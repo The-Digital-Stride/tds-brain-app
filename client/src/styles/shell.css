@@ -1,0 +1,503 @@
+/*
+ * shell.css: the desk, rail, docks, sheet and sheet bar.
+ * Layers, back to front: desk (body), rail and docks (glass), sheet (the one solid white
+ * surface), overlays (veil, palette).
+ */
+
+.desk {
+  --desk-pad: 12px;
+  --gap: 10px;
+  --rail-w: 60px;
+  display: flex;
+  height: 100dvh;
+  padding: var(--desk-pad);
+  overflow: hidden;
+}
+.desk[data-rail="wide"] {
+  --rail-w: 212px;
+}
+/* Holds the left dock in the flex row without adding a box of its own. */
+.dock-slot {
+  display: contents;
+}
+
+/* Layer 1: the rail ------------------------------------------------------------------------- */
+.rail {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 16px;
+  transition: width var(--t) var(--ease);
+}
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 600 15px var(--head);
+}
+.rail-mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+.rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: #33456a;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease),
+    box-shadow 120ms var(--ease);
+}
+.rail-item .icon {
+  flex: none;
+}
+.rail-item:hover,
+.rail-item[data-open="true"] {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: var(--lift-h);
+  color: var(--navy);
+}
+.rail-item:active {
+  box-shadow: none;
+}
+.rail-item[aria-current="page"] {
+  background: #fff;
+  color: var(--navy);
+  font-weight: 600;
+  box-shadow: var(--lift-1);
+}
+/* The drawer this button opened is showing: the hover surface plus a bar. */
+.rail-item[data-open="true"]::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue-ink);
+}
+.rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity var(--t) 80ms;
+}
+.rail-item .count.rail-label,
+.rail-item kbd.rail-label {
+  flex: none;
+}
+.rail[data-wide="false"] .rail-label {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 120ms,
+    visibility 0s 120ms;
+}
+.rail-pip {
+  position: absolute;
+  left: 25px;
+  top: 6px;
+  box-shadow: 0 0 0 2px #f1eee8;
+}
+/* Icons only: a count on the icon, so waiting work still shows. */
+.rail-badge {
+  position: absolute;
+  top: 4px;
+  left: 22px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #f1eee8;
+}
+/* With a count on the icon, the status dot moves to the icon's lower corner. */
+.rail-badge + .rail-pip {
+  top: 22px;
+}
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-strong);
+}
+.rail-group-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+  padding: 4px 10px 2px;
+}
+.rail[data-wide="false"] .rail-group-name {
+  display: none;
+}
+.rail-spacer {
+  flex: 1;
+}
+.rail-person {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+.avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: var(--paper);
+  font: 600 11px / 26px var(--body);
+  text-align: center;
+}
+.rail-who {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.rail-who small {
+  font-size: 12px;
+  color: var(--iron);
+}
+
+/* Names for an icons-only rail, on hover and on keyboard focus. */
+.rail [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--navy);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+.rail [data-tip]:hover::after {
+  opacity: 1;
+  transition: opacity 120ms 350ms;
+}
+.rail [data-tip]:focus-visible::after {
+  opacity: 1;
+}
+
+/* Layer 2: docks (left drawer, right panel) --------------------------------------------------- */
+.dock {
+  flex: none;
+  width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width var(--t) var(--ease),
+    margin var(--t) var(--ease),
+    opacity 160ms;
+}
+.dock[data-open="true"] {
+  width: 316px;
+  margin-left: var(--gap);
+  opacity: 1;
+}
+.dock[data-side="right"][data-open="true"] {
+  width: 332px;
+}
+.dock-panel {
+  width: 316px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+}
+.dock[data-side="right"] .dock-panel {
+  width: 332px;
+}
+.dock-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px 8px 14px;
+}
+.dock-head h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+/* The heading takes focus only so the reader starts there; it needs no ring. */
+.dock-head h2:focus {
+  outline: none;
+}
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+}
+/* Inside a clipping scroller the focus ring sits inside the row. */
+.dock-body :focus-visible {
+  outline-offset: -2px;
+}
+.dock-empty {
+  padding: 8px;
+  color: var(--iron);
+}
+
+/* A dock that floats over the sheet (not enough room to push). Modal: a veil sits behind it. */
+.dock[data-overlay="true"] {
+  width: 0;
+  margin-left: 0;
+  opacity: 1;
+  overflow: visible;
+}
+.dock[data-overlay="true"] .dock-panel {
+  position: fixed;
+  top: var(--desk-pad);
+  bottom: var(--desk-pad);
+  z-index: 41;
+  height: auto;
+  box-shadow: var(--lift-3);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 160ms,
+    transform var(--t) var(--ease),
+    visibility 0s var(--t);
+}
+.dock[data-overlay="true"][data-side="left"] .dock-panel {
+  left: calc(var(--desk-pad) + var(--rail-w) + var(--gap));
+  max-width: calc(100vw - 2 * var(--desk-pad) - var(--rail-w) - var(--gap));
+  transform: translateX(-12px);
+}
+.dock[data-overlay="true"][data-side="right"] .dock-panel {
+  right: var(--desk-pad);
+  max-width: calc(100vw - 2 * var(--desk-pad));
+  transform: translateX(12px);
+}
+.dock[data-overlay="true"][data-open="true"] .dock-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 160ms,
+    transform var(--t) var(--ease);
+}
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(2, 27, 67, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms;
+}
+.veil[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Layer 3: the sheet, where the work is ------------------------------------------------------- */
+.sheet {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--gap);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: var(--lift-2);
+  font-size: 14px;
+  /* The sheet bar adapts to the sheet's own width, which the docks change. */
+  container: sheet / inline-size;
+}
+.sheet:focus {
+  outline: none;
+}
+/* A view fills the sheet below the bar and notices; it scrolls inside itself. */
+.sheet > .chat {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.sheet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sheet-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 10px 0 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.crumb {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.crumb-lead,
+.crumb-sep {
+  flex: none;
+  color: var(--iron);
+}
+.crumb h1 {
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jump {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--tray);
+  color: var(--iron);
+  font-size: 13px;
+  cursor: pointer;
+}
+.jump:hover {
+  background: #eae6de;
+  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+  color: var(--navy);
+}
+.jump:active {
+  background: #e2ddd3;
+  box-shadow: none;
+}
+
+/* Lines any sheet can show (SheetNotices) */
+.offline-banner {
+  flex: none;
+  padding: 8px 16px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  border-bottom: 1px solid var(--amber-edge);
+  font-size: 13px;
+}
+.error-banner {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-radius: 10px;
+  max-width: 680px;
+  width: calc(100% - 32px);
+  align-self: center;
+}
+.closed-note {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--iron);
+}
+
+/* Narrow windows ------------------------------------------------------------------------------ */
+/* A tight sheet: the palette button keeps its icon (and its aria-label) only. */
+@container sheet (max-width: 699px) {
+  .jump {
+    padding: 0 9px;
+  }
+  .jump-text,
+  .jump kbd {
+    display: none;
+  }
+}
+/* A narrow sheet: the title gets a line of its own, the controls wrap below it. */
+@container sheet (max-width: 560px) {
+  .sheet-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .sheet-bar > .crumb {
+    flex: 1 0 100%;
+  }
+}
+@media (max-width: 599px) {
+  .desk {
+    --desk-pad: 8px;
+    --gap: 8px;
+  }
+  .sheet {
+    border-radius: 14px;
+  }
+  .sheet-bar {
+    padding-left: 14px;
+  }
+}
+
+/* Less motion: nothing slides or fades. */
+@media (prefers-reduced-motion: reduce) {
+  .rail,
+  .rail-label,
+  .rail[data-wide="false"] .rail-label,
+  .rail [data-tip]::after,
+  .rail [data-tip]:hover::after,
+  .dock,
+  .dock-panel,
+  .dock[data-overlay="true"] .dock-panel,
+  .dock[data-overlay="true"][data-open="true"] .dock-panel,
+  .veil {
+    transition: none;
+  }
+}

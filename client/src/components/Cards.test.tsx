@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionItem, QuestionItem } from '../state/chat-reducer.ts';
 
 const api = vi.hoisted(() => ({ answerPermission: vi.fn(), answerQuestion: vi.fn() }));
+const focusComposer = vi.hoisted(() => vi.fn());
 vi.mock('../api.ts', () => ({ api }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
@@ -11,7 +12,7 @@ vi.mock('../store.tsx', () => ({
       await fn();
       return true;
     },
-    requestComposerFocus: () => {},
+    requestComposerFocus: focusComposer,
   }),
 }));
 
@@ -61,6 +62,36 @@ describe('PermissionCard', () => {
     await waitFor(() =>
       expect(api.answerPermission).toHaveBeenCalledWith('s1', { requestId: 'r1', decision: 'allow-session' }),
     );
+  });
+
+  it('sends focus to the message box after an answer, unless told what to do instead', async () => {
+    const { unmount } = render(<PermissionCard item={perm()} sessionId="s1" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(focusComposer).toHaveBeenCalledTimes(1));
+    unmount();
+
+    const onAnswered = vi.fn();
+    render(<PermissionCard item={perm()} sessionId="s1" onAnswered={onAnswered} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(onAnswered).toHaveBeenCalledTimes(1));
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes focus when it appears, and shows only a record once answered', () => {
+    const { rerender } = render(<PermissionCard item={perm()} sessionId="s1" />);
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Claude wants to save a file' }));
+    rerender(<PermissionCard item={perm({ outcome: 'allowed' })} sessionId="s1" />);
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
+    expect(screen.getByText('You allowed this: Claude wants to save a file')).toBeTruthy();
+  });
+
+  it("offers Allow first, then Allow for this chat, then Don't allow, with the reason under the row", () => {
+    render(<PermissionCard item={perm()} sessionId="s1" />);
+    const names = screen.getAllByRole('button').map((b) => b.textContent);
+    expect(names).toEqual(['Allow', 'Allow for this chat', "Don't allow"]);
+    const forChat = screen.getByRole('button', { name: 'Allow for this chat' });
+    const why = document.getElementById(forChat.getAttribute('aria-describedby') ?? '');
+    expect(why?.textContent).toMatch(/rest of this chat/);
   });
 
   it('hides Allow for this chat when there is no label, and shows a warning', () => {

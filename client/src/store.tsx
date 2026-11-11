@@ -25,7 +25,7 @@ import { needsCloseConfirm } from './state/close.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 
-export type View = 'chat' | 'skills' | 'todos' | 'history' | 'settings';
+export type View = 'chat' | 'settings' | `app:${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
 
 export interface NewChat {
@@ -329,7 +329,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setActiveChat(freshNewChat());
         requestFocus();
       }
-      setNotice("Chat closed. It's in History if you want it back.");
+      setNotice("Chat closed. It's under Earlier in Chats if you want it back.");
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
       noticeTimer.current = setTimeout(() => setNotice(null), 6000);
       return true;

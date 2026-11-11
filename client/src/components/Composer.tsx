@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Attention, SkillInfo } from '../../../shared/contract.ts';
+import { Icon } from '../shell/Icon.tsx';
 
 export interface ComposerProps {
   initial: string;
@@ -57,7 +58,8 @@ export function Composer({
   };
 
   return (
-    <div className="composer">
+    // The box's border carries the chat's state (ready, working, needs your answer).
+    <div className="composer" data-attention={attention ?? undefined}>
       {skill ? (
         <div className="chip-row">
           <span className="chip">
@@ -68,22 +70,24 @@ export function Composer({
               aria-label={`Remove ${skill.title}`}
               onClick={() => setSkill(null)}
             >
-              Remove
+              <Icon name="close" size={12} />
             </button>
           </span>
         </div>
       ) : null}
       <textarea
         ref={area}
-        className="field"
-        data-attention={attention ?? undefined}
+        className="composer-input"
         rows={1}
         value={text}
         readOnly={blocked}
         aria-disabled={blocked}
         aria-label="Message to Claude"
         aria-describedby={disabledReason ? 'composer-reason' : 'composer-hint'}
-        placeholder={skill ? 'Add any detail, or just send' : 'Ask Claude anything about your work'}
+        // While blocked, the reason shows in the box too, so it doesn't look ready to type in.
+        placeholder={
+          disabledReason ?? (skill ? 'Add any detail, or just send' : 'Ask Claude anything about your work')
+        }
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           // Enter that confirms a word in an input method must not send.
@@ -94,24 +98,26 @@ export function Composer({
           }
         }}
       />
-      <button
-        type="button"
-        className="btn"
-        data-variant="primary"
-        disabled={!canSend}
-        onClick={() => void submit()}
-      >
-        Send
-      </button>
-      {disabledReason ? (
-        <p className="visually-hidden" id="composer-reason">
-          {disabledReason}
-        </p>
-      ) : (
-        <p className="composer-hint" id="composer-hint">
-          Enter to send, Shift and Enter for a new line.
-        </p>
-      )}
+      <div className="composer-foot">
+        {disabledReason ? (
+          <p className="visually-hidden" id="composer-reason">
+            {disabledReason}
+          </p>
+        ) : (
+          <p className="composer-hint" id="composer-hint">
+            Enter to send, Shift and Enter for a new line.
+          </p>
+        )}
+        <button
+          type="button"
+          className="btn"
+          data-variant="primary"
+          disabled={!canSend}
+          onClick={() => void submit()}
+        >
+          Send
+        </button>
+      </div>
     </div>
   );
 }

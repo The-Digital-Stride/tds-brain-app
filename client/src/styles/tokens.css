@@ -1,75 +1,71 @@
+/*
+ * Design tokens. Light only for now (dark mode is a follow-up).
+ * Brand and layer values come from the approved shell prototype (docs/shell-prototype.html).
+ */
 :root {
-  color-scheme: light dark;
-  --ink: #021b43;
+  color-scheme: light;
+
+  /* Brand */
+  --navy: #021b43;
+  --blue: #1889ff;
+  /* The blue for text and focus rings: 6.5:1 on white, where --blue is only 3.3:1. */
+  --blue-ink: #0b5cb5;
   --paper: #faf8f4;
-  --card: #ffffff;
-  --text: #021b43;
-  --text-soft: #4a566b;
-  --rule: #e4dfd6;
-  --rule-strong: #cfc8bb;
+  --iron: #525252;
+  --wash: #e7f1fe;
+
+  /* Layers, back to front: desk, tray, glass, sheet */
+  --desk: #e9e5dd;
+  --tray: #f3f0ea;
+  --line: rgba(2, 27, 67, 0.09);
+  --line-strong: rgba(2, 27, 67, 0.16);
+  --glass: rgba(255, 255, 255, 0.46);
+  /* Glass that carries text: keeps text at 4.5:1 or better over the darkest desk tint. */
+  --glass-strong: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.8);
+  /* Used instead of glass where blur is missing or less transparency is asked for. */
+  --glass-solid: #f6f4f0;
+  --lift-1: 0 1px 2px rgba(2, 27, 67, 0.05), 0 4px 14px rgba(2, 27, 67, 0.05);
+  --lift-2: 0 1px 2px rgba(2, 27, 67, 0.08), 0 18px 44px rgba(2, 27, 67, 0.16);
+  --lift-3: 0 2px 6px rgba(2, 27, 67, 0.08), 0 28px 70px rgba(2, 27, 67, 0.22);
+  /* Hover: the element lifting towards you. */
+  --lift-h: 0 1px 2px rgba(2, 27, 67, 0.06), 0 2px 8px rgba(2, 27, 67, 0.07);
+  /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */
+  --tick-edge: #7c8aa5;
+
+  /* Type */
+  --head: "Poppins", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --body: "Inter Variable", "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t: 240ms;
+
+  /* Text, fields, focus */
+  --text: var(--navy);
+  /* Field borders must reach 3:1 on white. */
   --field-edge: #857d70;
-  --accent: #0f74e0;
-  --accent-ink: #0b5cb5;
   --on-accent: #ffffff;
-  --accent-wash: #e8f1fc;
-  --side-bg: #021b43;
-  --side-text: #e6ecf7;
-  --side-soft: #a9b8d3;
-  --side-hover: rgba(255, 255, 255, 0.09);
-  --side-active: rgba(255, 255, 255, 0.16);
+  --focus: var(--blue-ink);
+  --shadow: var(--lift-1);
+
+  /* Amber, for "needs you" surfaces */
   --amber-bg: #fff4db;
   --amber-edge: #d99a00;
   --amber-text: #3d2a00;
+
   /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
   --attn-ready: #22c55e;
   --attn-working: #dc2626;
   --attn-asking: #f59e0b;
-  /* Deeper shades for the message box border, which must reach 3:1 on the light surfaces. */
+  /* Deeper shades for dots, edges and the message box border, which must reach 3:1 on white. */
   --attn-ready-edge: #16a34a;
   --attn-asking-edge: #d97706;
   --attn-working-edge: #dc2626;
   --attn-asking-pulse: #b45309;
+
   --danger: #a4261b;
   --danger-wash: #fdeceb;
   --ok: #17673a;
-  --focus: #0f74e0;
-  --shadow: 0 1px 2px rgba(2, 27, 67, 0.06), 0 4px 16px rgba(2, 27, 67, 0.05);
-  --radius: 12px;
-  --radius-sm: 10px;
-  --s1: 8px;
-  --s2: 16px;
-  --s3: 24px;
-  --s4: 32px;
-  --s5: 48px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0a1120;
-    --card: #111b2e;
-    --text: #e8edf5;
-    --text-soft: #a3b0c6;
-    --rule: #22304a;
-    --rule-strong: #34456a;
-    --field-edge: #61759c;
-    --accent: #5aaeff;
-    --accent-ink: #5aaeff;
-    --on-accent: #021b43;
-    --accent-wash: #14253f;
-    --side-bg: #010e26;
-    --amber-bg: #2a2108;
-    --amber-edge: #e0a800;
-    --amber-text: #f6e7b8;
-    --danger: #ff9b92;
-    --danger-wash: #3a1713;
-    --ok: #7fd6a0;
-    --focus: #5aaeff;
-    --attn-ready-edge: var(--attn-ready);
-    --attn-asking-edge: var(--attn-asking);
-    --attn-working-edge: var(--attn-working);
-    --attn-asking-pulse: #fbbf24;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  }
 }

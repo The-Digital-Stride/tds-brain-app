@@ -80,6 +80,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   sessionStorage.clear();
+  localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -89,14 +90,16 @@ async function openChat() {
 }
 
 describe('closing a chat', () => {
-  it('closes an idle chat at once and lands on the New chat screen', async () => {
+  it('closes an idle chat at once and lands on Home, ready for a new chat', async () => {
     await openChat();
     chatEvent(1, { type: 'state', state: 'idle' });
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
     expect(api.close).toHaveBeenCalledWith('s1');
-    await screen.findByRole('heading', { name: 'New chat' });
-    expect(screen.getByText(/Chat closed/)).toBeTruthy();
+    await screen.findByRole('heading', { level: 1, name: 'Home' });
+    expect(screen.queryByRole('heading', { name: 'Report check' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Message to Claude' })).toBeTruthy();
+    expect(screen.getByText("Chat closed. It's under Earlier in Chats if you want it back.")).toBeTruthy();
   });
 
   it('asks first when the chat is working, and does nothing until confirmed', async () => {
@@ -107,7 +110,7 @@ describe('closing a chat', () => {
     expect(api.close).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
-    await screen.findByRole('heading', { name: 'New chat' });
+    await screen.findByRole('heading', { level: 1, name: 'Home' });
   });
 
   it('Keep open cancels the confirm', async () => {
@@ -115,8 +118,25 @@ describe('closing a chat', () => {
     chatEvent(1, { type: 'state', state: 'waiting' });
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     expect(screen.getByText('Claude is waiting for your answer. Close anyway?')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep open' }));
     fireEvent.click(screen.getByRole('button', { name: 'Keep open' }));
     expect(api.close).not.toHaveBeenCalled();
     expect(screen.queryByText(/Close anyway/)).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close chat' }));
+  });
+
+  it('takes the "This chat" panel with it: Home never offers the panel', async () => {
+    await openChat();
+    chatEvent(1, { type: 'state', state: 'idle' });
+    const panel = () => document.getElementById('panel') as HTMLElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Steps and details' }));
+    expect(panel().hasAttribute('inert')).toBe(false);
+    expect(screen.getByRole('radio', { name: 'Steps' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
+    await screen.findByRole('heading', { level: 1, name: 'Home' });
+    expect(panel().hasAttribute('inert')).toBe(true);
+    expect(panel().getAttribute('aria-hidden')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Steps and details' })).toBeNull();
   });
 });

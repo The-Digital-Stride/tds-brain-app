@@ -1,0 +1,887 @@
+/*
+ * chat.css: the chat sheet (bar extras, thread, floater, answer box, message box), the "This chat"
+ * panel's body, Settings, and the whole-app states (loading, sign-in and boot problems).
+ * Sizes follow docs/design-system.md. Status dots and edges on white use the deeper
+ * `--attn-*-edge` shades (3:1 or better).
+ */
+
+/* The chat sheet ------------------------------------------------------------------------------ */
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* A size container, so the answer box can be held to half the sheet's height. */
+.chat-live {
+  container-type: size;
+}
+
+/* "Close anyway?" replaces Stop and Close chat in the bar while it shows. */
+.close-confirm {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The thread: one centred reading column ------------------------------------------------------ */
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+.thread-col {
+  max-width: 680px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+.thread-empty {
+  margin-top: 32px;
+  justify-items: center;
+  text-align: center;
+  gap: 6px;
+}
+.thread-empty h2 {
+  font-size: 18px;
+}
+.thread-empty .lede {
+  font-size: 14px;
+  color: var(--iron);
+}
+
+/* Your message: a soft bubble. Claude's reply: plain text on the sheet. */
+.msg-user {
+  justify-self: end;
+  max-width: min(85%, 560px);
+  margin-left: 32px;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--wash);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-assistant {
+  max-width: 100%;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+/* A side note Claude writes before a step: quieter than the answer itself. */
+.msg-assistant[data-note="true"] {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--iron);
+  border-left: 2px solid var(--line-strong);
+  padding-left: 12px;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown table,
+.markdown blockquote {
+  margin: 0 0 12px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 20px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 16px 0 6px;
+  font-family: var(--head);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.markdown h1,
+.markdown h2 {
+  font-size: 18px;
+}
+.markdown h3 {
+  font-size: 15px;
+}
+.markdown h4 {
+  font-size: 14px;
+}
+.markdown a {
+  color: var(--blue-ink);
+}
+.markdown a:hover {
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+.markdown code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--tray);
+  padding: 1px 5px;
+  border-radius: 6px;
+}
+.markdown pre {
+  background: var(--tray);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.markdown th,
+.markdown td {
+  padding: 8px 10px 8px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.markdown th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+  border-bottom: 1.5px solid var(--navy);
+}
+.markdown blockquote {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 12px;
+  font-size: 13px;
+  color: var(--iron);
+}
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* "What Claude did": the steps under a reply, folded away. */
+.activity {
+  font-size: 13px;
+  color: var(--iron);
+}
+.activity summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 9px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 120ms var(--ease);
+}
+.activity summary:hover {
+  background: rgba(2, 27, 67, 0.08);
+  color: var(--navy);
+}
+.activity summary::-webkit-details-marker {
+  display: none;
+}
+.activity summary .icon {
+  transform: rotate(-90deg);
+  transition: transform 120ms var(--ease);
+}
+.activity[open] > summary .icon {
+  transform: none;
+}
+.activity[data-running="true"] > summary {
+  color: var(--blue-ink);
+}
+.activity-steps,
+.activity-steps ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 4px;
+}
+.activity-steps {
+  margin-left: 10px;
+}
+.activity .tool-status[data-status="failed"] {
+  color: var(--danger);
+}
+.helper-text {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 8px;
+  margin: 4px 0;
+  color: var(--iron);
+}
+
+.notice {
+  border-radius: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.notice[data-level="warning"] {
+  border-color: var(--amber-edge);
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.notice[data-level="error"] {
+  border-color: var(--danger);
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+/* An answered card, kept in the thread as the record. */
+.record {
+  font-size: 13px;
+  color: var(--iron);
+}
+.record::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: #b9c0ce;
+}
+
+/* The floater: under the thread, never over it ------------------------------------------------ */
+.floater {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  padding: 8px 28px 14px;
+  background: #fff;
+}
+/* The thread fades into the floater rather than meeting it at a hard edge. */
+.floater::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -20px;
+  height: 20px;
+  background: linear-gradient(#fff0, #fff);
+  pointer-events: none;
+}
+.floater-col {
+  max-width: 680px;
+  margin: 0 auto;
+  display: grid;
+  gap: 8px;
+}
+
+/* The answer box: ONE amber-glass surface; nothing inside has a box of its own. ------------- */
+.pending {
+  max-height: 50cqb;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 14px;
+  background: rgba(255, 248, 232, 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: var(--lift-3);
+}
+/* The focus ring belongs to the surface, outside the scroller, so it is never cut off. */
+.pending:has(> :focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pending > :focus,
+.pending > :focus-visible {
+  outline: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pending {
+    background: var(--amber-bg);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .pending {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--amber-bg);
+  }
+}
+
+.approval,
+.question-card {
+  padding: 12px 14px;
+  color: var(--navy);
+}
+.approval-tag,
+.question-card .q-header {
+  display: block;
+  margin-bottom: 2px;
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+.approval-title,
+.question-card legend {
+  font-family: var(--head);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy);
+  overflow-wrap: anywhere;
+}
+.approval-detail {
+  max-height: 160px;
+  overflow: auto;
+  margin-top: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.approval-detail pre {
+  margin: 0;
+  padding: 8px 10px;
+  font: 12.5px / 1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.approval-warning {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.approval-warning strong {
+  color: var(--danger);
+}
+.note-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+.note-field > span,
+.own-answer > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+.pending .field {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* Allow first, then Allow for this chat, then Don't allow: one row. */
+.answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pending .btn:not([data-variant]) {
+  background: rgba(255, 255, 255, 0.75);
+}
+.pending .btn:not([data-variant]):hover:not(:disabled) {
+  background: #eae6de;
+  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+}
+.pending .btn:not([data-variant]):active:not(:disabled) {
+  background: #e2ddd3;
+  box-shadow: none;
+}
+.approval .why {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--iron);
+}
+
+/* Question card: a small form of flat option rows */
+.question-card {
+  display: grid;
+  gap: 12px;
+}
+.question-card fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.question-card legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.question-card .meta {
+  font-size: 12px;
+  color: var(--iron);
+}
+.question-card .answer-actions {
+  margin-top: 0;
+}
+.question-card .opt {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease),
+    box-shadow 120ms var(--ease),
+    transform 120ms var(--ease);
+}
+.question-card .opt:hover {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--lift-h, 0 1px 2px rgba(2, 27, 67, 0.06), 0 2px 8px rgba(2, 27, 67, 0.07));
+  transform: translateY(-1px);
+}
+.question-card .opt:active {
+  transform: none;
+}
+.question-card .opt:has(input:checked) {
+  background: #fff;
+  box-shadow: var(--lift-1);
+}
+.question-card .opt input {
+  margin: 1px 0 0;
+}
+.question-card .opt-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+.question-card .opt-desc {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.own-answer {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* The status line above the message box ------------------------------------------------------- */
+.attn-bar {
+  padding: 0 4px;
+}
+.attn-text {
+  font-size: 12px;
+  color: var(--iron);
+}
+.attn-label {
+  font-weight: 600;
+  color: var(--navy);
+}
+.attn-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 8px 0 2px;
+  background: var(--attn-ready-edge);
+}
+.attn-dot[data-attention="working"] {
+  background: var(--attn-working-edge);
+}
+.attn-dot[data-attention="asking"] {
+  background: var(--attn-asking-edge);
+}
+.attn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  stroke: var(--attn-working-edge);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: attn-spin 1.1s linear infinite;
+}
+@keyframes attn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The message box (Composer), on Home and in a chat ------------------------------------------- */
+.composer {
+  display: grid;
+  gap: 6px;
+  padding: 10px 10px 8px 14px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--lift-1);
+}
+.floater .composer {
+  box-shadow: var(--lift-2);
+}
+/* The box's border carries the chat's state. Same width in every state, no fill. */
+.composer[data-attention="ready"] {
+  border-color: var(--attn-ready-edge);
+}
+.composer[data-attention="working"] {
+  border-color: var(--attn-working-edge);
+}
+.composer[data-attention="asking"] {
+  border-color: var(--attn-asking-edge);
+  animation: attn-pulse 2s ease-in-out infinite;
+}
+@keyframes attn-pulse {
+  0%,
+  100% {
+    border-color: var(--attn-asking-edge);
+  }
+  50% {
+    border-color: var(--attn-asking-pulse);
+  }
+}
+.composer-input {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  max-height: 200px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--navy);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  field-sizing: content;
+}
+.floater .composer-input {
+  min-height: 22px;
+}
+.composer-input::placeholder {
+  color: var(--iron);
+}
+.composer-input[aria-disabled="true"] {
+  color: var(--iron);
+}
+/* Where :has() works the ring goes round the whole box; elsewhere it stays on the text area. */
+@supports selector(:has(*)) {
+  .composer-input:focus-visible {
+    outline: none;
+  }
+  .composer:has(> .composer-input:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--iron);
+}
+.composer-foot .btn {
+  margin-left: auto;
+}
+/* The chosen skill: the shared chip, in wash and blue ink, with a small remove button. */
+.chip-row .chip {
+  background: var(--wash);
+  color: var(--blue-ink);
+  padding-right: 3px;
+}
+.chip-remove {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+/* A 24px hit area round the 20px visible button, so the chip doesn't grow. */
+.chip-remove::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+}
+.chip-remove:hover {
+  background: rgba(2, 27, 67, 0.08);
+}
+.chip-remove:active {
+  background: rgba(2, 27, 67, 0.12);
+}
+
+/* The "This chat" panel (Inspector) ----------------------------------------------------------- */
+.inspector {
+  display: grid;
+  gap: 8px;
+}
+.inspector > .seg {
+  margin: 0 4px;
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+/* A helper's steps sit under the step that started the helper. */
+.step[data-depth="1"] {
+  margin-left: 16px;
+}
+.step[data-depth="2"] {
+  margin-left: 32px;
+}
+.step[data-depth="3"] {
+  margin-left: 48px;
+}
+.step-n {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(2, 27, 67, 0.08);
+  font: 600 11.5px / 1 var(--body);
+}
+.step-label {
+  display: block;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.step-status {
+  display: block;
+  font-size: 12px;
+  color: var(--iron);
+}
+/* Row meta: lower case in the text, first letter capitalised here ("Done", "Working"). */
+.step-status::first-letter {
+  text-transform: uppercase;
+}
+.step-status[data-status="failed"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Key/value lists (the panel's Details, Settings' About): hairline rows. */
+.kv {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  margin: 0;
+  font-size: 13px;
+}
+.kv dt,
+.kv dd {
+  margin: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.kv > :nth-child(-n + 2) {
+  border-top: 0;
+}
+.kv dt {
+  padding-right: 12px;
+  color: var(--iron);
+}
+.kv dd {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.kv .kv-wide {
+  grid-column: 1 / -1;
+}
+.kv dd.kv-wide {
+  border-top: 0;
+  padding-top: 0;
+}
+.inspector .kv {
+  padding: 0 8px;
+}
+.kv-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.terminal-cmd {
+  display: block;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--line-strong);
+  font: 400 12.5px / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Settings: plain content and hairline rows, no cards ----------------------------------------- */
+.page.settings {
+  max-width: 600px;
+  padding: 24px 28px 32px;
+  gap: 24px;
+}
+.settings h2 {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+.setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 0;
+}
+.setting + .setting {
+  border-top: 1px solid var(--line);
+}
+.setting-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+.setting-help {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.about-code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.problem-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--danger);
+}
+
+/* Whole-app states: one raised card on the desk ----------------------------------------------- */
+.gate {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.gate-card {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 18px;
+  box-shadow: var(--lift-2);
+}
+.gate-card h1 {
+  font-size: 18px;
+}
+.gate .problem-list {
+  color: var(--navy);
+}
+.spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--navy);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The client chip in the chat's bar. */
+.chat-live .sheet-bar .chip {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Narrow sheets and windows ------------------------------------------------------------------- */
+/* The bar wraps below 560px; Stop keeps its icon, and its name for screen readers. */
+@container sheet (max-width: 560px) {
+  .stop-btn {
+    padding: 0 9px;
+  }
+  .stop-btn .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 599px) {
+  .thread {
+    padding: 16px;
+  }
+  .floater {
+    padding: 8px 16px 12px;
+  }
+  .msg-user {
+    margin-left: 16px;
+  }
+  .page.settings {
+    padding: 16px;
+  }
+}
+
+/* Less motion: nothing spins, pulses or lifts. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .attn-spinner,
+  .composer[data-attention] {
+    animation: none;
+  }
+  .question-card .opt,
+  .question-card .opt:hover {
+    transform: none;
+  }
+  .question-card .opt,
+  .activity summary,
+  .activity summary .icon {
+    transition: none;
+  }
+}

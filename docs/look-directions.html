@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TDS Brain App: three looks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #021B43; --blue: #1889FF; --paper: #FAF8F4; --white: #fff; --iron: #525252;
+    --hairline: #E9E7E3; --sand: #E8E4DB; --ok: #1ABF5C; --warn: #F59E0B; --err: #EF3B2A; --err-ink: #A4261B;
+    --head: 'Poppins', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--navy); font: 16px/1.55 var(--body); }
+  .page { max-width: 1500px; margin: 0 auto; padding: 40px 24px 96px; }
+  .page h1 { font: 600 34px/1.15 var(--head); margin: 0 0 12px; letter-spacing: -0.01em; }
+  .page h2 { font: 600 24px/1.2 var(--head); margin: 0 0 6px; }
+  .page p { max-width: 68ch; margin: 0 0 12px; color: var(--iron); }
+  .page .lede { font-size: 18px; color: var(--navy); }
+  .always { background: var(--white); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 24px; margin: 28px 0 8px; max-width: 900px; }
+  .always h2 { font-size: 18px; margin-bottom: 10px; }
+  .always ul { margin: 0; padding-left: 20px; color: var(--iron); }
+  .always li { margin: 4px 0; max-width: 72ch; }
+  .direction { margin-top: 64px; }
+  .direction .pick { display: inline-block; font: 600 13px/1 var(--head); background: var(--navy); color: var(--paper); padding: 6px 10px; border-radius: 6px; margin-bottom: 12px; }
+  .frames { display: grid; gap: 20px; grid-template-columns: 1fr; margin-top: 20px; }
+  @media (min-width: 1300px) { .frames { grid-template-columns: 1fr 1fr; } }
+  figure { margin: 0; }
+  figcaption { font-size: 14px; color: var(--iron); margin-bottom: 8px; }
+  .stage { position: relative; width: 100%; aspect-ratio: 1180 / 720; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgba(2,27,67,.14), 0 18px 40px rgba(2,27,67,.12); }
+
+  /* ---------- the mock app (drawn at 1180 x 720, scaled to fit) ---------- */
+  .app { position: absolute; top: 0; left: 0; width: 1180px; height: 720px; transform-origin: 0 0; display: grid;
+    font: 14px/1.5 var(--body); color: var(--ink); background: var(--bg);
+    --ink: var(--navy); --soft: var(--iron); --bg: var(--paper); --surface: var(--white); --line: var(--hairline);
+    --side-bg: var(--navy); --side-fg: var(--paper); --side-soft: rgba(250,248,244,.72); --side-line: rgba(250,248,244,.12); --side-on: rgba(250,248,244,.1);
+    --action-bg: var(--blue); --action-fg: var(--navy); }
+  .app.home { grid-template-columns: 232px 1fr; }
+  .app.chat { grid-template-columns: 232px 1fr 264px; }
+  .app button { font: inherit; border: 0; cursor: default; }
+
+  .side { background: var(--side-bg); color: var(--side-fg); padding: 20px 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 600 16px/1 var(--head); padding: 0 6px 18px; }
+  .brand svg { width: 26px; height: 26px; flex: none; }
+  .new { background: var(--action-bg); color: var(--action-fg); font-weight: 600 !important; border-radius: 8px; padding: 10px 12px; text-align: left; margin-bottom: 14px; display: flex; justify-content: space-between; }
+  .new kbd { font: 500 12px var(--body); opacity: .7; }
+  .nav a, .list a { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; color: inherit; text-decoration: none; }
+  .nav a.on { background: var(--side-on); font-weight: 600; }
+  .nav svg { width: 16px; height: 16px; flex: none; opacity: .85; }
+  .side h4 { font: 600 12.5px/1 var(--body); color: var(--side-soft); margin: 18px 8px 6px; }
+  .list a { font-size: 13.5px; padding: 6px 8px; }
+  .list small { display: block; color: var(--side-soft); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ok); }
+  .dot.working { background: var(--err); } .dot.asking { background: var(--warn); }
+  .me { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--side-line); font-size: 13px; }
+  .me small { display: block; color: var(--side-soft); }
+
+  .main { min-width: 0; display: flex; flex-direction: column; }
+  .start { width: 620px; margin: 0 auto; padding-top: 92px; }
+  .start h1 { font: 600 30px/1.15 var(--head); margin: 0 0 6px; letter-spacing: -0.01em; }
+  .start .sub { color: var(--soft); margin: 0 0 22px; font-size: 15px; }
+  .composer { display: flex; gap: 10px; align-items: flex-end; background: var(--surface); border: 1.5px solid var(--field, #8a8377); border-radius: 12px; padding: 12px 12px 12px 16px; }
+  .composer span { flex: 1; color: var(--soft); padding: 6px 0 34px; }
+  .composer.slim span { padding-bottom: 6px; }
+  .send { background: var(--action-bg); color: var(--action-fg); font-weight: 600 !important; border-radius: 8px; padding: 8px 16px; }
+  .chips { display: flex; gap: 8px; margin: 12px 0 34px; align-items: center; color: var(--soft); font-size: 13px; }
+  .chips b { font-weight: 500; color: var(--ink); background: var(--chip, transparent); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; }
+  .needs h2 { font: 600 15px/1 var(--head); margin: 0 0 4px; }
+  .row { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .box { width: 20px; height: 20px; border: 1.5px solid var(--field, #8a8377); border-radius: 5px; background: var(--surface); }
+  .row .t { font-weight: 500; }
+  .row .m { display: block; font-size: 12.5px; color: var(--soft); font-weight: 400; }
+  .when { font-size: 12.5px; color: var(--soft); white-space: nowrap; }
+  .when.late { color: var(--err-ink); font-weight: 600; } .when.today { color: var(--ink); font-weight: 600; }
+  .more { font-size: 13px; color: var(--soft); padding-top: 10px; }
+  .more u { color: var(--ink); text-underline-offset: 3px; }
+
+  .bar { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  .bar h3 { font: 600 16px/1.2 var(--head); margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .client { font-size: 13px; color: var(--soft); } .bar .client b { color: var(--ink); font-weight: 600; }
+  .ghost { background: transparent; border: 1px solid var(--line) !important; color: var(--ink); border-radius: 8px; padding: 6px 12px; font-weight: 500 !important; }
+  .thread { flex: 1; overflow: hidden; padding: 22px 24px 0; }
+  .col { width: 600px; margin: 0 auto; }
+  .you { background: var(--you, #E7F1FE); border-radius: 12px 12px 3px 12px; padding: 10px 14px; margin: 0 0 16px 110px; }
+  .did { font-size: 13px; color: var(--soft); margin-bottom: 12px; }
+  .thread h5 { font: 600 17px/1.3 var(--head); margin: 0 0 6px; }
+  .thread p { margin: 0 0 10px; }
+  .thread table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 4px 0 12px; }
+  .thread th { text-align: left; font-weight: 600; color: var(--soft); padding: 6px 10px 6px 0; border-bottom: 1.5px solid var(--ink); }
+  .thread td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); }
+  .foot { padding: 10px 24px 18px; }
+  .state { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .rail { border-left: 1px solid var(--line); background: var(--rail-bg, var(--surface)); color: var(--rail-fg, var(--ink)); padding: 16px 16px 0; }
+  .rail h3 { font: 600 15px/1 var(--head); margin: 2px 0 8px; display: flex; justify-content: space-between; }
+  .rail h3 span { font: 400 13px var(--body); color: var(--rail-soft, var(--soft)); }
+  .rail .row { grid-template-columns: 20px 1fr; padding: 10px 0; border-color: var(--rail-line, var(--line)); align-items: start; }
+  .rail .row .box { margin-top: 1px; width: 18px; height: 18px; }
+  .rail .row.inhand { background: var(--inhand, #E7F1FE); margin: 0 -10px; padding: 10px; border-radius: 8px; border-bottom-color: transparent; }
+  .rail .m { color: var(--rail-soft, var(--soft)); }
+  .rail .late { color: var(--rail-late, var(--err-ink)); font-weight: 600; }
+  .strip { display: none; }
+
+  /* ---------- 2. Paper desk: light throughout, navy for the one action ---------- */
+  .app.t-paper { --side-bg: #F1EEE7; --side-fg: var(--navy); --side-soft: var(--iron); --side-line: var(--sand); --side-on: #E4DFD4;
+    --action-bg: var(--navy); --action-fg: var(--paper); --bg: var(--white); --you: #F1EEE7; --inhand: #F1EEE7; --rail-bg: var(--white); --chip: var(--paper); }
+  .app.t-paper .side { border-right: 1px solid var(--sand); }
+  .app.t-paper .start h1 { font-size: 26px; }
+  .app.t-paper .start { padding-top: 72px; }
+
+  /* ---------- 3. Stride: navy frame, one paper sheet, the day strip ---------- */
+  .app.t-stride { --bg: var(--navy); --rail-bg: var(--navy); --rail-fg: var(--paper); --rail-soft: rgba(250,248,244,.72); --rail-line: rgba(250,248,244,.12); --rail-late: #FF9B8F; --inhand: rgba(24,137,255,.22); }
+  .app.t-stride .main { margin: 14px 14px 14px 0; background: var(--paper); border-radius: 16px; overflow: hidden; }
+  .app.t-stride.chat .main { margin-right: 0; }
+  .app.t-stride .rail { border-left: 0; }
+  .app.t-stride .rail .box { background: transparent; border-color: rgba(250,248,244,.55); }
+  .app.t-stride .start { padding-top: 34px; width: 660px; }
+  .app.t-stride .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 26px 34px 0; }
+  .seg { position: relative; padding: 12px 18px 12px 34px; background: var(--sand); color: var(--navy); clip-path: polygon(22px 0, 100% 0, calc(100% - 22px) 100%, 0 100%); margin-right: -10px; }
+  .seg b { display: block; font: 600 22px/1 var(--head); }
+  .seg span { font-size: 12.5px; }
+  .seg.late { background: #FBD9D4; } .seg.today { background: var(--blue); } .seg.next { background: #D9E9FC; }
+  .app.t-stride .needs h2 { display: none; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>TDS Brain App: three looks</h1>
+  <p class="lede">Each look is drawn twice: the start screen and a chat in progress. The content is the same in all three, so the only thing changing is the look. These are sketches to choose from, not finished screens.</p>
+  <p>Brand colours, typefaces and the logo mark are taken from the TDS website: navy <code>#021B43</code>, blue <code>#1889FF</code>, paper <code>#FAF8F4</code>, Poppins for headings and Inter for text.</p>
+
+  <div class="always">
+    <h2>In all three, whichever you pick</h2>
+    <ul>
+      <li>The message box sits directly under the greeting on the start screen, not at the bottom of an empty page.</li>
+      <li>The start screen shows what needs you today, so the to-do panel isn't needed there.</li>
+      <li>To-dos are rows, not cards. Clicking a row starts a chat on it; the "Start a chat on this" button on every item goes.</li>
+      <li>The to-do panel shows beside chats only. Skills, History and Settings get the full width.</li>
+      <li>Poppins and Inter replace the system font, and the TDS mark sits beside the name.</li>
+      <li>Small labels are written normally, not in capitals. Tick boxes get bigger.</li>
+    </ul>
+  </div>
+
+  <section class="direction">
+    <span class="pick">1</span>
+    <h2>House style</h2>
+    <p>The app as a TDS product: the navy side menu, paper background and blue action from the website. Closest to what you have now, so the least change for anyone already using it.</p>
+    <div class="frames" data-theme="t-house"></div>
+  </section>
+
+  <section class="direction">
+    <span class="pick">2</span>
+    <h2>Paper desk</h2>
+    <p>Light all the way across. Navy is kept for text and the one main button, so the status colours (ready, asking, working) are the only bright things on screen. The calmest of the three for a long day in it.</p>
+    <div class="frames" data-theme="t-paper"></div>
+  </section>
+
+  <section class="direction">
+    <span class="pick">3</span>
+    <h2>Stride</h2>
+    <p>The whole frame is navy and the work sits on one paper sheet in the middle. The start screen leads with your week as a row of leaning bars, taken from the six bars of the TDS mark: overdue, today, tomorrow, later. The boldest and the most recognisably TDS.</p>
+    <div class="frames" data-theme="t-stride"></div>
+  </section>
+</div>
+
+<script>
+const mark = `<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#1889FF"/><g transform="translate(50 50) scale(.15) translate(-188.5 -237.5)" fill="#021B43"><polygon points="324.76 252.39 196.6 474.36 248.63 474.36 376.78 252.39"/><polygon points="239.29 252.39 111.14 474.36 163.16 474.36 291.32 252.39"/><polygon points="153.83 252.39 25.67 474.36 77.7 474.36 205.86 252.39"/><polygon points="299.08 0 170.93 221.97 222.95 221.97 351.11 0"/><polygon points="213.62 0 85.46 221.97 137.49 221.97 265.65 0"/><polygon points="128.16 0 0 221.97 52.03 221.97 180.18 0"/></g></svg>`;
+const icon = (d) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const icons = {
+  skills: icon('<path d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z"/>'),
+  todos: icon('<path d="M2.5 4.5l1.5 1.5 2.5-3M2.5 11l1.5 1.5 2.5-3M9 4.5h5M9 11h5"/>'),
+  history: icon('<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>'),
+  settings: icon('<path d="M2 5h8M13 5h1M2 11h1M6 11h8"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="4.5" cy="11" r="1.5"/>'),
+};
+
+const side = (chat) => `
+  <aside class="side">
+    <div class="brand">${mark}<span>TDS Brain</span></div>
+    <button class="new"><span>New chat</span><kbd>N</kbd></button>
+    ${chat ? `<h4 style="margin-top:2px">Open chats</h4>
+    <div class="list">
+      <a class="on" style="background:var(--side-on)"><span class="dot working"></span><span>Call tracking case<small>Working</small></span></a>
+      <a><span class="dot asking"></span><span>Monthly reports check<small>Waiting for you</small></span></a>
+    </div>` : ''}
+    <nav class="nav" style="margin-top:${chat ? 12 : 0}px">
+      <a>${icons.skills}Skills</a><a>${icons.todos}To-dos</a><a>${icons.history}History</a><a>${icons.settings}Settings</a>
+    </nav>
+    <h4>Pinned skills</h4>
+    <div class="list"><a>Meeting notes</a><a>Good morning</a><a>Search term audit</a></div>
+    <div class="me">Sam Example<small>Scout</small></div>
+  </aside>`;
+
+const rows = `
+  <div class="row"><span class="box"></span><span class="t">Write the call tracking case for the board<span class="m">Acme Heating</span></span><span class="when late">2 days overdue</span></div>
+  <div class="row"><span class="box"></span><span class="t">Check the monthly reports have gone out</span><span class="when today">Today</span></div>
+  <div class="row"><span class="box"></span><span class="t">Send the landing page package<span class="m">Northwind</span></span><span class="when">Tomorrow</span></div>
+  <div class="row"><span class="box"></span><span class="t">Replan the branding rule</span><span class="when">Wed 18 Nov</span></div>`;
+
+const home = (theme) => `
+  <div class="app home ${theme}">
+    ${side(false)}
+    <main class="main">
+      <div class="strip">
+        <div class="seg late"><b>1</b><span>Overdue</span></div>
+        <div class="seg today"><b>1</b><span>Today</span></div>
+        <div class="seg next"><b>1</b><span>Tomorrow</span></div>
+        <div class="seg"><b>5</b><span>Later this week</span></div>
+      </div>
+      <div class="start">
+        <h1>Good afternoon, Sam</h1>
+        <p class="sub">One to-do is overdue and one is due today.</p>
+        <div class="composer"><span>Ask Claude anything about your work</span><button class="send">Send</button></div>
+        <div class="chips">Or start from a skill <b>Meeting notes</b><b>Good morning</b><b>Search term audit</b></div>
+        <section class="needs">
+          <h2>Needs you</h2>
+          ${rows}
+          <div class="more">5 more this week. <u>See all to-dos</u></div>
+        </section>
+      </div>
+    </main>
+  </div>`;
+
+const chat = (theme) => `
+  <div class="app chat ${theme}">
+    ${side(true)}
+    <main class="main">
+      <div class="bar"><h3>Write the call tracking case for the board</h3><span class="client">Client <b>Acme Heating</b></span><button class="ghost">Stop</button><button class="ghost">Close chat</button></div>
+      <div class="thread"><div class="col">
+        <div class="you">Draft the case for call tracking for Acme's board. Keep it to one page and lead with what it costs them not to have it.</div>
+        <div class="did">What Claude did (3 steps)</div>
+        <h5>What Acme can't see today</h5>
+        <p>Around four in ten of Acme's enquiries arrive by phone, and none of them can be traced back to the advert that prompted the call. The budget is being steered by the form fills alone.</p>
+        <table><tr><th>Source</th><th>Enquiries</th><th>Traced to an advert</th></tr>
+          <tr><td>Web forms</td><td>212</td><td>All</td></tr>
+          <tr><td>Phone calls</td><td>148</td><td>None</td></tr></table>
+        <p>Next I'll set out the cost and the three-week rollout.</p>
+      </div></div>
+      <div class="foot"><div class="col">
+        <div class="state"><span class="dot working"></span>Working, 12 seconds</div>
+        <div class="composer slim" style="--field: var(--err)"><span>Ask Claude anything about your work</span><button class="send" style="opacity:.45">Send</button></div>
+      </div></div>
+    </main>
+    <aside class="rail">
+      <h3>My to-dos <span>Hide</span></h3>
+      <div class="row inhand"><span class="box"></span><span class="t">Write the call tracking case for the board<span class="m"><span class="late">2 days overdue</span>, Acme Heating</span></span></div>
+      <div class="row"><span class="box"></span><span class="t">Check the monthly reports have gone out<span class="m">Today</span></span></div>
+      <div class="row"><span class="box"></span><span class="t">Send the landing page package<span class="m">Tomorrow, Northwind</span></span></div>
+      <div class="row"><span class="box"></span><span class="t">Replan the branding rule<span class="m">Wed 18 Nov</span></span></div>
+      <div class="row"><span class="box"></span><span class="t">Renew the Acme contract<span class="m">Fri 20 Nov, Acme Heating</span></span></div>
+      <div class="row"><span class="box"></span><span class="t">Quote for the website rebuild<span class="m">Fri 20 Nov, Acme Heating</span></span></div>
+    </aside>
+  </div>`;
+
+for (const el of document.querySelectorAll('.frames')) {
+  const t = el.dataset.theme;
+  el.innerHTML = `<figure><figcaption>Start screen</figcaption><div class="stage">${home(t)}</div></figure>
+                  <figure><figcaption>A chat in progress</figcaption><div class="stage">${chat(t)}</div></figure>`;
+}
+const fit = () => { for (const s of document.querySelectorAll('.stage')) s.firstElementChild.style.transform = `scale(${s.clientWidth / 1180})`; };
+new ResizeObserver(fit).observe(document.body); fit();
+</script>
+</body>
+</html>

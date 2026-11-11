@@ -1,0 +1,116 @@
+/*
+ * The example Documents app: only what is particular to documents. The rest (tools, tray and
+ * cards, rows, the selection bar, the panel) is `../shared/library.css`. A row reads like a line in
+ * a table: what it is on the left, then its status, who changed it last and when.
+ */
+.docs .lib-list:not([hidden]) {
+  display: grid;
+  gap: 2px;
+}
+/* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
+.doc-glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--iron);
+}
+/* The columns on the right line up from row to row and from card to card. */
+.doc-col {
+  flex: none;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.doc-status {
+  width: 96px;
+}
+/* A draft is the one to notice. */
+.doc-status[data-status="draft"] {
+  color: var(--navy);
+  font-weight: 600;
+}
+.doc-by {
+  width: 88px;
+}
+.doc-date {
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@container (max-width: 640px) {
+  .doc-by {
+    display: none;
+  }
+}
+/* Narrower still, the date goes: the order still shows what is newest, and a draft still shows. */
+@container (max-width: 480px) {
+  .doc-date {
+    display: none;
+  }
+}
+
+/*
+ * The panel's cover: the white card is the page. The title and file name, then a sketch of what is
+ * inside.
+ */
+.doc-cover {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+}
+.doc-cover .lib-name,
+.doc-cover .lib-file {
+  margin: 0;
+  padding: 0;
+}
+.doc-sketch {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.doc-sec {
+  display: grid;
+  gap: 4px;
+}
+.doc-sec-head {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--iron);
+}
+.doc-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.doc-bar[data-short="true"] {
+  width: 62%;
+}
+/* A slide: its first heading in the middle of a small frame. */
+.doc-slide {
+  place-items: center;
+  height: 80px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--iron);
+  text-align: center;
+}
+/* A sheet: a header row, then ruled cells. */
+.doc-grid {
+  height: 80px;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(var(--tray), var(--tray)) top / 100% 16px no-repeat,
+    repeating-linear-gradient(to bottom, transparent 0 15px, var(--line) 15px 16px),
+    repeating-linear-gradient(to right, transparent 0 25%, var(--line) 25% calc(25% + 1px));
+}

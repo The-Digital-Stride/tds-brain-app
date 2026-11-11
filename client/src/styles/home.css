@@ -1,0 +1,147 @@
+/* home.css: the Home dashboard. Owned by Builder C. Sizes: docs/design-system.md. */
+
+.home-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.home-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 28px 24px;
+}
+.home-in {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+
+.home-greeting {
+  margin: 0 0 4px;
+  font: 600 26px / 1.15 var(--head);
+  letter-spacing: -0.01em;
+  color: var(--navy);
+}
+.home-sub {
+  min-height: 1.5em;
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--iron);
+}
+
+.home-composer {
+  display: grid;
+  gap: 8px;
+}
+.home-client {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-client label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+.home-client .field {
+  width: auto;
+  max-width: 100%;
+}
+.home-skill {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--wash);
+  font-size: 13px;
+}
+.home-skill .meta {
+  font-size: 12px;
+}
+
+/* The tray: recessed, holding raised cards. */
+.tray {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 6px;
+  border-radius: 18px;
+  background: var(--tray);
+  box-shadow: inset 0 1px 2px rgba(2, 27, 67, 0.05);
+}
+@container (max-width: 720px) {
+  .tray {
+    grid-template-columns: 1fr 1fr;
+  }
+  .tray > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@container (max-width: 460px) {
+  .tray {
+    grid-template-columns: 1fr;
+  }
+}
+.tray .card {
+  min-width: 0;
+  padding: 12px 6px 6px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+.card-head h2 {
+  font-size: 14px;
+}
+.card-head .btn {
+  margin-left: auto;
+}
+/* Surface-only hover: the row sits in the card, it does not lift. */
+.tray .line:hover,
+.card-more:hover {
+  background: #eae6de;
+  box-shadow: none;
+}
+.tray .line:active,
+.card-more:active {
+  background: #e2ddd3;
+}
+.tray .line-meta .late {
+  color: var(--danger);
+  font-weight: 600;
+}
+.card-note {
+  padding: 7px 8px;
+  font-size: 13px;
+  color: var(--iron);
+}
+.card-more {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--iron);
+  cursor: pointer;
+}
+.card-more:hover {
+  color: var(--navy);
+}
+
+@media (max-width: 480px) {
+  .home-scroll {
+    padding: 24px 16px 20px;
+  }
+  .home-greeting {
+    font-size: 22px;
+  }
+}

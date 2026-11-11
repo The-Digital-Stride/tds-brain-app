@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TDS Brain: shell prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #021B43; --blue: #1889FF; --blue-ink: #0B5CB5; --paper: #FAF8F4; --iron: #525252;
+    --desk: #E9E5DD; --tray: #F3F0EA; --line: rgba(2,27,67,.09); --line-strong: rgba(2,27,67,.16);
+    --wash: #E7F1FE; --ok: #1ABF5C; --warn: #F59E0B; --err: #EF3B2A; --err-ink: #A4261B;
+    --glass: rgba(255,255,255,.46); --glass-strong: rgba(255,255,255,.78); --glass-edge: rgba(255,255,255,.8);
+    --head: 'Poppins', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --ease: cubic-bezier(.2,.8,.2,1); --t: 240ms;
+    --lift-1: 0 1px 2px rgba(2,27,67,.05), 0 4px 14px rgba(2,27,67,.05);
+    --lift-2: 0 1px 2px rgba(2,27,67,.08), 0 18px 44px rgba(2,27,67,.16);
+    --lift-3: 0 2px 6px rgba(2,27,67,.08), 0 28px 70px rgba(2,27,67,.22);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 14px/1.5 var(--body); color: var(--navy); overflow: hidden;
+    /* Layer 0, the desk: a tinted surface so the glass panels above have something to pick up. */
+    background:
+      radial-gradient(620px 760px at 0% 0%, rgba(24,137,255,.42), transparent 66%),
+      radial-gradient(520px 620px at 8% 100%, rgba(2,27,67,.30), transparent 64%),
+      radial-gradient(760px 560px at 104% 108%, rgba(2,27,67,.24), transparent 60%),
+      radial-gradient(560px 420px at 100% -6%, rgba(24,137,255,.20), transparent 62%),
+      var(--desk); }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+  button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  h1, h2, h3 { font-family: var(--head); font-weight: 600; margin: 0; }
+  .soft { color: var(--iron); }
+
+  .desk { display: flex; height: 100vh; padding: 12px; }
+  .glass { background: var(--glass); backdrop-filter: blur(22px) saturate(1.5); -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid var(--glass-edge); border-radius: 16px; box-shadow: var(--lift-1); }
+
+  /* ---------- Layer 1: the rail (icons only, or icons with names) ---------- */
+  .rail { width: 60px; display: flex; flex-direction: column; padding: 10px; gap: 2px; transition: width var(--t) var(--ease); overflow: hidden; flex: none; }
+  .rail.wide { width: 212px; }
+  .rail .brand { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 3px; margin-bottom: 10px; white-space: nowrap; font: 600 15px var(--head); }
+  .rail .brand svg { width: 32px; height: 32px; flex: none; }
+  .rail .label, .rail .brand span, .rail .count, .rail .group-name { opacity: 0; transition: opacity 120ms; white-space: nowrap; }
+  .rail.wide .label, .rail.wide .brand span, .rail.wide .count, .rail.wide .group-name { opacity: 1; transition: opacity var(--t) 80ms; }
+  .item { position: relative; display: flex; align-items: center; gap: 11px; height: 38px; padding: 0 10px; border-radius: 10px; width: 100%; text-align: left; color: #33456A; }
+  .item:hover { background: rgba(255,255,255,.6); color: var(--navy); }
+  .item.on { background: #fff; color: var(--navy); box-shadow: var(--lift-1); font-weight: 600; }
+  .item.open::before { content: ''; position: absolute; left: -10px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); }
+  .item .label { flex: 1; }
+  .count { font-size: 12px; font-weight: 600; background: rgba(2,27,67,.08); border-radius: 999px; padding: 0 7px; line-height: 20px; }
+  .pip { position: absolute; left: 25px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--err); box-shadow: 0 0 0 2px #F1EEE8; }
+  .rail.wide .pip { display: none; }
+  .group-name { font-size: 12px; font-weight: 600; color: var(--iron); padding: 14px 10px 4px; height: 38px; }
+  .rail:not(.wide) .group-name { height: 17px; padding: 0; margin: 8px 8px; border-top: 1px solid var(--line-strong); }
+  .item.slot { color: #5A6B8C; }
+  .spacer { flex: 1; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--navy); color: var(--paper); font: 600 10.5px/24px var(--body); text-align: center; flex: none; margin-left: -3px; }
+  [data-tip]:not(.rail.wide *)::after { content: attr(data-tip); position: fixed; left: 76px; transform: translateY(0); background: var(--navy); color: var(--paper); font-size: 12px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; opacity: 0; pointer-events: none; z-index: 30; }
+  .rail:not(.wide) [data-tip]:hover::after { opacity: 1; transition: opacity 120ms 350ms; }
+
+  /* ---------- Layer 2: drawers that push the work over ---------- */
+  .dock { width: 0; margin-left: 0; opacity: 0; transition: width var(--t) var(--ease), margin var(--t) var(--ease), opacity 160ms; overflow: hidden; flex: none; }
+  .dock.open { width: 316px; margin-left: 10px; opacity: 1; }
+  .dock.right.open { width: 332px; }
+  .panel { width: 316px; height: 100%; display: flex; flex-direction: column; }
+  .dock.right .panel { width: 332px; }
+  .panel header { display: flex; align-items: center; gap: 8px; padding: 14px 12px 10px 16px; }
+  .panel header h2 { font-size: 16px; flex: 1; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: #33456A; }
+  .icon-btn:hover { background: rgba(2,27,67,.07); color: var(--navy); }
+  .icon-btn.lit { background: var(--wash); color: var(--blue-ink); }
+  .seg { display: flex; background: rgba(2,27,67,.07); border-radius: 10px; padding: 3px; margin: 0 14px 10px; }
+  .seg button { flex: 1; height: 28px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #33456A; }
+  .seg button.on { background: #fff; color: var(--navy); box-shadow: 0 1px 2px rgba(2,27,67,.12); font-weight: 600; }
+  .scroll { flex: 1; overflow-y: auto; padding: 0 10px 12px; }
+  .fold { margin-bottom: 4px; }
+  .fold > button { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 8px; border-radius: 8px; font-size: 13px; font-weight: 600; }
+  .fold > button:hover { background: rgba(2,27,67,.05); }
+  .fold > button svg { width: 14px; height: 14px; transition: transform 160ms; }
+  .fold.shut > button svg { transform: rotate(-90deg); }
+  .fold > button .n { margin-left: auto; font-weight: 500; color: var(--iron); }
+  .fold.shut .rows { display: none; }
+  .todo { display: grid; grid-template-columns: 20px 1fr 28px; gap: 10px; align-items: start; padding: 9px 8px; border-radius: 10px; width: 100%; text-align: left; }
+  .todo:hover { background: rgba(255,255,255,.75); }
+  .todo.inhand { background: #fff; box-shadow: var(--lift-1); }
+  .tick { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid #7C8AA5; background: rgba(255,255,255,.7); margin-top: 1px; }
+  .todo b { font-weight: 500; display: block; }
+  .todo small { font-size: 12.5px; color: var(--iron); }
+  .late { color: var(--err-ink); font-weight: 600; }
+  .go { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; opacity: 0; color: var(--blue-ink); }
+  .todo:hover .go, .todo.inhand .go { opacity: 1; }
+  .go svg { width: 15px; height: 15px; }
+  .search { display: flex; align-items: center; gap: 8px; height: 34px; margin: 0 14px 10px; padding: 0 10px; border-radius: 10px; background: rgba(255,255,255,.7); border: 1px solid var(--line); color: var(--iron); }
+  .line { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; width: 100%; text-align: left; }
+  .line:hover { background: rgba(255,255,255,.75); }
+  .line b { font-weight: 500; display: block; } .line small { font-size: 12.5px; color: var(--iron); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+  .dot.working { background: var(--err); } .dot.asking { background: var(--warn); } .dot.idle { background: #B9C0CE; }
+  .tag { margin-left: auto; font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 999px; background: #FFF1D6; color: #5C3D00; white-space: nowrap; }
+
+  /* ---------- Layer 3: the sheet, where the work is ---------- */
+  .sheet { flex: 1; min-width: 0; margin-left: 10px; background: #fff; border-radius: 18px; box-shadow: var(--lift-2); display: flex; flex-direction: column; position: relative; overflow: hidden; transition: filter var(--t), transform var(--t) var(--ease); }
+  .bar { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 12px 0 22px; border-bottom: 1px solid var(--line); flex: none; }
+  .crumb { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+  .crumb span { color: var(--iron); } .crumb h3 { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip { font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--tray); white-space: nowrap; }
+  .btn { height: 32px; padding: 0 13px; border-radius: 9px; font-weight: 600; font-size: 13px; background: var(--tray); white-space: nowrap; }
+  .btn:hover { background: #EAE6DE; }
+  .btn.primary { background: var(--navy); color: var(--paper); } .btn.primary:hover { background: #0A2A5E; }
+  .jump { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 12px; border-radius: 10px; background: var(--tray); color: var(--iron); font-size: 13px; }
+  kbd { font: 500 11.5px var(--body); background: #fff; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: var(--iron); }
+  .view { flex: 1; min-height: 0; display: none; flex-direction: column; }
+  .view.on { display: flex; }
+
+  .home { overflow-y: auto; padding: 44px 28px 28px; }
+  .home-in { max-width: 880px; margin: 0 auto; width: 100%; }
+  .home h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.01em; }
+  .home .sub { color: var(--iron); margin: 6px 0 22px; font-size: 15px; }
+  .composer { background: #fff; border: 1.5px solid var(--line-strong); border-radius: 14px; box-shadow: var(--lift-1); padding: 12px 12px 10px 16px; }
+  .composer .ph { color: var(--iron); min-height: 44px; display: block; }
+  .composer .tools { display: flex; align-items: center; gap: 4px; }
+  .composer .tools .sp { flex: 1; }
+  .tray { background: var(--tray); border-radius: 18px; padding: 8px; display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; margin-top: 26px; box-shadow: inset 0 1px 2px rgba(2,27,67,.05); }
+  .card { background: #fff; border-radius: 12px; box-shadow: var(--lift-1); padding: 14px 8px 8px; min-width: 0; }
+  .card h2 { font-size: 14px; padding: 0 8px 8px; display: flex; align-items: center; }
+  .card h2 button { margin-left: auto; font: 500 12.5px var(--body); color: var(--blue-ink); }
+  .card .todo { grid-template-columns: 20px 1fr; padding: 7px 8px; } .card .todo:hover, .card .line:hover { background: var(--tray); }
+  .card .line { padding: 7px 8px; }
+  .card h2 .count { margin-left: 8px; font-family: var(--body); }
+  .card .more { display: block; width: 100%; text-align: left; padding: 8px; border-radius: 10px; font-size: 13px; color: var(--iron); }
+  .card .more:hover { background: var(--tray); color: var(--navy); }
+
+  .thread { flex: 1; overflow-y: auto; padding: 24px 28px 150px; }
+  .col { max-width: 680px; margin: 0 auto; }
+  .you { background: var(--wash); border-radius: 14px 14px 4px 14px; padding: 10px 14px; margin: 0 0 18px 120px; }
+  .steps-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--iron); margin-bottom: 12px; padding: 3px 8px 3px 4px; border-radius: 8px; }
+  .steps-link:hover { background: var(--tray); color: var(--navy); }
+  .steps-link svg { width: 14px; height: 14px; }
+  .thread h4 { font: 600 18px/1.3 var(--head); margin: 0 0 6px; }
+  .thread p { margin: 0 0 12px; font-size: 15px; line-height: 1.6; }
+  table { border-collapse: collapse; width: 100%; margin: 4px 0 14px; }
+  th { text-align: left; font-weight: 600; color: var(--iron); font-size: 13px; padding: 6px 10px 6px 0; border-bottom: 1.5px solid var(--navy); }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+  /* The message box floats over the thread: the one raised thing inside the sheet. */
+  .floater { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 28px 18px; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(255,255,255,0), #fff 46%); }
+  .floater > * { pointer-events: auto; }
+  .floater .composer { box-shadow: var(--lift-2); border-color: var(--err); }
+  .floater .composer .ph { min-height: 24px; }
+  .state { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 0 0 8px 4px; }
+  .ask { display: none; margin-bottom: 10px; border-radius: 14px; padding: 14px 16px; box-shadow: var(--lift-3);
+    background: rgba(255,248,232,.72); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); border: 1px solid rgba(245,158,11,.5); }
+  .asking .ask { display: block; }
+  .asking .floater .composer { border-color: var(--warn); }
+  .ask h3 { font-size: 14.5px; margin-bottom: 2px; }
+  .ask code { font: 12.5px ui-monospace, 'SF Mono', Menlo, monospace; background: rgba(255,255,255,.7); padding: 2px 6px; border-radius: 6px; }
+  .ask .acts { display: flex; gap: 8px; margin-top: 12px; }
+  .ask .btn { background: rgba(255,255,255,.75); } .ask .btn.primary { background: var(--navy); }
+
+  .slot-view { align-items: center; justify-content: center; text-align: center; padding: 40px; }
+  .slot-view h1 { font-size: 22px; margin-bottom: 8px; } .slot-view p { max-width: 46ch; color: var(--iron); margin: 0 auto; }
+
+  /* inspector contents */
+  .step { display: grid; grid-template-columns: 20px 1fr; gap: 10px; padding: 9px 8px; border-radius: 10px; }
+  .step i { width: 20px; height: 20px; border-radius: 6px; background: rgba(2,27,67,.08); display: grid; place-items: center; font: 600 11px var(--body); font-style: normal; }
+  .step small { display: block; color: var(--iron); font-size: 12.5px; overflow-wrap: anywhere; }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; padding: 6px 8px; font-size: 13px; }
+  .kv span { color: var(--iron); }
+  .tab { display: none; } .tab.on { display: block; }
+
+  /* ---------- Layer 4: overlays (glass, above everything) ---------- */
+  .veil { position: fixed; inset: 0; background: rgba(2,27,67,.16); opacity: 0; pointer-events: none; transition: opacity 160ms; z-index: 40; }
+  .palette { position: fixed; left: 50%; top: 15%; width: min(580px, calc(100vw - 32px)); transform: translate(-50%, -8px) scale(.98); opacity: 0; pointer-events: none;
+    transition: opacity 160ms, transform var(--t) var(--ease); z-index: 41; border-radius: 18px; box-shadow: var(--lift-3); background: var(--glass-strong); overflow: hidden; }
+  body.cmd .veil { opacity: 1; pointer-events: auto; }
+  body.cmd .palette { opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto; }
+  body.cmd .sheet { filter: saturate(.85); transform: scale(.995); }
+  .palette input { width: 100%; border: 0; background: none; font: 16px var(--body); color: var(--navy); padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .palette input:focus-visible { outline: none; }
+  .palette .grp { font-size: 12px; font-weight: 600; color: var(--iron); padding: 10px 18px 4px; }
+  .palette .opt { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 0 6px; border-radius: 10px; width: calc(100% - 12px); text-align: left; }
+  .palette .opt:hover, .palette .opt.sel { background: rgba(255,255,255,.85); box-shadow: var(--lift-1); }
+  .palette .opt kbd { margin-left: auto; }
+  .palette .end { height: 8px; }
+
+  .demo { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); z-index: 35; display: flex; gap: 6px; align-items: center; padding: 6px 6px 6px 12px; border-radius: 12px; font-size: 12.5px; background: rgba(2,27,67,.86); color: var(--paper); box-shadow: var(--lift-2); }
+  .demo button { height: 26px; padding: 0 9px; border-radius: 7px; background: rgba(250,248,244,.14); font-weight: 500; }
+  .demo button:hover { background: rgba(250,248,244,.26); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 1ms !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-home"><path d="M3 9.5 10 3l7 6.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1z"/></g>
+    <g id="i-chat"><path d="M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></g>
+    <g id="i-todos"><path d="M3 6l1.5 1.5L7 5M3 13l1.5 1.5L7 12M10 6h7M10 13h7"/></g>
+    <g id="i-skills"><path d="M3 3h6v6H3zM11 3h6v6h-6zM3 11h6v6H3zM11 11h6v6h-6z"/></g>
+    <g id="i-ads"><path d="M4 16V9M10 16V4M16 16v-5"/></g>
+    <g id="i-reports"><path d="M5 3h7l4 4v10H5zM12 3v4h4M8 11h5M8 14h5"/></g>
+    <g id="i-time"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/></g>
+    <g id="i-plus"><path d="M10 4v12M4 10h12"/></g>
+    <g id="i-settings"><path d="M3 6h8M16 6h1M3 14h1M9 14h8"/><circle cx="13.5" cy="6" r="2"/><circle cx="6.5" cy="14" r="2"/></g>
+    <g id="i-fold"><path d="M3 4h14v12H3zM8 4v12"/></g>
+    <g id="i-side"><path d="M3 4h14v12H3zM12 4v12"/></g>
+    <g id="i-x"><path d="M5 5l10 10M15 5L5 15"/></g>
+    <g id="i-search"><circle cx="9" cy="9" r="5"/><path d="M13 13l4 4"/></g>
+    <g id="i-down"><path d="M5 8l5 5 5-5"/></g>
+    <g id="i-go"><path d="M4 10h11M11 5l5 5-5 5"/></g>
+    <g id="i-clip"><path d="M14 9.5l-4.5 4.5a2.5 2.5 0 0 1-3.5-3.5L11 5.5a1.7 1.7 0 0 1 2.5 2.5l-5 5"/></g>
+  </defs>
+</svg>
+
+<div class="desk" id="desk">
+
+  <nav class="rail glass" id="rail" aria-label="Main">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#021B43"/><g transform="translate(50 50) scale(.15) translate(-188.5 -237.5)" fill="#1889FF"><polygon points="324.76 252.39 196.6 474.36 248.63 474.36 376.78 252.39"/><polygon points="239.29 252.39 111.14 474.36 163.16 474.36 291.32 252.39"/><polygon points="153.83 252.39 25.67 474.36 77.7 474.36 205.86 252.39"/><polygon points="299.08 0 170.93 221.97 222.95 221.97 351.11 0"/><polygon points="213.62 0 85.46 221.97 137.49 221.97 265.65 0"/><polygon points="128.16 0 0 221.97 52.03 221.97 180.18 0"/></g></svg>
+      <span>TDS Brain</span>
+    </div>
+    <button class="item on" data-view="home" data-tip="Home"><svg class="i" viewBox="0 0 20 20"><use href="#i-home"/></svg><span class="label">Home</span></button>
+    <button class="item" data-drawer="chats" data-tip="Chats"><svg class="i" viewBox="0 0 20 20"><use href="#i-chat"/></svg><span class="pip" style="background:var(--warn)"></span><span class="label">Chats</span><span class="count">2</span></button>
+    <button class="item" data-drawer="todos" data-tip="To-dos"><svg class="i" viewBox="0 0 20 20"><use href="#i-todos"/></svg><span class="pip"></span><span class="label">To-dos</span><span class="count">8</span></button>
+    <button class="item" data-drawer="skills" data-tip="Skills"><svg class="i" viewBox="0 0 20 20"><use href="#i-skills"/></svg><span class="label">Skills</span></button>
+    <div class="group-name">Apps</div>
+    <button class="item slot" data-app="Ads" data-tip="Ads"><svg class="i" viewBox="0 0 20 20"><use href="#i-ads"/></svg><span class="label">Ads</span></button>
+    <button class="item slot" data-app="Reports" data-tip="Reports"><svg class="i" viewBox="0 0 20 20"><use href="#i-reports"/></svg><span class="label">Reports</span></button>
+    <button class="item slot" data-app="Time" data-tip="Time"><svg class="i" viewBox="0 0 20 20"><use href="#i-time"/></svg><span class="label">Time</span></button>
+    <button class="item slot" data-app="A new app" data-tip="Add an app"><svg class="i" viewBox="0 0 20 20"><use href="#i-plus"/></svg><span class="label">Add an app</span></button>
+    <div class="spacer"></div>
+    <button class="item" id="railToggle" data-tip="Show names"><svg class="i" viewBox="0 0 20 20"><use href="#i-fold"/></svg><span class="label">Icons only</span><kbd class="label" style="flex:none">[</kbd></button>
+    <button class="item" data-app="Settings" data-tip="Settings"><svg class="i" viewBox="0 0 20 20"><use href="#i-settings"/></svg><span class="label">Settings</span></button>
+    <button class="item" data-tip="Sam Example, Scout"><span class="avatar">SE</span><span class="label">Sam Example</span></button>
+  </nav>
+
+  <!-- Left drawer: one at a time, opened from the rail, pushes the sheet over -->
+  <div class="dock" id="dock">
+    <aside class="panel glass" aria-label="Drawer">
+      <div data-drawer-body="todos">
+        <header><h2>To-dos</h2><button class="icon-btn" data-close title="Close"><svg class="i" viewBox="0 0 20 20"><use href="#i-x"/></svg></button></header>
+        <div class="seg"><button class="on">Mine, 8</button><button>Open to anyone, 2</button></div>
+      </div>
+      <div class="scroll" data-drawer-body="todos">
+        <div class="fold"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>Overdue<span class="n">1</span></button><div class="rows">
+          <button class="todo" data-start="Write the call tracking case for the board"><span class="tick"></span><span><b>Write the call tracking case for the board</b><small><span class="late">2 days overdue</span>, Acme Heating</small></span><span class="go" title="Start a chat on this"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button></div></div>
+        <div class="fold"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>Today<span class="n">1</span></button><div class="rows">
+          <button class="todo" data-start="Check the monthly reports have gone out"><span class="tick"></span><span><b>Check the monthly reports have gone out</b><small>Due today</small></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button></div></div>
+        <div class="fold"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>This week<span class="n">4</span></button><div class="rows">
+          <button class="todo" data-start="Send the landing page package"><span class="tick"></span><span><b>Send the landing page package</b><small>Tomorrow, Northwind</small></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button>
+          <button class="todo" data-start="Replan the branding rule"><span class="tick"></span><span><b>Replan the branding rule</b><small>Wed 18 Nov</small></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button>
+          <button class="todo" data-start="Renew the Acme contract"><span class="tick"></span><span><b>Renew the Acme contract</b><small>Fri 20 Nov, Acme Heating</small></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button>
+          <button class="todo" data-start="Quote for the website rebuild"><span class="tick"></span><span><b>Quote for the website rebuild</b><small>Fri 20 Nov, Acme Heating</small></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button></div></div>
+        <div class="fold shut"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>No date<span class="n">2</span></button><div class="rows">
+          <button class="todo" data-start="Undated thing"><span class="tick"></span><span><b>Undated thing</b></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button>
+          <button class="todo" data-start="Send the monthly report"><span class="tick"></span><span><b>Send the monthly report</b></span><span class="go"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg></span></button></div></div>
+      </div>
+
+      <div data-drawer-body="chats">
+        <header><h2>Chats</h2><button class="btn primary" data-view="home">New chat</button><button class="icon-btn" data-close title="Close"><svg class="i" viewBox="0 0 20 20"><use href="#i-x"/></svg></button></header>
+        <div class="seg"><button class="on">Open, 2</button><button>Earlier</button></div>
+      </div>
+      <div class="scroll" data-drawer-body="chats">
+        <button class="line" data-start="Write the call tracking case for the board"><span class="dot working"></span><span><b>Call tracking case</b><small>Working, Acme Heating</small></span></button>
+        <button class="line" data-start="Check the monthly reports have gone out" data-ask><span class="dot asking"></span><span><b>Monthly reports check</b><small>Waiting for you</small></span><span class="tag">Needs a yes</span></button>
+      </div>
+
+      <div data-drawer-body="skills">
+        <header><h2>Skills</h2><button class="icon-btn" data-close title="Close"><svg class="i" viewBox="0 0 20 20"><use href="#i-x"/></svg></button></header>
+        <div class="search"><svg class="i" viewBox="0 0 20 20"><use href="#i-search"/></svg>Search skills</div>
+      </div>
+      <div class="scroll" data-drawer-body="skills">
+        <div class="fold"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>Pinned<span class="n">3</span></button><div class="rows">
+          <button class="line" data-start="Meeting notes"><span><b>Meeting notes</b><small>Turn raw notes into a filed client record</small></span></button>
+          <button class="line" data-start="Good morning"><span><b>Good morning</b><small>Start the day: calendar, inbox, briefing</small></span></button>
+          <button class="line" data-start="Search term audit"><span><b>Search term audit</b><small>Find wasted spend and new negatives</small></span></button></div></div>
+        <div class="fold"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>Used often<span class="n">2</span></button><div class="rows">
+          <button class="line" data-start="Time"><span><b>Time</b><small>Build today's timesheet</small></span></button>
+          <button class="line" data-start="Standup"><span><b>Standup</b><small>Run the daily stand-up</small></span></button></div></div>
+        <div class="fold shut"><button><svg class="i" viewBox="0 0 20 20"><use href="#i-down"/></svg>All skills<span class="n">64</span></button><div class="rows"></div></div>
+      </div>
+    </aside>
+  </div>
+
+  <main class="sheet" id="sheet">
+    <!-- Home: a light dashboard -->
+    <section class="view on" data-view-body="home">
+      <div class="bar">
+        <div class="crumb"><h3>Home</h3></div>
+        <button class="jump" data-cmd><svg class="i" viewBox="0 0 20 20"><use href="#i-search"/></svg>Search or jump to <kbd>⌘K</kbd></button>
+      </div>
+      <div class="home"><div class="home-in">
+        <h1>Good afternoon, Sam</h1>
+        <p class="sub">One to-do is overdue and one chat is waiting for you.</p>
+        <div class="composer">
+          <span class="ph">Ask Claude anything about your work</span>
+          <div class="tools"><button class="chip">No client</button><button class="icon-btn" title="Attach"><svg class="i" viewBox="0 0 20 20"><use href="#i-clip"/></svg></button><span class="sp"></span><span class="soft" style="font-size:12.5px;margin-right:8px">Enter to send</span><button class="btn primary" data-start="New chat">Send</button></div>
+        </div>
+        <div class="tray">
+          <div class="card">
+            <h2>Needs you <span class="count">3</span><button data-drawer="todos">All to-dos</button></h2>
+            <button class="todo" data-start="Write the call tracking case for the board"><span class="tick"></span><span><b>Write the call tracking case for the board</b><small><span class="late">2 days overdue</span>, Acme Heating</small></span></button>
+            <button class="todo" data-start="Check the monthly reports have gone out"><span class="tick"></span><span><b>Check the monthly reports have gone out</b><small>Due today</small></span></button>
+            <button class="todo" data-start="Send the landing page package"><span class="tick"></span><span><b>Send the landing page package</b><small>Tomorrow, Northwind</small></span></button>
+            <button class="more" data-drawer="todos">5 more later this week</button>
+          </div>
+          <div class="card">
+            <h2>Open chats <button data-drawer="chats">All chats</button></h2>
+            <button class="line" data-start="Check the monthly reports have gone out" data-ask><span class="dot asking"></span><span><b>Monthly reports check</b><small>Waiting for you</small></span></button>
+            <button class="line" data-start="Write the call tracking case for the board"><span class="dot working"></span><span><b>Call tracking case</b><small>Working</small></span></button>
+          </div>
+          <div class="card">
+            <h2>Pinned skills <button data-drawer="skills">All skills</button></h2>
+            <button class="line" data-start="Meeting notes"><span><b>Meeting notes</b></span></button>
+            <button class="line" data-start="Good morning"><span><b>Good morning</b></span></button>
+            <button class="line" data-start="Search term audit"><span><b>Search term audit</b></span></button>
+          </div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- Chat -->
+    <section class="view" data-view-body="chat" id="chatView">
+      <div class="bar">
+        <div class="crumb"><span>Chats</span><span>/</span><h3 id="chatTitle">Write the call tracking case for the board</h3></div>
+        <span class="chip">Acme Heating</span>
+        <button class="btn">Stop</button>
+        <button class="icon-btn" id="inspToggle" title="Steps, files and details"><svg class="i" viewBox="0 0 20 20"><use href="#i-side"/></svg></button>
+        <button class="icon-btn" data-view="home" title="Close chat"><svg class="i" viewBox="0 0 20 20"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="thread"><div class="col">
+        <div class="you">Draft the case for call tracking for Acme's board. Keep it to one page and lead with what it costs them not to have it.</div>
+        <button class="steps-link" data-insp><svg class="i" viewBox="0 0 20 20"><use href="#i-side"/></svg>What Claude did, 3 steps</button>
+        <h4>What Acme can't see today</h4>
+        <p>Around four in ten of Acme's enquiries arrive by phone, and none of them can be traced back to the advert that prompted the call. The budget is being steered by the form fills alone.</p>
+        <table><tr><th>Source</th><th>Enquiries</th><th>Traced to an advert</th></tr><tr><td>Web forms</td><td>212</td><td>All</td></tr><tr><td>Phone calls</td><td>148</td><td>None</td></tr></table>
+        <p>Next I'll set out the cost and the three-week rollout, then save the page to Acme's reports folder.</p>
+      </div></div>
+      <div class="floater"><div class="col">
+        <div class="ask">
+          <h3>Claude wants to save a file</h3>
+          <div class="soft">A new file in the shared brain: <code>clients/acme-heating/reports/call-tracking-case.md</code></div>
+          <div class="acts"><button class="btn primary" data-answer>Allow once</button><button class="btn" data-answer>Allow for this chat</button><button class="btn" data-answer>Don't allow</button></div>
+        </div>
+        <div class="state" id="state"><span class="dot working"></span><span>Working, 12 seconds</span></div>
+        <div class="composer"><span class="ph">Ask Claude anything about your work</span></div>
+      </div></div>
+    </section>
+
+    <!-- An app slot -->
+    <section class="view slot-view" data-view-body="slot">
+      <div><h1 id="slotName">Ads</h1>
+      <p>An app gets the same four places as everything else: an icon on the rail, a drawer on the left if it has a list, this sheet for the work, and the panel on the right for detail. Nothing else needs building to add one.</p></div>
+    </section>
+  </main>
+
+  <!-- Right panel: detail about what is on the sheet. Also pushes. -->
+  <div class="dock right" id="insp">
+    <aside class="panel glass" aria-label="Steps, files and details">
+      <header><h2>This chat</h2><button class="icon-btn" data-insp title="Close"><svg class="i" viewBox="0 0 20 20"><use href="#i-x"/></svg></button></header>
+      <div class="seg" id="inspTabs"><button class="on" data-tab="steps">Steps</button><button data-tab="files">Files</button><button data-tab="details">Details</button></div>
+      <div class="scroll">
+        <div class="tab on" data-tab-body="steps">
+          <div class="step"><i>1</i><span>Read the client's business notes<small>clients/acme-heating/context/business.md</small></span></div>
+          <div class="step"><i>2</i><span>Searched the call notes<small>4 files matched "call tracking"</small></span></div>
+          <div class="step"><i>3</i><span>Counted enquiries by source<small>Ran a script, 2 seconds</small></span></div>
+        </div>
+        <div class="tab" data-tab-body="files">
+          <div class="step"><i>+</i><span>call-tracking-case.md<small>Waiting to be saved to clients/acme-heating/reports/</small></span></div>
+        </div>
+        <div class="tab" data-tab-body="details">
+          <div class="kv"><span>Client</span><b>Acme Heating</b><span>To-do</span><b>Write the call tracking case for the board</b><span>Started</span><b>Today, 16:42</b><span>Approvals</span><b>Follows your Claude Code setting</b><span>Terminal</span><code style="font-size:12px">claude --resume 7f3a…</code></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="veil" data-cmd-close></div>
+<div class="palette glass" role="dialog" aria-label="Search or jump to">
+  <input placeholder="Search skills, to-dos and chats" id="cmdInput">
+  <div class="grp">Go to</div>
+  <button class="opt sel" data-view="home"><svg class="i" viewBox="0 0 20 20"><use href="#i-home"/></svg>Home</button>
+  <button class="opt" data-drawer="todos"><svg class="i" viewBox="0 0 20 20"><use href="#i-todos"/></svg>To-dos<kbd>T</kbd></button>
+  <button class="opt" data-drawer="chats"><svg class="i" viewBox="0 0 20 20"><use href="#i-chat"/></svg>Chats<kbd>C</kbd></button>
+  <div class="grp">Run a skill</div>
+  <button class="opt" data-start="Meeting notes"><svg class="i" viewBox="0 0 20 20"><use href="#i-skills"/></svg>Meeting notes</button>
+  <button class="opt" data-start="Search term audit"><svg class="i" viewBox="0 0 20 20"><use href="#i-skills"/></svg>Search term audit</button>
+  <div class="grp">Start a chat on a to-do</div>
+  <button class="opt" data-start="Write the call tracking case for the board"><svg class="i" viewBox="0 0 20 20"><use href="#i-go"/></svg>Write the call tracking case for the board</button>
+  <div class="end"></div>
+</div>
+
+<div class="demo">Prototype
+  <button data-cmd>Search (⌘K)</button>
+  <button id="demoAsk">Approval card</button>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const rail = $('#rail'), dock = $('#dock'), insp = $('#insp'), chatView = $('#chatView');
+let drawer = null;
+
+function setDrawer(name) {
+  drawer = drawer === name ? null : name;
+  dock.classList.toggle('open', !!drawer);
+  if (drawer) for (const el of $$('[data-drawer-body]')) el.hidden = el.dataset.drawerBody !== drawer;
+  for (const b of $$('.rail [data-drawer]')) b.classList.toggle('open', b.dataset.drawer === drawer);
+}
+function setInspector(open) {
+  insp.classList.toggle('open', open ?? !insp.classList.contains('open'));
+  $('#inspToggle').classList.toggle('lit', insp.classList.contains('open'));
+}
+function setView(name) {
+  for (const v of $$('[data-view-body]')) v.classList.toggle('on', v.dataset.viewBody === name);
+  for (const b of $$('.rail .item')) b.classList.toggle('on', b.dataset.view === name && name === 'home');
+  if (name !== 'chat') setInspector(false);
+}
+function setAsking(on) {
+  chatView.classList.toggle('asking', on);
+  $('#state').innerHTML = on ? '<span class="dot asking"></span><span>Waiting for you</span>' : '<span class="dot working"></span><span>Working, 12 seconds</span>';
+}
+function startChat(title, asking) {
+  $('#chatTitle').textContent = title;
+  for (const t of $$('.dock .todo')) t.classList.toggle('inhand', t.dataset.start === title);
+  setView('chat'); setAsking(!!asking);
+}
+const cmd = (on) => { document.body.classList.toggle('cmd', on); if (on) $('#cmdInput').focus(); };
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, [data-cmd-close]');
+  if (!t) return;
+  if (t.matches('[data-cmd-close]')) return cmd(false);
+  if (t.closest('.palette')) cmd(false);
+  if (t.id === 'railToggle') { rail.classList.toggle('wide'); $('.label', t).textContent = rail.classList.contains('wide') ? 'Icons only' : ''; return; }
+  if (t.matches('.fold > button')) return t.parentElement.classList.toggle('shut');
+  if (t.parentElement.classList.contains('seg')) {
+    for (const b of t.parentElement.children) b.classList.toggle('on', b === t);
+    if (t.dataset.tab) for (const p of $$('[data-tab-body]')) p.classList.toggle('on', p.dataset.tabBody === t.dataset.tab);
+    return;
+  }
+  if (t.dataset.cmd !== undefined) return cmd(true);
+  if (t.dataset.close !== undefined) return setDrawer(drawer);
+  if (t.dataset.drawer) { if (!(t.closest('.rail')) && drawer === t.dataset.drawer) return; return setDrawer(t.dataset.drawer); }
+  if (t.dataset.insp !== undefined || t.id === 'inspToggle') return setInspector();
+  if (t.dataset.answer !== undefined) return setAsking(false);
+  if (t.id === 'demoAsk') { if (!chatView.classList.contains('on')) startChat('Check the monthly reports have gone out', true); else setAsking(!chatView.classList.contains('asking')); return; }
+  if (t.dataset.start) return startChat(t.dataset.start, t.dataset.ask !== undefined);
+  if (t.dataset.app) { $('#slotName').textContent = t.dataset.app; return setView('slot'); }
+  if (t.dataset.view) return setView(t.dataset.view);
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return cmd(!document.body.classList.contains('cmd')); }
+  if (e.key === 'Escape') { if (document.body.classList.contains('cmd')) return cmd(false); if (insp.classList.contains('open')) return setInspector(false); if (drawer) return setDrawer(drawer); }
+  if (e.target.matches('input, textarea')) return;
+  if (e.key === '[') $('#railToggle').click();
+  if (e.key.toLowerCase() === 't') setDrawer('todos');
+  if (e.key.toLowerCase() === 'c') setDrawer('chats');
+});
+</script>
+</body>
+</html>

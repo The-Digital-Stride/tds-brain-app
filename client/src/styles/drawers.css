@@ -1,0 +1,82 @@
+/* Drawer bodies: To-dos, Chats and Skills. Rows use the shared .line and .todo classes. */
+.drawer-body {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.drawer-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.line-main,
+.todo-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.line-main {
+  flex: 1;
+}
+.todo-main {
+  grid-column: 2 / -1;
+  justify-content: space-between;
+}
+.todo-bullet {
+  width: 8px;
+  height: 8px;
+  margin: 7px 6px 0;
+  border-radius: 50%;
+  background: var(--iron);
+  opacity: 0.5;
+}
+.todo .go {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--blue-ink);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.todo:hover .go,
+.todo:focus-within .go {
+  opacity: 1;
+}
+.line .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.drawer-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.drawer-search > .icon {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+  color: var(--iron);
+}
+.drawer-search .field {
+  width: 100%;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px 0 32px;
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .todo .go {
+    transition: none;
+  }
+}

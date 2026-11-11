@@ -5,7 +5,7 @@ import type { Gate } from '../store.tsx';
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="gate">
-      <div className="card">
+      <div className="card gate-card">
         <h1>{title}</h1>
         {children}
       </div>
@@ -16,7 +16,7 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 export function Loading() {
   return (
     <main className="gate" aria-busy="true">
-      <div className="card">
+      <div className="card gate-card">
         <div className="spinner" aria-hidden="true" />
         <p role="status">Opening TDS Brain.</p>
       </div>

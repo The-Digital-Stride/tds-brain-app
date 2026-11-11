@@ -1,0 +1,216 @@
+/*
+ * What every library app on the sheet shares (docs/design-system.md, "Apps on the sheet"): the
+ * tools rows, the recessed tray holding one raised white card per folder, rows inside a card, the
+ * frosted bar for ticked items and the details panel. An app's own stylesheet adds only what is
+ * particular to its items.
+ */
+.lib {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  padding: 12px 16px 16px;
+}
+/* File names are shown as written: Inter would otherwise turn the x in "1200x628" into a ×. */
+.lib .line-title,
+.lib-name {
+  font-feature-settings: "calt" 0;
+}
+
+/* Tools: client, search, the app's own control; then the filter and the summary ----------------- */
+.lib-tools,
+.lib-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lib-client {
+  flex: none;
+  width: auto;
+  min-width: 180px;
+  font-weight: 600;
+}
+.lib-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 200px;
+  max-width: 340px;
+}
+.lib-search > .icon {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+  color: var(--iron);
+}
+.lib-search .field {
+  padding-left: 32px;
+}
+.lib-tools .seg {
+  flex: none;
+  width: 132px;
+  margin-left: auto;
+}
+.lib-filter .seg {
+  flex: 1 1 420px;
+  max-width: 560px;
+}
+.lib-summary {
+  margin: 0 4px 0 auto;
+  font: 400 12px / 1.45 var(--body);
+  color: var(--iron);
+  white-space: nowrap;
+}
+.lib-empty {
+  margin: 0;
+  padding: 24px 4px;
+  color: var(--iron);
+}
+
+/* The tray: one column of folder cards --------------------------------------------------------- */
+.lib .lib-tray {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0;
+}
+.lib .card-head {
+  padding-bottom: 4px;
+}
+.lib .card-head h3 {
+  margin: 0;
+  font: 600 14px / 1.25 var(--head);
+}
+.lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* An app's own layout rule for the list must carry `:not([hidden])`, or it outranks this and Hide does nothing. */
+.lib-list[hidden] {
+  display: none;
+}
+
+/* Items ------------------------------------------------------------------------------------------ */
+.lib-open {
+  appearance: none;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lib-tick {
+  margin: 0;
+}
+/* Rows: the tray's own (Home's hover and pressed states apply). */
+.lib .lib-row {
+  gap: 10px;
+  padding: 5px 8px;
+}
+.lib .lib-row:hover {
+  transform: none;
+}
+.lib-row .lib-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* The current item: the wash fill and a heavier name. */
+.lib .lib-list > [data-current="true"] {
+  background: var(--wash);
+  box-shadow: none;
+}
+.lib .lib-list > [data-current="true"]:hover {
+  background: #d9e8fc;
+}
+.lib [data-current="true"] .line-title {
+  font-weight: 600;
+}
+
+/* The bar for ticked items: frosted, floating over the bottom of the sheet ------------------------ */
+.lib-selbar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  /* Pinned to the bottom of the sheet, however short the list is. */
+  margin-top: auto;
+  padding: 6px 6px 6px 14px;
+  border-radius: 14px;
+  box-shadow: var(--lift-2);
+}
+.lib-selcount {
+  margin-right: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The details panel: a preview on a white card, then plain rows ----------------------------------- */
+.lib-detail {
+  display: grid;
+  gap: 8px;
+  padding: 0 4px;
+}
+.lib-preview {
+  padding: 8px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--lift-1);
+}
+.lib-name {
+  margin: 0;
+  padding: 0 4px;
+  font: 600 14px / 1.3 var(--head);
+  overflow-wrap: anywhere;
+}
+.lib-file {
+  margin: -6px 0 0;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+  overflow-wrap: anywhere;
+}
+.lib-tags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0 4px;
+}
+.lib-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px;
+}
+.lib-detail .kv {
+  padding: 0 4px;
+}
+.kv-cap::first-letter {
+  text-transform: uppercase;
+}
+.lib-used {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 13px;
+}
+.lib-used li {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.lib-used li:first-child {
+  border-top: 0;
+}

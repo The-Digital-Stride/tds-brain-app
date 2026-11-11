@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
+import { Icon } from '../shell/Icon.tsx';
 import { currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
+import { STEP_WORDS } from '../state/steps.ts';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
-
-function statusWord(t: ToolItem): string {
-  return t.status === 'running' ? 'working' : t.status === 'ok' ? 'done' : 'did not work';
-}
 
 function ToolLine({ tool }: { tool: ToolItem }) {
   return (
     <li>
       <span>{tool.label}</span>{' '}
       <span className="tool-status" data-status={tool.status}>
-        ({statusWord(tool)})
+        ({STEP_WORDS[tool.status]})
       </span>
       <HelperWork items={tool.children} />
     </li>
@@ -56,7 +54,10 @@ function ActivityGroup({ tools, active, waiting }: { tools: ToolItem[]; active: 
   else if (step) summary = `Claude is working: ${step}`;
   return (
     <details className="activity" data-running={step !== null}>
-      <summary>{summary}</summary>
+      <summary>
+        <Icon name="chevron" size={14} />
+        {summary}
+      </summary>
       <ul className="activity-steps">
         {tools.map((t) => (
           <ToolLine key={t.id} tool={t} />
@@ -82,10 +83,12 @@ function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; not
           <Markdown text={item.text} />
         </div>
       );
+    // A card still waiting on the person shows in the floater above the message box, not here.
+    // Once answered it shows here, as the record.
     case 'permission':
-      return <PermissionCard item={item} sessionId={sessionId} />;
+      return item.outcome === null ? null : <PermissionCard item={item} sessionId={sessionId} />;
     case 'question':
-      return <QuestionCard item={item} sessionId={sessionId} />;
+      return item.outcome === null ? null : <QuestionCard item={item} sessionId={sessionId} />;
     case 'notice':
       return (
         <div className="notice" data-level={item.level} role={item.level === 'error' ? 'alert' : undefined}>
@@ -128,14 +131,14 @@ export function Transcript({
 
   return (
     <div
-      className="transcript"
+      className="thread"
       ref={scroller}
       onScroll={(e) => {
         const el = e.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
     >
-      <div className="transcript-inner">
+      <div className="thread-col">
         {blocks.map((b, i) =>
           b.kind === 'tools' ? (
             <ActivityGroup

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shell layers explained</title>
+<style>
+  :root{
+    --navy:#021B43; --blue:#1889FF; --blue-ink:#0B5CB5; --iron:#525252;
+    --desk:#E9E5DD; --tray:#F3F0EA; --paper:#FAF8F4; --wash:#E7F1FE;
+    --line:rgba(2,27,67,.09); --line-strong:rgba(2,27,67,.16);
+    --warn-ink:#7A4A00; --warn-wash:#FFF1D6; --warn-edge:#B97500;
+    --glass:rgba(255,255,255,.46); --glass-strong:rgba(255,255,255,.78); --glass-edge:rgba(255,255,255,.8);
+    --head:'Poppins',-apple-system,'Helvetica Neue',Arial,sans-serif;
+    --body:'Inter',-apple-system,'Helvetica Neue',Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --lift-1:0 1px 2px rgba(2,27,67,.05),0 4px 14px rgba(2,27,67,.05);
+    --lift-2:0 1px 2px rgba(2,27,67,.08),0 18px 44px rgba(2,27,67,.16);
+    --lift-3:0 2px 6px rgba(2,27,67,.08),0 28px 70px rgba(2,27,67,.22);
+    color-scheme:light;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--navy);font:16px/1.55 var(--body);
+    background:
+      radial-gradient(620px 760px at 0% 0%,rgba(24,137,255,.30),transparent 66%),
+      radial-gradient(760px 560px at 104% 108%,rgba(2,27,67,.18),transparent 60%),
+      var(--desk);
+    background-attachment:fixed}
+  main{max-width:1000px;margin:0 auto;padding:36px 16px 72px}
+  h1,h2,h3{font-family:var(--head);font-weight:600;margin:0}
+  h1{font-size:clamp(1.8rem,4.4vw,2.6rem);line-height:1.1;letter-spacing:-.02em;margin-bottom:.7rem}
+  h2{font-size:1.35rem;letter-spacing:-.01em;margin:2.8rem 0 .4rem}
+  h3{font-size:1rem;margin-bottom:.2rem}
+  p{margin:.5rem 0}
+  .lede{font-size:1.1rem;max-width:64ch}
+  .soft{color:var(--iron)}
+  code,kbd{font-family:var(--mono);font-size:.86em}
+  kbd{display:inline-block;min-width:1.7em;text-align:center;padding:.05em .45em;background:#fff;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:6px;color:var(--navy)}
+  :focus-visible{outline:2px solid var(--blue-ink);outline-offset:2px}
+  .card{background:var(--glass-strong);border:1px solid var(--glass-edge);border-radius:16px;box-shadow:var(--lift-1);padding:16px 18px}
+  .sheetcard{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--lift-2);padding:18px}
+
+  /* Learn notes */
+  .learn{margin:14px 0 0;padding:10px 14px;background:var(--wash);border-left:4px solid var(--blue-ink);border-radius:0 12px 12px 0;font-size:.92rem;max-width:70ch}
+  .learn b{color:var(--blue-ink)}
+
+  /* Layout mock */
+  .stage{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start;margin-top:14px}
+  @media (max-width:760px){.stage{grid-template-columns:minmax(0,1fr)}}
+  .mock{position:relative;height:310px;padding:8px;border-radius:14px;box-shadow:var(--lift-1);display:flex;gap:6px;
+    background:
+      radial-gradient(260px 300px at 0% 0%,rgba(24,137,255,.40),transparent 66%),
+      radial-gradient(300px 260px at 100% 100%,rgba(2,27,67,.26),transparent 62%),
+      var(--desk)}
+  .pane{position:relative;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:6px 3px;min-width:0}
+  .frost{background:var(--glass-strong);border:1px solid var(--glass-edge);box-shadow:var(--lift-1)}
+  .m-rail{width:9%;gap:6px}
+  .m-drawer{width:22%}
+  .m-sheet{flex:1;background:#fff;border:1px solid var(--line);box-shadow:var(--lift-2);align-items:stretch;padding:8px;z-index:1}
+  .m-panel{width:23%}
+  .ic{width:60%;aspect-ratio:1;border-radius:5px;background:var(--line-strong)}
+  .ln{height:5px;border-radius:3px;background:var(--line-strong);margin:5px 4px 0;width:calc(100% - 8px)}
+  .ln.s{width:60%}
+  .badge{position:absolute;top:-9px;left:-6px;z-index:5;width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font:600 12px/22px var(--head);text-align:center}
+  .badge.ov{background:var(--warn-ink);left:auto;right:-6px}
+  .m-bar{height:12px;border-radius:4px;background:var(--line);margin-bottom:8px}
+  .m-thread{flex:1}
+  .m-card{margin:6px 0 0;padding:6px;border-radius:8px;background:var(--warn-wash);border:1px solid var(--warn-edge);position:relative}
+  .m-card .ln{background:rgba(122,74,0,.35)}
+  .m-box{margin-top:6px;height:22px;border-radius:8px;border:1px solid var(--line-strong);background:var(--paper)}
+  .m-pal{position:absolute;z-index:6;top:20px;left:22%;right:22%;padding:7px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--warn-edge);box-shadow:var(--lift-3);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .m-pal .ln{background:var(--line-strong)}
+  @supports not (backdrop-filter:blur(1px)){.m-pal{background:#fff}}
+  .legend{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+  .legend li{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start}
+  .legend .n{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font:600 12px/22px var(--head);text-align:center}
+  .legend .n.ov{background:var(--warn-ink)}
+  .legend b{display:block;font-family:var(--head);font-weight:600}
+  .legend span{color:var(--iron);font-size:.93rem}
+
+  /* Flow */
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px}
+  .step h3{color:var(--blue-ink)}
+  .step p{font-size:.93rem;margin:.3rem 0 0}
+  .step .then{display:block;margin-top:.4rem;padding-top:.4rem;border-top:1px dashed var(--line-strong);font-size:.9rem;color:var(--iron)}
+  .keys{width:100%;border-collapse:collapse;margin-top:14px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:var(--lift-1)}
+  .keys td,.keys th{padding:9px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:.94rem}
+  .keys th{font-family:var(--head);font-weight:600;background:var(--tray)}
+  .keys tr:last-child td{border-bottom:0}
+  .keys td:first-child{white-space:nowrap}
+
+  /* Tables */
+  table.rule{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;box-shadow:var(--lift-1);margin-top:14px}
+  .rule th,.rule td{padding:10px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:.94rem}
+  .rule th{font-family:var(--head);font-weight:600;background:var(--tray)}
+  .rule tr:last-child td{border-bottom:0}
+  .promise{margin-top:14px;padding:12px 16px;border-radius:12px;background:var(--navy);color:#fff}
+  .promise b{font-family:var(--head)}
+
+  /* Before and after */
+  .ba{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+  .ba li{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);gap:8px;align-items:center;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:var(--lift-1)}
+  .ba .old{color:var(--iron)}
+  .ba .mid{text-align:center;color:var(--blue-ink);font-weight:600}
+  .ba .new{font-weight:600}
+  .ba-head{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);gap:8px;padding:0 14px;margin-top:14px;font:600 .9rem var(--head);color:var(--iron)}
+  .ba-head+.ba{margin-top:6px}
+  @media (max-width:520px){
+    .ba li{grid-template-columns:minmax(0,1fr);gap:2px}
+    .ba .mid{display:none}
+    .ba .new::before{content:"Now: ";font-weight:400;color:var(--iron)}
+    .ba-head{display:none}
+    .ba .old::before{content:"Before: ";font-weight:600}
+  }
+
+  /* Careful parts */
+  .care{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-top:14px}
+  .care .card{border-left:4px solid var(--warn-edge)}
+  .care p{font-size:.93rem;margin:.3rem 0 0}
+  .care p b{color:var(--warn-ink)}
+
+  .left{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+  .left p{font-size:.93rem;margin:.3rem 0 0}
+
+  .waves{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:14px}
+  .waves ul{margin:.4rem 0 0;padding-left:1.1rem;font-size:.93rem}
+  .waves li{margin:.2rem 0}
+  .checks{margin:14px 0 0;padding:14px 18px 14px 36px;background:#fff;border-radius:14px;box-shadow:var(--lift-1)}
+  .checks li{margin:.25rem 0}
+  footer{margin-top:3rem;font-size:.85rem;color:var(--iron)}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>How the new shell fits together</h1>
+  <p class="lede">The app's frame is changing: a slim rail, drawers that slide in beside your work, one raised white sheet where the work happens, and a side panel for detail. What the app can do is not changing. How it reads the brain, signs you in and runs chats is untouched, because nothing on the server side is edited.</p>
+  <p class="soft">The look is the one you approved in the prototype. This page is about how the pieces connect and where the tricky parts are.</p>
+</header>
+
+<section aria-labelledby="layers">
+  <h2 id="layers">The five layers</h2>
+  <p>Think of a desk with things stacked on it. Each layer sits in front of the one before. The sheet is the only solid white surface, so your work reads as the front layer. The rail and drawers are frosted glass.</p>
+  <div class="stage">
+    <div class="mock" role="img" aria-label="Sketch of the app: a tinted desk holding, left to right, a narrow rail, a left drawer, a white sheet and a right panel. A command palette floats over the top of the sheet, and an amber approval card sits just above the message box.">
+      <div class="pane frost m-rail"><span class="badge">2</span><span class="ic"></span><span class="ic"></span><span class="ic"></span><span class="ic"></span></div>
+      <div class="pane frost m-drawer"><span class="badge">3</span><span class="ln"></span><span class="ln s"></span><span class="ln"></span><span class="ln s"></span><span class="ln"></span></div>
+      <div class="pane m-sheet"><span class="badge">4</span>
+        <div class="m-bar"></div>
+        <div class="m-thread"><span class="ln"></span><span class="ln s"></span><span class="ln"></span></div>
+        <div class="m-card"><span class="badge ov">B</span><span class="ln"></span><span class="ln s"></span></div>
+        <div class="m-box"></div>
+      </div>
+      <div class="pane frost m-panel"><span class="badge">5</span><span class="ln"></span><span class="ln s"></span><span class="ln"></span></div>
+      <div class="m-pal"><span class="badge ov">A</span><span class="ln"></span><span class="ln s"></span></div>
+    </div>
+    <ul class="legend">
+      <li><span class="n">1</span><div><b>Desk</b><span>The tinted background behind everything. It gives the frosted glass something to pick up.</span></div></li>
+      <li><span class="n">2</span><div><b>Rail</b><span>The slim strip on the left that gets you anywhere: Home, Chats, To-dos, Skills, Settings. It can shrink to icons to give the work more room.</span></div></li>
+      <li><span class="n">3</span><div><b>Left drawer</b><span>One list at a time (To-dos, Chats or Skills), slid in beside your work.</span></div></li>
+      <li><span class="n">4</span><div><b>The sheet</b><span>Where you work: Home, a chat or Settings. The one solid white, raised surface.</span></div></li>
+      <li><span class="n">5</span><div><b>Right panel</b><span>"This chat", with Steps and Details. Only offered on a live chat.</span></div></li>
+      <li><span class="n ov">A</span><div><b>Overlay: command palette</b><span>Floats above everything to find a skill, chat or to-do.</span></div></li>
+      <li><span class="n ov">B</span><div><b>Overlay: approval card</b><span>When Claude needs a yes, the card sits just above the message box so it can't scroll away.</span></div></li>
+    </ul>
+  </div>
+  <p class="soft" style="margin-top:14px">The rail, left drawer, sheet and right panel sit side by side in one row on top of the desk. The palette and approval card sit above.</p>
+</section>
+
+<section aria-labelledby="opens">
+  <h2 id="opens">What opens what</h2>
+  <div class="flow">
+    <div class="card step">
+      <h3>Rail button</h3>
+      <p>Press To-dos, Chats or Skills on the rail.</p>
+      <span class="then">The drawer slides in and nudges the sheet over. Only one drawer is open at a time.</span>
+    </div>
+    <div class="card step">
+      <h3>Choose something in the drawer</h3>
+      <p>A to-do, a chat or a skill.</p>
+      <span class="then">The sheet changes. The drawer stays open beside it.</span>
+    </div>
+    <div class="card step">
+      <h3>Panel toggle</h3>
+      <p>In the chat's top bar.</p>
+      <span class="then">The "This chat" panel opens on the right, with Steps and Details tabs.</span>
+    </div>
+    <div class="card step">
+      <h3>Cmd+K or Ctrl+K</h3>
+      <p>Or the "Search or jump to" button in the sheet bar.</p>
+      <span class="then">The palette floats over the app. Up and Down move, Enter runs, Esc closes.</span>
+    </div>
+  </div>
+  <table class="keys">
+    <thead><tr><th scope="col">Key</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>[</kbd></td><td>Widens or narrows the rail.</td></tr>
+      <tr><td><kbd>T</kbd></td><td>To-dos drawer.</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Chats drawer.</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Skills drawer.</td></tr>
+      <tr><td><kbd>Cmd</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd></td><td>Command palette. Works even while you are typing.</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Closes the palette first; if it is shut, closes the open drawer. A panel that is pushing stays open; one that is floating closes.</td></tr>
+    </tbody>
+  </table>
+  <p>The single letters only work on their own, outside a text box and with the palette shut. Anyone they trip up can switch them off with "Single-key shortcuts" in Settings.</p>
+  <div class="learn"><b>Learn: focus.</b> Focus is where the keyboard is "pointing" right now, the thing that Enter or Space would press. When a drawer opens, focus moves into it, and when it closes, focus goes back to the rail button you used. Without that, keyboard users would lose their place.</div>
+</section>
+
+<section aria-labelledby="room">
+  <h2 id="room">When there isn't room</h2>
+  <p>Drawers and the panel normally push the sheet over. On a narrow window that would squeeze your work, so they float over it instead.</p>
+  <table class="rule">
+    <thead><tr><th scope="col">Window width</th><th scope="col">Drawer</th><th scope="col">Panel</th></tr></thead>
+    <tbody>
+      <tr><td>Under 900px</td><td>Floats. The rail is icons only.</td><td>Floats.</td></tr>
+      <tr><td>900 to 1059px</td><td>Pushes, unless the rail is showing names. Then it floats.</td><td>Floats.</td></tr>
+      <tr><td>1060 to 1099px</td><td>Pushes.</td><td>Floats.</td></tr>
+      <tr><td>1100 to 1399px</td><td>Pushes. Opening it closes the panel.</td><td>Pushes. Opening it closes the drawer.</td></tr>
+      <tr><td>1400px and wider</td><td>Pushes.</td><td>Pushes.</td></tr>
+    </tbody>
+  </table>
+  <p>Two rules keep the sheet roomy. On a mid-width window there is space for a drawer or the panel, not both, so whichever you opened last stays and the other closes. And while the panel is open, the rail tucks down to icons and comes back when the panel closes. Your own rail setting is left alone, unless you press the rail button yourself while the panel is open.</p>
+  <p>A floating drawer or panel behaves like a pop-up. A veil dims the desk behind it, the rest of the app is switched off, and Esc, a click on the veil or choosing a row closes it.</p>
+  <div class="promise"><b>The promise:</b> the sheet never drops below 480px wide. Nothing scrolls sideways, even at 360px.</div>
+  <div class="learn"><b>Learn: breakpoint.</b> A breakpoint is a window width at which the layout changes. The widths in the table are the breakpoints, and they are checked one pixel either side in the tests.</div>
+</section>
+
+<section aria-labelledby="moved">
+  <h2 id="moved">Where the old pages went</h2>
+  <p>You never leave your work to look at a list. The list slides in beside it.</p>
+  <div class="ba-head" aria-hidden="true"><span>Before</span><span></span><span>Now</span></div>
+  <ul class="ba">
+    <li><span class="old">Skills page</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">Skills drawer</span></li>
+    <li><span class="old">To-dos page and the right-hand to-do panel</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">To-dos drawer</span></li>
+    <li><span class="old">History page</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">"Earlier" in the Chats drawer</span></li>
+    <li><span class="old">New-chat screen</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">Home, with Needs you, Open chats and Pinned skills</span></li>
+    <li><span class="old">Approval card in the thread</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">Above the message box</span></li>
+    <li><span class="old">"Continue in the terminal"</span><span class="mid" aria-hidden="true">&rarr;</span><span class="new">The Details tab of the "This chat" panel</span></li>
+  </ul>
+  <p class="soft" style="margin-top:12px">The top bar with its Menu button goes too. The rail replaces it.</p>
+</section>
+
+<section aria-labelledby="careful">
+  <h2 id="careful">The careful parts</h2>
+  <p>These are the steps most likely to go wrong. Each has a guard in the plan.</p>
+  <div class="care">
+    <div class="card">
+      <h3>Hidden means unreachable</h3>
+      <p><b>Risk:</b> a closed drawer is invisible, but a keyboard or screen reader could still land in it.</p>
+      <p><b>Guard:</b> closed drawers are switched off. So is the whole desk while the palette or a floating drawer is open.</p>
+    </div>
+    <div class="card">
+      <h3>The approval card must never be lost</h3>
+      <p><b>Risk:</b> a tall card could be cut off, or scroll out of sight behind the message box.</p>
+      <p><b>Guard:</b> the card sits in a strip below the thread, not floating over it. It scrolls inside itself past half the sheet's height. After you answer, focus goes to the next card, else the message box.</p>
+    </div>
+    <div class="card">
+      <h3>Esc closes one thing at a time</h3>
+      <p><b>Risk:</b> one press could cancel the "close chat" question and shut the drawer too.</p>
+      <p><b>Guard:</b> the close question marks its Esc as handled, and the app-wide key listener skips anything already handled. The palette closes before the drawer.</p>
+    </div>
+    <div class="card">
+      <h3>A chat from a to-do keeps its link</h3>
+      <p><b>Risk:</b> moving the wording and helpers around could cut the tie between a chat and its to-do.</p>
+      <p><b>Guard:</b> the helper that writes the opening message lives in one shared place, and a test checks it carries the to-do's id. Another test checks a chat started from Home keeps it too.</p>
+    </div>
+  </div>
+  <div class="learn"><b>Learn: inert.</b> Inert means a part of the page is switched off: it can't be clicked, tabbed to or read out by a screen reader. It is how a hidden drawer is made truly unreachable, not just invisible.</div>
+</section>
+
+<section aria-labelledby="out">
+  <h2 id="out">Left out on purpose</h2>
+  <div class="left">
+    <div class="card"><h3>No Files tab yet</h3><p>The server only sends file base names, so a file list would be guesswork. It returns when the server sends full paths, which is a separate server change.</p></div>
+    <div class="card"><h3>No attach button</h3><p>Home and the chat get no control without a feature behind it.</p></div>
+    <div class="card"><h3>No app slots on the rail</h3><p>The framework is there, but nothing shows until a real app exists. Adding one later means adding one entry.</p></div>
+    <div class="card"><h3>Dark mode later</h3><p>Light only for now. Dark is a follow-up.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="build">
+  <h2 id="build">How it gets built</h2>
+  <p>Two waves, so nobody edits the same file at the same time.</p>
+  <div class="waves">
+    <div class="sheetcard">
+      <h3>Wave 1: the frame</h3>
+      <ul>
+        <li>Shell state, rail, drawer and panel shells, shared pieces and wording.</li>
+        <li>Removes the old pages, so the app still builds.</li>
+        <li>Ends on a green check before wave 2 starts.</li>
+      </ul>
+    </div>
+    <div class="sheetcard">
+      <h3>Wave 2: in parallel</h3>
+      <ul>
+        <li>The three drawers.</li>
+        <li>Home and the command palette.</li>
+        <li>The chat sheet, the "This chat" panel and Settings.</li>
+      </ul>
+    </div>
+  </div>
+  <h3 style="margin-top:20px">Then the checks</h3>
+  <ol class="checks">
+    <li>Tests, type-check, lint and build.</li>
+    <li>Three reviewers: correctness, UI and accessibility, and requirement drift and copy.</li>
+    <li>An expert UX and accessibility critique against WCAG 2.2 AA.</li>
+    <li>A browser check on a pretend brain: Home, each drawer, both rail widths, a live chat with each panel tab, a pending approval, the palette, Settings, at 1280, 1000 and 400px, by keyboard only, and with reduced motion.</li>
+  </ol>
+</section>
+
+<footer>Source: <code>docs/plans/2026-11-11-shell-layers.md</code>. Local file, not published.</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,115 @@
+import { approvalsSentence } from '../approvals.ts';
+import type { ChatState } from '../state/chat-reducer.ts';
+import { STEP_WORDS, stepsOf } from '../state/steps.ts';
+import { useStore } from '../store.tsx';
+import type { PanelTab } from './contract.ts';
+import { Seg } from './Seg.tsx';
+import { useShell } from './ShellProvider.tsx';
+import { STATE_WORDS, whenWords } from './words.ts';
+
+/** The short value for Approvals, in the panel's Details and in Settings; the full sentence sits under it. */
+export const APPROVALS_SHORT = 'Same as your terminal';
+
+const TABS: { value: PanelTab; label: string }[] = [
+  { value: 'steps', label: 'Steps' },
+  { value: 'details', label: 'Details' },
+];
+
+function Steps({ chat }: { chat: ChatState | undefined }) {
+  const steps = stepsOf(chat?.items ?? []);
+  if (steps.length === 0) return <p className="dock-empty">No steps yet.</p>;
+  return (
+    <ol className="steps">
+      {steps.map((s, i) => (
+        <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
+          <span className="step-n" aria-hidden="true">
+            {i + 1}
+          </span>
+          <span className="step-text">
+            <span className="step-label">{s.label}</span>
+            <span className="step-status" data-status={s.status}>
+              {STEP_WORDS[s.status]}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * The body of the right panel, "This chat": the chat's steps, and its details. The right `Dock`
+ * supplies the region, heading and close button. Nothing shows unless a live chat is on the sheet.
+ */
+export function Inspector() {
+  const { boot, activeChat, chats, sessions, todos } = useStore();
+  const { state, dispatch } = useShell();
+  if (!boot || activeChat.kind !== 'live') return null;
+
+  const id = activeChat.sessionId;
+  const chat = chats[id];
+  const live = sessions?.live.find((s) => s.id === id);
+  const clientName = live?.client
+    ? (boot.clients.find((c) => c.slug === live.client)?.name ?? live.client)
+    : 'No client';
+  const todo = live?.todoId
+    ? [...(todos?.mine ?? []), ...(todos?.open ?? [])].find((t) => t.id === live.todoId)
+    : undefined;
+  const started = live ? whenWords(live.startedAt) : '';
+  const sessionState = chat?.sessionState ?? live?.state ?? null;
+  const sdkId = chat?.sdkSessionId ?? live?.sdkSessionId ?? null;
+  const canResume = boot.identity.role === 'owner' || boot.identity.role === 'scout';
+
+  return (
+    <div className="inspector">
+      <Seg
+        label="Show"
+        value={state.panelTab}
+        options={TABS}
+        onChange={(tab) => dispatch({ type: 'set-panel-tab', tab })}
+      />
+      {state.panelTab === 'steps' ? (
+        <Steps chat={chat} />
+      ) : (
+        <dl className="kv">
+          <dt>Client</dt>
+          <dd>{clientName}</dd>
+          {todo ? (
+            <>
+              <dt>To-do</dt>
+              <dd>{todo.title}</dd>
+            </>
+          ) : null}
+          {started ? (
+            <>
+              <dt>Started</dt>
+              <dd>{started}</dd>
+            </>
+          ) : null}
+          {sessionState ? (
+            <>
+              <dt>State</dt>
+              <dd>{STATE_WORDS[sessionState]}</dd>
+            </>
+          ) : null}
+          <dt>Approvals</dt>
+          <dd>
+            {APPROVALS_SHORT}
+            <span className="kv-note">{approvalsSentence(boot.engine.permissionMode)}</span>
+          </dd>
+          {sdkId && canResume ? (
+            <>
+              <dt className="kv-wide">Continue in the terminal</dt>
+              <dd className="kv-wide">
+                <code className="terminal-cmd">claude --resume {sdkId}</code>
+                <span className="kv-note">
+                  Chats started here do not show in the terminal's own list, so use this line.
+                </span>
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      )}
+    </div>
+  );
+}

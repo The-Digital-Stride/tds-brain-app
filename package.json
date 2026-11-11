@@ -6,6 +6,8 @@
   "description": "A local face for the TDS Agency Brain. Internal tool; never published.",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.322",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/poppins": "^5.3.0",
     "dompurify": "^3.4.17",
     "marked": "^18.2.0",
     "react": "^19.3.1",

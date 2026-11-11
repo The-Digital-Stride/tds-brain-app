@@ -19,7 +19,17 @@ const OUTCOME_WORDS: Record<Outcome, string> = {
   cancelled: 'This was cancelled',
 };
 
-export function PermissionCard({ item, sessionId }: { item: PermissionItem; sessionId: string }) {
+interface CardProps<T> {
+  item: T;
+  sessionId: string;
+  /**
+   * Called once the answer has gone through. The chat's floater uses it to keep focus off the
+   * message box while another card is waiting; on its own, a card sends focus to the message box.
+   */
+  onAnswered?: () => void;
+}
+
+export function PermissionCard({ item, sessionId, onAnswered }: CardProps<PermissionItem>) {
   const { run, requestComposerFocus } = useStore();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -42,7 +52,7 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
         ...(decision === 'deny' && note.trim() ? { note: note.trim() } : {}),
       }),
     );
-    if (ok) requestComposerFocus();
+    if (ok) (onAnswered ?? requestComposerFocus)();
     else setBusy(false);
   };
 
@@ -82,7 +92,7 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
           maxLength={500}
         />
       </label>
-      <div className="approval-actions">
+      <div className="answer-actions">
         <button
           type="button"
           className="btn"
@@ -92,27 +102,26 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
         >
           Allow
         </button>
+        {item.sessionAllowLabel !== null ? (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            aria-describedby={whyId}
+            onClick={() => void decide('allow-session')}
+          >
+            Allow for this chat
+          </button>
+        ) : null}
         <button type="button" className="btn" disabled={busy} onClick={() => void decide('deny')}>
           Don't allow
         </button>
-        {item.sessionAllowLabel !== null ? (
-          <div className="allow-group">
-            <button
-              type="button"
-              className="btn"
-              data-variant="quiet"
-              disabled={busy}
-              aria-describedby={whyId}
-              onClick={() => void decide('allow-session')}
-            >
-              Allow for this chat
-            </button>
-            <span className="why" id={whyId}>
-              {item.sessionAllowLabel}
-            </span>
-          </div>
-        ) : null}
       </div>
+      {item.sessionAllowLabel !== null ? (
+        <p className="why" id={whyId}>
+          {item.sessionAllowLabel}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -134,7 +143,7 @@ export function answerFor(q: AskQuestion, pick: Pick | undefined): string | stri
   return chosen[0] ?? null;
 }
 
-export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionId: string }) {
+export function QuestionCard({ item, sessionId, onAnswered }: CardProps<QuestionItem>) {
   const { run, requestComposerFocus } = useStore();
   const [picks, setPicks] = useState<Record<string, Pick>>({});
   const [busy, setBusy] = useState(false);
@@ -174,7 +183,7 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
     setBusy(true);
     const reply: QuestionReply = { requestId: item.requestId, answers };
     const ok = await run(() => api.answerQuestion(sessionId, reply));
-    if (ok) requestComposerFocus();
+    if (ok) (onAnswered ?? requestComposerFocus)();
     else setBusy(false);
   };
 
@@ -203,6 +212,7 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
             {q.options.map((o) => (
               <label key={o.label} className="opt">
                 <input
+                  className="tick"
                   type={q.multiSelect ? 'checkbox' : 'radio'}
                   name={group}
                   checked={pick?.chosen.includes(o.label) ?? false}
@@ -233,7 +243,7 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
           </fieldset>
         );
       })}
-      <div>
+      <div className="answer-actions">
         <button type="submit" className="btn" data-variant="primary" disabled={!complete || busy}>
           Send answer
         </button>

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import type { Identity, TodoItem, TodoList } from '../../shared/contract.ts';
+import { stampDone } from './done-record.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { humanise, readText } from './util.ts';
 
@@ -62,20 +63,33 @@ export async function listTodos(root: string, identity: Identity): Promise<TodoL
   return { mine, open, othersCount: items.length - mine.length - open.length };
 }
 
-export async function completeTodo(root: string, id: string): Promise<void> {
+/** What the app writes as the place a to-do was ticked. */
+export const TICKED_VIA = 'TDS Brain App';
+
+export async function completeTodo(root: string, id: string, by: Identity, at: Date): Promise<void> {
   if (typeof id !== 'string' || !SAFE_ID.test(id))
     throw new Error('That is not a to-do the app can tick off.');
   const live = await readAll(root);
   if (!live.some((t) => t.id === id))
     throw new Error('That to-do could not be found. It may already be done.');
+  const source = join(root, 'todo', id);
   const doneDir = join(root, 'todo', 'done');
   const target = join(doneDir, id);
+  const stamped = stampDone(await fs.readFile(source, 'utf8'), { by, at, via: TICKED_VIA });
   await fs.mkdir(doneDir, { recursive: true });
   try {
-    await fs.access(target);
-    throw new Error('A finished to-do with that name already exists, so nothing was moved.');
+    // 'wx' fails if the name is taken, so an earlier finished to-do is never overwritten.
+    await fs.writeFile(target, stamped, { encoding: 'utf8', flag: 'wx' });
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith('A finished')) throw err;
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST')
+      throw new Error('A finished to-do with that name already exists, so nothing was moved.');
+    throw err;
   }
-  await fs.rename(join(root, 'todo', id), target);
+  try {
+    await fs.unlink(source);
+  } catch (err) {
+    // Never leave the to-do both open and finished.
+    await fs.rm(target, { force: true });
+    throw err;
+  }
 }

@@ -129,8 +129,11 @@ export interface BrainReaders {
   skillAccess(identity: Identity, name: string): Promise<'allowed' | 'restricted' | 'unknown-skill'>;
   /** Files in `todo/` only (not `done/`, `archive/`, `AGENTS.md`, `README.md`). */
   todos(identity: Identity): Promise<TodoList>;
-  /** The one direct write: moves `todo/<id>` to `todo/done/<id>`, as the Workbench does. Rejects unknown ids. */
-  completeTodo(id: string): Promise<void>;
+  /**
+   * The one direct write: moves `todo/<id>` to `todo/done/<id>` and records in the file who ticked it
+   * (`by`), the UK date and time, and that it was ticked in this app. Rejects unknown ids.
+   */
+  completeTodo(id: string, by: Identity): Promise<void>;
   /** Folders in `clients/`, skipping names that start with `_` or `.`. */
   clients(): Promise<ClientInfo[]>;
   /**

@@ -275,7 +275,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       throw new HttpError(400, 'bad-request', 'That to-do was not understood.');
     }
     try {
-      await ctx.brain.completeTodo(id);
+      await ctx.brain.completeTodo(id, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
     } catch {
       throw new HttpError(404, 'not-found', 'That to-do could not be found. It may already be done.');
     }

@@ -23,7 +23,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     skills: (identity) => listSkills(root, identity),
     skillAccess: (identity, name) => skillAccess(root, identity, name),
     todos: (identity) => listTodos(root, identity),
-    completeTodo: (id) => completeTodo(root, id),
+    completeTodo: (id, by) => completeTodo(root, id, by, now()),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));

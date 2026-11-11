@@ -76,7 +76,7 @@
 }
 .palette .opt:hover {
   background: rgba(255, 255, 255, 0.85);
-  box-shadow: var(--lift-h);
+  box-shadow: var(--lift-1);
 }
 /* The active option: white, raised and ringed, so it is clearly more than a hover. */
 .palette .opt[aria-selected="true"] {

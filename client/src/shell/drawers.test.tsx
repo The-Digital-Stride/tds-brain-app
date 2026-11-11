@@ -117,6 +117,30 @@ describe('To-dos drawer', () => {
     expect(shell.dispatch).not.toHaveBeenCalled();
   });
 
+  it('shows a project by name, never as a folder name', () => {
+    setStore({
+      boot: {
+        clients: [{ slug: 'acme', name: 'Acme Heating' }],
+        usedOften: [],
+        prefs: { pins: [], directWrites: false },
+        skills: [],
+      },
+      todos: {
+        mine: [
+          { ...todo('t1.md', 'Renew contract', '2020-01-01'), project: 'acme' },
+          { ...todo('t2.md', 'Plan the pages', '2020-01-02'), project: 'uc-ai-search' },
+        ],
+        open: [],
+        othersCount: 0,
+      },
+    });
+    render(<TodosDrawer />);
+    expect(screen.getByRole('button', { name: /Renew contract/ }).textContent).toContain('Acme Heating');
+    const second = screen.getByRole('button', { name: /Plan the pages/ }).textContent ?? '';
+    expect(second).toContain('UC AI search');
+    expect(second).not.toContain('uc-ai-search');
+  });
+
   it('names the row button with its action, title, due words and client', () => {
     setStore({
       boot: {
@@ -199,6 +223,37 @@ describe('Skills drawer', () => {
     expect(fns.togglePin).toHaveBeenCalledWith('a');
     expect(fns.startSkill).not.toHaveBeenCalled();
     expect(shell.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('a skill shows one line of its description until it is expanded, without starting it', () => {
+    render(<SkillsDrawer />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), { target: { value: 'beta' } });
+    const more = screen.getByRole('button', { name: 'Description of Beta' });
+    const row = more.closest('li') as HTMLElement;
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(row.dataset.open).toBe('false');
+    fireEvent.click(more);
+    const less = screen.getByRole('button', { name: 'Description of Beta' });
+    expect(less.getAttribute('aria-expanded')).toBe('true');
+    expect(row.dataset.open).toBe('true');
+    expect(document.getElementById(less.getAttribute('aria-controls') as string)?.textContent).toBe(
+      'Second one',
+    );
+    expect(fns.startSkill).not.toHaveBeenCalled();
+  });
+
+  it('a skill with no description has nothing to expand', () => {
+    setStore({
+      boot: {
+        clients: [],
+        usedOften: [],
+        prefs: { pins: [], directWrites: false },
+        skills: [skill('c', 'Gamma')],
+      },
+    });
+    render(<SkillsDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: /All skills/ }));
+    expect(screen.queryByRole('button', { name: /Description of Gamma/ })).toBeNull();
   });
 
   it('starting a skill closes a floating drawer', () => {

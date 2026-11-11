@@ -2,7 +2,14 @@
  * Wording shared by the rail, drawers, Home, palette and panel, so a status or a date reads the same
  * everywhere. Contract: `Words` in client/src/shell/contract.ts.
  */
-import { ATTENTION_LABEL, type LiveSession, type SkillInfo } from '../../../shared/contract.ts';
+import {
+  ATTENTION_LABEL,
+  type ClientInfo,
+  type LiveSession,
+  type SkillInfo,
+  type TodoItem,
+} from '../../../shared/contract.ts';
+import { slugWords } from '../../../shared/words.ts';
 import type { Words } from './contract.ts';
 
 export const STATE_WORDS: Words['STATE_WORDS'] = {
@@ -56,4 +63,23 @@ export function initials(name: string): string {
   const first = parts[0]?.[0] ?? '';
   const last = parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '';
   return (first + last).toUpperCase() || '?';
+}
+
+/** A client or project as people say it: the client's name, else its folder name as words. Never a folder name as written. */
+export function placeName(slug: string, clients: readonly ClientInfo[]): string {
+  return clients.find((c) => c.slug === slug)?.name ?? slugWords(slug);
+}
+
+/** The client and the project of a to-do, by name. A place is said once when both are the same. */
+export function todoPlaces(
+  todo: Pick<TodoItem, 'client' | 'project'>,
+  clients: readonly ClientInfo[],
+): string[] {
+  const out: string[] = [];
+  for (const slug of [todo.client, todo.project]) {
+    if (!slug) continue;
+    const name = placeName(slug, clients);
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
 }

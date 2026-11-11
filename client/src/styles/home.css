@@ -71,7 +71,7 @@
   padding: 6px;
   border-radius: 18px;
   background: var(--tray);
-  box-shadow: inset 0 1px 2px rgba(2, 27, 67, 0.05);
+  box-shadow: var(--recess);
 }
 @container (max-width: 720px) {
   .tray {
@@ -102,15 +102,23 @@
 .card-head .btn {
   margin-left: auto;
 }
-/* Surface-only hover: the row sits in the card, it does not lift. */
+/*
+ * A row in a card rises one step off it on hover, like every other hover in the app: it stays
+ * white and casts the one-step shadow (`--lift-1`), with no edge of its own.
+ */
 .tray .line:hover,
 .card-more:hover {
-  background: #eae6de;
-  box-shadow: none;
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  box-shadow: var(--lift-1);
+  transform: translateY(-1px);
 }
 .tray .line:active,
 .card-more:active {
-  background: #e2ddd3;
+  background: var(--tray);
+  box-shadow: none;
+  transform: none;
 }
 .tray .line-meta .late {
   color: var(--danger);

@@ -57,26 +57,82 @@
   width: 28px;
   height: 28px;
 }
-.drawer-search {
+/* A drawer with tools above its list (the Skills search, the To-dos switch). The tools sit on the drawer's own glass
+   and only the list scrolls, so nothing needs a backing of its own. */
+.dock-body:has(> .drawer-split) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.drawer-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-tools {
+  flex: none;
   position: relative;
   display: flex;
   align-items: center;
+  padding: 0 10px 8px;
 }
-.drawer-search > .icon {
+.drawer-tools > .icon {
   position: absolute;
-  left: 10px;
+  left: 20px;
   pointer-events: none;
   color: var(--iron);
 }
-.drawer-search .field {
-  width: 100%;
-  min-height: 32px;
-  height: 32px;
-  padding: 0 10px 0 32px;
-  font-size: 13px;
+.drawer-tools .field {
+  padding-left: 32px;
+}
+.drawer-tools > .seg {
+  flex: 1;
+}
+.drawer-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+}
+/* A skill row: one line of its description until the chevron opens it. */
+.skill-row {
+  gap: 4px;
+}
+.skill-row[data-open="false"] .line-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skill-row[data-open="true"] {
+  align-items: flex-start;
+}
+.skill-more {
+  color: var(--iron);
+}
+.skill-more .icon {
+  transition: transform 120ms var(--ease);
+}
+/* The pin shows on the row under the pointer or the keyboard; a pinned skill keeps its pin. */
+@media (hover: hover) {
+  .skill-row .icon-btn[aria-pressed="false"] {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .skill-row:is(:hover, :focus-within) .icon-btn[aria-pressed="false"] {
+    opacity: 1;
+  }
+}
+.skill-more[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .todo .go {
+  .todo .go,
+  .skill-row .icon-btn,
+  .skill-more .icon {
     transition: none;
   }
 }

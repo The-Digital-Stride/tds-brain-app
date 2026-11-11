@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import type { Role } from '../../shared/contract.ts';
+import { keepAcronyms } from '../../shared/words.ts';
 
 export async function readText(path: string): Promise<string | null> {
   try {
@@ -34,12 +35,12 @@ export function memberSlug(name: string): string {
     .replace(/[^a-z0-9-]/g, '');
 }
 
-/** "meeting-notes" becomes "Meeting notes". */
+/** "meeting-notes" becomes "Meeting notes", "tds-doc" becomes "TDS doc". */
 export function humanise(name: string): string {
   const s = name
     .replace(/\.md$/i, '')
     .replace(/^\d{8}-/, '')
     .replace(/[-_]+/g, ' ')
     .trim();
-  return s === '' ? name : s.charAt(0).toUpperCase() + s.slice(1);
+  return s === '' ? name : keepAcronyms(s.charAt(0).toUpperCase() + s.slice(1));
 }

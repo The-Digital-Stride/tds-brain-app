@@ -27,6 +27,10 @@ body,
 #root {
   height: 100%;
 }
+/* Scrollbars: a thumb and no track, so a scroller shows no patch on glass or on white. */
+:root {
+  scrollbar-color: var(--tick-edge) transparent;
+}
 
 /* Layer 0, the desk: a tinted surface so the glass above has something to pick up. */
 body {
@@ -182,7 +186,7 @@ kbd {
 }
 .btn:hover:not(:disabled) {
   background: #eae6de;
-  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+  box-shadow: var(--lift-0);
 }
 .btn:active:not(:disabled) {
   background: #e2ddd3;
@@ -331,7 +335,7 @@ kbd {
   height: 14px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.2);
+  box-shadow: var(--lift-0);
   transition: transform 120ms var(--ease);
 }
 .switch:checked {
@@ -439,7 +443,7 @@ kbd {
   background: #fff;
   color: var(--navy);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+  box-shadow: var(--lift-0);
 }
 .seg > button:focus-visible {
   outline-offset: -2px;
@@ -525,7 +529,7 @@ button.todo {
 .line:hover,
 .todo:hover {
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--lift-h);
+  box-shadow: var(--lift-1);
   transform: translateY(-1px);
 }
 .line:active,

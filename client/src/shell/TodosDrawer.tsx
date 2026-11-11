@@ -8,7 +8,7 @@ import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { todoChatDraft } from './words.ts';
+import { todoChatDraft, todoPlaces } from './words.ts';
 
 type Tab = 'mine' | 'open';
 
@@ -20,16 +20,12 @@ function TodoRow({ todo }: { todo: TodoItem }) {
   const current =
     chat !== null && view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const ticks = boot?.prefs.directWrites === true;
-  const clientName = todo.client
-    ? (boot?.clients.find((c) => c.slug === todo.client)?.name ?? todo.client)
-    : null;
   const due = todo.due ? dueInWords(todo.due) : '';
   const overdue = todo.due ? isOverdue(todo.due) : false;
 
   const parts: { text: string; late?: boolean }[] = [];
   if (due) parts.push({ text: due, late: overdue });
-  if (clientName) parts.push({ text: clientName });
-  if (todo.project) parts.push({ text: todo.project });
+  for (const text of todoPlaces(todo, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
@@ -83,37 +79,49 @@ export function TodosDrawer() {
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
   const items = tab === 'mine' ? todos.mine : todos.open;
   const groups = groupTodos(items, todayIso());
+  // The switch filters the list, so it sits on the drawer above it: only the list scrolls.
   return (
-    <div className="drawer-body">
-      <Seg
-        label="Which to-dos"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: 'mine', label: `Mine, ${todos.mine.length}` },
-          { value: 'open', label: `Open to anyone, ${todos.open.length}` },
-        ]}
-      />
-      {groups.length === 0 ? (
-        <p className="dock-empty">
-          {tab === 'mine' ? 'Nothing assigned to you.' : 'Nothing open to anyone.'}
-        </p>
-      ) : (
-        groups.map((g) => (
-          <Fold key={`${tab}-${g.key}`} title={g.title} count={g.items.length} defaultOpen={g.key !== 'none'}>
-            <ul className="drawer-list">
-              {g.items.map((t) => (
-                <TodoRow key={t.id} todo={t} />
-              ))}
-            </ul>
-          </Fold>
-        ))
-      )}
-      {todos.othersCount > 0 ? (
-        <p className="dock-empty">
-          {todos.othersCount} more {todos.othersCount === 1 ? 'belongs' : 'belong'} to other people.
-        </p>
-      ) : null}
+    <div className="drawer-split">
+      <div className="drawer-tools">
+        <Seg
+          label="Which to-dos"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'mine', label: `Mine, ${todos.mine.length}` },
+            { value: 'open', label: `Open to anyone, ${todos.open.length}` },
+          ]}
+        />
+      </div>
+      <div className="drawer-scroll">
+        <div className="drawer-body">
+          {groups.length === 0 ? (
+            <p className="dock-empty">
+              {tab === 'mine' ? 'Nothing assigned to you.' : 'Nothing open to anyone.'}
+            </p>
+          ) : (
+            groups.map((g) => (
+              <Fold
+                key={`${tab}-${g.key}`}
+                title={g.title}
+                count={g.items.length}
+                defaultOpen={g.key !== 'none'}
+              >
+                <ul className="drawer-list">
+                  {g.items.map((t) => (
+                    <TodoRow key={t.id} todo={t} />
+                  ))}
+                </ul>
+              </Fold>
+            ))
+          )}
+          {todos.othersCount > 0 ? (
+            <p className="dock-empty">
+              {todos.othersCount} more {todos.othersCount === 1 ? 'belongs' : 'belong'} to other people.
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

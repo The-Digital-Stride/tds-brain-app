@@ -6,16 +6,14 @@ import type { ChatsTab } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { STATE_WORDS, whenWords } from './words.ts';
+import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
 function OpenRow({ chat }: { chat: LiveSession }) {
   const { boot, openChat, requestClose, activeChat, view } = useStore();
   const { dispatch, modes } = useShell();
   const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const title = chat.title || 'New chat';
-  const clientName = chat.client
-    ? (boot?.clients.find((c) => c.slug === chat.client)?.name ?? chat.client)
-    : null;
+  const clientName = chat.client ? placeName(chat.client, boot?.clients ?? []) : null;
   return (
     <li className="line" aria-current={current ? 'true' : undefined}>
       <button

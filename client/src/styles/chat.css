@@ -397,7 +397,7 @@
 }
 .pending .btn:not([data-variant]):hover:not(:disabled) {
   background: #eae6de;
-  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+  box-shadow: var(--lift-0);
 }
 .pending .btn:not([data-variant]):active:not(:disabled) {
   background: #e2ddd3;
@@ -449,7 +449,7 @@
 }
 .question-card .opt:hover {
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--lift-h, 0 1px 2px rgba(2, 27, 67, 0.06), 0 2px 8px rgba(2, 27, 67, 0.07));
+  box-shadow: var(--lift-1);
   transform: translateY(-1px);
 }
 .question-card .opt:active {

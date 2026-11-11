@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
-import { chatsRailLabel, initials, STATE_WORDS, starterSkills, todoChatDraft, whenWords } from './words.ts';
+import {
+  chatsRailLabel,
+  initials,
+  placeName,
+  STATE_WORDS,
+  starterSkills,
+  todoChatDraft,
+  todoPlaces,
+  whenWords,
+} from './words.ts';
 
 const skill = (name: string): SkillInfo => ({
   name,
@@ -102,5 +111,24 @@ describe('initials', () => {
     expect(initials('Ian van Hancock')).toBe('IH');
     expect(initials('cher')).toBe('C');
     expect(initials('  ')).toBe('?');
+  });
+});
+
+describe('placeName and todoPlaces', () => {
+  const clients = [{ slug: 'acme', name: 'Acme Heating' }];
+  const todo = (client: string | null, project: string | null) => ({ client, project }) as TodoItem;
+
+  it("uses the client's name, and never shows a folder name as written", () => {
+    expect(placeName('acme', clients)).toBe('Acme Heating');
+    expect(placeName('gladwell-and-patterson', clients)).toBe('Gladwell and patterson');
+    expect(placeName('uc-ai-search', clients)).toBe('UC AI search');
+  });
+  it('names the client and the project of a to-do', () => {
+    expect(todoPlaces(todo('acme', 'website-rebuild'), clients)).toEqual(['Acme Heating', 'Website rebuild']);
+    expect(todoPlaces(todo(null, 'acme'), clients)).toEqual(['Acme Heating']);
+    expect(todoPlaces(todo(null, null), clients)).toEqual([]);
+  });
+  it('says a place once when the client and the project are the same', () => {
+    expect(todoPlaces(todo('acme', 'acme'), clients)).toEqual(['Acme Heating']);
   });
 });

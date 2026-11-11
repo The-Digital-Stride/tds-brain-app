@@ -5,7 +5,7 @@ import { useStore } from '../store.tsx';
 import type { PanelTab } from './contract.ts';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { STATE_WORDS, whenWords } from './words.ts';
+import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
 /** The short value for Approvals, in the panel's Details and in Settings; the full sentence sits under it. */
 export const APPROVALS_SHORT = 'Same as your terminal';
@@ -49,9 +49,7 @@ export function Inspector() {
   const id = activeChat.sessionId;
   const chat = chats[id];
   const live = sessions?.live.find((s) => s.id === id);
-  const clientName = live?.client
-    ? (boot.clients.find((c) => c.slug === live.client)?.name ?? live.client)
-    : 'No client';
+  const clientName = live?.client ? placeName(live.client, boot.clients) : 'No client';
   const todo = live?.todoId
     ? [...(todos?.mine ?? []), ...(todos?.open ?? [])].find((t) => t.id === live.todoId)
     : undefined;

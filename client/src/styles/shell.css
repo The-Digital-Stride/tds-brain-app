@@ -30,7 +30,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px;
+  /* No padding above: the brand row is the rail's share of the header band. */
+  padding: 0 10px 10px;
   border-radius: 16px;
   transition: width var(--t) var(--ease);
 }
@@ -38,9 +39,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 40px;
-  padding: 0 4px;
-  margin-bottom: 10px;
+  /* The header band: 48px with the glass edge, the mark centred on the same line as every title. */
+  height: 47px;
+  padding: 0 4px 1px;
   overflow: hidden;
   white-space: nowrap;
   font: 600 15px var(--head);
@@ -75,7 +76,7 @@
 .rail-item:hover,
 .rail-item[data-open="true"] {
   background: rgba(255, 255, 255, 0.8);
-  box-shadow: var(--lift-h);
+  box-shadow: var(--lift-1);
   color: var(--navy);
 }
 .rail-item:active {
@@ -254,12 +255,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 10px 8px 14px;
+  /* The header band: 48px with the glass edge, on the same line as the sheet bar. */
+  min-height: 47px;
+  padding: 0 10px 1px 14px;
 }
 .dock-head h2 {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14px;
 }
 /* The heading takes focus only so the reader starts there; it needs no ring. */
 .dock-head h2:focus {
@@ -281,7 +284,9 @@
 }
 
 /* A dock that floats over the sheet (not enough room to push). Modal: a veil sits behind it. */
-.dock[data-overlay="true"] {
+/* The second selector outranks the open right dock's own width, which would otherwise still push. */
+.dock[data-overlay="true"],
+.dock[data-overlay="true"][data-side="right"][data-open="true"] {
   width: 0;
   margin-left: 0;
   opacity: 1;
@@ -345,7 +350,7 @@
   overflow: hidden;
   background: #fff;
   border-radius: 18px;
-  box-shadow: var(--lift-2);
+  box-shadow: var(--lift-1);
   font-size: 14px;
   /* The sheet bar adapts to the sheet's own width, which the docks change. */
   container: sheet / inline-size;
@@ -364,6 +369,17 @@
   min-height: 0;
   overflow-y: auto;
 }
+/* No layer draws a line under its header. What scrolls under a fixed header fades out over the
+   scroller's top 8px, on glass and on white alike. */
+.dock-body,
+.drawer-scroll,
+.sheet-scroll,
+.home-scroll,
+.thread {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 8px);
+  mask-image: linear-gradient(to bottom, transparent, #000 8px);
+  scroll-padding-top: 8px;
+}
 
 .sheet-bar {
   flex: none;
@@ -372,7 +388,6 @@
   gap: 10px;
   min-height: 48px;
   padding: 0 10px 0 18px;
-  border-bottom: 1px solid var(--line);
   font-size: 14px;
 }
 .crumb {
@@ -410,7 +425,7 @@
 }
 .jump:hover {
   background: #eae6de;
-  box-shadow: 0 1px 2px rgba(2, 27, 67, 0.12);
+  box-shadow: var(--lift-0);
   color: var(--navy);
 }
 .jump:active {
@@ -468,6 +483,7 @@
   .sheet-bar {
     flex-wrap: wrap;
     row-gap: 6px;
+    padding-block: 8px;
   }
   .sheet-bar > .crumb {
     flex: 1 0 100%;

@@ -25,11 +25,21 @@
   --glass-edge: rgba(255, 255, 255, 0.8);
   /* Used instead of glass where blur is missing or less transparency is asked for. */
   --glass-solid: #f6f4f0;
-  --lift-1: 0 1px 2px rgba(2, 27, 67, 0.05), 0 4px 14px rgba(2, 27, 67, 0.05);
-  --lift-2: 0 1px 2px rgba(2, 27, 67, 0.08), 0 18px 44px rgba(2, 27, 67, 0.16);
-  --lift-3: 0 2px 6px rgba(2, 27, 67, 0.08), 0 28px 70px rgba(2, 27, 67, 0.22);
-  /* Hover: the element lifting towards you. */
-  --lift-h: 0 1px 2px rgba(2, 27, 67, 0.06), 0 2px 8px rgba(2, 27, 67, 0.07);
+  /*
+   * Height. One light, one formula, even steps: each step up is 6px higher, so its shadow drops 6px
+   * further, spreads 16px wider and is a little darker. Anything one step above the surface it sits
+   * on casts --lift-1, whatever it is: the sheet on the desk, a card in the tray, a row you hover.
+   */
+  /* Touching the surface: a switch's knob, a chosen segment, a plain button under the pointer. */
+  --lift-0: 0 1px 2px rgba(2, 27, 67, 0.1);
+  /* One step up: the sheet, rail and drawers; cards; a hovered or current row, tile or rail item. */
+  --lift-1: 0 1px 2px rgba(2, 27, 67, 0.06), 0 6px 16px rgba(2, 27, 67, 0.06);
+  /* Two steps up: things that float over the sheet: menus, the selection bar, a floating composer. */
+  --lift-2: 0 1px 2px rgba(2, 27, 67, 0.06), 0 12px 32px rgba(2, 27, 67, 0.1);
+  /* Three steps up: what sits over everything: the palette, the answer box, a floating drawer. */
+  --lift-3: 0 1px 2px rgba(2, 27, 67, 0.06), 0 18px 48px rgba(2, 27, 67, 0.14);
+  /* One step down: the tray, pressed into the sheet. */
+  --recess: inset 0 1px 2px rgba(2, 27, 67, 0.06);
   /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */
   --tick-edge: #7c8aa5;
 

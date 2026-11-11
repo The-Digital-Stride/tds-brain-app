@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { SkillInfo } from '../../../shared/contract.ts';
 import { useStore } from '../store.tsx';
 import { Fold } from './Fold.tsx';
@@ -9,8 +9,11 @@ import { starterSkills } from './words.ts';
 function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
   const { startSkill, togglePin } = useStore();
   const { dispatch, modes } = useShell();
+  // The description is long (it tells Claude when to use the skill), so a row shows one line of it.
+  const [open, setOpen] = useState(false);
+  const about = useId();
   return (
-    <li className="line">
+    <li className="line skill-row" data-open={open}>
       <button
         type="button"
         className="line-main"
@@ -31,9 +34,14 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
               </>
             ) : null}
           </span>
-          {skill.description ? <span className="line-meta">{skill.description}</span> : null}
+          {skill.description ? (
+            <span className="line-meta" id={about}>
+              {skill.description}
+            </span>
+          ) : null}
         </span>
       </button>
+      {/* The pin comes first so the chevron always sits at the row's right edge. */}
       <button
         type="button"
         className="icon-btn"
@@ -43,6 +51,18 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
       >
         <Icon name="pin" size={16} />
       </button>
+      {skill.description ? (
+        <button
+          type="button"
+          className="icon-btn skill-more"
+          aria-expanded={open}
+          aria-controls={about}
+          aria-label={`Description of ${skill.title}`}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Icon name="chevron" size={14} />
+        </button>
+      ) : null}
     </li>
   );
 }
@@ -73,9 +93,10 @@ export function SkillsDrawer() {
     </ul>
   );
 
+  // The search sits on the drawer itself, above the list: only the list scrolls.
   return (
-    <div className="drawer-body">
-      <div className="drawer-search">
+    <div className="drawer-split">
+      <div className="drawer-tools">
         <Icon name="search" size={16} />
         <label className="visually-hidden" htmlFor="skill-search">
           Search skills
@@ -89,29 +110,33 @@ export function SkillsDrawer() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      {shown ? (
-        shown.length === 0 ? (
-          <p className="dock-empty">No skills match that search.</p>
-        ) : (
-          list(shown)
-        )
-      ) : (
-        <>
-          {pinned.length > 0 ? (
-            <Fold title="Pinned" count={pinned.length}>
-              {list(pinned)}
-            </Fold>
-          ) : null}
-          {often.length > 0 ? (
-            <Fold title="Used often" count={often.length}>
-              {list(often)}
-            </Fold>
-          ) : null}
-          <Fold title="All skills" count={all.length} defaultOpen={false}>
-            {list(all)}
-          </Fold>
-        </>
-      )}
+      <div className="drawer-scroll">
+        <div className="drawer-body">
+          {shown ? (
+            shown.length === 0 ? (
+              <p className="dock-empty">No skills match that search.</p>
+            ) : (
+              list(shown)
+            )
+          ) : (
+            <>
+              {pinned.length > 0 ? (
+                <Fold title="Pinned" count={pinned.length}>
+                  {list(pinned)}
+                </Fold>
+              ) : null}
+              {often.length > 0 ? (
+                <Fold title="Used often" count={often.length}>
+                  {list(often)}
+                </Fold>
+              ) : null}
+              <Fold title="All skills" count={all.length} defaultOpen={false}>
+                {list(all)}
+              </Fold>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

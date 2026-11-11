@@ -5,6 +5,7 @@ import { DOCK_IDS } from '../shell/Dock.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
+import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
 import { type ChatItem, initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { closeConfirmText, isClearCommand, needsCloseConfirm } from '../state/close.ts';
@@ -78,7 +79,7 @@ export function ChatView() {
   else if (state === 'closed') reason = REASONS.closed;
   const working = state === 'working' || state === 'starting';
   const step = currentStep(chat.items.filter((i) => i.kind === 'tool'));
-  const clientName = live?.client ? (clients.find((c) => c.slug === live.client)?.name ?? live.client) : null;
+  const clientName = live?.client ? placeName(live.client, clients) : null;
 
   // After an answer, focus goes to the next card if one is waiting (it takes focus as it
   // appears), else back to the message box.

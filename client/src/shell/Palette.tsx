@@ -4,7 +4,7 @@ import { useStore } from '../store.tsx';
 import type { PaletteCommand, PaletteOption } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { todoChatDraft } from './words.ts';
+import { placeName, todoChatDraft } from './words.ts';
 
 /** The command palette: Cmd/Ctrl+K or the "Search or jump to" button. Nothing is rendered while shut. */
 export function Palette() {
@@ -27,8 +27,7 @@ function PaletteDialog() {
 
   const groups = useMemo(() => {
     // Hints show a client's name, never its folder slug.
-    const named = (slug: string | null) =>
-      slug ? (boot?.clients.find((c) => c.slug === slug)?.name ?? slug) : null;
+    const named = (slug: string | null) => (slug ? placeName(slug, boot?.clients ?? []) : null);
     const g = paletteGroups(query, {
       live: sessions?.live ?? [],
       skills: boot?.skills ?? [],

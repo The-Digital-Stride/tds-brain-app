@@ -12,8 +12,8 @@ describe('APPS', () => {
     expect(APPS).toEqual([]);
   });
 
-  it('holds the example apps, each with a panel of its own, when the build asks for examples', async () => {
-    vi.stubEnv('VITE_EXAMPLE_APPS', '1');
+  it('holds the library apps, each with a panel of its own, when the build asks for them', async () => {
+    vi.stubEnv('VITE_LIBRARY_APPS', '1');
     vi.resetModules();
     const { APPS } = await import('./apps.ts');
     expect(APPS.map((a) => a.id)).toEqual(['images', 'documents']);

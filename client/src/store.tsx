@@ -75,6 +75,8 @@ export interface Store {
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
+  /** Counts up when the library's files change or the server restarts; the library screens refetch. */
+  libraryVersion: number;
   retry: () => void;
   /** The chat whose inline "Close anyway?" is showing in the header, if any. */
   closeRequest: string | null;
@@ -124,6 +126,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const restored = useRef(false);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef(activeChat);
   activeRef.current = activeChat;
@@ -230,6 +233,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Events may have been missed while we were away.
           dropped = false;
           loadAll();
+          setLibraryVersion((n) => n + 1);
         }
       };
       es.onmessage = (e) => {
@@ -246,10 +250,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         const ev = frame.event;
         if (ev.type === 'hello') {
-          if (serverStartedAt.current && serverStartedAt.current !== ev.serverStartedAt) loadAll();
+          if (serverStartedAt.current && serverStartedAt.current !== ev.serverStartedAt) {
+            loadAll();
+            setLibraryVersion((n) => n + 1);
+          }
           serverStartedAt.current = ev.serverStartedAt;
         } else if (ev.type === 'brain-changed') {
           if (ev.area === 'todos') void loadTodos();
+          else if (ev.area === 'library') setLibraryVersion((n) => n + 1);
           else void loadBootstrap();
         } else if (ev.type === 'sessions-changed') {
           void loadSessions();
@@ -475,6 +483,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updatePrefs,
       togglePin,
       completeTodo,
+      libraryVersion,
       retry: loadAll,
       composerFocus,
       requestComposerFocus: requestFocus,
@@ -504,6 +513,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updatePrefs,
       togglePin,
       completeTodo,
+      libraryVersion,
       loadAll,
       composerFocus,
       requestFocus,

@@ -94,7 +94,7 @@ export interface UsedSkill {
   lastUsed: string;
 }
 
-export type BrainArea = 'skills' | 'todos' | 'clients' | 'identity' | 'usage';
+export type BrainArea = 'skills' | 'todos' | 'clients' | 'identity' | 'usage' | 'library';
 
 export interface BrainHealth {
   ok: boolean;
@@ -142,8 +142,132 @@ export interface BrainReaders {
    * names that `skills(identity)` lists. Defaults: 30 days, top 6.
    */
   usedOften(identity: Identity, opts?: { days?: number; limit?: number }): Promise<UsedSkill[]>;
+  /** Whose files can be shown: the person's own `personal/` folder first, then each client. */
+  libraryScopes(): Promise<LibraryScope[]>;
+  /** Every image and document in one scope, or null when the scope is not one `libraryScopes` lists. */
+  library(scope: string): Promise<LibraryListing | null>;
+  /**
+   * The file behind an id from `library`, for the routes that serve a picture, text or a page.
+   * Null when the id is unknown, the file has gone, or it no longer resolves to a real file inside
+   * the brain that the rules allow. The browser never sends a path, only ids.
+   */
+  libraryFile(id: string): Promise<LibraryFile | null>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
   watch(onChange: (area: BrainArea) => void): () => void;
+}
+
+// ---------------------------------------------------------------------------
+// The library: images and documents found in the brain (read-only)
+// ---------------------------------------------------------------------------
+
+export type LibraryKind = 'image' | 'document';
+
+/** What sort of document, from its extension: pdf | doc (md, txt, docx, html) | sheet (csv, xlsx) | deck (pptx). */
+export type DocFormat = 'pdf' | 'doc' | 'sheet' | 'deck';
+
+/**
+ * How the app can open the file itself, or null when it can only be listed:
+ * 'image' (a large re-encoded picture), 'text' (Markdown or plain text), 'page' (HTML, sandboxed) or
+ * 'pdf' (the browser's own PDF reader, in a frame).
+ */
+export type LibraryView = 'image' | 'text' | 'page' | 'pdf';
+
+export interface LibraryScope {
+  /** `personal`, or `client:<slug>`. (`shared:<name>` is reserved for agency folders; none yet.) */
+  id: string;
+  /** "My personal files", or the client's name. */
+  name: string;
+  kind: 'personal' | 'client' | 'shared';
+}
+
+export interface LibraryItem {
+  /**
+   * Stable for a path, and the only thing the browser sends back. Made as `<scope id>.<hash of the
+   * path>`, so the server can find the file again after a restart by re-listing that one scope. The
+   * client treats it as opaque and never takes it apart.
+   */
+  id: string;
+  kind: LibraryKind;
+  /** Null for an image. */
+  format: DocFormat | null;
+  /** Lower case, no dot: "png", "md". */
+  ext: string;
+  /**
+   * The card it is shown in. From the rules ("Reports", "Brand"); a file no rule matches takes its
+   * first folder's name, tidied up; a file loose in the scope's root goes in "Other".
+   */
+  group: string;
+  /** The file's name. */
+  name: string;
+  /** For people: a Markdown file's first heading when it has one, else the file name tidied up. */
+  title: string;
+  /** From the brain's root, forward slashes: "clients/acme-heating/reports/x.pdf". Shown and copied; never sent back. */
+  path: string;
+  bytes: number;
+  /** ISO time the file last changed. */
+  modified: string;
+  /** Pixels, for an image whose size could be read. */
+  width: number | null;
+  height: number | null;
+  /**
+   * True when `GET /api/library/thumb/<id>` can try to make a picture of it. False (not an image, or
+   * over the 50 MB cap, 1 MB for an SVG): show the standard tile. A true can still fail (a broken file): the route
+   * answers 404 and the screen falls back to the tile.
+   */
+  thumb: boolean;
+  /**
+   * Null when the app cannot open it, or an HTML page is over 5 MB. Text over 1 MB still opens: the
+   * text route sends the first 1 MB, marked `truncated`.
+   */
+  view: LibraryView | null;
+}
+
+export interface LibraryListing {
+  scope: string;
+  /**
+   * The cards to show, in order, and only those that have items: the rules' cards in the rules'
+   * order, then cards named after a folder A to Z, then "Other". In `personal` every card is named
+   * after a folder, so A to Z with "Other" last.
+   */
+  groups: string[];
+  items: LibraryItem[];
+  /** True when the scope held more files than the cap and the rest were left out. */
+  truncated: boolean;
+}
+
+/** Server only: where an item's file really is. */
+export interface LibraryFile {
+  item: LibraryItem;
+  /** Absolute, already checked to be a real file inside the brain. */
+  absPath: string;
+  /** Changes whenever the file's size or time changes; keys the picture cache. */
+  version: string;
+}
+
+/** The picture widths the server will make. Anything else is refused. */
+export const THUMB_WIDTHS = [96, 320, 1600] as const;
+export type ThumbWidth = (typeof THUMB_WIDTHS)[number];
+
+/** `GET /api/library/text/<id>`. */
+export interface LibraryText {
+  /** The file's text with any YAML frontmatter block at the top removed. */
+  text: string;
+  /** True when the file was longer than the cap and was cut. */
+  truncated: boolean;
+}
+
+/**
+ * Server only: makes and caches small pictures in the app's data folder, never in the brain.
+ * Resolves to the cached file's absolute path (always WebP), or null when no picture can be made;
+ * a failure is remembered for that `version` so it is not retried until the file changes.
+ *
+ * The source is read into memory and handed to the image library as bytes, never as a path: an SVG
+ * opened by path can pull in neighbouring files, and from bytes it cannot. The picture fits inside
+ * `width` wide and 16,000 high, is turned the right way up, and is refused over a pixel limit or a
+ * time limit.
+ */
+export interface Thumbnailer {
+  get(file: LibraryFile, width: ThumbWidth): Promise<string | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +618,43 @@ export const ROUTES = {
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
+  /** `GET`: LibraryScope[]. */
+  libraryScopes: '/api/library/scopes',
+  /**
+   * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
+   *
+   * Errors on every library route: 400 `bad-request` for a width that is not in THUMB_WIDTHS or an
+   * item whose `thumb` or `view` does not fit the route; 404 `not-found` for an id that is unknown,
+   * gone or no longer allowed. Error replies are `no-store`.
+   */
+  library: (scope: string) => `/api/library?scope=${encodeURIComponent(scope)}`,
+  /**
+   * `GET`: image/webp, for an item with `thumb: true`. `w` must be one of THUMB_WIDTHS. `v` is the
+   * item's `modified` and only makes the address change when the file does; the server ignores it.
+   * A picture is sent with `Cache-Control: private, max-age=31536000, immutable`.
+   */
+  libraryThumb: (id: string, w: ThumbWidth, v: string) =>
+    `/api/library/thumb/${encodeURIComponent(id)}?w=${w}&v=${encodeURIComponent(v)}`,
+  /** `GET`: LibraryText, for an item with `view: 'text'`. */
+  libraryText: (id: string) => `/api/library/text/${encodeURIComponent(id)}`,
+  /**
+   * `GET`: the HTML file itself, for an item with `view: 'page'`, sent with its own strict policy
+   * (sandboxed: no scripts, no access to the app) so it is safe inside a sandboxed frame. Its
+   * errors are a small plain HTML page under the same policy, never JSON, because a frame shows them.
+   */
+  libraryPage: (id: string) => `/api/library/page/${encodeURIComponent(id)}`,
+  /**
+   * `GET`: the PDF itself, for an item with `view: 'pdf'`, as `application/pdf`, `inline`, `nosniff`,
+   * under its own policy (only the app may frame it). Refused unless the file really starts as a
+   * PDF. Errors are a small plain HTML page under the page policy, as for `libraryPage`.
+   */
+  libraryPdf: (id: string) => `/api/library/pdf/${encodeURIComponent(id)}`,
+  /**
+   * `GET`: the file itself as a download, for any listed item. Always `application/octet-stream`
+   * with `Content-Disposition: attachment`, `nosniff` and a sandbox policy, so the browser saves it
+   * and never shows it inside the app, whatever is in it. `no-store`.
+   */
+  libraryFile: (id: string) => `/api/library/file/${encodeURIComponent(id)}`,
   stream: (sessionId?: string | null, after = 0) =>
     sessionId ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}` : '/api/stream',
 } as const;

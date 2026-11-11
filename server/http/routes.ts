@@ -2,24 +2,34 @@
  * The JSON API (the route table in `shared/contract.ts`). Every request reaching here has already
  * passed the security gate in `security.ts`.
  */
+import { promises as fs } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type {
-  ApiError,
-  ApiErrorCode,
-  AppPrefs,
-  AppStore,
-  Bootstrap,
-  BrainHealth,
-  BrainReaders,
-  EngineHealth,
-  Identity,
-  PermissionReply,
-  QuestionReply,
-  StartSessionRequest,
-  TodoList,
+import { pipeline } from 'node:stream/promises';
+import { StringDecoder } from 'node:string_decoder';
+import {
+  type ApiError,
+  type ApiErrorCode,
+  type AppPrefs,
+  type AppStore,
+  type Bootstrap,
+  type BrainHealth,
+  type BrainReaders,
+  type EngineHealth,
+  type Identity,
+  type LibraryFile,
+  type LibraryText,
+  type PermissionReply,
+  type QuestionReply,
+  type StartSessionRequest,
+  THUMB_WIDTHS,
+  type Thumbnailer,
+  type ThumbWidth,
+  type TodoList,
 } from '../../shared/contract.ts';
+import { parseFrontmatter } from '../brain/frontmatter.ts';
+import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
-import { MAX_BODY_BYTES } from './security.ts';
+import { isLibraryPagePath, MAX_BODY_BYTES, PAGE_CSP, PDF_CSP } from './security.ts';
 import { type AppEventHub, openStream } from './stream.ts';
 
 export interface RouteContext {
@@ -27,6 +37,8 @@ export interface RouteContext {
   store: AppStore;
   sessions: SessionManager;
   hub: AppEventHub;
+  /** Makes and caches the library's small pictures, in the app's data folder. */
+  thumbs: Thumbnailer;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
   appVersion: string;
@@ -237,6 +249,266 @@ async function todos(ctx: RouteContext): Promise<TodoList> {
   return safe(ctx.brain.todos(identity), EMPTY_TODOS);
 }
 
+// ---------------------------------------------------------------------------
+// The library (read-only). The browser only ever sends an id; the brain readers map it to a file
+// they have checked, and each route then checks the item suits it.
+// ---------------------------------------------------------------------------
+
+const LIBRARY_ITEM = /^\/api\/library\/(thumb|text|page|pdf|file)\/([^/]+)$/;
+/** A download is never run or shown, even if something opens it in place of saving it. */
+const DOWNLOAD_CSP = "sandbox; default-src 'none'";
+const THUMB_CACHE = 'private, max-age=31536000, immutable';
+const NOT_FOUND = 'That file could not be found. It may have been moved or deleted.';
+const WRONG_VIEW = 'That file cannot be opened that way.';
+
+function decodeId(raw: string): string | null {
+  try {
+    const id = decodeURIComponent(raw);
+    return id.length > 0 && id.length <= 400 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function libraryFile(ctx: RouteContext, rawId: string): Promise<LibraryFile> {
+  const id = decodeId(rawId);
+  const file = id ? await safe(ctx.brain.libraryFile(id), null) : null;
+  if (!file) throw new HttpError(404, 'not-found', NOT_FOUND);
+  return file;
+}
+
+function thumbWidth(raw: string | null): ThumbWidth {
+  const n = raw !== null && /^[1-9][0-9]{0,4}$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!(THUMB_WIDTHS as readonly number[]).includes(n)) {
+    throw new HttpError(400, 'bad-request', 'That picture size is not one the app makes.');
+  }
+  return n as ThumbWidth;
+}
+
+async function sendThumb(res: ServerResponse, url: URL, rawId: string, ctx: RouteContext): Promise<void> {
+  const width = thumbWidth(url.searchParams.get('w'));
+  const file = await libraryFile(ctx, rawId);
+  if (!file.item.thumb) throw new HttpError(400, 'bad-request', 'There is no picture of that file.');
+  const path = await safe(ctx.thumbs.get(file, width), null);
+  const data = path ? await safe(fs.readFile(path), null) : null;
+  if (!data) throw new HttpError(404, 'not-found', 'A picture of that file could not be made.');
+  res.writeHead(200, {
+    'Content-Type': 'image/webp',
+    'Cache-Control': THUMB_CACHE,
+    'Content-Length': data.length,
+  });
+  res.end(data);
+}
+
+async function sendText(res: ServerResponse, rawId: string, ctx: RouteContext): Promise<void> {
+  const file = await libraryFile(ctx, rawId);
+  if (file.item.view !== 'text') throw new HttpError(400, 'bad-request', WRONG_VIEW);
+  const read = await readChecked(file, TEXT_MAX_BYTES);
+  if (!read) throw new HttpError(404, 'not-found', NOT_FOUND);
+  // A cut can fall inside a character: the decoder keeps only whole ones.
+  const text = new StringDecoder('utf8').write(read.data);
+  const body: LibraryText = { text: parseFrontmatter(text).body, truncated: read.truncated };
+  sendJson(res, 200, body);
+}
+
+/**
+ * `attachment` (or `inline`) with a plain-ASCII name for old browsers and the exact name as UTF-8
+ * (RFC 6266 and RFC 8187). Quotes, backslashes, controls and anything outside printable ASCII become
+ * `_` in the plain one.
+ */
+export function attachmentHeader(name: string, disposition: 'attachment' | 'inline' = 'attachment'): string {
+  const plain = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const exact = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${disposition}; filename="${plain}"; filename*=UTF-8''${exact}`;
+}
+
+/** A real PDF has `%PDF-` within its first 1 KB (where readers look for it). */
+const PDF_HEAD_BYTES = 1024;
+
+async function sendDownload(res: ServerResponse, rawId: string, ctx: RouteContext): Promise<void> {
+  const file = await libraryFile(ctx, rawId);
+  const sent = await sendWhole(res, file, {
+    'Content-Security-Policy': DOWNLOAD_CSP,
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': attachmentHeader(file.item.name),
+  });
+  if (!sent) throw new HttpError(404, 'not-found', NOT_FOUND);
+}
+
+/** The PDF route. Like the page route, its errors are a small page, since a frame shows them. */
+async function sendPdf(req: IncomingMessage, res: ServerResponse, rawId: string, ctx: RouteContext) {
+  try {
+    if ((req.method ?? 'GET').toUpperCase() !== 'GET') {
+      sendPageError(res, 405, 'That is not something this address does.');
+      return;
+    }
+    const id = decodeId(rawId);
+    const file = id ? await safe(ctx.brain.libraryFile(id), null) : null;
+    if (!file) {
+      sendPageError(res, 404, NOT_FOUND);
+      return;
+    }
+    if (file.item.view !== 'pdf') {
+      sendPageError(res, 400, WRONG_VIEW);
+      return;
+    }
+    const head = await readChecked(file, PDF_HEAD_BYTES);
+    if (!head) {
+      sendPageError(res, 404, NOT_FOUND);
+      return;
+    }
+    // A file named .pdf that is something else (a web page, say) is never handed to the browser to show.
+    if (!head.data.includes('%PDF-', 0, 'latin1')) {
+      sendPageError(res, 400, 'That file is not a PDF the app can show. Download it instead.');
+      return;
+    }
+    const sent = await sendWhole(res, file, {
+      'Content-Security-Policy': PDF_CSP,
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': attachmentHeader(file.item.name, 'inline'),
+    });
+    if (!sent) sendPageError(res, 404, NOT_FOUND);
+  } catch {
+    if (res.headersSent) res.end();
+    else sendPageError(res, 500, 'Something went wrong in the app. Try again.');
+  }
+}
+
+/**
+ * Streams a checked file whole, with `nosniff` and `no-store` added to the headers given. False,
+ * having sent nothing, when the file is no longer the one that was checked.
+ */
+async function sendWhole(
+  res: ServerResponse,
+  file: LibraryFile,
+  headers: { 'Content-Security-Policy': string; 'Content-Type': string; 'Content-Disposition': string },
+): Promise<boolean> {
+  const opened = await openChecked(file);
+  if (!opened) return false;
+  const { handle, size } = opened;
+  try {
+    res.setHeader('Content-Security-Policy', headers['Content-Security-Policy']);
+    res.writeHead(200, {
+      ...headers,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+      'Content-Length': size,
+    });
+    if (size === 0) res.end();
+    // Exactly the bytes the length promised, even if the file grows while it is being sent.
+    else await pipeline(handle.createReadStream({ start: 0, end: size - 1, autoClose: false }), res);
+    return true;
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** Sends HTML under the page policy, replacing the app's usual one. */
+function sendPageHtml(res: ServerResponse, status: number, body: string | Buffer): void {
+  const length = typeof body === 'string' ? Buffer.byteLength(body) : body.length;
+  res.setHeader('Content-Security-Policy', PAGE_CSP);
+  res.writeHead(status, {
+    'Content-Security-Policy': PAGE_CSP,
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+    'Content-Length': length,
+  });
+  res.end(body);
+}
+
+/** The page route's errors: a tiny plain page under the same policy, never JSON (a frame shows it). */
+export function sendPageError(res: ServerResponse, status: number, message: string): void {
+  sendPageHtml(
+    res,
+    status,
+    `<!doctype html>
+<html lang="en-GB">
+<head><meta charset="utf-8"><title>Cannot show this file</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:2rem;color:#444}</style></head>
+<body><p>${escapeHtml(message)}</p></body>
+</html>
+`,
+  );
+}
+
+async function sendPage(req: IncomingMessage, res: ServerResponse, rawId: string, ctx: RouteContext) {
+  try {
+    if ((req.method ?? 'GET').toUpperCase() !== 'GET') {
+      sendPageError(res, 405, 'That is not something this address does.');
+      return;
+    }
+    const id = decodeId(rawId);
+    const file = id ? await safe(ctx.brain.libraryFile(id), null) : null;
+    if (!file) {
+      sendPageError(res, 404, NOT_FOUND);
+      return;
+    }
+    if (file.item.view !== 'page') {
+      sendPageError(res, 400, WRONG_VIEW);
+      return;
+    }
+    const read = await readChecked(file, PAGE_MAX_BYTES);
+    if (!read) {
+      sendPageError(res, 404, NOT_FOUND);
+      return;
+    }
+    if (read.truncated) {
+      sendPageError(res, 400, 'That page is too large to open in the app.');
+      return;
+    }
+    sendPageHtml(res, 200, read.data);
+  } catch {
+    if (res.headersSent) res.end();
+    else sendPageError(res, 500, 'Something went wrong in the app. Try again.');
+  }
+}
+
+async function libraryRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  ctx: RouteContext,
+): Promise<boolean> {
+  const method = (req.method ?? 'GET').toUpperCase();
+  const path = url.pathname;
+  if (isLibraryPagePath(path)) {
+    const m = LIBRARY_ITEM.exec(path);
+    if (m?.[1] === 'page' && m[2]) await sendPage(req, res, m[2], ctx);
+    else if (m?.[1] === 'pdf' && m[2]) await sendPdf(req, res, m[2], ctx);
+    else sendPageError(res, 404, NOT_FOUND);
+    return true;
+  }
+  if (path === '/api/library/scopes') {
+    if (method !== 'GET') throw methodNotAllowed();
+    sendJson(res, 200, await safe(ctx.brain.libraryScopes(), []));
+    return true;
+  }
+  if (path === '/api/library') {
+    if (method !== 'GET') throw methodNotAllowed();
+    const scope = url.searchParams.get('scope');
+    if (!scope) throw new HttpError(400, 'bad-request', 'Choose whose files to show.');
+    const listing = await safe(ctx.brain.library(scope), null);
+    if (!listing) throw new HttpError(404, 'not-found', 'Those files could not be found.');
+    sendJson(res, 200, listing);
+    return true;
+  }
+  const m = LIBRARY_ITEM.exec(path);
+  if (!m?.[1] || !m[2]) return false;
+  if (method !== 'GET') throw methodNotAllowed();
+  if (m[1] === 'thumb') await sendThumb(res, url, m[2], ctx);
+  else if (m[1] === 'file') await sendDownload(res, m[2], ctx);
+  else await sendText(res, m[2], ctx);
+  return true;
+}
+
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close)$/;
 
 function methodNotAllowed(): HttpError {
@@ -335,6 +607,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     sendJson(res, 200, { ok: true });
     return;
   }
+
+  if (path.startsWith('/api/library') && (await libraryRoute(req, res, url, ctx))) return;
 
   if (path === '/api/stream') {
     if (method !== 'GET') throw methodNotAllowed();

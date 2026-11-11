@@ -2,11 +2,12 @@ import { lazy } from 'react';
 import type { AppSlot } from './contract.ts';
 
 /**
- * The example apps (`client/src/apps/images`, `client/src/apps/documents`): sample data only, there
- * to show how an app sits in the shell. They share `client/src/apps/shared`. They are left out of a
- * normal build, and their code with them; a build with `VITE_EXAMPLE_APPS=1` adds them to the rail.
+ * The library apps (`client/src/apps/images`, `client/src/apps/documents`): the images and
+ * documents the server lists from the brain. They share `client/src/apps/shared`. They are left out
+ * of a normal build, and their code with them; a build with `VITE_LIBRARY_APPS=1` adds them to the
+ * rail. (The server routes are always there.)
  */
-function imagesExample(): AppSlot {
+function imagesApp(): AppSlot {
   const ui = () => import('../apps/images/ui.ts');
   return {
     id: 'images',
@@ -19,7 +20,7 @@ function imagesExample(): AppSlot {
   };
 }
 
-function documentsExample(): AppSlot {
+function documentsApp(): AppSlot {
   const ui = () => import('../apps/documents/ui.ts');
   return {
     id: 'documents',
@@ -36,5 +37,4 @@ function documentsExample(): AppSlot {
  * Apps on the rail. Empty until a real app exists: the rail shows an "Apps" group only when this
  * has entries, and the view `app:<id>` shows the matching `Sheet`.
  */
-export const APPS: AppSlot[] =
-  import.meta.env.VITE_EXAMPLE_APPS === '1' ? [imagesExample(), documentsExample()] : [];
+export const APPS: AppSlot[] = import.meta.env.VITE_LIBRARY_APPS === '1' ? [imagesApp(), documentsApp()] : [];

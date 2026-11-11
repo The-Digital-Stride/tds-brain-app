@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { BrainArea } from '../../shared/contract.ts';
 import { createBrainReaders } from './index.ts';
 import { copyFixture, FIXTURE } from './test-helpers.ts';
+import { watchBrain } from './watch.ts';
 
 describe('health', () => {
   it('is ok for the fixture and explains a missing brain', async () => {
@@ -28,5 +29,59 @@ describe('watch', () => {
     stop();
     expect(seen.filter((a) => a === 'todos')).toHaveLength(1);
     expect(() => createBrainReaders('/nonexistent/brain').watch(() => {})()).not.toThrow();
+  });
+});
+
+describe('watch: library', () => {
+  it('fires library once for a change in a client or personal folder, passing the changed path on', async () => {
+    const root = copyFixture();
+    const seen: BrainArea[] = [];
+    const changed: (string | null)[] = [];
+    const live: string[] = [];
+    const stop = watchBrain(root, (a) => seen.push(a), {
+      onLibraryChange: (rel) => changed.push(rel),
+      onLibraryLive: (folder, on) => live.push(`${folder}:${on}`),
+    });
+    expect(live).toEqual(['clients:true', 'personal:true']);
+    await new Promise((r) => setTimeout(r, 500));
+    writeFileSync(join(root, 'clients', 'acme-heating', 'reports', 'new.pdf'), 'a');
+    writeFileSync(join(root, 'personal', 'notes', 'new.md'), 'a');
+    await new Promise((r) => setTimeout(r, 1200));
+    stop();
+    expect(seen.filter((a) => a === 'library')).toHaveLength(1);
+    expect(changed).toContain('clients/acme-heating/reports/new.pdf');
+    expect(changed).toContain('personal/notes/new.md');
+    expect(live).toEqual(['clients:true', 'personal:true', 'clients:false', 'personal:false']);
+  });
+
+  it('ignores changes in never-listed places', async () => {
+    const root = copyFixture();
+    mkdirSync(join(root, 'clients', 'acme-heating', 'crm', 'data'), { recursive: true });
+    const seen: BrainArea[] = [];
+    const changed: (string | null)[] = [];
+    const stop = watchBrain(root, (a) => seen.push(a), { onLibraryChange: (rel) => changed.push(rel) });
+    await new Promise((r) => setTimeout(r, 500));
+    seen.length = 0;
+    changed.length = 0;
+    writeFileSync(join(root, 'clients', 'acme-heating', 'crm', 'data', 'people.csv'), 'a');
+    writeFileSync(join(root, 'clients', 'acme-heating', 'reports', '.draft.md'), 'b');
+    await new Promise((r) => setTimeout(r, 1200));
+    stop();
+    expect(changed).toEqual([]);
+    expect(seen).not.toContain('library');
+  });
+
+  it('a listing picks up a new file once the watcher has seen it', async () => {
+    const root = copyFixture();
+    const brain = createBrainReaders(root);
+    const stop = brain.watch(() => {});
+    await new Promise((r) => setTimeout(r, 500));
+    const before = await brain.library('client:acme-heating');
+    writeFileSync(join(root, 'clients', 'acme-heating', 'reports', 'added.pdf'), 'a');
+    await new Promise((r) => setTimeout(r, 800));
+    const after = await brain.library('client:acme-heating');
+    stop();
+    expect(before?.items.map((i) => i.name)).not.toContain('added.pdf');
+    expect(after?.items.map((i) => i.name)).toContain('added.pdf');
   });
 });

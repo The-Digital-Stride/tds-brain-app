@@ -184,6 +184,10 @@ kbd {
   text-align: center;
   white-space: nowrap;
 }
+a.btn,
+a.btn:hover {
+  text-decoration: none;
+}
 .btn:hover:not(:disabled) {
   background: #eae6de;
   box-shadow: var(--lift-0);

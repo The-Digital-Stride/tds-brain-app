@@ -1,16 +1,16 @@
-import { useState } from 'react';
 import { attentionFor, type SkillInfo, type TodoItem } from '../../../shared/contract.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { sortChats } from '../state/chats.ts';
+import { clientChoice, clientSlugOf, scopeForClient, useClientChoice } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, needsYou, summary } from '../state/home.ts';
 import { useStore } from '../store.tsx';
 import type { DrawerName } from './contract.ts';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { STATE_WORDS, starterSkills, todoChatDraft } from './words.ts';
+import { placeName, STATE_WORDS, starterSkills, todoChatDraft } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
 function metaParts(
@@ -31,10 +31,13 @@ export function Home() {
     useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
-  const [client, setClient] = useState<string>(() => {
-    const last = boot?.prefs.lastClient;
-    return last && clients.some((c) => c.slug === last) ? last : '';
-  });
+  // The client chosen here or in an app; until one is, the last client a chat was started for.
+  const listed = (slug: string | null | undefined): slug is string =>
+    typeof slug === 'string' && clients.some((c) => c.slug === slug);
+  const picked = clientSlugOf(useClientChoice());
+  const last = boot?.prefs.lastClient;
+  const client = picked === '' || listed(picked) ? picked : listed(last) ? last : '';
+  const setClient = (slug: string) => clientChoice.set(scopeForClient(slug));
 
   if (!boot) return null;
 
@@ -43,8 +46,7 @@ export function Home() {
   const mine = todos?.mine ?? [];
   const need = needsYou(mine, today);
   const openDrawer = (drawer: DrawerName) => dispatch({ type: 'open-drawer', drawer });
-  const clientName = (slug: string | null) =>
-    slug ? (clients.find((c) => c.slug === slug)?.name ?? slug) : null;
+  const clientName = (slug: string | null) => (slug ? placeName(slug, clients) : null);
 
   const openTodo = (todo: TodoItem) => {
     const chat = chatForTodo(todo.id, live);

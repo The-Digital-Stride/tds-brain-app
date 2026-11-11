@@ -4,6 +4,9 @@ import type {
   AppPrefs,
   Bootstrap,
   CompleteTodoRequest,
+  LibraryListing,
+  LibraryScope,
+  LibraryText,
   OkResponse,
   PermissionReply,
   QuestionReply,
@@ -76,6 +79,9 @@ export const api = {
     request<OkResponse>('POST', ROUTES.sessionAnswer(id), reply),
   interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
+  libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
+  library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
+  libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
 };
 
 /** The URL for the one event stream a tab holds. */

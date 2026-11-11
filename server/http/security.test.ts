@@ -13,8 +13,10 @@ import {
   isAllowedHost,
   isAllowedOrigin,
   isJsonContentType,
+  isLibraryPagePath,
   MAX_BODY_BYTES,
   MAX_LIVE_CODES,
+  PAGE_CSP,
   parseCookies,
   pingProof,
   SECURITY_HEADERS,
@@ -342,6 +344,32 @@ describe('security headers', () => {
     expect(SECURITY_HEADERS['Referrer-Policy']).toBe('no-referrer');
     const names = Object.keys(SECURITY_HEADERS).map((h) => h.toLowerCase());
     expect(names.some((h) => h.startsWith('access-control-'))).toBe(false);
+  });
+
+  it('keeps frames to the app itself: the library viewer relies on it to stop a page leaving', () => {
+    const csp = SECURITY_HEADERS['Content-Security-Policy'] ?? '';
+    const directives = new Map(
+      csp.split(';').map((d) => {
+        const [name = '', ...values] = d.trim().split(/\s+/);
+        return [name.toLowerCase(), values] as const;
+      }),
+    );
+    expect(directives.get('default-src')).toEqual(["'self'"]);
+    const frameSrc = directives.get('frame-src') ?? directives.get('child-src');
+    if (frameSrc) expect(frameSrc.every((v) => v === "'self'" || v === "'none'")).toBe(true);
+  });
+
+  it('gives the library page route its own sandboxed policy', () => {
+    expect(PAGE_CSP).toBe(
+      "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'",
+    );
+    expect(isLibraryPagePath(ROUTES.libraryPage('client:acme.0123'))).toBe(true);
+    expect(isLibraryPagePath('/api/library/page/')).toBe(false);
+    expect(isLibraryPagePath('/api/library/text/x')).toBe(false);
+    expect(isLibraryPagePath('/api/library/pages/x')).toBe(false);
+    // A PDF is shown in a frame too, so its errors are a page as well.
+    expect(isLibraryPagePath(ROUTES.libraryPdf('client:acme.0123'))).toBe(true);
+    expect(isLibraryPagePath('/api/library/pdf/')).toBe(false);
   });
 
   it('caps bodies at 64 KB', () => {

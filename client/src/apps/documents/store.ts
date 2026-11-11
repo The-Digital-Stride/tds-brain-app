@@ -1,20 +1,21 @@
+import type { DocFormat } from '../../../../shared/contract.ts';
 import { createLibraryStore, type LibraryState, useLibrary } from '../shared/store.ts';
-import { DOC_CLIENTS, type Format } from './data.ts';
 import type { Sort } from './library.ts';
 
 /** What the Documents app is showing; shared by its sheet and its panel. */
 export interface DocsState extends LibraryState {
   query: string;
-  format: Format | 'all';
+  format: DocFormat | 'all';
   sort: Sort;
 }
 
 const initial = (): DocsState => ({
-  client: DOC_CLIENTS[0]?.slug ?? '',
+  scope: '',
   query: '',
   format: 'all',
   sort: 'newest',
-  currentId: null,
+  current: null,
+  viewing: null,
   ticked: new Set(),
 });
 

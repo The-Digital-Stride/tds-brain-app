@@ -18,7 +18,19 @@
   font-feature-settings: "calt" 0;
 }
 
-/* Tools: client, search, the app's own control; then the filter and the summary ----------------- */
+/* The sheet's body while a file is open in its place is hidden, not removed, so the list keeps its place. */
+.lib-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+.lib-main[hidden] {
+  display: none;
+}
+
+/* Tools: scope, search, the app's own control; then the filter and the summary ----------------- */
 .lib-tools,
 .lib-filter {
   display: flex;
@@ -54,7 +66,7 @@
   margin-left: auto;
 }
 .lib-filter .seg {
-  flex: 1 1 420px;
+  flex: 1 1 300px;
   max-width: 560px;
 }
 .lib-summary {
@@ -63,9 +75,32 @@
   color: var(--iron);
   white-space: nowrap;
 }
+/* In the tools row the summary takes the free space, so the layout control sits against it. */
+.lib-tools .lib-summary + .seg {
+  margin-left: 0;
+}
 .lib-empty {
   margin: 0;
   padding: 24px 4px;
+  color: var(--iron);
+}
+.lib-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 4px;
+}
+.lib-failed p {
+  margin: 0;
+  color: var(--iron);
+}
+/* A quiet line: a cap that was hit, or a file cut short. */
+.lib-note {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--iron);
 }
 
@@ -105,15 +140,21 @@
   cursor: pointer;
 }
 .lib-tick {
+  position: relative;
+  z-index: 1;
   margin: 0;
+}
+/* The whole item answers a click, not only the inner button: the button's hit area fills the item. */
+.lib-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 /* Rows: the tray's own (Home's hover and pressed states apply). */
 .lib .lib-row {
+  position: relative;
   gap: 10px;
   padding: 5px 8px;
-}
-.lib .lib-row:hover {
-  transform: none;
 }
 .lib-row .lib-open {
   flex: 1;
@@ -121,13 +162,20 @@
   align-items: center;
   gap: 10px;
 }
-/* The current item: the wash fill and a heavier name. */
+/* The current item is a layer of its own: the wash fill, raised one step, and a heavier name. */
 .lib .lib-list > [data-current="true"] {
   background: var(--wash);
-  box-shadow: none;
+  box-shadow: var(--lift-1);
 }
 .lib .lib-list > [data-current="true"]:hover {
   background: #d9e8fc;
+  box-shadow: var(--lift-1);
+}
+/* Pressed is the tray fill with no shadow, on the current item too. */
+.lib .lib-list > [data-current="true"]:active {
+  background: var(--tray);
+  box-shadow: none;
+  transform: none;
 }
 .lib [data-current="true"] .line-title {
   font-weight: 600;
@@ -181,36 +229,84 @@
   color: var(--iron);
   overflow-wrap: anywhere;
 }
-.lib-tags {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
+/* Two rows on purpose: the actions on the file, then the two file utilities (Download, Copy file path). */
+.lib-actions {
+  display: grid;
+  gap: 6px;
   padding: 0 4px;
 }
-.lib-actions {
+.lib-actions-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 4px;
 }
 .lib-detail .kv {
   padding: 0 4px;
 }
-.kv-cap::first-letter {
-  text-transform: uppercase;
+
+/* The viewer: a file open on the sheet in place of the list ---------------------------------------- */
+.lib-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
 }
-.lib-used {
-  list-style: none;
+.lib-viewer:focus {
+  outline: none;
+}
+/* The viewer sits on the tray like the lists do: one white card, whatever the file. */
+.lib-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-top: 0;
+}
+/* A picture sits flat on the white card with a hairline edge and no shadow. */
+.tray .lib-pic {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  padding: 8px;
+}
+.lib-viewer-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 150px);
+  object-fit: contain;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+.tray .lib-doc {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 24px;
+}
+.lib-text {
   margin: 0;
-  padding: 0 8px;
-  font-size: 13px;
+  font: 400 14px / 1.6 var(--body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.lib-used li {
-  padding: 6px 0;
-  border-top: 1px solid var(--line);
+.tray .lib-page {
+  flex: 1;
+  display: flex;
+  padding: 6px;
 }
-.lib-used li:first-child {
-  border-top: 0;
+.lib-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+}
+/* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
+.tray .lib-pdf {
+  padding: 0;
+  overflow: hidden;
+}
+.lib-pdf .lib-frame {
+  border-radius: 0;
 }

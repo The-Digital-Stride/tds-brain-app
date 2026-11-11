@@ -1,8 +1,11 @@
 import { type ReactNode, useId, useState } from 'react';
+import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { DOCK_IDS } from '../../shell/Dock.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useCopy } from './copy.ts';
+import { FIRST_SHOWN } from './library.ts';
+import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
 
 /** The button in the sheet bar that shows or hides the app's details panel. */
 export function DetailsButton({ label }: { label: string }) {
@@ -22,12 +25,42 @@ export function DetailsButton({ label }: { label: string }) {
   );
 }
 
+/** The sheet bar's buttons: Back while a file is open in place of the list, then the details button. */
+export function LibraryBar<S extends LibraryState>({
+  store,
+  back,
+  details,
+}: {
+  store: LibraryStore<S>;
+  /** "Back to Images". */
+  back: string;
+  details: string;
+}) {
+  const { viewing } = useLibrary(store);
+  return (
+    <>
+      {viewing ? (
+        <button
+          type="button"
+          className="btn"
+          data-variant="quiet"
+          data-size="small"
+          onClick={() => store.set({ viewing: null } as Partial<S>)}
+        >
+          {back}
+        </button>
+      ) : null}
+      <DetailsButton label={details} />
+    </>
+  );
+}
+
 /** The first row of a library sheet: whose library, a search, then the app's own control. */
 export function LibraryTools({
   id,
-  clients,
-  client,
-  onClient,
+  scopes,
+  scope,
+  onScope,
   query,
   onQuery,
   searchLabel,
@@ -36,31 +69,38 @@ export function LibraryTools({
 }: {
   /** Prefix for the field ids, e.g. "imgs". */
   id: string;
-  clients: { slug: string; name: string }[];
-  client: string;
-  onClient: (slug: string) => void;
+  scopes: LibraryScope[];
+  scope: string;
+  onScope: (scope: string) => void;
   query: string;
   onQuery: (query: string) => void;
   searchLabel: string;
   placeholder: string;
   children?: ReactNode;
 }) {
+  const option = (s: LibraryScope) => (
+    <option key={s.id} value={s.id}>
+      {s.name}
+    </option>
+  );
+  const mine = scopes.filter((s) => s.kind === 'personal');
+  const clients = scopes.filter((s) => s.kind === 'client');
+  const shared = scopes.filter((s) => s.kind === 'shared');
   return (
     <div className="lib-tools">
-      <label className="visually-hidden" htmlFor={`${id}-client`}>
-        Client
+      <label className="visually-hidden" htmlFor={`${id}-scope`}>
+        Library
       </label>
       <select
-        id={`${id}-client`}
+        id={`${id}-scope`}
         className="field lib-client"
-        value={client}
-        onChange={(e) => onClient(e.target.value)}
+        value={scope}
+        disabled={scopes.length === 0}
+        onChange={(e) => onScope(e.target.value)}
       >
-        {clients.map((c) => (
-          <option key={c.slug} value={c.slug}>
-            {c.name}
-          </option>
-        ))}
+        {mine.length > 0 ? <optgroup label="Mine">{mine.map(option)}</optgroup> : null}
+        {clients.length > 0 ? <optgroup label="Clients">{clients.map(option)}</optgroup> : null}
+        {shared.length > 0 ? <optgroup label="Shared">{shared.map(option)}</optgroup> : null}
       </select>
       <div className="lib-search">
         <Icon name="search" size={16} />
@@ -83,25 +123,28 @@ export function LibraryTools({
 
 /**
  * One folder: a raised card in the tray, the same device as Home's cards. Its heading carries the
- * count and a button that hides or shows what is in it.
+ * count and a button that hides or shows what is in it. Only the first 60 items are drawn until
+ * "Show all" is pressed.
  */
-export function FolderCard({
+export function FolderCard<T extends { id: string }>({
   title,
-  count,
-  children,
+  items,
+  renderItem,
 }: {
   title: string;
-  count: number;
-  children: ReactNode;
+  items: T[];
+  renderItem: (item: T) => ReactNode;
 }) {
   const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
   const headId = useId();
   const listId = useId();
+  const shown = all ? items : items.slice(0, FIRST_SHOWN);
   return (
     <section className="card" aria-labelledby={headId}>
       <div className="card-head">
         <h3 id={headId}>{title}</h3>
-        <span className="count">{count}</span>
+        <span className="count">{items.length}</span>
         <button
           type="button"
           className="btn"
@@ -115,8 +158,13 @@ export function FolderCard({
         </button>
       </div>
       <ul className="lib-list" id={listId} hidden={!open}>
-        {children}
+        {shown.map(renderItem)}
       </ul>
+      {open && shown.length < items.length ? (
+        <button type="button" className="card-more" onClick={() => setAll(true)}>
+          Show all {items.length.toLocaleString('en-GB')} <span className="visually-hidden">in {title}</span>
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -159,17 +207,46 @@ export function SelectionBar({
   );
 }
 
-/** The panel's two actions for the chosen item: ask Claude about it, or copy where it is. */
-export function DetailActions({ path, onAsk }: { path: string; onAsk: () => void }) {
+/**
+ * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can) or
+ * ask Claude about it; then download it or copy where it is. Open is the main action when it is there.
+ */
+export function DetailActions({
+  item,
+  onAsk,
+  onOpen,
+}: {
+  item: LibraryItem;
+  onAsk: () => void;
+  onOpen?: (() => void) | null;
+}) {
   const { said, copy } = useCopy();
   return (
     <div className="lib-actions">
-      <button type="button" className="btn" data-variant="primary" onClick={onAsk}>
-        Ask Claude about it
-      </button>
-      <button type="button" className="btn" onClick={() => void copy(path)}>
-        {said ?? 'Copy file path'}
-      </button>
+      <div className="lib-actions-row">
+        {onOpen ? (
+          <button type="button" className="btn" data-variant="primary" onClick={onOpen}>
+            Open
+          </button>
+        ) : null}
+        <button type="button" className="btn" data-variant={onOpen ? undefined : 'primary'} onClick={onAsk}>
+          Ask Claude about it
+        </button>
+      </div>
+      <div className="lib-actions-row">
+        {/* The server sends it as an attachment, so the browser saves it and the app stays put. */}
+        <a
+          className="btn"
+          href={ROUTES.libraryFile(item.id)}
+          download={item.name}
+          aria-label={`Download ${item.name}`}
+        >
+          Download
+        </a>
+        <button type="button" className="btn" onClick={() => void copy(item.path)}>
+          {said ?? 'Copy file path'}
+        </button>
+      </div>
       <span className="visually-hidden" role="status">
         {said ?? ''}
       </span>
@@ -177,14 +254,35 @@ export function DetailActions({ path, onAsk }: { path: string; onAsk: () => void
   );
 }
 
-/** A plain list in the panel with hairlines between the rows, or a line saying it is empty. */
-export function DetailList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) return <p className="dock-empty">{empty}</p>;
-  return (
-    <ul className="lib-used">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
+/** What a sheet says while there is nothing to list: loading, a failure with a way to retry, or empty. */
+export function LibraryNotice({
+  status,
+  message,
+  retry,
+  empty,
+}: {
+  status: 'loading' | 'failed' | 'ready';
+  message: string | null;
+  retry: () => void;
+  /** Shown when ready with nothing in it; omit when there are items. */
+  empty?: string;
+}) {
+  if (status === 'loading') {
+    return (
+      <p className="lib-empty" role="status">
+        Loading…
+      </p>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <div className="lib-failed" role="alert">
+        <p>{message}</p>
+        <button type="button" className="btn" onClick={retry}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+  return empty ? <p className="lib-empty">{empty}</p> : null;
 }

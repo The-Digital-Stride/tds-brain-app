@@ -2,6 +2,7 @@ import type { BrainReaders } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
+import { createLibrary } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
@@ -11,11 +12,17 @@ export interface BrainDeps {
   /** Runs child processes (whoami, git). Tests inject a fake. */
   run?: Runner;
   now?: () => Date;
+  /**
+   * The app's own data folder, where the library keeps image sizes and titles. Never inside the
+   * brain. Missing: they are kept in memory only.
+   */
+  dataDir?: string | null;
 }
 
 export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainReaders {
   const run = deps.run ?? defaultRunner;
   const now = deps.now ?? (() => new Date());
+  const library = createLibrary(root, { clients: () => listClients(root), dataDir: deps.dataDir ?? null });
   return {
     root,
     health: () => checkHealth(root),
@@ -29,7 +36,14 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));
       return readUsage(root, identity, listed, now(), opts);
     },
-    watch: (onChange) => watchBrain(root, onChange),
+    libraryScopes: () => library.scopes(),
+    library: (scope) => library.list(scope),
+    libraryFile: (id) => library.file(id),
+    watch: (onChange) =>
+      watchBrain(root, onChange, {
+        onLibraryChange: (rel, folder) => library.changed(rel, folder),
+        onLibraryLive: (folder, on) => library.setLive(folder, on),
+      }),
   };
 }
 

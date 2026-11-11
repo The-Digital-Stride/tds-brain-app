@@ -30,6 +30,7 @@ class FakeEventSource {
 }
 
 const { App } = await import('../App.tsx');
+const { clientChoice, NO_CLIENT } = await import('../state/client-choice.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
   name,
@@ -120,6 +121,7 @@ beforeEach(() => {
   api.updatePrefs.mockResolvedValue(boot.prefs);
 });
 afterEach(() => {
+  clientChoice.set('');
   cleanup();
   vi.unstubAllGlobals();
   sessionStorage.clear();
@@ -197,6 +199,27 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
+  });
+
+  it('choosing a client on Home is remembered for the apps, and "No client" is too', async () => {
+    await renderHome();
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'northwind' } });
+    expect(clientChoice.get()).toBe('client:northwind');
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: '' } });
+    expect(clientChoice.get()).toBe(NO_CLIENT);
+    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('opens on the client chosen in an app', async () => {
+    clientChoice.set('client:northwind');
+    await renderHome();
+    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('northwind');
+  });
+
+  it('opens on "No client" when the person\'s own files were chosen in an app', async () => {
+    clientChoice.set('personal');
+    await renderHome();
+    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
   });
 
   it('never sends /clear: it just empties the box', async () => {

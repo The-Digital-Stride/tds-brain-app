@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
 import { APP_HOST, type EngineHealth, ROUTES } from '../shared/contract.ts';
 import { createBrainReaders } from './brain/index.ts';
+import { createThumbnailer } from './brain/thumbs.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
@@ -96,7 +97,8 @@ const engine: EngineFns = {
   getSessionMessages: (id, opts) => getSessionMessages(id, opts),
 };
 
-const brain = createBrainReaders(config.brainPath);
+const brain = createBrainReaders(config.brainPath, { dataDir: config.dataDir });
+const thumbs = createThumbnailer(config.dataDir, { brainRoot: config.brainPath });
 const store = createAppStore(config.dataDir);
 const sessions = createSessionManager({
   brain,
@@ -116,6 +118,7 @@ const app = createAppServer({
   brain,
   store,
   sessions,
+  thumbs,
   engineHealth,
   log,
 });

@@ -5,13 +5,20 @@ export function sizeWords(bytes: number): string {
   return kb < 1000 ? `${kb} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
-/** "3 Nov 2026" from "2026-11-03". */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "5 Nov 2026" from an ISO date or time, as the day reads in London. Empty when it is not a date. */
 export function dateWords(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
-    (m ?? 1) - 1
-  ];
-  return `${d} ${month} ${y}`;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  }).formatToParts(at);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return `${part('day')} ${MONTHS[part('month') - 1]} ${part('year')}`;
 }
 
 /** "1 image", "24 images": the count with the right form of the noun. */
@@ -19,32 +26,10 @@ export function plural(n: number, one: string, many: string): string {
   return n === 1 ? `1 ${one}` : `${n.toLocaleString('en-GB')} ${many}`;
 }
 
-/** "2 images selected", or with some out of sight "2 images selected, 1 hidden by the filter". */
-export function selectionWords(count: string, hidden: number): string {
+/** "2 images selected", or with some out of sight "2 images selected, 1 hidden by your search". */
+export function selectionWords(count: string, hidden: number, by = 'your search'): string {
   const base = `${count} selected`;
-  return hidden > 0 ? `${base}, ${hidden} hidden by the filter` : base;
-}
-
-export interface FolderGroup<T> {
-  folder: string;
-  items: T[];
-}
-
-/** Groups by folder in the given order; a folder it does not know goes last. Empty ones are left out. */
-export function groupByFolder<T extends { folder: string }>(items: T[], order: string[]): FolderGroup<T>[] {
-  const groups = new Map<string, T[]>();
-  for (const item of items) {
-    const list = groups.get(item.folder);
-    if (list) list.push(item);
-    else groups.set(item.folder, [item]);
-  }
-  const rank = (folder: string) => {
-    const i = order.indexOf(folder);
-    return i === -1 ? order.length : i;
-  };
-  return [...groups.entries()]
-    .sort(([a], [b]) => rank(a) - rank(b))
-    .map(([folder, list]) => ({ folder, items: list }));
+  return hidden > 0 ? `${base}, ${hidden} hidden by ${by}` : base;
 }
 
 /** True when every word of the search is somewhere in the text. */

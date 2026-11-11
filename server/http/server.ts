@@ -11,10 +11,18 @@ import {
   type AppStore,
   type BrainReaders,
   type EngineHealth,
+  type Thumbnailer,
 } from '../../shared/contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
-import { handleApi, sendError } from './routes.ts';
-import { type AuthCodes, authExchange, checkRequest, pingProof, SECURITY_HEADERS } from './security.ts';
+import { handleApi, sendError, sendPageError } from './routes.ts';
+import {
+  type AuthCodes,
+  authExchange,
+  checkRequest,
+  isLibraryPagePath,
+  pingProof,
+  SECURITY_HEADERS,
+} from './security.ts';
 import { type AppEventHub, createAppEventHub } from './stream.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -149,6 +157,8 @@ export interface ServerDeps {
   brain: BrainReaders;
   store: AppStore;
   sessions: SessionManager;
+  /** The library's small pictures, cached in the app's data folder. */
+  thumbs: Thumbnailer;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
   log?: (line: string) => void;
@@ -181,6 +191,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     brain: deps.brain,
     store: deps.store,
     sessions: deps.sessions,
+    thumbs: deps.thumbs,
     hub,
     engineHealth: deps.engineHealth,
     appVersion: deps.appVersion,
@@ -189,6 +200,8 @@ export function createAppServer(deps: ServerDeps): AppServer {
   };
 
   const server = createServer((req, res) => {
+    // The library page route answers in HTML under its own policy, errors included.
+    let pageRoute = false;
     void (async () => {
       const method = (req.method ?? 'GET').toUpperCase();
       for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
@@ -200,13 +213,15 @@ export function createAppServer(deps: ServerDeps): AppServer {
         return;
       }
       const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
+      pageRoute = isLibraryPagePath(url.pathname);
       const decision = checkRequest(
         { method, path: url.pathname, headers: req.headers },
         { port: deps.port, launchToken: deps.launchToken },
       );
       switch (decision.action) {
         case 'reject':
-          if (isApi) sendError(res, decision.status, decision.code, decision.message);
+          if (pageRoute) sendPageError(res, decision.status, decision.message);
+          else if (isApi) sendError(res, decision.status, decision.code, decision.message);
           else
             sendHtml(
               res,
@@ -259,7 +274,8 @@ export function createAppServer(deps: ServerDeps): AppServer {
       }
     })().catch(() => {
       log('A request failed unexpectedly.');
-      if (!res.headersSent) sendError(res, 500, 'internal', 'Something went wrong in the app.');
+      if (!res.headersSent && pageRoute) sendPageError(res, 500, 'Something went wrong in the app.');
+      else if (!res.headersSent) sendError(res, 500, 'internal', 'Something went wrong in the app.');
       else res.end();
     });
   });

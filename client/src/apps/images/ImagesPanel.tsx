@@ -1,59 +1,57 @@
-import { Fold } from '../../shell/Fold.tsx';
+import type { LibraryItem } from '../../../../shared/contract.ts';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
-import { DetailActions, DetailList } from '../shared/parts.tsx';
+import { pictureWords } from '../shared/library.ts';
+import { DetailActions } from '../shared/parts.tsx';
+import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
-import { Art } from './Art.tsx';
-import { KIND_WORDS, LIBRARY } from './data.ts';
 import { chatDraft } from './library.ts';
-import { useImages } from './store.ts';
+import { imagesStore, useImages } from './store.ts';
 
-/** The right panel for the Images app: the chosen image, what it is and where it is used. */
+/** The right panel for the Images app: the chosen image and the facts the file itself holds. */
 export function ImagesPanel() {
-  const s = useImages();
+  const { current: image } = useImages();
   const { newChat } = useStore();
-  const image = LIBRARY.find((i) => i.id === s.currentId && i.client === s.client);
+  const { dispatch, modes } = useShell();
+  // A floating panel would hide the file it opens, so it closes; a docked one stays.
+  const open = (item: LibraryItem) => {
+    imagesStore.set({ viewing: item });
+    if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+  };
   if (!image) return <p className="dock-empty">Choose an image to see its details.</p>;
+  const size = pictureWords(image);
 
   return (
     <div className="lib-detail">
       <div className="lib-preview">
-        <span className="img-preview-frame">
-          <Art image={image} label={`Preview of ${image.name}`} />
-        </span>
+        <Thumb item={image} width={320} label={`Preview of ${image.name}`} iconSize={32} />
       </div>
       <h3 className="lib-name">{image.name}</h3>
-      <ul className="lib-tags" aria-label="Tags">
-        {image.tags.map((tag) => (
-          <li key={tag} className="chip">
-            {tag}
-          </li>
-        ))}
-      </ul>
-      <DetailActions path={image.path} onAsk={() => newChat({ draft: chatDraft([image]) })} />
+      <DetailActions
+        item={image}
+        onAsk={() => newChat({ draft: chatDraft([image]) })}
+        onOpen={image.view ? () => open(image) : null}
+      />
       <dl className="kv">
         <dt>Type</dt>
-        <dd className="kv-cap">{KIND_WORDS[image.kind]}</dd>
-        <dt>Dimensions</dt>
-        <dd>
-          {image.width} × {image.height}
-        </dd>
+        <dd>{image.ext.toUpperCase()}</dd>
+        {size ? (
+          <>
+            <dt>Dimensions</dt>
+            <dd>{size}</dd>
+          </>
+        ) : null}
         <dt>Size</dt>
         <dd>{sizeWords(image.bytes)}</dd>
-        <dt>Folder</dt>
-        <dd>{image.folder}</dd>
-        <dt>Added</dt>
-        <dd>
-          {dateWords(image.added)}
-          <span className="kv-note">by {image.by}</span>
-        </dd>
+        <dt>Group</dt>
+        <dd>{image.group}</dd>
+        <dt>Changed</dt>
+        <dd>{dateWords(image.modified)}</dd>
         <dt className="kv-wide">File path</dt>
         <dd className="kv-wide">
           <code className="terminal-cmd">{image.path}</code>
         </dd>
       </dl>
-      <Fold title="Used in" count={image.usedIn.length}>
-        <DetailList items={image.usedIn} empty="Not used anywhere yet." />
-      </Fold>
     </div>
   );
 }

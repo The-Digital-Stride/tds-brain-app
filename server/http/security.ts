@@ -12,6 +12,8 @@ export const AUTH_PING_PATH = '/auth/ping';
 
 /** Sent on every page and API reply. No CORS headers are ever sent. */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  // `default-src 'self'` with no wider `frame-src`: the library viewer relies on it to stop a link
+  // in a framed HTML page taking the frame to another site.
   'Content-Security-Policy':
     "default-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
@@ -19,6 +21,32 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Cross-Origin-Opener-Policy': 'same-origin',
 };
+
+/**
+ * `GET /api/library/page/<id>` replaces the app's policy with this one, on success and on error: the
+ * page is sandboxed (no scripts, an opaque origin), may load nothing from anywhere, and only the app
+ * itself may frame it.
+ */
+export const PAGE_CSP =
+  "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'";
+
+/**
+ * `GET /api/library/pdf/<id>` sends a PDF under this one. No `sandbox`: the browser refuses to show
+ * a PDF in a sandboxed document. The reader runs in the browser's own isolated viewer, not in the
+ * app's origin, and the route only sends a file that really starts as a PDF, with `nosniff`, so it
+ * can never be read as a page. Only the app itself may frame it.
+ */
+export const PDF_CSP = "default-src 'none'; object-src 'self'; frame-ancestors 'self'";
+
+const LIBRARY_FRAME_PREFIXES = ['/api/library/page/', '/api/library/pdf/'];
+
+/**
+ * True for the library routes shown in a frame (a page, a PDF), whose errors are HTML under
+ * `PAGE_CSP`, never JSON, because the frame shows them.
+ */
+export function isLibraryPagePath(path: string): boolean {
+  return LIBRARY_FRAME_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length);
+}
 
 export type HeaderBag = Record<string, string | string[] | undefined>;
 

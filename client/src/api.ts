@@ -1,0 +1,84 @@
+import type {
+  ApiError,
+  ApiErrorCode,
+  AppPrefs,
+  Bootstrap,
+  CompleteTodoRequest,
+  OkResponse,
+  PermissionReply,
+  QuestionReply,
+  SendMessageRequest,
+  SessionList,
+  StartSessionRequest,
+  StartSessionResponse,
+  TodoList,
+} from '../../shared/contract.ts';
+import { ROUTES } from '../../shared/contract.ts';
+
+/** Every failure from the server, or from reaching it, arrives as one of these. */
+export class ApiFailure extends Error {
+  readonly code: ApiErrorCode | 'network';
+  readonly status: number;
+  constructor(code: ApiErrorCode | 'network', message: string, status: number) {
+    super(message);
+    this.name = 'ApiFailure';
+    this.code = code;
+    this.status = status;
+  }
+  /** A 401 means the page was not opened from the launcher. */
+  get notSignedIn(): boolean {
+    return this.status === 401;
+  }
+}
+
+async function request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: method === 'GET' ? { Accept: 'application/json' } : { 'Content-Type': 'application/json' },
+      body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+    });
+  } catch {
+    throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
+  }
+  if (!res.ok) {
+    let code: ApiErrorCode = res.status === 401 ? 'unauthorised' : 'internal';
+    let message = 'Something went wrong. Please try again.';
+    try {
+      const data = (await res.json()) as Partial<ApiError>;
+      if (data.error) {
+        code = data.error.code;
+        message = data.error.message;
+      }
+    } catch {
+      // The reply was not JSON; keep the plain defaults.
+    }
+    throw new ApiFailure(code, message, res.status);
+  }
+  return (await res.json()) as T;
+}
+
+export const api = {
+  bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
+  todos: () => request<TodoList>('GET', ROUTES.todos),
+  completeTodo: (id: string) =>
+    request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest),
+  updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
+  sessions: () => request<SessionList>('GET', ROUTES.sessions),
+  startSession: (req: StartSessionRequest) => request<StartSessionResponse>('POST', ROUTES.sessions, req),
+  sendMessage: (id: string, text: string) =>
+    request<OkResponse>('POST', ROUTES.sessionMessages(id), { text } satisfies SendMessageRequest),
+  answerPermission: (id: string, reply: PermissionReply) =>
+    request<OkResponse>('POST', ROUTES.sessionPermission(id), reply),
+  answerQuestion: (id: string, reply: QuestionReply) =>
+    request<OkResponse>('POST', ROUTES.sessionAnswer(id), reply),
+  interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
+  close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
+};
+
+/** The URL for the one event stream a tab holds. */
+export function streamUrl(sessionId: string | null, after: number): string {
+  return ROUTES.stream(sessionId, after);
+}

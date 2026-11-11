@@ -1,0 +1,807 @@
+import type {
+  Options,
+  PermissionResult,
+  PermissionUpdate,
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrainReaders, ChatEvent, ClientInfo, Identity } from '../../shared/contract.ts';
+import {
+  createSessionManager,
+  type EngineFns,
+  type HistoryMessage,
+  type PastInfo,
+  SessionError,
+  type SessionManager,
+} from './session-manager.ts';
+
+const BRAIN = '/tmp/fake-brain-root';
+const CLAUDE = '/usr/local/bin/claude';
+
+// ---------------------------------------------------------------------------
+// Fakes
+// ---------------------------------------------------------------------------
+
+class FakeQuery implements AsyncIterable<unknown> {
+  options: Options;
+  received: string[] = [];
+  interrupts = 0;
+  closed = false;
+  ended = false;
+  sid = 'sdk-new-1';
+  onInterrupt: (() => void) | null = null;
+  private queue: unknown[] = [];
+  private wake: (() => void) | null = null;
+
+  constructor(options: Options) {
+    this.options = options;
+  }
+
+  emit(msg: unknown): void {
+    this.queue.push(msg);
+    this.wake?.();
+  }
+
+  init(over: Record<string, unknown> = {}): void {
+    this.emit({
+      type: 'system',
+      subtype: 'init',
+      session_id: this.sid,
+      model: 'claude-test',
+      claude_code_version: '2.1.322',
+      apiKeySource: 'none',
+      ...over,
+    });
+  }
+
+  text(id: string, text: string): void {
+    this.emit({
+      type: 'assistant',
+      message: { id, content: [{ type: 'text', text }] },
+      parent_tool_use_id: null,
+      session_id: this.sid,
+    });
+  }
+
+  result(subtype = 'success'): void {
+    this.emit({
+      type: 'result',
+      subtype,
+      is_error: subtype !== 'success',
+      duration_ms: 5,
+      result: 'ok',
+      errors: [],
+    });
+  }
+
+  finish(): void {
+    this.ended = true;
+    this.wake?.();
+  }
+
+  async interrupt(): Promise<undefined> {
+    this.interrupts++;
+    this.onInterrupt?.();
+    return undefined;
+  }
+
+  close(): void {
+    this.closed = true;
+    this.finish();
+  }
+
+  async *[Symbol.asyncIterator](): AsyncIterator<unknown> {
+    while (true) {
+      if (this.queue.length > 0) {
+        yield this.queue.shift();
+        continue;
+      }
+      if (this.ended) return;
+      await new Promise<void>((r) => {
+        this.wake = r;
+      });
+      this.wake = null;
+    }
+  }
+
+  ask(toolName: string, input: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    const canUseTool = this.options.canUseTool;
+    if (!canUseTool) throw new Error('no canUseTool');
+    const controller = new AbortController();
+    const promise = canUseTool(toolName, input, {
+      signal: controller.signal,
+      toolUseID: 'toolu_1',
+      requestId: (extra.requestId as string) ?? 'req-1',
+      ...extra,
+    } as Parameters<typeof canUseTool>[2]);
+    return { promise, controller };
+  }
+}
+
+type Script = (ctx: { text: string; turn: number; q: FakeQuery }) => Promise<void> | void;
+
+const replyScript: Script = ({ q, turn }) => {
+  q.init();
+  q.text(`msg_${turn}`, `Reply ${turn}`);
+  q.result();
+};
+
+function makeEngine(script: Script = replyScript) {
+  const queries: FakeQuery[] = [];
+  const past: PastInfo[] = [];
+  const history: Record<string, HistoryMessage[]> = {};
+  const engine: EngineFns = {
+    query: ({ prompt, options }) => {
+      const q = new FakeQuery(options);
+      if (options.resume) q.sid = options.resume;
+      queries.push(q);
+      void (async () => {
+        let turn = 0;
+        for await (const m of prompt as AsyncIterable<SDKUserMessage>) {
+          const content = m.message.content;
+          const text = typeof content === 'string' ? content : '';
+          q.received.push(text);
+          await script({ text, turn: turn++, q });
+        }
+        q.finish();
+      })();
+      return q;
+    },
+    listSessions: vi.fn(async () => past),
+    getSessionMessages: vi.fn(async (id: string) => history[id] ?? []),
+  };
+  return { engine, queries, past, history };
+}
+
+const IDENTITY: Identity = {
+  name: 'Test Person',
+  slug: 'test-person',
+  email: null,
+  role: 'team',
+  knownMember: true,
+};
+
+function fakeBrain(
+  over: Partial<BrainReaders> = {},
+): Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients'> {
+  return {
+    identity: async () => IDENTITY,
+    skillAccess: async (_id, name) =>
+      name === 'key-rotation' ? 'restricted' : name === 'gm' ? 'allowed' : 'unknown-skill',
+    clients: async (): Promise<ClientInfo[]> => [{ slug: 'urban-cooling', name: 'Urban Cooling' }],
+    ...over,
+  };
+}
+
+async function flush(times = 30): Promise<void> {
+  for (let i = 0; i < times; i++) await new Promise<void>((r) => setImmediate(r));
+}
+
+function events(mgr: SessionManager, id: string, after = 0): ChatEvent[] {
+  const sub = mgr.subscribe(id, after, () => {});
+  sub.unsubscribe();
+  return sub.replay.map((s) => s.event);
+}
+
+async function expectCode(p: Promise<unknown>, code: string): Promise<void> {
+  const err = await p.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(SessionError);
+  expect((err as SessionError).code).toBe(code);
+}
+
+let mgr: SessionManager;
+
+function setup(
+  script?: Script,
+  opts: { brain?: Partial<BrainReaders>; env?: NodeJS.ProcessEnv; claudePath?: string | null } = {},
+) {
+  const fx = makeEngine(script);
+  mgr = createSessionManager({
+    brain: fakeBrain(opts.brain),
+    brainRoot: BRAIN,
+    claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
+    engine: fx.engine,
+    env: opts.env ?? { PATH: '/bin', HOME: '/home/x' },
+    log: () => {},
+  });
+  return fx;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+});
+
+afterEach(async () => {
+  // A chat whose engine never finishes waits out the graceful-close timeout, so run the clock.
+  const closing = mgr?.closeAll();
+  await flush();
+  await vi.runAllTimersAsync();
+  await closing;
+  vi.useRealTimers();
+});
+
+// ---------------------------------------------------------------------------
+
+describe('a new chat', () => {
+  it('starts the engine in the brain root with the terminal-equivalent options', async () => {
+    const { queries } = setup();
+    const session = await mgr.start({ prompt: 'Hello there' });
+    await flush();
+    expect(queries).toHaveLength(1);
+    const o = queries[0]?.options as Options;
+    expect(o.cwd).toBe(BRAIN);
+    expect(o.pathToClaudeCodeExecutable).toBe(CLAUDE);
+    expect(o.permissionMode).toBe('default');
+    expect(o.includePartialMessages).toBe(true);
+    expect(o.settingSources).toEqual(['user', 'project', 'local']);
+    expect(o.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code' });
+    expect(o.model).toBeUndefined();
+    expect(o.resume).toBeUndefined();
+    expect(queries[0]?.received).toEqual(['Hello there']);
+    expect(session.title).toBe('Hello there');
+
+    const ev = events(mgr, session.id);
+    expect(ev.map((e) => e.type)).toEqual([
+      'state',
+      'user-message',
+      'state',
+      'session-info',
+      'assistant-message',
+      'turn-end',
+      'state',
+    ]);
+    expect(ev[0]).toEqual({ type: 'state', state: 'starting' });
+    expect(ev[2]).toEqual({ type: 'state', state: 'working' });
+    expect(ev[6]).toEqual({ type: 'state', state: 'idle' });
+    const live = (await mgr.list()).live[0];
+    expect(live?.sdkSessionId).toBe('sdk-new-1');
+    expect(live?.state).toBe('idle');
+  });
+
+  it('scrubs API keys and nested-session markers from the engine environment (A6)', async () => {
+    const { queries } = setup(undefined, {
+      env: {
+        PATH: '/bin',
+        ANTHROPIC_API_KEY: 'sk-x',
+        ANTHROPIC_AUTH_TOKEN: 't',
+        CLAUDECODE: '1',
+        CLAUDE_CODE_ENTRYPOINT: 'cli',
+      },
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(queries[0]?.options.env).toEqual({ PATH: '/bin' });
+  });
+
+  it('warns when the engine reports an API key instead of the sign-in', async () => {
+    setup(({ q }) => {
+      q.init({ apiKeySource: 'ANTHROPIC_API_KEY' });
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const notices = events(mgr, s.id).filter((e) => e.type === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ level: 'warning' });
+  });
+
+  it('trims a long first prompt into the title', async () => {
+    setup();
+    const s = await mgr.start({ prompt: `  ${'word '.repeat(40)}` });
+    expect(s.title.length).toBeLessThanOrEqual(61);
+    expect(s.title.endsWith('…')).toBe(true);
+  });
+
+  it('appends the client line, validated against the brain clients (A5)', async () => {
+    const { queries } = setup();
+    const s = await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+    await flush();
+    expect(s.client).toBe('urban-cooling');
+    const sp = queries[0]?.options.systemPrompt as { append?: string };
+    expect(sp.append).toContain('clients/urban-cooling/');
+    await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
+  });
+
+  it('refuses when Claude Code is not installed', async () => {
+    setup(undefined, { claudePath: null });
+    await expectCode(mgr.start({ prompt: 'hi' }), 'engine-missing');
+  });
+
+  it('refuses an empty request', async () => {
+    setup();
+    await expectCode(mgr.start({}), 'bad-request');
+    await expectCode(mgr.start({ prompt: '   ' }), 'bad-request');
+  });
+});
+
+describe('restricted skills', () => {
+  it('refuses a typed /name for a restricted skill on start and on send', async () => {
+    setup();
+    await expectCode(mgr.start({ prompt: '/key-rotation now' }), 'not-allowed');
+    const s = await mgr.start({ prompt: '/gm' });
+    await flush();
+    await expectCode(mgr.send(s.id, '/key-rotation'), 'not-allowed');
+    await mgr.send(s.id, '/unknown-builtin');
+  });
+});
+
+describe('sending', () => {
+  it('is busy while a turn is running, and runs the next turn afterwards', async () => {
+    let release: () => void = () => {};
+    const { queries } = setup(async ({ q, turn }) => {
+      q.init();
+      if (turn === 0) await new Promise<void>((r) => (release = r));
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'first' });
+    await flush();
+    await expectCode(mgr.send(s.id, 'second'), 'busy');
+    release();
+    await flush();
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(queries[0]?.received).toEqual(['first', 'second']);
+    expect(queries).toHaveLength(1);
+  });
+
+  it('refuses after close and for an unknown chat', async () => {
+    setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.close(s.id);
+    await expectCode(mgr.send(s.id, 'again'), 'session-closed');
+    await expectCode(mgr.send('nope', 'x'), 'not-found');
+  });
+});
+
+describe('replay', () => {
+  it('returns only events after the given seq, and pushes live ones to listeners', async () => {
+    setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const all = mgr.subscribe(s.id, 0, () => {});
+    all.unsubscribe();
+    expect(all.replay.map((e) => e.seq)).toEqual(all.replay.map((_, i) => i + 1));
+    const tail = mgr.subscribe(s.id, 3, () => {});
+    tail.unsubscribe();
+    expect(tail.replay[0]?.seq).toBe(4);
+
+    const seen: number[] = [];
+    const sub = mgr.subscribe(s.id, 999, (e) => seen.push(e.seq));
+    expect(sub.replay).toEqual([]);
+    await mgr.send(s.id, 'more');
+    await flush();
+    sub.unsubscribe();
+    expect(seen[0]).toBe((all.replay.at(-1)?.seq ?? 0) + 1);
+  });
+
+  it('drops streamed deltas from the log once the finished block arrives', async () => {
+    setup(({ q }) => {
+      q.init();
+      q.emit({
+        type: 'stream_event',
+        event: { type: 'message_start', message: { id: 'm' } },
+        parent_tool_use_id: null,
+      });
+      q.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        parent_tool_use_id: null,
+      });
+      q.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } },
+        parent_tool_use_id: null,
+      });
+      q.text('m', 'Hi');
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const types = events(mgr, s.id).map((e) => e.type);
+    expect(types).not.toContain('assistant-delta');
+    expect(types).toContain('assistant-message');
+  });
+});
+
+describe('permissions', () => {
+  const suggestions: PermissionUpdate[] = [
+    {
+      type: 'addRules',
+      rules: [{ toolName: 'Bash', ruleContent: 'node:*' }],
+      behavior: 'allow',
+      destination: 'localSettings',
+    },
+    { type: 'setMode', mode: 'bypassPermissions', destination: 'session' },
+  ];
+
+  async function askOnce(decision: 'allow' | 'allow-session' | 'deny', note?: string) {
+    let result: PermissionResult | null = null;
+    setup(async ({ q }) => {
+      q.init();
+      result = await q.ask('Bash', { command: 'node x.js' }, { suggestions }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({
+      type: 'permission-request',
+      requestId: 'req-1',
+      tool: 'Bash',
+      title: 'Claude wants to run a command',
+      detail: 'node x.js',
+      sessionAllowLabel: 'Also allow `node` commands in this chat',
+    });
+    expect((await mgr.list()).live[0]?.state).toBe('waiting');
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision, ...(note ? { note } : {}) });
+    await flush();
+    return { result: result as PermissionResult | null, s };
+  }
+
+  it('allow round-trips', async () => {
+    const { result, s } = await askOnce('allow');
+    expect(result).toEqual({ behavior: 'allow', updatedInput: { command: 'node x.js' } });
+    expect(events(mgr, s.id)).toContainEqual({
+      type: 'request-resolved',
+      requestId: 'req-1',
+      outcome: 'allowed',
+    });
+  });
+
+  it('allow-session returns only the narrowed, session-scoped suggestions', async () => {
+    const { result } = await askOnce('allow-session');
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { command: 'node x.js' },
+      updatedPermissions: [
+        {
+          type: 'addRules',
+          rules: [{ toolName: 'Bash', ruleContent: 'node:*' }],
+          behavior: 'allow',
+          destination: 'session',
+        },
+      ],
+    });
+  });
+
+  it('deny round-trips with the person’s note', async () => {
+    const { result, s } = await askOnce('deny', 'Use the staging folder');
+    expect(result?.behavior).toBe('deny');
+    expect((result as { message: string }).message).toContain('Use the staging folder');
+    expect(events(mgr, s.id)).toContainEqual({
+      type: 'request-resolved',
+      requestId: 'req-1',
+      outcome: 'denied',
+    });
+  });
+
+  it('refuses a reply to an unknown request', async () => {
+    setup();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    await expectCode(mgr.replyPermission(s.id, { requestId: 'nope', decision: 'allow' }), 'not-found');
+  });
+});
+
+describe('questions', () => {
+  const questions = [
+    {
+      question: 'Which client?',
+      header: 'Client',
+      options: [
+        { label: 'Acme', description: 'A' },
+        { label: 'Beta', description: 'B' },
+      ],
+      multiSelect: false,
+    },
+    {
+      question: 'Which channels?',
+      header: 'Channels',
+      options: [
+        { label: 'PPC', description: '' },
+        { label: 'SEO', description: '' },
+      ],
+      multiSelect: true,
+    },
+  ];
+
+  it('round-trips answers in the SDK shape, with freeText as response', async () => {
+    let result: PermissionResult | null = null;
+    setup(async ({ q }) => {
+      q.init();
+      result = await q.ask('AskUserQuestion', { questions }, { requestId: 'q-1' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(events(mgr, s.id)).toContainEqual({ type: 'question-request', requestId: 'q-1', questions });
+    await mgr.replyQuestion(s.id, {
+      requestId: 'q-1',
+      answers: { 'Which client?': 'Acme', 'Which channels?': ['PPC', 'SEO'] },
+      freeText: 'Also check email',
+    });
+    await flush();
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: {
+        questions,
+        answers: { 'Which client?': 'Acme', 'Which channels?': 'PPC, SEO' },
+        response: 'Also check email',
+      },
+    });
+    expect(events(mgr, s.id)).toContainEqual({
+      type: 'request-resolved',
+      requestId: 'q-1',
+      outcome: 'answered',
+    });
+  });
+
+  it('refuses answers to questions that were not asked', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask('AskUserQuestion', { questions }, { requestId: 'q-1' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    await expectCode(
+      mgr.replyQuestion(s.id, { requestId: 'q-1', answers: { 'Something else?': 'x' } }),
+      'bad-request',
+    );
+  });
+});
+
+describe('cancelling', () => {
+  it('cancels a waiting request on interrupt and tells the engine to stop', async () => {
+    let result: PermissionResult | null = null;
+    const { queries } = setup(async ({ q }) => {
+      q.init();
+      result = await q.ask('Write', { file_path: '/a' }).promise;
+      q.result('error_during_execution');
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(queries[0]?.interrupts).toBe(1);
+    expect(result).toMatchObject({ behavior: 'deny' });
+    const ev = events(mgr, s.id);
+    expect(ev).toContainEqual({ type: 'request-resolved', requestId: 'req-1', outcome: 'cancelled' });
+    expect(ev.find((e) => e.type === 'turn-end')).toMatchObject({
+      interrupted: true,
+      ok: false,
+      errorText: null,
+    });
+  });
+
+  it('cancels a waiting request on close, ends the input and closes the engine', async () => {
+    let result: PermissionResult | null = null;
+    const seen: ChatEvent[] = [];
+    const { queries } = setup(async ({ q }) => {
+      q.init();
+      result = await q.ask('Write', { file_path: '/a' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    const sub = mgr.subscribe(s.id, 0, (e) => seen.push(e.event));
+    await mgr.close(s.id);
+    sub.unsubscribe();
+    expect(result).toMatchObject({ behavior: 'deny' });
+    expect(seen).toContainEqual({ type: 'request-resolved', requestId: 'req-1', outcome: 'cancelled' });
+    expect(seen.at(-1)).toEqual({ type: 'state', state: 'closed' });
+    expect(queries[0]?.ended).toBe(true);
+    expect(queries[0]?.closed).toBe(true);
+    expect((await mgr.list()).live).toEqual([]);
+  });
+
+  it('cancels a waiting request when the engine aborts it', async () => {
+    let result: PermissionResult | null = null;
+    setup(async ({ q }) => {
+      q.init();
+      const { promise, controller } = q.ask('Write', { file_path: '/a' });
+      controller.abort();
+      result = await promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(result).toMatchObject({ behavior: 'deny' });
+    expect(events(mgr, s.id)).toContainEqual({
+      type: 'request-resolved',
+      requestId: 'req-1',
+      outcome: 'cancelled',
+    });
+  });
+});
+
+describe('reopening a past chat (A4)', () => {
+  it('replays history, stays idle without an engine, then resumes on the first message', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier chat about PPC', lastModified: 1_700_000_000_000 });
+    fx.history['old-1'] = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'What is CPA?' },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Cost per acquisition.' }] },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'x' }] },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'assistant',
+        uuid: 'a2',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'helper' }] },
+        parent_tool_use_id: 'agent',
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1', client: 'urban-cooling' });
+    expect(s.sdkSessionId).toBe('old-1');
+    expect(s.state).toBe('idle');
+    expect(s.title).toBe('Earlier chat about PPC');
+    expect(s.client).toBeNull();
+    expect(fx.queries).toHaveLength(0);
+    const ev = events(mgr, s.id);
+    expect(ev).toEqual([
+      { type: 'user-message', messageId: expect.any(String), text: 'What is CPA?' },
+      {
+        type: 'assistant-message',
+        messageId: expect.any(String),
+        text: 'Cost per acquisition.',
+        parentToolUseId: null,
+      },
+      { type: 'state', state: 'idle' },
+    ]);
+    expect((await mgr.list()).past).toEqual([]);
+
+    await mgr.send(s.id, 'And ROAS?');
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(fx.queries[0]?.options.resume).toBe('old-1');
+    expect(fx.queries[0]?.options.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code' });
+  });
+
+  it('refuses an unknown session and one that is already open', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    await expectCode(mgr.start({ resume: 'missing' }), 'not-found');
+    await mgr.start({ resume: 'old-1' });
+    await expectCode(mgr.start({ resume: 'old-1' }), 'already-open');
+  });
+
+  it('lists past sessions newest first, minus live ones', async () => {
+    const fx = setup();
+    fx.past.push(
+      { sessionId: 'a', summary: 'A', lastModified: 1_000 },
+      { sessionId: 'b', summary: 'B', customTitle: 'Bee', lastModified: 3_000 },
+      { sessionId: 'sdk-new-1', summary: 'live one', lastModified: 2_000 },
+    );
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const list = await mgr.list();
+    expect(list.past.map((p) => p.sdkSessionId)).toEqual(['b', 'a']);
+    expect(list.past[0]).toEqual({
+      sdkSessionId: 'b',
+      title: 'Bee',
+      lastModified: new Date(3_000).toISOString(),
+    });
+  });
+});
+
+describe('the live-chat cap (A8)', () => {
+  it('closes the longest-idle chat to make room', async () => {
+    const fx = setup();
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      ids.push((await mgr.start({ prompt: `chat ${i}` })).id);
+      await flush();
+      vi.advanceTimersByTime(1000);
+    }
+    await mgr.send(ids[0] as string, 'touch the oldest');
+    await flush();
+    const fifth = await mgr.start({ prompt: 'chat 5' });
+    await flush();
+    const live = (await mgr.list()).live.map((s) => s.id);
+    expect(live).toHaveLength(4);
+    expect(live).toContain(fifth.id);
+    expect(live).toContain(ids[0]);
+    expect(live).not.toContain(ids[1]);
+    expect(fx.queries[1]?.closed).toBe(true);
+  });
+
+  it('refuses with too-many-chats when all are busy', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await new Promise(() => {});
+    });
+    for (let i = 0; i < 4; i++) await mgr.start({ prompt: `chat ${i}` });
+    await flush();
+    await expectCode(mgr.start({ prompt: 'one more' }), 'too-many-chats');
+  });
+});
+
+describe('the idle timer (A8)', () => {
+  it('closes a chat 30 minutes after its turn finished', async () => {
+    setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    vi.advanceTimersByTime(29 * 60 * 1000);
+    await flush();
+    expect((await mgr.list()).live).toHaveLength(1);
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    await flush();
+    expect((await mgr.list()).live).toHaveLength(0);
+    await expectCode(mgr.send(s.id, 'x'), 'session-closed');
+  });
+
+  it('does not run while a question or approval is waiting', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask('Write', { file_path: '/a' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    vi.advanceTimersByTime(3 * 60 * 60 * 1000);
+    await flush();
+    const live = (await mgr.list()).live;
+    expect(live).toHaveLength(1);
+    expect(live[0]?.state).toBe('waiting');
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    await flush();
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    await flush();
+    expect((await mgr.list()).live).toHaveLength(0);
+  });
+});
+
+describe('engine failure', () => {
+  it('ends the turn with an error and restarts with resume on the next message', async () => {
+    const fx = setup(async ({ q, turn }) => {
+      q.init();
+      if (fx.queries.length === 1 && turn === 0) {
+        q.finish();
+        return;
+      }
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const ev = events(mgr, s.id);
+    expect(ev.find((e) => e.type === 'turn-end')).toMatchObject({ ok: false });
+    expect((await mgr.list()).live[0]?.state).toBe('error');
+    await mgr.send(s.id, 'try again');
+    await flush();
+    expect(fx.queries).toHaveLength(2);
+    expect(fx.queries[1]?.options.resume).toBe('sdk-new-1');
+  });
+});
+
+describe('sessions-changed', () => {
+  it('notifies on create, state change and close', async () => {
+    setup();
+    const fn = vi.fn();
+    const off = mgr.onChange(fn);
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const before = fn.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+    await mgr.close(s.id);
+    expect(fn.mock.calls.length).toBeGreaterThan(before);
+    off();
+  });
+});

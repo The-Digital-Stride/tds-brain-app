@@ -45,7 +45,14 @@ export function AttentionBar({
   return (
     <div className="attn-bar">
       <div className="attn-text">
-        <span className="attn-dot" data-attention={attention} aria-hidden="true" />
+        {attention === 'working' ? (
+          <svg className="attn-spinner" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+            <path d="M13.8 2.2v3.2h-3.2" />
+          </svg>
+        ) : (
+          <span className="attn-dot" data-attention={attention} aria-hidden="true" />
+        )}
         <span className="attn-label">
           {label}
           {attention === 'working' ? ` ${elapsed}` : ` · ${elapsed}`}

@@ -1023,7 +1023,7 @@ p {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 6px;
+  margin: 0 8px 0 2px;
   background: var(--attn-ready);
 }
 .attn-dot[data-attention="working"] {
@@ -1059,6 +1059,25 @@ p {
   border-color: var(--attn-asking);
   color: #2a1700;
 }
+.attn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  stroke: var(--attn-working-edge);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: attn-spin 1.1s linear infinite;
+}
+@keyframes attn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @keyframes attn-pulse {
   0%,
   100% {
@@ -1093,6 +1112,7 @@ p {
     scroll-behavior: auto;
   }
   .spinner,
+  .attn-spinner,
   .composer textarea[data-attention] {
     animation: none;
   }

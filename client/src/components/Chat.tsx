@@ -115,11 +115,11 @@ export function ChatView() {
             }}
           >
             <span>{closeConfirmText(state)}</span>
-            <button type="button" className="btn" data-size="small" onClick={() => void closeChat(sessionId)}>
+            <button type="button" className="btn" onClick={() => void closeChat(sessionId)}>
               Close chat
             </button>
             {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
-            <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
+            <button type="button" className="btn" autoFocus onClick={cancelClose}>
               Keep open
             </button>
           </fieldset>
@@ -130,14 +130,7 @@ export function ChatView() {
                 Stop
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn"
-              data-variant="quiet"
-              data-size="small"
-              ref={closeButton}
-              onClick={() => requestClose(sessionId)}
-            >
+            <button type="button" className="btn" ref={closeButton} onClick={() => requestClose(sessionId)}>
               Close chat
             </button>
           </>

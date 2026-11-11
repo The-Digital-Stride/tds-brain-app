@@ -1,17 +1,25 @@
 import { useStore, type View } from '../store.tsx';
 
 const MENU: { view: View; label: string }[] = [
-  { view: 'chat', label: 'Chat' },
   { view: 'skills', label: 'Skills' },
   { view: 'todos', label: 'To-dos' },
   { view: 'history', label: 'History' },
   { view: 'settings', label: 'Settings' },
 ];
 
+const STATE_WORDS = {
+  starting: 'Starting',
+  working: 'Working',
+  waiting: 'Waiting for you',
+  idle: 'Ready',
+  error: 'Hit a problem',
+  closed: 'Ended',
+} as const;
+
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Role not set' } as const;
 
 export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
-  const { boot, view, openView, newChat } = useStore();
+  const { boot, view, openView, newChat, startSkill, sessions, activeChat, openChat } = useStore();
   if (!boot) return null;
   const byName = (name: string) => boot.skills.find((s) => s.name === name);
   const pinned = boot.prefs.pins.map(byName).filter((s) => s !== undefined);
@@ -33,8 +41,42 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
       >
         New chat
       </button>
+      {sessions && sessions.live.length > 0 ? (
+        <section className="side-section" aria-labelledby="open-h">
+          <h3 id="open-h">Open chats</h3>
+          <ul className="side-list">
+            {sessions.live.map((c) => {
+              const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === c.id;
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className="side-link chat-link"
+                    aria-current={current ? 'true' : undefined}
+                    onClick={() => {
+                      openChat(c.id);
+                      onNavigate();
+                    }}
+                  >
+                    <span className="chat-link-title">{c.title || 'New chat'}</span>
+                    <span className="chat-link-state">
+                      {c.state === 'waiting' ? (
+                        <span className="badge" data-tone="waiting">
+                          Waiting for you
+                        </span>
+                      ) : (
+                        STATE_WORDS[c.state]
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
       <nav aria-label="Main menu">
-        <ul>
+        <ul className="side-menu">
           {MENU.map((m) => (
             <li key={m.view}>
               <button
@@ -64,7 +106,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   type="button"
                   className="side-link"
                   onClick={() => {
-                    newChat({ draft: `/${s.name} `, skill: s });
+                    startSkill(s);
                     onNavigate();
                   }}
                 >
@@ -87,7 +129,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   type="button"
                   className="side-link"
                   onClick={() => {
-                    newChat({ draft: `/${s.name} `, skill: s });
+                    startSkill(s);
                     onNavigate();
                   }}
                 >

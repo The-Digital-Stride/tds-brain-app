@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
+import type { SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
+import { currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
@@ -46,16 +48,16 @@ function countAll(tools: ToolItem[]): number {
   );
 }
 
-function ActivityGroup({ tools }: { tools: ToolItem[] }) {
-  const running = tools.find((t) => t.status === 'running');
+function ActivityGroup({ tools, active, waiting }: { tools: ToolItem[]; active: boolean; waiting: boolean }) {
+  const step = active ? currentStep(tools) : null;
   const total = countAll(tools);
-  const summary = running
-    ? `Claude is working: ${running.label}`
-    : `What Claude did (${total} ${total === 1 ? 'step' : 'steps'})`;
+  let summary = `What Claude did (${total} ${total === 1 ? 'step' : 'steps'})`;
+  if (active && waiting) summary = 'Waiting for you';
+  else if (step) summary = `Claude is working: ${step}`;
   return (
-    <details className="activity" data-running={running !== undefined}>
+    <details className="activity" data-running={step !== null}>
       <summary>{summary}</summary>
-      <ul>
+      <ul className="activity-steps">
         {tools.map((t) => (
           <ToolLine key={t.id} tool={t} />
         ))}
@@ -64,35 +66,19 @@ function ActivityGroup({ tools }: { tools: ToolItem[] }) {
   );
 }
 
-type Block = { kind: 'tools'; id: string; tools: ToolItem[] } | { kind: 'item'; item: ChatItem };
-
-function toBlocks(items: ChatItem[]): Block[] {
-  const blocks: Block[] = [];
-  for (const item of items) {
-    if (item.kind === 'tool') {
-      const last = blocks.at(-1);
-      if (last?.kind === 'tools') last.tools.push(item);
-      else blocks.push({ kind: 'tools', id: item.id, tools: [item] });
-    } else {
-      blocks.push({ kind: 'item', item });
-    }
-  }
-  return blocks;
-}
-
 function itemKey(item: ChatItem): string {
   return item.kind === 'permission' || item.kind === 'question'
     ? `${item.kind}-${item.requestId}`
     : `${item.kind}-${item.id}`;
 }
 
-function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
+function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; note: boolean }) {
   switch (item.kind) {
     case 'user':
       return <div className="msg-user">{item.text}</div>;
     case 'assistant':
       return (
-        <div className="msg-assistant">
+        <div className="msg-assistant" data-note={note}>
           <Markdown text={item.text} />
         </div>
       );
@@ -120,8 +106,18 @@ function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
   }
 }
 
-export function Transcript({ items, sessionId }: { items: ChatItem[]; sessionId: string }) {
+export function Transcript({
+  items,
+  sessionId,
+  sessionState,
+}: {
+  items: ChatItem[];
+  sessionId: string;
+  sessionState: SessionState;
+}) {
   const blocks = useMemo(() => toBlocks(items), [items]);
+  const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
+  const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -140,11 +136,16 @@ export function Transcript({ items, sessionId }: { items: ChatItem[]; sessionId:
       }}
     >
       <div className="transcript-inner">
-        {blocks.map((b) =>
+        {blocks.map((b, i) =>
           b.kind === 'tools' ? (
-            <ActivityGroup key={`tools-${b.id}`} tools={b.tools} />
+            <ActivityGroup
+              key={`tools-${b.id}`}
+              tools={b.tools}
+              active={busy && i === lastTools}
+              waiting={sessionState === 'waiting'}
+            />
           ) : (
-            <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} />
+            <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
           ),
         )}
       </div>

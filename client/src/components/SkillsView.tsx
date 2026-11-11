@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store.tsx';
 
 export function SkillsView() {
-  const { boot, newChat, togglePin } = useStore();
+  const { boot, startSkill, togglePin } = useStore();
   const [query, setQuery] = useState('');
   const skills = boot?.skills ?? [];
   const pins = boot?.prefs.pins ?? [];
@@ -40,16 +40,12 @@ export function SkillsView() {
             const pinned = pins.includes(s.name);
             return (
               <li className="skill-row" key={s.name}>
-                <button
-                  type="button"
-                  className="skill-main"
-                  onClick={() => newChat({ draft: `/${s.name} `, skill: s })}
-                >
+                <button type="button" className="skill-main" onClick={() => startSkill(s)}>
                   <div className="skill-title">
                     {s.title}{' '}
                     {s.maturity === 'draft' ? (
                       <span className="badge" data-tone="draft">
-                        draft
+                        Still being tested
                       </span>
                     ) : null}
                   </div>

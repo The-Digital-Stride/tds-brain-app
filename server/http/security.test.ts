@@ -1,16 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SESSION_COOKIE } from '../../shared/contract.ts';
+import { ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
 import {
+  AUTH_CODE_TTL_MS,
   AUTH_COOKIE_MAX_AGE,
   AUTH_PING_PATH,
   authExchange,
   checkRequest,
+  codeProof,
   cookieValueFor,
+  createAuthCodes,
   isAllowedHost,
   isAllowedOrigin,
   isJsonContentType,
   MAX_BODY_BYTES,
+  MAX_LIVE_CODES,
   parseCookies,
   pingProof,
   SECURITY_HEADERS,
@@ -230,9 +234,18 @@ describe('changing requests', () => {
   });
 });
 
-describe('/auth exchange', () => {
-  it('sets an HttpOnly, SameSite=Strict, 30-day cookie for the right token', () => {
-    const r = authExchange(TOKEN, TOKEN);
+describe('/auth exchange (A15: single-use, 60-second codes)', () => {
+  function codes(start = 1_000_000) {
+    let t = start;
+    const c = createAuthCodes(TOKEN, () => t);
+    return { c, tick: (ms: number) => (t += ms) };
+  }
+
+  it('swaps a fresh code for an HttpOnly, SameSite=Strict, 30-day cookie, once only', () => {
+    const { c } = codes();
+    const code = c.mint();
+    expect(code).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+    const r = authExchange(code, c, TOKEN);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.setCookie).toContain(`${SESSION_COOKIE}=${COOKIE}`);
@@ -241,12 +254,82 @@ describe('/auth exchange', () => {
     expect(r.setCookie).toContain('Path=/');
     expect(r.setCookie).toContain(`Max-Age=${AUTH_COOKIE_MAX_AGE}`);
     expect(AUTH_COOKIE_MAX_AGE).toBe(30 * 24 * 60 * 60);
+    expect(authExchange(code, c, TOKEN).ok).toBe(false);
   });
 
-  it('refuses a wrong or missing token', () => {
-    expect(authExchange('wrong', TOKEN).ok).toBe(false);
-    expect(authExchange(null, TOKEN).ok).toBe(false);
-    expect(authExchange('', TOKEN).ok).toBe(false);
+  it('refuses an expired code', () => {
+    const { c, tick } = codes();
+    const code = c.mint();
+    tick(AUTH_CODE_TTL_MS + 1);
+    expect(authExchange(code, c, TOKEN).ok).toBe(false);
+  });
+
+  it('refuses a wrong or missing code, and the old long-lived token', () => {
+    const { c } = codes();
+    c.mint();
+    expect(authExchange('wrong', c, TOKEN).ok).toBe(false);
+    expect(authExchange(null, c, TOKEN).ok).toBe(false);
+    expect(authExchange('', c, TOKEN).ok).toBe(false);
+    expect(authExchange(TOKEN, c, TOKEN).ok).toBe(false);
+  });
+
+  it('caps the number of live codes', () => {
+    const { c, tick } = codes();
+    for (let i = 0; i < MAX_LIVE_CODES; i++) expect(c.mint()).not.toBeNull();
+    expect(c.mint()).toBeNull();
+    tick(AUTH_CODE_TTL_MS + 1);
+    expect(c.mint()).not.toBeNull();
+  });
+});
+
+describe('/auth/code (launcher asks for a code by proving it knows the secret)', () => {
+  const NONCE = 'n0nce-abcdefghijklmnop';
+
+  it('gives a working code for a right proof', () => {
+    const c = createAuthCodes(TOKEN, () => 5);
+    const r = c.issueForLauncher(NONCE, codeProof(TOKEN, NONCE));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(authExchange(r.code, c, TOKEN).ok).toBe(true);
+  });
+
+  it('refuses a wrong proof, a ping proof, a short nonce and a replayed nonce', () => {
+    const c = createAuthCodes(TOKEN, () => 5);
+    expect(c.issueForLauncher(NONCE, codeProof('other', NONCE)).ok).toBe(false);
+    expect(c.issueForLauncher(NONCE, pingProof(TOKEN, NONCE)).ok).toBe(false);
+    expect(c.issueForLauncher('short', codeProof(TOKEN, 'short')).ok).toBe(false);
+    const fresh = 'another-nonce-1234567';
+    expect(c.issueForLauncher(fresh, codeProof(TOKEN, fresh)).ok).toBe(true);
+    expect(c.issueForLauncher(fresh, codeProof(TOKEN, fresh)).ok).toBe(false);
+  });
+
+  it('uses a proof different from the ping proof and never the secret', () => {
+    expect(codeProof(TOKEN, NONCE)).not.toBe(pingProof(TOKEN, NONCE));
+    expect(codeProof(TOKEN, NONCE)).not.toContain(TOKEN);
+  });
+
+  it('is reachable without a cookie but refuses anything that looks like a browser', () => {
+    const path = ROUTES.authCode;
+    expect(checkRequest(req({ path, headers: { cookie: undefined } }), ctx)).toEqual({ action: 'auth-code' });
+    expect(
+      checkRequest(req({ path, headers: { cookie: `${SESSION_COOKIE}=${COOKIE}` } }), ctx),
+    ).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(checkRequest(req({ path, headers: { cookie: undefined, origin: ORIGIN } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(
+      checkRequest(req({ path, headers: { cookie: undefined, 'sec-fetch-site': 'same-origin' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ path, headers: { cookie: undefined, host: `localhost:${PORT}` } }), ctx),
+    ).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
   });
 });
 

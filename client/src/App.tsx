@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
 import { HistoryView } from './components/HistoryView.tsx';
@@ -13,20 +13,15 @@ import { StoreProvider, useStore } from './store.tsx';
 function Announcer() {
   const { activeChat, chats } = useStore();
   const chat = activeChat.kind === 'live' ? (chats[activeChat.sessionId] ?? initialChatState) : null;
-  const prev = useRef<string | null>(null);
   const card = chat ? pendingCard(chat) : null;
   const state = chat?.sessionState ?? null;
+  const last = chat?.items.at(-1);
   let text = '';
   if (card?.kind === 'question') text = 'Claude has a question for you';
   else if (card?.kind === 'permission') text = 'Claude needs your approval';
   else if (state === 'working' || state === 'starting') text = 'Claude is working';
-  else if (state === 'idle' && prev.current === 'Claude is working') text = 'Claude has finished';
   else if (state === 'error') text = 'Something went wrong in this chat';
-  const last = useRef(text);
-  useEffect(() => {
-    prev.current = last.current;
-    last.current = text;
-  });
+  else if (last?.kind === 'turn-end' && last.ok && !last.interrupted) text = 'Claude has finished';
   return (
     <div className="visually-hidden" aria-live="polite" role="status">
       {text}

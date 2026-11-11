@@ -1,3 +1,4 @@
+import { approvalsSentence } from '../approvals.ts';
 import { useStore } from '../store.tsx';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
@@ -22,8 +23,7 @@ export function SettingsView() {
             Let the app tick to-dos
           </label>
           <p className="lede" id="set-direct-help">
-            Let the app tick to-dos. A ticked to-do is moved in the shared brain, so the whole team sees the
-            change within a couple of minutes.
+            Lets you tick to-dos off here. Each tick changes the shared brain, so the whole team sees it.
           </p>
           <p className="meta">Off by default.</p>
         </div>
@@ -45,7 +45,7 @@ export function SettingsView() {
       </section>
 
       <section className="card" aria-labelledby="about-h">
-        <h2 id="about-h">About this copy</h2>
+        <h2 id="about-h">About TDS Brain on this computer</h2>
         <dl className="about">
           <dt>You are</dt>
           <dd>
@@ -54,7 +54,7 @@ export function SettingsView() {
           </dd>
           <dt>Brain folder</dt>
           <dd>
-            <code>{brain.path}</code>
+            <code className="about-code">{brain.path}</code>
           </dd>
           <dt>Brain health</dt>
           <dd>
@@ -69,7 +69,20 @@ export function SettingsView() {
             )}
           </dd>
           <dt>Claude Code</dt>
-          <dd>{engine.ok ? <code>{engine.claudePath}</code> : (engine.problem ?? 'Not ready.')}</dd>
+          <dd>
+            {engine.ok ? (
+              <code className="about-code">{engine.claudePath}</code>
+            ) : (
+              (engine.problem ?? 'Not ready.')
+            )}
+          </dd>
+          <dt>Approvals</dt>
+          <dd>
+            {approvalsSentence(engine.permissionMode)}
+            <p className="meta">
+              This follows your Claude Code setting, so the app asks as often as your terminal does.
+            </p>
+          </dd>
           <dt>App version</dt>
           <dd>{appVersion}</dd>
         </dl>

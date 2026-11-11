@@ -4,12 +4,15 @@
  * "Allow for this chat" may only ever widen access for THIS session: anything that could become a
  * permanent rule, deny something, or switch to a looser mode is dropped here.
  */
+import { realpathSync } from 'node:fs';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import { humaniseMcpServer } from './event-map.ts';
 
 type Rec = Record<string, unknown>;
 
-const MAX_DETAIL = 2000;
+/** Longest detail the card shows in full (A12). A longer `Bash` command is refused, not shortened. */
+export const MAX_DETAIL_CHARS = 20_000;
 
 function isRec(v: unknown): v is Rec {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -73,17 +76,17 @@ function describeRule(toolName: string, content: string | undefined): string {
   const mcp = /^mcp__(.+?)(?:__(.+))?$/.exec(toolName);
   if (mcp?.[1]) {
     const server = humaniseMcpServer(mcp[1]);
-    return mcp[2] ? `${mcp[2]} from ${server}` : `everything from ${server}`;
+    return mcp[2] ? `using ${mcp[2]} from ${server}` : `using everything from ${server}`;
   }
   switch (toolName) {
     case 'Bash': {
-      if (!content) return 'any command';
+      if (!content) return 'running any command';
       const prefix = /^(.*?)(?::\*| \*)$/.exec(content)?.[1];
       if (prefix !== undefined) {
         const shown = prefix.endsWith('/') ? `${prefix}...` : prefix;
-        return `\`${shown}\` commands`;
+        return `running \`${shown}\` commands`;
       }
-      return `the command \`${content}\``;
+      return `running the command \`${content}\``;
     }
     case 'Read':
       return content ? `reading ${content}` : 'reading files';
@@ -91,20 +94,20 @@ function describeRule(toolName: string, content: string | undefined): string {
     case 'Edit':
     case 'MultiEdit':
     case 'NotebookEdit':
-      return content ? `editing ${content}` : 'file edits';
+      return content ? `changing ${content}` : 'changing files';
     case 'WebFetch': {
       const domain = content?.startsWith('domain:') ? content.slice('domain:'.length) : content;
       return domain ? `opening pages on ${domain}` : 'opening web pages';
     }
     case 'WebSearch':
-      return 'web searches';
+      return 'searching the web';
     case 'Glob':
     case 'Grep':
       return 'searching files';
     case 'Skill':
-      return content ? `the ${content} skill` : 'skills';
+      return content ? `using the ${content} skill` : 'using skills';
     default:
-      return content ? `${toolName}(${content})` : toolName;
+      return content ? `using ${toolName}(${content})` : `using ${toolName}`;
   }
 }
 
@@ -113,25 +116,24 @@ function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/** The plain sentence shown under "Allow for this chat", or null when nothing safe is offered. */
+/**
+ * The full sentence shown beside "Allow for this chat" (A13), or null when nothing safe is offered.
+ * Edit mode is described by all it lets through: it also auto-approves rm, mv, cp, sed, mkdir and touch.
+ */
 export function describeSessionAllow(kept: readonly PermissionUpdate[]): string | null {
   const parts: string[] = [];
   for (const u of kept) {
     if (u.type === 'addRules') {
       for (const r of u.rules) parts.push(describeRule(r.toolName, r.ruleContent));
     } else if (u.type === 'addDirectories') {
-      parts.push(`access to files in ${u.directories.join(', ')}`);
+      parts.push(`using files in ${u.directories.join(', ')}`);
     } else if (u.type === 'setMode' && u.mode === 'acceptEdits') {
-      parts.push('file edits without asking');
+      parts.push('creating, changing, moving and deleting files in the brain folder');
     }
   }
   const unique = [...new Set(parts)];
   if (unique.length === 0) return null;
-  return `Also allow ${joinList(unique)} in this chat`;
-}
-
-function clip(text: string): string {
-  return text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL)}…` : text;
+  return `For the rest of this chat, Claude won't ask before ${joinList(unique)}.`;
 }
 
 function stringifyInput(input: Rec): string {
@@ -142,18 +144,64 @@ function stringifyInput(input: Rec): string {
   }
 }
 
+export const OUTSIDE_BRAIN_WARNING = 'This file is outside the brain folder.';
+export const LONG_COMMAND_WARNING = 'This is a long command. Scroll to the end before you allow it.';
+const LONG_COMMAND_CHARS = 600;
+const LONG_COMMAND_LINES = 8;
+
+/** The brain root as written and as the disk resolves it (e.g. /tmp vs /private/tmp on macOS). */
+function brainRoots(brainRoot: string): string[] {
+  const roots = [resolve(brainRoot)];
+  try {
+    const real = realpathSync.native(brainRoot);
+    if (!roots.includes(real)) roots.push(real);
+  } catch {
+    // the folder may not exist (tests); the resolved path is enough
+  }
+  return roots;
+}
+
+/**
+ * A path inside the brain folder is shown relative to it; one outside keeps its full (resolved) path.
+ * Resolving first means `brain/../elsewhere` cannot pass as inside.
+ */
+function placePath(p: string, roots: string[]): { shown: string; outside: boolean } {
+  const first = roots[0] ?? '/';
+  const full = isAbsolute(p) ? resolve(p) : resolve(first, p);
+  for (const root of roots) {
+    if (full === root) return { shown: '.', outside: false };
+    if (full.startsWith(root + sep)) return { shown: relative(root, full), outside: false };
+  }
+  return { shown: full, outside: true };
+}
+
 export interface PermissionCardContext {
   title?: string;
   blockedPath?: string;
+  /** The brain folder: files inside it are shown relative to it, files outside get a warning. */
+  brainRoot: string;
 }
 
-/** The card's plain-text title and detail. Nothing here is rendered as markdown or HTML. */
-export function permissionCard(
-  toolName: string,
-  input: Rec,
-  ctx: PermissionCardContext,
-): { title: string; detail: string } {
-  const file = str(input.file_path) ?? str(input.notebook_path);
+export interface PermissionCard {
+  title: string;
+  /** Plain text. Never shortened unless `warning` says so. */
+  detail: string;
+  warning: string | null;
+  /** True for a `Bash` command too long to show in full: refuse it instead of asking (A12). */
+  refuse: boolean;
+}
+
+/** The card's plain-text title, detail and warning. Nothing here is rendered as markdown or HTML. */
+export function permissionCard(toolName: string, input: Rec, ctx: PermissionCardContext): PermissionCard {
+  const roots = brainRoots(ctx.brainRoot);
+  let outside = false;
+  const place = (p: string): string => {
+    const r = placePath(p, roots);
+    if (r.outside) outside = true;
+    return r.shown;
+  };
+  const filePath = str(input.file_path) ?? str(input.notebook_path);
+  const file = filePath ? place(filePath) : null;
   let title: string;
   let detail: string;
   const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
@@ -168,10 +216,12 @@ export function permissionCard(
       title = 'Claude wants to change a file';
       detail = file ?? stringifyInput(input);
       break;
-    case 'Read':
+    case 'Read': {
+      const p = str(input.path);
       title = 'Claude wants to read a file';
-      detail = file ?? str(input.path) ?? stringifyInput(input);
+      detail = file ?? (p ? place(p) : stringifyInput(input));
       break;
+    }
     case 'Bash':
       title = 'Claude wants to run a command';
       detail = str(input.command) ?? stringifyInput(input);
@@ -185,13 +235,15 @@ export function permissionCard(
       detail = str(input.query) ?? stringifyInput(input);
       break;
     case 'Glob':
-    case 'Grep':
+    case 'Grep': {
+      const p = str(input.path);
       title = 'Claude wants to search files';
-      detail = [str(input.pattern), str(input.path)].filter(Boolean).join('\n') || stringifyInput(input);
+      detail = [str(input.pattern), p ? place(p) : null].filter(Boolean).join('\n') || stringifyInput(input);
       break;
+    }
     case 'Skill': {
-      const name = str(input.skill) ?? 'a';
-      title = `Claude wants to use the ${name.replace(/^\//, '')} skill`;
+      const name = str(input.skill)?.replace(/^\//, '');
+      title = name ? `Claude wants to use the ${name} skill` : 'Claude wants to use a skill';
       detail = str(input.args) ?? '';
       break;
     }
@@ -209,7 +261,32 @@ export function permissionCard(
   }
   const engineTitle = str(ctx.title);
   if (engineTitle) title = engineTitle;
+
   const blocked = str(ctx.blockedPath);
-  if (blocked && !detail.includes(blocked)) detail = detail ? `${detail}\n\nPath: ${blocked}` : blocked;
-  return { title, detail: clip(detail) };
+  if (blocked) {
+    const shown = place(blocked);
+    if (!detail.includes(shown) && !detail.includes(blocked))
+      detail = detail ? `${detail}\n\nPath: ${shown}` : shown;
+  }
+
+  const command = toolName === 'Bash' ? str(input.command) : null;
+  const refuse = command !== null && command.length > MAX_DETAIL_CHARS;
+
+  const warnings: string[] = [];
+  if (outside) warnings.push(OUTSIDE_BRAIN_WARNING);
+  if (
+    command !== null &&
+    !refuse &&
+    (command.length > LONG_COMMAND_CHARS || command.split('\n').length > LONG_COMMAND_LINES)
+  ) {
+    warnings.push(LONG_COMMAND_WARNING);
+  }
+  if (!refuse && detail.length > MAX_DETAIL_CHARS) {
+    const n = detail.length.toLocaleString('en-GB');
+    detail = `${detail.slice(0, MAX_DETAIL_CHARS)}…`;
+    warnings.push(
+      `This is too long to show in full (${n} characters). Only allow it if you know what Claude is doing.`,
+    );
+  }
+  return { title, detail, warning: warnings.length > 0 ? warnings.join(' ') : null, refuse };
 }

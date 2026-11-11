@@ -153,7 +153,7 @@
       <line class="d-acc" x1="250" y1="146" x2="250" y2="414" marker-end="url(#ahA)"/>
       <text class="t-acc" x="240" y="300" text-anchor="end">reads lists directly</text>
       <text class="t-m" x="240" y="317" text-anchor="end">skills, to-dos, clients, roles</text>
-      <text class="t-m" x="240" y="334" text-anchor="end">one small write: ticking a to-do</text>
+      <text class="t-m" x="240" y="334" text-anchor="end">one write, off by default: ticking a to-do</text>
 
       <line class="d-acc" x1="400" y1="152" x2="400" y2="264" marker-start="url(#ahA)" marker-end="url(#ahA)"/>
       <text class="t-acc" x="410" y="222">prompts down</text>
@@ -207,12 +207,12 @@
   <p>A sketch of the shell, not a design. Each numbered part is a small app in its own right, plugged into the shell. The table underneath says where each one gets its information.</p>
   <figure>
     <div class="win">
-      <div class="bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="addr">localhost · TDS Brain App</span></div>
+      <div class="bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="addr">127.0.0.1:3877 · TDS Brain</span></div>
       <div class="shell">
         <div class="side">
           <div class="brand">TDS Brain</div>
           <div class="grp"><span class="n">1</span>Menu</div>
-          <div class="nav"><div class="on">Chat</div><div>Skills</div><div>To-dos</div><div>Clients</div><div>Sessions</div><div>Settings</div></div>
+          <div class="nav"><div class="on">New chat</div><div>Skills</div><div>To-dos</div><div>History</div><div>Settings</div></div>
           <div class="grp"><span class="n">2</span>Pinned skills</div>
           <div class="pin"><div>Good morning</div><div>Meeting notes</div><div>Search-term audit</div></div>
           <div class="grp"><span class="n">3</span>Used often</div>
@@ -225,9 +225,9 @@
             <div class="opts"><span class="btn solid">New call</span><span class="btn">Already filed</span><span class="btn">Show me both</span></div>
           </div>
           <div class="approve"><b>Claude wants to save a file</b><br>clients/urban-cooling/call-notes/2026-11-11-catch-up.md
-            <div class="opts"><span class="btn solid">Allow</span><span class="btn">Show me first</span><span class="btn">Don't</span></div>
+            <div class="opts"><span class="btn solid">Allow</span><span class="btn">Don't allow</span><span class="btn">Allow for this chat</span></div>
           </div>
-          <div class="box">Ask the brain anything…</div>
+          <div class="box">Ask Claude anything about your work</div>
         </div>
         <div class="todo">
           <div class="grp" style="margin-top:0"><span class="n">5</span>My to-dos</div>
@@ -251,7 +251,7 @@
       <tr><td><span class="n">2</span></td><td><b>Pinned skills</b></td><td>The skill folders as they are on disk right now (<code>.claude/skills/*/SKILL.md</code>). Which ones you pinned is the app's own note.</td><td>No</td></tr>
       <tr><td><span class="n">3</span></td><td><b>Used often</b></td><td>Your own usage log, which the brain already writes (<code>z-logs/team-usage/&lt;you&gt;.jsonl</code>).</td><td>No</td></tr>
       <tr><td><span class="n">4</span></td><td><b>Chat, with client and skill set</b></td><td>The engine. Clients come from <code>clients/</code> and <code>.claude/accounts.json</code>.</td><td class="yes">Only what you approve</td></tr>
-      <tr><td><span class="n">5</span></td><td><b>Brain to-do list</b></td><td>The files in <code>todo/</code>: yours first, then unassigned ones.</td><td class="yes">Yes: a tick edits that file and syncs to the team</td></tr>
+      <tr><td><span class="n">5</span></td><td><b>Brain to-do list</b></td><td>The files in <code>todo/</code>: yours first, then unassigned ones.</td><td class="yes">Only when switched on in Settings: a tick then edits that file and syncs to the team</td></tr>
       <tr><td><span class="n">6</span></td><td><b>The next panel</b></td><td>Any brain folder, or a skill run in the background. A panel is a screen plus a source, nothing more.</td><td>Depends on the panel</td></tr>
     </tbody>
   </table>

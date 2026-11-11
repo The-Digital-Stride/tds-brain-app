@@ -20,7 +20,7 @@ const OUTCOME_WORDS: Record<Outcome, string> = {
 };
 
 export function PermissionCard({ item, sessionId }: { item: PermissionItem; sessionId: string }) {
-  const { run } = useStore();
+  const { run, requestComposerFocus } = useStore();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useFocusOnAppear<HTMLElement>(item.outcome === null);
@@ -42,10 +42,13 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
         ...(decision === 'deny' && note.trim() ? { note: note.trim() } : {}),
       }),
     );
-    if (!ok) setBusy(false);
+    if (ok) requestComposerFocus();
+    else setBusy(false);
   };
 
   const titleId = `perm-${item.requestId}-title`;
+  const detailId = `perm-${item.requestId}-detail`;
+  const whyId = `perm-${item.requestId}-why`;
   return (
     <section className="approval" aria-labelledby={titleId} tabIndex={-1} ref={ref}>
       <div className="approval-tag">Needs your approval</div>
@@ -53,40 +56,22 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
         {item.title}
       </div>
       {item.detail ? (
-        <pre>
-          <code>{item.detail}</code>
-        </pre>
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard.
+        <section className="approval-detail" tabIndex={0} aria-labelledby={detailId}>
+          <span className="visually-hidden" id={detailId}>
+            Full details of what Claude wants to do
+          </span>
+          <pre>
+            <code>{item.detail}</code>
+          </pre>
+        </section>
       ) : null}
-      <div className="approval-actions">
-        <button
-          type="button"
-          className="btn"
-          data-variant="primary"
-          disabled={busy}
-          onClick={() => void decide('allow')}
-        >
-          Allow
-        </button>
-        {item.sessionAllowLabel !== null ? (
-          <div className="allow-group">
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              aria-describedby={`perm-${item.requestId}-why`}
-              onClick={() => void decide('allow-session')}
-            >
-              Allow for this chat
-            </button>
-            <span className="why" id={`perm-${item.requestId}-why`}>
-              {item.sessionAllowLabel}
-            </span>
-          </div>
-        ) : null}
-        <button type="button" className="btn" disabled={busy} onClick={() => void decide('deny')}>
-          Don't
-        </button>
-      </div>
+      {item.warning ? (
+        <p className="approval-warning">
+          <strong>Take care: </strong>
+          {item.warning}
+        </p>
+      ) : null}
       <label className="note-field">
         <span>If you say no, tell Claude why (optional)</span>
         <input
@@ -97,6 +82,37 @@ export function PermissionCard({ item, sessionId }: { item: PermissionItem; sess
           maxLength={500}
         />
       </label>
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="btn"
+          data-variant="primary"
+          disabled={busy}
+          onClick={() => void decide('allow')}
+        >
+          Allow
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => void decide('deny')}>
+          Don't allow
+        </button>
+        {item.sessionAllowLabel !== null ? (
+          <div className="allow-group">
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              disabled={busy}
+              aria-describedby={whyId}
+              onClick={() => void decide('allow-session')}
+            >
+              Allow for this chat
+            </button>
+            <span className="why" id={whyId}>
+              {item.sessionAllowLabel}
+            </span>
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -106,7 +122,8 @@ interface Pick {
   own: string;
 }
 
-function answerFor(q: AskQuestion, pick: Pick | undefined): string | string[] | null {
+/** What goes to the engine for one question: own words win for a single choice; multi adds them. */
+export function answerFor(q: AskQuestion, pick: Pick | undefined): string | string[] | null {
   const own = pick?.own.trim() ?? '';
   const chosen = pick?.chosen ?? [];
   if (q.multiSelect) {
@@ -118,7 +135,7 @@ function answerFor(q: AskQuestion, pick: Pick | undefined): string | string[] | 
 }
 
 export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionId: string }) {
-  const { run } = useStore();
+  const { run, requestComposerFocus } = useStore();
   const [picks, setPicks] = useState<Record<string, Pick>>({});
   const [busy, setBusy] = useState(false);
   const ref = useFocusOnAppear<HTMLFormElement>(item.outcome === null);
@@ -142,7 +159,7 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
           chosen: p.chosen.includes(label) ? p.chosen.filter((c) => c !== label) : [...p.chosen, label],
         };
       }
-      return { chosen: p.chosen[0] === label ? [] : [label], own: '' };
+      return { chosen: [label], own: '' };
     });
 
   const answers: Record<string, string | string[]> = {};
@@ -157,7 +174,8 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
     setBusy(true);
     const reply: QuestionReply = { requestId: item.requestId, answers };
     const ok = await run(() => api.answerQuestion(sessionId, reply));
-    if (!ok) setBusy(false);
+    if (ok) requestComposerFocus();
+    else setBusy(false);
   };
 
   return (
@@ -174,23 +192,28 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
       {item.questions.map((q, qi) => {
         const pick = picks[q.question];
         const ownId = `q-${item.requestId}-${qi}-own`;
+        const group = `q-${item.requestId}-${qi}`;
         return (
           <fieldset key={q.question}>
-            {q.header ? <span className="q-header">{q.header}</span> : null}
-            <legend>{q.question}</legend>
+            <legend>
+              {q.header ? <span className="q-header">{q.header}</span> : null}
+              {q.question}
+            </legend>
             {q.multiSelect ? <span className="meta">Choose as many as you like.</span> : null}
             {q.options.map((o) => (
-              <button
-                key={o.label}
-                type="button"
-                className="opt"
-                aria-pressed={pick?.chosen.includes(o.label) ?? false}
-                disabled={busy}
-                onClick={() => toggle(q, o.label)}
-              >
-                <span className="opt-label">{o.label}</span>
-                {o.description ? <span className="opt-desc">{o.description}</span> : null}
-              </button>
+              <label key={o.label} className="opt">
+                <input
+                  type={q.multiSelect ? 'checkbox' : 'radio'}
+                  name={group}
+                  checked={pick?.chosen.includes(o.label) ?? false}
+                  disabled={busy}
+                  onChange={() => toggle(q, o.label)}
+                />
+                <span>
+                  <span className="opt-label">{o.label}</span>
+                  {o.description ? <span className="opt-desc">{o.description}</span> : null}
+                </span>
+              </label>
             ))}
             <label className="own-answer" htmlFor={ownId}>
               <span>Or type your own answer</span>
@@ -212,7 +235,7 @@ export function QuestionCard({ item, sessionId }: { item: QuestionItem; sessionI
       })}
       <div>
         <button type="submit" className="btn" data-variant="primary" disabled={!complete || busy}>
-          Send
+          Send answer
         </button>
       </div>
     </form>

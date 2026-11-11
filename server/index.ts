@@ -1,16 +1,19 @@
 /**
- * `pnpm start`: start the local server, then open Chrome at the launch URL.
+ * `pnpm start`: start the local server, then open Chrome with a one-time sign-in code (A15).
  *
  * Logs are short status lines only: never prompts, replies, tokens or cookie values.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { get as httpGet } from 'node:http';
+import { homedir } from 'node:os';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
-import { APP_HOST, type EngineHealth } from '../shared/contract.ts';
+import { APP_HOST, type EngineHealth, ROUTES } from '../shared/contract.ts';
 import { createBrainReaders } from './brain/index.ts';
 import { resolveConfig } from './config.ts';
+import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
-import { AUTH_PING_PATH, pingProof, safeEqual } from './http/security.ts';
+import { AUTH_PING_PATH, codeProof, createAuthCodes, pingProof, safeEqual } from './http/security.ts';
 import { createAppServer } from './http/server.ts';
 import { createAppStore } from './store/app-store.ts';
 
@@ -37,29 +40,55 @@ function openBrowser(url: string): void {
 
 const config = resolveConfig();
 const appUrl = `http://${APP_HOST}:${config.port}`;
-const authUrl = `${appUrl}/auth?token=${encodeURIComponent(config.launchToken)}`;
+const authCodes = createAuthCodes(config.launchToken);
+const signInUrl = (code: string) => `${appUrl}${ROUTES.auth}?code=${encodeURIComponent(code)}`;
 
-/** Asks the app already on the port to prove it holds our launch token, before the token goes anywhere. */
-async function isOurServerRunning(): Promise<boolean> {
-  const nonce = randomBytes(18).toString('base64url');
-  try {
-    const res = await fetch(`${appUrl}${AUTH_PING_PATH}?nonce=${nonce}`, {
-      signal: AbortSignal.timeout(2000),
+/**
+ * A plain GET to the app already on the port. Uses node:http so no browser-like headers (Origin,
+ * Sec-Fetch-*, Cookie) are ever sent: `/auth/code` refuses those.
+ */
+function launcherGet(path: string): Promise<{ status: number; body: string } | null> {
+  return new Promise((resolve) => {
+    const req = httpGet({ host: APP_HOST, port: config.port, path, timeout: 2000 }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        if (body.length < 4096) body += chunk;
+      });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: body.trim() }));
     });
-    if (!res.ok) return false;
-    return safeEqual((await res.text()).trim(), pingProof(config.launchToken, nonce));
-  } catch {
-    return false;
-  }
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
+  });
 }
 
-const engineHealth: EngineHealth = config.claudePath
-  ? { ok: true, claudePath: config.claudePath, problem: null }
-  : {
-      ok: false,
-      claudePath: null,
-      problem: 'Claude Code is not installed on this computer, or the app cannot find it.',
-    };
+/**
+ * For a second `pnpm start`: check the app on the port really is this one (it can prove it holds our
+ * secret), then ask it for a one-time sign-in code. The secret itself never leaves this process (A15).
+ */
+async function codeFromRunningServer(): Promise<string | null> {
+  const pingNonce = randomBytes(18).toString('base64url');
+  const ping = await launcherGet(`${AUTH_PING_PATH}?nonce=${pingNonce}`);
+  if (ping?.status !== 200 || !safeEqual(ping.body, pingProof(config.launchToken, pingNonce))) return null;
+  const nonce = randomBytes(18).toString('base64url');
+  const proof = codeProof(config.launchToken, nonce);
+  const issued = await launcherGet(
+    `${ROUTES.authCode}?nonce=${encodeURIComponent(nonce)}&proof=${encodeURIComponent(proof)}`,
+  );
+  return issued?.status === 200 && issued.body ? issued.body : null;
+}
+
+function engineHealth(): EngineHealth {
+  const permissionMode = resolvePermissionMode(config.brainPath, homedir());
+  return config.claudePath
+    ? { ok: true, permissionMode, claudePath: config.claudePath, problem: null }
+    : {
+        ok: false,
+        permissionMode,
+        claudePath: null,
+        problem: 'Claude Code is not installed on this computer, or the app cannot find it.',
+      };
+}
 
 const engine: EngineFns = {
   query: (params) => query(params),
@@ -82,6 +111,7 @@ const app = createAppServer({
   port: config.port,
   clientDir: config.clientDir,
   launchToken: config.launchToken,
+  authCodes,
   appVersion: config.appVersion,
   brain,
   store,
@@ -93,10 +123,10 @@ const app = createAppServer({
 app.server.on('error', (err: NodeJS.ErrnoException) => {
   app.stop();
   if (err.code === 'EADDRINUSE') {
-    void isOurServerRunning().then((ours) => {
-      if (ours) {
+    void codeFromRunningServer().then((code) => {
+      if (code) {
         log(`TDS Brain is already running at ${appUrl}. Opening it.`);
-        openBrowser(authUrl);
+        openBrowser(signInUrl(code));
         setTimeout(() => process.exit(0), 1500).unref();
       } else {
         // Never send the launch token to some other program that happens to hold the port.
@@ -119,7 +149,10 @@ app.server.listen(config.port, APP_HOST, () => {
     (h) => log(h.ok ? `Brain found at ${h.path}` : `Brain not ready at ${h.path}`),
     () => log('Could not check the brain folder.'),
   );
-  openBrowser(authUrl);
+  if (!noOpen) {
+    const code = authCodes.mint();
+    if (code) openBrowser(signInUrl(code));
+  }
 });
 
 let shuttingDown = false;

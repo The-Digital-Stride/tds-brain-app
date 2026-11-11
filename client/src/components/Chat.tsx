@@ -1,81 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api.ts';
 import { initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { useStore } from '../store.tsx';
+import { Composer } from './Composer.tsx';
 import { Transcript } from './Transcript.tsx';
-
-function Composer({
-  initial,
-  disabledReason,
-  onSend,
-  autoFocus,
-}: {
-  initial: string;
-  disabledReason: string | null;
-  onSend: (text: string) => Promise<boolean>;
-  autoFocus: boolean;
-}) {
-  const [text, setText] = useState(initial);
-  const [sending, setSending] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
-  const disabled = disabledReason !== null || sending;
-
-  useEffect(() => {
-    if (autoFocus && area.current) {
-      area.current.focus();
-      const n = area.current.value.length;
-      area.current.setSelectionRange(n, n);
-    }
-  }, [autoFocus]);
-
-  const submit = async () => {
-    if (disabled || !text.trim()) return;
-    setSending(true);
-    const ok = await onSend(text);
-    setSending(false);
-    if (ok) setText('');
-  };
-
-  return (
-    <div className="composer">
-      <textarea
-        ref={area}
-        className="field"
-        rows={1}
-        value={text}
-        disabled={disabled}
-        aria-label="Message to Claude"
-        aria-describedby={disabledReason ? 'composer-reason' : 'composer-hint'}
-        placeholder="Ask Claude anything about your work"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="btn"
-        data-variant="primary"
-        disabled={disabled || !text.trim()}
-        onClick={() => void submit()}
-      >
-        Send
-      </button>
-      {disabledReason ? (
-        <p className="composer-hint" id="composer-reason">
-          {disabledReason}
-        </p>
-      ) : (
-        <p className="composer-hint" id="composer-hint">
-          Enter to send, Shift and Enter for a new line.
-        </p>
-      )}
-    </div>
-  );
-}
 
 const REASONS = {
   working: 'Claude is working. You can stop it with the Stop button.',
@@ -84,15 +12,31 @@ const REASONS = {
 } as const;
 
 export function ChatView() {
-  const { boot, activeChat, chats, sessions, send, run, actionError, clearError, newChat } = useStore();
+  const {
+    boot,
+    activeChat,
+    chats,
+    sessions,
+    send,
+    run,
+    actionError,
+    clearError,
+    startSkill,
+    openView,
+    composerFocus,
+  } = useStore();
 
   const sessionId = activeChat.kind === 'live' ? activeChat.sessionId : null;
   const chat = sessionId ? (chats[sessionId] ?? initialChatState) : initialChatState;
   const live = sessionId ? sessions?.live.find((s) => s.id === sessionId) : undefined;
   const clients = boot?.clients ?? [];
-  const pinned = (boot?.prefs.pins ?? [])
-    .map((name) => boot?.skills.find((s) => s.name === name))
-    .filter((s) => s !== undefined);
+  const skills = boot?.skills ?? [];
+
+  // Starting points: pinned skills, else the ones used often.
+  const byName = (name: string) => skills.find((s) => s.name === name);
+  const pinned = (boot?.prefs.pins ?? []).map(byName).filter((s) => s !== undefined);
+  const often = (boot?.usedOften ?? []).map((u) => byName(u.name)).filter((s) => s !== undefined);
+  const starters = (pinned.length > 0 ? pinned : often).slice(0, 6);
 
   const [client, setClient] = useState<string>(() => {
     const last = boot?.prefs.lastClient;
@@ -109,17 +53,18 @@ export function ChatView() {
   }
   const working = sessionId !== null && (state === 'working' || state === 'starting');
   const sdkId = chat.sdkSessionId ?? live?.sdkSessionId ?? null;
+  const canResumeInTerminal = boot?.identity.role === 'owner' || boot?.identity.role === 'scout';
   const clientName = (slug: string | null) =>
     slug ? (clients.find((c) => c.slug === slug)?.name ?? slug) : null;
 
   const composerKey = activeChat.kind === 'new' ? `new-${activeChat.key}` : activeChat.sessionId;
   const skill = activeChat.kind === 'new' ? activeChat.skill : null;
-  const showEmpty = activeChat.kind === 'new' || chat.items.length === 0;
+  const hasMessages = activeChat.kind === 'live' && chat.items.length > 0;
 
   return (
     <div className="chat">
       <div className="chat-head">
-        <div className="chat-title">{live?.title || (activeChat.kind === 'new' ? 'New chat' : 'Chat')}</div>
+        <h1 className="chat-title">{live?.title || (activeChat.kind === 'new' ? 'New chat' : 'Chat')}</h1>
         {activeChat.kind === 'new' ? (
           <div className="client-pick">
             <label htmlFor="client-select">Client</label>
@@ -129,7 +74,7 @@ export function ChatView() {
               value={client}
               onChange={(e) => setClient(e.target.value)}
             >
-              <option value="">No particular client</option>
+              <option value="">No client</option>
               {clients.map((c) => (
                 <option key={c.slug} value={c.slug}>
                   {c.name}
@@ -137,11 +82,11 @@ export function ChatView() {
               ))}
             </select>
           </div>
-        ) : (
+        ) : live ? (
           <div className="client-label">
-            Client: <strong>{clientName(live?.client ?? null) ?? 'none'}</strong>
+            Client: <strong>{clientName(live.client) ?? 'No client'}</strong>
           </div>
-        )}
+        ) : null}
         {working && sessionId ? (
           <button type="button" className="btn" onClick={() => void run(() => api.interrupt(sessionId))}>
             Stop
@@ -149,33 +94,29 @@ export function ChatView() {
         ) : null}
       </div>
 
-      {activeChat.kind === 'live' && chat.items.length > 0 ? (
-        <Transcript items={chat.items} sessionId={activeChat.sessionId} />
+      {hasMessages && activeChat.kind === 'live' ? (
+        <Transcript items={chat.items} sessionId={activeChat.sessionId} sessionState={state} />
       ) : (
         <div className="transcript">
-          {showEmpty ? (
-            <div className="empty">
-              <h1>What would you like to do?</h1>
-              <p className="lede">
-                Type a request below, or start from a skill.
-                {activeChat.kind === 'live' ? ' This chat has no messages yet.' : ''}
-              </p>
-              {pinned.length > 0 && activeChat.kind === 'new' ? (
-                <div className="starters">
-                  {pinned.map((s) => (
-                    <button
-                      key={s.name}
-                      type="button"
-                      className="btn"
-                      onClick={() => newChat({ draft: `/${s.name} `, skill: s })}
-                    >
-                      {s.title}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="empty">
+            <h2 className="empty-title">What would you like to do?</h2>
+            <p className="lede">
+              Type a request below, or start from a skill.
+              {activeChat.kind === 'live' ? ' This chat has no messages yet.' : ''}
+            </p>
+            {activeChat.kind === 'new' ? (
+              <div className="starters">
+                {starters.map((s) => (
+                  <button key={s.name} type="button" className="btn" onClick={() => startSkill(s)}>
+                    {s.title}
+                  </button>
+                ))}
+                <button type="button" className="btn" data-variant="quiet" onClick={() => openView('skills')}>
+                  Browse all skills
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
 
@@ -202,14 +143,16 @@ export function ChatView() {
           <Composer
             key={composerKey}
             initial={activeChat.kind === 'new' ? activeChat.draft : ''}
+            skill={skill}
             disabledReason={reason}
             autoFocus={activeChat.kind === 'new'}
+            focusSignal={composerFocus}
             onSend={(text) => send(text, activeChat.kind === 'new' ? client || null : null)}
           />
-          {sdkId ? (
+          {sdkId && canResumeInTerminal ? (
             <details className="terminal-note">
-              <summary>Continue in the terminal</summary>
-              <code>claude --resume {sdkId}</code>
+              <summary className="terminal-summary">Continue in the terminal</summary>
+              <code className="terminal-cmd">claude --resume {sdkId}</code>
               <span>Chats started here do not show in the terminal's own list, so use this line.</span>
             </details>
           ) : null}

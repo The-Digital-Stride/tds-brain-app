@@ -85,10 +85,15 @@ describe('chatReducer', () => {
         tool: 'Write',
         title: 'Claude wants to save a file',
         detail: 'clients/x/notes.md',
+        warning: 'Not all of it is shown.',
         sessionAllowLabel: null,
       }),
     ]);
-    expect(pendingCard(asked)).toMatchObject({ kind: 'permission', requestId: 'r1' });
+    expect(pendingCard(asked)).toMatchObject({
+      kind: 'permission',
+      requestId: 'r1',
+      warning: 'Not all of it is shown.',
+    });
     const done = apply([seq(2, { type: 'request-resolved', requestId: 'r1', outcome: 'allowed' })], asked);
     expect(pendingCard(done)).toBeNull();
     expect(done.items[0]).toMatchObject({ kind: 'permission', outcome: 'allowed' });

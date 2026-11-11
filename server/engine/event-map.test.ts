@@ -228,26 +228,47 @@ describe('turn-end', () => {
     ).toEqual([{ type: 'turn-end', ok: true, interrupted: false, durationMs: 6206, errorText: null }]);
   });
 
-  it('maps an API error and an error subtype', () => {
+  it('maps errors to plain sentences, never the engine’s own error text', () => {
+    const plain = (e: unknown) => {
+      const text = (e as { errorText: string }).errorText;
+      expect(text).toMatch(/^[A-Z][\s\S]*\.$/);
+      expect(text).not.toMatch(/API Error|529|boom|error_|stack|exception/i);
+      return text;
+    };
     const [a] = run([
-      { type: 'result', subtype: 'success', is_error: true, result: 'API Error: 529', duration_ms: 10 },
+      {
+        type: 'result',
+        subtype: 'success',
+        is_error: true,
+        result: 'API Error: 529 overloaded_error',
+        duration_ms: 10,
+      },
     ]);
-    expect(a).toEqual({
-      type: 'turn-end',
-      ok: false,
-      interrupted: false,
-      durationMs: 10,
-      errorText: 'API Error: 529',
-    });
+    expect(a).toMatchObject({ type: 'turn-end', ok: false, interrupted: false, durationMs: 10 });
+    expect(plain(a)).toMatch(/again/);
     const [b] = run([
       { type: 'result', subtype: 'error_max_turns', is_error: true, duration_ms: 5, errors: [] },
     ]);
     expect(b).toMatchObject({ type: 'turn-end', ok: false, interrupted: false, durationMs: 5 });
-    expect((b as { errorText: string }).errorText).toMatch(/limit/);
+    expect(plain(b)).toMatch(/steps/);
     const [c] = run([
-      { type: 'result', subtype: 'error_during_execution', is_error: true, duration_ms: 5, errors: ['boom'] },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        duration_ms: 5,
+        errors: ['boom at x.js:1'],
+      },
     ]);
-    expect(c).toMatchObject({ ok: false, errorText: 'boom' });
+    expect(c).toMatchObject({ ok: false });
+    expect(plain(c)).toMatch(/again/);
+    for (const subtype of [
+      'error_max_budget_usd',
+      'error_max_structured_output_retries',
+      'error_something_new',
+    ]) {
+      plain(run([{ type: 'result', subtype, is_error: true, duration_ms: 1, errors: ['raw'] }])[0]);
+    }
   });
 
   it('marks an interrupted turn and drops its error text', () => {
@@ -264,5 +285,50 @@ describe('turn-end', () => {
       { interrupted: true },
     );
     expect(e).toEqual({ type: 'turn-end', ok: false, interrupted: true, durationMs: 5, errorText: null });
+  });
+});
+
+describe('safety-check denials', () => {
+  const denied = (over: Record<string, unknown> = {}): RawMessage => ({
+    type: 'system',
+    subtype: 'permission_denied',
+    tool_name: 'Bash',
+    tool_use_id: 'toolu_secret_id',
+    decision_reason_type: 'classifier',
+    message: 'Permission denied',
+    session_id: SID,
+    ...over,
+  });
+
+  it('becomes a plain notice naming the step, never the raw tool id', () => {
+    const m = createEventMapper();
+    m.map(
+      assistant('m', [
+        { type: 'tool_use', id: 'toolu_secret_id', name: 'Write', input: { file_path: '/a/notes.md' } },
+      ]),
+    );
+    const [e] = m.map(denied({ tool_name: 'Write' }));
+    expect(e).toEqual({
+      type: 'notice',
+      level: 'warning',
+      text: "Claude Code's safety check stopped a step (editing notes.md). Claude has been told and may try another way.",
+    });
+    expect(JSON.stringify(e)).not.toContain('toolu_secret_id');
+  });
+
+  it('falls back to the tool name phrase, and adds a readable reason capped at 300 characters', () => {
+    const [a] = run([denied()]);
+    expect(a).toMatchObject({ text: expect.stringContaining('(running a command)') });
+    const [b] = run([denied({ decision_reason: `Looks risky:\n${'z'.repeat(400)}` })]);
+    const text = (b as { text: string }).text;
+    expect(text).toContain('Looks risky:');
+    expect(text).not.toContain('\n');
+    const reason = text.slice(text.indexOf('Looks risky:'));
+    expect(reason.length).toBeLessThanOrEqual(301);
+  });
+
+  it('stays quiet for a step the person refused on a card', () => {
+    const m = createEventMapper();
+    expect(m.map(denied(), { deniedByPerson: new Set(['toolu_secret_id']) })).toEqual([]);
   });
 });

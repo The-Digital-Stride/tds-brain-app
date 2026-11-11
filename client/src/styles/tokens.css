@@ -7,6 +7,7 @@
   --text-soft: #4a566b;
   --rule: #e4dfd6;
   --rule-strong: #cfc8bb;
+  --field-edge: #857d70;
   --accent: #0f74e0;
   --accent-ink: #0b5cb5;
   --on-accent: #ffffff;
@@ -43,6 +44,7 @@
     --text-soft: #a3b0c6;
     --rule: #22304a;
     --rule-strong: #34456a;
+    --field-edge: #61759c;
     --accent: #5aaeff;
     --accent-ink: #5aaeff;
     --on-accent: #021b43;

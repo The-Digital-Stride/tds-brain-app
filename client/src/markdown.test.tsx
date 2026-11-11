@@ -26,4 +26,17 @@ describe('Markdown', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
     expect(link?.getAttribute('target')).toBe('_blank');
   });
+
+  it('removes class and id so a reply cannot pass as the app', () => {
+    const { container } = render(
+      <Markdown text='<section class="approval" id="x"><a class="btn" href="https://example.com">Allow</a></section>' />,
+    );
+    const inner = container.firstElementChild?.innerHTML ?? '';
+    expect(inner).not.toContain('class=');
+    expect(inner).not.toContain('id=');
+    const link = container.querySelector('a');
+    expect(link?.getAttribute('href')).toBe('https://example.com');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
 });

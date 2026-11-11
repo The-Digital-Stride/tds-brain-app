@@ -5,7 +5,13 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BrainReaders, ChatEvent, ClientInfo, Identity } from '../../shared/contract.ts';
+import type {
+  AppPermissionMode,
+  BrainReaders,
+  ChatEvent,
+  ClientInfo,
+  Identity,
+} from '../../shared/contract.ts';
 import {
   createSessionManager,
   type EngineFns,
@@ -196,7 +202,12 @@ let mgr: SessionManager;
 
 function setup(
   script?: Script,
-  opts: { brain?: Partial<BrainReaders>; env?: NodeJS.ProcessEnv; claudePath?: string | null } = {},
+  opts: {
+    brain?: Partial<BrainReaders>;
+    env?: NodeJS.ProcessEnv;
+    claudePath?: string | null;
+    permissionMode?: () => AppPermissionMode;
+  } = {},
 ) {
   const fx = makeEngine(script);
   mgr = createSessionManager({
@@ -205,6 +216,8 @@ function setup(
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
     engine: fx.engine,
     env: opts.env ?? { PATH: '/bin', HOME: '/home/x' },
+    // Never read the real home folder in tests.
+    permissionMode: opts.permissionMode ?? (() => 'default'),
     log: () => {},
   });
   return fx;
@@ -269,6 +282,13 @@ describe('a new chat', () => {
         ANTHROPIC_AUTH_TOKEN: 't',
         CLAUDECODE: '1',
         CLAUDE_CODE_ENTRYPOINT: 'cli',
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        CLAUDE_CODE_USE_VERTEX: '1',
+        CLAUDE_CODE_USE_FOUNDRY: '1',
+        ANTHROPIC_BASE_URL: 'https://proxy.example',
+        ANTHROPIC_BEDROCK_BASE_URL: 'https://b.example',
+        ANTHROPIC_VERTEX_BASE_URL: 'https://v.example',
+        AWS_BEARER_TOKEN_BEDROCK: 'tok',
       },
     });
     await mgr.start({ prompt: 'hi' });
@@ -434,7 +454,8 @@ describe('permissions', () => {
       tool: 'Bash',
       title: 'Claude wants to run a command',
       detail: 'node x.js',
-      sessionAllowLabel: 'Also allow `node` commands in this chat',
+      warning: null,
+      sessionAllowLabel: "For the rest of this chat, Claude won't ask before running `node` commands.",
     });
     expect((await mgr.list()).live[0]?.state).toBe('waiting');
     await mgr.replyPermission(s.id, { requestId: 'req-1', decision, ...(note ? { note } : {}) });
@@ -766,6 +787,153 @@ describe('the idle timer (A8)', () => {
     vi.advanceTimersByTime(31 * 60 * 1000);
     await flush();
     expect((await mgr.list()).live).toHaveLength(0);
+  });
+});
+
+describe('permission mode (A18)', () => {
+  it('starts each engine in the mode resolved at that moment, never skipping approvals', async () => {
+    let current: AppPermissionMode = 'auto';
+    const resolver = vi.fn(() => current);
+    const { queries } = setup(undefined, { permissionMode: resolver });
+    await mgr.start({ prompt: 'one' });
+    await flush();
+    current = 'acceptEdits';
+    await mgr.start({ prompt: 'two' });
+    await flush();
+    expect(queries[0]?.options.permissionMode).toBe('auto');
+    expect(queries[1]?.options.permissionMode).toBe('acceptEdits');
+    expect(resolver).toHaveBeenCalledTimes(2);
+    for (const q of queries) expect(q.options.allowDangerouslySkipPermissions).toBeUndefined();
+  });
+});
+
+describe('safety-check denials', () => {
+  it('shows no extra notice for a step the person refused on a card, but does for the engine’s own', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask('Write', { file_path: `${BRAIN}/x.md` }).promise;
+      q.emit({
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Write',
+        tool_use_id: 'toolu_1',
+        message: 'no',
+      });
+      q.emit({
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_2',
+        message: 'no',
+      });
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'deny' });
+    await flush();
+    const notices = events(mgr, s.id).filter((e) => e.type === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ text: expect.stringContaining('(running a command)') });
+  });
+});
+
+describe('races (review)', () => {
+  it('starts no engine when a reopened chat is closed while its history loads', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    let release: (v: HistoryMessage[]) => void = () => {};
+    vi.mocked(fx.engine.getSessionMessages).mockImplementationOnce(
+      () => new Promise<HistoryMessage[]>((r) => (release = r)),
+    );
+    const starting = mgr.start({ resume: 'old-1', prompt: 'carry on' });
+    await flush();
+    const live = (await mgr.list()).live;
+    expect(live).toHaveLength(1);
+    await mgr.close(live[0]?.id as string);
+    release([]);
+    await expectCode(starting, 'session-closed');
+    await flush();
+    expect(fx.queries).toHaveLength(0);
+  });
+
+  it('ignores an interrupt after the turn has already finished', async () => {
+    const { queries } = setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const before = events(mgr, s.id).length;
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(events(mgr, s.id)).toHaveLength(before);
+    expect(queries[0]?.interrupts).toBe(0);
+  });
+
+  it('never leaves a chat stuck when a message is sent as the engine exits', async () => {
+    const fx = setup(({ q, turn }) => {
+      q.init();
+      q.result();
+      if (fx.queries.length === 1 && turn === 0) q.finish();
+    });
+    const s = await mgr.start({ prompt: 'first' });
+    let sending: Promise<void> | null = null;
+    const sub = mgr.subscribe(s.id, 0, (item) => {
+      if (!sending && item.event.type === 'state' && item.event.state === 'idle') {
+        sending = mgr.send(s.id, 'second');
+      }
+    });
+    await flush();
+    await sending;
+    await flush();
+    sub.unsubscribe();
+    const state = (await mgr.list()).live[0]?.state;
+    expect(['idle', 'error']).toContain(state);
+    const delivered = fx.queries.some((q, i) => i > 0 && q.received.includes('second'));
+    if (!delivered) {
+      const ends = events(mgr, s.id).filter((e) => e.type === 'turn-end');
+      expect(ends.at(-1)).toMatchObject({ ok: false });
+      await mgr.send(s.id, 'again');
+      await flush();
+      expect(fx.queries.at(-1)?.received).toContain('again');
+    }
+  });
+});
+
+describe('long and outside-the-brain requests (A12)', () => {
+  it('refuses an over-long command without showing a card, and says why', async () => {
+    let result: PermissionResult | null = null;
+    setup(async ({ q }) => {
+      q.init();
+      result = await q.ask('Bash', { command: `echo ${'x'.repeat(20_001)}` }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(result).toMatchObject({ behavior: 'deny' });
+    expect((result as unknown as { message: string }).message).toMatch(/split/i);
+    const ev = events(mgr, s.id);
+    expect(ev.some((e) => e.type === 'permission-request')).toBe(false);
+    expect(ev.find((e) => e.type === 'notice')).toMatchObject({ level: 'warning' });
+  });
+
+  it('shows a file inside the brain relative to it, and warns about one outside', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask('Write', { file_path: `${BRAIN}/clients/acme/notes.md` }, { requestId: 'r1' }).promise;
+      await q.ask('Write', { file_path: '/etc/hosts' }, { requestId: 'r2' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(events(mgr, s.id).find((e) => e.type === 'permission-request')).toMatchObject({
+      detail: 'clients/acme/notes.md',
+      warning: null,
+    });
+    await mgr.replyPermission(s.id, { requestId: 'r1', decision: 'allow' });
+    await flush();
+    expect(events(mgr, s.id).filter((e) => e.type === 'permission-request')[1]).toMatchObject({
+      detail: '/etc/hosts',
+      warning: 'This file is outside the brain folder.',
+    });
   });
 });
 

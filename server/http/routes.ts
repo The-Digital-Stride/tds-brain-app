@@ -26,7 +26,8 @@ export interface RouteContext {
   store: AppStore;
   sessions: SessionManager;
   hub: AppEventHub;
-  engineHealth: EngineHealth;
+  /** Built per request: the permission mode is read afresh (A18). */
+  engineHealth: () => EngineHealth;
   appVersion: string;
   serverStartedAt: string;
   log: (line: string) => void;
@@ -201,7 +202,7 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     appVersion: ctx.appVersion,
     identity,
     brain,
-    engine: ctx.engineHealth,
+    engine: ctx.engineHealth(),
     skills,
     clients,
     usedOften,

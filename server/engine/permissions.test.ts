@@ -61,72 +61,60 @@ describe('narrowSuggestions (A1)', () => {
   });
 });
 
-describe('describeSessionAllow (sessionAllowLabel)', () => {
+const allowRule = (toolName: string, ruleContent?: string): PermissionUpdate => ({
+  type: 'addRules',
+  rules: [ruleContent === undefined ? { toolName } : { toolName, ruleContent }],
+  behavior: 'allow',
+  destination: 'session',
+});
+
+const label = (u: PermissionUpdate[]) => describeSessionAllow(u);
+const sentence = (parts: string) => `For the rest of this chat, Claude won't ask before ${parts}.`;
+
+describe('describeSessionAllow (A13: one full sentence, all that it grants)', () => {
   it('is null when nothing is kept', () => {
-    expect(describeSessionAllow([])).toBeNull();
+    expect(label([])).toBeNull();
   });
 
-  it('names what a command rule covers', () => {
-    const label = describeSessionAllow([
-      {
-        type: 'addRules',
-        rules: [{ toolName: 'Bash', ruleContent: 'node .claude/skills/time/:*' }],
-        behavior: 'allow',
-        destination: 'session',
-      },
-    ]);
-    expect(label).toBe('Also allow `node .claude/skills/time/...` commands in this chat');
-  });
-
-  it('names an exact command, a tool, a web domain, a folder and edit mode', () => {
-    expect(
-      describeSessionAllow([
-        {
-          type: 'addRules',
-          rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
-          behavior: 'allow',
-          destination: 'session',
-        },
-      ]),
-    ).toBe('Also allow the command `git status` in this chat');
-    expect(
-      describeSessionAllow([
-        { type: 'addRules', rules: [{ toolName: 'WebSearch' }], behavior: 'allow', destination: 'session' },
-      ]),
-    ).toBe('Also allow web searches in this chat');
-    expect(
-      describeSessionAllow([
-        {
-          type: 'addRules',
-          rules: [{ toolName: 'WebFetch', ruleContent: 'domain:example.com' }],
-          behavior: 'allow',
-          destination: 'session',
-        },
-      ]),
-    ).toBe('Also allow opening pages on example.com in this chat');
-    expect(
-      describeSessionAllow([
-        { type: 'addDirectories', directories: ['/Users/x/Downloads'], destination: 'session' },
-      ]),
-    ).toBe('Also allow access to files in /Users/x/Downloads in this chat');
-    expect(describeSessionAllow([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])).toBe(
-      'Also allow file edits without asking in this chat',
+  it('names command rules as running …', () => {
+    expect(label([allowRule('Bash', 'node .claude/skills/time/:*')])).toBe(
+      sentence('running `node .claude/skills/time/...` commands'),
     );
+    expect(label([allowRule('Bash', 'ls *')])).toBe(sentence('running `ls` commands'));
+    expect(label([allowRule('Bash', 'git status')])).toBe(sentence('running the command `git status`'));
+    expect(label([allowRule('Bash')])).toBe(sentence('running any command'));
+  });
+
+  it('names file, web, skill and connector rules', () => {
+    expect(label([allowRule('Read')])).toBe(sentence('reading files'));
+    expect(label([allowRule('Read', '/a/**')])).toBe(sentence('reading /a/**'));
+    expect(label([allowRule('Edit')])).toBe(sentence('changing files'));
+    expect(label([allowRule('Write', 'clients/**')])).toBe(sentence('changing clients/**'));
+    expect(label([allowRule('WebFetch', 'domain:example.com')])).toBe(
+      sentence('opening pages on example.com'),
+    );
+    expect(label([allowRule('WebFetch')])).toBe(sentence('opening web pages'));
+    expect(label([allowRule('WebSearch')])).toBe(sentence('searching the web'));
+    expect(label([allowRule('Grep')])).toBe(sentence('searching files'));
+    expect(label([allowRule('Skill', 'gm')])).toBe(sentence('using the gm skill'));
+    expect(label([allowRule('mcp__claude_ai_Gmail__create_draft')])).toBe(
+      sentence('using create_draft from Gmail'),
+    );
+    expect(label([allowRule('mcp__slack')])).toBe(sentence('using everything from slack'));
+  });
+
+  it('names a folder and says plainly what edit mode lets through', () => {
     expect(
-      describeSessionAllow([
-        {
-          type: 'addRules',
-          rules: [{ toolName: 'mcp__claude_ai_Gmail__create_draft' }],
-          behavior: 'allow',
-          destination: 'session',
-        },
-      ]),
-    ).toBe('Also allow create_draft from Gmail in this chat');
+      label([{ type: 'addDirectories', directories: ['/Users/x/Downloads'], destination: 'session' }]),
+    ).toBe(sentence('using files in /Users/x/Downloads'));
+    expect(label([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])).toBe(
+      sentence('creating, changing, moving and deleting files in the brain folder'),
+    );
   });
 
   it('joins several items into one sentence', () => {
     expect(
-      describeSessionAllow([
+      label([
         {
           type: 'addRules',
           rules: [
@@ -138,50 +126,122 @@ describe('describeSessionAllow (sessionAllowLabel)', () => {
         },
         { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
       ]),
-    ).toBe('Also allow `ls` commands, reading /a/** and file edits without asking in this chat');
+    ).toBe(
+      sentence(
+        'running `ls` commands, reading /a/** and creating, changing, moving and deleting files in the brain folder',
+      ),
+    );
   });
 });
 
+const BRAIN = '/b/brain';
+const card = (
+  tool: string,
+  input: Record<string, unknown>,
+  ctx: { title?: string; blockedPath?: string } = {},
+) => permissionCard(tool, input, { ...ctx, brainRoot: BRAIN });
+
 describe('permissionCard', () => {
   it('uses the engine title when given', () => {
-    const card = permissionCard(
-      'Write',
-      { file_path: '/a/out.txt' },
-      { title: 'Claude wants to write out.txt' },
-    );
-    expect(card).toEqual({ title: 'Claude wants to write out.txt', detail: '/a/out.txt' });
+    expect(
+      card('Write', { file_path: `${BRAIN}/out.txt` }, { title: 'Claude wants to write out.txt' }),
+    ).toMatchObject({
+      title: 'Claude wants to write out.txt',
+      detail: 'out.txt',
+      warning: null,
+    });
   });
 
   it('builds a plain sentence and detail per tool otherwise', () => {
-    expect(permissionCard('Write', { file_path: '/a/out.txt', content: 'x' }, {})).toEqual({
+    expect(card('Write', { file_path: `${BRAIN}/clients/acme/notes.md`, content: 'x' })).toEqual({
       title: 'Claude wants to save a file',
-      detail: '/a/out.txt',
+      detail: 'clients/acme/notes.md',
+      warning: null,
+      refuse: false,
     });
-    expect(permissionCard('Edit', { file_path: '/a/b.md' }, {}).title).toBe('Claude wants to change a file');
-    expect(permissionCard('Bash', { command: 'git push', description: 'Push' }, {})).toEqual({
+    expect(card('Edit', { file_path: `${BRAIN}/b.md` }).title).toBe('Claude wants to change a file');
+    expect(card('Bash', { command: 'git push', description: 'Push' })).toMatchObject({
       title: 'Claude wants to run a command',
       detail: 'git push',
+      warning: null,
     });
-    expect(permissionCard('WebFetch', { url: 'https://example.com/a' }, {})).toEqual({
+    expect(card('WebFetch', { url: 'https://example.com/a' })).toMatchObject({
       title: 'Claude wants to open a web page',
       detail: 'https://example.com/a',
     });
-    expect(permissionCard('WebSearch', { query: 'uk vat rate' }, {}).detail).toBe('uk vat rate');
-    expect(permissionCard('mcp__claude_ai_Gmail__create_draft', { to: 'a@b.c' }, {}).title).toBe(
+    expect(card('WebSearch', { query: 'uk vat rate' }).detail).toBe('uk vat rate');
+    expect(card('mcp__claude_ai_Gmail__create_draft', { to: 'a@b.c' }).title).toBe(
       'Claude wants to use create_draft from Gmail',
     );
-    expect(permissionCard('Skill', { skill: 'gm' }, {}).title).toBe('Claude wants to use the gm skill');
+    expect(card('Skill', { skill: 'gm' }).title).toBe('Claude wants to use the gm skill');
+    expect(card('Skill', {}).title).toBe('Claude wants to use a skill');
   });
 
-  it('falls back to the input as text, trimmed, for an unknown tool', () => {
-    const card = permissionCard('Mystery', { a: 'x'.repeat(5000) }, {});
-    expect(card.title).toBe('Claude wants to use Mystery');
-    expect(card.detail.length).toBeLessThanOrEqual(2001);
+  it('treats a relative path as inside the brain folder', () => {
+    expect(card('Write', { file_path: 'todo/x.md' })).toMatchObject({ detail: 'todo/x.md', warning: null });
   });
 
-  it('mentions a blocked path when the engine gives one', () => {
-    const card = permissionCard('Bash', { command: 'cat /etc/hosts' }, { blockedPath: '/etc/hosts' });
-    expect(card.detail).toContain('cat /etc/hosts');
-    expect(card.detail).toContain('/etc/hosts');
+  it('keeps the full path and warns for a file outside the brain, including a .. escape', () => {
+    expect(card('Write', { file_path: '/etc/hosts' })).toMatchObject({
+      detail: '/etc/hosts',
+      warning: 'This file is outside the brain folder.',
+    });
+    expect(card('Write', { file_path: `${BRAIN}/../brain-evil/x.md` })).toMatchObject({
+      detail: '/b/brain-evil/x.md',
+      warning: 'This file is outside the brain folder.',
+    });
+    expect(card('Write', { file_path: `${BRAIN}-copy/x.md` }).warning).toBe(
+      'This file is outside the brain folder.',
+    );
+  });
+
+  it('treats a blocked path the same way', () => {
+    const c = card('Bash', { command: 'cat /etc/hosts' }, { blockedPath: '/etc/hosts' });
+    expect(c.detail).toContain('cat /etc/hosts');
+    expect(c.warning).toBe('This file is outside the brain folder.');
+    expect(card('Bash', { command: 'cat x' }, { blockedPath: `${BRAIN}/x` }).warning).toBeNull();
+  });
+
+  it('never clips silently: long details are shown in full up to 20,000 characters', () => {
+    const c = card('Mystery', { a: 'x'.repeat(15_000) });
+    expect(c.title).toBe('Claude wants to use Mystery');
+    expect(c.detail).toContain('x'.repeat(15_000));
+    expect(c.warning).toBeNull();
+  });
+
+  it('shortens a longer detail only with a plain warning saying so', () => {
+    const c = card('Mystery', { a: 'x'.repeat(30_000) });
+    expect(c.detail.length).toBeLessThanOrEqual(20_001);
+    expect(c.warning).toMatch(
+      /^This is too long to show in full \([\d,]+ characters\)\. Only allow it if you know what Claude is doing\.$/,
+    );
+    expect(c.refuse).toBe(false);
+  });
+
+  it('marks an over-long command to be refused, never shortened', () => {
+    const c = card('Bash', { command: `echo ${'x'.repeat(20_001)}` });
+    expect(c.refuse).toBe(true);
+  });
+
+  it('joins both warnings into one string', () => {
+    const c = card('Write', { file_path: `/tmp/${'d/'.repeat(10_001)}x.md` });
+    expect(c.warning).toContain('This file is outside the brain folder.');
+    expect(c.warning).toContain('too long to show in full');
+  });
+
+  it('warns about a long or many-line command, joined with any other warning', () => {
+    const LONG = 'This is a long command. Scroll to the end before you allow it.';
+    expect(card('Bash', { command: `echo ${'x'.repeat(595)}` }).warning).toBeNull();
+    expect(card('Bash', { command: `echo ${'x'.repeat(596)}` }).warning).toBe(LONG);
+    expect(
+      card('Bash', { command: Array.from({ length: 8 }, (_, i) => `echo ${i}`).join('\n') }).warning,
+    ).toBeNull();
+    expect(
+      card('Bash', { command: Array.from({ length: 9 }, (_, i) => `echo ${i}`).join('\n') }).warning,
+    ).toBe(LONG);
+    const both = card('Bash', { command: `cat ${'y'.repeat(700)}` }, { blockedPath: '/etc/hosts' });
+    expect(both.warning).toContain('This file is outside the brain folder.');
+    expect(both.warning).toContain(LONG);
+    expect(card('Bash', { command: `echo ${'x'.repeat(20_001)}` }).refuse).toBe(true);
   });
 });

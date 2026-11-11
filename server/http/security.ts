@@ -2,7 +2,7 @@
  * The app's request gate (decision 12, amendments A2 and A7). Pure functions only, so every rule
  * can be tested without a socket.
  */
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { APP_HOST, type ApiErrorCode, ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -40,6 +40,8 @@ export type GateDecision =
   | { action: 'auth' }
   /** `/auth/ping?nonce=…`: answer with `pingProof`, so the launcher never sends the token to another app. */
   | { action: 'ping' }
+  /** `/auth/code?nonce=…&proof=…`: the launcher asks for a one-time code (A15). */
+  | { action: 'auth-code' }
   /** A page visit without a session: show the plain "open it from the launcher" page. */
   | { action: 'launcher' }
   | { action: 'reject'; status: number; code: ApiErrorCode; message: string };
@@ -132,6 +134,17 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
       : reject(405, 'bad-request', 'That is not something this page does.');
   }
 
+  if (req.path === ROUTES.authCode) {
+    // Launcher only: a browser always sends one of these, the launcher never does.
+    const cookie = header(req.headers, 'cookie');
+    if (origin !== undefined || fetchSite !== undefined || cookie !== undefined) {
+      return reject(403, 'forbidden', 'That request came from another website or app, so it was refused.');
+    }
+    return method === 'GET'
+      ? { action: 'auth-code' }
+      : reject(405, 'bad-request', 'That is not something this page does.');
+  }
+
   if (req.path === ROUTES.auth) {
     return method === 'GET'
       ? { action: 'auth' }
@@ -159,12 +172,93 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   return { action: 'allow' };
 }
 
+export const AUTH_CODE_TTL_MS = 60_000;
+export const MAX_LIVE_CODES = 20;
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const MAX_SEEN_NONCES = 200;
+
+/** The launcher's proof for `/auth/code`: an HMAC of the secret over the nonce, never the secret itself. */
+export function codeProof(secret: string, nonce: string): string {
+  return createHmac('sha256', secret).update(`tds-brain-app/auth-code/v1:${nonce}`).digest('base64url');
+}
+
+export type IssueResult =
+  | { ok: true; code: string }
+  | { ok: false; status: number; code: ApiErrorCode; message: string };
+
+/** Single-use sign-in codes, held in memory only (A15). */
+export interface AuthCodes {
+  /** A new code valid for 60 seconds, or null when too many are already live. */
+  mint(): string | null;
+  /** True once for a live code; the code is used up either way it matches. */
+  redeem(code: string | null | undefined): boolean;
+  /** `/auth/code`: a code for a launcher that proves it knows the secret with a fresh nonce. */
+  issueForLauncher(nonce: string | null | undefined, proof: string | null | undefined): IssueResult;
+}
+
+export function createAuthCodes(secret: string, now: () => number = Date.now): AuthCodes {
+  const live = new Map<string, number>();
+  const seenNonces = new Map<string, number>();
+
+  function prune(): void {
+    const t = now();
+    for (const [code, expires] of live) if (expires <= t) live.delete(code);
+    for (const [nonce, seen] of seenNonces) if (seen + AUTH_CODE_TTL_MS <= t) seenNonces.delete(nonce);
+  }
+
+  function mint(): string | null {
+    prune();
+    if (live.size >= MAX_LIVE_CODES) return null;
+    const code = randomBytes(24).toString('base64url');
+    live.set(code, now() + AUTH_CODE_TTL_MS);
+    return code;
+  }
+
+  return {
+    mint,
+    redeem(code) {
+      if (!code) return false;
+      prune();
+      // Compare against every live code in constant time; no early exit.
+      let match: string | null = null;
+      for (const candidate of live.keys()) {
+        if (safeEqual(code, candidate)) match = candidate;
+      }
+      if (match === null) return false;
+      live.delete(match);
+      return true;
+    },
+    issueForLauncher(nonce, proof) {
+      const refuse = (status: number, code: ApiErrorCode, message: string): IssueResult => ({
+        ok: false,
+        status,
+        code,
+        message,
+      });
+      prune();
+      if (!nonce || !proof || !NONCE_PATTERN.test(nonce)) {
+        return refuse(400, 'bad-request', 'That sign-in request was not understood.');
+      }
+      if (!safeEqual(proof, codeProof(secret, nonce))) {
+        return refuse(403, 'forbidden', 'That sign-in request was refused.');
+      }
+      if (seenNonces.has(nonce) || seenNonces.size >= MAX_SEEN_NONCES) {
+        return refuse(403, 'forbidden', 'That sign-in request was refused.');
+      }
+      seenNonces.set(nonce, now());
+      const code = mint();
+      if (!code) return refuse(429, 'busy', 'Too many sign-in requests. Wait a minute and try again.');
+      return { ok: true, code };
+    },
+  };
+}
+
 export type AuthResult = { ok: true; setCookie: string } | { ok: false };
 
-/** `/auth?token=…`: swap the launch token for the session cookie. */
-export function authExchange(token: string | null | undefined, launchToken: string): AuthResult {
-  if (!token || !safeEqual(token, launchToken)) return { ok: false };
-  const setCookie = `${SESSION_COOKIE}=${cookieValueFor(launchToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}`;
+/** `/auth?code=…`: swap a single-use code for the session cookie. The cookie is unchanged from before. */
+export function authExchange(code: string | null | undefined, codes: AuthCodes, secret: string): AuthResult {
+  if (!codes.redeem(code)) return { ok: false };
+  const setCookie = `${SESSION_COOKIE}=${cookieValueFor(secret)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}`;
   return { ok: true, setCookie };
 }
 

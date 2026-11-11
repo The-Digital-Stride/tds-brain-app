@@ -35,6 +35,7 @@ function TodoRow({ todo, compact }: { todo: TodoItem; compact: boolean }) {
           type="button"
           className="btn"
           data-size="small"
+          aria-label={`Start a chat on ${todo.title}`}
           onClick={() => newChat({ draft: `Help me with this to-do: todo/${todo.id} (${todo.title})` })}
         >
           Start a chat on this

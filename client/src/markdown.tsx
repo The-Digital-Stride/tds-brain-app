@@ -13,8 +13,10 @@ export function renderMarkdown(text: string): string {
   const html = marked.parse(text, { async: false, gfm: true }) as string;
   return DOMPurify.sanitize(html, {
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
-    FORBID_ATTR: ['style'],
+    // An allow list: no class or id, so a reply cannot borrow the app's own look.
+    ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'start', 'colspan', 'rowspan'],
     ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
   });
 }
 

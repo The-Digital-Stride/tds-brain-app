@@ -7,6 +7,7 @@
  * `query`, `listSessions` and `getSessionMessages` are injected, so tests never start Claude Code.
  */
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
 import type {
   Options,
   PermissionResult,
@@ -15,6 +16,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import {
   type ApiErrorCode,
+  type AppPermissionMode,
   type AskQuestion,
   type BrainReaders,
   type ChatEvent,
@@ -29,6 +31,7 @@ import {
   type StartSessionRequest,
 } from '../../shared/contract.ts';
 import { createEventMapper, type EventMapper, type RawMessage } from './event-map.ts';
+import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +78,11 @@ export interface SessionManagerOptions {
   closeTimeoutMs?: number;
   /** Short status lines only. Never prompts, replies or tokens. */
   log?: (line: string) => void;
+  /**
+   * The approval mode for a new engine, read afresh each time (A18). Defaults to reading the
+   * person's and the brain's Claude Code settings; tests inject their own.
+   */
+  permissionMode?: () => AppPermissionMode;
 }
 
 export class SessionError extends Error {
@@ -113,7 +121,20 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_CHARS = 100_000;
 const MAX_ANSWER_CHARS = 10_000;
 const TITLE_CHARS = 60;
-const SCRUBBED_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT'];
+/** A6 and A16: nothing that could bill an API key or a cloud account instead of the person's sign-in. */
+const SCRUBBED_ENV = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'AWS_BEARER_TOKEN_BEDROCK',
+];
 
 export function scrubEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
@@ -214,6 +235,8 @@ interface Session {
   input: InputQueue | null;
   pump: Promise<void> | null;
   pending: Map<string, Pending>;
+  /** Tool calls refused on a card (or by the app), so the engine's later denial is not shown twice. */
+  deniedTools: Set<string>;
   turnRunning: boolean;
   interruptRequested: boolean;
   warnedKeySource: boolean;
@@ -302,6 +325,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   const closeTimeoutMs = opts.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
   const env = scrubEnv(opts.env ?? process.env);
   const log = opts.log ?? (() => {});
+  const resolveMode = opts.permissionMode ?? (() => resolvePermissionMode(opts.brainRoot, homedir()));
   const live = new Map<string, Session>();
   const closedIds = new Set<string>();
   const changeListeners = new Set<() => void>();
@@ -404,6 +428,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       input: null,
       pump: null,
       pending: new Map(),
+      deniedTools: new Set(),
       turnRunning: false,
       interruptRequested: false,
       warnedKeySource: false,
@@ -434,6 +459,27 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           message: 'The app could not show that question. Ask it in plain text instead.',
         });
       }
+      const card = isQuestion
+        ? null
+        : permissionCard(toolName, input, {
+            title: ctx.title,
+            blockedPath: ctx.blockedPath,
+            brainRoot: opts.brainRoot,
+          });
+      if (card?.refuse) {
+        if (ctx.toolUseID) s.deniedTools.add(ctx.toolUseID);
+        // A12: the person cannot review what they cannot see, so never ask about it.
+        emit(s, {
+          type: 'notice',
+          level: 'warning',
+          text: 'Claude tried to run a command that was too long to show you in full, so the app refused it. Claude has been asked to split it into smaller steps.',
+        });
+        return Promise.resolve({
+          behavior: 'deny',
+          message:
+            'This command is too long for the user to review. Split it into smaller steps, each short enough to read, and try again.',
+        });
+      }
       return new Promise<PermissionResult>((resolve) => {
         const signal = ctx.signal;
         const onAbort = () => pending.settle({ behavior: 'deny', message: 'Cancelled.' }, 'cancelled');
@@ -446,6 +492,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           settle(result, outcome) {
             if (s.pending.get(requestId) !== pending) return;
             s.pending.delete(requestId);
+            if (result.behavior === 'deny' && ctx.toolUseID) s.deniedTools.add(ctx.toolUseID);
             signal?.removeEventListener('abort', onAbort);
             emit(s, { type: 'request-resolved', requestId, outcome });
             if (s.pending.size === 0 && s.turnRunning) setState(s, 'working');
@@ -456,14 +503,14 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         clearIdle(s);
         if (isQuestion) {
           emit(s, { type: 'question-request', requestId, questions });
-        } else {
-          const card = permissionCard(toolName, input, { title: ctx.title, blockedPath: ctx.blockedPath });
+        } else if (card) {
           emit(s, {
             type: 'permission-request',
             requestId,
             tool: toolName,
             title: card.title,
             detail: card.detail,
+            warning: card.warning,
             sessionAllowLabel: describeSessionAllow(pending.kept),
           });
         }
@@ -489,11 +536,15 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         emit(s, {
           type: 'notice',
           level: 'warning',
-          text: 'Claude Code is using an API key on this computer, not your own Claude sign-in, so this chat may be billed to that key. Ask a scout to check your set-up.',
+          text: 'This chat is using an API key or a cloud account, not your Claude sign-in, so it may be charged separately. Close this chat and tell whoever looks after the brain.',
         });
       }
     }
-    for (const event of s.mapper.map(raw, { interrupted: s.interruptRequested })) emit(s, event);
+    for (const event of s.mapper.map(raw, {
+      interrupted: s.interruptRequested,
+      deniedByPerson: s.deniedTools,
+    }))
+      emit(s, event);
     if (raw.type === 'result') {
       s.turnRunning = false;
       s.interruptRequested = false;
@@ -504,14 +555,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   }
 
   async function pump(s: Session, q: EngineQuery): Promise<void> {
-    let failure: string | null = null;
     try {
       for await (const raw of q) {
         if (isRec(raw) && typeof raw.type === 'string') handleMessage(s, raw as RawMessage);
       }
-    } catch (err) {
-      const first = err instanceof Error ? (err.message.split('\n')[0] ?? '') : '';
-      failure = first.slice(0, 300);
+    } catch {
+      // The engine's own error text is technical and can echo the conversation: never show or log it.
     } finally {
       s.query = null;
       s.input?.end();
@@ -525,7 +574,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             ok: false,
             interrupted: s.interruptRequested,
             durationMs: null,
-            errorText: 'Claude Code stopped before it finished.',
+            errorText: 'Claude stopped before it finished. Send your message again to carry on.',
           });
           s.turnRunning = false;
           s.interruptRequested = false;
@@ -533,7 +582,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         emit(s, {
           type: 'notice',
           level: 'error',
-          text: `Claude Code stopped unexpectedly${failure ? ` (${failure})` : ''}. Send a message to carry on.`,
+          text: 'Claude stopped unexpectedly. Send your message again to carry on.',
         });
         setState(s, 'error');
       }
@@ -545,7 +594,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const options: Options = {
       cwd: opts.brainRoot,
       pathToClaudeCodeExecutable: opts.claudePath ?? undefined,
-      permissionMode: 'default',
+      // Never 'bypassPermissions', and never allowDangerouslySkipPermissions: the app always asks.
+      permissionMode: resolveMode(),
       includePartialMessages: true,
       settingSources: ['user', 'project', 'local'],
       systemPrompt: s.appendLine
@@ -591,6 +641,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   }
 
   function beginTurn(s: Session, text: string): void {
+    if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
     clearIdle(s);
     s.turnRunning = true;
     s.interruptRequested = false;
@@ -760,6 +811,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
       if (resume) {
         await replayHistory(s, resume);
+        // The chat may have been closed while its history loaded: never start an engine for it then.
+        if (s.closing) throw new SessionError('session-closed', 'That chat was closed while it was opening.');
         emit(s, { type: 'state', state: 'idle' });
       }
       if (prompt) beginTurn(s, prompt);

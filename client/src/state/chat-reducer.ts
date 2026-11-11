@@ -34,6 +34,7 @@ export interface PermissionItem {
   tool: string;
   title: string;
   detail: string;
+  warning: string | null;
   sessionAllowLabel: string | null;
   outcome: Outcome | null;
 }
@@ -195,6 +196,7 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent): ChatStat
           tool: event.tool,
           title: event.title,
           detail: event.detail,
+          warning: event.warning,
           sessionAllowLabel: event.sessionAllowLabel,
           outcome: null,
         },

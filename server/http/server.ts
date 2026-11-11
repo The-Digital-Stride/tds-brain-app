@@ -14,7 +14,7 @@ import {
 } from '../../shared/contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import { handleApi, sendError } from './routes.ts';
-import { authExchange, checkRequest, pingProof, SECURITY_HEADERS } from './security.ts';
+import { type AuthCodes, authExchange, checkRequest, pingProof, SECURITY_HEADERS } from './security.ts';
 import { type AppEventHub, createAppEventHub } from './stream.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -66,12 +66,11 @@ function sendHtml(res: ServerResponse, status: number, html: string, method: str
 }
 
 export const LAUNCHER_PAGE = plainPage('Open TDS Brain from its launcher', [
-  'For your safety, TDS Brain only opens from its launcher on this computer.',
-  'Start it the usual way (for now, run "pnpm start" in the tds-brain-app folder) and it will open here, ready to use.',
+  'This page was opened without signing in. If you started it yourself, start it again and it will open in Chrome.',
 ]);
 
-const NOT_BUILT_PAGE = plainPage("TDS Brain's screens are not built yet", [
-  'Run "pnpm build" in the tds-brain-app folder, then reload this page.',
+const NOT_BUILT_PAGE = plainPage('TDS Brain is not quite ready', [
+  'Its screens have not been set up on this computer yet. Ask whoever looks after the brain to finish setting it up.',
 ]);
 
 async function fileIfExists(path: string): Promise<boolean> {
@@ -144,11 +143,14 @@ export interface ServerDeps {
   port: number;
   clientDir: string;
   launchToken: string;
+  /** Single-use sign-in codes (A15). */
+  authCodes: AuthCodes;
   appVersion: string;
   brain: BrainReaders;
   store: AppStore;
   sessions: SessionManager;
-  engineHealth: EngineHealth;
+  /** Built per request: the permission mode is read afresh (A18). */
+  engineHealth: () => EngineHealth;
   log?: (line: string) => void;
 }
 
@@ -226,8 +228,22 @@ export function createAppServer(deps: ServerDeps): AppServer {
           res.end(pingProof(deps.launchToken, nonce));
           return;
         }
+        case 'auth-code': {
+          const issued = deps.authCodes.issueForLauncher(
+            url.searchParams.get('nonce'),
+            url.searchParams.get('proof'),
+          );
+          if (!issued.ok) {
+            sendError(res, issued.status, issued.code, issued.message);
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(issued.code);
+          return;
+        }
         case 'auth': {
-          const result = authExchange(url.searchParams.get('token'), deps.launchToken);
+          // Only a single-use code works here; the old `?token=` is ignored (A15).
+          const result = authExchange(url.searchParams.get('code'), deps.authCodes, deps.launchToken);
           if (!result.ok) {
             sendHtml(res, 403, LAUNCHER_PAGE, method);
             return;

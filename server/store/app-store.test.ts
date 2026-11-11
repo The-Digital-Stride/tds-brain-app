@@ -1,11 +1,19 @@
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { DEFAULT_PREFS } from '../../shared/contract.ts';
 import { createAppStore } from './app-store.ts';
 
-const fresh = () => join(mkdtempSync(join(tmpdir(), 'tba-store-')), 'nested', 'data');
+const roots: string[] = [];
+afterAll(() => {
+  for (const d of roots.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+const fresh = () => {
+  const root = mkdtempSync(join(tmpdir(), 'tba-store-'));
+  roots.push(root);
+  return join(root, 'nested', 'data');
+};
 
 describe('app store', () => {
   it('gives defaults when nothing is saved, with directWrites off', async () => {

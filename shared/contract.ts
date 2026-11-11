@@ -178,8 +178,18 @@ export interface AppStore {
 // The engine (Claude Code) and chat sessions
 // ---------------------------------------------------------------------------
 
+/**
+ * How chats ask for approval. Taken from the person's own Claude Code settings, so the app behaves
+ * like their terminal: 'default' asks before changes and commands; 'acceptEdits' lets file changes
+ * through; 'auto' lets Claude Code's own safety check approve low-risk steps and asks about the
+ * rest. The app never runs with approvals switched off.
+ */
+export type AppPermissionMode = 'default' | 'acceptEdits' | 'auto';
+
 export interface EngineHealth {
   ok: boolean;
+  /** The mode the next chat will start in. Read afresh for each new chat. */
+  permissionMode: AppPermissionMode;
   /** Where the installed `claude` command was found, or null. */
   claudePath: string | null;
   /** A plain sentence when not ok, e.g. "Claude Code is not installed on this computer." */
@@ -259,11 +269,20 @@ export type ChatEvent =
       tool: string;
       /** Plain sentence, e.g. "Claude wants to save a file". */
       title: string;
-      /** The specifics: a path, a command, a URL. Shown in a code-style block. */
+      /**
+       * The specifics: a path, a command, a URL. Shown in full in a scrolling code-style block.
+       * A file inside the brain folder is given relative to it. Never silently shortened: if the
+       * server had to shorten it, `warning` says so.
+       */
       detail: string;
       /**
-       * What "Allow for this chat" would cover, as a plain sentence the button can show beneath it,
-       * e.g. "Also allow other `node .claude/skills/time/...` commands in this chat".
+       * A plain caution the card shows above the buttons, or null. Used when the file is outside
+       * the brain folder, and when the detail was too long to show in full.
+       */
+      warning: string | null;
+      /**
+       * What "Allow for this chat" would cover, as one full plain sentence shown beside the button,
+       * e.g. "For the rest of this chat, Claude won't ask before running `node tools/x` commands."
        * null when the engine offers nothing safe to remember: then only Allow and Don't are shown.
        */
       sessionAllowLabel: string | null;
@@ -397,7 +416,9 @@ export interface ApiError {
 /**
  * Route table (the single source of truth for paths):
  *
- *   GET  /auth?token=…                          sets the session cookie, redirects to /
+ *   GET  /auth?code=…                           swaps a one-time code for the cookie, redirects to /
+ *   GET  /auth/code?nonce=…&proof=…             launcher only: returns a one-time code
+ *   GET  /auth/ping?nonce=…                     launcher only: proves this is the app
  *   GET  /api/bootstrap                         → Bootstrap
  *   GET  /api/todos                             → TodoList
  *   POST /api/todos/complete   CompleteTodoRequest → TodoList
@@ -418,7 +439,10 @@ export interface ApiError {
  * to say send `{}`. Any failure returns ApiError with a fitting HTTP status.
  */
 export const ROUTES = {
+  /** `GET /auth?code=<one-time code>`: swaps a single-use, 60-second code for the session cookie. */
   auth: '/auth',
+  /** Launcher only (never a browser): proves it knows the secret and gets a one-time code back. */
+  authCode: '/auth/code',
   bootstrap: '/api/bootstrap',
   todos: '/api/todos',
   completeTodo: '/api/todos/complete',

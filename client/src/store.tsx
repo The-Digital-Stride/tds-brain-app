@@ -20,6 +20,7 @@ import type {
 } from '../../shared/contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
+import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 
 export type View = 'chat' | 'skills' | 'todos' | 'history' | 'settings';
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
@@ -61,6 +62,7 @@ export interface Store {
   clearError: () => void;
   openView: (view: View) => void;
   newChat: (opts?: { draft?: string; skill?: SkillInfo | null }) => void;
+  startSkill: (skill: SkillInfo) => void;
   openChat: (sessionId: string) => void;
   openPast: (sdkSessionId: string) => Promise<void>;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
@@ -69,6 +71,9 @@ export interface Store {
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
   retry: () => void;
+  /** Counts up each time focus should return to the message box. */
+  composerFocus: number;
+  requestComposerFocus: () => void;
   /** Runs a chat action (answer, stop) and reports a failure in plain words. */
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }
@@ -101,6 +106,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [chats, dispatchChat] = useReducer(chatsReducer, {} as Chats);
   const [streamUp, setStreamUp] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [composerFocus, setComposerFocus] = useState(0);
+  const restored = useRef(false);
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
@@ -131,7 +138,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadSessions = useCallback(async () => {
     try {
-      setSessions(await api.sessions());
+      const list = await api.sessions();
+      setSessions(list);
+      if (!restored.current) {
+        // First load: go back to the chat this tab had open, if it is still open.
+        restored.current = true;
+        const id = chooseInitialChat(
+          readSavedChat(),
+          list.live.map((s) => s.id),
+        );
+        if (id)
+          setActiveChat((cur) =>
+            cur.kind === 'new' && !cur.draft && !cur.skill ? { kind: 'live', sessionId: id } : cur,
+          );
+        else saveChat(null);
+      }
     } catch {
       // As above.
     }
@@ -147,6 +168,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadAll();
   }, [loadAll]);
 
+  // Remember the open chat for this tab, so a reload returns to it.
+  useEffect(() => {
+    if (!restored.current) return;
+    saveChat(activeChat.kind === 'live' ? activeChat.sessionId : null);
+  }, [activeChat]);
+
   // While the server cannot be reached (or the brain is still loading), keep trying quietly.
   useEffect(() => {
     if (gate !== 'unreachable') return;
@@ -161,11 +188,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let source: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    let failures = 0;
+    let dropped = false;
 
     const connect = () => {
       const after = liveId ? (chatsRef.current[liveId]?.lastSeq ?? 0) : 0;
       source = new EventSource(streamUrl(liveId, after));
-      source.onopen = () => setStreamUp(true);
+      source.onopen = () => {
+        setStreamUp(true);
+        failures = 0;
+        if (dropped) {
+          // Events may have been missed while we were away.
+          dropped = false;
+          loadAll();
+        }
+      };
       source.onmessage = (e) => {
         let frame: StreamFrame;
         try {
@@ -192,6 +229,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Close and reconnect ourselves, so the new request asks only for what is still missing.
         source?.close();
         setStreamUp(false);
+        dropped = true;
+        failures += 1;
+        if (failures >= 2) {
+          // Still failing: find out whether the sign-in is the problem.
+          api.bootstrap().catch((err) => {
+            if (err instanceof ApiFailure && err.notSignedIn) setGate('not-signed-in');
+          });
+        }
         if (!stopped) retry = setTimeout(connect, 2000);
       };
     };
@@ -221,6 +266,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setView('chat');
     setActionError(null);
   }, []);
+
+  const startSkill = useCallback(
+    (skill: SkillInfo) => {
+      newChat({ draft: '', skill });
+    },
+    [newChat],
+  );
 
   const openChat = useCallback((sessionId: string) => {
     setActiveChat({ kind: 'live', sessionId });
@@ -321,6 +373,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearError: () => setActionError(null),
       openView,
       newChat,
+      startSkill,
       openChat,
       openPast,
       send,
@@ -328,6 +381,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       retry: loadAll,
+      composerFocus,
+      requestComposerFocus: () => setComposerFocus((n) => n + 1),
       run,
     }),
     [
@@ -342,6 +397,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       actionError,
       openView,
       newChat,
+      startSkill,
       openChat,
       openPast,
       send,
@@ -349,6 +405,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       loadAll,
+      composerFocus,
       run,
     ],
   );

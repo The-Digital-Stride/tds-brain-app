@@ -24,6 +24,15 @@ Needs Node 22.18 or newer, and Claude Code installed and signed in (`claude` on 
 pnpm check      # type-check, lint, tests, build
 ```
 
+## Signing in
+
+The app opens Chrome with a one-time code and then keeps you signed in with a cookie for 30 days.
+To sign every browser out, stop the app, delete `data/runtime.json` and start it again.
+
+```bash
+lsof -ti tcp:3877 | xargs kill   # stop the app
+```
+
 ## Layout
 
 | Folder | What it holds |

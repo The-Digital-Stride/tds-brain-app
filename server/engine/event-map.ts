@@ -67,13 +67,20 @@ export function toolLabel(tool: string, input: Rec): string {
   return tool;
 }
 
+/** Plain sentences for a turn that went wrong: what happened, then what to do. Never the engine's own text. */
 const RESULT_ERRORS: Record<string, string> = {
-  error_max_turns: 'Claude stopped because it reached its limit of steps for one message.',
-  error_max_budget_usd: 'Claude stopped because it reached its spending limit for this chat.',
+  error_max_turns:
+    'Claude stopped because this needed more steps than it is allowed in one go. Send "carry on" to let it continue.',
+  error_max_budget_usd:
+    'Claude stopped because this chat reached its spending limit. Start a new chat to carry on.',
   error_max_structured_output_retries:
-    'Claude stopped because it could not produce the expected answer format.',
-  error_during_execution: 'Something went wrong while Claude was working.',
+    'Claude stopped because it could not get its answer into the shape that was needed. Try asking again in different words.',
+  error_during_execution:
+    'Something went wrong while Claude was working, so it stopped. Try sending your message again.',
 };
+
+const API_ERROR_TEXT =
+  "Claude couldn't finish its answer because it could not reach Claude's servers properly. Wait a moment, then send your message again.";
 
 const ASSISTANT_ERRORS: Record<string, string> = {
   authentication_failed:
@@ -84,7 +91,11 @@ const ASSISTANT_ERRORS: Record<string, string> = {
 };
 
 export interface EventMapper {
-  map(msg: RawMessage, opts?: { interrupted?: boolean }): ChatEvent[];
+  /**
+   * `deniedByPerson`: tool calls the person refused on a card (or the app refused for them). The
+   * engine's later `permission_denied` for those is not news, so it is not shown again.
+   */
+  map(msg: RawMessage, opts?: { interrupted?: boolean; deniedByPerson?: ReadonlySet<string> }): ChatEvent[];
 }
 
 /**
@@ -104,12 +115,28 @@ export function createEventMapper(): EventMapper {
   const streamTextCount = new Map<string, number>();
   /** api message id → text blocks finished */
   const doneTextCount = new Map<string, number>();
+  /** tool use id → its plain label, for naming a step the safety check stopped */
+  const toolLabels = new Map<string, string>();
 
   function parentOf(msg: RawMessage): string | null {
     return str(msg.parent_tool_use_id);
   }
 
-  function mapSystem(msg: RawMessage): ChatEvent[] {
+  function mapDenied(msg: RawMessage, deniedByPerson: ReadonlySet<string> | undefined): ChatEvent[] {
+    const toolUseId = str(msg.tool_use_id);
+    if (toolUseId && deniedByPerson?.has(toolUseId)) return [];
+    const tool = str(msg.tool_name);
+    const label =
+      (toolUseId ? toolLabels.get(toolUseId) : undefined) ?? (tool ? toolLabel(tool, {}) : 'a step');
+    const phrase = label.charAt(0).toLowerCase() + label.slice(1);
+    let text = `Claude Code's safety check stopped a step (${phrase}). Claude has been told and may try another way.`;
+    const reason = str(msg.decision_reason)?.replace(/\s+/g, ' ').trim();
+    if (reason) text += ` ${reason.length > 300 ? `${reason.slice(0, 299)}…` : reason}`;
+    return [{ type: 'notice', level: 'warning', text }];
+  }
+
+  function mapSystem(msg: RawMessage, deniedByPerson: ReadonlySet<string> | undefined): ChatEvent[] {
+    if (msg.subtype === 'permission_denied') return mapDenied(msg, deniedByPerson);
     if (msg.subtype !== 'init') return [];
     const sdkSessionId = str(msg.session_id);
     if (!sdkSessionId) return [];
@@ -176,11 +203,13 @@ export function createEventMapper(): EventMapper {
         const tool = str(block.name);
         if (!toolUseId || !tool) continue;
         const input = isRec(block.input) ? block.input : {};
+        const label = toolLabel(tool, input);
+        toolLabels.set(toolUseId, label);
         out.push({
           type: 'tool-start',
           toolUseId,
           tool,
-          label: toolLabel(tool, input),
+          label,
           parentToolUseId: parent,
         });
       }
@@ -211,17 +240,10 @@ export function createEventMapper(): EventMapper {
     const ok = !interrupted && msg.subtype === 'success' && msg.is_error !== true;
     let errorText: string | null = null;
     if (!ok && !interrupted) {
-      if (msg.subtype === 'success') {
-        errorText = str(msg.result) || RESULT_ERRORS.error_during_execution || null;
-      } else {
-        const errors = Array.isArray(msg.errors)
-          ? msg.errors.filter((e): e is string => typeof e === 'string')
-          : [];
-        const subtype = str(msg.subtype) ?? '';
-        errorText =
-          (subtype !== 'error_during_execution' ? RESULT_ERRORS[subtype] : undefined) ??
-          (errors.length > 0 ? errors.join('\n') : (RESULT_ERRORS[subtype] ?? 'Something went wrong.'));
-      }
+      errorText =
+        msg.subtype === 'success'
+          ? API_ERROR_TEXT
+          : (RESULT_ERRORS[str(msg.subtype) ?? ''] ?? RESULT_ERRORS.error_during_execution ?? null);
     }
     return [{ type: 'turn-end', ok, interrupted, durationMs, errorText }];
   }
@@ -230,7 +252,7 @@ export function createEventMapper(): EventMapper {
     map(msg, opts) {
       switch (msg.type) {
         case 'system':
-          return mapSystem(msg);
+          return mapSystem(msg, opts?.deniedByPerson);
         case 'stream_event':
           return mapStream(msg);
         case 'assistant':

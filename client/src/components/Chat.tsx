@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
 import { currentStep } from '../state/blocks.ts';
 import { initialChatState, pendingCard } from '../state/chat-reducer.ts';
+import { closeConfirmText, isClearCommand, needsCloseConfirm } from '../state/close.ts';
 import { useStore } from '../store.tsx';
 import { AttentionBar } from './AttentionBar.tsx';
 import { Composer } from './Composer.tsx';
@@ -27,7 +28,14 @@ export function ChatView() {
     startSkill,
     openView,
     composerFocus,
+    closeRequest,
+    cancelClose,
+    requestClose,
+    closeChat,
+    notice,
   } = useStore();
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
 
   const sessionId = activeChat.kind === 'live' ? activeChat.sessionId : null;
   const chat = sessionId ? (chats[sessionId] ?? initialChatState) : initialChatState;
@@ -45,6 +53,13 @@ export function ChatView() {
     const last = boot?.prefs.lastClient;
     return last && clients.some((c) => c.slug === last) ? last : '';
   });
+
+  const confirming = sessionId !== null && closeRequest === sessionId;
+  useEffect(() => {
+    // Cancelling the confirm puts focus back on the button that opened it.
+    if (wasConfirming.current && !confirming) closeButton.current?.focus();
+    wasConfirming.current = confirming;
+  }, [confirming]);
 
   const waiting = pendingCard(chat) !== null;
   const state = chat.sessionState;
@@ -91,10 +106,41 @@ export function ChatView() {
             Client: <strong>{clientName(live.client) ?? 'No client'}</strong>
           </div>
         ) : null}
-        {working && sessionId ? (
-          <button type="button" className="btn" onClick={() => void run(() => api.interrupt(sessionId))}>
-            Stop
-          </button>
+        {sessionId && confirming ? (
+          <fieldset
+            className="close-confirm"
+            aria-label="Close this chat"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancelClose();
+            }}
+          >
+            <span>{closeConfirmText(state)}</span>
+            <button type="button" className="btn" data-size="small" onClick={() => void closeChat(sessionId)}>
+              Close chat
+            </button>
+            {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
+            <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
+              Keep open
+            </button>
+          </fieldset>
+        ) : sessionId ? (
+          <>
+            {working ? (
+              <button type="button" className="btn" onClick={() => void run(() => api.interrupt(sessionId))}>
+                Stop
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              ref={closeButton}
+              onClick={() => requestClose(sessionId)}
+            >
+              Close chat
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -133,6 +179,11 @@ export function ChatView() {
         </div>
       ) : null}
 
+      {notice ? (
+        <p className="closed-note" role="status">
+          {notice}
+        </p>
+      ) : null}
       <div className="composer-wrap">
         <div className="composer-inner">
           {skill ? (
@@ -161,7 +212,14 @@ export function ChatView() {
             autoFocus={activeChat.kind === 'new'}
             focusSignal={composerFocus}
             attention={sessionId ? attentionFor(state) : null}
-            onSend={(text) => send(text, activeChat.kind === 'new' ? client || null : null)}
+            onSend={async (text) => {
+              if (isClearCommand(text)) {
+                // "Start afresh": handled here, never sent to Claude.
+                if (sessionId) return needsCloseConfirm(state) ? false : closeChat(sessionId);
+                return true;
+              }
+              return send(text, activeChat.kind === 'new' ? client || null : null);
+            }}
           />
           {sdkId && canResumeInTerminal ? (
             <details className="terminal-note">

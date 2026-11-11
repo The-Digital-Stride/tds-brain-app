@@ -20,7 +20,8 @@ const STATE_WORDS = {
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Role not set' } as const;
 
 export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
-  const { boot, view, openView, newChat, startSkill, sessions, activeChat, openChat } = useStore();
+  const { boot, view, openView, newChat, startSkill, sessions, activeChat, openChat, requestClose } =
+    useStore();
   if (!boot) return null;
   const byName = (name: string) => boot.skills.find((s) => s.name === name);
   const pinned = boot.prefs.pins.map(byName).filter((s) => s !== undefined);
@@ -49,7 +50,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
             {sessions.live.map((c) => {
               const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === c.id;
               return (
-                <li key={c.id}>
+                <li key={c.id} className="chat-item">
                   <button
                     type="button"
                     className="side-link chat-link"
@@ -76,6 +77,14 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                         STATE_WORDS[c.state]
                       )}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-close"
+                    aria-label={`Close chat: ${c.title || 'New chat'}`}
+                    onClick={() => requestClose(c.id)}
+                  >
+                    {'\u00d7'}
                   </button>
                 </li>
               );

@@ -185,8 +185,61 @@ p {
   font-weight: 650;
 }
 .side-link.chat-link {
+  padding-right: 34px;
   display: grid;
   gap: 2px;
+}
+.chat-item {
+  position: relative;
+}
+.chat-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--side-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+}
+.chat-item:hover .chat-close,
+.chat-close:focus-visible {
+  opacity: 1;
+}
+.chat-close:hover {
+  color: var(--side-text);
+  background: var(--side-hover);
+}
+@media (hover: none), (max-width: 899px) {
+  .chat-close {
+    opacity: 1;
+  }
+}
+.close-confirm {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  font-size: 14px;
+}
+.closed-note {
+  margin: 0;
+  padding: 0 var(--s3) var(--s1);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-soft);
 }
 .chat-link-title {
   overflow: hidden;

@@ -21,6 +21,7 @@ import type {
 import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
+import { needsCloseConfirm } from './state/close.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 
@@ -75,6 +76,14 @@ export interface Store {
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
   retry: () => void;
+  /** The chat whose inline "Close anyway?" is showing in the header, if any. */
+  closeRequest: string | null;
+  cancelClose: () => void;
+  /** Closes at once when idle; otherwise switches to the chat and asks first. */
+  requestClose: (id: string) => void;
+  closeChat: (id: string) => Promise<boolean>;
+  /** A brief plain line shown after a chat is closed. */
+  notice: string | null;
   /** Counts up each time focus should return to the message box. */
   composerFocus: number;
   requestComposerFocus: () => void;
@@ -111,7 +120,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [streamUp, setStreamUp] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
+  const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
   const restored = useRef(false);
+  const [closeRequest, setCloseRequest] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef = useRef(activeChat);
+  activeRef.current = activeChat;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
@@ -295,6 +312,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const closeChat = useCallback(
+    async (id: string) => {
+      try {
+        await api.close(id);
+      } catch (err) {
+        setActionError(messageOf(err));
+        return false;
+      }
+      setActionError(null);
+      setCloseRequest(null);
+      setSessions((s) => (s ? { ...s, live: s.live.filter((c) => c.id !== id) } : s));
+      void loadSessions();
+      const cur = activeRef.current;
+      if (cur.kind === 'live' && cur.sessionId === id) {
+        setActiveChat(freshNewChat());
+        requestFocus();
+      }
+      setNotice("Chat closed. It's in History if you want it back.");
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+      return true;
+    },
+    [loadSessions, requestFocus],
+  );
+
+  const requestClose = useCallback(
+    (id: string) => {
+      const cur = activeRef.current;
+      const mine = cur.kind === 'live' && cur.sessionId === id ? chatsRef.current[id] : undefined;
+      const state =
+        mine && mine.stateSince !== null
+          ? mine.sessionState
+          : sessionsRef.current?.live.find((c) => c.id === id)?.state;
+      if (state && needsCloseConfirm(state)) {
+        setActiveChat({ kind: 'live', sessionId: id });
+        setView('chat');
+        setCloseRequest(id);
+      } else {
+        void closeChat(id);
+      }
+    },
+    [closeChat],
+  );
+
   const startSkill = useCallback(
     (skill: SkillInfo) => {
       newChat({ draft: '', skill });
@@ -306,6 +367,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveChat({ kind: 'live', sessionId });
     setView('chat');
     setActionError(null);
+    setCloseRequest(null);
   }, []);
 
   const openPast = useCallback(
@@ -415,7 +477,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeTodo,
       retry: loadAll,
       composerFocus,
-      requestComposerFocus: () => setComposerFocus((n) => n + 1),
+      requestComposerFocus: requestFocus,
+      closeRequest,
+      cancelClose: () => setCloseRequest(null),
+      requestClose,
+      closeChat,
+      notice,
       run,
     }),
     [
@@ -439,6 +506,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeTodo,
       loadAll,
       composerFocus,
+      requestFocus,
+      closeRequest,
+      requestClose,
+      closeChat,
+      notice,
       run,
     ],
   );

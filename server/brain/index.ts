@@ -17,12 +17,18 @@ export interface BrainDeps {
    * brain. Missing: they are kept in memory only.
    */
   dataDir?: string | null;
+  /** Where Quick Look can draw documents: offer pictures of them (see `LibraryOptions.docThumbs`). */
+  docThumbs?: boolean;
 }
 
 export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainReaders {
   const run = deps.run ?? defaultRunner;
   const now = deps.now ?? (() => new Date());
-  const library = createLibrary(root, { clients: () => listClients(root), dataDir: deps.dataDir ?? null });
+  const library = createLibrary(root, {
+    clients: () => listClients(root),
+    dataDir: deps.dataDir ?? null,
+    docThumbs: deps.docThumbs ?? false,
+  });
   return {
     root,
     health: () => checkHealth(root),

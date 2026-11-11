@@ -59,6 +59,11 @@ export interface LibraryOptions {
   onWalk?: (scope: string) => void;
   /** Tests hold a build after its walk, to change things while it is in flight. */
   afterWalk?: (scope: string) => Promise<void> | void;
+  /**
+   * True where Quick Look can draw documents (`quickLookAvailable()`), so PDFs and Office files are
+   * offered a picture (never web pages: see `DOC_THUMB_EXTS`). Must match what the thumbnailer was given. Default false.
+   */
+  docThumbs?: boolean;
 }
 
 export interface Library {
@@ -251,9 +256,23 @@ export function svgSize(head: string): [number, number] | null {
   return box.length === 4 ? sized(box[2], box[3]) : null;
 }
 
-/** Whether a picture can be made: an image under 50 MB, or an SVG under 1 MB. */
-export function canThumb(cls: FileClass, ext: string, bytes: number): boolean {
-  return cls.kind === 'image' && bytes <= (ext === 'svg' ? SVG_MAX_BYTES : THUMB_MAX_BYTES);
+/**
+ * Documents Quick Look draws well. Not md, txt or csv: it draws them as small grey text or tiny
+ * tables, and their icons say more. Never html or htm: Quick Look's web view loads `file://` and
+ * relative addresses, so a page in the brain could draw any local file (a token, an `.env`) into its
+ * picture.
+ */
+export const DOC_THUMB_EXTS: ReadonlySet<string> = new Set(['pdf', 'docx', 'xlsx', 'pptx']);
+
+/**
+ * Whether a picture can be made: an image under 50 MB, an SVG under 1 MB, or (where Quick Look is
+ * there, `docThumbs`) a PDF or Office file under 50 MB.
+ */
+export function canThumb(cls: FileClass, ext: string, bytes: number, docThumbs = false): boolean {
+  if (cls.kind === 'document') return docThumbs && DOC_THUMB_EXTS.has(ext) && bytes <= THUMB_MAX_BYTES;
+  // Any kind added later gets no picture until someone decides it should.
+  if (cls.kind !== 'image') return false;
+  return bytes <= (ext === 'svg' ? SVG_MAX_BYTES : THUMB_MAX_BYTES);
 }
 
 /** A Markdown title: frontmatter `title:`, else the first heading. Null when neither is there. */
@@ -345,6 +364,7 @@ async function pool<T>(items: T[], size: number, job: (item: T) => Promise<void>
 export function createLibrary(root: string, opts: LibraryOptions): Library {
   const now = opts.now ?? Date.now;
   const limits = { ...LIMITS, ...opts.limits };
+  const docThumbs = opts.docThumbs ?? false;
   const cache = new Map<string, Entry>();
   const gens = new Map<string, number>();
   /** One build per scope at a time, with the generation it started at. */
@@ -564,7 +584,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   }
 
   function itemFor(scope: ScopeDef, f: Found, m: MetaEntry | undefined): LibraryItem {
-    const thumb = canThumb(f.cls, f.ext, f.bytes);
+    const thumb = canThumb(f.cls, f.ext, f.bytes, docThumbs);
     return {
       id: idFor(scope.id, f.rel),
       kind: f.cls.kind,
@@ -684,7 +704,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           ...item,
           bytes,
           modified: new Date(mtimeMs).toISOString(),
-          thumb: canThumb(cls, ext, bytes),
+          thumb: canThumb(cls, ext, bytes, docThumbs),
           view: viewFor(cls, ext, bytes),
         },
         absPath: real,

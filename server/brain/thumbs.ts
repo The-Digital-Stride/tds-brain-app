@@ -9,12 +9,12 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import sharp from 'sharp';
 import { type LibraryFile, THUMB_WIDTHS, type Thumbnailer, type ThumbWidth } from '../../shared/contract.ts';
-import { looksLikeRaster, readChecked, SVG_MAX_BYTES, THUMB_MAX_BYTES } from './library.ts';
+import { looksLikeRaster, readCapped, readChecked, SVG_MAX_BYTES, THUMB_MAX_BYTES } from './library.ts';
 
 /** Fits inside the asked width and this height: a width-only resize of a very long image fails. */
 export const THUMB_MAX_HEIGHT = 16_000;
@@ -26,9 +26,33 @@ const MAX_REMEMBERED_FAILURES = 5000;
 const MAX_SVG_OUTPUT = 32 * 1024 * 1024;
 const SVG_RENDERER = join(import.meta.dirname, 'svg-render.ts');
 
+/** macOS's Quick Look command; it draws PDFs and Office files as Finder does (web pages are never given it). */
+export const QUICK_LOOK_COMMAND = '/usr/bin/qlmanage';
+/** Quick Look draws this many pixels on the long side, so an A4 page fills a 320-wide picture. */
+const QUICK_LOOK_SIZE = 480;
+/** Documents are drawn at this width only: each width would be a separate Quick Look run. */
+export const DOC_THUMB_WIDTH = 320;
+/** A broken file makes Quick Look hang rather than fail, so this is how most failures end. */
+const DEFAULT_QUICK_LOOK_TIMEOUT_MS = 5000;
+const MAX_QUICK_LOOK_OUTPUT = 32 * 1024 * 1024;
+
+/** True on a Mac with Quick Look. Checked once at start; elsewhere documents keep their icons. */
+export function quickLookAvailable(): boolean {
+  return process.platform === 'darwin' && existsSync(QUICK_LOOK_COMMAND);
+}
+
+export interface QuickLook {
+  command: string;
+  /** Put before Quick Look's own arguments (tests run a stand-in script through Node). */
+  args?: string[];
+}
+
 export interface ThumbOptions {
   /** The brain's root: nothing is ever written under it, even if the data folder is put there. */
   brainRoot?: string;
+  /** How to run Quick Look, or null/missing where it is not there (documents then get no picture). */
+  quickLook?: QuickLook | null;
+  quickLookTimeoutMs?: number;
   maxConcurrent?: number;
   timeoutSeconds?: number;
   /** Wall-clock limit for one SVG, after which its process is killed. */
@@ -107,10 +131,73 @@ function renderSvg(data: Buffer, width: number, maxPixels: number, timeoutMs: nu
   });
 }
 
+/** The first bytes a file of this type must have before Quick Look is given it (it hangs on junk). */
+function looksLikeDocument(ext: string, head: Buffer): boolean {
+  if (ext === 'pdf') return head.subarray(0, 1024).includes('%PDF-', 0, 'latin1');
+  if (ext === 'docx' || ext === 'xlsx' || ext === 'pptx') {
+    return head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+  }
+  // Anything else (a web page above all: it can draw local files) is never given to Quick Look.
+  return false;
+}
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Has Quick Look draw a document from a private copy: the checked bytes are written as `file.<ext>`
+ * in a fresh folder of its own, Quick Look runs there with an empty environment in its own process
+ * group, and the whole group is killed at the time limit. Only a PNG it wrote is taken back. The
+ * folder is always removed.
+ */
+async function quickLookPng(
+  ql: QuickLook,
+  ext: string,
+  data: Buffer,
+  timeoutMs: number,
+): Promise<DrawResult> {
+  const dir = await fs.mkdtemp(join(tmpdir(), 'tba-ql-'));
+  try {
+    const name = `file.${ext}`;
+    await fs.writeFile(join(dir, name), data, { mode: 0o600 });
+    const ran = await new Promise<'ok' | 'failed' | 'unavailable'>((done) => {
+      let settled = false;
+      const child = spawn(
+        ql.command,
+        [...(ql.args ?? []), '-t', '-s', String(QUICK_LOOK_SIZE), '-o', dir, name],
+        { cwd: dir, env: {}, stdio: 'ignore', detached: true, windowsHide: true },
+      );
+      const finish = (r: 'ok' | 'failed' | 'unavailable') => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        done(r);
+      };
+      const timer = setTimeout(() => {
+        try {
+          // The negative id is the whole group: anything Quick Look started goes with it.
+          if (child.pid) process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+        finish('failed');
+      }, timeoutMs);
+      child.on('error', () => finish('unavailable'));
+      child.on('close', () => finish('ok'));
+    });
+    if (ran !== 'ok') return ran;
+    const out = await readCapped(join(dir, `${name}.png`), MAX_QUICK_LOOK_OUTPUT);
+    if (!out || out.truncated || !out.data.subarray(0, 8).equals(PNG_MAGIC)) return 'failed';
+    return out.data;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export function createThumbnailer(dataDir: string, opts: ThumbOptions = {}): Thumbnailer {
   const cacheDir = join(resolve(dataDir), 'thumbs');
   const slots = limiter(Math.max(1, opts.maxConcurrent ?? DEFAULT_CONCURRENCY));
   const svgSlot = limiter(1);
+  const quickLookSlot = limiter(1);
   const maxPixels = opts.maxPixels ?? DEFAULT_MAX_PIXELS;
   const failed = new Map<string, true>();
   const inflight = new Map<string, Promise<string | null>>();
@@ -153,14 +240,28 @@ export function createThumbnailer(dataDir: string, opts: ThumbOptions = {}): Thu
 
   /** The WebP bytes, 'failed' (remembered for this version) or 'unavailable' (tried again later). */
   async function draw(file: LibraryFile, width: ThumbWidth): Promise<DrawResult> {
-    const svg = file.item.ext === 'svg';
+    const { ext, kind } = file.item;
+    const svg = ext === 'svg';
     const read = await readChecked(file, svg ? SVG_MAX_BYTES : THUMB_MAX_BYTES);
     if (!read || read.truncated || read.data.length === 0) return 'failed';
     if (svg) return renderSvg(read.data, width, maxPixels, opts.svgTimeoutMs ?? DEFAULT_SVG_TIMEOUT_MS);
-    // Markup or gzip under a picture's name would be drawn as SVG in this process: refuse it.
-    if (!looksLikeRaster(read.data)) return 'failed';
+    let source = read.data;
+    if (kind === 'document') {
+      if (!opts.quickLook || !looksLikeDocument(ext, read.data)) return 'failed';
+      const png = await quickLookPng(
+        opts.quickLook,
+        ext,
+        read.data,
+        opts.quickLookTimeoutMs ?? DEFAULT_QUICK_LOOK_TIMEOUT_MS,
+      );
+      if (!Buffer.isBuffer(png)) return png;
+      source = png;
+    } else if (!looksLikeRaster(read.data)) {
+      // Markup or gzip under a picture's name would be drawn as SVG in this process: refuse it.
+      return 'failed';
+    }
     try {
-      return await sharp(read.data, { limitInputPixels: maxPixels, failOn: 'error' })
+      return await sharp(source, { limitInputPixels: maxPixels, failOn: 'error' })
         .autoOrient()
         .resize({ width, height: THUMB_MAX_HEIGHT, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 80 })
@@ -173,8 +274,11 @@ export function createThumbnailer(dataDir: string, opts: ThumbOptions = {}): Thu
 
   async function make(file: LibraryFile, width: ThumbWidth, dest: string, failKey: string) {
     const svg = file.item.ext === 'svg';
-    // One SVG at a time, and never more than the overall limit at once.
+    const doc = file.item.kind === 'document';
+    // One SVG and one Quick Look at a time, each taken before a shared slot, so a slow one never holds
+    // up more than one of the shared slots; and never more than the overall limit at once.
     if (svg) await svgSlot.acquire();
+    if (doc) await quickLookSlot.acquire();
     await slots.acquire();
     try {
       if (await exists(dest)) return dest;
@@ -197,6 +301,7 @@ export function createThumbnailer(dataDir: string, opts: ThumbOptions = {}): Thu
       }
     } finally {
       slots.release();
+      if (doc) quickLookSlot.release();
       if (svg) svgSlot.release();
     }
   }
@@ -206,7 +311,8 @@ export function createThumbnailer(dataDir: string, opts: ThumbOptions = {}): Thu
       if (!(THUMB_WIDTHS as readonly number[]).includes(width)) return null;
       const { item } = file;
       const cap = item.ext === 'svg' ? SVG_MAX_BYTES : THUMB_MAX_BYTES;
-      if (item.kind !== 'image' || !item.thumb || item.bytes > cap) return null;
+      if (!item.thumb || item.bytes > cap) return null;
+      if (item.kind === 'document' && (!opts.quickLook || width !== DOC_THUMB_WIDTH)) return null;
       if (!(await writable())) return null;
       const failKey = hash(`fail\0${item.path}\0${file.version}`);
       if (failed.has(failKey)) return null;

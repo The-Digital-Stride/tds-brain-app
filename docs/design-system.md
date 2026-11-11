@@ -139,7 +139,7 @@ picking, `.kv` rows and `.chip` tags in the panel, `.btn` for actions, `.glass` 
 action bar. Sheet padding 12px 16px 16px, gap 8px.
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
-with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, one control of the app's own), `FolderCard` (first 60 items,
+with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,
 then a `.card-more` "Show all N"), `SelectionBar`, `LibraryBar` (Back, details), `DetailActions`,
 `LibraryNotice` (loading, failed with "Try again", empty), `Thumb`, `Viewer`, the data hooks and a
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
@@ -149,7 +149,7 @@ list the real files the server finds; nothing is sample data.
 | App | What is its own |
 |---|---|
 | `client/src/apps/images` | Grid or list. Tiles: padding 8px, radius 10, 2px apart, picture box 3:2 with a hairline edge, the picture contained at its own proportions. No picture (or one that fails to load): the standard tile, the `image` line icon centred in the same box. Meta: the dimensions, else the size. |
-| `client/src/apps/documents` | Rows that read like a table: a 32px flat white box with a line icon for the file's kind, title and meta ("PDF, 840 KB"), then the date changed (80px, right-aligned, 12px; gone under 480px of sheet, it is in the panel). In the panel the white card is the cover: the type icon, title, file name. |
+| `client/src/apps/documents` | Rows that read like a table: a 32px flat white box with a line icon for the file's kind, title and meta ("PDF, 840 KB"), then the date changed (80px, right-aligned, 12px; gone under 480px of sheet, it is in the panel). Grid or list (list by default). Tiles as in Images, but the picture box is 3:4. On a Mac, Quick Look draws the first page of PDFs, Word, Excel and PowerPoint; other files (web pages too: Quick Look would load local files into them), and every file elsewhere, show their format icon in the same box. In the panel: the preview (square when there is a picture, 3:2 with the icon when not), then the title and file name. |
 
 In both panels the `.kv` row for a card is labelled "Group" (it is a card name, not always a folder).
 

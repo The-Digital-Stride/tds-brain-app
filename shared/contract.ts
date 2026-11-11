@@ -210,9 +210,11 @@ export interface LibraryItem {
   width: number | null;
   height: number | null;
   /**
-   * True when `GET /api/library/thumb/<id>` can try to make a picture of it. False (not an image, or
-   * over the 50 MB cap, 1 MB for an SVG): show the standard tile. A true can still fail (a broken file): the route
-   * answers 404 and the screen falls back to the tile.
+   * True when `GET /api/library/thumb/<id>` can try to make a picture of it. An image: always, up to
+   * the 50 MB cap (1 MB for an SVG). A document: only a PDF, Word, Excel or PowerPoint file, up to
+   * 50 MB (never a web page: Quick Look would draw local files into it), and only on a Mac, where Quick Look draws its first page (at width 320 only). False:
+   * show the standard tile. A true can still fail (a broken file): the route answers 404 and the
+   * screen falls back to the tile.
    */
   thumb: boolean;
   /**

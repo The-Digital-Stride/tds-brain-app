@@ -1,8 +1,8 @@
 import type { LibraryItem } from '../../../../shared/contract.ts';
-import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { DetailActions } from '../shared/parts.tsx';
+import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
 import { chatDraft, typeWords } from './library.ts';
@@ -22,13 +22,17 @@ export function DocumentsPanel() {
 
   return (
     <div className="lib-detail">
-      <div className="lib-preview doc-cover">
-        <span className="doc-glyph">
-          <Icon name={FORMAT_ICONS[doc.format ?? 'doc']} size={18} />
-        </span>
-        <h3 className="lib-name">{doc.title}</h3>
-        <p className="lib-file">{doc.name}</p>
+      <div className="lib-preview doc-preview">
+        <Thumb
+          item={doc}
+          width={320}
+          label={`Preview of ${doc.title}`}
+          icon={FORMAT_ICONS[doc.format ?? 'doc']}
+          iconSize={32}
+        />
       </div>
+      <h3 className="lib-name">{doc.title}</h3>
+      <p className="lib-file">{doc.name}</p>
       <DetailActions
         item={doc}
         onAsk={() => newChat({ draft: chatDraft([doc]) })}

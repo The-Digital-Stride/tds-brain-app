@@ -33,6 +33,7 @@ const lead = doc({
   name: 'lead.pdf',
   modified: '2026-11-03T09:00:00.000Z',
   view: 'pdf',
+  thumb: true,
 });
 const plan = doc({
   id: 'client:acme.d3',
@@ -194,7 +195,47 @@ describe('DocumentsSheet', () => {
   });
 });
 
+describe('Documents grid', () => {
+  it('opens as a list; Grid shows each document as a tile with its page picture, or its icon', async () => {
+    const { container } = render(<DocumentsSheet />);
+    await card('Reports');
+    expect(container.querySelector('.docs')?.getAttribute('data-layout')).toBe('list');
+    expect(container.querySelector('.img-tile')).toBeNull();
+    // Rows keep the small icon box and ask for no pictures.
+    expect(container.querySelector('.lib-row img')).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Grid' }));
+    expect(container.querySelector('.docs')?.getAttribute('data-layout')).toBe('grid');
+    const tile = screen.getByRole('button', { name: /^Lead quality/ }).closest('.img-tile') as HTMLElement;
+    const img = tile.querySelector('img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(
+      `/api/library/thumb/${encodeURIComponent(lead.id)}?w=320&v=${encodeURIComponent(lead.modified)}`,
+    );
+    expect(tile.textContent).toContain('PDF, 840 KB');
+    const note = screen
+      .getByRole('button', { name: /^Winter boiler campaign/ })
+      .closest('.img-tile') as HTMLElement;
+    expect(note.querySelector('img')).toBeNull();
+    expect(note.querySelector('.img-thumb[data-plain="true"] svg.icon')).not.toBeNull();
+    // Ticking still works from a tile.
+    fireEvent.click(within(tile).getByRole('checkbox', { name: 'Select Lead quality' }));
+    expect(docsStore.get().ticked.has(lead.id)).toBe(true);
+  });
+});
+
 describe('DocumentsPanel', () => {
+  it('shows the page picture above the title when there is one, and the icon if it fails', () => {
+    docsStore.set({ current: lead });
+    const { container } = render(<DocumentsPanel />);
+    const img = container.querySelector('.lib-preview img') as HTMLImageElement;
+    expect(img.getAttribute('alt')).toBe('Preview of Lead quality');
+    expect(img.getAttribute('src')).toContain('w=320');
+    expect(screen.getByRole('heading', { level: 3, name: 'Lead quality' })).toBeTruthy();
+    expect(screen.getByText('lead.pdf')).toBeTruthy();
+    fireEvent.error(img);
+    expect(container.querySelector('.lib-preview img')).toBeNull();
+    expect(container.querySelector('.lib-preview svg.icon')).not.toBeNull();
+  });
+
   it('asks for a choice until a document is chosen', () => {
     render(<DocumentsPanel />);
     expect(screen.getByText('Choose a document to see its details.')).toBeTruthy();
@@ -205,7 +246,9 @@ describe('DocumentsPanel', () => {
     const { container } = render(<DocumentsPanel />);
     expect(screen.getByRole('heading', { level: 3, name: 'Winter boiler campaign' })).toBeTruthy();
     expect(screen.getByText('winter.md')).toBeTruthy();
-    expect(container.querySelector('.doc-cover svg.icon')).not.toBeNull();
+    // No picture of a note: the format's icon stands in, in the preview box.
+    expect(container.querySelector('.lib-preview .img-thumb[data-plain="true"] svg.icon')).not.toBeNull();
+    expect(container.querySelector('.lib-preview img')).toBeNull();
     expect(container.querySelector('.doc-sketch')).toBeNull();
     expect(screen.getByText('Markdown')).toBeTruthy();
     expect(screen.getByText('3 KB')).toBeTruthy();

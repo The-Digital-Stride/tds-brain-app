@@ -8,6 +8,7 @@ import { useCopy } from '../shared/copy.ts';
 import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
 import { FolderCard, LibraryBar, LibraryNotice, LibraryTools, SelectionBar } from '../shared/parts.tsx';
+import { Thumb } from '../shared/Thumb.tsx';
 import { Viewer } from '../shared/Viewer.tsx';
 import { dateWords, selectionWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
@@ -35,9 +36,60 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: 'name', label: 'A to Z' },
 ];
 
+const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
+  { value: 'grid', label: 'Grid' },
+  { value: 'list', label: 'List' },
+];
+
 /** The buttons in the sheet bar: Back while a document is open, and the details button. */
 export function DocumentsBar() {
   return <LibraryBar store={docsStore} back="Back to Documents" details="Document details" />;
+}
+
+/** A grid tile: the first page where Quick Look drew one, otherwise the type's icon on the page. */
+function Tile({
+  doc,
+  current,
+  ticked,
+  onOpen,
+}: {
+  doc: LibraryItem;
+  current: boolean;
+  ticked: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <li
+      className="img-tile"
+      data-current={current ? 'true' : undefined}
+      data-ticked={ticked ? 'true' : undefined}
+    >
+      <label className="tick-hit lib-tick">
+        <input
+          type="checkbox"
+          className="tick"
+          checked={ticked}
+          aria-label={`Select ${doc.title}`}
+          onChange={() => docsStore.toggleTick(doc.id)}
+        />
+      </label>
+      <button
+        type="button"
+        className="lib-open"
+        data-open-id={doc.id}
+        aria-current={current ? 'true' : undefined}
+        onClick={onOpen}
+      >
+        <Thumb item={doc} width={320} icon={FORMAT_ICONS[doc.format ?? 'doc']} iconSize={22} />
+        <span className="line-text">
+          <span className="line-title" title={doc.name}>
+            {doc.title}
+          </span>
+          <span className="line-meta">{metaWords(doc)}</span>
+        </span>
+      </button>
+    </li>
+  );
 }
 
 function Row({
@@ -124,7 +176,12 @@ export function DocumentsSheet() {
   };
 
   return (
-    <div className="lib docs" ref={root}>
+    <div
+      className="lib docs"
+      ref={root}
+      data-layout={s.layout}
+      data-picking={picked.length > 0 ? 'true' : undefined}
+    >
       {s.viewing ? <Viewer item={s.viewing} onBack={() => docsStore.set({ viewing: null })} /> : null}
       <div className="lib-main" hidden={s.viewing !== null}>
         <LibraryTools
@@ -138,6 +195,12 @@ export function DocumentsSheet() {
           placeholder="Search by name or folder"
         >
           <Seg label="Sort" value={s.sort} options={SORTS} onChange={(sort) => docsStore.set({ sort })} />
+          <Seg
+            label="Layout"
+            value={s.layout}
+            options={LAYOUTS}
+            onChange={(layout) => docsStore.set({ layout })}
+          />
         </LibraryTools>
 
         <div className="lib-filter">
@@ -172,15 +235,18 @@ export function DocumentsSheet() {
                 key={`${data.scope}/${g.group}`}
                 title={g.group}
                 items={g.items}
-                renderItem={(doc) => (
-                  <Row
-                    key={doc.id}
-                    doc={doc}
-                    current={s.current?.id === doc.id}
-                    ticked={s.ticked.has(doc.id)}
-                    onOpen={() => open(doc)}
-                  />
-                )}
+                renderItem={(doc) => {
+                  const Item = s.layout === 'grid' ? Tile : Row;
+                  return (
+                    <Item
+                      key={doc.id}
+                      doc={doc}
+                      current={s.current?.id === doc.id}
+                      ticked={s.ticked.has(doc.id)}
+                      onOpen={() => open(doc)}
+                    />
+                  );
+                }}
               />
             ))}
           </div>

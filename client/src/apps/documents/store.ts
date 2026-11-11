@@ -7,6 +7,8 @@ export interface DocsState extends LibraryState {
   query: string;
   format: DocFormat | 'all';
   sort: Sort;
+  /** List by default: about half the documents are notes with no picture. */
+  layout: 'grid' | 'list';
 }
 
 const initial = (): DocsState => ({
@@ -14,6 +16,7 @@ const initial = (): DocsState => ({
   query: '',
   format: 'all',
   sort: 'newest',
+  layout: 'list',
   current: null,
   viewing: null,
   ticked: new Set(),

@@ -154,7 +154,11 @@ describe('library listing', () => {
       title: '2026 10 summary',
       view: 'pdf',
     });
-    expect(items.get(`${ACME}landing-pages/boiler/page.html`)).toMatchObject({ view: 'page', format: 'doc' });
+    expect(items.get(`${ACME}landing-pages/boiler/page.html`)).toMatchObject({
+      view: 'page',
+      format: 'doc',
+      thumb: false,
+    });
     expect(items.get(`${ACME}created/2026-11-02-keywords.csv`)).toMatchObject({
       format: 'sheet',
       group: 'Ad builds',
@@ -162,6 +166,29 @@ describe('library listing', () => {
     });
     expect(items.get(`${ACME}loose-note.txt`)?.group).toBe('Other');
     expect(items.get(`${ACME}media/van.webp`)?.group).toBe('Media');
+  });
+
+  it('offers a picture of a PDF or Office file only where Quick Look is there, never a web page', async () => {
+    const root = copyFixture();
+    put(root, `${ACME}reports/big.pdf`, Buffer.alloc(50 * 1024 * 1024 + 1));
+    const thumbOf = async (docThumbs: boolean) => {
+      const listing = await lib(root, { docThumbs }).list('client:acme-heating');
+      const items = byPath(listing?.items ?? []);
+      return (rel: string) => items.get(ACME + rel)?.thumb;
+    };
+    const on = await thumbOf(true);
+    expect(on('reports/2026-10-summary.pdf')).toBe(true);
+    expect(on('plans/q1-plan.docx')).toBe(true);
+    // A web page could draw local files into its picture: it keeps its icon.
+    expect(on('landing-pages/boiler/page.html')).toBe(false);
+    // Notes and data files keep their icons; so does anything over the size cap.
+    expect(on('reports/monthly-report.md')).toBe(false);
+    expect(on('loose-note.txt')).toBe(false);
+    expect(on('created/2026-11-02-keywords.csv')).toBe(false);
+    expect(on('reports/big.pdf')).toBe(false);
+    const off = await thumbOf(false);
+    expect(off('reports/2026-10-summary.pdf')).toBe(false);
+    expect(off('plans/q1-plan.docx')).toBe(false);
   });
 
   it('lists the personal folder by folder, with Other last', async () => {

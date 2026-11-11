@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
 import { APP_HOST, type EngineHealth, ROUTES } from '../shared/contract.ts';
 import { createBrainReaders } from './brain/index.ts';
-import { createThumbnailer } from './brain/thumbs.ts';
+import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
@@ -97,8 +97,13 @@ const engine: EngineFns = {
   getSessionMessages: (id, opts) => getSessionMessages(id, opts),
 };
 
-const brain = createBrainReaders(config.brainPath, { dataDir: config.dataDir });
-const thumbs = createThumbnailer(config.dataDir, { brainRoot: config.brainPath });
+// Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
+const quickLook = quickLookAvailable() ? { command: QUICK_LOOK_COMMAND } : null;
+const brain = createBrainReaders(config.brainPath, {
+  dataDir: config.dataDir,
+  docThumbs: quickLook !== null,
+});
+const thumbs = createThumbnailer(config.dataDir, { brainRoot: config.brainPath, quickLook });
 const store = createAppStore(config.dataDir);
 const sessions = createSessionManager({
   brain,

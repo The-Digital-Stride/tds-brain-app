@@ -37,8 +37,8 @@ function slowSvg(): string {
   return `${s}</defs><use xlink:href="#a5"/></svg>`;
 }
 
-async function fileFor(root: string, name: string): Promise<LibraryFile> {
-  const brain = createBrainReaders(root);
+async function fileFor(root: string, name: string, docThumbs = false): Promise<LibraryFile> {
+  const brain = createBrainReaders(root, { docThumbs });
   const listing = await brain.library('client:acme-heating');
   const item = listing?.items.find((i) => i.name === name);
   if (!item) throw new Error(`missing ${name}`);
@@ -222,6 +222,137 @@ describe('thumbnails', () => {
     const out = await Promise.all(files.map((f) => thumbs.get(f, 320)));
     expect(out.every((p) => p !== null)).toBe(true);
     expect(peak).toBeLessThanOrEqual(2);
+  });
+
+  describe('documents, through Quick Look', () => {
+    /**
+     * A stand-in for `qlmanage`, run by Node under an empty environment as the real one is. It
+     * records its arguments and folder, then does what its mode says: copy a ready PNG to
+     * `<out>/<name>.png`, write SVG markup there under the PNG's name (sharp would draw it), or hang.
+     */
+    const FAKE = `
+const fs = require('node:fs');
+const [mode, logPath, png, ...rest] = process.argv.slice(2);
+fs.appendFileSync(logPath, JSON.stringify({ argv: rest, cwd: process.cwd(), env: Object.keys(process.env) }) + '\\n');
+const out = rest[rest.indexOf('-o') + 1];
+const name = rest[rest.length - 1];
+if (mode === 'hang') setInterval(() => {}, 1000);
+else if (mode === 'junk') fs.writeFileSync(out + '/' + name + '.png', '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="60"><rect width="40" height="60"/></svg>');
+else if (mode === 'ok') fs.copyFileSync(png, out + '/' + name + '.png');
+`;
+
+    async function setup(mode: 'ok' | 'hang' | 'junk', extra: Record<string, unknown> = {}, page?: Buffer) {
+      const root = copyFixture();
+      const tools = tempDir();
+      const script = join(tools, 'fake-qlmanage.cjs');
+      writeFileSync(script, FAKE);
+      const png = join(tools, 'page.png');
+      // An A4-shaped page, as Quick Look draws one at 480 on the long side.
+      writeFileSync(
+        png,
+        page ??
+          (await sharp({ create: { width: 339, height: 480, channels: 3, background: '#ffffff' } })
+            .png()
+            .toBuffer()),
+      );
+      const log = join(tools, 'calls.log');
+      let made = 0;
+      const thumbs = createThumbnailer(tempDir(), {
+        brainRoot: root,
+        quickLook: { command: process.execPath, args: [script, mode, log, png] },
+        onGenerate: () => made++,
+        ...extra,
+      });
+      const calls = () => {
+        try {
+          return readFileSync(log, 'utf8')
+            .trim()
+            .split('\n')
+            .map((l) => JSON.parse(l) as { argv: string[]; cwd: string; env: string[] });
+        } catch {
+          return [];
+        }
+      };
+      const doc = (name: string) => fileFor(root, name, true);
+      return { root, thumbs, calls, made: () => made, doc };
+    }
+
+    it('makes a 320-wide WebP of a PDF from a private copy, and caches it', async () => {
+      const { root, thumbs, calls, doc } = await setup('ok');
+      const pdf = await doc('2026-10-summary.pdf');
+      const out = await thumbs.get(pdf, 320);
+      expect(out).not.toBeNull();
+      const meta = await sharp(readFileSync(out as string)).metadata();
+      expect(meta.format).toBe('webp');
+      expect(meta.width).toBe(320);
+      expect(await thumbs.get(pdf, 320)).toBe(out);
+      const [call, again] = calls();
+      expect(again).toBeUndefined();
+      // Drawn at 480 on the long side, from a copy named file.pdf in its own folder, never the brain's path.
+      expect(call?.argv.slice(0, 4)).toEqual(['-t', '-s', '480', '-o']);
+      expect(call?.argv.at(-1)).toBe('file.pdf');
+      expect(call?.argv.join(' ')).not.toContain(root);
+      expect(call?.cwd).not.toContain(root);
+      expect(call?.env.filter((k) => k !== '__CF_USER_TEXT_ENCODING')).toEqual([]);
+      // The private folder is gone afterwards.
+      expect(() => statSync(call?.argv[4] as string)).toThrow();
+    });
+
+    it('makes documents at 320 only, and never without Quick Look', async () => {
+      const { root, thumbs, calls, doc } = await setup('ok');
+      const pdf = await doc('2026-10-summary.pdf');
+      expect(await thumbs.get(pdf, 96)).toBeNull();
+      expect(await thumbs.get(pdf, 1600)).toBeNull();
+      expect(calls()).toEqual([]);
+      const none = createThumbnailer(tempDir(), { brainRoot: root });
+      expect(await none.get(pdf, 320)).toBeNull();
+    });
+
+    it('refuses a file whose first bytes do not match its type, without running Quick Look', async () => {
+      const { root, thumbs, calls, doc } = await setup('ok');
+      writeFileSync(join(root, 'clients/acme-heating/reports/junk.pdf'), 'garbage');
+      writeFileSync(join(root, 'clients/acme-heating/reports/junk.docx'), '%PDF-1.4 not a zip');
+      expect(await thumbs.get(await doc('junk.pdf'), 320)).toBeNull();
+      expect(await thumbs.get(await doc('junk.docx'), 320)).toBeNull();
+      expect(calls()).toEqual([]);
+    });
+
+    it('never gives a web page to Quick Look, even if the list offered it a picture', async () => {
+      const { root, thumbs, calls, doc } = await setup('ok');
+      writeFileSync(join(root, 'clients/acme-heating/reports/summary.html'), '<!doctype html><p>Summary</p>');
+      const html = await doc('summary.html');
+      // The same file object (its checked identity kept), as if the list had said yes.
+      (html.item as { thumb: boolean }).thumb = true;
+      expect(await thumbs.get(html, 320)).toBeNull();
+      expect(calls()).toEqual([]);
+    });
+
+    it('refuses what Quick Look writes when it is not a PNG, and remembers it', async () => {
+      const { thumbs, made, doc } = await setup('junk');
+      const pdf = await doc('2026-10-summary.pdf');
+      expect(await thumbs.get(pdf, 320)).toBeNull();
+      expect(await thumbs.get(pdf, 320)).toBeNull();
+      expect(made()).toBe(1);
+    });
+
+    it('kills a Quick Look that hangs at the limit, remembers it, and pictures are not held up', async () => {
+      const { root, thumbs, made, doc } = await setup('hang', { quickLookTimeoutMs: 400 });
+      const pdf = await doc('2026-10-summary.pdf');
+      const started = Date.now();
+      let hungDone = false;
+      const hung = thumbs.get(pdf, 320).finally(() => {
+        hungDone = true;
+      });
+      // A picture asked for meanwhile is made at once, not after the hung document.
+      const logo = await thumbs.get(await fileFor(root, 'logo.png'), 96);
+      expect(logo).not.toBeNull();
+      expect(hungDone).toBe(false);
+      expect(await hung).toBeNull();
+      expect(Date.now() - started).toBeLessThan(3000);
+      const before = made();
+      expect(await thumbs.get(pdf, 320)).toBeNull();
+      expect(made()).toBe(before);
+    });
   });
 
   it('writes nothing when the data folder is inside the brain', async () => {

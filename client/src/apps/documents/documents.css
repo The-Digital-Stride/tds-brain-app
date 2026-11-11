@@ -3,9 +3,9 @@
  * the selection bar, the panel) is `../shared/library.css`. A row reads like a line in a table: what
  * it is on the left, then when it last changed.
  */
-.docs .lib-list:not([hidden]) {
-  display: grid;
-  gap: 2px;
+/* A grid tile is a page: portrait, so a PDF's first page or a slide fills it without a band. */
+.docs .img-tile {
+  --thumb-ratio: 3 / 4;
 }
 /* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
 .doc-glyph {
@@ -41,18 +41,7 @@
   }
 }
 
-/* The panel's cover: the white card is the page. The type's icon, the title, then the file name. */
-.doc-cover {
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-  padding: 12px;
-}
-.doc-cover .doc-glyph {
-  margin-bottom: 8px;
-}
-.doc-cover .lib-name,
-.doc-cover .lib-file {
-  margin: 0;
-  padding: 0;
+/* The panel's page is square when there is a picture, so a portrait page shows at a readable size. */
+.doc-preview .img-thumb:not([data-plain="true"]) {
+  --thumb-ratio: 1 / 1;
 }

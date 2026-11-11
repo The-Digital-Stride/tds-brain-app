@@ -65,7 +65,7 @@ export interface EngineFns {
 }
 
 export interface SessionManagerOptions {
-  brain: Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients'>;
+  brain: Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients' | 'todos'>;
   brainRoot: string;
   /** The installed `claude`, or null when it could not be found. */
   claudePath: string | null;
@@ -222,6 +222,8 @@ interface Session {
   sdkSessionId: string | null;
   title: string;
   client: string | null;
+  /** The to-do this chat was started on (A19), kept while the chat is open. */
+  todoId: string | null;
   appendLine: string | null;
   state: SessionState;
   startedAt: string;
@@ -375,6 +377,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       sdkSessionId: s.sdkSessionId,
       title: s.title,
       client: s.client,
+      todoId: s.todoId,
       state: s.state,
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,
@@ -407,6 +410,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   function newSession(fields: {
     title: string;
     client: string | null;
+    todoId: string | null;
     sdkSessionId: string | null;
   }): Session {
     const now = new Date();
@@ -415,6 +419,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       sdkSessionId: fields.sdkSessionId,
       title: fields.title,
       client: fields.client,
+      todoId: fields.todoId,
       appendLine: fields.client ? clientLine(fields.client) : null,
       state: 'idle',
       startedAt: now.toISOString(),
@@ -798,13 +803,25 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           throw new SessionError('bad-request', 'That client is not in the brain. Pick one from the list.');
         client = slug;
       }
+      let todoId: string | null = null;
+      if (!resume && req.todoId !== undefined && req.todoId !== null) {
+        const id: unknown = req.todoId;
+        let listed: string | null = null;
+        if (typeof id === 'string') {
+          const identity = await opts.brain.identity();
+          const list = await opts.brain.todos(identity);
+          listed = [...list.mine, ...list.open].find((t) => t.id === id)?.id ?? null;
+        }
+        if (!listed) throw new SessionError('bad-request', 'That to-do is not on your list any more.');
+        todoId = listed;
+      }
 
       // Re-check synchronously: other requests may have run while we awaited.
       if (resume && [...live.values()].some((s) => s.sdkSessionId === resume)) {
         throw new SessionError('already-open', 'That chat is already open.');
       }
       makeRoom();
-      const s = newSession({ title, client, sdkSessionId: resume });
+      const s = newSession({ title, client, todoId, sdkSessionId: resume });
       live.set(s.id, s);
       notifyChanged();
       log(resume ? 'Reopened a past chat.' : 'Started a chat.');

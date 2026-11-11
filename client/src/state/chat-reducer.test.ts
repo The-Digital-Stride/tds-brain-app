@@ -126,4 +126,38 @@ describe('chatReducer', () => {
     expect(s.sdkSessionId).toBe('abc');
     expect(s.items[0]).toMatchObject({ kind: 'notice', level: 'warning', text: 'Careful' });
   });
+
+  describe('stateSince', () => {
+    const at = (n: number, event: ChatEvent): SequencedEvent => ({
+      seq: n,
+      at: new Date(Date.UTC(2026, 10, 11, 10, 0, n)).toISOString(),
+      event,
+    });
+    const t = (n: number) => Date.UTC(2026, 10, 11, 10, 0, n);
+
+    it('takes the time of the latest change of attention, whatever the clock says', () => {
+      const s = apply([
+        at(1, { type: 'state', state: 'working' }),
+        at(2, { type: 'state', state: 'waiting' }),
+      ]);
+      expect(s.stateSince).toBe(t(2));
+    });
+    it('keeps the first time when the same attention repeats', () => {
+      const s = apply([
+        at(1, { type: 'state', state: 'working' }),
+        at(2, { type: 'state', state: 'working' }),
+      ]);
+      expect(s.stateSince).toBe(t(1));
+    });
+    it('treats starting then working as one stretch', () => {
+      const s = apply([
+        at(1, { type: 'state', state: 'starting' }),
+        at(2, { type: 'state', state: 'working' }),
+      ]);
+      expect(s.stateSince).toBe(t(1));
+    });
+    it('is null until a state event has been seen', () => {
+      expect(apply([at(1, { type: 'notice', level: 'info', text: 'x' })]).stateSince).toBeNull();
+    });
+  });
 });

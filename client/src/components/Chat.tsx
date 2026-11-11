@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { attentionFor } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
+import { currentStep } from '../state/blocks.ts';
 import { initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { useStore } from '../store.tsx';
+import { AttentionBar } from './AttentionBar.tsx';
 import { Composer } from './Composer.tsx';
 import { Transcript } from './Transcript.tsx';
 
@@ -54,10 +57,11 @@ export function ChatView() {
   const working = sessionId !== null && (state === 'working' || state === 'starting');
   const sdkId = chat.sdkSessionId ?? live?.sdkSessionId ?? null;
   const canResumeInTerminal = boot?.identity.role === 'owner' || boot?.identity.role === 'scout';
+  const step = currentStep(chat.items.filter((i) => i.kind === 'tool'));
   const clientName = (slug: string | null) =>
     slug ? (clients.find((c) => c.slug === slug)?.name ?? slug) : null;
 
-  const composerKey = activeChat.kind === 'new' ? `new-${activeChat.key}` : activeChat.sessionId;
+  const composerKey = activeChat.kind === 'new' ? `new-${activeChat.key}` : `chat-${activeChat.sessionId}`;
   const skill = activeChat.kind === 'new' ? activeChat.skill : null;
   const hasMessages = activeChat.kind === 'live' && chat.items.length > 0;
 
@@ -140,6 +144,15 @@ export function ChatView() {
               ) : null}
             </div>
           ) : null}
+          {sessionId ? (
+            <AttentionBar
+              key={`status-${sessionId}`}
+              state={state}
+              step={step}
+              lastActivityAt={live?.lastActivityAt ?? null}
+              stateSince={chat.stateSince}
+            />
+          ) : null}
           <Composer
             key={composerKey}
             initial={activeChat.kind === 'new' ? activeChat.draft : ''}
@@ -147,6 +160,7 @@ export function ChatView() {
             disabledReason={reason}
             autoFocus={activeChat.kind === 'new'}
             focusSignal={composerFocus}
+            attention={sessionId ? attentionFor(state) : null}
             onSend={(text) => send(text, activeChat.kind === 'new' ? client || null : null)}
           />
           {sdkId && canResumeInTerminal ? (

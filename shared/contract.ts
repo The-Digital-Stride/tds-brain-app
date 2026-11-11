@@ -196,6 +196,34 @@ export interface EngineHealth {
   problem: string | null;
 }
 
+/**
+ * The three things a person needs to tell apart at a glance, and the colours for them. These match
+ * Ian's attention-bar mod for the terminal: green = ready for you, red = working, amber = needs
+ * your answer (an approval or a question). Always shown with the words, never colour alone.
+ */
+export type Attention = 'ready' | 'working' | 'asking';
+
+/** `error` and `closed` have no attention colour: they are shown as a plain stopped message. */
+export function attentionFor(state: SessionState): Attention | null {
+  switch (state) {
+    case 'idle':
+      return 'ready';
+    case 'starting':
+    case 'working':
+      return 'working';
+    case 'waiting':
+      return 'asking';
+    default:
+      return null;
+  }
+}
+
+export const ATTENTION_LABEL: Record<Attention, string> = {
+  ready: 'Ready for you',
+  working: 'Working',
+  asking: 'Needs your answer',
+};
+
 export type SessionState =
   | 'starting' // process launching
   | 'working' // Claude is thinking or using tools
@@ -215,6 +243,11 @@ export interface LiveSession {
   title: string;
   /** Fixed when the chat is created; it cannot change mid-chat. */
   client: string | null;
+  /**
+   * The to-do this chat was started on (a `TodoItem.id`), or null. Fixed when the chat is created.
+   * Kept only while the chat is open: a chat reopened from History has null.
+   */
+  todoId: string | null;
   state: SessionState;
   startedAt: string;
   lastActivityAt: string;
@@ -349,6 +382,11 @@ export interface StartSessionRequest {
   prompt?: string;
   client?: string | null;
   resume?: string | null;
+  /**
+   * The to-do this chat is about. Must be an id in the person's current `TodoList` (mine or open),
+   * else `bad-request`. Ignored when `resume` is set.
+   */
+  todoId?: string | null;
 }
 
 export interface StartSessionResponse {
@@ -456,3 +494,13 @@ export const ROUTES = {
   stream: (sessionId?: string | null, after = 0) =>
     sessionId ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}` : '/api/stream',
 } as const;
+
+/**
+ * Stream health. The server sends a named `ping` event (not a comment, so the page can see it) on
+ * every stream at this interval. If the page hears nothing at all on its stream, pings included,
+ * for `STREAM_STALL_MS`, it treats the stream as dropped: closes it, reconnects, and reloads what
+ * it may have missed. This catches a connection that stalls without raising an error.
+ */
+export const STREAM_PING_EVENT = 'ping';
+export const STREAM_PING_MS = 15_000;
+export const STREAM_STALL_MS = 40_000;

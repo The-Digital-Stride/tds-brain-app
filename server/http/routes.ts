@@ -15,6 +15,7 @@ import type {
   Identity,
   PermissionReply,
   QuestionReply,
+  StartSessionRequest,
   TodoList,
 } from '../../shared/contract.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
@@ -184,6 +185,27 @@ export async function validatePrefsPatch(
   return patch;
 }
 
+/**
+ * `POST /api/sessions`: each field is checked for type here; the session manager checks the values
+ * (the client and the to-do must be in the brain, the past chat must exist).
+ */
+export function parseStartRequest(body: unknown): StartSessionRequest {
+  if (!isRec(body)) throw new HttpError(400, 'bad-request', 'That request was not understood.');
+  const out: StartSessionRequest = {};
+  for (const key of ['prompt', 'client', 'resume', 'todoId'] as const) {
+    if (!(key in body)) continue;
+    const value = body[key];
+    if (value === null) {
+      if (key !== 'prompt') out[key] = null;
+      continue;
+    }
+    if (typeof value !== 'string')
+      throw new HttpError(400, 'bad-request', 'That request was not understood.');
+    out[key] = value;
+  }
+  return out;
+}
+
 async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
   const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
   const brainFallback: BrainHealth = {
@@ -275,9 +297,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       return;
     }
     if (method === 'POST') {
-      const body = await readJson(req);
-      if (!isRec(body)) throw new HttpError(400, 'bad-request', 'That request was not understood.');
-      const session = await ctx.sessions.start(body);
+      const session = await ctx.sessions.start(parseStartRequest(await readJson(req)));
       sendJson(res, 200, { session });
       return;
     }

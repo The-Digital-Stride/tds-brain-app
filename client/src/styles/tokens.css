@@ -20,6 +20,15 @@
   --amber-bg: #fff4db;
   --amber-edge: #d99a00;
   --amber-text: #3d2a00;
+  /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
+  --attn-ready: #22c55e;
+  --attn-working: #dc2626;
+  --attn-asking: #f59e0b;
+  /* Deeper shades for the message box border, which must reach 3:1 on the light surfaces. */
+  --attn-ready-edge: #16a34a;
+  --attn-asking-edge: #d97706;
+  --attn-working-edge: #dc2626;
+  --attn-asking-pulse: #b45309;
   --danger: #a4261b;
   --danger-wash: #fdeceb;
   --ok: #17673a;
@@ -57,6 +66,10 @@
     --danger-wash: #3a1713;
     --ok: #7fd6a0;
     --focus: #5aaeff;
+    --attn-ready-edge: var(--attn-ready);
+    --attn-asking-edge: var(--attn-asking);
+    --attn-working-edge: var(--attn-working);
+    --attn-asking-pulse: #fbbf24;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 }

@@ -1,3 +1,4 @@
+import { ATTENTION_LABEL, attentionFor } from '../../../shared/contract.ts';
 import { useStore, type View } from '../store.tsx';
 
 const MENU: { view: View; label: string }[] = [
@@ -8,11 +9,11 @@ const MENU: { view: View; label: string }[] = [
 ];
 
 const STATE_WORDS = {
-  starting: 'Starting',
-  working: 'Working',
-  waiting: 'Waiting for you',
-  idle: 'Ready',
-  error: 'Hit a problem',
+  starting: ATTENTION_LABEL.working,
+  working: ATTENTION_LABEL.working,
+  waiting: ATTENTION_LABEL.asking,
+  idle: ATTENTION_LABEL.ready,
+  error: 'Stopped by a problem',
   closed: 'Ended',
 } as const;
 
@@ -60,9 +61,16 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   >
                     <span className="chat-link-title">{c.title || 'New chat'}</span>
                     <span className="chat-link-state">
+                      {attentionFor(c.state) ? (
+                        <span
+                          className="attn-dot"
+                          data-attention={attentionFor(c.state)}
+                          aria-hidden="true"
+                        />
+                      ) : null}
                       {c.state === 'waiting' ? (
                         <span className="badge" data-tone="waiting">
-                          Waiting for you
+                          {ATTENTION_LABEL.asking}
                         </span>
                       ) : (
                         STATE_WORDS[c.state]

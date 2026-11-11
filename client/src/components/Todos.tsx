@@ -1,9 +1,13 @@
-import type { TodoItem } from '../../../shared/contract.ts';
+import { ATTENTION_LABEL, attentionFor, type TodoItem } from '../../../shared/contract.ts';
 import { dueInWords, isOverdue } from '../format.ts';
+import { chatForTodo } from '../state/attention.ts';
 import { useStore } from '../store.tsx';
 
 function TodoRow({ todo, compact }: { todo: TodoItem; compact: boolean }) {
-  const { boot, completeTodo, newChat } = useStore();
+  const { boot, completeTodo, newChat, sessions, activeChat, openChat } = useStore();
+  const chat = sessions ? chatForTodo(todo.id, sessions.live) : null;
+  const attention = chat ? attentionFor(chat.state) : null;
+  const current = chat !== null && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const ticks = boot?.prefs.directWrites === true;
   const clientName = todo.client
     ? (boot?.clients.find((c) => c.slug === todo.client)?.name ?? todo.client)
@@ -11,7 +15,13 @@ function TodoRow({ todo, compact }: { todo: TodoItem; compact: boolean }) {
   const due = todo.due ? dueInWords(todo.due) : '';
   const overdue = todo.due ? isOverdue(todo.due) : false;
   return (
-    <li className="row" data-compact={compact}>
+    <li
+      className="row"
+      data-compact={compact}
+      data-attention={attention ?? undefined}
+      data-current={current || undefined}
+      aria-current={current ? 'true' : undefined}
+    >
       {ticks ? (
         <input
           type="checkbox"
@@ -28,18 +38,38 @@ function TodoRow({ todo, compact }: { todo: TodoItem; compact: boolean }) {
         <div className="meta">
           {due ? <span className={overdue ? 'overdue' : undefined}>{due}</span> : null}
           {clientName ? <span>{clientName}</span> : null}
+          {attention ? (
+            <span className="todo-state">
+              <span className="attn-dot" data-attention={attention} aria-hidden="true" />
+              {ATTENTION_LABEL[attention]}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="row-actions">
-        <button
-          type="button"
-          className="btn"
-          data-size="small"
-          aria-label={`Start a chat on ${todo.title}`}
-          onClick={() => newChat({ draft: `Help me with this to-do: todo/${todo.id} (${todo.title})` })}
-        >
-          Start a chat on this
-        </button>
+        {chat ? (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            aria-label={`Open chat: ${todo.title}`}
+            onClick={() => openChat(chat.id)}
+          >
+            Open chat
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            aria-label={`Start a chat on this: ${todo.title}`}
+            onClick={() =>
+              newChat({ draft: `Help me with this to-do: todo/${todo.id} (${todo.title})`, todoId: todo.id })
+            }
+          >
+            Start a chat on this
+          </button>
+        )}
       </div>
     </li>
   );

@@ -3,10 +3,14 @@
  * when `session` is given, that chat's numbered events (replayed after `after`, then live).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AppEvent, SequencedEvent, StreamFrame } from '../../shared/contract.ts';
+import {
+  type AppEvent,
+  type SequencedEvent,
+  STREAM_PING_EVENT,
+  STREAM_PING_MS,
+  type StreamFrame,
+} from '../../shared/contract.ts';
 import type { SessionManager, Subscription } from '../engine/session-manager.ts';
-
-const HEARTBEAT_MS = 25_000;
 
 export interface AppEventHub {
   publish(event: AppEvent): void;
@@ -72,27 +76,37 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
     );
   }
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-store',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  write('retry: 3000\n\n');
-  writeFrame({ kind: 'app', event: { type: 'hello', serverStartedAt: ctx.serverStartedAt } });
-  if (chat && sessionId) {
-    for (const item of chat.replay) writeFrame({ kind: 'chat', sessionId, item }, item.seq);
-  }
-  const offApp = ctx.hub.subscribe((event) => writeFrame({ kind: 'app', event }));
-  const heartbeat = setInterval(() => write(': ping\n\n'), HEARTBEAT_MS);
-
+  let offApp: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
   const cleanup = () => {
     if (!open) return;
     open = false;
-    clearInterval(heartbeat);
-    offApp();
+    if (heartbeat) clearInterval(heartbeat);
+    offApp?.();
     chat?.unsubscribe();
   };
+
+  try {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    write('retry: 3000\n\n');
+    writeFrame({ kind: 'app', event: { type: 'hello', serverStartedAt: ctx.serverStartedAt } });
+    if (chat && sessionId) {
+      for (const item of chat.replay) writeFrame({ kind: 'chat', sessionId, item }, item.seq);
+    }
+    offApp = ctx.hub.subscribe((event) => writeFrame({ kind: 'app', event }));
+    // A named event, not an SSE comment: the page can see it and spot a stream that has gone silent.
+    heartbeat = setInterval(() => write(`event: ${STREAM_PING_EVENT}\ndata: {}\n\n`), STREAM_PING_MS);
+  } catch (err) {
+    // Never leave a subscription attached to a stream that could not open.
+    cleanup();
+    throw err;
+  }
+
   req.on('close', cleanup);
   res.on('close', cleanup);
   res.on('error', cleanup);

@@ -862,7 +862,6 @@ p {
   min-height: 48px;
 }
 .composer textarea[aria-disabled="true"] {
-  background: transparent;
   color: var(--text-soft);
 }
 .chip-row {
@@ -1006,11 +1005,95 @@ p {
   }
 }
 
+/* Status: the attention colours */
+.attn-bar {
+  display: grid;
+  gap: 4px;
+}
+.attn-text {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+.attn-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.attn-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--attn-ready);
+}
+.attn-dot[data-attention="working"] {
+  background: var(--attn-working);
+}
+.attn-dot[data-attention="asking"] {
+  background: var(--attn-asking);
+}
+.row[data-attention] {
+  border-left: 4px solid var(--attn-ready);
+}
+.row[data-attention="working"] {
+  border-left-color: var(--attn-working);
+}
+.row[data-attention="asking"] {
+  border-left-color: var(--attn-asking);
+}
+.row[data-current="true"] {
+  background: var(--accent-wash);
+  border-top-color: var(--accent-ink);
+  border-right-color: var(--accent-ink);
+  border-bottom-color: var(--accent-ink);
+}
+.row[data-current="true"]:not([data-attention]) {
+  border-left-color: var(--accent-ink);
+}
+.todo-state {
+  font-weight: 600;
+  color: var(--text);
+}
+.sidebar .badge[data-tone="waiting"] {
+  background: var(--attn-asking);
+  border-color: var(--attn-asking);
+  color: #2a1700;
+}
+@keyframes attn-pulse {
+  0%,
+  100% {
+    border-color: var(--attn-asking-edge);
+  }
+  50% {
+    border-color: var(--attn-asking-pulse);
+  }
+}
+
+/* The message box border carries the chat's state. Same width in every state, no fill. */
+.composer textarea {
+  border-width: 1.5px;
+}
+.composer textarea[data-attention="ready"] {
+  border-color: var(--attn-ready-edge);
+}
+.composer textarea[data-attention="working"] {
+  border-color: var(--attn-working-edge);
+}
+.composer textarea[data-attention="asking"] {
+  border-color: var(--attn-asking-edge);
+  animation: attn-pulse 2s ease-in-out infinite;
+}
+.composer textarea:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
-  .spinner {
+  .spinner,
+  .composer textarea[data-attention] {
     animation: none;
   }
 }

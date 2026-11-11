@@ -18,9 +18,11 @@ import type {
   StreamFrame,
   TodoList,
 } from '../../shared/contract.ts';
+import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
+import { isStalled } from './state/stall.ts';
 
 export type View = 'chat' | 'skills' | 'todos' | 'history' | 'settings';
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
@@ -31,6 +33,8 @@ export interface NewChat {
   key: number;
   draft: string;
   skill: SkillInfo | null;
+  /** The to-do this chat is about, when it was started from one. */
+  todoId: string | null;
 }
 export interface LiveChat {
   kind: 'live';
@@ -61,7 +65,7 @@ export interface Store {
   actionError: string | null;
   clearError: () => void;
   openView: (view: View) => void;
-  newChat: (opts?: { draft?: string; skill?: SkillInfo | null }) => void;
+  newChat: (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null }) => void;
   startSkill: (skill: SkillInfo) => void;
   openChat: (sessionId: string) => void;
   openPast: (sdkSessionId: string) => Promise<void>;
@@ -91,9 +95,9 @@ function messageOf(err: unknown): string {
 }
 
 let newChatKey = 0;
-function freshNewChat(draft = '', skill: SkillInfo | null = null): NewChat {
+function freshNewChat(draft = '', skill: SkillInfo | null = null, todoId: string | null = null): NewChat {
   newChatKey += 1;
-  return { kind: 'new', key: newChatKey, draft, skill };
+  return { kind: 'new', key: newChatKey, draft, skill, todoId };
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -190,11 +194,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let stopped = false;
     let failures = 0;
     let dropped = false;
+    let lastHeard = Date.now();
+    let watchdog: ReturnType<typeof setInterval> | null = null;
 
     const connect = () => {
       const after = liveId ? (chatsRef.current[liveId]?.lastSeq ?? 0) : 0;
-      source = new EventSource(streamUrl(liveId, after));
-      source.onopen = () => {
+      const es = new EventSource(streamUrl(liveId, after));
+      source = es;
+      lastHeard = Date.now();
+      es.addEventListener(STREAM_PING_EVENT, () => {
+        lastHeard = Date.now();
+      });
+      es.onopen = () => {
+        lastHeard = Date.now();
         setStreamUp(true);
         failures = 0;
         if (dropped) {
@@ -203,7 +215,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           loadAll();
         }
       };
-      source.onmessage = (e) => {
+      es.onmessage = (e) => {
+        lastHeard = Date.now();
         let frame: StreamFrame;
         try {
           frame = JSON.parse(e.data) as StreamFrame;
@@ -225,9 +238,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void loadSessions();
         }
       };
-      source.onerror = () => {
+      const fail = () => {
         // Close and reconnect ourselves, so the new request asks only for what is still missing.
-        source?.close();
+        es.close();
         setStreamUp(false);
         dropped = true;
         failures += 1;
@@ -237,12 +250,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (err instanceof ApiFailure && err.notSignedIn) setGate('not-signed-in');
           });
         }
-        if (!stopped) retry = setTimeout(connect, 2000);
+        if (!stopped && !retry) {
+          retry = setTimeout(() => {
+            retry = null;
+            connect();
+          }, 2000);
+        }
       };
+      es.onerror = fail;
+      // Silence with no error counts as a drop too.
+      if (watchdog) clearInterval(watchdog);
+      watchdog = setInterval(() => {
+        if (es.readyState !== EventSource.CLOSED && isStalled(lastHeard, Date.now(), STREAM_STALL_MS)) fail();
+      }, 5000);
     };
     connect();
     return () => {
       stopped = true;
+      if (watchdog) clearInterval(watchdog);
       source?.close();
       if (retry) clearTimeout(retry);
     };
@@ -261,11 +286,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const openView = useCallback((v: View) => setView(v), []);
 
-  const newChat = useCallback((opts?: { draft?: string; skill?: SkillInfo | null }) => {
-    setActiveChat(freshNewChat(opts?.draft ?? '', opts?.skill ?? null));
-    setView('chat');
-    setActionError(null);
-  }, []);
+  const newChat = useCallback(
+    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null }) => {
+      setActiveChat(freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null));
+      setView('chat');
+      setActionError(null);
+    },
+    [],
+  );
 
   const startSkill = useCallback(
     (skill: SkillInfo) => {
@@ -308,7 +336,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!body) return false;
       try {
         if (activeChat.kind === 'new') {
-          const { session } = await api.startSession({ prompt: body, client });
+          // Keep the to-do link only while the message still mentions it.
+          const todoId =
+            activeChat.todoId && body.includes(`todo/${activeChat.todoId}`) ? activeChat.todoId : null;
+          const { session } = await api.startSession({ prompt: body, client, ...(todoId ? { todoId } : {}) });
           if (client && boot && boot.prefs.lastClient !== client) {
             void api
               .updatePrefs({ lastClient: client })
@@ -324,10 +355,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return true;
       } catch (err) {
         setActionError(messageOf(err));
+        // A refused to-do has probably gone: refresh the list.
+        if (err instanceof ApiFailure && err.code === 'bad-request') void loadTodos();
         return false;
       }
     },
-    [activeChat, boot, loadSessions],
+    [activeChat, boot, loadSessions, loadTodos],
   );
 
   const updatePrefs = useCallback(async (patch: Partial<AppPrefs>) => {

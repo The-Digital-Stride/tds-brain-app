@@ -1,4 +1,5 @@
 import type { AskQuestion, ChatEvent, SequencedEvent, SessionState } from '../../../shared/contract.ts';
+import { attentionFor } from '../../../shared/contract.ts';
 
 export type Outcome = 'allowed' | 'denied' | 'answered' | 'cancelled';
 
@@ -76,6 +77,8 @@ export interface ChatState {
   items: ChatItem[];
   sessionState: SessionState;
   stateDetail: string | null;
+  /** When (ms) the chat last changed attention state, from the events' own times. null until seen. */
+  stateSince: number | null;
   sdkSessionId: string | null;
 }
 
@@ -84,6 +87,7 @@ export const initialChatState: ChatState = {
   items: [],
   sessionState: 'starting',
   stateDetail: null,
+  stateSince: null,
   sdkSessionId: null,
 };
 
@@ -141,10 +145,14 @@ function cloneItems(items: ChatItem[]): ChatItem[] {
   return structuredClone(items);
 }
 
-function applyEvent(state: ChatState, seqNo: number, event: ChatEvent): ChatState {
+function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: string): ChatState {
   const next: ChatState = { ...state, lastSeq: seqNo };
   switch (event.type) {
     case 'state':
+      if (state.stateSince === null || attentionFor(event.state) !== attentionFor(state.sessionState)) {
+        const t = Date.parse(at);
+        next.stateSince = Number.isNaN(t) ? state.stateSince : t;
+      }
       next.sessionState = event.state;
       next.stateDetail = event.detail ?? null;
       return next;
@@ -241,5 +249,5 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   if (action.type === 'reset') return initialChatState;
   // Replays and duplicates: anything at or before the last applied event is ignored.
   if (action.item.seq <= state.lastSeq) return state;
-  return applyEvent(state, action.item.seq, action.item.event);
+  return applyEvent(state, action.item.seq, action.item.event, action.item.at);
 }

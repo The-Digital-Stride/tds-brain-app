@@ -11,6 +11,8 @@ import type {
   ChatEvent,
   ClientInfo,
   Identity,
+  TodoItem,
+  TodoList,
 } from '../../shared/contract.ts';
 import {
   createSessionManager,
@@ -167,14 +169,23 @@ const IDENTITY: Identity = {
   knownMember: true,
 };
 
+function todo(id: string): TodoItem {
+  return { id, title: id, assignee: null, due: null, surfaceDate: null, project: null, client: null };
+}
+
 function fakeBrain(
   over: Partial<BrainReaders> = {},
-): Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients'> {
+): Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients' | 'todos'> {
   return {
     identity: async () => IDENTITY,
     skillAccess: async (_id, name) =>
       name === 'key-rotation' ? 'restricted' : name === 'gm' ? 'allowed' : 'unknown-skill',
     clients: async (): Promise<ClientInfo[]> => [{ slug: 'urban-cooling', name: 'Urban Cooling' }],
+    todos: async (): Promise<TodoList> => ({
+      mine: [todo('20261111-mine.md')],
+      open: [todo('20261112-open.md')],
+      othersCount: 3,
+    }),
     ...over,
   };
 }
@@ -334,6 +345,43 @@ describe('a new chat', () => {
     setup();
     await expectCode(mgr.start({}), 'bad-request');
     await expectCode(mgr.start({ prompt: '   ' }), 'bad-request');
+  });
+});
+
+describe('a chat started on a to-do (A19)', () => {
+  it('keeps a listed to-do id, mine or open, and shows it in the live list', async () => {
+    setup();
+    const a = await mgr.start({ prompt: 'on mine', todoId: '20261111-mine.md' });
+    const b = await mgr.start({ prompt: 'on open', todoId: '20261112-open.md' });
+    expect(a.todoId).toBe('20261111-mine.md');
+    expect(b.todoId).toBe('20261112-open.md');
+    await flush();
+    const live = (await mgr.list()).live;
+    expect(live.find((l) => l.id === a.id)?.todoId).toBe('20261111-mine.md');
+    expect(live.find((l) => l.id === b.id)?.todoId).toBe('20261112-open.md');
+  });
+
+  it('is null when no to-do is given', async () => {
+    setup();
+    expect((await mgr.start({ prompt: 'hi' })).todoId).toBeNull();
+    expect((await mgr.start({ prompt: 'hi', todoId: null })).todoId).toBeNull();
+  });
+
+  it('refuses an id that is not on the list, or is not text', async () => {
+    const { queries } = setup();
+    await expectCode(mgr.start({ prompt: 'x', todoId: 'someone-elses.md' }), 'bad-request');
+    await expectCode(mgr.start({ prompt: 'x', todoId: '../../etc/passwd' }), 'bad-request');
+    await expectCode(mgr.start({ prompt: 'x', todoId: 42 as unknown as string }), 'bad-request');
+    await flush();
+    expect(queries).toHaveLength(0);
+    expect((await mgr.list()).live).toHaveLength(0);
+  });
+
+  it('is ignored (null) when reopening a past chat', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', todoId: '20261111-mine.md' });
+    expect(s.todoId).toBeNull();
   });
 });
 

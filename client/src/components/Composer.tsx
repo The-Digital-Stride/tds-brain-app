@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SkillInfo } from '../../../shared/contract.ts';
+import type { Attention, SkillInfo } from '../../../shared/contract.ts';
 
 export interface ComposerProps {
   initial: string;
@@ -10,6 +10,8 @@ export interface ComposerProps {
   autoFocus: boolean;
   /** Changes when focus should come back here (after an approval or answer). */
   focusSignal: number;
+  /** Colours the ring round the box. null for a chat that has stopped, or a new chat. */
+  attention?: Attention | null;
 }
 
 export function Composer({
@@ -19,6 +21,7 @@ export function Composer({
   onSend,
   autoFocus,
   focusSignal,
+  attention = null,
 }: ComposerProps) {
   const [text, setText] = useState(initial);
   const [skill, setSkill] = useState(initialSkill);
@@ -73,6 +76,7 @@ export function Composer({
       <textarea
         ref={area}
         className="field"
+        data-attention={attention ?? undefined}
         rows={1}
         value={text}
         readOnly={blocked}
@@ -100,7 +104,7 @@ export function Composer({
         Send
       </button>
       {disabledReason ? (
-        <p className="composer-hint" id="composer-reason">
+        <p className="visually-hidden" id="composer-reason">
           {disabledReason}
         </p>
       ) : (

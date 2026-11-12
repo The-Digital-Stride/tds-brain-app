@@ -5,12 +5,24 @@ import { captureInstallPrompt } from '../installPrompt.ts';
 
 const boot = {
   appVersion: '1.0.0',
+  service: { underService: true },
   prefs: { directWrites: false },
   identity: { name: 'Sam', role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', permissionMode: 'default' },
 };
-vi.mock('../store.tsx', () => ({ useStore: () => ({ boot, updatePrefs: vi.fn() }) }));
+const live = { streamUp: true, lastSync: new Date().toISOString() as string | null | undefined };
+vi.mock('../store.tsx', () => ({
+  useStore: () => ({
+    boot,
+    updatePrefs: vi.fn(),
+    streamUp: live.streamUp,
+    lists: { todos: 'loaded', chats: 'loaded' },
+  }),
+}));
+vi.mock('../shell/useLastSync.ts', () => ({
+  useLastSync: () => ({ lastSync: live.lastSync, now: Date.now() }),
+}));
 vi.mock('../shell/ShellProvider.tsx', () => ({
   useShell: () => ({ state: { singleKeys: true }, dispatch: vi.fn() }),
 }));
@@ -26,6 +38,31 @@ const chromeEvent = (type: string, extra: object = {}) =>
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  live.streamUp = true;
+  live.lastSync = new Date().toISOString();
+});
+
+describe('health panel', () => {
+  it('says everything is connected when it is', () => {
+    standalone(false);
+    render(<SettingsView />);
+    expect(screen.getByRole('status').textContent).toBe('Everything is connected and working.');
+    expect(screen.getByText('/brain')).toBeTruthy();
+  });
+
+  it('names each problem and counts them in the announced summary', () => {
+    standalone(false);
+    live.streamUp = false;
+    live.lastSync = null;
+    render(<SettingsView />);
+    expect(screen.getByRole('status').textContent).toBe(
+      '2 things need attention: Connection and Brain sync.',
+    );
+    expect(screen.getByText(/^Lost the live connection/)).toBeTruthy();
+    // The state is in words too, not only the dot's colour.
+    expect(screen.getAllByText('Needs attention')).toHaveLength(2);
+    expect(screen.getByText(/has not seen the brain sync yet/)).toBeTruthy();
+  });
 });
 
 describe('Dock app row', () => {

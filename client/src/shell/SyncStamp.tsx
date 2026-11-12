@@ -1,10 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { SYNC_POLL_MS } from '../../../shared/contract.ts';
-import { api } from '../api.ts';
+import { useLastSync } from './useLastSync.ts';
 import { syncWords } from './words.ts';
-
-/** How often the stamp checks the clock, so it turns red on time between polls. */
-const TICK_MS = 15_000;
 
 /**
  * The foot of the rail: when the brain last synced with GitHub, in red once it is over five minutes
@@ -13,43 +9,10 @@ const TICK_MS = 15_000;
  */
 export function SyncStamp({ wide }: { wide: boolean }) {
   // undefined: not heard yet. null: no good sync seen (never synced, or failing since the app started).
-  const [lastSync, setLastSync] = useState<string | null | undefined>(undefined);
-  const [now, setNow] = useState(() => Date.now());
+  const { lastSync, now } = useLastSync();
   // Said once to screen readers when it goes stale or recovers; never on every poll.
   const [announce, setAnnounce] = useState('');
   const wasStale = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    let stopped = false;
-    const load = () => {
-      api.sync().then(
-        (s) => {
-          if (stopped) return;
-          setLastSync(s.lastSync);
-          setNow(Date.now());
-        },
-        () => {
-          // Keep the last time we had; the clock tick turns it red if this goes on.
-        },
-      );
-    };
-    load();
-    const poll = setInterval(load, SYNC_POLL_MS);
-    const tick = setInterval(() => setNow(Date.now()), TICK_MS);
-    // A tab in the background may have had its timers slowed: catch up as soon as it is seen.
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      setNow(Date.now());
-      load();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      stopped = true;
-      clearInterval(poll);
-      clearInterval(tick);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
 
   const w = lastSync === undefined ? null : syncWords(lastSync, now);
   const stale = w?.stale ?? null;

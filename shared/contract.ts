@@ -523,8 +523,15 @@ export type StreamFrame =
 // HTTP API. JSON in, JSON out. Every route needs the session cookie.
 // ---------------------------------------------------------------------------
 
+/** How this copy of the app is running. */
+export interface ServiceInfo {
+  /** True when macOS started it at login (the LaunchAgent sets `TDS_BRAIN_SERVICE=1`), so it restarts by itself. */
+  underService: boolean;
+}
+
 export interface Bootstrap {
   appVersion: string;
+  service: ServiceInfo;
   identity: Identity;
   profile: MemberProfile;
   brain: BrainHealth;

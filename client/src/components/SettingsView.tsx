@@ -3,6 +3,7 @@ import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
+import { HealthPanel } from './HealthPanel.tsx';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
@@ -11,10 +12,12 @@ export function SettingsView() {
   const dock = useDockApp();
   const { state: shell, dispatch } = useShell();
   if (!boot) return null;
-  const { prefs, identity, brain, engine, appVersion } = boot;
+  const { prefs, identity, engine, appVersion } = boot;
   return (
     // The sheet bar above carries the page's heading.
     <div className="page settings">
+      <HealthPanel />
+
       <section aria-labelledby="prefs-h">
         <h2 id="prefs-h">Preferences</h2>
         <div className="setting-rows">
@@ -70,30 +73,6 @@ export function SettingsView() {
           <dd>
             {identity.name}, {ROLE_WORDS[identity.role]}
             {identity.knownMember ? '' : ' (not found in the team list)'}
-          </dd>
-          <dt>Brain folder</dt>
-          <dd>
-            <code className="about-code">{brain.path}</code>
-          </dd>
-          <dt>Brain health</dt>
-          <dd>
-            {brain.ok ? (
-              'No problems found.'
-            ) : (
-              <ul className="problem-list">
-                {brain.problems.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
-              </ul>
-            )}
-          </dd>
-          <dt>Claude Code</dt>
-          <dd>
-            {engine.ok ? (
-              <code className="about-code">{engine.claudePath}</code>
-            ) : (
-              (engine.problem ?? 'Not ready.')
-            )}
           </dd>
           <dt>Approvals</dt>
           <dd>

@@ -214,6 +214,8 @@ export interface ServerDeps {
   /** Single-use sign-in codes (A15). */
   authCodes: AuthCodes;
   appVersion: string;
+  /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
+  underService: boolean;
   brain: BrainReaders;
   store: AppStore;
   sessions: SessionManager;
@@ -258,6 +260,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     hub,
     engineHealth: deps.engineHealth,
     appVersion: deps.appVersion,
+    underService: deps.underService,
     serverStartedAt,
     launchToken: deps.launchToken,
     log,

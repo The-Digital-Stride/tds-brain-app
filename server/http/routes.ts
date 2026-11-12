@@ -58,6 +58,8 @@ export interface RouteContext {
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
   appVersion: string;
+  /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
+  underService: boolean;
   serverStartedAt: string;
   /** Only to renew the session cookie on `GET /api/bootstrap` (decision 6a). */
   launchToken: string;
@@ -334,6 +336,7 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
   ]);
   return {
     appVersion: ctx.appVersion,
+    service: { underService: ctx.underService },
     identity,
     profile,
     brain,

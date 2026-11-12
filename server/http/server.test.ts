@@ -45,6 +45,7 @@ beforeAll(async () => {
     launchToken: TOKEN,
     authCodes: createAuthCodes(TOKEN),
     appVersion: '0',
+    underService: false,
     brain: createBrainReaders(copyFixture()),
     store: {
       get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }),

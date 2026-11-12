@@ -135,7 +135,7 @@ describe('GET /api/bootstrap', () => {
   const TOKEN = 'launch-token-abc123';
   const GOOD_COOKIE = `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`;
 
-  async function call(cookie: string | undefined, method = 'GET') {
+  async function call(cookie: string | undefined, method = 'GET', underService = false) {
     const req = Object.assign(Readable.from([]), { method, headers: cookie === undefined ? {} : { cookie } });
     const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
     const res = {
@@ -156,6 +156,7 @@ describe('GET /api/bootstrap', () => {
       store: { get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }) },
       engineHealth: () => ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }),
       appVersion: '0',
+      underService,
       launchToken: TOKEN,
       log: () => {},
     };
@@ -187,6 +188,11 @@ describe('GET /api/bootstrap', () => {
     const post = await call(GOOD_COOKIE, 'POST');
     expect(post.status).toBe(405);
     expect(post.headers['Set-Cookie']).toBeUndefined();
+  });
+
+  it('says whether this copy runs as the login service, for the Settings health panel', async () => {
+    expect(JSON.parse((await call(GOOD_COOKIE)).body).service).toEqual({ underService: false });
+    expect(JSON.parse((await call(GOOD_COOKIE, 'GET', true)).body).service).toEqual({ underService: true });
   });
 
   it("sends the person's profile from the brain's team profile alongside who they are", async () => {

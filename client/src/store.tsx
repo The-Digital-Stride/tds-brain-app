@@ -22,6 +22,7 @@ import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
+import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 
@@ -62,6 +63,8 @@ export interface Store {
   chats: Chats;
   /** False while the event stream is down and being retried. */
   streamUp: boolean;
+  /** Whether the to-do and chat lists have loaded, for the Settings health panel. */
+  lists: { todos: ListState; chats: ListState };
   /** A short plain message about the last action that failed, if any. */
   actionError: string | null;
   clearError: () => void;
@@ -120,6 +123,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeChat, setActiveChat] = useState<ActiveChat>(() => freshNewChat());
   const [chats, dispatchChat] = useReducer(chatsReducer, {} as Chats);
   const [streamUp, setStreamUp] = useState(true);
+  const [todosState, setTodosState] = useState<ListState>('loading');
+  const [chatsState, setChatsState] = useState<ListState>('loading');
   const [actionError, setActionError] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
@@ -155,8 +160,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadTodos = useCallback(async () => {
     try {
       setTodos(await api.todos());
+      setTodosState('loaded');
     } catch {
-      // The to-do list is not essential; the next change will try again.
+      // The to-do list is not essential; the next change will try again. Settings says so meanwhile.
+      setTodosState('failed');
     }
   }, []);
 
@@ -164,6 +171,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const list = await api.sessions();
       setSessions(list);
+      setChatsState('loaded');
       if (!restored.current) {
         // First load: go back to the chat this tab had open, if it is still open.
         restored.current = true;
@@ -179,6 +187,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       // As above.
+      setChatsState('failed');
     }
   }, []);
 
@@ -479,6 +488,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeChat,
       chats,
       streamUp,
+      lists: { todos: todosState, chats: chatsState },
       actionError,
       clearError: () => setActionError(null),
       openView,
@@ -510,6 +520,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeChat,
       chats,
       streamUp,
+      todosState,
+      chatsState,
       actionError,
       openView,
       newChat,

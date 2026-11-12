@@ -45,6 +45,7 @@ const { useStore } = await import('../store.tsx');
 
 const boot = {
   appVersion: '0',
+  service: { underService: true },
   identity: {
     name: 'Sam Example',
     slug: 'sam-example',

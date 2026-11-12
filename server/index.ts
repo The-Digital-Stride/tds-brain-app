@@ -81,6 +81,7 @@ const app = createAppServer({
   launchToken: config.launchToken,
   authCodes,
   appVersion: config.appVersion,
+  underService: config.underService,
   brain,
   store,
   sessions,

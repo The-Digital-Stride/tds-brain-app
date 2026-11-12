@@ -4,3 +4,4 @@ data/
 spike/
 .DS_Store
 *.log
+.playwright-mcp/

@@ -13,8 +13,8 @@ on Ian's Mac.
 
 ## User decisions (fixed)
 
-- **Code home:** a new private GitHub repo under `thedigitalstride` (proposed name
-  `thedigitalstride/tds-brain-app`). Installs clone it and updates pull from it. The repo is created
+- **Code home:** a new private GitHub repo under `The-Digital-Stride` (created by Ian; name
+  `The-Digital-Stride/tds-brain-app`). Installs clone it and updates pull from it. The repo is created
   and pushed only after Ian approves this plan. Each push needs his go-ahead.
 - **Scope:** ready for the team in this piece of work. That means the background service, the
   installable PWA, first-run brain-folder setup, the sign-in change, and install and update skills
@@ -229,7 +229,7 @@ on Ian's Mac.
     - **`/doctor-brain-app`** runs `bin/tds-brain doctor` and explains the result.
     Plain: a team member types one command in Claude in their brain, and the app is set up.
 
-13. **GitHub.** Create the private `thedigitalstride/tds-brain-app` and push `main` with its
+13. **GitHub.** Ian created the private `The-Digital-Stride/tds-brain-app` (2026-11-12). Push `main` with its
     history, after checking that `.gitignore` covers `data/`, `dist/` and `.playwright-mcp/`. Team
     members get read access through an org team, so the install skill can clone. No CI in this
     phase. The README gains an "Install" section that points to the skill.

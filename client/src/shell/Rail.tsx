@@ -176,7 +176,15 @@ export function Rail({ inert = false }: { inert?: boolean }) {
         current={view === 'settings'}
         onClick={() => openView('settings')}
       />
-      <div className="rail-person" data-tip={wide ? undefined : `${name}, ${ROLE_WORDS[role]}`}>
+      {/* Opens the Profile page. One spoken name in both widths; the visible name leads it. */}
+      <button
+        type="button"
+        className="rail-person"
+        aria-label={`${name}, ${ROLE_WORDS[role]}: your profile`}
+        data-tip={wide ? undefined : `${name}, ${ROLE_WORDS[role]}: your profile`}
+        aria-current={view === 'profile' ? 'page' : undefined}
+        onClick={() => openView('profile')}
+      >
         <span className="avatar" aria-hidden="true">
           {initials(name)}
         </span>
@@ -185,12 +193,8 @@ export function Rail({ inert = false }: { inert?: boolean }) {
             <span>{name}</span>
             <small>{ROLE_WORDS[role]}</small>
           </span>
-        ) : (
-          <span className="visually-hidden">
-            {name}, {ROLE_WORDS[role]}
-          </span>
-        )}
-      </div>
+        ) : null}
+      </button>
       <SyncStamp wide={wide} />
     </nav>
   );

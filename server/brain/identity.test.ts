@@ -1,7 +1,9 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Runner } from './identity.ts';
+import { parseDepartments, type Runner } from './identity.ts';
 import { createBrainReaders } from './index.ts';
-import { FIXTURE } from './test-helpers.ts';
+import { copyFixture, FIXTURE } from './test-helpers.ts';
 
 const failing: Runner = async () => {
   throw new Error('boom');
@@ -16,6 +18,7 @@ describe('identity', () => {
       email: 'sam@example.test',
       role: 'scout',
       knownMember: true,
+      departments: ['SEO', 'Content'],
     });
   });
 
@@ -48,6 +51,7 @@ describe('identity', () => {
       email: 'alex@example.test',
       role: 'team',
       knownMember: true,
+      departments: ['PPC'],
     });
   });
 
@@ -76,5 +80,83 @@ describe('identity', () => {
       return { stdout: 'not json' };
     };
     expect((await createBrainReaders(FIXTURE, { run }).identity()).role).toBe('unknown');
+  });
+
+  it('has no departments for a member without dept, or someone not on the team list', async () => {
+    const as =
+      (email: string | null, name = 'Jo Owner'): Runner =>
+      async () => ({ stdout: JSON.stringify({ slug: 'x', name, email, role: 'owner', knownMember: true }) });
+    expect(
+      (await createBrainReaders(FIXTURE, { run: as('jo@example.test') }).identity()).departments,
+    ).toEqual([]);
+    expect(
+      (await createBrainReaders(FIXTURE, { run: as('nobody@example.test', 'Nobody') }).identity())
+        .departments,
+    ).toEqual([]);
+    expect((await createBrainReaders(FIXTURE, { run: failing }).identity()).departments).toEqual([]);
+  });
+
+  it('matches departments by email ignoring case, else by name when whoami gives no email', async () => {
+    const as =
+      (email: string | null, name: string): Runner =>
+      async () => ({ stdout: JSON.stringify({ name, email, role: 'team', knownMember: true }) });
+    expect(
+      (await createBrainReaders(FIXTURE, { run: as('ALEX@Example.test', 'Al') }).identity()).departments,
+    ).toEqual(['PPC']);
+    expect(
+      (await createBrainReaders(FIXTURE, { run: as(null, 'Alex Sample') }).identity()).departments,
+    ).toEqual(['PPC']);
+  });
+});
+
+describe('a hand-edited team list', () => {
+  it('skips stray entries that are not people and still finds the real member', async () => {
+    const root = copyFixture();
+    writeFileSync(
+      join(root, '.team-config', 'roles.json'),
+      JSON.stringify({
+        members: [
+          null,
+          3,
+          [],
+          'x',
+          { email: 'alex@example.test', name: 'Alex Sample', role: 'team', dept: 'PPC' },
+        ],
+      }),
+    );
+    const viaWhoami: Runner = async () => ({
+      stdout: JSON.stringify({
+        name: 'Alex Sample',
+        email: 'alex@example.test',
+        role: 'team',
+        knownMember: true,
+      }),
+    });
+    expect(await createBrainReaders(root, { run: viaWhoami }).identity()).toMatchObject({
+      name: 'Alex Sample',
+      departments: ['PPC'],
+    });
+    const viaGit: Runner = async (file) => {
+      if (file === 'git') return { stdout: 'alex@example.test\n' };
+      throw new Error('no whoami');
+    };
+    expect(await createBrainReaders(root, { run: viaGit }).identity()).toMatchObject({
+      name: 'Alex Sample',
+      departments: ['PPC'],
+    });
+  });
+});
+
+describe('parseDepartments', () => {
+  it('splits on commas, trims, drops blanks and repeats (first spelling wins)', () => {
+    expect(parseDepartments('SEO, Content , seo,, ')).toEqual(['SEO', 'Content']);
+    expect(parseDepartments('Paid Social')).toEqual(['Paid Social']);
+  });
+  it('also takes a list, and ignores anything else', () => {
+    expect(parseDepartments(['SEO', ' PPC ', 3, ''])).toEqual(['SEO', 'PPC']);
+    expect(parseDepartments(undefined)).toEqual([]);
+    expect(parseDepartments(null)).toEqual([]);
+    expect(parseDepartments(42)).toEqual([]);
+    expect(parseDepartments('')).toEqual([]);
   });
 });

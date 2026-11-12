@@ -170,9 +170,35 @@
   display: flex;
   align-items: center;
   gap: 11px;
+  width: 100%;
   min-height: 44px;
   padding: 0 7px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease),
+    box-shadow 120ms var(--ease);
+}
+/* Opens the Profile page: the same hover, pressed and current states as the rail's other buttons. */
+.rail-person:hover {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: var(--lift-1);
+  color: var(--navy);
+}
+.rail-person:active {
+  box-shadow: none;
+}
+.rail-person[aria-current="page"] {
+  background: #fff;
+  color: var(--navy);
+  font-weight: 600;
+  box-shadow: var(--lift-1);
 }
 .avatar {
   flex: none;

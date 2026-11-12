@@ -19,6 +19,52 @@ export const defaultRunner: Runner = (file, args, opts) =>
     });
   });
 
+/** One entry in `.team-config/roles.json`. Every field is unchecked: the file is hand-edited. */
+type Member = { email?: unknown; name?: unknown; role?: unknown; dept?: unknown };
+
+/** The team list from the brain, or `[]` when it is missing or malformed. */
+async function readMembers(root: string): Promise<Member[]> {
+  try {
+    const raw = await readText(join(root, '.team-config', 'roles.json'));
+    const members = raw ? (JSON.parse(raw) as { members?: unknown }).members : null;
+    return Array.isArray(members) ? members.filter((x): x is Member => !!x && typeof x === 'object') : [];
+  } catch {
+    return [];
+  }
+}
+
+function sameEmail(a: unknown, b: string | null): boolean {
+  return typeof a === 'string' && b !== null && a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * The departments in a member's `dept`: a comma-separated string ("SEO, Content"). A list of
+ * strings is accepted too. Trimmed, blanks dropped, repeats dropped ignoring case (first spelling wins).
+ */
+export function parseDepartments(raw: unknown): string[] {
+  const parts = typeof raw === 'string' ? raw.split(',') : Array.isArray(raw) ? raw : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    if (typeof p !== 'string') continue;
+    const name = p.trim();
+    const key = name.toLowerCase();
+    if (name === '' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+/** Fills in the departments for an identity whoami found: matched by email, else by name. */
+async function withDepartments(root: string, id: Omit<Identity, 'departments'>): Promise<Identity> {
+  const members = await readMembers(root);
+  const m = id.email
+    ? members.find((x) => sameEmail(x.email, id.email))
+    : members.find((x) => typeof x.name === 'string' && memberSlug(x.name) === id.slug);
+  return { ...id, departments: parseDepartments(m?.dept) };
+}
+
 function osName(): string {
   try {
     return userInfo().username || 'unknown';
@@ -38,13 +84,14 @@ async function fromWhoami(root: string, run: Runner): Promise<Identity | null> {
     const name = str(j.name);
     const slug = str(j.slug) ?? (name ? memberSlug(name) : null);
     if (!slug) return null;
-    return {
+    // Awaited so the catch below covers it too.
+    return await withDepartments(root, {
       name: name ?? slug,
       slug,
       email: str(j.email),
       role: mapRole(j.role),
       knownMember: j.knownMember === true,
-    };
+    });
   } catch {
     return null;
   }
@@ -59,28 +106,26 @@ async function fromGit(root: string, run: Runner): Promise<Identity | null> {
     return null;
   }
   if (!email) return null;
-  try {
-    const raw = await readText(join(root, '.team-config', 'roles.json'));
-    const members = raw ? (JSON.parse(raw) as { members?: unknown }).members : null;
-    if (Array.isArray(members)) {
-      const m = members.find(
-        (x) => x && typeof x.email === 'string' && x.email.toLowerCase() === email?.toLowerCase(),
-      ) as { email: string; name?: unknown; role?: unknown } | undefined;
-      if (m && typeof m.name === 'string' && m.name.trim() !== '') {
-        return {
-          name: m.name,
-          slug: memberSlug(m.name),
-          email: m.email,
-          role: mapRole(m.role),
-          knownMember: true,
-        };
-      }
-    }
-  } catch {
-    // fall through to unmatched
+  const m = (await readMembers(root)).find((x) => sameEmail(x.email, email));
+  if (m && typeof m.name === 'string' && m.name.trim() !== '') {
+    return {
+      name: m.name,
+      slug: memberSlug(m.name),
+      email: m.email as string,
+      role: mapRole(m.role),
+      knownMember: true,
+      departments: parseDepartments(m.dept),
+    };
   }
   const os = osName();
-  return { name: os, slug: memberSlug(os) || 'unknown', email, role: 'unknown', knownMember: false };
+  return {
+    name: os,
+    slug: memberSlug(os) || 'unknown',
+    email,
+    role: 'unknown',
+    knownMember: false,
+    departments: [],
+  };
 }
 
 /** Who is using this copy of the brain. Never throws. */
@@ -96,5 +141,6 @@ export async function readIdentity(root: string, run: Runner): Promise<Identity>
     email: null,
     role: 'unknown',
     knownMember: false,
+    departments: [],
   };
 }

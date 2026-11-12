@@ -22,5 +22,5 @@ export function copyFixture(): string {
 }
 
 export function person(slug: string, role: Identity['role']): Identity {
-  return { name: slug, slug, email: null, role, knownMember: true };
+  return { name: slug, slug, email: null, role, knownMember: true, departments: [] };
 }

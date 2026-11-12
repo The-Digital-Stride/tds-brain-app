@@ -36,6 +36,11 @@ export interface Identity {
   role: Role;
   /** False when the person could not be matched to `.team-config/roles.json`. */
   knownMember: boolean;
+  /**
+   * Their departments from the roles.json `dept` field (comma-separated there), e.g. ["SEO", "Content"].
+   * Empty when the field is missing or the person isn't on the team list.
+   */
+  departments: string[];
 }
 
 // ---------------------------------------------------------------------------

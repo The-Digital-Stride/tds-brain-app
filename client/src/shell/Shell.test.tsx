@@ -45,7 +45,14 @@ const { useStore } = await import('../store.tsx');
 
 const boot = {
   appVersion: '0',
-  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'scout', knownMember: true },
+  identity: {
+    name: 'Sam Example',
+    slug: 'sam-example',
+    email: null,
+    role: 'scout',
+    knownMember: true,
+    departments: ['SEO', 'Content'],
+  },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [],
@@ -122,6 +129,17 @@ afterEach(() => {
 });
 
 describe('the rail', () => {
+  it('the person at the foot opens their Profile, with their departments from the brain', async () => {
+    await renderHome();
+    const me = railButton('Sam Example, Scout: your profile');
+    fireEvent.click(me);
+    expect(screen.getByRole('heading', { level: 1, name: 'Profile' })).toBeTruthy();
+    expect(me.getAttribute('aria-current')).toBe('page');
+    expect(railButton('Home').hasAttribute('aria-current')).toBe(false);
+    const depts = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(depts).toEqual(['SEO', 'Content']);
+  });
+
   it('starts as icons with names in aria-label, and the toggle shows the names', async () => {
     await renderHome();
     const home = railButton('Home');

@@ -158,7 +158,14 @@ async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-const UNKNOWN_IDENTITY: Identity = { name: '', slug: '', email: null, role: 'unknown', knownMember: false };
+const UNKNOWN_IDENTITY: Identity = {
+  name: '',
+  slug: '',
+  email: null,
+  role: 'unknown',
+  knownMember: false,
+  departments: [],
+};
 const EMPTY_TODOS: TodoList = { mine: [], open: [], othersCount: 0 };
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;

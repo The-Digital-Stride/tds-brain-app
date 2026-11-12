@@ -2,6 +2,7 @@ import { type ComponentType, Suspense, useRef } from 'react';
 import { useBlockStrayDrops } from './components/Attachments.tsx';
 import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
+import { ProfileView } from './components/ProfileView.tsx';
 import { SettingsView } from './components/SettingsView.tsx';
 import { APPS } from './shell/apps.ts';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
@@ -54,6 +55,16 @@ function SheetContent() {
         <SheetBar title="Settings" />
         <div className="sheet-scroll">
           <SettingsView />
+        </div>
+      </>
+    );
+  }
+  if (view === 'profile') {
+    return (
+      <>
+        <SheetBar title="Profile" />
+        <div className="sheet-scroll">
+          <ProfileView />
         </div>
       </>
     );

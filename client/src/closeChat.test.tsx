@@ -38,7 +38,14 @@ const { App } = await import('./App.tsx');
 
 const boot = {
   appVersion: '0',
-  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'team', knownMember: true },
+  identity: {
+    name: 'Sam Example',
+    slug: 'sam-example',
+    email: null,
+    role: 'team',
+    knownMember: true,
+    departments: [],
+  },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [],

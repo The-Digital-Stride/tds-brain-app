@@ -38,7 +38,7 @@ function Probe({ text, ids }: { text: string; ids: string[] }) {
 
 const boot = {
   appVersion: '0',
-  identity: { name: 'Sam', slug: 'sam', email: null, role: 'team', knownMember: true },
+  identity: { name: 'Sam', slug: 'sam', email: null, role: 'team', knownMember: true, departments: [] },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [],

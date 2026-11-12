@@ -25,7 +25,7 @@ import { needsCloseConfirm } from './state/close.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 
-export type View = 'chat' | 'settings' | `app:${string}`;
+export type View = 'chat' | 'settings' | 'profile' | `app:${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
 
 export interface NewChat {

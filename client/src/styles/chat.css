@@ -928,6 +928,20 @@
   color: var(--danger);
 }
 
+/* Profile: the person's departments as chips, wrapping. */
+.dept-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kv-quiet {
+  font-weight: 400;
+  color: var(--iron);
+}
+
 /* Whole-app states: one raised card on the desk ----------------------------------------------- */
 .gate {
   min-height: 100%;

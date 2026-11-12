@@ -1,5 +1,5 @@
 { "members": [
-  { "email": "sam@example.test", "name": "Sam Example", "role": "head-scout", "slug": "sam-example-sam" },
-  { "email": "alex@example.test", "name": "Alex Sample", "role": "team", "slug": "alex" },
+  { "email": "sam@example.test", "name": "Sam Example", "role": "head-scout", "slug": "sam-example-sam", "dept": "SEO, Content , seo,, " },
+  { "email": "alex@example.test", "name": "Alex Sample", "role": "team", "slug": "alex", "dept": "PPC" },
   { "email": "jo@example.test", "name": "Jo Owner", "role": "owner", "slug": "owner" }
 ] }

@@ -45,7 +45,14 @@ const skill = (name: string, title: string): SkillInfo => ({
 
 const boot = {
   appVersion: '0',
-  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'team', knownMember: true },
+  identity: {
+    name: 'Sam Example',
+    slug: 'sam-example',
+    email: null,
+    role: 'team',
+    knownMember: true,
+    departments: [],
+  },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [skill('meeting-notes', 'Meeting notes'), skill('standup', 'Standup')],

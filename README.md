@@ -5,6 +5,10 @@ can be used without a terminal or an IDE. Internal tool. **Local only: this repo
 here is published.**
 
 - It keeps nothing of the brain's. It reads the brain folder and drives the Claude Code already installed.
+- It never changes brain files with its own code; changes go through brain skills (the to-do tick is the
+  one exception, for now).
+- Project tracking for the brain guardian (why the app, features, change requests, the "would like"
+  pipeline, changelog) lives in the brain at `os/tds-brain-app/`.
 - The terminal and the IDE keep working exactly as before.
 - How it fits together: open `docs/explainer.html` (the app) and `docs/shell-explainer.html` (the
   screen layout). The look: `docs/design-system.md`. Each piece of work has a plan in `docs/plans/`.
@@ -21,9 +25,13 @@ here is published.**
   the brain where `.claude/rules/save-locations.md` says, asks if the client or folder isn't clear,
   and tells you where each went. The app keeps only a private copy in its data folder until then
   (an hour if unsent, a day once sent).
-- **To-dos**: your to-dos and the team's open ones. Ticking them off is off by default, because it
-  changes the shared brain; switch it on in Settings ("Let the app tick to-dos"). A tick records who
-  did it and when.
+- **To-dos**: your to-dos and the team's open ones. Ticking, adding, editing, passing to a teammate,
+  setting a due date and deleting are off by default, because they change the shared brain; switch
+  them on in Settings ("Let the app change to-dos"). A tick records who did it and when. Every change
+  except the tick is made by the brain's own `todo` skill (see `brain-skills/`), never by the app's
+  code, and works exactly as the Workbench does. Until that skill is released it is for owners and
+  scouts only. Weak spots found in the Workbench's behaviour wait for sign-off in
+  `os/tds-brain-app/change-requests.md` in the brain.
 - **Skills**: the brain's skills and commands you can run. Skills kept for owners and scouts are
   refused for other roles.
 - **Images** and **Documents**: everything in the brain you're allowed to see, by client, in a grid

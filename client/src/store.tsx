@@ -16,6 +16,7 @@ import type {
   SessionList,
   SkillInfo,
   StreamFrame,
+  TodoAction,
   TodoList,
 } from '../../shared/contract.ts';
 import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
@@ -25,6 +26,11 @@ import { needsCloseConfirm } from './state/close.ts';
 import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
+
+export interface ChangeTodosResult {
+  done: number;
+  error?: { code: string; message: string };
+}
 
 export type View = 'chat' | 'settings' | 'profile' | `app:${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
@@ -78,6 +84,11 @@ export interface Store {
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
+  /**
+   * Sends to-do changes one at a time, in order, stopping at the first failure. `todos` becomes the last
+   * list the server returned. `done` is how many went through; `error` carries the server's message.
+   */
+  changeTodos: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
   /** Counts up when the library's files change or the server restarts; the library screens refetch. */
   libraryVersion: number;
   retry: () => void;
@@ -453,14 +464,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeChat, boot, loadSessions, loadTodos],
   );
 
-  const updatePrefs = useCallback(async (patch: Partial<AppPrefs>) => {
-    try {
-      const prefs = await api.updatePrefs(patch);
-      setBoot((b) => (b ? { ...b, prefs } : b));
-    } catch (err) {
-      setActionError(messageOf(err));
-    }
-  }, []);
+  const updatePrefs = useCallback(
+    async (patch: Partial<AppPrefs>) => {
+      try {
+        const prefs = await api.updatePrefs(patch);
+        setBoot((b) => (b ? { ...b, prefs } : b));
+        // The server works out whether to-dos can be changed from this switch, so ask again.
+        if ('directWrites' in patch) await loadTodos();
+      } catch (err) {
+        setActionError(messageOf(err));
+      }
+    },
+    [loadTodos],
+  );
 
   const togglePin = useCallback(
     async (name: string) => {
@@ -480,6 +496,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setActionError(messageOf(err));
     }
+  }, []);
+
+  const changeTodos = useCallback(async (actions: TodoAction[]): Promise<ChangeTodosResult> => {
+    let done = 0;
+    for (const action of actions) {
+      try {
+        setTodos(await api.changeTodo(action));
+        done += 1;
+      } catch (err) {
+        return {
+          done,
+          error:
+            err instanceof ApiFailure
+              ? { code: err.code, message: err.message }
+              : { code: 'internal', message: messageOf(err) },
+        };
+      }
+    }
+    return { done };
   }, []);
 
   const value = useMemo<Store>(
@@ -504,6 +539,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updatePrefs,
       togglePin,
       completeTodo,
+      changeTodos,
       libraryVersion,
       retry: loadAll,
       setupOpen,
@@ -538,6 +574,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updatePrefs,
       togglePin,
       completeTodo,
+      changeTodos,
       libraryVersion,
       loadAll,
       setupOpen,

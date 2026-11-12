@@ -6,6 +6,9 @@ const TODAY = '2026-11-11';
 const item = (id: string, due: string | null): TodoItem => ({
   id,
   title: id,
+  created: null,
+  source: null,
+  details: '',
   assignee: null,
   due,
   surfaceDate: null,

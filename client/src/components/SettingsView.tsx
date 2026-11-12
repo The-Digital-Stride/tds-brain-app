@@ -24,11 +24,11 @@ export function SettingsView() {
           <div className="setting">
             <div>
               <label className="setting-label" htmlFor="set-direct">
-                Let the app tick to-dos
+                Let the app change to-dos
               </label>
               <p className="setting-help" id="set-direct-help">
-                Lets you tick to-dos off here. Each tick changes the shared brain, so the whole team sees it.
-                Off by default.
+                Lets you tick, add, edit, pass on and delete to-dos here. Each change is made in the shared
+                brain, so the whole team sees it. Off by default.
               </p>
             </div>
             <input

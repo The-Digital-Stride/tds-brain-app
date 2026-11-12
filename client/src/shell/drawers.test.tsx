@@ -20,6 +20,9 @@ const { SkillsDrawer } = await import('./SkillsDrawer.tsx');
 const todo = (id: string, title: string, due: string | null = null): TodoItem => ({
   id,
   title,
+  created: null,
+  source: null,
+  details: '',
   assignee: 'sam-example',
   due,
   surfaceDate: null,
@@ -57,10 +60,17 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
     boot: {
       clients: [],
       usedOften: [],
+      identity: { slug: 'sam-example' },
       prefs: { pins, directWrites },
       skills: [skill('b', 'Beta', 'Second one'), skill('a', 'Alpha', 'First one', 'draft')],
     },
-    todos: { mine: [todo('t1.md', 'Renew contract', '2020-01-01')], open: [], othersCount: 2 },
+    todos: {
+      mine: [todo('t1.md', 'Renew contract', '2020-01-01')],
+      open: [],
+      othersCount: 2,
+      team: [],
+      changes: 'no-skill',
+    },
     sessions: {
       live: [],
       past: [{ sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z' }],
@@ -122,6 +132,7 @@ describe('To-dos drawer', () => {
       boot: {
         clients: [{ slug: 'acme', name: 'Acme Heating' }],
         usedOften: [],
+        identity: { slug: 'sam-example' },
         prefs: { pins: [], directWrites: false },
         skills: [],
       },
@@ -132,6 +143,8 @@ describe('To-dos drawer', () => {
         ],
         open: [],
         othersCount: 0,
+        team: [],
+        changes: 'no-skill',
       },
     });
     render(<TodosDrawer />);
@@ -146,6 +159,7 @@ describe('To-dos drawer', () => {
       boot: {
         clients: [{ slug: 'acme', name: 'Acme Heating' }],
         usedOften: [],
+        identity: { slug: 'sam-example' },
         prefs: { pins: [], directWrites: false },
         skills: [],
       },
@@ -153,6 +167,8 @@ describe('To-dos drawer', () => {
         mine: [{ ...todo('t1.md', 'Renew contract', '2020-01-01'), client: 'acme' }],
         open: [],
         othersCount: 0,
+        team: [],
+        changes: 'no-skill',
       },
     });
     render(<TodosDrawer />);
@@ -164,7 +180,15 @@ describe('To-dos drawer', () => {
   });
 
   it('keeps the line about other people, and the old group of to-dos open to anyone', () => {
-    setStore({ todos: { mine: [], open: [todo('o.md', 'Anyone can do this')], othersCount: 1 } });
+    setStore({
+      todos: {
+        mine: [],
+        open: [todo('o.md', 'Anyone can do this')],
+        othersCount: 1,
+        team: [],
+        changes: 'no-skill',
+      },
+    });
     render(<TodosDrawer />);
     expect(screen.getByText('1 more belongs to other people.')).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: 'Open to anyone, 1' }));
@@ -247,6 +271,7 @@ describe('Skills drawer', () => {
       boot: {
         clients: [],
         usedOften: [],
+        identity: { slug: 'sam-example' },
         prefs: { pins: [], directWrites: false },
         skills: [skill('c', 'Gamma')],
       },

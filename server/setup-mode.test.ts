@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import type { Identity, LibraryFile } from '../shared/contract.ts';
+import { type Identity, type LibraryFile, TodoChangeError } from '../shared/contract.ts';
 import { SessionError } from './engine/session-manager.ts';
 import {
   createEngineHealth,
@@ -22,7 +22,13 @@ describe('createSetupBrain', () => {
     expect(await brain.libraryScopes()).toEqual([]);
     expect(await brain.library('personal')).toBeNull();
     expect(await brain.libraryFile('personal.abc')).toBeNull();
-    expect(await brain.todos(someone)).toEqual({ mine: [], open: [], othersCount: 0 });
+    expect(await brain.todos(someone)).toEqual({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      team: [],
+      changes: 'no-skill',
+    });
     expect(await brain.profile(someone)).toEqual({ title: null, departments: [], owns: null });
     expect(await brain.skillAccess(someone, 'anything')).toBe('unknown-skill');
     expect(await brain.sync()).toEqual({ lastSync: null });
@@ -37,8 +43,11 @@ describe('createSetupBrain', () => {
     expect(health.problems[0]).toMatch(/brain folder/);
   });
 
-  it('refuses the one write', async () => {
+  it('refuses the one write, and every to-do change', async () => {
     await expect(createSetupBrain().completeTodo('20261111-x.md', someone)).rejects.toThrow();
+    await expect(
+      createSetupBrain().changeTodo({ kind: 'delete', id: '20261111-x.md' }, someone),
+    ).rejects.toThrow(TodoChangeError);
   });
 
   it('watches nothing, and the stop function is harmless', () => {

@@ -176,7 +176,18 @@ const IDENTITY: Identity = {
 };
 
 function todo(id: string): TodoItem {
-  return { id, title: id, assignee: null, due: null, surfaceDate: null, project: null, client: null };
+  return {
+    id,
+    title: id,
+    assignee: null,
+    due: null,
+    surfaceDate: null,
+    project: null,
+    client: null,
+    created: null,
+    source: null,
+    details: '',
+  };
 }
 
 function fakeBrain(
@@ -191,6 +202,8 @@ function fakeBrain(
       mine: [todo('20261111-mine.md')],
       open: [todo('20261112-open.md')],
       othersCount: 3,
+      team: [],
+      changes: 'no-skill',
     }),
     ...over,
   };

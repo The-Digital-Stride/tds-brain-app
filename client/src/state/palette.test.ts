@@ -25,6 +25,9 @@ const chat = (id: string, title: string): LiveSession => ({
 const todo = (id: string, title: string): TodoItem => ({
   id,
   title,
+  created: null,
+  source: null,
+  details: '',
   assignee: null,
   due: null,
   surfaceDate: null,

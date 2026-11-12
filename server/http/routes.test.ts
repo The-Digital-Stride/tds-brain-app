@@ -10,6 +10,8 @@ import {
   MAX_ATTACHMENTS,
   ROUTES,
   SESSION_COOKIE,
+  TODO_SCRIPT,
+  type TodoList,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
@@ -25,7 +27,7 @@ import {
   createSetupUploads,
 } from '../setup-mode.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
-import { HttpError, handleApi, parseStartRequest, type RouteContext } from './routes.ts';
+import { HttpError, handleApi, parseStartRequest, parseTodoAction, type RouteContext } from './routes.ts';
 import { cookieValueFor, PAGE_CSP, PDF_CSP, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
 
 const tempDirs: string[] = [];
@@ -137,6 +139,275 @@ describe('POST /api/todos/complete', () => {
     expect(sent.status).toBe(403);
     expect(existsSync(join(root, 'todo', TODO))).toBe(true);
     expect(existsSync(join(root, 'todo', 'done', TODO))).toBe(false);
+  });
+});
+
+describe('parseTodoAction', () => {
+  it('passes each action shape through', () => {
+    const good = [
+      { kind: 'add', title: 'Call Ben', due: null, assignee: 'sam-example' },
+      { kind: 'add', title: 'Call Ben', due: '2026-11-20', assignee: 'sam-example' },
+      { kind: 'edit', id: 'a.md', title: 'T' },
+      { kind: 'edit', id: 'a.md', title: 'T', details: '' },
+      { kind: 'due', id: 'a.md', due: null },
+      { kind: 'due', id: 'a.md', due: '2026-11-20' },
+      { kind: 'assignee', id: 'a.md', assignee: null },
+      { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam' },
+      { kind: 'delete', id: 'a.md' },
+    ];
+    for (const body of good) expect(parseTodoAction(body), JSON.stringify(body)).toEqual(body);
+  });
+
+  it('refuses anything that is not exactly one of the shapes', () => {
+    const bad: unknown[] = [
+      null,
+      [],
+      'delete',
+      {},
+      { kind: 'tick', id: 'a.md' },
+      { kind: 'toString', id: 'a.md' },
+      { kind: 'delete' },
+      { kind: 'delete', id: 7 },
+      { kind: 'delete', id: 'a.md', extra: 1 },
+      { kind: 'add', title: 'x', assignee: 'sam' },
+      { kind: 'add', title: 'x', due: null },
+      { kind: 'add', title: 7, due: null, assignee: 'sam' },
+      { kind: 'add', title: 'x', due: 20261120, assignee: 'sam' },
+      { kind: 'add', title: 'x', due: null, assignee: null },
+      { kind: 'add', id: 'a.md', title: 'x', due: null, assignee: 'sam' },
+      { kind: 'edit', id: 'a.md' },
+      { kind: 'edit', id: 'a.md', title: 'x', details: null },
+      { kind: 'edit', id: 'a.md', title: 'x', body: 'y' },
+      { kind: 'due', id: 'a.md' },
+      { kind: 'due', id: 'a.md', due: false },
+      { kind: 'assignee', id: 'a.md' },
+      { kind: 'assignee', id: 'a.md', assignee: ['sam'] },
+    ];
+    for (const body of bad) {
+      expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow(
+        "That change wasn't understood. Check the title and date, then try again.",
+      );
+    }
+  });
+});
+
+describe('POST /api/todos/change', () => {
+  const MINE = '20261105-send-report.md';
+  /** Records each call outside the brain; with FAKE_TODO_APPLY it really deletes, as the brain's script would. */
+  const FAKE_SCRIPT = `
+const fs = require('node:fs');
+const path = require('node:path');
+let input = '';
+process.stdin.on('data', (c) => { input += c; });
+process.stdin.on('end', () => {
+  const body = JSON.parse(input);
+  fs.appendFileSync(process.env.FAKE_TODO_LOG, JSON.stringify({ command: process.argv[2], body }) + '\\n');
+  if (process.env.FAKE_TODO_APPLY && process.argv[2] === 'delete') {
+    fs.unlinkSync(path.join(process.env.BRAIN_ROOT, 'todo', body.file));
+  }
+  const reply = JSON.parse(process.env.FAKE_TODO_REPLY || '{}');
+  process.stdout.write(reply.out || '{"ok":true}');
+  process.exitCode = reply.exit || 0;
+});
+`;
+
+  function makeBrain(opts: { roles?: string; reply?: object; skill?: boolean } = {}) {
+    const root = copyFixture();
+    if (opts.skill !== false) {
+      mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+      writeFileSync(
+        join(root, '.claude', 'skills', 'todo', 'SKILL.md'),
+        `---\ndescription: Change to-dos.\nroles: ${opts.roles ?? 'owner, scout'}\nmaturity: draft\n---\n`,
+      );
+      writeFileSync(join(root, TODO_SCRIPT), FAKE_SCRIPT);
+    }
+    const logDir = mkdtempSync(join(tmpdir(), 'tba-todo-log-'));
+    tempDirs.push(logDir);
+    const log = join(logDir, 'calls.jsonl');
+    const whoami = { name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true };
+    const brain = createBrainReaders(root, {
+      run: async () => ({ stdout: JSON.stringify(whoami) }),
+      todoSkill: {
+        env: {
+          PATH: process.env.PATH,
+          FAKE_TODO_LOG: log,
+          FAKE_TODO_APPLY: '1',
+          FAKE_TODO_REPLY: JSON.stringify(opts.reply ?? {}),
+        },
+      },
+    });
+    const calls = () =>
+      existsSync(log)
+        ? readFileSync(log, 'utf8')
+            .trim()
+            .split('\n')
+            .map((l) => JSON.parse(l))
+        : [];
+    return { root, brain, calls };
+  }
+
+  async function send(
+    brain: RouteContext['brain'],
+    opts: { body?: unknown; directWrites?: boolean; method?: string; path?: string } = {},
+  ) {
+    const raw = opts.body === undefined ? [] : [Buffer.from(JSON.stringify(opts.body))];
+    const req = Object.assign(Readable.from(raw), { method: opts.method ?? 'POST', headers: {} });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    const logs: string[] = [];
+    const ctx = {
+      brain,
+      store: { get: async () => ({ directWrites: opts.directWrites ?? true }) },
+      log: (line: string) => logs.push(line),
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${opts.path ?? ROUTES.changeTodo}`),
+      ctx as unknown as RouteContext,
+    );
+    return { status: sent.status, json: sent.body ? JSON.parse(sent.body) : null, logs };
+  }
+
+  it('runs the change and answers with the fresh list', async () => {
+    const { root, brain, calls } = makeBrain();
+    const { status, json, logs } = await send(brain, { body: { kind: 'delete', id: MINE } });
+    expect(status).toBe(200);
+    expect(calls()).toEqual([{ command: 'delete', body: { file: MINE } }]);
+    expect(existsSync(join(root, 'todo', MINE))).toBe(false);
+    const list = json as TodoList;
+    expect(list.mine.map((t) => t.id)).not.toContain(MINE);
+    expect(list.changes).toBe('on');
+    expect(list.team.map((m) => m.slug)).toEqual(['sam-example', 'alex-sample', 'jo-owner']);
+    expect(logs).toEqual(['Changed a to-do (delete).']);
+  });
+
+  it('changes nothing while the Settings switch is off', async () => {
+    const { root, brain, calls } = makeBrain();
+    const { status, json } = await send(brain, { body: { kind: 'delete', id: MINE }, directWrites: false });
+    expect(status).toBe(403);
+    expect(json.error).toEqual({
+      code: 'not-allowed',
+      message: "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings.",
+    });
+    expect(calls()).toEqual([]);
+    expect(existsSync(join(root, 'todo', MINE))).toBe(true);
+  });
+
+  it('refuses a body that is not a to-do change, and other methods', async () => {
+    const { brain, calls } = makeBrain();
+    for (const body of [
+      { kind: 'delete' },
+      { kind: 'tick', id: MINE },
+      { kind: 'delete', id: MINE, x: 1 },
+      [],
+    ]) {
+      const { status, json } = await send(brain, { body });
+      expect(status, JSON.stringify(body)).toBe(400);
+      expect(json.error.code).toBe('bad-request');
+      expect(json.error.message).toBe(
+        "That change wasn't understood. Check the title and date, then try again.",
+      );
+    }
+    expect((await send(brain, { method: 'GET' })).status).toBe(405);
+    expect(calls()).toEqual([]);
+  });
+
+  it("maps refusals to statuses, with the app's own words", async () => {
+    const { brain } = makeBrain();
+    const other = await send(brain, { body: { kind: 'delete', id: '20261102-alex-task.md' } });
+    expect(other.status).toBe(404);
+    expect(other.json.error).toEqual({
+      code: 'not-found',
+      message: 'That to-do could not be found. It may have been finished, deleted or passed on.',
+    });
+    const badDate = await send(brain, { body: { kind: 'due', id: MINE, due: '2026-02-30' } });
+    expect(badDate.status).toBe(400);
+
+    const restricted = makeBrain({ roles: 'owner' });
+    expect((await send(restricted.brain, { body: { kind: 'delete', id: MINE } })).json.error.code).toBe(
+      'not-allowed',
+    );
+    expect((await send(restricted.brain, { body: { kind: 'delete', id: MINE } })).status).toBe(403);
+    expect(restricted.calls()).toEqual([]);
+
+    const noSkill = makeBrain({ skill: false });
+    expect((await send(noSkill.brain, { body: { kind: 'delete', id: MINE } })).status).toBe(403);
+  });
+
+  it("passes on the script's own refusals and failures as plain errors", async () => {
+    const refused = makeBrain({ reply: { exit: 2, out: '{"error":"title required","status":400}' } });
+    const r400 = await send(refused.brain, { body: { kind: 'edit', id: MINE, title: 'x' } });
+    expect(r400.status).toBe(400);
+    expect(r400.json.error.message).not.toContain('title required');
+
+    const gone = makeBrain({ reply: { exit: 2, out: '{"error":"not found","status":404}' } });
+    expect((await send(gone.brain, { body: { kind: 'delete', id: MINE } })).status).toBe(404);
+
+    const crashed = makeBrain({ reply: { exit: 1, out: 'boom' } });
+    const r500 = await send(crashed.brain, { body: { kind: 'delete', id: MINE } });
+    expect(r500.status).toBe(500);
+    expect(r500.json.error).toEqual({
+      code: 'internal',
+      message: 'The change could not be made. Try again.',
+    });
+  });
+
+  it('is refused in setup mode', async () => {
+    expect((await send(createSetupBrain(), { body: { kind: 'delete', id: MINE } })).status).toBe(403);
+  });
+});
+
+describe('GET /api/todos', () => {
+  it("says 'switched-off' in place of 'on' while the Settings switch is off", async () => {
+    const root = copyFixture();
+    mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'skills', 'todo', 'SKILL.md'), '---\nroles: owner, scout\n---\n');
+    writeFileSync(join(root, TODO_SCRIPT), '');
+    const whoami = { name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true };
+    const brain = createBrainReaders(root, { run: async () => ({ stdout: JSON.stringify(whoami) }) });
+    const get = async (directWrites: boolean) => {
+      const req = Object.assign(Readable.from([]), { method: 'GET', headers: {} });
+      let body = '';
+      const res = { headersSent: false, writeHead: () => {}, end: (t: string) => (body = t) };
+      await handleApi(
+        req as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+        new URL(`http://127.0.0.1:3877${ROUTES.todos}`),
+        { brain, store: { get: async () => ({ directWrites }) }, log: () => {} } as unknown as RouteContext,
+      );
+      return JSON.parse(body) as TodoList;
+    };
+    expect((await get(true)).changes).toBe('on');
+    expect((await get(false)).changes).toBe('switched-off');
+    const restricted = createBrainReaders(root, {
+      run: async () => ({ stdout: JSON.stringify({ ...whoami, role: 'team' }) }),
+    });
+    const req = Object.assign(Readable.from([]), { method: 'GET', headers: {} });
+    let body = '';
+    await handleApi(
+      req as unknown as IncomingMessage,
+      {
+        headersSent: false,
+        writeHead: () => {},
+        end: (t: string) => (body = t),
+      } as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${ROUTES.todos}`),
+      {
+        brain: restricted,
+        store: { get: async () => ({ directWrites: false }) },
+        log: () => {},
+      } as unknown as RouteContext,
+    );
+    expect((JSON.parse(body) as TodoList).changes).toBe('restricted');
   });
 });
 

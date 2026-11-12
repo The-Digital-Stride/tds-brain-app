@@ -6,7 +6,8 @@ import { createLibrary } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
-import { completeTodo, listTodos } from './todos.ts';
+import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
+import { changeTodo, completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { watchBrain } from './watch.ts';
 
@@ -21,6 +22,8 @@ export interface BrainDeps {
   dataDir?: string | null;
   /** Where Quick Look can draw documents: offer pictures of them (see `LibraryOptions.docThumbs`). */
   docThumbs?: boolean;
+  /** How the brain's `todo` skill script is run. Tests pass an environment or a spawner. */
+  todoSkill?: TodoSkillOptions;
 }
 
 export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainReaders {
@@ -32,6 +35,8 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     docThumbs: deps.docThumbs ?? false,
   });
   const syncReader = createSyncReader(root);
+  // One runner per brain, so to-do changes run one at a time.
+  const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   return {
     root,
     health: () => checkHealth(root),
@@ -41,6 +46,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     skillAccess: (identity, name) => skillAccess(root, identity, name),
     todos: (identity) => listTodos(root, identity),
     completeTodo: (id, by) => completeTodo(root, id, by, now()),
+    changeTodo: (action, identity) => changeTodo(root, action, identity, todoSkill),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));

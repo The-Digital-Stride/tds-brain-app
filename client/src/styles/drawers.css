@@ -136,3 +136,138 @@
     transition: none;
   }
 }
+
+/* Changing to-dos: the add button, the add form and the inline editor. ------------------------- */
+.todo[data-editable="true"] .todo-main {
+  grid-column: 2;
+}
+.todo-edit {
+  grid-column: 3;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+}
+.drawer-tools.todo-add {
+  display: block;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.todo-add-btn {
+  width: 100%;
+  height: 36px;
+}
+.todo-editing {
+  display: block;
+  background: #fff;
+  box-shadow: var(--lift-1);
+}
+.todo-editing:hover {
+  transform: none;
+}
+.todo-form {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.todo-add .todo-form {
+  padding: 4px 0 0;
+}
+.todo-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.todo-field > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.todo-field textarea.field {
+  height: auto;
+  min-height: 96px;
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.todo-field select.field {
+  padding-right: 6px;
+}
+.todo-field textarea.field[readonly] {
+  background: var(--tray);
+  color: var(--iron);
+}
+.todo-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.todo-inline .field {
+  flex: 1;
+  min-width: 0;
+}
+.todo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.todo-actions .btn {
+  min-height: 36px;
+}
+.todo-delete {
+  margin-left: auto;
+  color: var(--danger);
+}
+.todo-warn {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.btn[data-variant="danger"] {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+.btn[data-variant="danger"]:hover:not(:disabled) {
+  background: #8a1f16;
+}
+.todo-note {
+  margin: 0;
+  padding: 0 14px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.todo-field .todo-note {
+  padding: 0;
+}
+.todo-status {
+  flex: none;
+  margin: 0;
+  padding: 0 14px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--navy);
+}
+.todo-status:empty {
+  padding: 0;
+}
+.link-btn {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--blue-ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.todo-status[data-tone="error"] {
+  color: var(--danger);
+}
+.drawer-scroll:focus-visible {
+  outline-offset: -2px;
+}

@@ -4,12 +4,13 @@
  * staging, session manager and permission-mode reader are never built, so Claude cannot be started and
  * no brain hook can load, by construction.
  */
-import type {
-  AppPermissionMode,
-  BrainReaders,
-  EngineHealth,
-  Identity,
-  Thumbnailer,
+import {
+  type AppPermissionMode,
+  type BrainReaders,
+  type EngineHealth,
+  type Identity,
+  type Thumbnailer,
+  TodoChangeError,
 } from '../shared/contract.ts';
 import { SessionError, type SessionManager } from './engine/session-manager.ts';
 import { GONE_MESSAGE, UploadError, type UploadStaging } from './uploads/staging.ts';
@@ -20,7 +21,7 @@ const NO_UPLOADS = 'Choose your brain folder before attaching files.';
 
 const UNKNOWN_PERSON: Identity = { name: '', slug: '', email: null, role: 'unknown', knownMember: false };
 
-/** Every reader answers empty, the brain is not ok, the one write is refused and nothing is watched. */
+/** Every reader answers empty, the brain is not ok, every write is refused and nothing is watched. */
 export function createSetupBrain(): BrainReaders {
   return {
     root: '',
@@ -29,9 +30,12 @@ export function createSetupBrain(): BrainReaders {
     profile: async () => ({ title: null, departments: [], owns: null }),
     skills: async () => [],
     skillAccess: async () => 'unknown-skill',
-    todos: async () => ({ mine: [], open: [], othersCount: 0 }),
+    todos: async () => ({ mine: [], open: [], othersCount: 0, team: [], changes: 'no-skill' }),
     completeTodo: async () => {
       throw new Error(NO_BRAIN);
+    },
+    changeTodo: async () => {
+      throw new TodoChangeError('not-allowed', NO_BRAIN);
     },
     clients: async () => [],
     usedOften: async () => [],

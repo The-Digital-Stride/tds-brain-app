@@ -38,6 +38,9 @@ describe('todoChatDraft', () => {
     const todo: TodoItem = {
       id: '20261111-renew.md',
       title: 'Renew the contract',
+      created: null,
+      source: null,
+      details: '',
       assignee: null,
       due: null,
       surfaceDate: null,

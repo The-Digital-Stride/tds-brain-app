@@ -86,7 +86,40 @@ export interface TodoItem {
   surfaceDate: string | null;
   project: string | null;
   client: string | null;
+  /** Frontmatter `created` as written, else null. */
+  created: string | null;
+  /** Frontmatter `source` (where the to-do came from), else null. */
+  source: string | null;
+  /**
+   * Everything below the frontmatter, trimmed ('' when empty). The Workbench shows this on hover
+   * and edits it as "details"; an edit replaces it whole.
+   */
+  details: string;
 }
+
+/** One person a to-do can be passed to: a member of `.team-config/roles.json`. */
+export interface TeamMember {
+  /**
+   * The Workbench's slug rule (`/api/todos/roster`): lower-case, every run of characters other than
+   * a–z and 0–9 becomes one dash, no dash at either end. "Ben McAdam" → "ben-mcadam".
+   */
+  slug: string;
+  name: string;
+}
+
+/**
+ * Whether this person can add, edit, pass on, re-date and delete to-dos in the app. The app never
+ * writes those changes itself: it runs the brain's own `todo` skill script (TODO_SCRIPT), so the
+ * brain decides how the file changes. Ticking is separate and unchanged (`directWrites`).
+ * - `on`: the skill is in this brain, this person's role may use it, and the Settings switch is on.
+ * - `switched-off`: as `on`, but the Settings switch ("Let the app change to-dos") is off.
+ * - `restricted`: the skill's `roles:` leave this person out (it hasn't been released to them yet).
+ * - `no-skill`: this brain has no `todo` skill, or its script is missing.
+ */
+export type TodoChangeAccess = 'on' | 'switched-off' | 'restricted' | 'no-skill';
+
+/** What `BrainReaders.todos` may return for `changes`; the route adds 'switched-off'. */
+export type TodoSkillAccess = Exclude<TodoChangeAccess, 'switched-off'>;
 
 export interface TodoList {
   /** Assigned to the current person, soonest first. */
@@ -95,7 +128,81 @@ export interface TodoList {
   open: TodoItem[];
   /** How many belong to other people (not listed). */
   othersCount: number;
+  /** Everyone in `.team-config/roles.json` with a name, in file order. [] when it can't be read. */
+  team: TeamMember[];
+  /** `BrainReaders.todos` gives a TodoSkillAccess; the route turns 'on' into 'switched-off' when the switch is off. */
+  changes: TodoChangeAccess;
 }
+
+/** The brain skill that changes to-dos, and its script relative to the brain root. */
+export const TODO_SKILL = 'todo';
+export const TODO_SCRIPT = '.claude/skills/todo/scripts/todo.cjs';
+
+export const TODO_TITLE_MAX = 200;
+export const TODO_DETAILS_MAX = 8000;
+export const TODO_ASSIGNEE_MAX = 40;
+export const TODO_SCRIPT_MAX_OUTPUT_BYTES = 65_536;
+
+/**
+ * One change to a to-do, run through the brain's `todo` skill script. Field names and rules are
+ * the Workbench's (`tools/members/command-centre/server.cjs`, routes `/api/todos/*`), unchanged.
+ * - `add`: the app always sends `assignee` (default: the person's own `Identity.slug`), so a new
+ *   to-do lands on their own list even if git's user name differs. `due` is YYYY-MM-DD or null.
+ * - `edit`: replaces the title; replaces the whole details text only when `details` is sent.
+ *   Omit it to leave the body alone.
+ * - `assignee: null` on `assignee` makes the to-do open to anyone.
+ * A save that changes several fields sends them one at a time in this order, stopping at the first
+ * failure: edit → due → assignee (passing on last, because the to-do then leaves this person's list).
+ *
+ * Route checks before anything runs: `id` matches `^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$` and is
+ * listed for this person; title 1–TODO_TITLE_MAX characters after trimming; details at most
+ * TODO_DETAILS_MAX; assignee matches `^[a-z0-9]+(-[a-z0-9]+)*$`, at most TODO_ASSIGNEE_MAX.
+ */
+export type TodoAction =
+  | { kind: 'add'; title: string; due: string | null; assignee: string }
+  | { kind: 'edit'; id: string; title: string; details?: string }
+  | { kind: 'due'; id: string; due: string | null }
+  | { kind: 'assignee'; id: string; assignee: string | null }
+  | { kind: 'delete'; id: string };
+
+export type TodoChangeErrorCode = 'bad-request' | 'not-found' | 'not-allowed' | 'internal';
+
+/** Thrown by `BrainReaders.changeTodo`. `message` is plain UK English, fit to show the user. */
+export class TodoChangeError extends Error {
+  readonly code: TodoChangeErrorCode;
+  constructor(code: TodoChangeErrorCode, message: string) {
+    super(message);
+    this.name = 'TodoChangeError';
+    this.code = code;
+  }
+}
+
+/**
+ * The script's command line (the agreement between the brain skill and the app):
+ *
+ *   node <brain>/.claude/skills/todo/scripts/todo.cjs <command>
+ *
+ * - `<command>`: add | edit | due | assignee | delete | tick | roster | list.
+ * - stdin: one JSON object, the Workbench route's request body with the same field names
+ *   (`file`, `title`, `body`, `due`, `assignee`). `roster` and `list` need none (send `{}`).
+ * - The brain root is `process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..', '..', '..')`
+ *   (scripts → todo → skills → .claude → brain).
+ * - stdin is read to the end. Empty means `{}`. Invalid JSON, a non-object or an unknown command
+ *   → `{"error":"invalid JSON"|"unknown command","status":400}`, exit 2.
+ * - stdout: one JSON line. Exit 0: exactly the Workbench route's success body, with no `status`.
+ *   Exit 2: the Workbench route's error body plus `status` (400, 404 or 500, including unterminated
+ *   frontmatter and file errors). stderr is ignored. Any other exit code is a crash.
+ * - Kept literally from the Workbench: the file regex `^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$`
+ *   (spaces allowed) with only CLAUDE.md and README.md excluded; `source: added from the
+ *   Workbench`; local-date file names; the 200 / 8000 / 40 cuts; the default assignee from
+ *   `spawnSync('git', ['config', 'user.name'], { cwd: BRAIN_ROOT, timeout: 3000 })`. `list` honours
+ *   `WORKBENCH_AS`; `add` does not.
+ * - The app runs it with `spawn` (no shell), the real path of the script inside the brain's real
+ *   path, a scrubbed environment plus `BRAIN_ROOT` (no `WORKBENCH_AS`, no `NODE_OPTIONS`), SIGKILL
+ *   at TODO_SCRIPT_TIMEOUT_MS, at most TODO_SCRIPT_MAX_OUTPUT_BYTES of stdout, one run at a time.
+ * - `roster` → `{"members":[{slug,name}]}`; `list` → `{"todos":[…]}` as `/api/misc-todos`.
+ */
+export const TODO_SCRIPT_TIMEOUT_MS = 10_000;
 
 export interface ClientInfo {
   /** Folder name under `clients/`, e.g. "urban-cooling". */
@@ -167,6 +274,14 @@ export interface BrainReaders {
    * (`by`), the UK date and time, and that it was ticked in this app. Rejects unknown ids.
    */
   completeTodo(id: string, by: Identity): Promise<void>;
+  /**
+   * Runs the brain's `todo` skill script for one change (see TodoAction and the command line above
+   * TODO_SCRIPT_TIMEOUT_MS). The app writes nothing itself. Refuses with TodoChangeError
+   * `not-allowed` unless `todos(identity).changes` is 'on' (before the switch), and `not-found`
+   * for an `id` that is not listed for this person (theirs or open). Script status 400 →
+   * `bad-request`, 404 → `not-found`, anything else or a crash/timeout → `internal`.
+   */
+  changeTodo(action: TodoAction, identity: Identity): Promise<void>;
   /** Folders in `clients/`, skipping names that start with `_` or `.`. */
   clients(): Promise<ClientInfo[]>;
   /**
@@ -317,9 +432,10 @@ export interface AppPrefs {
   lastClient: string | null;
   todoPanelOpen: boolean;
   /**
-   * Off by default while the app is in testing. When off, the app makes NO direct write to the
-   * brain: `POST /api/todos/complete` is refused with `not-allowed`, and the page shows to-dos
-   * without tick boxes. (Claude can still change brain files in a chat, with approval, exactly
+   * Off by default while the app is in testing. Shown in Settings as "Let the app change to-dos".
+   * When off, the app makes NO change to to-dos: `POST /api/todos/complete` and
+   * `POST /api/todos/change` are refused with `not-allowed`, and the page shows to-dos without tick
+   * boxes, the add button or the edit controls. (Claude can still change brain files in a chat, with approval, exactly
    * as it can in the terminal.)
    */
   directWrites: boolean;
@@ -669,6 +785,8 @@ export interface CompleteTodoRequest {
   id: string;
 }
 
+export type ChangeTodoRequest = TodoAction;
+
 export interface OkResponse {
   ok: true;
 }
@@ -704,6 +822,7 @@ export interface ApiError {
  *   GET  /api/bootstrap                         → Bootstrap
  *   GET  /api/todos                             → TodoList
  *   POST /api/todos/complete   CompleteTodoRequest → TodoList
+ *   POST /api/todos/change     ChangeTodoRequest   → TodoList
  *   PUT  /api/prefs            Partial<AppPrefs>   → AppPrefs
  *   GET  /api/sessions                          → SessionList
  *   POST /api/sessions         StartSessionRequest → StartSessionResponse
@@ -731,6 +850,12 @@ export const ROUTES = {
   bootstrap: '/api/bootstrap',
   todos: '/api/todos',
   completeTodo: '/api/todos/complete',
+  /**
+   * `POST` ChangeTodoRequest → the fresh TodoList. 403 `not-allowed` when `changes` isn't 'on';
+   * 400 `bad-request` for a body that isn't a TodoAction or a change the script refuses;
+   * 404 `not-found`; 500 `internal` when the script fails.
+   */
+  changeTodo: '/api/todos/change',
   prefs: '/api/prefs',
   /** `GET`: SyncStatus. `no-store`. */
   sync: '/api/brain/sync',

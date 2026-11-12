@@ -20,10 +20,10 @@ export const defaultRunner: Runner = (file, args, opts) =>
   });
 
 /** One entry in `.team-config/roles.json`. Every field is unchecked: the file is hand-edited. */
-type Member = { email?: unknown; name?: unknown; role?: unknown };
+export type Member = { email?: unknown; name?: unknown; role?: unknown };
 
 /** The team list from the brain, or `[]` when it is missing or malformed. */
-async function readMembers(root: string): Promise<Member[]> {
+export async function readMembers(root: string): Promise<Member[]> {
   try {
     const raw = await readText(join(root, '.team-config', 'roles.json'));
     const members = raw ? (JSON.parse(raw) as { members?: unknown }).members : null;

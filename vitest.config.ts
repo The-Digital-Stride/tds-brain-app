@@ -9,6 +9,7 @@ export default defineConfig({
       'server/**/*.test.ts',
       'shared/**/*.test.ts',
       'client/src/**/*.test.{ts,tsx}',
+      'brain-skills/**/*.test.ts',
     ],
   },
 });

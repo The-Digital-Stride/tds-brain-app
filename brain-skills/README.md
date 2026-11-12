@@ -8,6 +8,7 @@ the TDS Brain app by typing one command in Claude in their brain folder:
 | `/install-brain-app` | Checks the Mac, downloads and builds the app, sets it to start at login, signs in and adds it to the Dock |
 | `/update-brain-app` | Shows what's new, warns that a restart closes open chats, then updates, restarts and checks |
 | `/doctor-brain-app` | Runs `bin/tds-brain doctor` and explains each problem in plain words |
+| `/todo` | Adds, edits, passes on, re-dates, deletes and ticks to-dos, exactly as the Workbench does. The app runs its script (`todo/scripts/todo.cjs`) for every to-do change except the tick (still the app's own code, for now), so it never writes those changes itself. In testing: `roles: owner, scout` and `maturity: draft` until Pete releases it. Copy it without `scripts/todo.test.ts`. |
 
 They're written and reviewed here, next to the code they drive. Copying them into the brain's
 `.claude/skills/` is a separate step that needs Ian's approval, because it changes the shared brain

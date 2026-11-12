@@ -68,6 +68,9 @@ function dayOffset(n: number): string {
 const todo = (id: string, title: string, due: string | null, client: string | null = null): TodoItem => ({
   id,
   title,
+  created: null,
+  source: null,
+  details: '',
   assignee: 'sam-example',
   due,
   surfaceDate: null,

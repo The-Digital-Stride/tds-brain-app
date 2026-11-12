@@ -5,6 +5,9 @@ import { greeting, needsYou, summary } from './home.ts';
 const todo = (id: string, due: string | null): TodoItem => ({
   id,
   title: id,
+  created: null,
+  source: null,
+  details: '',
   assignee: 'sam-example',
   due,
   surfaceDate: null,

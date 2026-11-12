@@ -3,6 +3,7 @@ import type {
   ApiErrorCode,
   AppPrefs,
   Bootstrap,
+  ChangeTodoRequest,
   CompleteTodoRequest,
   LibraryListing,
   LibraryScope,
@@ -15,6 +16,7 @@ import type {
   StartSessionRequest,
   StartSessionResponse,
   SyncStatus,
+  TodoAction,
   TodoList,
   UploadInfo,
   UploadResponse,
@@ -87,6 +89,8 @@ export const api = {
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
   completeTodo: (id: string) =>
     request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest),
+  changeTodo: (action: TodoAction) =>
+    request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),
   startSession: (req: StartSessionRequest) => request<StartSessionResponse>('POST', ROUTES.sessions, req),

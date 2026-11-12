@@ -173,7 +173,6 @@ const IDENTITY: Identity = {
   email: null,
   role: 'team',
   knownMember: true,
-  departments: [],
 };
 
 function todo(id: string): TodoItem {

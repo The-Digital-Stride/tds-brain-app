@@ -941,6 +941,11 @@
   font-weight: 400;
   color: var(--iron);
 }
+/* A sentence or two, so it reads as prose rather than a bold value. */
+.kv dd.profile-owns {
+  font-weight: 400;
+  line-height: 1.5;
+}
 
 /* Whole-app states: one raised card on the desk ----------------------------------------------- */
 .gate {

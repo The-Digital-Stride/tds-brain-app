@@ -5,6 +5,7 @@ import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
+import { readMemberProfile } from './team-profile.ts';
 import { completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { watchBrain } from './watch.ts';
@@ -35,6 +36,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     root,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
+    profile: (identity) => readMemberProfile(root, identity),
     skills: (identity) => listSkills(root, identity),
     skillAccess: (identity, name) => skillAccess(root, identity, name),
     todos: (identity) => listTodos(root, identity),

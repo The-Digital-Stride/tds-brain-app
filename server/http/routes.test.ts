@@ -130,6 +130,34 @@ describe('POST /api/todos/complete', () => {
   });
 });
 
+describe('GET /api/bootstrap', () => {
+  it("sends the person's profile from the brain's team profile alongside who they are", async () => {
+    const req = Object.assign(Readable.from([]), { method: 'GET', headers: {} });
+    let body = '';
+    const res = { headersSent: false, writeHead: () => {}, end: (text: string) => (body = text) };
+    const ctx = {
+      brain: createBrainReaders(copyFixture()),
+      store: { get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }) },
+      engineHealth: () => ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }),
+      appVersion: '0',
+      log: () => {},
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${ROUTES.bootstrap}`),
+      ctx as unknown as RouteContext,
+    );
+    const boot = JSON.parse(body);
+    expect(boot.identity.name).toBe('Sam Example');
+    expect(boot.profile).toEqual({
+      title: 'Head of Search',
+      departments: ['SEO', 'Content'],
+      owns: 'Runs search delivery and the content calendar.',
+    });
+  });
+});
+
 describe('GET /api/brain/sync', () => {
   async function call(path: string, method = 'GET') {
     const root = copyFixture();

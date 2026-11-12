@@ -23,6 +23,8 @@ const TARGETS: Target[] = [
   { area: 'clients', rel: ['clients'], recursive: false },
   { area: 'clients', rel: ['.claude'], recursive: false, only: 'accounts.json' },
   { area: 'identity', rel: ['.team-config'], recursive: true },
+  // The Profile page's title, departments and day-to-day work.
+  { area: 'identity', rel: ['context'], recursive: false, only: 'team-profile.md' },
   { area: 'usage', rel: ['z-logs', 'team-usage'], recursive: false },
   { area: 'library', rel: ['clients'], recursive: true, library: 'clients' },
   { area: 'library', rel: ['personal'], recursive: true, library: 'personal' },

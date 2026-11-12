@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { BrainArea } from '../../shared/contract.ts';
@@ -29,6 +29,36 @@ describe('watch', () => {
     stop();
     expect(seen.filter((a) => a === 'todos')).toHaveLength(1);
     expect(() => createBrainReaders('/nonexistent/brain').watch(() => {})()).not.toThrow();
+  });
+});
+
+describe('watch: team profile', () => {
+  it('reports identity when context/team-profile.md changes, however it is written, and ignores its neighbours', async () => {
+    const root = copyFixture();
+    const seen: BrainArea[] = [];
+    const stop = createBrainReaders(root).watch((a) => seen.push(a));
+    // Let the OS watcher start, and let late news of the fixture copy itself (roles.json) pass.
+    await new Promise((r) => setTimeout(r, 1000));
+    seen.length = 0;
+    writeFileSync(join(root, 'context', 'notes.md'), 'not the profile');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(seen).toEqual([]);
+    // In place, as an editor saves it.
+    writeFileSync(
+      join(root, 'context', 'team-profile.md'),
+      '| Name | Departments |\n|---|---|\n| Sam | SEO |\n',
+    );
+    await new Promise((r) => setTimeout(r, 700));
+    expect(seen).toEqual(['identity']);
+    // Removed and written afresh, as a git pull replaces a changed file.
+    rmSync(join(root, 'context', 'team-profile.md'));
+    writeFileSync(
+      join(root, 'context', 'team-profile.md'),
+      '| Name | Departments |\n|---|---|\n| Sam | PPC |\n',
+    );
+    await new Promise((r) => setTimeout(r, 700));
+    stop();
+    expect(seen).toEqual(['identity', 'identity']);
   });
 });
 

@@ -19,6 +19,7 @@ import {
   type LibraryFile,
   type LibraryText,
   MAX_ATTACHMENTS,
+  type MemberProfile,
   type PermissionReply,
   type QuestionReply,
   ROUTES,
@@ -164,8 +165,8 @@ const UNKNOWN_IDENTITY: Identity = {
   email: null,
   role: 'unknown',
   knownMember: false,
-  departments: [],
 };
+const EMPTY_PROFILE: MemberProfile = { title: null, departments: [], owns: null };
 const EMPTY_TODOS: TodoList = { mine: [], open: [], othersCount: 0 };
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
@@ -314,8 +315,9 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     path: ctx.brain.root,
     problems: ['The app could not read your brain folder.'],
   };
-  const [brain, skills, clients, usedOften, prefs] = await Promise.all([
+  const [brain, profile, skills, clients, usedOften, prefs] = await Promise.all([
     safe(ctx.brain.health(), brainFallback),
+    safe(ctx.brain.profile(identity), EMPTY_PROFILE),
     safe(ctx.brain.skills(identity), []),
     safe(ctx.brain.clients(), []),
     safe(ctx.brain.usedOften(identity), []),
@@ -324,6 +326,7 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
   return {
     appVersion: ctx.appVersion,
     identity,
+    profile,
     brain,
     engine: ctx.engineHealth(),
     skills,

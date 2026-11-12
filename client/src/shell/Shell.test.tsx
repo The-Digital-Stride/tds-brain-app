@@ -51,8 +51,8 @@ const boot = {
     email: null,
     role: 'scout',
     knownMember: true,
-    departments: ['SEO', 'Content'],
   },
+  profile: { title: 'Head of Search', departments: ['SEO', 'Content'], owns: 'Runs search delivery.' },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [],
@@ -129,7 +129,7 @@ afterEach(() => {
 });
 
 describe('the rail', () => {
-  it('the person at the foot opens their Profile, with their departments from the brain', async () => {
+  it('the person at the foot opens their Profile, with their title, departments and day-to-day work from the brain', async () => {
     await renderHome();
     const me = railButton('Sam Example, Scout: your profile');
     fireEvent.click(me);
@@ -138,6 +138,8 @@ describe('the rail', () => {
     expect(railButton('Home').hasAttribute('aria-current')).toBe(false);
     const depts = screen.getAllByRole('listitem').map((li) => li.textContent);
     expect(depts).toEqual(['SEO', 'Content']);
+    expect(screen.getByText('Head of Search')).toBeTruthy();
+    expect(screen.getByText('Runs search delivery.')).toBeTruthy();
   });
 
   it('starts as icons with names in aria-label, and the toggle shows the names', async () => {

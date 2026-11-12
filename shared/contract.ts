@@ -36,11 +36,20 @@ export interface Identity {
   role: Role;
   /** False when the person could not be matched to `.team-config/roles.json`. */
   knownMember: boolean;
-  /**
-   * Their departments from the roles.json `dept` field (comma-separated there), e.g. ["SEO", "Content"].
-   * Empty when the field is missing or the person isn't on the team list.
-   */
+}
+
+/**
+ * What the brain says about a person beyond who they are: their row in `context/team-profile.md`
+ * (columns Name, Title, Departments, What they own day to day), matched by name. Shown on the
+ * Profile page. Every field is empty when they have no row.
+ */
+export interface MemberProfile {
+  /** e.g. "Director – Finance & Technical". */
+  title: string | null;
+  /** The Departments cell, comma-separated there, e.g. ["Finance", "Technical"]. */
   departments: string[];
+  /** The "What they own day to day" cell. */
+  owns: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +143,8 @@ export interface BrainReaders {
   readonly root: string;
   health(): Promise<BrainHealth>;
   identity(): Promise<Identity>;
+  /** Their row in `context/team-profile.md`; empty fields when there is none. */
+  profile(identity: Identity): Promise<MemberProfile>;
   /**
    * Only the skills and commands this person may run: hidden when `roles:` excludes them or
    * `user-invocable: false`. (`members:` is a vendor packaging flag and is NOT a hide signal.)
@@ -515,6 +526,7 @@ export type StreamFrame =
 export interface Bootstrap {
   appVersion: string;
   identity: Identity;
+  profile: MemberProfile;
   brain: BrainHealth;
   engine: EngineHealth;
   skills: SkillInfo[];

@@ -20,7 +20,7 @@ export const defaultRunner: Runner = (file, args, opts) =>
   });
 
 /** One entry in `.team-config/roles.json`. Every field is unchecked: the file is hand-edited. */
-type Member = { email?: unknown; name?: unknown; role?: unknown; dept?: unknown };
+type Member = { email?: unknown; name?: unknown; role?: unknown };
 
 /** The team list from the brain, or `[]` when it is missing or malformed. */
 async function readMembers(root: string): Promise<Member[]> {
@@ -35,34 +35,6 @@ async function readMembers(root: string): Promise<Member[]> {
 
 function sameEmail(a: unknown, b: string | null): boolean {
   return typeof a === 'string' && b !== null && a.toLowerCase() === b.toLowerCase();
-}
-
-/**
- * The departments in a member's `dept`: a comma-separated string ("SEO, Content"). A list of
- * strings is accepted too. Trimmed, blanks dropped, repeats dropped ignoring case (first spelling wins).
- */
-export function parseDepartments(raw: unknown): string[] {
-  const parts = typeof raw === 'string' ? raw.split(',') : Array.isArray(raw) ? raw : [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of parts) {
-    if (typeof p !== 'string') continue;
-    const name = p.trim();
-    const key = name.toLowerCase();
-    if (name === '' || seen.has(key)) continue;
-    seen.add(key);
-    out.push(name);
-  }
-  return out;
-}
-
-/** Fills in the departments for an identity whoami found: matched by email, else by name. */
-async function withDepartments(root: string, id: Omit<Identity, 'departments'>): Promise<Identity> {
-  const members = await readMembers(root);
-  const m = id.email
-    ? members.find((x) => sameEmail(x.email, id.email))
-    : members.find((x) => typeof x.name === 'string' && memberSlug(x.name) === id.slug);
-  return { ...id, departments: parseDepartments(m?.dept) };
 }
 
 function osName(): string {
@@ -84,14 +56,13 @@ async function fromWhoami(root: string, run: Runner): Promise<Identity | null> {
     const name = str(j.name);
     const slug = str(j.slug) ?? (name ? memberSlug(name) : null);
     if (!slug) return null;
-    // Awaited so the catch below covers it too.
-    return await withDepartments(root, {
+    return {
       name: name ?? slug,
       slug,
       email: str(j.email),
       role: mapRole(j.role),
       knownMember: j.knownMember === true,
-    });
+    };
   } catch {
     return null;
   }
@@ -114,7 +85,6 @@ async function fromGit(root: string, run: Runner): Promise<Identity | null> {
       email: m.email as string,
       role: mapRole(m.role),
       knownMember: true,
-      departments: parseDepartments(m.dept),
     };
   }
   const os = osName();
@@ -124,7 +94,6 @@ async function fromGit(root: string, run: Runner): Promise<Identity | null> {
     email,
     role: 'unknown',
     knownMember: false,
-    departments: [],
   };
 }
 
@@ -141,6 +110,5 @@ export async function readIdentity(root: string, run: Runner): Promise<Identity>
     email: null,
     role: 'unknown',
     knownMember: false,
-    departments: [],
   };
 }

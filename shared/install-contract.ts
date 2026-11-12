@@ -35,6 +35,35 @@ export interface BrainConfig {
   underService: boolean;
 }
 
+/**
+ * `server/settings.ts` (Builder A). Functions are pure apart from the file reads and writes named.
+ * - `supportDir(home)`: `<home>/Library/Application Support/TDS Brain`
+ * - `defaultDataDir(home)`: `<supportDir>/data`; `installedAppDir(home)`: `<supportDir>/app`
+ * - `readSettings(dataDir)`: `<dataDir>/settings.json`, `{}` when missing or broken; never throws
+ * - `writeSettings(dataDir, settings)`: atomic (temp file + rename), file 0600, folder created 0700
+ * - `resolveBrainPath(env, settings, home)`: `TDS_BRAIN_PATH`, then `settings.brainPath`, then
+ *   `<home>/agencybrain`. Phase 1 keeps today's unchecked fallback; the `null` of decision 9 arrives in phase 3.
+ */
+export interface SettingsModule {
+  supportDir(home: string): string;
+  defaultDataDir(home: string): string;
+  installedAppDir(home: string): string;
+  readSettings(dataDir: string): AppSettings;
+  writeSettings(dataDir: string, settings: AppSettings): void;
+  resolveBrainPath(
+    env: Record<string, string | undefined>,
+    settings: AppSettings,
+    home: string,
+  ): { path: string; source: SettingSource };
+}
+
+/** Where `checkBrain` looks for clashes. */
+export interface BrainCheckContext {
+  home: string;
+  appRoot: string;
+  dataDir: string;
+}
+
 /** Why a folder is not accepted as a brain. */
 export type BrainRefusal =
   | 'not-absolute'
@@ -49,12 +78,15 @@ export type BrainRefusal =
 
 export type BrainCheck = { ok: true; path: string } | { ok: false; reason: BrainRefusal };
 
-/** Implemented in `server/brain/locate.ts`. Never throws. */
+/**
+ * `server/brain/locate.ts` (Builder A), exported as `checkBrain` and `findBrainCandidates`. Never throw.
+ * `checkBrain` resolves links first, then applies decision 8's test.
+ * `findBrainCandidates` looks one level inside `~`, `~/Documents`, `~/Developer`, `~/Projects` and
+ * `~/My Repos`, skipping dot folders; `~/agencybrain` first when it qualifies.
+ */
 export interface BrainLocator {
-  /** Checks one folder against decision 8's test. `path` is resolved through links first. */
-  check(path: string): Promise<BrainCheck>;
-  /** Brains found one level inside the likely folders (decision 9), best first. */
-  candidates(): Promise<string[]>;
+  checkBrain(path: string, ctx: BrainCheckContext): Promise<BrainCheck>;
+  findBrainCandidates(ctx: BrainCheckContext): Promise<string[]>;
 }
 
 // ---------------------------------------------------------------------------

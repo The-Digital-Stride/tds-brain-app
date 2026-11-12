@@ -3,19 +3,22 @@
  *
  * Logs are short status lines only: never prompts, replies, tokens or cookie values.
  */
-import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { get as httpGet } from 'node:http';
 import { homedir } from 'node:os';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
-import { APP_HOST, type EngineHealth, ROUTES } from '../shared/contract.ts';
+import { APP_HOST, type EngineHealth } from '../shared/contract.ts';
 import { createBrainReaders } from './brain/index.ts';
 import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
-import { AUTH_PING_PATH, codeProof, createAuthCodes, pingProof, safeEqual } from './http/security.ts';
+import { createAuthCodes } from './http/security.ts';
 import { createAppServer } from './http/server.ts';
+import {
+  appUrl as appUrlFor,
+  codeFromRunningServer,
+  openBrowser as openLink,
+  signInUrl,
+} from './launcher.ts';
 import { createAppStore } from './store/app-store.ts';
 import { createUploadStaging } from './uploads/staging.ts';
 
@@ -25,60 +28,12 @@ function log(line: string): void {
   console.log(`[tds-brain] ${line}`);
 }
 
-function openBrowser(url: string): void {
-  if (noOpen) return;
-  if (process.platform === 'darwin') {
-    const chrome = spawn('open', ['-a', 'Google Chrome', url], { stdio: 'ignore' });
-    const fallback = () => spawn('open', [url], { stdio: 'ignore' }).on('error', () => {});
-    chrome.on('error', fallback);
-    chrome.on('exit', (code) => {
-      if (code !== 0) fallback();
-    });
-    return;
-  }
-  // No reliable way to pick Chrome elsewhere yet: the person opens the link themselves.
-  console.log(`Open this link in Chrome to use TDS Brain:\n${url}`);
-}
-
 const config = resolveConfig();
-const appUrl = `http://${APP_HOST}:${config.port}`;
+const appUrl = appUrlFor(config.port);
 const authCodes = createAuthCodes(config.launchToken);
-const signInUrl = (code: string) => `${appUrl}${ROUTES.auth}?code=${encodeURIComponent(code)}`;
-
-/**
- * A plain GET to the app already on the port. Uses node:http so no browser-like headers (Origin,
- * Sec-Fetch-*, Cookie) are ever sent: `/auth/code` refuses those.
- */
-function launcherGet(path: string): Promise<{ status: number; body: string } | null> {
-  return new Promise((resolve) => {
-    const req = httpGet({ host: APP_HOST, port: config.port, path, timeout: 2000 }, (res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk: string) => {
-        if (body.length < 4096) body += chunk;
-      });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: body.trim() }));
-    });
-    req.on('timeout', () => req.destroy());
-    req.on('error', () => resolve(null));
-  });
-}
-
-/**
- * For a second `pnpm start`: check the app on the port really is this one (it can prove it holds our
- * secret), then ask it for a one-time sign-in code. The secret itself never leaves this process (A15).
- */
-async function codeFromRunningServer(): Promise<string | null> {
-  const pingNonce = randomBytes(18).toString('base64url');
-  const ping = await launcherGet(`${AUTH_PING_PATH}?nonce=${pingNonce}`);
-  if (ping?.status !== 200 || !safeEqual(ping.body, pingProof(config.launchToken, pingNonce))) return null;
-  const nonce = randomBytes(18).toString('base64url');
-  const proof = codeProof(config.launchToken, nonce);
-  const issued = await launcherGet(
-    `${ROUTES.authCode}?nonce=${encodeURIComponent(nonce)}&proof=${encodeURIComponent(proof)}`,
-  );
-  return issued?.status === 200 && issued.body ? issued.body : null;
-}
+const openBrowser = (url: string) => {
+  if (!noOpen) openLink(url);
+};
 
 function engineHealth(): EngineHealth {
   const permissionMode = resolvePermissionMode(config.brainPath, homedir());
@@ -139,10 +94,10 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
   app.stop();
   uploads.close();
   if (err.code === 'EADDRINUSE') {
-    void codeFromRunningServer().then((code) => {
+    void codeFromRunningServer(config.port, config.launchToken).then((code) => {
       if (code) {
         log(`TDS Brain is already running at ${appUrl}. Opening it.`);
-        openBrowser(signInUrl(code));
+        openBrowser(signInUrl(config.port, code));
         setTimeout(() => process.exit(0), 1500).unref();
       } else {
         // Never send the launch token to some other program that happens to hold the port.
@@ -168,7 +123,7 @@ app.server.listen(config.port, APP_HOST, () => {
   );
   if (!noOpen) {
     const code = authCodes.mint();
-    if (code) openBrowser(signInUrl(code));
+    if (code) openBrowser(signInUrl(config.port, code));
   }
 });
 

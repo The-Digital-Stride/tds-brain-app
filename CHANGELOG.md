@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.5.0 — 2026-11-12
+
+- **feat**: add, edit, pass on, re-date and delete to-dos through the brain's todo skill
+- **feat**: undo for 10 seconds after ticking, deleting or passing on a to-do
+- **feat**: finish a to-do from inside it, with no tick box in the list
+- **feat**: keep deleted to-dos in todo/deleted/ with who, when and from where
+
 ## v0.4.0 — 2026-11-12
 
 - **feat**: brain skills to install, update and check the app, fully guided

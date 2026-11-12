@@ -135,7 +135,13 @@ export const SETUP_ROUTES = {
  * Served without a session (GET and HEAD only), after the Host and Origin checks. Exact matches, case
  * sensitive. A listed path whose file is missing answers 404, never the SPA's index.html.
  */
-export const PUBLIC_PATHS: readonly string[] = ['/manifest.webmanifest', '/sw.js', '/offline.html'];
+export const PUBLIC_PATHS: readonly string[] = [
+  '/manifest.webmanifest',
+  '/sw.js',
+  '/offline.html',
+  // The offline page's stylesheet: the CSP blocks inline styles, and the page is shown signed out.
+  '/offline.css',
+];
 export const PUBLIC_ICON_PATTERN = /^\/icons\/[a-z0-9-]+\.(png|svg)$/;
 
 /** The session cookie's Max-Age (Chrome's cap), re-sent on every authenticated `GET /api/bootstrap`. */

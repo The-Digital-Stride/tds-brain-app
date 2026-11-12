@@ -124,7 +124,7 @@ on Ian's Mac.
 
 5. **An exact public allow-list in the gate.** `checkRequest()` lets these through without a
    session, for `GET` and `HEAD` only, after the `Host` and `Origin` checks:
-   - exactly `/manifest.webmanifest`, `/sw.js` and `/offline.html`;
+   - exactly `/manifest.webmanifest`, `/sw.js`, `/offline.html` and `/offline.css` (the CSP blocks inline styles);
    - icons matching `^/icons/[a-z0-9-]+\.(png|svg)$`.
 
    A public path whose file is missing gets a 404, never the app's home page.
@@ -313,7 +313,7 @@ Builder B can import it from the start.
 | `server/install/doctor.test.ts` | each failure (no Node, a missing tool on the service PATH, no Claude, brain missing or EPERM, agent not loaded, port held by another program, no build) gives its plain message | B |
 | `server/install/migrate.test.ts` | copies, checks, renames the old folder, keeps the launch token, and refuses to overwrite existing data | B |
 | `client/src/components/SetupView.test.tsx` | lists candidates, shows a refusal reason, and says "Restarting…" then reloads | C |
-| `client/public/sw.test.ts` (logic split into a module) | a failed page load gives the offline page; `/api`, `/auth`, the manifest and `sw.js` are never cached or answered | C |
+| `client/src/sw.test.ts` (runs `client/public/sw.js` in `node:vm` with a fake worker; a test inside `public/` would ship in the build) | a failed page load gives the offline page; `/api`, `/auth`, the manifest and `sw.js` are never cached or answered | C |
 
 ## Gates
 

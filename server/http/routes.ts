@@ -18,17 +18,22 @@ import {
   type Identity,
   type LibraryFile,
   type LibraryText,
+  MAX_ATTACHMENTS,
   type PermissionReply,
   type QuestionReply,
+  ROUTES,
   type StartSessionRequest,
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
   type TodoList,
+  UPLOAD_NAME_HEADER,
+  type UploadResponse,
 } from '../../shared/contract.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
+import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
 import { isLibraryPagePath, MAX_BODY_BYTES, PAGE_CSP, PDF_CSP } from './security.ts';
 import { type AppEventHub, openStream } from './stream.ts';
 
@@ -39,6 +44,8 @@ export interface RouteContext {
   hub: AppEventHub;
   /** Makes and caches the library's small pictures, in the app's data folder. */
   thumbs: Thumbnailer;
+  /** Chat attachments waiting in the app's data folder. */
+  uploads: UploadStaging;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
   appVersion: string;
@@ -197,6 +204,25 @@ export async function validatePrefsPatch(
   return patch;
 }
 
+const MAX_ID_CHARS = 100;
+
+/** `attachments` on a new chat or a message: absent or null (none), or a list of at most MAX_ATTACHMENTS ids. */
+export function parseAttachments(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_ATTACHMENTS ||
+    !value.every((v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_CHARS)
+  ) {
+    throw new HttpError(
+      400,
+      'bad-request',
+      `The attached files were not understood. A message can carry up to ${MAX_ATTACHMENTS} files.`,
+    );
+  }
+  return value as string[];
+}
+
 /**
  * `POST /api/sessions`: each field is checked for type here; the session manager checks the values
  * (the client and the to-do must be in the brain, the past chat must exist).
@@ -215,7 +241,62 @@ export function parseStartRequest(body: unknown): StartSessionRequest {
       throw new HttpError(400, 'bad-request', 'That request was not understood.');
     out[key] = value;
   }
+  if ('attachments' in body) out.attachments = parseAttachments(body.attachments);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Uploads. The gate lets raw bytes through on exactly POST /api/uploads; nothing else here reads
+// a body that is not JSON.
+// ---------------------------------------------------------------------------
+
+const UPLOAD_STATUS: Record<UploadErrorCode, [number, ApiErrorCode]> = {
+  off: [403, 'not-allowed'],
+  'bad-name': [400, 'bad-request'],
+  'bad-type': [400, 'bad-request'],
+  'no-length': [411, 'bad-request'],
+  'too-large': [413, 'bad-request'],
+  full: [409, 'busy'],
+  busy: [409, 'busy'],
+  aborted: [400, 'bad-request'],
+  'no-space': [507, 'internal'],
+  gone: [400, 'bad-request'],
+  failed: [500, 'internal'],
+};
+
+const UPLOAD_DISCARD = /^\/api\/uploads\/([^/]+)\/discard$/;
+
+function headerText(req: IncomingMessage, name: string): string | undefined {
+  const v = req.headers[name];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+async function uploadFile(req: IncomingMessage, res: ServerResponse, ctx: RouteContext): Promise<void> {
+  // Whatever goes wrong, the rest of the body is never read: close the connection after the reply.
+  try {
+    const type = headerText(req, 'content-type')?.split(';')[0]?.trim().toLowerCase();
+    if (type !== 'application/octet-stream') {
+      throw new HttpError(
+        415,
+        'bad-request',
+        'The app sent that in the wrong format. Reload the page and try again.',
+      );
+    }
+    // No length is refused with 411 by the staging folder, after the name and type checks.
+    const rawLength = headerText(req, 'content-length');
+    const declared = rawLength === undefined ? null : /^\d{1,15}$/.test(rawLength) ? Number(rawLength) : -1;
+    if (declared === -1) throw new HttpError(400, 'bad-request', 'That file could not be read. Try again.');
+    const upload = await ctx.uploads.save(req, headerText(req, UPLOAD_NAME_HEADER), declared);
+    const body: UploadResponse = { upload };
+    sendJson(res, 200, body);
+  } catch (err) {
+    if (!res.headersSent) res.setHeader('Connection', 'close');
+    if (err instanceof UploadError) {
+      const [status, code] = UPLOAD_STATUS[err.code];
+      throw new HttpError(status, code, err.message);
+    }
+    throw err;
+  }
 }
 
 async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
@@ -589,7 +670,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (!isRec(body)) throw new HttpError(400, 'bad-request', 'That request was not understood.');
     switch (m[2]) {
       case 'messages':
-        await ctx.sessions.send(id, body.text as string); // validated by the session manager
+        // The text is validated by the session manager.
+        await ctx.sessions.send(id, body.text as string, parseAttachments(body.attachments));
         break;
       case 'permission':
         await ctx.sessions.replyPermission(id, body as unknown as PermissionReply);
@@ -604,6 +686,23 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
         await ctx.sessions.close(id);
         break;
     }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (path === ROUTES.uploads) {
+    if (method !== 'POST') throw methodNotAllowed();
+    await uploadFile(req, res, ctx);
+    return;
+  }
+
+  const discard = UPLOAD_DISCARD.exec(path);
+  if (discard?.[1]) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const id = decodeId(discard[1]);
+    if (!id) throw new HttpError(400, 'bad-request', 'That file was not understood.');
+    await readJson(req);
+    await ctx.uploads.discard(id);
     sendJson(res, 200, { ok: true });
     return;
   }

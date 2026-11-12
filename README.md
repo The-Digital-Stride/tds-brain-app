@@ -16,6 +16,11 @@ here is published.**
 - **Chats**: talk to Claude in the brain folder, as in the terminal. Approvals and Claude's questions
   appear as cards in the chat. Up to four chats can be open at once; past chats can be reopened.
   The approval mode follows your Claude Code settings (never "skip permissions").
+- **Attachments**: drop files on a chat, paste a screenshot, or use the paperclip (up to 10 files,
+  32 MB each; documents, spreadsheets, slides, text and pictures). Claude files every attachment in
+  the brain where `.claude/rules/save-locations.md` says, asks if the client or folder isn't clear,
+  and tells you where each went. The app keeps only a private copy in its data folder until then
+  (an hour if unsent, a day once sent).
 - **To-dos**: your to-dos and the team's open ones. Ticking them off is off by default, because it
   changes the shared brain; switch it on in Settings ("Let the app tick to-dos"). A tick records who
   did it and when.

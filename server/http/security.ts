@@ -89,10 +89,24 @@ export function isAllowedOrigin(origin: string | undefined, port: number): boole
   return origin === `http://${APP_HOST}:${port}`;
 }
 
+function mediaType(contentType: string | undefined): string | null {
+  if (!contentType) return null;
+  return contentType.split(';')[0]?.trim().toLowerCase() ?? null;
+}
+
 export function isJsonContentType(contentType: string | undefined): boolean {
-  if (!contentType) return false;
-  const media = contentType.split(';')[0]?.trim().toLowerCase();
-  return media === 'application/json';
+  return mediaType(contentType) === 'application/json';
+}
+
+/**
+ * Raw file bytes are accepted on exactly `POST /api/uploads` and nowhere else. Like JSON, octet-stream
+ * is not a CORS "simple" type, so another page cannot send it without a preflight, which is never
+ * answered.
+ */
+export function isUploadRequest(method: string, path: string, contentType: string | undefined): boolean {
+  return (
+    method === 'POST' && path === ROUTES.uploads && mediaType(contentType) === 'application/octet-stream'
+  );
 }
 
 /**
@@ -188,7 +202,8 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
     if (!isAllowedOrigin(origin, ctx.port)) {
       return reject(403, 'forbidden', 'That request came from another website or app, so it was refused.');
     }
-    if (!isJsonContentType(header(req.headers, 'content-type'))) {
+    const contentType = header(req.headers, 'content-type');
+    if (!isJsonContentType(contentType) && !isUploadRequest(method, req.path, contentType)) {
       return reject(
         415,
         'bad-request',

@@ -111,10 +111,10 @@ export function Home() {
                 autoFocus={true}
                 focusSignal={composerFocus}
                 attention={null}
-                onSend={async (text) => {
+                onSend={async (text, uploadIds) => {
                   // "/clear" on Home just empties the box; it is never sent.
                   if (isClearCommand(text)) return true;
-                  return send(text, client || null);
+                  return send(text, client || null, uploadIds);
                 }}
               />
             </div>

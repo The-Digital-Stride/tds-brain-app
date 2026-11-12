@@ -14,6 +14,7 @@
 /* A size container, so the answer box can be held to half the sheet's height. */
 .chat-live {
   container-type: size;
+  position: relative;
 }
 
 /* "Close anyway?" replaces Stop and Close chat in the bar while it shows. */
@@ -639,6 +640,138 @@
   background: rgba(2, 27, 67, 0.12);
 }
 
+/* Attached files ------------------------------------------------------------------------------ */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.file-chip {
+  max-width: min(260px, 100%);
+  padding-left: 7px;
+  background: var(--tray);
+  color: var(--navy);
+  border: 1px solid var(--line);
+}
+.chip-row .file-chip {
+  background: var(--tray);
+  color: var(--navy);
+}
+.file-chip > svg {
+  flex: none;
+}
+.file-name {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* A long name is cut in the middle: the start shrinks, the end stays. */
+.file-name-start {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-name-end {
+  flex: none;
+}
+.file-note {
+  flex: none;
+  color: var(--iron);
+  font-weight: 400;
+}
+.file-note[data-error="true"] {
+  color: var(--danger);
+}
+.file-chip[data-status="error"] {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+.file-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+.file-chip:not(:has(.chip-remove)) {
+  padding-right: 9px;
+}
+/* The full reason for a refused file, one line each under the chips. */
+.attach-problem {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.sent-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  white-space: normal;
+}
+.msg-user > span + .sent-files {
+  margin-top: 8px;
+}
+.msg-user .file-chip {
+  background: var(--on-accent);
+}
+.attach-btn {
+  margin-left: -6px;
+}
+.composer-hint[data-wait="true"] {
+  color: var(--navy);
+  font-weight: 500;
+}
+/* Files are being dragged over the target: a dashed ring on a veil, and a note on a card. */
+[data-drop="true"] {
+  position: relative;
+}
+.composer[data-drop="true"] {
+  border-style: dashed;
+  border-color: var(--blue-ink);
+}
+.chat-live[data-drop="true"]::before,
+.composer[data-drop="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed var(--blue-ink);
+  border-radius: 14px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  z-index: 5;
+}
+.chat-live[data-drop="true"]::after,
+.composer[data-drop="true"]::after {
+  content: "Drop files to attach";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--on-accent);
+  box-shadow: var(--lift-1);
+  color: var(--blue-ink);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .chat-live[data-drop="true"]::before,
+  .composer[data-drop="true"]::before {
+    background: var(--glass-solid);
+    backdrop-filter: none;
+  }
+}
+
 /* The "This chat" panel (Inspector) ----------------------------------------------------------- */
 .inspector {
   display: grid;
@@ -871,6 +1004,7 @@
 /* Less motion: nothing spins, pulses or lifts. */
 @media (prefers-reduced-motion: reduce) {
   .spinner,
+  .file-spinner,
   .attn-spinner,
   .composer[data-attention] {
     animation: none;

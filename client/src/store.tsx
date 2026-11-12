@@ -71,7 +71,7 @@ export interface Store {
   openChat: (sessionId: string) => void;
   openPast: (sdkSessionId: string) => Promise<void>;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
-  send: (text: string, client: string | null) => Promise<boolean>;
+  send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
@@ -401,15 +401,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const send = useCallback(
-    async (text: string, client: string | null) => {
+    async (text: string, client: string | null, attachments: string[] = []) => {
       const body = text.trim();
-      if (!body) return false;
+      // A message may be files only.
+      if (!body && attachments.length === 0) return false;
+      const files = attachments.length > 0 ? { attachments } : {};
       try {
         if (activeChat.kind === 'new') {
           // Keep the to-do link only while the message still mentions it.
           const todoId =
             activeChat.todoId && body.includes(`todo/${activeChat.todoId}`) ? activeChat.todoId : null;
-          const { session } = await api.startSession({ prompt: body, client, ...(todoId ? { todoId } : {}) });
+          const { session } = await api.startSession({
+            prompt: body,
+            client,
+            ...(todoId ? { todoId } : {}),
+            ...files,
+          });
           if (client && boot && boot.prefs.lastClient !== client) {
             void api
               .updatePrefs({ lastClient: client })
@@ -419,7 +426,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void loadSessions();
           setActiveChat({ kind: 'live', sessionId: session.id });
         } else {
-          await api.sendMessage(activeChat.sessionId, body);
+          await api.sendMessage(activeChat.sessionId, body, attachments);
         }
         setActionError(null);
         return true;

@@ -14,6 +14,7 @@ import {
   type Thumbnailer,
 } from '../../shared/contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
+import type { UploadStaging } from '../uploads/staging.ts';
 import { handleApi, sendError, sendPageError } from './routes.ts';
 import {
   type AuthCodes,
@@ -159,6 +160,8 @@ export interface ServerDeps {
   sessions: SessionManager;
   /** The library's small pictures, cached in the app's data folder. */
   thumbs: Thumbnailer;
+  /** Chat attachments waiting in the app's data folder. */
+  uploads: UploadStaging;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
   log?: (line: string) => void;
@@ -192,6 +195,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     store: deps.store,
     sessions: deps.sessions,
     thumbs: deps.thumbs,
+    uploads: deps.uploads,
     hub,
     engineHealth: deps.engineHealth,
     appVersion: deps.appVersion,

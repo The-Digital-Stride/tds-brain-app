@@ -160,4 +160,12 @@ describe('chatReducer', () => {
       expect(apply([at(1, { type: 'notice', level: 'info', text: 'x' })]).stateSince).toBeNull();
     });
   });
+
+  it('keeps attachments on a user message, live or replayed', () => {
+    const attachments = [{ name: 'report.pdf', size: 2048, kind: 'document' as const }];
+    const s = apply([seq(1, { type: 'user-message', messageId: 'u1', text: 'See this', attachments })]);
+    expect(s.items[0]).toMatchObject({ kind: 'user', text: 'See this', attachments });
+    const plain = apply([seq(1, { type: 'user-message', messageId: 'u2', text: 'Hi' })]);
+    expect(plain.items[0]).not.toHaveProperty('attachments');
+  });
 });

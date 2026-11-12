@@ -38,6 +38,9 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   sheet: <path d="M3 4h14v12H3zM3 8h14M3 12h14M8 4v12" />,
   slides: <path d="M3 4h14v9H3zM10 13v3M7 16.5h6M6.5 7.5h4M6.5 10h7" />,
+  paperclip: (
+    <path d="M16 9.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3l-6 6a1.1 1.1 0 0 1-1.6-1.6L12 6.6" />
+  ),
   stop: <rect x="5" y="5" width="10" height="10" rx="1.5" />,
 };
 

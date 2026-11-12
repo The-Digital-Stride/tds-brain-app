@@ -119,7 +119,8 @@ export type IconName =
   | 'doc'
   | 'sheet'
   | 'slides'
-  | 'stop';
+  | 'stop'
+  | 'paperclip';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {

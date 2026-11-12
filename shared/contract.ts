@@ -418,7 +418,11 @@ export interface AskQuestion {
 export type ChatEvent =
   | { type: 'state'; state: SessionState; detail?: string }
   | { type: 'session-info'; sdkSessionId: string; model: string | null; claudeVersion: string | null }
-  | { type: 'user-message'; messageId: string; text: string }
+  /**
+   * `text` never includes the app's attachment note, and `attachments` never carries a path. On
+   * history replay the note is recognised and turned back into `attachments`.
+   */
+  | { type: 'user-message'; messageId: string; text: string; attachments?: AttachmentInfo[] }
   /** A piece of a reply as it is typed. Append to the block with this id. One id per text block. */
   | { type: 'assistant-delta'; messageId: string; text: string; parentToolUseId: string | null }
   /** The finished text for that block. Replaces whatever the deltas built. Also used to replay history. */
@@ -516,6 +520,8 @@ export interface StartSessionRequest {
    * else `bad-request`. Ignored when `resume` is set.
    */
   todoId?: string | null;
+  /** Upload ids from `POST /api/uploads`, at most MAX_ATTACHMENTS. With attachments, `prompt` may be empty. */
+  attachments?: string[];
 }
 
 export interface StartSessionResponse {
@@ -524,8 +530,72 @@ export interface StartSessionResponse {
 
 /** Refused with `busy` while a turn is running, `session-closed` after close, `not-allowed` as above. */
 export interface SendMessageRequest {
+  /** May be empty when `attachments` is not. */
   text: string;
+  /** Upload ids, at most MAX_ATTACHMENTS. Each id is used once; a used, unknown or expired one is `bad-request`. */
+  attachments?: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Attachments (docs/plans/2026-11-12-chat-attachments.md)
+// ---------------------------------------------------------------------------
+
+export type UploadKind = 'image' | 'document';
+
+/** A file staged in the app's data folder, waiting to go with a message. Never a path. */
+export interface UploadInfo {
+  /** Server-made, opaque. */
+  id: string;
+  /** The cleaned name, as Claude will see it. */
+  name: string;
+  /** Bytes. */
+  size: number;
+  kind: UploadKind;
+}
+
+export interface UploadResponse {
+  upload: UploadInfo;
+}
+
+/** A file shown on a sent message. */
+export type AttachmentInfo = Omit<UploadInfo, 'id'>;
+
+export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 10;
+export const MAX_STAGED_BYTES = 512 * 1024 * 1024;
+/** The request header carrying the file name, `encodeURIComponent`ed. */
+export const UPLOAD_NAME_HEADER = 'x-upload-name';
+
+/** Allowed extensions (lower case, no dot) and what each counts as. Anything else is refused. */
+export const UPLOAD_TYPES: Readonly<Record<string, UploadKind>> = {
+  pdf: 'document',
+  doc: 'document',
+  docx: 'document',
+  xls: 'document',
+  xlsx: 'document',
+  csv: 'document',
+  tsv: 'document',
+  ppt: 'document',
+  pptx: 'document',
+  odt: 'document',
+  ods: 'document',
+  rtf: 'document',
+  txt: 'document',
+  md: 'document',
+  json: 'document',
+  html: 'document',
+  htm: 'document',
+  eml: 'document',
+  vtt: 'document',
+  srt: 'document',
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  gif: 'image',
+  webp: 'image',
+  heic: 'image',
+  svg: 'image',
+};
 
 export type PermissionDecision = 'allow' | 'allow-session' | 'deny';
 
@@ -593,6 +663,9 @@ export interface ApiError {
  *   GET  /api/sessions                          → SessionList
  *   POST /api/sessions         StartSessionRequest → StartSessionResponse
  *   POST /api/sessions/:id/messages   SendMessageRequest → OkResponse
+ *   POST /api/uploads          raw file bytes      → UploadResponse
+ *                              (Content-Type: application/octet-stream; name in UPLOAD_NAME_HEADER)
+ *   POST /api/uploads/:id/discard     {}                 → OkResponse
  *   POST /api/sessions/:id/permission PermissionReply    → OkResponse
  *   POST /api/sessions/:id/answer     QuestionReply      → OkResponse
  *   POST /api/sessions/:id/interrupt  {}                 → OkResponse
@@ -602,7 +675,7 @@ export interface ApiError {
  *                                               the chat's events with seq > after are sent first
  *                                               (default after=0: the whole chat), then live ones.
  *
- * Every POST and PUT sends `Content-Type: application/json` and a JSON body; routes with nothing
+ * Every POST and PUT except the upload sends `Content-Type: application/json` and a JSON body; routes with nothing
  * to say send `{}`. Any failure returns ApiError with a fitting HTTP status.
  */
 export const ROUTES = {
@@ -620,6 +693,18 @@ export const ROUTES = {
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
+  /**
+   * `POST`: the file's bytes. Errors (all ApiError, sent with `Connection: close`):
+   * 400 `bad-request` for a missing or bad name, a type not in UPLOAD_TYPES, a bad Content-Length
+   * or an upload cut short; 403 `not-allowed` when uploads are switched off; 409 `busy` when the
+   * staging folder is full or more than 4 uploads are running; 411 `bad-request` without a
+   * Content-Length; 413 `bad-request` over MAX_UPLOAD_BYTES; 415 `bad-request` for a Content-Type
+   * other than application/octet-stream; 507 `internal` when the disk is full; 500 `internal`
+   * otherwise. The page sends at most 4 at once.
+   */
+  uploads: '/api/uploads',
+  /** `POST {}`: deletes an upload that has not been sent. An unknown id is fine (OkResponse). */
+  uploadDiscard: (id: string) => `/api/uploads/${encodeURIComponent(id)}/discard`,
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
   /**

@@ -4,15 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { afterAll, describe, expect, it } from 'vitest';
-import { type LibraryListing, ROUTES } from '../../shared/contract.ts';
+import {
+  type LibraryListing,
+  MAX_ATTACHMENTS,
+  ROUTES,
+  UPLOAD_NAME_HEADER,
+  type UploadResponse,
+} from '../../shared/contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
+import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
 import { HttpError, handleApi, parseStartRequest, type RouteContext } from './routes.ts';
 import { PAGE_CSP, PDF_CSP, SECURITY_HEADERS } from './security.ts';
 
 const tempDirs: string[] = [];
+const stagings: UploadStaging[] = [];
 afterAll(() => {
+  for (const s of stagings.splice(0)) s.close();
   for (const d of tempDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -33,6 +42,31 @@ describe('parseStartRequest', () => {
   it('refuses a todoId that is not text or null', () => {
     for (const todoId of [42, true, ['a'], { id: 'a' }]) {
       expect(() => parseStartRequest({ prompt: 'hi', todoId })).toThrow(HttpError);
+    }
+  });
+
+  it('passes a list of attachment ids through', () => {
+    expect(parseStartRequest({ prompt: '', attachments: ['a', 'b'] })).toEqual({
+      prompt: '',
+      attachments: ['a', 'b'],
+    });
+    expect(parseStartRequest({ attachments: [] })).toEqual({ attachments: [] });
+    expect(parseStartRequest({ prompt: 'hi', attachments: null })).toEqual({ prompt: 'hi', attachments: [] });
+  });
+
+  it('refuses attachments that are not a short list of ids', () => {
+    for (const attachments of [
+      'a',
+      {},
+      [1],
+      [''],
+      ['a', null],
+      ['x'.repeat(200)],
+      Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) => `id-${i}`),
+    ]) {
+      expect(() => parseStartRequest({ prompt: 'hi', attachments }), JSON.stringify(attachments)).toThrow(
+        HttpError,
+      );
     }
   });
 
@@ -410,5 +444,203 @@ describe('library routes', () => {
     const sent = await call(ctx, ROUTES.libraryPage(id));
     expect(sent.status).toBe(400);
     expect(sent.headers['content-security-policy']).toBe(PAGE_CSP);
+  });
+});
+
+describe('uploads', () => {
+  type Sent = { status: number; headers: Record<string, string | number>; body: string };
+
+  function setup(opts: { off?: boolean; maxUploadBytes?: number } = {}) {
+    const dataDir = mkdtempSync(join(tmpdir(), 'tba-routes-up-'));
+    tempDirs.push(dataDir);
+    const brainRoot = opts.off ? dataDir : mkdtempSync(join(tmpdir(), 'tba-routes-brain-'));
+    if (!opts.off) tempDirs.push(brainRoot);
+    const uploads = createUploadStaging({
+      dataDir: opts.off ? join(brainRoot, 'data') : dataDir,
+      brainRoot,
+      sweepMs: 0,
+      maxUploadBytes: opts.maxUploadBytes,
+    });
+    stagings.push(uploads);
+    const calls: { start: unknown[]; send: unknown[][] } = { start: [], send: [] };
+    const sessions = {
+      start: async (req: unknown) => {
+        calls.start.push(req);
+        return { id: 'chat-1' };
+      },
+      send: async (...args: unknown[]) => {
+        calls.send.push(args);
+      },
+    };
+    const ctx = { uploads, sessions, log: () => {} } as unknown as RouteContext;
+    return { ctx, uploads, calls };
+  }
+
+  async function call(
+    ctx: RouteContext,
+    path: string,
+    opts: { method?: string; headers?: Record<string, string>; body?: string | Buffer } = {},
+  ): Promise<Sent> {
+    const data = opts.body === undefined ? [] : [Buffer.from(opts.body)];
+    const req = Object.assign(Readable.from(data), {
+      method: opts.method ?? 'POST',
+      headers: opts.headers ?? {},
+    });
+    const sent: Sent = { status: 0, headers: {}, body: '' };
+    const res = {
+      headersSent: false,
+      setHeader(name: string, value: string | number) {
+        sent.headers[name.toLowerCase()] = value;
+      },
+      writeHead(status: number, headers: Record<string, string | number> = {}) {
+        sent.status = status;
+        for (const [k, v] of Object.entries(headers)) sent.headers[k.toLowerCase()] = v;
+        res.headersSent = true;
+      },
+      end(body?: string | Buffer) {
+        if (body !== undefined) sent.body = body.toString();
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx,
+    );
+    return sent;
+  }
+
+  const upload = (ctx: RouteContext, name: string | null, body: string, length?: number | null) => {
+    const headers: Record<string, string> = { 'content-type': 'application/octet-stream' };
+    if (name !== null) headers[UPLOAD_NAME_HEADER] = encodeURIComponent(name);
+    const len = length === undefined ? Buffer.byteLength(body) : length;
+    if (len !== null) headers['content-length'] = String(len);
+    return call(ctx, ROUTES.uploads, { headers, body });
+  };
+
+  const json = (s: Sent) => JSON.parse(s.body);
+
+  it('stages a file and answers with what it is, never a path', async () => {
+    const { ctx, uploads } = setup();
+    const sent = await upload(ctx, 'Brief – final.pdf', '%PDF-1.4 x');
+    expect(sent.status).toBe(200);
+    const { upload: info } = json(sent) as UploadResponse;
+    expect(info).toEqual({ id: expect.any(String), name: 'Brief – final.pdf', size: 10, kind: 'document' });
+    expect(sent.body).not.toContain(uploads.root as string);
+    expect(sent.headers['cache-control']).toBe('no-store');
+    expect(uploads.peek([info.id])).toHaveLength(1);
+  });
+
+  it('answers 411 without a length, and 413 with Connection: close over the cap', async () => {
+    const { ctx } = setup({ maxUploadBytes: 10 });
+    const none = await upload(ctx, 'a.txt', 'abc', null);
+    expect(none.status).toBe(411);
+    expect(json(none).error.code).toBe('bad-request');
+    const declared = await upload(ctx, 'a.txt', 'x'.repeat(11));
+    expect(declared.status).toBe(413);
+    expect(declared.headers.connection).toBe('close');
+    expect(json(declared).error).toEqual({
+      code: 'bad-request',
+      message: 'That file is too large to attach. Files can be up to 32 MB.',
+    });
+    // more bytes arrive than were promised
+    const streamed = await upload(ctx, 'a.txt', 'x'.repeat(9), 5);
+    expect(streamed.status).toBe(413);
+    expect(streamed.headers.connection).toBe('close');
+  });
+
+  it('answers 400 for a missing name or a type it will not pass on', async () => {
+    const { ctx } = setup();
+    const noName = await upload(ctx, null, 'abc');
+    expect(noName.status).toBe(400);
+    expect(json(noName).error.code).toBe('bad-request');
+    const exe = await upload(ctx, 'tool.exe', 'abc');
+    expect(exe.status).toBe(400);
+    expect(json(exe).error.message).toBe(
+      "TDS Brain can't pass on .exe files. Attach a document, spreadsheet, slide deck, text file or picture.",
+    );
+  });
+
+  it('refuses a body that is not raw bytes, and anything but POST', async () => {
+    const { ctx } = setup();
+    const asJson = await call(ctx, ROUTES.uploads, {
+      headers: { 'content-type': 'application/json', 'content-length': '2', [UPLOAD_NAME_HEADER]: 'a.txt' },
+      body: '{}',
+    });
+    expect(asJson.status).toBe(415);
+    expect((await call(ctx, ROUTES.uploads, { method: 'GET' })).status).toBe(405);
+  });
+
+  it('answers 409 busy when the folder is full', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'tba-routes-up-'));
+    const brainRoot = mkdtempSync(join(tmpdir(), 'tba-routes-brain-'));
+    tempDirs.push(dataDir, brainRoot);
+    const uploads = createUploadStaging({ dataDir, brainRoot, sweepMs: 0, maxStagedBytes: 4 });
+    stagings.push(uploads);
+    const ctx = { uploads, log: () => {} } as unknown as RouteContext;
+    expect((await upload(ctx, 'a.txt', 'abc')).status).toBe(200);
+    const full = await upload(ctx, 'b.txt', 'abc');
+    expect(full.status).toBe(409);
+    expect(json(full).error.code).toBe('busy');
+  });
+
+  it('refuses plainly with not-allowed when uploads are switched off', async () => {
+    const { ctx } = setup({ off: true });
+    const sent = await upload(ctx, 'a.txt', 'abc');
+    expect(sent.status).toBe(403);
+    expect(json(sent).error.code).toBe('not-allowed');
+    expect(json(sent).error.message).toMatch(/switched off/);
+  });
+
+  it('discards an upload, and is fine with an unknown id', async () => {
+    const { ctx, uploads } = setup();
+    const { upload: info } = json(await upload(ctx, 'a.txt', 'abc')) as UploadResponse;
+    const jsonHeaders = { 'content-type': 'application/json' };
+    const sent = await call(ctx, ROUTES.uploadDiscard(info.id), { headers: jsonHeaders, body: '{}' });
+    expect(sent.status).toBe(200);
+    expect(json(sent)).toEqual({ ok: true });
+    expect(() => uploads.peek([info.id])).toThrow();
+    expect((await call(ctx, ROUTES.uploadDiscard('nope'), { headers: jsonHeaders, body: '{}' })).status).toBe(
+      200,
+    );
+    expect((await call(ctx, ROUTES.uploadDiscard(info.id), { method: 'GET' })).status).toBe(405);
+  });
+
+  it('passes attachments from a new chat and a message to the session manager, and refuses bad shapes', async () => {
+    const { ctx, calls } = setup();
+    const headers = { 'content-type': 'application/json' };
+    const started = await call(ctx, ROUTES.sessions, {
+      headers,
+      body: JSON.stringify({ prompt: '', attachments: ['u1'] }),
+    });
+    expect(started.status).toBe(200);
+    expect(calls.start).toEqual([{ prompt: '', attachments: ['u1'] }]);
+    const sent = await call(ctx, ROUTES.sessionMessages('chat-1'), {
+      headers,
+      body: JSON.stringify({ text: '', attachments: ['u2', 'u3'] }),
+    });
+    expect(sent.status).toBe(200);
+    expect(calls.send).toEqual([['chat-1', '', ['u2', 'u3']]]);
+    await call(ctx, ROUTES.sessionMessages('chat-1'), { headers, body: JSON.stringify({ text: 'hi' }) });
+    expect(calls.send[1]).toEqual(['chat-1', 'hi', []]);
+    await call(ctx, ROUTES.sessionMessages('chat-1'), {
+      headers,
+      body: JSON.stringify({ text: 'hi', attachments: null }),
+    });
+    expect(calls.send[2]).toEqual(['chat-1', 'hi', []]);
+    for (const attachments of ['u1', [3], [''], Array.from({ length: MAX_ATTACHMENTS + 1 }, () => 'x')]) {
+      const bad = await call(ctx, ROUTES.sessionMessages('chat-1'), {
+        headers,
+        body: JSON.stringify({ text: 'hi', attachments }),
+      });
+      expect(bad.status, JSON.stringify(attachments)).toBe(400);
+      const badStart = await call(ctx, ROUTES.sessions, {
+        headers,
+        body: JSON.stringify({ prompt: 'hi', attachments }),
+      });
+      expect(badStart.status).toBe(400);
+    }
+    expect(calls.send).toHaveLength(3);
+    expect(calls.start).toHaveLength(1);
   });
 });

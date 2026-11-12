@@ -27,7 +27,7 @@ describe('Composer keys', () => {
     const { onSend, box } = setup();
     fireEvent.change(box, { target: { value: 'Hello' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    await waitFor(() => expect(onSend).toHaveBeenCalledWith('Hello'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('Hello', []));
   });
 
   it('Shift+Enter makes a new line and does not send', () => {
@@ -55,6 +55,6 @@ describe('Composer keys', () => {
     const skill = { name: 'time', title: 'Log my time' } as never;
     const { onSend } = setup({ skill });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(onSend).toHaveBeenCalledWith('/time'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('/time', []));
   });
 });

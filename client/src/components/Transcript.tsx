@@ -5,6 +5,7 @@ import { Icon } from '../shell/Icon.tsx';
 import { currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
 import { STEP_WORDS } from '../state/steps.ts';
+import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
 function ToolLine({ tool }: { tool: ToolItem }) {
@@ -76,7 +77,12 @@ function itemKey(item: ChatItem): string {
 function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; note: boolean }) {
   switch (item.kind) {
     case 'user':
-      return <div className="msg-user">{item.text}</div>;
+      return (
+        <div className="msg-user">
+          {item.text ? <span>{item.text}</span> : null}
+          {item.attachments?.length ? <SentFiles files={item.attachments} /> : null}
+        </div>
+      );
     case 'assistant':
       return (
         <div className="msg-assistant" data-note={note}>

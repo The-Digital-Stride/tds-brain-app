@@ -52,6 +52,8 @@ export function ChatView() {
   const { state: shell, dispatch } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
+  // Files can be dropped anywhere on the chat column.
+  const column = useRef<HTMLDivElement>(null);
 
   const sessionId = activeChat.kind === 'live' ? activeChat.sessionId : null;
   const chat = sessionId ? (chats[sessionId] ?? initialChatState) : initialChatState;
@@ -88,7 +90,7 @@ export function ChatView() {
   };
 
   return (
-    <div className="chat chat-live">
+    <div className="chat chat-live" ref={column}>
       <SheetBar crumb="Chats" title={title}>
         {/* With no client the chip is left out; the panel's Details says so. */}
         {clientName ? <span className="chip">{clientName}</span> : null}
@@ -188,12 +190,14 @@ export function ChatView() {
             autoFocus={false}
             focusSignal={composerFocus}
             attention={attentionFor(state)}
-            onSend={async (text) => {
+            dropZone={column}
+            attachDisabled={state === 'closed'}
+            onSend={async (text, uploadIds) => {
               if (isClearCommand(text)) {
                 // "Start afresh": handled here, never sent to Claude.
                 return needsCloseConfirm(state) ? false : closeChat(sessionId);
               }
-              return send(text, null);
+              return send(text, null, uploadIds);
             }}
           />
         </div>

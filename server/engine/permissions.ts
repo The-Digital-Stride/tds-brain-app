@@ -149,7 +149,7 @@ export const LONG_COMMAND_WARNING = 'This is a long command. Scroll to the end b
 const LONG_COMMAND_CHARS = 600;
 const LONG_COMMAND_LINES = 8;
 
-/** The brain root as written and as the disk resolves it (e.g. /tmp vs /private/tmp on macOS). */
+/** A root as written and as the disk resolves it (e.g. /tmp vs /private/tmp on macOS). */
 function brainRoots(brainRoot: string): string[] {
   const roots = [resolve(brainRoot)];
   try {
@@ -162,12 +162,20 @@ function brainRoots(brainRoot: string): string[] {
 }
 
 /**
- * A path inside the brain folder is shown relative to it; one outside keeps its full (resolved) path.
- * Resolving first means `brain/../elsewhere` cannot pass as inside.
+ * A path inside the brain folder is shown relative to it; one in the app's attachments folder by its
+ * file name (decision 10); one anywhere else keeps its full (resolved) path. Resolving first means
+ * `brain/../elsewhere` cannot pass as inside.
  */
-function placePath(p: string, roots: string[]): { shown: string; outside: boolean } {
+function placePath(p: string, roots: string[], uploads: string[]): { shown: string; outside: boolean } {
   const first = roots[0] ?? '/';
   const full = isAbsolute(p) ? resolve(p) : resolve(first, p);
+  for (const root of uploads) {
+    if (full === root || full.startsWith(root + sep)) {
+      const parts = relative(root, full).split(sep).filter(Boolean);
+      const name = parts.length >= 2 ? parts[parts.length - 1] : null;
+      return { shown: name ? `Attached file: ${name}` : 'Attached files', outside: false };
+    }
+  }
   for (const root of roots) {
     if (full === root) return { shown: '.', outside: false };
     if (full.startsWith(root + sep)) return { shown: relative(root, full), outside: false };
@@ -180,6 +188,8 @@ export interface PermissionCardContext {
   blockedPath?: string;
   /** The brain folder: files inside it are shown relative to it, files outside get a warning. */
   brainRoot: string;
+  /** The app's attachments folder (a real path), or null when uploads are off. */
+  uploadsRoot?: string | null;
 }
 
 export interface PermissionCard {
@@ -194,9 +204,10 @@ export interface PermissionCard {
 /** The card's plain-text title, detail and warning. Nothing here is rendered as markdown or HTML. */
 export function permissionCard(toolName: string, input: Rec, ctx: PermissionCardContext): PermissionCard {
   const roots = brainRoots(ctx.brainRoot);
+  const uploads = ctx.uploadsRoot ? brainRoots(ctx.uploadsRoot) : [];
   let outside = false;
   const place = (p: string): string => {
-    const r = placePath(p, roots);
+    const r = placePath(p, roots, uploads);
     if (r.outside) outside = true;
     return r.shown;
   };

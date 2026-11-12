@@ -236,6 +236,75 @@ describe('changing requests', () => {
   });
 });
 
+describe('file uploads (octet-stream on exactly POST /api/uploads)', () => {
+  const upload = (
+    over: { method?: string; path?: string; headers?: Record<string, string | undefined> } = {},
+  ) =>
+    req({
+      method: over.method ?? 'POST',
+      path: over.path ?? ROUTES.uploads,
+      headers: { origin: ORIGIN, 'content-type': 'application/octet-stream', ...over.headers },
+    });
+
+  it('allows raw bytes on the upload route with the cookie and the app’s own Origin', () => {
+    expect(checkRequest(upload(), ctx)).toEqual({ action: 'allow' });
+    expect(checkRequest(upload({ headers: { 'sec-fetch-site': 'same-origin' } }), ctx)).toEqual({
+      action: 'allow',
+    });
+  });
+
+  it('refuses octet-stream on every other changing path and method', () => {
+    for (const path of [
+      '/api/sessions',
+      '/api/uploads/',
+      '/api/uploads/x',
+      ROUTES.uploadDiscard('abc'),
+      '/api/uploadsx',
+      '/api/prefs',
+      '/API/uploads',
+    ]) {
+      expect(checkRequest(upload({ path }), ctx), path).toMatchObject({ action: 'reject', status: 415 });
+    }
+    expect(checkRequest(upload({ method: 'PUT' }), ctx)).toMatchObject({ action: 'reject', status: 415 });
+  });
+
+  it('still refuses other content types on the upload route', () => {
+    for (const type of [
+      'text/plain',
+      'multipart/form-data; boundary=x',
+      'application/x-www-form-urlencoded',
+    ]) {
+      expect(checkRequest(upload({ headers: { 'content-type': type } }), ctx), type).toMatchObject({
+        action: 'reject',
+        status: 415,
+      });
+    }
+    expect(checkRequest(upload({ headers: { 'content-type': undefined } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 415,
+    });
+  });
+
+  it('refuses a cross-site, cookie-less or foreign-Origin upload', () => {
+    expect(checkRequest(upload({ headers: { 'sec-fetch-site': 'cross-site' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(checkRequest(upload({ headers: { cookie: undefined } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 401,
+    });
+    expect(checkRequest(upload({ headers: { origin: 'http://evil.example' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(checkRequest(upload({ headers: { origin: undefined } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+  });
+});
+
 describe('/auth exchange (A15: single-use, 60-second codes)', () => {
   function codes(start = 1_000_000) {
     let t = start;

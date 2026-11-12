@@ -1,4 +1,5 @@
 import { type ComponentType, Suspense, useRef } from 'react';
+import { useBlockStrayDrops } from './components/Attachments.tsx';
 import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
 import { SettingsView } from './components/SettingsView.tsx';
@@ -174,6 +175,7 @@ function Root() {
 }
 
 export function App() {
+  useBlockStrayDrops();
   return (
     <StoreProvider>
       <Root />

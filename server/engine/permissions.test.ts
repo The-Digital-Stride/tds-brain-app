@@ -245,3 +245,47 @@ describe('permissionCard', () => {
     expect(card('Bash', { command: `echo ${'x'.repeat(20_001)}` }).refuse).toBe(true);
   });
 });
+
+describe('attached files (decision 10)', () => {
+  const UPLOADS = '/d/data/uploads';
+  const withUploads = (tool: string, input: Record<string, unknown>, ctx: { blockedPath?: string } = {}) =>
+    permissionCard(tool, input, { ...ctx, brainRoot: BRAIN, uploadsRoot: UPLOADS });
+
+  it('names a file in the uploads folder plainly, with no outside-the-brain warning', () => {
+    expect(withUploads('Read', { file_path: `${UPLOADS}/1234/report.pdf` })).toMatchObject({
+      title: 'Claude wants to read a file',
+      detail: 'Attached file: report.pdf',
+      warning: null,
+    });
+    expect(withUploads('Grep', { pattern: 'x', path: `${UPLOADS}/1234` })).toMatchObject({
+      detail: 'x\nAttached files',
+      warning: null,
+    });
+    const bash = withUploads('Bash', { command: 'cp a b' }, { blockedPath: `${UPLOADS}/1234/a b.png` });
+    expect(bash.detail).toBe('cp a b\n\nPath: Attached file: a b.png');
+    expect(bash.warning).toBeNull();
+  });
+
+  it('still warns about a path that only looks like the uploads folder, or escapes it', () => {
+    expect(withUploads('Read', { file_path: `${UPLOADS}-evil/1234/x.pdf` }).warning).toBe(
+      'This file is outside the brain folder.',
+    );
+    expect(withUploads('Read', { file_path: `${UPLOADS}/../secret.json` })).toMatchObject({
+      detail: '/d/data/secret.json',
+      warning: 'This file is outside the brain folder.',
+    });
+  });
+
+  it('is unchanged without an uploads folder', () => {
+    expect(
+      permissionCard(
+        'Read',
+        { file_path: `${UPLOADS}/1234/report.pdf` },
+        { brainRoot: BRAIN, uploadsRoot: null },
+      ),
+    ).toMatchObject({
+      detail: `${UPLOADS}/1234/report.pdf`,
+      warning: 'This file is outside the brain folder.',
+    });
+  });
+});

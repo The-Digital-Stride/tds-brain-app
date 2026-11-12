@@ -17,6 +17,7 @@ import { createSessionManager, type EngineFns } from './engine/session-manager.t
 import { AUTH_PING_PATH, codeProof, createAuthCodes, pingProof, safeEqual } from './http/security.ts';
 import { createAppServer } from './http/server.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createUploadStaging } from './uploads/staging.ts';
 
 const noOpen = process.argv.slice(2).includes('--no-open');
 
@@ -105,6 +106,9 @@ const brain = createBrainReaders(config.brainPath, {
 });
 const thumbs = createThumbnailer(config.dataDir, { brainRoot: config.brainPath, quickLook });
 const store = createAppStore(config.dataDir);
+// Off (root null) when the data folder and the brain overlap; it logs why. It sweeps only once
+// started, after `listen`: a second `pnpm start` that finds the port taken must leave it alone.
+const uploads = createUploadStaging({ dataDir: config.dataDir, brainRoot: config.brainPath, log });
 const sessions = createSessionManager({
   brain,
   brainRoot: config.brainPath,
@@ -112,6 +116,8 @@ const sessions = createSessionManager({
   engine,
   env: process.env,
   log,
+  uploads,
+  dataDir: config.dataDir,
 });
 
 const app = createAppServer({
@@ -124,12 +130,14 @@ const app = createAppServer({
   store,
   sessions,
   thumbs,
+  uploads,
   engineHealth,
   log,
 });
 
 app.server.on('error', (err: NodeJS.ErrnoException) => {
   app.stop();
+  uploads.close();
   if (err.code === 'EADDRINUSE') {
     void codeFromRunningServer().then((code) => {
       if (code) {
@@ -151,6 +159,7 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
 });
 
 app.server.listen(config.port, APP_HOST, () => {
+  uploads.start();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
   void brain.health().then(
@@ -170,6 +179,7 @@ async function shutdown(): Promise<void> {
   log('Closing chats and stopping.');
   setTimeout(() => process.exit(1), 20_000).unref();
   app.stop();
+  uploads.close();
   app.server.close();
   await sessions.closeAll().catch(() => {});
   app.server.closeAllConnections();

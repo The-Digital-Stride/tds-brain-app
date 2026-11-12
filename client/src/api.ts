@@ -15,8 +15,10 @@ import type {
   StartSessionRequest,
   StartSessionResponse,
   TodoList,
+  UploadInfo,
+  UploadResponse,
 } from '../../shared/contract.ts';
-import { ROUTES } from '../../shared/contract.ts';
+import { ROUTES, UPLOAD_NAME_HEADER } from '../../shared/contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
 export class ApiFailure extends Error {
@@ -34,14 +36,23 @@ export class ApiFailure extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: 'GET' | 'POST' | 'PUT',
+  path: string,
+  body?: unknown,
+  raw?: { body: BodyInit; headers: Record<string, string> },
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: method === 'GET' ? { Accept: 'application/json' } : { 'Content-Type': 'application/json' },
-      body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      headers: raw
+        ? raw.headers
+        : method === 'GET'
+          ? { Accept: 'application/json' }
+          : { 'Content-Type': 'application/json' },
+      body: raw ? raw.body : method === 'GET' ? undefined : JSON.stringify(body ?? {}),
     });
   } catch {
     throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
@@ -71,8 +82,11 @@ export const api = {
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),
   startSession: (req: StartSessionRequest) => request<StartSessionResponse>('POST', ROUTES.sessions, req),
-  sendMessage: (id: string, text: string) =>
-    request<OkResponse>('POST', ROUTES.sessionMessages(id), { text } satisfies SendMessageRequest),
+  sendMessage: (id: string, text: string, attachments?: string[]) =>
+    request<OkResponse>('POST', ROUTES.sessionMessages(id), {
+      text,
+      ...(attachments?.length ? { attachments } : {}),
+    } satisfies SendMessageRequest),
   answerPermission: (id: string, reply: PermissionReply) =>
     request<OkResponse>('POST', ROUTES.sessionPermission(id), reply),
   answerQuestion: (id: string, reply: QuestionReply) =>
@@ -83,6 +97,30 @@ export const api = {
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
 };
+
+/** Sends one file's bytes to the app's staging folder. It goes with a message later, by its id. */
+export async function uploadFile(file: File | Blob, name: string): Promise<UploadInfo> {
+  const { upload } = await request<UploadResponse>('POST', ROUTES.uploads, undefined, {
+    body: file,
+    headers: { 'Content-Type': 'application/octet-stream', [UPLOAD_NAME_HEADER]: encodeURIComponent(name) },
+  });
+  return upload;
+}
+
+/** Deletes an upload that was never sent. `keepalive` lets it finish while the page is going away. */
+export async function discardUpload(id: string, keepalive = false): Promise<void> {
+  try {
+    await fetch(ROUTES.uploadDiscard(id), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      keepalive,
+    });
+  } catch {
+    // The staging folder sweeps unsent files anyway.
+  }
+}
 
 /** The URL for the one event stream a tab holds. */
 export function streamUrl(sessionId: string | null, after: number): string {

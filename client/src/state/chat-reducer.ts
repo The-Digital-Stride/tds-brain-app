@@ -1,4 +1,10 @@
-import type { AskQuestion, ChatEvent, SequencedEvent, SessionState } from '../../../shared/contract.ts';
+import type {
+  AskQuestion,
+  AttachmentInfo,
+  ChatEvent,
+  SequencedEvent,
+  SessionState,
+} from '../../../shared/contract.ts';
 import { attentionFor } from '../../../shared/contract.ts';
 
 export type Outcome = 'allowed' | 'denied' | 'answered' | 'cancelled';
@@ -27,6 +33,7 @@ export interface UserItem {
   kind: 'user';
   id: string;
   text: string;
+  attachments?: AttachmentInfo[];
 }
 
 export interface PermissionItem {
@@ -160,7 +167,15 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
       next.sdkSessionId = event.sdkSessionId;
       return next;
     case 'user-message': {
-      next.items = [...state.items, { kind: 'user', id: event.messageId, text: event.text }];
+      next.items = [
+        ...state.items,
+        {
+          kind: 'user',
+          id: event.messageId,
+          text: event.text,
+          ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+        },
+      ];
       return next;
     }
     case 'assistant-delta':

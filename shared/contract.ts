@@ -104,6 +104,21 @@ export interface BrainHealth {
 }
 
 /**
+ * When the brain last synced with GitHub. The desktop sync app runs `git fetch` about once a
+ * minute, and git rewrites `.git/FETCH_HEAD` on every fetch, even when nothing new came down,
+ * so that file's modified time is the last sync.
+ */
+export interface SyncStatus {
+  /** ISO timestamp, or null when the brain has never fetched or is not a git folder. */
+  lastSync: string | null;
+}
+
+/** Older than this, the rail shows the last sync in red. */
+export const SYNC_STALE_MS = 5 * 60_000;
+/** How often the page asks for the last sync time. */
+export const SYNC_POLL_MS = 30_000;
+
+/**
  * Everything the app reads from the brain folder, plus its ONE direct write.
  * Implemented in `server/brain/index.ts` as `createBrainReaders(root: string): BrainReaders`.
  * Nothing here may import or execute brain code in-process; brain tools are run as
@@ -152,6 +167,8 @@ export interface BrainReaders {
    * the brain that the rules allow. The browser never sends a path, only ids.
    */
   libraryFile(id: string): Promise<LibraryFile | null>;
+  /** When the brain last synced (see SyncStatus). Never throws. */
+  sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
   watch(onChange: (area: BrainArea) => void): () => void;
 }
@@ -687,6 +704,8 @@ export const ROUTES = {
   todos: '/api/todos',
   completeTodo: '/api/todos/complete',
   prefs: '/api/prefs',
+  /** `GET`: SyncStatus. `no-store`. */
+  sync: '/api/brain/sync',
   sessions: '/api/sessions',
   sessionMessages: (id: string) => `/api/sessions/${encodeURIComponent(id)}/messages`,
   sessionPermission: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permission`,

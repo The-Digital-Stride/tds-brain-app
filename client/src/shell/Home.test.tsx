@@ -7,6 +7,8 @@ const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
   todos: vi.fn(),
   sessions: vi.fn(),
+  // The rail's last-sync stamp asks for this.
+  sync: vi.fn(async () => ({ lastSync: null })),
   startSession: vi.fn(),
   close: vi.fn(),
   updatePrefs: vi.fn(),

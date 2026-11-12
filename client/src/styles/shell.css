@@ -194,6 +194,66 @@
   color: var(--iron);
 }
 
+/* The last sync with GitHub, at the foot of the rail. Red once it is over five minutes old. */
+.rail-sync {
+  position: relative;
+  /* A hairline above, so it reads as the app's status rather than a line about the person. */
+  margin: 4px 0 0;
+  padding: 8px 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--iron);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rail-sync[data-wide="false"] {
+  padding: 8px 0 0;
+  font-size: 10px;
+  text-align: center;
+}
+.rail-sync-shown {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+/* The longest line, "Not synced since 23:59, 30 Sept" in bold, can be wider than the rail: wrap it,
+   keeping the time and date together. */
+.rail-sync[data-wide="true"] {
+  white-space: normal;
+}
+.rail-sync-when {
+  white-space: nowrap;
+}
+.rail-sync[data-wide="false"] .rail-sync-shown {
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.rail-sync-dot {
+  width: 7px;
+  height: 7px;
+  /* Centred on the first line of text. */
+  margin-top: 4px;
+  background: var(--ok);
+}
+.rail-sync[data-wide="false"] .rail-sync-dot {
+  margin: 0 0 2px;
+}
+.rail-sync[data-stale="true"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+.rail-sync[data-stale="true"] .rail-sync-dot {
+  background: var(--danger);
+}
+/* High contrast modes drop background colours: draw the dot's edge so it still shows. */
+@media (forced-colors: active) {
+  .rail-sync-dot {
+    border: 1px solid CanvasText;
+  }
+}
+
 /* Names for an icons-only rail, on hover and on keyboard focus. */
 .rail [data-tip]::after {
   content: attr(data-tip);

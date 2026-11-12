@@ -3,7 +3,13 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppEvent, StreamFrame } from '../../shared/contract.ts';
 
-const api = vi.hoisted(() => ({ bootstrap: vi.fn(), todos: vi.fn(), sessions: vi.fn() }));
+const api = vi.hoisted(() => ({
+  bootstrap: vi.fn(),
+  todos: vi.fn(),
+  sessions: vi.fn(),
+  // The rail's last-sync stamp asks for this.
+  sync: vi.fn(async () => ({ lastSync: null })),
+}));
 vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
 
 class FakeEventSource {

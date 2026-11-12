@@ -178,6 +178,22 @@ export type SheetNoticesProps = Record<string, never>;
  * `client/src/shell/words.ts`. Wording shared by the rail, drawers, Home, palette and panel, so a
  * status or a date reads the same everywhere. (Moved from Sidebar, Todos and HistoryView.)
  */
+/** What the rail says about the brain's last sync (UK English, local time). */
+export interface SyncWords {
+  /** Older than SYNC_STALE_MS, or never synced: shown in red. A time ahead of the clock is not stale. */
+  stale: boolean;
+  /** "11:24", or '' when it never synced. */
+  time: string;
+  /** "12 Nov", or '' when it never synced. */
+  date: string;
+  /** The words before the time: "Synced", "Not synced since", or "No sync found" (no time follows). */
+  lead: string;
+  /** One line for the wide rail and the icons-only tooltip: "Synced 11:24, 12 Nov", "Not synced since 11:24, 12 Nov" or "No sync found". */
+  line: string;
+  /** A full sentence for screen readers, with what to do when stale. */
+  spoken: string;
+}
+
 export interface Words {
   /** A chat's state in words: "Working", "Needs your answer", "Ready for you", "Stopped by a problem", "Ended". */
   STATE_WORDS: Record<LiveSession['state'], string>;
@@ -191,6 +207,8 @@ export interface Words {
   todoChatDraft: (todo: TodoItem) => string;
   /** "11 Nov, 16:42" (en-GB), or '' when the date can't be read. */
   whenWords: (iso: string) => string;
+  /** The rail's last-sync stamp. See `SyncWords`. `now` is milliseconds since 1970. */
+  syncWords: (lastSync: string | null, now: number) => SyncWords;
   /** The person's pinned skills and the ones used often, as `SkillInfo`, unknown names dropped. */
   starterSkills: (boot: {
     skills: SkillInfo[];

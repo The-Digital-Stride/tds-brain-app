@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -127,6 +127,52 @@ describe('POST /api/todos/complete', () => {
     expect(sent.status).toBe(403);
     expect(existsSync(join(root, 'todo', TODO))).toBe(true);
     expect(existsSync(join(root, 'todo', 'done', TODO))).toBe(false);
+  });
+});
+
+describe('GET /api/brain/sync', () => {
+  async function call(path: string, method = 'GET') {
+    const root = copyFixture();
+    mkdirSync(join(root, '.git'), { recursive: true });
+    const when = new Date('2026-11-12T11:24:44.000Z');
+    writeFileSync(join(root, '.git', 'FETCH_HEAD'), 'abc\n');
+    utimesSync(join(root, '.git', 'FETCH_HEAD'), when, when);
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number, headers: Record<string, unknown> = {}) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    const ctx = { brain: createBrainReaders(root), log: () => {} };
+    try {
+      await handleApi(
+        req as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+        new URL(`http://127.0.0.1:3877${path}`),
+        ctx as unknown as RouteContext,
+      );
+    } catch (err) {
+      if (err instanceof HttpError) sent.status = err.status;
+      else throw err;
+    }
+    return sent;
+  }
+
+  it('says when the brain last synced, never cached', async () => {
+    const sent = await call(ROUTES.sync);
+    expect(sent.status).toBe(200);
+    expect(sent.headers['Cache-Control']).toBe('no-store');
+    expect(JSON.parse(sent.body)).toEqual({ lastSync: '2026-11-12T11:24:44.000Z' });
+  });
+
+  it('only answers GET', async () => {
+    expect((await call(ROUTES.sync, 'POST')).status).toBe(405);
   });
 });
 

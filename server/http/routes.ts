@@ -23,6 +23,7 @@ import {
   type QuestionReply,
   ROUTES,
   type StartSessionRequest,
+  type SyncStatus,
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
@@ -603,6 +604,13 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (path === '/api/bootstrap') {
     if (method !== 'GET') throw methodNotAllowed();
     sendJson(res, 200, await bootstrap(ctx));
+    return;
+  }
+
+  if (path === '/api/brain/sync') {
+    if (method !== 'GET') throw methodNotAllowed();
+    const body: SyncStatus = await safe(ctx.brain.sync(), { lastSync: null });
+    sendJson(res, 200, body);
     return;
   }
 

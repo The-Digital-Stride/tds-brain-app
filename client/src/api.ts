@@ -14,6 +14,7 @@ import type {
   SessionList,
   StartSessionRequest,
   StartSessionResponse,
+  SyncStatus,
   TodoList,
   UploadInfo,
   UploadResponse,
@@ -77,6 +78,7 @@ async function request<T>(
 export const api = {
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
+  sync: () => request<SyncStatus>('GET', ROUTES.sync),
   completeTodo: (id: string) =>
     request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),

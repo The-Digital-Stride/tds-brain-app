@@ -8,6 +8,7 @@ import type { DrawerName, IconName } from './contract.ts';
 import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
+import { SyncStamp } from './SyncStamp.tsx';
 import { chatsRailLabel, initials, ROLE_WORDS } from './words.ts';
 
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
@@ -190,6 +191,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           </span>
         )}
       </div>
+      <SyncStamp wide={wide} />
     </nav>
   );
 }

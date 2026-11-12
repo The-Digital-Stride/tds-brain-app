@@ -6,6 +6,7 @@ import {
   placeName,
   STATE_WORDS,
   starterSkills,
+  syncWords,
   todoChatDraft,
   todoPlaces,
   whenWords,
@@ -130,5 +131,57 @@ describe('placeName and todoPlaces', () => {
   });
   it('says a place once when the client and the project are the same', () => {
     expect(todoPlaces(todo('acme', 'acme'), clients)).toEqual(['Acme Heating']);
+  });
+});
+
+describe('syncWords', () => {
+  const at = new Date(2026, 10, 12, 11, 24, 44);
+  const iso = at.toISOString();
+  const later = (ms: number) => at.getTime() + ms;
+
+  it('shows the local time and date, not stale within five minutes', () => {
+    const w = syncWords(iso, later(4 * 60_000));
+    expect(w).toMatchObject({
+      stale: false,
+      time: '11:24',
+      date: '12 Nov',
+      lead: 'Synced',
+      line: 'Synced 11:24, 12 Nov',
+    });
+    expect(w.spoken).toBe('The brain last synced at 11:24 on 12 Nov.');
+  });
+
+  it('is still fresh at exactly five minutes, and stale just after', () => {
+    expect(syncWords(iso, later(5 * 60_000)).stale).toBe(false);
+    const w = syncWords(iso, later(5 * 60_000 + 1));
+    expect(w.stale).toBe(true);
+    expect(w.lead).toBe('Not synced since');
+    expect(w.line).toBe('Not synced since 11:24, 12 Nov');
+    expect(w.spoken).toBe(
+      `The brain has not synced since 11:24 on 12 Nov, 5 minutes ago. It normally syncs every minute, so check you're online and Brain Connect is running.`,
+    );
+  });
+
+  it('counts longer gaps in hours and days', () => {
+    expect(syncWords(iso, later(60 * 60_000)).spoken).toContain(', 1 hour ago.');
+    expect(syncWords(iso, later(3 * 60 * 60_000)).spoken).toContain(', 3 hours ago.');
+    expect(syncWords(iso, later(50 * 60 * 60_000)).spoken).toContain(', 2 days ago.');
+  });
+
+  it('is not stale when the sync time is ahead of the clock', () => {
+    expect(syncWords(iso, later(-60_000)).stale).toBe(false);
+  });
+
+  it('is stale with nothing to show when it never synced or the time cannot be read', () => {
+    for (const bad of [null, '', 'not a date']) {
+      expect(syncWords(bad, at.getTime())).toEqual({
+        stale: true,
+        time: '',
+        date: '',
+        lead: 'No sync found',
+        line: 'No sync found',
+        spoken: "The app has not seen the brain sync yet. Check you're online and Brain Connect is running.",
+      });
+    }
   });
 });

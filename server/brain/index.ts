@@ -4,6 +4,7 @@ import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
+import { createSyncReader } from './sync.ts';
 import { completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { watchBrain } from './watch.ts';
@@ -29,6 +30,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     dataDir: deps.dataDir ?? null,
     docThumbs: deps.docThumbs ?? false,
   });
+  const syncReader = createSyncReader(root);
   return {
     root,
     health: () => checkHealth(root),
@@ -45,6 +47,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     libraryScopes: () => library.scopes(),
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
+    sync: () => syncReader.read(),
     watch: (onChange) =>
       watchBrain(root, onChange, {
         onLibraryChange: (rel, folder) => library.changed(rel, folder),

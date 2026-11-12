@@ -238,7 +238,7 @@ describe('signed-out page (decision 6c)', () => {
     expect(r.body).toContain('<meta http-equiv="refresh" content="5">');
     expect(r.body).toContain('<h1>Sign in to TDS Brain</h1>');
     expect(r.body).toContain('<title>Sign in to TDS Brain</title>');
-    expect(r.body).toContain('<link rel="icon" href="/icons/mark.svg">');
+    expect(r.body).toContain('<link rel="icon" href="/icons/brain.svg">');
     expectSecurityHeaders(r);
   });
 

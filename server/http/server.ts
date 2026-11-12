@@ -65,7 +65,7 @@ function plainPage(heading: string, paragraphs: readonly string[], options: Plai
       : `<meta http-equiv="refresh" content="${refreshSeconds}${refreshUrl ? `; url=${escapeHtml(refreshUrl)}` : ''}">`;
   return `<!doctype html>
 <html lang="en-GB">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${refresh}<title>${escapeHtml(heading)}</title><link rel="icon" href="/icons/mark.svg"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${refresh}<title>${escapeHtml(heading)}</title><link rel="icon" href="/icons/brain.svg"></head>
 <body>
 <main>
 <h1>${escapeHtml(heading)}</h1>

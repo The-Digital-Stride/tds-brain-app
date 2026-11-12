@@ -106,7 +106,7 @@ describe('service worker', () => {
     expect(stores.size).toBe(0);
   });
 
-  it.each(['/offline.css', '/icons/mark.svg'])(
+  it.each(['/offline.css', '/icons/brain.svg'])(
     'serves the cached %s when the server is down',
     async (path) => {
       const { handlers } = setup(down);
@@ -178,7 +178,7 @@ describe('service worker', () => {
   it('caches exactly the three offline files on install, then skips waiting', async () => {
     const { handlers, added, stores, state } = setup(down);
     await dispatch(handlers.install).waited;
-    expect(added).toEqual([['/offline.html', '/offline.css', '/icons/mark.svg']]);
+    expect(added).toEqual([['/offline.html', '/offline.css', '/icons/brain.svg']]);
     expect(stores.size).toBe(1);
     expect(state.skipped).toBe(true);
   });
@@ -187,7 +187,7 @@ describe('service worker', () => {
     const { handlers, stores, state } = setup(down, ['tds-brain-offline-v0', 'something-else']);
     await dispatch(handlers.install).waited;
     await dispatch(handlers.activate).waited;
-    expect([...stores.keys()]).toEqual(['tds-brain-offline-v2']);
+    expect([...stores.keys()]).toEqual(['tds-brain-offline-v3']);
     expect(state.claimed).toBe(true);
   });
 });

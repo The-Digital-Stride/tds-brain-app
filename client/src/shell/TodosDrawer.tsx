@@ -9,7 +9,7 @@ import {
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { groupTodos } from '../state/todo-groups.ts';
-import { type ChangeTodosResult, useStore } from '../store.tsx';
+import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
@@ -34,8 +34,61 @@ interface Editing {
   remove: (todo: TodoItem) => Promise<void>;
 }
 
-function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null }) {
-  const { boot, completeTodo, newChat, sessions, activeChat, openChat, view } = useStore();
+const UNDO_VERB: Record<HeldTodo['kind'], string> = {
+  tick: 'ticking off',
+  delete: 'deleting',
+  assignee: 'passing on',
+};
+
+/** A to-do whose tick, delete or pass-on is waiting out its undo time. Nothing is in the brain yet. */
+function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUndo: () => void }) {
+  const undo = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // preventScroll: a mouse tick shouldn't jump the list.
+    if (focus) undo.current?.focus({ preventScroll: true });
+  }, [focus]);
+  const gone = held.kind !== 'assignee';
+  return (
+    <li className="todo todo-held" data-held={held.kind}>
+      <span className="todo-bullet" aria-hidden="true" />
+      <span className="line-text">
+        <span className={gone ? 'line-title todo-gone' : 'line-title'}>{held.title}</span>{' '}
+        <span className="line-meta">{held.label}</span>
+      </span>
+      {held.sending ? (
+        <span className="todo-sending">Sending…</span>
+      ) : (
+        <button
+          type="button"
+          className="btn todo-undo"
+          ref={undo}
+          aria-label={`Undo ${UNDO_VERB[held.kind]} "${held.title}"`}
+          onClick={onUndo}
+        >
+          Undo
+        </button>
+      )}
+      {held.sending ? null : (
+        <span
+          className="todo-countdown"
+          aria-hidden="true"
+          style={{ animationDuration: `${TODO_UNDO_MS}ms` }}
+        />
+      )}
+    </li>
+  );
+}
+
+function TodoRow({
+  todo,
+  editing,
+  onTick,
+}: {
+  todo: TodoItem;
+  editing: Editing | null;
+  onTick: (todo: TodoItem) => void;
+}) {
+  const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
   const chat = sessions ? chatForTodo(todo.id, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
@@ -88,8 +141,9 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
             type="checkbox"
             className="tick"
             aria-label={`Mark "${todo.title}" as done`}
+            data-tick-for={todo.id}
             checked={false}
-            onChange={() => void completeTodo(todo.id)}
+            onChange={() => onTick(todo)}
           />
         </label>
       ) : (
@@ -131,7 +185,10 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
 }
 
 export function TodosDrawer() {
-  const { todos, boot, changeTodos, openView } = useStore();
+  const { todos, boot, changeTodos, openView, heldTodos, holdTodo, undoHeld } = useStore();
+  const [focusUndo, setFocusUndo] = useState<string | null>(null);
+  // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
+  const [undoMessageFor, setUndoMessageFor] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('mine');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,6 +197,7 @@ export function TodosDrawer() {
   const [message, setMessageText] = useState('');
   const [isError, setIsError] = useState(false);
   const setMessage = (text: string, error = false) => {
+    setUndoMessageFor(null);
     setMessageText(text);
     setIsError(error);
   };
@@ -150,20 +208,55 @@ export function TodosDrawer() {
   // After the editor closes, put the keyboard back on the row's edit button (or the Add button).
   useEffect(() => {
     if (refocus === null) return;
-    if (refocus === '') addButton.current?.focus();
+    if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
     else {
-      const pencil = document.querySelector<HTMLElement>(`[data-edit-for="${CSS.escape(refocus)}"]`);
+      const id = CSS.escape(refocus);
+      const row = document.querySelector<HTMLElement>(`[data-edit-for="${id}"], [data-tick-for="${id}"]`);
       // The row may have left the list (passed on) or sit in a closed group: fall back to Add, then the list.
-      (pencil ?? addButton.current ?? scrollRef.current)?.focus();
+      (row ?? addButton.current ?? scrollRef.current)?.focus();
     }
     setRefocus(null);
   }, [refocus]);
+
+  // A held change was sent and its row went: if the keyboard was on its Undo button, keep it in the drawer,
+  // and drop a "You can undo this" line that is no longer true.
+  // The same when its Undo turns into "Sending…".
+  const heldCount = heldTodos.length;
+  const sendingCount = heldTodos.filter((h) => h.sending).length;
+  const lastHeld = useRef({ heldCount, sendingCount });
+  useEffect(() => {
+    const was = lastHeld.current;
+    lastHeld.current = { heldCount, sendingCount };
+    if (heldCount >= was.heldCount && sendingCount <= was.sendingCount) return;
+    if (undoMessageFor !== null && !heldTodos.some((h) => h.todoId === undoMessageFor && !h.sending)) {
+      setUndoMessageFor(null);
+      setMessageText('');
+    }
+    if (document.activeElement === null || document.activeElement === document.body)
+      (addButton.current ?? scrollRef.current)?.focus();
+  }, [heldCount, sendingCount, heldTodos, undoMessageFor]);
 
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
   const items = tab === 'mine' ? todos.mine : todos.open;
   const groups = groupTodos(items, todayIso());
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';
+  const heldById = new Map(heldTodos.map((h) => [h.todoId, h]));
+
+  const hold = (held: HeldTodo) => {
+    holdTodo(held);
+    setFocusUndo(held.todoId);
+    setMessage(`${held.label}. You can undo this for ${TODO_UNDO_MS / 1000} seconds.`);
+    setUndoMessageFor(held.todoId);
+  };
+  const tick = (todo: TodoItem) =>
+    hold({ todoId: todo.id, title: todo.title, kind: 'tick', label: 'Ticked off', action: null });
+  const undo = (held: HeldTodo) => {
+    undoHeld(held.todoId);
+    setFocusUndo(null);
+    setMessage('Undone.');
+    setRefocus(held.todoId);
+  };
 
   const run = async (actions: TodoAction[]) => {
     setBusy(true);
@@ -203,34 +296,43 @@ export function TodosDrawer() {
           setRefocus(id);
         },
         save: async (todo, actions) => {
-          const result = await run(actions);
+          // Title, details and date are saved now (they can simply be edited again). Passing the to-do
+          // on is held with an Undo, because it leaves this list and can't be edited back from here.
+          const passed = actions.find((a) => a.kind === 'assignee');
+          const now = actions.filter((a) => a.kind !== 'assignee');
+          const result = now.length > 0 ? await run(now) : { done: 0 };
           if (result.error) {
             if (result.done > 0) {
               setMessage('Some changes were saved, but not all. Check the to-do and save again.', true);
             } else setMessage(result.error.message, true);
             return result;
           }
-          const passed = actions.find((a) => a.kind === 'assignee');
+          setEditingId(null);
           if (passed?.kind === 'assignee') {
             const who = todos.team.find((m) => m.slug === passed.assignee)?.name;
-            setMessage(
+            const label =
               passed.assignee === null
-                ? 'Now open to anyone.'
+                ? 'Made open to anyone'
                 : passed.assignee === me
-                  ? 'Saved.'
-                  : `Passed to ${who ?? passed.assignee}. It's on their list now.`,
-            );
-          } else setMessage('Saved.');
-          setEditingId(null);
-          setRefocus(todo.id);
-          return result;
+                  ? 'Assigned to you'
+                  : `Passed to ${who ?? passed.assignee}`;
+            const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
+            hold({ todoId: todo.id, title, kind: 'assignee', label, action: passed });
+          } else {
+            setMessage('Saved.');
+            setRefocus(todo.id);
+          }
+          return { done: result.done + (passed ? 1 : 0) };
         },
         remove: async (todo) => {
-          const result = await run([{ kind: 'delete', id: todo.id }]);
-          if (result.error) return setMessage(result.error.message, true);
           setEditingId(null);
-          setMessage('Deleted.');
-          setRefocus('');
+          hold({
+            todoId: todo.id,
+            title: todo.title,
+            kind: 'delete',
+            label: 'Deleted',
+            action: { kind: 'delete', id: todo.id },
+          });
         },
       }
     : null;
@@ -305,9 +407,14 @@ export function TodosDrawer() {
                 defaultOpen={g.key !== 'none'}
               >
                 <ul className="drawer-list">
-                  {g.items.map((t) => (
-                    <TodoRow key={t.id} todo={t} editing={editing} />
-                  ))}
+                  {g.items.map((t) => {
+                    const held = heldById.get(t.id);
+                    return held ? (
+                      <HeldRow key={t.id} held={held} focus={focusUndo === t.id} onUndo={() => undo(held)} />
+                    ) : (
+                      <TodoRow key={t.id} todo={t} editing={editing} onTick={tick} />
+                    );
+                  })}
                 </ul>
               </Fold>
             ))

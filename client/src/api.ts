@@ -45,17 +45,24 @@ export class ApiFailure extends Error {
   }
 }
 
+/** `keepalive` lets a request finish after the page closes (used to send held to-do changes). */
+export interface SendOptions {
+  keepalive?: boolean;
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT',
   path: string,
   body?: unknown,
   raw?: { body: BodyInit; headers: Record<string, string> },
+  opts?: SendOptions,
 ): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
+      keepalive: opts?.keepalive === true,
       headers: raw
         ? raw.headers
         : method === 'GET'
@@ -87,10 +94,10 @@ export const api = {
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
-  completeTodo: (id: string) =>
-    request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest),
-  changeTodo: (action: TodoAction) =>
-    request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest),
+  completeTodo: (id: string, opts?: SendOptions) =>
+    request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest, undefined, opts),
+  changeTodo: (action: TodoAction, opts?: SendOptions) =>
+    request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),
   startSession: (req: StartSessionRequest) => request<StartSessionResponse>('POST', ROUTES.sessions, req),

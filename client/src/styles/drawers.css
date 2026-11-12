@@ -219,19 +219,59 @@
   margin-left: auto;
   color: var(--danger);
 }
-.todo-warn {
-  flex-basis: 100%;
-  margin: 0;
+/* A tick, delete or pass-on waiting out its undo time: nothing is in the brain yet. */
+.todo-held {
+  position: relative;
+  overflow: hidden;
+  align-items: center;
+}
+.todo-held:hover {
+  transform: none;
+}
+.todo-held .line-meta {
+  color: var(--iron);
+}
+.todo-gone {
+  color: var(--iron);
+  text-decoration: line-through;
+}
+.todo-undo {
+  min-height: 32px;
+  padding: 0 12px;
+}
+.todo-sending {
+  align-self: center;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--danger);
+  color: var(--iron);
 }
-.btn[data-variant="danger"] {
-  background: var(--danger);
-  color: var(--on-accent);
+/* A thin line along the bottom that runs down while Undo is still possible. */
+.todo-countdown {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--blue-ink);
+  opacity: 0.35;
+  transform-origin: left;
+  animation-name: todo-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
-.btn[data-variant="danger"]:hover:not(:disabled) {
-  background: #8a1f16;
+@keyframes todo-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+/* Without motion a still bar would look stuck; the status line already says how long is left. */
+@media (prefers-reduced-motion: reduce) {
+  .todo-countdown {
+    display: none;
+  }
 }
 .todo-note {
   margin: 0;

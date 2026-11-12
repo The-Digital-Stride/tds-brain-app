@@ -71,7 +71,7 @@ The app stays a front end: it never writes a brain file itself. Every change run
    Plain: the edit form can show the details and the people to pass to.
 6. **UI in the To-dos drawer.** When `changes` is 'on': an "Add a to-do" control above the list and
    an edit control on each row opening an inline editor (title, details, due date, assigned to,
-   Save, Cancel, Delete with an in-app second confirm, no browser dialogs). Saving sends one action
+   Save, Cancel, Delete; no browser dialogs). Ticks, deletes and pass-ons are held with an Undo (decision 9). Saving sends one action
    per changed field. Passing to someone else drops it from "Mine" and says so. When
    'switched-off', one line points to Settings; when 'restricted' or 'no-skill', nothing changes from
    today. The overseer settles the exact layout.
@@ -80,6 +80,12 @@ The app stays a front end: it never writes a brain file itself. Every change run
    on and delete. The pref key stays `directWrites`.
    Plain: one switch, clearly named, still off until you turn it on.
 8. **Weak spots logged, not fixed**: `os/tds-brain-app/change-requests.md` in the brain.
+9. **Undo (follow-up, Ian's request).** Ticking, deleting and passing on are held in the client for
+   `TODO_UNDO_MS` (10 s) with an Undo on the row, then sent as one request each, one at a time. Undo
+   only drops the held change, so nothing in the brain is ever reversed. Title, details and date save
+   at once. `pagehide` sends anything not yet started with `fetch` keepalive. Once a change has
+   started sending, Undo is replaced by "Sending…".
+   Plain: a mis-click can be taken back for 10 seconds, without the app or the brain undoing a file.
 
 ## Overseer pre-review (applied)
 
@@ -103,22 +109,22 @@ change". Nice: the script's test isn't copied into the brain.
   "Assigned to" ("Me", team, "Open to anyone"). Footer: "Save", "Cancel", and "Delete" on the far side.
 - **Save:** explicit only, in the B1 order, using the last list returned. If one fails midway the
   editor stays open with the fresh values, so saving again sends only what's left.
-- **Delete:** the footer becomes "Delete this to-do for good? It can't be undone." with
-  "Delete for good" and "Keep it" (focus on "Keep it"). No timer, no browser dialog.
+- **Delete:** sends nothing at once: the row is held with an Undo for 10 seconds (decision 9). The
+  first build's in-page "Delete this to-do for good?" confirm was removed at Ian's request.
 - **switched-off:** one line under the tabs, with "Settings" as a link. **restricted / no-skill:**
   nothing shown.
 
 | Where | Copy |
 |---|---|
 | Partial save | "Some changes were saved, but not all. Check the to-do and save again." |
-| Passed on | "Passed to Ben McAdam. It's on their list now." |
+| Held (tick, delete, pass on) | Row: "Ticked off" · "Deleted" · "Passed to Ben McAdam" · "Made open to anyone" · "Assigned to you", with "Undo". Status: "<that>. You can undo this for 10 seconds." · after Undo: "Undone." · once sent: "Sending…" |
 | Made open | "Now open to anyone." |
 | Switched off | "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings." |
 | Long details | "These details are too long to edit here. Change them in a chat instead." |
 | `bad-request` | "That change wasn't understood. Check the title and date, then try again." |
 | `not-found` | "That to-do could not be found. It may have been finished, deleted or passed on." |
 | `internal` | "The change could not be made. Try again." |
-| Success (added, saved, deleted) | "Added." · "Saved." · "Deleted." (builder's wording, accepted at review) |
+| Success (added, saved) | "Added." · "Saved." |
 | Settings help | "Lets you tick, add, edit, pass on and delete to-dos here. Each change is made in the shared brain, so the whole team sees it. Off by default." |
 
 ## Contract
@@ -147,7 +153,7 @@ No file appears in two rows.
 | `server/brain/todo-skill.test.ts` | Runs a fake script: argv, stdin, env, timeout; maps 400/404/crash; refuses a script outside the brain; never writes itself | B |
 | `server/brain/todos.test.ts` | New fields; `changes` from skill access and script presence; unlisted id refused | B |
 | `server/http/routes.test.ts` | `/api/todos/change`: switch off → 403; bad bodies → 400; ok → fresh list; error mapping | B |
-| client tests | Controls only when 'on'; editor sends one action per changed field; delete needs the second confirm; switched-off line | C |
+| client tests | Controls only when 'on'; editor sends one action per changed field; tick, delete and pass-on are held with Undo (store timers, late Undo, page close); switched-off line | C |
 
 ## Gates
 
@@ -156,6 +162,22 @@ No file appears in two rows.
 - [ ] Browser check: To-dos drawer against a test brain copy with the skill installed
 
 ## Review outcomes
+
+### Undo follow-up
+
+- **Correctness (opus):** confirmed and fixed: Undo pressed after the time ran out (change in flight)
+  said "Undone." but the change still went; a change queued behind another was not sent on
+  `pagehide`. Added the missing test that a failed title/date save doesn't hold the pass-on.
+- **UX and accessibility (sonnet):** applied: 10 s instead of 8; bar hidden under reduced motion;
+  stale "You can undo" line cleared once sent; Undo's accessible name built from the action, not a
+  lower-cased label; focus without scrolling. Not applied: pause on hover (the held row sits under
+  the pointer that ticked it, so it would pause at once).
+- **Browser check (lead, throwaway test brain, port 3879):** tick → Undo left the file alone; delete
+  ran out and the skill removed the file; focus moved Undo → tick box → Add.
+- **Gates:** type-check, lint, build pass; tests 1,096 of 1,097, the one failure the known flaky
+  `Shell.test.tsx` (passes 3 of 3 alone).
+
+### First build
 
 - **Security (opus):** no findings. Same request gate, strict body checks, ids can't leave `todo/`,
   only the brain's real script runs, no new app writes.

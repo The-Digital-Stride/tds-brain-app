@@ -187,18 +187,11 @@ export function TodoEditor({
   const setDetails = (v: string) => onDraft({ ...draft, details: v });
   const setDue = (v: string) => onDraft({ ...draft, due: v });
   const setAssignee = (v: string) => onDraft({ ...draft, assignee: v });
-  const [confirming, setConfirming] = useState(false);
-  const keepRef = useRef<HTMLButtonElement>(null);
-  const deleteRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  // Focus the title on opening, "Keep it" when asking about delete, and Delete again if they keep it.
-  const first = useRef(true);
+  // Focus the title on opening.
   useEffect(() => {
-    if (confirming) keepRef.current?.focus();
-    else if (first.current) titleRef.current?.focus();
-    else deleteRef.current?.focus();
-    first.current = false;
-  }, [confirming]);
+    titleRef.current?.focus();
+  }, []);
 
   const actions = buildEditActions(todo, draft, detailsEditable);
   const canSave = !busy && title.trim() !== '';
@@ -215,8 +208,7 @@ export function TodoEditor({
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
     e.stopPropagation();
-    if (confirming) setConfirming(false);
-    else onCancel();
+    onCancel();
   };
 
   return (
@@ -284,39 +276,24 @@ export function TodoEditor({
         <label htmlFor={`${uid}-who`}>Assigned to</label>
         <Assignee id={`${uid}-who`} value={assignee} onChange={setAssignee} me={me} team={team} allowOpen />
       </div>
-      {confirming ? (
-        // biome-ignore lint/a11y/useSemanticElements: a fieldset would restyle the footer row; the label is the warning.
-        <div className="todo-actions" role="group" aria-labelledby={`${uid}-warn`}>
-          <p className="todo-warn" id={`${uid}-warn`}>
-            Delete this to-do for good? It can't be undone.
-          </p>
-          <button type="button" className="btn" data-variant="danger" disabled={busy} onClick={onDelete}>
-            Delete for good
-          </button>
-          <button type="button" className="btn" ref={keepRef} onClick={() => setConfirming(false)}>
-            Keep it
-          </button>
-        </div>
-      ) : (
-        <div className="todo-actions">
-          <button type="submit" className="btn" data-variant="primary" disabled={!canSave}>
-            Save
-          </button>
-          <button type="button" className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn todo-delete"
-            data-variant="quiet"
-            ref={deleteRef}
-            disabled={busy}
-            onClick={() => setConfirming(true)}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      {/* Delete is held for a few seconds with an Undo button on the row, so it asks nothing here. */}
+      <div className="todo-actions">
+        <button type="submit" className="btn" data-variant="primary" disabled={!canSave}>
+          Save
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn todo-delete"
+          data-variant="quiet"
+          disabled={busy}
+          onClick={onDelete}
+        >
+          Delete
+        </button>
+      </div>
     </form>
   );
 }

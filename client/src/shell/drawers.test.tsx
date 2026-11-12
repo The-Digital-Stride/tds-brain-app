@@ -8,7 +8,7 @@ const shell = vi.hoisted(() => ({
   dispatch: vi.fn(),
   modes: { drawerOverlays: false, panelOverlays: false },
 }));
-vi.mock('../store.tsx', () => ({ useStore: () => store.current }));
+vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: {}, dispatch: shell.dispatch, modes: shell.modes }),
 }));
@@ -44,6 +44,8 @@ const live = (id: string, todoId: string | null = null): LiveSession => ({
 
 const fns = {
   completeTodo: vi.fn(),
+  holdTodo: vi.fn(),
+  undoHeld: vi.fn(),
   newChat: vi.fn(),
   openChat: vi.fn(),
   openPast: vi.fn(),
@@ -56,6 +58,7 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
   store.current = {
     ...fns,
     view: 'chat',
+    heldTodos: [],
     activeChat: { kind: 'new', key: 1, draft: '', skill: null, todoId: null },
     boot: {
       clients: [],
@@ -94,12 +97,13 @@ describe('To-dos drawer', () => {
     expect(screen.getByText('Renew contract')).toBeTruthy();
   });
 
-  it('ticking a to-do calls completeTodo and leaves the drawer alone', () => {
+  it('ticking a to-do holds it for undo and leaves the drawer alone', () => {
     setStore({}, true);
     shell.modes.drawerOverlays = true;
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
-    expect(fns.completeTodo).toHaveBeenCalledWith('t1.md');
+    expect(fns.holdTodo).toHaveBeenCalledWith(expect.objectContaining({ todoId: 't1.md', kind: 'tick' }));
+    expect(fns.completeTodo).not.toHaveBeenCalled();
     expect(shell.dispatch).not.toHaveBeenCalled();
   });
 

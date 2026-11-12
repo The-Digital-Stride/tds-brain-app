@@ -32,6 +32,25 @@ export interface ChangeTodosResult {
   error?: { code: string; message: string };
 }
 
+/** How long a held to-do change waits, with an Undo button, before it is sent. */
+export const TODO_UNDO_MS = 10_000;
+
+/**
+ * A to-do change waiting to be sent, so it can be undone. Nothing has been written to the brain yet:
+ * Undo just drops it. Ticks, deletes and passing a to-do on are held; each is one request.
+ */
+export interface HeldTodo {
+  todoId: string;
+  title: string;
+  kind: 'tick' | 'delete' | 'assignee';
+  /** What the row says while held, e.g. "Ticked off", "Passed to Pete Tyler". */
+  label: string;
+  /** The change to send; null for a tick, which uses the tick route. */
+  action: TodoAction | null;
+  /** Set by the store once the undo time is up and the change is on its way: Undo no longer works. */
+  sending?: boolean;
+}
+
 export type View = 'chat' | 'settings' | 'profile' | `app:${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
 
@@ -89,6 +108,15 @@ export interface Store {
    * list the server returned. `done` is how many went through; `error` carries the server's message.
    */
   changeTodos: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
+  /** To-do changes waiting out their undo time, oldest first. */
+  heldTodos: HeldTodo[];
+  /**
+   * Holds a change for TODO_UNDO_MS, then sends it (a failure shows in `actionError`). Closing the page
+   * sends every held change at once, so nothing is lost.
+   */
+  holdTodo: (held: HeldTodo) => void;
+  /** Drops a held change before it is sent. Nothing reaches the brain. */
+  undoHeld: (todoId: string) => void;
   /** Counts up when the library's files change or the server restarts; the library screens refetch. */
   libraryVersion: number;
   retry: () => void;
@@ -517,6 +545,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { done };
   }, []);
 
+  const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
+  // A held change is 'waiting' (Undo works) until its time is up, then 'queued' behind any change still
+  // being sent. It leaves this map only when its request starts, so closing the page sends it either way.
+  type HeldEntry = {
+    held: HeldTodo;
+    timer: ReturnType<typeof setTimeout> | null;
+    state: 'waiting' | 'queued';
+  };
+  const heldEntries = useRef(new Map<string, HeldEntry>());
+  const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  /** Starts the request for a held change. The caller has already taken it out of `heldEntries`. */
+  const sendHeld = useCallback(async (held: HeldTodo, opts?: { keepalive: true }) => {
+    const send = () =>
+      held.kind === 'tick' || held.action === null
+        ? opts
+          ? api.completeTodo(held.todoId, opts)
+          : api.completeTodo(held.todoId)
+        : opts
+          ? api.changeTodo(held.action, opts)
+          : api.changeTodo(held.action);
+    try {
+      setTodos(await send());
+    } catch (err) {
+      setActionError(messageOf(err));
+    } finally {
+      setHeldTodos((list) => list.filter((h) => h.todoId !== held.todoId));
+    }
+  }, []);
+
+  const holdTodo = useCallback(
+    (held: HeldTodo) => {
+      const entries = heldEntries.current;
+      const existing = entries.get(held.todoId);
+      // Already on its way: too late to replace it.
+      if (existing && existing.state !== 'waiting') return;
+      if (existing?.timer) clearTimeout(existing.timer);
+      const entry: HeldEntry = { held, timer: null, state: 'waiting' };
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        entry.state = 'queued';
+        setHeldTodos((list) => list.map((h) => (h.todoId === held.todoId ? { ...h, sending: true } : h)));
+        // One at a time, so the lists come back in the order the changes were made.
+        const next = sendQueue.current.then(() => {
+          // Closing the page may already have sent it.
+          if (entries.get(held.todoId) !== entry) return;
+          entries.delete(held.todoId);
+          return sendHeld(held);
+        });
+        sendQueue.current = next;
+      }, TODO_UNDO_MS);
+      entries.set(held.todoId, entry);
+      setHeldTodos((list) => [...list.filter((h) => h.todoId !== held.todoId), held]);
+    },
+    [sendHeld],
+  );
+
+  const undoHeld = useCallback((todoId: string) => {
+    const entries = heldEntries.current;
+    const entry = entries.get(todoId);
+    // Only while the time is still running: once a change is on its way, Undo can't stop it.
+    if (!entry || entry.state !== 'waiting') return;
+    if (entry.timer) clearTimeout(entry.timer);
+    entries.delete(todoId);
+    setHeldTodos((list) => list.filter((h) => h.todoId !== todoId));
+  }, []);
+
+  // Closing or leaving the page: start everything not yet sent, at once, so no change is lost.
+  useEffect(() => {
+    const flush = () => {
+      const entries = heldEntries.current;
+      for (const [id, entry] of entries) {
+        if (entry.timer) clearTimeout(entry.timer);
+        entries.delete(id);
+        void sendHeld(entry.held, { keepalive: true });
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [sendHeld]);
+
   const value = useMemo<Store>(
     () => ({
       gate,
@@ -540,6 +649,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       changeTodos,
+      heldTodos,
+      holdTodo,
+      undoHeld,
       libraryVersion,
       retry: loadAll,
       setupOpen,
@@ -575,6 +687,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       changeTodos,
+      heldTodos,
+      holdTodo,
+      undoHeld,
       libraryVersion,
       loadAll,
       setupOpen,

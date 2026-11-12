@@ -2,9 +2,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TodoChangeAccess, TodoItem, TodoList } from '../../../shared/contract.ts';
+import type { HeldTodo } from '../store.tsx';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
-vi.mock('../store.tsx', () => ({ useStore: () => store.current }));
+vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: {}, dispatch: vi.fn(), modes: { drawerOverlays: false, panelOverlays: false } }),
 }));
@@ -37,11 +38,16 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
 
 const changeTodos = vi.fn();
 const openView = vi.fn();
+const holdTodo = vi.fn();
+const undoHeld = vi.fn();
 
-function setStore(changes: TodoChangeAccess, items?: TodoItem[]) {
+function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: HeldTodo[] = []) {
   store.current = {
     changeTodos,
     openView,
+    heldTodos,
+    holdTodo,
+    undoHeld,
     completeTodo: vi.fn(),
     newChat: vi.fn(),
     openChat: vi.fn(),
@@ -57,6 +63,8 @@ beforeEach(() => {
   changeTodos.mockReset();
   changeTodos.mockResolvedValue({ done: 1 });
   openView.mockReset();
+  holdTodo.mockReset();
+  undoHeld.mockReset();
   setStore('on');
 });
 afterEach(cleanup);
@@ -114,21 +122,37 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(changeTodos).not.toHaveBeenCalled();
   });
 
-  it('sends only the changed fields, in order edit, due, assignee, without unchanged details', async () => {
+  it('saves title and date now, in order, and holds the pass-on with an Undo', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
     type('Assigned to', 'ben-mcadam');
     type('Due date', '2030-02-02');
     type('Title', 'Renew the contract');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(changeTodos).toHaveBeenCalled());
+    await waitFor(() => expect(holdTodo).toHaveBeenCalled());
     expect(changeTodos).toHaveBeenCalledWith([
       { kind: 'edit', id: 't1.md', title: 'Renew the contract' },
       { kind: 'due', id: 't1.md', due: '2030-02-02' },
-      { kind: 'assignee', id: 't1.md', assignee: 'ben-mcadam' },
     ]);
-    expect(await screen.findByText("Passed to Ben McAdam. It's on their list now.")).toBeTruthy();
+    expect(holdTodo).toHaveBeenCalledWith({
+      todoId: 't1.md',
+      title: 'Renew the contract',
+      kind: 'assignee',
+      label: 'Passed to Ben McAdam',
+      action: { kind: 'assignee', id: 't1.md', assignee: 'ben-mcadam' },
+    });
+    expect(await screen.findByText('Passed to Ben McAdam. You can undo this for 10 seconds.')).toBeTruthy();
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
+  });
+
+  it('holds a pass-on alone without sending anything yet', async () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Assigned to', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(holdTodo).toHaveBeenCalled());
+    expect(changeTodos).not.toHaveBeenCalled();
+    expect(holdTodo.mock.calls[0]?.[0]).toMatchObject({ label: 'Made open to anyone' });
   });
 
   it('sends details only when they changed, and Clear date sends null', async () => {
@@ -173,18 +197,93 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
   });
 
-  it('asks a second time before deleting, then sends delete', async () => {
+  it('deletes without a second question, held with an Undo and nothing sent yet', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(holdTodo).toHaveBeenCalled());
+    expect(holdTodo).toHaveBeenCalledWith({
+      todoId: 't1.md',
+      title: 'Renew contract',
+      kind: 'delete',
+      label: 'Deleted',
+      action: { kind: 'delete', id: 't1.md' },
+    });
     expect(changeTodos).not.toHaveBeenCalled();
-    expect(screen.getByText("Delete this to-do for good? It can't be undone.")).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep it' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
-    expect(changeTodos).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete for good' }));
-    await waitFor(() => expect(changeTodos).toHaveBeenCalledWith([{ kind: 'delete', id: 't1.md' }]));
+    expect(screen.getByText('Deleted. You can undo this for 10 seconds.')).toBeTruthy();
+    expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
+  });
+
+  it('ticking holds the to-do instead of sending it', () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
+    expect(holdTodo).toHaveBeenCalledWith({
+      todoId: 't1.md',
+      title: 'Renew contract',
+      kind: 'tick',
+      label: 'Ticked off',
+      action: null,
+    });
+  });
+
+  it('shows a held to-do struck through with Undo, and Undo puts it back', () => {
+    const held: HeldTodo = {
+      todoId: 't1.md',
+      title: 'Renew contract',
+      kind: 'delete',
+      label: 'Deleted',
+      action: { kind: 'delete', id: 't1.md' },
+    };
+    setStore('on', undefined, [held]);
+    render(<TodosDrawer />);
+    expect(screen.queryByRole('button', { name: 'Edit "Renew contract"' })).toBeNull();
+    expect(screen.getByText('Renew contract').className).toContain('todo-gone');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo deleting "Renew contract"' }));
+    expect(undoHeld).toHaveBeenCalledWith('t1.md');
+    expect(screen.getByText('Undone.')).toBeTruthy();
+  });
+
+  it('does not strike through a passed-on to-do', () => {
+    setStore('on', undefined, [
+      {
+        todoId: 't1.md',
+        title: 'Renew contract',
+        kind: 'assignee',
+        label: 'Passed to Ben McAdam',
+        action: { kind: 'assignee', id: 't1.md', assignee: 'ben-mcadam' },
+      },
+    ]);
+    render(<TodosDrawer />);
+    expect(screen.getByText('Renew contract').className).not.toContain('todo-gone');
+    expect(screen.getByText('Passed to Ben McAdam')).toBeTruthy();
+  });
+
+  it('does not hold the pass-on when the title or date part of the save fails', async () => {
+    changeTodos.mockResolvedValue({ done: 0, error: { code: 'internal', message: 'Nope.' } });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Renew it');
+    type('Assigned to', 'ben-mcadam');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('Nope.');
+    expect(holdTodo).not.toHaveBeenCalled();
+    expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
+  });
+
+  it('shows Sending… in place of Undo once the change is on its way', () => {
+    setStore('on', undefined, [
+      {
+        todoId: 't1.md',
+        title: 'Renew contract',
+        kind: 'delete',
+        label: 'Deleted',
+        action: { kind: 'delete', id: 't1.md' },
+        sending: true,
+      },
+    ]);
+    render(<TodosDrawer />);
+    expect(screen.getByText('Sending…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
   });
 
   it('shows over-long details read-only and never sends them', async () => {
@@ -231,25 +330,46 @@ describe('To-dos drawer, edge cases', () => {
     expect((await screen.findByText('Nope.')).getAttribute('data-tone')).toBe('error');
   });
 
-  it('names the warning for the delete group', () => {
-    render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(screen.getByRole('group', { name: /Delete this to-do for good/ })).toBeTruthy();
+  it('drops the "You can undo" line once the held change is sent, but keeps "Undone."', () => {
+    const held: HeldTodo = {
+      todoId: 't1.md',
+      title: 'Renew contract',
+      kind: 'tick',
+      label: 'Ticked off',
+      action: null,
+    };
+    const { rerender } = render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
+    setStore('on', undefined, [held]);
+    rerender(<TodosDrawer />);
+    expect(screen.getByText('Ticked off. You can undo this for 10 seconds.')).toBeTruthy();
+    setStore('on', [], []);
+    rerender(<TodosDrawer />);
+    expect(screen.queryByText(/You can undo this/)).toBeNull();
+
+    cleanup();
+    setStore('on', undefined, [held]);
+    const second = render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo ticking off "Renew contract"' }));
+    setStore('on', undefined, []);
+    second.rerender(<TodosDrawer />);
+    expect(screen.getByText('Undone.')).toBeTruthy();
   });
 
-  it('puts focus on the Add button when the passed-on row has left the list', async () => {
-    changeTodos.mockImplementationOnce(async () => {
-      store.current.todos = list('on', []);
-      return { done: 1 };
-    });
-    render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
-    type('Assigned to', 'ben-mcadam');
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await screen.findByText(/Passed to Ben McAdam/);
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a to-do' })),
-    );
+  it('puts focus on the Add button when a held row is sent and leaves the list', () => {
+    const held: HeldTodo = {
+      todoId: 't1.md',
+      title: 'Renew contract',
+      kind: 'tick',
+      label: 'Ticked off',
+      action: null,
+    };
+    setStore('on', undefined, [held]);
+    const { rerender } = render(<TodosDrawer />);
+    const undoButton = screen.getByRole('button', { name: /^Undo/ });
+    undoButton.focus();
+    setStore('on', [], []);
+    rerender(<TodosDrawer />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a to-do' }));
   });
 });

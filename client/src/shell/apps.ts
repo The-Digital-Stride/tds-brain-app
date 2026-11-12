@@ -3,9 +3,8 @@ import type { AppSlot } from './contract.ts';
 
 /**
  * The library apps (`client/src/apps/images`, `client/src/apps/documents`): the images and
- * documents the server lists from the brain. They share `client/src/apps/shared`. They are left out
- * of a normal build, and their code with them; a build with `VITE_LIBRARY_APPS=1` adds them to the
- * rail. (The server routes are always there.)
+ * documents the server lists from the brain. They share `client/src/apps/shared` and are always on
+ * the rail. Each loads its code only when first opened.
  */
 function imagesApp(): AppSlot {
   const ui = () => import('../apps/images/ui.ts');
@@ -34,7 +33,7 @@ function documentsApp(): AppSlot {
 }
 
 /**
- * Apps on the rail. Empty until a real app exists: the rail shows an "Apps" group only when this
- * has entries, and the view `app:<id>` shows the matching `Sheet`.
+ * Apps on the rail. The rail shows an "Apps" group only when this has entries, and the view
+ * `app:<id>` shows the matching `Sheet`.
  */
-export const APPS: AppSlot[] = import.meta.env.VITE_LIBRARY_APPS === '1' ? [imagesApp(), documentsApp()] : [];
+export const APPS: AppSlot[] = [imagesApp(), documentsApp()];

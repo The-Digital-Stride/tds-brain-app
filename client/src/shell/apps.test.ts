@@ -1,21 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.resetModules();
-});
+import { describe, expect, it } from 'vitest';
+import { APPS } from './apps.ts';
 
 describe('APPS', () => {
-  it('is empty in a normal build, so the rail shows no Apps group', async () => {
-    vi.resetModules();
-    const { APPS } = await import('./apps.ts');
-    expect(APPS).toEqual([]);
-  });
-
-  it('holds the library apps, each with a panel of its own, when the build asks for them', async () => {
-    vi.stubEnv('VITE_LIBRARY_APPS', '1');
-    vi.resetModules();
-    const { APPS } = await import('./apps.ts');
+  it('holds the library apps in a normal build, each with a panel of its own', () => {
     expect(APPS.map((a) => a.id)).toEqual(['images', 'documents']);
     expect(APPS[0]?.Panel).toBeDefined();
     expect(APPS[0]?.panelLabel).toBe('Image details');

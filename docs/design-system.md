@@ -172,7 +172,7 @@ no shadow); text and Markdown in a card up to 760px wide; an HTML page fills a c
 an empty `sandbox`; a PDF opens in the browser's own reader, edge to edge in its card (no padding), at
 `#navpanes=0&view=FitH`, unsandboxed because browsers refuse PDFs in a sandboxed frame; if a link to another site is blocked the frame reloads and a quiet line says "Links to other sites are switched off here." Items are clickable across their whole box, not only the inner button.
 
-Both are shown only in a build with `VITE_LIBRARY_APPS=1`.
+Both are on the rail in every build.
 
 ## Old tokens being retired
 

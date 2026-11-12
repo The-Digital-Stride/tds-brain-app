@@ -27,8 +27,8 @@ export function SettingsView() {
                 Let the app change to-dos
               </label>
               <p className="setting-help" id="set-direct-help">
-                Lets you tick, add, edit, pass on and delete to-dos here. Each change is made in the shared
-                brain, so the whole team sees it. Off by default.
+                Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is
+                made in the shared brain, so the whole team sees it. Off by default.
               </p>
             </div>
             <input

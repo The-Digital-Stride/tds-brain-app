@@ -86,6 +86,14 @@ The app stays a front end: it never writes a brain file itself. Every change run
    at once. `pagehide` sends anything not yet started with `fetch` keepalive. Once a change has
    started sending, Undo is replaced by "Sending…".
    Plain: a mis-click can be taken back for 10 seconds, without the app or the brain undoing a file.
+10. **No tick box (Ian's request).** The list has no tick box; a to-do is finished from inside it. The
+   editor's footer has Save and Cancel, then a separate row with "Mark as done" and "Delete" (red).
+   Mark as done waits while there are unsaved edits ("Save or cancel your changes before marking it
+   as done."). Someone who may tick but not edit (switch on, no `todo` skill yet) gets a "…" button,
+   `Options for "<title>"`, opening a small panel: the title (focused, so Enter twice can't finish it),
+   the details, "Mark as done" and "Cancel". Both actions keep the 10-second Undo; the held row says
+   "Marked as done".
+   Plain: finishing or deleting a to-do is always a deliberate step, and titles get the tick box's room.
 
 ## Overseer pre-review (applied)
 
@@ -125,7 +133,7 @@ change". Nice: the script's test isn't copied into the brain.
 | `not-found` | "That to-do could not be found. It may have been finished, deleted or passed on." |
 | `internal` | "The change could not be made. Try again." |
 | Success (added, saved) | "Added." · "Saved." |
-| Settings help | "Lets you tick, add, edit, pass on and delete to-dos here. Each change is made in the shared brain, so the whole team sees it. Off by default." |
+| Settings help | "Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is made in the shared brain, so the whole team sees it. Off by default." |
 
 ## Contract
 
@@ -162,6 +170,18 @@ No file appears in two rows.
 - [ ] Browser check: To-dos drawer against a test brain copy with the skill installed
 
 ## Review outcomes
+
+### No tick box follow-up
+
+- **UX and accessibility (sonnet):** applied all six: the "…" button's name no longer starts "Open"
+  (clashed with "Open chat"); the panel is named by its title (a `legend`); focus on the title, not
+  the button; Mark as done and Delete on their own row, Delete red; Mark as done waits for unsaved
+  edits.
+- **Browser check (throwaway test brain):** rows use the full width; the editor footer reads as
+  above; Mark as done → Undo restored the row and put focus back on its edit button; a delete ran out
+  its 10 seconds and the skill removed the file. The tick-only panel is covered by tests only (the
+  test copy ran as a scout, who gets the full editor).
+- **Gates:** type-check, lint, build and all 1,099 tests pass.
 
 ### Undo follow-up
 

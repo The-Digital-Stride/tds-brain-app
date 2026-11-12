@@ -14,7 +14,7 @@ import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { AddTodoForm, type EditDraft, TodoEditor } from './TodoForms.tsx';
+import { AddTodoForm, type EditDraft, TodoDonePanel, TodoEditor } from './TodoForms.tsx';
 import { todoChatDraft, todoPlaces } from './words.ts';
 
 type Tab = 'mine' | 'open';
@@ -25,6 +25,8 @@ interface Editing {
   /** The open editor's fields. They live here so a row that moves group keeps what was typed. */
   draft: EditDraft;
   setDraft: (d: EditDraft) => void;
+  /** False for someone who may only tick to-dos off: opening one shows just "Mark as done". */
+  canEdit: boolean;
   busy: boolean;
   me: string;
   team: TeamMember[];
@@ -32,10 +34,11 @@ interface Editing {
   close: () => void;
   save: (todo: TodoItem, actions: TodoAction[]) => Promise<ChangeTodosResult>;
   remove: (todo: TodoItem) => Promise<void>;
+  done: (todo: TodoItem) => void;
 }
 
 const UNDO_VERB: Record<HeldTodo['kind'], string> = {
-  tick: 'ticking off',
+  tick: 'marking as done',
   delete: 'deleting',
   assignee: 'passing on',
 };
@@ -50,7 +53,6 @@ function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUn
   const gone = held.kind !== 'assignee';
   return (
     <li className="todo todo-held" data-held={held.kind}>
-      <span className="todo-bullet" aria-hidden="true" />
       <span className="line-text">
         <span className={gone ? 'line-title todo-gone' : 'line-title'}>{held.title}</span>{' '}
         <span className="line-meta">{held.label}</span>
@@ -79,22 +81,13 @@ function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUn
   );
 }
 
-function TodoRow({
-  todo,
-  editing,
-  onTick,
-}: {
-  todo: TodoItem;
-  editing: Editing | null;
-  onTick: (todo: TodoItem) => void;
-}) {
+function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null }) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
   const chat = sessions ? chatForTodo(todo.id, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
     chat !== null && view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
-  const ticks = boot?.prefs.directWrites === true;
   const due = todo.due ? dueInWords(todo.due) : '';
   const overdue = todo.due ? isOverdue(todo.due) : false;
 
@@ -113,17 +106,22 @@ function TodoRow({
   if (editing && editing.id === todo.id) {
     return (
       <li className="todo todo-editing">
-        <TodoEditor
-          draft={editing.draft}
-          onDraft={editing.setDraft}
-          todo={todo}
-          me={editing.me}
-          team={editing.team}
-          busy={editing.busy}
-          onSave={(actions) => editing.save(todo, actions)}
-          onDelete={() => void editing.remove(todo)}
-          onCancel={editing.close}
-        />
+        {editing.canEdit ? (
+          <TodoEditor
+            draft={editing.draft}
+            onDraft={editing.setDraft}
+            todo={todo}
+            me={editing.me}
+            team={editing.team}
+            busy={editing.busy}
+            onSave={(actions) => editing.save(todo, actions)}
+            onDone={() => editing.done(todo)}
+            onDelete={() => void editing.remove(todo)}
+            onCancel={editing.close}
+          />
+        ) : (
+          <TodoDonePanel todo={todo} onDone={() => editing.done(todo)} onCancel={editing.close} />
+        )}
       </li>
     );
   }
@@ -135,20 +133,6 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      {ticks ? (
-        <label className="tick-hit">
-          <input
-            type="checkbox"
-            className="tick"
-            aria-label={`Mark "${todo.title}" as done`}
-            data-tick-for={todo.id}
-            checked={false}
-            onChange={() => onTick(todo)}
-          />
-        </label>
-      ) : (
-        <span className="todo-bullet" aria-hidden="true" />
-      )}
       <button type="button" className="todo-main" onClick={choose}>
         <span className="line-text">
           <span className="line-title">
@@ -173,11 +157,11 @@ function TodoRow({
           type="button"
           className="icon-btn todo-edit"
           data-edit-for={todo.id}
-          aria-label={`Edit "${todo.title}"`}
+          aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
           disabled={editing.busy}
           onClick={() => editing.open(todo)}
         >
-          <Icon name="edit" size={16} />
+          <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
         </button>
       ) : null}
     </li>
@@ -211,7 +195,7 @@ export function TodosDrawer() {
     if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
     else {
       const id = CSS.escape(refocus);
-      const row = document.querySelector<HTMLElement>(`[data-edit-for="${id}"], [data-tick-for="${id}"]`);
+      const row = document.querySelector<HTMLElement>(`[data-edit-for="${id}"]`);
       // The row may have left the list (passed on) or sit in a closed group: fall back to Add, then the list.
       (row ?? addButton.current ?? scrollRef.current)?.focus();
     }
@@ -241,6 +225,8 @@ export function TodosDrawer() {
   const groups = groupTodos(items, todayIso());
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';
+  // Ticking off is the app's own switch; editing needs the `todo` skill as well.
+  const canTick = boot?.prefs.directWrites === true;
   const heldById = new Map(heldTodos.map((h) => [h.todoId, h]));
 
   const hold = (held: HeldTodo) => {
@@ -249,8 +235,6 @@ export function TodosDrawer() {
     setMessage(`${held.label}. You can undo this for ${TODO_UNDO_MS / 1000} seconds.`);
     setUndoMessageFor(held.todoId);
   };
-  const tick = (todo: TodoItem) =>
-    hold({ todoId: todo.id, title: todo.title, kind: 'tick', label: 'Ticked off', action: null });
   const undo = (held: HeldTodo) => {
     undoHeld(held.todoId);
     setFocusUndo(null);
@@ -275,67 +259,73 @@ export function TodosDrawer() {
     setRefocus('');
   };
 
-  const editing: Editing | null = canChange
-    ? {
-        id: editingId,
-        draft,
-        setDraft,
-        busy,
-        me,
-        team: todos.team,
-        open: (t) => {
-          setAdding(false);
-          setMessage('');
-          setDraft({ title: t.title, details: t.details, due: t.due ?? '', assignee: t.assignee ?? '' });
-          setEditingId(t.id);
-        },
-        close: () => {
-          const id = editingId;
-          setEditingId(null);
-          setMessage('');
-          setRefocus(id);
-        },
-        save: async (todo, actions) => {
-          // Title, details and date are saved now (they can simply be edited again). Passing the to-do
-          // on is held with an Undo, because it leaves this list and can't be edited back from here.
-          const passed = actions.find((a) => a.kind === 'assignee');
-          const now = actions.filter((a) => a.kind !== 'assignee');
-          const result = now.length > 0 ? await run(now) : { done: 0 };
-          if (result.error) {
-            if (result.done > 0) {
-              setMessage('Some changes were saved, but not all. Check the to-do and save again.', true);
-            } else setMessage(result.error.message, true);
-            return result;
-          }
-          setEditingId(null);
-          if (passed?.kind === 'assignee') {
-            const who = todos.team.find((m) => m.slug === passed.assignee)?.name;
-            const label =
-              passed.assignee === null
-                ? 'Made open to anyone'
-                : passed.assignee === me
-                  ? 'Assigned to you'
-                  : `Passed to ${who ?? passed.assignee}`;
-            const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
-            hold({ todoId: todo.id, title, kind: 'assignee', label, action: passed });
-          } else {
-            setMessage('Saved.');
-            setRefocus(todo.id);
-          }
-          return { done: result.done + (passed ? 1 : 0) };
-        },
-        remove: async (todo) => {
-          setEditingId(null);
-          hold({
-            todoId: todo.id,
-            title: todo.title,
-            kind: 'delete',
-            label: 'Deleted',
-            action: { kind: 'delete', id: todo.id },
-          });
-        },
-      }
-    : null;
+  const editing: Editing | null =
+    canChange || canTick
+      ? {
+          id: editingId,
+          canEdit: canChange,
+          draft,
+          setDraft,
+          busy,
+          me,
+          team: todos.team,
+          open: (t) => {
+            setAdding(false);
+            setMessage('');
+            setDraft({ title: t.title, details: t.details, due: t.due ?? '', assignee: t.assignee ?? '' });
+            setEditingId(t.id);
+          },
+          close: () => {
+            const id = editingId;
+            setEditingId(null);
+            setMessage('');
+            setRefocus(id);
+          },
+          save: async (todo, actions) => {
+            // Title, details and date are saved now (they can simply be edited again). Passing the to-do
+            // on is held with an Undo, because it leaves this list and can't be edited back from here.
+            const passed = actions.find((a) => a.kind === 'assignee');
+            const now = actions.filter((a) => a.kind !== 'assignee');
+            const result = now.length > 0 ? await run(now) : { done: 0 };
+            if (result.error) {
+              if (result.done > 0) {
+                setMessage('Some changes were saved, but not all. Check the to-do and save again.', true);
+              } else setMessage(result.error.message, true);
+              return result;
+            }
+            setEditingId(null);
+            if (passed?.kind === 'assignee') {
+              const who = todos.team.find((m) => m.slug === passed.assignee)?.name;
+              const label =
+                passed.assignee === null
+                  ? 'Made open to anyone'
+                  : passed.assignee === me
+                    ? 'Assigned to you'
+                    : `Passed to ${who ?? passed.assignee}`;
+              const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
+              hold({ todoId: todo.id, title, kind: 'assignee', label, action: passed });
+            } else {
+              setMessage('Saved.');
+              setRefocus(todo.id);
+            }
+            return { done: result.done + (passed ? 1 : 0) };
+          },
+          done: (todo) => {
+            setEditingId(null);
+            hold({ todoId: todo.id, title: todo.title, kind: 'tick', label: 'Marked as done', action: null });
+          },
+          remove: async (todo) => {
+            setEditingId(null);
+            hold({
+              todoId: todo.id,
+              title: todo.title,
+              kind: 'delete',
+              label: 'Deleted',
+              action: { kind: 'delete', id: todo.id },
+            });
+          },
+        }
+      : null;
   // The switch filters the list, so it sits on the drawer above it: only the list scrolls.
   return (
     <div className="drawer-split">
@@ -412,7 +402,7 @@ export function TodosDrawer() {
                     return held ? (
                       <HeldRow key={t.id} held={held} focus={focusUndo === t.id} onUndo={() => undo(held)} />
                     ) : (
-                      <TodoRow key={t.id} todo={t} editing={editing} onTick={tick} />
+                      <TodoRow key={t.id} todo={t} editing={editing} />
                     );
                   })}
                 </ul>

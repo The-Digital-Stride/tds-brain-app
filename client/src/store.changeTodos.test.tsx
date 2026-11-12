@@ -153,7 +153,7 @@ describe('store.holdTodo (undo)', () => {
     await start();
     api.completeTodo.mockResolvedValue(list('after tick'));
     act(() =>
-      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Ticked off', action: null }),
+      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Marked as done', action: null }),
     );
     expect(store?.heldTodos.map((h) => h.todoId)).toEqual(['a.md']);
     await act(async () => {
@@ -259,7 +259,7 @@ describe('store.holdTodo (undo)', () => {
     await start();
     api.completeTodo.mockRejectedValue(new TestFailure('That to-do could not be found.'));
     act(() =>
-      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Ticked off', action: null }),
+      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Marked as done', action: null }),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);

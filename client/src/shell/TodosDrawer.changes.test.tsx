@@ -214,16 +214,31 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
   });
 
-  it('ticking holds the to-do instead of sending it', () => {
+  it('has no tick box: Mark as done in the opened to-do holds it instead of sending it', () => {
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as done' }));
     expect(holdTodo).toHaveBeenCalledWith({
       todoId: 't1.md',
       title: 'Renew contract',
       kind: 'tick',
-      label: 'Ticked off',
+      label: 'Marked as done',
       action: null,
     });
+    expect(changeTodos).not.toHaveBeenCalled();
+    expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
+  });
+
+  it('waits for unsaved edits before Mark as done, and says so', () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Renew it');
+    const done = screen.getByRole('button', { name: 'Mark as done' }) as HTMLButtonElement;
+    expect(done.disabled).toBe(true);
+    expect(screen.getByText('Save or cancel your changes before marking it as done.')).toBeTruthy();
+    type('Title', 'Renew contract');
+    expect(done.disabled).toBe(false);
   });
 
   it('shows a held to-do struck through with Undo, and Undo puts it back', () => {
@@ -335,14 +350,15 @@ describe('To-dos drawer, edge cases', () => {
       todoId: 't1.md',
       title: 'Renew contract',
       kind: 'tick',
-      label: 'Ticked off',
+      label: 'Marked as done',
       action: null,
     };
     const { rerender } = render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as done' }));
     setStore('on', undefined, [held]);
     rerender(<TodosDrawer />);
-    expect(screen.getByText('Ticked off. You can undo this for 10 seconds.')).toBeTruthy();
+    expect(screen.getByText('Marked as done. You can undo this for 10 seconds.')).toBeTruthy();
     setStore('on', [], []);
     rerender(<TodosDrawer />);
     expect(screen.queryByText(/You can undo this/)).toBeNull();
@@ -350,7 +366,7 @@ describe('To-dos drawer, edge cases', () => {
     cleanup();
     setStore('on', undefined, [held]);
     const second = render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Undo ticking off "Renew contract"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo marking as done "Renew contract"' }));
     setStore('on', undefined, []);
     second.rerender(<TodosDrawer />);
     expect(screen.getByText('Undone.')).toBeTruthy();
@@ -361,7 +377,7 @@ describe('To-dos drawer, edge cases', () => {
       todoId: 't1.md',
       title: 'Renew contract',
       kind: 'tick',
-      label: 'Ticked off',
+      label: 'Marked as done',
       action: null,
     };
     setStore('on', undefined, [held]);

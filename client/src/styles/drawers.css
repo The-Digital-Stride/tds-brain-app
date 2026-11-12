@@ -28,16 +28,8 @@
   flex: 1;
 }
 .todo-main {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   justify-content: space-between;
-}
-.todo-bullet {
-  width: 8px;
-  height: 8px;
-  margin: 7px 6px 0;
-  border-radius: 50%;
-  background: var(--iron);
-  opacity: 0.5;
 }
 .todo .go {
   display: inline-grid;
@@ -139,10 +131,10 @@
 
 /* Changing to-dos: the add button, the add form and the inline editor. ------------------------- */
 .todo[data-editable="true"] .todo-main {
-  grid-column: 2;
+  grid-column: 1;
 }
 .todo-edit {
-  grid-column: 3;
+  grid-column: 2;
   align-self: center;
   width: 32px;
   height: 32px;
@@ -215,9 +207,41 @@
 .todo-actions .btn {
   min-height: 36px;
 }
+.todo-finish {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.todo-finish .todo-note {
+  flex-basis: 100%;
+  margin: 0;
+}
 .todo-delete {
   margin-left: auto;
+}
+/* Beats the quiet variant's blue: deleting reads as the risky one. */
+.btn.todo-delete[data-variant="quiet"] {
   color: var(--danger);
+}
+.btn.todo-delete[data-variant="quiet"]:hover:not(:disabled) {
+  background: var(--danger-wash);
+}
+.todo-done {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.todo-done-title {
+  margin: 0;
+  padding: 0;
+  float: left;
+  width: 100%;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.todo-done-details {
+  max-height: 8lh;
+  overflow-y: auto;
+  white-space: pre-wrap;
 }
 /* A tick, delete or pass-on waiting out its undo time: nothing is in the brain yet. */
 .todo-held {

@@ -43,7 +43,7 @@ export interface HeldTodo {
   todoId: string;
   title: string;
   kind: 'tick' | 'delete' | 'assignee';
-  /** What the row says while held, e.g. "Ticked off", "Passed to Pete Tyler". */
+  /** What the row says while held, e.g. "Marked as done", "Passed to Pete Tyler". */
   label: string;
   /** The change to send; null for a tick, which uses the tick route. */
   action: TodoAction | null;

@@ -520,7 +520,8 @@ a.btn:hover {
 }
 .todo {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  /* No tick box: a to-do is finished from inside it, so the title gets the whole width. */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
 }

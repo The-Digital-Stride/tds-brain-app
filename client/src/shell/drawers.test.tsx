@@ -91,20 +91,43 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('To-dos drawer', () => {
-  it('shows no tick boxes when direct writes are off', () => {
+  it('shows no tick box, and no way to finish a to-do, when the switch is off', () => {
     render(<TodosDrawer />);
     expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Options for/ })).toBeNull();
     expect(screen.getByText('Renew contract')).toBeTruthy();
   });
 
-  it('ticking a to-do holds it for undo and leaves the drawer alone', () => {
+  it('with only the switch on, a to-do is opened and marked as done on purpose, held for undo', () => {
     setStore({}, true);
     shell.modes.drawerOverlays = true;
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Mark "Renew contract" as done' }));
-    expect(fns.holdTodo).toHaveBeenCalledWith(expect.objectContaining({ todoId: 't1.md', kind: 'tick' }));
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
+    const done = screen.getByRole('button', { name: 'Mark as done' });
+    // Focus goes to the title, not the button, so two presses of Enter can't finish it.
+    expect(document.activeElement?.textContent).toBe('Renew contract');
+    expect(screen.getByRole('group', { name: 'Renew contract' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    fireEvent.click(done);
+    expect(fns.holdTodo).toHaveBeenCalledWith(
+      expect.objectContaining({ todoId: 't1.md', kind: 'tick', label: 'Marked as done' }),
+    );
     expect(fns.completeTodo).not.toHaveBeenCalled();
     expect(shell.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('closes the opened to-do with Escape or Cancel without finishing it', () => {
+    setStore({}, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Mark as done' }), { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'Mark as done' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('button', { name: 'Mark as done' })).toBeNull();
+    expect(fns.holdTodo).not.toHaveBeenCalled();
   });
 
   it('starts a chat with a draft naming the to-do and its id, then closes a floating drawer', () => {

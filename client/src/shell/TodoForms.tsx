@@ -167,6 +167,7 @@ export function TodoEditor({
   team,
   busy,
   onSave,
+  onDone,
   onDelete,
   onCancel,
 }: {
@@ -177,6 +178,7 @@ export function TodoEditor({
   team: TeamMember[];
   busy: boolean;
   onSave: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
+  onDone: () => void;
   onDelete: () => void;
   onCancel: () => void;
 }) {
@@ -194,6 +196,7 @@ export function TodoEditor({
   }, []);
 
   const actions = buildEditActions(todo, draft, detailsEditable);
+  const dirty = actions.length > 0;
   const canSave = !busy && title.trim() !== '';
 
   const submit = (e: FormEvent) => {
@@ -276,13 +279,25 @@ export function TodoEditor({
         <label htmlFor={`${uid}-who`}>Assigned to</label>
         <Assignee id={`${uid}-who`} value={assignee} onChange={setAssignee} me={me} team={team} allowOpen />
       </div>
-      {/* Delete is held for a few seconds with an Undo button on the row, so it asks nothing here. */}
       <div className="todo-actions">
         <button type="submit" className="btn" data-variant="primary" disabled={!canSave}>
           Save
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
+        </button>
+      </div>
+      {/* Finishing a to-do, on a row of its own. Both are held for a few seconds with an Undo on the
+          row, so they ask nothing here. Mark as done waits for unsaved edits, so none are lost. */}
+      <div className="todo-actions todo-finish">
+        <button
+          type="button"
+          className="btn"
+          disabled={busy || dirty}
+          aria-describedby={dirty ? `${uid}-dirty` : undefined}
+          onClick={onDone}
+        >
+          Mark as done
         </button>
         <button
           type="button"
@@ -293,7 +308,53 @@ export function TodoEditor({
         >
           Delete
         </button>
+        {dirty ? (
+          <p className="todo-note" id={`${uid}-dirty`}>
+            Save or cancel your changes before marking it as done.
+          </p>
+        ) : null}
       </div>
     </form>
+  );
+}
+
+/**
+ * For someone who may tick to-dos off but not edit them (the `todo` skill isn't theirs yet): the
+ * to-do opened, with only "Mark as done". Ticking needs this one deliberate step; the list has no tick box.
+ */
+export function TodoDonePanel({
+  todo,
+  onDone,
+  onCancel,
+}: {
+  todo: TodoItem;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  // Focus lands on the title, not on Mark as done, so finishing always takes a deliberate second step.
+  const titleRef = useRef<HTMLLegendElement>(null);
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    onCancel();
+  };
+  return (
+    <fieldset className="todo-form todo-done" onKeyDown={onKeyDown}>
+      <legend className="todo-done-title" ref={titleRef} tabIndex={-1}>
+        {todo.title}
+      </legend>
+      {todo.details ? <p className="todo-note todo-done-details">{todo.details}</p> : null}
+      <div className="todo-actions">
+        <button type="button" className="btn" data-variant="primary" onClick={onDone}>
+          Mark as done
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </fieldset>
   );
 }

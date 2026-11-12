@@ -5,6 +5,7 @@ import type { IconName, IconProps } from './contract.ts';
 const PATHS: Record<IconName, ReactNode> = {
   home: <path d="M3 9.5 10 3l7 6.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1z" />,
   edit: <path d="M13.5 3.5l3 3L7 16H4v-3zM11.5 5.5l3 3" />,
+  more: <path d="M5 10h.01M10 10h.01M15 10h.01" strokeWidth={2.6} />,
   chat: <path d="M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />,
   todos: <path d="M3 6l1.5 1.5L7 5M3 13l1.5 1.5L7 12M10 6h7M10 13h7" />,
   skills: <path d="M3 3h6v6H3zM11 3h6v6h-6zM3 11h6v6H3zM11 11h6v6h-6z" />,

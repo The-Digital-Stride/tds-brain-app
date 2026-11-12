@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.4.0 — 2026-11-12
+
+- **feat**: brain skills to install, update and check the app, fully guided
+
 ## v0.3.0 — 2026-11-12
 
 - **feat**: setup screen chooses the brain folder when none is usable

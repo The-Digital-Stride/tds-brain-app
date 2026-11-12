@@ -64,9 +64,13 @@ on Ian's Mac.
    - `RunAtLoad` and `KeepAlive` are true, so it restarts after a crash.
    - `ThrottleInterval` is 10 s and `ExitTimeOut` is 30 s, which leaves room for `shutdown()`'s own
      20 s.
-   - `AssociatedBundleIdentifiers` names the sign-in app (decision 6), so Login Items can show
-     "TDS Brain" rather than "node". The spike confirms this.
-   - `ProgramArguments` is the node launcher (decision 2), then `<app>/server/index.ts --no-open`.
+   - `ProgramArguments` is a single executable inside the app bundle the installer builds,
+     `~/Applications/TDS Brain Sign-in.app/Contents/MacOS/tds-brain-service`, which `exec`s the
+     node launcher (decision 2) with `<app>/server/index.ts --no-open`. The spike showed macOS names
+     the login item after the bundle that holds its executable, so Login Items shows "TDS Brain
+     Sign-in", not "node" from "Unknown Developer". `AssociatedBundleIdentifiers` is dropped: it
+     made no difference, because it only works for apps signed with an Apple developer
+     certificate.
    - `WorkingDirectory` is the app folder.
    - Logs go to `~/Library/Logs/TDS Brain/server.log`.
    - The environment adds `TDS_BRAIN_SERVICE=1`, so the server knows launchd will restart it.
@@ -133,8 +137,12 @@ on Ian's Mac.
    - **(b) "TDS Brain Sign-in".** A small app at `~/Applications/TDS Brain Sign-in.app`, a shell
      script in a bundle the installer builds locally. It isn't the Dock icon. It runs
      `<app>/bin/tds-brain open`, which uses the existing `/auth/ping` and `/auth/code` handshake
-     to mint a code and opens `/auth?code=…` in the recorded Chrome profile. Signing in still only
-     ever starts from something that can read the 0600 secret file.
+     to mint a code and opens `/auth?code=…` with `open -a "Google Chrome"`. That goes to the Chrome
+     profile used last. Install can't record a profile, because macOS blocks reading Chrome's
+     profile list, so the signed-out page says to open the link in the main profile if Chrome
+     picked another. Signing in still only ever starts from something that can read the 0600
+     secret file. If the wrong profile proves a nuisance, the security gate in phase 2 considers a
+     window-approved sign-in: the window asks, and the Sign-in app approves.
    - **(c) The signed-out page.** `LAUNCHER_PAGE` says "Open TDS Brain Sign-in from Applications to
      sign in again" and refreshes every 5 s. Once a tab sets the cookie, a signed-out PWA window
      picks it up, because they share the Chrome profile's cookies.
@@ -162,8 +170,10 @@ on Ian's Mac.
    links, and inside the person's home folder. It must not be the app folder or inside the data
    folder.
 
-   If the spike shows the service can't read `~/Documents`, `~/Desktop` or `~/Downloads`, the check
-   refuses those with `protected-folder` and says why.
+   On Ian's Mac the service read a brain in `~/Documents` without a prompt. That may be because
+   Node already had permission there, so the phase 3 trial on a fresh account checks it again.
+   If it fails, the check refuses those folders with `protected-folder`, and `doctor` reports
+   EPERM.
    Plain: each person's app points at their own brain, and the app says so plainly if it can't see
    it.
 
@@ -189,8 +199,8 @@ on Ian's Mac.
 10. **One command-line tool.** `server/cli.ts`, run as `<app>/bin/tds-brain <command>`, has these
     commands:
     - `install --brain <path> [--migrate-from <path>]`: writes `settings.json`, the node launcher,
-      the LaunchAgent and the sign-in app, records the Chrome profile, loads the agent (decision
-      1's order) and opens the sign-in.
+      the LaunchAgent and the sign-in app (holding the service executable), loads the agent
+      (decision 1's order) and opens the sign-in.
     - `open`
     - `restart`
     - `doctor`: checks Node, each tool on the service PATH, Claude Code, the brain (including
@@ -251,6 +261,20 @@ on Ian's Mac.
     3. **Ready for the team:** decisions 9 and 12, then a trial install on a second macOS user
        account with the brain outside `~/agencybrain`. Use `~/Documents/brain` if the spike says
        that works, else `~/Developer/brain`.
+
+## Step 0 spike results (2026-11-12, Chrome 157, macOS 27.0.1)
+
+Throwaway app on `127.0.0.1:3879`, a test LaunchAgent and a test sign-in app, all removed afterwards.
+
+| Question | Result | Effect on the plan |
+|---|---|---|
+| Does Chrome offer Install on a local address? | Yes. Chrome made `TDS Spike.app` in `~/Applications/Chrome Apps.localized/`, and it opened standalone (`display-mode: standalone`). | Decision 3 holds. |
+| Does `open -a "Google Chrome" <url>` open in the app window? | No, it opens a tab. Opening Chrome's app with a URL opens the window at `start_url` and ignores the URL. | Decision 6: the Dock icon is Chrome's app; the Sign-in app opens a tab. |
+| Does a cookie set in a tab reach the app window? | Yes. After the Sign-in app signed in a tab, a fresh app window loaded signed in. | Decision 6 holds. |
+| Two Chrome profiles | Chrome's app isn't tied to one profile folder. `open -a` uses the profile used last. `--profile-directory=Default` did open a different profile, so steering works, but macOS blocks reading Chrome's profile list, even outside Claude's sandbox. | Install can't record the profile. Decision 6b uses the last-used profile, with guidance on the signed-out page. |
+| Can the service read a brain in `~/Documents`? | Yes on Ian's Mac, with no prompt. | Recheck on a fresh account in the phase 3 trial. |
+| How does Login Items name the service? | As "node" from "Unknown Developer" when it runs the node launcher directly; `AssociatedBundleIdentifiers` was ignored (unsigned). As "TDS Spike Sign-in" when the executable sits inside the app bundle. | Decision 1: the service executable lives in the sign-in app bundle. |
+| Does the PATH and the node launcher work? | Yes. It found `git`, `jq`, `python3`, `bash` and `claude`, and the launcher picked Node 24.15, the newest qualifying version in nvm. | Decision 2 holds. |
 
 ## Contract
 

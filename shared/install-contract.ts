@@ -156,8 +156,11 @@ export interface LaunchAgentSpec {
   throttleSeconds: number;
   /** 30: more than `shutdown()`'s own 20 s. */
   exitTimeoutSeconds: number;
-  /** `[SIGNIN_APP_BUNDLE_ID]`, so Login Items can name the job. */
-  associatedBundleIds: string[];
+  /**
+   * `~/Applications/TDS Brain Sign-in.app/Contents/MacOS/tds-brain-service`. It sits inside the bundle so Login
+   * Items names the job after the bundle, not "node" (spike, 2026-11-12). It execs `node` with `entry`.
+   */
+  serviceExecutable: string;
 }
 
 export type DoctorCheck =

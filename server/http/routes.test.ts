@@ -8,6 +8,7 @@ import {
   type LibraryListing,
   MAX_ATTACHMENTS,
   ROUTES,
+  SESSION_COOKIE,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
@@ -16,7 +17,7 @@ import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
 import { HttpError, handleApi, parseStartRequest, type RouteContext } from './routes.ts';
-import { PAGE_CSP, PDF_CSP, SECURITY_HEADERS } from './security.ts';
+import { cookieValueFor, PAGE_CSP, PDF_CSP, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
 
 const tempDirs: string[] = [];
 const stagings: UploadStaging[] = [];
@@ -131,15 +132,31 @@ describe('POST /api/todos/complete', () => {
 });
 
 describe('GET /api/bootstrap', () => {
-  it("sends the person's profile from the brain's team profile alongside who they are", async () => {
-    const req = Object.assign(Readable.from([]), { method: 'GET', headers: {} });
-    let body = '';
-    const res = { headersSent: false, writeHead: () => {}, end: (text: string) => (body = text) };
+  const TOKEN = 'launch-token-abc123';
+  const GOOD_COOKIE = `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`;
+
+  async function call(cookie: string | undefined, method = 'GET') {
+    const req = Object.assign(Readable.from([]), { method, headers: cookie === undefined ? {} : { cookie } });
+    const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
+    const res = {
+      headersSent: false,
+      setHeader: (name: string, value: unknown) => {
+        sent.headers[name] = value;
+      },
+      writeHead: (status: number, headers: Record<string, unknown> = {}) => {
+        sent.status = status;
+        Object.assign(sent.headers, headers);
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
     const ctx = {
       brain: createBrainReaders(copyFixture()),
       store: { get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }) },
       engineHealth: () => ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }),
       appVersion: '0',
+      launchToken: TOKEN,
       log: () => {},
     };
     await handleApi(
@@ -148,6 +165,32 @@ describe('GET /api/bootstrap', () => {
       new URL(`http://127.0.0.1:3877${ROUTES.bootstrap}`),
       ctx as unknown as RouteContext,
     );
+    return sent;
+  }
+
+  it('re-sends the same 400-day session cookie on every signed-in load (decision 6a)', async () => {
+    for (let i = 0; i < 2; i++) {
+      const sent = await call(`other=1; ${GOOD_COOKIE}`);
+      expect(sent.status).toBe(200);
+      expect(sent.headers['Set-Cookie']).toBe(sessionSetCookie(TOKEN));
+      expect(sent.headers['Set-Cookie']).toBe(
+        `${GOOD_COOKIE}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${400 * 24 * 60 * 60}`,
+      );
+    }
+  });
+
+  it('sends no cookie without a valid session, nor for another method', async () => {
+    for (const cookie of [undefined, '', `${SESSION_COOKIE}=nope`, `${SESSION_COOKIE}=${TOKEN}`]) {
+      const sent = await call(cookie);
+      expect(sent.headers['Set-Cookie'], String(cookie)).toBeUndefined();
+    }
+    const post = await call(GOOD_COOKIE, 'POST');
+    expect(post.status).toBe(405);
+    expect(post.headers['Set-Cookie']).toBeUndefined();
+  });
+
+  it("sends the person's profile from the brain's team profile alongside who they are", async () => {
+    const { body } = await call(GOOD_COOKIE);
     const boot = JSON.parse(body);
     expect(boot.identity.name).toBe('Sam Example');
     expect(boot.profile).toEqual({

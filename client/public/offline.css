@@ -1,0 +1,58 @@
+:root {
+  --navy: #021b43;
+  --blue-ink: #0b5cb5;
+  --paper: #faf8f4;
+  --iron: #525252;
+  --line-strong: rgba(2, 27, 67, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--navy);
+  background: var(--paper);
+  font: 16px / 1.6 -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+main {
+  max-width: 34rem;
+}
+
+.mark {
+  display: block;
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font: 600 1.6rem / 1.25 "Poppins", -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+p {
+  margin: 0 0 14px;
+  color: var(--iron);
+}
+
+code {
+  display: block;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  color: var(--navy);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: 0.9rem / 1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  user-select: all;
+}
+
+.small {
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+}

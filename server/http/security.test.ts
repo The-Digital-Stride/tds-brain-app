@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
+import { AUTH_COOKIE_MAX_AGE_SECONDS, PUBLIC_PATHS } from '../../shared/install-contract.ts';
 import {
   AUTH_CODE_TTL_MS,
-  AUTH_COOKIE_MAX_AGE,
   AUTH_PING_PATH,
   authExchange,
   checkRequest,
@@ -21,6 +21,7 @@ import {
   pingProof,
   SECURITY_HEADERS,
   safeEqual,
+  sessionSetCookie,
 } from './security.ts';
 
 const PORT = 3877;
@@ -312,7 +313,7 @@ describe('/auth exchange (A15: single-use, 60-second codes)', () => {
     return { c, tick: (ms: number) => (t += ms) };
   }
 
-  it('swaps a fresh code for an HttpOnly, SameSite=Strict, 30-day cookie, once only', () => {
+  it('swaps a fresh code for an HttpOnly, SameSite=Strict, 400-day cookie, once only', () => {
     const { c } = codes();
     const code = c.mint();
     expect(code).toMatch(/^[A-Za-z0-9_-]{20,}$/);
@@ -323,8 +324,10 @@ describe('/auth exchange (A15: single-use, 60-second codes)', () => {
     expect(r.setCookie).toContain('HttpOnly');
     expect(r.setCookie).toContain('SameSite=Strict');
     expect(r.setCookie).toContain('Path=/');
-    expect(r.setCookie).toContain(`Max-Age=${AUTH_COOKIE_MAX_AGE}`);
-    expect(AUTH_COOKIE_MAX_AGE).toBe(30 * 24 * 60 * 60);
+    expect(r.setCookie).toContain(`Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}`);
+    expect(AUTH_COOKIE_MAX_AGE_SECONDS).toBe(400 * 24 * 60 * 60);
+    // Built in one place, shared with the bootstrap renewal, so the two can't drift apart.
+    expect(r.setCookie).toBe(sessionSetCookie(TOKEN));
     expect(authExchange(code, c, TOKEN).ok).toBe(false);
   });
 
@@ -466,5 +469,165 @@ describe('/auth/ping (is the app on this port really TDS Brain?)', () => {
     expect(proof).not.toBe(pingProof(TOKEN, 'abc124'));
     expect(proof).not.toContain(TOKEN);
     expect(proof).not.toBe(COOKIE);
+  });
+});
+
+describe('session cookie header (decision 6a)', () => {
+  it('is the same value with HttpOnly, SameSite=Strict, Path=/ and a 400-day Max-Age', () => {
+    expect(sessionSetCookie(TOKEN)).toBe(
+      `${SESSION_COOKIE}=${COOKIE}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${400 * 24 * 60 * 60}`,
+    );
+  });
+});
+
+describe('public allow-list (decision 5)', () => {
+  const ICONS = ['/icons/icon-192.png', '/icons/icon-512.png', '/icons/maskable-512.png', '/icons/mark.svg'];
+  const signedOut = { cookie: undefined };
+
+  it('lets exactly the listed paths and matching icons through without a session, for GET and HEAD', () => {
+    expect(PUBLIC_PATHS).toEqual(['/manifest.webmanifest', '/sw.js', '/offline.html', '/offline.css']);
+    for (const path of [...PUBLIC_PATHS, ...ICONS]) {
+      for (const method of ['GET', 'HEAD', 'get']) {
+        expect(checkRequest(req({ method, path, headers: signedOut }), ctx), `${method} ${path}`).toEqual({
+          action: 'public',
+        });
+      }
+    }
+  });
+
+  it('serves them the same way with a session', () => {
+    expect(checkRequest(req({ path: '/sw.js' }), ctx)).toEqual({ action: 'public' });
+  });
+
+  it('refuses any other method with 405', () => {
+    for (const path of ['/sw.js', '/icons/icon-192.png']) {
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+        expect(
+          checkRequest(
+            req({
+              method,
+              path,
+              headers: { ...signedOut, origin: ORIGIN, 'content-type': 'application/json' },
+            }),
+            ctx,
+          ),
+          `${method} ${path}`,
+        ).toMatchObject({ action: 'reject', status: 405 });
+      }
+    }
+  });
+
+  it('still checks Host and a foreign Origin first', () => {
+    expect(
+      checkRequest(req({ path: '/sw.js', headers: { ...signedOut, host: `localhost:${PORT}` } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(
+        req({ path: '/manifest.webmanifest', headers: { ...signedOut, host: `evil.example:${PORT}` } }),
+        ctx,
+      ),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ path: '/sw.js', headers: { ...signedOut, origin: 'https://evil.example' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ path: '/icons/icon-192.png', headers: { ...signedOut, origin: 'null' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+  });
+
+  it('lets no lookalike through: they get the signed-out page or a 401, never a public file', () => {
+    const lookalikes = [
+      '/sw.js/',
+      '/SW.JS',
+      '/Sw.js',
+      '/sw.js.map',
+      '/sw.jsx',
+      '//sw.js',
+      '/x/sw.js',
+      '/offline.html?x',
+      '/offline.html/',
+      '/offline.htm',
+      '/manifest.json',
+      '/manifest.webmanifest.bak',
+      '/offline.css/',
+      '/icons',
+      '/icons/',
+      '/icons/a/b',
+      '/icons/a/b.png',
+      '/icons/x',
+      '/icons/x.',
+      '/icons/x.PNG',
+      '/icons/X.png',
+      '/icons/x.jpg',
+      '/icons/x.png/',
+      '/icons/x.png.html',
+      '/icons/.png',
+      '/icons/x_y.png',
+      '/icons/x.y.png',
+      '/icons/x.png\n',
+      '/icons/../api/x',
+      '/icons/%2e%2e/x',
+      '/icons/%2e%2e/api/x.png',
+      '/icons/..%2fapi%2fx.png',
+      '/icons/x%2epng',
+      '/ICONS/x.png',
+      '/api/sw.js',
+      '/sw.js%00',
+      '/sw.js;x',
+    ];
+    for (const path of lookalikes) {
+      const d = checkRequest(req({ path, headers: signedOut }), ctx);
+      expect(d.action, path).not.toBe('public');
+      expect(['launcher', 'reject'], path).toContain(d.action);
+    }
+  });
+});
+
+describe('a planted service worker (Service-Worker: script)', () => {
+  const sw = { 'service-worker': 'script' };
+
+  it('gets the self-unregistering worker for any other path, with or without a session', () => {
+    for (const path of [
+      '/x.js',
+      '/',
+      '/api/x.js',
+      '/assets/app.js',
+      '/icons/icon-192.png',
+      '/offline.html',
+    ]) {
+      expect(checkRequest(req({ path, headers: { ...sw, cookie: undefined } }), ctx), path).toEqual({
+        action: 'unregister-worker',
+      });
+      expect(checkRequest(req({ path, headers: sw }), ctx), path).toEqual({ action: 'unregister-worker' });
+    }
+  });
+
+  it('leaves /sw.js as it is', () => {
+    expect(checkRequest(req({ path: '/sw.js', headers: { ...sw, cookie: undefined } }), ctx)).toEqual({
+      action: 'public',
+    });
+  });
+
+  it('without the header, still needs a session', () => {
+    expect(checkRequest(req({ path: '/x.js', headers: { cookie: undefined } }), ctx)).toEqual({
+      action: 'launcher',
+    });
+  });
+
+  it('only for GET, and still behind the Host and Origin checks', () => {
+    expect(
+      checkRequest(req({ path: '/x.js', headers: { ...sw, host: `evil.example:${PORT}` } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ path: '/x.js', headers: { ...sw, origin: 'https://evil.example' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ method: 'HEAD', path: '/x.js', headers: { ...sw, cookie: undefined } }), ctx),
+    ).toEqual({ action: 'launcher' });
+    expect(
+      checkRequest(req({ path: '/x.js', headers: { 'service-worker': 'other', cookie: undefined } }), ctx),
+    ).toEqual({
+      action: 'launcher',
+    });
   });
 });

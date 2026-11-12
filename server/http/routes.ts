@@ -36,7 +36,14 @@ import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
-import { isLibraryPagePath, MAX_BODY_BYTES, PAGE_CSP, PDF_CSP } from './security.ts';
+import {
+  hasValidSession,
+  isLibraryPagePath,
+  MAX_BODY_BYTES,
+  PAGE_CSP,
+  PDF_CSP,
+  sessionSetCookie,
+} from './security.ts';
 import { type AppEventHub, openStream } from './stream.ts';
 
 export interface RouteContext {
@@ -52,6 +59,8 @@ export interface RouteContext {
   engineHealth: () => EngineHealth;
   appVersion: string;
   serverStartedAt: string;
+  /** Only to renew the session cookie on `GET /api/bootstrap` (decision 6a). */
+  launchToken: string;
   log: (line: string) => void;
 }
 
@@ -613,7 +622,13 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
 
   if (path === '/api/bootstrap') {
     if (method !== 'GET') throw methodNotAllowed();
-    sendJson(res, 200, await bootstrap(ctx));
+    const body = await bootstrap(ctx);
+    // Each visit restarts the cookie's 400 days (6a). The gate already refused anyone without a
+    // session; checking again here means a renewal can never be handed out by mistake.
+    if (hasValidSession(req.headers.cookie, ctx.launchToken)) {
+      res.setHeader('Set-Cookie', sessionSetCookie(ctx.launchToken));
+    }
+    sendJson(res, 200, body);
     return;
   }
 

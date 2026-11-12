@@ -2,12 +2,11 @@
  * The one local server (decision 2): the built client and the API on 127.0.0.1 only.
  */
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
 import {
   APP_HOST,
-  APP_NAME,
   type AppStore,
   type BrainReaders,
   type EngineHealth,
@@ -50,11 +49,23 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+interface PlainPageOptions {
+  /** Reload after this many seconds (a meta refresh: the CSP blocks scripts). */
+  refreshSeconds?: number;
+  /** Where the reload goes. Default: the same address. */
+  refreshUrl?: string;
+}
+
 /** A tiny page with no scripts or styles (the CSP forbids inline ones anyway). */
-function plainPage(heading: string, paragraphs: string[]): string {
+function plainPage(heading: string, paragraphs: readonly string[], options: PlainPageOptions = {}): string {
+  const { refreshSeconds, refreshUrl } = options;
+  const refresh =
+    refreshSeconds === undefined
+      ? ''
+      : `<meta http-equiv="refresh" content="${refreshSeconds}${refreshUrl ? `; url=${escapeHtml(refreshUrl)}` : ''}">`;
   return `<!doctype html>
 <html lang="en-GB">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(APP_NAME)}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${refresh}<title>${escapeHtml(heading)}</title><link rel="icon" href="/icons/mark.svg"></head>
 <body>
 <main>
 <h1>${escapeHtml(heading)}</h1>
@@ -74,13 +85,61 @@ function sendHtml(res: ServerResponse, status: number, html: string, method: str
   res.end(method === 'HEAD' ? undefined : html);
 }
 
-export const LAUNCHER_PAGE = plainPage('Open TDS Brain from its launcher', [
-  'This page was opened without signing in. If you started it yourself, start it again and it will open in Chrome.',
-]);
+/** The signed-out page's wording (decision 6c), kept together for review. */
+export const SIGNED_OUT_COPY = {
+  heading: 'Sign in to TDS Brain',
+  paragraphs: [
+    "Press Command and Space, type TDS Brain Sign-in, then press Return. This page checks every few seconds and opens TDS Brain once you're signed in.",
+    'If Chrome opens with the wrong profile, close that window, switch to the Chrome profile you use for work, then open TDS Brain Sign-in again.',
+  ],
+} as const;
+
+const SIGNED_OUT_REFRESH_SECONDS = 5;
+
+/** Any page visit without a session. It reloads itself, so it becomes the app once signed in elsewhere. */
+export const LAUNCHER_PAGE = plainPage(SIGNED_OUT_COPY.heading, SIGNED_OUT_COPY.paragraphs, {
+  refreshSeconds: SIGNED_OUT_REFRESH_SECONDS,
+});
+
+/** A used or wrong `/auth` code: the same words, but reloading the home page, since that link never works again. */
+const FAILED_CODE_PAGE = plainPage(SIGNED_OUT_COPY.heading, SIGNED_OUT_COPY.paragraphs, {
+  refreshSeconds: SIGNED_OUT_REFRESH_SECONDS,
+  refreshUrl: '/',
+});
 
 const NOT_BUILT_PAGE = plainPage('TDS Brain is not quite ready', [
   'Its screens have not been set up on this computer yet. Ask whoever looks after the brain to finish setting it up.',
 ]);
+
+/** Used when the built client has no `sw-off.js`: unregister, then clear every cache. */
+const SW_OFF_FALLBACK = `self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    self.registration
+      .unregister()
+      .then(() => caches.keys())
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k)))),
+  );
+});
+`;
+
+/** The self-unregistering worker, for a worker script request that isn't `/sw.js`. Never cached. */
+async function sendUnregisterWorker(res: ServerResponse, clientDir: string): Promise<void> {
+  let body: string;
+  try {
+    body = await readFile(resolve(clientDir, 'sw-off.js'), 'utf8');
+  } catch {
+    body = SW_OFF_FALLBACK;
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/javascript; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
 
 async function fileIfExists(path: string): Promise<boolean> {
   try {
@@ -200,6 +259,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     engineHealth: deps.engineHealth,
     appVersion: deps.appVersion,
     serverStartedAt,
+    launchToken: deps.launchToken,
     log,
   };
 
@@ -264,13 +324,20 @@ export function createAppServer(deps: ServerDeps): AppServer {
           // Only a single-use code works here; the old `?token=` is ignored (A15).
           const result = authExchange(url.searchParams.get('code'), deps.authCodes, deps.launchToken);
           if (!result.ok) {
-            sendHtml(res, 403, LAUNCHER_PAGE, method);
+            sendHtml(res, 403, FAILED_CODE_PAGE, method);
             return;
           }
           res.writeHead(303, { 'Set-Cookie': result.setCookie, Location: '/', 'Cache-Control': 'no-store' });
           res.end();
           return;
         }
+        case 'unregister-worker':
+          await sendUnregisterWorker(res, deps.clientDir);
+          return;
+        case 'public':
+          // Missing listed files get serveStatic's 404 (they all have an extension), never index.html.
+          await serveStatic(req, res, url.pathname, deps.clientDir);
+          return;
         case 'allow':
           if (isApi) await handleApi(req, res, url, routeCtx);
           else await serveStatic(req, res, url.pathname, deps.clientDir);

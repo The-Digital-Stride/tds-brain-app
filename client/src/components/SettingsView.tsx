@@ -2,11 +2,13 @@ import { approvalsSentence } from '../approvals.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { useStore } from '../store.tsx';
+import { useDockApp } from '../useDockApp.ts';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
 export function SettingsView() {
   const { boot, updatePrefs } = useStore();
+  const dock = useDockApp();
   const { state: shell, dispatch } = useShell();
   if (!boot) return null;
   const { prefs, identity, brain, engine, appVersion } = boot;
@@ -100,6 +102,19 @@ export function SettingsView() {
             <span className="kv-note">
               This follows your Claude Code setting, so the app asks as often as your terminal does.
             </span>
+          </dd>
+          <dt>Dock app</dt>
+          <dd>
+            {dock.state === 'installed' && 'Installed. TDS Brain is in your Dock.'}
+            {dock.state === 'added' && 'Added. TDS Brain is in your Dock.'}
+            {dock.state === 'dismissed' && "Not added. You can add it later from Chrome's menu."}
+            {dock.state === 'can-install' && (
+              <button type="button" className="btn" onClick={() => void dock.install()}>
+                Add TDS Brain to your Dock
+              </button>
+            )}
+            {dock.state === 'manual' &&
+              "If TDS Brain isn't in your Dock yet, choose Install TDS Brain from Chrome's menu or the address bar."}
           </dd>
           <dt>App version</dt>
           <dd>{appVersion}</dd>

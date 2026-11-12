@@ -4,9 +4,13 @@
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { APP_HOST, type ApiErrorCode, ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
+import {
+  AUTH_COOKIE_MAX_AGE_SECONDS,
+  PUBLIC_ICON_PATTERN,
+  PUBLIC_PATHS,
+} from '../../shared/install-contract.ts';
 
 export const MAX_BODY_BYTES = 64 * 1024;
-export const AUTH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
 /** Launcher-only: lets `pnpm start` check that the app already on the port is really this one. */
 export const AUTH_PING_PATH = '/auth/ping';
 
@@ -72,6 +76,13 @@ export type GateDecision =
   | { action: 'auth-code' }
   /** A page visit without a session: show the plain "open it from the launcher" page. */
   | { action: 'launcher' }
+  /** One of the files the installed app needs before sign-in (decision 5): serve it, or 404. */
+  | { action: 'public' }
+  /**
+   * A service worker script fetch for anything but `/sw.js`: answer with the self-unregistering
+   * worker, so one planted by another program that held the port while the app was down removes itself.
+   */
+  | { action: 'unregister-worker' }
   | { action: 'reject'; status: number; code: ApiErrorCode; message: string };
 
 const CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -144,13 +155,22 @@ export function hasValidSession(cookieHeader: string | undefined, launchToken: s
   return safeEqual(got, cookieValueFor(launchToken));
 }
 
+/**
+ * The manifest, service worker, offline page and icons (decision 5). Exact and case-sensitive on the
+ * path as the gate sees it: no prefixes, no trailing slash, no encoded or nested lookalikes.
+ */
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_PATHS.includes(path) || PUBLIC_ICON_PATTERN.test(path);
+}
+
 function reject(status: number, code: ApiErrorCode, message: string): GateDecision {
   return { action: 'reject', status, code, message };
 }
 
 /**
  * Decide what to do with a request before any route runs. Order matters: Host first (defeats DNS
- * rebinding), then any foreign Origin, then the session cookie, then the rules for changing requests.
+ * rebinding), then any foreign Origin, then the sign-in and public paths, then the session cookie, then
+ * the rules for changing requests.
  */
 export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   const method = req.method.toUpperCase();
@@ -168,6 +188,12 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   const fetchSite = header(req.headers, 'sec-fetch-site');
   if (isApi && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
     return reject(403, 'forbidden', 'That request came from another website or app, so it was refused.');
+  }
+
+  // Chrome sends `Service-Worker: script` when it fetches a worker to install or update it. Only
+  // `/sw.js` is ours; any other worker on this origin was planted, so it gets one that removes itself.
+  if (method === 'GET' && req.path !== '/sw.js' && header(req.headers, 'service-worker') === 'script') {
+    return { action: 'unregister-worker' };
   }
 
   if (req.path === AUTH_PING_PATH) {
@@ -190,6 +216,12 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   if (req.path === ROUTES.auth) {
     return method === 'GET'
       ? { action: 'auth' }
+      : reject(405, 'bad-request', 'That is not something this page does.');
+  }
+
+  if (isPublicPath(req.path)) {
+    return method === 'GET' || method === 'HEAD'
+      ? { action: 'public' }
       : reject(405, 'bad-request', 'That is not something this page does.');
   }
 
@@ -298,11 +330,18 @@ export function createAuthCodes(secret: string, now: () => number = Date.now): A
 
 export type AuthResult = { ok: true; setCookie: string } | { ok: false };
 
-/** `/auth?code=…`: swap a single-use code for the session cookie. The cookie is unchanged from before. */
+/**
+ * The session cookie's `Set-Cookie` header. The one place it is built: `/auth` sets it and every
+ * signed-in `GET /api/bootstrap` re-sends it unchanged, so the 400 days restart on each visit (6a).
+ */
+export function sessionSetCookie(launchToken: string): string {
+  return `${SESSION_COOKIE}=${cookieValueFor(launchToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}`;
+}
+
+/** `/auth?code=…`: swap a single-use code for the session cookie. */
 export function authExchange(code: string | null | undefined, codes: AuthCodes, secret: string): AuthResult {
   if (!codes.redeem(code)) return { ok: false };
-  const setCookie = `${SESSION_COOKIE}=${cookieValueFor(secret)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE}`;
-  return { ok: true, setCookie };
+  return { ok: true, setCookie: sessionSetCookie(secret) };
 }
 
 /** Proves knowledge of the launch token for a nonce, without revealing the token or the cookie. */

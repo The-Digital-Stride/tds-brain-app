@@ -148,7 +148,9 @@ on Ian's Mac.
      picks it up, because they share the Chrome profile's cookies.
    - **(d) `tds-brain sign-out-everywhere`.** Makes a new secret in `runtime.json`, which ends every
      cookie. Cookies aren't separated by port, so this is the remedy if one ever leaks to another
-     local server.
+     local server. It doesn't remove a service worker another program planted while the port was
+     free; for that, the gate answers any foreign worker's update check (`Service-Worker: script`
+     on a path other than `/sw.js`) with the self-unregistering worker (phase 2 security review).
    Plain: you stay signed in for over a year, and when you do need to sign in, there's one obvious
    app for it.
 

@@ -5,3 +5,5 @@ spike/
 .DS_Store
 *.log
 .playwright-mcp/
+# Old data folder left behind by `tds-brain install --migrate-from` (holds the launch token)
+*.moved/

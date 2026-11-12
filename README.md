@@ -36,7 +36,39 @@ Keys: <kbd>⌘K</kbd> opens the command palette; <kbd>Esc</kbd> closes a drawer.
 shortcuts on (Settings), <kbd>[</kbd> shows or hides the names on the rail, and <kbd>T</kbd>,
 <kbd>C</kbd> and <kbd>S</kbd> open To-dos, Chats and Skills.
 
-## Run it
+## Install it (macOS)
+
+The installed app starts by itself when you log in and restarts if it stops. It lives in
+`~/Library/Application Support/TDS Brain/`: the code in `app/`, your sign-in secret, settings and
+pins in `data/`.
+
+```bash
+APP="$HOME/Library/Application Support/TDS Brain/app"
+git clone https://github.com/The-Digital-Stride/tds-brain-app.git "$APP"
+cd "$APP" && pnpm install && pnpm build
+bin/tds-brain install --brain ~/agencybrain     # your brain folder, wherever it is
+```
+
+Needs Node 22.18 or newer, and Claude Code installed and signed in (`claude` on your PATH). The
+install checks the brain folder first and changes nothing if it isn't one. It then adds
+**TDS Brain Sign-in** to `~/Applications`, starts the service and opens Chrome signed in. If an older
+copy is still running on port 3877, quit it first; the install stops and says so.
+
+Already running the app from a clone? Add `--migrate-from <that clone>/data` to bring your sign-in and
+pins across once. The old folder is renamed to `data.moved`.
+
+| Command (`bin/tds-brain …`) | What it does |
+|---|---|
+| `open` | Opens the app in Chrome, signed in (what TDS Brain Sign-in runs) |
+| `restart` | Restarts the service, for example after an update |
+| `doctor` | Checks Node, tools, Claude Code, the brain, the build and the service, and says what to fix |
+| `sign-out-everywhere` | Signs every browser out by making a new sign-in secret, then restarts |
+| `uninstall` | Stops the service and removes it and TDS Brain Sign-in. `--all` also removes `data/`; the code is never removed |
+
+**To update:** `cd "$APP" && git pull && pnpm install && pnpm build && bin/tds-brain restart`.
+The service log is `~/Library/Logs/TDS Brain/server.log`.
+
+## Run it from a clone
 
 ```bash
 pnpm install
@@ -44,23 +76,16 @@ pnpm build      # builds the page into dist/client
 pnpm start      # starts the server on 127.0.0.1:3877 and opens Chrome
 ```
 
-Needs Node 22.18 or newer, and Claude Code installed and signed in (`claude` on your PATH).
-
-**After pulling new work, rebuild and restart.** The server only reads its code when it starts, and
-the page is whatever `pnpm build` last made. An app left running from an older start keeps showing the
-older version:
-
-```bash
-lsof -ti tcp:3877 | xargs kill   # stop the app (open chats are closed)
-pnpm build && pnpm start
-```
+Without `TDS_BRAIN_APP_DATA` a clone uses the same data folder as the installed app, so it signs in as
+you and, if the installed app is already on the port, simply opens that. Give a development copy its
+own `TDS_BRAIN_APP_DATA` and `TDS_BRAIN_APP_PORT`.
 
 ### Settings from the environment
 
 | Variable | Default | What it sets |
 |---|---|---|
-| `TDS_BRAIN_PATH` | `~/agencybrain` | The brain folder |
-| `TDS_BRAIN_APP_DATA` | `./data` | The app's own folder: sign-in secret, preferences, picture cache |
+| `TDS_BRAIN_PATH` | `brainPath` in `data/settings.json`, else `~/agencybrain` | The brain folder (the install writes `settings.json`) |
+| `TDS_BRAIN_APP_DATA` | `~/Library/Application Support/TDS Brain/data` | The app's own folder: sign-in secret, preferences, picture cache |
 | `TDS_BRAIN_APP_PORT` | `3877` | The port |
 | `TDS_CLAUDE_PATH` | `claude` on PATH | Which Claude Code to drive |
 
@@ -92,7 +117,7 @@ pnpm check      # all of the above plus a build (rewrites dist/client, so not in
 ## Signing in
 
 The app opens Chrome with a one-time code and then keeps you signed in with a cookie for 30 days.
-To sign every browser out, stop the app, delete `data/runtime.json` and start it again.
+To sign every browser out, run `bin/tds-brain sign-out-everywhere`.
 
 ## Layout
 
@@ -102,7 +127,9 @@ To sign every browser out, stop the app, delete `data/runtime.json` and start it
 | `server/brain/` | Reads the brain folder (skills, to-dos, clients, identity, usage, the library and its previews). Never runs brain code in-process |
 | `server/engine/` | Drives Claude Code through the Agent SDK: chats, approvals, questions |
 | `server/http/` | The local web server and its security checks |
-| `server/store/` | The app's own notes (pins, layout), kept in `data/` |
+| `server/store/` | The app's own notes (pins, layout), kept in the data folder |
+| `server/install/`, `server/cli.ts`, `bin/` | The `tds-brain` command: the login service, TDS Brain Sign-in, `doctor`, moving data across, and the Node finder `bin/node` |
+| `server/settings.ts`, `server/brain/locate.ts` | Where the data folder and brain are, and the check that a folder really is a brain |
 | `client/src/shell/` | The frame: rail, drawers, side panel, command palette, Home |
 | `client/src/components/` | Chat, approval and question cards, Settings |
 | `client/src/apps/` | Images and Documents, and the parts they share |

@@ -15,10 +15,16 @@ import {
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { DEFAULT_PORT } from '../shared/contract.ts';
+import type { SettingSource } from '../shared/install-contract.ts';
+import { readSettings, resolveBrainPath, resolveDataDir } from './settings.ts';
 
 export interface AppConfig {
   appRoot: string;
   brainPath: string;
+  /** Where `brainPath` came from: `TDS_BRAIN_PATH`, `settings.json`, or the `~/agencybrain` fallback. */
+  brainSource: SettingSource;
+  /** True when `TDS_BRAIN_SERVICE=1`: launchd restarts the server when it exits. */
+  underService: boolean;
   port: number;
   dataDir: string;
   clientDir: string;
@@ -110,12 +116,22 @@ export function loadOrCreateLaunchToken(dataDir: string): string {
   return launchToken;
 }
 
-export function resolveConfig(env: NodeJS.ProcessEnv = process.env, appRoot: string = APP_ROOT): AppConfig {
-  const brainPath = resolve(expandHome(env.TDS_BRAIN_PATH?.trim() || '~/agencybrain'));
-  const dataDir = resolve(expandHome(env.TDS_BRAIN_APP_DATA?.trim() || join(appRoot, 'data')));
+/**
+ * The data folder is `TDS_BRAIN_APP_DATA`, else `~/Library/Application Support/TDS Brain/data` (decision 7).
+ * The brain is `TDS_BRAIN_PATH`, then `settings.json`, then `~/agencybrain` (decision 8).
+ */
+export function resolveConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  appRoot: string = APP_ROOT,
+  home: string = homedir(),
+): AppConfig {
+  const dataDir = resolveDataDir(env, home);
+  const brain = resolveBrainPath(env, readSettings(dataDir), home);
   return {
     appRoot,
-    brainPath,
+    brainPath: brain.path,
+    brainSource: brain.source,
+    underService: env.TDS_BRAIN_SERVICE === '1',
     port: parsePort(env.TDS_BRAIN_APP_PORT),
     dataDir,
     clientDir: join(appRoot, 'dist', 'client'),

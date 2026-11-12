@@ -307,7 +307,7 @@ Builder B can import it from the start.
 | `server/http/security.test.ts` (added to) | only the exact public paths and the icon pattern pass, for `GET`/`HEAD`, still behind the Host and Origin checks; `/sw.js/`, `/SW.JS`, `/icons/`, `/icons/a/b`, `/icons/x` and `/icons/../api/x` are refused; a public path with no file gets 404, not the home page | A |
 | `server/http/routes.test.ts` (added to) | bootstrap re-sends a 400-day cookie only with a valid session; setup routes list candidates, refuse a non-brain path and `env-override`, save a valid one, and refuse without a session or from another origin | A |
 | `server/engine/session-manager.test.ts` (added to) | with no brain, starting a chat is refused and Claude is never started | A |
-| `server/install/plist.test.ts` | exact keys (`ExitTimeOut`, `ThrottleInterval`, `AssociatedBundleIdentifiers`, the environment); paths with spaces and `&` are escaped | B |
+| `server/install/plist.test.ts` | exact keys (`ExitTimeOut`, `ThrottleInterval`, the environment, and `ProgramArguments` pointing at the service executable inside the sign-in app); paths with spaces and `&` are escaped | B |
 | `server/install/node-launcher.test.ts` | picks the newest Node at 22.18 or later across nvm, Homebrew and the system, and refuses older ones | B |
 | `server/install/signin-app.test.ts` | the bundle's `Info.plist` and script; the script quotes the app path | B |
 | `server/install/doctor.test.ts` | each failure (no Node, a missing tool on the service PATH, no Claude, brain missing or EPERM, agent not loaded, port held by another program, no build) gives its plain message | B |
@@ -360,7 +360,7 @@ All blocking and should items were accepted and are folded into the decisions ab
 - **S2:** a 400-day cookie renewed on every bootstrap, replacing "once a day", which would have
   needed extra state.
 - **S3:** install order of `bootout`, `enable`, `bootstrap`, then wait; `ExitTimeOut` 30;
-  `AssociatedBundleIdentifiers`; `TDS_BRAIN_SERVICE=1`.
+  `AssociatedBundleIdentifiers` (later dropped: the spike showed it is ignored for an unsigned app); `TDS_BRAIN_SERVICE=1`.
 - **S4:** an explicit `--migrate-from` replaces moving data on start-up.
 - **S5:** `app` sits beside `data`, not inside it.
 - **S6:** Node 22.18 or later; `LANG`; `doctor` checks tools on the service PATH.

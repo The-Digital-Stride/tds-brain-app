@@ -117,8 +117,11 @@ app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
+  const from = { env: 'from TDS_BRAIN_PATH', settings: 'from settings', default: 'the default' }[
+    config.brainSource
+  ];
   void brain.health().then(
-    (h) => log(h.ok ? `Brain found at ${h.path}` : `Brain not ready at ${h.path}`),
+    (h) => log(h.ok ? `Brain found at ${h.path} (${from})` : `Brain not ready at ${h.path} (${from})`),
     () => log('Could not check the brain folder.'),
   );
   if (!noOpen) {

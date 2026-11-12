@@ -1,0 +1,57 @@
+#!/bin/sh
+# The node launcher (installable-app decision 2). launchd reads no shell settings, so the service
+# cannot rely on `node` being on PATH. This picks the newest Node at or above the minimum from nvm,
+# Homebrew or the system, then runs it with the same arguments.
+#
+# TDS_BRAIN_NODE_SYSTEM (colon-separated file list) replaces the three system locations; tests use it.
+
+MIN_MAJOR=22
+MIN_MINOR=18
+MIN_PATCH=0
+MIN_TEXT="$MIN_MAJOR.$MIN_MINOR.$MIN_PATCH"
+
+best_key=0
+best_path=""
+
+# consider <path> <version like 24.15.0 or v24.15.0-rc.1>: remember it if new enough and newer than the best so far.
+consider() {
+  v=${2#v}
+  major=${v%%.*}
+  rest=${v#*.}
+  minor=${rest%%.*}
+  patch=${rest#*.}
+  patch=${patch%%[!0-9]*}
+  case "$major$minor$patch" in '' | *[!0-9]*) return 0 ;; esac
+  case "$major" in '') return 0 ;; esac
+  [ -n "$minor" ] && [ -n "$patch" ] || return 0
+  min_key=$((MIN_MAJOR * 1000000000 + MIN_MINOR * 1000000 + MIN_PATCH))
+  key=$((major * 1000000000 + minor * 1000000 + patch))
+  [ "$key" -ge "$min_key" ] || return 0
+  if [ "$key" -gt "$best_key" ]; then
+    best_key=$key
+    best_path=$1
+  fi
+}
+
+for dir in "${HOME:-/nonexistent}"/.nvm/versions/node/v*; do
+  [ -x "$dir/bin/node" ] || continue
+  consider "$dir/bin/node" "${dir##*/}"
+done
+
+system=${TDS_BRAIN_NODE_SYSTEM:-/opt/homebrew/bin/node:/usr/local/bin/node:/usr/bin/node}
+old_ifs=$IFS
+IFS=:
+for candidate in $system; do
+  IFS=$old_ifs
+  [ -x "$candidate" ] || continue
+  version=$("$candidate" --version 2>/dev/null) || continue
+  consider "$candidate" "$version"
+done
+IFS=$old_ifs
+
+if [ -z "$best_path" ]; then
+  echo "TDS Brain needs Node $MIN_TEXT or newer, and could not find it. Install it from nodejs.org or with nvm, then run this again." >&2
+  exit 127
+fi
+
+exec "$best_path" "$@"

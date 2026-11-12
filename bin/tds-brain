@@ -1,0 +1,13 @@
+#!/bin/sh
+# Runs the TDS Brain command-line tool: tds-brain install | open | restart | doctor | sign-out-everywhere | uninstall
+self=$0
+while [ -h "$self" ]; do
+  target=$(readlink "$self")
+  case "$target" in
+    /*) self=$target ;;
+    *) self="$(dirname "$self")/$target" ;;
+  esac
+done
+bin_dir=$(cd "$(dirname "$self")" && pwd -P) || exit 1
+app_dir=$(dirname "$bin_dir")
+exec "$bin_dir/node" "$app_dir/server/cli.ts" "$@"

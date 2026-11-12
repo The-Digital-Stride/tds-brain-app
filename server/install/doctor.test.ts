@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { DoctorCheck } from '../../shared/install-contract.ts';
+import { BRAIN_REFUSAL_TEXT, type DoctorCheck } from '../../shared/install-contract.ts';
 import { type DoctorDeps, runDoctor } from './doctor.ts';
 
 const healthy = (over: Partial<DoctorDeps> = {}): DoctorDeps => ({
   appRoot: '/app',
   port: 3877,
   launchToken: 't'.repeat(43),
-  brainPath: '/Users/a/agencybrain',
+  brainCandidate: { path: '/Users/a/agencybrain', source: 'settings' },
   servicePath: ['/app/bin', '/usr/bin'],
   logFile: '/log/server.log',
   signinAppDir: '/Users/a/Applications/TDS Brain Sign-in.app',
@@ -71,8 +71,39 @@ describe('runDoctor', () => {
     expect(failed(r).sort()).toEqual(['brain', 'build', 'claude']);
   });
 
-  it('flags no brain set', async () => {
-    expect(failed(await runDoctor(healthy({ brainPath: null })))).toEqual(['brain']);
+  it('says no brain folder is chosen yet when the never-chosen default is not a brain', async () => {
+    const r = await runDoctor(
+      healthy({
+        brainCandidate: { path: '/Users/a/agencybrain', source: 'default' },
+        checkBrain: async () => ({ ok: false, reason: 'not-found' }),
+      }),
+    );
+    expect(failed(r)).toEqual(['brain']);
+    expect(r.results.find((x) => x.check === 'brain')?.message).toBe(
+      'No brain folder chosen yet; open TDS Brain to choose one.',
+    );
+  });
+
+  it('passes the default folder when it is a brain', async () => {
+    const r = await runDoctor(
+      healthy({ brainCandidate: { path: '/Users/a/agencybrain', source: 'default' } }),
+    );
+    expect(failed(r)).toEqual([]);
+  });
+
+  it('explains a refused chosen folder in the same words as the Setup page, naming it', async () => {
+    for (const source of ['settings', 'env'] as const) {
+      const r = await runDoctor(
+        healthy({
+          brainCandidate: { path: '/Users/a/old-brain', source },
+          checkBrain: async () => ({ ok: false, reason: 'missing-whoami' }),
+        }),
+      );
+      const brain = r.results.find((x) => x.check === 'brain');
+      expect(brain?.ok).toBe(false);
+      expect(brain?.message).toContain(BRAIN_REFUSAL_TEXT['missing-whoami']);
+      expect(brain?.message).toContain('/Users/a/old-brain');
+    }
   });
 
   it('flags the agent not loaded and the app not answering', async () => {

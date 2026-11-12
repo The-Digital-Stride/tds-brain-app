@@ -5,16 +5,19 @@ import { captureInstallPrompt } from '../installPrompt.ts';
 
 const boot = {
   appVersion: '1.0.0',
+  appState: { kind: 'ready' as const },
   service: { underService: true },
   prefs: { directWrites: false },
   identity: { name: 'Sam', role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', permissionMode: 'default' },
 };
+const setSetupOpen = vi.fn();
 const live = { streamUp: true, lastSync: new Date().toISOString() as string | null | undefined };
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
     boot,
+    setSetupOpen,
     updatePrefs: vi.fn(),
     streamUp: live.streamUp,
     lists: { todos: 'loaded', chats: 'loaded' },
@@ -43,6 +46,13 @@ afterEach(() => {
 });
 
 describe('health panel', () => {
+  it('opens the brain folder page from the Change button', () => {
+    standalone(false);
+    render(<SettingsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Change brain folder' }));
+    expect(setSetupOpen).toHaveBeenCalledWith(true);
+  });
+
   it('says everything is connected when it is', () => {
     standalone(false);
     render(<SettingsView />);

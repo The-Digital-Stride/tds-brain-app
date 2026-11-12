@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SESSION_COOKIE } from '../../shared/contract.ts';
+import { SETUP_ROUTES } from '../../shared/install-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { cookieValueFor, createAuthCodes, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
@@ -23,6 +24,7 @@ const SW_OFF = '// test sw-off\nself.registration.unregister();\n';
 let clientDir: string;
 let app: AppServer;
 let listenPort: number;
+const setupCalls = { candidates: 0, save: [] as string[], restart: 0 };
 
 beforeAll(async () => {
   clientDir = mkdtempSync(join(tmpdir(), 'tba-client-'));
@@ -55,6 +57,20 @@ beforeAll(async () => {
     uploads: {} as never,
     engineHealth: () =>
       ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }) as never,
+    appState: { kind: 'ready' },
+    setup: {
+      candidates: async () => {
+        setupCalls.candidates += 1;
+        return { candidates: [], current: null, openChats: 0, envOverride: false };
+      },
+      save: async (p) => {
+        setupCalls.save.push(p);
+        return { ok: true, path: p, restarting: true };
+      },
+      restart: () => {
+        setupCalls.restart += 1;
+      },
+    },
   });
   await new Promise<void>((done) => app.server.listen(0, '127.0.0.1', done));
   listenPort = (app.server.address() as AddressInfo).port;
@@ -75,7 +91,7 @@ interface Reply {
 /** Sends `path` byte for byte, so the server's own URL parsing is what gets tested. */
 function send(
   path: string,
-  opts: { method?: string; headers?: Record<string, string> } = {},
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = request(
@@ -99,7 +115,7 @@ function send(
       },
     );
     req.on('error', reject);
-    req.end();
+    req.end(opts.body);
   });
 }
 
@@ -274,5 +290,63 @@ describe('GET /api/bootstrap over HTTP (decision 6a)', () => {
       expect(r.status).toBe(401);
       expect(r.headers['set-cookie']).toBeUndefined();
     }
+  });
+});
+
+describe('setup routes behind the gate (setup-screen decision 4)', () => {
+  const ORIGIN = `http://${HOST}`;
+  const body = JSON.stringify({ path: '/Users/a/brain' });
+
+  it('need a session, both of them', async () => {
+    const list = await send(SETUP_ROUTES.candidates);
+    expect(list.status).toBe(401);
+    const save = await send(SETUP_ROUTES.brain, {
+      method: 'PUT',
+      headers: { origin: ORIGIN, 'content-type': 'application/json' },
+      body,
+    });
+    expect(save.status).toBe(401);
+    expect(setupCalls.candidates).toBe(0);
+    expect(setupCalls.save).toEqual([]);
+  });
+
+  it('lists the candidates with a session', async () => {
+    const r = await send(SETUP_ROUTES.candidates, { headers: { cookie: GOOD_COOKIE } });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toMatchObject({ candidates: [], openChats: 0 });
+  });
+
+  it('saves only from the app itself, as JSON', async () => {
+    const noOrigin = await send(SETUP_ROUTES.brain, {
+      method: 'PUT',
+      headers: { cookie: GOOD_COOKIE, 'content-type': 'application/json' },
+      body,
+    });
+    expect(noOrigin.status).toBe(403);
+    const foreign = await send(SETUP_ROUTES.brain, {
+      method: 'PUT',
+      headers: { cookie: GOOD_COOKIE, origin: 'https://evil.example', 'content-type': 'application/json' },
+      body,
+    });
+    expect(foreign.status).toBe(403);
+    const notJson = await send(SETUP_ROUTES.brain, {
+      method: 'PUT',
+      headers: { cookie: GOOD_COOKIE, origin: ORIGIN, 'content-type': 'text/plain' },
+      body,
+    });
+    expect(notJson.status).toBe(415);
+    expect(setupCalls.save).toEqual([]);
+
+    const ok = await send(SETUP_ROUTES.brain, {
+      method: 'PUT',
+      headers: { cookie: GOOD_COOKIE, origin: ORIGIN, 'content-type': 'application/json' },
+      body,
+    });
+    expect(ok.status).toBe(200);
+    expect(JSON.parse(ok.body)).toEqual({ ok: true, path: '/Users/a/brain', restarting: true });
+    expect(setupCalls.save).toEqual(['/Users/a/brain']);
+    // The answer has been read in full, so the response has finished and the restart has run.
+    await new Promise((r) => setImmediate(r));
+    expect(setupCalls.restart).toBe(1);
   });
 });

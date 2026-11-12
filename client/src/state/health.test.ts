@@ -7,6 +7,7 @@ const NOW = Date.parse('2026-11-12T17:30:00Z');
 function boot(over: Partial<Bootstrap> = {}): Bootstrap {
   return {
     appVersion: '0',
+    appState: { kind: 'ready' as const },
     service: { underService: true },
     identity: { name: 'Ian', email: null, role: 'scout', knownMember: true, slug: 'ian' },
     profile: { title: null, departments: [], owns: null },

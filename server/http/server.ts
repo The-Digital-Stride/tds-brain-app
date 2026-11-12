@@ -12,6 +12,7 @@ import {
   type EngineHealth,
   type Thumbnailer,
 } from '../../shared/contract.ts';
+import type { AppState, SetupService } from '../../shared/install-contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
 import { handleApi, sendError, sendPageError } from './routes.ts';
@@ -225,6 +226,10 @@ export interface ServerDeps {
   uploads: UploadStaging;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
+  /** What start-up decided about the brain. In `setup`, every brain dependency above is a stand-in. */
+  appState: AppState;
+  /** Choosing the brain folder (setup-screen plan, decision 4). */
+  setup: SetupService;
   log?: (line: string) => void;
 }
 
@@ -259,6 +264,8 @@ export function createAppServer(deps: ServerDeps): AppServer {
     uploads: deps.uploads,
     hub,
     engineHealth: deps.engineHealth,
+    appState: deps.appState,
+    setup: deps.setup,
     appVersion: deps.appVersion,
     underService: deps.underService,
     serverStartedAt,

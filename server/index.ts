@@ -5,8 +5,11 @@
  */
 import { homedir } from 'node:os';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
-import { APP_HOST, type EngineHealth } from '../shared/contract.ts';
+import { APP_HOST } from '../shared/contract.ts';
+import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
+import { appStateFor, decideBrain } from './brain/decide.ts';
 import { createBrainReaders } from './brain/index.ts';
+import { checkBrain, findBrainCandidates } from './brain/locate.ts';
 import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
@@ -19,6 +22,15 @@ import {
   openBrowser as openLink,
   signInUrl,
 } from './launcher.ts';
+import { mergeSettings } from './settings.ts';
+import {
+  createEngineHealth,
+  createSetupBrain,
+  createSetupSessions,
+  createSetupThumbs,
+  createSetupUploads,
+} from './setup-mode.ts';
+import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
 import { createUploadStaging } from './uploads/staging.ts';
 
@@ -35,17 +47,15 @@ const openBrowser = (url: string) => {
   if (!noOpen) openLink(url);
 };
 
-function engineHealth(): EngineHealth {
-  const permissionMode = resolvePermissionMode(config.brainPath, homedir());
-  return config.claudePath
-    ? { ok: true, permissionMode, claudePath: config.claudePath, problem: null }
-    : {
-        ok: false,
-        permissionMode,
-        claudePath: null,
-        problem: 'Claude Code is not installed on this computer, or the app cannot find it.',
-      };
-}
+const home = homedir();
+const brainCheckContext = { home, appRoot: config.appRoot, dataDir: config.dataDir };
+
+// Decided once, and checked, before anything that touches the brain is built (setup-screen plan,
+// decision 1). Only a `ready` decision's path is ever handed to brain code.
+const decision: BrainDecision = await decideBrain(config.brainCandidate, (p) =>
+  checkBrain(p, brainCheckContext),
+);
+const brainPath = decision.kind === 'ready' ? decision.path : null;
 
 const engine: EngineFns = {
   query: (params) => query(params),
@@ -53,26 +63,57 @@ const engine: EngineFns = {
   getSessionMessages: (id, opts) => getSessionMessages(id, opts),
 };
 
-// Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
-const quickLook = quickLookAvailable() ? { command: QUICK_LOOK_COMMAND } : null;
-const brain = createBrainReaders(config.brainPath, {
-  dataDir: config.dataDir,
-  docThumbs: quickLook !== null,
-});
-const thumbs = createThumbnailer(config.dataDir, { brainRoot: config.brainPath, quickLook });
 const store = createAppStore(config.dataDir);
-// Off (root null) when the data folder and the brain overlap; it logs why. It sweeps only once
-// started, after `listen`: a second `pnpm start` that finds the port taken must leave it alone.
-const uploads = createUploadStaging({ dataDir: config.dataDir, brainRoot: config.brainPath, log });
-const sessions = createSessionManager({
-  brain,
-  brainRoot: config.brainPath,
-  claudePath: config.claudePath,
-  engine,
+
+/**
+ * The real readers, thumbnailer, upload staging and session manager on a checked brain; in setup mode,
+ * stand-ins that read nothing and can never start Claude (decision 2).
+ */
+function buildBrainSide(path: string | null) {
+  if (path === null) {
+    return {
+      brain: createSetupBrain(),
+      thumbs: createSetupThumbs(),
+      uploads: createSetupUploads(),
+      sessions: createSetupSessions(),
+    };
+  }
+  // Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
+  const quickLook = quickLookAvailable() ? { command: QUICK_LOOK_COMMAND } : null;
+  const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
+  const thumbs = createThumbnailer(config.dataDir, { brainRoot: path, quickLook });
+  // Off (root null) when the data folder and the brain overlap; it logs why. It sweeps only once
+  // started, after `listen`: a second `pnpm start` that finds the port taken must leave it alone.
+  const uploads = createUploadStaging({ dataDir: config.dataDir, brainRoot: path, log });
+  const sessions = createSessionManager({
+    brain,
+    brainRoot: path,
+    claudePath: config.claudePath,
+    engine,
+    env: process.env,
+    log,
+    uploads,
+    dataDir: config.dataDir,
+  });
+  return { brain, thumbs, uploads, sessions };
+}
+
+const { brain, thumbs, uploads, sessions } = buildBrainSide(brainPath);
+const engineHealth = createEngineHealth(brainPath, config.claudePath, home, resolvePermissionMode);
+
+const setup = createSetupService({
   env: process.env,
-  log,
-  uploads,
+  home,
+  appRoot: config.appRoot,
   dataDir: config.dataDir,
+  underService: config.underService,
+  current: decision.kind === 'ready' ? { path: decision.path, source: decision.source } : null,
+  openChats: async () => (await sessions.list()).live.length,
+  checkBrain,
+  findBrainCandidates,
+  mergeSettings,
+  log,
+  restart: () => void shutdown(),
 });
 
 const app = createAppServer({
@@ -88,6 +129,8 @@ const app = createAppServer({
   thumbs,
   uploads,
   engineHealth,
+  appState: appStateFor(decision),
+  setup,
   log,
 });
 
@@ -118,18 +161,43 @@ app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
-  const from = { env: 'from TDS_BRAIN_PATH', settings: 'from settings', default: 'the default' }[
-    config.brainSource
-  ];
-  void brain.health().then(
-    (h) => log(h.ok ? `Brain found at ${h.path} (${from})` : `Brain not ready at ${h.path} (${from})`),
-    () => log('Could not check the brain folder.'),
-  );
+  logBrainDecision(decision);
   if (!noOpen) {
     const code = authCodes.mint();
     if (code) openBrowser(signInUrl(config.port, code));
   }
 });
+
+const FROM = { env: 'from TDS_BRAIN_PATH', settings: 'from settings', default: 'the default' } as const;
+const REFUSAL_LOG: Record<BrainRefusal, string> = {
+  'not-absolute': 'not a full path',
+  'not-found': 'no folder there',
+  'outside-home': 'outside the home folder',
+  'is-app-folder': 'the app folder',
+  'is-data-folder': 'the data folder',
+  'protected-folder': 'macOS refused access',
+  'missing-roles': 'no .team-config/roles.json',
+  'missing-whoami': 'no tools/whoami.cjs',
+  'not-a-repo': 'not a git folder',
+};
+
+function logBrainDecision(d: BrainDecision): void {
+  if (d.kind === 'ready') {
+    const from = FROM[d.source];
+    void brain.health().then(
+      (h) => log(h.ok ? `Brain found at ${h.path} (${from})` : `Brain not ready at ${h.path} (${from})`),
+      () => log('Could not check the brain folder.'),
+    );
+    return;
+  }
+  if (d.tried === null || d.source === null || d.reason === null) {
+    log('No brain folder chosen yet. Waiting for one to be chosen in the app; Claude is off.');
+    return;
+  }
+  log(
+    `Brain folder ${JSON.stringify(d.tried)} (${FROM[d.source]}) can't be used (${REFUSAL_LOG[d.reason]}). Waiting for one to be chosen in the app; Claude is off.`,
+  );
+}
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {

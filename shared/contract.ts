@@ -10,6 +10,8 @@
  * source with Node's built-in type stripping.
  */
 
+import type { AppState } from './install-contract.ts';
+
 export const DEFAULT_PORT = 3877;
 /** The app is served on this host only. `localhost` is refused: cookies do not carry between the two names. */
 export const APP_HOST = '127.0.0.1';
@@ -531,6 +533,8 @@ export interface ServiceInfo {
 
 export interface Bootstrap {
   appVersion: string;
+  /** `setup`: no usable brain was found, so the client shows the Setup page (setup-screen plan, decision 3). */
+  appState: AppState;
   service: ServiceInfo;
   identity: Identity;
   profile: MemberProfile;

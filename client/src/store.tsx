@@ -81,6 +81,9 @@ export interface Store {
   /** Counts up when the library's files change or the server restarts; the library screens refetch. */
   libraryVersion: number;
   retry: () => void;
+  /** True while the full-screen brain folder page is open from Settings or the brain problem screen. */
+  setupOpen: boolean;
+  setSetupOpen: (open: boolean) => void;
   /** The chat whose inline "Close anyway?" is showing in the header, if any. */
   closeRequest: string | null;
   cancelClose: () => void;
@@ -132,6 +135,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [libraryVersion, setLibraryVersion] = useState(0);
+  const [setupOpen, setSetupOpen] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef(activeChat);
   activeRef.current = activeChat;
@@ -502,6 +506,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeTodo,
       libraryVersion,
       retry: loadAll,
+      setupOpen,
+      setSetupOpen,
       composerFocus,
       requestComposerFocus: requestFocus,
       closeRequest,
@@ -534,6 +540,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeTodo,
       libraryVersion,
       loadAll,
+      setupOpen,
       composerFocus,
       requestFocus,
       closeRequest,

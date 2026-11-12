@@ -61,6 +61,10 @@ export function readSettings(dataDir: string): AppSettings {
 
 /** Atomic: a temp file renamed over the old one. File 0600; the folder is created 0700. */
 export function writeSettings(dataDir: string, settings: AppSettings): void {
+  writeSettingsFile(dataDir, { ...settings });
+}
+
+function writeSettingsFile(dataDir: string, settings: Record<string, unknown>): void {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const file = join(dataDir, SETTINGS_FILE);
   const tmp = `${file}.${process.pid}.tmp`;
@@ -70,8 +74,25 @@ export function writeSettings(dataDir: string, settings: AppSettings): void {
 }
 
 /**
- * `TDS_BRAIN_PATH`, then `settings.brainPath`, then `<home>/agencybrain`. Phase 1 keeps the
- * unchecked fallback; the `null` of decision 9 arrives in phase 3.
+ * Sets the keys in `patch` and keeps every other key already in the file, including ones this version
+ * doesn't know. A missing or broken file counts as `{}`. Same atomic, 0600 write as `writeSettings`.
+ */
+export function mergeSettings(dataDir: string, patch: AppSettings): void {
+  let current: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(dataDir, SETTINGS_FILE), 'utf8'));
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      current = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // missing or broken: start again
+  }
+  writeSettingsFile(dataDir, { ...current, ...patch });
+}
+
+/**
+ * `TDS_BRAIN_PATH`, then `settings.brainPath`, then `<home>/agencybrain`. Unchecked: it names the
+ * candidate only, and `decideBrain` (server/brain/decide.ts) checks it before any brain code sees it.
  */
 export function resolveBrainPath(
   env: Record<string, string | undefined>,

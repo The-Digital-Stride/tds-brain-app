@@ -32,6 +32,7 @@ import {
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
+import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
@@ -57,6 +58,10 @@ export interface RouteContext {
   uploads: UploadStaging;
   /** Built per request: the permission mode is read afresh (A18). */
   engineHealth: () => EngineHealth;
+  /** What start-up decided about the brain (setup-screen plan, decision 3). */
+  appState: AppState;
+  /** Choosing the brain folder; available in both states (decision 4). */
+  setup: SetupService;
   appVersion: string;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
@@ -336,6 +341,7 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
   ]);
   return {
     appVersion: ctx.appVersion,
+    appState: ctx.appState,
     service: { underService: ctx.underService },
     identity,
     profile,
@@ -346,6 +352,18 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     usedOften,
     prefs,
   };
+}
+
+/** A pasted path is at most this many bytes; longer is never a real folder. */
+const MAX_SETUP_PATH_BYTES = 4096;
+
+/** `PUT /api/setup/brain`: `{ path }`, a string of at most 4 KB. The setup service tidies and checks it. */
+export function parseSetBrainRequest(body: unknown): string {
+  const path = isRec(body) ? body.path : undefined;
+  if (typeof path !== 'string' || Buffer.byteLength(path, 'utf8') > MAX_SETUP_PATH_BYTES) {
+    throw new HttpError(400, 'bad-request', 'That folder path was not understood.');
+  }
+  return path;
 }
 
 async function todos(ctx: RouteContext): Promise<TodoList> {
@@ -632,6 +650,21 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       res.setHeader('Set-Cookie', sessionSetCookie(ctx.launchToken));
     }
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === SETUP_ROUTES.candidates) {
+    if (method !== 'GET') throw methodNotAllowed();
+    sendJson(res, 200, await ctx.setup.candidates());
+    return;
+  }
+
+  if (path === SETUP_ROUTES.brain) {
+    if (method !== 'PUT') throw methodNotAllowed();
+    const result = await ctx.setup.save(parseSetBrainRequest(await readJson(req)));
+    // Only once the answer has gone out, so the page learns it was saved before the server stops.
+    if (result.ok && result.restarting) res.once('finish', () => ctx.setup.restart());
+    sendJson(res, 200, result);
     return;
   }
 

@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   defaultDataDir,
   installedAppDir,
+  mergeSettings,
   readSettings,
   resolveBrainPath,
   resolveDataDir,
@@ -100,6 +101,34 @@ describe('writeSettings', () => {
     writeSettings(dataDir, {});
     expect(existsSync(join(dataDir, 'settings.json'))).toBe(true);
     expect(readSettings(dataDir)).toEqual({});
+  });
+});
+
+describe('mergeSettings', () => {
+  it('changes only the keys given and keeps every other key in the file, even unknown ones', () => {
+    const dataDir = tempDir();
+    writeFileSync(
+      join(dataDir, 'settings.json'),
+      JSON.stringify({ brainPath: '/old', theme: 'dark', nested: { a: 1 } }),
+    );
+    mergeSettings(dataDir, { brainPath: '/new' });
+    expect(JSON.parse(readFileSync(join(dataDir, 'settings.json'), 'utf8'))).toEqual({
+      brainPath: '/new',
+      theme: 'dark',
+      nested: { a: 1 },
+    });
+    expect(statSync(join(dataDir, 'settings.json')).mode & 0o777).toBe(0o600);
+    expect(readdirSync(dataDir)).toEqual(['settings.json']);
+  });
+
+  it('starts from {} when the file is missing or broken', () => {
+    const missing = join(tempDir(), 'data');
+    mergeSettings(missing, { brainPath: '/b' });
+    expect(readSettings(missing)).toEqual({ brainPath: '/b' });
+    const broken = tempDir();
+    writeFileSync(join(broken, 'settings.json'), '[1, 2]');
+    mergeSettings(broken, { brainPath: '/c' });
+    expect(JSON.parse(readFileSync(join(broken, 'settings.json'), 'utf8'))).toEqual({ brainPath: '/c' });
   });
 });
 

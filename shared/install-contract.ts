@@ -25,12 +25,12 @@ export const INSTALLED_APP_DIR = 'app';
 export const INSTALLED_DATA_DIR = 'data';
 
 /**
- * Added to `AppConfig` (lead). `brainPath` is null when no folder passes the brain check; then no chat
- * may start and the brain readers and watcher do nothing (decision 9).
+ * Added to `AppConfig` (lead). `brainCandidate` is `resolveBrainPath`'s answer and is NOT checked:
+ * nothing that touches the brain may use it. `server/index.ts` passes it to `decideBrain`, and only a
+ * `ready` decision's `path` reaches brain code (setup-screen plan, decisions 1 and 2).
  */
 export interface BrainConfig {
-  brainPath: string | null;
-  brainSource: SettingSource | null;
+  brainCandidate: { path: string; source: SettingSource };
   /** True when `TDS_BRAIN_SERVICE=1`: launchd restarts the server when it exits. */
   underService: boolean;
 }
@@ -42,7 +42,7 @@ export interface BrainConfig {
  * - `readSettings(dataDir)`: `<dataDir>/settings.json`, `{}` when missing or broken; never throws
  * - `writeSettings(dataDir, settings)`: atomic (temp file + rename), file 0600, folder created 0700
  * - `resolveBrainPath(env, settings, home)`: `TDS_BRAIN_PATH`, then `settings.brainPath`, then
- *   `<home>/agencybrain`. Phase 1 keeps today's unchecked fallback; the `null` of decision 9 arrives in phase 3.
+ *   `<home>/agencybrain`. Unchecked: it names the candidate only; `decideBrain` checks it.
  */
 export interface SettingsModule {
   supportDir(home: string): string;
@@ -94,18 +94,24 @@ export interface BrainLocator {
 // ---------------------------------------------------------------------------
 
 /**
- * Added to `Bootstrap` in shared/contract.ts. `ready`: the brain was found. `setup`: no usable brain,
- * so the client shows the Setup page and the rest of Bootstrap holds empty lists.
+ * Added to `Bootstrap` in shared/contract.ts. `ready`: the brain passed its check. `setup`: no usable
+ * brain, so the client shows the Setup page and the rest of Bootstrap holds empty lists. `source` is
+ * where `tried` came from; `env` means `TDS_BRAIN_PATH` names a bad folder, so the page explains that
+ * instead of offering choices that would all be refused.
  */
 export type AppState =
   | { kind: 'ready' }
-  | { kind: 'setup'; tried: string | null; reason: BrainRefusal | null };
+  | { kind: 'setup'; tried: string | null; source: SettingSource | null; reason: BrainRefusal | null };
 
 /** `GET /api/setup/candidates` */
 export interface SetupCandidatesResponse {
   candidates: string[];
-  /** The brain path in use now, if any, and where it came from. */
+  /** The brain path in use now (link-resolved), if any, and where it came from. Null in setup mode. */
   current: { path: string; source: SettingSource } | null;
+  /** Chats a restart would close (the session manager's live sessions). 0 in setup mode. */
+  openChats: number;
+  /** True when `TDS_BRAIN_PATH` is set, so saving is refused with `env-override`. */
+  envOverride: boolean;
 }
 
 /** `PUT /api/setup/brain` (session, same origin, JSON). */
@@ -126,6 +132,62 @@ export const SETUP_ROUTES = {
   candidates: '/api/setup/candidates',
   brain: '/api/setup/brain',
 } as const;
+
+/**
+ * What start-up decided (setup-screen plan, decision 1). `server/brain/decide.ts` (Builder A):
+ * `decideBrain(candidate, check)` runs `check` on `resolveBrainPath`'s answer. Passes → `ready` on the
+ * checked (link-resolved) path. Fails with source `env` or `settings` → `setup` with `tried` = that path
+ * and the refusal. Fails with source `default` (`~/agencybrain`, never chosen) → `setup` with `tried`
+ * and `reason` null. Never throws.
+ */
+export type BrainDecision =
+  | { kind: 'ready'; path: string; source: SettingSource }
+  | { kind: 'setup'; tried: string | null; source: SettingSource | null; reason: BrainRefusal | null };
+
+export type DecideBrain = (
+  candidate: { path: string; source: SettingSource },
+  check: (path: string) => Promise<BrainCheck>,
+) => Promise<BrainDecision>;
+
+/**
+ * `server/setup-service.ts` (Builder A). Tidies a path pasted from Finder or Terminal: trims
+ * whitespace, strips one pair of surrounding quotes ('…' or "…"), unescapes `\ ` to a space, and expands
+ * a leading `~` with `expandHomeFor`. Does not resolve or check it; `checkBrain` does that.
+ */
+export type NormalizePastedPath = (raw: string, home: string) => string;
+
+/**
+ * `server/setup-service.ts` (Builder A), built in `server/index.ts` and handed to the routes.
+ * - `candidates()`: `findBrainCandidates` (the usual places; a macOS denial reads as none found), the
+ *   brain in use (null in setup mode), `openChats` and `envOverride`.
+ * - `save(path)`: tidies a pasted path with `normalizePastedPath`; `TDS_BRAIN_PATH` set → `env-override`;
+ *   else `checkBrain`; on a pass merges `brainPath` (the checked, link-resolved path) into
+ *   `settings.json` (other keys kept), logs `Brain folder changed to ${JSON.stringify(path)}.`, and
+ *   answers `restarting: underService`. It never restarts by itself.
+ * - `restart()`: called by the route on the response's `finish` event, only when `restarting` was
+ *   true. Shuts the server down gracefully (closing chats) so launchd starts it on the new brain.
+ */
+export interface SetupService {
+  candidates(): Promise<SetupCandidatesResponse>;
+  save(path: string): Promise<SetBrainResponse>;
+  restart(): void;
+}
+
+/** One plain UK sentence per refusal, shown on the Setup page and by `doctor`. */
+export const BRAIN_REFUSAL_TEXT: Record<BrainRefusal | 'env-override', string> = {
+  'not-absolute': "That isn't a full folder path. It should start with / or ~/.",
+  'not-found': "There's no folder at that path. Check it's typed the way Finder shows it.",
+  'outside-home': 'The brain folder needs to be inside your home folder.',
+  'is-app-folder': "That's the folder TDS Brain itself is installed in, not your brain.",
+  'is-data-folder': "That's where TDS Brain keeps its own data, not your brain.",
+  'protected-folder':
+    "macOS doesn't let TDS Brain read that folder. Move your brain somewhere else in your home folder.",
+  'missing-roles': "That folder doesn't look like the Agency Brain. Choose the folder you copied it into.",
+  'missing-whoami': "That folder doesn't look like the Agency Brain. Choose the folder you copied it into.",
+  'not-a-repo': "That folder isn't a git copy of the brain. Use the folder you cloned the brain into.",
+  'env-override':
+    "This Mac fixes the brain folder with a setting (TDS_BRAIN_PATH), so it can't be changed here. Ask whoever looks after TDS Brain.",
+};
 
 // ---------------------------------------------------------------------------
 // The gate (decisions 5, 6)

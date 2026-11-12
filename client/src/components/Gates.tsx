@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Bootstrap } from '../../../shared/contract.ts';
-import type { Gate } from '../store.tsx';
+import { type Gate, useStore } from '../store.tsx';
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -52,9 +52,10 @@ export function GateScreen({ gate, retry }: { gate: Exclude<Gate, 'ready' | 'loa
 
 /** Problems with the brain folder or Claude Code stop the app before the shell appears. */
 export function BootProblem({ boot, retry }: { boot: Bootstrap; retry: () => void }) {
+  const { setSetupOpen } = useStore();
   if (!boot.brain.ok) {
     return (
-      <Panel title="Can't find your brain">
+      <Panel title="There's a problem with your brain folder">
         <p>TDS Brain needs your Agency Brain folder to work.</p>
         {boot.brain.problems.length > 0 ? (
           <ul className="problem-list">
@@ -64,9 +65,12 @@ export function BootProblem({ boot, retry }: { boot: Bootstrap; retry: () => voi
           </ul>
         ) : null}
         <p className="lede">Looked in: {boot.brain.path}</p>
-        <div>
+        <div className="setup-actions">
           <button type="button" className="btn" onClick={retry}>
             Check again
+          </button>
+          <button type="button" className="btn" onClick={() => setSetupOpen(true)}>
+            Choose a different folder
           </button>
         </div>
       </Panel>

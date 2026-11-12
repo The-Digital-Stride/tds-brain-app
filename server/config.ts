@@ -15,16 +15,15 @@ import {
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { DEFAULT_PORT } from '../shared/contract.ts';
-import type { SettingSource } from '../shared/install-contract.ts';
+import type { BrainConfig } from '../shared/install-contract.ts';
 import { readSettings, resolveBrainPath, resolveDataDir } from './settings.ts';
 
-export interface AppConfig {
+/**
+ * `brainCandidate` is unchecked: nothing that touches the brain may use it. `server/index.ts` passes it
+ * to `decideBrain`, and only a `ready` decision's path reaches brain code.
+ */
+export interface AppConfig extends BrainConfig {
   appRoot: string;
-  brainPath: string;
-  /** Where `brainPath` came from: `TDS_BRAIN_PATH`, `settings.json`, or the `~/agencybrain` fallback. */
-  brainSource: SettingSource;
-  /** True when `TDS_BRAIN_SERVICE=1`: launchd restarts the server when it exits. */
-  underService: boolean;
   port: number;
   dataDir: string;
   clientDir: string;
@@ -118,7 +117,7 @@ export function loadOrCreateLaunchToken(dataDir: string): string {
 
 /**
  * The data folder is `TDS_BRAIN_APP_DATA`, else `~/Library/Application Support/TDS Brain/data` (decision 7).
- * The brain is `TDS_BRAIN_PATH`, then `settings.json`, then `~/agencybrain` (decision 8).
+ * The brain candidate is `TDS_BRAIN_PATH`, then `settings.json`, then `~/agencybrain`, unchecked (decision 8).
  */
 export function resolveConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -126,11 +125,9 @@ export function resolveConfig(
   home: string = homedir(),
 ): AppConfig {
   const dataDir = resolveDataDir(env, home);
-  const brain = resolveBrainPath(env, readSettings(dataDir), home);
   return {
     appRoot,
-    brainPath: brain.path,
-    brainSource: brain.source,
+    brainCandidate: resolveBrainPath(env, readSettings(dataDir), home),
     underService: env.TDS_BRAIN_SERVICE === '1',
     port: parsePort(env.TDS_BRAIN_APP_PORT),
     dataDir,

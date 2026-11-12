@@ -1136,3 +1136,63 @@
     transition: none;
   }
 }
+
+/* The brain folder page ------------------------------------------------------------------------ */
+.setup {
+  width: min(600px, 100%);
+}
+.setup h1:focus {
+  outline: none;
+}
+.setup h2 {
+  font-size: 14px;
+}
+.setup-section,
+.setup-form {
+  display: grid;
+  gap: 8px;
+}
+.setup-form label {
+  font-weight: 600;
+  font-size: 13px;
+}
+.setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.setup-candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.setup-path {
+  overflow-wrap: anywhere;
+}
+.setup-current {
+  font-weight: 600;
+  color: var(--blue-ink);
+}
+.setup-warning {
+  color: var(--navy);
+  font-weight: 600;
+}
+.setup-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.setup-status:empty {
+  display: none;
+}
+.health-check .btn {
+  margin-top: 6px;
+}

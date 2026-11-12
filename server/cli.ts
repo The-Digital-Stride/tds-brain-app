@@ -163,15 +163,16 @@ async function realDeps(): Promise<InstallDeps> {
 
 async function doctorCommand(d: InstallDeps): Promise<number> {
   const dataDir = d.settings.resolveDataDir(d.env, d.home);
-  const { readSettings } = await import('./settings.ts');
+  const { readSettings, resolveBrainPath } = await import('./settings.ts');
   const { checkBrain } = await import('./brain/locate.ts');
   const p = installPaths(d.home);
-  const brainPath = d.env.TDS_BRAIN_PATH || readSettings(dataDir).brainPath || null;
+  // The same candidate the server starts from; doctor then makes the same checked decision.
+  const brainCandidate = resolveBrainPath(d.env, readSettings(dataDir), d.home);
   const report = await runDoctor({
     appRoot: d.appRoot,
     port: d.port,
     launchToken: d.readLaunchToken(dataDir),
-    brainPath,
+    brainCandidate,
     servicePath: servicePath(d.appRoot, d.home),
     logFile: p.logFile,
     signinAppDir: p.signinApp,

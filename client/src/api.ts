@@ -20,6 +20,12 @@ import type {
   UploadResponse,
 } from '../../shared/contract.ts';
 import { ROUTES, UPLOAD_NAME_HEADER } from '../../shared/contract.ts';
+import {
+  SETUP_ROUTES,
+  type SetBrainRequest,
+  type SetBrainResponse,
+  type SetupCandidatesResponse,
+} from '../../shared/install-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
 export class ApiFailure extends Error {
@@ -98,6 +104,9 @@ export const api = {
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
+  getSetupCandidates: () => request<SetupCandidatesResponse>('GET', SETUP_ROUTES.candidates),
+  saveBrainFolder: (path: string) =>
+    request<SetBrainResponse>('PUT', SETUP_ROUTES.brain, { path } satisfies SetBrainRequest),
 };
 
 /** Sends one file's bytes to the app's staging folder. It goes with a message later, by its id. */

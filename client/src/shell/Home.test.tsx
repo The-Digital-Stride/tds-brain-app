@@ -46,6 +46,7 @@ const skill = (name: string, title: string): SkillInfo => ({
 
 const boot = {
   appVersion: '0',
+  appState: { kind: 'ready' as const },
   service: { underService: true },
   identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },

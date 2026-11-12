@@ -1,12 +1,14 @@
 import { join } from 'node:path';
 import {
+  BRAIN_REFUSAL_TEXT,
   type BrainCheck,
-  type BrainRefusal,
   type DoctorCheck,
   type DoctorReport,
   type DoctorResult,
   MIN_NODE_VERSION,
+  type SettingSource,
 } from '../../shared/install-contract.ts';
+import { decideBrain } from '../brain/decide.ts';
 
 /** Every probe is injected, so tests need no Mac, no launchctl and no network. */
 export interface DoctorDeps {
@@ -14,7 +16,8 @@ export interface DoctorDeps {
   port: number;
   /** Null when runtime.json does not exist (not installed). Never created here. */
   launchToken: string | null;
-  brainPath: string | null;
+  /** `resolveBrainPath`'s answer, unchecked: doctor makes the same decision as the server's start-up. */
+  brainCandidate: { path: string; source: SettingSource };
   /** The service's PATH, not the terminal's. */
   servicePath: string[];
   logFile: string;
@@ -35,21 +38,6 @@ export interface DoctorDeps {
 }
 
 export const SERVICE_TOOLS = ['node', 'bash', 'git', 'jq', 'python3'] as const;
-
-const REFUSALS: Record<BrainRefusal, string> = {
-  'not-absolute': 'The brain folder must be a full path starting with /.',
-  'not-found':
-    'The brain folder is missing, so run "tds-brain install --brain <folder>" with its right location.',
-  'outside-home': 'The brain folder must be inside your home folder, so choose another one.',
-  'is-app-folder': 'The brain folder is the app folder, so choose your brain instead.',
-  'is-data-folder': 'The brain folder is inside the app data folder, so choose your brain instead.',
-  'protected-folder':
-    'macOS stops the app reading that brain folder, so move it out of Documents, Desktop and Downloads.',
-  'missing-roles':
-    'That folder has no team list (.team-config/roles.json), so check it is your agency brain.',
-  'missing-whoami': 'That folder has no tools/whoami.cjs, so check it is your agency brain.',
-  'not-a-repo': 'That folder is not a git repository, so check it is your agency brain.',
-};
 
 const meets = (version: string, min: string): boolean => {
   const a = version.replace(/^v/, '').split(/[.-]/).slice(0, 3).map(Number);
@@ -92,11 +80,14 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
     'Claude Code was not found, so install it and sign in before using chat.',
   );
 
-  if (d.brainPath === null) {
-    add('brain', false, '', 'No brain folder is set, so run "tds-brain install --brain <folder>".');
+  const decision = await decideBrain(d.brainCandidate, d.checkBrain);
+  if (decision.kind === 'ready') {
+    add('brain', true, 'The brain folder is ready.', '');
+  } else if (decision.tried === null || decision.reason === null) {
+    add('brain', false, '', 'No brain folder chosen yet; open TDS Brain to choose one.');
   } else {
-    const c = await d.checkBrain(d.brainPath);
-    add('brain', c.ok, 'The brain folder is ready.', c.ok ? '' : REFUSALS[c.reason]);
+    const where = decision.source === 'env' ? `${decision.tried}, set by TDS_BRAIN_PATH` : decision.tried;
+    add('brain', false, '', `${BRAIN_REFUSAL_TEXT[decision.reason]} (${where})`);
   }
 
   add(

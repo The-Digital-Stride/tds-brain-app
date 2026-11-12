@@ -39,26 +39,25 @@ describe('resolveConfig', () => {
     const home = tempDir();
     writeSettings(defaultDataDir(home), { brainPath: join(home, 'Documents', 'brain') });
     const config = resolveConfig({}, APP_ROOT, home);
-    expect(config.brainPath).toBe(join(home, 'Documents', 'brain'));
-    expect(config.brainSource).toBe('settings');
+    expect(config.brainCandidate).toEqual({ path: join(home, 'Documents', 'brain'), source: 'settings' });
+    expect(config).not.toHaveProperty('brainPath');
   });
 
   it('lets TDS_BRAIN_PATH win over settings', () => {
     const home = tempDir();
     writeSettings(defaultDataDir(home), { brainPath: join(home, 'Documents', 'brain') });
     const config = resolveConfig({ TDS_BRAIN_PATH: '~/other' }, APP_ROOT, home);
-    expect(config.brainPath).toBe(join(home, 'other'));
-    expect(config.brainSource).toBe('env');
+    expect(config.brainCandidate).toEqual({ path: join(home, 'other'), source: 'env' });
   });
 
-  it('falls back to ~/agencybrain when settings are missing or broken', () => {
+  it('names ~/agencybrain as the unchecked candidate when settings are missing or broken', () => {
     const home = tempDir();
-    expect(resolveConfig({}, APP_ROOT, home)).toMatchObject({
-      brainPath: join(home, 'agencybrain'),
-      brainSource: 'default',
+    expect(resolveConfig({}, APP_ROOT, home).brainCandidate).toEqual({
+      path: join(home, 'agencybrain'),
+      source: 'default',
     });
     writeFileSync(join(defaultDataDir(home), 'settings.json'), '{ broken');
-    expect(resolveConfig({}, APP_ROOT, home).brainSource).toBe('default');
+    expect(resolveConfig({}, APP_ROOT, home).brainCandidate.source).toBe('default');
   });
 
   it('knows when it runs under the service', () => {

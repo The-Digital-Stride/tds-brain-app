@@ -1,9 +1,10 @@
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   type LibraryListing,
   MAX_ATTACHMENTS,
@@ -12,9 +13,17 @@ import {
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
+import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
+import {
+  createEngineHealth,
+  createSetupBrain,
+  createSetupSessions,
+  createSetupThumbs,
+  createSetupUploads,
+} from '../setup-mode.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
 import { HttpError, handleApi, parseStartRequest, type RouteContext } from './routes.ts';
 import { cookieValueFor, PAGE_CSP, PDF_CSP, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
@@ -135,7 +144,12 @@ describe('GET /api/bootstrap', () => {
   const TOKEN = 'launch-token-abc123';
   const GOOD_COOKIE = `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`;
 
-  async function call(cookie: string | undefined, method = 'GET', underService = false) {
+  async function call(
+    cookie: string | undefined,
+    method = 'GET',
+    underService = false,
+    appState: AppState = { kind: 'ready' },
+  ) {
     const req = Object.assign(Readable.from([]), { method, headers: cookie === undefined ? {} : { cookie } });
     const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
     const res = {
@@ -156,6 +170,7 @@ describe('GET /api/bootstrap', () => {
       store: { get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }) },
       engineHealth: () => ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }),
       appVersion: '0',
+      appState,
       underService,
       launchToken: TOKEN,
       log: () => {},
@@ -195,6 +210,17 @@ describe('GET /api/bootstrap', () => {
     expect(JSON.parse((await call(GOOD_COOKIE, 'GET', true)).body).service).toEqual({ underService: true });
   });
 
+  it('says the app is ready, or in setup with what it tried (setup-screen decision 3)', async () => {
+    expect(JSON.parse((await call(GOOD_COOKIE)).body).appState).toEqual({ kind: 'ready' });
+    const setup: AppState = {
+      kind: 'setup',
+      tried: '/Users/a/gone',
+      source: 'settings',
+      reason: 'not-found',
+    };
+    expect(JSON.parse((await call(GOOD_COOKIE, 'GET', false, setup)).body).appState).toEqual(setup);
+  });
+
   it("sends the person's profile from the brain's team profile alongside who they are", async () => {
     const { body } = await call(GOOD_COOKIE);
     const boot = JSON.parse(body);
@@ -204,6 +230,179 @@ describe('GET /api/bootstrap', () => {
       departments: ['SEO', 'Content'],
       owns: 'Runs search delivery and the content calendar.',
     });
+  });
+});
+
+describe('bootstrap in setup mode (setup-screen decision 2)', () => {
+  it('reads no folder: empty lists, default permission mode, resolvePermissionMode never called', async () => {
+    const resolveMode = vi.fn(() => 'acceptEdits' as const);
+    const appState: AppState = { kind: 'setup', tried: null, source: null, reason: null };
+    const ctx = {
+      brain: createSetupBrain(),
+      sessions: createSetupSessions(),
+      thumbs: createSetupThumbs(),
+      uploads: createSetupUploads(),
+      store: { get: async () => ({ pins: [], lastClient: null, todoPanelOpen: false, directWrites: false }) },
+      engineHealth: createEngineHealth(null, '/bin/claude', '/Users/a', resolveMode),
+      appVersion: '0',
+      appState,
+      underService: true,
+      launchToken: 'launch-token-abc123',
+      log: () => {},
+    };
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      setHeader: () => {},
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      Object.assign(Readable.from([]), { method: 'GET', headers: {} }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${ROUTES.bootstrap}`),
+      ctx as unknown as RouteContext,
+    );
+    expect(sent.status).toBe(200);
+    const boot = JSON.parse(sent.body);
+    expect(boot.appState).toEqual(appState);
+    expect(boot.brain.ok).toBe(false);
+    expect(boot.skills).toEqual([]);
+    expect(boot.clients).toEqual([]);
+    expect(boot.usedOften).toEqual([]);
+    expect(boot.identity.role).toBe('unknown');
+    expect(boot.engine.permissionMode).toBe('default');
+    expect(resolveMode).not.toHaveBeenCalled();
+  });
+});
+
+describe('setup routes (setup-screen decision 4)', () => {
+  type Sent = { status: number; body: string };
+
+  function fakeSetup(saveResult: Awaited<ReturnType<SetupService['save']>>) {
+    const calls = { save: [] as string[], restart: 0 };
+    const setup: SetupService = {
+      candidates: async () => ({
+        candidates: ['/Users/a/agencybrain'],
+        current: null,
+        openChats: 2,
+        envOverride: false,
+      }),
+      save: async (p) => {
+        calls.save.push(p);
+        return saveResult;
+      },
+      restart: () => {
+        calls.restart += 1;
+      },
+    };
+    return { setup, calls };
+  }
+
+  async function call(setup: SetupService, path: string, method: string, body?: string) {
+    const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(body)]), {
+      method,
+      headers: {},
+    });
+    const sent: Sent = { status: 0, body: '' };
+    const res = Object.assign(new EventEmitter(), {
+      headersSent: false,
+      setHeader: () => {},
+      writeHead(status: number) {
+        sent.status = status;
+        res.headersSent = true;
+      },
+      end(text?: string) {
+        if (text !== undefined) sent.body = text;
+      },
+    });
+    const ctx = { setup, log: () => {} } as unknown as RouteContext;
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx,
+    );
+    return { sent, res };
+  }
+
+  it('lists the candidates on GET only', async () => {
+    const { setup } = fakeSetup({ ok: false, reason: 'not-found' });
+    const { sent } = await call(setup, SETUP_ROUTES.candidates, 'GET');
+    expect(sent.status).toBe(200);
+    expect(JSON.parse(sent.body)).toEqual({
+      candidates: ['/Users/a/agencybrain'],
+      current: null,
+      openChats: 2,
+      envOverride: false,
+    });
+    expect((await call(setup, SETUP_ROUTES.candidates, 'POST', '{}')).sent.status).toBe(405);
+  });
+
+  it('saves on PUT only, passing the path as sent', async () => {
+    const { setup, calls } = fakeSetup({ ok: false, reason: 'missing-roles' });
+    const { sent } = await call(setup, SETUP_ROUTES.brain, 'PUT', JSON.stringify({ path: " '~/b' " }));
+    expect(sent.status).toBe(200);
+    expect(JSON.parse(sent.body)).toEqual({ ok: false, reason: 'missing-roles' });
+    expect(calls.save).toEqual([" '~/b' "]);
+    expect((await call(setup, SETUP_ROUTES.brain, 'POST', '{"path":"/a"}')).sent.status).toBe(405);
+    expect((await call(setup, SETUP_ROUTES.brain, 'GET')).sent.status).toBe(405);
+    expect(calls.save).toHaveLength(1);
+  });
+
+  it('answers bad-request for a body that is not an object, a path that is not text, or one over 4 KB', async () => {
+    const { setup, calls } = fakeSetup({ ok: true, path: '/a', restarting: true });
+    for (const body of [
+      '[]',
+      '"x"',
+      '{}',
+      '{"path":42}',
+      '{"path":null}',
+      '{"path":["/a"]}',
+      '{ broken',
+      JSON.stringify({ path: `/${'a'.repeat(4096)}` }),
+    ]) {
+      const { sent } = await call(setup, SETUP_ROUTES.brain, 'PUT', body);
+      expect(sent.status, body.slice(0, 20)).toBe(400);
+      expect(JSON.parse(sent.body).error.code).toBe('bad-request');
+    }
+    expect(calls.save).toEqual([]);
+    expect(calls.restart).toBe(0);
+  });
+
+  it("restarts only once the answer has gone out (the response's finish event)", async () => {
+    const { setup, calls } = fakeSetup({ ok: true, path: '/Users/a/brain', restarting: true });
+    const { sent, res } = await call(
+      setup,
+      SETUP_ROUTES.brain,
+      'PUT',
+      JSON.stringify({ path: '/Users/a/brain' }),
+    );
+    expect(JSON.parse(sent.body)).toEqual({ ok: true, path: '/Users/a/brain', restarting: true });
+    expect(calls.restart).toBe(0);
+    res.emit('finish');
+    expect(calls.restart).toBe(1);
+  });
+
+  it('never restarts when not restarting, nor after a refusal', async () => {
+    for (const result of [
+      { ok: true, path: '/Users/a/brain', restarting: false } as const,
+      { ok: false, reason: 'env-override' } as const,
+    ]) {
+      const { setup, calls } = fakeSetup(result);
+      const { res } = await call(
+        setup,
+        SETUP_ROUTES.brain,
+        'PUT',
+        JSON.stringify({ path: '/Users/a/brain' }),
+      );
+      res.emit('finish');
+      expect(calls.restart).toBe(0);
+    }
   });
 });
 

@@ -9,7 +9,7 @@ import { useStore } from '../store.tsx';
  * once rather than every row.
  */
 export function HealthPanel() {
-  const { boot, streamUp, lists } = useStore();
+  const { boot, streamUp, lists, setSetupOpen } = useStore();
   const { lastSync, now } = useLastSync();
   if (!boot) return null;
   const checks = healthChecks({ boot, streamUp, lists, lastSync, now });
@@ -40,6 +40,17 @@ export function HealthPanel() {
               </p>
               <p className="health-text">{c.text}</p>
               {c.detail && <code className="about-code health-detail">{c.detail}</code>}
+              {c.id === 'brain' && (
+                <button
+                  type="button"
+                  className="btn"
+                  data-size="small"
+                  aria-label="Change brain folder"
+                  onClick={() => setSetupOpen(true)}
+                >
+                  Change…
+                </button>
+              )}
             </div>
           </li>
         ))}

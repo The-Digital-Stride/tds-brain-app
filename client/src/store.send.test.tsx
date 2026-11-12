@@ -38,6 +38,7 @@ function Probe({ text, ids }: { text: string; ids: string[] }) {
 
 const boot = {
   appVersion: '0',
+  appState: { kind: 'ready' as const },
   service: { underService: true },
   identity: { name: 'Sam', slug: 'sam', email: null, role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },

@@ -4,6 +4,7 @@ import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
 import { ProfileView } from './components/ProfileView.tsx';
 import { SettingsView } from './components/SettingsView.tsx';
+import { SetupView } from './components/SetupView.tsx';
 import { APPS } from './shell/apps.ts';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import type { DrawerName } from './shell/contract.ts';
@@ -173,10 +174,30 @@ function Shell() {
 }
 
 function Root() {
-  const { gate, boot, retry } = useStore();
+  const { gate, boot, retry, setupOpen, setSetupOpen } = useStore();
   if (gate === 'loading') return <Loading />;
   if (gate === 'not-signed-in' || gate === 'unreachable') return <GateScreen gate={gate} retry={retry} />;
   if (!boot) return <Loading />;
+  if (boot.appState.kind === 'setup')
+    return <SetupView appState={boot.appState} underService={boot.service.underService} />;
+  if (setupOpen) {
+    return (
+      <SetupView
+        appState={boot.appState}
+        underService={boot.service.underService}
+        onCancel={() => {
+          setSetupOpen(false);
+          // Back where the person started: the Change button, or failing that the page's heading.
+          setTimeout(() => {
+            const back = document.querySelector<HTMLElement>('[aria-label="Change brain folder"]');
+            const h1 = document.querySelector<HTMLElement>('main h1');
+            if (!back && h1) h1.tabIndex = -1;
+            (back ?? h1)?.focus();
+          }, 0);
+        }}
+      />
+    );
+  }
   if (!boot.brain.ok || !boot.engine.ok) return <BootProblem boot={boot} retry={retry} />;
   return (
     <ShellProvider>

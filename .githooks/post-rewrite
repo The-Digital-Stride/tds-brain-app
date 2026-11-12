@@ -1,0 +1,13 @@
+#!/bin/sh
+# On main the newest commit is usually the release commit, so `git commit --amend` changes that,
+# not your own commit. Say so when it happens. See scripts/bump-version.ts.
+[ "$1" = amend ] || exit 0
+case "$(git log -1 --format=%s)" in
+  "chore(release): "*) ;;
+  *) exit 0 ;;
+esac
+others=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -v -x -e package.json -e CHANGELOG.md)
+[ -n "$others" ] || exit 0
+echo "[version] That amend went into the release commit, not your own commit." >&2
+echo "[version] To undo it: git reset --soft HEAD@{1}  (then make a new commit for the change instead)." >&2
+exit 0

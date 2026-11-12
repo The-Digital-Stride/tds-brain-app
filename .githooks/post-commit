@@ -1,0 +1,6 @@
+#!/bin/sh
+# Bumps the version on main after a feat, fix, perf or refactor lands. See scripts/bump-version.ts.
+# Turned on by `pnpm install` (the "prepare" script points git at this folder).
+root=$(git rev-parse --show-toplevel) || exit 0
+"$root/bin/node" "$root/scripts/bump-version.ts" || echo "[version] Skipped: the bump script didn't run." >&2
+exit 0

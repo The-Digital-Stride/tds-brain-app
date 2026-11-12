@@ -1,0 +1,13 @@
+#!/bin/sh
+# Safety net for the version bump (scripts/bump-version.ts): when main is pushed with changes that
+# reached it without a release (a cherry-pick, say), add the release commit and stop the push so it
+# can be run again with it. Anything else lets the push go ahead.
+pushing_main=no
+while read -r local_ref _ _ _; do
+  [ "$local_ref" = "refs/heads/main" ] && pushing_main=yes
+done
+[ "$pushing_main" = yes ] || exit 0
+root=$(git rev-parse --show-toplevel) || exit 0
+"$root/bin/node" "$root/scripts/bump-version.ts" --pre-push
+[ $? -eq 3 ] && exit 1
+exit 0

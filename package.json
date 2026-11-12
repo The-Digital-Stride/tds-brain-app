@@ -38,6 +38,7 @@
     "test": "vitest run",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   }
 }

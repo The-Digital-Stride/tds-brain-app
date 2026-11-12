@@ -4,6 +4,11 @@ import { defineConfig } from 'vitest/config';
 // comment `// @vitest-environment jsdom`.
 export default defineConfig({
   test: {
-    include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'client/src/**/*.test.{ts,tsx}'],
+    include: [
+      'scripts/**/*.test.ts',
+      'server/**/*.test.ts',
+      'shared/**/*.test.ts',
+      'client/src/**/*.test.{ts,tsx}',
+    ],
   },
 });

@@ -114,6 +114,27 @@ pnpm test
 pnpm check      # all of the above plus a build (rewrites dist/client, so not in the folder the real app runs from)
 ```
 
+### Versions
+
+The version is `version` in `package.json` (Settings shows it). It goes up by itself: when commits land
+on `main`, a git hook in `.githooks/` looks at the ones since the last release that aren't pushed yet and
+makes one `chore(release): vX.Y.Z` commit, with an entry in `CHANGELOG.md`.
+
+| Commit type | Bump |
+| --- | --- |
+| `feat` | minor (0.2.0 → 0.3.0) |
+| `fix`, `perf`, `refactor` | patch (0.2.0 → 0.2.1) |
+| `!` after the type, or a `BREAKING CHANGE:` line | major (0.2.0 → 1.0.0) |
+| `chore`, `docs`, `style`, `test`, `ci`, `build` | none |
+
+Task branches never bump, so branches don't conflict over the version; merging one into `main` does.
+If something reaches `main` without a hook running (a cherry-pick, say), pushing `main` adds the
+release commit and stops; push again to include it. On `main` the newest commit is usually the release,
+so make a new commit for a fix rather than `git commit --amend`.
+
+`pnpm install` turns the hooks on (`git config core.hooksPath .githooks`). Set `SKIP_VERSION_BUMP=1`
+to skip them for one commit, merge or push.
+
 ## Signing in
 
 The app opens Chrome with a one-time code and then keeps you signed in with a cookie for 30 days.

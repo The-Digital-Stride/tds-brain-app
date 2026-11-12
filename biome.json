@@ -1,6 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
-  "files": { "includes": ["shared/**", "server/**", "client/src/**", "test/**", "*.ts", "!test/fixtures"] },
+  "files": {
+    "includes": ["scripts/**", "shared/**", "server/**", "client/src/**", "test/**", "*.ts", "!test/fixtures"]
+  },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
   "javascript": { "formatter": { "quoteStyle": "single" } },
   "linter": { "enabled": true }

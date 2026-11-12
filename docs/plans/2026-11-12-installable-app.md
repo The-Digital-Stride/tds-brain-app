@@ -245,6 +245,9 @@ on Ian's Mac.
     history, after checking that `.gitignore` covers `data/`, `dist/` and `.playwright-mcp/`. Team
     members get read access through an org team, so the install skill can clone. No CI in this
     phase. The README gains an "Install" section that points to the skill.
+    Update (2026-11-12, phase 3): Ian made the repo public, so installs and updates need no GitHub
+    account or sign-in. A full-history check found no secrets; four client names and one teammate's
+    name in tests and notes were left as they are, by Ian's choice.
     Plain: the code is backed up, everyone installs the same version, and updates are one pull.
 
 14. **Phasing.** Each phase ends usable:
@@ -403,3 +406,21 @@ All blocking and should items were accepted and are folded into the decisions ab
   after the app, Spotlight directions to TDS Brain Sign-in, and page titles that follow the heading.
 - **Overseer:** pass. Still to check on Ian's Chrome after the update: install, the Sign-in app
   reviving a signed-out window, and the profile wording.
+
+### Phase 3, brain skills (2026-11-12)
+
+- **Owner's requirement added mid-task:** the installer must be fully guided for a non-technical
+  teammate. Missing tools are installed through the Mac's own windows: Apple's command line tools
+  (`xcode-select --install`), Node 24 from the official nodejs.org installer (checksum and Apple
+  notarisation checked before it opens; the Mac asks for the password in the installer, never in
+  chat), Chrome from its download page. pnpm is never installed: `npx --yes pnpm@10`.
+- **Review 1 (Opus):** commands ran in the brain if `$APP` was lost between commands (every block now
+  sets it); a half-finished update couldn't be finished (now detected and finished); pnpm advice
+  failed on new Node (replaced by `npx`); early checks for Node location and brain folder.
+- **Review 2 (Opus):** a half-finished install said "already installed" and looped with doctor (now
+  checks the LaunchAgent plist and resumes); an older default Node could break the build (builds now
+  put `app/bin` first on PATH, so the app's Node finder picks the newest suitable Node).
+- **Not dependent on other brain skills:** the skills mention only each other; the brain's role gate
+  allows them (no `roles:` line), and they never write into the brain.
+- Copying them into the brain's `.claude/skills/` is a separate step Ian approves.
+

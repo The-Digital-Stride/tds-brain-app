@@ -42,10 +42,14 @@ The installed app starts by itself when you log in and restarts if it stops. It 
 `~/Library/Application Support/TDS Brain/`: the code in `app/`, your sign-in secret, settings and
 pins in `data/`.
 
+**The easy way:** in Claude Code, in your brain folder, run `/install-brain-app`. `/update-brain-app`
+gets new versions and `/doctor-brain-app` checks a broken install. The skills are in
+[`brain-skills/`](brain-skills/README.md). By hand:
+
 ```bash
 APP="$HOME/Library/Application Support/TDS Brain/app"
 git clone https://github.com/The-Digital-Stride/tds-brain-app.git "$APP"
-cd "$APP" && pnpm install && pnpm build
+cd "$APP" && pnpm install --frozen-lockfile && pnpm build
 bin/tds-brain install --brain ~/agencybrain     # your brain folder, wherever it is
 ```
 
@@ -65,7 +69,7 @@ pins across once. The old folder is renamed to `data.moved`.
 | `sign-out-everywhere` | Signs every browser out by making a new sign-in secret, then restarts |
 | `uninstall` | Stops the service and removes it and TDS Brain Sign-in. `--all` also removes `data/`; the code is never removed |
 
-**To update:** `cd "$APP" && git pull && pnpm install && pnpm build && bin/tds-brain restart`.
+**To update:** `cd "$APP" && git pull --ff-only && pnpm install --frozen-lockfile && pnpm build && bin/tds-brain restart`.
 The service log is `~/Library/Logs/TDS Brain/server.log`.
 
 ## Run it from a clone

@@ -185,6 +185,9 @@ export class TodoChangeError extends Error {
  * - `<command>`: add | edit | due | assignee | delete | tick | roster | list.
  * - stdin: one JSON object, the Workbench route's request body with the same field names
  *   (`file`, `title`, `body`, `due`, `assignee`). `roster` and `list` need none (send `{}`).
+ * - `delete` differs from the Workbench (BCR-05): it takes an optional `via` (the app sends
+ *   "TDS Brain App") and moves the file to `todo/deleted/` stamped with `status: deleted`,
+ *   `deleted`, `deleted_at`, `deleted_by` and `deleted_via`, answering `{ok, file, moved}`.
  * - The brain root is `process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..', '..', '..')`
  *   (scripts → todo → skills → .claude → brain).
  * - stdin is read to the end. Empty means `{}`. Invalid JSON, a non-object or an unknown command

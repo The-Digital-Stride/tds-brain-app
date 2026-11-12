@@ -1,7 +1,7 @@
 ---
 name: todo
 description: Change a loose to-do in todo/ exactly as the Workbench does - add one, edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, or tick it off - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
-version: 0.1
+version: 0.2
 last_updated: 2026-11-12
 roles: owner, scout
 maturity: draft
@@ -19,6 +19,11 @@ It's in testing. Only the owner and scouts can use it until Pete, as brain guard
 to the team. Known weak spots it copies from the Workbench are listed in
 `os/tds-brain-app/change-requests.md`; don't work around them here.
 
+One deliberate difference from the Workbench (BCR-05, built at Ian's request, awaiting Pete's
+sign-off): **delete keeps the to-do.** It moves the file to `todo/deleted/` and records who deleted it,
+when and from which tool, so there's a history for reporting and a mistake can be put back by moving
+the file into `todo/` again. The Workbench still deletes for good until it's changed too.
+
 ## How to run it
 
 Send one JSON object on stdin and name the command:
@@ -34,7 +39,7 @@ echo '{"title":"Renew the Acme contract","due":"2026-12-01"}' \
 | `edit` | `file`, `title`, `body` (optional) | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. |
 | `due` | `file`, `due` | Sets the due date (`YYYY-MM-DD`), or clears it when empty or null. |
 | `assignee` | `file`, `assignee` | Passes it on (a name slug such as `ben-mcadam`), or makes it open to anyone when empty or null. |
-| `delete` | `file` | Removes the file for good. |
+| `delete` | `file`, `via`, `by`, `by_name` (all optional) | Moves it to `todo/deleted/`, adding `status: deleted`, `deleted` (date), `deleted_at` (UK time), `deleted_by` (`by`, else the person in `git config user.name`) and `deleted_via` (`via`, such as `TDS Brain App`; `todo skill` when not sent), and a "Deleted … by … at …" line at the end. An earlier deleted to-do of the same name is kept: the new one gets a number added. |
 | `tick` | `file` | Moves it to `todo/done/`. |
 | `roster` | none | Lists the team from `.team-config/roles.json`. |
 | `list` | none | Lists this person's to-dos and the open ones. |

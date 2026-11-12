@@ -4,6 +4,7 @@
 // This test stays in the app repo; it is not copied into the brain.
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -308,10 +309,138 @@ describe('assignee', () => {
 });
 
 describe('delete', () => {
-  it('removes the file', () => {
+  const deletedPath = (file: string) => join(root, 'todo', 'deleted', file);
+  const UK_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
+
+  it('moves the file into todo/deleted/, stamped with when, by whom and from where', () => {
     put('a.md', SAMPLE);
-    expect(run('delete', { file: 'a.md' })).toEqual({ code: 0, json: { ok: true, file: 'a.md' } });
+    const r = run('delete', { file: 'a.md', via: 'TDS Brain App' });
+    expect(r).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', moved: join('todo', 'deleted', 'a.md') },
+    });
     expect(existsSync(todoPath('a.md'))).toBe(false);
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    const [, head = '', rest = ''] = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/) ?? [];
+    const fm = Object.fromEntries(
+      head.split('\n').map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]),
+    );
+    expect(fm).toMatchObject({
+      assignee: 'sam-example',
+      title: 'Old title',
+      created: '2026-11-01',
+      status: 'deleted',
+      deleted_by: 'sam-example',
+      deleted_via: 'TDS Brain App',
+    });
+    expect(fm.deleted).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(fm.deleted_at).toMatch(UK_STAMP);
+    expect(fm.deleted_at?.startsWith(fm.deleted as string)).toBe(true);
+    // The body is kept, and a line for people says who deleted it and when.
+    expect(rest).toContain('# Old title\n\nSome details.\n');
+    expect(rest).toMatch(
+      new RegExp(
+        `\\n## Deleted ${fm.deleted}\\n\\nDeleted by Sam Example at \\d{2}:\\d{2} UK time \\(TDS Brain App\\)\\.\\n$`,
+      ),
+    );
+  });
+
+  it('says it came from the todo skill when no tool is named, and adds frontmatter to a plain file', () => {
+    put('a.md', 'Plain\n');
+    run('delete', { file: 'a.md' });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text).toMatch(
+      /^---\nstatus: deleted\ndeleted: \S+\ndeleted_at: \S+\ndeleted_by: sam-example\ndeleted_via: todo skill\n---\nPlain\n/,
+    );
+  });
+
+  it('records "unknown" when git has no user name', () => {
+    put('a.md', SAMPLE);
+    run('delete', { file: 'a.md' }, { userName: null });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text).toContain('\ndeleted_by: unknown\n');
+    expect(text).toMatch(/Deleted by unknown at /);
+  });
+
+  it('replaces an earlier status line instead of adding a second one', () => {
+    put('a.md', '---\ntitle: T\nstatus: open\n---\nBody\n');
+    run('delete', { file: 'a.md' });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text.match(/^status:/gm)).toHaveLength(1);
+    expect(text).toContain('\nstatus: deleted\n');
+  });
+
+  it('keeps an earlier deleted to-do of the same name, adding a suffix', () => {
+    put('a.md', SAMPLE);
+    run('delete', { file: 'a.md' });
+    put('a.md', 'second\n');
+    const r = run('delete', { file: 'a.md' });
+    expect(r.json.moved).toMatch(/^todo\/deleted\/a-\d{13}\.md$/);
+    expect(readFileSync(join(root, r.json.moved as string), 'utf8')).toContain('second');
+    expect(readFileSync(deletedPath('a.md'), 'utf8')).toContain('Some details.');
+  });
+
+  it('writes a tool name only as one safe line', () => {
+    put('a.md', SAMPLE);
+    run('delete', { file: 'a.md', via: 'Bad\ndeleted_by: someone-else' });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text.match(/^deleted_by:/gm)).toHaveLength(1);
+    expect(text).toContain('\ndeleted_by: sam-example\n');
+    expect(text).toContain('\ndeleted_via: "Bad deleted_by: someone-else"\n');
+  });
+
+  it("records the caller's person when sent, so the app's deletes match its ticks", () => {
+    put('a.md', SAMPLE);
+    run('delete', { file: 'a.md', via: 'TDS Brain App', by: 'Mary-ONeil', by_name: "Mary O'Neil\nx" });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text).toContain('\ndeleted_by: mary-oneil\n');
+    expect(text).toMatch(/Deleted by Mary O'Neil x at \d{2}:\d{2} UK time \(TDS Brain App\)\.\n$/);
+  });
+
+  it('keeps a byte order mark and Windows line endings', () => {
+    put('a.md', '\uFEFF---\r\ntitle: T\r\n---\r\nBody\r\n');
+    run('delete', { file: 'a.md' });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text.startsWith('\uFEFF---\r\ntitle: T\r\nstatus: deleted\r\n')).toBe(true);
+    expect(text).not.toMatch(/[^\r]\n/);
+  });
+
+  it('cuts the tool name to 60 characters', () => {
+    put('a.md', SAMPLE);
+    run('delete', { file: 'a.md', via: 'v'.repeat(80) });
+    expect(readFileSync(deletedPath('a.md'), 'utf8')).toContain(`\ndeleted_via: ${'v'.repeat(60)}\n`);
+  });
+
+  it('drops every line of an earlier multi-line deleted key, keeping the fields after it', () => {
+    put('a.md', '---\ntitle: T\ndeleted_by:\n  - someone\n  - else\ntags:\n  - a\n---\nBody\n');
+    run('delete', { file: 'a.md' });
+    const text = readFileSync(deletedPath('a.md'), 'utf8');
+    expect(text).not.toContain('someone');
+    expect(text).toContain('\ntags:\n  - a\n');
+  });
+
+  it('leaves the to-do open, and nothing in todo/deleted/, when it cannot be moved', () => {
+    put('a.md', SAMPLE);
+    // todo/deleted/ can be written, todo/ can't: the copy is made, then removing the open one fails.
+    mkdirSync(join(root, 'todo', 'deleted'));
+    chmodSync(join(root, 'todo'), 0o555);
+    try {
+      const r = run('delete', { file: 'a.md' });
+      expect(r.code).toBe(2);
+      expect(r.json.status).toBe(500);
+    } finally {
+      chmodSync(join(root, 'todo'), 0o755);
+    }
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(readdirSync(join(root, 'todo', 'deleted'))).toEqual([]);
+  });
+
+  it('leaves deleted to-dos out of the list', () => {
+    put('a.md', SAMPLE);
+    put('b.md', SAMPLE.replace('Old title', 'Other'));
+    run('delete', { file: 'a.md' });
+    const files = (run('list').json.todos as { file: string }[]).map((t) => t.file);
+    expect(files).toEqual(['b.md']);
   });
 });
 

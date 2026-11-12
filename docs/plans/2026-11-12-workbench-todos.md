@@ -94,6 +94,12 @@ The app stays a front end: it never writes a brain file itself. Every change run
    the details, "Mark as done" and "Cancel". Both actions keep the 10-second Undo; the held row says
    "Marked as done".
    Plain: finishing or deleting a to-do is always a deliberate step, and titles get the tick box's room.
+11. **Deleted to-dos are kept (Ian's request; BCR-05, awaiting Pete).** The skill's `delete` moves the
+   file to `todo/deleted/` (suffix on a clash, never overwriting) and stamps `status: deleted`,
+   `deleted`, `deleted_at`, `deleted_by` and `deleted_via`, mirroring `stampDone`. Who: the body's
+   `by` / `by_name` (the app sends its signed-in identity, as its tick records use), else git
+   user.name. `via`: the app sends "TDS Brain App"; "todo skill" otherwise. The Workbench still deletes for good until changed.
+   Plain: every delete leaves a record of who and when, for reporting, and can be put back.
 
 ## Overseer pre-review (applied)
 
@@ -170,6 +176,15 @@ No file appears in two rows.
 - [ ] Browser check: To-dos drawer against a test brain copy with the skill installed
 
 ## Review outcomes
+
+### Kept deletes follow-up
+
+- **Correctness and security (opus):** injection, data loss, rollback, line endings and list readers
+  clean. Confirmed and fixed: deletes named the person from git while ticks used the app's identity, so
+  one person could appear under two names in reports (the app now sends its identity); four safety
+  parts had no test (rollback, BOM/CRLF, the 60-character tool name, multi-line keys), now added. The
+  rollback test was checked to fail with the rollback switched off.
+- **Gates:** type-check, lint, build and all 1,111 tests pass.
 
 ### No tick box follow-up
 

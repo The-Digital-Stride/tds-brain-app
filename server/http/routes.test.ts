@@ -281,7 +281,12 @@ process.stdin.on('end', () => {
     const { root, brain, calls } = makeBrain();
     const { status, json, logs } = await send(brain, { body: { kind: 'delete', id: MINE } });
     expect(status).toBe(200);
-    expect(calls()).toEqual([{ command: 'delete', body: { file: MINE } }]);
+    expect(calls()).toEqual([
+      {
+        command: 'delete',
+        body: { file: MINE, via: 'TDS Brain App', by: 'sam-example', by_name: 'Sam Example' },
+      },
+    ]);
     expect(existsSync(join(root, 'todo', MINE))).toBe(false);
     const list = json as TodoList;
     expect(list.mine.map((t) => t.id)).not.toContain(MINE);

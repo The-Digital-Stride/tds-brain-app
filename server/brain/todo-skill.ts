@@ -16,6 +16,9 @@ import {
 } from '../../shared/contract.ts';
 import { scrubEnv } from '../engine/session-manager.ts';
 
+/** The tool name the app records on to-dos it finishes or deletes. */
+export const APP_VIA = 'TDS Brain App';
+
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {
   'bad-request': "That change wasn't understood. Check the title and date, then try again.",
@@ -43,8 +46,14 @@ const COMMAND: Record<TodoAction['kind'], string> = {
 /** Variables the script must not inherit: `WORKBENCH_AS` would act as someone else, `NODE_OPTIONS` could load code. */
 const DROPPED_ENV = ['WORKBENCH_AS', 'NODE_OPTIONS'];
 
+/** Who a change is for, as the app knows them (the same identity its tick records use). */
+export interface TodoActor {
+  name: string;
+  slug: string;
+}
+
 /** The Workbench route's request body for an action, with the Workbench's field names. */
-export function scriptPayload(action: TodoAction): Record<string, string> {
+export function scriptPayload(action: TodoAction, by?: TodoActor): Record<string, string> {
   switch (action.kind) {
     case 'add':
       return { title: action.title, due: action.due ?? '', assignee: action.assignee };
@@ -57,7 +66,11 @@ export function scriptPayload(action: TodoAction): Record<string, string> {
     case 'assignee':
       return { file: action.id, assignee: action.assignee ?? '' };
     case 'delete':
-      return { file: action.id };
+      // The skill keeps the file in todo/deleted/, recording who, when and this app as the tool.
+      // Who is the app's own identity, so deletes and ticks name a person the same way.
+      return by
+        ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name }
+        : { file: action.id, via: APP_VIA };
   }
 }
 
@@ -90,7 +103,7 @@ export interface TodoSkillOptions {
 
 export interface TodoSkillRunner {
   /** Runs one change. Resolves when the script says it worked; otherwise rejects with TodoChangeError. */
-  run(action: TodoAction): Promise<void>;
+  run(action: TodoAction, by?: TodoActor): Promise<void>;
 }
 
 interface Outcome {
@@ -186,7 +199,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
   };
   let tail: Promise<unknown> = Promise.resolve();
 
-  const runOnce = async (action: TodoAction): Promise<void> => {
+  const runOnce = async (action: TodoAction, by?: TodoActor): Promise<void> => {
     const script = await findTodoScript(root);
     if (!script) throw todoChangeError('internal');
     let realRoot: string;
@@ -199,7 +212,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
       script,
       realRoot,
       COMMAND[action.kind],
-      JSON.stringify(scriptPayload(action)),
+      JSON.stringify(scriptPayload(action, by)),
       opts,
     );
     const code = judge(outcome);
@@ -207,8 +220,8 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
   };
 
   return {
-    run(action) {
-      const next = tail.then(() => runOnce(action));
+    run(action, by) {
+      const next = tail.then(() => runOnce(action, by));
       tail = next.catch(() => {});
       return next;
     },

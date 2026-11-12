@@ -16,7 +16,7 @@ import { stampDone } from './done-record.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { readMembers } from './identity.ts';
 import { skillAccess } from './skills.ts';
-import { findTodoScript, type TodoSkillRunner, todoChangeError } from './todo-skill.ts';
+import { APP_VIA, findTodoScript, type TodoSkillRunner, todoChangeError } from './todo-skill.ts';
 import { humanise, readText } from './util.ts';
 
 const SKIP = new Set(['AGENTS.md', 'README.md', 'CLAUDE.md']);
@@ -178,11 +178,11 @@ export async function changeTodo(
   if ('id' in action && ![...list.mine, ...list.open].some((t) => t.id === action.id)) {
     throw todoChangeError('not-found');
   }
-  await runner.run(action);
+  await runner.run(action, { name: identity.name, slug: identity.slug });
 }
 
 /** What the app writes as the place a to-do was ticked. */
-export const TICKED_VIA = 'TDS Brain App';
+export const TICKED_VIA = APP_VIA;
 
 export async function completeTodo(root: string, id: string, by: Identity, at: Date): Promise<void> {
   if (typeof id !== 'string' || !SAFE_ID.test(id))

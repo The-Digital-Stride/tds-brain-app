@@ -178,7 +178,10 @@ describe('scriptPayload: the Workbench route bodies', () => {
         { kind: 'assignee', id: 'a.md', assignee: null },
         { file: 'a.md', assignee: '' },
       ],
-      [{ kind: 'delete', id: 'a.md' }, { file: 'a.md' }],
+      [
+        { kind: 'delete', id: 'a.md' },
+        { file: 'a.md', via: 'TDS Brain App' },
+      ],
     ];
     for (const [action, payload] of cases)
       expect(scriptPayload(action), JSON.stringify(action)).toEqual(payload);
@@ -263,8 +266,19 @@ describe('createTodoSkillRunner', () => {
       { file: 'a.md', title: 'T', body: 'D' },
       { file: 'a.md', due: '2026-12-01' },
       { file: 'a.md', assignee: '' },
-      { file: 'a.md' },
+      { file: 'a.md', via: 'TDS Brain App' },
     ]);
+  });
+
+  it('sends who is deleting when the app knows them', () => {
+    expect(
+      scriptPayload({ kind: 'delete', id: 'a.md' }, { name: "Mary O'Neil", slug: 'mary-oneil' }),
+    ).toEqual({
+      file: 'a.md',
+      via: 'TDS Brain App',
+      by: 'mary-oneil',
+      by_name: "Mary O'Neil",
+    });
   });
 
   it('passes BRAIN_ROOT and a scrubbed environment, without WORKBENCH_AS or NODE_OPTIONS', async () => {

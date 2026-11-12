@@ -6,13 +6,15 @@
 // /delete, /tick, /roster and /api/misc-todos, with lib/todo-parser.cjs). Regexes,
 // limits, frontmatter edits, success bodies and error texts are copied as they are,
 // weak spots included: fixing them is the brain guardian's call, not this script's.
+// One deliberate exception (BCR-05, at Ian's request): `delete` keeps the to-do in
+// todo/deleted/ with who, when and from where, instead of removing it.
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/todo/scripts/todo.cjs <command>
 //
 //   <command>  add | edit | due | assignee | delete | tick | roster | list
 //   stdin      one JSON object: the Workbench route's request body, same field names
-//              (file, title, body, due, assignee). roster and list need none ({}).
+//              (file, title, body, due, assignee; delete also takes via). roster and list need none ({}).
 //   stdout     one JSON line.
 //   exit 0     the Workbench route's success body (no `status`).
 //   exit 2     the Workbench route's error body plus `status` (400, 404 or 500).
@@ -340,7 +342,109 @@ function edit(req, res) {
   }
 }
 
-// POST /api/todos/delete: removes todo/<file> permanently (tick archives instead).
+// ---- delete: kept, not removed (a change from the Workbench; BCR-05) -------------------
+//
+// The Workbench's /api/todos/delete removed the file for good (server.cjs 1725-1738). Here it is
+// moved to todo/deleted/ with who deleted it, when and from where, so there is a record for
+// reporting and a deleted to-do can be brought back by moving the file. The record mirrors the one
+// the TDS Brain App writes when a to-do is ticked off (status / completed_* in todo/done/).
+
+const DELETED_KEYS = ['status', 'deleted', 'deleted_at', 'deleted_by', 'deleted_via'];
+const DELETED_KEY_LINE = new RegExp(`^(?:${DELETED_KEYS.join('|')})\\s*:`);
+
+// One line of plain text: control characters and line breaks become single spaces.
+function oneLine(value) {
+  return String(value == null ? '' : value).replace(/[\p{Cc}\p{Zl}\p{Zp}\s]+/gu, ' ').trim();
+}
+function slugOf(value) {
+  return oneLine(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+// A YAML value safe on one line: plain when simple, double-quoted otherwise.
+function yamlValue(value) {
+  if (/^[A-Za-z0-9][A-Za-z0-9 ._()/+-]*$/.test(value)) return value;
+  return `"${value.replace(/[\\"]/g, '\\$&')}"`;
+}
+// The date, clock time and UTC offset in the UK at that instant (GMT in winter, BST in summer).
+function ukTime(at) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(at);
+  const p = {};
+  for (const part of parts) p[part.type] = part.value;
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  const offsetMin = Math.round((asUtc - Math.floor(at.getTime() / 1000) * 1000) / 60000);
+  const abs = Math.abs(offsetMin);
+  const two = (n) => String(n).padStart(2, '0');
+  return {
+    date: `${p.year}-${p.month}-${p.day}`,
+    time: `${p.hour}:${p.minute}`,
+    seconds: p.second || '00',
+    offset: `${offsetMin < 0 ? '-' : '+'}${two(Math.floor(abs / 60))}:${two(abs % 60)}`,
+  };
+}
+// Who is deleting: the caller's `by` (slug) and `by_name` when sent (the app sends its signed-in
+// identity, so deletes match its tick records), else this machine's git user.name, as `add` and
+// `list` use for "me".
+function deleter(body) {
+  const slug = slugOf(body.by);
+  if (slug) return { slug, name: oneLine(body.by_name).slice(0, 80) || slug };
+  return currentUser();
+}
+function currentUser() {
+  try {
+    const out = spawnSync('git', ['config', 'user.name'], { cwd: BRAIN_ROOT, encoding: 'utf8', timeout: 3000 });
+    const name = oneLine((out && out.stdout) || '');
+    return { name: name || 'unknown', slug: slugOf(name) || 'unknown' };
+  } catch {
+    return { name: 'unknown', slug: 'unknown' };
+  }
+}
+
+// The to-do's text with the deletion recorded: in the frontmatter (for tools and reports) and in a
+// short "Deleted" section at the end (for people). Everything else is kept as written.
+function stampDeleted(text, by, via, at) {
+  const raw = String(text == null ? '' : text);
+  const bom = raw.startsWith('﻿') ? '﻿' : '';
+  const src = bom ? raw.slice(1) : raw;
+  const eol = src.includes('\r\n') ? '\r\n' : '\n';
+  const lines = src === '' ? [] : src.split(/\r\n|\n/);
+  const when = ukTime(at);
+  const record = [
+    'status: deleted',
+    `deleted: ${when.date}`,
+    `deleted_at: ${when.date}T${when.time}:${when.seconds}${when.offset}`,
+    `deleted_by: ${by.slug}`,
+    `deleted_via: ${yamlValue(via)}`,
+  ];
+  let close = -1;
+  if (lines.length > 0 && lines[0].trim() === '---') {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---') { close = i; break; }
+    }
+  }
+  let out;
+  if (close === -1) {
+    out = ['---', ...record, '---', ...lines];
+  } else {
+    const head = [];
+    let dropping = false;
+    for (const line of lines.slice(1, close)) {
+      if (DELETED_KEY_LINE.test(line)) { dropping = true; continue; }
+      if (dropping && (line.trim() === '' || /^\s/.test(line) || /^-\s/.test(line))) continue;
+      dropping = false;
+      head.push(line);
+    }
+    out = ['---', ...head, ...record, '---', ...lines.slice(close + 1)];
+  }
+  while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+  out.push('', `## Deleted ${when.date}`, '', `Deleted by ${by.name} at ${when.time} UK time (${via}).`, '');
+  return bom + out.join(eol);
+}
+
+// delete: moves todo/<file> into todo/deleted/, stamped. Body: { file, via?, by?, by_name? } where
+// `via` names the tool it was deleted from (e.g. "TDS Brain App"; "todo skill" when not given) and
+// `by` / `by_name` the person (else git user.name).
 function remove(req, res) {
   const file = String((req.body && req.body.file) || '');
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$/.test(file)
@@ -349,9 +453,28 @@ function remove(req, res) {
   }
   const abs = path.join(BRAIN_ROOT, 'todo', file);
   if (!fs.existsSync(abs)) return res.status(404).json({ error: 'todo not found: ' + file });
+  const via = oneLine(req.body && req.body.via).slice(0, 60) || 'todo skill';
   try {
-    fs.unlinkSync(abs);
-    res.json({ ok: true, file });
+    const stamped = stampDeleted(fs.readFileSync(abs, 'utf8'), deleter(req.body), via, new Date());
+    const deletedDir = path.join(BRAIN_ROOT, 'todo', 'deleted');
+    fs.mkdirSync(deletedDir, { recursive: true });
+    let dest = path.join(deletedDir, file);
+    // 'wx' never overwrites an earlier deleted to-do of the same name.
+    try {
+      fs.writeFileSync(dest, stamped, { encoding: 'utf8', flag: 'wx' });
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      dest = path.join(deletedDir, file.replace(/\.md$/, `-${Date.now()}.md`));
+      fs.writeFileSync(dest, stamped, { encoding: 'utf8', flag: 'wx' });
+    }
+    try {
+      fs.unlinkSync(abs);
+    } catch (err) {
+      // Never leave the to-do both open and deleted.
+      fs.rmSync(dest, { force: true });
+      throw err;
+    }
+    res.json({ ok: true, file, moved: path.relative(BRAIN_ROOT, dest) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

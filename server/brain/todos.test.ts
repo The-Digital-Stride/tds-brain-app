@@ -299,7 +299,15 @@ describe('changeTodo', () => {
       { command: 'assignee', body: { file: '20261103-open-task.md', assignee: 'sam-example' } },
       { command: 'add', body: { title: 'Call Ben', due: '2026-11-20', assignee: 'sam-example' } },
       { command: 'due', body: { file: '20261101-renew-contract.md', due: '' } },
-      { command: 'delete', body: { file: '20261010-undated-thing.md' } },
+      {
+        command: 'delete',
+        body: {
+          file: '20261010-undated-thing.md',
+          via: 'TDS Brain App',
+          by: 'sam-example',
+          by_name: 'sam-example',
+        },
+      },
     ]);
   });
 

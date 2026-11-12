@@ -375,5 +375,31 @@ All blocking and should items were accepted and are folded into the decisions ab
 
 ## Review outcomes
 
-To be filled in at the end: each confirmed finding and its fix, each dropped finding and why, and
-the overseer's sign-off.
+### Phase 1 (2026-11-12, merged as `fd284f1`)
+
+- **Correctness:** install moved the old data before checking an old copy still held the port; now
+  every check runs first and a held port changes nothing. `doctor` and `open` created
+  `runtime.json`, which then blocked `--migrate-from`; they now only read it.
+- **Security:** the CLI and the server could resolve different data folders (so `uninstall --all`
+  could remove the wrong one); now one `resolveDataDir`. `data.moved` held the live secret and wasn't
+  git-ignored (`*.moved/`). `sign-out-everywhere` said "signed out" when no restart happened. The
+  brain may not contain the data or app folder.
+- **Overseer:** a failed reinstall no longer switches off the working copy. Dropped:
+  `AssociatedBundleIdentifiers`, which the spike showed is ignored.
+- **Cutover:** Ian's app moved to the installed copy; service running, the sign-in secret carried
+  across, a chat ran the brain's tools under the service PATH, and Login Items lists
+  "TDS Brain Sign-in" under "Unknown Developer" (unsigned).
+
+### Phase 2 (2026-11-12, `b6a3765`)
+
+- **Correctness and browser check:** the offline page lost its stylesheet and mark, because the
+  worker answered only page loads; those two files now fall back to the cache. The Dock row was
+  wrong after the prompt and when already installed.
+- **Security:** a worker planted by another program while the port was free would survive
+  `sign-out-everywhere`; any foreign worker's update check now gets the self-unregistering worker.
+  The 400-day cookie was judged fine: the server never checks expiry, so `Max-Age` only sets how long
+  Chrome keeps it.
+- **UX:** calmer offline wording ("TDS Brain is starting up"), the Terminal step only for whoever looks
+  after the app, Spotlight directions to TDS Brain Sign-in, and page titles that follow the heading.
+- **Overseer:** pass. Still to check on Ian's Chrome after the update: install, the Sign-in app
+  reviving a signed-out window, and the profile wording.

@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.14.0 — 2026-11-13
+
+- **feat**: work out a new chat's client from its first message
+- **feat**: count how each new chat's client is decided
+
 ## v0.13.1 — 2026-11-13
 
 - **fix**: opening an app closes the open drawer

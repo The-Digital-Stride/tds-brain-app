@@ -143,6 +143,21 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
   }, []);
 
+  // Opening an app (from the rail, the palette or a search result) closes the open drawer, so the
+  // app has the room. Only on the move into an app: a drawer opened while the app shows stays open.
+  const lastView = useRef(view);
+  useEffect(() => {
+    const was = lastView.current;
+    lastView.current = view;
+    if (view === was || !view.startsWith('app:') || !stateRef.current.drawer) return;
+    // Focus still in the drawer (the palette hands it back there; Safari doesn't focus a clicked
+    // button) would otherwise be sent to the drawer's rail button as it closes: send it to the app.
+    const active = document.activeElement;
+    if (!active || active === document.body || document.getElementById('drawer')?.contains(active))
+      document.getElementById('main')?.focus({ preventScroll: true });
+    dispatch({ type: 'close-drawer' });
+  }, [view, dispatch]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(SHELL_STORAGE_KEY, saveShell(state));

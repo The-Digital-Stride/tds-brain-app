@@ -15,7 +15,9 @@ import {
   type BrainHealth,
   type BrainReaders,
   type ChangelogResponse,
+  CLIENT_PICK_REPORTED,
   type ClientGuessResponse,
+  type ClientPickReported,
   type EngineHealth,
   type Identity,
   LIBRARY_SEARCH_QUERY,
@@ -60,6 +62,7 @@ import {
 } from '../engine/client-guess.ts';
 import { jevFromBrain } from '../engine/jev.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
+import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
 import {
   hasValidSession,
@@ -104,6 +107,8 @@ export interface RouteContext {
    * Jev with the config read from the brain at call time (`jevFromBrain`).
    */
   clientGuess?: (text: string, clients: ClientAlias[]) => Promise<ClientGuessResponse>;
+  /** Counts how each new chat's client was decided, in the app's data folder. Absent: nothing is counted. */
+  clientPickTally?: ClientPickTally;
 }
 
 export class HttpError extends Error {
@@ -1013,7 +1018,21 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       [],
     );
     const fallback: ClientGuessResponse = { kind: 'ask', options: [] };
-    sendJson(res, 200, await safe(clientGuesser(ctx)(text, clients), fallback));
+    const guess = await safe(clientGuesser(ctx)(text, clients), fallback);
+    ctx.clientPickTally?.record(guessOutcome(guess));
+    sendJson(res, 200, guess);
+    return;
+  }
+
+  if (path === ROUTES.clientPickOutcome) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = (await readJson(req)) as { outcome?: unknown } | null;
+    const outcome = body?.outcome;
+    if (!(CLIENT_PICK_REPORTED as readonly unknown[]).includes(outcome)) {
+      throw new HttpError(400, 'bad-request', 'That outcome was not understood.');
+    }
+    ctx.clientPickTally?.record(outcome as ClientPickReported);
+    sendJson(res, 200, {});
     return;
   }
 

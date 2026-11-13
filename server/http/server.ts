@@ -16,6 +16,7 @@ import {
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
 import type { Updater } from '../../shared/update-contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
+import type { ClientPickTally } from '../store/client-pick-tally.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
 import { handleApi, sendError, sendPageError } from './routes.ts';
 import {
@@ -248,6 +249,8 @@ export interface ServerDeps {
   appState: AppState;
   /** Choosing the brain folder (setup-screen plan, decision 4). */
   setup: SetupService;
+  /** Counts how each new chat's client was decided (app data folder). Absent: nothing is counted. */
+  clientPickTally?: ClientPickTally;
   log?: (line: string) => void;
 }
 
@@ -292,6 +295,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     launchToken: deps.launchToken,
     port: deps.port,
     log,
+    clientPickTally: deps.clientPickTally,
   };
 
   const server = createServer((req, res) => {

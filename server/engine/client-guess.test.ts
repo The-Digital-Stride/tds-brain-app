@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import type { ClientGuessResponse } from '../../shared/contract.ts';
+import { CLIENT_PICK_REPORTED, type ClientGuessResponse } from '../../shared/contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { handleApi, type RouteContext } from '../http/routes.ts';
+import { type ClientPickTally, createClientPickTally } from '../store/client-pick-tally.ts';
 import {
   CLIENT_GUESS_MAX_CHARS,
   CLIENT_GUESS_THRESHOLDS,
@@ -304,7 +305,13 @@ describe('createClientGuesser', () => {
 });
 
 describe('POST /api/client-guess', () => {
-  async function call(body: string, method = 'POST', guess?: RouteContext['clientGuess']) {
+  async function call(
+    body: string,
+    method = 'POST',
+    guess?: RouteContext['clientGuess'],
+    path = '/api/client-guess',
+    clientPickTally?: ClientPickTally,
+  ) {
     const req = Object.assign(Readable.from([Buffer.from(body)]), {
       method,
       headers: { 'content-length': String(Buffer.byteLength(body)) },
@@ -320,14 +327,14 @@ describe('POST /api/client-guess', () => {
       },
     };
     const root = copyFixture();
-    const ctx = { brain: createBrainReaders(root), clientGuess: guess, log: () => {} };
+    const ctx = { brain: createBrainReaders(root), clientGuess: guess, clientPickTally, log: () => {} };
     await handleApi(
       req as unknown as IncomingMessage,
       res as unknown as ServerResponse,
-      new URL('http://127.0.0.1:3877/api/client-guess'),
+      new URL(`http://127.0.0.1:3877${path}`),
       ctx as unknown as RouteContext,
     );
-    return { status: sent.status, json: JSON.parse(sent.body) as unknown };
+    return { status: sent.status, json: sent.body ? (JSON.parse(sent.body) as unknown) : null };
   }
 
   it('answers with the guess for the brain’s clients', async () => {
@@ -358,5 +365,58 @@ describe('POST /api/client-guess', () => {
       expect(out.json).toMatchObject({ error: { code: 'bad-request' } });
     }
     expect((await call('', 'GET')).status).toBe(405);
+  });
+});
+
+describe('the client-pick tally', () => {
+  async function call(body: string, path: string, tally: ClientPickTally, method = 'POST') {
+    const req = Object.assign(Readable.from([Buffer.from(body)]), {
+      method,
+      headers: { 'content-length': String(Buffer.byteLength(body)) },
+    });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text?: string) => {
+        sent.body = text ?? '';
+      },
+    };
+    const ctx = { brain: createBrainReaders(copyFixture()), clientPickTally: tally, log: () => {} };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx as unknown as RouteContext,
+    );
+    return sent;
+  }
+  let tally: ClientPickTally;
+
+  it('counts each guess the route answers', async () => {
+    tally = createClientPickTally(null);
+    await call(JSON.stringify({ text: 'Acme Heating boiler ads' }), '/api/client-guess', tally);
+    await call(JSON.stringify({ text: '' }), '/api/client-guess', tally);
+    const counts = Object.values((await tally.read()).months)[0];
+    expect(counts).toEqual({ named: 1, 'not-client': 1 });
+  });
+
+  it('counts what Home reports, and refuses anything else', async () => {
+    tally = createClientPickTally(null);
+    for (const outcome of CLIENT_PICK_REPORTED) {
+      expect((await call(JSON.stringify({ outcome }), '/api/client-guess/outcome', tally)).status).toBe(200);
+    }
+    for (const body of [
+      JSON.stringify({ outcome: 'named' }),
+      JSON.stringify({ outcome: 7 }),
+      JSON.stringify({}),
+    ]) {
+      expect((await call(body, '/api/client-guess/outcome', tally)).status).toBe(400);
+    }
+    expect((await call('', '/api/client-guess/outcome', tally, 'GET')).status).toBe(405);
+    const counts = Object.values((await tally.read()).months)[0];
+    expect(Object.keys(counts ?? {}).sort()).toEqual([...CLIENT_PICK_REPORTED].sort());
   });
 });

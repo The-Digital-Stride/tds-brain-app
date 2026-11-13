@@ -35,6 +35,7 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
@@ -164,6 +165,7 @@ const app = createAppServer({
   appState: appStateFor(decision),
   setup,
   log,
+  clientPickTally: createClientPickTally(config.dataDir),
 });
 
 app.server.on('error', (err: NodeJS.ErrnoException) => {

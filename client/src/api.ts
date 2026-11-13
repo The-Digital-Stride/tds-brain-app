@@ -7,6 +7,8 @@ import type {
   ChangeTodoRequest,
   ClientGuessRequest,
   ClientGuessResponse,
+  ClientPickOutcomeRequest,
+  ClientPickReported,
   CompleteTodoRequest,
   LibraryKind,
   LibraryListing,
@@ -144,6 +146,11 @@ export const api = {
     ),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
   clientGuess: (req: ClientGuessRequest) => request<ClientGuessResponse>('POST', ROUTES.clientGuess, req),
+  /** Counted in the app's data folder only; a failure is ignored by the caller. */
+  clientPickOutcome: (outcome: ClientPickReported) =>
+    request<Record<string, never>>('POST', ROUTES.clientPickOutcome, {
+      outcome,
+    } satisfies ClientPickOutcomeRequest),
   updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
   updateStart: () =>

@@ -98,3 +98,7 @@ All findings below were checked in code before fixing.
 - **Browser:** composer foot shows "Client: Auto"; a vague message shows the card with Rubber4Roofs, SIG Roofing, No client; Cancel keeps the text. Simulated Enter from the browser tool is ignored by the existing input-method guard (unchanged code; real Enter is covered by tests).
 - **Accepted deviations:** no `roles:` line in the skill (it would lock the team out of `ask.cjs`); empty text → none; a leading `/skill` word is stripped before matching; two named clients → ask without Jev.
 - **Follow-ups:** short name-spelling aliases match case-insensitively ("what is h2o made of" tags H2O Restoration); two-word names can match ordinary phrases ("optima health check"). Watch in use; tighten if they misfire.
+
+## Follow-up: client-pick tally (2026-11-13)
+
+A local count of how each new chat's client was decided, by month, in the app's data folder (`client-pick-tally.json`; counts only, never the brain, nothing sent anywhere), to decide later whether Jev needs "memory" of past chats. The server counts its guesses (`named`, `jev`, `not-client`, `asked`, `asked-blank`); Home reports `by-hand`, `preset`, `ask-suggested`, `ask-other`, `ask-no-client`, `ask-cancelled`, `skill-only` via `POST /api/client-guess/outcome`. Review (opus): two minor gaps; skill-only chats now counted; a sure guess for a client added after Home loaded can count twice (documented in the contract, rare).

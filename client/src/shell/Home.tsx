@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   attentionFor,
   type ClientGuessResponse,
+  type ClientPickReported,
   type SkillInfo,
   type TodoItem,
 } from '../../../shared/contract.ts';
@@ -78,6 +79,11 @@ export function Home() {
     activeChat.kind === 'new' && activeChat.client !== undefined ? (activeChat.client ?? NONE) : AUTO;
   const choice = activeChat.kind === 'new' && picked?.key === activeChat.key ? picked.value : initial;
   const listed = (slug: string) => clients.some((c) => c.slug === slug);
+  // Counted in the app's own data folder so we can see how often people are asked; never in the way.
+  const report = (outcome: ClientPickReported) =>
+    void Promise.resolve()
+      .then(() => api.clientPickOutcome(outcome))
+      .catch(() => {});
 
   if (!boot) return null;
 
@@ -177,15 +183,23 @@ export function Home() {
                 onSend={async (text, uploadIds) => {
                   // "/clear" on Home just empties the box; it is never sent.
                   if (isClearCommand(text)) return true;
-                  if (choice === NONE) return send(text, null, uploadIds);
-                  if (choice !== AUTO) return send(text, choice, uploadIds);
+                  if (choice !== AUTO) {
+                    // Chosen in the select, or set by a to-do or a search result.
+                    report(
+                      activeChat.kind === 'new' && picked?.key === activeChat.key ? 'by-hand' : 'preset',
+                    );
+                    return send(text, choice === NONE ? null : choice, uploadIds);
+                  }
                   // The skill's name alone is not something to read a client from.
                   const name = activeChat.skill ? `/${activeChat.skill.name}` : null;
                   const message =
                     name && (text === name || text.startsWith(`${name} `))
                       ? text.slice(name.length).trim()
                       : text;
-                  if (message.trim() === '') return send(text, null, uploadIds);
+                  if (message.trim() === '') {
+                    report('skill-only');
+                    return send(text, null, uploadIds);
+                  }
                   setBusy(true);
                   try {
                     const timer = setTimeout(() => setStatus('Working out the client…'), STATUS_DELAY_MS);
@@ -221,6 +235,7 @@ export function Home() {
                       };
                       const cancel = () => {
                         done();
+                        report('ask-cancelled');
                         resolve(false);
                       };
                       cancelAsk.current = cancel;
@@ -229,6 +244,13 @@ export function Home() {
                         cancel,
                         choose: (slug) => {
                           done();
+                          report(
+                            slug === null
+                              ? 'ask-no-client'
+                              : options.includes(slug)
+                                ? 'ask-suggested'
+                                : 'ask-other',
+                          );
                           resolve(send(text, slug, uploadIds));
                         },
                       });

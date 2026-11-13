@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   changelog: vi.fn(async () => ({ versions: [] })),
   startSession: vi.fn(),
   clientGuess: vi.fn(),
+  clientPickOutcome: vi.fn(async () => ({})),
   close: vi.fn(),
   updatePrefs: vi.fn(),
 }));
@@ -236,6 +237,7 @@ describe('Home', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
     expect(api.clientGuess).not.toHaveBeenCalled();
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('by-hand');
   });
 
   it('"No client" skips the guess and sends no client', async () => {
@@ -263,6 +265,8 @@ describe('Home', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.clientGuess).toHaveBeenCalledWith({ text: 'Acme need a report' });
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Acme need a report', client: 'acme' });
+    // The server counts its own guesses; Home reports nothing for these.
+    expect(api.clientPickOutcome).not.toHaveBeenCalled();
   });
 
   it('auto: only the first 4,000 characters are sent to be guessed', async () => {
@@ -290,6 +294,7 @@ describe('Home', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.clientGuess).not.toHaveBeenCalled();
     expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('skill-only');
   });
 
   it('shows a polite status when the guess is slow, with the box read-only and unchanged', async () => {
@@ -316,6 +321,7 @@ describe('Home', () => {
     fireEvent.click(within(group).getByRole('button', { name: 'Northwind' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Something vague', client: 'northwind' });
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('ask-suggested');
     await waitFor(() =>
       expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull(),
     );
@@ -329,6 +335,7 @@ describe('Home', () => {
     fireEvent.click(within(group).getByRole('button', { name: 'No client' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('ask-no-client');
   });
 
   it('"Another client…" lists every client and sends the one chosen', async () => {
@@ -347,6 +354,7 @@ describe('Home', () => {
     fireEvent.click(use);
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0].client).toBe('acme');
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('ask-other');
   });
 
   it('an error from the guess asks with no options', async () => {
@@ -443,6 +451,7 @@ describe('Home', () => {
     );
     expect(box.value).toBe('Keep me');
     expect(api.startSession).not.toHaveBeenCalled();
+    expect(api.clientPickOutcome.mock.calls).toEqual([['ask-cancelled'], ['ask-cancelled']]);
   });
 
   it("a to-do chat opens on the to-do's client; a personal to-do on No client", async () => {
@@ -458,6 +467,11 @@ describe('Home', () => {
     await waitFor(() => expect(select().value).toBe('acme'));
     fireEvent.click(card('Needs you').getByRole('button', { name: /My own thing/ }));
     await waitFor(() => expect(select().value).toBe('@none'));
+    // Sending a chat whose client arrived with it counts as preset, not chosen by hand.
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('preset');
+    expect(api.clientGuess).not.toHaveBeenCalled();
   });
 
   it('never sends /clear: it just empties the box', async () => {

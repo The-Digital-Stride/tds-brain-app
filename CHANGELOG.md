@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.12.0 — 2026-11-13
+
+- **feat**: one button language across the app
+
 ## v0.11.1 — 2026-11-13
 
 - **fix**: personal to-dos no longer show up as documents

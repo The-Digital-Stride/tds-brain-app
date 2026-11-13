@@ -87,4 +87,14 @@ Overseer pre-review (fable) returned 5 blocking and 5 should items; all are fold
 
 ## Review outcomes
 
-<Filled at step 10.>
+All findings below were checked in code before fixing.
+
+- **Correctness (opus):** a guess still running when the person opened another chat landed on that chat (card over the new composer, old text sent). Fixed: cancel token set before the await, test added. The drawer passed an unlisted to-do client (send refused). Fixed with shared `todoChatClient` (client/src/state/client-choice.ts) used by Home and TodosDrawer: personal → none, listed → slug, else guessed. Home's old code also set No client for a TDS to-do without a client, against its own comment; it now guesses.
+- **Security (opus):** `set-secrets.cjs` pushed whatever `JEV_PROXY_SECRET` was in `.env` as the owner key, so a scout with a personal token could become the owner. Fixed: owner key is `JEV_PROXY_OWNER_SECRET`, pushed only on first run or `--rotate-gate`, and a first run refuses when the Worker already has one. The synced `data/jev-proxy.json` URL is accepted only for `jev-proxy.*.workers.dev` (app and `ask.cjs`). `jev-proxy.yaml` added to the brain `.gitignore` before the copy.
+- **UX gate (opus expert):** "Another client…" sent on change (WCAG 3.2.2); now needs "Use this client". Live status region kept in the tree. Composer hint explains the locked box. Visible "Client" label, "Auto". "No client" everywhere. Settings privacy line in its own row, mentions the client list.
+- **Drift and copy (sonnet):** SKILL.md "each time" wording fixed; drawer client check (as above).
+- **Overseer sign-off (fable):** approved; blocker: files could be attached or removed while the question was open and be silently dropped. Fixed: attach, paste, drop and chip removal ignored while sending, with tests.
+- **Live:** the Worker's `redirect: 'error'` threw in the Workers runtime ("Could not reach Jev"); mocked tests couldn't see it. Changed to `redirect: 'manual'` with a 3xx refused, test added, redeployed. 12-message live trial through the app's guesser: 9 tagged correctly (2 by name, 7 by Jev), 3 correctly "not client work", 2 vague ones asked with sensible options; Jev ~150–280 ms.
+- **Browser:** composer foot shows "Client: Auto"; a vague message shows the card with Rubber4Roofs, SIG Roofing, No client; Cancel keeps the text. Simulated Enter from the browser tool is ignored by the existing input-method guard (unchanged code; real Enter is covered by tests).
+- **Accepted deviations:** no `roles:` line in the skill (it would lock the team out of `ask.cjs`); empty text → none; a leading `/skill` word is stripped before matching; two named clients → ask without Jev.
+- **Follow-ups:** short name-spelling aliases match case-insensitively ("what is h2o made of" tags H2O Restoration); two-word names can match ordinary phrases ("optima health check"). Watch in use; tighten if they misfire.

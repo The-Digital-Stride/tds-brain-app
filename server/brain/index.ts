@@ -2,7 +2,7 @@ import type { BrainReaders } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
-import { createLibrary } from './library.ts';
+import { createLibrary, type LibraryOptions } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
@@ -29,13 +29,20 @@ export interface BrainDeps {
   todoGit?: GitRunner;
 }
 
-export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainReaders {
+/** The real brain always has the library search. */
+export type SearchableBrain = BrainReaders & Required<Pick<BrainReaders, 'librarySearch'>>;
+
+export function createBrainReaders(
+  root: string,
+  deps: BrainDeps & { librarySearch?: LibraryOptions['search'] } = {},
+): SearchableBrain {
   const run = deps.run ?? defaultRunner;
   const now = deps.now ?? (() => new Date());
   const library = createLibrary(root, {
     clients: () => listClients(root),
     dataDir: deps.dataDir ?? null,
     docThumbs: deps.docThumbs ?? false,
+    search: deps.librarySearch,
   });
   const syncReader = createSyncReader(root);
   // One runner per brain, so to-do changes run one at a time.
@@ -63,6 +70,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
       return readUsage(root, identity, listed, now(), opts);
     },
     libraryScopes: () => library.scopes(),
+    librarySearch: (q, kind) => library.search(q, kind),
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
     sync: () => syncReader.read(),

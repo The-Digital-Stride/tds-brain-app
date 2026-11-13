@@ -22,8 +22,6 @@ import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
 
 type Tab = 'mine' | 'open';
 
-const SEARCH_ID = 'todo-search';
-
 /** What the rows need to edit: set by the drawer only when changes are on. */
 interface Editing {
   /** The open editor's to-do, by `key`. */
@@ -186,7 +184,7 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      <button type="button" className="todo-main" onClick={choose}>
+      <button type="button" className="todo-main" data-todo-open={todo.key} onClick={choose}>
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
           <span className="line-title">
@@ -254,8 +252,18 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
 }
 
 export function TodosDrawer() {
-  const { todos, boot, changeTodos, openView, heldTodos, holdTodo, undoHeld, markTodosSeen } = useStore();
-  const { state: shellState } = useShell();
+  const {
+    todos,
+    boot,
+    changeTodos,
+    openView,
+    heldTodos,
+    holdTodo,
+    undoHeld,
+    markTodosSeen,
+    reveal,
+    clearReveal,
+  } = useStore();
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
   const [undoMessageFor, setUndoMessageFor] = useState<string | null>(null);
@@ -263,8 +271,13 @@ export function TodosDrawer() {
   // To-dos opened this visit: they stay in "New to you" (without the dot) until the tab changes, so a row
   // doesn't jump away under the person's hands.
   const [visitSeen, setVisitSeen] = useState<ReadonlySet<string>>(new Set());
+  // A to-do the global search sent us to: its group is held open, and its row takes focus once it shows.
+  // `n` counts requests, so asking again remounts the groups (a group closed by hand opens again).
+  const [revealed, setRevealed] = useState<{ key: string; n: number } | null>(null);
+  const [focusRow, setFocusRow] = useState<string | null>(null);
   const setTab = (t: Tab) => {
     setVisitSeen(new Set());
+    setRevealed(null);
     setTabState(t);
   };
   const [adding, setAdding] = useState(false);
@@ -288,27 +301,38 @@ export function TodosDrawer() {
     setIsError(error);
   };
   const scrollRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
-  // "/" jumps to the search while this drawer is open (not while typing, and only with single keys on).
-  const singleKeys = shellState?.singleKeys !== false;
+  // The global search chose a to-do (`revealTodo`): show its tab with no filters, hold its group open and
+  // focus its row. The request is taken at once, so it happens once. It waits for the list to load.
   useEffect(() => {
-    if (!singleKeys) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || e.isComposing) return;
-      const input = searchRef.current;
-      if (!input || input.closest('[inert]')) return;
-      const el = document.activeElement;
-      if (el instanceof HTMLElement && (el.matches('input, textarea, select') || el.isContentEditable))
-        return;
-      e.preventDefault();
-      input.focus();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [singleKeys]);
+    if (!reveal || !todos) return;
+    const key = reveal.todo.key;
+    clearReveal();
+    const inMine = todos.mine.some((t) => t.key === key);
+    // A to-do that has gone since it was found has nothing to show.
+    if (!inMine && !todos.open.some((t) => t.key === key)) return;
+    setVisitSeen(new Set());
+    setTabState(inMine ? 'mine' : 'open');
+    setFilter(EMPTY_FILTER);
+    setAdding(false);
+    setEditingId(null);
+    setRevealed({ key, n: reveal.n });
+    setFocusRow(key);
+  }, [reveal, todos, clearReveal]);
+
+  // The row exists only after the render that opened its group, hence a second step.
+  useEffect(() => {
+    if (focusRow === null) return;
+    const row = document.querySelector<HTMLElement>(`[data-todo-open="${CSS.escape(focusRow)}"]`);
+    if (row) {
+      row.focus();
+      row.scrollIntoView?.({ block: 'nearest' });
+    } else scrollRef.current?.focus();
+    setFocusRow(null);
+  }, [focusRow]);
 
   // After the editor closes, put the keyboard back on the row's edit button (or the Add button).
   useEffect(() => {
@@ -352,12 +376,12 @@ export function TodosDrawer() {
   const savedSeen = boot?.prefs.todoSeen ?? {};
   const seenMap = Object.fromEntries(Object.entries(savedSeen).filter(([k]) => !visitSeen.has(k)));
 
-  // Search and filters (decision 7). The kind filter belongs to Mine: everything open to anyone is TDS.
+  // Filters (the text search is the global search's now). The kind filter belongs to Mine: everything open
+  // to anyone is TDS.
   const showKind = tab === 'mine' && (todos.canUsePersonal || todos.mine.some((t) => t.scope === 'personal'));
   const clientSlugs = [...new Set(items.map((t) => t.client).filter((c): c is string => c !== null))];
   const showClient = clientSlugs.length >= 2;
   const active: TodoFilter = {
-    query: filter.query,
     scope: showKind ? filter.scope : 'all',
     client:
       showClient && filter.client !== null && clientSlugs.includes(filter.client) ? filter.client : null,
@@ -371,10 +395,9 @@ export function TodosDrawer() {
     todayIso(),
   );
   const showScope = tab === 'mine' && active.scope === 'all';
-  const other = tab === 'mine' ? todos.open : todos.mine;
-  const otherMatches = filtering
-    ? filterTodos(other, { query: active.query, scope: 'all', client: active.client }, clients).length
-    : 0;
+  // The group the global search sent us to stays open, whatever else is closed.
+  const holdsRevealed = (list: TodoItem[]) => revealed !== null && list.some((t) => t.key === revealed.key);
+  const revealN = revealed?.n ?? 0;
 
   const opened = (todo: TodoItem) => {
     if (tab === 'mine' && freshKeys.has(todo.key) && !visitSeen.has(todo.key)) {
@@ -384,7 +407,12 @@ export function TodosDrawer() {
   };
   const clearFilters = () => {
     setFilter(EMPTY_FILTER);
-    searchRef.current?.focus();
+    // The button leaves with the "No to-dos match" panel: put the keyboard on a filter, now reset.
+    const row = filtersRef.current;
+    const filter =
+      row?.querySelector<HTMLElement>('select') ??
+      row?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
+    (filter ?? scrollRef.current)?.focus();
   };
 
   const hold = (held: HeldTodo) => {
@@ -398,6 +426,17 @@ export function TodosDrawer() {
     setFocusUndo(null);
     setMessage('Undone.');
     setRefocus(held.todoId);
+  };
+
+  const toggleAdd = () => {
+    if (adding) {
+      setAdding(false);
+      setMessage('');
+      return;
+    }
+    setEditingId(null);
+    setMessage('');
+    setAdding(true);
   };
 
   const run = async (actions: TodoAction[]) => {
@@ -561,6 +600,36 @@ export function TodosDrawer() {
   };
 
   // The tools sit on the drawer above the list: only the list scrolls.
+  // With a filter row the + icon closes it at the right end. With none, a labelled quiet button on a row
+  // of its own, right-aligned to line up with that +.
+  const hasFilterRow = showKind || showClient;
+  const addToggle = canChange ? (
+    hasFilterRow ? (
+      <button
+        type="button"
+        className="icon-btn todo-add-btn"
+        ref={addButton}
+        aria-label="Add a to-do"
+        aria-expanded={adding}
+        onClick={toggleAdd}
+      >
+        <Icon name="plus" size={18} />
+      </button>
+    ) : (
+      <button
+        type="button"
+        className="btn todo-add-label"
+        data-variant="quiet"
+        data-size="small"
+        ref={addButton}
+        aria-expanded={adding}
+        onClick={toggleAdd}
+      >
+        Add a to-do
+      </button>
+    )
+  ) : null;
+
   return (
     <div className="drawer-split">
       <div className="drawer-tools">
@@ -574,71 +643,12 @@ export function TodosDrawer() {
           ]}
         />
       </div>
-      <div className="drawer-tools">
-        <Icon name="search" size={16} />
-        <label className="visually-hidden" htmlFor={SEARCH_ID}>
-          Search to-dos
-        </label>
-        <input
-          id={SEARCH_ID}
-          ref={searchRef}
-          type="search"
-          className="field"
-          placeholder="Search to-dos"
-          aria-keyshortcuts={singleKeys ? '/' : undefined}
-          value={filter.query}
-          onChange={(e) => setFilter({ ...filter, query: e.target.value })}
-          onKeyDown={(e) => {
-            // Esc clears the search first; with nothing to clear it closes the drawer as usual.
-            if (e.key === 'Escape' && filter.query !== '') {
-              e.preventDefault();
-              e.stopPropagation();
-              setFilter({ ...filter, query: '' });
-            }
-          }}
-        />
-        {canChange ? (
-          <button
-            type="button"
-            className="icon-btn todo-add-btn"
-            ref={addButton}
-            aria-label="Add a to-do"
-            aria-expanded={adding}
-            onClick={() => {
-              if (adding) {
-                setAdding(false);
-                setMessage('');
-                return;
-              }
-              setEditingId(null);
-              setMessage('');
-              setAdding(true);
-            }}
-          >
-            <Icon name="plus" size={18} />
-          </button>
-        ) : null}
-      </div>
-      {canChange && adding ? (
-        <div className="drawer-tools todo-add">
-          <AddTodoForm
-            me={me}
-            team={todos.team}
-            busy={busy}
-            canAddOpen={todos.canAddOpen}
-            canUsePersonal={todos.canUsePersonal}
-            startPersonal={tab === 'mine' && active.scope === 'personal'}
-            onAdd={(a) => void add(a)}
-            onCancel={() => {
-              setAdding(false);
-              setMessage('');
-              setRefocus('');
-            }}
-          />
-        </div>
-      ) : null}
-      {showKind || showClient ? (
-        <div className="drawer-tools todo-filters" data-stacked={showKind && showClient ? 'true' : undefined}>
+      {hasFilterRow || canChange ? (
+        <div
+          className="drawer-tools todo-filters"
+          ref={filtersRef}
+          data-stacked={showKind && showClient ? 'true' : undefined}
+        >
           {showKind ? (
             <Seg<TodoFilter['scope']>
               label="Which kind of to-do"
@@ -671,6 +681,25 @@ export function TodosDrawer() {
               </select>
             </>
           ) : null}
+          {addToggle}
+        </div>
+      ) : null}
+      {canChange && adding ? (
+        <div className="drawer-tools todo-add">
+          <AddTodoForm
+            me={me}
+            team={todos.team}
+            busy={busy}
+            canAddOpen={todos.canAddOpen}
+            canUsePersonal={todos.canUsePersonal}
+            startPersonal={tab === 'mine' && active.scope === 'personal'}
+            onAdd={(a) => void add(a)}
+            onCancel={() => {
+              setAdding(false);
+              setMessage('');
+              setRefocus('');
+            }}
+          />
         </div>
       ) : null}
       {todos.changes === 'switched-off' ? (
@@ -697,20 +726,6 @@ export function TodosDrawer() {
                     Clear filters
                   </button>
                 </p>
-                {otherMatches > 0 ? (
-                  <p>
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => {
-                        setTab(tab === 'mine' ? 'open' : 'mine');
-                        searchRef.current?.focus();
-                      }}
-                    >
-                      {otherMatches} in {tab === 'mine' ? 'Open to anyone' : 'Mine'}
-                    </button>
-                  </p>
-                ) : null}
               </div>
             ) : (
               <p className="dock-empty">
@@ -721,7 +736,7 @@ export function TodosDrawer() {
             <>
               {fresh.length > 0 ? (
                 <Fold
-                  key={`${tab}-new-${filtering}`}
+                  key={`${tab}-new-${filtering}-${revealN}`}
                   title="New to you"
                   count={fresh.length}
                   action={
@@ -748,12 +763,12 @@ export function TodosDrawer() {
               {groups.map((g, i) => (
                 <Fold
                   // Only the top section starts open ("New to you" when there is one), so the list isn't
-                  // overwhelming (Ian, 2026-11-13). While a search or filter is on, every group opens. The key
+                  // overwhelming (Ian, 2026-11-13). While a filter is on, every group opens. The key
                   // remounts a group when either changes, so the new top group opens once "New to you" empties.
-                  key={`${tab}-${g.key}-${filtering}-${fresh.length === 0 && i === 0}`}
+                  key={`${tab}-${g.key}-${filtering}-${fresh.length === 0 && i === 0}-${holdsRevealed(g.items)}-${revealN}`}
                   title={g.title}
                   count={g.items.length}
-                  defaultOpen={filtering || (fresh.length === 0 && i === 0)}
+                  defaultOpen={filtering || (fresh.length === 0 && i === 0) || holdsRevealed(g.items)}
                 >
                   <ul className="drawer-list">{g.items.map((t) => row(t, false))}</ul>
                 </Fold>

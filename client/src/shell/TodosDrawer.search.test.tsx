@@ -82,6 +82,8 @@ function setStore(mine: TodoItem[], over: Partial<TodoList> = {}, seen: Record<s
       ...over,
     },
     sessions: { live: [], past: [] },
+    reveal: null,
+    clearReveal: vi.fn(),
   };
 }
 
@@ -190,78 +192,23 @@ describe('quick add', () => {
   });
 });
 
-describe('search and filters', () => {
+describe('no search row', () => {
+  it('has no search field and no "/" shortcut of its own: the global search does both', () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    render(<TodosDrawer />);
+    expect(screen.queryByLabelText('Search to-dos')).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    const notHandled = fireEvent.keyDown(document.body, { key: '/' });
+    expect(notHandled).toBe(true);
+  });
+});
+
+describe('filters', () => {
   const items = [
     todo('a.md', 'Renew contract', { client: 'acme' }),
     todo('b.md', 'Ring Bob', { client: 'bolt', due: '2999-01-01' }),
     todo('c.md', 'Someday idea', { due: null }),
   ];
-
-  it('filters by text and says when nothing matches, with a Clear filters button', () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    const search = screen.getByLabelText('Search to-dos');
-    fireEvent.change(search, { target: { value: 'ring' } });
-    expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
-    expect(screen.queryByText('Renew contract', { exact: false })).toBeNull();
-    fireEvent.change(search, { target: { value: 'zzz' } });
-    expect(screen.getByText('No to-dos match.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(screen.getByText('Renew contract', { exact: false })).toBeTruthy();
-  });
-
-  it('hints at matches in the other tab', () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'open thing' } });
-    expect(screen.getByRole('button', { name: '1 in Open to anyone' })).toBeTruthy();
-  });
-
-  it('matches a project by the words the row shows', () => {
-    setStore([todo('w.md', 'Plan', { project: 'website-rebuild' }), todo('x.md', 'Other')]);
-    render(<TodosDrawer />);
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'website rebuild' } });
-    expect(screen.getByText('Plan', { exact: false })).toBeTruthy();
-    expect(screen.queryByText('Other', { exact: false })).toBeNull();
-  });
-
-  it('focuses the search after jumping to the other tab', () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'open thing' } });
-    fireEvent.click(screen.getByRole('button', { name: '1 in Open to anyone' }));
-    expect(document.activeElement).toBe(screen.getByLabelText('Search to-dos'));
-  });
-
-  it('announces the number of matches a moment after typing, and only while filtering', async () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    const live = () => screen.getAllByRole('status').map((n) => n.textContent);
-    expect(live().join('')).toBe('');
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'ring' } });
-    await waitFor(() => expect(live()).toContain('1 to-do matches'), { timeout: 2000 });
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'zzz' } });
-    await waitFor(() => expect(live()).toContain('No to-dos match'), { timeout: 2000 });
-  });
-
-  it('Escape clears the search and keeps the event from closing the drawer', () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    const search = screen.getByLabelText('Search to-dos') as HTMLInputElement;
-    fireEvent.change(search, { target: { value: 'ring' } });
-    const notStopped = fireEvent.keyDown(search, { key: 'Escape' });
-    expect(search.value).toBe('');
-    expect(notStopped).toBe(false);
-  });
-
-  it('opens every group while a filter is on, even the closed "No date" one', () => {
-    setStore(items);
-    render(<TodosDrawer />);
-    const noDate = () => screen.getByRole('button', { name: /No date/ });
-    expect(noDate().getAttribute('aria-expanded')).toBe('false');
-    fireEvent.change(screen.getByLabelText('Search to-dos'), { target: { value: 'idea' } });
-    expect(noDate().getAttribute('aria-expanded')).toBe('true');
-  });
 
   it('shows the client select with two or more clients, and filters by it', () => {
     setStore(items);
@@ -269,6 +216,45 @@ describe('search and filters', () => {
     fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
     expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
     expect(screen.queryByText('Renew contract', { exact: false })).toBeNull();
+  });
+
+  it('says when nothing matches, with a Clear filters button that works', () => {
+    setStore(
+      [personal('p.md', 'Secret plan', { client: 'acme' }), todo('b.md', 'Ring Bob', { client: 'bolt' })],
+      {
+        canUsePersonal: true,
+      },
+    );
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
+    expect(screen.getByText('No to-dos match.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
+    // The keyboard lands on a filter, now reset, not on the unnamed scroll area.
+    expect(document.activeElement).toBe(screen.getByLabelText('Client'));
+  });
+
+  it('announces the number of matches a moment after a filter changes, and only while filtering', async () => {
+    setStore(items);
+    render(<TodosDrawer />);
+    const live = () => screen.getAllByRole('status').map((n) => n.textContent);
+    expect(live().join('')).toBe('');
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
+    await waitFor(() => expect(live()).toContain('1 to-do matches'), { timeout: 2000 });
+  });
+
+  it('opens every group while a filter is on, even the closed "No date" one', () => {
+    setStore([
+      todo('a.md', 'Renew contract', { client: 'acme' }),
+      todo('b.md', 'Ring Bob', { client: 'bolt' }),
+      todo('c.md', 'Someday idea', { client: 'acme', due: null }),
+    ]);
+    render(<TodosDrawer />);
+    const noDate = () => screen.getByRole('button', { name: /No date/ });
+    expect(noDate().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
+    expect(noDate().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('hides the kind switch with no personal to-dos, and filters by it when shown', () => {
@@ -284,6 +270,200 @@ describe('search and filters', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'All' }));
     const row = screen.getByText('Secret plan', { exact: false }).closest('li') as HTMLElement;
     expect(within(row).getByText('Personal')).toBeTruthy();
+  });
+});
+
+describe('the + button', () => {
+  const two = [
+    todo('a.md', 'Renew contract', { client: 'acme' }),
+    todo('b.md', 'Ring Bob', { client: 'bolt' }),
+  ];
+  const add = () => screen.getByRole('button', { name: 'Add a to-do' });
+  const row = () => document.querySelector('.todo-filters') as HTMLElement;
+  const tabs = () => screen.getByRole('radiogroup', { name: 'Which to-dos' });
+
+  it('sits at the right end of the filter row, after the client select, as an icon', () => {
+    setStore(two);
+    render(<TodosDrawer />);
+    expect(row().contains(add())).toBe(true);
+    expect(row().lastElementChild).toBe(add());
+    expect(row().contains(screen.getByLabelText('Client'))).toBe(true);
+    expect(add().classList.contains('icon-btn')).toBe(true);
+    expect(add().textContent).toBe('');
+    expect(row().getAttribute('data-stacked')).toBeNull();
+  });
+
+  it('with the kind switch as well, the select and + still share the row, the switch above', () => {
+    setStore([...two, personal('p.md', 'Secret plan')], { canUsePersonal: true });
+    render(<TodosDrawer />);
+    expect(row().getAttribute('data-stacked')).toBe('true');
+    const kids = [...row().children].map((c) => c.tagName + (c.classList.contains('seg') ? '.seg' : ''));
+    expect(kids.at(-1)).toBe('BUTTON');
+    expect(kids.at(-2)).toBe('SELECT');
+    expect(kids[0]).toBe('DIV.seg');
+    expect(add().classList.contains('icon-btn')).toBe(true);
+  });
+
+  it('with only the kind switch, it follows the switch as an icon', () => {
+    setStore([todo('a.md', 'Renew contract'), personal('p.md', 'Secret plan')], { canUsePersonal: true });
+    render(<TodosDrawer />);
+    expect(add().classList.contains('icon-btn')).toBe(true);
+    expect(row().lastElementChild).toBe(add());
+  });
+
+  it('with no filter, is a labelled quiet small button alone on its own row, right-aligned', () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    render(<TodosDrawer />);
+    expect(row().contains(add())).toBe(true);
+    expect(row().children).toHaveLength(1);
+    expect(tabs().closest('.drawer-tools')?.contains(add())).toBe(false);
+    expect(add().textContent).toBe('Add a to-do');
+    expect(add().classList.contains('btn')).toBe(true);
+    expect(add().classList.contains('todo-add-label')).toBe(true);
+    expect(add().getAttribute('data-variant')).toBe('quiet');
+    expect(add().getAttribute('data-size')).toBe('small');
+  });
+
+  it('is not there, when to-dos cannot be changed, and no row is left behind', () => {
+    setStore([todo('a.md', 'Renew contract')], { changes: 'switched-off' });
+    render(<TodosDrawer />);
+    expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
+    expect(document.querySelector('.todo-filters')).toBeNull();
+  });
+
+  it('opens the form below the row, and Cancel puts focus back on the button (both looks)', () => {
+    for (const items of [two, [todo('a.md', 'Renew contract')]]) {
+      setStore(items);
+      const { unmount } = render(<TodosDrawer />);
+      fireEvent.click(add());
+      expect(add().getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByRole('form', { name: 'Add a to-do' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('form', { name: 'Add a to-do' })).toBeNull();
+      expect(document.activeElement).toBe(add());
+      unmount();
+    }
+  });
+
+  it('keeps focus on the button after a to-do is added', async () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    render(<TodosDrawer />);
+    fireEvent.click(add());
+    fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: 'Ring Bob' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
+    await waitFor(() => expect(screen.getByText('Added.')).toBeTruthy());
+    expect(document.activeElement).toBe(add());
+  });
+});
+
+describe('revealTodo (from the global search)', () => {
+  const clear = vi.fn();
+  const ask = (t: TodoItem, n = 1) => {
+    (store.current as Record<string, unknown>).reveal = { todo: t, n };
+    (store.current as Record<string, unknown>).clearReveal = clear;
+  };
+  const tabs = () => screen.getByRole('radiogroup', { name: 'Which to-dos' });
+
+  beforeEach(() => clear.mockReset());
+
+  it('takes the request once, switches to the other tab, focuses the row and opens its group', () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    const target = todo('o2.md', 'Pick me up', { assignee: null, due: null });
+    (store.current.todos as TodoList).open = [todo('o1.md', 'Open thing'), target];
+    ask(target);
+    render(<TodosDrawer />);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(
+      within(tabs())
+        .getByRole('radio', { name: /^Open to anyone/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    // "No date" is a closed group when nothing asked for it.
+    expect(screen.getByRole('button', { name: /No date/ }).getAttribute('aria-expanded')).toBe('true');
+    const rowButton = screen.getByText('Pick me up', { exact: false }).closest('button') as HTMLElement;
+    expect(document.activeElement).toBe(rowButton);
+  });
+
+  it('stays on Mine for one of mine, opening a group that was closed', () => {
+    const late = todo('l.md', 'Late thing', { due: '2000-01-01' });
+    const target = todo('n.md', 'Undated thing', { due: null });
+    setStore([late, target]);
+    ask(target);
+    render(<TodosDrawer />);
+    expect(screen.getByRole('button', { name: /^Overdue/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /^No date/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
+    );
+  });
+
+  it('clears the filters first, so the to-do is not hidden by them', () => {
+    const a = todo('a.md', 'Renew contract', { client: 'acme' });
+    const b = todo('b.md', 'Ring Bob', { client: 'bolt' });
+    setStore([a, b]);
+    const { rerender } = render(<TodosDrawer />);
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
+    expect(screen.queryByText('Ring Bob', { exact: false })).toBeNull();
+    ask(b);
+    rerender(<TodosDrawer />);
+    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
+    expect(document.activeElement).toBe(screen.getByText('Ring Bob', { exact: false }).closest('button'));
+  });
+
+  it('opens a group the person closed by hand when the same to-do is revealed again', () => {
+    const late = todo('l.md', 'Late thing', { due: '2000-01-01' });
+    const target = todo('n.md', 'Undated thing', { due: null });
+    setStore([late, target]);
+    ask(target, 1);
+    const { rerender } = render(<TodosDrawer />);
+    const noDate = () => screen.getByRole('button', { name: /^No date/ });
+    expect(noDate().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(noDate());
+    expect(noDate().getAttribute('aria-expanded')).toBe('false');
+    (document.activeElement as HTMLElement).blur();
+    ask(target, 2);
+    rerender(<TodosDrawer />);
+    expect(noDate().getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
+    );
+  });
+
+  it('does the same for "New to you", so the row is never left in a hidden group', () => {
+    const fresh = todo('n.md', 'Handed over', { due: null, handover: handover() });
+    setStore([todo('l.md', 'Late thing', { due: '2000-01-01' }), fresh]);
+    ask(fresh, 1);
+    const { rerender } = render(<TodosDrawer />);
+    const group = () => screen.getByRole('button', { name: /^New to you\s*\d/ });
+    expect(group().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(group());
+    expect(group().getAttribute('aria-expanded')).toBe('false');
+    ask(fresh, 2);
+    rerender(<TodosDrawer />);
+    expect(group().getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      screen.getByText('Handed over', { exact: false }).closest('button') as HTMLElement,
+    );
+  });
+
+  it('does nothing visible for a to-do that has gone, but still takes the request', () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    ask(todo('gone.md', 'Gone'));
+    render(<TodosDrawer />);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(within(tabs()).getByRole('radio', { name: /^Mine/ }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('waits for the list to load before taking the request', () => {
+    setStore([todo('a.md', 'Renew contract')]);
+    const loaded = store.current.todos;
+    store.current.todos = null;
+    ask(todo('a.md', 'Renew contract'));
+    const { rerender } = render(<TodosDrawer />);
+    expect(clear).not.toHaveBeenCalled();
+    store.current.todos = loaded;
+    rerender(<TodosDrawer />);
+    expect(clear).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -25,6 +25,12 @@ export interface LibraryStore<S extends LibraryState> {
    * as the scope, so choosing that same client later changes nothing. Drops nothing and tells no one.
    */
   settle(scope: string): void;
+  /**
+   * Opens `item` in its library (`scope`) in one update (global search): chosen in the panel, open in the
+   * sheet when the app can view it (`item.view`), and the app's search and format filters cleared so the
+   * item shows in the list when the person goes back. Ticks stay unless the library changes.
+   */
+  openItem(scope: string, item: LibraryItem): void;
   toggleTick(id: string): void;
   reset(): void;
   subscribe(listener: () => void): () => void;
@@ -75,6 +81,17 @@ export function createLibraryStore<S extends LibraryState>(initial: () => S): Li
       if (scope === state.scope) return;
       state = { ...state, scope };
       emit();
+    },
+    openItem(scope, item) {
+      const base = initial() as unknown as Record<string, unknown>;
+      const cleared: Record<string, unknown> = {};
+      for (const key of ['query', 'format']) if (key in base) cleared[key] = base[key];
+      set({
+        scope,
+        current: item,
+        viewing: item.view !== null ? item : null,
+        ...cleared,
+      } as unknown as Partial<S>);
     },
     toggleTick(id) {
       const ticked = new Set(state.ticked);

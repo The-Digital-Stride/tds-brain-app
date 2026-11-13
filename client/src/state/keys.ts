@@ -22,6 +22,12 @@ export const keyAction: KeyAction = (e, { typing, state, panelFloating = false }
     return null;
   }
 
+  // "/" opens the global search from anywhere (not while typing, so it can still be typed). Before the Shift
+  // check: on some keyboards (German, French, Nordic) "/" is typed with Shift.
+  if (key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    return !typing && !state.paletteOpen && state.singleKeys ? { type: 'set-palette', open: true } : null;
+  }
+
   // Single keys: no modifier, not typing, palette shut, and switched on.
   if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
   if (typing || state.paletteOpen || !state.singleKeys) return null;

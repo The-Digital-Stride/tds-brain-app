@@ -336,7 +336,7 @@ function AdsSheet() {
 
 describe('app slots', () => {
   it('a registered app shows on the rail and opens its sheet; an unknown app id shows Home', async () => {
-    apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet });
+    apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet, search: null });
     const view = await renderHome();
     expect(screen.getByText('Apps')).toBeTruthy();
 
@@ -388,6 +388,7 @@ describe('an app with a panel of its own', () => {
       title: 'Ads',
       icon: 'skills',
       Sheet: AdsSheet,
+      search: null,
       Panel: AdsPanel,
       panelLabel: 'Ad details',
       BarActions: AdsBar,
@@ -413,6 +414,7 @@ describe('an app with a panel of its own', () => {
       title: 'Ads',
       icon: 'skills',
       Sheet: AdsSheet,
+      search: null,
       Panel: LeavingPanel,
       BarActions: ToggleBar,
     });
@@ -436,7 +438,7 @@ describe('an app with a panel of its own', () => {
 
   it('an app without one leaves the panel shut', async () => {
     vi.stubGlobal('innerWidth', 1280);
-    apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet });
+    apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet, search: null });
     localStorage.setItem('tds-brain-shell', JSON.stringify({ panelOpen: true }));
     await renderHome();
     fireEvent.click(railButton('Ads'));
@@ -504,10 +506,15 @@ describe('single keys', () => {
   it('the rail advertises them only while they are switched on', async () => {
     const on = await renderHome();
     expect(railButton('To-dos').getAttribute('aria-keyshortcuts')).toBe('t');
+    const jump = () => screen.getByRole('button', { name: 'Search or jump to' });
+    expect(jump().getAttribute('aria-keyshortcuts')).toMatch(/ \/$/);
     on.unmount();
     localStorage.setItem('tds-brain-shell', JSON.stringify({ singleKeys: false, railWide: true }));
     await renderHome();
     expect(railButton('To-dos').hasAttribute('aria-keyshortcuts')).toBe(false);
+    expect(
+      screen.getByRole('button', { name: 'Search or jump to' }).getAttribute('aria-keyshortcuts'),
+    ).not.toContain('/');
     expect(railButton('Icons only').hasAttribute('aria-keyshortcuts')).toBe(false);
     expect(railButton('Icons only').querySelector('kbd')).toBeNull();
   });

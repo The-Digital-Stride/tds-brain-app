@@ -134,6 +134,55 @@ describe('createLibraryStore', () => {
     expect(store.get().ticked.size).toBe(0);
   });
 
+  describe('openItem', () => {
+    it('selects the item in its library in one update, viewing it when it can be viewed', () => {
+      const store = make();
+      store.set({ scope: 'a', query: 'van' });
+      const heard = vi.fn();
+      store.subscribe(heard);
+      const picture = item({ view: 'image' });
+      store.openItem('b', picture);
+      expect(heard).toHaveBeenCalledTimes(1);
+      expect(store.get()).toMatchObject({ scope: 'b', current: picture, viewing: picture, query: '' });
+      expect(clientChoice.get()).toBe('b');
+    });
+
+    it('only selects an item the app cannot open', () => {
+      const store = make();
+      const file = doc({ view: null });
+      store.openItem('a', file);
+      expect(store.get()).toMatchObject({ current: file, viewing: null });
+    });
+
+    it('keeps the ticks when the library does not change, and clears an earlier open file', () => {
+      const store = make();
+      store.toggleTick('x');
+      store.set({ viewing: item() });
+      const file = doc({ view: null });
+      store.openItem('a', file);
+      expect([...store.get().ticked]).toEqual(['x']);
+      expect(store.get().viewing).toBeNull();
+    });
+
+    it('also clears a format filter the app has, so the item is in the list', () => {
+      interface D extends LibraryState {
+        query: string;
+        format: string;
+      }
+      const store = createLibraryStore<D>(() => ({
+        scope: 'a',
+        query: '',
+        format: 'all',
+        current: null,
+        viewing: null,
+        ticked: new Set(),
+      }));
+      store.set({ format: 'pdf', query: 'x' });
+      store.openItem('a', doc());
+      expect(store.get()).toMatchObject({ format: 'all', query: '' });
+    });
+  });
+
   it('reset goes back to the start', () => {
     const store = make();
     store.set({ scope: 'b', query: 'x' });

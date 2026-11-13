@@ -17,7 +17,9 @@ import {
   type ChangelogResponse,
   type EngineHealth,
   type Identity,
+  LIBRARY_SEARCH_QUERY,
   type LibraryFile,
+  type LibrarySearchResponse,
   type LibraryText,
   MAX_ATTACHMENTS,
   type MemberProfile,
@@ -705,6 +707,26 @@ async function libraryRoute(
   if (path === '/api/library/scopes') {
     if (method !== 'GET') throw methodNotAllowed();
     sendJson(res, 200, await safe(ctx.brain.libraryScopes(), []));
+    return true;
+  }
+  if (path === '/api/library/search') {
+    if (method !== 'GET') throw methodNotAllowed();
+    const q = (url.searchParams.get('q') ?? '').trim();
+    const kind = url.searchParams.get('kind');
+    const { min, max } = LIBRARY_SEARCH_QUERY;
+    if (q.length < min || q.length > max) {
+      throw new HttpError(400, 'bad-request', `Type between ${min} and ${max} characters to search.`);
+    }
+    if (kind !== 'image' && kind !== 'doc') {
+      throw new HttpError(400, 'bad-request', 'Choose whether to search images or documents.');
+    }
+    const search = ctx.brain.librarySearch;
+    const empty: LibrarySearchResponse = { hits: [], total: 0, partial: false };
+    sendJson(
+      res,
+      200,
+      search ? await safe(search.call(ctx.brain, q, kind === 'doc' ? 'document' : 'image'), empty) : empty,
+    );
     return true;
   }
   if (path === '/api/library') {

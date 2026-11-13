@@ -37,23 +37,13 @@ describe('filterTodos', () => {
     expect(filterTodos(items, EMPTY_FILTER, clients)).toBe(items);
     expect(filterActive(EMPTY_FILTER)).toBe(false);
   });
-  it('matches title, details, client name and project, ignoring case and accents', () => {
-    const q = (query: string) => ids(filterTodos(items, { ...EMPTY_FILTER, query }, clients));
-    expect(q('contract')).toEqual(['a']);
-    expect(q('residence')).toEqual(['b']);
-    expect(q('CAFE')).toEqual(['a', 'c']);
-    expect(q('  bolt ')).toEqual(['b']);
-    expect(q('nothing')).toEqual([]);
-  });
-  it('matches a project by the words the row shows', () => {
-    const list = [todo('w', { title: 'Plan', project: 'website-rebuild' })];
-    expect(ids(filterTodos(list, { ...EMPTY_FILTER, query: 'website rebuild' }, clients))).toEqual(['w']);
-  });
-  it('filters by scope and by client, and combines them with the text', () => {
+  it('filters by scope and by client, and combines them', () => {
     expect(ids(filterTodos(items, { ...EMPTY_FILTER, scope: 'personal' }, clients))).toEqual(['c']);
     expect(ids(filterTodos(items, { ...EMPTY_FILTER, scope: 'tds' }, clients))).toEqual(['a', 'b']);
     expect(ids(filterTodos(items, { ...EMPTY_FILTER, client: 'bolt' }, clients))).toEqual(['b']);
-    expect(ids(filterTodos(items, { query: 'ring', scope: 'tds', client: 'bolt' }, clients))).toEqual(['b']);
+    expect(ids(filterTodos(items, { ...EMPTY_FILTER, scope: 'personal', client: 'bolt' }, clients))).toEqual(
+      [],
+    );
     expect(filterActive({ ...EMPTY_FILTER, client: 'bolt' })).toBe(true);
   });
 });

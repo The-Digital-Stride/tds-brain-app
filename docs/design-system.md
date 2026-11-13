@@ -40,7 +40,8 @@ including label or padding, reaches 24px), visible focus on everything.
 - Rail item 36px high. Drawer and card rows: padding 7px 8px. Fold header 30px (32px in a drawer). Dock header min-height 47px (48 with the glass edge), padding 0 10px 1px 14px.
 - Sheet bar 48px, padding 0 10px 0 18px, no border.
 - Header band: the rail's logo, every dock header and the sheet bar fill the top 48px of their layer, with their contents centred on one line (y 36 from the desk's top edge); 32px controls sit 8px from top and bottom.
-- A drawer's search or filter (the Skills search, the To-dos switch) sits on the drawer's own glass between the header and the list (`.drawer-tools`, padding 0 10px 8px); only the list scrolls (`.drawer-scroll`). Nothing in a drawer has a backing of its own (Ian, 2026-11-11: a whiter strip behind the search was "not good").
+- A drawer's search or filter (the Skills search, the To-dos switch and client select) sits on the drawer's own glass between the header and the list (`.drawer-tools`, padding 0 10px 8px); only the list scrolls (`.drawer-scroll`). Nothing in a drawer has a backing of its own (Ian, 2026-11-11: a whiter strip behind the search was "not good").
+- The To-dos drawer has no search row: "/" and Search or jump to search everything, and choosing a to-do there opens this drawer on it (its tab, filters cleared, its group open, its row focused). The add button shows whenever the person can add. With a filter (the kind switch, the client select) it is a 32px `+` icon (`icon-btn`, "Add a to-do") at the right end of the filter row (`.todo-filters`): with both filters the switch has the first line and the select and `+` share the second, never wrapping. With no filter, the row holds only a labelled quiet small `btn` "Add a to-do", right-aligned so it lines up with that `+` (the tabs row has no room for an icon at 316px: "Open to anyone, N" truncates).
 - A skill row shows its title and one clipped line of description. A chevron (28px, right when closed, down when open) opens the full text; clicking the title still starts the skill. The pin shows on the row under the pointer or the keyboard; a pinned skill keeps its pin. The pin sits left of the chevron, so the chevron is always at the row's right edge.
 - Tray: gap and padding 6px. Card: padding 12px 6px 6px (its heading row is inset 8px so text lines up with the rows).
 - Home: top padding 32px; greeting margin 0 0 4px; summary line 14px, margin 0 0 18px.
@@ -56,7 +57,7 @@ including label or padding, reaches 24px), visible focus on everything.
 - **Field and select** `.field`: 32px, padding 0 10px, 1px `--field-edge`, radius 9, 13px, white fill.
 - **Tick** `.tick` (on `input[type=checkbox]` or `input[type=radio]`): 18px, `appearance: none`, 1.5px solid `--tick-edge` (#7C8AA5), fill rgba(255,255,255,.7), radius 5 (radio 50%). Checked checkbox: navy fill, white check. Checked radio: navy border, centred 8px navy dot. Hit area: wrap in `label.tick-hit` (24px box) when the input stands alone.
 - **Switch** `.switch` (on `input[type=checkbox][role=switch]`), for on/off settings that apply at once: track 30×18, radius 999, off #8A94A6, on navy; knob 14px white with `0 1px 2px rgba(2,27,67,.2)`, moves 12px. Row: grid `1fr auto`, gap 16; title 14/500; help 12 iron, margin-top 2.
-- **Seg**: options 28px, 3px padding, radius 10 / 8, 13px.
+- **Seg**: options 28px, 3px padding, 3px gap between options (so a hovered or focused one never touches its neighbour), radius 10 / 8, 13px.
 - **Chip** `.chip`: 12/500, padding 2px 9px, tray fill. **Count** `.count`: 12/600, line-height 18.
 
 ## Surfaces inside the sheet
@@ -144,6 +145,8 @@ labelled "Name, count"), the `.tray` with one `.card` per group (`.card-head`: t
 quiet button on the right), `.line` rows or tiles inside the card, `.tick` in `label.tick-hit` for
 picking, `.kv` rows and `.chip` tags in the panel, `.btn` for actions, `.glass` for a floating
 action bar. Sheet padding 12px 16px 16px, gap 8px.
+
+Every app declares `search` (global search); a new list or inventory is searchable from Search or jump to. An app's `AppSlot.search` is a `SearchSource` kept outside its lazy UI chunk (`search.ts` in the app's folder), with a hit that opens the item (`SearchActions`); `client/src/shell/apps.test.ts` fails for a `search: null` that has no reason listed. The palette's groups: Go to (derived from the apps), To-dos, Open chats, Skills, Clients, Earlier chats, then the apps' own, async ones last. Six per group, with "6 of N" beside the heading when there are more; "Still looking…" beside it while the server builds more; a hit's second line is the client, the scope name or "My personal files".
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
 with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,

@@ -1,135 +1,136 @@
 import { describe, expect, it } from 'vitest';
-import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
-import type { PaletteData } from '../shell/contract.ts';
-import { paletteGroups } from './palette.ts';
+import type { SearchContext, SearchHit, SearchSource } from '../shell/contract.ts';
+import {
+  type AsyncSlot,
+  asyncLooking,
+  asyncPending,
+  asyncTrouble,
+  groupCount,
+  NOTE_FAILED,
+  NOTE_UNFINISHED,
+  optionKey,
+  paletteGroups,
+} from './palette.ts';
 
-const skill = (name: string, title: string): SkillInfo => ({
-  name,
-  title,
-  description: '',
-  kind: 'skill',
-  maturity: 'live',
-  argumentHint: null,
-  restrictedTo: null,
-});
-const chat = (id: string, title: string): LiveSession => ({
-  id,
-  sdkSessionId: null,
-  title,
-  client: 'acme',
-  todoId: null,
-  state: 'idle',
-  startedAt: '',
-  lastActivityAt: '',
-});
-const todo = (id: string, title: string): TodoItem => ({
-  id,
-  scope: 'tds',
-  key: id,
-  path: `todo/${id}`,
-  handover: null,
-  createdBy: null,
-  title,
-  created: null,
-  source: null,
-  details: '',
-  version: 'v1',
-  assignee: null,
-  due: null,
-  surfaceDate: null,
-  project: null,
-  client: null,
-});
+const hit = (id: string, label = id): SearchHit => ({ id, label, hint: null, icon: 'doc', run: () => {} });
+const ctx: SearchContext = { me: 'sam', todos: null, live: [], past: [], skills: [], pins: [], clients: [] };
 
-const data: PaletteData = {
-  live: [chat('c1', 'Monthly reports check'), chat('c2', 'Call tracking case')],
-  skills: [
-    skill('a', 'Account auditor'),
-    skill('meeting-notes', 'Meeting notes'),
-    skill('search-term', 'Search term audit'),
-  ],
-  pins: ['search-term'],
-  todos: ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'].map((t) =>
-    todo(t.toLowerCase(), `${t} thing`),
-  ),
+const sync = (id: string, labels: string[], total = labels.length): SearchSource => ({
+  id,
+  title: id.toUpperCase(),
+  search: () => ({ hits: labels.map((l) => hit(l)), total }),
+  idle: () => labels.slice(0, 1).map((l) => hit(l)),
+});
+const remote: SearchSource = {
+  id: 'remote',
+  title: 'Remote',
+  searchAsync: async () => ({ hits: [], total: 0 }),
 };
 
-const titles = (q: string, d = data) => paletteGroups(q, d).map((g) => g.title);
-const labels = (q: string, title: string, d = data) =>
-  paletteGroups(q, d)
-    .find((g) => g.title === title)
-    ?.options.map((o) => o.label);
-
 describe('paletteGroups', () => {
-  it('with an empty query gives Go to, open chats, pinned skills and the first five to-dos', () => {
-    expect(titles('')).toEqual(['Go to', 'Open chats', 'Run a skill', 'Start a chat on a to-do']);
-    expect(labels('', 'Go to')).toEqual(['Home', 'To-dos', 'Chats', 'Skills', 'Settings']);
-    expect(labels('', 'Open chats')).toEqual(['Monthly reports check', 'Call tracking case']);
-    expect(labels('', 'Run a skill')).toEqual(['Search term audit']);
-    expect(labels('', 'Start a chat on a to-do')).toHaveLength(5);
+  it('follows the source order and leaves empty groups out', () => {
+    const sources = [sync('a', ['a1']), sync('b', []), sync('c', ['c1', 'c2'])];
+    const groups = paletteGroups(sources, 'x', ctx);
+    expect(groups.map((g) => g.source.id)).toEqual(['a', 'c']);
+    expect(groups[1]?.hits.map((h) => h.id)).toEqual(['c1', 'c2']);
   });
 
-  it('gives the drawer commands and key hints', () => {
-    const go = paletteGroups('', data)[0]?.options ?? [];
-    expect(go.find((o) => o.label === 'To-dos')?.hint).toBe('T');
-    expect(go.find((o) => o.label === 'Chats')?.command).toEqual({ kind: 'drawer', drawer: 'chats' });
-    expect(go[0]?.command).toEqual({ kind: 'home' });
-    expect(go.at(-1)?.command).toEqual({ kind: 'settings' });
+  it('uses idle hits for an empty query, and no group for a source without them', () => {
+    const noIdle: SearchSource = { id: 'n', title: 'N', search: () => ({ hits: [hit('n1')], total: 1 }) };
+    const groups = paletteGroups([sync('a', ['a1', 'a2']), noIdle, remote], '', ctx);
+    expect(groups.map((g) => [g.source.id, g.hits.length])).toEqual([['a', 1]]);
   });
 
-  it('matches case-insensitively on every word, in any order', () => {
-    expect(labels('SEARCH audit', 'Run a skill')).toEqual(['Search term audit']);
-    expect(labels('audit term', 'Run a skill')).toEqual(['Search term audit']);
-    expect(labels('reports', 'Open chats')).toEqual(['Monthly reports check']);
-  });
-
-  it('drops empty groups', () => {
-    expect(titles('zzzz')).toEqual([]);
-    expect(titles('meeting')).toEqual(['Run a skill']);
-  });
-
-  it('searches all skills and puts pinned ones first', () => {
-    expect(labels('t', 'Run a skill')).toEqual(['Search term audit', 'Account auditor', 'Meeting notes']);
-  });
-
-  it('shows at most six per group', () => {
-    const many: PaletteData = {
-      ...data,
-      todos: Array.from({ length: 10 }, (_, i) => todo(`t${i}`, `Thing ${i}`)),
+  it('adds an async group only from an answer to this exact query', () => {
+    const slots: Record<string, AsyncSlot> = {
+      remote: { query: 'rep', results: { hits: [hit('r1')], total: 1 }, looking: false },
     };
-    expect(labels('thing', 'Start a chat on a to-do', many)).toHaveLength(6);
+    const sources = [sync('a', ['a1']), remote];
+    expect(paletteGroups(sources, 'rep', ctx, slots).map((g) => g.source.id)).toEqual(['a', 'remote']);
+    // The person typed on: the old answer is stale and dropped.
+    expect(paletteGroups(sources, 'repo', ctx, slots).map((g) => g.source.id)).toEqual(['a']);
   });
 
-  it('gives every option a unique id', () => {
-    const ids = paletteGroups('', data).flatMap((g) => g.options.map((o) => o.id));
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('orders to-dos by due date, undated last, before slicing', () => {
-    const dated = (id: string, due: string | null): TodoItem => ({ ...todo(id, `${id} thing`), due });
-    const d: PaletteData = {
-      ...data,
-      todos: [
-        dated('none1', null),
-        dated('later', '2026-11-20'),
-        dated('overdue', '2026-11-01'),
-        dated('none2', null),
-        dated('soon', '2026-11-12'),
-        dated('x1', '2026-12-01'),
-        dated('x2', '2026-12-02'),
-      ],
+  it('leaves out an async group that is still looking with no hits, so no heading stands alone', () => {
+    const looking: Record<string, AsyncSlot> = {
+      remote: { query: 'q1', results: { hits: [], total: 0, partial: true }, looking: true },
     };
-    expect(labels('', 'Start a chat on a to-do', d)).toEqual([
-      'overdue thing',
-      'soon thing',
-      'later thing',
-      'x1 thing',
-      'x2 thing',
+    expect(paletteGroups([remote], 'q1', ctx, looking)).toEqual([]);
+    expect(paletteGroups([sync('a', ['a1']), remote], 'q1', ctx, looking).map((g) => g.source.id)).toEqual([
+      'a',
     ]);
-    expect(labels('thing', 'Start a chat on a to-do', d)?.slice(0, 2)).toEqual([
-      'overdue thing',
-      'soon thing',
-    ]);
-    expect(labels('none', 'Start a chat on a to-do', d)).toEqual(['none1 thing', 'none2 thing']);
+    expect(asyncLooking([remote], 'q1', looking)).toBe(true);
+    expect(asyncLooking([remote], 'q2', looking)).toBe(false);
+    const done: Record<string, AsyncSlot> = {
+      remote: { query: 'q1', results: { hits: [], total: 0 }, looking: false },
+    };
+    expect(paletteGroups([remote], 'q1', ctx, done)).toEqual([]);
+    const failed: Record<string, AsyncSlot> = { remote: { query: 'q1', results: null, looking: false } };
+    expect(paletteGroups([remote], 'q1', ctx, failed)).toEqual([]);
+  });
+
+  it('async groups always come after the sync ones given before them in the list', () => {
+    const slots: Record<string, AsyncSlot> = {
+      remote: { query: 'q1', results: { hits: [hit('r1')], total: 1 }, looking: false },
+    };
+    const groups = paletteGroups([sync('a', ['a1']), sync('b', ['b1']), remote], 'q1', ctx, slots);
+    expect(groups.map((g) => g.source.id)).toEqual(['a', 'b', 'remote']);
+  });
+});
+
+describe('a search that could not finish', () => {
+  const failed: Record<string, AsyncSlot> = { remote: { query: 'q1', results: null, looking: false } };
+  const partial: Record<string, AsyncSlot> = {
+    remote: { query: 'q1', results: { hits: [hit('r1')], total: 1, partial: true }, looking: false },
+  };
+
+  it('keeps its heading with a note while other groups have results, and drops it when nothing else does', () => {
+    const [, g] = paletteGroups([sync('a', ['a1']), remote], 'q1', ctx, failed);
+    expect(g).toMatchObject({ hits: [], note: NOTE_FAILED });
+    expect(paletteGroups([remote], 'q1', ctx, failed)).toEqual([]);
+  });
+
+  it('says some folders were not searched when a partial answer ran out of retries', () => {
+    const [g] = paletteGroups([remote], 'q1', ctx, partial);
+    expect(g).toMatchObject({ note: NOTE_UNFINISHED });
+    expect(g?.hits).toHaveLength(1);
+  });
+
+  it('is trouble for the palette line, but a complete or still-retrying answer is not', () => {
+    expect(asyncTrouble([remote], 'q1', failed)).toBe(true);
+    expect(asyncTrouble([remote], 'q1', partial)).toBe(true);
+    expect(asyncTrouble([remote], 'q2', failed)).toBe(false);
+    const done = { remote: { query: 'q1', results: { hits: [], total: 0 }, looking: false } };
+    expect(asyncTrouble([remote], 'q1', done)).toBe(false);
+    const retrying = {
+      remote: { query: 'q1', results: { hits: [], total: 0, partial: true }, looking: true },
+    };
+    expect(asyncTrouble([remote], 'q1', retrying)).toBe(false);
+  });
+});
+
+describe('groupCount and optionKey', () => {
+  it('says "6 of 23" only when the group is cut short', () => {
+    const [short] = paletteGroups([sync('a', ['1', '2', '3', '4', '5', '6'], 23)], 'x', ctx);
+    expect(short && groupCount(short)).toBe('6 of 23');
+    const [full] = paletteGroups([sync('a', ['1', '2'])], 'x', ctx);
+    expect(full && groupCount(full)).toBeNull();
+  });
+
+  it('keeps ids apart across groups', () => {
+    const [a] = paletteGroups([sync('a', ['x'])], 'q', ctx);
+    const [b] = paletteGroups([sync('b', ['x'])], 'q', ctx);
+    expect(a && b && optionKey(a, hit('x'))).not.toBe(b && a && optionKey(b, hit('x')));
+  });
+});
+
+describe('asyncPending', () => {
+  it('is true until every async source has answered the current query, and only for 2+ characters', () => {
+    expect(asyncPending([remote], 'a', {})).toBe(false);
+    expect(asyncPending([sync('a', [])], 'ab', {})).toBe(false);
+    expect(asyncPending([remote], 'ab', {})).toBe(true);
+    const slots = { remote: { query: 'ab', results: null, looking: false } };
+    expect(asyncPending([remote], 'ab', slots)).toBe(false);
+    expect(asyncPending([remote], 'abc', slots)).toBe(true);
   });
 });

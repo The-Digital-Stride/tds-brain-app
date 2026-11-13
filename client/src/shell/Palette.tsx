@@ -1,93 +1,165 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { paletteGroups } from '../state/palette.ts';
+import { openLibraryItem, warmLibrarySearch } from '../apps/shared/search.ts';
+import { clientChoice, scopeForClient } from '../state/client-choice.ts';
+import {
+  asyncLooking,
+  asyncPending,
+  asyncTrouble,
+  groupCount,
+  optionKey,
+  paletteGroups,
+  SEARCH_TROUBLE,
+  type SearchGroup,
+  useAsyncSearch,
+} from '../state/palette.ts';
 import { useStore } from '../store.tsx';
-import type { PaletteCommand, PaletteOption } from './contract.ts';
+import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
-import { placeName, todoChatDraft } from './words.ts';
+import { GO_TO_SOURCE, searchSources } from './search-sources.ts';
 
-/** The command palette: Cmd/Ctrl+K or the "Search or jump to" button. Nothing is rendered while shut. */
+/** The global search: Cmd/Ctrl+K, "/" or the "Search or jump to" button. Nothing is rendered while shut. */
 export function Palette() {
   const { state } = useShell();
   return state.paletteOpen ? <PaletteDialog /> : null;
 }
 
+interface Option {
+  /** Unique across groups; also the DOM id suffix for `aria-activedescendant`. */
+  key: string;
+  group: SearchGroup;
+  hit: SearchHit;
+}
+
+/** How long the list must stay as it is before the live region says how many results there are. */
+const ANNOUNCE_MS = 500;
+
 function PaletteDialog() {
   const { state, dispatch } = useShell();
-  const { boot, todos, sessions, newChat, openView, openChat, startSkill, requestComposerFocus } = useStore();
+  const {
+    boot,
+    todos,
+    sessions,
+    newChat,
+    openView,
+    openChat,
+    openPast,
+    startSkill,
+    revealTodo,
+    requestComposerFocus,
+  } = useStore();
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState(0);
+  // The highlighted option by id, not position: results arriving or changing never move it.
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [said, setSaid] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<Element | null>(document.activeElement);
   const skipRestore = useRef(false);
   const uid = useId();
   const listId = `${uid}-list`;
-  const optionId = (o: PaletteOption) => `${uid}-opt-${o.id}`;
+  const optionId = (o: Option) => `${uid}-opt-${o.key}`;
 
-  const groups = useMemo(() => {
-    // Hints show a client's name, never its folder slug.
-    const named = (slug: string | null) => (slug ? placeName(slug, boot?.clients ?? []) : null);
-    const g = paletteGroups(query, {
+  const sources = useMemo(() => searchSources(), []);
+  const q = query.trim();
+  const ctx = useMemo<SearchContext>(
+    () => ({
+      me: boot?.identity.slug ?? '',
+      todos,
       live: sessions?.live ?? [],
+      past: sessions?.past ?? [],
       skills: boot?.skills ?? [],
       pins: boot?.prefs.pins ?? [],
-      todos: todos?.mine ?? [],
-    });
-    return g.map((group) => ({
-      ...group,
-      options: group.options.map((o) =>
-        o.command.kind === 'chat' || o.command.kind === 'todo' ? { ...o, hint: named(o.hint) } : o,
-      ),
-    }));
-  }, [query, sessions, boot, todos]);
-  const options = useMemo(() => groups.flatMap((g) => g.options), [groups]);
-  const active = options[Math.min(selected, options.length - 1)];
+      clients: boot?.clients ?? [],
+    }),
+    [boot, todos, sessions],
+  );
+  const slots = useAsyncSearch(sources, q);
+  const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
+  const options = useMemo<Option[]>(
+    () => groups.flatMap((group) => group.hits.map((hit) => ({ key: optionKey(group, hit), group, hit }))),
+    [groups],
+  );
+  const active = options.find((o) => o.key === activeId) ?? options[0];
+  // Still looking (a partial answer being asked again) with nothing to show yet counts as still searching.
+  const looking = asyncLooking(sources, q, slots);
+  const pending = asyncPending(sources, q, slots) || (options.length === 0 && looking);
+  // A "Still looking…" no group carries (the looking group has no hits yet) goes at the foot of the list.
+  const lookingAlone = looking && options.length > 0 && !groups.some((g) => g.looking);
 
   // Focus the input on open; hand focus back to where it was on close, unless the command moved it.
   useEffect(() => {
     inputRef.current?.focus();
+    // The first search of a visit is usually the slow one: get the library's lists ready now.
+    warmLibrarySearch();
     const from = restoreTo.current;
     return () => {
       if (!skipRestore.current && from instanceof HTMLElement && from.isConnected) from.focus();
     };
   }, []);
 
+  const activeKey = active?.key;
   useEffect(() => {
-    if (!active) return;
+    if (!activeKey) return;
     listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
-  }, [active]);
+  }, [activeKey]);
 
-  const run = (option: PaletteOption) => {
-    const c: PaletteCommand = option.command;
-    switch (c.kind) {
-      case 'home':
-        newChat();
-        break;
-      case 'settings':
-        openView('settings');
-        break;
-      case 'drawer':
-        // The dock takes focus itself.
-        skipRestore.current = true;
-        dispatch({ type: 'open-drawer', drawer: c.drawer });
-        break;
-      case 'chat':
-        skipRestore.current = true;
-        openChat(c.sessionId);
-        requestComposerFocus();
-        break;
-      case 'skill':
-        skipRestore.current = true;
-        startSkill(c.skill);
-        requestComposerFocus();
-        break;
-      case 'todo':
-        skipRestore.current = true;
-        newChat({ draft: todoChatDraft(c.todo), todoId: c.todo.key });
-        requestComposerFocus();
-        break;
-    }
+  // A live region says how many results there are, a moment after the list settles: once while the server
+  // is still looking ("N results, still looking for more") and once when it is done. Counts changing while
+  // it looks are not said again.
+  const resultCount = `${options.length} ${options.length === 1 ? 'result' : 'results'}`;
+  const phase =
+    q === '' || pending ? '' : looking ? 'looking' : options.length === 0 ? 'No results' : resultCount;
+  const lookingSummary = useRef('');
+  lookingSummary.current = `${resultCount}, still looking for more`;
+  useEffect(() => {
+    if (phase === '') return setSaid('');
+    const t = setTimeout(() => setSaid(phase === 'looking' ? lookingSummary.current : phase), ANNOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  // What a chosen hit may do. Most of it moves focus itself, so the palette must not hand it back.
+  const actions: SearchActions = {
+    openView: (view) => openView(view),
+    openChat: (id) => {
+      skipRestore.current = true;
+      openChat(id);
+      requestComposerFocus();
+    },
+    openPast: (sdkSessionId) => {
+      skipRestore.current = true;
+      void openPast(sdkSessionId);
+    },
+    startSkill: (skill) => {
+      skipRestore.current = true;
+      startSkill(skill);
+      requestComposerFocus();
+    },
+    revealTodo: (todo) => {
+      // The drawer takes the request, switches to the to-do's tab and focuses its row.
+      skipRestore.current = true;
+      dispatch({ type: 'open-drawer', drawer: 'todos' });
+      revealTodo(todo);
+    },
+    chooseClient: (slug) => {
+      newChat();
+      clientChoice.set(scopeForClient(slug));
+    },
+    openLibraryItem: (appId, scope, item) => {
+      skipRestore.current = true;
+      openLibraryItem(appId, scope, item);
+      openView(`app:${appId}`);
+    },
+    openDrawer: (drawer) => {
+      // The dock takes focus itself.
+      skipRestore.current = true;
+      dispatch({ type: 'open-drawer', drawer });
+    },
+    goHome: () => newChat(),
+  };
+
+  const run = (option: Option) => {
+    option.hit.run(actions);
     dispatch({ type: 'set-palette', open: false });
   };
 
@@ -96,7 +168,9 @@ function PaletteDialog() {
       e.preventDefault();
       if (options.length === 0) return;
       const step = e.key === 'ArrowDown' ? 1 : -1;
-      setSelected((i) => (Math.min(i, options.length - 1) + step + options.length) % options.length);
+      const at = active ? options.indexOf(active) : 0;
+      const next = options[(at + step + options.length) % options.length];
+      if (next) setActiveId(next.key);
     } else if (e.key === 'Enter') {
       if (e.nativeEvent.isComposing) return;
       e.preventDefault();
@@ -129,55 +203,77 @@ function PaletteDialog() {
           aria-expanded="true"
           aria-controls={listId}
           aria-activedescendant={active ? optionId(active) : undefined}
+          aria-label="Search or jump to"
           aria-autocomplete="list"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search skills, to-dos and chats"
+          placeholder="Search to-dos, chats, skills, files and more"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
-            setSelected(0);
+            setActiveId(null);
           }}
         />
         <div className="palette-list" id={listId} role="listbox" aria-label="Results" ref={listRef}>
-          {groups.map((g, gi) => (
-            // biome-ignore lint/a11y/useSemanticElements: a fieldset would add form semantics to a listbox group
-            <div key={g.title} role="group" aria-labelledby={`${uid}-grp-${gi}`}>
-              <div className="grp" id={`${uid}-grp-${gi}`}>
-                {g.title}
-              </div>
-              {g.options.map((o) => (
-                // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/useFocusableInteractive: the combobox input keeps focus and drives the list with the keyboard (aria-activedescendant)
-                <div
-                  key={o.id}
-                  id={optionId(o)}
-                  role="option"
-                  aria-selected={o === active}
-                  className="opt"
-                  data-selected={o === active ? 'true' : undefined}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => run(o)}
-                >
-                  <Icon name={o.icon} size={18} />
-                  <span className="opt-label">{o.label}</span>
-                  {o.hint && o.command.kind === 'drawer' ? (
-                    // The letter is only a shortcut while single keys are on.
-                    state.singleKeys ? (
-                      <kbd>{o.hint}</kbd>
-                    ) : null
-                  ) : o.hint ? (
-                    <span className="opt-hint">{o.hint}</span>
+          {groups.map((g) => {
+            const count = groupCount(g);
+            const headId = `${uid}-grp-${g.source.id}`;
+            const countId = `${headId}-count`;
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: a fieldset would add form semantics to a listbox group
+              <div key={g.source.id} role="group" aria-labelledby={count ? `${headId} ${countId}` : headId}>
+                <div className="grp">
+                  <span id={headId}>{g.source.title}</span>
+                  {count ? (
+                    <span className="grp-note" id={countId}>
+                      {count}
+                    </span>
                   ) : null}
+                  {g.note ? <span className="grp-note">{g.note}</span> : null}
+                  {g.looking ? <span className="grp-note">Still looking…</span> : null}
                 </div>
-              ))}
-            </div>
-          ))}
+                {g.hits.map((hit) => {
+                  const o: Option = { key: optionKey(g, hit), group: g, hit };
+                  const selected = o.key === active?.key;
+                  // The letter on a "Go to" drawer is a shortcut, so it only shows while single keys are on.
+                  const shortcut = g.source.id === GO_TO_SOURCE && hit.hint?.length === 1;
+                  return (
+                    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/useFocusableInteractive: the combobox input keeps focus and drives the list with the keyboard (aria-activedescendant)
+                    <div
+                      key={o.key}
+                      id={optionId(o)}
+                      role="option"
+                      aria-selected={selected}
+                      className="opt"
+                      data-selected={selected ? 'true' : undefined}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => run(o)}
+                    >
+                      <Icon name={hit.icon} size={18} />
+                      <span className="opt-label">{hit.label}</span>
+                      {shortcut ? (
+                        state.singleKeys ? (
+                          <kbd>{hit.hint}</kbd>
+                        ) : null
+                      ) : hit.hint ? (
+                        <span className="opt-hint">{hit.hint}</span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
+        {lookingAlone ? <p className="palette-foot">Still looking…</p> : null}
         {options.length === 0 ? (
-          <p className="palette-empty" role="status">
-            Nothing matches
+          <p className="palette-empty">
+            {pending ? 'Searching…' : asyncTrouble(sources, q, slots) ? SEARCH_TROUBLE : 'Nothing matches'}
           </p>
         ) : null}
+        <p className="visually-hidden" role="status">
+          {said}
+        </p>
       </div>
     </>
   );

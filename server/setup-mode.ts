@@ -6,12 +6,12 @@
  */
 import {
   type AppPermissionMode,
-  type BrainReaders,
   type EngineHealth,
   type Identity,
   type Thumbnailer,
   TodoChangeError,
 } from '../shared/contract.ts';
+import type { SearchableBrain } from './brain/index.ts';
 import { SessionError, type SessionManager } from './engine/session-manager.ts';
 import { GONE_MESSAGE, UploadError, type UploadStaging } from './uploads/staging.ts';
 
@@ -22,7 +22,7 @@ const NO_UPLOADS = 'Choose your brain folder before attaching files.';
 const UNKNOWN_PERSON: Identity = { name: '', slug: '', email: null, role: 'unknown', knownMember: false };
 
 /** Every reader answers empty, the brain is not ok, every write is refused and nothing is watched. */
-export function createSetupBrain(): BrainReaders {
+export function createSetupBrain(): SearchableBrain {
   return {
     root: '',
     health: async () => ({ ok: false, path: '', problems: [NO_BRAIN] }),
@@ -53,6 +53,7 @@ export function createSetupBrain(): BrainReaders {
     libraryScopes: async () => [],
     library: async () => null,
     libraryFile: async () => null,
+    librarySearch: async () => ({ hits: [], total: 0, partial: false }),
     sync: async () => ({ lastSync: null }),
     watch: () => () => {},
   };

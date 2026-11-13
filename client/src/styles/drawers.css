@@ -147,11 +147,16 @@
 }
 .todo-add-btn {
   flex: none;
-  margin-left: 8px;
 }
+/* The filter row: the kind switch, the client select and the add button, which sits at the right end. */
 .todo-filters {
   flex-wrap: wrap;
   gap: 8px;
+}
+/* With no filter beside it, the add button is a labelled quiet button, right-aligned like the +. */
+.todo-add-label {
+  flex: none;
+  margin-left: auto;
 }
 .drawer-tools .seg > button {
   white-space: nowrap;
@@ -182,8 +187,9 @@
   min-width: 0;
   padding-left: 10px;
 }
-.drawer-tools.todo-filters[data-stacked] .field {
-  flex-basis: 100%;
+/* Both filters: the kind switch takes the first line; the client select and + share the second, never wrapping. */
+.drawer-tools.todo-filters[data-stacked] > .seg {
+  flex: 1 1 100%;
 }
 .todo-actions .link-btn {
   margin-left: auto;

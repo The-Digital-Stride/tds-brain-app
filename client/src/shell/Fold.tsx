@@ -6,13 +6,7 @@ import { Icon } from './Icon.tsx';
  * An expanding section in a drawer: a header button with a chevron and an optional count. `action` (a
  * quiet small button, say) sits on the right of the heading line, beside the toggle and never inside it.
  */
-export function Fold({
-  title,
-  count,
-  defaultOpen = true,
-  action,
-  children,
-}: FoldProps) {
+export function Fold({ title, count, defaultOpen = true, action, children }: FoldProps) {
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   return (

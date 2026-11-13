@@ -11,7 +11,7 @@ const onMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
  * right, always) the right panel's toggle when the sheet has a panel.
  */
 export function SheetBar({ title, crumb, panel, children }: SheetBarProps) {
-  const { dispatch } = useShell();
+  const { state, dispatch } = useShell();
   return (
     <div className="sheet-bar">
       <div className="crumb">
@@ -31,7 +31,8 @@ export function SheetBar({ title, crumb, panel, children }: SheetBarProps) {
         type="button"
         className="jump"
         aria-label="Search or jump to"
-        aria-keyshortcuts={onMac ? 'Meta+K' : 'Control+K'}
+        // "/" works only while single keys are on, so it is only advertised then.
+        aria-keyshortcuts={`${onMac ? 'Meta+K' : 'Control+K'}${state.singleKeys ? ' /' : ''}`}
         onClick={() => dispatch({ type: 'set-palette', open: true })}
       >
         <Icon name="search" size={18} />

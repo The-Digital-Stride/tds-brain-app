@@ -8,6 +8,7 @@ import { Readable, Writable } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   type LibraryListing,
+  type LibrarySearchResponse,
   MAX_ATTACHMENTS,
   ROUTES,
   SESSION_COOKIE,
@@ -949,6 +950,39 @@ describe('library routes', () => {
     if (!id) throw new Error(`missing ${name}`);
     return id;
   }
+
+  it('searches the library', async () => {
+    const { ctx } = setup();
+    const ok = await call(ctx, `${ROUTES.librarySearch}?q=${encodeURIComponent('  acme logo ')}&kind=image`);
+    expect(ok.status).toBe(200);
+    const body = json(ok) as LibrarySearchResponse;
+    expect(body.total).toBe(body.hits.length);
+    expect(body.hits.every((h) => h.item.kind === 'image' && h.scope.id.length > 0)).toBe(true);
+    expect(body.hits.some((h) => h.item.name === 'logo.png' && h.scope.id === 'client:acme-heating')).toBe(
+      true,
+    );
+    const docs = json(await call(ctx, `${ROUTES.librarySearch}?q=logo&kind=doc`)) as LibrarySearchResponse;
+    expect(docs.hits.every((h) => h.item.kind === 'document')).toBe(true);
+  });
+
+  it('refuses a bad search query or kind, and any method but GET', async () => {
+    const { ctx } = setup();
+    for (const qs of [
+      '',
+      'kind=image',
+      'q=a&kind=image',
+      `q=${'a'.repeat(81)}&kind=image`,
+      'q=%20%20a%20%20&kind=image',
+      'q=logo',
+      'q=logo&kind=video',
+      'q=logo&kind=document',
+    ]) {
+      const sent = await call(ctx, `${ROUTES.librarySearch}?${qs}`);
+      expect(sent.status, qs).toBe(400);
+      expect(json(sent).error.code).toBe('bad-request');
+    }
+    expect((await call(ctx, `${ROUTES.librarySearch}?q=logo&kind=image`, 'POST')).status).toBe(405);
+  });
 
   it('lists the scopes, and a scope', async () => {
     const { ctx } = setup();

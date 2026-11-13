@@ -13,10 +13,14 @@ import type {
   ClientInfo,
   LibraryFile,
   LibraryItem,
+  LibraryKind,
   LibraryListing,
   LibraryScope,
+  LibrarySearchHit,
+  LibrarySearchResponse,
   LibraryView,
 } from '../../shared/contract.ts';
+import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import {
   classify,
@@ -64,9 +68,43 @@ export interface LibraryOptions {
    * offered a picture (never web pages: see `DOC_THUMB_EXTS`). Must match what the thumbnailer was given. Default false.
    */
   docThumbs?: boolean;
+  /** Search limits. Tests lower them. */
+  search?: Partial<{ budgetMs: number; concurrency: number }>;
+}
+
+/** How long a search waits for scopes that have never been listed, and how many it builds at once. */
+export const SEARCH_BUDGET_MS = 1500;
+export const SEARCH_CONCURRENCY = 3;
+
+/** Lower case, accents stripped: what search compares. */
+export function fold(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+const FOLDER_SPLIT = /[/\-_.\s]+/;
+const words = (s: string) => s.split(/\s+/).filter(Boolean);
+
+/** 0 title starts with the query, 1 title has every word and a title word starts with one, 2 title has every word, 3 other fields; null: no match. */
+function searchTier(item: LibraryItem, scopeName: string, q: string, qWords: string[]): number | null {
+  const title = fold(item.title);
+  const dir = item.path.split('/').slice(0, -1).join(' ');
+  const folderWords = dir.split(FOLDER_SPLIT).join(' ');
+  const all = `${title} ${fold(item.name)} ${fold(item.group)} ${fold(folderWords)} ${fold(scopeName)}`;
+  if (!qWords.every((w) => all.includes(w))) return null;
+  if (title.startsWith(q)) return 0;
+  if (qWords.every((w) => title.includes(w))) {
+    const titleWords = title.split(FOLDER_SPLIT).filter(Boolean);
+    return qWords.some((w) => titleWords.some((t) => t.startsWith(w))) ? 1 : 2;
+  }
+  return 3;
 }
 
 export interface Library {
+  /**
+   * Items of one kind whose title, name, group, folder words or scope name hold every word of `q`,
+   * best first, across every scope. Listing metadata only: file contents are never read.
+   */
+  search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
   scopes(): Promise<LibraryScope[]>;
   list(scope: string): Promise<LibraryListing | null>;
   file(id: string): Promise<LibraryFile | null>;
@@ -717,7 +755,108 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     }
   }
 
+  const refreshing = new Set<string>();
+  const refreshQueue: ScopeDef[] = [];
+  let refreshRunning = 0;
+  /** Refreshes a stale scope without waiting, a few at a time however many are stale. */
+  function refreshBehind(scope: ScopeDef, limit: number): void {
+    if (refreshing.has(scope.id)) return;
+    refreshing.add(scope.id);
+    refreshQueue.push(scope);
+    const pump = (): void => {
+      while (refreshRunning < limit) {
+        const next = refreshQueue.shift();
+        if (!next) return;
+        refreshRunning++;
+        entryFor(next)
+          .catch(() => {})
+          .finally(() => {
+            refreshing.delete(next.id);
+            refreshRunning--;
+            pump();
+          });
+      }
+    };
+    pump();
+  }
+
+  async function search(q: string, kind: LibraryKind): Promise<LibrarySearchResponse> {
+    const query = fold(q).trim().replace(/\s+/g, ' ');
+    const qWords = words(query);
+    if (qWords.length === 0) return { hits: [], total: 0, partial: false };
+    const budgetMs = opts.search?.budgetMs ?? SEARCH_BUDGET_MS;
+    const concurrency = Math.max(1, opts.search?.concurrency ?? SEARCH_CONCURRENCY);
+    const defs = await scopeDefs();
+    const listings: { scope: ScopeDef; items: LibraryItem[] }[] = [];
+    const cold: ScopeDef[] = [];
+    for (const scope of defs) {
+      const e = cache.get(scope.id);
+      if (!e) {
+        cold.push(scope);
+        continue;
+      }
+      listings.push({ scope, items: e.listing.items });
+      // Stale is fine to answer from: refresh behind it for the next search.
+      if (!isFresh(scope, e)) refreshBehind(scope, concurrency);
+    }
+    let closed = false;
+    let finished = 0;
+    const queue = [...cold];
+    const worker = async (): Promise<void> => {
+      for (let scope = queue.shift(); scope; scope = queue.shift()) {
+        try {
+          const e = await entryFor(scope);
+          if (!closed) listings.push({ scope, items: e.listing.items });
+        } catch {
+          // left out; a retry builds it again
+        }
+        finished++;
+      }
+    };
+    if (cold.length > 0) {
+      const pool = Promise.all(Array.from({ length: Math.min(concurrency, cold.length) }, worker));
+      let timer: NodeJS.Timeout | undefined;
+      const late = new Promise<void>((done) => {
+        timer = setTimeout(done, budgetMs);
+      });
+      await Promise.race([pool, late]);
+      clearTimeout(timer);
+    }
+    closed = true;
+    const partial = finished < cold.length;
+
+    const found: { hit: LibrarySearchHit; tier: number; at: number }[] = [];
+    for (const { scope, items } of listings) {
+      const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
+      for (const item of items) {
+        if (item.kind !== kind) continue;
+        const tier = searchTier(item, scope.name, query, qWords);
+        if (tier === null) continue;
+        found.push({ hit: { item, scope: info }, tier, at: Date.parse(item.modified) || 0 });
+      }
+    }
+    found.sort(
+      (a, b) =>
+        a.tier - b.tier ||
+        b.at - a.at ||
+        a.hit.item.path.localeCompare(b.hit.item.path, 'en', { sensitivity: 'base' }),
+    );
+    return {
+      hits: found.slice(0, LIBRARY_SEARCH_MAX).map((f) => f.hit),
+      total: found.length,
+      partial,
+    };
+  }
+
   return {
+    async search(q, kind) {
+      try {
+        return await search(q, kind);
+      } catch {
+        return { hits: [], total: 0, partial: false };
+      }
+    },
+
     async scopes() {
       try {
         return (await scopeDefs()).map(({ id, name, kind }) => ({ id, name, kind }));

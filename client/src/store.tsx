@@ -151,6 +151,14 @@ export interface Store {
   /** Counts up each time focus should return to the message box. */
   composerFocus: number;
   requestComposerFocus: () => void;
+  /**
+   * A to-do the global search asked the to-dos drawer to show, or null. One-shot, like `composerFocus`:
+   * `revealTodo` sets it, the drawer takes it and calls `clearReveal`. `n` changes on every request, so
+   * asking for the same to-do twice still counts.
+   */
+  reveal: { todo: TodoItem; n: number } | null;
+  revealTodo: (todo: TodoItem) => void;
+  clearReveal: () => void;
   /** Runs a chat action (answer, stop) and reports a failure in plain words. */
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }
@@ -187,6 +195,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
+  const [reveal, setReveal] = useState<{ todo: TodoItem; n: number } | null>(null);
+  const revealCount = useRef(0);
+  const revealTodo = useCallback((todo: TodoItem) => {
+    revealCount.current += 1;
+    setReveal({ todo, n: revealCount.current });
+  }, []);
+  const clearReveal = useCallback(() => setReveal(null), []);
   const restored = useRef(false);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -775,6 +790,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSetupOpen,
       composerFocus,
       requestComposerFocus: requestFocus,
+      reveal,
+      revealTodo,
+      clearReveal,
       closeRequest,
       cancelClose: () => setCloseRequest(null),
       requestClose,
@@ -813,6 +831,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setupOpen,
       composerFocus,
       requestFocus,
+      reveal,
+      revealTodo,
+      clearReveal,
       closeRequest,
       requestClose,
       closeChat,

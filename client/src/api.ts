@@ -6,8 +6,10 @@ import type {
   ChangelogResponse,
   ChangeTodoRequest,
   CompleteTodoRequest,
+  LibraryKind,
   LibraryListing,
   LibraryScope,
+  LibrarySearchResponse,
   LibraryText,
   OkResponse,
   PermissionReply,
@@ -50,6 +52,8 @@ export class ApiFailure extends Error {
 /** `keepalive` lets a request finish after the page closes (used to send held to-do changes). */
 export interface SendOptions {
   keepalive?: boolean;
+  /** Aborts the request (the global search drops a search the person has typed past). */
+  signal?: AbortSignal;
 }
 
 async function request<T>(
@@ -65,6 +69,7 @@ async function request<T>(
       method,
       credentials: 'same-origin',
       keepalive: opts?.keepalive === true,
+      ...(opts?.signal ? { signal: opts.signal } : {}),
       headers: raw
         ? raw.headers
         : method === 'GET'
@@ -72,7 +77,9 @@ async function request<T>(
           : { 'Content-Type': 'application/json' },
       body: raw ? raw.body : method === 'GET' ? undefined : JSON.stringify(body ?? {}),
     });
-  } catch {
+  } catch (err) {
+    // An aborted request is the caller's own doing: let it through as it is.
+    if (opts?.signal?.aborted) throw err;
     throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
   }
   if (!res.ok) {
@@ -124,6 +131,15 @@ export const api = {
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
+  /** Global search over every library folder the person can see; `kind` is sent as `image` or `doc`. */
+  librarySearch: (q: string, kind: LibraryKind, opts?: SendOptions) =>
+    request<LibrarySearchResponse>(
+      'GET',
+      `${ROUTES.librarySearch}?q=${encodeURIComponent(q)}&kind=${kind === 'document' ? 'doc' : 'image'}`,
+      undefined,
+      undefined,
+      opts,
+    ),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
   updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),

@@ -459,6 +459,11 @@ export interface BrainReaders {
    * the brain that the rules allow. The browser never sends a path, only ids.
    */
   libraryFile(id: string): Promise<LibraryFile | null>;
+  /**
+   * Global search over every scope `libraryScopes` lists (see LibrarySearchResponse). Optional so
+   * older test fakes still satisfy the type; the route answers an empty reply when it is missing.
+   */
+  librarySearch?(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
   /** When the brain last synced (see SyncStatus). Never throws. */
   sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
@@ -1088,6 +1093,7 @@ export const ROUTES = {
   uploadDiscard: (id: string) => `/api/uploads/${encodeURIComponent(id)}/discard`,
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
+  librarySearch: '/api/library/search',
   /**
    * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
    *
@@ -1136,3 +1142,30 @@ export const ROUTES = {
 export const STREAM_PING_EVENT = 'ping';
 export const STREAM_PING_MS = 15_000;
 export const STREAM_STALL_MS = 40_000;
+
+// ── Library search (plan 2026-11-13-global-search, decision 4) ───────────────────────────────────────
+
+/**
+ * `GET /api/library/search?q=<2–80 chars>&kind=image|doc` → LibrarySearchResponse. Read-only. Matches
+ * every word of `q` (case- and accent-insensitive) against an item's title, name, group, folder words and
+ * its scope's name, across every scope the person can see. Uses cached listings even past their freshness
+ * (refreshing behind); builds cold scopes three at a time within a 1.5 s budget, then answers with
+ * `partial: true`. At most LIBRARY_SEARCH_MAX hits, best first (title starts-with, word-start, contains,
+ * other fields; ties newest first). Bad `q` or `kind` → 400 `bad-request`.
+ */
+export interface LibrarySearchHit {
+  item: LibraryItem;
+  /** The scope the item is in, so the client can open it without taking the id apart. */
+  scope: LibraryScope;
+}
+
+export interface LibrarySearchResponse {
+  hits: LibrarySearchHit[];
+  /** All matches found so far (may exceed hits.length). */
+  total: number;
+  /** True when some scopes weren't listed yet; asking again soon may find more. */
+  partial: boolean;
+}
+
+export const LIBRARY_SEARCH_MAX = 20;
+export const LIBRARY_SEARCH_QUERY = { min: 2, max: 80 } as const;

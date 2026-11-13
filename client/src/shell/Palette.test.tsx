@@ -630,6 +630,134 @@ describe('global search', () => {
     expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report, viewing: report });
   });
 
+  describe('tooltips', () => {
+    const tip = () => document.querySelector<HTMLElement>('.palette-tip');
+    const tipText = () => [...(tip()?.querySelectorAll('p') ?? [])].map((p) => p.textContent);
+    const answerDocs = () =>
+      api.librarySearch.mockImplementation(async (_q: string, kind: string) =>
+        kind === 'document'
+          ? searchResponse({ hits: [docHit('client:acme.d1', 'October report for the board')], total: 1 })
+          : searchResponse(),
+      );
+    const FULL = [
+      'October report for the board',
+      '2026-11-03-october-report.pdf',
+      'Acme Heating Ltd · Reports',
+      'PDF · 840 KB · Changed 5 Nov 2026',
+      'clients/acme/reports/2026-11-03-october-report.pdf',
+    ];
+
+    // The server's answer ignores the query: "report" also finds a to-do and a chat, "october" only the file.
+    const fileRow = async (query = 'october') => {
+      answerDocs();
+      await renderHome();
+      await openPalette();
+      fireEvent.change(input(), { target: { value: query } });
+      return screen.findByRole('option', { name: /October report/ }, { timeout: 2000 });
+    };
+    const pause = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("show a file's full details on hover, after a moment, and hide on leaving", async () => {
+      const row = await fileRow();
+      fireEvent.mouseMove(row);
+      expect(tip()).toBeNull();
+      await waitFor(() => expect(tipText()).toEqual(FULL));
+      // Drawn outside the dialog, so the clipped panel never cuts it off; hidden from screen readers.
+      expect(screen.getByRole('dialog').contains(tip())).toBe(false);
+      expect(tip()?.getAttribute('aria-hidden')).toBe('true');
+      fireEvent.mouseLeave(row);
+      await waitFor(() => expect(tip()).toBeNull());
+    });
+
+    it('stay while the pointer moves from the row onto the tooltip, and go when it leaves that too', async () => {
+      const row = await fileRow();
+      fireEvent.mouseMove(row);
+      await waitFor(() => expect(tip()).not.toBeNull());
+      fireEvent.mouseLeave(row);
+      fireEvent.mouseEnter(tip() as HTMLElement);
+      await pause(300);
+      expect(tipText()).toEqual(FULL);
+      fireEvent.mouseLeave(tip() as HTMLElement);
+      await waitFor(() => expect(tip()).toBeNull());
+    });
+
+    it('put away with one Escape, and a second Escape closes the search', async () => {
+      const row = await fileRow();
+      fireEvent.mouseMove(row);
+      await waitFor(() => expect(tip()).not.toBeNull());
+      fireEvent.keyDown(input(), { key: 'Escape' });
+      expect(tip()).toBeNull();
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      fireEvent.keyDown(input(), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it('with no tooltip up, Escape closes the search at once', async () => {
+      await fileRow();
+      fireEvent.keyDown(input(), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it('follow the arrows rather than a pointer resting on another row, and go when typing', async () => {
+      const row = await fileRow('report');
+      const rows = options();
+      const other = rows.find((o) => o !== row) as HTMLElement;
+      const label = other.querySelector('.opt-label') as HTMLElement;
+      Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 900 });
+      Object.defineProperty(label, 'clientWidth', { configurable: true, value: 300 });
+      fireEvent.mouseMove(other);
+      await waitFor(() => expect(tipText()[0]).toBe(label.textContent));
+      // Arrow until the file row is highlighted: its tooltip, not the pointed-at row's.
+      for (let i = 0; i < rows.length && selectedLabel() !== 'October report for the board'; i++) {
+        fireEvent.keyDown(input(), { key: 'ArrowDown' });
+      }
+      await waitFor(() => expect(tipText()[0]).toBe('October report for the board'));
+      fireEvent.change(input(), { target: { value: 'repor' } });
+      expect(tip()).toBeNull();
+    });
+
+    it("give screen readers a file's details as the row's description", async () => {
+      answerDocs();
+      await renderHome();
+      await openPalette();
+      fireEvent.change(input(), { target: { value: 'october' } });
+      const row = await screen.findByRole('option', { name: /October report/ }, { timeout: 2000 });
+      const desc = document.getElementById(row.getAttribute('aria-describedby') ?? '');
+      // Not the path: it would be read out on every arrow press.
+      expect(desc?.textContent).toBe(FULL.slice(1, -1).join('. '));
+      // The name stays the row's own words, not the details.
+      expect(row.querySelector('.opt-label')?.textContent).toBe('October report for the board');
+      expect(within(screen.getByRole('dialog')).queryByRole('option', { name: /840 KB/ })).toBeNull();
+    });
+
+    it('never show for a highlighted row that fits', async () => {
+      await renderHome();
+      await openPalette();
+      fireEvent.change(input(), { target: { value: 'sett' } });
+      fireEvent.keyDown(input(), { key: 'ArrowDown' });
+      await pause(450);
+      expect(selectedLabel()).toBe('Settings');
+      expect(tip()).toBeNull();
+    });
+
+    it('show the full words of any row cut short by the box', async () => {
+      await renderHome();
+      await openPalette();
+      fireEvent.change(input(), { target: { value: 'monthly' } });
+      const row = within(screen.getByRole('dialog')).getByRole('option', {
+        name: /Check the monthly reports/,
+      });
+      const label = row.querySelector('.opt-label') as HTMLElement;
+      Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 900 });
+      Object.defineProperty(label, 'clientWidth', { configurable: true, value: 300 });
+      fireEvent.mouseMove(row);
+      await waitFor(() =>
+        expect(tipText()).toEqual(['Check the monthly reports', 'Acme Heating, due today']),
+      );
+      expect(row.getAttribute('aria-describedby')).toBeNull();
+    });
+  });
+
   it('says how many results there are, once the list settles', async () => {
     await renderHome();
     await openPalette();

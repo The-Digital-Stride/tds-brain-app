@@ -15,6 +15,7 @@ import {
 import { useStore } from '../store.tsx';
 import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
+import { HOVER_GRACE_MS, PaletteTip, tipLines, tipWanted, useTipKey } from './PaletteTip.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { GO_TO_SOURCE, searchSources } from './search-sources.ts';
 
@@ -52,6 +53,10 @@ function PaletteDialog() {
   // The highlighted option by id, not position: results arriving or changing never move it.
   const [activeId, setActiveId] = useState<string | null>(null);
   const [said, setSaid] = useState('');
+  // The row the pointer is on, and whether the highlight last moved by the arrows: either earns a tooltip.
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [keyed, setKeyed] = useState(false);
+  const leaving = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<Element | null>(document.activeElement);
@@ -86,6 +91,24 @@ function PaletteDialog() {
   const pending = asyncPending(sources, q, slots) || (options.length === 0 && looking);
   // A "Still looking…" no group carries (the looking group has no hits yet) goes at the foot of the list.
   const lookingAlone = looking && options.length > 0 && !groups.some((g) => g.looking);
+  const tipKey = useTipKey(hoverId ?? (keyed ? (active?.key ?? null) : null));
+  const tipOption = options.find((o) => o.key === tipKey);
+  const tipRow = tipOption ? document.getElementById(optionId(tipOption)) : null;
+  const tipShown =
+    tipOption && tipRow && tipWanted(tipOption.hit, tipRow) ? { hit: tipOption.hit, row: tipRow } : null;
+  /** The pointer left a row or its tooltip: hover ends after a moment, unless it lands on a row or the tooltip. */
+  const leaveSoon = () => {
+    clearTimeout(leaving.current);
+    leaving.current = setTimeout(() => setHoverId(null), HOVER_GRACE_MS);
+  };
+  /** The pointer is on a row (or its tooltip) again: keep the tooltip. */
+  const stay = () => clearTimeout(leaving.current);
+  /** Hover no longer counts: the keyboard or typing took over, or Escape put the tooltip away. */
+  const dropHover = () => {
+    clearTimeout(leaving.current);
+    setHoverId(null);
+  };
+  useEffect(() => () => clearTimeout(leaving.current), []);
 
   // Focus the input on open; hand focus back to where it was on close, unless the command moved it.
   useEffect(() => {
@@ -171,10 +194,17 @@ function PaletteDialog() {
       const at = active ? options.indexOf(active) : 0;
       const next = options[(at + step + options.length) % options.length];
       if (next) setActiveId(next.key);
+      setKeyed(true);
+      dropHover();
     } else if (e.key === 'Enter') {
       if (e.nativeEvent.isComposing) return;
       e.preventDefault();
       if (active) run(active);
+    } else if (e.key === 'Escape' && tipShown) {
+      // One thing per press: this one puts the tooltip away; the next closes the palette (the shell's listener skips a handled key).
+      e.preventDefault();
+      setKeyed(false);
+      dropHover();
     } else if (e.key === 'Tab') {
       // The only tabbable thing is the input; options are reached with the arrows.
       e.preventDefault();
@@ -212,6 +242,8 @@ function PaletteDialog() {
           onChange={(e) => {
             setQuery(e.target.value);
             setActiveId(null);
+            setKeyed(false);
+            dropHover();
           }}
         />
         <div className="palette-list" id={listId} role="listbox" aria-label="Results" ref={listRef}>
@@ -237,6 +269,8 @@ function PaletteDialog() {
                   const selected = o.key === active?.key;
                   // The letter on a "Go to" drawer is a shortcut, so it only shows while single keys are on.
                   const shortcut = g.source.id === GO_TO_SOURCE && hit.hint?.length === 1;
+                  // A file's full details, for screen readers; the tooltip shows the same to everyone else.
+                  const descId = hit.detail ? `${optionId(o)}-desc` : undefined;
                   return (
                     // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/useFocusableInteractive: the combobox input keeps focus and drives the list with the keyboard (aria-activedescendant)
                     <div
@@ -244,10 +278,17 @@ function PaletteDialog() {
                       id={optionId(o)}
                       role="option"
                       aria-selected={selected}
+                      aria-describedby={descId}
                       className="opt"
                       data-selected={selected ? 'true' : undefined}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => run(o)}
+                      // Moves, not enters: the list scrolling under a still pointer is not the person pointing.
+                      onMouseMove={() => {
+                        stay();
+                        setHoverId(o.key);
+                      }}
+                      onMouseLeave={leaveSoon}
                     >
                       <Icon name={hit.icon} size={18} />
                       <span className="opt-label">{hit.label}</span>
@@ -257,6 +298,11 @@ function PaletteDialog() {
                         ) : null
                       ) : hit.hint ? (
                         <span className="opt-hint">{hit.hint}</span>
+                      ) : null}
+                      {descId ? (
+                        <span id={descId} hidden>
+                          {tipLines(hit).join('. ')}
+                        </span>
                       ) : null}
                     </div>
                   );
@@ -270,6 +316,15 @@ function PaletteDialog() {
           <p className="palette-empty">
             {pending ? 'Searching…' : asyncTrouble(sources, q, slots) ? SEARCH_TROUBLE : 'Nothing matches'}
           </p>
+        ) : null}
+        {tipShown ? (
+          <PaletteTip
+            hit={tipShown.hit}
+            row={tipShown.row}
+            list={listRef}
+            onPointerEnter={stay}
+            onPointerLeave={leaveSoon}
+          />
         ) : null}
         <p className="visually-hidden" role="status">
           {said}

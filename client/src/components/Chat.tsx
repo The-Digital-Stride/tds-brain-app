@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
-import { DOCK_IDS } from '../shell/Dock.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
-import { useShell } from '../shell/ShellProvider.tsx';
 import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
 import { type ChatItem, initialChatState, pendingCard } from '../state/chat-reducer.ts';
@@ -49,7 +47,6 @@ export function ChatView() {
     requestClose,
     closeChat,
   } = useStore();
-  const { state: shell, dispatch } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
   // Files can be dropped anywhere on the chat column.
@@ -91,7 +88,7 @@ export function ChatView() {
 
   return (
     <div className="chat chat-live" ref={column}>
-      <SheetBar crumb="Chats" title={title}>
+      <SheetBar crumb="Chats" title={title} panel="Steps and details">
         {/* With no client the chip is left out; the panel's Details says so. */}
         {clientName ? <span className="chip">{clientName}</span> : null}
         {working && !confirming ? (
@@ -105,17 +102,6 @@ export function ChatView() {
             <span className="btn-label">Stop</span>
           </button>
         ) : null}
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Steps and details"
-          title="Steps and details"
-          aria-pressed={shell.panelOpen}
-          aria-controls={DOCK_IDS.right}
-          onClick={() => dispatch({ type: 'toggle-panel' })}
-        >
-          <Icon name="panel" />
-        </button>
         {confirming ? (
           <fieldset
             className="close-confirm"

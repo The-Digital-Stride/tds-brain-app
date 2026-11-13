@@ -20,7 +20,7 @@ const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
 
 /** The buttons in the sheet bar: Back while a picture is open, and the details button. */
 export function ImagesBar() {
-  return <LibraryBar store={imagesStore} back="Back to Images" details="Image details" />;
+  return <LibraryBar store={imagesStore} back="Back to Images" />;
 }
 
 function Item({

@@ -36,20 +36,60 @@
   transition: width var(--t) var(--ease);
 }
 .rail-brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   /* The header band: 48px with the glass edge, the mark centred on the same line as every title. */
   height: 47px;
-  padding: 0 4px 1px;
-  overflow: hidden;
+  /* Right: room for the toggle, so a long name never runs under it. */
+  padding: 0 40px 1px 4px;
   white-space: nowrap;
   font: 600 15px var(--head);
+}
+.rail[data-wide="false"] .rail-brand {
+  padding-right: 4px;
 }
 .rail-mark {
   width: 32px;
   height: 32px;
   flex: none;
+  transition: opacity 120ms;
+}
+/* Show or hide names: the icon at the top right, like a dock's close button (10px from the edge). */
+.rail-toggle {
+  position: absolute;
+  top: 7px;
+  right: 0;
+  transition:
+    background-color 120ms var(--ease),
+    box-shadow 120ms var(--ease),
+    opacity 120ms;
+}
+/* Icons only: the toggle takes the mark's place. Where there is no hover (touch), it simply shows. */
+.rail[data-wide="false"] .rail-toggle {
+  right: auto;
+  left: 4px;
+}
+.rail[data-wide="false"] .rail-mark {
+  opacity: 0;
+}
+/* With a pointer that hovers: the mark shows, and the toggle replaces it on hover or keyboard focus. */
+@media (hover: hover) {
+  .rail[data-wide="false"] .rail-mark {
+    opacity: 1;
+  }
+  .rail[data-wide="false"] .rail-toggle {
+    opacity: 0;
+  }
+  .rail[data-wide="false"] .rail-brand:hover .rail-toggle,
+  .rail[data-wide="false"] .rail-toggle:focus-visible {
+    opacity: 1;
+  }
+  .rail[data-wide="false"] .rail-brand:hover .rail-mark,
+  .rail[data-wide="false"] .rail-brand:has(.rail-toggle:focus-visible) .rail-mark {
+    opacity: 0;
+  }
 }
 .rail-item {
   position: relative;
@@ -107,8 +147,7 @@
   opacity: 1;
   transition: opacity var(--t) 80ms;
 }
-.rail-item .count.rail-label,
-.rail-item kbd.rail-label {
+.rail-item .count.rail-label {
   flex: none;
 }
 .rail[data-wide="false"] .rail-label {

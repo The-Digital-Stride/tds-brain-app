@@ -75,7 +75,7 @@ function SheetContent() {
     if (!app) return <Home />;
     return (
       <>
-        <SheetBar title={app.title}>
+        <SheetBar title={app.title} panel={app.Panel ? (app.panelLabel ?? app.title) : undefined}>
           {app.BarActions ? (
             <Suspense fallback={null}>
               <app.BarActions />

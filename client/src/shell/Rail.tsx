@@ -89,12 +89,28 @@ export function Rail({ inert = false }: { inert?: boolean }) {
   const { name, role } = boot.identity;
   // Only advertise the single keys while they are switched on.
   const shortcut = (key: string) => (state.singleKeys ? key : undefined);
+  const toggleName = wide ? 'Icons only' : 'Show names';
 
   return (
     <nav className="rail glass" aria-label="Main" data-wide={wide} inert={inert}>
       <div className="rail-brand">
         <Mark />
         <span className="rail-label">TDS Brain</span>
+        {/* The show/hide names toggle: an icon only, at the top right like every dock's close
+            button. Icons only, it sits over the mark and shows on hover or keyboard focus. One
+            element in both widths, so focus stays on it when it is pressed. */}
+        {width >= RAIL_NAMES_FROM ? (
+          <button
+            type="button"
+            className="icon-btn rail-toggle"
+            aria-label={toggleName}
+            data-tip={state.singleKeys ? `${toggleName} ([)` : toggleName}
+            aria-keyshortcuts={shortcut('[')}
+            onClick={() => dispatch({ type: 'toggle-rail' })}
+          >
+            <Icon name="rail" />
+          </button>
+        ) : null}
       </div>
 
       <Item icon="home" label="Home" wide={wide} current={onHome} onClick={() => newChat()} />
@@ -146,17 +162,6 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
       <span className="rail-spacer" />
 
-      {width >= RAIL_NAMES_FROM ? (
-        <Item
-          icon="rail"
-          label={wide ? 'Icons only' : 'Show names'}
-          name={wide ? 'Icons only' : 'Show names'}
-          wide={wide}
-          keys={shortcut('[')}
-          onClick={() => dispatch({ type: 'toggle-rail' })}
-          after={wide && state.singleKeys ? <kbd className="rail-label">[</kbd> : null}
-        />
-      ) : null}
       <Item
         icon="settings"
         label="Settings"

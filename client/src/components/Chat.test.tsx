@@ -128,6 +128,14 @@ describe('the sheet bar', () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
+
+  it('puts the panel toggle last, at the top right, after "Search or jump to"', () => {
+    h.chat = chatState('idle');
+    render(sheet());
+    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    expect(toggle.parentElement?.lastElementChild).toBe(toggle);
+    expect(toggle.previousElementSibling).toBe(screen.getByRole('button', { name: 'Search or jump to' }));
+  });
 });
 
 const perm = (

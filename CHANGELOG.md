@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.10.0 — 2026-11-13
+
+- **feat**: to-dos show who passed them on, New to you, TDS or personal, search and a quick add
+- **feat**: one search finds to-dos, chats, skills, clients, images and documents
+
 ## v0.9.1 — 2026-11-13
 
 - **fix**: a test copy of the app no longer signs you out of the live one

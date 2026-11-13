@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatFile, ChatFilesSnapshot, LibraryItem } from '../../../shared/contract.ts';
 
@@ -93,6 +94,14 @@ function Asker() {
   const { dispatch } = useShell();
   askAgain = () => dispatch({ type: 'show-chat-file', chat: 's1', key: 'made1' });
   return <button type="button">elsewhere</button>;
+}
+
+// Stands in for leaving the chat and coming back: the panel's contents unmount and mount again.
+let setPanelShown: (on: boolean) => void = () => {};
+function Toggle() {
+  const [on, setOn] = useState(true);
+  setPanelShown = setOn;
+  return on ? <ChatFiles sessionId="s1" /> : null;
 }
 
 const headings = () => Array.from(document.querySelectorAll('.fold-title')).map((e) => e.textContent);
@@ -192,6 +201,28 @@ describe('the preview', () => {
     screen.getByRole('button', { name: 'elsewhere' }).focus();
     act(() => askAgain());
     await waitFor(() => expect(document.activeElement).toBe(heading()));
+  });
+
+  it('does not take focus when the panel comes back on a file nobody asked for again (returning to the chat)', async () => {
+    set({ files: [file('made1', ['created'])] });
+    render(
+      <ShellProvider>
+        <Asker />
+        <Toggle />
+      </ShellProvider>,
+    );
+    openRow(/Title made1/);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Title made1' })),
+    );
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' });
+    act(() => setPanelShown(false));
+    elsewhere.focus();
+    act(() => setPanelShown(true));
+    expect(screen.getByRole('heading', { name: 'Title made1' })).toBeTruthy();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.activeElement).toBe(elsewhere);
   });
 
   it('goes back with the All files button', () => {

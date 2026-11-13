@@ -186,6 +186,11 @@ describe('chatFileFor', () => {
     expect(f('weightmans/brief.md')).toBeNull();
   });
 
+  it('never links a bare file name, even when only one file has it (it may be about another client)', () => {
+    expect(f('business.md')).toBeNull();
+    expect(f('plan.md')).toBeNull();
+  });
+
   it('matches whole folder names only, never part of one', () => {
     expect(f('mans/profile.md')).toBeNull();
     expect(f('ess.md')).toBeNull();

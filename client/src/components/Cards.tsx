@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AskQuestion, PermissionDecision, QuestionReply } from '../../../shared/contract.ts';
+import type {
+  AskQuestion,
+  ChangeLine,
+  PermissionDecision,
+  ProposedChange,
+  QuestionReply,
+} from '../../../shared/contract.ts';
 import { api } from '../api.ts';
+import { Icon } from '../shell/Icon.tsx';
 import type { Outcome, PermissionItem, QuestionItem } from '../state/chat-reducer.ts';
 import { useStore } from '../store.tsx';
 
@@ -18,6 +25,139 @@ const OUTCOME_WORDS: Record<Outcome, string> = {
   answered: 'You answered',
   cancelled: 'This was cancelled',
 };
+
+/** The sign shown before an edit's line, and the words a screen reader hears instead of the colour. */
+const LINE_MARKS: Record<'same' | 'removed' | 'added', { sign: string; words: string }> = {
+  same: { sign: ' ', words: '' },
+  removed: { sign: '−', words: 'Removed: ' },
+  added: { sign: '+', words: 'Added: ' },
+};
+
+const CUT_TEXT = "The rest isn't shown because the change is too long.";
+
+/** `plain`: a new or replacing file, where every line is new, so no signs or "Added:" words. */
+function DiffLine({ line, plain }: { line: ChangeLine; plain: boolean }) {
+  if (line.kind === 'gap') {
+    return (
+      <span className="diff-gap">
+        {line.count === 1 ? '1 unchanged line' : `${line.count.toLocaleString('en-GB')} unchanged lines`}
+      </span>
+    );
+  }
+  if (line.kind === 'cut') return <span className="diff-gap diff-cut">{CUT_TEXT}</span>;
+  if (plain) {
+    return (
+      <span className="diff-line" data-kind="plain">
+        {line.text}
+      </span>
+    );
+  }
+  const mark = LINE_MARKS[line.kind];
+  return (
+    <span className="diff-line" data-kind={line.kind}>
+      <span className="diff-sign" aria-hidden="true">
+        {mark.sign}
+      </span>
+      {mark.words ? <span className="visually-hidden">{mark.words}</span> : null}
+      {line.text}
+    </span>
+  );
+}
+
+function lines(n: number): string {
+  return n === 1 ? '1 line' : `${n.toLocaleString('en-GB')} lines`;
+}
+
+/** The one line shown while the change is closed: what it is, and how much changes. */
+export function changeSummary(change: ProposedChange): string {
+  let removed = 0;
+  let added = 0;
+  let cut = false;
+  for (const p of change.parts) {
+    for (const l of p.lines) {
+      if (l.kind === 'removed') removed++;
+      else if (l.kind === 'added') added++;
+      else if (l.kind === 'cut') cut = true;
+    }
+  }
+  if (change.kind === 'edit') {
+    const many = change.parts.length > 1;
+    const edits = many ? `The change (${change.parts.length} edits)` : 'The change';
+    // Counts of a cut change would understate it; the card's warning gives the real size.
+    let counts: string;
+    if (cut) counts = ', too long to show in full';
+    else if (removed > 0 && added > 0)
+      counts = `: ${lines(removed)} removed, ${added.toLocaleString('en-GB')} added`;
+    else if (removed > 0) counts = `: ${lines(removed)} removed`;
+    else counts = `: ${lines(added)} added`;
+    // Never hidden behind the fold: one line on the card can stand for every place it appears.
+    let everywhere = '';
+    if (change.parts.some((p) => p.everyMatch))
+      everywhere = many
+        ? ', some made everywhere they appear in the file'
+        : ', everywhere it appears in the file';
+    return `${edits}${counts}${everywhere}`;
+  }
+  const lead = change.kind === 'new-file' ? 'What the new file will contain' : 'Replaces the whole file';
+  if (cut) return `${lead}, too long to show in full`;
+  return change.kind === 'new-file' ? `${lead}: ${lines(added)}` : `${lead} with ${lines(added)}`;
+}
+
+const EMPTY_WORDS: Record<ProposedChange['kind'], string> = {
+  edit: 'No lines change.',
+  'new-file': 'The new file will be empty.',
+  'replace-file': 'This empties the whole file.',
+};
+
+/**
+ * What a Write or Edit will do, closed to one line that says how much changes; opening it shows
+ * the lines. Plain text only, never markdown or HTML. Warnings stay on the card, outside it.
+ */
+function ChangeView({ change }: { change: ProposedChange }) {
+  const isEdit = change.kind === 'edit';
+  const many = change.parts.length > 1;
+  if (change.parts.every((p) => p.lines.length === 0)) {
+    return <p className="change-empty">{EMPTY_WORDS[change.kind]}</p>;
+  }
+  return (
+    <details className="activity change-fold">
+      <summary>
+        <Icon name="chevron" size={14} />
+        {changeSummary(change)}
+      </summary>
+      {isEdit ? <p className="change-key">Lines marked − are removed and lines marked + are added.</p> : null}
+      <section
+        className="approval-detail approval-change"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must be reachable by keyboard.
+        tabIndex={0}
+        aria-label={isEdit ? 'The change' : 'The new contents'}
+      >
+        {change.parts.map((part, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts never reorder; their place is their identity.
+          <div className="diff-part" key={i}>
+            {many || part.everyMatch ? (
+              <p className="diff-part-head">
+                {many ? `Change ${i + 1} of ${change.parts.length}` : null}
+                {many && part.everyMatch ? ' · ' : null}
+                {part.everyMatch
+                  ? 'Claude will make this change everywhere it appears in the file, not just the first time.'
+                  : null}
+              </p>
+            ) : null}
+            <pre>
+              <code>
+                {part.lines.map((line, j) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: lines never reorder; their place is their identity.
+                  <DiffLine key={j} line={line} plain={!isEdit} />
+                ))}
+              </code>
+            </pre>
+          </div>
+        ))}
+      </section>
+    </details>
+  );
+}
 
 interface CardProps<T> {
   item: T;
@@ -76,6 +216,7 @@ export function PermissionCard({ item, sessionId, onAnswered }: CardProps<Permis
           </pre>
         </section>
       ) : null}
+      {item.change ? <ChangeView change={item.change} /> : null}
       {item.warning ? (
         <p className="approval-warning">
           <strong>Take care: </strong>

@@ -1,6 +1,14 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
-import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
+import {
+  describeSessionAllow,
+  HIDDEN_CHARS_WARNING,
+  narrowSuggestions,
+  permissionCard,
+} from './permissions.ts';
 
 describe('narrowSuggestions (A1)', () => {
   const broad: PermissionUpdate[] = [
@@ -158,6 +166,7 @@ describe('permissionCard', () => {
       detail: 'clients/acme/notes.md',
       warning: null,
       refuse: false,
+      change: { kind: 'new-file', parts: [{ everyMatch: false, lines: [{ kind: 'added', text: 'x' }] }] },
     });
     expect(card('Edit', { file_path: `${BRAIN}/b.md` }).title).toBe('Claude wants to change a file');
     expect(card('Bash', { command: 'git push', description: 'Push' })).toMatchObject({
@@ -243,6 +252,77 @@ describe('permissionCard', () => {
     expect(both.warning).toContain('This file is outside the brain folder.');
     expect(both.warning).toContain(LONG);
     expect(card('Bash', { command: `echo ${'x'.repeat(20_001)}` }).refuse).toBe(true);
+  });
+});
+
+describe('permissionCard: the change a file tool will make', () => {
+  it('shows the lines an Edit removes and adds, with the path still as the detail', () => {
+    const c = card('Edit', {
+      file_path: `${BRAIN}/clients/acme/profile.md`,
+      old_string: 'Phone: 0161 000 0000',
+      new_string: 'Phone: 0161 111 1111',
+    });
+    expect(c.detail).toBe('clients/acme/profile.md');
+    expect(c.change).toEqual({
+      kind: 'edit',
+      parts: [
+        {
+          everyMatch: false,
+          lines: [
+            { kind: 'removed', text: 'Phone: 0161 000 0000' },
+            { kind: 'added', text: 'Phone: 0161 111 1111' },
+          ],
+        },
+      ],
+    });
+    expect(c.warning).toBeNull();
+  });
+
+  it('says whether a Write makes a new file or replaces one that is there', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'perm-card-'));
+    try {
+      writeFileSync(join(dir, 'there.md'), 'old');
+      const at = (file_path: string) =>
+        permissionCard('Write', { file_path, content: 'new' }, { brainRoot: dir }).change?.kind;
+      expect(at(join(dir, 'there.md'))).toBe('replace-file');
+      expect(at('there.md')).toBe('replace-file');
+      expect(at(join(dir, 'not-yet.md'))).toBe('new-file');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('has no change for other tools, or for a file tool whose input it cannot read', () => {
+    expect(card('Bash', { command: 'ls' }).change).toBeNull();
+    expect(card('Read', { file_path: `${BRAIN}/a.md` }).change).toBeNull();
+    expect(card('Edit', { file_path: `${BRAIN}/a.md` }).change).toBeNull();
+  });
+
+  it('warns when the change was too long to show in full, giving its lines and characters', () => {
+    const c = card('Write', { file_path: `${BRAIN}/big.txt`, content: 'z'.repeat(60_000) });
+    expect(c.change?.kind).toBe('new-file');
+    expect(c.warning).toBe(
+      'This change is too long to show in full (1 line, 60,001 characters). Only allow it if you know what Claude is doing.',
+    );
+    const padded = card('Write', { file_path: `${BRAIN}/notes.md`, content: `Hi\n${'\n'.repeat(5_000)}x` });
+    expect(padded.warning).toMatch(/^This change is too long to show in full \(5,002 lines, /);
+  });
+
+  it('warns about hidden characters, which are shown as visible codes', () => {
+    const c = card('Edit', {
+      file_path: `${BRAIN}/clients/acme/bank.md`,
+      old_string: 'Account: 12345678',
+      new_string: 'Account: ‮87654321',
+    });
+    expect(c.warning).toBe(HIDDEN_CHARS_WARNING);
+    expect(HIDDEN_CHARS_WARNING).toContain('⟨U+202E⟩');
+    expect(card('Edit', { file_path: `${BRAIN}/a.md`, old_string: 'a', new_string: 'b' }).warning).toBeNull();
+  });
+
+  it('joins the too-long warning with the outside-the-brain one', () => {
+    const c = card('Write', { file_path: '/etc/big.txt', content: 'z'.repeat(60_000) });
+    expect(c.warning).toContain('This file is outside the brain folder.');
+    expect(c.warning).toContain('This change is too long to show in full');
   });
 });
 

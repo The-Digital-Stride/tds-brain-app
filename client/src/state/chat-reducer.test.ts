@@ -93,10 +93,32 @@ describe('chatReducer', () => {
       kind: 'permission',
       requestId: 'r1',
       warning: 'Not all of it is shown.',
+      // An older server sends no change: the card simply has none.
+      change: null,
     });
     const done = apply([seq(2, { type: 'request-resolved', requestId: 'r1', outcome: 'allowed' })], asked);
     expect(pendingCard(done)).toBeNull();
     expect(done.items[0]).toMatchObject({ kind: 'permission', outcome: 'allowed' });
+  });
+
+  it('keeps the change a file tool will make on its permission card', () => {
+    const change = {
+      kind: 'edit' as const,
+      parts: [{ everyMatch: false, lines: [{ kind: 'removed' as const, text: 'a' }] }],
+    };
+    const asked = apply([
+      seq(1, {
+        type: 'permission-request',
+        requestId: 'r1',
+        tool: 'Edit',
+        title: 'Claude wants to change a file',
+        detail: 'clients/x/notes.md',
+        warning: null,
+        sessionAllowLabel: null,
+        change,
+      }),
+    ]);
+    expect(pendingCard(asked)).toMatchObject({ kind: 'permission', change });
   });
 
   it('handles a question card the same way', () => {

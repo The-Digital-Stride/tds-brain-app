@@ -742,6 +742,35 @@ export interface AskQuestion {
 }
 
 /**
+ * One line of a proposed file change on an approval card. `gap` stands for that many unchanged
+ * lines left out between the lines that matter; it is always shown, never silently dropped.
+ * `cut` marks where the server stopped because the change was too long to show: everything after
+ * it in that part (and every later part) is not shown, and the card's `warning` says so too.
+ * Hidden characters that could change how text looks arrive already made visible, as `⟨U+202E⟩`.
+ */
+export type ChangeLine =
+  | { kind: 'same' | 'removed' | 'added'; text: string }
+  | { kind: 'gap'; count: number }
+  | { kind: 'cut' };
+
+/** One replaced passage: an Edit has one; a MultiEdit has one per edit; a Write has one. */
+export interface ChangePart {
+  /** True when Claude asked to change every match in the file, not just the first. */
+  everyMatch: boolean;
+  lines: ChangeLine[];
+}
+
+/**
+ * What a Write or Edit will do to the file, worked out by the server from what Claude sent.
+ * `edit`: passages are replaced. `new-file`: the file does not exist yet. `replace-file`: the
+ * existing file's whole contents are replaced (its current contents are not read or shown).
+ */
+export interface ProposedChange {
+  kind: 'edit' | 'new-file' | 'replace-file';
+  parts: ChangePart[];
+}
+
+/**
  * One thing that happened in a chat, in the order it happened.
  *
  * Rendering rule (security): ONLY `assistant-message` / `assistant-delta` text is rendered as
@@ -787,6 +816,12 @@ export type ChatEvent =
        * null when the engine offers nothing safe to remember: then only Allow and Don't are shown.
        */
       sessionAllowLabel: string | null;
+      /**
+       * For Write, Edit and MultiEdit: the lines Claude wants to remove and add, shown as plain
+       * text below the detail. Absent for other tools (and from older servers), so a client must
+       * treat it as optional. If it had to be cut short, `warning` says so.
+       */
+      change?: ProposedChange;
     }
   | { type: 'question-request'; requestId: string; questions: AskQuestion[] }
   | { type: 'request-resolved'; requestId: string; outcome: 'allowed' | 'denied' | 'answered' | 'cancelled' }

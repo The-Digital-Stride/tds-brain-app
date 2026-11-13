@@ -49,12 +49,15 @@ export function AddTodoForm({
   me,
   team,
   busy,
+  canAddOpen,
   onAdd,
   onCancel,
 }: {
   me: string;
   team: TeamMember[];
   busy: boolean;
+  /** TodoList.canAddOpen: offers "Open to anyone". */
+  canAddOpen: boolean;
   onAdd: (action: TodoAction) => void;
   onCancel: () => void;
 }) {
@@ -69,7 +72,7 @@ export function AddTodoForm({
     e.preventDefault();
     const t = title.trim();
     if (!t || busy) return;
-    onAdd({ kind: 'add', title: t, due: due || null, assignee });
+    onAdd({ kind: 'add', title: t, due: due || null, assignee: assignee === '' ? null : assignee });
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -109,7 +112,7 @@ export function AddTodoForm({
           onChange={setAssignee}
           me={me}
           team={team}
-          allowOpen={false}
+          allowOpen={canAddOpen}
         />
       </div>
       <div className="todo-actions">
@@ -125,11 +128,7 @@ export function AddTodoForm({
 }
 
 /** Builds the actions for a save: only changed fields, in the order edit, due, assignee. */
-export function buildEditActions(
-  todo: TodoItem,
-  draft: { title: string; details: string; due: string; assignee: string },
-  detailsEditable: boolean,
-): TodoAction[] {
+export function buildEditActions(todo: TodoItem, draft: EditDraft, detailsEditable: boolean): TodoAction[] {
   const actions: TodoAction[] = [];
   const title = draft.title.trim();
   const titleChanged = title !== todo.title;
@@ -148,6 +147,10 @@ export function buildEditActions(
   if (draft.assignee !== (todo.assignee ?? '')) {
     actions.push({ kind: 'assignee', id: todo.id, assignee: draft.assignee || null });
   }
+  // Only the first step carries the version the editor opened with; the store gives each later step
+  // the version the one before it left behind.
+  const [first] = actions;
+  if (first && first.kind !== 'add' && draft.version) actions[0] = { ...first, expect: draft.version };
   return actions;
 }
 
@@ -156,6 +159,8 @@ export interface EditDraft {
   details: string;
   due: string;
   assignee: string;
+  /** TodoItem.version when the editor opened (or the fresh one adopted after a 'changed' refusal). */
+  version: string;
 }
 
 /** The inline editor that replaces a to-do's row. */

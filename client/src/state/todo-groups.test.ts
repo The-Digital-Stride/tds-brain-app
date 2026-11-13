@@ -9,6 +9,7 @@ const item = (id: string, due: string | null): TodoItem => ({
   created: null,
   source: null,
   details: '',
+  version: 'v1',
   assignee: null,
   due,
   surfaceDate: null,

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -7,6 +8,7 @@ import {
   TODO_DETAILS_MAX,
   TODO_SKILL,
   TODO_TITLE_MAX,
+  TODO_VERSION_PATTERN,
   type TodoAction,
   type TodoItem,
   type TodoList,
@@ -16,8 +18,8 @@ import { stampDone } from './done-record.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { readMembers } from './identity.ts';
 import { skillAccess } from './skills.ts';
-import { APP_VIA, findTodoScript, type TodoSkillRunner, todoChangeError } from './todo-skill.ts';
-import { humanise, readText } from './util.ts';
+import { APP_VIA, findTodoSkill, type TodoSkillRunner, todoChangeError } from './todo-skill.ts';
+import { humanise, readBytes } from './util.ts';
 
 const SKIP = new Set(['AGENTS.md', 'README.md', 'CLAUDE.md']);
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
@@ -41,8 +43,11 @@ async function readAll(root: string): Promise<TodoItem[]> {
   const items: TodoItem[] = [];
   for (const e of entries) {
     if (!e.isFile() || !e.name.endsWith('.md') || SKIP.has(e.name)) continue;
-    const text = await readText(join(dir, e.name));
-    if (text === null) continue;
+    // Read once as bytes: the version hashes exactly what is on disk, then the text is decoded for parsing.
+    const bytes = await readBytes(join(dir, e.name));
+    if (bytes === null) continue;
+    const version = createHash('sha256').update(bytes).digest('hex');
+    const text = bytes.toString('utf8');
     const { data, body } = parseFrontmatter(text);
     const heading = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
     const due = asString(data.due).trim();
@@ -57,6 +62,7 @@ async function readAll(root: string): Promise<TodoItem[]> {
       created: asString(data.created).trim() || null,
       source: asString(data.source).trim() || null,
       details: body.trim(),
+      version,
     });
   }
   return items;
@@ -99,22 +105,35 @@ async function readTeam(root: string): Promise<TeamMember[]> {
 }
 
 /** Whether this person may change to-dos through the brain's `todo` skill (before the Settings switch). */
-async function changeAccess(root: string, identity: Identity): Promise<TodoSkillAccess> {
-  const access = await skillAccess(root, identity, TODO_SKILL);
-  if (access === 'restricted') return 'restricted';
-  if (access === 'allowed' && (await findTodoScript(root)) !== null) return 'on';
-  return 'no-skill';
+async function changeAccess(
+  root: string,
+  identity: Identity,
+): Promise<{ changes: TodoSkillAccess; canAddOpen: boolean }> {
+  const found = await findTodoSkill(root);
+  if (!found) return { changes: 'no-skill', canAddOpen: false };
+  const access = await skillAccess(root, identity, found.skill);
+  if (access === 'restricted') return { changes: 'restricted', canAddOpen: false };
+  if (access === 'allowed' && found.script !== null)
+    return { changes: 'on', canAddOpen: found.skill === TODO_SKILL };
+  return { changes: 'no-skill', canAddOpen: false };
 }
 
 export async function listTodos(root: string, identity: Identity): Promise<TodoList> {
-  const [items, team, changes] = await Promise.all([
+  const [items, team, access] = await Promise.all([
     readAll(root),
     readTeam(root),
     changeAccess(root, identity),
   ]);
   const mine = items.filter((t) => t.assignee !== null && t.assignee === identity.slug).sort(bySoonest);
   const open = items.filter((t) => t.assignee === null).sort(bySoonest);
-  return { mine, open, othersCount: items.length - mine.length - open.length, team, changes };
+  return {
+    mine,
+    open,
+    othersCount: items.length - mine.length - open.length,
+    team,
+    changes: access.changes,
+    canAddOpen: access.canAddOpen,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,13 +155,15 @@ const okTitle = (v: unknown) =>
   typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= TODO_TITLE_MAX;
 const okDue = (v: unknown) => v === null || (typeof v === 'string' && isDate(v));
 const okAssignee = (v: unknown) => typeof v === 'string' && v.length <= TODO_ASSIGNEE_MAX && ASSIGNEE.test(v);
+const okExpect = (v: unknown) => typeof v === 'string' && TODO_VERSION_PATTERN.test(v);
 const okId = (v: unknown) => typeof v === 'string' && v.length <= 255 && CHANGE_ID.test(v);
 
 /** The contract's route checks on the values (the route has already checked the shape). */
-function validAction(a: TodoAction): boolean {
+function validAction(a: TodoAction, canAddOpen: boolean): boolean {
+  if ('expect' in a && a.expect !== undefined && !okExpect(a.expect)) return false;
   switch (a.kind) {
     case 'add':
-      return okTitle(a.title) && okDue(a.due) && okAssignee(a.assignee);
+      return okTitle(a.title) && okDue(a.due) && (a.assignee === null ? canAddOpen : okAssignee(a.assignee));
     case 'edit':
       return (
         okId(a.id) &&
@@ -162,8 +183,9 @@ function validAction(a: TodoAction): boolean {
 
 /**
  * One change, run by the brain's `todo` skill script. Refuses `not-allowed` unless `changes` is
- * 'on', `bad-request` for values outside the Workbench's rules, and `not-found` for an id that is
- * not listed for this person (theirs or open), all before anything runs.
+ * 'on', `bad-request` for values outside the Workbench's rules, `not-found` for an id that is
+ * not listed for this person (theirs or open) and `changed` when `expect` is not the listed version,
+ * all before anything runs.
  */
 export async function changeTodo(
   root: string,
@@ -173,10 +195,12 @@ export async function changeTodo(
 ): Promise<void> {
   const list = await listTodos(root, identity);
   if (list.changes !== 'on') throw todoChangeError('not-allowed');
-  if (typeof action !== 'object' || action === null || !validAction(action))
+  if (typeof action !== 'object' || action === null || !validAction(action, list.canAddOpen))
     throw todoChangeError('bad-request');
-  if ('id' in action && ![...list.mine, ...list.open].some((t) => t.id === action.id)) {
-    throw todoChangeError('not-found');
+  if ('id' in action) {
+    const listed = [...list.mine, ...list.open].find((t) => t.id === action.id);
+    if (!listed) throw todoChangeError('not-found');
+    if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
   }
   await runner.run(action, { name: identity.name, slug: identity.slug });
 }

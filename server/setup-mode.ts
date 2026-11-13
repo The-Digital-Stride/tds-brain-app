@@ -30,7 +30,14 @@ export function createSetupBrain(): BrainReaders {
     profile: async () => ({ title: null, departments: [], owns: null }),
     skills: async () => [],
     skillAccess: async () => 'unknown-skill',
-    todos: async () => ({ mine: [], open: [], othersCount: 0, team: [], changes: 'no-skill' }),
+    todos: async () => ({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      team: [],
+      changes: 'no-skill',
+      canAddOpen: false,
+    }),
     completeTodo: async () => {
       throw new Error(NO_BRAIN);
     },

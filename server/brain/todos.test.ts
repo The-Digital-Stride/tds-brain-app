@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   promises as fsPromises,
@@ -32,7 +33,8 @@ describe('todos', () => {
   });
 
   it('reads fields and falls back for the title', async () => {
-    const brain = createBrainReaders(copyFixture());
+    const fixtureRoot = copyFixture();
+    const brain = createBrainReaders(fixtureRoot);
     const list = await brain.todos(person('sam-example', 'scout'));
     const byId = Object.fromEntries(list.mine.map((t) => [t.id, t]));
     expect(byId['20261101-renew-contract.md']).toEqual({
@@ -46,6 +48,9 @@ describe('todos', () => {
       created: null,
       source: null,
       details: '',
+      version: createHash('sha256')
+        .update(readFileSync(join(fixtureRoot, 'todo', '20261101-renew-contract.md')))
+        .digest('hex'),
     });
     expect(byId['20261105-send-report.md']?.title).toBe('Send the monthly report');
     expect(byId['20261010-undated-thing.md']?.title).toBe('Undated thing');
@@ -130,7 +135,14 @@ describe('todos', () => {
 
   it('gives an empty list when todo/ is missing', async () => {
     const list = await createBrainReaders('/nonexistent/brain').todos(person('a', 'team'));
-    expect(list).toEqual({ mine: [], open: [], othersCount: 0, team: [], changes: 'no-skill' });
+    expect(list).toEqual({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      team: [],
+      changes: 'no-skill',
+      canAddOpen: false,
+    });
   });
 });
 
@@ -152,13 +164,19 @@ process.stdin.on('end', () => {
 });
 `;
 
-function addTodoSkill(root: string, roles = 'owner, scout', script: string | null = FAKE_SCRIPT): void {
-  mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+function addTodoSkill(
+  root: string,
+  roles = 'owner, scout',
+  script: string | null = FAKE_SCRIPT,
+  skill = 'tdsapp-todo',
+): void {
+  const scriptName = skill === 'tdsapp-todo' ? 'tdsapp-todo.cjs' : 'todo.cjs';
+  mkdirSync(join(root, '.claude', 'skills', skill, 'scripts'), { recursive: true });
   writeFileSync(
-    join(root, '.claude', 'skills', 'todo', 'SKILL.md'),
+    join(root, '.claude', 'skills', skill, 'SKILL.md'),
     `---\ndescription: Add, edit, pass on, re-date or delete a to-do.\nroles: ${roles}\nmaturity: draft\n---\nBody.\n`,
   );
-  if (script !== null) writeFileSync(join(root, TODO_SCRIPT), script);
+  if (script !== null) writeFileSync(join(root, '.claude', 'skills', skill, 'scripts', scriptName), script);
 }
 
 function fakeEnv(reply: object = {}) {
@@ -297,7 +315,10 @@ describe('changeTodo', () => {
     expect(calls()).toEqual([
       { command: 'edit', body: { file: '20261105-send-report.md', title: 'Send it', body: 'Soon' } },
       { command: 'assignee', body: { file: '20261103-open-task.md', assignee: 'sam-example' } },
-      { command: 'add', body: { title: 'Call Ben', due: '2026-11-20', assignee: 'sam-example' } },
+      {
+        command: 'add',
+        body: { title: 'Call Ben', due: '2026-11-20', assignee: 'sam-example', via: 'TDS Brain App' },
+      },
       { command: 'due', body: { file: '20261101-renew-contract.md', due: '' } },
       {
         command: 'delete',
@@ -397,5 +418,148 @@ describe('changeTodo', () => {
     expect(await codeOf(bad.brain.changeTodo({ kind: 'delete', id: '20261105-send-report.md' }, sam))).toBe(
       'bad-request',
     );
+  });
+});
+
+describe('todos: version and the skill found', () => {
+  const FILE = '20261105-send-report.md';
+
+  it('version is the SHA-256 of the raw bytes, even when they are not valid UTF-8', async () => {
+    const root = copyFixture();
+    const bytes = Buffer.concat([
+      Buffer.from('---\nassignee: sam-example\n---\n# Caf'),
+      Buffer.from([0xe9, 0xff, 0xfe]),
+      Buffer.from('\n'),
+    ]);
+    writeFileSync(join(root, 'todo', FILE), bytes);
+    const item = (await createBrainReaders(root).todos(sam)).mine.find((t) => t.id === FILE);
+    expect(item?.version).toBe(createHash('sha256').update(bytes).digest('hex'));
+    // Hashing the decoded text would give a different answer: the bytes were not valid UTF-8.
+    expect(item?.version).not.toBe(createHash('sha256').update(bytes.toString('utf8')).digest('hex'));
+    expect(item?.version).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('version changes when the file changes', async () => {
+    const root = copyFixture();
+    const brain = createBrainReaders(root);
+    const before = (await brain.todos(sam)).mine.find((t) => t.id === FILE)?.version;
+    writeFileSync(join(root, 'todo', FILE), '---\nassignee: sam-example\n---\n# Changed\n');
+    const after = (await brain.todos(sam)).mine.find((t) => t.id === FILE)?.version;
+    expect(after).not.toBe(before);
+  });
+
+  it('canAddOpen is true only for tdsapp-todo with changes on', async () => {
+    const newer = copyFixture();
+    addTodoSkill(newer);
+    expect(await createBrainReaders(newer).todos(sam)).toMatchObject({ changes: 'on', canAddOpen: true });
+
+    const older = copyFixture();
+    addTodoSkill(older, 'owner, scout', FAKE_SCRIPT, 'todo');
+    expect(await createBrainReaders(older).todos(sam)).toMatchObject({ changes: 'on', canAddOpen: false });
+
+    const none = copyFixture();
+    expect(await createBrainReaders(none).todos(sam)).toMatchObject({
+      changes: 'no-skill',
+      canAddOpen: false,
+    });
+  });
+
+  it('tdsapp-todo wins over todo, and a restricted tdsapp-todo does not fall back to todo', async () => {
+    const both = copyFixture();
+    addTodoSkill(both, 'owner', FAKE_SCRIPT, 'todo');
+    addTodoSkill(both, 'owner, scout', FAKE_SCRIPT, 'tdsapp-todo');
+    expect((await createBrainReaders(both).todos(sam)).changes).toBe('on');
+
+    const restricted = copyFixture();
+    addTodoSkill(restricted, 'owner', FAKE_SCRIPT, 'tdsapp-todo');
+    addTodoSkill(restricted, 'owner, scout', FAKE_SCRIPT, 'todo');
+    expect(await createBrainReaders(restricted).todos(sam)).toMatchObject({
+      changes: 'restricted',
+      canAddOpen: false,
+    });
+  });
+
+  it('tdsapp-todo present without its script does not fall back to todo', async () => {
+    const root = copyFixture();
+    addTodoSkill(root, 'owner, scout', null, 'tdsapp-todo');
+    addTodoSkill(root, 'owner, scout', FAKE_SCRIPT, 'todo');
+    expect(await createBrainReaders(root).todos(sam)).toMatchObject({
+      changes: 'no-skill',
+      canAddOpen: false,
+    });
+  });
+});
+
+describe('changeTodo: expect, open adds and the older skill', () => {
+  const FILE = '20261105-send-report.md';
+
+  function setup(skill = 'tdsapp-todo', reply: object = {}) {
+    const root = copyFixture();
+    addTodoSkill(root, 'owner, scout', FAKE_SCRIPT, skill);
+    const fake = fakeEnv(reply);
+    const brain = createBrainReaders(root, { todoSkill: { env: fake.env } });
+    const version = async () => (await brain.todos(sam)).mine.find((t) => t.id === FILE)?.version ?? '';
+    return { root, brain, calls: fake.calls, version };
+  }
+
+  it('passes a matching expect to the script', async () => {
+    const { brain, calls, version } = setup();
+    const expectV = await version();
+    await brain.changeTodo({ kind: 'due', id: FILE, due: '2026-12-01', expect: expectV }, sam);
+    expect(calls()).toEqual([{ command: 'due', body: { file: FILE, due: '2026-12-01', expect: expectV } }]);
+  });
+
+  it("refuses with 'changed' before anything runs when the version differs", async () => {
+    const { root, brain, calls, version } = setup();
+    const stale = await version();
+    writeFileSync(join(root, 'todo', FILE), '---\nassignee: sam-example\n---\n# Edited by someone\n');
+    expect(
+      await codeOf(brain.changeTodo({ kind: 'edit', id: FILE, title: 'Mine', expect: stale }, sam)),
+    ).toBe('changed');
+    expect(calls()).toEqual([]);
+  });
+
+  it('refuses a malformed expect as bad-request', async () => {
+    const { brain, calls } = setup();
+    for (const expectV of ['', 'abc', 'A'.repeat(64), 'a'.repeat(63), 5 as unknown as string]) {
+      expect(await codeOf(brain.changeTodo({ kind: 'delete', id: FILE, expect: expectV }, sam))).toBe(
+        'bad-request',
+      );
+    }
+    expect(calls()).toEqual([]);
+  });
+
+  it("maps the script's own 409 to 'changed'", async () => {
+    const { brain, version } = setup('tdsapp-todo', {
+      exit: 2,
+      out: '{"error":"changed since read","status":409}',
+    });
+    expect(await codeOf(brain.changeTodo({ kind: 'delete', id: FILE, expect: await version() }, sam))).toBe(
+      'changed',
+    );
+  });
+
+  it('adds open to anyone only when canAddOpen', async () => {
+    const newer = setup('tdsapp-todo');
+    await newer.brain.changeTodo({ kind: 'add', title: 'Anyone', due: null, assignee: null }, sam);
+    expect(newer.calls()).toEqual([
+      { command: 'add', body: { title: 'Anyone', due: '', open: true, via: 'TDS Brain App' } },
+    ]);
+
+    const older = setup('todo');
+    expect(
+      await codeOf(older.brain.changeTodo({ kind: 'add', title: 'Anyone', due: null, assignee: null }, sam)),
+    ).toBe('bad-request');
+    expect(older.calls()).toEqual([]);
+  });
+
+  it('still works with the older todo skill: runs its script, and the server check still protects', async () => {
+    const { root, brain, calls, version } = setup('todo');
+    const v = await version();
+    await brain.changeTodo({ kind: 'edit', id: FILE, title: 'New', expect: v }, sam);
+    expect(calls()).toEqual([{ command: 'edit', body: { file: FILE, title: 'New', expect: v } }]);
+    writeFileSync(join(root, 'todo', FILE), '---\nassignee: sam-example\n---\n# Edited by someone\n');
+    expect(await codeOf(brain.changeTodo({ kind: 'delete', id: FILE, expect: v }, sam))).toBe('changed');
+    expect(calls()).toHaveLength(1);
   });
 });

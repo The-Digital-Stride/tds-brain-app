@@ -154,6 +154,11 @@ describe('parseTodoAction', () => {
       { kind: 'assignee', id: 'a.md', assignee: null },
       { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam' },
       { kind: 'delete', id: 'a.md' },
+      { kind: 'add', title: 'Anyone', due: null, assignee: null },
+      { kind: 'edit', id: 'a.md', title: 'T', expect: 'a'.repeat(64) },
+      { kind: 'due', id: 'a.md', due: null, expect: 'a'.repeat(64) },
+      { kind: 'assignee', id: 'a.md', assignee: null, expect: 'a'.repeat(64) },
+      { kind: 'delete', id: 'a.md', expect: 'a'.repeat(64) },
     ];
     for (const body of good) expect(parseTodoAction(body), JSON.stringify(body)).toEqual(body);
   });
@@ -173,7 +178,9 @@ describe('parseTodoAction', () => {
       { kind: 'add', title: 'x', due: null },
       { kind: 'add', title: 7, due: null, assignee: 'sam' },
       { kind: 'add', title: 'x', due: 20261120, assignee: 'sam' },
-      { kind: 'add', title: 'x', due: null, assignee: null },
+      { kind: 'add', title: 'x', due: null, assignee: 5 },
+      { kind: 'delete', id: 'a.md', expect: null },
+      { kind: 'delete', id: 'a.md', expect: 5 },
       { kind: 'add', id: 'a.md', title: 'x', due: null, assignee: 'sam' },
       { kind: 'edit', id: 'a.md' },
       { kind: 'edit', id: 'a.md', title: 'x', details: null },
@@ -214,9 +221,9 @@ process.stdin.on('end', () => {
   function makeBrain(opts: { roles?: string; reply?: object; skill?: boolean } = {}) {
     const root = copyFixture();
     if (opts.skill !== false) {
-      mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+      mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
       writeFileSync(
-        join(root, '.claude', 'skills', 'todo', 'SKILL.md'),
+        join(root, '.claude', 'skills', 'tdsapp-todo', 'SKILL.md'),
         `---\ndescription: Change to-dos.\nroles: ${opts.roles ?? 'owner, scout'}\nmaturity: draft\n---\n`,
       );
       writeFileSync(join(root, TODO_SCRIPT), FAKE_SCRIPT);
@@ -366,6 +373,15 @@ process.stdin.on('end', () => {
     });
   });
 
+  it("answers 409 'changed' when the version is stale, and sends no script call", async () => {
+    const { brain, calls } = makeBrain();
+    const sent = await send(brain, { body: { kind: 'delete', id: MINE, expect: 'f'.repeat(64) } });
+    expect(sent.status).toBe(409);
+    expect(sent.json.error.code).toBe('changed');
+    expect(sent.json.error.message).toContain('Someone changed this to-do');
+    expect(calls()).toEqual([]);
+  });
+
   it('is refused in setup mode', async () => {
     expect((await send(createSetupBrain(), { body: { kind: 'delete', id: MINE } })).status).toBe(403);
   });
@@ -374,8 +390,11 @@ process.stdin.on('end', () => {
 describe('GET /api/todos', () => {
   it("says 'switched-off' in place of 'on' while the Settings switch is off", async () => {
     const root = copyFixture();
-    mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
-    writeFileSync(join(root, '.claude', 'skills', 'todo', 'SKILL.md'), '---\nroles: owner, scout\n---\n');
+    mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
+    writeFileSync(
+      join(root, '.claude', 'skills', 'tdsapp-todo', 'SKILL.md'),
+      '---\nroles: owner, scout\n---\n',
+    );
     writeFileSync(join(root, TODO_SCRIPT), '');
     const whoami = { name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true };
     const brain = createBrainReaders(root, { run: async () => ({ stdout: JSON.stringify(whoami) }) });

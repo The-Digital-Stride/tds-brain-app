@@ -95,6 +95,12 @@ export interface TodoItem {
    * and edits it as "details"; an edit replaces it whole.
    */
   details: string;
+  /**
+   * The file's fingerprint when it was read: lower-case hex SHA-256 of its raw bytes (64 characters).
+   * Sent back as `expect` with a change, so the skill refuses it if the file has changed since
+   * (BCR-01). Changes when anyone changes the file, including this person.
+   */
+  version: string;
 }
 
 /** One person a to-do can be passed to: a member of `.team-config/roles.json`. */
@@ -132,11 +138,33 @@ export interface TodoList {
   team: TeamMember[];
   /** `BrainReaders.todos` gives a TodoSkillAccess; the route turns 'on' into 'switched-off' when the switch is off. */
   changes: TodoChangeAccess;
+  /**
+   * Whether the brain's skill can add a to-do open to anyone (`add` with `assignee: null`). True only
+   * when `changes` is 'on' and the skill found is `tdsapp-todo` (v0.3 or later by definition): the older
+   * `todo` script ignores the request and would assign the to-do to the person instead.
+   */
+  canAddOpen: boolean;
 }
 
-/** The brain skill that changes to-dos, and its script relative to the brain root. */
-export const TODO_SKILL = 'todo';
-export const TODO_SCRIPT = '.claude/skills/todo/scripts/todo.cjs';
+/**
+ * The brain skill that changes to-dos, and its script relative to the brain root. Brain files the
+ * app adds start with `tdsapp-`. The skill was called `todo` until v0.3 (2026-11-13). The app uses the
+ * first skill in TODO_SKILLS whose folder exists (presence, not access: if `tdsapp-todo` is there but
+ * restricted for this person, the app does not fall back to `todo`). For one release the brain keeps a
+ * `todo` shim (deprecated SKILL.md with the same `roles:`, script that runs tdsapp-todo.cjs) so an older
+ * app or older instructions keep working.
+ */
+export const TODO_SKILL = 'tdsapp-todo';
+export const TODO_SCRIPT = '.claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs';
+export const TODO_SKILL_LEGACY = 'todo';
+export const TODO_SCRIPT_LEGACY = '.claude/skills/todo/scripts/todo.cjs';
+/** Where the app looks, first match wins: the skill name (for roles) and its script. */
+export const TODO_SKILLS: readonly { skill: string; script: string }[] = [
+  { skill: TODO_SKILL, script: TODO_SCRIPT },
+  { skill: TODO_SKILL_LEGACY, script: TODO_SCRIPT_LEGACY },
+];
+/** `expect` / TodoItem.version: lower-case hex SHA-256. */
+export const TODO_VERSION_PATTERN = /^[0-9a-f]{64}$/;
 
 export const TODO_TITLE_MAX = 200;
 export const TODO_DETAILS_MAX = 8000;
@@ -151,21 +179,30 @@ export const TODO_SCRIPT_MAX_OUTPUT_BYTES = 65_536;
  * - `edit`: replaces the title; replaces the whole details text only when `details` is sent.
  *   Omit it to leave the body alone.
  * - `assignee: null` on `assignee` makes the to-do open to anyone.
+ * - `add` with `assignee: null` adds it open to anyone; only offered when TodoList.canAddOpen.
+ * - `expect` (optional, on every action with an `id`): the TodoItem.version the person was looking
+ *   at. The server refuses with 'changed' if the listed to-do is no longer that version, then passes it
+ *   to the skill, which checks again just before writing (BCR-01). Omitted, the change runs as before.
+ *   When a save sends several actions for one to-do, each one after the first carries the version from
+ *   the fresh list the previous one returned (the person's own change); if the to-do is missing from
+ *   that list, the save stops. A later step is never sent without `expect`.
  * A save that changes several fields sends them one at a time in this order, stopping at the first
  * failure: edit → due → assignee (passing on last, because the to-do then leaves this person's list).
  *
  * Route checks before anything runs: `id` matches `^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$` and is
  * listed for this person; title 1–TODO_TITLE_MAX characters after trimming; details at most
- * TODO_DETAILS_MAX; assignee matches `^[a-z0-9]+(-[a-z0-9]+)*$`, at most TODO_ASSIGNEE_MAX.
+ * TODO_DETAILS_MAX; assignee matches `^[a-z0-9]+(-[a-z0-9]+)*$`, at most TODO_ASSIGNEE_MAX;
+ * `expect` matches TODO_VERSION_PATTERN; `add` with `assignee: null` only when canAddOpen.
  */
 export type TodoAction =
-  | { kind: 'add'; title: string; due: string | null; assignee: string }
-  | { kind: 'edit'; id: string; title: string; details?: string }
-  | { kind: 'due'; id: string; due: string | null }
-  | { kind: 'assignee'; id: string; assignee: string | null }
-  | { kind: 'delete'; id: string };
+  | { kind: 'add'; title: string; due: string | null; assignee: string | null }
+  | { kind: 'edit'; id: string; title: string; details?: string; expect?: string }
+  | { kind: 'due'; id: string; due: string | null; expect?: string }
+  | { kind: 'assignee'; id: string; assignee: string | null; expect?: string }
+  | { kind: 'delete'; id: string; expect?: string };
 
-export type TodoChangeErrorCode = 'bad-request' | 'not-found' | 'not-allowed' | 'internal';
+/** `changed`: the to-do's file changed since the person read it (`expect` didn't match). HTTP 409. */
+export type TodoChangeErrorCode = 'bad-request' | 'not-found' | 'not-allowed' | 'changed' | 'internal';
 
 /** Thrown by `BrainReaders.changeTodo`. `message` is plain UK English, fit to show the user. */
 export class TodoChangeError extends Error {
@@ -180,25 +217,47 @@ export class TodoChangeError extends Error {
 /**
  * The script's command line (the agreement between the brain skill and the app):
  *
- *   node <brain>/.claude/skills/todo/scripts/todo.cjs <command>
+ *   node <brain>/.claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
+ *   (before v0.3: <brain>/.claude/skills/todo/scripts/todo.cjs, the same agreement minus the v0.3 parts)
  *
  * - `<command>`: add | edit | due | assignee | delete | tick | roster | list.
  * - stdin: one JSON object, the Workbench route's request body with the same field names
  *   (`file`, `title`, `body`, `due`, `assignee`). `roster` and `list` need none (send `{}`).
- * - `delete` differs from the Workbench (BCR-05): it takes an optional `via` (the app sends
- *   "TDS Brain App") and moves the file to `todo/deleted/` stamped with `status: deleted`,
- *   `deleted`, `deleted_at`, `deleted_by` and `deleted_via`, answering `{ok, file, moved}`.
+ *   Every field added since is optional, so a caller that sends only the Workbench's fields gets the
+ *   same result as before, apart from the fixes listed below.
+ * - `delete` differs from the Workbench (BCR-05): optional `via` (the app sends "TDS Brain App"),
+ *   `by`, `by_name`; moves the file to `todo/deleted/` stamped with `status: deleted`, `deleted`,
+ *   `deleted_at`, `deleted_by` and `deleted_via`, answering `{ok, file, moved}`.
+ * - v0.3 additions (2026-11-13), all optional:
+ *   - `expect` on edit, due, assignee, delete and tick: the hex SHA-256 of the file's bytes the
+ *     caller read. If the file now differs → `{"error":"changed since read","status":409}`, exit 2,
+ *     nothing written (BCR-01).
+ *   - `add`: `open: true` adds it with no assignee (BCR-06); `via` names the tool, written as
+ *     `source: added from <via>` (BCR-13; default `added with the todo skill`). The app sends
+ *     `via: "TDS Brain App"`.
+ *   - `tick`: `via`, `by`, `by_name`, stamping `status: done`, `completed`, `completed_at`,
+ *     `completed_by`, `completed_via` like the app's own tick (BCR-09).
+ *   - `list` entries gain `version` (the fingerprint).
+ * - v0.3 fixes (each refuses with 400 where the Workbench quietly accepted): over-long title (200),
+ *   details (8000) or assignee (40) are refused, not cut (BCR-02); an explicit assignee must be on
+ *   the team in `.team-config/roles.json` by either slug rule, unless that file is missing or empty
+ *   (BCR-07); due dates must be real calendar dates (BCR-17); CLAUDE.md, README.md and AGENTS.md are
+ *   refused in any letter case (BCR-12).
+ * - v0.3 fixes to how files are written: titles needing quotes are quoted when that needs no escapes
+ *   (BCR-03); a title change adds to `## Title history`, and updates the first `#` heading only when
+ *   it matched the old title (BCR-04/16); the file's own line endings and BOM are kept (BCR-11); a new
+ *   name also avoids `todo/done/` and `todo/deleted/` (BCR-14); writes go to a temporary file named
+ *   `.tdsapp-todo-<pid>-<random>.tmp~` (ignored by the brain's `*~` rule) renamed or linked into place;
+ *   symlinks and files without write permission are refused (BCR-15).
  * - The brain root is `process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..', '..', '..')`
- *   (scripts → todo → skills → .claude → brain).
+ *   (scripts → tdsapp-todo → skills → .claude → brain).
  * - stdin is read to the end. Empty means `{}`. Invalid JSON, a non-object or an unknown command
  *   → `{"error":"invalid JSON"|"unknown command","status":400}`, exit 2.
- * - stdout: one JSON line. Exit 0: exactly the Workbench route's success body, with no `status`.
- *   Exit 2: the Workbench route's error body plus `status` (400, 404 or 500, including unterminated
- *   frontmatter and file errors). stderr is ignored. Any other exit code is a crash.
- * - Kept literally from the Workbench: the file regex `^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$`
- *   (spaces allowed) with only CLAUDE.md and README.md excluded; `source: added from the
- *   Workbench`; local-date file names; the 200 / 8000 / 40 cuts; the default assignee from
- *   `spawnSync('git', ['config', 'user.name'], { cwd: BRAIN_ROOT, timeout: 3000 })`. `list` honours
+ * - stdout: one JSON line. Exit 0: the success body, with no `status`. Exit 2: the error body plus
+ *   `status` (400, 404, 409 or 500, including unterminated frontmatter and file errors). stderr is
+ *   ignored. Any other exit code is a crash.
+ * - Kept from the Workbench: the file regex `^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$` (spaces allowed);
+ *   local-date file names; the default assignee from `git config user.name`. `list` honours
  *   `WORKBENCH_AS`; `add` does not.
  * - The app runs it with `spawn` (no shell), the real path of the script inside the brain's real
  *   path, a scrubbed environment plus `BRAIN_ROOT` (no `WORKBENCH_AS`, no `NODE_OPTIONS`), SIGKILL
@@ -800,6 +859,7 @@ export type ApiErrorCode =
   | 'forbidden' // wrong Host or Origin
   | 'not-found'
   | 'not-allowed' // the person's role may not run that skill
+  | 'changed' // a to-do changed since the person read it (409)
   | 'busy' // a turn is already running in that chat
   | 'session-closed'
   | 'too-many-chats' // MAX_LIVE_SESSIONS are all busy

@@ -10,6 +10,15 @@ export async function readText(path: string): Promise<string | null> {
   }
 }
 
+/** The file's raw bytes, or null when it can't be read. */
+export async function readBytes(path: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(path);
+  } catch {
+    return null;
+  }
+}
+
 export async function isDir(path: string): Promise<boolean> {
   try {
     return (await fs.stat(path)).isDirectory();

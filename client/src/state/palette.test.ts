@@ -28,6 +28,7 @@ const todo = (id: string, title: string): TodoItem => ({
   created: null,
   source: null,
   details: '',
+  version: 'v1',
   assignee: null,
   due: null,
   surfaceDate: null,

@@ -187,6 +187,7 @@ function todo(id: string): TodoItem {
     created: null,
     source: null,
     details: '',
+    version: '0'.repeat(64),
   };
 }
 
@@ -204,6 +205,7 @@ function fakeBrain(
       othersCount: 3,
       team: [],
       changes: 'no-skill',
+      canAddOpen: false,
     }),
     ...over,
   };

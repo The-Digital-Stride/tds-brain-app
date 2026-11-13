@@ -23,8 +23,10 @@ const todo = (over: Partial<TodoItem> = {}): TodoItem => ({
   created: null,
   source: null,
   details: 'Some notes',
+  version: 'v1',
   ...over,
 });
+let canAddOpen = false;
 const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList => ({
   mine: items,
   open: [],
@@ -34,6 +36,7 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
     { slug: 'ben-mcadam', name: 'Ben McAdam' },
   ],
   changes,
+  canAddOpen,
 });
 
 const changeTodos = vi.fn();
@@ -60,8 +63,9 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
 }
 
 beforeEach(() => {
+  canAddOpen = false;
   changeTodos.mockReset();
-  changeTodos.mockResolvedValue({ done: 1 });
+  changeTodos.mockResolvedValue({ done: 1, todos: list('on', [todo({ version: 'v2' })]) });
   openView.mockReset();
   holdTodo.mockReset();
   undoHeld.mockReset();
@@ -131,7 +135,7 @@ describe('To-dos drawer, changing to-dos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(holdTodo).toHaveBeenCalled());
     expect(changeTodos).toHaveBeenCalledWith([
-      { kind: 'edit', id: 't1.md', title: 'Renew the contract' },
+      { kind: 'edit', id: 't1.md', title: 'Renew the contract', expect: 'v1' },
       { kind: 'due', id: 't1.md', due: '2030-02-02' },
     ]);
     expect(holdTodo).toHaveBeenCalledWith({
@@ -139,7 +143,7 @@ describe('To-dos drawer, changing to-dos', () => {
       title: 'Renew the contract',
       kind: 'assignee',
       label: 'Passed to Ben McAdam',
-      action: { kind: 'assignee', id: 't1.md', assignee: 'ben-mcadam' },
+      action: { kind: 'assignee', id: 't1.md', assignee: 'ben-mcadam', expect: 'v2' },
     });
     expect(await screen.findByText('Passed to Ben McAdam. You can undo this for 10 seconds.')).toBeTruthy();
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
@@ -163,7 +167,7 @@ describe('To-dos drawer, changing to-dos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(changeTodos).toHaveBeenCalled());
     expect(changeTodos).toHaveBeenCalledWith([
-      { kind: 'edit', id: 't1.md', title: 'Renew contract', details: 'New notes' },
+      { kind: 'edit', id: 't1.md', title: 'Renew contract', details: 'New notes', expect: 'v1' },
       { kind: 'due', id: 't1.md', due: null },
     ]);
   });
@@ -207,7 +211,7 @@ describe('To-dos drawer, changing to-dos', () => {
       title: 'Renew contract',
       kind: 'delete',
       label: 'Deleted',
-      action: { kind: 'delete', id: 't1.md' },
+      action: { kind: 'delete', id: 't1.md', expect: 'v1' },
     });
     expect(changeTodos).not.toHaveBeenCalled();
     expect(screen.getByText('Deleted. You can undo this for 10 seconds.')).toBeTruthy();
@@ -247,7 +251,7 @@ describe('To-dos drawer, changing to-dos', () => {
       title: 'Renew contract',
       kind: 'delete',
       label: 'Deleted',
-      action: { kind: 'delete', id: 't1.md' },
+      action: { kind: 'delete', id: 't1.md', expect: 'v1' },
     };
     setStore('on', undefined, [held]);
     render(<TodosDrawer />);
@@ -292,7 +296,7 @@ describe('To-dos drawer, changing to-dos', () => {
         title: 'Renew contract',
         kind: 'delete',
         label: 'Deleted',
-        action: { kind: 'delete', id: 't1.md' },
+        action: { kind: 'delete', id: 't1.md', expect: 'v1' },
         sending: true,
       },
     ]);
@@ -313,15 +317,89 @@ describe('To-dos drawer, changing to-dos', () => {
     type('Title', 'Renew it');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(changeTodos).toHaveBeenCalled());
-    expect(changeTodos).toHaveBeenCalledWith([{ kind: 'edit', id: 't1.md', title: 'Renew it' }]);
+    expect(changeTodos).toHaveBeenCalledWith([
+      { kind: 'edit', id: 't1.md', title: 'Renew it', expect: 'v1' },
+    ]);
+  });
+});
+
+describe('To-dos drawer, conflict check and open adds', () => {
+  it('sends the version captured when the editor opened, not a refreshed one', async () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    // The list refreshes behind the open editor.
+    (store.current.todos as TodoList).mine[0] = todo({ version: 'v9' });
+    type('Title', 'Renew it');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalled());
+    expect(changeTodos.mock.calls[0]?.[0][0]).toMatchObject({ kind: 'edit', expect: 'v1' });
+  });
+
+  it('carries the opened version on a pass-on that is the only change', async () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Assigned to', 'ben-mcadam');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(holdTodo).toHaveBeenCalled());
+    expect(holdTodo.mock.calls[0]?.[0].action).toMatchObject({ kind: 'assignee', expect: 'v1' });
+  });
+
+  it('does not hold the pass-on when the to-do is missing after the save', async () => {
+    changeTodos.mockResolvedValue({ done: 1, todos: list('on', []) });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Assigned to', 'ben-mcadam');
+    type('Title', 'Renew it');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/no longer in your list/)).toBeTruthy();
+    expect(holdTodo).not.toHaveBeenCalled();
+  });
+
+  it('on a changed refusal keeps the editor and draft, shows the message and adopts the new version', async () => {
+    changeTodos.mockResolvedValueOnce({
+      done: 0,
+      error: { code: 'changed', message: 'Someone changed this to-do. Check it, then save again.' },
+      todos: list('on', [todo({ title: 'Theirs', version: 'v7' })]),
+    });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Mine');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const msg = await screen.findByText('Someone changed this to-do. Check it, then save again.');
+    expect(msg.getAttribute('role')).toBe('status');
+    expect(msg.getAttribute('data-tone')).toBe('error');
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
+    expect(changeTodos.mock.calls[1]?.[0][0]).toMatchObject({ kind: 'edit', title: 'Mine', expect: 'v7' });
+  });
+
+  it('offers Open to anyone when adding only with canAddOpen, and sends assignee null', async () => {
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    expect(screen.queryByRole('option', { name: 'Open to anyone' })).toBeNull();
+    cleanup();
+    canAddOpen = true;
+    setStore('on');
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    type('What needs doing?', 'Anyone can do this');
+    type('Assigned to', '');
+    fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
+    await waitFor(() =>
+      expect(changeTodos).toHaveBeenCalledWith([
+        { kind: 'add', title: 'Anyone can do this', due: null, assignee: null },
+      ]),
+    );
   });
 });
 
 describe('To-dos drawer, edge cases', () => {
   it('after a part-saved edit keeps the unsaved date and sends only that next', async () => {
     changeTodos.mockImplementationOnce(async () => {
-      store.current.todos = list('on', [todo({ title: 'Renew it' })]);
-      return { done: 1, error: { code: 'internal', message: 'The change could not be made.' } };
+      const fresh = list('on', [todo({ title: 'Renew it', version: 'v2' })]);
+      store.current.todos = fresh;
+      return { done: 1, todos: fresh, error: { code: 'internal', message: 'The change could not be made.' } };
     });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
@@ -333,7 +411,9 @@ describe('To-dos drawer, edge cases', () => {
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Renew it');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
-    expect(changeTodos).toHaveBeenLastCalledWith([{ kind: 'due', id: 't1.md', due: '2030-03-03' }]);
+    expect(changeTodos).toHaveBeenLastCalledWith([
+      { kind: 'due', id: 't1.md', due: '2030-03-03', expect: 'v2' },
+    ]);
   });
 
   it('marks errors in the status line', async () => {

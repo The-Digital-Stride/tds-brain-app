@@ -176,7 +176,13 @@ export function TodosDrawer() {
   const [tab, setTab] = useState<Tab>('mine');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<EditDraft>({ title: '', details: '', due: '', assignee: '' });
+  const [draft, setDraft] = useState<EditDraft>({
+    title: '',
+    details: '',
+    due: '',
+    assignee: '',
+    version: '',
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessageText] = useState('');
   const [isError, setIsError] = useState(false);
@@ -272,7 +278,13 @@ export function TodosDrawer() {
           open: (t) => {
             setAdding(false);
             setMessage('');
-            setDraft({ title: t.title, details: t.details, due: t.due ?? '', assignee: t.assignee ?? '' });
+            setDraft({
+              title: t.title,
+              details: t.details,
+              due: t.due ?? '',
+              assignee: t.assignee ?? '',
+              version: t.version,
+            });
             setEditingId(t.id);
           },
           close: () => {
@@ -284,14 +296,41 @@ export function TodosDrawer() {
           save: async (todo, actions) => {
             // Title, details and date are saved now (they can simply be edited again). Passing the to-do
             // on is held with an Undo, because it leaves this list and can't be edited back from here.
-            const passed = actions.find((a) => a.kind === 'assignee');
+            let passed = actions.find((a) => a.kind === 'assignee');
             const now = actions.filter((a) => a.kind !== 'assignee');
-            const result = now.length > 0 ? await run(now) : { done: 0 };
+            const result: ChangeTodosResult = now.length > 0 ? await run(now) : { done: 0 };
             if (result.error) {
+              // Keep the editor and the draft untouched, but adopt the version now in the brain (a teammate's
+              // change, or our own earlier steps), so pressing Save again is a deliberate overwrite.
+              const fresh = result.todos
+                ? [...result.todos.mine, ...result.todos.open].find((t) => t.id === todo.id)
+                : undefined;
+              if (fresh) setDraft({ ...draft, version: fresh.version });
+              if (result.error.code === 'changed') {
+                setMessage(result.error.message, true);
+                return result;
+              }
               if (result.done > 0) {
                 setMessage('Some changes were saved, but not all. Check the to-do and save again.', true);
               } else setMessage(result.error.message, true);
               return result;
+            }
+            if (passed && now.length > 0) {
+              // The pass-on is held and sent later: it checks against the version after this save's own steps.
+              const version = result.todos?.mine
+                .concat(result.todos.open)
+                .find((t) => t.id === todo.id)?.version;
+              if (!version) {
+                setMessage('This to-do is no longer in your list, so it was not passed on.', true);
+                return {
+                  done: result.done,
+                  error: {
+                    code: 'not-found',
+                    message: 'This to-do is no longer in your list, so it was not passed on.',
+                  },
+                };
+              }
+              passed = { ...passed, expect: version };
             }
             setEditingId(null);
             if (passed?.kind === 'assignee') {
@@ -321,7 +360,8 @@ export function TodosDrawer() {
               title: todo.title,
               kind: 'delete',
               label: 'Deleted',
-              action: { kind: 'delete', id: todo.id },
+              // The version as shown when Delete was pressed.
+              action: { kind: 'delete', id: todo.id, expect: todo.version },
             });
           },
         }
@@ -347,6 +387,7 @@ export function TodosDrawer() {
               me={me}
               team={todos.team}
               busy={busy}
+              canAddOpen={todos.canAddOpen}
               onAdd={(a) => void add(a)}
               onCancel={() => {
                 setAdding(false);

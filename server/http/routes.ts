@@ -91,6 +91,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   forbidden: 403,
   'not-found': 404,
   'not-allowed': 403,
+  changed: 409,
   busy: 409,
   'session-closed': 410,
   'too-many-chats': 409,
@@ -186,7 +187,14 @@ const UNKNOWN_IDENTITY: Identity = {
   knownMember: false,
 };
 const EMPTY_PROFILE: MemberProfile = { title: null, departments: [], owns: null };
-const EMPTY_TODOS: TodoList = { mine: [], open: [], othersCount: 0, team: [], changes: 'no-skill' };
+const EMPTY_TODOS: TodoList = {
+  mine: [],
+  open: [],
+  othersCount: 0,
+  team: [],
+  changes: 'no-skill',
+  canAddOpen: false,
+};
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
 
@@ -383,11 +391,11 @@ const TODO_SWITCHED_OFF =
 
 /** Each action's fields besides `kind`: required text, text or null, or optional text. */
 const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-null' | 'optional-text'>> = {
-  add: { title: 'text', due: 'text-or-null', assignee: 'text' },
-  edit: { id: 'text', title: 'text', details: 'optional-text' },
-  due: { id: 'text', due: 'text-or-null' },
-  assignee: { id: 'text', assignee: 'text-or-null' },
-  delete: { id: 'text' },
+  add: { title: 'text', due: 'text-or-null', assignee: 'text-or-null' },
+  edit: { id: 'text', title: 'text', details: 'optional-text', expect: 'optional-text' },
+  due: { id: 'text', due: 'text-or-null', expect: 'optional-text' },
+  assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text' },
+  delete: { id: 'text', expect: 'optional-text' },
 };
 
 /**

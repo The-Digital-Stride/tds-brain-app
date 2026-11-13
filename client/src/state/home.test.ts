@@ -8,6 +8,7 @@ const todo = (id: string, due: string | null): TodoItem => ({
   created: null,
   source: null,
   details: '',
+  version: 'v1',
   assignee: 'sam-example',
   due,
   surfaceDate: null,

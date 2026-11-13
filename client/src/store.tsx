@@ -30,6 +30,11 @@ import { isStalled } from './state/stall.ts';
 export interface ChangeTodosResult {
   done: number;
   error?: { code: string; message: string };
+  /**
+   * The newest list the server returned (after a 'changed' error, a freshly loaded one), so the caller
+   * can read the versions its own steps produced. Absent when nothing came back.
+   */
+  todos?: TodoList;
 }
 
 /** How long a held to-do change waits, with an Undo button, before it is sent. */
@@ -528,21 +533,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const changeTodos = useCallback(async (actions: TodoAction[]): Promise<ChangeTodosResult> => {
     let done = 0;
-    for (const action of actions) {
+    let latest: TodoList | undefined;
+    for (const [i, original] of actions.entries()) {
+      let action = original;
+      // Each step after the first checks against the version the previous step left behind (the
+      // person's own change), so only someone else's change can stop the save. Never sent without it.
+      if (i > 0 && action.kind !== 'add') {
+        const id = action.id;
+        const version = latest && [...latest.mine, ...latest.open].find((t) => t.id === id)?.version;
+        if (!version) {
+          return {
+            done,
+            error: {
+              code: 'not-found',
+              message: 'This to-do is no longer in your list, so the rest of your changes were not saved.',
+            },
+            ...(latest ? { todos: latest } : {}),
+          };
+        }
+        action = { ...action, expect: version };
+      }
       try {
-        setTodos(await api.changeTodo(action));
+        latest = await api.changeTodo(action);
+        setTodos(latest);
         done += 1;
       } catch (err) {
-        return {
-          done,
-          error:
-            err instanceof ApiFailure
-              ? { code: err.code, message: err.message }
-              : { code: 'internal', message: messageOf(err) },
-        };
+        const error =
+          err instanceof ApiFailure
+            ? { code: err.code, message: err.message }
+            : { code: 'internal', message: messageOf(err) };
+        if (error.code === 'changed') {
+          // Someone else changed it: load what is there now so the editor can adopt the new version.
+          try {
+            latest = await api.todos();
+            setTodos(latest);
+          } catch {
+            // The next change will try again.
+          }
+        }
+        return { done, error, ...(latest ? { todos: latest } : {}) };
       }
     }
-    return { done };
+    return { done, ...(latest ? { todos: latest } : {}) };
   }, []);
 
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
@@ -569,6 +601,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       setTodos(await send());
     } catch (err) {
+      // A 'changed' refusal shows like any other held failure. On pagehide (keepalive) nothing can be
+      // shown: it fails safe, the change is refused and nothing is written.
       setActionError(messageOf(err));
     } finally {
       setHeldTodos((list) => list.filter((h) => h.todoId !== held.todoId));

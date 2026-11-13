@@ -7,14 +7,15 @@ import { type ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'node:c
 import { promises as fs } from 'node:fs';
 import { join, sep } from 'node:path';
 import {
-  TODO_SCRIPT,
   TODO_SCRIPT_MAX_OUTPUT_BYTES,
   TODO_SCRIPT_TIMEOUT_MS,
+  TODO_SKILLS,
   type TodoAction,
   TodoChangeError,
   type TodoChangeErrorCode,
 } from '../../shared/contract.ts';
 import { scrubEnv } from '../engine/session-manager.ts';
+import { isDir } from './util.ts';
 
 /** The tool name the app records on to-dos it finishes or deletes. */
 export const APP_VIA = 'TDS Brain App';
@@ -24,6 +25,8 @@ export const TODO_CHANGE_MESSAGES = {
   'bad-request': "That change wasn't understood. Check the title and date, then try again.",
   'not-found': 'That to-do could not be found. It may have been finished, deleted or passed on.',
   'not-allowed': "Changing to-dos isn't available to you in the app yet.",
+  changed:
+    "Someone changed this to-do since you opened it, so your change wasn't saved. Check the latest version below, then save again.",
   internal: 'The change could not be made. Try again.',
 } as const satisfies Record<TodoChangeErrorCode, string>;
 
@@ -53,24 +56,30 @@ export interface TodoActor {
 }
 
 /** The Workbench route's request body for an action, with the Workbench's field names. */
-export function scriptPayload(action: TodoAction, by?: TodoActor): Record<string, string> {
+export function scriptPayload(action: TodoAction, by?: TodoActor): Record<string, string | boolean> {
+  const expect: Record<string, string> =
+    'expect' in action && action.expect !== undefined ? { expect: action.expect } : {};
   switch (action.kind) {
     case 'add':
-      return { title: action.title, due: action.due ?? '', assignee: action.assignee };
+      // `via` names this app as the tool; an open to-do sends `open` and no assignee. An older script
+      // ignores both and the server only offers open adds when the newer skill is there.
+      return action.assignee === null
+        ? { title: action.title, due: action.due ?? '', open: true, via: APP_VIA }
+        : { title: action.title, due: action.due ?? '', assignee: action.assignee, via: APP_VIA };
     case 'edit':
       return action.details === undefined
-        ? { file: action.id, title: action.title }
-        : { file: action.id, title: action.title, body: action.details };
+        ? { file: action.id, title: action.title, ...expect }
+        : { file: action.id, title: action.title, body: action.details, ...expect };
     case 'due':
-      return { file: action.id, due: action.due ?? '' };
+      return { file: action.id, due: action.due ?? '', ...expect };
     case 'assignee':
-      return { file: action.id, assignee: action.assignee ?? '' };
+      return { file: action.id, assignee: action.assignee ?? '', ...expect };
     case 'delete':
       // The skill keeps the file in todo/deleted/, recording who, when and this app as the tool.
       // Who is the app's own identity, so deletes and ticks name a person the same way.
       return by
-        ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name }
-        : { file: action.id, via: APP_VIA };
+        ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name, ...expect }
+        : { file: action.id, via: APP_VIA, ...expect };
   }
 }
 
@@ -78,19 +87,41 @@ function inside(child: string, parent: string): boolean {
   return child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
 }
 
+/** The skill the app uses: its name (for the roles check) and its script's real path, null if unusable. */
+export interface TodoSkillFound {
+  skill: string;
+  script: string | null;
+}
+
 /**
- * The real path of the brain's `todo` script, or null when it is missing, not a regular file, or
- * its real path (after every link) is not inside the brain's real path.
+ * The first skill in TODO_SKILLS whose folder exists (presence, not access), or null when none does.
+ * `script` is its real path when it is a regular file inside the brain's real path, else null. There
+ * is no fallback to the next skill once a folder is found.
  */
-export async function findTodoScript(root: string): Promise<string | null> {
+export async function findTodoSkill(root: string): Promise<TodoSkillFound | null> {
+  let realRoot: string;
   try {
-    const realRoot = await fs.realpath(root);
-    const real = await fs.realpath(join(realRoot, TODO_SCRIPT));
-    if (!inside(real, realRoot)) return null;
-    return (await fs.stat(real)).isFile() ? real : null;
+    realRoot = await fs.realpath(root);
   } catch {
     return null;
   }
+  for (const entry of TODO_SKILLS) {
+    const folder = join(realRoot, '.claude', 'skills', entry.skill);
+    if (!(await isDir(folder))) continue;
+    try {
+      const real = await fs.realpath(join(realRoot, entry.script));
+      if (!inside(real, realRoot)) return { skill: entry.skill, script: null };
+      return { skill: entry.skill, script: (await fs.stat(real)).isFile() ? real : null };
+    } catch {
+      return { skill: entry.skill, script: null };
+    }
+  }
+  return null;
+}
+
+/** The real path of the script of the skill found, or null. */
+export async function findTodoScript(root: string): Promise<string | null> {
+  return (await findTodoSkill(root))?.script ?? null;
 }
 
 export interface TodoSkillOptions {
@@ -185,6 +216,7 @@ function judge(outcome: Outcome): TodoChangeErrorCode | null {
   if (outcome.code === 2) {
     if (reply.status === 400) return 'bad-request';
     if (reply.status === 404) return 'not-found';
+    if (reply.status === 409) return 'changed';
   }
   return 'internal';
 }

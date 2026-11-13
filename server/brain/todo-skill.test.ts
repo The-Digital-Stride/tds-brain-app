@@ -23,11 +23,13 @@ import {
 import {
   createTodoSkillRunner,
   findTodoScript,
+  findTodoSkill,
   scriptPayload,
   TODO_CHANGE_MESSAGES,
   type TodoSpawner,
 } from './todo-skill.ts';
 
+const EXPECT = 'a'.repeat(64);
 const made: string[] = [];
 afterAll(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -80,7 +82,7 @@ function makeBrain(script: string | null = FAKE_SCRIPT): string {
   mkdirSync(join(root, 'todo'), { recursive: true });
   writeFileSync(join(root, 'todo', '20261112-thing.md'), '---\nassignee: sam\n---\n# Thing\n');
   if (script !== null) {
-    mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+    mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
     writeFileSync(join(root, TODO_SCRIPT), script);
   }
   return root;
@@ -148,11 +150,31 @@ describe('scriptPayload: the Workbench route bodies', () => {
     const cases: [TodoAction, object][] = [
       [
         { kind: 'add', title: 'Call Ben', due: '2026-11-20', assignee: 'sam' },
-        { title: 'Call Ben', due: '2026-11-20', assignee: 'sam' },
+        { title: 'Call Ben', due: '2026-11-20', assignee: 'sam', via: 'TDS Brain App' },
       ],
       [
         { kind: 'add', title: 'Call Ben', due: null, assignee: 'sam' },
-        { title: 'Call Ben', due: '', assignee: 'sam' },
+        { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Brain App' },
+      ],
+      [
+        { kind: 'add', title: 'Call Ben', due: null, assignee: null },
+        { title: 'Call Ben', due: '', open: true, via: 'TDS Brain App' },
+      ],
+      [
+        { kind: 'edit', id: 'a.md', title: 'T', details: 'D', expect: EXPECT },
+        { file: 'a.md', title: 'T', body: 'D', expect: EXPECT },
+      ],
+      [
+        { kind: 'due', id: 'a.md', due: null, expect: EXPECT },
+        { file: 'a.md', due: '', expect: EXPECT },
+      ],
+      [
+        { kind: 'assignee', id: 'a.md', assignee: null, expect: EXPECT },
+        { file: 'a.md', assignee: '', expect: EXPECT },
+      ],
+      [
+        { kind: 'delete', id: 'a.md', expect: EXPECT },
+        { file: 'a.md', via: 'TDS Brain App', expect: EXPECT },
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'New' },
@@ -205,22 +227,22 @@ describe('findTodoScript', () => {
     const outside = tempDir('tba-outside-');
     writeFileSync(join(outside, 'todo.cjs'), FAKE_SCRIPT);
     const viaFile = makeBrain(null);
-    mkdirSync(join(viaFile, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+    mkdirSync(join(viaFile, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
     symlinkSync(join(outside, 'todo.cjs'), join(viaFile, TODO_SCRIPT));
     expect(await findTodoScript(viaFile)).toBeNull();
 
     const viaFolder = makeBrain(null);
-    mkdirSync(join(outside, 'todo', 'scripts'), { recursive: true });
-    writeFileSync(join(outside, 'todo', 'scripts', 'todo.cjs'), FAKE_SCRIPT);
+    mkdirSync(join(outside, 'tdsapp-todo', 'scripts'), { recursive: true });
+    writeFileSync(join(outside, 'tdsapp-todo', 'scripts', 'tdsapp-todo.cjs'), FAKE_SCRIPT);
     mkdirSync(join(viaFolder, '.claude', 'skills'), { recursive: true });
-    symlinkSync(join(outside, 'todo'), join(viaFolder, '.claude', 'skills', 'todo'));
+    symlinkSync(join(outside, 'tdsapp-todo'), join(viaFolder, '.claude', 'skills', 'tdsapp-todo'));
     expect(await findTodoScript(viaFolder)).toBeNull();
   });
 
   it('accepts a link that stays inside the brain', async () => {
     const root = makeBrain(null);
     writeFileSync(join(root, 'real.cjs'), FAKE_SCRIPT);
-    mkdirSync(join(root, '.claude', 'skills', 'todo', 'scripts'), { recursive: true });
+    mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
     symlinkSync(join(root, 'real.cjs'), join(root, TODO_SCRIPT));
     expect(await findTodoScript(root)).toBe(realpathSync(join(root, 'real.cjs')));
   });
@@ -262,7 +284,7 @@ describe('createTodoSkillRunner', () => {
     const starts = readLog(log).filter((c) => c.at === 'start');
     expect(starts.map((c) => c.argv[1])).toEqual(['add', 'edit', 'due', 'assignee', 'delete']);
     expect(starts.map((c) => JSON.parse(c.stdin))).toEqual([
-      { title: 'Call Ben', due: '', assignee: 'sam' },
+      { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Brain App' },
       { file: 'a.md', title: 'T', body: 'D' },
       { file: 'a.md', due: '2026-12-01' },
       { file: 'a.md', assignee: '' },
@@ -409,5 +431,51 @@ describe('createTodoSkillRunner', () => {
     expect(first.status).toBe('rejected');
     expect(second.status).toBe('rejected');
     expect(readLog(failing.log).filter((l) => l.at === 'start')).toHaveLength(2);
+  });
+});
+
+describe('findTodoSkill', () => {
+  function skillDir(root: string, skill: string, script: string | null = FAKE_SCRIPT) {
+    mkdirSync(join(root, '.claude', 'skills', skill, 'scripts'), { recursive: true });
+    if (script !== null)
+      writeFileSync(
+        join(root, '.claude', 'skills', skill, 'scripts', skill === 'todo' ? 'todo.cjs' : 'tdsapp-todo.cjs'),
+        script,
+      );
+  }
+
+  it('is null when neither skill folder exists', async () => {
+    expect(await findTodoSkill(tempDir('tba-empty-'))).toBeNull();
+  });
+
+  it('prefers tdsapp-todo and gives its script', async () => {
+    const root = makeBrain(null);
+    skillDir(root, 'todo');
+    skillDir(root, 'tdsapp-todo');
+    const found = await findTodoSkill(root);
+    expect(found?.skill).toBe('tdsapp-todo');
+    expect(found?.script).toBe(realpathSync(join(root, TODO_SCRIPT)));
+  });
+
+  it('uses todo when tdsapp-todo has no folder', async () => {
+    const root = makeBrain(null);
+    skillDir(root, 'todo');
+    const found = await findTodoSkill(root);
+    expect(found?.skill).toBe('todo');
+    expect(found?.script).toBe(realpathSync(join(root, '.claude/skills/todo/scripts/todo.cjs')));
+  });
+
+  it('does not fall back to todo when tdsapp-todo is there without a script', async () => {
+    const root = makeBrain(null);
+    skillDir(root, 'todo');
+    skillDir(root, 'tdsapp-todo', null);
+    expect(await findTodoSkill(root)).toEqual({ skill: 'tdsapp-todo', script: null });
+  });
+
+  it("maps the script's exit 2 with status 409 to 'changed', with the plain message", async () => {
+    const { root, env } = setup({ exit: 2, out: '{"error":"changed since read","status":409}' });
+    const result = await codeOf(createTodoSkillRunner(root, { env }).run({ kind: 'delete', id: 'a.md' }));
+    expect(result?.code).toBe('changed');
+    expect(result?.message).toBe(TODO_CHANGE_MESSAGES.changed);
   });
 });

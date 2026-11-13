@@ -23,6 +23,7 @@ const todo = (id: string, title: string, due: string | null = null): TodoItem =>
   created: null,
   source: null,
   details: '',
+  version: 'v1',
   assignee: 'sam-example',
   due,
   surfaceDate: null,
@@ -73,6 +74,7 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
       othersCount: 2,
       team: [],
       changes: 'no-skill',
+      canAddOpen: false,
     },
     sessions: {
       live: [],
@@ -172,6 +174,7 @@ describe('To-dos drawer', () => {
         othersCount: 0,
         team: [],
         changes: 'no-skill',
+        canAddOpen: false,
       },
     });
     render(<TodosDrawer />);
@@ -196,6 +199,7 @@ describe('To-dos drawer', () => {
         othersCount: 0,
         team: [],
         changes: 'no-skill',
+        canAddOpen: false,
       },
     });
     render(<TodosDrawer />);
@@ -214,6 +218,7 @@ describe('To-dos drawer', () => {
         othersCount: 1,
         team: [],
         changes: 'no-skill',
+        canAddOpen: false,
       },
     });
     render(<TodosDrawer />);

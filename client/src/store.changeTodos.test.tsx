@@ -33,12 +33,14 @@ const list = (title: string): TodoList => ({
       created: null,
       source: null,
       details: '',
+      version: 'v1',
     },
   ],
   open: [],
   othersCount: 0,
   team: [],
   changes: 'on',
+  canAddOpen: false,
 });
 
 let store: Store | undefined;
@@ -74,7 +76,7 @@ describe('store.changeTodos', () => {
       result = await store?.changeTodos(actions);
     });
     expect(api.changeTodo.mock.calls.map((c) => (c[0] as TodoAction).kind)).toEqual(['edit', 'due']);
-    expect(result).toEqual({ done: 1, error: { code: 'internal', message: 'Bad date.' } });
+    expect(result).toMatchObject({ done: 1, error: { code: 'internal', message: 'Bad date.' } });
     expect(store?.todos?.mine[0]?.title).toBe('after first');
   });
 
@@ -266,5 +268,65 @@ describe('store.holdTodo (undo)', () => {
     });
     expect(store?.actionError).toBe('That to-do could not be found.');
     expect(store?.heldTodos).toEqual([]);
+  });
+
+  const withVersions = (title: string, version: string): TodoList => {
+    const l = list(title);
+    for (const t of l.mine) t.version = version;
+    return l;
+  };
+  const boot = async () => {
+    api.bootstrap.mockRejectedValue(new Error('no boot'));
+    api.todos.mockResolvedValue(list('start'));
+    api.sessions.mockResolvedValue({ live: [], past: [] });
+    api.changeTodo.mockReset();
+    render(
+      <StoreProvider>
+        <Grab />
+      </StoreProvider>,
+    );
+  };
+
+  it('gives each later step the version the previous step returned, and keeps the first as sent', async () => {
+    await boot();
+    api.changeTodo
+      .mockResolvedValueOnce(withVersions('one', 'v2'))
+      .mockResolvedValueOnce(withVersions('two', 'v3'));
+    let result: ChangeTodosResult | undefined;
+    await act(async () => {
+      result = await store?.changeTodos([
+        { kind: 'edit', id: 'a.md', title: 'T', expect: 'v1' },
+        { kind: 'due', id: 'a.md', due: '2030-01-01', expect: 'stale' },
+      ]);
+    });
+    expect(api.changeTodo.mock.calls.map((c) => (c[0] as { expect?: string }).expect)).toEqual(['v1', 'v2']);
+    expect(result?.todos?.mine[0]?.version).toBe('v3');
+  });
+
+  it('stops the save when the to-do is missing from the list a step returned', async () => {
+    await boot();
+    api.changeTodo.mockResolvedValue({ ...list('x'), mine: [] });
+    let result: ChangeTodosResult | undefined;
+    await act(async () => {
+      result = await store?.changeTodos([
+        { kind: 'edit', id: 'a.md', title: 'T', expect: 'v1' },
+        { kind: 'due', id: 'a.md', due: null },
+      ]);
+    });
+    expect(api.changeTodo).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ done: 1, error: { code: 'not-found' } });
+  });
+
+  it('reloads the list on a changed refusal and returns it', async () => {
+    await boot();
+    api.changeTodo.mockRejectedValueOnce(Object.assign(new TestFailure('Changed.'), { code: 'changed' }));
+    api.todos.mockResolvedValue(withVersions('theirs', 'v8'));
+    let result: ChangeTodosResult | undefined;
+    await act(async () => {
+      result = await store?.changeTodos([{ kind: 'edit', id: 'a.md', title: 'T', expect: 'v1' }]);
+    });
+    expect(result?.error).toEqual({ code: 'changed', message: 'Changed.' });
+    expect(result?.todos?.mine[0]?.version).toBe('v8');
+    expect(store?.todos?.mine[0]?.title).toBe('theirs');
   });
 });

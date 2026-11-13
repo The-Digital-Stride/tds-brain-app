@@ -41,6 +41,7 @@ describe('todoChatDraft', () => {
       created: null,
       source: null,
       details: '',
+      version: 'v1',
       assignee: null,
       due: null,
       surfaceDate: null,

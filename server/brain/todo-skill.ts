@@ -25,8 +25,7 @@ export const TODO_CHANGE_MESSAGES = {
   'bad-request': "That change wasn't understood. Check the title and date, then try again.",
   'not-found': 'That to-do could not be found. It may have been finished, deleted or passed on.',
   'not-allowed': "Changing to-dos isn't available to you in the app yet.",
-  changed:
-    "Someone changed this to-do since you opened it, so your change wasn't saved. Check the latest version below, then save again.",
+  changed: "Someone else changed this to-do since you opened it, so your change wasn't made.",
   internal: 'The change could not be made. Try again.',
 } as const satisfies Record<TodoChangeErrorCode, string>;
 

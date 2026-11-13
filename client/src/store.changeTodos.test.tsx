@@ -270,6 +270,34 @@ describe('store.holdTodo (undo)', () => {
     expect(store?.heldTodos).toEqual([]);
   });
 
+  it('tells the person how to carry on when a held change is refused as changed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await start();
+    api.changeTodo.mockRejectedValue(
+      Object.assign(
+        new TestFailure('Someone else changed this to-do since you opened it, so your change was not made.'),
+        {
+          code: 'changed',
+        },
+      ),
+    );
+    act(() =>
+      store?.holdTodo({
+        todoId: 'a.md',
+        title: 'A',
+        kind: 'delete',
+        label: 'Deleted',
+        action: { kind: 'delete', id: 'a.md', expect: 'v1' },
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);
+    });
+    expect(store?.actionError).toBe(
+      'Someone else changed this to-do since you opened it, so your change was not made. Open it to see the latest, then try again.',
+    );
+  });
+
   const withVersions = (title: string, version: string): TodoList => {
     const l = list(title);
     for (const t of l.mine) t.version = version;

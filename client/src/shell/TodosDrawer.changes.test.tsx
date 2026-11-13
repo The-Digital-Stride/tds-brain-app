@@ -183,7 +183,9 @@ describe('To-dos drawer, changing to-dos', () => {
     type('Due date', '2030-03-03');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(
-      await screen.findByText('Some changes were saved, but not all. Check the to-do and save again.'),
+      await screen.findByText(
+        'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
+      ),
     ).toBeTruthy();
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
   });
@@ -358,20 +360,87 @@ describe('To-dos drawer, conflict check and open adds', () => {
   it('on a changed refusal keeps the editor and draft, shows the message and adopts the new version', async () => {
     changeTodos.mockResolvedValueOnce({
       done: 0,
-      error: { code: 'changed', message: 'Someone changed this to-do. Check it, then save again.' },
+      error: { code: 'changed', message: 'Someone else changed this.' },
       todos: list('on', [todo({ title: 'Theirs', version: 'v7' })]),
     });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
     type('Title', 'Mine');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    const msg = await screen.findByText('Someone changed this to-do. Check it, then save again.');
+    const msg = await screen.findByText('Someone else changed this. Your changes are still here.');
     expect(msg.getAttribute('role')).toBe('status');
     expect(msg.getAttribute('data-tone')).toBe('error');
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
     expect(changeTodos.mock.calls[1]?.[0][0]).toMatchObject({ kind: 'edit', title: 'Mine', expect: 'v7' });
+  });
+
+  it('rebases on a changed refusal: only what the person edited is sent, and the note lists the differences', async () => {
+    const fresh = list('on', [
+      todo({ title: 'Theirs', due: '2031-05-05', details: 'Ben notes', version: 'v7' }),
+    ]);
+    changeTodos.mockImplementationOnce(async () => {
+      store.current.todos = fresh; // the store reloads the list
+      return { done: 0, error: { code: 'changed', message: 'Someone else changed this.' }, todos: fresh };
+    });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Mine');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/Your changes are still here/);
+    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe('Ben notes');
+    expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe('2031-05-05');
+    const note = screen.getByText(/Someone else changed this to-do while you were editing/);
+    expect(note.textContent).toContain('\u201cTheirs\u201d');
+    expect(note.textContent).not.toContain('different details');
+    expect(note.textContent).toContain('Press Save to replace it with yours, or Cancel to keep theirs.');
+    expect(screen.getByRole('form', { name: /^Edit/ }).getAttribute('aria-describedby')).toBe(note.id);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
+    expect(changeTodos.mock.calls[1]?.[0]).toEqual([
+      { kind: 'edit', id: 't1.md', title: 'Mine', expect: 'v7' },
+    ]);
+  });
+
+  it('keeps text typed while a failing save is in flight', async () => {
+    let fail: (v: unknown) => void = () => {};
+    changeTodos.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          fail = r;
+        }),
+    );
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Mine');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    type('Details', 'typed meanwhile');
+    fail({
+      done: 0,
+      error: { code: 'changed', message: 'Someone else changed this.' },
+      todos: list('on', [todo({ title: 'Theirs', version: 'v7' })]),
+    });
+    await screen.findByText(/Your changes are still here/);
+    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe('typed meanwhile');
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
+  });
+
+  it('Cancel after a conflict closes the editor and the row shows the fresh title', async () => {
+    const fresh = list('on', [todo({ title: 'Theirs', version: 'v7' })]);
+    changeTodos.mockImplementationOnce(async () => {
+      store.current.todos = fresh;
+      return { done: 0, error: { code: 'changed', message: 'Someone else changed this.' }, todos: fresh };
+    });
+    const view = render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    type('Title', 'Mine');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/Your changes are still here/);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    view.rerender(<TodosDrawer />);
+    expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit "Theirs"' })).toBeTruthy();
   });
 
   it('offers Open to anyone when adding only with canAddOpen, and sends assignee null', async () => {
@@ -406,7 +475,7 @@ describe('To-dos drawer, edge cases', () => {
     type('Title', 'Renew it');
     type('Due date', '2030-03-03');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await screen.findByText(/Some changes were saved/);
+    await screen.findByText(/Some of your changes were saved/);
     expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe('2030-03-03');
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Renew it');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

@@ -37,6 +37,29 @@ interface Editing {
   done: (todo: TodoItem) => void;
 }
 
+/**
+ * Moves a draft onto the version now in the brain: fields the person didn't touch take the fresh value,
+ * fields they edited stay as typed. Functional, so text typed while a save was in flight survives.
+ */
+function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean): EditDraft {
+  const now = {
+    title: fresh.title,
+    details: fresh.details,
+    due: fresh.due ?? '',
+    assignee: fresh.assignee ?? '',
+  };
+  const keep = <K extends keyof typeof now>(k: K) => (d[k] === d.base[k] ? now[k] : d[k]);
+  return {
+    title: keep('title'),
+    details: keep('details'),
+    due: keep('due'),
+    assignee: keep('assignee'),
+    version: fresh.version,
+    base: now,
+    ...(conflict ? { theirs: now } : {}),
+  };
+}
+
 const UNDO_VERB: Record<HeldTodo['kind'], string> = {
   tick: 'marking as done',
   delete: 'deleting',
@@ -182,6 +205,7 @@ export function TodosDrawer() {
     due: '',
     assignee: '',
     version: '',
+    base: { title: '', details: '', due: '', assignee: '' },
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessageText] = useState('');
@@ -278,13 +302,13 @@ export function TodosDrawer() {
           open: (t) => {
             setAdding(false);
             setMessage('');
-            setDraft({
+            const fields = {
               title: t.title,
               details: t.details,
               due: t.due ?? '',
               assignee: t.assignee ?? '',
-              version: t.version,
-            });
+            };
+            setDraft({ ...fields, version: t.version, base: fields });
             setEditingId(t.id);
           },
           close: () => {
@@ -305,13 +329,17 @@ export function TodosDrawer() {
               const fresh = result.todos
                 ? [...result.todos.mine, ...result.todos.open].find((t) => t.id === todo.id)
                 : undefined;
-              if (fresh) setDraft({ ...draft, version: fresh.version });
               if (result.error.code === 'changed') {
-                setMessage(result.error.message, true);
+                if (fresh) setDraft((d) => rebase(d, fresh, true));
+                setMessage(`${result.error.message} Your changes are still here.`, true);
                 return result;
               }
+              if (fresh) setDraft((d) => rebase(d, fresh, false));
               if (result.done > 0) {
-                setMessage('Some changes were saved, but not all. Check the to-do and save again.', true);
+                setMessage(
+                  'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
+                  true,
+                );
               } else setMessage(result.error.message, true);
               return result;
             }

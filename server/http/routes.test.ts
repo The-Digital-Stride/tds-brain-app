@@ -378,7 +378,7 @@ process.stdin.on('end', () => {
     const sent = await send(brain, { body: { kind: 'delete', id: MINE, expect: 'f'.repeat(64) } });
     expect(sent.status).toBe(409);
     expect(sent.json.error.code).toBe('changed');
-    expect(sent.json.error.message).toContain('Someone changed this to-do');
+    expect(sent.json.error.message).toContain('Someone else changed this to-do');
     expect(calls()).toEqual([]);
   });
 

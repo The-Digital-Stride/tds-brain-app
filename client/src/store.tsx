@@ -603,7 +603,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       // A 'changed' refusal shows like any other held failure. On pagehide (keepalive) nothing can be
       // shown: it fails safe, the change is refused and nothing is written.
-      setActionError(messageOf(err));
+      setActionError(
+        err instanceof ApiFailure && err.code === 'changed'
+          ? `${err.message} Open it to see the latest, then try again.`
+          : messageOf(err),
+      );
     } finally {
       setHeldTodos((list) => list.filter((h) => h.todoId !== held.todoId));
     }

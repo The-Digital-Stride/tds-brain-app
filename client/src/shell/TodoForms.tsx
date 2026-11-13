@@ -6,6 +6,7 @@ import {
   type TodoAction,
   type TodoItem,
 } from '../../../shared/contract.ts';
+import { dueInWords } from '../format.ts';
 import type { ChangeTodosResult } from '../store.tsx';
 
 /** Who a to-do can go to: you first, then the team (not you). */
@@ -161,6 +162,29 @@ export interface EditDraft {
   assignee: string;
   /** TodoItem.version when the editor opened (or the fresh one adopted after a 'changed' refusal). */
   version: string;
+  /** The field values the editor opened with (or last rebased on), to tell what the person edited. */
+  base: { title: string; details: string; due: string; assignee: string };
+  /** After a 'changed' refusal: what the other person's version says, to show beside the draft. */
+  theirs?: { title: string; due: string; assignee: string; details: string };
+}
+
+/** The sentence describing how the other person's version differs from the draft, or null if it doesn't. */
+export function conflictNote(
+  theirs: NonNullable<EditDraft['theirs']>,
+  draft: EditDraft,
+  team: TeamMember[],
+  me: string,
+): string {
+  const parts: string[] = [];
+  if (theirs.title !== draft.title.trim()) parts.push(`\u201c${theirs.title}\u201d`);
+  if (theirs.due !== draft.due) parts.push(theirs.due ? `due ${dueInWords(theirs.due)}` : 'with no due date');
+  if (theirs.assignee !== draft.assignee) {
+    const name = theirs.assignee === me ? 'you' : team.find((m) => m.slug === theirs.assignee)?.name;
+    parts.push(theirs.assignee === '' ? 'open to anyone' : `assigned to ${name ?? theirs.assignee}`);
+  }
+  if (theirs.details !== draft.details) parts.push('with different details');
+  const theirsText = parts.length > 0 ? ` Their version: ${parts.join(', ')}.` : '';
+  return `Someone else changed this to-do while you were editing.${theirsText} Press Save to replace it with yours, or Cancel to keep theirs.`;
 }
 
 /** The inline editor that replaces a to-do's row. */
@@ -195,6 +219,12 @@ export function TodoEditor({
   const setDue = (v: string) => onDraft({ ...draft, due: v });
   const setAssignee = (v: string) => onDraft({ ...draft, assignee: v });
   const titleRef = useRef<HTMLInputElement>(null);
+  const conflictRef = useRef<HTMLParagraphElement>(null);
+  const hasConflict = draft.theirs !== undefined;
+  // Bring the conflict note into view without moving focus off Save.
+  useEffect(() => {
+    if (hasConflict) conflictRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [hasConflict]);
   // Focus the title on opening.
   useEffect(() => {
     titleRef.current?.focus();
@@ -220,7 +250,13 @@ export function TodoEditor({
   };
 
   return (
-    <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label={`Edit "${todo.title}"`}>
+    <form
+      className="todo-form"
+      onSubmit={submit}
+      onKeyDown={onKeyDown}
+      aria-label={`Edit "${todo.title}"`}
+      aria-describedby={draft.theirs ? `${uid}-conflict` : undefined}
+    >
       <div className="todo-field">
         <label htmlFor={`${uid}-title`}>Title</label>
         <input
@@ -284,6 +320,11 @@ export function TodoEditor({
         <label htmlFor={`${uid}-who`}>Assigned to</label>
         <Assignee id={`${uid}-who`} value={assignee} onChange={setAssignee} me={me} team={team} allowOpen />
       </div>
+      {draft.theirs ? (
+        <p className="todo-note" id={`${uid}-conflict`} ref={conflictRef}>
+          {conflictNote(draft.theirs, draft, team, me)}
+        </p>
+      ) : null}
       <div className="todo-actions">
         <button type="submit" className="btn" data-variant="primary" disabled={!canSave}>
           Save

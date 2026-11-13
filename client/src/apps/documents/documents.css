@@ -1,6 +1,6 @@
 /*
  * The Documents app: only what is particular to documents. The rest (tools, tray and cards, rows,
- * the selection bar, the panel) is `../shared/library.css`. A row reads like a line in a table: what
+ * the inline Open, the panel) is `../shared/library.css`. Documents have no ticks: one at a time. A row reads like a line in a table: what
  * it is on the left, then when it last changed.
  */
 /* A grid tile is a page: portrait, so a PDF's first page or a slide fills it without a band. */

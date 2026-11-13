@@ -162,6 +162,16 @@ describe('ImagesSheet', () => {
     expect(brand.querySelector('ul')?.hasAttribute('hidden')).toBe(false);
   });
 
+  it('Open on a tile or row shows an image straight away; one the app cannot show has no Open', async () => {
+    render(<ImagesSheet />);
+    await card('Photography');
+    expect(screen.queryByRole('button', { name: 'Open odd.svg' })).toBeNull();
+    // Images keep their ticks for picking several.
+    expect(screen.getByRole('checkbox', { name: 'Select acme-mark.png' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open van-front.jpg' }));
+    expect(imagesStore.get()).toMatchObject({ current: van, viewing: van });
+  });
+
   it('draws the first 60 of a long card until Show all is pressed', async () => {
     const many = Array.from({ length: 75 }, (_, i) => item({ id: `client:acme.m${i}`, name: `p${i}.png` }));
     api.library.mockResolvedValue(listing('client:acme', many, ['Brand']));

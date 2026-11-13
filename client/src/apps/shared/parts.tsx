@@ -194,6 +194,27 @@ export function SelectionBar({
 }
 
 /**
+ * Open on a row or tile, for a file the app can show (pass `onView: null` otherwise): straight to the viewer, without choosing the item
+ * and then pressing Open in the panel. It sits above the item's own button (which fills the item), and
+ * shows on hover, on focus, on the chosen item and always on touch (`library.css`).
+ */
+export function ViewButton({ title, onView }: { title: string; onView: (() => void) | null }) {
+  // A file the app can't show keeps the button's room, so a row's columns line up with the others.
+  if (!onView) return <span className="lib-view-gap" aria-hidden="true" />;
+  return (
+    <button
+      type="button"
+      className="btn lib-view"
+      data-size="small"
+      aria-label={`Open ${title}`}
+      onClick={onView}
+    >
+      Open
+    </button>
+  );
+}
+
+/**
  * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can) or
  * ask Claude about it; then download it or copy where it is. Open is the main action when it is there.
  */

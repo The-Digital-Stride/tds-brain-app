@@ -155,14 +155,14 @@ its own sheet-bar buttons and right-panel body. It builds from the shared pieces
 its own: `.field` for pickers and search, `Seg` for any one-of-many choice (including filters,
 labelled "Name, count"), the `.tray` with one `.card` per group (`.card-head`: title, `.count`, a
 quiet button on the right), `.line` rows or tiles inside the card, `.tick` in `label.tick-hit` for
-picking, `.kv` rows and `.chip` tags in the panel, `.btn` for actions, `.glass` for a floating
+picking several (only where that is worth it: Images has ticks, Documents doesn't), `.kv` rows and `.chip` tags in the panel, `.btn` for actions, `.glass` for a floating
 action bar. Sheet padding 12px 16px 16px, gap 8px.
 
 Every app declares `search` (global search); a new list or inventory is searchable from Search or jump to. An app's `AppSlot.search` is a `SearchSource` kept outside its lazy UI chunk (`search.ts` in the app's folder), with a hit that opens the item (`SearchActions`); `client/src/shell/apps.test.ts` fails for a `search: null` that has no reason listed. The palette's groups: Go to (derived from the apps), To-dos, Open chats, Skills, Clients, Earlier chats, then the apps' own, async ones last. Six per group, with "6 of N" beside the heading when there are more; "Still looking…" beside it while the server builds more; a hit's second line is the client, the scope name or "My personal files".
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
 with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,
-then a quiet small `btn` "Show all N"), `SelectionBar`, `LibraryBar` (Back, details), `DetailActions`,
+then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline Open), `LibraryBar` (Back, details), `DetailActions`,
 `LibraryNotice` (loading, failed with "Try again", empty), `Thumb`, `Viewer`, the data hooks and a
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples
@@ -171,7 +171,7 @@ list the real files the server finds; nothing is sample data.
 | App | What is its own |
 |---|---|
 | `client/src/apps/images` | Grid or list. Tiles: padding 8px, radius 10, 2px apart, picture box 3:2 with a hairline edge, the picture contained at its own proportions. No picture (or one that fails to load): the standard tile, the `image` line icon centred in the same box. Meta: the dimensions, else the size. |
-| `client/src/apps/documents` | Rows that read like a table: a 32px flat white box with a line icon for the file's kind, title and meta ("PDF, 840 KB"), then the date changed (80px, right-aligned, 12px; gone under 480px of sheet, it is in the panel). Grid or list (list by default). Tiles as in Images, but the picture box is 3:4. On a Mac, Quick Look draws the first page of PDFs, Word, Excel and PowerPoint; other files (web pages too: Quick Look would load local files into them), and every file elsewhere, show their format icon in the same box. In the panel: the preview (square when there is a picture, 3:2 with the icon when not), then the title and file name. |
+| `client/src/apps/documents` | Rows that read like a table: a 32px flat white box with a line icon for the file's kind, title and meta ("PDF, 840 KB"), then the date changed (80px, right-aligned, 12px; gone under 480px of sheet, it is in the panel). Grid or list (list by default). Tiles as in Images, but the picture box is 3:4. No ticks: one document at a time, through its row or the panel (Ian, 2026-11-13: the panel already does what the selection bar did). On a Mac, Quick Look draws the first page of PDFs, Word, Excel and PowerPoint; other files (web pages too: Quick Look would load local files into them), and every file elsewhere, show their format icon in the same box. In the panel: the preview (square when there is a picture, 3:2 with the icon when not), then the title and file name. |
 
 In both panels the `.kv` row for a card is labelled "Group" (it is a card name, not always a folder).
 
@@ -189,9 +189,17 @@ clients. With auto, Send works the client out from the first message (`POST /api
 a `.pending` card above the composer asks "Which client is this for?" (`ClientAsk`: a `.btn` per likely
 client, "No client", an "Another client…" `.field` select, "Cancel"; Escape cancels and the text
 stays in the box). A chat opened from search (a client) or a to-do (its client) starts with that client
-chosen. Choosing the client an app already shows keeps what is ticked, open and in the panel.
+chosen. Choosing the client an app already shows keeps what is ticked (Images), open and in the panel.
 
-Opening a file ("Open" in the panel) swaps the sheet's list for the viewer and adds a quiet small
+Every row and tile for a file the app can show has its own **Open** (`ViewButton`, Ian, 2026-11-13:
+saves choosing the item and then pressing Open in the panel): a standard small `.btn`, named "Open
+<title>" for screen readers, at the end of a row (after the date) or on the top right corner of a
+tile's picture (a tile's tick is top left). It shows on hover, on keyboard focus, on the chosen item
+and always where nothing hovers (`hover: none`), fading in (opacity only, so nothing moves). A row for a
+file the app can't show keeps the same 56px empty, so the columns line up. It opens the viewer
+straight away and makes the item the chosen one.
+
+Opening a file ("Open" on the item or in the panel, or a file chosen in Search or jump to) swaps the sheet's list for the viewer and adds a quiet small
 "Back to ..." button to the sheet bar. When the panel floats, Open also closes it, and the viewer takes
 focus once the sheet is live again. The list stays mounted, hidden, so Back (or Escape inside the
 viewer) restores its scroll and puts focus on the item. The viewer sits on a `.tray` like the lists,

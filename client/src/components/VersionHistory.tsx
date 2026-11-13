@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { VersionNotes } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
+import { Fold } from '../shell/Fold.tsx';
 
 /** The commit types the version hook records, in plain words. Anything else shows no label. */
 const KIND_WORDS: Record<string, string> = {
@@ -56,12 +57,11 @@ export function VersionHistory({ current }: { current: string }) {
       <ol className="version-list">
         {shown.map((v, i) => (
           <li key={v.version}>
-            <details className="version" open={i === 0}>
-              <summary className="version-summary">
-                Version {v.version}
-                {v.date ? `, ${longDate(v.date)}` : ''}
-                {v.version === current ? ' (this version)' : ''}
-              </summary>
+            {/* The drawers' own fold, so the chevron and open/close match the to-do list. */}
+            <Fold
+              title={`Version ${v.version}${v.date ? `, ${longDate(v.date)}` : ''}${v.version === current ? ' (this version)' : ''}`}
+              defaultOpen={i === 0}
+            >
               <ul className="version-changes">
                 {v.changes.map((c, j) => (
                   // Changes have no id; the list never reorders.
@@ -74,7 +74,7 @@ export function VersionHistory({ current }: { current: string }) {
                   </li>
                 ))}
               </ul>
-            </details>
+            </Fold>
           </li>
         ))}
       </ol>

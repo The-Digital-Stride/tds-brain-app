@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const changelog = vi.fn();
@@ -36,34 +36,39 @@ describe('VersionHistory', () => {
   it('lists every version newest first, each folding open and closed, with only the newest open', async () => {
     changelog.mockResolvedValue({ versions: VERSIONS });
     const { container } = render(<VersionHistory current="0.6.0" />);
-    await waitFor(() => expect(container.querySelectorAll('details')).toHaveLength(3));
-    const folds = [...container.querySelectorAll('details')];
-    expect(folds.map((d) => d.open)).toEqual([true, false, false]);
-    expect(folds.map((d) => d.querySelector('summary')?.textContent)).toEqual([
+    await waitFor(() => expect(container.querySelectorAll('.fold')).toHaveLength(3));
+    const heads = screen.getAllByRole('button', { name: /^Version / });
+    expect(heads.map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(heads.map((b) => b.textContent)).toEqual([
       'Version 0.6.0, 13 November 2026 (this version)',
       'Version 0.5.0, 12 November 2026',
       'Version 0.4.0',
     ]);
+    fireEvent.click(heads[1] as HTMLElement);
+    expect(heads[1]?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it("uses the same fold and chevron as the drawers, not the browser's own arrow", async () => {
+    changelog.mockResolvedValue({ versions: VERSIONS });
+    const { container } = render(<VersionHistory current="0.6.0" />);
+    await waitFor(() => expect(container.querySelectorAll('.fold')).toHaveLength(3));
+    expect(container.querySelector('details')).toBeNull();
+    for (const head of container.querySelectorAll('.fold-head > button')) {
+      expect(head.querySelector('svg.icon')).not.toBeNull();
+    }
   });
 
   it('says what kind each change is in plain words, with a capital letter', async () => {
     changelog.mockResolvedValue({ versions: VERSIONS });
     const { container } = render(<VersionHistory current="0.6.0" />);
-    await waitFor(() => expect(container.querySelectorAll('details')).toHaveLength(3));
-    const first = container.querySelectorAll('details')[0] as HTMLElement;
-    expect(
-      within(first)
-        .getAllByRole('listitem')
-        .map((li) => li.textContent),
-    ).toEqual(['New: tdsapp-todo skill v0.3', 'Fixed: Keep a teammate’s fields']);
-    const second = container.querySelectorAll('details')[1] as HTMLElement;
-    expect(
-      within(second)
-        .getAllByRole('listitem')
-        .map((li) => li.textContent),
-    ).toEqual(['Plain change', 'New: Add, edit and pass on']);
-    const third = container.querySelectorAll('details')[2] as HTMLElement;
-    expect(within(third).getByRole('listitem').textContent).toBe('Faster: Faster lists');
+    await waitFor(() => expect(container.querySelectorAll('.fold')).toHaveLength(3));
+    const changes = (n: number) =>
+      [
+        ...(container.querySelectorAll('.fold')[n] as HTMLElement).querySelectorAll('.version-changes > li'),
+      ].map((li) => li.textContent);
+    expect(changes(0)).toEqual(['New: tdsapp-todo skill v0.3', 'Fixed: Keep a teammate’s fields']);
+    expect(changes(1)).toEqual(['Plain change', 'New: Add, edit and pass on']);
+    expect(changes(2)).toEqual(['Faster: Faster lists']);
   });
 
   it('says so when the history cannot be loaded, or is empty', async () => {
@@ -84,9 +89,9 @@ describe('VersionHistory', () => {
     }));
     changelog.mockResolvedValue({ versions: many });
     const { container } = render(<VersionHistory current="0.7.0" />);
-    await waitFor(() => expect(container.querySelectorAll('details')).toHaveLength(5));
+    await waitFor(() => expect(container.querySelectorAll('.fold')).toHaveLength(5));
     fireEvent.click(screen.getByRole('button', { name: 'Show older versions (2)' }));
-    expect(container.querySelectorAll('details')).toHaveLength(7);
+    expect(container.querySelectorAll('.fold')).toHaveLength(7);
     expect(screen.queryByRole('button', { name: /Show older/ })).toBeNull();
   });
 });

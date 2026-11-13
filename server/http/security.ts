@@ -3,7 +3,7 @@
  * can be tested without a socket.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { APP_HOST, type ApiErrorCode, ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
+import { APP_HOST, type ApiErrorCode, ROUTES, sessionCookieName } from '../../shared/contract.ts';
 import {
   AUTH_COOKIE_MAX_AGE_SECONDS,
   PUBLIC_ICON_PATTERN,
@@ -149,8 +149,12 @@ export function parseCookies(cookieHeader: string | undefined): Record<string, s
   return out;
 }
 
-export function hasValidSession(cookieHeader: string | undefined, launchToken: string): boolean {
-  const got = parseCookies(cookieHeader)[SESSION_COOKIE];
+export function hasValidSession(
+  cookieHeader: string | undefined,
+  launchToken: string,
+  port: number,
+): boolean {
+  const got = parseCookies(cookieHeader)[sessionCookieName(port)];
   if (!got) return false;
   return safeEqual(got, cookieValueFor(launchToken));
 }
@@ -225,7 +229,7 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
       : reject(405, 'bad-request', 'That is not something this page does.');
   }
 
-  if (!hasValidSession(header(req.headers, 'cookie'), ctx.launchToken)) {
+  if (!hasValidSession(header(req.headers, 'cookie'), ctx.launchToken, ctx.port)) {
     if (!isApi && (method === 'GET' || method === 'HEAD')) return { action: 'launcher' };
     return reject(401, 'unauthorised', 'Open TDS Brain from its launcher to sign in to the app.');
   }
@@ -334,14 +338,19 @@ export type AuthResult = { ok: true; setCookie: string } | { ok: false };
  * The session cookie's `Set-Cookie` header. The one place it is built: `/auth` sets it and every
  * signed-in `GET /api/bootstrap` re-sends it unchanged, so the 400 days restart on each visit (6a).
  */
-export function sessionSetCookie(launchToken: string): string {
-  return `${SESSION_COOKIE}=${cookieValueFor(launchToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}`;
+export function sessionSetCookie(launchToken: string, port: number): string {
+  return `${sessionCookieName(port)}=${cookieValueFor(launchToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}`;
 }
 
 /** `/auth?code=…`: swap a single-use code for the session cookie. */
-export function authExchange(code: string | null | undefined, codes: AuthCodes, secret: string): AuthResult {
+export function authExchange(
+  code: string | null | undefined,
+  codes: AuthCodes,
+  secret: string,
+  port: number,
+): AuthResult {
   if (!codes.redeem(code)) return { ok: false };
-  return { ok: true, setCookie: sessionSetCookie(secret) };
+  return { ok: true, setCookie: sessionSetCookie(secret, port) };
 }
 
 /** Proves knowledge of the launch token for a nonce, without revealing the token or the cookie. */

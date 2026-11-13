@@ -290,6 +290,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     underService: deps.underService,
     serverStartedAt,
     launchToken: deps.launchToken,
+    port: deps.port,
     log,
   };
 
@@ -352,7 +353,12 @@ export function createAppServer(deps: ServerDeps): AppServer {
         }
         case 'auth': {
           // Only a single-use code works here; the old `?token=` is ignored (A15).
-          const result = authExchange(url.searchParams.get('code'), deps.authCodes, deps.launchToken);
+          const result = authExchange(
+            url.searchParams.get('code'),
+            deps.authCodes,
+            deps.launchToken,
+            deps.port,
+          );
           if (!result.ok) {
             sendHtml(res, 403, FAILED_CODE_PAGE, method);
             return;

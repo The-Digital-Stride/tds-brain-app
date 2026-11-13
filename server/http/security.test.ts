@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
+import { ROUTES, SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { AUTH_COOKIE_MAX_AGE_SECONDS, PUBLIC_PATHS } from '../../shared/install-contract.ts';
 import {
   AUTH_CODE_TTL_MS,
@@ -10,6 +10,7 @@ import {
   codeProof,
   cookieValueFor,
   createAuthCodes,
+  hasValidSession,
   isAllowedHost,
   isAllowedOrigin,
   isJsonContentType,
@@ -317,7 +318,7 @@ describe('/auth exchange (A15: single-use, 60-second codes)', () => {
     const { c } = codes();
     const code = c.mint();
     expect(code).toMatch(/^[A-Za-z0-9_-]{20,}$/);
-    const r = authExchange(code, c, TOKEN);
+    const r = authExchange(code, c, TOKEN, PORT);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.setCookie).toContain(`${SESSION_COOKIE}=${COOKIE}`);
@@ -327,24 +328,24 @@ describe('/auth exchange (A15: single-use, 60-second codes)', () => {
     expect(r.setCookie).toContain(`Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}`);
     expect(AUTH_COOKIE_MAX_AGE_SECONDS).toBe(400 * 24 * 60 * 60);
     // Built in one place, shared with the bootstrap renewal, so the two can't drift apart.
-    expect(r.setCookie).toBe(sessionSetCookie(TOKEN));
-    expect(authExchange(code, c, TOKEN).ok).toBe(false);
+    expect(r.setCookie).toBe(sessionSetCookie(TOKEN, PORT));
+    expect(authExchange(code, c, TOKEN, PORT).ok).toBe(false);
   });
 
   it('refuses an expired code', () => {
     const { c, tick } = codes();
     const code = c.mint();
     tick(AUTH_CODE_TTL_MS + 1);
-    expect(authExchange(code, c, TOKEN).ok).toBe(false);
+    expect(authExchange(code, c, TOKEN, PORT).ok).toBe(false);
   });
 
   it('refuses a wrong or missing code, and the old long-lived token', () => {
     const { c } = codes();
     c.mint();
-    expect(authExchange('wrong', c, TOKEN).ok).toBe(false);
-    expect(authExchange(null, c, TOKEN).ok).toBe(false);
-    expect(authExchange('', c, TOKEN).ok).toBe(false);
-    expect(authExchange(TOKEN, c, TOKEN).ok).toBe(false);
+    expect(authExchange('wrong', c, TOKEN, PORT).ok).toBe(false);
+    expect(authExchange(null, c, TOKEN, PORT).ok).toBe(false);
+    expect(authExchange('', c, TOKEN, PORT).ok).toBe(false);
+    expect(authExchange(TOKEN, c, TOKEN, PORT).ok).toBe(false);
   });
 
   it('caps the number of live codes', () => {
@@ -364,7 +365,7 @@ describe('/auth/code (launcher asks for a code by proving it knows the secret)',
     const r = c.issueForLauncher(NONCE, codeProof(TOKEN, NONCE));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(authExchange(r.code, c, TOKEN).ok).toBe(true);
+    expect(authExchange(r.code, c, TOKEN, PORT).ok).toBe(true);
   });
 
   it('refuses a wrong proof, a ping proof, a short nonce and a replayed nonce', () => {
@@ -474,7 +475,7 @@ describe('/auth/ping (is the app on this port really TDS Brain?)', () => {
 
 describe('session cookie header (decision 6a)', () => {
   it('is the same value with HttpOnly, SameSite=Strict, Path=/ and a 400-day Max-Age', () => {
-    expect(sessionSetCookie(TOKEN)).toBe(
+    expect(sessionSetCookie(TOKEN, PORT)).toBe(
       `${SESSION_COOKIE}=${COOKIE}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${400 * 24 * 60 * 60}`,
     );
   });
@@ -629,5 +630,31 @@ describe('a planted service worker (Service-Worker: script)', () => {
     ).toEqual({
       action: 'launcher',
     });
+  });
+});
+
+describe('session cookie name per port (a test copy never signs the live app out)', () => {
+  it('keeps the original name on the default port and adds the port everywhere else', () => {
+    expect(sessionCookieName(3877)).toBe(SESSION_COOKIE);
+    expect(sessionCookieName(3899)).toBe(`${SESSION_COOKIE}_3899`);
+    expect(sessionSetCookie(TOKEN, 3899)).toMatch(new RegExp(`^${SESSION_COOKIE}_3899=${COOKIE};`));
+  });
+
+  it('accepts only the cookie named for its own port', () => {
+    const live = `${SESSION_COOKIE}=${COOKIE}`;
+    const test = `${SESSION_COOKIE}_3899=${COOKIE}`;
+    expect(hasValidSession(live, TOKEN, 3877)).toBe(true);
+    expect(hasValidSession(live, TOKEN, 3899)).toBe(false);
+    expect(hasValidSession(test, TOKEN, 3899)).toBe(true);
+    expect(hasValidSession(test, TOKEN, 3877)).toBe(false);
+    // The browser sends both when both copies have been signed into; each picks its own.
+    expect(hasValidSession(`${test}; ${SESSION_COOKIE}=other`, TOKEN, 3899)).toBe(true);
+    expect(hasValidSession(`${live}; ${SESSION_COOKIE}_3899=other`, TOKEN, 3877)).toBe(true);
+  });
+
+  it("signs in on another port with that port's cookie", () => {
+    const c = createAuthCodes(TOKEN, () => 5);
+    const r = authExchange(c.mint(), c, TOKEN, 3899);
+    expect(r.ok && r.setCookie.startsWith(`${SESSION_COOKIE}_3899=`)).toBe(true);
   });
 });

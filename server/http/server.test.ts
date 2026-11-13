@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SESSION_COOKIE } from '../../shared/contract.ts';
+import { SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { SETUP_ROUTES } from '../../shared/install-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
@@ -15,7 +15,7 @@ import { type AppServer, createAppServer, LAUNCHER_PAGE, SIGNED_OUT_COPY } from 
 const PORT = 45877;
 const HOST = `127.0.0.1:${PORT}`;
 const TOKEN = 'launch-token-abc123';
-const GOOD_COOKIE = `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`;
+const GOOD_COOKIE = `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`;
 
 const SW = 'self.addEventListener("fetch", () => {});\n';
 const INDEX = '<!doctype html><title>the app</title>';
@@ -281,11 +281,15 @@ describe('GET /api/bootstrap over HTTP (decision 6a)', () => {
   it('renews the cookie with a valid session', async () => {
     const r = await send('/api/bootstrap', { headers: { cookie: GOOD_COOKIE } });
     expect(r.status).toBe(200);
-    expect(r.headers['set-cookie']).toEqual([sessionSetCookie(TOKEN)]);
+    expect(r.headers['set-cookie']).toEqual([sessionSetCookie(TOKEN, PORT)]);
   });
 
   it('sends no cookie without one', async () => {
-    for (const cookie of [undefined, `${SESSION_COOKIE}=nope`]) {
+    for (const cookie of [
+      undefined,
+      `${sessionCookieName(PORT)}=nope`,
+      `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`,
+    ]) {
       const r = await send('/api/bootstrap', cookie ? { headers: { cookie } } : {});
       expect(r.status).toBe(401);
       expect(r.headers['set-cookie']).toBeUndefined();

@@ -620,6 +620,7 @@ describe('GET /api/bootstrap', () => {
       appState,
       underService,
       launchToken: TOKEN,
+      port: 3877,
       log: () => {},
     };
     await handleApi(
@@ -635,7 +636,7 @@ describe('GET /api/bootstrap', () => {
     for (let i = 0; i < 2; i++) {
       const sent = await call(`other=1; ${GOOD_COOKIE}`);
       expect(sent.status).toBe(200);
-      expect(sent.headers['Set-Cookie']).toBe(sessionSetCookie(TOKEN));
+      expect(sent.headers['Set-Cookie']).toBe(sessionSetCookie(TOKEN, 3877));
       expect(sent.headers['Set-Cookie']).toBe(
         `${GOOD_COOKIE}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${400 * 24 * 60 * 60}`,
       );
@@ -695,6 +696,7 @@ describe('bootstrap in setup mode (setup-screen decision 2)', () => {
       appState,
       underService: true,
       launchToken: 'launch-token-abc123',
+      port: 3877,
       log: () => {},
     };
     const sent = { status: 0, body: '' };

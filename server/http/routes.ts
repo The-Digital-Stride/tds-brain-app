@@ -87,6 +87,8 @@ export interface RouteContext {
   serverStartedAt: string;
   /** Only to renew the session cookie on `GET /api/bootstrap` (decision 6a). */
   launchToken: string;
+  /** The port the app listens on; the session cookie's name depends on it (`sessionCookieName`). */
+  port: number;
   log: (line: string) => void;
 }
 
@@ -835,8 +837,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     const body = await bootstrap(ctx);
     // Each visit restarts the cookie's 400 days (6a). The gate already refused anyone without a
     // session; checking again here means a renewal can never be handed out by mistake.
-    if (hasValidSession(req.headers.cookie, ctx.launchToken)) {
-      res.setHeader('Set-Cookie', sessionSetCookie(ctx.launchToken));
+    if (hasValidSession(req.headers.cookie, ctx.launchToken, ctx.port)) {
+      res.setHeader('Set-Cookie', sessionSetCookie(ctx.launchToken, ctx.port));
     }
     sendJson(res, 200, body);
     return;

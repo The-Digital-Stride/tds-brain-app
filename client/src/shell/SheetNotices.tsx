@@ -1,6 +1,8 @@
 import { CLIENT_VERSION, isOutdated } from '../build-version.ts';
+import { useUpdate } from '../state/update.ts';
 import { useStore } from '../store.tsx';
 import type { SheetNoticesProps } from './contract.ts';
+import { UpdateBanner } from './UpdateBanner.tsx';
 
 const UPDATE_TEXT =
   "A new version of TDS Brain is ready. Reload to start using it. Anything you haven't sent will be cleared.";
@@ -11,6 +13,8 @@ const UPDATE_TEXT =
  */
 export function SheetNotices(_: SheetNoticesProps) {
   const { boot, streamUp, actionError, clearError, notice } = useStore();
+  // Stays subscribed even when the banner is hidden, so the tab that started an update still reloads.
+  const { restarting } = useUpdate();
   const outdated = isOutdated(CLIENT_VERSION, boot?.appVersion);
   return (
     <>
@@ -18,6 +22,8 @@ export function SheetNotices(_: SheetNoticesProps) {
       <p className="visually-hidden" role="status" data-testid="update-status">
         {outdated ? UPDATE_TEXT : ''}
       </p>
+      {/* A page that is already out of date only offers Reload. */}
+      {outdated ? null : <UpdateBanner />}
       {outdated ? (
         <div className="update-banner">
           <span>{UPDATE_TEXT}</span>
@@ -32,7 +38,7 @@ export function SheetNotices(_: SheetNoticesProps) {
           </button>
         </div>
       ) : null}
-      {streamUp ? null : (
+      {streamUp || restarting ? null : (
         <div className="offline-banner" role="status">
           Lost touch with TDS Brain. Trying to reconnect.
         </div>

@@ -174,7 +174,8 @@ export interface SheetBarProps {
 
 /**
  * `client/src/shell/SheetNotices.tsx`, no props. The lines every sheet can show, from the store:
- * the offline banner (`streamUp` false), the action error with its Dismiss button (`role="alert"`),
+ * the update banner (`UpdateBanner`: a newer version can be installed, hidden while the page is
+ * already out of date), the offline banner (`streamUp` false), the action error with its Dismiss button (`role="alert"`),
  * and the brief notice (`role="status"`). `App.tsx` mounts it once, at the top of the sheet.
  */
 export type SheetNoticesProps = Record<string, never>;

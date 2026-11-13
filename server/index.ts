@@ -3,7 +3,9 @@
  *
  * Logs are short status lines only: never prompts, replies, tokens or cookie values.
  */
+import { promises as fsp } from 'node:fs';
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
 import { APP_HOST } from '../shared/contract.ts';
 import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
@@ -33,7 +35,13 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createRunner } from './update/run.ts';
+import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
+
+// The update's boot check (`bin/node server/index.ts --check`): reaching here means every import loaded.
+// Nothing below this line has run, so no config is read and nothing is created or started.
+if (process.argv.includes('--check')) process.exit(0);
 
 const noOpen = process.argv.slice(2).includes('--no-open');
 
@@ -117,6 +125,27 @@ const setup = createSetupService({
   restart: () => void shutdown(),
 });
 
+const runner = createRunner();
+const updater = createUpdater({
+  appRoot: config.appRoot,
+  clientDir: config.clientDir,
+  dataDir: config.dataDir,
+  currentVersion: config.appVersion,
+  underService: config.underService,
+  run: runner,
+  nodeBinDir: dirname(process.execPath),
+  nodePath: process.execPath,
+  env: process.env,
+  freeBytes: async (path) => {
+    const s = await fsp.statfs(path);
+    return Number(s.bavail) * Number(s.bsize);
+  },
+  openChats: async () => (await sessions.list()).live.length,
+  restart: () => void shutdown(),
+  log,
+  now: () => new Date(),
+});
+
 const app = createAppServer({
   port: config.port,
   clientDir: config.clientDir,
@@ -124,6 +153,7 @@ const app = createAppServer({
   authCodes,
   appVersion: config.appVersion,
   changelog: createChangelogReader(config.appRoot),
+  updater,
   underService: config.underService,
   brain,
   store,
@@ -161,6 +191,7 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
 
 app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
+  updater.startTimer();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
   logBrainDecision(decision);
@@ -207,6 +238,9 @@ async function shutdown(): Promise<void> {
   shuttingDown = true;
   log('Closing chats and stopping.');
   setTimeout(() => process.exit(1), 20_000).unref();
+  // Stops the timer and any update, and lets a rollback finish; the 20 s timer above bounds it.
+  await updater.abort().catch(() => {});
+  runner.killAll();
   app.stop();
   uploads.close();
   app.server.close();

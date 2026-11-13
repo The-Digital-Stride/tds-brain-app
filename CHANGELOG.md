@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.8.0 — 2026-11-13
+
+- **feat**: prompt to reload when the app has been updated
+
 ## v0.7.0 — 2026-11-13
 
 - **feat**: version history in Settings for owners and scouts

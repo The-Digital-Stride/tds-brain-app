@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.8.2 — 2026-11-13
+
+- **fix**: show/hide toggles are icons only, always at the top right
+
 ## v0.8.1 — 2026-11-13
 
 - **fix**: version history folds use the same chevron as the to-do list

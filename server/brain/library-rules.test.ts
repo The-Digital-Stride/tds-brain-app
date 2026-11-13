@@ -139,6 +139,25 @@ describe('isNeverListed', () => {
     for (const rel of refused) expect(isNeverListed(rel), rel).toBe(true);
   });
 
+  it('refuses personal to-dos: they are to-dos, not documents (the folder itself too, so a walk never goes in)', () => {
+    const refused = [
+      'personal/todo',
+      'personal/todo/20261113-feed-the-cat.md',
+      'personal/todo/done/20261101-x.md',
+      'personal/todo/deleted/20261101-x.md',
+      'personal/Todo/x.md',
+    ];
+    for (const rel of refused) expect(isNeverListed(rel), rel).toBe(true);
+    // Only that one folder: a file or folder merely named "todo" elsewhere is still listed.
+    const allowed = [
+      'personal/todo.md',
+      'personal/todos/x.md',
+      'personal/projects/todo/x.md',
+      'clients/acme/context/brand/style-guide/todo.md',
+    ];
+    for (const rel of allowed) expect(isNeverListed(rel), rel).toBe(false);
+  });
+
   it('allows ordinary places', () => {
     const allowed = [
       'clients/acme/reports/x.pdf',

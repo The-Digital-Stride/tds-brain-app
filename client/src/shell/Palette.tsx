@@ -169,7 +169,11 @@ function PaletteDialog() {
       clientChoice.set(scopeForClient(slug));
     },
     openLibraryItem: (appId, scope, item) => {
-      skipRestore.current = true;
+      // A file gets the room an app gets (see ShellProvider), even when its app is already showing.
+      if (state.drawer) dispatch({ type: 'close-drawer' });
+      // Focus goes to the sheet as the palette shuts (not to body, nor to a closing drawer's rail
+      // button); a viewer then takes it for itself.
+      restoreTo.current = document.getElementById('main');
       openLibraryItem(appId, scope, item);
       openView(`app:${appId}`);
     },

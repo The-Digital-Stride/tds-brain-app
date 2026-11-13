@@ -6,7 +6,14 @@ import { useStore } from '../../store.tsx';
 import { useCopy } from '../shared/copy.ts';
 import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
-import { FolderCard, LibraryBar, LibraryNotice, LibraryTools, SelectionBar } from '../shared/parts.tsx';
+import {
+  FolderCard,
+  LibraryBar,
+  LibraryNotice,
+  LibraryTools,
+  SelectionBar,
+  ViewButton,
+} from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { Viewer } from '../shared/Viewer.tsx';
 import { selectionWords } from '../shared/words.ts';
@@ -29,12 +36,16 @@ function Item({
   current,
   ticked,
   onOpen,
+  onView,
 }: {
   image: LibraryItem;
   layout: 'grid' | 'list';
   current: boolean;
   ticked: boolean;
+  /** Choose the image (its details show in the panel). */
   onOpen: () => void;
+  /** Show it in the viewer straight away. */
+  onView: () => void;
 }) {
   return (
     <li
@@ -67,6 +78,7 @@ function Item({
           <span className="line-meta">{layout === 'list' ? metaWords(image) : tileWords(image)}</span>
         </span>
       </button>
+      <ViewButton title={image.name} onView={image.view ? onView : null} />
     </li>
   );
 }
@@ -153,6 +165,7 @@ export function ImagesSheet() {
                     current={s.current?.id === image.id}
                     ticked={s.ticked.has(image.id)}
                     onOpen={() => open(image)}
+                    onView={() => imagesStore.set({ current: image, viewing: image })}
                   />
                 )}
               />

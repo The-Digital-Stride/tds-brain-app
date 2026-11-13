@@ -3,24 +3,14 @@ import type { DocFormat, LibraryItem } from '../../../../shared/contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
-import { useStore } from '../../store.tsx';
-import { useCopy } from '../shared/copy.ts';
 import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
-import { FolderCard, LibraryBar, LibraryNotice, LibraryTools, SelectionBar } from '../shared/parts.tsx';
+import { FolderCard, LibraryBar, LibraryNotice, LibraryTools, ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { Viewer } from '../shared/Viewer.tsx';
-import { dateWords, selectionWords } from '../shared/words.ts';
+import { dateWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
-import {
-  chatDraft,
-  countWords,
-  filterDocs,
-  metaWords,
-  type Sort,
-  sortDocs,
-  summaryWords,
-} from './library.ts';
+import { filterDocs, metaWords, type Sort, sortDocs, summaryWords } from './library.ts';
 import { docsStore, useDocs } from './store.ts';
 
 const FORMATS: { value: DocFormat | 'all'; label: string }[] = [
@@ -50,29 +40,18 @@ export function DocumentsBar() {
 function Tile({
   doc,
   current,
-  ticked,
   onOpen,
+  onView,
 }: {
   doc: LibraryItem;
   current: boolean;
-  ticked: boolean;
+  /** Choose the document (its details show in the panel). */
   onOpen: () => void;
+  /** Show it in the viewer straight away. */
+  onView: () => void;
 }) {
   return (
-    <li
-      className="img-tile"
-      data-current={current ? 'true' : undefined}
-      data-ticked={ticked ? 'true' : undefined}
-    >
-      <label className="tick-hit lib-tick">
-        <input
-          type="checkbox"
-          className="tick"
-          checked={ticked}
-          aria-label={`Select ${doc.title}`}
-          onChange={() => docsStore.toggleTick(doc.id)}
-        />
-      </label>
+    <li className="img-tile" data-current={current ? 'true' : undefined}>
       <button
         type="button"
         className="lib-open"
@@ -88,6 +67,7 @@ function Tile({
           <span className="line-meta">{metaWords(doc)}</span>
         </span>
       </button>
+      <ViewButton title={doc.title} onView={doc.view ? onView : null} />
     </li>
   );
 }
@@ -95,29 +75,18 @@ function Tile({
 function Row({
   doc,
   current,
-  ticked,
   onOpen,
+  onView,
 }: {
   doc: LibraryItem;
   current: boolean;
-  ticked: boolean;
+  /** Choose the document (its details show in the panel). */
   onOpen: () => void;
+  /** Show it in the viewer straight away. */
+  onView: () => void;
 }) {
   return (
-    <li
-      className="line lib-row"
-      data-current={current ? 'true' : undefined}
-      data-ticked={ticked ? 'true' : undefined}
-    >
-      <label className="tick-hit lib-tick">
-        <input
-          type="checkbox"
-          className="tick"
-          checked={ticked}
-          aria-label={`Select ${doc.title}`}
-          onChange={() => docsStore.toggleTick(doc.id)}
-        />
-      </label>
+    <li className="line lib-row" data-current={current ? 'true' : undefined}>
       <button
         type="button"
         className="lib-open"
@@ -139,6 +108,7 @@ function Row({
           {dateWords(doc.modified)}
         </span>
       </button>
+      <ViewButton title={doc.title} onView={doc.view ? onView : null} />
     </li>
   );
 }
@@ -147,8 +117,6 @@ function Row({
 export function DocumentsSheet() {
   const s = useDocs();
   const { state, dispatch } = useShell();
-  const { newChat } = useStore();
-  const { said, copy } = useCopy();
   const root = useRef<HTMLDivElement>(null);
   const summary = useRef<HTMLParagraphElement>(null);
   const data = useLibraryData(docsStore, 'document');
@@ -161,9 +129,6 @@ export function DocumentsSheet() {
   );
   const shown = s.format === 'all' ? found : found.filter((d) => d.format === s.format);
   const groups = useMemo(() => groupItems(sortDocs(shown, s.sort), data.order), [shown, s.sort, data.order]);
-  const picked = data.items.filter((d) => s.ticked.has(d.id));
-  const hidden = picked.filter((d) => !shown.includes(d)).length;
-  const pickedWords = selectionWords(countWords(picked.length), hidden, 'your search or filter');
   const ready = data.status === 'ready';
   const formats = FORMATS.map((f) => ({
     value: f.value,
@@ -176,12 +141,7 @@ export function DocumentsSheet() {
   };
 
   return (
-    <div
-      className="lib docs"
-      ref={root}
-      data-layout={s.layout}
-      data-picking={picked.length > 0 ? 'true' : undefined}
-    >
+    <div className="lib docs" ref={root} data-layout={s.layout}>
       {s.viewing ? <Viewer item={s.viewing} onBack={() => docsStore.set({ viewing: null })} /> : null}
       <div className="lib-main" hidden={s.viewing !== null}>
         <LibraryTools
@@ -242,8 +202,8 @@ export function DocumentsSheet() {
                       key={doc.id}
                       doc={doc}
                       current={s.current?.id === doc.id}
-                      ticked={s.ticked.has(doc.id)}
                       onOpen={() => open(doc)}
+                      onView={() => docsStore.set({ current: doc, viewing: doc })}
                     />
                   );
                 }}
@@ -253,26 +213,6 @@ export function DocumentsSheet() {
         ) : null}
         {ready && data.truncated ? (
           <p className="lib-note">This library is very large, so some files are not listed.</p>
-        ) : null}
-
-        <div className="visually-hidden" role="status">
-          {picked.length > 0 ? pickedWords : ''}
-          {said ? `. ${said}` : ''}
-        </div>
-        {picked.length > 0 ? (
-          <SelectionBar
-            label="Selected documents"
-            words={pickedWords}
-            many={picked.length > 1}
-            said={said}
-            onAsk={() => newChat({ draft: chatDraft(picked) })}
-            onCopy={() => void copy(picked.map((d) => d.path).join('\n'))}
-            onClear={() => {
-              docsStore.set({ ticked: new Set() });
-              // The bar goes with the selection, so focus moves to the line above the documents.
-              summary.current?.focus();
-            }}
-          />
         ) : null}
       </div>
     </div>

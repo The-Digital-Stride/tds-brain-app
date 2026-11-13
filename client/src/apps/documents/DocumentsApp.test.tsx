@@ -159,31 +159,6 @@ describe('DocumentsSheet', () => {
     ).toBeTruthy();
   });
 
-  it('ticked documents get a bar that starts a chat naming each real path', async () => {
-    render(<DocumentsSheet />);
-    await card('Plans');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Winter boiler campaign' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Winter budget split' }));
-    const bar = screen.getByRole('group', { name: 'Selected documents' });
-    expect(within(bar).getByText('2 documents selected')).toBeTruthy();
-    fireEvent.click(within(bar).getByRole('button', { name: 'Ask Claude about them' }));
-    expect(store.newChat).toHaveBeenCalledWith({
-      draft:
-        'Help me with these 2 documents:\n- clients/acme/plans/winter.md\n- clients/acme/plans/split.xlsx',
-    });
-    fireEvent.click(within(bar).getByRole('button', { name: 'Clear selection' }));
-    expect(document.activeElement?.textContent).toMatch(/^5 documents, /);
-  });
-
-  it('says when the Type filter is hiding part of the selection', async () => {
-    render(<DocumentsSheet />);
-    await card('Plans');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Winter boiler campaign' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'PDFs, 2' }));
-    const bar = screen.getByRole('group', { name: 'Selected documents' });
-    expect(within(bar).getByText('1 document selected, 1 hidden by your search or filter')).toBeTruthy();
-  });
-
   it('choosing a document marks it current and opens the panel', async () => {
     render(<DocumentsSheet />);
     await card('Reports');
@@ -193,9 +168,22 @@ describe('DocumentsSheet', () => {
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
     expect(docsStore.get().current?.id).toBe(lead.id);
   });
-});
-
-describe('Documents grid', () => {
+  it('has no ticks: one document at a time, through its row or the panel', async () => {
+    render(<DocumentsSheet />);
+    await card('Plans');
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByRole('group', { name: 'Selected documents' })).toBeNull();
+  });
+  it('Open on a row shows a document the app can show straight away; others have no Open', async () => {
+    render(<DocumentsSheet />);
+    await card('Plans');
+    expect(screen.queryByRole('button', { name: 'Open Winter budget split' })).toBeNull();
+    // Its row keeps the same room at the end, so the dates still line up.
+    const split = screen.getByRole('button', { name: /^Winter budget split/ }).closest('li') as HTMLElement;
+    expect(split.querySelector('.lib-view-gap')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Winter boiler campaign' }));
+    expect(docsStore.get()).toMatchObject({ current: plan, viewing: plan });
+  });
   it('opens as a list; Grid shows each document as a tile with its page picture, or its icon', async () => {
     const { container } = render(<DocumentsSheet />);
     await card('Reports');
@@ -216,9 +204,9 @@ describe('Documents grid', () => {
       .closest('.img-tile') as HTMLElement;
     expect(note.querySelector('img')).toBeNull();
     expect(note.querySelector('.img-thumb[data-plain="true"] svg.icon')).not.toBeNull();
-    // Ticking still works from a tile.
-    fireEvent.click(within(tile).getByRole('checkbox', { name: 'Select Lead quality' }));
-    expect(docsStore.get().ticked.has(lead.id)).toBe(true);
+    // A tile has Open too, for a document the app can show.
+    fireEvent.click(within(tile).getByRole('button', { name: 'Open Lead quality' }));
+    expect(docsStore.get()).toMatchObject({ current: lead, viewing: lead });
   });
 });
 

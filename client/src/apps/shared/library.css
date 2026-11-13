@@ -154,6 +154,44 @@
   position: absolute;
   inset: 0;
 }
+/* Open on the item itself: at the end of a row, on the top right corner of a tile's picture. It shows on
+   hover, on keyboard focus, on the chosen item, and always where nothing hovers. */
+.lib-view {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+/* The same room at the end of every row, button or not, so the columns line up. */
+.lib-row .lib-view,
+.lib-view-gap {
+  flex: none;
+  width: 56px;
+}
+.img-tile .lib-view-gap {
+  display: none;
+}
+.img-tile .lib-view {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+}
+.lib-list > [data-current="true"] .lib-view,
+.lib-list > li:hover .lib-view,
+.lib-list > li:focus-within .lib-view {
+  opacity: 1;
+}
+@media (hover: none) {
+  .lib-view {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lib-view {
+    transition: none;
+  }
+}
 /* Rows: the tray's own (Home's hover and pressed states apply). */
 .lib .lib-row {
   position: relative;

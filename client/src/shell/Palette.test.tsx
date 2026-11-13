@@ -630,6 +630,36 @@ describe('global search', () => {
     expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report, viewing: report });
   });
 
+  it('opening a file closes the open drawer, even from inside its own app, and focus goes to the app', async () => {
+    const report = doc({ id: 'client:northwind.d1', title: 'Board report' });
+    api.librarySearch.mockImplementation(async (_q: string, kind: string) =>
+      kind === 'document'
+        ? searchResponse({ hits: [{ item: report, scope: SCOPES[2] as LibraryScope }], total: 1 })
+        : searchResponse(),
+    );
+    api.library.mockImplementation(async (scope: string) =>
+      listing(scope, scope === 'client:northwind' ? [report] : []),
+    );
+    await renderHome();
+    const rail = within(screen.getByRole('navigation', { name: 'Main' }));
+    fireEvent.click(rail.getByRole('button', { name: 'Documents' }));
+    await screen.findByRole('heading', { level: 1, name: 'Documents' });
+    const todos = rail.getByRole('button', { name: /^To-dos/ });
+    todos.focus();
+    fireEvent.click(todos);
+    const drawer = document.getElementById('drawer') as HTMLElement;
+    expect(drawer.hasAttribute('inert')).toBe(false);
+
+    await openPalette();
+    fireEvent.change(input(), { target: { value: 'board' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Board report/ }, { timeout: 2000 }));
+    await waitFor(() => expect(docsStore.get().current).toEqual(report));
+    expect(drawer.hasAttribute('inert')).toBe(true);
+    expect(todos.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).not.toBe(todos);
+    expect(document.getElementById('main')?.contains(document.activeElement)).toBe(true);
+  });
+
   describe('tooltips', () => {
     const tip = () => document.querySelector<HTMLElement>('.palette-tip');
     const tipText = () => [...(tip()?.querySelectorAll('p') ?? [])].map((p) => p.textContent);

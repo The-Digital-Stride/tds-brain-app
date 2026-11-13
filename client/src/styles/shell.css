@@ -528,6 +528,22 @@
   border-bottom: 1px solid var(--amber-edge);
   font-size: 13px;
 }
+.update-banner {
+  flex: none;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--wash);
+  color: var(--navy);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+/* The quiet button's own hover is --wash, which would vanish on this strip. */
+.update-banner .btn[data-variant="quiet"]:hover:not(:disabled) {
+  background: var(--paper);
+}
 .error-banner {
   flex: none;
   display: flex;

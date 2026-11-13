@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.6.0 — 2026-11-13
+
+- **feat**: tdsapp-todo skill v0.3 with 13 backward-compatible fixes
+- **fix**: after a to-do conflict, keep a teammate's untouched fields and show what they changed
+
 ## v0.5.0 — 2026-11-12
 
 - **feat**: add, edit, pass on, re-date and delete to-dos through the brain's todo skill

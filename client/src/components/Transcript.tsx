@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
-import type { SessionState } from '../../../shared/contract.ts';
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import { indexChatFiles, normaliseBrainPath } from '../../../shared/chat-files.ts';
+import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { currentStep, toBlocks } from '../state/blocks.ts';
@@ -8,10 +9,26 @@ import { STEP_WORDS } from '../state/steps.ts';
 import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
+/** What the transcript needs to turn file names and steps into links (plan 2026-11-13-chat-files). */
+interface FileLinks {
+  link: (raw: string) => string | null;
+  byToolUse: ReadonlyMap<string, string>;
+  onFile: (key: string) => void;
+}
+const FileLinksContext = createContext<FileLinks | null>(null);
+
 function ToolLine({ tool }: { tool: ToolItem }) {
+  const links = useContext(FileLinksContext);
+  const key = links?.byToolUse.get(tool.id);
   return (
     <li>
-      <span>{tool.label}</span>{' '}
+      {key !== undefined && links ? (
+        <button type="button" className="step-link" onClick={() => links.onFile(key)}>
+          {tool.label}
+        </button>
+      ) : (
+        <span>{tool.label}</span>
+      )}{' '}
       <span className="tool-status" data-status={tool.status}>
         ({STEP_WORDS[tool.status]})
       </span>
@@ -75,6 +92,7 @@ function itemKey(item: ChatItem): string {
 }
 
 function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; note: boolean }) {
+  const links = useContext(FileLinksContext);
   switch (item.kind) {
     case 'user':
       return (
@@ -86,7 +104,7 @@ function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; not
     case 'assistant':
       return (
         <div className="msg-assistant" data-note={note}>
-          <Markdown text={item.text} />
+          <Markdown text={item.text} link={links?.link} onFile={links?.onFile} />
         </div>
       );
     // A card still waiting on the person shows in the floater above the message box, not here.
@@ -119,11 +137,27 @@ export function Transcript({
   items,
   sessionId,
   sessionState,
+  files,
+  brainRoot = '',
+  onFile,
 }: {
   items: ChatItem[];
   sessionId: string;
   sessionState: SessionState;
+  /** The chat's files, for links in replies and steps. Without them nothing is linked. */
+  files?: readonly ChatFile[];
+  brainRoot?: string;
+  onFile?: (key: string) => void;
 }) {
+  const fileLinks = useMemo<FileLinks | null>(() => {
+    if (!files || !onFile) return null;
+    const index = indexChatFiles(files);
+    return {
+      link: (raw) => index.byPath.get(normaliseBrainPath(raw, brainRoot) ?? '') ?? null,
+      byToolUse: index.byToolUse,
+      onFile,
+    };
+  }, [files, brainRoot, onFile]);
   const blocks = useMemo(() => toBlocks(items), [items]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
@@ -144,20 +178,22 @@ export function Transcript({
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
     >
-      <div className="thread-col">
-        {blocks.map((b, i) =>
-          b.kind === 'tools' ? (
-            <ActivityGroup
-              key={`tools-${b.id}`}
-              tools={b.tools}
-              active={busy && i === lastTools}
-              waiting={sessionState === 'waiting'}
-            />
-          ) : (
-            <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
-          ),
-        )}
-      </div>
+      <FileLinksContext.Provider value={fileLinks}>
+        <div className="thread-col">
+          {blocks.map((b, i) =>
+            b.kind === 'tools' ? (
+              <ActivityGroup
+                key={`tools-${b.id}`}
+                tools={b.tools}
+                active={busy && i === lastTools}
+                waiting={sessionState === 'waiting'}
+              />
+            ) : (
+              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
+            ),
+          )}
+        </div>
+      </FileLinksContext.Provider>
     </div>
   );
 }

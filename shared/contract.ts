@@ -532,7 +532,9 @@ export interface BrainReaders {
    * Null when the path is in no listed scope, or the library rules never list it. Optional so older
    * test fakes still satisfy the type; without it a chat reports no files.
    */
-  libraryItemForPath?(rel: string): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
+  libraryItemForPath?(
+    rel: string,
+  ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
   /** When the brain last synced (see SyncStatus). Never throws. */
   sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */

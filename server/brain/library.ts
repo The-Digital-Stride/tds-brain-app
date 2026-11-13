@@ -109,6 +109,13 @@ export interface Library {
   list(scope: string): Promise<LibraryListing | null>;
   file(id: string): Promise<LibraryFile | null>;
   /**
+   * The listed scope a path from the brain's root falls in, the key the file has (or would have)
+   * there, and the item when it is listed now (chat files). A file made since the scope was listed
+   * is found by walking that scope once more. Null outside every scope, for a path the rules never
+   * list, or for a file that is there but not listed (a symbolic link, too deep). Never throws.
+   */
+  itemForPath(rel: string): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
+  /**
    * The watcher saw a change. `rel` is the changed path from the brain's root (forward slashes), or
    * null when the platform did not say, in which case every scope under `folder` is marked stale.
    */
@@ -125,6 +132,8 @@ interface ScopeDef extends LibraryScope {
 interface Entry {
   listing: LibraryListing;
   paths: Map<string, LibraryItem>;
+  /** By lower-case path from the brain's root. */
+  byPath: Map<string, LibraryItem>;
   gen: number;
   builtAt: number;
 }
@@ -676,6 +685,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const entry: Entry = {
       listing: { scope: scope.id, groups, items, truncated },
       paths: new Map(items.map((i) => [i.id, i])),
+      byPath: new Map(items.map((i) => [i.path.toLowerCase(), i])),
       gen,
       builtAt: now(),
     };
@@ -753,6 +763,51 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     } catch {
       return null;
     }
+  }
+
+  let defsInFlight: Promise<ScopeDef[]> | null = null;
+  /** Many paths are looked up at once at a turn's end: they share one read of the scopes. */
+  function sharedScopeDefs(): Promise<ScopeDef[]> {
+    if (!defsInFlight) {
+      const p = scopeDefs().finally(() => {
+        if (defsInFlight === p) defsInFlight = null;
+      });
+      defsInFlight = p;
+    }
+    return defsInFlight;
+  }
+
+  /** The listed item at `rel` (any case) and its fresh check; `file` is null when the check fails. */
+  async function lookup(
+    scope: ScopeDef,
+    rel: string,
+  ): Promise<{ item: LibraryItem; file: LibraryFile | null } | null> {
+    const item = (await entryFor(scope)).byPath.get(rel.toLowerCase());
+    return item ? { item, file: await check(scope, item) } : null;
+  }
+
+  async function itemForPath(
+    rel: string,
+  ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null> {
+    if (typeof rel !== 'string' || isNeverListed(rel)) return null;
+    const lower = rel.toLowerCase();
+    const scope = (await sharedScopeDefs()).find((s) => lower.startsWith(`${s.folder.toLowerCase()}/`));
+    if (!scope || !classify(extOf(basename(rel)))) return null;
+    const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
+    const first = await lookup(scope, rel);
+    if (first?.file) return { key: first.item.id, scope: info, item: first.file.item };
+    const key = first?.item.id ?? idFor(scope.id, rel);
+    try {
+      // Not followed: a link is never listed, so it is "there but not listed", not missing.
+      await fs.lstat(join(root, ...rel.split('/')));
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return code === 'ENOENT' || code === 'ENOTDIR' ? { key, scope: info, item: null } : null;
+    }
+    // There but not in the listing: made since it was walked. Walk that scope once more.
+    bump(scope.id);
+    const second = await lookup(scope, rel);
+    return second?.file ? { key: second.item.id, scope: info, item: second.file.item } : null;
   }
 
   const refreshing = new Set<string>();
@@ -887,6 +942,14 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           item = (await entryFor(scope)).paths.get(id);
         }
         return item ? await check(scope, item) : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async itemForPath(rel) {
+      try {
+        return await itemForPath(rel);
       } catch {
         return null;
       }

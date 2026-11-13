@@ -38,6 +38,23 @@ describe('shellReducer', () => {
     expect(shellReducer(base, { type: 'set-palette', open: true }).paletteOpen).toBe(true);
     expect(shellReducer(base, { type: 'set-single-keys', on: false }).singleKeys).toBe(false);
   });
+
+  it('show-chat-file opens the panel on the files tab with the file chosen', () => {
+    const shown = shellReducer(base, { type: 'show-chat-file', chat: 'c1', key: 'a.md' });
+    expect(shown).toMatchObject({
+      panelOpen: true,
+      panelTab: 'files',
+      panelFile: { chat: 'c1', key: 'a.md' },
+    });
+    const list = shellReducer(shown, { type: 'show-chat-file', chat: 'c1', key: null });
+    expect(list).toMatchObject({ panelOpen: true, panelTab: 'files', panelFile: null });
+  });
+
+  it('changing tab clears the chosen file', () => {
+    const shown = shellReducer(base, { type: 'show-chat-file', chat: 'c1', key: 'a.md' });
+    expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'steps' }).panelFile).toBeNull();
+    expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'files' }).panelFile).toBeNull();
+  });
 });
 
 describe('loadShell', () => {
@@ -61,11 +78,17 @@ describe('loadShell', () => {
       ...DEFAULT_SHELL,
       drawer: 'todos',
       panelOpen: true,
+      panelTab: 'files',
     });
     expect(loadShell(JSON.stringify({ drawer: 'history' })).drawer).toBeNull();
     expect(loadShell(JSON.stringify({ railWide: !DEFAULT_SHELL.railWide })).railWide).toBe(
       !DEFAULT_SHELL.railWide,
     );
+  });
+
+  it('never restores a chosen file', () => {
+    const raw = JSON.stringify({ panelTab: 'files', panelFile: { chat: 'c', key: 'k' } });
+    expect(loadShell(raw).panelFile).toBeNull();
   });
 
   it('never restores an open palette', () => {
@@ -80,11 +103,13 @@ describe('saveShell', () => {
       drawer: 'chats',
       panelOpen: true,
       panelTab: 'details',
+      panelFile: { chat: 'c', key: 'k' },
       paletteOpen: true,
       singleKeys: false,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
+    expect(saved).not.toHaveProperty('panelFile');
     expect(saved).toEqual({
       railWide: true,
       drawer: 'chats',
@@ -92,7 +117,7 @@ describe('saveShell', () => {
       panelTab: 'details',
       singleKeys: false,
     });
-    expect(loadShell(saveShell(state))).toEqual({ ...state, paletteOpen: false });
+    expect(loadShell(saveShell(state))).toEqual({ ...state, panelFile: null, paletteOpen: false });
   });
 });
 

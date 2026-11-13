@@ -137,7 +137,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     const opensDrawer =
       (action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer;
     const opensPanel =
-      (action.type === 'toggle-panel' && !s.panelOpen) || (action.type === 'set-panel' && action.open);
+      (action.type === 'toggle-panel' && !s.panelOpen) ||
+      (action.type === 'set-panel' && action.open) ||
+      action.type === 'show-chat-file';
     if (opensDrawer) focusIntent.current = 'left';
     else if (opensPanel) focusIntent.current = 'right';
     rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });

@@ -5,9 +5,22 @@ import { Markdown } from '../../markdown.tsx';
 import { useStore } from '../../store.tsx';
 import { useLoaded } from './data.ts';
 
-function TextBody({ item }: { item: LibraryItem }) {
+/** A small stable number for a string, so a version string can drive `useLoaded`'s quiet refresh. */
+function versionNumber(v: string): number {
+  let n = 0;
+  for (let i = 0; i < v.length; i++) n = (n * 31 + v.charCodeAt(i)) | 0;
+  return n;
+}
+
+/**
+ * A text or Markdown file's body. `version` (the library's version, say) refetches quietly when it
+ * changes, with no "Loading…" flash, so a file Claude is editing stays current with its scroll kept.
+ */
+export function TextBody({ item, version }: { item: LibraryItem; version?: string }) {
   // Refetched only when this file itself changes, not whenever anything else in the library does.
-  const text = useLoaded(`${item.id}|${item.modified}`, 0, () => api.libraryText(item.id));
+  const text = useLoaded(`${item.id}|${item.modified}`, version ? versionNumber(version) : 0, () =>
+    api.libraryText(item.id),
+  );
   if (text.status === 'loading') {
     return (
       <p className="lib-note" role="status">
@@ -39,7 +52,7 @@ function TextBody({ item }: { item: LibraryItem }) {
   );
 }
 
-function PictureBody({ item }: { item: LibraryItem }) {
+export function PictureBody({ item }: { item: LibraryItem }) {
   // The parent keys this on the file's version and the library's, so a failure is not remembered for ever.
   const [failed, setFailed] = useState(false);
   if (failed) return <p className="lib-note">This picture could not be shown.</p>;

@@ -20,6 +20,7 @@ export const DEFAULT_SHELL: ShellState = {
   drawer: null,
   panelOpen: false,
   panelTab: 'steps',
+  panelFile: null,
   paletteOpen: false,
   singleKeys: true,
 };
@@ -28,7 +29,7 @@ export const DEFAULT_SHELL: ShellState = {
 export const RAIL_NAMES_FROM = 900;
 
 const DRAWERS: readonly DrawerName[] = ['chats', 'todos', 'skills'];
-const TABS: readonly PanelTab[] = ['steps', 'details'];
+const TABS: readonly PanelTab[] = ['steps', 'files', 'details'];
 
 export const shellReducer: ShellReducer = (state, action) => {
   switch (action.type) {
@@ -45,7 +46,16 @@ export const shellReducer: ShellReducer = (state, action) => {
     case 'set-panel':
       return state.panelOpen === action.open ? state : { ...state, panelOpen: action.open };
     case 'set-panel-tab':
-      return state.panelTab === action.tab ? state : { ...state, panelTab: action.tab };
+      return state.panelTab === action.tab && state.panelFile === null
+        ? state
+        : { ...state, panelTab: action.tab, panelFile: null };
+    case 'show-chat-file':
+      return {
+        ...state,
+        panelOpen: true,
+        panelTab: 'files',
+        panelFile: action.key === null ? null : { chat: action.chat, key: action.key },
+      };
     case 'set-palette':
       return state.paletteOpen === action.open ? state : { ...state, paletteOpen: action.open };
     case 'set-single-keys':
@@ -77,6 +87,7 @@ export const loadShell: LoadShell = (raw) => {
     drawer,
     panelOpen: bool('panelOpen', DEFAULT_SHELL.panelOpen),
     panelTab,
+    panelFile: null,
     paletteOpen: false,
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
   };

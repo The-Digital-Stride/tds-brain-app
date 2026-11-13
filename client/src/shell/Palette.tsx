@@ -84,7 +84,7 @@ function PaletteDialog() {
         break;
       case 'todo':
         skipRestore.current = true;
-        newChat({ draft: todoChatDraft(c.todo), todoId: c.todo.id });
+        newChat({ draft: todoChatDraft(c.todo), todoId: c.todo.key });
         requestComposerFocus();
         break;
     }

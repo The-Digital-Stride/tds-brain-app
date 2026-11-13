@@ -122,7 +122,11 @@ export type IconName =
   | 'sheet'
   | 'slides'
   | 'stop'
-  | 'paperclip';
+  | 'paperclip'
+  | 'plus'
+  | 'lock'
+  | 'calendar'
+  | 'person';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {
@@ -206,9 +210,9 @@ export interface Words {
   /** "Owner", "Scout", "Team", "Role not set". */
   ROLE_WORDS: Record<'owner' | 'scout' | 'team' | 'unknown', string>;
   /**
-   * The opening message for a chat about a to-do. Must contain `todo/<id>`: the store keeps the
-   * chat linked to the to-do only while the message still mentions it.
-   * Exactly: `Help me with this to-do: todo/${todo.id} (${todo.title})`.
+   * The opening message for a chat about a to-do. Must contain the to-do's `path` (`todo/<id>`
+   * or `personal/todo/<id>`): the store keeps the chat linked to the to-do only while the message still
+   * mentions it. Exactly: `Help me with this to-do: ${todo.path} (${todo.title})`.
    */
   todoChatDraft: (todo: TodoItem) => string;
   /** "11 Nov, 16:42" (en-GB), or '' when the date can't be read. */
@@ -231,6 +235,8 @@ export interface FoldProps {
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  /** Shown beside the heading, never inside its toggle (e.g. "Mark all as seen"). */
+  action?: ReactNode;
   children: ReactNode;
 }
 
@@ -275,6 +281,32 @@ export interface TodoGroup {
  * order given. "week" is tomorrow up to 7 days ahead. Empty groups are left out.
  */
 export type GroupTodos = (items: TodoItem[], today: string) => TodoGroup[];
+
+/** The drawer's search and filters (decision 7). Nothing here is remembered between visits. */
+export interface TodoFilter {
+  /** Free text; matched against title, details, client name and project, ignoring case and accents. */
+  query: string;
+  scope: 'all' | 'tds' | 'personal';
+  /** A client slug, or null for every client. */
+  client: string | null;
+}
+
+/**
+ * `client/src/state/todo-filter.ts`. Keeps the order given. `clients` maps slugs to names for the
+ * text match. An empty query, scope 'all' and client null return `items` unchanged.
+ */
+export type FilterTodos = (
+  items: TodoItem[],
+  filter: TodoFilter,
+  clients: { slug: string; name: string }[],
+) => TodoItem[];
+
+/**
+ * `client/src/state/todo-new.ts` (decision 6). The to-dos in `mine` that are "New to you": a handover by
+ * someone other than `me`, dated within TODO_NEW_DAYS of `now`, whose `handover.at` isn't `seen[key]`.
+ * Keeps the order given.
+ */
+export type NewToYou = (mine: TodoItem[], me: string, seen: Record<string, string>, now: Date) => TodoItem[];
 
 // ── Home ───────────────────────────────────────────────────────────────────────────────────────
 

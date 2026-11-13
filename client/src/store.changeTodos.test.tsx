@@ -24,6 +24,11 @@ const list = (title: string): TodoList => ({
   mine: [
     {
       id: 'a.md',
+      scope: 'tds',
+      key: 'a.md',
+      path: 'todo/a.md',
+      handover: null,
+      createdBy: null,
       title,
       assignee: null,
       due: null,
@@ -41,6 +46,7 @@ const list = (title: string): TodoList => ({
   team: [],
   changes: 'on',
   canAddOpen: false,
+  canUsePersonal: false,
 });
 
 let store: Store | undefined;
@@ -127,6 +133,90 @@ describe('store.changeTodos', () => {
       await store?.updatePrefs({ pins: ['x'] });
     });
     expect(api.todos.mock.calls.length).toBe(before);
+  });
+});
+
+describe('store.changeTodos, moving a to-do', () => {
+  it('addresses later steps to the new id and version after a name clash', async () => {
+    api.bootstrap.mockRejectedValue(new Error('no boot'));
+    api.todos.mockResolvedValue(list('start'));
+    api.sessions.mockResolvedValue({ live: [], past: [] });
+    api.changeTodo.mockReset();
+    const moved = list('moved');
+    const item = moved.mine[0];
+    if (!item) throw new Error('fixture');
+    moved.mine = [{ ...item, id: 'a-2.md', scope: 'personal', key: 'personal/a-2.md', version: 'v7' }];
+    moved.moved = { from: 'a.md', to: 'personal/a-2.md' };
+    api.changeTodo.mockResolvedValueOnce(moved).mockResolvedValueOnce(list('done'));
+    render(
+      <StoreProvider>
+        <Grab />
+      </StoreProvider>,
+    );
+    await act(async () => {});
+    let result: ChangeTodosResult | undefined;
+    await act(async () => {
+      result = await store?.changeTodos([
+        { kind: 'move', id: 'a.md', scope: 'tds', to: 'personal', expect: 'v1' },
+        { kind: 'due', id: 'a.md', scope: 'personal', due: '2030-01-01' },
+      ]);
+    });
+    expect(api.changeTodo.mock.calls[1]?.[0]).toEqual({
+      kind: 'due',
+      id: 'a-2.md',
+      scope: 'personal',
+      due: '2030-01-01',
+      expect: 'v7',
+    });
+    expect(result?.moved).toEqual({ from: 'a.md', to: 'personal/a-2.md' });
+  });
+});
+
+describe('store.holdTodo, personal ticks', () => {
+  const tick = {
+    todoId: 'personal/a.md',
+    title: 'A',
+    kind: 'tick' as const,
+    label: 'Marked as done',
+    action: null,
+    tick: { id: 'a.md', scope: 'personal' as const, expect: 'v5' },
+  };
+  const start = async () => {
+    api.bootstrap.mockRejectedValue(new Error('no boot'));
+    api.sessions.mockResolvedValue({ live: [], past: [] });
+    api.todos.mockResolvedValue(list('start'));
+    api.completeTodo.mockReset();
+    api.completeTodo.mockResolvedValue(list('after'));
+    render(
+      <StoreProvider>
+        <Grab />
+      </StoreProvider>,
+    );
+    await act(async () => {});
+  };
+  afterEach(() => vi.useRealTimers());
+
+  it('sends the file name, scope and version once the undo time is up', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await start();
+    act(() => store?.holdTodo(tick));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);
+    });
+    expect(api.completeTodo).toHaveBeenCalledWith('a.md', undefined, { scope: 'personal', expect: 'v5' });
+  });
+
+  it('sends it with keepalive when the page closes', async () => {
+    await start();
+    act(() => store?.holdTodo(tick));
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(api.completeTodo).toHaveBeenCalledWith(
+      'a.md',
+      { keepalive: true },
+      { scope: 'personal', expect: 'v5' },
+    );
   });
 });
 

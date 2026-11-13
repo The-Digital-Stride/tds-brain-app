@@ -37,11 +37,15 @@ export function createSetupBrain(): BrainReaders {
       team: [],
       changes: 'no-skill',
       canAddOpen: false,
+      canUsePersonal: false,
     }),
     completeTodo: async () => {
       throw new Error(NO_BRAIN);
     },
     changeTodo: async () => {
+      throw new TodoChangeError('not-allowed', NO_BRAIN);
+    },
+    completePersonalTodo: async () => {
       throw new TodoChangeError('not-allowed', NO_BRAIN);
     },
     clients: async () => [],

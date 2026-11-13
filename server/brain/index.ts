@@ -6,6 +6,7 @@ import { createLibrary } from './library.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
+import { createTodoHistory, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
 import { changeTodo, completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
@@ -24,6 +25,8 @@ export interface BrainDeps {
   docThumbs?: boolean;
   /** How the brain's `todo` skill script is run. Tests pass an environment or a spawner. */
   todoSkill?: TodoSkillOptions;
+  /** Runs git for the to-do handover fallback. Tests inject a fake. */
+  todoGit?: GitRunner;
 }
 
 export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainReaders {
@@ -37,6 +40,7 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
   const syncReader = createSyncReader(root);
   // One runner per brain, so to-do changes run one at a time.
   const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
+  const todoHistory = createTodoHistory(deps.todoGit);
   return {
     root,
     health: () => checkHealth(root),
@@ -44,9 +48,15 @@ export function createBrainReaders(root: string, deps: BrainDeps = {}): BrainRea
     profile: (identity) => readMemberProfile(root, identity),
     skills: (identity) => listSkills(root, identity),
     skillAccess: (identity, name) => skillAccess(root, identity, name),
-    todos: (identity) => listTodos(root, identity),
+    todos: (identity) =>
+      listTodos(root, identity, { history: todoHistory, capabilities: () => todoSkill.capabilities() }),
     completeTodo: (id, by) => completeTodo(root, id, by, now()),
-    changeTodo: (action, identity) => changeTodo(root, action, identity, todoSkill),
+    changeTodo: (action, identity) => changeTodo(root, action, identity, todoSkill, { history: todoHistory }),
+    completePersonalTodo: async (id, expect, by) => {
+      await changeTodo(root, { kind: 'tick', id, scope: 'personal', expect }, by, todoSkill, {
+        history: todoHistory,
+      });
+    },
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));

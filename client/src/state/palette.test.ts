@@ -24,6 +24,11 @@ const chat = (id: string, title: string): LiveSession => ({
 });
 const todo = (id: string, title: string): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title,
   created: null,
   source: null,

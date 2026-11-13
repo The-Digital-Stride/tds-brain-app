@@ -97,8 +97,15 @@ export const api = {
   todos: () => request<TodoList>('GET', ROUTES.todos),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
   changelog: () => request<ChangelogResponse>('GET', ROUTES.changelog),
-  completeTodo: (id: string, opts?: SendOptions) =>
-    request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest, undefined, opts),
+  /** `personal` ticks a personal to-do through the brain script: it carries `scope` and `expect`. */
+  completeTodo: (id: string, opts?: SendOptions, personal?: { scope: 'personal'; expect: string }) =>
+    request<TodoList>(
+      'POST',
+      ROUTES.completeTodo,
+      { id, ...(personal ?? {}) } satisfies CompleteTodoRequest,
+      undefined,
+      opts,
+    ),
   changeTodo: (action: TodoAction, opts?: SendOptions) =>
     request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),

@@ -29,9 +29,11 @@ import {
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
+  TODO_SEEN_MAX,
   type TodoAction,
   TodoChangeError,
   type TodoList,
+  type TodoScope,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
   type VersionNotes,
@@ -206,9 +208,12 @@ const EMPTY_TODOS: TodoList = {
   team: [],
   changes: 'no-skill',
   canAddOpen: false,
+  canUsePersonal: false,
 };
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
+const SEEN_KEY_MAX = 300;
+const SEEN_VALUE_MAX = 40;
 
 /** `PUT /api/prefs`: only known keys, each of the right type. */
 export async function validatePrefsPatch(
@@ -237,6 +242,25 @@ export async function validatePrefsPatch(
           if (!known) throw bad('That client is not in the brain.');
         }
         patch.lastClient = value as string | null;
+        break;
+      }
+      case 'todoSeen': {
+        const entries = isRec(value) ? Object.entries(value) : null;
+        if (
+          entries === null ||
+          entries.length > TODO_SEEN_MAX ||
+          !entries.every(
+            ([k, v]) =>
+              k !== '' &&
+              k.length <= SEEN_KEY_MAX &&
+              typeof v === 'string' &&
+              v !== '' &&
+              v.length <= SEEN_VALUE_MAX,
+          )
+        ) {
+          throw bad('The list of to-dos you have seen was not understood.');
+        }
+        patch.todoSeen = Object.fromEntries(entries as [string, string][]);
         break;
       }
       case 'todoPanelOpen':
@@ -395,7 +419,7 @@ async function todos(ctx: RouteContext): Promise<TodoList> {
   const list = await safe(ctx.brain.todos(identity), EMPTY_TODOS);
   if (list.changes !== 'on') return list;
   const prefs = await safe(ctx.store.get(), null);
-  return prefs?.directWrites === true ? list : { ...list, changes: 'switched-off' };
+  return prefs?.directWrites === true ? list : { ...list, changes: 'switched-off', canUsePersonal: false };
 }
 
 const TODO_SWITCHED_OFF =
@@ -403,16 +427,25 @@ const TODO_SWITCHED_OFF =
 
 /** Each action's fields besides `kind`: required text, text or null, or optional text. */
 const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-null' | 'optional-text'>> = {
-  add: { title: 'text', due: 'text-or-null', assignee: 'text-or-null' },
-  edit: { id: 'text', title: 'text', details: 'optional-text', expect: 'optional-text' },
-  due: { id: 'text', due: 'text-or-null', expect: 'optional-text' },
-  assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text' },
-  delete: { id: 'text', expect: 'optional-text' },
+  add: { title: 'text', due: 'text-or-null', assignee: 'text-or-null', scope: 'optional-text' },
+  edit: {
+    id: 'text',
+    title: 'text',
+    details: 'optional-text',
+    expect: 'optional-text',
+    scope: 'optional-text',
+  },
+  due: { id: 'text', due: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
+  assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
+  delete: { id: 'text', expect: 'optional-text', scope: 'optional-text' },
+  move: { id: 'text', scope: 'text', to: 'text', expect: 'optional-text' },
 };
 
+const isTodoScope = (v: unknown): v is TodoScope => v === 'tds' || v === 'personal';
+
 /**
- * `POST /api/todos/change`: exactly one TodoAction shape, no other fields. The values (lengths,
- * date, slug, id) are checked by `BrainReaders.changeTodo`.
+ * `POST /api/todos/change`: exactly one TodoAction shape, no other fields. `scope` and `to` must be
+ * 'tds' or 'personal'. The other values (lengths, date, slug, id) are checked by `BrainReaders.changeTodo`.
  */
 export function parseTodoAction(body: unknown): TodoAction {
   const bad = () => new HttpError(400, 'bad-request', TODO_CHANGE_MESSAGES['bad-request']);
@@ -426,6 +459,7 @@ export function parseTodoAction(body: unknown): TodoAction {
     const v = body[key];
     if (type === 'optional-text' && v === undefined) continue;
     if (!(typeof v === 'string' || (type === 'text-or-null' && v === null))) throw bad();
+    if ((key === 'scope' || key === 'to') && !isTodoScope(v)) throw bad();
     action[key] = v;
   }
   return action as unknown as TodoAction;
@@ -845,10 +879,29 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (typeof id !== 'string' || !id || id.length > 255 || /[\\/\0]/.test(id) || id.startsWith('.')) {
       throw new HttpError(400, 'bad-request', 'That to-do was not understood.');
     }
-    try {
-      await ctx.brain.completeTodo(id, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
-    } catch {
-      throw new HttpError(404, 'not-found', 'That to-do could not be found. It may already be done.');
+    const scope = isRec(body) ? body.scope : undefined;
+    const expect = isRec(body) ? body.expect : undefined;
+    if (
+      (scope !== undefined && !isTodoScope(scope)) ||
+      (expect !== undefined && typeof expect !== 'string')
+    ) {
+      throw new HttpError(400, 'bad-request', 'That to-do was not understood.');
+    }
+    if (scope === 'personal') {
+      // A personal to-do is ticked by the brain's script (scope + expect), never by the app's own write.
+      if (expect === undefined) throw new HttpError(400, 'bad-request', TODO_CHANGE_MESSAGES['bad-request']);
+      try {
+        await ctx.brain.completePersonalTodo(id, expect, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
+      } catch (err) {
+        if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
+        throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
+      }
+    } else {
+      try {
+        await ctx.brain.completeTodo(id, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
+      } catch {
+        throw new HttpError(404, 'not-found', 'That to-do could not be found. It may already be done.');
+      }
     }
     ctx.log('Ticked a to-do.');
     sendJson(res, 200, await todos(ctx));
@@ -861,15 +914,17 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     const prefs = await ctx.store.get();
     if (!prefs.directWrites) throw new HttpError(403, 'not-allowed', TODO_SWITCHED_OFF);
     const action = parseTodoAction(body);
+    let moved: TodoList['moved'];
     try {
-      await ctx.brain.changeTodo(action, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
+      moved = (await ctx.brain.changeTodo(action, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY))).moved;
     } catch (err) {
       if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
       ctx.log('A to-do change failed unexpectedly.');
       throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
     }
     ctx.log(`Changed a to-do (${action.kind}).`);
-    sendJson(res, 200, await todos(ctx));
+    const list = await todos(ctx);
+    sendJson(res, 200, moved ? { ...list, moved } : list);
     return;
   }
 

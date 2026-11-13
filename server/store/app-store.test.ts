@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -49,6 +49,7 @@ describe('app store', () => {
       'lastClient',
       'pins',
       'todoPanelOpen',
+      'todoSeen',
     ]);
     writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['z'], extra: true }));
     expect(await store.get()).toEqual({ ...DEFAULT_PREFS, pins: ['z'] });
@@ -80,6 +81,43 @@ describe('app store', () => {
       lastClient: 'x',
       todoPanelOpen: false,
       directWrites: true,
+      todoSeen: {},
     });
+  });
+
+  it('loads an old prefs file without todoSeen, with an empty map', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'], directWrites: true }));
+    const p = await createAppStore(dir).get();
+    expect(p.todoSeen).toEqual({});
+    expect(p.pins).toEqual(['a']);
+  });
+
+  it('prunes seen markers older than a week or unparseable on every write, and keeps recent ones', async () => {
+    const dir = fresh();
+    const store = createAppStore(dir, () => new Date('2026-11-13T12:00:00Z'));
+    const next = await store.update({
+      todoSeen: {
+        fresh: '2026-11-12T09:00:00+00:00',
+        edge: '2026-11-06T12:00:00Z',
+        old: '2026-11-05T09:00:00+00:00',
+        junk: 'yesterday-ish',
+        'personal/x.md': '2026-11-13T08:00:00+00:00',
+      },
+    });
+    expect(Object.keys(next.todoSeen).sort()).toEqual(['edge', 'fresh', 'personal/x.md']);
+    // an unrelated write prunes too
+    const later = createAppStore(dir, () => new Date('2026-11-19T12:00:00Z'));
+    expect(Object.keys((await later.update({ pins: ['b'] })).todoSeen)).toEqual(['personal/x.md']);
+  });
+
+  it('caps todoSeen at 500 entries and ignores bad entries', async () => {
+    const store = createAppStore(fresh(), () => new Date('2026-11-13T12:00:00Z'));
+    const big: Record<string, string> = {};
+    for (let i = 0; i < 600; i++) big[`k${i}`] = '2026-11-13T08:00:00Z';
+    expect(Object.keys((await store.update({ todoSeen: big })).todoSeen)).toHaveLength(500);
+    const mixed = { ok: '2026-11-13T08:00:00Z', long: 'x'.repeat(41), n: 5 } as never;
+    expect(Object.keys((await store.update({ todoSeen: mixed })).todoSeen)).toEqual(['ok']);
   });
 });

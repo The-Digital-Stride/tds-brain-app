@@ -1037,7 +1037,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         if (typeof id === 'string') {
           const identity = await opts.brain.identity();
           const list = await opts.brain.todos(identity);
-          listed = [...list.mine, ...list.open].find((t) => t.id === id)?.id ?? null;
+          // Sessions store the `key`: a bare id for TDS (as before), `personal/<id>` for personal.
+          listed = [...list.mine, ...list.open].find((t) => t.key === id)?.key ?? null;
         }
         if (!listed) throw new SessionError('bad-request', 'That to-do is not on your list any more.');
         todoId = listed;

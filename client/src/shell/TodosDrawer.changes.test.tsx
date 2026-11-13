@@ -14,6 +14,11 @@ const { TodosDrawer } = await import('./TodosDrawer.tsx');
 
 const todo = (over: Partial<TodoItem> = {}): TodoItem => ({
   id: 't1.md',
+  scope: 'tds',
+  key: 't1.md',
+  path: 'todo/t1.md',
+  handover: null,
+  createdBy: null,
   title: 'Renew contract',
   assignee: 'sam-example',
   due: '2030-01-01',
@@ -27,6 +32,7 @@ const todo = (over: Partial<TodoItem> = {}): TodoItem => ({
   ...over,
 });
 let canAddOpen = false;
+let canUsePersonal = false;
 const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList => ({
   mine: items,
   open: [],
@@ -37,6 +43,7 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
   ],
   changes,
   canAddOpen,
+  canUsePersonal,
 });
 
 const changeTodos = vi.fn();
@@ -64,6 +71,7 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
 
 beforeEach(() => {
   canAddOpen = false;
+  canUsePersonal = false;
   changeTodos.mockReset();
   changeTodos.mockResolvedValue({ done: 1, todos: list('on', [todo({ version: 'v2' })]) });
   openView.mockReset();
@@ -106,6 +114,7 @@ describe('To-dos drawer, changing to-dos', () => {
   it('adds with the person themselves as the default assignee', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     type('What needs doing?', '  Ring the client ');
     const who = screen.getByLabelText('Assigned to') as HTMLSelectElement;
     expect(who.value).toBe('sam-example');
@@ -446,12 +455,14 @@ describe('To-dos drawer, conflict check and open adds', () => {
   it('offers Open to anyone when adding only with canAddOpen, and sends assignee null', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     expect(screen.queryByRole('option', { name: 'Open to anyone' })).toBeNull();
     cleanup();
     canAddOpen = true;
     setStore('on');
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     type('What needs doing?', 'Anyone can do this');
     type('Assigned to', '');
     fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));

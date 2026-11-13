@@ -22,12 +22,15 @@ export function initialSince(lastActivityAt: string | null | undefined, now: num
 
 const PRIORITY: Record<Attention, number> = { asking: 3, working: 2, ready: 1 };
 
-/** The open chat that belongs to a to-do. If several do: needs an answer, then working, then ready. */
-export function chatForTodo(todoId: string, live: LiveSession[]): LiveSession | null {
+/**
+ * The open chat that belongs to a to-do, by its `key` (a bare id for TDS, `personal/<id>` for personal; a
+ * stored session's `todoId` is the same). If several do: needs an answer, then working, then ready.
+ */
+export function chatForTodo(todoKey: string, live: LiveSession[]): LiveSession | null {
   let best: LiveSession | null = null;
   let bestRank = 0;
   for (const s of live) {
-    if (s.todoId !== todoId) continue;
+    if (s.todoId !== todoKey) continue;
     const a = attentionFor(s.state);
     const rank = a ? PRIORITY[a] : 0;
     if (rank > bestRank) {

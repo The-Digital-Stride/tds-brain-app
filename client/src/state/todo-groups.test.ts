@@ -5,6 +5,11 @@ import { groupTodos } from './todo-groups.ts';
 const TODAY = '2026-11-11';
 const item = (id: string, due: string | null): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title: id,
   created: null,
   source: null,

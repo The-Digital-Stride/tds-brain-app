@@ -126,7 +126,7 @@ export function SkillsDrawer() {
                 </Fold>
               ) : null}
               {often.length > 0 ? (
-                <Fold title="Used often" count={often.length}>
+                <Fold title="Used often" count={often.length} defaultOpen={pinned.length === 0}>
                   {list(often)}
                 </Fold>
               ) : null}

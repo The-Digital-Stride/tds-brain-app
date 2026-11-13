@@ -17,6 +17,7 @@ including label or padding, reaches 24px), visible focus on everything.
 |---|---|---|---|
 | Sheet-bar title (the page `h1`) | `--head` | 14 / 600 / 1.25 (T) | navy |
 | Greeting on Home | `--head` | 26 / 600 / 1.15, −0.01em (T) | navy |
+| Drawer section heading (a `Fold` in a drawer) | `--head` | 14 / 600 | navy |
 | Dock (drawer, panel) heading | `--head` | 14 / 600 (T) | navy |
 | Card heading, section heading in a sheet, answer-box title | `--head` | 14 / 600 | navy |
 | Body; row title (row title at 500) | `--body` | 14 / 400 / 1.5 | navy |
@@ -36,7 +37,7 @@ including label or padding, reaches 24px), visible focus on everything.
 
 ## Dimensions
 
-- Rail item 36px high. Drawer and card rows: padding 7px 8px. Fold header 30px. Dock header min-height 47px (48 with the glass edge), padding 0 10px 1px 14px.
+- Rail item 36px high. Drawer and card rows: padding 7px 8px. Fold header 30px (32px in a drawer). Dock header min-height 47px (48 with the glass edge), padding 0 10px 1px 14px.
 - Sheet bar 48px, padding 0 10px 0 18px, no border.
 - Header band: the rail's logo, every dock header and the sheet bar fill the top 48px of their layer, with their contents centred on one line (y 36 from the desk's top edge); 32px controls sit 8px from top and bottom.
 - A drawer's search or filter (the Skills search, the To-dos switch) sits on the drawer's own glass between the header and the list (`.drawer-tools`, padding 0 10px 8px); only the list scrolls (`.drawer-scroll`). Nothing in a drawer has a backing of its own (Ian, 2026-11-11: a whiter strip behind the search was "not good").
@@ -45,7 +46,7 @@ including label or padding, reaches 24px), visible focus on everything.
 - Home: top padding 32px; greeting margin 0 0 4px; summary line 14px, margin 0 0 18px.
 - Composer padding 10px 10px 8px 14px; input 14px. Floater padding 8px 28px 14px.
 - Thread: column gap 12px; paragraph margin 0 0 12px.
-- Settings rows: padding 10px 0, divided by hairlines.
+- Drawer sections: header 32px; a `--line` hairline and 12px of space above every section but the first; rows 6px apart; only the top section starts open. A section can carry one action (`Fold`'s `action` slot): a quiet small `.btn` on the right of the heading line, outside the toggle button (nested buttons are invalid). The unread dot hangs in the row's left padding so titles share one left edge.
 
 ## Controls
 
@@ -101,7 +102,7 @@ Rings are for keyboard focus and the palette's active option only.
 No layer draws a line under its header (Ian, 2026-11-11: the hairline under the sheet bar was "not in
 line with the design system"). Content that scrolls under a fixed header fades out over the scroller's
 top 8px (`mask-image`), and the scroller takes `scroll-padding-top: 8px`. Hairlines are for rows of plain
-content (Settings, tables) and picture edges only. Scrollbars show a thumb and no track.
+content (Settings, tables), between drawer sections, and picture edges only. Scrollbars show a thumb and no track.
 
 ## Interaction states
 

@@ -175,9 +175,14 @@ const IDENTITY: Identity = {
   knownMember: true,
 };
 
-function todo(id: string): TodoItem {
+function todo(id: string, scope: 'tds' | 'personal' = 'tds'): TodoItem {
   return {
     id,
+    scope,
+    key: scope === 'personal' ? `personal/${id}` : id,
+    path: scope === 'personal' ? `personal/todo/${id}` : `todo/${id}`,
+    handover: null,
+    createdBy: null,
     title: id,
     assignee: null,
     due: null,
@@ -200,12 +205,13 @@ function fakeBrain(
       name === 'key-rotation' ? 'restricted' : name === 'gm' ? 'allowed' : 'unknown-skill',
     clients: async (): Promise<ClientInfo[]> => [{ slug: 'urban-cooling', name: 'Urban Cooling' }],
     todos: async (): Promise<TodoList> => ({
-      mine: [todo('20261111-mine.md')],
+      mine: [todo('20261111-mine.md'), todo('20261111-mine.md', 'personal')],
       open: [todo('20261112-open.md')],
       othersCount: 3,
       team: [],
       changes: 'no-skill',
       canAddOpen: false,
+      canUsePersonal: false,
     }),
     ...over,
   };
@@ -384,6 +390,14 @@ describe('a chat started on a to-do (A19)', () => {
     const live = (await mgr.list()).live;
     expect(live.find((l) => l.id === a.id)?.todoId).toBe('20261111-mine.md');
     expect(live.find((l) => l.id === b.id)?.todoId).toBe('20261112-open.md');
+  });
+
+  it('matches by key: a bare id is TDS, personal/<id> is the personal one', async () => {
+    setup();
+    const p = await mgr.start({ prompt: 'private', todoId: 'personal/20261111-mine.md' });
+    expect(p.todoId).toBe('personal/20261111-mine.md');
+    await expectCode(mgr.start({ prompt: 'x', todoId: 'personal/20261112-open.md' }), 'bad-request');
+    await expectCode(mgr.start({ prompt: 'x', todoId: 'todo/20261111-mine.md' }), 'bad-request');
   });
 
   it('is null when no to-do is given', async () => {

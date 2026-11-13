@@ -118,3 +118,9 @@ describe('keyAction: Esc and a floating panel', () => {
     expect(keyAction(esc, ctx({ panelOpen: true }))).toBeNull();
   });
 });
+
+describe('keyAction: the to-dos search key', () => {
+  it('leaves "/" to the to-dos drawer, which focuses its own search', () => {
+    expect(keyAction(key('/'), ctx({ drawer: 'todos' }))).toBeNull();
+  });
+});

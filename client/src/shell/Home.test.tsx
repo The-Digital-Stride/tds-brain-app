@@ -69,6 +69,11 @@ function dayOffset(n: number): string {
 }
 const todo = (id: string, title: string, due: string | null, client: string | null = null): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title,
   created: null,
   source: null,
@@ -251,6 +256,22 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md' });
+  });
+
+  it('marks a to-do passed to you as seen when it is opened from Home', async () => {
+    const at = new Date(Date.now() - 3_600_000).toISOString();
+    api.todos.mockResolvedValue({
+      ...todoList,
+      mine: [
+        {
+          ...todo('t-new.md', 'Fresh from Ben', dayOffset(0)),
+          handover: { by: 'ben-mcadam', byName: 'Ben McAdam', at, from: null, via: null, source: 'stamp' },
+        },
+      ],
+    });
+    await renderHome();
+    fireEvent.click(await card('Needs you').findByRole('button', { name: /Fresh from Ben/ }));
+    await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ todoSeen: { 't-new.md': at } }));
   });
 
   it('opens the live chat for a to-do that already has one', async () => {

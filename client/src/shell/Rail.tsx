@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Attention } from '../../../shared/contract.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
+import { newToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import { APPS } from './apps.ts';
 import type { DrawerName, IconName } from './contract.ts';
@@ -9,7 +10,7 @@ import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
 import { SyncStamp } from './SyncStamp.tsx';
-import { chatsRailLabel, initials, ROLE_WORDS } from './words.ts';
+import { chatsRailLabel, initials, ROLE_WORDS, todosRailLabel } from './words.ts';
 
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
 export const DRAWER_LABELS: Record<DrawerName, string> = {
@@ -29,12 +30,27 @@ interface ItemProps {
   /** For drawer buttons: whether its drawer is open. */
   drawer?: { name: DrawerName; open: boolean };
   pip?: Attention | null;
+  /** Something new to the person: a plain blue dot, whatever the chats are doing. */
+  fresh?: boolean;
   count?: number;
   after?: ReactNode;
   keys?: string;
 }
 
-function Item({ icon, label, name, wide, onClick, current, drawer, pip, count, after, keys }: ItemProps) {
+function Item({
+  icon,
+  label,
+  name,
+  wide,
+  onClick,
+  current,
+  drawer,
+  pip,
+  fresh,
+  count,
+  after,
+  keys,
+}: ItemProps) {
   return (
     <button
       type="button"
@@ -61,6 +77,7 @@ function Item({ icon, label, name, wide, onClick, current, drawer, pip, count, a
         </span>
       ) : null}
       {pip ? <span className="dot rail-pip" data-attention={pip} /> : null}
+      {fresh ? <span className="dot rail-pip" data-new="true" /> : null}
       <span className="rail-label">{label}</span>
       {count ? <span className="count rail-label">{count}</span> : null}
       {after}
@@ -82,6 +99,9 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
   const live = sessions?.live ?? [];
   const mine = todos?.mine.length ?? 0;
+  const fresh = todos
+    ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date()).length
+    : 0;
   const app = APPS.find((a) => view === `app:${a.id}`);
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);
   const drawer = (name: DrawerName) => ({ name, open: state.drawer === name });
@@ -128,7 +148,8 @@ export function Rail({ inert = false }: { inert?: boolean }) {
       <Item
         icon="todos"
         label="To-dos"
-        name={mine > 0 ? `To-dos, ${mine} of yours` : undefined}
+        name={todosRailLabel(mine, fresh)}
+        fresh={fresh > 0}
         wide={wide}
         drawer={drawer('todos')}
         count={mine}

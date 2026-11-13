@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// tdsapp-todo.cjs (v0.3) — change one loose to-do in todo/, the way the Workbench does, with fixes.
+// tdsapp-todo.cjs (v0.4) — change one loose to-do in todo/ (or personal/todo/), the way the
+// Workbench does, with fixes.
 //
 // A dependency-free port of the Workbench's to-do routes (tools/members/command-centre/server.cjs:
 // /api/todos/add, /edit, /due, /assignee, /delete, /tick, /roster and /api/misc-todos, with
 // lib/todo-parser.cjs). File names, frontmatter lines, success bodies and error texts are the
 // Workbench's. The plan behind v0.3 is the app repo's docs/plans/2026-11-13-todo-skill-fixes.md; the
-// weak spots it fixes are in the brain's os/tds-brain-app/change-requests.md (BCR-xx below).
+// weak spots it fixes are in the brain's os/tds-brain-app/change-requests.md (BCR-xx below). v0.4
+// follows docs/plans/2026-11-13-todo-handover-search-scope.md (decision 2).
 //
 // Differences from the Workbench:
 //   - delete keeps the to-do in todo/deleted/, stamped with who, when and from where (BCR-05).
@@ -30,10 +32,31 @@
 //     never overwrite. Symbolic links and files without write permission are refused (BCR-15).
 //   - Due dates must be real calendar dates (BCR-17).
 //
+// v0.4 differences (every new field optional; v0.3 calls to edit, due, tick, delete, roster and list
+// give byte-identical results):
+//   - capabilities: {} → {"version":"0.4","features":["handover","scope"?]}. "scope" only when the
+//     brain isn't a git repo or git ignores personal/todo/, and personal/todo isn't a symbolic link.
+//   - `scope: "personal"` on edit, due, delete, tick, assignee and move works in personal/todo/ (its
+//     done/ and deleted/ too); absent or "tds" is todo/; anything else → 400. Personal requests are
+//     refused (400) whenever "scope" isn't offered, so a private to-do never lands where git syncs it.
+//     Offered = no link among personal/, personal/todo/ and its done/ and deleted/; and, in a git
+//     repo, nothing tracked in personal/todo/ and all three folders ignored. Each personal file read
+//     to change or written must also be ignored by its real name and really be under personal/todo/.
+//     git runs without the caller's GIT_* variables.
+//   - add: `scope: "personal"` writes to personal/todo/, assigned to the adder (`by`, else the git
+//     user); `open` or someone else → 400. `created_by: <adder>` when the adder is known; a to-do for
+//     someone else is stamped as handed over (assigned_to, _at, _by, _via). New names are free in
+//     todo/, personal/todo/ and the done/ and deleted/ folders of both.
+//   - assignee: a real change stamps assigned_to (slug or "open"), assigned_at (UK offset),
+//     assigned_by, assigned_from (slug or "open") and assigned_via, replacing earlier ones, and adds a
+//     line under "## Handover history" for people. No change → nothing written. Personal → 400.
+//   - move: {file, scope?, to, expect?, by?, by_name?, via?} copies the bytes (and mode) unchanged to
+//     the other folder (a clash gets -<n>), then removes the original. Only the assignee may move it, either way.
+//
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
 //
-//   <command>  add | edit | due | assignee | delete | tick | roster | list
+//   <command>  add | edit | due | assignee | delete | tick | move | roster | list | capabilities
 //   stdin      one JSON object: the Workbench route's request body, same field names (file, title,
 //              body, due, assignee), plus the optional fields above. roster and list need none ({}).
 //   stdout     one JSON line.
@@ -58,6 +81,9 @@ const { spawnSync } = require('child_process');
 
 const BRAIN_ROOT = process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..', '..', '..');
 const TODO_DIR = path.join(BRAIN_ROOT, 'todo');
+// v0.4: personal to-dos, kept out of git by the brain's own ignore rules.
+const PERSONAL_DIR = path.join(BRAIN_ROOT, 'personal', 'todo');
+const SCRIPT_VERSION = '0.4';
 
 // WORKBENCH_AS=<name-slug> previews another person's list (server.cjs VIEW_AS).
 const VIEW_AS = /^[a-z0-9-]+$/.test(process.env.WORKBENCH_AS || '') ? process.env.WORKBENCH_AS : null;
@@ -307,14 +333,128 @@ function viaOf(body) {
   return oneLine(body.via).slice(0, VIA_MAX);
 }
 
+// ---- scope (v0.4) ---------------------------------------------------------------------
+
+const SCOPES = new Set(['tds', 'personal']);
+
+// 'tds' or 'personal' from a field that may be absent (absent = 'tds').
+function scopeValue(value, name) {
+  if (value === undefined || value === null) return 'tds';
+  if (typeof value !== 'string' || !SCOPES.has(value)) {
+    throw new Refusal(400, `${name} must be "tds" or "personal"`);
+  }
+  return value;
+}
+
+// git, run in the brain with messages in English so they can be recognised, and with none of the
+// caller's GIT_* variables (they could point git at another repository). Null if it can't run.
+function gitInBrain(args, input) {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.startsWith('GIT_')) env[key] = value;
+  }
+  env.LC_ALL = 'C';
+  env.LANGUAGE = '';
+  const out = spawnSync('git', args, { cwd: BRAIN_ROOT, encoding: 'utf8', timeout: 5000, env, input });
+  return out.error ? null : out;
+}
+
+const UNAVAILABLE = "personal to-dos aren't available: ";
+const UNCHECKED = UNAVAILABLE + "git couldn't check that personal/todo/ stays private";
+// Folders that must be real folders, not links, or a personal write could land anywhere.
+const PERSONAL_FOLDERS = ['personal', 'personal/todo', 'personal/todo/done', 'personal/todo/deleted'];
+
+// 'repo', 'none' (the brain isn't a git repository) or null (git couldn't tell). Asked once.
+let repoState;
+function brainRepo() {
+  if (repoState !== undefined) return repoState;
+  const repo = gitInBrain(['rev-parse', '--is-inside-work-tree']);
+  if (!repo) repoState = null;
+  else if (repo.status !== 0) repoState = /not a git repository/i.test(repo.stderr || '') ? 'none' : null;
+  else repoState = (repo.stdout || '').trim() === 'true' ? 'repo' : null;
+  return repoState;
+}
+
+// Which of these brain-relative paths git doesn't ignore ([] = all ignored); null if git couldn't tell.
+// check-ignore says a tracked file isn't ignored, so a force-added file fails here too.
+function notIgnored(rels) {
+  // Names go in and out NUL-separated, so git never quotes them.
+  const out = gitInBrain(['check-ignore', '--stdin', '-z'], rels.map(rel => rel + '\0').join(''));
+  if (!out || (out.status !== 0 && out.status !== 1)) return null;
+  const ignored = new Set((out.stdout || '').split('\0').filter(Boolean));
+  return rels.filter(rel => !ignored.has(rel));
+}
+
+// Why personal to-dos can't be used here, or null when they can. The folder-level checks: no link
+// among personal/, personal/todo/ and its done/ and deleted/; and, in a git repository, nothing in
+// personal/todo/ tracked and all three folders ignored, so nothing there ever syncs.
+function personalProblem() {
+  for (const rel of PERSONAL_FOLDERS) {
+    try {
+      if (fs.lstatSync(path.join(BRAIN_ROOT, rel)).isSymbolicLink()) {
+        return UNAVAILABLE + `${rel} is a link to another folder`;
+      }
+    } catch { /* not there yet: it is made as a real folder when needed */ }
+  }
+  const repo = brainRepo();
+  if (repo === 'none') return null;
+  if (repo === null) return UNCHECKED;
+  const tracked = gitInBrain(['ls-files', '-z', '--', 'personal/todo']);
+  if (!tracked || tracked.status !== 0) return UNCHECKED;
+  if (tracked.stdout !== '') return UNAVAILABLE + 'git already tracks files in personal/todo/';
+  const missed = notIgnored(['personal/todo/x.md', 'personal/todo/done/x.md', 'personal/todo/deleted/x.md']);
+  if (missed === null) return UNCHECKED;
+  if (missed.length > 0) return UNAVAILABLE + `the brain's git doesn't ignore ${missed[0].replace(/x\.md$/, '')}`;
+  return null;
+}
+
+// Refuses unless git ignores each of these files (absolute paths) by its real name.
+function requireIgnored(absPaths) {
+  const repo = brainRepo();
+  if (repo === 'none') return;
+  if (repo === null) throw new Refusal(400, UNCHECKED);
+  const missed = notIgnored(absPaths.map(abs => path.relative(BRAIN_ROOT, abs).split(path.sep).join('/')));
+  if (missed === null) throw new Refusal(400, UNCHECKED);
+  if (missed.length > 0) throw new Refusal(400, UNAVAILABLE + `the brain's git doesn't ignore ${missed[0]}`);
+}
+
+// Refuses a folder that really is somewhere outside `root` (a link along the way).
+function requireInside(dir, root) {
+  const real = fs.realpathSync(dir);
+  const base = fs.realpathSync(root);
+  if (real !== base && !real.startsWith(base + path.sep)) {
+    const prefix = root === PERSONAL_DIR ? UNAVAILABLE : '';
+    throw new Refusal(400, `${prefix}${path.relative(BRAIN_ROOT, dir)} leads outside ${path.relative(BRAIN_ROOT, root)}`);
+  }
+}
+
+// Every personal file read to change or written: in personal/todo/ for real, and ignored by git.
+function requirePrivate(abs) {
+  requireInside(path.dirname(abs), PERSONAL_DIR);
+  requireIgnored([abs]);
+}
+
+// The folder a request works in. Personal requests are refused unless personal/todo is private.
+function dirOfScope(scope) {
+  if (scope === 'tds') return TODO_DIR;
+  const problem = personalProblem();
+  if (problem) throw new Refusal(400, problem);
+  return PERSONAL_DIR;
+}
+
+function dirOf(body) {
+  return dirOfScope(scopeValue(body.scope, 'scope'));
+}
+
 // ---- reading and writing files (BCR-15) ---------------------------------------------
 
 // The to-do to change: checked, read once, and compared with `expect` before anything is written.
 // `rewrite`: it will be replaced in place (edit, due, assignee), so it must be writable; tick and
 // delete only remove it, which works on a read-only file today and still does.
-function openTodo(file, expect, rewrite) {
-  const abs = path.join(TODO_DIR, file);
+function openTodo(dir, file, expect, rewrite) {
+  const abs = path.join(dir, file);
   if (!fs.existsSync(abs)) throw new Refusal(404, 'todo not found: ' + file);
+  if (dir === PERSONAL_DIR) requirePrivate(abs);
   const stat = fs.lstatSync(abs);
   // rename would replace a link or a read-only file, where the Workbench wrote through the link
   // or failed; refuse first. A link is refused for tick and delete too: never copy what it points at.
@@ -417,10 +557,11 @@ function replaceTodo(todo, text) {
   syncDir(dir);
 }
 
-// Creates a new file all at once. Fails with EEXIST rather than overwrite anything.
-function createFile(abs, data) {
+// Creates a new file all at once. Fails with EEXIST rather than overwrite anything. `mode` (move
+// only) keeps the original's permissions; otherwise the default applies, as before.
+function createFile(abs, data, mode) {
   const dir = path.dirname(abs);
-  const tmp = writeTemp(dir, data);
+  const tmp = writeTemp(dir, data, mode);
   try {
     try {
       io.link(tmp, abs);
@@ -428,6 +569,7 @@ function createFile(abs, data) {
       if (err.code === 'EEXIST') throw err;
       // No hard links here (some file systems): the Workbench's exclusive write, as before.
       fs.writeFileSync(abs, data, { encoding: 'utf8', flag: 'wx' });
+      if (mode !== undefined) fs.chmodSync(abs, mode);
     }
   } finally {
     fs.rmSync(tmp, { force: true });
@@ -510,13 +652,15 @@ function normalTitle(value) {
   return String(value).toLowerCase().replace(/[\p{P}\p{S}]+/gu, '').replace(/\s+/g, ' ').trim();
 }
 
-// Adds `entry` at the end of the "## Title history" section, making the section if needed.
-function addTitleHistory(lines, entry) {
+// Adds `entry` at the end of the "## <name>" section (Title history, Handover history), making the
+// section at the end of the body if needed.
+function addToSection(lines, name, entry) {
   const outside = linesOutsideFences(lines);
-  const at = outside.find(i => /^##\s+Title history\s*$/i.test(lines[i]));
+  const heading = new RegExp(`^##\\s+${name}\\s*$`, 'i');
+  const at = outside.find(i => heading.test(lines[i]));
   if (at === undefined) {
     while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
-    lines.push('', '## Title history', '', entry, '');
+    lines.push('', `## ${name}`, '', entry, '');
     return;
   }
   let end = lines.length;
@@ -538,7 +682,7 @@ function retitleBody(lines, oldTitle, newTitle) {
     out[heading.index] = '# ' + newTitle;
   }
   if (normalTitle(newTitle) !== normalTitle(oldTitle)) {
-    addTitleHistory(out, `- ${ukTime(new Date()).date}: was "${oldTitle}"`);
+    addToSection(out, 'Title history', `- ${ukTime(new Date()).date}: was "${oldTitle}"`);
   }
   return out;
 }
@@ -574,14 +718,31 @@ function roster(body, res) {
   }
 }
 
+// Every folder a to-do of a given name may be in: a new name is free in all of them (BCR-14), so it
+// can be ticked, deleted or moved between TDS and personal later (v0.4).
+const NAME_FOLDERS = [TODO_DIR, PERSONAL_DIR].flatMap(dir => ['', 'done', 'deleted'].map(sub => path.join(dir, sub)));
+
 // POST /api/todos/add: writes todo/YYYYMMDD-<slug>.md with the standard frontmatter.
 // Assignee defaults to this machine's git user (slugified); `open: true` leaves it open.
+// v0.4: `scope: "personal"` writes personal/todo/ instead, always for the adder.
 function add(body, res) {
   const title = titleOf(body);
   const due = dueOf(body);
+  const scope = scopeValue(body.scope, 'scope');
   const open = body.open === true;
-  let assignee = open ? '' : assigneeOf(body);
+  const adder = adderOf(body);
+  let assignee;
+  if (scope === 'personal') {
+    if (open) throw new Refusal(400, "a personal to-do can't be open to anyone");
+    const asked = workbenchSlug(body.assignee);
+    if (asked && asked !== adder) throw new Refusal(400, 'a personal to-do can only be for the person adding it');
+    if (!adder) throw new Refusal(400, 'a personal to-do needs to know who is adding it: send by');
+    assignee = adder;
+  } else {
+    assignee = open ? '' : assigneeOf(body);
+  }
   const via = viaOf(body);
+  const dir = dirOfScope(scope);
 
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -591,21 +752,28 @@ function add(body, res) {
   if (!assignee && !open) assignee = workbenchSlug(gitUserName());
 
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'todo';
-  fs.mkdirSync(TODO_DIR, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
+  if (scope === 'personal') requireInside(dir, PERSONAL_DIR);
   const fm = ['---'];
   if (assignee) fm.push('assignee: ' + assignee);
   fm.push('title: ' + yamlText(title), 'created: ' + today);
+  if (adder) fm.push('created_by: ' + adder);
   if (due) fm.push('due: ' + due);
-  fm.push('source: ' + yamlText(via ? `added from ${via}` : 'added with the todo skill'), '---', '');
+  fm.push('source: ' + yamlText(via ? `added from ${via}` : 'added with the todo skill'));
+  // Made for someone else: a handover, with nobody it came from.
+  if (adder && assignee && assignee !== adder) {
+    fm.push(...handoverRecord({ to: assignee, by: adder, via: via || 'todo skill', at: new Date() }));
+  }
+  fm.push('---', '');
   const text = fm.join('\n');
 
   const stem = `${today.replace(/-/g, '')}-${slug}`;
   for (let n = 1; ; n++) {
     const file = n === 1 ? `${stem}.md` : `${stem}-${n}.md`;
-    // Free in todo/, todo/done/ and todo/deleted/, so it can be ticked or deleted later (BCR-14).
-    if (['', 'done', 'deleted'].some(sub => fs.existsSync(path.join(TODO_DIR, sub, file)))) continue;
+    if (NAME_FOLDERS.some(folder => fs.existsSync(path.join(folder, file)))) continue;
+    if (scope === 'personal') requireIgnored([path.join(dir, file)]);
     try {
-      createFile(path.join(TODO_DIR, file), text);
+      createFile(path.join(dir, file), text);
       return res.json({ ok: true, file });
     } catch (err) {
       // Another writer took the name between the check and the link: try the next one.
@@ -618,7 +786,7 @@ function add(body, res) {
 function due(body, res) {
   const file = fileOf(body);
   const due = dueOf(body);
-  const todo = openTodo(file, expectOf(body), true);
+  const todo = openTodo(dirOf(body), file, expectOf(body), true);
   let content = todo.text;
   if (/^---\n/.test(content)) {
     const lines = content.split('\n');
@@ -638,23 +806,38 @@ function due(body, res) {
 
 // POST /api/todos/assignee: rewrites the `assignee:` line (adds one if missing;
 // clearing removes it, which leaves the todo open).
+// v0.4: a real change is stamped as a handover (see stampHandover); no change writes nothing.
 function assignee(body, res) {
   const file = fileOf(body);
+  const scope = scopeValue(body.scope, 'scope');
+  if (scope === 'personal') throw new Refusal(400, "a personal to-do can't be passed on: move it to TDS first");
   const assignee = assigneeOf(body);
-  const todo = openTodo(file, expectOf(body), true);
+  const todo = openTodo(TODO_DIR, file, expectOf(body), true);
   let content = todo.text;
+  let from = '';
   if (/^---\n/.test(content)) {
     const lines = content.split('\n');
     const close = closingLine(lines);
     if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
     let idx = -1;
     for (let i = 1; i < close; i++) { if (/^assignee:/.test(lines[i])) { idx = i; break; } }
+    if (idx !== -1) from = workbenchSlug(unquote(lines[idx].slice('assignee:'.length)));
+    if (from === assignee) return res.json({ ok: true, file, assignee: assignee || null });
     if (idx !== -1) { if (assignee) lines[idx] = 'assignee: ' + assignee; else lines.splice(idx, 1); }
     else if (assignee) lines.splice(1, 0, 'assignee: ' + assignee);
     content = lines.join('\n');
   } else if (assignee) {
     content = `---\nassignee: ${assignee}\n---\n\n` + content;
+  } else {
+    return res.json({ ok: true, file, assignee: null });
   }
+  content = stampHandover(content, {
+    to: assignee,
+    from,
+    by: actor(body),
+    via: viaOf(body) || 'todo skill',
+    at: new Date(),
+  });
   replaceTodo(todo, content);
   res.json({ ok: true, file, assignee: assignee || null });
 }
@@ -672,7 +855,7 @@ function edit(body, res) {
   if (hasBody && newBody.length > DETAILS_MAX) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
-  const todo = openTodo(file, expectOf(body), true);
+  const todo = openTodo(dirOf(body), file, expectOf(body), true);
   const titleLine = 'title: ' + yamlText(title);
   let headLines = null; // the frontmatter lines, when the file has a block
   let prefix = ''; // else the new block put in front
@@ -752,6 +935,11 @@ function actor(body) {
   return { name: name || 'unknown', slug: workbenchSlug(name) || 'unknown' };
 }
 
+// Who is adding or moving a to-do, as a slug: `by`, else the git user; '' when neither is known.
+function adderOf(body) {
+  return workbenchSlug(oneLine(body.by)) || workbenchSlug(gitUserName());
+}
+
 // The to-do's text with a record added: in the frontmatter (for tools, replacing earlier values of
 // the same keys) and in a short section at the end (for people). Everything else is kept.
 function stampRecord(text, keyLine, record, footer) {
@@ -812,18 +1000,24 @@ function stampDeleted(text, by, via, at) {
 // timestamp suffix), then removes the original. If that fails, the copy goes too.
 function moveStamped(body, res, folder, stamp) {
   const file = fileOf(body);
-  const todo = openTodo(file, expectOf(body), false);
+  const home = dirOf(body);
+  const todo = openTodo(home, file, expectOf(body), false);
   const via = viaOf(body) || 'todo skill';
   const stamped = stamp(todo.bytes.toString('utf8'), actor(body), via, new Date());
-  const dir = path.join(TODO_DIR, folder);
+  const dir = path.join(home, folder);
   fs.mkdirSync(dir, { recursive: true });
+  // A personal one stays private: its done/ or deleted/ folder is real and every name is ignored.
+  const create = (dest) => {
+    if (home === PERSONAL_DIR) requirePrivate(dest);
+    createFile(dest, stamped);
+  };
   let dest = path.join(dir, file);
   try {
-    createFile(dest, stamped);
+    create(dest);
   } catch (err) {
     if (err.code !== 'EEXIST') throw err;
     dest = path.join(dir, file.replace(/\.md$/, `-${Date.now()}.md`));
-    createFile(dest, stamped);
+    create(dest);
   }
   try {
     fs.unlinkSync(todo.abs);
@@ -835,19 +1029,127 @@ function moveStamped(body, res, folder, stamp) {
   res.json({ ok: true, file, moved: path.relative(BRAIN_ROOT, dest) });
 }
 
-// tick: { file, expect?, via?, by?, by_name? } → todo/done/, stamped as the app's own tick.
+// tick: { file, scope?, expect?, via?, by?, by_name? } → todo/done/ (or personal/todo/done/),
+// stamped as the app's own tick.
 function tick(body, res) {
   moveStamped(body, res, 'done', stampDone);
 }
 
-// delete: { file, expect?, via?, by?, by_name? } → todo/deleted/, stamped.
+// delete: { file, scope?, expect?, via?, by?, by_name? } → todo/deleted/ (or personal/todo/deleted/),
+// stamped.
 function remove(body, res) {
   moveStamped(body, res, 'deleted', stampDeleted);
 }
 
+// ---- handover (v0.4) ----------------------------------------------------------------------
+//
+// Passing a to-do on records who passed it, when, from whom and with which tool: in the frontmatter
+// for tools (the app shows "Passed to you by …"), replacing an earlier record, and as one line under
+// "## Handover history" for people. Readers that don't know these keys skip them.
+
+const HANDOVER_KEY_LINE = /^assigned_[A-Za-z0-9_-]*\s*:/;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The frontmatter lines. `from` is left out when undefined (a new to-do came from nobody).
+function handoverRecord({ to, from, by, via, at }) {
+  const when = ukTime(at);
+  const lines = [
+    `assigned_to: ${to || 'open'}`,
+    `assigned_at: ${when.date}T${when.time}:${when.seconds}${when.offset}`,
+    `assigned_by: ${by}`,
+  ];
+  if (from !== undefined) lines.push(`assigned_from: ${from || 'open'}`);
+  lines.push(`assigned_via: ${yamlValue(via)}`);
+  return lines;
+}
+
+// "- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Brain App)."
+function handoverLine({ to, from, by, via, at }) {
+  const when = ukTime(at);
+  const [y, m, d] = when.date.split('-');
+  let what;
+  if (!to) what = `made it open to anyone; it was with ${from}`;
+  else if (!from && to === by.slug) what = 'picked it up from the open list';
+  else if (!from) what = `passed it from the open list to ${to}`;
+  else what = `passed it from ${from} to ${to}`;
+  return `- ${Number(d)} ${MONTHS[Number(m) - 1]} ${y}, ${when.time} UK: ${by.name} ${what} (${via}).`;
+}
+
+// `text` (plain \n lines, starting with a frontmatter block) with the handover recorded.
+function stampHandover(text, change) {
+  const lines = text.split('\n');
+  const close = closingLine(lines);
+  const head = [];
+  let dropping = false;
+  for (const line of lines.slice(1, close)) {
+    if (HANDOVER_KEY_LINE.test(line)) { dropping = true; continue; }
+    // ... and the rest of an earlier multi-line value, as stampRecord does.
+    if (dropping && (line.trim() === '' || /^\s/.test(line) || /^-\s/.test(line))) continue;
+    dropping = false;
+    head.push(line);
+  }
+  const record = handoverRecord({ ...change, by: change.by.slug });
+  const bodyLines = lines.slice(close + 1);
+  addToSection(bodyLines, 'Handover history', handoverLine(change));
+  return ['---', ...head, ...record, '---', ...bodyLines].join('\n');
+}
+
+// ---- move (v0.4) ---------------------------------------------------------------------------
+
+// move: { file, scope?, to, expect?, by?, by_name?, via? } → the same bytes in the other folder
+// (todo/ ↔ personal/todo/), nothing stamped, so its version is unchanged. Only the person it's
+// assigned to may move it. A name taken there gets -2, -3, …
+function move(body, res) {
+  const file = fileOf(body);
+  const scope = scopeValue(body.scope, 'scope');
+  // Unlike scope, `to` has no default.
+  const to = scopeValue(body.to == null ? '' : body.to, 'to');
+  if (to === scope) throw new Refusal(400, 'to must differ from scope');
+  const fromDir = dirOfScope(scope);
+  const toDir = dirOfScope(to);
+  const todo = openTodo(fromDir, file, expectOf(body), false);
+  const owner = workbenchSlug(parseFrontmatter(stripBom(todo.text)).frontmatter.assignee);
+  const mover = adderOf(body);
+  if (!owner || !mover || owner !== mover) {
+    throw new Refusal(400, to === 'personal'
+      ? 'only your own to-dos can be made personal'
+      : 'only your own personal to-dos can be moved to TDS');
+  }
+  fs.mkdirSync(toDir, { recursive: true });
+  requireInside(toDir, to === 'personal' ? PERSONAL_DIR : TODO_DIR);
+  let name = file;
+  for (let n = 2; ; n++) {
+    try {
+      if (to === 'personal') requireIgnored([path.join(toDir, name)]);
+      createFile(path.join(toDir, name), todo.bytes, todo.mode);
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST' || n >= 1000) throw err;
+      name = file.replace(/\.md$/, `-${n}.md`);
+    }
+  }
+  const dest = path.join(toDir, name);
+  try {
+    fs.unlinkSync(todo.abs);
+  } catch (err) {
+    // Never leave it in both lists.
+    fs.rmSync(dest, { force: true });
+    throw err;
+  }
+  res.json({ ok: true, file: name, moved: path.relative(BRAIN_ROOT, dest) });
+}
+
+// capabilities: {} → what this script can do, so a caller can tell v0.4 from v0.3 (which answers
+// "unknown command") and whether personal to-dos are safe to use in this brain.
+function capabilities(body, res) {
+  const features = ['handover'];
+  if (!personalProblem()) features.push('scope');
+  res.json({ version: SCRIPT_VERSION, features });
+}
+
 // ---- command line -----------------------------------------------------------
 
-const COMMANDS = { add, edit, due, assignee, delete: remove, tick, roster, list };
+const COMMANDS = { add, edit, due, assignee, delete: remove, tick, move, roster, list, capabilities };
 
 function finish(code, body) {
   const out = code === 200 ? body : Object.assign({}, body, { status: code });

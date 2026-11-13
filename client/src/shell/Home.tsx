@@ -6,6 +6,7 @@ import { sortChats } from '../state/chats.ts';
 import { clientChoice, clientSlugOf, scopeForClient, useClientChoice } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, needsYou, summary } from '../state/home.ts';
+import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import type { DrawerName } from './contract.ts';
 import { SheetBar } from './SheetBar.tsx';
@@ -27,8 +28,18 @@ function metaParts(
 
 /** The light dashboard shown for a new chat: greeting, composer, and three cards of what needs you. */
 export function Home() {
-  const { boot, todos, sessions, activeChat, send, composerFocus, startSkill, newChat, openChat } =
-    useStore();
+  const {
+    boot,
+    todos,
+    sessions,
+    activeChat,
+    send,
+    composerFocus,
+    startSkill,
+    newChat,
+    openChat,
+    markTodosSeen,
+  } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
   // The client chosen here or in an app; until one is, the last client a chat was started for.
@@ -49,9 +60,11 @@ export function Home() {
   const clientName = (slug: string | null) => (slug ? placeName(slug, clients) : null);
 
   const openTodo = (todo: TodoItem) => {
-    const chat = chatForTodo(todo.id, live);
+    // Opening a to-do someone passed to you counts as seeing it.
+    if (isNewToYou(todo, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date())) markTodosSeen([todo]);
+    const chat = chatForTodo(todo.key, live);
     if (chat) openChat(chat.id);
-    else newChat({ draft: todoChatDraft(todo), todoId: todo.id });
+    else newChat({ draft: todoChatDraft(todo), todoId: todo.key });
   };
 
   const { pinned, often } = starterSkills(boot);
@@ -152,7 +165,7 @@ export function Home() {
               ) : (
                 <>
                   {need.rows.map((t) => (
-                    <button key={t.id} type="button" className="line" onClick={() => openTodo(t)}>
+                    <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
                       <span className="line-text">
                         <span className="line-title">{t.title}</span>
                         <span className="line-meta">

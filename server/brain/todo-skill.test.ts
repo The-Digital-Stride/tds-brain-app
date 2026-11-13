@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -170,7 +171,7 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: null, expect: EXPECT },
-        { file: 'a.md', assignee: '', expect: EXPECT },
+        { file: 'a.md', assignee: '', via: 'TDS Brain App', expect: EXPECT },
       ],
       [
         { kind: 'delete', id: 'a.md', expect: EXPECT },
@@ -194,11 +195,11 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam' },
-        { file: 'a.md', assignee: 'ben-mcadam' },
+        { file: 'a.md', assignee: 'ben-mcadam', via: 'TDS Brain App' },
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: null },
-        { file: 'a.md', assignee: '' },
+        { file: 'a.md', assignee: '', via: 'TDS Brain App' },
       ],
       [
         { kind: 'delete', id: 'a.md' },
@@ -287,7 +288,7 @@ describe('createTodoSkillRunner', () => {
       { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Brain App' },
       { file: 'a.md', title: 'T', body: 'D' },
       { file: 'a.md', due: '2026-12-01' },
-      { file: 'a.md', assignee: '' },
+      { file: 'a.md', assignee: '', via: 'TDS Brain App' },
       { file: 'a.md', via: 'TDS Brain App' },
     ]);
   });
@@ -477,5 +478,123 @@ describe('findTodoSkill', () => {
     const result = await codeOf(createTodoSkillRunner(root, { env }).run({ kind: 'delete', id: 'a.md' }));
     expect(result?.code).toBe('changed');
     expect(result?.message).toBe(TODO_CHANGE_MESSAGES.changed);
+  });
+});
+
+describe('v0.4: scope, move and tick payloads', () => {
+  const by = { slug: 'sam', name: 'Sam Example' };
+
+  it('sends scope only when personal, so v0.3 payloads stay identical', () => {
+    expect(scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', scope: 'tds' })).toEqual({
+      file: 'a.md',
+      title: 'T',
+    });
+    expect(
+      scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', expect: EXPECT, scope: 'personal' }),
+    ).toEqual({
+      file: 'a.md',
+      title: 'T',
+      expect: EXPECT,
+      scope: 'personal',
+    });
+    expect(scriptPayload({ kind: 'due', id: 'a.md', due: null, scope: 'personal' })).toEqual({
+      file: 'a.md',
+      due: '',
+      scope: 'personal',
+    });
+    expect(scriptPayload({ kind: 'delete', id: 'a.md', scope: 'personal' }, by)).toEqual({
+      file: 'a.md',
+      via: 'TDS Brain App',
+      by: 'sam',
+      by_name: 'Sam Example',
+      scope: 'personal',
+    });
+    expect(scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'sam', scope: 'personal' })).toEqual(
+      { title: 'T', due: '', assignee: 'sam', via: 'TDS Brain App', scope: 'personal' },
+    );
+  });
+
+  it('maps move and a personal tick', () => {
+    expect(
+      scriptPayload({ kind: 'move', id: 'a.md', scope: 'personal', to: 'tds', expect: EXPECT }, by),
+    ).toEqual({
+      file: 'a.md',
+      scope: 'personal',
+      to: 'tds',
+      expect: EXPECT,
+      by: 'sam',
+      by_name: 'Sam Example',
+      via: 'TDS Brain App',
+    });
+    expect(scriptPayload({ kind: 'tick', id: 'a.md', scope: 'personal', expect: EXPECT }, by)).toEqual({
+      file: 'a.md',
+      via: 'TDS Brain App',
+      by: 'sam',
+      by_name: 'Sam Example',
+      expect: EXPECT,
+      scope: 'personal',
+    });
+  });
+
+  it("runs the right command and exposes the script's reply file", async () => {
+    const { root, log, env } = setup({ out: '{"ok":true,"file":"a-2.md","moved":"todo/a-2.md"}' });
+    const runner = createTodoSkillRunner(root, { env });
+    const result = await runner.run({ kind: 'move', id: 'a.md', scope: 'personal', to: 'tds' }, by);
+    expect(result).toEqual({ file: 'a-2.md' });
+    expect(readLog(log)[0]?.argv.slice(1)).toEqual(['move']);
+    await runner.run({ kind: 'tick', id: 'a.md', scope: 'personal', expect: EXPECT }, by);
+    expect(
+      readLog(log)
+        .filter((c) => c.at === 'start')
+        .map((c) => c.argv[1]),
+    ).toEqual(['move', 'tick']);
+  });
+});
+
+describe('capabilities probe', () => {
+  const caps = (features: string[]) => ({ out: JSON.stringify({ version: '0.4', features }) });
+  const starts = (log: string) => readLog(log).filter((c) => c.at === 'start');
+
+  it("runs 'capabilities' with {} and returns the features", async () => {
+    const { root, log, env } = setup(caps(['handover', 'scope']));
+    const features = await createTodoSkillRunner(root, { env }).capabilities();
+    expect(features).toEqual(['handover', 'scope']);
+    expect(starts(log)).toHaveLength(1);
+    expect(starts(log)[0]?.argv.slice(1)).toEqual(['capabilities']);
+    expect(starts(log)[0]?.stdin).toBe('{}');
+  });
+
+  it('caches per script path and mtime, and asks again when the script changes', async () => {
+    const { root, log, env } = setup(caps(['handover']));
+    const runner = createTodoSkillRunner(root, { env });
+    await runner.capabilities();
+    await runner.capabilities();
+    expect(starts(log)).toHaveLength(1);
+    const script = join(root, TODO_SCRIPT);
+    const later = new Date(Date.now() + 5000);
+    utimesSync(script, later, later);
+    await runner.capabilities();
+    expect(starts(log)).toHaveLength(2);
+  });
+
+  it('treats unknown command (a v0.3 script) as none, and remembers that', async () => {
+    const { root, log, env } = setup({ exit: 2, out: '{"ok":false,"status":400,"error":"unknown command"}' });
+    const runner = createTodoSkillRunner(root, { env });
+    expect(await runner.capabilities()).toEqual([]);
+    expect(await runner.capabilities()).toEqual([]);
+    expect(starts(log)).toHaveLength(1);
+  });
+
+  it('gives none on a crash or a bad reply, and asks again next time', async () => {
+    const { root, log, env } = setup({ exit: 1, out: 'boom' });
+    const runner = createTodoSkillRunner(root, { env });
+    expect(await runner.capabilities()).toEqual([]);
+    expect(await runner.capabilities()).toEqual([]);
+    expect(starts(log)).toHaveLength(2);
+  });
+
+  it('gives none when there is no script', async () => {
+    const root = makeBrain(null);
+    expect(await createTodoSkillRunner(root).capabilities()).toEqual([]);
   });
 });

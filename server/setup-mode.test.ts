@@ -29,6 +29,7 @@ describe('createSetupBrain', () => {
       team: [],
       changes: 'no-skill',
       canAddOpen: false,
+      canUsePersonal: false,
     });
     expect(await brain.profile(someone)).toEqual({ title: null, departments: [], owns: null });
     expect(await brain.skillAccess(someone, 'anything')).toBe('unknown-skill');

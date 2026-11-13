@@ -8,25 +8,33 @@ import {
 } from '../../../shared/contract.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
+import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
+import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
+import type { TodoFilter } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { AddTodoForm, type EditDraft, TodoDonePanel, TodoEditor } from './TodoForms.tsx';
-import { todoChatDraft, todoPlaces } from './words.ts';
+import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
 
 type Tab = 'mine' | 'open';
 
+const SEARCH_ID = 'todo-search';
+
 /** What the rows need to edit: set by the drawer only when changes are on. */
 interface Editing {
+  /** The open editor's to-do, by `key`. */
   id: string | null;
   /** The open editor's fields. They live here so a row that moves group keeps what was typed. */
   draft: EditDraft;
   setDraft: (d: EditDraft) => void;
   /** False for someone who may only tick to-dos off: opening one shows just "Mark as done". */
   canEdit: boolean;
+  /** TodoList.canUsePersonal: shows the TDS / Personal switch in the editor. */
+  canUsePersonal: boolean;
   busy: boolean;
   me: string;
   team: TeamMember[];
@@ -47,6 +55,7 @@ function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean): EditDraft {
     details: fresh.details,
     due: fresh.due ?? '',
     assignee: fresh.assignee ?? '',
+    scope: fresh.scope,
   };
   const keep = <K extends keyof typeof now>(k: K) => (d[k] === d.base[k] ? now[k] : d[k]);
   return {
@@ -54,6 +63,7 @@ function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean): EditDraft {
     details: keep('details'),
     due: keep('due'),
     assignee: keep('assignee'),
+    scope: keep('scope'),
     version: fresh.version,
     base: now,
     ...(conflict ? { theirs: now } : {}),
@@ -104,29 +114,48 @@ function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUn
   );
 }
 
-function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null }) {
+function TodoRow({
+  todo,
+  editing,
+  fresh,
+  showScope,
+  onOpened,
+}: {
+  todo: TodoItem;
+  editing: Editing | null;
+  /** In "New to you": a dot, and opening it marks it seen. */
+  fresh: boolean;
+  /** The scope filter is All: a personal row says so. */
+  showScope: boolean;
+  /** The row was opened (chat or editor): "New to you" marks it seen. */
+  onOpened: (todo: TodoItem) => void;
+}) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
-  const chat = sessions ? chatForTodo(todo.id, sessions.live) : null;
+  const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
     chat !== null && view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const due = todo.due ? dueInWords(todo.due) : '';
   const overdue = todo.due ? isOverdue(todo.due) : false;
 
-  const parts: { text: string; late?: boolean }[] = [];
+  const parts: { text: string; late?: boolean; icon?: 'lock' }[] = [];
+  const from = handoverMeta(todo, boot?.identity.slug ?? '');
+  if (from) parts.push({ text: from });
+  if (showScope && todo.scope === 'personal') parts.push({ text: 'Personal', icon: 'lock' });
   if (due) parts.push({ text: due, late: overdue });
   for (const text of todoPlaces(todo, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
   const choose = () => {
+    onOpened(todo);
     if (chat) openChat(chat.id);
-    else newChat({ draft: todoChatDraft(todo), todoId: todo.id });
+    else newChat({ draft: todoChatDraft(todo), todoId: todo.key });
     if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
   };
 
-  if (editing && editing.id === todo.id) {
+  if (editing && editing.id === todo.key) {
     return (
       <li className="todo todo-editing">
         {editing.canEdit ? (
@@ -137,6 +166,7 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
             me={editing.me}
             team={editing.team}
             busy={editing.busy}
+            canUsePersonal={editing.canUsePersonal}
             onSave={(actions) => editing.save(todo, actions)}
             onDone={() => editing.done(todo)}
             onDelete={() => void editing.remove(todo)}
@@ -157,15 +187,24 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
       aria-current={current ? 'true' : undefined}
     >
       <button type="button" className="todo-main" onClick={choose}>
+        {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
           <span className="line-title">
-            <span className="visually-hidden">{chat ? 'Open chat:' : 'Start a chat on this:'}</span>{' '}
+            <span className="visually-hidden">
+              {fresh ? 'New to you. ' : ''}
+              {chat ? 'Open chat:' : 'Start a chat on this:'}
+            </span>{' '}
             {todo.title}
           </span>{' '}
           <span className="line-meta">
             {parts.map((part, i) => (
               <span key={part.text}>
                 {i > 0 ? ', ' : ''}
+                {part.icon ? (
+                  <span className="todo-lock">
+                    <Icon name={part.icon} size={12} />
+                  </span>
+                ) : null}
                 <span className={part.late ? 'late' : undefined}>{part.text}</span>
               </span>
             ))}
@@ -179,10 +218,13 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
         <button
           type="button"
           className="icon-btn todo-edit"
-          data-edit-for={todo.id}
+          data-edit-for={todo.key}
           aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
           disabled={editing.busy}
-          onClick={() => editing.open(todo)}
+          onClick={() => {
+            onOpened(todo);
+            editing.open(todo);
+          }}
         >
           <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
         </button>
@@ -191,21 +233,51 @@ function TodoRow({ todo, editing }: { todo: TodoItem; editing: Editing | null })
   );
 }
 
+/** Tells screen readers how many to-dos match, a moment after the person stops typing. Silent unless filtering. */
+function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: number }) {
+  const text = filtering
+    ? count === 0
+      ? 'No to-dos match'
+      : `${count} ${count === 1 ? 'to-do matches' : 'to-dos match'}`
+    : '';
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    if (text === '') return setSaid('');
+    const t = setTimeout(() => setSaid(text), 500);
+    return () => clearTimeout(t);
+  }, [text]);
+  return (
+    <p className="visually-hidden" role="status">
+      {said}
+    </p>
+  );
+}
+
 export function TodosDrawer() {
-  const { todos, boot, changeTodos, openView, heldTodos, holdTodo, undoHeld } = useStore();
+  const { todos, boot, changeTodos, openView, heldTodos, holdTodo, undoHeld, markTodosSeen } = useStore();
+  const { state: shellState } = useShell();
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
   const [undoMessageFor, setUndoMessageFor] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('mine');
+  const [tab, setTabState] = useState<Tab>('mine');
+  // To-dos opened this visit: they stay in "New to you" (without the dot) until the tab changes, so a row
+  // doesn't jump away under the person's hands.
+  const [visitSeen, setVisitSeen] = useState<ReadonlySet<string>>(new Set());
+  const setTab = (t: Tab) => {
+    setVisitSeen(new Set());
+    setTabState(t);
+  };
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TodoFilter>(EMPTY_FILTER);
   const [draft, setDraft] = useState<EditDraft>({
     title: '',
     details: '',
     due: '',
     assignee: '',
+    scope: 'tds',
     version: '',
-    base: { title: '', details: '', due: '', assignee: '' },
+    base: { title: '', details: '', due: '', assignee: '', scope: 'tds' },
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessageText] = useState('');
@@ -216,8 +288,27 @@ export function TodosDrawer() {
     setIsError(error);
   };
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+
+  // "/" jumps to the search while this drawer is open (not while typing, and only with single keys on).
+  const singleKeys = shellState?.singleKeys !== false;
+  useEffect(() => {
+    if (!singleKeys) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || e.isComposing) return;
+      const input = searchRef.current;
+      if (!input || input.closest('[inert]')) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && (el.matches('input, textarea, select') || el.isContentEditable))
+        return;
+      e.preventDefault();
+      input.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [singleKeys]);
 
   // After the editor closes, put the keyboard back on the row's edit button (or the Add button).
   useEffect(() => {
@@ -252,12 +343,49 @@ export function TodosDrawer() {
 
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
   const items = tab === 'mine' ? todos.mine : todos.open;
-  const groups = groupTodos(items, todayIso());
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';
   // Ticking off is the app's own switch; editing needs the `todo` skill as well.
   const canTick = boot?.prefs.directWrites === true;
   const heldById = new Map(heldTodos.map((h) => [h.todoId, h]));
+  const clients = boot?.clients ?? [];
+  const savedSeen = boot?.prefs.todoSeen ?? {};
+  const seenMap = Object.fromEntries(Object.entries(savedSeen).filter(([k]) => !visitSeen.has(k)));
+
+  // Search and filters (decision 7). The kind filter belongs to Mine: everything open to anyone is TDS.
+  const showKind = tab === 'mine' && (todos.canUsePersonal || todos.mine.some((t) => t.scope === 'personal'));
+  const clientSlugs = [...new Set(items.map((t) => t.client).filter((c): c is string => c !== null))];
+  const showClient = clientSlugs.length >= 2;
+  const active: TodoFilter = {
+    query: filter.query,
+    scope: showKind ? filter.scope : 'all',
+    client:
+      showClient && filter.client !== null && clientSlugs.includes(filter.client) ? filter.client : null,
+  };
+  const filtering = filterActive(active);
+  const shown = filterTodos(items, active, clients);
+  const fresh = tab === 'mine' ? newToYou(shown, me, seenMap, new Date()) : [];
+  const freshKeys = new Set(fresh.map((t) => t.key));
+  const groups = groupTodos(
+    fresh.length > 0 ? shown.filter((t) => !freshKeys.has(t.key)) : shown,
+    todayIso(),
+  );
+  const showScope = tab === 'mine' && active.scope === 'all';
+  const other = tab === 'mine' ? todos.open : todos.mine;
+  const otherMatches = filtering
+    ? filterTodos(other, { query: active.query, scope: 'all', client: active.client }, clients).length
+    : 0;
+
+  const opened = (todo: TodoItem) => {
+    if (tab === 'mine' && freshKeys.has(todo.key) && !visitSeen.has(todo.key)) {
+      setVisitSeen(new Set(visitSeen).add(todo.key));
+      markTodosSeen([todo]);
+    }
+  };
+  const clearFilters = () => {
+    setFilter(EMPTY_FILTER);
+    searchRef.current?.focus();
+  };
 
   const hold = (held: HeldTodo) => {
     holdTodo(held);
@@ -294,6 +422,7 @@ export function TodosDrawer() {
       ? {
           id: editingId,
           canEdit: canChange,
+          canUsePersonal: todos.canUsePersonal,
           draft,
           setDraft,
           busy,
@@ -307,9 +436,10 @@ export function TodosDrawer() {
               details: t.details,
               due: t.due ?? '',
               assignee: t.assignee ?? '',
+              scope: t.scope,
             };
             setDraft({ ...fields, version: t.version, base: fields });
-            setEditingId(t.id);
+            setEditingId(t.key);
           },
           close: () => {
             const id = editingId;
@@ -318,17 +448,20 @@ export function TodosDrawer() {
             setRefocus(id);
           },
           save: async (todo, actions) => {
-            // Title, details and date are saved now (they can simply be edited again). Passing the to-do
-            // on is held with an Undo, because it leaves this list and can't be edited back from here.
+            // Title, details, date and where it is kept are saved now (they can simply be edited again).
+            // Passing the to-do on is held with an Undo, because it leaves this list and can't be edited
+            // back from here.
             let passed = actions.find((a) => a.kind === 'assignee');
             const now = actions.filter((a) => a.kind !== 'assignee');
             const result: ChangeTodosResult = now.length > 0 ? await run(now) : { done: 0 };
+            // A `move` may have given it a new key (and a new name, after a clash).
+            const key = result.moved && result.moved.from === todo.key ? result.moved.to : todo.key;
+            const all = result.todos ? [...result.todos.mine, ...result.todos.open] : [];
             if (result.error) {
               // Keep the editor and the draft untouched, but adopt the version now in the brain (a teammate's
               // change, or our own earlier steps), so pressing Save again is a deliberate overwrite.
-              const fresh = result.todos
-                ? [...result.todos.mine, ...result.todos.open].find((t) => t.id === todo.id)
-                : undefined;
+              const fresh = all.find((t) => t.key === key);
+              if (key !== todo.key) setEditingId(key);
               if (result.error.code === 'changed') {
                 if (fresh) setDraft((d) => rebase(d, fresh, true));
                 setMessage(`${result.error.message} Your changes are still here.`, true);
@@ -343,12 +476,11 @@ export function TodosDrawer() {
               } else setMessage(result.error.message, true);
               return result;
             }
+            let finalKey = key;
             if (passed && now.length > 0) {
               // The pass-on is held and sent later: it checks against the version after this save's own steps.
-              const version = result.todos?.mine
-                .concat(result.todos.open)
-                .find((t) => t.id === todo.id)?.version;
-              if (!version) {
+              const latest = all.find((t) => t.key === key);
+              if (!latest) {
                 setMessage('This to-do is no longer in your list, so it was not passed on.', true);
                 return {
                   done: result.done,
@@ -358,7 +490,8 @@ export function TodosDrawer() {
                   },
                 };
               }
-              passed = { ...passed, expect: version };
+              finalKey = latest.key;
+              passed = { ...passed, id: latest.id, expect: latest.version };
             }
             setEditingId(null);
             if (passed?.kind === 'assignee') {
@@ -370,31 +503,64 @@ export function TodosDrawer() {
                     ? 'Assigned to you'
                     : `Passed to ${who ?? passed.assignee}`;
               const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
-              hold({ todoId: todo.id, title, kind: 'assignee', label, action: passed });
+              hold({ todoId: finalKey, title, kind: 'assignee', label, action: passed });
             } else {
               setMessage('Saved.');
-              setRefocus(todo.id);
+              setRefocus(finalKey);
             }
             return { done: result.done + (passed ? 1 : 0) };
           },
           done: (todo) => {
             setEditingId(null);
-            hold({ todoId: todo.id, title: todo.title, kind: 'tick', label: 'Marked as done', action: null });
+            hold({
+              todoId: todo.key,
+              title: todo.title,
+              kind: 'tick',
+              label: 'Marked as done',
+              action: null,
+              // A personal to-do is ticked through the brain script, which needs its scope and version.
+              ...(todo.scope === 'personal'
+                ? { tick: { id: todo.id, scope: todo.scope, expect: todo.version } }
+                : {}),
+            });
           },
           remove: async (todo) => {
             setEditingId(null);
             hold({
-              todoId: todo.id,
+              todoId: todo.key,
               title: todo.title,
               kind: 'delete',
               label: 'Deleted',
               // The version as shown when Delete was pressed.
-              action: { kind: 'delete', id: todo.id, expect: todo.version },
+              action: {
+                kind: 'delete',
+                id: todo.id,
+                expect: todo.version,
+                ...(todo.scope === 'personal' ? { scope: 'personal' as const } : {}),
+              },
             });
           },
         }
       : null;
-  // The switch filters the list, so it sits on the drawer above it: only the list scrolls.
+
+  const row = (t: TodoItem, isFresh: boolean) => {
+    const held = heldById.get(t.key);
+    return held ? (
+      <HeldRow key={t.key} held={held} focus={focusUndo === t.key} onUndo={() => undo(held)} />
+    ) : (
+      <TodoRow
+        key={t.key}
+        todo={t}
+        // A personal to-do can't be changed when the gate is off (the server would refuse): chat only.
+        editing={t.scope === 'personal' && !todos.canUsePersonal ? null : editing}
+        fresh={isFresh && !visitSeen.has(t.key)}
+        showScope={showScope}
+        onOpened={opened}
+      />
+    );
+  };
+
+  // The tools sit on the drawer above the list: only the list scrolls.
   return (
     <div className="drawer-split">
       <div className="drawer-tools">
@@ -408,35 +574,103 @@ export function TodosDrawer() {
           ]}
         />
       </div>
-      {canChange ? (
-        <div className="drawer-tools todo-add">
-          {adding ? (
-            <AddTodoForm
-              me={me}
-              team={todos.team}
-              busy={busy}
-              canAddOpen={todos.canAddOpen}
-              onAdd={(a) => void add(a)}
-              onCancel={() => {
+      <div className="drawer-tools">
+        <Icon name="search" size={16} />
+        <label className="visually-hidden" htmlFor={SEARCH_ID}>
+          Search to-dos
+        </label>
+        <input
+          id={SEARCH_ID}
+          ref={searchRef}
+          type="search"
+          className="field"
+          placeholder="Search to-dos"
+          aria-keyshortcuts={singleKeys ? '/' : undefined}
+          value={filter.query}
+          onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+          onKeyDown={(e) => {
+            // Esc clears the search first; with nothing to clear it closes the drawer as usual.
+            if (e.key === 'Escape' && filter.query !== '') {
+              e.preventDefault();
+              e.stopPropagation();
+              setFilter({ ...filter, query: '' });
+            }
+          }}
+        />
+        {canChange ? (
+          <button
+            type="button"
+            className="icon-btn todo-add-btn"
+            ref={addButton}
+            aria-label="Add a to-do"
+            aria-expanded={adding}
+            onClick={() => {
+              if (adding) {
                 setAdding(false);
                 setMessage('');
-                setRefocus('');
-              }}
+                return;
+              }
+              setEditingId(null);
+              setMessage('');
+              setAdding(true);
+            }}
+          >
+            <Icon name="plus" size={18} />
+          </button>
+        ) : null}
+      </div>
+      {canChange && adding ? (
+        <div className="drawer-tools todo-add">
+          <AddTodoForm
+            me={me}
+            team={todos.team}
+            busy={busy}
+            canAddOpen={todos.canAddOpen}
+            canUsePersonal={todos.canUsePersonal}
+            startPersonal={tab === 'mine' && active.scope === 'personal'}
+            onAdd={(a) => void add(a)}
+            onCancel={() => {
+              setAdding(false);
+              setMessage('');
+              setRefocus('');
+            }}
+          />
+        </div>
+      ) : null}
+      {showKind || showClient ? (
+        <div className="drawer-tools todo-filters" data-stacked={showKind && showClient ? 'true' : undefined}>
+          {showKind ? (
+            <Seg<TodoFilter['scope']>
+              label="Which kind of to-do"
+              value={active.scope}
+              onChange={(scope) => setFilter({ ...filter, scope })}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'tds', label: 'TDS' },
+                { value: 'personal', label: 'Personal' },
+              ]}
             />
-          ) : (
-            <button
-              type="button"
-              className="btn todo-add-btn"
-              ref={addButton}
-              onClick={() => {
-                setEditingId(null);
-                setMessage('');
-                setAdding(true);
-              }}
-            >
-              Add a to-do
-            </button>
-          )}
+          ) : null}
+          {showClient ? (
+            <>
+              <label className="visually-hidden" htmlFor="todo-client">
+                Client
+              </label>
+              <select
+                id="todo-client"
+                className="field"
+                value={active.client ?? ''}
+                onChange={(e) => setFilter({ ...filter, client: e.target.value || null })}
+              >
+                <option value="">All clients</option>
+                {clientSlugs.map((slug) => (
+                  <option key={slug} value={slug}>
+                    {clients.find((c) => c.slug === slug)?.name ?? slug}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
         </div>
       ) : null}
       {todos.changes === 'switched-off' ? (
@@ -448,35 +682,83 @@ export function TodosDrawer() {
           .
         </p>
       ) : null}
+      <ResultsAnnouncer filtering={filtering} count={shown.length} />
       <p className="todo-status" role="status" data-tone={isError ? 'error' : undefined}>
         {message}
       </p>
       <div className="drawer-scroll" ref={scrollRef} tabIndex={-1}>
         <div className="drawer-body">
-          {groups.length === 0 ? (
-            <p className="dock-empty">
-              {tab === 'mine' ? 'Nothing assigned to you.' : 'Nothing open to anyone.'}
-            </p>
+          {shown.length === 0 ? (
+            filtering ? (
+              <div className="dock-empty todo-nomatch">
+                <p>No to-dos match.</p>
+                <p>
+                  <button type="button" className="btn" data-size="small" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                </p>
+                {otherMatches > 0 ? (
+                  <p>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => {
+                        setTab(tab === 'mine' ? 'open' : 'mine');
+                        searchRef.current?.focus();
+                      }}
+                    >
+                      {otherMatches} in {tab === 'mine' ? 'Open to anyone' : 'Mine'}
+                    </button>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="dock-empty">
+                {tab === 'mine' ? 'Nothing assigned to you.' : 'Nothing open to anyone.'}
+              </p>
+            )
           ) : (
-            groups.map((g) => (
-              <Fold
-                key={`${tab}-${g.key}`}
-                title={g.title}
-                count={g.items.length}
-                defaultOpen={g.key !== 'none'}
-              >
-                <ul className="drawer-list">
-                  {g.items.map((t) => {
-                    const held = heldById.get(t.id);
-                    return held ? (
-                      <HeldRow key={t.id} held={held} focus={focusUndo === t.id} onUndo={() => undo(held)} />
-                    ) : (
-                      <TodoRow key={t.id} todo={t} editing={editing} />
-                    );
-                  })}
-                </ul>
-              </Fold>
-            ))
+            <>
+              {fresh.length > 0 ? (
+                <Fold
+                  key={`${tab}-new-${filtering}`}
+                  title="New to you"
+                  count={fresh.length}
+                  action={
+                    <button
+                      type="button"
+                      className="btn"
+                      data-variant="quiet"
+                      data-size="small"
+                      onClick={() => {
+                        markTodosSeen(fresh);
+                        setVisitSeen(new Set());
+                        setMessage('Marked as seen.');
+                        // The button leaves with its group: keep the keyboard in the drawer.
+                        scrollRef.current?.focus();
+                      }}
+                    >
+                      Mark all as seen
+                    </button>
+                  }
+                >
+                  <ul className="drawer-list">{fresh.map((t) => row(t, true))}</ul>
+                </Fold>
+              ) : null}
+              {groups.map((g, i) => (
+                <Fold
+                  // Only the top section starts open ("New to you" when there is one), so the list isn't
+                  // overwhelming (Ian, 2026-11-13). While a search or filter is on, every group opens. The key
+                  // remounts a group when either changes, so the new top group opens once "New to you" empties.
+                  key={`${tab}-${g.key}-${filtering}-${fresh.length === 0 && i === 0}`}
+                  title={g.title}
+                  count={g.items.length}
+                  defaultOpen={filtering || (fresh.length === 0 && i === 0)}
+                >
+                  <ul className="drawer-list">{g.items.map((t) => row(t, false))}</ul>
+                </Fold>
+              ))}
+            </>
           )}
           {todos.othersCount > 0 ? (
             <p className="dock-empty">

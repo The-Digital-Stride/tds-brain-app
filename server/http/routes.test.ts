@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -27,7 +28,14 @@ import {
   createSetupUploads,
 } from '../setup-mode.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
-import { HttpError, handleApi, parseStartRequest, parseTodoAction, type RouteContext } from './routes.ts';
+import {
+  HttpError,
+  handleApi,
+  parseStartRequest,
+  parseTodoAction,
+  type RouteContext,
+  validatePrefsPatch,
+} from './routes.ts';
 import { cookieValueFor, PAGE_CSP, PDF_CSP, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
 
 const tempDirs: string[] = [];
@@ -159,6 +167,12 @@ describe('parseTodoAction', () => {
       { kind: 'due', id: 'a.md', due: null, expect: 'a'.repeat(64) },
       { kind: 'assignee', id: 'a.md', assignee: null, expect: 'a'.repeat(64) },
       { kind: 'delete', id: 'a.md', expect: 'a'.repeat(64) },
+      { kind: 'add', title: 'T', due: null, assignee: 'sam-example', scope: 'personal' },
+      { kind: 'edit', id: 'a.md', title: 'T', scope: 'tds', expect: 'a'.repeat(64) },
+      { kind: 'due', id: 'a.md', due: null, scope: 'personal', expect: 'a'.repeat(64) },
+      { kind: 'delete', id: 'a.md', scope: 'personal', expect: 'a'.repeat(64) },
+      { kind: 'move', id: 'a.md', scope: 'personal', to: 'tds', expect: 'a'.repeat(64) },
+      { kind: 'move', id: 'a.md', scope: 'tds', to: 'personal' },
     ];
     for (const body of good) expect(parseTodoAction(body), JSON.stringify(body)).toEqual(body);
   });
@@ -189,6 +203,12 @@ describe('parseTodoAction', () => {
       { kind: 'due', id: 'a.md', due: false },
       { kind: 'assignee', id: 'a.md' },
       { kind: 'assignee', id: 'a.md', assignee: ['sam'] },
+      { kind: 'delete', id: 'a.md', scope: 'secret' },
+      { kind: 'delete', id: 'a.md', scope: null },
+      { kind: 'move', id: 'a.md', scope: 'tds' },
+      { kind: 'move', id: 'a.md', to: 'personal' },
+      { kind: 'move', id: 'a.md', scope: 'tds', to: 'elsewhere' },
+      { kind: 'move', id: 'a.md', scope: 'tds', to: 'personal', title: 'x' },
     ];
     for (const body of bad) {
       expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow(
@@ -208,6 +228,10 @@ let input = '';
 process.stdin.on('data', (c) => { input += c; });
 process.stdin.on('end', () => {
   const body = JSON.parse(input);
+  if (process.argv[2] === 'capabilities') {
+    if (process.env.FAKE_TODO_CAPS) { process.stdout.write(JSON.stringify({ version: '0.4', features: JSON.parse(process.env.FAKE_TODO_CAPS) })); return; }
+    process.stdout.write('{"ok":false,"status":400,"error":"unknown command"}'); process.exitCode = 2; return;
+  }
   fs.appendFileSync(process.env.FAKE_TODO_LOG, JSON.stringify({ command: process.argv[2], body }) + '\\n');
   if (process.env.FAKE_TODO_APPLY && process.argv[2] === 'delete') {
     fs.unlinkSync(path.join(process.env.BRAIN_ROOT, 'todo', body.file));
@@ -218,7 +242,7 @@ process.stdin.on('end', () => {
 });
 `;
 
-  function makeBrain(opts: { roles?: string; reply?: object; skill?: boolean } = {}) {
+  function makeBrain(opts: { roles?: string; reply?: object; skill?: boolean; caps?: string[] } = {}) {
     const root = copyFixture();
     if (opts.skill !== false) {
       mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
@@ -240,6 +264,7 @@ process.stdin.on('end', () => {
           FAKE_TODO_LOG: log,
           FAKE_TODO_APPLY: '1',
           FAKE_TODO_REPLY: JSON.stringify(opts.reply ?? {}),
+          ...(opts.caps ? { FAKE_TODO_CAPS: JSON.stringify(opts.caps) } : {}),
         },
       },
     });
@@ -300,6 +325,132 @@ process.stdin.on('end', () => {
     expect(list.changes).toBe('on');
     expect(list.team.map((m) => m.slug)).toEqual(['sam-example', 'alex-sample', 'jo-owner']);
     expect(logs).toEqual(['Changed a to-do (delete).']);
+  });
+
+  describe('personal to-dos', () => {
+    const PID = '20261110-dentist.md';
+    const withPersonal = (extra: Parameters<typeof makeBrain>[0] = {}) => {
+      const made = makeBrain({ caps: ['handover', 'scope'], ...extra });
+      mkdirSync(join(made.root, 'personal', 'todo'), { recursive: true });
+      writeFileSync(
+        join(made.root, 'personal', 'todo', PID),
+        '---\ntitle: Book dentist\nassignee: sam-example\n---\n',
+      );
+      const version = createHash('sha256')
+        .update(readFileSync(join(made.root, 'personal', 'todo', PID)))
+        .digest('hex');
+      return { ...made, version };
+    };
+
+    it('answers a move with the fresh list and moved {from, to}', async () => {
+      const { brain, calls, version } = withPersonal({
+        reply: { out: '{"ok":true,"file":"20261110-dentist-2.md"}' },
+      });
+      const { status, json } = await send(brain, {
+        body: { kind: 'move', id: PID, scope: 'personal', to: 'tds', expect: version },
+      });
+      expect(status).toBe(200);
+      expect(json.moved).toEqual({ from: `personal/${PID}`, to: '20261110-dentist-2.md' });
+      expect((json as TodoList).canUsePersonal).toBe(true);
+      expect(calls()[0]).toMatchObject({
+        command: 'move',
+        body: { file: PID, scope: 'personal', to: 'tds' },
+      });
+    });
+
+    it('sends no moved for other changes', async () => {
+      const { brain, version } = withPersonal();
+      const { json } = await send(brain, {
+        body: { kind: 'edit', id: PID, title: 'T', scope: 'personal', expect: version },
+      });
+      expect(json.moved).toBeUndefined();
+    });
+
+    it('ticks a personal to-do through the script with scope, and never writes itself', async () => {
+      const { root, brain, calls, version } = withPersonal();
+      const { status } = await send(brain, {
+        path: ROUTES.completeTodo,
+        body: { id: PID, scope: 'personal', expect: version },
+      });
+      expect(status).toBe(200);
+      expect(calls()).toEqual([
+        {
+          command: 'tick',
+          body: {
+            file: PID,
+            via: 'TDS Brain App',
+            by: 'sam-example',
+            by_name: 'Sam Example',
+            expect: version,
+            scope: 'personal',
+          },
+        },
+      ]);
+      expect(existsSync(join(root, 'personal', 'todo', 'done'))).toBe(false);
+    });
+
+    it('refuses a personal tick without expect, without the capability, or with the switch off', async () => {
+      const on = withPersonal();
+      const noExpect = await send(on.brain, {
+        path: ROUTES.completeTodo,
+        body: { id: PID, scope: 'personal' },
+      });
+      expect(noExpect.status).toBe(400);
+      const off = withPersonal({ caps: [] });
+      const noGate = await send(off.brain, {
+        path: ROUTES.completeTodo,
+        body: { id: PID, scope: 'personal', expect: off.version },
+      });
+      expect(noGate.status).toBe(403);
+      const switched = await send(on.brain, {
+        path: ROUTES.completeTodo,
+        body: { id: PID, scope: 'personal', expect: on.version },
+        directWrites: false,
+      });
+      expect(switched.status).toBe(403);
+      const badScope = await send(on.brain, { path: ROUTES.completeTodo, body: { id: PID, scope: 'x' } });
+      expect(badScope.status).toBe(400);
+      expect(on.calls()).toEqual([]);
+      expect(off.calls()).toEqual([]);
+    });
+
+    it("a tick with scope tds (or none) still uses the app's own direct tick", async () => {
+      const { root, brain, calls } = withPersonal();
+      const { status } = await send(brain, {
+        path: ROUTES.completeTodo,
+        body: { id: '20261105-send-report.md', scope: 'tds' },
+      });
+      expect(status).toBe(200);
+      expect(calls()).toEqual([]);
+      expect(existsSync(join(root, 'todo', 'done', '20261105-send-report.md'))).toBe(true);
+    });
+
+    it('reports canUsePersonal false while the switch is off', async () => {
+      const { brain } = withPersonal();
+      const { json } = await send(brain, {
+        path: ROUTES.todos,
+        method: 'GET',
+        directWrites: false,
+      });
+      expect(json.changes).toBe('switched-off');
+      expect(json.canUsePersonal).toBe(false);
+    });
+
+    it('refuses a personal move without the capability, and without expect', async () => {
+      const off = withPersonal({ caps: [] });
+      const refused = await send(off.brain, {
+        body: { kind: 'move', id: PID, scope: 'personal', to: 'tds', expect: off.version },
+      });
+      expect(refused.status).toBe(403);
+      expect(refused.json.error.code).toBe('not-allowed');
+      const on = withPersonal();
+      const noExpect = await send(on.brain, {
+        body: { kind: 'move', id: PID, scope: 'personal', to: 'tds' },
+      });
+      expect(noExpect.status).toBe(400);
+      expect(on.calls()).toEqual([]);
+      expect(off.calls()).toEqual([]);
+    });
   });
 
   it('changes nothing while the Settings switch is off', async () => {
@@ -1311,5 +1462,41 @@ describe('GET /api/changelog (owners and scouts only)', () => {
       versions: [],
     });
     expect((await get('owner', 'POST')).status).toBe(405);
+  });
+});
+
+describe('validatePrefsPatch: todoSeen', () => {
+  const brain = { clients: async () => [] };
+
+  it('accepts a map of keys to markers', async () => {
+    const todoSeen = {
+      '20261112-a.md': '2026-11-12T10:30:00+00:00',
+      'personal/b.md': '2026-11-13T08:00:00Z',
+    };
+    expect(await validatePrefsPatch({ todoSeen }, brain)).toEqual({ todoSeen });
+    expect(await validatePrefsPatch({ todoSeen: {} }, brain)).toEqual({ todoSeen: {} });
+  });
+
+  it('refuses anything else, and too many entries or too-long keys and markers', async () => {
+    const many = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`k${i}`, '2026-11-13']));
+    const bad: unknown[] = [
+      null,
+      [],
+      'x',
+      many,
+      { [`${'k'.repeat(301)}`]: '2026-11-13' },
+      { a: 'x'.repeat(41) },
+      { a: 5 },
+      { a: '' },
+      { '': '2026-11-13' },
+    ];
+    for (const todoSeen of bad) {
+      await expect(
+        validatePrefsPatch({ todoSeen }, brain),
+        JSON.stringify(todoSeen).slice(0, 60),
+      ).rejects.toThrow(HttpError);
+    }
+    const max = Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`k${i}`, '2026-11-13']));
+    expect(await validatePrefsPatch({ todoSeen: max }, brain)).toEqual({ todoSeen: max });
   });
 });

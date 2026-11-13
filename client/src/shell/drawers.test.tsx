@@ -19,6 +19,11 @@ const { SkillsDrawer } = await import('./SkillsDrawer.tsx');
 
 const todo = (id: string, title: string, due: string | null = null): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title,
   created: null,
   source: null,
@@ -46,6 +51,7 @@ const live = (id: string, todoId: string | null = null): LiveSession => ({
 const fns = {
   completeTodo: vi.fn(),
   holdTodo: vi.fn(),
+  markTodosSeen: vi.fn(),
   undoHeld: vi.fn(),
   newChat: vi.fn(),
   openChat: vi.fn(),
@@ -229,6 +235,25 @@ describe('To-dos drawer', () => {
 });
 
 describe('Chats drawer', () => {
+  it('groups earlier chats under headings, with only the newest group open', () => {
+    const iso = (back: number) => new Date(Date.now() - back * 86_400_000).toISOString();
+    setStore({
+      sessions: {
+        live: [],
+        past: [
+          { sdkSessionId: 'n', title: 'Just now chat', lastModified: new Date().toISOString() },
+          { sdkSessionId: 'o', title: 'Ancient chat', lastModified: iso(40) },
+        ],
+      },
+    });
+    render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const today = screen.getByRole('button', { name: /Today/ });
+    const earlier = screen.getByRole('button', { name: /Earlier/ });
+    expect(today.getAttribute('aria-expanded')).toBe('true');
+    expect(earlier.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('Earlier rows open the past chat', () => {
     render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));

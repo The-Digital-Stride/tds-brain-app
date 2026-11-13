@@ -17,7 +17,9 @@ import type {
   SkillInfo,
   StreamFrame,
   TodoAction,
+  TodoItem,
   TodoList,
+  TodoScope,
 } from '../../shared/contract.ts';
 import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
@@ -35,6 +37,8 @@ export interface ChangeTodosResult {
    * can read the versions its own steps produced. Absent when nothing came back.
    */
   todos?: TodoList;
+  /** Set when a `move` step went through: the to-do's key before and after (a name clash renames it). */
+  moved?: { from: string; to: string };
 }
 
 /** How long a held to-do change waits, with an Undo button, before it is sent. */
@@ -45,6 +49,7 @@ export const TODO_UNDO_MS = 10_000;
  * Undo just drops it. Ticks, deletes and passing a to-do on are held; each is one request.
  */
 export interface HeldTodo {
+  /** The to-do's `key` (a bare id for TDS, `personal/<id>` for personal). Held changes are mapped by it. */
   todoId: string;
   title: string;
   kind: 'tick' | 'delete' | 'assignee';
@@ -52,6 +57,11 @@ export interface HeldTodo {
   label: string;
   /** The change to send; null for a tick, which uses the tick route. */
   action: TodoAction | null;
+  /**
+   * For a tick: the file name and, for a personal to-do, the scope and version to send with it
+   * (`api.completeTodo` with `{id, scope: 'personal', expect}`). Absent = the app's own tick of `todoId`.
+   */
+  tick?: { id: string; scope: TodoScope; expect: string };
   /** Set by the store once the undo time is up and the change is on its way: Undo no longer works. */
   sending?: boolean;
 }
@@ -106,6 +116,8 @@ export interface Store {
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
+  /** Marks these to-dos' handovers as seen ("New to you"): saves `prefs.todoSeen` with the full map. */
+  markTodosSeen: (todos: TodoItem[]) => void;
   togglePin: (name: string) => Promise<void>;
   completeTodo: (id: string) => Promise<void>;
   /**
@@ -466,8 +478,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         if (activeChat.kind === 'new') {
           // Keep the to-do link only while the message still mentions it.
-          const todoId =
-            activeChat.todoId && body.includes(`todo/${activeChat.todoId}`) ? activeChat.todoId : null;
+          const link = activeChat.todoId;
+          const known = link
+            ? [...(todos?.mine ?? []), ...(todos?.open ?? [])].find((t) => t.key === link)
+            : null;
+          // The draft names the to-do by its path (`todo/<id>` or `personal/todo/<id>`).
+          const path = known
+            ? known.path
+            : link?.startsWith('personal/')
+              ? `personal/todo/${link.slice('personal/'.length)}`
+              : `todo/${link}`;
+          const todoId = link && body.includes(path) ? link : null;
           const { session } = await api.startSession({
             prompt: body,
             client,
@@ -494,7 +515,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [activeChat, boot, loadSessions, loadTodos],
+    [activeChat, boot, todos, loadSessions, loadTodos],
   );
 
   const updatePrefs = useCallback(
@@ -522,6 +543,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [boot, updatePrefs],
   );
 
+  // The latest seen map, kept here so quick successive marks each carry the earlier ones.
+  const seenRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    seenRef.current = boot?.prefs.todoSeen ?? {};
+  }, [boot?.prefs.todoSeen]);
+  const markTodosSeen = useCallback((items: TodoItem[]) => {
+    const next = { ...seenRef.current };
+    let changed = false;
+    for (const t of items) {
+      const at = t.handover?.at;
+      if (at && next[t.key] !== at) {
+        next[t.key] = at;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    seenRef.current = next;
+    // Optimistic, so the dot goes at once; the server's reply (pruned, capped) replaces it.
+    setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoSeen: next } } : b));
+    api
+      .updatePrefs({ todoSeen: next })
+      .then((prefs) => {
+        if (seenRef.current === next) setBoot((b) => (b ? { ...b, prefs } : b));
+      })
+      .catch(() => {
+        // Not saved: it shows as new again next time. Nothing to tell the person.
+      });
+  }, []);
+
   const completeTodo = useCallback(async (id: string) => {
     try {
       setTodos(await api.completeTodo(id));
@@ -534,13 +584,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const changeTodos = useCallback(async (actions: TodoAction[]): Promise<ChangeTodosResult> => {
     let done = 0;
     let latest: TodoList | undefined;
+    let moved: { from: string; to: string } | undefined;
+    // After a `move`, later steps for the same to-do go to its new place (and new name, after a clash).
+    const renamed = new Map<string, string>();
+    const keyOf = (id: string, scope: TodoScope | undefined) =>
+      scope === 'personal' ? `personal/${id}` : id;
+    const found = () => (moved ? { moved } : {});
     for (const [i, original] of actions.entries()) {
       let action = original;
+      if (action.kind !== 'add') {
+        // The editor addresses steps after a `move` by the key it expects the file to have there.
+        const to = renamed.get(keyOf(action.id, action.scope));
+        if (to !== undefined) {
+          const personal = to.startsWith('personal/');
+          const { scope: _old, ...rest } = action;
+          action = {
+            ...rest,
+            id: personal ? to.slice('personal/'.length) : to,
+            ...(personal ? { scope: 'personal' as const } : {}),
+          } as TodoAction;
+        }
+      }
       // Each step after the first checks against the version the previous step left behind (the
       // person's own change), so only someone else's change can stop the save. Never sent without it.
       if (i > 0 && action.kind !== 'add') {
-        const id = action.id;
-        const version = latest && [...latest.mine, ...latest.open].find((t) => t.id === id)?.version;
+        const key = keyOf(action.id, action.scope);
+        const version = latest && [...latest.mine, ...latest.open].find((t) => t.key === key)?.version;
         if (!version) {
           return {
             done,
@@ -549,6 +618,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               message: 'This to-do is no longer in your list, so the rest of your changes were not saved.',
             },
             ...(latest ? { todos: latest } : {}),
+            ...found(),
           };
         }
         action = { ...action, expect: version };
@@ -557,6 +627,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         latest = await api.changeTodo(action);
         setTodos(latest);
         done += 1;
+        if (action.kind === 'move' && latest.moved) {
+          // The reply names the new key. If a name clash changed it, later steps go to the new name.
+          const expected = keyOf(action.id, action.to);
+          if (expected !== latest.moved.to) renamed.set(expected, latest.moved.to);
+          moved = { from: moved?.from ?? latest.moved.from, to: latest.moved.to };
+        }
       } catch (err) {
         const error =
           err instanceof ApiFailure
@@ -571,10 +647,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             // The next change will try again.
           }
         }
-        return { done, error, ...(latest ? { todos: latest } : {}) };
+        return { done, error, ...(latest ? { todos: latest } : {}), ...found() };
       }
     }
-    return { done, ...(latest ? { todos: latest } : {}) };
+    return { done, ...(latest ? { todos: latest } : {}), ...found() };
   }, []);
 
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
@@ -592,9 +668,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const sendHeld = useCallback(async (held: HeldTodo, opts?: { keepalive: true }) => {
     const send = () =>
       held.kind === 'tick' || held.action === null
-        ? opts
-          ? api.completeTodo(held.todoId, opts)
-          : api.completeTodo(held.todoId)
+        ? held.tick && held.tick.scope === 'personal'
+          ? api.completeTodo(held.tick.id, opts, { scope: 'personal', expect: held.tick.expect })
+          : opts
+            ? api.completeTodo(held.todoId, opts)
+            : api.completeTodo(held.todoId)
         : opts
           ? api.changeTodo(held.action, opts)
           : api.changeTodo(held.action);
@@ -684,6 +762,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openPast,
       send,
       updatePrefs,
+      markTodosSeen,
       togglePin,
       completeTodo,
       changeTodos,
@@ -722,6 +801,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openPast,
       send,
       updatePrefs,
+      markTodosSeen,
       togglePin,
       completeTodo,
       changeTodos,

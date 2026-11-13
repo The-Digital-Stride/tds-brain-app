@@ -68,6 +68,11 @@ function dayOffset(n: number): string {
 }
 const todo = (id: string, title: string, due: string | null, client: string | null = null): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title,
   created: null,
   source: null,
@@ -215,6 +220,31 @@ describe('Palette', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md' });
+  });
+
+  it('links a personal to-do by its key and path', async () => {
+    api.todos.mockResolvedValue({
+      ...todoList,
+      mine: [
+        {
+          ...todo('p1.md', 'Private errand', null),
+          scope: 'personal',
+          key: 'personal/p1.md',
+          path: 'personal/todo/p1.md',
+        },
+      ],
+    });
+    await renderHome();
+    await openPalette();
+    fireEvent.click(screen.getByRole('option', { name: /Private errand/ }));
+    await waitFor(() =>
+      expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
+        'Help me with this to-do: personal/todo/p1.md (Private errand)',
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 'personal/p1.md' });
   });
 
   it('starts a skill and puts focus in the message box', async () => {

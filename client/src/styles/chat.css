@@ -42,6 +42,9 @@
   max-width: 680px;
   margin: 0 auto;
   display: grid;
+  /* One column that never grows past the sheet: without minmax(0, …) the implicit `auto`
+     column widens to the longest code line or table, and every message overflows with it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .thread-empty {
@@ -294,6 +297,8 @@
   max-width: 680px;
   margin: 0 auto;
   display: grid;
+  /* Same as .thread-col: a long unbroken string in a card must not widen the answer box. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 

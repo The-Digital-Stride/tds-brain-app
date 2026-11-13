@@ -84,9 +84,53 @@ export interface SkillInfo {
   restrictedTo: Role[] | null;
 }
 
+/**
+ * Where a to-do lives is its scope (plan 2026-11-13-todo-handover-search-scope, decision 1):
+ * 'tds' = `todo/*.md` (shared through git), 'personal' = `personal/todo/*.md` (git-ignored, this Mac only).
+ */
+export type TodoScope = 'tds' | 'personal';
+
+/** The personal to-do folder, relative to the brain root. Done/deleted go in its `done/` and `deleted/`. */
+export const TODO_PERSONAL_DIR = 'personal/todo';
+
+/** Who passed a to-do to its current assignee, and when (decision 5). */
+export interface TodoHandover {
+  /** Team slug of the person who passed it on; null when it can't be matched to the team. */
+  by: string | null;
+  /** Display name: the roster's name for `by`, else the stamp/git author's name as written. */
+  byName: string | null;
+  /** When: an ISO timestamp (stamp: with UK offset; history: the commit's author date). */
+  at: string;
+  /** Previous assignee slug, 'open' when it was open to anyone, null when not known. */
+  from: string | null;
+  /** `assigned_via` from the stamp (e.g. "TDS Brain App"); null for history or when absent. */
+  via: string | null;
+  /**
+   * 'stamp': from the `assigned_*` frontmatter, used only when `assigned_to` equals the current assignee.
+   * 'history': from `git log -G '^assignee:'` (usually the creating commit), for TDS to-dos in `mine`.
+   */
+  source: 'stamp' | 'history';
+}
+
 export interface TodoItem {
-  /** The file name inside `todo/`, e.g. "20260702-renew-contract.md". Also the id used in the API. */
+  /**
+   * The file name inside its folder (`todo/` or `personal/todo/`), e.g. "20260702-renew-contract.md".
+   * Sent as `id` in the API, together with `scope`. NOT unique on its own across scopes: use `key`.
+   */
   id: string;
+  /** Which folder it lives in. 'tds' for everything in `todo/`. */
+  scope: TodoScope;
+  /**
+   * Unique across scopes: `id` for TDS, `personal/<id>` for personal. Used for every client map
+   * (held changes, seen markers, React keys) and as the session's `todoId`.
+   */
+  key: string;
+  /** Brain-relative path: `todo/<id>` or `personal/todo/<id>`. Used in chat drafts. */
+  path: string;
+  /** Who passed it on and when; null when not known or when it was never passed on. */
+  handover: TodoHandover | null;
+  /** Frontmatter `created_by` (team slug), else null. */
+  createdBy: string | null;
   title: string;
   /** Slugified person name, or null when the to-do is open to anyone. */
   assignee: string | null;
@@ -154,6 +198,17 @@ export interface TodoList {
    * `todo` script ignores the request and would assign the to-do to the person instead.
    */
   canAddOpen: boolean;
+  /**
+   * Whether personal to-dos can be added, changed, moved and ticked: `changes` is 'on' and the script's
+   * `capabilities` lists "scope" (v0.4+, and the brain's git ignores `personal/todo/`). Personal to-dos
+   * already on disk are listed in `mine` whatever this says.
+   */
+  canUsePersonal: boolean;
+  /**
+   * Only in the reply to a `move` change: the to-do's `key` before and after (a name clash at the
+   * destination changes the id). Lets a multi-step save address the next step to the new place.
+   */
+  moved?: { from: string; to: string };
 }
 
 /**
@@ -205,14 +260,32 @@ export const TODO_SCRIPT_MAX_OUTPUT_BYTES = 65_536;
  * `expect` matches TODO_VERSION_PATTERN; `add` with `assignee: null` only when canAddOpen.
  */
 export type TodoAction =
-  | { kind: 'add'; title: string; due: string | null; assignee: string | null }
-  | { kind: 'edit'; id: string; title: string; details?: string; expect?: string }
-  | { kind: 'due'; id: string; due: string | null; expect?: string }
-  | { kind: 'assignee'; id: string; assignee: string | null; expect?: string }
-  | { kind: 'delete'; id: string; expect?: string };
+  | { kind: 'add'; title: string; due: string | null; assignee: string | null; scope?: TodoScope }
+  | { kind: 'edit'; id: string; title: string; details?: string; expect?: string; scope?: TodoScope }
+  | { kind: 'due'; id: string; due: string | null; expect?: string; scope?: TodoScope }
+  | { kind: 'assignee'; id: string; assignee: string | null; expect?: string; scope?: TodoScope }
+  | { kind: 'delete'; id: string; expect?: string; scope?: TodoScope }
+  /** v0.4: moves the file between `todo/` (tds) and `personal/todo/` (personal), bytes unchanged. */
+  | { kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string };
+/*
+ * v0.4 rules for `scope` (plan 2026-11-13-todo-handover-search-scope, decisions 2 and 4):
+ * - Absent means 'tds', so every v0.3 action shape is unchanged. The server matches the listed to-do
+ *   by scope + id.
+ * - Any action on a personal to-do (scope 'personal', or `move`, or `add` with scope 'personal') is
+ *   refused `not-allowed` unless TodoList.canUsePersonal, and every one with an `id` must carry `expect`
+ *   (`bad-request` otherwise).
+ * - `add` with scope 'personal' needs `assignee` = the person. `assignee` on a personal to-do is refused
+ *   (`bad-request`): move it to TDS first. `move` needs the to-do's assignee to be the person, both ways,
+ *   and `to` different from `scope`.
+ */
 
 /** `changed`: the to-do's file changed since the person read it (`expect` didn't match). HTTP 409. */
 export type TodoChangeErrorCode = 'bad-request' | 'not-found' | 'not-allowed' | 'changed' | 'internal';
+
+/** What `BrainReaders.changeTodo` reports back: for a `move`, the to-do's key before and after. */
+export interface TodoChangeOutcome {
+  moved?: { from: string; to: string };
+}
 
 /** Thrown by `BrainReaders.changeTodo`. `message` is plain UK English, fit to show the user. */
 export class TodoChangeError extends Error {
@@ -273,6 +346,24 @@ export class TodoChangeError extends Error {
  *   path, a scrubbed environment plus `BRAIN_ROOT` (no `WORKBENCH_AS`, no `NODE_OPTIONS`), SIGKILL
  *   at TODO_SCRIPT_TIMEOUT_MS, at most TODO_SCRIPT_MAX_OUTPUT_BYTES of stdout, one run at a time.
  * - `roster` → `{"members":[{slug,name}]}`; `list` → `{"todos":[…]}` as `/api/misc-todos`.
+ * - v0.4 additions (2026-11-13, plan 2026-11-13-todo-handover-search-scope, decision 2), all optional:
+ *   - `capabilities` (new command, `{}` in) → `{"version":"0.4","features":[…]}`: "handover" always;
+ *     "scope" only when the brain isn't a git repo or `git check-ignore -q personal/todo/x.md` passes,
+ *     and `personal/todo` is not a symlink. A v0.3 script answers `unknown command` (400).
+ *   - `scope: "personal"` on edit, due, delete, tick, assignee and move picks `personal/todo/` (and its
+ *     done/ and deleted/); absent or "tds" = `todo/`; any other value → 400. Personal requests → 400
+ *     when "scope" isn't advertised.
+ *   - `add`: `scope: "personal"` writes to `personal/todo/` with assignee = the adder (`by`, else git
+ *     user); `open` or another assignee → 400. Writes `created_by: <slug>` when the adder is known. An
+ *     assignee other than the adder also stamps the handover. New names avoid all six folders.
+ *   - `assignee`: when the value changes, writes `assigned_to` (new slug or "open"), `assigned_at`
+ *     (ISO, UK offset), `assigned_by`, `assigned_from` (old slug or "open"), `assigned_via`, replacing
+ *     earlier `assigned_*` lines, and appends a line to `## Handover history` at the end of the body.
+ *     Unchanged → nothing written. Personal → 400.
+ *   - `move` (new): `{file, scope, to, expect?, by?, by_name?, via?}` copies the bytes unchanged to the
+ *     other folder (assignee must be the actor), clash → `-<n>` suffix, answers `{ok, file, moved}`
+ *     with `file` = the new name.
+ *   - v0.3 calls to edit, due, tick, delete, roster and list give byte-identical results.
  */
 export const TODO_SCRIPT_TIMEOUT_MS = 10_000;
 
@@ -353,7 +444,12 @@ export interface BrainReaders {
    * for an `id` that is not listed for this person (theirs or open). Script status 400 →
    * `bad-request`, 404 → `not-found`, anything else or a crash/timeout → `internal`.
    */
-  changeTodo(action: TodoAction, identity: Identity): Promise<void>;
+  changeTodo(action: TodoAction, identity: Identity): Promise<TodoChangeOutcome>;
+  /**
+   * v0.4: ticks a personal to-do (`personal/todo/<id>`) through the brain script's `tick` with
+   * `scope: "personal"`. Same refusals as `changeTodo`; `not-allowed` unless `canUsePersonal`.
+   */
+  completePersonalTodo(id: string, expect: string, by: Identity): Promise<void>;
   /** Folders in `clients/`, skipping names that start with `_` or `.`. */
   clients(): Promise<ClientInfo[]>;
   /**
@@ -372,6 +468,11 @@ export interface BrainReaders {
    * the brain that the rules allow. The browser never sends a path, only ids.
    */
   libraryFile(id: string): Promise<LibraryFile | null>;
+  /**
+   * Global search over every scope `libraryScopes` lists (see LibrarySearchResponse). Optional so
+   * older test fakes still satisfy the type; the route answers an empty reply when it is missing.
+   */
+  librarySearch?(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
   /** When the brain last synced (see SyncStatus). Never throws. */
   sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
@@ -511,13 +612,24 @@ export interface AppPrefs {
    * as it can in the terminal.)
    */
   directWrites: boolean;
+  /**
+   * "New to you" seen markers: TodoItem.key → the `handover.at` the person has seen. Entries whose
+   * marker is more than 7 days old are dropped on every write; at most TODO_SEEN_MAX entries
+   * (a patch with more is refused). Keys at most 300 characters, markers at most 40.
+   */
+  todoSeen: Record<string, string>;
 }
+
+export const TODO_SEEN_MAX = 500;
+/** A handover counts as "New to you" for this long. */
+export const TODO_NEW_DAYS = 7;
 
 export const DEFAULT_PREFS: AppPrefs = {
   pins: [],
   lastClient: null,
   todoPanelOpen: true,
   directWrites: false,
+  todoSeen: {},
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */
@@ -855,6 +967,12 @@ export interface QuestionReply {
 
 export interface CompleteTodoRequest {
   id: string;
+  /**
+   * v0.4. Absent = 'tds' (the app's own tick, as before). 'personal' ticks through the brain script's
+   * `tick` with scope, only when TodoList.canUsePersonal, and then `expect` is required.
+   */
+  scope?: TodoScope;
+  expect?: string;
 }
 
 export type ChangeTodoRequest = TodoAction;
@@ -984,6 +1102,7 @@ export const ROUTES = {
   uploadDiscard: (id: string) => `/api/uploads/${encodeURIComponent(id)}/discard`,
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
+  librarySearch: '/api/library/search',
   /**
    * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
    *
@@ -1032,3 +1151,30 @@ export const ROUTES = {
 export const STREAM_PING_EVENT = 'ping';
 export const STREAM_PING_MS = 15_000;
 export const STREAM_STALL_MS = 40_000;
+
+// ── Library search (plan 2026-11-13-global-search, decision 4) ───────────────────────────────────────
+
+/**
+ * `GET /api/library/search?q=<2–80 chars>&kind=image|doc` → LibrarySearchResponse. Read-only. Matches
+ * every word of `q` (case- and accent-insensitive) against an item's title, name, group, folder words and
+ * its scope's name, across every scope the person can see. Uses cached listings even past their freshness
+ * (refreshing behind); builds cold scopes three at a time within a 1.5 s budget, then answers with
+ * `partial: true`. At most LIBRARY_SEARCH_MAX hits, best first (title starts-with, word-start, contains,
+ * other fields; ties newest first). Bad `q` or `kind` → 400 `bad-request`.
+ */
+export interface LibrarySearchHit {
+  item: LibraryItem;
+  /** The scope the item is in, so the client can open it without taking the id apart. */
+  scope: LibraryScope;
+}
+
+export interface LibrarySearchResponse {
+  hits: LibrarySearchHit[];
+  /** All matches found so far (may exceed hits.length). */
+  total: number;
+  /** True when some scopes weren't listed yet; asking again soon may find more. */
+  partial: boolean;
+}
+
+export const LIBRARY_SEARCH_MAX = 20;
+export const LIBRARY_SEARCH_QUERY = { min: 2, max: 80 } as const;

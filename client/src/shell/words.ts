@@ -30,7 +30,7 @@ export const ROLE_WORDS: Words['ROLE_WORDS'] = {
 };
 
 export const todoChatDraft: Words['todoChatDraft'] = (todo) =>
-  `Help me with this to-do: todo/${todo.id} (${todo.title})`;
+  `Help me with this to-do: ${todo.path} (${todo.title})`;
 
 export const whenWords: Words['whenWords'] = (iso) => {
   const d = new Date(iso);
@@ -102,6 +102,12 @@ export function chatsRailLabel(live: LiveSession[]): string {
   return `${open}, ${asking} ${asking === 1 ? 'needs' : 'need'} your answer`;
 }
 
+/** The To-dos rail button's accessible name: "To-dos, 5 of yours, 2 new". Undefined when there is nothing to add. */
+export function todosRailLabel(mine: number, fresh: number): string | undefined {
+  if (mine === 0) return undefined;
+  return `To-dos, ${mine} of yours${fresh > 0 ? `, ${fresh} new` : ''}`;
+}
+
 /** "SE" for "Sam Example": first and last names' first letters. */
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -111,14 +117,14 @@ export function initials(name: string): string {
 }
 
 /** A client or project as people say it: the client's name, else its folder name as words. Never a folder name as written. */
-export function placeName(slug: string, clients: readonly ClientInfo[]): string {
+export function placeName(slug: string, clients: readonly Pick<ClientInfo, 'slug' | 'name'>[]): string {
   return clients.find((c) => c.slug === slug)?.name ?? slugWords(slug);
 }
 
 /** The client and the project of a to-do, by name. A place is said once when both are the same. */
 export function todoPlaces(
   todo: Pick<TodoItem, 'client' | 'project'>,
-  clients: readonly ClientInfo[],
+  clients: readonly Pick<ClientInfo, 'slug' | 'name'>[],
 ): string[] {
   const out: string[] = [];
   for (const slug of [todo.client, todo.project]) {
@@ -127,4 +133,54 @@ export function todoPlaces(
     if (!out.includes(name)) out.push(name);
   }
   return out;
+}
+
+const DAY_MS = 86_400_000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** How long ago, in calendar days, as people say it: "today", "yesterday", "3 days ago". */
+function agoDays(at: Date, now: Date): string {
+  const day = (d: Date) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS);
+  const n = Math.max(0, day(now) - day(at));
+  if (n === 0) return 'today';
+  if (n === 1) return 'yesterday';
+  return `${n} days ago`;
+}
+
+/** Who passed it on: the name, else the slug as words, else "someone" (the roster may not list them). */
+function handoverName(h: NonNullable<TodoItem['handover']>): string {
+  return h.byName?.trim() || (h.by ? slugWords(h.by) : '') || 'someone';
+}
+
+/** Handovers older than this show no "from" in the row (decision 11). */
+export const HANDOVER_ROW_DAYS = 14;
+
+/**
+ * The row's "from Ben, yesterday" (a stamp) or "from Ben (git history)". Null when the handover is by
+ * the person themselves, unknown, or older than HANDOVER_ROW_DAYS.
+ */
+export function handoverMeta(
+  todo: Pick<TodoItem, 'handover' | 'assignee'>,
+  me: string,
+  now: Date = new Date(),
+): string | null {
+  const h = todo.handover;
+  // Only for what is yours now: an open to-do stamped "to open" was not passed to you.
+  if (!h || h.by === me || todo.assignee !== me) return null;
+  const at = new Date(h.at);
+  if (Number.isNaN(at.getTime()) || now.getTime() - at.getTime() > HANDOVER_ROW_DAYS * DAY_MS) return null;
+  const first = handoverName(h).split(/\s+/)[0] || 'someone';
+  return h.source === 'history' ? `from ${first} (git history)` : `from ${first}, ${agoDays(at, now)}`;
+}
+
+/** The editor's line: "Passed to you by Ben McAdam, 12 Nov (TDS Brain App)" or "From Ben McAdam (git history), 12 Nov". */
+export function handoverLine(todo: Pick<TodoItem, 'handover' | 'assignee'>, me: string): string | null {
+  const h = todo.handover;
+  // Only for what is yours now: an open to-do stamped "to open" was not passed to you.
+  if (!h || h.by === me || todo.assignee !== me) return null;
+  const at = new Date(h.at);
+  const date = Number.isNaN(at.getTime()) ? '' : `, ${at.getDate()} ${MONTHS[at.getMonth()]}`;
+  const name = handoverName(h);
+  if (h.source === 'history') return `From ${name} (git history)${date}`;
+  return `Passed to you by ${name}${date}${h.via ? ` (${h.via})` : ''}`;
 }

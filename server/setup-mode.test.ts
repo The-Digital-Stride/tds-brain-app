@@ -22,6 +22,7 @@ describe('createSetupBrain', () => {
     expect(await brain.libraryScopes()).toEqual([]);
     expect(await brain.library('personal')).toBeNull();
     expect(await brain.libraryFile('personal.abc')).toBeNull();
+    expect(await brain.librarySearch('abc', 'image')).toEqual({ hits: [], total: 0, partial: false });
     expect(await brain.todos(someone)).toEqual({
       mine: [],
       open: [],
@@ -29,6 +30,7 @@ describe('createSetupBrain', () => {
       team: [],
       changes: 'no-skill',
       canAddOpen: false,
+      canUsePersonal: false,
     });
     expect(await brain.profile(someone)).toEqual({ title: null, departments: [], owns: null });
     expect(await brain.skillAccess(someone, 'anything')).toBe('unknown-skill');

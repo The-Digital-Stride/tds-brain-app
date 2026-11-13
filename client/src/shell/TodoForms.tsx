@@ -5,9 +5,26 @@ import {
   TODO_TITLE_MAX,
   type TodoAction,
   type TodoItem,
+  type TodoScope,
 } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
 import type { ChangeTodosResult } from '../store.tsx';
+import { Icon } from './Icon.tsx';
+import { Seg } from './Seg.tsx';
+import { handoverLine } from './words.ts';
+
+/** Said when a to-do is set to Personal in the editor (plan decision 9). */
+export const PERSONAL_WARNING =
+  "Personal to-dos stay on this Mac. They aren't backed up, and the Workbench, Reminders and teammates stop seeing them.";
+/** Said when a personal to-do is given to someone else. */
+export const PASS_ON_NOTE = 'Passing it on makes it a TDS to-do so they can see it.';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "14 Nov" from YYYY-MM-DD. */
+function shortDate(iso: string): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${Number(m[2])} ${MONTHS[Number(m[1]) - 1] ?? ''}`.trim() : iso;
+}
 
 /** Who a to-do can go to: you first, then the team (not you). */
 function people(me: string, team: TeamMember[]): TeamMember[] {
@@ -45,12 +62,17 @@ function Assignee({
   );
 }
 
-/** The "Add a to-do" form: one column. Enter adds, Esc cancels. */
+/**
+ * The "Add a to-do" line: type, press Enter, done (it goes to you, with no date). Icon toggles on the line
+ * add a personal flag, a date and a person; "More options" opens the full fields. Esc cancels.
+ */
 export function AddTodoForm({
   me,
   team,
   busy,
   canAddOpen,
+  canUsePersonal,
+  startPersonal,
   onAdd,
   onCancel,
 }: {
@@ -59,6 +81,10 @@ export function AddTodoForm({
   busy: boolean;
   /** TodoList.canAddOpen: offers "Open to anyone". */
   canAddOpen: boolean;
+  /** TodoList.canUsePersonal: shows the personal (lock) toggle. */
+  canUsePersonal: boolean;
+  /** Start as personal (the Personal filter is showing). Ignored unless canUsePersonal. */
+  startPersonal: boolean;
   onAdd: (action: TodoAction) => void;
   onCancel: () => void;
 }) {
@@ -66,14 +92,37 @@ export function AddTodoForm({
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
   const [assignee, setAssignee] = useState(me);
+  const [personalChoice, setPersonal] = useState(startPersonal && canUsePersonal);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [whoOpen, setWhoOpen] = useState(false);
+  const [full, setFull] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const dueRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
+  // "More options" removes itself: put the keyboard on the first field it reveals.
+  useEffect(() => {
+    if (full) dueRef.current?.focus();
+  }, [full]);
+
+  // Someone else, or open to anyone, can't be personal: it turns off and the toggle is disabled.
+  const mine = assignee === me;
+  const personal = canUsePersonal && personalChoice && mine;
+  const whoName =
+    assignee === '' ? 'Open to anyone' : (team.find((m) => m.slug === assignee)?.name ?? assignee);
+  const showDate = full || dateOpen;
+  const showWho = full || whoOpen;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const t = title.trim();
     if (!t || busy) return;
-    onAdd({ kind: 'add', title: t, due: due || null, assignee: assignee === '' ? null : assignee });
+    onAdd({
+      kind: 'add',
+      title: t,
+      due: due || null,
+      assignee: assignee === '' ? null : assignee,
+      ...(personal ? { scope: 'personal' as const } : {}),
+    });
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -85,52 +134,123 @@ export function AddTodoForm({
   return (
     <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label="Add a to-do">
       <div className="todo-field">
-        <label htmlFor={`${uid}-title`}>What needs doing?</label>
-        <input
-          id={`${uid}-title`}
-          ref={titleRef}
-          className="field"
-          value={title}
-          maxLength={TODO_TITLE_MAX}
-          onChange={(e) => setTitle(e.target.value)}
-        />
+        <label htmlFor={`${uid}-title`} className={full ? undefined : 'visually-hidden'}>
+          What needs doing?
+        </label>
+        <div className="todo-quick">
+          <input
+            id={`${uid}-title`}
+            ref={titleRef}
+            className="field"
+            value={title}
+            placeholder="What needs doing?"
+            maxLength={TODO_TITLE_MAX}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          {canUsePersonal ? (
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Keep it personal"
+              aria-pressed={personal}
+              aria-describedby={mine ? undefined : `${uid}-why`}
+              aria-disabled={mine ? undefined : true}
+              onClick={() => {
+                if (mine) setPersonal(!personalChoice);
+              }}
+            >
+              <Icon name="lock" size={16} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={due ? `Due date: ${shortDate(due)}` : 'Add a due date'}
+            aria-expanded={showDate}
+            data-on={due !== '' ? 'true' : undefined}
+            onClick={() => setDateOpen(!dateOpen)}
+          >
+            <Icon name="calendar" size={16} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={mine ? "Choose who it's for" : `For: ${whoName}`}
+            aria-expanded={showWho}
+            data-on={!mine ? 'true' : undefined}
+            onClick={() => setWhoOpen(!whoOpen)}
+          >
+            <Icon name="person" size={16} />
+          </button>
+        </div>
       </div>
-      <div className="todo-field">
-        <label htmlFor={`${uid}-due`}>Due date (optional)</label>
-        <input
-          id={`${uid}-due`}
-          type="date"
-          className="field"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-        />
-      </div>
-      <div className="todo-field">
-        <label htmlFor={`${uid}-who`}>Assigned to</label>
-        <Assignee
-          id={`${uid}-who`}
-          value={assignee}
-          onChange={setAssignee}
-          me={me}
-          team={team}
-          allowOpen={canAddOpen}
-        />
-      </div>
+      {canUsePersonal && !mine ? (
+        <p className="todo-note" id={`${uid}-why`}>
+          A personal to-do can only be yours.
+        </p>
+      ) : null}
+      {personal ? (
+        <p className="todo-note" id={`${uid}-personal`}>
+          {PERSONAL_WARNING}
+        </p>
+      ) : null}
+      {showDate ? (
+        <div className="todo-field">
+          <label htmlFor={`${uid}-due`}>Due date (optional)</label>
+          <input
+            id={`${uid}-due`}
+            ref={dueRef}
+            type="date"
+            className="field"
+            value={due}
+            onChange={(e) => setDue(e.target.value)}
+          />
+        </div>
+      ) : null}
+      {showWho ? (
+        <div className="todo-field">
+          <label htmlFor={`${uid}-who`}>Assigned to</label>
+          <Assignee
+            id={`${uid}-who`}
+            value={assignee}
+            onChange={setAssignee}
+            me={me}
+            team={team}
+            allowOpen={canAddOpen}
+          />
+        </div>
+      ) : null}
       <div className="todo-actions">
-        <button type="submit" className="btn" data-variant="primary" disabled={busy || title.trim() === ''}>
+        <button
+          type="submit"
+          className="btn"
+          data-variant="primary"
+          disabled={busy || title.trim() === ''}
+          aria-describedby={personal ? `${uid}-personal` : undefined}
+        >
           Add
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
         </button>
+        {full ? null : (
+          <button type="button" className="link-btn" onClick={() => setFull(true)}>
+            More options
+          </button>
+        )}
       </div>
     </form>
   );
 }
 
-/** Builds the actions for a save: only changed fields, in the order edit, due, assignee. */
+/**
+ * Builds the actions for a save: only changed fields, in the order edit, due, move, assignee. Personal
+ * to-dos send `scope: 'personal'` on every step; TDS steps keep the old shape. After a `move` the later
+ * steps address the to-do where it now lives.
+ */
 export function buildEditActions(todo: TodoItem, draft: EditDraft, detailsEditable: boolean): TodoAction[] {
   const actions: TodoAction[] = [];
+  const at = (scope: TodoScope) => (scope === 'personal' ? { scope } : {});
   const title = draft.title.trim();
   const titleChanged = title !== todo.title;
   const detailsChanged = detailsEditable && draft.details !== todo.details;
@@ -140,13 +260,17 @@ export function buildEditActions(todo: TodoItem, draft: EditDraft, detailsEditab
       id: todo.id,
       title,
       ...(detailsChanged ? { details: draft.details } : {}),
+      ...at(todo.scope),
     });
   }
   if (draft.due !== (todo.due ?? '')) {
-    actions.push({ kind: 'due', id: todo.id, due: draft.due || null });
+    actions.push({ kind: 'due', id: todo.id, due: draft.due || null, ...at(todo.scope) });
+  }
+  if (draft.scope !== todo.scope) {
+    actions.push({ kind: 'move', id: todo.id, scope: todo.scope, to: draft.scope });
   }
   if (draft.assignee !== (todo.assignee ?? '')) {
-    actions.push({ kind: 'assignee', id: todo.id, assignee: draft.assignee || null });
+    actions.push({ kind: 'assignee', id: todo.id, assignee: draft.assignee || null, ...at(draft.scope) });
   }
   // Only the first step carries the version the editor opened with; the store gives each later step
   // the version the one before it left behind.
@@ -160,10 +284,12 @@ export interface EditDraft {
   details: string;
   due: string;
   assignee: string;
+  /** TDS or personal: where the to-do will live after saving. */
+  scope: TodoScope;
   /** TodoItem.version when the editor opened (or the fresh one adopted after a 'changed' refusal). */
   version: string;
   /** The field values the editor opened with (or last rebased on), to tell what the person edited. */
-  base: { title: string; details: string; due: string; assignee: string };
+  base: { title: string; details: string; due: string; assignee: string; scope: TodoScope };
   /** After a 'changed' refusal: what the other person's version says, to show beside the draft. */
   theirs?: { title: string; due: string; assignee: string; details: string };
 }
@@ -195,6 +321,7 @@ export function TodoEditor({
   me,
   team,
   busy,
+  canUsePersonal,
   onSave,
   onDone,
   onDelete,
@@ -206,6 +333,8 @@ export function TodoEditor({
   me: string;
   team: TeamMember[];
   busy: boolean;
+  /** TodoList.canUsePersonal: shows the TDS / Personal switch on to-dos that are yours. */
+  canUsePersonal: boolean;
   onSave: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
   onDone: () => void;
   onDelete: () => void;
@@ -217,7 +346,18 @@ export function TodoEditor({
   const setTitle = (v: string) => onDraft({ ...draft, title: v });
   const setDetails = (v: string) => onDraft({ ...draft, details: v });
   const setDue = (v: string) => onDraft({ ...draft, due: v });
-  const setAssignee = (v: string) => onDraft({ ...draft, assignee: v });
+  // Giving a personal to-do to someone else makes it a TDS one: they can't see a personal file.
+  const setAssignee = (v: string) =>
+    onDraft({
+      ...draft,
+      assignee: v,
+      ...(draft.scope === 'personal' && v !== me ? { scope: 'tds' as const } : {}),
+    });
+  const setScope = (v: TodoScope) => onDraft({ ...draft, scope: v });
+  const passing = todo.scope === 'personal' && draft.scope === 'tds' && draft.assignee !== me;
+  const switchable = canUsePersonal && todo.assignee === me && draft.assignee === me;
+  const handover = handoverLine(todo, me);
+  const warnPersonal = switchable && draft.scope === 'personal' && todo.scope !== 'personal';
   const titleRef = useRef<HTMLInputElement>(null);
   const conflictRef = useRef<HTMLParagraphElement>(null);
   const hasConflict = draft.theirs !== undefined;
@@ -257,6 +397,7 @@ export function TodoEditor({
       aria-label={`Edit "${todo.title}"`}
       aria-describedby={draft.theirs ? `${uid}-conflict` : undefined}
     >
+      {handover ? <p className="todo-note todo-handover">{handover}</p> : null}
       <div className="todo-field">
         <label htmlFor={`${uid}-title`}>Title</label>
         <input
@@ -319,14 +460,40 @@ export function TodoEditor({
       <div className="todo-field">
         <label htmlFor={`${uid}-who`}>Assigned to</label>
         <Assignee id={`${uid}-who`} value={assignee} onChange={setAssignee} me={me} team={team} allowOpen />
+        {passing ? <p className="todo-note">{PASS_ON_NOTE}</p> : null}
       </div>
+      {switchable ? (
+        <div className="todo-field">
+          <span className="todo-label">Where it's kept</span>
+          <Seg<TodoScope>
+            label="Where this to-do is kept"
+            value={draft.scope}
+            onChange={setScope}
+            options={[
+              { value: 'tds', label: 'TDS' },
+              { value: 'personal', label: 'Personal' },
+            ]}
+          />
+          {warnPersonal ? (
+            <p className="todo-note" id={`${uid}-personal`}>
+              {PERSONAL_WARNING}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {draft.theirs ? (
         <p className="todo-note" id={`${uid}-conflict`} ref={conflictRef}>
           {conflictNote(draft.theirs, draft, team, me)}
         </p>
       ) : null}
       <div className="todo-actions">
-        <button type="submit" className="btn" data-variant="primary" disabled={!canSave}>
+        <button
+          type="submit"
+          className="btn"
+          data-variant="primary"
+          disabled={!canSave}
+          aria-describedby={warnPersonal ? `${uid}-personal` : undefined}
+        >
           Save
         </button>
         <button type="button" className="btn" onClick={onCancel}>

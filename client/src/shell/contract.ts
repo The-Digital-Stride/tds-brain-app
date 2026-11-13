@@ -5,7 +5,15 @@
  * Layers, back to front: desk, rail, docks (left drawer, right panel), sheet, overlays.
  */
 import type { ComponentType, ReactNode } from 'react';
-import type { LiveSession, PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type {
+  ClientInfo,
+  LibraryItem,
+  LiveSession,
+  PastSession,
+  SkillInfo,
+  TodoItem,
+  TodoList,
+} from '../../../shared/contract.ts';
 import type { ChatItem } from '../state/chat-reducer.ts';
 
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
@@ -97,6 +105,7 @@ export interface KeyContext {
  * is true. Anything that handles Esc itself (the chat's close confirm, a card) calls
  * `preventDefault()` so the drawer behind it stays open.
  * - `[`, `t`, `c`, `s` (no modifier, not typing, palette shut, `singleKeys` on): rail, To-dos, Chats, Skills.
+ * - `/` (not typing, palette shut, `singleKeys` on; Shift allowed, as some keyboards need it): open the global search.
  */
 export type KeyAction = (e: KeyLike, ctx: KeyContext) => ShellAction | null;
 
@@ -122,7 +131,11 @@ export type IconName =
   | 'sheet'
   | 'slides'
   | 'stop'
-  | 'paperclip';
+  | 'paperclip'
+  | 'plus'
+  | 'lock'
+  | 'calendar'
+  | 'person';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {
@@ -206,9 +219,9 @@ export interface Words {
   /** "Owner", "Scout", "Team", "Role not set". */
   ROLE_WORDS: Record<'owner' | 'scout' | 'team' | 'unknown', string>;
   /**
-   * The opening message for a chat about a to-do. Must contain `todo/<id>`: the store keeps the
-   * chat linked to the to-do only while the message still mentions it.
-   * Exactly: `Help me with this to-do: todo/${todo.id} (${todo.title})`.
+   * The opening message for a chat about a to-do. Must contain the to-do's `path` (`todo/<id>`
+   * or `personal/todo/<id>`): the store keeps the chat linked to the to-do only while the message still
+   * mentions it. Exactly: `Help me with this to-do: ${todo.path} (${todo.title})`.
    */
   todoChatDraft: (todo: TodoItem) => string;
   /** "11 Nov, 16:42" (en-GB), or '' when the date can't be read. */
@@ -231,6 +244,8 @@ export interface FoldProps {
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  /** Shown beside the heading, never inside its toggle (e.g. "Mark all as seen"). */
+  action?: ReactNode;
   children: ReactNode;
 }
 
@@ -244,7 +259,7 @@ export interface SegProps<T extends string> {
 
 // ── App slots (hidden until a real app exists) ─────────────────────────────────────────────────
 
-/** `client/src/shell/apps.ts` exports `APPS: AppSlot[]`, empty for now. */
+/** `client/src/shell/apps.ts` exports `APPS: AppSlot[]` (Images, Documents). */
 export interface AppSlot {
   /** Lowercase, no spaces. The sheet shows this app when the view is `app:<id>`; an unknown id shows Home. */
   id: string;
@@ -253,6 +268,13 @@ export interface AppSlot {
   Sheet: ComponentType;
   /** Buttons the app adds to the sheet bar, before "Search or jump to". */
   BarActions?: ComponentType;
+  /**
+   * How the global search ("Search or jump to") finds this app's things. REQUIRED for every app: a new
+   * app is searchable as part of building it (plan 2026-11-13-global-search, decision 9). `null` only with
+   * a reason listed in `client/src/shell/apps.test.ts`, which fails otherwise. The source must not import
+   * the app's lazy UI chunk.
+   */
+  search: SearchSource | null;
   /** The app's body for the right panel. With one, the panel can open while the app is on the sheet. */
   Panel?: ComponentType;
   /** The right panel's heading while this app is on the sheet. Default: the app's title. */
@@ -275,6 +297,30 @@ export interface TodoGroup {
  * order given. "week" is tomorrow up to 7 days ahead. Empty groups are left out.
  */
 export type GroupTodos = (items: TodoItem[], today: string) => TodoGroup[];
+
+/** The drawer's filters (decision 7). Nothing here is remembered between visits. Text search is global (plan 2026-11-13-global-search). */
+export interface TodoFilter {
+  scope: 'all' | 'tds' | 'personal';
+  /** A client slug, or null for every client. */
+  client: string | null;
+}
+
+/**
+ * `client/src/state/todo-filter.ts`. Keeps the order given. Scope 'all' and client null return `items`
+ * unchanged. `clients` is kept for callers; the filter no longer matches text.
+ */
+export type FilterTodos = (
+  items: TodoItem[],
+  filter: TodoFilter,
+  clients: { slug: string; name: string }[],
+) => TodoItem[];
+
+/**
+ * `client/src/state/todo-new.ts` (decision 6). The to-dos in `mine` that are "New to you": a handover by
+ * someone other than `me`, dated within TODO_NEW_DAYS of `now`, whose `handover.at` isn't `seen[key]`.
+ * Keeps the order given.
+ */
+export type NewToYou = (mine: TodoItem[], me: string, seen: Record<string, string>, now: Date) => TodoItem[];
 
 // ── Home ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -299,47 +345,6 @@ export interface HomeLogic {
   summary: (counts: { overdue: number; dueToday: number; asking: number }) => string;
 }
 
-// ── Palette ────────────────────────────────────────────────────────────────────────────────────
-
-export type PaletteCommand =
-  | { kind: 'home' }
-  | { kind: 'settings' }
-  | { kind: 'drawer'; drawer: DrawerName }
-  | { kind: 'chat'; sessionId: string }
-  | { kind: 'skill'; skill: SkillInfo }
-  | { kind: 'todo'; todo: TodoItem };
-
-export interface PaletteOption {
-  /** Unique in the list; also the DOM id suffix for `aria-activedescendant`. */
-  id: string;
-  label: string;
-  /** A short second line or trailing note, e.g. a client name or "T". */
-  hint: string | null;
-  icon: IconName;
-  command: PaletteCommand;
-}
-
-export interface PaletteGroup {
-  /** "Go to", "Open chats", "Run a skill", "Start a chat on a to-do". */
-  title: string;
-  options: PaletteOption[];
-}
-
-export interface PaletteData {
-  live: LiveSession[];
-  skills: SkillInfo[];
-  /** Skill names, pinned first: used to order skills when the query is empty. */
-  pins: string[];
-  todos: TodoItem[];
-}
-
-/**
- * `client/src/state/palette.ts`. Case-insensitive match of every word of `query` against the label.
- * Empty query: all "Go to" options, open chats, pinned skills and the first five to-dos.
- * At most 6 options per group; empty groups are left out.
- */
-export type PaletteGroups = (query: string, data: PaletteData) => PaletteGroup[];
-
 // ── Right panel ────────────────────────────────────────────────────────────────────────────────
 
 export interface StepRow {
@@ -361,3 +366,76 @@ export interface ChatsLists {
   open: LiveSession[];
   earlier: PastSession[];
 }
+
+// ── Global search (plan 2026-11-13-global-search) ──────────────────────────────────────────────────
+
+/** What a hit may do when chosen. The palette closes itself after `run` unless the hit says otherwise. */
+export interface SearchActions {
+  openView: (view: 'chat' | 'settings' | 'profile' | `app:${string}`) => void;
+  /** Shows Home (the sheet with no chat or app). */
+  goHome: () => void;
+  openDrawer: (drawer: DrawerName) => void;
+  openChat: (sessionId: string) => void;
+  /** Reopens an earlier chat (store `openPast`). */
+  openPast: (sdkSessionId: string) => void;
+  startSkill: (skill: SkillInfo) => void;
+  /** Opens the to-dos drawer on the to-do's tab, clears its filters, opens its group and focuses its row. */
+  revealTodo: (todo: TodoItem) => void;
+  /** Shows Home with this client chosen. */
+  chooseClient: (slug: string) => void;
+  /** Opens a library app (`app:<appId>`) on `scope` with `item` selected (and viewed when it can be). */
+  openLibraryItem: (appId: string, scope: string, item: LibraryItem) => void;
+}
+
+export interface SearchHit {
+  /** Unique within its source. */
+  id: string;
+  label: string;
+  /** Second line or trailing note (client name, "My personal files", due date). */
+  hint: string | null;
+  icon: IconName;
+  run: (actions: SearchActions) => void;
+}
+
+/** The data every synchronous source searches; a snapshot from the store. */
+export interface SearchContext {
+  me: string;
+  todos: TodoList | null;
+  live: LiveSession[];
+  past: PastSession[];
+  skills: SkillInfo[];
+  pins: string[];
+  clients: ClientInfo[];
+}
+
+export interface SearchResults {
+  hits: SearchHit[];
+  /** How many matched in all (the heading shows "6 of N" when more than shown). */
+  total: number;
+  /** Async only: true while the server is still building some folders' lists ("Still looking…"). */
+  partial?: boolean;
+}
+
+/**
+ * One searchable thing: a built-in (Go to, To-dos, Open chats, Skills, Clients, Earlier chats) or an
+ * app's `AppSlot.search`. Exactly one of `search` / `searchAsync` is given. Groups show in
+ * `client/src/shell/search-sources.ts` order, async ones last so late results never move the highlight.
+ */
+export interface SearchSource {
+  id: string;
+  /** The group heading: "To-dos", "Documents". */
+  title: string;
+  /** Instant: runs on every keystroke. Ranked (decision 5); `query` is already trimmed and non-empty. */
+  search?: (query: string, ctx: SearchContext) => SearchResults;
+  /** Server-backed: debounced (~150 ms); aborted when the query changes; only for 2+ characters. */
+  searchAsync?: (query: string, signal: AbortSignal) => Promise<SearchResults>;
+  /** What shows with an empty query; omit for none. */
+  idle?: (ctx: SearchContext) => SearchHit[];
+}
+
+/**
+ * `client/src/state/search-match.ts`. Every word of `query`, in any order, case- and accent-insensitive.
+ * Returns a rank (lower is better): 0 title starts with the query, 1 a title word starts with a query
+ * word, 2 the title contains all words, 3 only other `fields` match; null for no match.
+ */
+export type MatchRank = (query: string, title: string, fields: string[]) => 0 | 1 | 2 | 3 | null;

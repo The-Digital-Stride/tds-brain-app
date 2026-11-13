@@ -3,6 +3,25 @@ import type { IconName, IconProps } from './contract.ts';
 
 /** 20×20 line icons, drawn with the current text colour. */
 const PATHS: Record<IconName, ReactNode> = {
+  plus: <path d="M10 4v12M4 10h12" />,
+  lock: (
+    <>
+      <rect x="4.5" y="9" width="11" height="8" rx="1.5" />
+      <path d="M7 9V6.5a3 3 0 0 1 6 0V9" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3.5" y="4.5" width="13" height="12" rx="1.5" />
+      <path d="M3.5 8.5h13M7 3v3M13 3v3" />
+    </>
+  ),
+  person: (
+    <>
+      <circle cx="10" cy="7" r="3" />
+      <path d="M4 16.5c.8-3 3-4.5 6-4.5s5.2 1.5 6 4.5" />
+    </>
+  ),
   home: <path d="M3 9.5 10 3l7 6.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1z" />,
   edit: <path d="M13.5 3.5l3 3L7 16H4v-3zM11.5 5.5l3 3" />,
   more: <path d="M5 10h.01M10 10h.01M15 10h.01" strokeWidth={2.6} />,

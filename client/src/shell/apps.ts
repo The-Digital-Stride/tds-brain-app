@@ -1,10 +1,13 @@
 import { lazy } from 'react';
+import { documentsSearch } from '../apps/documents/search.ts';
+import { imagesSearch } from '../apps/images/search.ts';
 import type { AppSlot } from './contract.ts';
 
 /**
  * The library apps (`client/src/apps/images`, `client/src/apps/documents`): the images and
  * documents the server lists from the brain. They share `client/src/apps/shared` and are always on
- * the rail. Each loads its code only when first opened.
+ * the rail. Each loads its code only when first opened; its search source sits outside that lazy chunk
+ * (`search.ts` in each app), so the global search never loads the screens.
  */
 function imagesApp(): AppSlot {
   const ui = () => import('../apps/images/ui.ts');
@@ -16,6 +19,7 @@ function imagesApp(): AppSlot {
     BarActions: lazy(() => ui().then((m) => ({ default: m.ImagesBar }))),
     Panel: lazy(() => ui().then((m) => ({ default: m.ImagesPanel }))),
     panelLabel: 'Image details',
+    search: imagesSearch,
   };
 }
 
@@ -29,6 +33,7 @@ function documentsApp(): AppSlot {
     BarActions: lazy(() => ui().then((m) => ({ default: m.DocumentsBar }))),
     Panel: lazy(() => ui().then((m) => ({ default: m.DocumentsPanel }))),
     panelLabel: 'Document details',
+    search: documentsSearch,
   };
 }
 

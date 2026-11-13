@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import {
   chatsRailLabel,
+  handoverLine,
+  handoverMeta,
   initials,
   placeName,
   STATE_WORDS,
@@ -37,6 +39,11 @@ describe('todoChatDraft', () => {
   it('names the to-do by its path, so the store keeps the chat linked to it', () => {
     const todo: TodoItem = {
       id: '20261111-renew.md',
+      scope: 'tds',
+      key: '20261111-renew.md',
+      path: 'todo/20261111-renew.md',
+      handover: null,
+      createdBy: null,
       title: 'Renew the contract',
       created: null,
       source: null,
@@ -50,6 +57,9 @@ describe('todoChatDraft', () => {
     };
     const draft = todoChatDraft(todo);
     expect(draft).toContain('todo/20261111-renew.md');
+    expect(todoChatDraft({ ...todo, path: 'personal/todo/20261111-renew.md' })).toContain(
+      'personal/todo/20261111-renew.md',
+    );
     expect(draft).toBe('Help me with this to-do: todo/20261111-renew.md (Renew the contract)');
   });
 });
@@ -187,5 +197,54 @@ describe('syncWords', () => {
         spoken: "The app has not seen the brain sync yet. Check you're online and Brain Connect is running.",
       });
     }
+  });
+});
+
+describe('handover words', () => {
+  const now = new Date(2026, 10, 13, 12, 0);
+  const h = (
+    over: Partial<NonNullable<TodoItem['handover']>> = {},
+    assignee: string | null = 'sam-example',
+  ) => ({
+    assignee,
+    handover: {
+      by: 'ben-mcadam',
+      byName: 'Ben McAdam',
+      at: new Date(2026, 10, 12, 9, 0).toISOString(),
+      from: null,
+      via: 'TDS Brain App',
+      source: 'stamp' as const,
+      ...over,
+    },
+  });
+  it('says who and when in the row, or git history', () => {
+    expect(handoverMeta(h(), 'sam-example', now)).toBe('from Ben, yesterday');
+    expect(handoverMeta(h({ source: 'history' }), 'sam-example', now)).toBe('from Ben (git history)');
+    expect(handoverMeta(h({ at: new Date(2026, 10, 10).toISOString() }), 'sam-example', now)).toBe(
+      'from Ben, 3 days ago',
+    );
+  });
+  it('falls back to the slug, then to "someone", when the name is not known', () => {
+    expect(handoverMeta(h({ byName: null }), 'sam-example', now)).toBe('from Ben, yesterday');
+    expect(handoverMeta(h({ byName: null, by: null }), 'sam-example', now)).toBe('from someone, yesterday');
+    expect(handoverLine(h({ byName: null, by: null }), 'sam-example')).toBe(
+      'Passed to you by someone, 12 Nov (TDS Brain App)',
+    );
+  });
+  it('says nothing for your own, old or missing handovers', () => {
+    expect(handoverMeta(h({ by: 'sam-example' }), 'sam-example', now)).toBeNull();
+    expect(handoverMeta(h({ at: new Date(2026, 9, 1).toISOString() }), 'sam-example', now)).toBeNull();
+    expect(handoverMeta({ handover: null, assignee: 'sam-example' }, 'sam-example', now)).toBeNull();
+  });
+  it('says nothing for a to-do that is open or belongs to someone else', () => {
+    expect(handoverMeta(h({}, null), 'sam-example', now)).toBeNull();
+    expect(handoverLine(h({}, null), 'sam-example')).toBeNull();
+    expect(handoverMeta(h({}, 'ben-mcadam'), 'sam-example', now)).toBeNull();
+  });
+  it('words the editor line', () => {
+    expect(handoverLine(h(), 'sam-example')).toBe('Passed to you by Ben McAdam, 12 Nov (TDS Brain App)');
+    expect(handoverLine(h({ source: 'history', via: null }), 'sam-example')).toBe(
+      'From Ben McAdam (git history), 12 Nov',
+    );
   });
 });

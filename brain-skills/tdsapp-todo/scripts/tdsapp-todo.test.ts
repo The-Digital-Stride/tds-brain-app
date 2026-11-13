@@ -138,20 +138,47 @@ const SAMPLE =
 
 const titleLine = (file: string) => read(file).match(/^title: .*$/m)?.[0];
 
+// v0.4: the personal folder, and the handover record that `assignee` adds.
+const personalPath = (file: string) => join(root, 'personal', 'todo', file);
+const readPersonal = (file: string) => readFileSync(personalPath(file), 'utf8');
+function putPersonal(file: string, text: string | Buffer) {
+  mkdirSync(join(root, 'personal', 'todo'), { recursive: true });
+  writeFileSync(personalPath(file), text);
+}
+// The text without the v0.4 handover record: what v0.3 would have written.
+function withoutHandover(text: string): string {
+  return text
+    .replace(/^assigned_[a-z]+: .*\r?\n/gm, '')
+    .replace(/\r?\n## Handover history\r?\n\r?\n(?:- .*\r?\n)+/, '');
+}
+const fmValue = (text: string, key: string) => text.match(new RegExp(`^${key}: (.*?)\\r?$`, 'm'))?.[1];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "13 Nov 2026, 14:05 UK" from an `assigned_at` value.
+function ukWhen(at: string): string {
+  const [, y, m, d, hm] = at.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}):\d{2}[+-]\d{2}:\d{2}$/) ?? [];
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}, ${hm} UK`;
+}
+// Makes the throwaway brain a git repository, with or without the rule that keeps personal/ out.
+function gitInit(ignorePersonal: boolean) {
+  const r = spawnSync('git', ['init', '-q'], { cwd: root, env: gitEnv('Sam Example'), encoding: 'utf8' });
+  expect(r.status, r.stderr).toBe(0);
+  if (ignorePersonal) writeFileSync(join(root, '.gitignore'), 'personal/\n');
+}
+
 describe('add', () => {
   it('writes the Workbench frontmatter, defaulting the assignee to git user.name', () => {
     const r = run('add', { title: 'Renew the contract' });
     const file = `${stamp()}-renew-the-contract.md`;
     expect(r).toEqual({ code: 0, json: { ok: true, file } });
     expect(read(file)).toBe(
-      `---\nassignee: sam-example\ntitle: Renew the contract\ncreated: ${today()}\nsource: added with the todo skill\n---\n`,
+      `---\nassignee: sam-example\ntitle: Renew the contract\ncreated: ${today()}\ncreated_by: sam-example\nsource: added with the todo skill\n---\n`,
     );
   });
 
   it('writes due after created when given', () => {
     const r = run('add', { title: 'Book venue', due: '2026-12-01', assignee: 'sam-example' });
     expect(read(r.json.file as string)).toBe(
-      `---\nassignee: sam-example\ntitle: Book venue\ncreated: ${today()}\ndue: 2026-12-01\nsource: added with the todo skill\n---\n`,
+      `---\nassignee: sam-example\ntitle: Book venue\ncreated: ${today()}\ncreated_by: sam-example\ndue: 2026-12-01\nsource: added with the todo skill\n---\n`,
     );
   });
 
@@ -333,21 +360,24 @@ describe('assignee', () => {
       code: 0,
       json: { ok: true, file: 'a.md', assignee: 'ben-mcadam' },
     });
-    expect(read('a.md')).toBe(SAMPLE.replace('assignee: sam-example', 'assignee: ben-mcadam'));
+    // v0.4 adds the handover record (see "v0.4: assignee"); the rest is v0.3's change.
+    expect(withoutHandover(read('a.md'))).toBe(
+      SAMPLE.replace('assignee: sam-example', 'assignee: ben-mcadam'),
+    );
     expect(run('assignee', { file: 'a.md', assignee: null }).json).toEqual({
       ok: true,
       file: 'a.md',
       assignee: null,
     });
-    expect(read('a.md')).toBe(SAMPLE.replace('assignee: sam-example\n', ''));
+    expect(withoutHandover(read('a.md'))).toBe(SAMPLE.replace('assignee: sam-example\n', ''));
     run('assignee', { file: 'a.md', assignee: 'sam-example' });
-    expect(read('a.md')).toBe(SAMPLE);
+    expect(withoutHandover(read('a.md'))).toBe(SAMPLE);
   });
 
   it('adds a block to a file without frontmatter', () => {
     put('a.md', 'Plain\n');
     run('assignee', { file: 'a.md', assignee: 'ben-mcadam' });
-    expect(read('a.md')).toBe('---\nassignee: ben-mcadam\n---\n\nPlain\n');
+    expect(withoutHandover(read('a.md'))).toBe('---\nassignee: ben-mcadam\n---\n\nPlain\n');
   });
 });
 
@@ -859,7 +889,7 @@ describe('BCR-06: open to-dos (decision 6)', () => {
   it('open: true adds it with no assignee line, even with a git name', () => {
     const r = run('add', { title: 'For anyone', open: true });
     expect(read(r.json.file as string)).toBe(
-      `---\ntitle: For anyone\ncreated: ${today()}\nsource: added with the todo skill\n---\n`,
+      `---\ntitle: For anyone\ncreated: ${today()}\ncreated_by: sam-example\nsource: added with the todo skill\n---\n`,
     );
   });
 
@@ -978,7 +1008,8 @@ describe('BCR-11: line endings and byte order marks (decision 9)', () => {
     run('due', { file: 'a.md', due: '2026-12-01' });
     run('assignee', { file: 'a.md', assignee: 'ben-mcadam' });
     run('edit', { file: 'a.md', title: 'Old title', body: 'One\nTwo' });
-    expect(read('a.md')).toBe(
+    expect(read('a.md')).not.toMatch(/[^\r]\n/);
+    expect(withoutHandover(read('a.md'))).toBe(
       '---\r\nassignee: ben-mcadam\r\ntitle: Old title\r\ncreated: 2026-11-01\r\ndue: 2026-12-01\r\n---\r\n\r\nOne\r\nTwo\r\n',
     );
   });
@@ -1006,7 +1037,9 @@ describe('BCR-11: line endings and byte order marks (decision 9)', () => {
     expect(read('a.md')).toBe('﻿---\ntitle: T\ndue: 2026-12-01\n---\nBody\n');
     run('assignee', { file: 'a.md', assignee: 'ben-mcadam' });
     run('edit', { file: 'a.md', title: 'T' });
-    expect(read('a.md')).toBe('﻿---\nassignee: ben-mcadam\ntitle: T\ndue: 2026-12-01\n---\nBody\n');
+    expect(withoutHandover(read('a.md'))).toBe(
+      '﻿---\nassignee: ben-mcadam\ntitle: T\ndue: 2026-12-01\n---\nBody\n',
+    );
   });
 
   it('reads the title after a byte order mark in list', () => {
@@ -1349,10 +1382,10 @@ describe('the skill files', () => {
   const skill = (rel: string) =>
     appParse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')).data;
 
-  it('tdsapp-todo is v0.3, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
+  it('tdsapp-todo is v0.4, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
     expect(skill('../SKILL.md')).toMatchObject({
       name: 'tdsapp-todo',
-      version: '0.3',
+      version: '0.4',
       roles: 'owner, scout',
       maturity: 'draft',
       members: 'false',
@@ -1366,5 +1399,688 @@ describe('the skill files', () => {
     expect(shim).toMatchObject({ name: 'todo', version: '0.3', roles: 'owner, scout', maturity: 'draft' });
     expect(shim.description).toMatch(/^Deprecated: use tdsapp-todo\./);
     expect(shim.description).not.toContain('USE WHEN');
+  });
+});
+
+// ---- v0.4 (docs/plans/2026-11-13-todo-handover-search-scope.md, decision 2) ----------------------
+
+describe('v0.4: capabilities', () => {
+  it('offers handover and scope in a brain that is not a git repository', () => {
+    expect(run('capabilities')).toEqual({
+      code: 0,
+      json: { version: '0.4', features: ['handover', 'scope'] },
+    });
+  });
+
+  it('offers scope in a git brain only when git ignores personal/todo/', () => {
+    gitInit(false);
+    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+    writeFileSync(join(root, '.gitignore'), 'personal/\n');
+    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover', 'scope'] });
+  });
+
+  it('does not offer scope when personal/todo is a symbolic link', () => {
+    const elsewhere = join(root, 'elsewhere');
+    mkdirSync(elsewhere);
+    mkdirSync(join(root, 'personal'));
+    symlinkSync(elsewhere, join(root, 'personal', 'todo'));
+    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+  });
+});
+
+describe('v0.4: scope', () => {
+  const commands: [string, Record<string, unknown>][] = [
+    ['edit', { title: 'X' }],
+    ['due', { due: '2026-12-01' }],
+    ['assignee', { assignee: 'ben-mcadam' }],
+    ['delete', {}],
+    ['tick', {}],
+    ['move', { to: 'personal' }],
+  ];
+
+  it.each(commands)('%s refuses a scope other than "tds" or "personal" with 400', (command, extra) => {
+    put('a.md', SAMPLE);
+    for (const scope of ['Personal', 'work', 5, true, '']) {
+      expect(run(command, { file: 'a.md', scope, ...extra })).toEqual({
+        code: 2,
+        json: { error: 'scope must be "tds" or "personal"', status: 400 },
+      });
+    }
+    expect(read('a.md')).toBe(SAMPLE);
+  });
+
+  it('treats scope "tds" as todo/, the same as no scope', () => {
+    put('a.md', SAMPLE);
+    expect(run('due', { file: 'a.md', due: '2026-12-01', scope: 'tds' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', due: '2026-12-01' },
+    });
+    expect(read('a.md')).toContain('\ndue: 2026-12-01\n');
+  });
+
+  it('edits and re-dates a personal to-do in personal/todo/, leaving a TDS one of the same name alone', () => {
+    put('a.md', SAMPLE);
+    putPersonal('a.md', SAMPLE);
+    expect(run('edit', { file: 'a.md', title: 'New title', scope: 'personal' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', title: 'New title' },
+    });
+    expect(run('due', { file: 'a.md', due: '2026-12-01', scope: 'personal' }).code).toBe(0);
+    expect(readPersonal('a.md')).toBe(
+      `${SAMPLE.replace('title: Old title', 'title: New title')
+        .replace('# Old title', '# New title')
+        .replace('created: 2026-11-01\n', 'created: 2026-11-01\ndue: 2026-12-01\n')}${history('Old title')}`,
+    );
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(temps(join(root, 'personal', 'todo'))).toEqual([]);
+  });
+
+  it('ticks and deletes a personal to-do into personal/todo/done/ and personal/todo/deleted/', () => {
+    putPersonal('a.md', SAMPLE);
+    putPersonal('b.md', SAMPLE);
+    expect(run('tick', { file: 'a.md', scope: 'personal' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', moved: join('personal', 'todo', 'done', 'a.md') },
+    });
+    expect(run('delete', { file: 'b.md', scope: 'personal' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'b.md', moved: join('personal', 'todo', 'deleted', 'b.md') },
+    });
+    expect(readFileSync(join(root, 'personal', 'todo', 'done', 'a.md'), 'utf8')).toContain(
+      '\nstatus: done\n',
+    );
+    expect(readFileSync(join(root, 'personal', 'todo', 'deleted', 'b.md'), 'utf8')).toContain(
+      '\nstatus: deleted\n',
+    );
+    expect(readdirSync(join(root, 'personal', 'todo')).sort()).toEqual(['deleted', 'done']);
+    expect(existsSync(join(root, 'todo', 'done'))).toBe(false);
+  });
+
+  it('checks expect on a personal to-do', () => {
+    putPersonal('a.md', SAMPLE);
+    expect(run('due', { file: 'a.md', due: '2026-12-01', scope: 'personal', expect: sha('other') })).toEqual({
+      code: 2,
+      json: { error: 'changed since read', status: 409 },
+    });
+    expect(readPersonal('a.md')).toBe(SAMPLE);
+  });
+
+  it('gives 404 for a personal to-do that is only in todo/', () => {
+    put('a.md', SAMPLE);
+    expect(run('due', { file: 'a.md', due: '2026-12-01', scope: 'personal' })).toEqual({
+      code: 2,
+      json: { error: 'todo not found: a.md', status: 404 },
+    });
+  });
+
+  it('refuses every personal request when git does not ignore personal/todo/, writing nothing', () => {
+    gitInit(false);
+    put('a.md', SAMPLE);
+    putPersonal('p.md', SAMPLE);
+    const requests: [string, Record<string, unknown>][] = [
+      ['add', { title: 'Private', scope: 'personal' }],
+      ['edit', { file: 'p.md', title: 'X', scope: 'personal' }],
+      ['due', { file: 'p.md', due: '2026-12-01', scope: 'personal' }],
+      ['tick', { file: 'p.md', scope: 'personal' }],
+      ['delete', { file: 'p.md', scope: 'personal' }],
+      ['move', { file: 'p.md', scope: 'personal', to: 'tds' }],
+      ['move', { file: 'a.md', to: 'personal' }],
+    ];
+    for (const [command, input] of requests) {
+      const r = run(command, input);
+      expect(r.code).toBe(2);
+      expect(r.json.status).toBe(400);
+      expect(r.json.error).toMatch(/^personal to-dos aren't available/);
+    }
+    expect(readPersonal('p.md')).toBe(SAMPLE);
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(readdirSync(join(root, 'personal', 'todo'))).toEqual(['p.md']);
+    expect(readdirSync(join(root, 'todo'))).toEqual(['a.md']);
+  });
+
+  it('works in a git brain that ignores personal/', () => {
+    gitInit(true);
+    putPersonal('p.md', SAMPLE);
+    expect(run('due', { file: 'p.md', due: '2026-12-01', scope: 'personal' }).code).toBe(0);
+  });
+
+  it('refuses a symbolically linked personal/todo, leaving what it points at alone', () => {
+    const elsewhere = join(root, 'elsewhere');
+    mkdirSync(elsewhere);
+    writeFileSync(join(elsewhere, 'p.md'), SAMPLE);
+    mkdirSync(join(root, 'personal'));
+    symlinkSync(elsewhere, join(root, 'personal', 'todo'));
+    for (const [command, input] of [
+      ['due', { file: 'p.md', due: '2026-12-01', scope: 'personal' }],
+      ['add', { title: 'Private', scope: 'personal' }],
+    ] as const) {
+      const r = run(command, input);
+      expect(r.json.status).toBe(400);
+    }
+    expect(readdirSync(elsewhere)).toEqual(['p.md']);
+    expect(readFileSync(join(elsewhere, 'p.md'), 'utf8')).toBe(SAMPLE);
+  });
+
+  it('refuses to pass on a personal to-do', () => {
+    putPersonal('a.md', SAMPLE);
+    expect(run('assignee', { file: 'a.md', assignee: 'ben-mcadam', scope: 'personal' })).toEqual({
+      code: 2,
+      json: { error: "a personal to-do can't be passed on: move it to TDS first", status: 400 },
+    });
+    expect(readPersonal('a.md')).toBe(SAMPLE);
+  });
+});
+
+describe('v0.4: add', () => {
+  it('writes created_by from by, else the git user, and nothing when neither is known', () => {
+    const byCaller = run('add', { title: 'From the app', assignee: 'ben-mcadam', by: 'Ben McAdam' });
+    expect(read(byCaller.json.file as string)).toBe(
+      `---\nassignee: ben-mcadam\ntitle: From the app\ncreated: ${today()}\ncreated_by: ben-mcadam\nsource: added with the todo skill\n---\n`,
+    );
+    const byGit = run('add', { title: 'From git' });
+    expect(fmValue(read(byGit.json.file as string), 'created_by')).toBe('sam-example');
+    const unknown = run('add', { title: 'Nobody', assignee: 'ben-mcadam' }, { userName: null });
+    expect(read(unknown.json.file as string)).not.toMatch(/^(?:created_by|assigned_\w+):/m);
+  });
+
+  it('stamps the handover when the to-do is for someone other than the adder', () => {
+    const r = run('add', {
+      title: 'For Ben',
+      assignee: 'ben-mcadam',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+      via: 'TDS Brain App',
+    });
+    const text = read(r.json.file as string);
+    const at = fmValue(text, 'assigned_at') as string;
+    expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+    expect(text).toBe(
+      `---\nassignee: ben-mcadam\ntitle: For Ben\ncreated: ${today()}\ncreated_by: sam-example\nsource: added from TDS Brain App\nassigned_to: ben-mcadam\nassigned_at: ${at}\nassigned_by: sam-example\nassigned_via: TDS Brain App\n---\n`,
+    );
+  });
+
+  it('stamps no handover for your own to-do or an open one', () => {
+    const own = run('add', { title: 'Mine', assignee: 'sam-example' });
+    const open = run('add', { title: 'Anyone', open: true });
+    expect(read(own.json.file as string)).not.toContain('assigned_');
+    expect(read(open.json.file as string)).not.toContain('assigned_');
+  });
+
+  it('defaults the handover tool to "todo skill" and the adder to the git user', () => {
+    const r = run('add', { title: 'For Ben', assignee: 'ben-mcadam' });
+    const text = read(r.json.file as string);
+    expect(fmValue(text, 'assigned_by')).toBe('sam-example');
+    expect(fmValue(text, 'assigned_via')).toBe('todo skill');
+    expect(text).not.toContain('assigned_from');
+  });
+
+  it('adds a personal to-do to personal/todo/, for the adder, making the folder', () => {
+    const r = run('add', {
+      title: 'Dentist',
+      due: '2026-12-01',
+      scope: 'personal',
+      by: 'ben-mcadam',
+      via: 'TDS Brain App',
+    });
+    const file = `${stamp()}-dentist.md`;
+    expect(r).toEqual({ code: 0, json: { ok: true, file } });
+    expect(readPersonal(file)).toBe(
+      `---\nassignee: ben-mcadam\ntitle: Dentist\ncreated: ${today()}\ncreated_by: ben-mcadam\ndue: 2026-12-01\nsource: added from TDS Brain App\n---\n`,
+    );
+    expect(readdirSync(join(root, 'todo'))).toEqual([]);
+    expect(temps(join(root, 'personal', 'todo'))).toEqual([]);
+  });
+
+  it('takes the git user as the adder of a personal to-do, and accepts their own slug as assignee', () => {
+    const a = run('add', { title: 'One', scope: 'personal' });
+    expect(fmValue(readPersonal(a.json.file as string), 'assignee')).toBe('sam-example');
+    const b = run('add', { title: 'Two', scope: 'personal', assignee: 'Sam Example' });
+    expect(b.code).toBe(0);
+    expect(fmValue(readPersonal(b.json.file as string), 'assignee')).toBe('sam-example');
+  });
+
+  it('refuses a personal to-do that is open, for someone else, or has no known adder', () => {
+    const cases: [Record<string, unknown>, string, string | null][] = [
+      [{ open: true }, "a personal to-do can't be open to anyone", 'Sam Example'],
+      [{ assignee: 'ben-mcadam' }, 'a personal to-do can only be for the person adding it', 'Sam Example'],
+      [
+        { assignee: 'ben-mcadam', by: 'sam-example' },
+        'a personal to-do can only be for the person adding it',
+        null,
+      ],
+      [{}, 'a personal to-do needs to know who is adding it: send by', null],
+    ];
+    for (const [extra, error, userName] of cases) {
+      expect(run('add', { title: 'Private', scope: 'personal', ...extra }, { userName })).toEqual({
+        code: 2,
+        json: { error, status: 400 },
+      });
+    }
+    expect(existsSync(join(root, 'personal'))).toBe(false);
+  });
+
+  it('refuses a scope other than "tds" or "personal"', () => {
+    expect(run('add', { title: 'x', scope: 'home' })).toEqual({
+      code: 2,
+      json: { error: 'scope must be "tds" or "personal"', status: 400 },
+    });
+  });
+
+  it('picks a name free in all six folders, for TDS and personal to-dos alike', () => {
+    const taken = [
+      ['todo'],
+      ['todo', 'done'],
+      ['todo', 'deleted'],
+      ['personal', 'todo'],
+      ['personal', 'todo', 'done'],
+      ['personal', 'todo', 'deleted'],
+    ];
+    taken.forEach((parts, i) => {
+      mkdirSync(join(root, ...parts), { recursive: true });
+      writeFileSync(
+        join(root, ...parts, i === 0 ? `${stamp()}-same.md` : `${stamp()}-same-${i + 1}.md`),
+        'x',
+      );
+    });
+    expect(run('add', { title: 'Same' }).json.file).toBe(`${stamp()}-same-7.md`);
+    expect(run('add', { title: 'Same', scope: 'personal' }).json.file).toBe(`${stamp()}-same-8.md`);
+  });
+});
+
+describe('v0.4: assignee records the handover', () => {
+  it('stamps who passed it on, when and from where, and adds a line under ## Handover history', () => {
+    put('a.md', SAMPLE);
+    const r = run('assignee', {
+      file: 'a.md',
+      assignee: 'ben-mcadam',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+      via: 'TDS Brain App',
+    });
+    expect(r).toEqual({ code: 0, json: { ok: true, file: 'a.md', assignee: 'ben-mcadam' } });
+    const text = read('a.md');
+    const at = fmValue(text, 'assigned_at') as string;
+    expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+    expect(text).toBe(
+      `---\nassignee: ben-mcadam\ntitle: Old title\ncreated: 2026-11-01\nassigned_to: ben-mcadam\nassigned_at: ${at}\nassigned_by: sam-example\nassigned_from: sam-example\nassigned_via: TDS Brain App\n---\n\n# Old title\n\nSome details.\n\n## Handover history\n\n- ${ukWhen(at)}: Sam Example passed it from sam-example to ben-mcadam (TDS Brain App).\n`,
+    );
+  });
+
+  it('replaces the earlier stamp and adds to the same history section', () => {
+    put('a.md', SAMPLE);
+    run('assignee', { file: 'a.md', assignee: 'ben-mcadam', by: 'sam-example', by_name: 'Sam Example' });
+    run('assignee', { file: 'a.md', assignee: null, by: 'ben-mcadam', by_name: 'Ben McAdam' });
+    const text = read('a.md');
+    expect(text.match(/^assigned_\w+:/gm)).toEqual([
+      'assigned_to:',
+      'assigned_at:',
+      'assigned_by:',
+      'assigned_from:',
+      'assigned_via:',
+    ]);
+    expect(fmValue(text, 'assigned_to')).toBe('open');
+    expect(fmValue(text, 'assigned_from')).toBe('ben-mcadam');
+    expect(fmValue(text, 'assigned_by')).toBe('ben-mcadam');
+    expect(fmValue(text, 'assigned_via')).toBe('todo skill');
+    expect(text.match(/## Handover history/g)).toHaveLength(1);
+    expect(text).toMatch(
+      /\n## Handover history\n\n- .+: Sam Example passed it from sam-example to ben-mcadam \(todo skill\)\.\n- .+: Ben McAdam made it open to anyone; it was with ben-mcadam \(todo skill\)\.\n$/,
+    );
+  });
+
+  it('words picking up an open to-do, and passing one on from open', () => {
+    put('a.md', '---\ntitle: T\n---\n');
+    run('assignee', { file: 'a.md', assignee: 'sam-example' });
+    expect(fmValue(read('a.md'), 'assigned_from')).toBe('open');
+    expect(read('a.md')).toMatch(/: Sam Example picked it up from the open list \(todo skill\)\.\n$/);
+    put('b.md', '---\ntitle: T\n---\n');
+    run('assignee', { file: 'b.md', assignee: 'ben-mcadam' });
+    expect(read('b.md')).toMatch(
+      /: Sam Example passed it from the open list to ben-mcadam \(todo skill\)\.\n$/,
+    );
+  });
+
+  it('writes nothing when the assignee is unchanged', () => {
+    put('a.md', SAMPLE);
+    put('b.md', '---\ntitle: T\n---\n');
+    put('c.md', 'Plain\n');
+    const before = statSync(todoPath('a.md')).mtimeMs;
+    expect(run('assignee', { file: 'a.md', assignee: 'Sam Example' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', assignee: 'sam-example' },
+    });
+    expect(run('assignee', { file: 'b.md', assignee: null }).json).toEqual({
+      ok: true,
+      file: 'b.md',
+      assignee: null,
+    });
+    run('assignee', { file: 'c.md', assignee: '' });
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(statSync(todoPath('a.md')).mtimeMs).toBe(before);
+    expect(read('b.md')).toBe('---\ntitle: T\n---\n');
+    expect(read('c.md')).toBe('Plain\n');
+  });
+
+  it('adds the history at the end of an existing section, before the next one', () => {
+    put(
+      'a.md',
+      `${SAMPLE}\n## Handover history\n\n- 1 Nov 2026, 09:00 UK: older line.\n\n## Notes\n\nKeep.\n`,
+    );
+    run('assignee', { file: 'a.md', assignee: 'ben-mcadam' });
+    expect(read('a.md')).toMatch(
+      /\n## Handover history\n\n- 1 Nov 2026, 09:00 UK: older line\.\n- .+ \(todo skill\)\.\n\n## Notes\n\nKeep\.\n$/,
+    );
+  });
+
+  it('stamps a file without frontmatter, keeping CRLF and a byte order mark', () => {
+    put('a.md', '﻿# Heading\r\n\r\nText\r\n');
+    run('assignee', { file: 'a.md', assignee: 'ben-mcadam' });
+    const text = read('a.md');
+    expect(text.startsWith('﻿---\r\nassignee: ben-mcadam\r\nassigned_to: ben-mcadam\r\n')).toBe(true);
+    expect(text).not.toMatch(/[^\r]\n/);
+    expect(text).toMatch(/\r\n\r\n## Handover history\r\n\r\n- .+\(todo skill\)\.\r\n$/);
+    expectReadersAgree(todoPath('a.md'), { title: 'Heading', due: null, assignee: 'ben-mcadam' });
+  });
+
+  it('writes the tool name as one safe line', () => {
+    put('a.md', SAMPLE);
+    run('assignee', { file: 'a.md', assignee: 'ben-mcadam', via: 'Odd: tool\nassignee: x' });
+    const text = read('a.md');
+    expect(fmValue(text, 'assigned_via')).toBe('"Odd: tool assignee: x"');
+    expect(text.match(/^assignee:/gm)).toHaveLength(1);
+  });
+});
+
+describe('v0.4: move', () => {
+  it('moves your own to-do to personal/todo/ byte for byte, so its version is unchanged', () => {
+    const bytes = `﻿${SAMPLE.replace(/\n/g, '\r\n')}`;
+    put('a.md', bytes);
+    const version = versionOf('a.md');
+    expect(run('move', { file: 'a.md', to: 'personal', expect: version, by: 'sam-example' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', moved: join('personal', 'todo', 'a.md') },
+    });
+    expect(existsSync(todoPath('a.md'))).toBe(false);
+    expect(sha(readFileSync(personalPath('a.md')))).toBe(version);
+    expect(temps(join(root, 'personal', 'todo'))).toEqual([]);
+  });
+
+  it('moves a personal to-do back to todo/', () => {
+    putPersonal('a.md', SAMPLE);
+    expect(run('move', { file: 'a.md', scope: 'personal', to: 'tds' })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', moved: join('todo', 'a.md') },
+    });
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(existsSync(personalPath('a.md'))).toBe(false);
+  });
+
+  it('adds -2, -3 when the name is taken where it goes', () => {
+    putPersonal('a.md', 'taken');
+    putPersonal('a-2.md', 'taken too');
+    put('a.md', SAMPLE);
+    expect(run('move', { file: 'a.md', to: 'personal' }).json).toEqual({
+      ok: true,
+      file: 'a-3.md',
+      moved: join('personal', 'todo', 'a-3.md'),
+    });
+    expect(readPersonal('a-3.md')).toBe(SAMPLE);
+    expect(readPersonal('a.md')).toBe('taken');
+  });
+
+  it("refuses someone else's to-do and an open one, both ways", () => {
+    put('ben.md', SAMPLE.replace('sam-example', 'ben-mcadam'));
+    put('open.md', SAMPLE.replace('assignee: sam-example\n', ''));
+    putPersonal('ben.md', SAMPLE.replace('sam-example', 'ben-mcadam'));
+    const toPersonal = { code: 2, json: { error: 'only your own to-dos can be made personal', status: 400 } };
+    const toTds = {
+      code: 2,
+      json: { error: 'only your own personal to-dos can be moved to TDS', status: 400 },
+    };
+    expect(run('move', { file: 'ben.md', to: 'personal' })).toEqual(toPersonal);
+    expect(run('move', { file: 'open.md', to: 'personal' })).toEqual(toPersonal);
+    expect(run('move', { file: 'a.md', to: 'personal' }).json.status).toBe(404);
+    put('mine.md', SAMPLE);
+    expect(run('move', { file: 'mine.md', to: 'personal', by: 'ben-mcadam' })).toEqual(toPersonal);
+    expect(run('move', { file: 'mine.md', to: 'personal' }, { userName: null })).toEqual(toPersonal);
+    expect(run('move', { file: 'ben.md', scope: 'personal', to: 'tds' })).toEqual(toTds);
+    expect(existsSync(personalPath('mine.md'))).toBe(false);
+    expect(readdirSync(join(root, 'personal', 'todo'))).toEqual(['ben.md']);
+  });
+
+  it('refuses a missing or unknown to, and to the same place', () => {
+    put('a.md', SAMPLE);
+    for (const to of [undefined, 'home', 5]) {
+      expect(run('move', { file: 'a.md', to })).toEqual({
+        code: 2,
+        json: { error: 'to must be "tds" or "personal"', status: 400 },
+      });
+    }
+    expect(run('move', { file: 'a.md', to: 'tds' })).toEqual({
+      code: 2,
+      json: { error: 'to must differ from scope', status: 400 },
+    });
+    expect(run('move', { file: '../a.md', to: 'personal' }).json).toEqual({
+      error: 'invalid todo file',
+      status: 400,
+    });
+    expect(read('a.md')).toBe(SAMPLE);
+  });
+
+  it('refuses with 409 when the file changed since it was read', () => {
+    put('a.md', SAMPLE);
+    expect(run('move', { file: 'a.md', to: 'personal', expect: sha('older') })).toEqual({
+      code: 2,
+      json: { error: 'changed since read', status: 409 },
+    });
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(existsSync(personalPath('a.md'))).toBe(false);
+  });
+
+  it('refuses a symbolic link', () => {
+    writeFileSync(join(root, 'outside.md'), SAMPLE);
+    symlinkSync(join(root, 'outside.md'), todoPath('link.md'));
+    expect(run('move', { file: 'link.md', to: 'personal' })).toEqual({
+      code: 2,
+      json: { error: 'todo is a symbolic link: link.md', status: 500 },
+    });
+    expect(existsSync(personalPath('link.md'))).toBe(false);
+  });
+
+  it('leaves the to-do where it was, and no copy, when the original cannot be removed', () => {
+    put('a.md', SAMPLE);
+    mkdirSync(join(root, 'personal', 'todo'), { recursive: true });
+    chmodSync(join(root, 'todo'), 0o555);
+    try {
+      const r = run('move', { file: 'a.md', to: 'personal' });
+      expect(r.code).toBe(2);
+      expect(r.json.status).toBe(500);
+    } finally {
+      chmodSync(join(root, 'todo'), 0o755);
+    }
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(readdirSync(join(root, 'personal', 'todo'))).toEqual([]);
+  });
+});
+
+describe('v0.4: personal to-dos never land where git syncs them (review fix)', () => {
+  const git = (...args: string[]) => {
+    const r = spawnSync('git', args, { cwd: root, env: gitEnv('Sam Example'), encoding: 'utf8' });
+    expect(r.status, r.stderr).toBe(0);
+  };
+  const noScope = () => expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+  const refused = (r: RunResult) => {
+    expect(r.code).toBe(2);
+    expect(r.json.status).toBe(400);
+    expect(r.json.error).toMatch(/^personal to-dos aren't available/);
+  };
+
+  it.each([
+    ['done', 'tick'],
+    ['deleted', 'delete'],
+  ])('refuses a personal/todo/%s that links into todo/, in a git brain and outside one', (sub, command) => {
+    for (const inGit of [false, true]) {
+      rmSync(join(root, 'personal'), { recursive: true, force: true });
+      if (inGit && !existsSync(join(root, '.git'))) gitInit(true);
+      putPersonal('p.md', SAMPLE);
+      mkdirSync(join(root, 'todo', sub), { recursive: true });
+      symlinkSync(join('..', '..', 'todo', sub), join(root, 'personal', 'todo', sub));
+      noScope();
+      refused(run(command, { file: 'p.md', scope: 'personal' }));
+      expect(readdirSync(join(root, 'todo', sub))).toEqual([]);
+      expect(readPersonal('p.md')).toBe(SAMPLE);
+    }
+  });
+
+  it('refuses when personal itself is a symbolic link', () => {
+    const elsewhere = join(root, 'elsewhere');
+    mkdirSync(join(elsewhere, 'todo'), { recursive: true });
+    symlinkSync(elsewhere, join(root, 'personal'));
+    noScope();
+    refused(run('add', { title: 'Private', scope: 'personal' }));
+    expect(readdirSync(join(elsewhere, 'todo'))).toEqual([]);
+  });
+
+  it('refuses when anything in personal/todo is tracked by git', () => {
+    gitInit(true);
+    putPersonal('tracked.md', SAMPLE);
+    putPersonal('p.md', SAMPLE);
+    git('add', '-f', 'personal/todo/tracked.md');
+    noScope();
+    refused(run('due', { file: 'p.md', due: '2026-12-01', scope: 'personal' }));
+    refused(run('add', { title: 'Private', scope: 'personal' }));
+    expect(readPersonal('p.md')).toBe(SAMPLE);
+  });
+
+  it('refuses when git ignores personal/todo/*.md but not its done/ and deleted/ folders', () => {
+    gitInit(false);
+    writeFileSync(join(root, '.gitignore'), 'personal/todo/*.md\n');
+    putPersonal('p.md', SAMPLE);
+    noScope();
+    refused(run('tick', { file: 'p.md', scope: 'personal' }));
+    expect(existsSync(join(root, 'personal', 'todo', 'done'))).toBe(false);
+  });
+
+  it('checks the real file names, not only the folder', () => {
+    gitInit(false);
+    writeFileSync(
+      join(root, '.gitignore'),
+      'personal/*\n!personal/todo/\npersonal/todo/*\n!personal/todo/*share*.md\n',
+    );
+    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover', 'scope'] });
+    putPersonal('share-a.md', SAMPLE);
+    put('share-b.md', SAMPLE);
+    refused(run('due', { file: 'share-a.md', due: '2026-12-01', scope: 'personal' }));
+    refused(run('move', { file: 'share-b.md', to: 'personal' }));
+    refused(run('add', { title: 'Share it', scope: 'personal' }));
+    expect(readPersonal('share-a.md')).toBe(SAMPLE);
+    expect(read('share-b.md')).toBe(SAMPLE);
+    expect(readdirSync(join(root, 'personal', 'todo'))).toEqual(['share-a.md']);
+    // A name the rules do ignore still works.
+    putPersonal('p.md', SAMPLE);
+    expect(run('due', { file: 'p.md', due: '2026-12-01', scope: 'personal' }).code).toBe(0);
+  });
+
+  it("ignores the caller's GIT_* variables when checking", () => {
+    const other = join(root, 'other-repo');
+    mkdirSync(other);
+    const r = spawnSync('git', ['init', '-q'], { cwd: other, env: gitEnv('Sam Example') });
+    expect(r.status).toBe(0);
+    // Pointed at another repository, git would say personal/todo/ isn't ignored; the brain is no repo.
+    const env = { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: root };
+    expect(run('capabilities', {}, { env }).json).toEqual({
+      version: '0.4',
+      features: ['handover', 'scope'],
+    });
+  });
+
+  it('move keeps the file mode', () => {
+    put('a.md', SAMPLE);
+    chmodSync(todoPath('a.md'), 0o640);
+    expect(run('move', { file: 'a.md', to: 'personal' }).code).toBe(0);
+    expect(statSync(personalPath('a.md')).mode & 0o777).toBe(0o640);
+    chmodSync(personalPath('a.md'), 0o600);
+    expect(run('move', { file: 'a.md', scope: 'personal', to: 'tds' }).code).toBe(0);
+    expect(statSync(todoPath('a.md')).mode & 0o777).toBe(0o600);
+  });
+});
+
+// v0.3 calls give byte-identical results: the v0.3 script (as released in v0.9.0) and this one are
+// run side by side on the same brain contents, and every reply and file must match, apart from the
+// clock (stamp times and list mtimes).
+describe('v0.4: v0.3 calls give the same results as v0.3', () => {
+  const V03_COMMIT = '1c16fc0';
+  const repo = fileURLToPath(new URL('../../..', import.meta.url));
+  const shown = spawnSync('git', ['show', `${V03_COMMIT}:brain-skills/tdsapp-todo/scripts/tdsapp-todo.cjs`], {
+    cwd: repo,
+    encoding: 'utf8',
+  });
+  const v03 = shown.status === 0 ? shown.stdout : null;
+
+  // Every file under a brain, path → text, with clock values set aside.
+  function snapshot(dir: string, prefix = ''): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const entry of readdirSync(join(dir, prefix), { withFileTypes: true })) {
+      const rel = join(prefix, entry.name);
+      if (entry.isDirectory()) Object.assign(out, snapshot(dir, rel));
+      else out[rel] = calm(readFileSync(join(dir, rel), 'utf8'));
+    }
+    return out;
+  }
+  const calm = (text: string) =>
+    text
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+Z|[+-]\d{2}:\d{2})/g, '<at>')
+      .replace(/ at \d{2}:\d{2} UK time/g, ' at <time> UK time');
+
+  it.skipIf(v03 === null)('edit, due, tick, delete, roster and list', () => {
+    const brains = ['old', 'new'].map((name) => {
+      const brain = join(root, name);
+      mkdirSync(join(brain, 'todo'), { recursive: true });
+      mkdirSync(join(brain, '.team-config'));
+      writeFileSync(join(brain, '.team-config', 'roles.json'), JSON.stringify(ROLES));
+      const files: [string, string][] = [
+        ['lf.md', SAMPLE],
+        ['crlf.md', SAMPLE.replace(/\n/g, '\r\n')],
+        ['bom.md', `﻿${SAMPLE}`],
+        ['plain.md', '# Heading\n\nText\n'],
+        ['quoted.md', SAMPLE.replace('title: Old title', 'title: "ON HOLD: Old title"')],
+        ['tick-me.md', SAMPLE],
+        ['delete-me.md', '﻿---\r\ntitle: T\r\n---\r\nBody\r\n'],
+        ['open.md', '---\ntitle: Open\ncreated: 2026-11-03\ndue: 2026-12-01\n---\n'],
+      ];
+      for (const [file, text] of files) writeFileSync(join(brain, 'todo', file), text);
+      return brain;
+    });
+    const scripts = [join(root, 'v03.cjs'), SCRIPT];
+    writeFileSync(scripts[0] as string, v03 as string);
+    const calls: [string, Record<string, unknown>][] = [
+      ['edit', { file: 'lf.md', title: 'New title' }],
+      ['edit', { file: 'crlf.md', title: 'Say "hi": now', body: 'One\r\nTwo' }],
+      ['edit', { file: 'plain.md', title: 'T' }],
+      ['edit', { file: 'bom.md', title: 'Old title', body: '' }],
+      ['due', { file: 'quoted.md', due: '2026-12-01' }],
+      ['due', { file: 'bom.md', due: '2026-12-01' }],
+      ['due', { file: 'plain.md', due: null }],
+      ['due', { file: 'lf.md', due: '2026-02-31' }],
+      ['tick', { file: 'tick-me.md', by: 'ben-mcadam', by_name: 'Ben McAdam', via: 'TDS Brain App' }],
+      ['delete', { file: 'delete-me.md' }],
+      ['tick', { file: 'gone.md' }],
+      ['edit', { file: 'crlf.md', title: 'X', expect: sha('stale') }],
+      ['roster', {}],
+      ['list', {}],
+    ];
+    for (const [command, input] of calls) {
+      const replies = brains.map((brain, i) => {
+        const r = spawnSync(process.execPath, [scripts[i] as string, command], {
+          input: JSON.stringify(input),
+          env: { ...gitEnv('Sam Example'), BRAIN_ROOT: brain },
+          cwd: brain,
+          encoding: 'utf8',
+        });
+        return { code: r.status, out: calm(r.stdout) };
+      });
+      expect(replies[1], `${command} ${JSON.stringify(input)}`).toEqual(replies[0]);
+    }
+    expect(snapshot(brains[1] as string)).toEqual(snapshot(brains[0] as string));
   });
 });

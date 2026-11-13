@@ -13,6 +13,7 @@ import {
   type TodoAction,
   TodoChangeError,
   type TodoChangeErrorCode,
+  type TodoScope,
 } from '../../shared/contract.ts';
 import { scrubEnv } from '../engine/session-manager.ts';
 import { isDir } from './util.ts';
@@ -36,13 +37,29 @@ export function todoChangeError(code: TodoChangeErrorCode): TodoChangeError {
 /** Starts a child process. Tests inject one to see the arguments or to fail the start. */
 export type TodoSpawner = (file: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 
+/**
+ * A tick of a personal to-do, run by the script's `tick` (v0.4). Not a route action: the complete
+ * route builds it. `scope` is always given; the app's own direct tick for `todo/` stays `completeTodo`.
+ */
+export interface TodoTickAction {
+  kind: 'tick';
+  id: string;
+  scope: TodoScope;
+  expect?: string;
+}
+
+/** Everything the runner can send to the script. */
+export type TodoRunAction = TodoAction | TodoTickAction;
+
 /** A fixed map, so nothing from the request ever becomes part of the command line. */
-const COMMAND: Record<TodoAction['kind'], string> = {
+const COMMAND: Record<TodoRunAction['kind'], string> = {
   add: 'add',
   edit: 'edit',
   due: 'due',
   assignee: 'assignee',
   delete: 'delete',
+  move: 'move',
+  tick: 'tick',
 };
 
 /** Variables the script must not inherit: `WORKBENCH_AS` would act as someone else, `NODE_OPTIONS` could load code. */
@@ -54,31 +71,57 @@ export interface TodoActor {
   slug: string;
 }
 
-/** The Workbench route's request body for an action, with the Workbench's field names. */
-export function scriptPayload(action: TodoAction, by?: TodoActor): Record<string, string | boolean> {
+/**
+ * The Workbench route's request body for an action, with the Workbench's field names. `scope` is sent
+ * only for 'personal' (and always for `move`), so every v0.3 payload stays byte-identical.
+ */
+export function scriptPayload(action: TodoRunAction, by?: TodoActor): Record<string, string | boolean> {
   const expect: Record<string, string> =
     'expect' in action && action.expect !== undefined ? { expect: action.expect } : {};
+  const scope: Record<string, string> =
+    'scope' in action && action.scope === 'personal' ? { scope: 'personal' } : {};
+  const actor: Record<string, string> = by ? { by: by.slug, by_name: by.name } : {};
   switch (action.kind) {
     case 'add':
       // `via` names this app as the tool; an open to-do sends `open` and no assignee. An older script
       // ignores both and the server only offers open adds when the newer skill is there.
       return action.assignee === null
-        ? { title: action.title, due: action.due ?? '', open: true, via: APP_VIA }
-        : { title: action.title, due: action.due ?? '', assignee: action.assignee, via: APP_VIA };
+        ? { title: action.title, due: action.due ?? '', open: true, via: APP_VIA, ...actor, ...scope }
+        : {
+            title: action.title,
+            due: action.due ?? '',
+            assignee: action.assignee,
+            via: APP_VIA,
+            ...actor,
+            ...scope,
+          };
     case 'edit':
       return action.details === undefined
-        ? { file: action.id, title: action.title, ...expect }
-        : { file: action.id, title: action.title, body: action.details, ...expect };
+        ? { file: action.id, title: action.title, ...expect, ...scope }
+        : { file: action.id, title: action.title, body: action.details, ...expect, ...scope };
     case 'due':
-      return { file: action.id, due: action.due ?? '', ...expect };
+      return { file: action.id, due: action.due ?? '', ...expect, ...scope };
     case 'assignee':
-      return { file: action.id, assignee: action.assignee ?? '', ...expect };
+      // Who passed it on and through which tool goes into the handover stamp; without them the
+      // script would use the machine's git user, which need not be the person the app knows.
+      return {
+        file: action.id,
+        assignee: action.assignee ?? '',
+        via: APP_VIA,
+        ...actor,
+        ...expect,
+        ...scope,
+      };
     case 'delete':
       // The skill keeps the file in todo/deleted/, recording who, when and this app as the tool.
       // Who is the app's own identity, so deletes and ticks name a person the same way.
       return by
-        ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name, ...expect }
-        : { file: action.id, via: APP_VIA, ...expect };
+        ? { file: action.id, via: APP_VIA, by: by.slug, by_name: by.name, ...expect, ...scope }
+        : { file: action.id, via: APP_VIA, ...expect, ...scope };
+    case 'tick':
+      return { file: action.id, via: APP_VIA, ...actor, ...expect, ...scope };
+    case 'move':
+      return { file: action.id, scope: action.scope, to: action.to, ...expect, ...actor, via: APP_VIA };
   }
 }
 
@@ -131,9 +174,19 @@ export interface TodoSkillOptions {
   maxOutputBytes?: number;
 }
 
+/** What the script answered to a change that worked. `file` is its reply's `file` (a `move` can rename). */
+export interface TodoRunResult {
+  file: string | null;
+}
+
 export interface TodoSkillRunner {
   /** Runs one change. Resolves when the script says it worked; otherwise rejects with TodoChangeError. */
-  run(action: TodoAction, by?: TodoActor): Promise<void>;
+  run(action: TodoRunAction, by?: TodoActor): Promise<TodoRunResult>;
+  /**
+   * The script's `capabilities` features (v0.4), cached per script real path and mtime. A script
+   * that doesn't know the command (v0.3) or fails gives none.
+   */
+  capabilities(): Promise<readonly string[]>;
 }
 
 interface Outcome {
@@ -230,7 +283,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
   };
   let tail: Promise<unknown> = Promise.resolve();
 
-  const runOnce = async (action: TodoAction, by?: TodoActor): Promise<void> => {
+  const runOnce = async (action: TodoRunAction, by?: TodoActor): Promise<TodoRunResult> => {
     const script = await findTodoScript(root);
     if (!script) throw todoChangeError('internal');
     let realRoot: string;
@@ -248,6 +301,36 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
     );
     const code = judge(outcome);
     if (code) throw todoChangeError(code);
+    const file = parseReply(outcome.stdout)?.file;
+    return { file: typeof file === 'string' ? file : null };
+  };
+
+  let probed: { key: string; features: readonly string[] } | null = null;
+
+  const probe = async (): Promise<readonly string[]> => {
+    let script: string | null;
+    let realRoot: string;
+    let key: string;
+    try {
+      script = await findTodoScript(root);
+      if (!script) return [];
+      realRoot = await fs.realpath(root);
+      key = `${script}\0${(await fs.stat(script)).mtimeMs}`;
+    } catch {
+      return [];
+    }
+    if (probed?.key === key) return probed.features;
+    const outcome = await runScript(script, realRoot, 'capabilities', '{}', opts);
+    const reply = outcome.failed ? null : parseReply(outcome.stdout);
+    let features: string[] | null = null;
+    if (reply !== null && outcome.code === 0 && Array.isArray(reply.features))
+      features = reply.features.filter((f): f is string => typeof f === 'string');
+    // A v0.3 script answers `unknown command` (400): that is a settled answer, so it is cached too.
+    // A crash or timeout is not: try again next time.
+    else if (reply !== null && outcome.code === 2 && reply.status === 400) features = [];
+    if (features === null) return [];
+    probed = { key, features };
+    return features;
   };
 
   return {
@@ -256,5 +339,6 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
       tail = next.catch(() => {});
       return next;
     },
+    capabilities: probe,
   };
 }

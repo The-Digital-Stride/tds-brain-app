@@ -50,10 +50,21 @@
   padding-bottom: 8px;
 }
 .palette .grp {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--iron);
   padding: 10px 18px 4px;
+}
+/* "6 of 23" and "Still looking…" after a group's heading. */
+.palette .grp-note {
+  margin-left: auto;
+  font-weight: 400;
+}
+.palette .grp-note + .grp-note {
+  margin-left: 0;
 }
 .palette .opt {
   display: flex;
@@ -126,4 +137,10 @@
   .palette {
     animation: none;
   }
+}
+.palette-foot {
+  margin: 0;
+  padding: 4px 18px 10px;
+  font-size: 12px;
+  color: var(--iron);
 }

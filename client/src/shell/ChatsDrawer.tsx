@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { attentionFor, type LiveSession } from '../../../shared/contract.ts';
+import { groupChatsByDay } from '../state/chat-groups.ts';
 import { sortChats } from '../state/chats.ts';
 import { useStore } from '../store.tsx';
 import type { ChatsTab } from './contract.ts';
+import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -79,25 +81,30 @@ export function ChatsDrawer() {
       ) : sessions.past.length === 0 ? (
         <p className="dock-empty">No earlier chats yet.</p>
       ) : (
-        <ul className="drawer-list">
-          {sessions.past.map((s) => (
-            <li className="line" key={s.sdkSessionId}>
-              <button
-                type="button"
-                className="line-main"
-                onClick={() => {
-                  void openPast(s.sdkSessionId);
-                  if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
-                }}
-              >
-                <span className="line-text">
-                  <span className="line-title">{s.title || 'New chat'}</span>
-                  <span className="line-meta">{whenWords(s.lastModified)}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        // Grouped by when they were last used, with only the newest group open, like the to-dos.
+        groupChatsByDay(sessions.past, new Date()).map((g, i) => (
+          <Fold key={g.key} title={g.title} count={g.items.length} defaultOpen={i === 0}>
+            <ul className="drawer-list">
+              {g.items.map((s) => (
+                <li className="line" key={s.sdkSessionId}>
+                  <button
+                    type="button"
+                    className="line-main"
+                    onClick={() => {
+                      void openPast(s.sdkSessionId);
+                      if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
+                    }}
+                  >
+                    <span className="line-text">
+                      <span className="line-title">{s.title || 'New chat'}</span>
+                      <span className="line-meta">{whenWords(s.lastModified)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Fold>
+        ))
       )}
     </div>
   );

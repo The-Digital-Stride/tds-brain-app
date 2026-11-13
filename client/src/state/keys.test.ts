@@ -118,3 +118,30 @@ describe('keyAction: Esc and a floating panel', () => {
     expect(keyAction(esc, ctx({ panelOpen: true }))).toBeNull();
   });
 });
+
+describe('keyAction: "/" opens the global search', () => {
+  it('opens the palette from anywhere, with or without a drawer open', () => {
+    const open = { type: 'set-palette', open: true };
+    expect(keyAction(key('/'), ctx())).toEqual(open);
+    expect(keyAction(key('/'), ctx({ drawer: 'todos' }))).toEqual(open);
+    expect(keyAction(key('/'), ctx({ drawer: 'chats' }))).toEqual(open);
+  });
+
+  it('is left alone while typing, so it can be typed', () => {
+    expect(keyAction(key('/'), ctx({}, true))).toBeNull();
+  });
+
+  it('works with Shift, where "/" is typed with it (German, French, Nordic keyboards)', () => {
+    expect(keyAction(key('/', { shiftKey: true }), ctx())).toEqual({ type: 'set-palette', open: true });
+    expect(keyAction(key('/', { shiftKey: true }), ctx({}, true))).toBeNull();
+    expect(keyAction(key('/', { shiftKey: true }), ctx({ singleKeys: false }))).toBeNull();
+  });
+
+  it('is ignored with Cmd, Ctrl or Alt, while the palette is open, and when single keys are off', () => {
+    for (const mod of ['metaKey', 'ctrlKey', 'altKey'] as const) {
+      expect(keyAction(key('/', { [mod]: true }), ctx())).toBeNull();
+    }
+    expect(keyAction(key('/'), ctx({ paletteOpen: true }))).toBeNull();
+    expect(keyAction(key('/'), ctx({ singleKeys: false }))).toBeNull();
+  });
+});

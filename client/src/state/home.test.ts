@@ -4,6 +4,11 @@ import { greeting, needsYou, summary } from './home.ts';
 
 const todo = (id: string, due: string | null): TodoItem => ({
   id,
+  scope: 'tds',
+  key: id,
+  path: `todo/${id}`,
+  handover: null,
+  createdBy: null,
   title: id,
   created: null,
   source: null,

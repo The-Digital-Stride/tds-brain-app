@@ -423,6 +423,7 @@ a.btn:hover {
 /* Segmented choice (the Seg component). */
 .seg {
   display: flex;
+  gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
   padding: 3px;
   border-radius: 10px;
   background: rgba(2, 27, 67, 0.07);

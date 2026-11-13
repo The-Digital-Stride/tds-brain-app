@@ -43,7 +43,7 @@ const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
 
 /** The buttons in the sheet bar: Back while a document is open, and the details button. */
 export function DocumentsBar() {
-  return <LibraryBar store={docsStore} back="Back to Documents" details="Document details" />;
+  return <LibraryBar store={docsStore} back="Back to Documents" />;
 }
 
 /** A grid tile: the first page where Quick Look drew one, otherwise the type's icon on the page. */

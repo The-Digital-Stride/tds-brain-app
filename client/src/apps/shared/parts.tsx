@@ -1,40 +1,21 @@
 import { type ReactNode, useId, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
-import { DOCK_IDS } from '../../shell/Dock.tsx';
 import { Icon } from '../../shell/Icon.tsx';
-import { useShell } from '../../shell/ShellProvider.tsx';
 import { useCopy } from './copy.ts';
 import { FIRST_SHOWN } from './library.ts';
 import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
 
-/** The button in the sheet bar that shows or hides the app's details panel. */
-export function DetailsButton({ label }: { label: string }) {
-  const { state, dispatch } = useShell();
-  return (
-    <button
-      type="button"
-      className="icon-btn"
-      aria-label={label}
-      title={label}
-      aria-pressed={state.panelOpen}
-      aria-controls={DOCK_IDS.right}
-      onClick={() => dispatch({ type: 'toggle-panel' })}
-    >
-      <Icon name="panel" />
-    </button>
-  );
-}
-
-/** The sheet bar's buttons: Back while a file is open in place of the list, then the details button. */
+/**
+ * The sheet bar's buttons: Back while a file is open in place of the list. The details toggle is
+ * `SheetBar`'s own (from the app's `panelLabel`), so it always sits at the top right.
+ */
 export function LibraryBar<S extends LibraryState>({
   store,
   back,
-  details,
 }: {
   store: LibraryStore<S>;
   /** "Back to Images". */
   back: string;
-  details: string;
 }) {
   const { viewing } = useLibrary(store);
   return (
@@ -50,7 +31,6 @@ export function LibraryBar<S extends LibraryState>({
           {back}
         </button>
       ) : null}
-      <DetailsButton label={details} />
     </>
   );
 }

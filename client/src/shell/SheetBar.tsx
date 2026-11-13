@@ -1,14 +1,16 @@
 import type { SheetBarProps } from './contract.ts';
 import { Icon } from './Icon.tsx';
+import { PanelToggle } from './PanelToggle.tsx';
 import { useShell } from './ShellProvider.tsx';
 
 const onMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
  * The bar across the top of every sheet: the page's one `h1`, an optional lead-in ("Chats / …"),
- * whatever the sheet adds on the right, and last the button that opens the palette.
+ * whatever the sheet adds on the right, then the button that opens the palette, and last (top
+ * right, always) the right panel's toggle when the sheet has a panel.
  */
-export function SheetBar({ title, crumb, children }: SheetBarProps) {
+export function SheetBar({ title, crumb, panel, children }: SheetBarProps) {
   const { dispatch } = useShell();
   return (
     <div className="sheet-bar">
@@ -36,6 +38,7 @@ export function SheetBar({ title, crumb, children }: SheetBarProps) {
         <span className="jump-text">Search or jump to</span>
         <kbd>{onMac ? '⌘K' : 'Ctrl K'}</kbd>
       </button>
+      {panel ? <PanelToggle label={panel} /> : null}
     </div>
   );
 }

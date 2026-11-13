@@ -163,6 +163,13 @@ describe('the rail', () => {
     expect(railButton('Home').getAttribute('aria-label')).toBe('Home');
   });
 
+  it('keeps the names toggle an icon at the top of the rail, with no visible words', async () => {
+    await renderHome();
+    const toggle = railButton('Show names');
+    expect(toggle.closest('.rail-brand')).toBeTruthy();
+    expect(toggle.textContent).toBe('');
+  });
+
   it('shows no Apps group while there are no apps', async () => {
     await renderHome();
     expect(screen.queryByText('Apps')).toBeNull();

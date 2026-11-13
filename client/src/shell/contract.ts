@@ -166,6 +166,9 @@ export interface DockProps {
 export interface SheetBarProps {
   title: string;
   crumb?: string;
+  /** The right panel's toggle label ("Steps and details"). Given, the toggle sits last: top right. */
+  panel?: string;
+  /** Sheet buttons, placed before "Search or jump to". */
   children?: ReactNode;
 }
 

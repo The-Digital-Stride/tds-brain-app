@@ -3,6 +3,7 @@ import type {
   ApiErrorCode,
   AppPrefs,
   Bootstrap,
+  ChangelogResponse,
   ChangeTodoRequest,
   CompleteTodoRequest,
   LibraryListing,
@@ -94,6 +95,7 @@ export const api = {
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
+  changelog: () => request<ChangelogResponse>('GET', ROUTES.changelog),
   completeTodo: (id: string, opts?: SendOptions) =>
     request<TodoList>('POST', ROUTES.completeTodo, { id } satisfies CompleteTodoRequest, undefined, opts),
   changeTodo: (action: TodoAction, opts?: SendOptions) =>

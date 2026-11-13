@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   sessions: vi.fn(),
   // The rail's last-sync stamp asks for this.
   sync: vi.fn(async () => ({ lastSync: null })),
+  changelog: vi.fn(async () => ({ versions: [] })),
   close: vi.fn(),
   interrupt: vi.fn(),
 }));

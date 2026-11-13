@@ -14,6 +14,7 @@ import {
   type Bootstrap,
   type BrainHealth,
   type BrainReaders,
+  type ChangelogResponse,
   type EngineHealth,
   type Identity,
   type LibraryFile,
@@ -33,6 +34,7 @@ import {
   type TodoList,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
+  type VersionNotes,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
@@ -66,6 +68,8 @@ export interface RouteContext {
   /** Choosing the brain folder; available in both states (decision 4). */
   setup: SetupService;
   appVersion: string;
+  /** The app's own version history, newest first (from its CHANGELOG.md, never the brain). */
+  changelog: () => Promise<VersionNotes[]>;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
   serverStartedAt: string;
@@ -713,6 +717,17 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     // Only once the answer has gone out, so the page learns it was saved before the server stops.
     if (result.ok && result.restarting) res.once('finish', () => ctx.setup.restart());
     sendJson(res, 200, result);
+    return;
+  }
+
+  if (path === ROUTES.changelog) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    if (identity.role !== 'owner' && identity.role !== 'scout') {
+      throw new HttpError(403, 'not-allowed', 'The version history is for owners and scouts.');
+    }
+    const body: ChangelogResponse = { versions: await safe(ctx.changelog(), []) };
+    sendJson(res, 200, body);
     return;
   }
 

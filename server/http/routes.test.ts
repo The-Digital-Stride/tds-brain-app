@@ -1261,3 +1261,55 @@ describe('uploads', () => {
     expect(calls.start).toHaveLength(1);
   });
 });
+
+describe('GET /api/changelog (owners and scouts only)', () => {
+  const VERSIONS = [{ version: '0.6.0', date: '2026-11-13', changes: [{ kind: 'feat', text: 'x' }] }];
+  async function get(role: string, method = 'GET', changelog = async () => VERSIONS) {
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      setHeader: () => {},
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    const brain = {
+      identity: async () => ({ name: 'Sam Example', slug: 'sam-example', role, knownMember: true }),
+    };
+    const ctx = { brain, changelog, log: () => {} } as unknown as RouteContext;
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${ROUTES.changelog}`),
+      ctx,
+    );
+    return { status: sent.status, body: JSON.parse(sent.body || '{}') };
+  }
+
+  it('gives owners and scouts every version', async () => {
+    for (const role of ['owner', 'scout']) {
+      const r = await get(role);
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual({ versions: VERSIONS });
+    }
+  });
+
+  it('refuses the team and anyone not recognised', async () => {
+    for (const role of ['team', 'unknown']) {
+      const r = await get(role);
+      expect(r.status).toBe(403);
+      expect(r.body.error.code).toBe('not-allowed');
+    }
+  });
+
+  it('answers an empty list when the history cannot be read, and only to GET', async () => {
+    expect((await get('owner', 'GET', async () => Promise.reject(new Error('gone')))).body).toEqual({
+      versions: [],
+    });
+    expect((await get('owner', 'POST')).status).toBe(405);
+  });
+});

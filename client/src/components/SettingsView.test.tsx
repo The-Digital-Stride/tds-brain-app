@@ -30,6 +30,8 @@ vi.mock('../shell/ShellProvider.tsx', () => ({
   useShell: () => ({ state: { singleKeys: true }, dispatch: vi.fn() }),
 }));
 
+vi.mock('./VersionHistory.tsx', () => ({ VersionHistory: () => <p>History</p> }));
+
 const { SettingsView } = await import('./SettingsView.tsx');
 
 const standalone = (on: boolean) => vi.stubGlobal('matchMedia', () => ({ matches: on }) as MediaQueryList);
@@ -99,5 +101,24 @@ describe('Dock app row', () => {
     expect(screen.getByText("Not added. You can add it later from Chrome's menu.")).toBeTruthy();
     await chromeEvent('appinstalled');
     expect(screen.getByText('Added. TDS Brain is in your Dock.')).toBeTruthy();
+  });
+});
+
+describe("what's changed", () => {
+  it('is shown to owners and scouts only', () => {
+    standalone(false);
+    for (const role of ['team', 'unknown']) {
+      boot.identity.role = role;
+      render(<SettingsView />);
+      expect(screen.queryByRole('heading', { name: "What's changed" })).toBeNull();
+      cleanup();
+    }
+    for (const role of ['owner', 'scout']) {
+      boot.identity.role = role;
+      render(<SettingsView />);
+      expect(screen.getByRole('heading', { name: "What's changed" })).toBeTruthy();
+      cleanup();
+    }
+    boot.identity.role = 'team';
   });
 });

@@ -4,6 +4,7 @@ import { useShell } from '../shell/ShellProvider.tsx';
 import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
 import { HealthPanel } from './HealthPanel.tsx';
+import { VersionHistory } from './VersionHistory.tsx';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
@@ -99,6 +100,16 @@ export function SettingsView() {
           <dd>{appVersion}</dd>
         </dl>
       </section>
+
+      {identity.role === 'owner' || identity.role === 'scout' ? (
+        <section aria-labelledby="changes-h">
+          <h2 id="changes-h">What's changed</h2>
+          <p className="setting-help">
+            Every version of the app, newest first. Select a version to see what changed.
+          </p>
+          <VersionHistory current={appVersion} />
+        </section>
+      ) : null}
     </div>
   );
 }

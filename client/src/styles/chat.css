@@ -922,6 +922,37 @@
   font-size: 12.5px;
   font-weight: 400;
 }
+/* Settings → What's changed: one fold per version, newest first. */
+.version-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.version-list > li + li {
+  border-top: 1px solid var(--line);
+}
+.version-summary {
+  padding: 10px 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.version-summary:hover {
+  background: rgba(2, 27, 67, 0.05);
+}
+.version-more {
+  margin-top: 8px;
+}
+.version-changes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.version-kind {
+  font-weight: 600;
+}
 .problem-list {
   margin: 0;
   padding-left: 18px;

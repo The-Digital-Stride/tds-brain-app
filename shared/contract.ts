@@ -905,6 +905,21 @@ export interface ApiError {
  * Every POST and PUT except the upload sends `Content-Type: application/json` and a JSON body; routes with nothing
  * to say send `{}`. Any failure returns ApiError with a fitting HTTP status.
  */
+/** One released version of the app, from its own `CHANGELOG.md` (written by the version hook). */
+export interface VersionNotes {
+  /** "0.6.0", without the "v". */
+  version: string;
+  /** YYYY-MM-DD, or null when the heading has none. */
+  date: string | null;
+  /** In file order. `kind` is the commit type ("feat", "fix", "perf", "refactor"), or '' when none. */
+  changes: { kind: string; text: string }[];
+}
+
+/** `GET ROUTES.changelog`: newest version first. */
+export interface ChangelogResponse {
+  versions: VersionNotes[];
+}
+
 export const ROUTES = {
   /** `GET /auth?code=<one-time code>`: swaps a single-use, 60-second code for the session cookie. */
   auth: '/auth',
@@ -920,6 +935,11 @@ export const ROUTES = {
    */
   changeTodo: '/api/todos/change',
   prefs: '/api/prefs',
+  /**
+   * `GET`: ChangelogResponse, read from the app's own CHANGELOG.md (never a brain file). Owners and
+   * scouts only: 403 `not-allowed` for anyone else. An unreadable file gives `{versions: []}`.
+   */
+  changelog: '/api/changelog',
   /** `GET`: SyncStatus. `no-store`. */
   sync: '/api/brain/sync',
   sessions: '/api/sessions',

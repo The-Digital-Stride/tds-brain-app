@@ -11,6 +11,7 @@ import {
   type BrainReaders,
   type EngineHealth,
   type Thumbnailer,
+  type VersionNotes,
 } from '../../shared/contract.ts';
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
@@ -215,6 +216,8 @@ export interface ServerDeps {
   /** Single-use sign-in codes (A15). */
   authCodes: AuthCodes;
   appVersion: string;
+  /** The app's own version history (Settings, owners and scouts). Default: none. */
+  changelog?: () => Promise<VersionNotes[]>;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
   brain: BrainReaders;
@@ -267,6 +270,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     appState: deps.appState,
     setup: deps.setup,
     appVersion: deps.appVersion,
+    changelog: deps.changelog ?? (async () => []),
     underService: deps.underService,
     serverStartedAt,
     launchToken: deps.launchToken,

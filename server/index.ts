@@ -11,6 +11,7 @@ import { appStateFor, decideBrain } from './brain/decide.ts';
 import { createBrainReaders } from './brain/index.ts';
 import { checkBrain, findBrainCandidates } from './brain/locate.ts';
 import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
+import { createChangelogReader } from './changelog.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
@@ -122,6 +123,7 @@ const app = createAppServer({
   launchToken: config.launchToken,
   authCodes,
   appVersion: config.appVersion,
+  changelog: createChangelogReader(config.appRoot),
   underService: config.underService,
   brain,
   store,

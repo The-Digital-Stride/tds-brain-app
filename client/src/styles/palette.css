@@ -144,3 +144,50 @@
   font-size: 12px;
   color: var(--iron);
 }
+
+/* A search result's full details on hover or keyboard highlight (PaletteTip.tsx), drawn into the body. Navy
+   like the rail's names, but several lines that wrap, with the file path last in monospace. */
+.palette-tip {
+  position: fixed;
+  z-index: 72;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--navy);
+  color: var(--paper);
+  box-shadow: var(--lift-2);
+  font-size: 12px;
+  line-height: 1.4;
+  /* It can be pointed at, and its path selected (WCAG 1.4.13); it is not a button. */
+  cursor: default;
+  user-select: text;
+}
+.palette-tip[data-placed="true"] {
+  visibility: visible;
+  animation: palette-fade 120ms var(--ease);
+}
+.palette-tip p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.palette-tip .palette-tip-title {
+  font-weight: 600;
+}
+.palette-tip .palette-tip-path {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: reduce) {
+  .palette-tip[data-placed="true"] {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .palette-tip {
+    border: 1px solid CanvasText;
+  }
+}

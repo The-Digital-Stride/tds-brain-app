@@ -58,6 +58,37 @@ describe('library search sources', () => {
     ]);
   });
 
+  it('give a document hit its details: file name, place and card, type, size, date and path', async () => {
+    const report = doc({ id: 'client:acme.d1', title: 'October report', ext: 'docx', bytes: 2_400_000 });
+    api.librarySearch.mockResolvedValue({ hits: [{ item: report, scope: acme }], total: 1, partial: false });
+    const res = await documentsSearch.searchAsync?.('oct', new AbortController().signal);
+    expect(res?.hits[0]?.detail).toEqual({
+      lines: [
+        '2026-11-03-october-report.pdf',
+        'Acme Heating Ltd · Reports',
+        'Word · 2.4 MB · Changed 5 Nov 2026',
+      ],
+      path: 'clients/acme/reports/2026-11-03-october-report.pdf',
+    });
+  });
+
+  it('give an image hit its pixel size, and leave out the file name when it is the title', async () => {
+    const logo = item({ id: 'personal.i1', title: 'acme-logo.png' });
+    api.librarySearch.mockResolvedValue({ hits: [{ item: logo, scope: mine }], total: 1, partial: false });
+    const res = await imagesSearch.searchAsync?.('logo', new AbortController().signal);
+    expect(res?.hits[0]?.detail?.lines).toEqual([
+      'My personal files · Brand',
+      'PNG · 1200 × 628 · 184 KB · Changed 5 Nov 2026',
+    ]);
+  });
+
+  it('leave out what is not known: no pixel size, no date', async () => {
+    const odd = item({ width: null, height: null, modified: 'not a date' });
+    api.librarySearch.mockResolvedValue({ hits: [{ item: odd, scope: acme }], total: 1, partial: false });
+    const res = await imagesSearch.searchAsync?.('logo', new AbortController().signal);
+    expect(res?.hits[0]?.detail?.lines.at(-1)).toBe('PNG · 184 KB');
+  });
+
   it('a hit opens the item in its app through the palette action', async () => {
     const logo = item({ id: 'client:acme.i1', title: 'Acme logo' });
     api.librarySearch.mockResolvedValue({ hits: [{ item: logo, scope: acme }], total: 1, partial: false });

@@ -394,7 +394,20 @@ export interface SearchHit {
   /** Second line or trailing note (client name, "My personal files", due date). */
   hint: string | null;
   icon: IconName;
+  /**
+   * More than the row can hold, for a tooltip on hover or when the row is highlighted from the keyboard
+   * (`client/src/shell/PaletteTip.tsx`). Given: the tooltip always shows, with the label, these lines and the
+   * path. Omitted: it shows the label and hint only when the row cuts either of them short.
+   */
+  detail?: SearchHitDetail;
   run: (actions: SearchActions) => void;
+}
+
+export interface SearchHitDetail {
+  /** Plain lines under the label: "acme-logo.png", "Acme Heating Ltd · Brand", "PNG · 1200 × 628 · 184 KB · Changed 5 Nov 2026". */
+  lines: string[];
+  /** A file path, shown last in monospace and broken anywhere so it always fits. */
+  path?: string;
 }
 
 /** The data every synchronous source searches; a snapshot from the store. */

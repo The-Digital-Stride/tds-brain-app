@@ -36,7 +36,7 @@ function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: st
             {byToolUse.has(s.id) ? (
               <button
                 type="button"
-                className="step-label step-link"
+                className="step-label link-btn"
                 onClick={() =>
                   dispatch({ type: 'show-chat-file', chat: sessionId, key: byToolUse.get(s.id) ?? null })
                 }

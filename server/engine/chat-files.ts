@@ -103,9 +103,9 @@ const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'
 /** The tools `proposedChange` can show. */
 const KEPT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 /** Paths tracked per chat; the least recently touched go first. */
-const TRACKED_MAX = 1000;
+export const TRACKED_MAX = 1000;
 /** Tool uses waiting for a result (a long history can leave some unanswered). */
-const PENDING_MAX = 500;
+export const PENDING_MAX = 500;
 /** Destinations tried per attachment in one Bash command. */
 const CANDIDATES_MAX = 50;
 const RESOLVE_CONCURRENCY = 8;

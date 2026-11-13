@@ -20,7 +20,7 @@ const UNWRAP = 'data-unwrap';
 // - http, https and mailto links open in a new tab and cannot reach back to this page;
 // - every other link is marked, and renderMarkdown unwraps it to its text.
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName !== 'A') return;
+  if (node.nodeName.toLowerCase() !== 'a') return;
   const href = node.getAttribute('href') ?? '';
   node.removeAttribute('target');
   node.removeAttribute('rel');
@@ -76,7 +76,19 @@ export function renderMarkdown(text: string, link?: FileLinker): string {
   try {
     const html = md.parse(text, { async: false, gfm: true }) as string;
     const clean = DOMPurify.sanitize(html, {
-      FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
+      FORBID_TAGS: [
+        'style',
+        'form',
+        'input',
+        'button',
+        'textarea',
+        'select',
+        'iframe',
+        'object',
+        'embed',
+        'svg',
+        'math',
+      ],
       // An allow list: no class or id, so a reply cannot borrow the app's own look.
       ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'start', 'colspan', 'rowspan'],
       ALLOW_DATA_ATTR: false,

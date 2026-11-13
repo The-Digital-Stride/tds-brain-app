@@ -3,12 +3,16 @@ import type { ChatFile, ChatFilesSnapshot, LibraryItem, LibraryScope } from '../
 import {
   CHAT_FILE_CHANGES_BUDGET,
   CHAT_FILE_CHANGES_MAX,
+  CHAT_FILES_MAX,
   CHAT_LINK_MAX_CHARS,
+  CHAT_LINKS_MAX,
 } from '../../shared/contract.ts';
 import {
   type ChatFilesTracker,
   createChatFiles,
+  PENDING_MAX,
   type ResolvePath,
+  TRACKED_MAX,
   type TrackedAttachment,
 } from './chat-files.ts';
 
@@ -503,5 +507,93 @@ describe('createChatFiles: history', () => {
     expect(s.attachments[0]?.filedKey).toBe('key:clients/acme/brief.pdf');
     expect(s.links).toEqual([{ url: 'https://example.com/' }]);
     expect(t.changes('key:clients/acme/r.md')?.changes.map((c) => c.at)).toEqual([null]);
+  });
+});
+
+describe('createChatFiles: limits', () => {
+  it('merges two spellings of one file into one row; the newer spelling gives path and order', async () => {
+    const brain = fakeBrain();
+    const t = createChatFiles({
+      brainRoots: [ROOT],
+      // Like the library: case does not matter, the key is the listed path's.
+      resolve: (rel) => brain.resolve(rel.toLowerCase()),
+    });
+    brain.disk.add('personal/a.md');
+    const r = step(t, 'Read', { file_path: `${ROOT}/personal/A.md` });
+    const e = step(t, 'Edit', { file_path: `${ROOT}/personal/a.md`, old_string: 'x', new_string: 'y' });
+    let s = await snap(t);
+    expect(s.files).toHaveLength(1);
+    const first = s.files[0];
+    expect(first).toMatchObject({
+      key: 'key:personal/a.md',
+      path: 'personal/a.md',
+      actions: ['read', 'changed'],
+      toolUseIds: [r, e],
+      edits: 1,
+    });
+    // Gone: no item, so the newest spelling is shown, with the newest order.
+    brain.disk.delete('personal/a.md');
+    step(t, 'Read', { file_path: `${ROOT}/personal/A.md` }, { ok: true });
+    t.endTurn();
+    s = await snap(t);
+    expect(s.files).toHaveLength(1);
+    expect(s.files[0]?.path).toBe('personal/A.md');
+    expect(s.files[0]?.order).toBeGreaterThan(first?.order ?? 0);
+  });
+
+  it(`sends at most ${CHAT_FILES_MAX} files, the newest, and no filedKey for a file left out`, async () => {
+    const { t, disk } = setup();
+    const att: TrackedAttachment = { name: 'f.pdf', kind: 'document', stagedPath: '/data/uploads/u3/f.pdf' };
+    t.addAttachments([att]);
+    disk.add('personal/f.pdf');
+    step(t, 'Bash', { command: `cp ${att.stagedPath} ${ROOT}/personal/f.pdf` });
+    expect((await snap(t)).attachments[0]?.filedKey).toBe('key:personal/f.pdf');
+    for (let i = 0; i < CHAT_FILES_MAX; i++) {
+      disk.add(`personal/${i}.md`);
+      step(t, 'Read', { file_path: `${ROOT}/personal/${i}.md` });
+    }
+    const s = await snap(t);
+    expect(s.files).toHaveLength(CHAT_FILES_MAX);
+    expect(s.files[0]?.path).toBe(`personal/${CHAT_FILES_MAX - 1}.md`);
+    expect(s.files.some((f) => f.path === 'personal/f.pdf')).toBe(false);
+    expect(s.attachments[0]?.filedKey).toBeNull();
+  });
+
+  it(`sends at most ${CHAT_LINKS_MAX} links, the newest`, async () => {
+    const { t } = setup();
+    const many = (from: number) =>
+      Array.from({ length: 60 }, (_, i) => `https://example.com/${from + i}`).join(' ');
+    t.observe(say(many(0)));
+    t.observe(say(many(60)));
+    const links = (await snap(t)).links.map((l) => l.url);
+    expect(links).toHaveLength(CHAT_LINKS_MAX);
+    expect(links[0]).toBe('https://example.com/119');
+    expect(links.at(-1)).toBe('https://example.com/20');
+  });
+
+  it(`tracks at most ${TRACKED_MAX} paths, forgetting the least recently touched`, async () => {
+    const { t, disk } = setup();
+    disk.add('personal/first.md');
+    step(t, 'Edit', { file_path: `${ROOT}/personal/first.md`, old_string: 'a', new_string: 'b' });
+    await snap(t);
+    expect(t.changes('key:personal/first.md')).not.toBeNull();
+    for (let i = 0; i < TRACKED_MAX; i++) step(t, 'Read', { file_path: `${ROOT}/personal/${i}.md` });
+    await snap(t);
+    expect(t.changes('key:personal/first.md')).toBeNull();
+  });
+
+  it(`keeps at most ${PENDING_MAX} steps waiting for a result, dropping the oldest`, async () => {
+    const { t, disk } = setup();
+    const uses = Array.from({ length: PENDING_MAX + 1 }, (_, i) => {
+      disk.add(`personal/${i}.md`);
+      const u = use('Read', { file_path: `${ROOT}/personal/${i}.md` });
+      t.observe(u.msg);
+      return u;
+    });
+    // Answered newest first, so the oldest would be the newest file if it still counted.
+    for (const u of [...uses].reverse()) t.observe(result(u.id));
+    const paths = (await snap(t)).files.map((f) => f.path);
+    expect(paths).not.toContain('personal/0.md');
+    expect(paths[0]).toBe('personal/1.md');
   });
 });

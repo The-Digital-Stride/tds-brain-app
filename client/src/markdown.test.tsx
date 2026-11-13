@@ -108,4 +108,15 @@ describe('chat file links', () => {
     fireEvent.click(container.querySelector('a') as HTMLAnchorElement);
     expect(onFile).not.toHaveBeenCalled();
   });
+
+  it('does not let an svg link bypass the link rules', () => {
+    const html = renderMarkdown(
+      '<svg><a href="https://evil.example/login"><image href="https://evil.example/btn.png"/></a></svg>' +
+        '<svg><a href="#chat-file=anything">x</a></svg>',
+      link,
+    );
+    expect(html).not.toContain('evil.example');
+    expect(html).not.toContain('#chat-file=');
+    expect(html).not.toContain('<svg');
+  });
 });

@@ -777,12 +777,32 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     return defsInFlight;
   }
 
-  /** The listed item at `rel` (any case) and its fresh check; `file` is null when the check fails. */
+  /**
+   * Paths found on disk that a listing still left out (a symbolic link, too deep, past the cap), by
+   * listing. Asked again while that listing is current, they answer null without another walk.
+   */
+  const unlistedIn = new WeakMap<Entry, Set<string>>();
+  /** One re-list per scope at a time: concurrent lookups share it rather than bumping again. */
+  const relisting = new Map<string, Promise<Entry>>();
+
+  function relist(scope: ScopeDef): Promise<Entry> {
+    const running = relisting.get(scope.id);
+    if (running) return running;
+    bump(scope.id);
+    const p = entryFor(scope).finally(() => {
+      if (relisting.get(scope.id) === p) relisting.delete(scope.id);
+    });
+    relisting.set(scope.id, p);
+    return p;
+  }
+
+  /** The listed item at `lower` and its fresh check; `file` is null when the check fails. */
   async function lookup(
     scope: ScopeDef,
-    rel: string,
+    entry: Entry,
+    lower: string,
   ): Promise<{ item: LibraryItem; file: LibraryFile | null } | null> {
-    const item = (await entryFor(scope)).byPath.get(rel.toLowerCase());
+    const item = entry.byPath.get(lower);
     return item ? { item, file: await check(scope, item) } : null;
   }
 
@@ -794,7 +814,9 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const scope = (await sharedScopeDefs()).find((s) => lower.startsWith(`${s.folder.toLowerCase()}/`));
     if (!scope || !classify(extOf(basename(rel)))) return null;
     const info: LibraryScope = { id: scope.id, name: scope.name, kind: scope.kind };
-    const first = await lookup(scope, rel);
+    const before = cache.get(scope.id);
+    const entry = await entryFor(scope);
+    const first = await lookup(scope, entry, lower);
     if (first?.file) return { key: first.item.id, scope: info, item: first.file.item };
     const key = first?.item.id ?? idFor(scope.id, rel);
     try {
@@ -804,10 +826,16 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       const code = (err as NodeJS.ErrnoException).code;
       return code === 'ENOENT' || code === 'ENOTDIR' ? { key, scope: info, item: null } : null;
     }
-    // There but not in the listing: made since it was walked. Walk that scope once more.
-    bump(scope.id);
-    const second = await lookup(scope, rel);
-    return second?.file ? { key: second.item.id, scope: info, item: second.file.item } : null;
+    if (unlistedIn.get(entry)?.has(lower)) return null;
+    // There but not in the listing: made since it was walked, so walk that scope once more, unless
+    // the listing was walked just now for this lookup.
+    const latest = entry === before ? await relist(scope) : entry;
+    const second = latest === entry ? first : await lookup(scope, latest, lower);
+    if (second?.file) return { key: second.item.id, scope: info, item: second.file.item };
+    const seen = unlistedIn.get(latest) ?? new Set<string>();
+    seen.add(lower);
+    unlistedIn.set(latest, seen);
+    return null;
   }
 
   const refreshing = new Set<string>();

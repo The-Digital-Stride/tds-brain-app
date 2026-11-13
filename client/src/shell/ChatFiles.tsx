@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { chatFileGroup } from '../../../shared/chat-files.ts';
 import { type ChatFile, type ChatFileAction, ROUTES, type SessionState } from '../../../shared/contract.ts';
 import { ApiFailure, api } from '../api.ts';
@@ -62,7 +62,7 @@ function FileRow({
       <Icon name={iconFor(file)} />
       <span className="line-text">
         <span className="line-title">{nameOf(file)}</span>
-        <span className="line-meta">{meta.join(' · ')}</span>
+        <span className="line-meta">{meta.join(', ')}</span>
       </span>
     </button>
   );
@@ -75,6 +75,7 @@ function scopeWords(file: ChatFile): string {
 /** "What changed": the edits this chat made to one file, newest first, in the approval card's view. */
 function Changes({ sessionId, file }: { sessionId: string; file: ChatFile }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const loaded = useLoaded(open ? `changes|${sessionId}|${file.key}` : null, file.edits, () =>
     // A 404 means the kept edits were dropped (or the file is gone): nothing to show, not an error.
     api.chatFileChanges(sessionId, file.key).catch((err: unknown) => {
@@ -88,45 +89,49 @@ function Changes({ sessionId, file }: { sessionId: string; file: ChatFile }) {
       <button
         type="button"
         className="btn"
+        data-variant="quiet"
         data-chevron="true"
         data-size="small"
         aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen(!open)}
       >
         <Icon name="chevron" size={14} />
         What changed
       </button>
       {open ? (
-        loaded.status === 'loading' ? (
-          <p className="lib-note" role="status">
-            Loading…
-          </p>
-        ) : loaded.status === 'failed' ? (
-          <div className="lib-failed" role="alert">
-            <p>{loaded.message}</p>
-            <button type="button" className="btn" onClick={loaded.retry}>
-              Try again
-            </button>
-          </div>
-        ) : data === null ? (
-          <p className="lib-note">The changes are no longer available.</p>
-        ) : (
-          <div className="files-change-list">
-            {[...data.changes].reverse().map((c, i) => (
-              // Changes have no id; counting from the oldest keeps a key stable as newer ones arrive.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above.
-              <div className="files-change" key={data.changes.length - i}>
-                {c.at ? <p className="files-change-when">{whenWords(c.at)}</p> : null}
-                <ChangeView change={c.change} />
-                {c.cut ? <p className="lib-note">This change was too long to show in full.</p> : null}
-                {c.hiddenChars ? (
-                  <p className="lib-note">Hidden characters are shown as ⟨U+…⟩ markers.</p>
-                ) : null}
-              </div>
-            ))}
-            {data.truncated ? <p className="lib-note">Older changes are not shown.</p> : null}
-          </div>
-        )
+        <div id={panelId}>
+          {loaded.status === 'loading' ? (
+            <p className="lib-note" role="status">
+              Loading…
+            </p>
+          ) : loaded.status === 'failed' ? (
+            <div className="lib-failed" role="alert">
+              <p>{loaded.message}</p>
+              <button type="button" className="btn" onClick={loaded.retry}>
+                Try again
+              </button>
+            </div>
+          ) : data === null ? (
+            <p className="lib-note">The changes are no longer available.</p>
+          ) : (
+            <div className="files-change-list">
+              {[...data.changes].reverse().map((c, i) => (
+                // Changes have no id; counting from the oldest keeps a key stable as newer ones arrive.
+                // biome-ignore lint/suspicious/noArrayIndexKey: see above.
+                <div className="files-change" key={data.changes.length - i}>
+                  {c.at ? <p className="files-change-when">{whenWords(c.at)}</p> : null}
+                  <ChangeView change={c.change} />
+                  {c.cut ? <p className="lib-note">This change was too long to show in full.</p> : null}
+                  {c.hiddenChars ? (
+                    <p className="lib-note">Hidden characters are shown as ⟨U+…⟩ markers.</p>
+                  ) : null}
+                </div>
+              ))}
+              {data.truncated ? <p className="lib-note">Older changes are not shown.</p> : null}
+            </div>
+          )}
+        </div>
       ) : null}
     </div>
   );
@@ -147,10 +152,12 @@ function Preview({
   const { libraryVersion, openView } = useStore();
   const { dispatch, modes } = useShell();
   const heading = useRef<HTMLHeadingElement>(null);
-  // Focus moves to the heading when a file opens (or a different one replaces it).
+  // Focus moves to the heading when a file opens (or a different one replaces it). A frame later, so
+  // a panel that is opening has recorded its opener and focused its own heading first.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger.
   useEffect(() => {
-    heading.current?.focus({ preventScroll: true });
+    const frame = requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
   }, [file.key]);
 
   const item = file.item;
@@ -230,9 +237,6 @@ function Preview({
       ) : null}
       {body}
       {item && file.edits > 0 && live ? <Changes sessionId={sessionId} file={file} /> : null}
-      <span className="visually-hidden" role="status">
-        Opened {title}
-      </span>
     </div>
   );
 }
@@ -259,10 +263,18 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
   const rows = useRef(new Map<string, HTMLButtonElement>());
   const returnTo = useRef<string | null>(null);
   const show = (key: string | null) => dispatch({ type: 'show-chat-file', chat: sessionId, key });
+  // Bumped when Back returns to a "Looked at" file: the fold remounts open, so its row can take focus.
+  const [lookedReset, setLookedReset] = useState(0);
   const back = () => {
     returnTo.current = shown?.key ?? null;
+    if (shown && chatFileGroup(shown) === 'looked-at') setLookedReset((n) => n + 1);
     show(null);
   };
+  const [announce, setAnnounce] = useState('');
+  // One status region, always there; its text is set when a file opens and cleared on Back.
+  useEffect(() => {
+    setAnnounce(shown ? `Opened ${nameOf(shown)}` : '');
+  }, [shown]);
   // Back puts focus on the row the file was opened from.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the preview closes.
   useEffect(() => {
@@ -294,6 +306,9 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="files">
+      <span className="visually-hidden" role="status">
+        {announce}
+      </span>
       {shown ? (
         <Preview file={shown} sessionId={sessionId} live={sessionState !== 'closed'} onBack={back} />
       ) : null}
@@ -316,7 +331,7 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
               return (
                 // Attachments have no id; the name and place in the list are stable while it is open.
                 // biome-ignore lint/suspicious/noArrayIndexKey: see above.
-                <div className="line files-row" key={`${a.name}-${i}`}>
+                <div className="files-row" key={`${a.name}-${i}`}>
                   <Icon name={a.kind === 'image' ? 'image' : 'paperclip'} />
                   <span className="line-text">
                     <span className="line-title">{a.name}</span>
@@ -335,30 +350,39 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
         ) : null}
         {looked.length > 0 ? (
           <Fold
+            key={lookedReset}
             title="Looked at"
             count={looked.length}
-            defaultOpen={made.length + attachedCount + mentioned.length + snapshot.links.length === 0}
+            defaultOpen={
+              lookedReset > 0 || made.length + attachedCount + mentioned.length + snapshot.links.length === 0
+            }
           >
             {looked.map(row)}
           </Fold>
         ) : null}
         {snapshot.links.length > 0 ? (
           <Fold title="Web links" count={snapshot.links.length}>
-            {snapshot.links.map((l) => (
-              <a
-                key={l.url}
-                className="line files-row"
-                href={l.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Icon name="go" />
-                <span className="line-text">
-                  <span className="line-title">{hostOf(l.url)}</span>
-                  <span className="line-meta">{l.url}</span>
-                </span>
-              </a>
-            ))}
+            {snapshot.links.map((l) => {
+              const address = l.url.replace(/^https?:\/\//, '');
+              return (
+                <a
+                  key={l.url}
+                  className="line files-row"
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icon name="go" />
+                  <span className="line-text">
+                    <span className="line-title">{hostOf(l.url)}</span>
+                    <span className="visually-hidden"> (opens in a new tab)</span>
+                    <span className="line-meta files-url" aria-hidden="true">
+                      {address}
+                    </span>
+                  </span>
+                </a>
+              );
+            })}
           </Fold>
         ) : null}
       </div>

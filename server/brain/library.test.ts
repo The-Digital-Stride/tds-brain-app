@@ -735,14 +735,44 @@ describe('itemForPath', () => {
     const root = copyFixture();
     const outside = tempDir();
     put(outside, 'x.md', '# outside');
-    symlinkSync(join(outside, 'x.md'), join(root, ACME, 'reports/linked.md'));
+    const linked = `${ACME}reports/linked.md`;
+    symlinkSync(join(outside, 'x.md'), join(root, linked));
     const walks: string[] = [];
     const library = lib(root, { onWalk: (s) => walks.push(s), limits: { depth: 1 } });
     library.setLive('clients', true);
-    expect(await library.itemForPath(`${ACME}reports/linked.md`)).toBeNull();
-    expect(walks).toEqual(['client:acme-heating', 'client:acme-heating']);
+    // Cold: the walk made for this lookup is the re-list.
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(1);
+    // Asked again (and at once, as at a turn's end) while the listing is current: no more walks.
+    await Promise.all([library.itemForPath(linked), library.itemForPath(linked)]);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(1);
     put(root, `${ACME}a/b/c/deep.md`);
     expect(await library.itemForPath(`${ACME}a/b/c/deep.md`)).toBeNull();
+  });
+
+  it('walks once more for a left-out file in a listed scope, then not again until the watcher says so', async () => {
+    const root = copyFixture();
+    const walks: string[] = [];
+    const library = lib(root, { onWalk: (s) => walks.push(s) });
+    library.setLive('clients', true);
+    await library.list('client:acme-heating');
+    const linked = `${ACME}reports/linked.md`;
+    const outside = tempDir();
+    put(outside, 'x.md', '# outside');
+    symlinkSync(join(outside, 'x.md'), join(root, linked));
+    // Concurrent lookups share one re-list.
+    const both = await Promise.all([library.itemForPath(linked), library.itemForPath(linked)]);
+    expect(both).toEqual([null, null]);
+    expect(walks).toHaveLength(2);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(2);
+    // A change in that scope: the next lookup lists it again.
+    library.changed(`${ACME}reports/other.md`);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(3);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(3);
   });
 
   it('is wired into the brain readers and never throws for a missing brain', async () => {

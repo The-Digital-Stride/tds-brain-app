@@ -91,6 +91,14 @@ describe('findPathMentions', () => {
   });
 });
 
+describe('findPathMentions on hostile text', () => {
+  it('stays fast on crafted input', () => {
+    const t0 = performance.now();
+    findPathMentions('/('.repeat(50000));
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+});
+
 describe('findWebLinks', () => {
   it('finds markdown targets and bare addresses, http(s) only', () => {
     const t = 'Go [here](https://a.com/x) or http://b.com/y or ftp://c.com or mailto:a@b.com';

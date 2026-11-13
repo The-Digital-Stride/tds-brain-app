@@ -157,11 +157,13 @@ describe('the preview', () => {
     const region = screen.getByRole('region', { name: 'Preview of Title made1' });
     expect(within(region).getByRole('heading', { name: 'Title made1' })).toBeTruthy();
     expect(within(region).getByText('Acme Heating')).toBeTruthy();
-    expect(within(region).getByText('Opened Title made1')).toBeTruthy();
+    expect(screen.getAllByRole('status').map((e) => e.textContent)).toContain('Opened Title made1');
     await waitFor(() => expect(within(region).getByText('Body text')).toBeTruthy());
     expect(within(region).getByRole('link', { name: 'Download made1.md' })).toBeTruthy();
     expect(within(region).getByRole('button', { name: 'Open in Documents' })).toBeTruthy();
-    expect(document.activeElement).toBe(within(region).getByRole('heading', { name: 'Title made1' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(region).getByRole('heading', { name: 'Title made1' })),
+    );
 
     fireEvent.keyDown(region, { key: 'Escape' });
     expect(screen.queryByRole('region', { name: /Preview of/ })).toBeNull();

@@ -61,7 +61,9 @@ function withoutFences(text: string): string {
 const MD_LINK = /\[[^\]\n]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))[^)\n]*\)/g;
 const CODE_SPAN = /`([^`\n]+)`/g;
 const BARE_PATH =
-  /(?<![\w/.~-])((?:\/[^\s/`]+)*?\/(?:clients|personal)\/[^\s`<>"]+|(?:clients|personal)\/[^\s`<>"]+)/g;
+  /(?<![\w/.~-])((?:\/[^\s/`]+){0,32}?\/(?:clients|personal)\/[^\s`<>"]+|(?:clients|personal)\/[^\s`<>"]+)/g;
+const MAX_SCAN = 100_000;
+const MAX_CANDIDATE = 1000;
 const TRAILING = /[.,;:!?)\]]+$/;
 
 /**
@@ -71,7 +73,7 @@ const TRAILING = /[.,;:!?)\]]+$/;
  * Text inside fenced code blocks is skipped. At most 200.
  */
 export function findPathMentions(text: string): string[] {
-  const body = withoutFences(text);
+  const body = withoutFences(text.slice(0, MAX_SCAN));
   const found: { at: number; raw: string }[] = [];
   const mask = body.split('');
   const blank = (from: number, len: number) => {
@@ -90,7 +92,7 @@ export function findPathMentions(text: string): string[] {
   }
   const rest = mask.join('');
   for (const m of rest.matchAll(BARE_PATH)) {
-    const raw = (m[1] as string).replace(TRAILING, '');
+    const raw = (m[1] as string).slice(0, MAX_CANDIDATE).replace(TRAILING, '');
     if (/\.[A-Za-z0-9]{1,8}(?::\d+(?:-\d+)?)?$/.test(raw)) found.push({ at: m.index, raw });
   }
   found.sort((a, b) => a.at - b.at);

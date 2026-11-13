@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
-import { indexChatFiles, normaliseBrainPath } from '../../../shared/chat-files.ts';
+import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
+import { findPathMentions, indexChatFiles, normaliseBrainPath } from '../../../shared/chat-files.ts';
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
@@ -17,13 +17,32 @@ interface FileLinks {
 }
 const FileLinksContext = createContext<FileLinks | null>(null);
 
+/**
+ * A reply. The linker is rebuilt whenever the chat's files change, and newly reported files must
+ * still link older replies, so each reply works out which keys its own paths resolve to and only
+ * renders again when that signature (or its text) changes.
+ */
+const AssistantText = memo(function AssistantText({ text }: { text: string }) {
+  const links = useContext(FileLinksContext);
+  const mentions = useMemo(() => findPathMentions(text), [text]);
+  const signature = links ? mentions.map((m) => links.link(m) ?? '').join('|') : '';
+  const latest = useRef(links);
+  latest.current = links;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable for a signature; reads the latest linker.
+  const link = useMemo(
+    () => (links ? (raw: string) => latest.current?.link(raw) ?? null : undefined),
+    [signature, links === null],
+  );
+  return <Markdown text={text} link={link} onFile={links?.onFile} />;
+});
+
 function ToolLine({ tool }: { tool: ToolItem }) {
   const links = useContext(FileLinksContext);
   const key = links?.byToolUse.get(tool.id);
   return (
     <li>
       {key !== undefined && links ? (
-        <button type="button" className="step-link" onClick={() => links.onFile(key)}>
+        <button type="button" className="link-btn" onClick={() => links.onFile(key)}>
           {tool.label}
         </button>
       ) : (
@@ -92,7 +111,6 @@ function itemKey(item: ChatItem): string {
 }
 
 function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; note: boolean }) {
-  const links = useContext(FileLinksContext);
   switch (item.kind) {
     case 'user':
       return (
@@ -104,7 +122,7 @@ function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; not
     case 'assistant':
       return (
         <div className="msg-assistant" data-note={note}>
-          <Markdown text={item.text} link={links?.link} onFile={links?.onFile} />
+          <AssistantText text={item.text} />
         </div>
       );
     // A card still waiting on the person shows in the floater above the message box, not here.

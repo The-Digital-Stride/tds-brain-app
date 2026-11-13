@@ -2,6 +2,7 @@ import type {
   AskQuestion,
   AttachmentInfo,
   ChatEvent,
+  ChatFilesSnapshot,
   ProposedChange,
   SequencedEvent,
   SessionState,
@@ -90,6 +91,8 @@ export interface ChatState {
   /** When (ms) the chat last changed attention state, from the events' own times. null until seen. */
   stateSince: number | null;
   sdkSessionId: string | null;
+  /** The files, attachments and links this chat has touched. */
+  files: ChatFilesSnapshot;
 }
 
 export const initialChatState: ChatState = {
@@ -99,6 +102,7 @@ export const initialChatState: ChatState = {
   stateDetail: null,
   stateSince: null,
   sdkSessionId: null,
+  files: { files: [], attachments: [], links: [] },
 };
 
 export type ChatAction = { type: 'event'; item: SequencedEvent } | { type: 'reset' };
@@ -260,6 +264,12 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
         ...state.items,
         { kind: 'notice', id: `notice-${seqNo}`, level: event.level, text: event.text },
       ];
+      return next;
+    case 'files':
+      next.files = { files: event.files, attachments: event.attachments, links: event.links };
+      return next;
+    default:
+      // An event this app does not know yet: keep the chat as it is.
       return next;
   }
 }

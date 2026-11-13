@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
+import { useShell } from '../shell/ShellProvider.tsx';
 import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
 import { type ChatItem, initialChatState, pendingCard } from '../state/chat-reducer.ts';
@@ -47,6 +48,7 @@ export function ChatView() {
     requestClose,
     closeChat,
   } = useStore();
+  const { dispatch: shellDispatch } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
   // Files can be dropped anywhere on the chat column.
@@ -60,6 +62,13 @@ export function ChatView() {
   const live = sessionId ? sessions?.live.find((s) => s.id === sessionId) : undefined;
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
+
+  const openFile = useCallback(
+    (key: string) => {
+      if (sessionId) shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
+    },
+    [sessionId, shellDispatch],
+  );
 
   const confirming = sessionId !== null && closeRequest === sessionId;
   useEffect(() => {
@@ -144,7 +153,14 @@ export function ChatView() {
       </SheetBar>
 
       {chat.items.length > 0 ? (
-        <Transcript items={chat.items} sessionId={sessionId} sessionState={state} />
+        <Transcript
+          items={chat.items}
+          sessionId={sessionId}
+          sessionState={state}
+          files={chat.files.files}
+          brainRoot={boot?.brain.path}
+          onFile={openFile}
+        />
       ) : (
         <div className="thread">
           <div className="thread-col thread-empty">

@@ -526,6 +526,15 @@ export interface BrainReaders {
    * older test fakes still satisfy the type; the route answers an empty reply when it is missing.
    */
   librarySearch?(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
+  /**
+   * The listed scope a path from the brain's root falls in, with the key the file has (or would
+   * have) there and the item when it is listed now (chat files, plan 2026-11-13-chat-files).
+   * Null when the path is in no listed scope, or the library rules never list it. Optional so older
+   * test fakes still satisfy the type; without it a chat reports no files.
+   */
+  libraryItemForPath?(
+    rel: string,
+  ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
   /** When the brain last synced (see SyncStatus). Never throws. */
   sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
@@ -885,7 +894,107 @@ export type ChatEvent =
       durationMs: number | null;
       errorText: string | null;
     }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
+  /**
+   * Everything this chat has used or produced so far (plan 2026-11-13-chat-files). A whole snapshot
+   * each time, never a delta: the newest one replaces any before it, and the server keeps only the
+   * newest in its replay log. Sent only on streams opened with `files=1` (see `ROUTES.stream`):
+   * an older page's reducer would reset the chat on an event it does not know.
+   */
+  | ({ type: 'files' } & ChatFilesSnapshot);
+
+// ---------------------------------------------------------------------------
+// Chat files: the documents, attachments and web links of one chat (plan 2026-11-13-chat-files)
+// ---------------------------------------------------------------------------
+
+/**
+ * What happened to a file in this chat. `created`: written by a Write with no earlier Read of that
+ * path in the chat (Claude Code refuses to overwrite a file it has not read, so that means new).
+ * `changed`: any later Write, or an Edit / MultiEdit / NotebookEdit. `read`: a Read. `mentioned`: its
+ * path appears in a finished reply. `filed`: an attachment of this chat was copied or moved here.
+ * Only steps that finished ok count for `created`, `changed` and `read`.
+ */
+export type ChatFileAction = 'created' | 'changed' | 'read' | 'mentioned' | 'filed';
+
+/** The screen's groups, in order. Worked out on the client by `chatFileGroup`. */
+export type ChatFileGroup = 'made' | 'attached' | 'mentioned' | 'looked-at';
+
+export interface ChatFile {
+  /**
+   * Stable for the path: the library id the file has (or would have) in its scope, so it equals
+   * `item.id` whenever `item` is set. Opaque; the only thing the browser sends back.
+   */
+  key: string;
+  /** From the brain's root, forward slashes. Shown and matched against reply text; never sent back. */
+  path: string;
+  /** The file as the library lists it now, or null when it is gone or no longer listed ("No longer there"). */
+  item: LibraryItem | null;
+  /** The scope it is in (always known: a path outside every listed scope is never reported). */
+  scope: LibraryScope;
+  /** Each action at most once, in the order first seen. */
+  actions: ChatFileAction[];
+  /** The steps that touched it (Read, Write, Edit…), so a step can open its file. */
+  toolUseIds: string[];
+  /** Successful edits and writes in this chat; above 0, "What changed" is offered. */
+  edits: number;
+  /**
+   * Orders the list only; never shown (a reopened chat's history has no times, so it counts the
+   * order things were seen instead). Newer is greater.
+   */
+  order: number;
+}
+
+/** A file the person attached to this chat. Never carries the staged copy's path. */
+export interface ChatAttachment {
+  name: string;
+  kind: UploadKind;
+  /** `ChatFile.key` of where Claude filed it, or null while that is not known. */
+  filedKey: string | null;
+}
+
+/** A web address from a reply or a WebFetch step. Opens in a new tab, as every outside link does. */
+export interface ChatWebLink {
+  /** Always `http:` or `https:`, never with a user name or password, at most CHAT_LINK_MAX_CHARS. */
+  url: string;
+}
+
+export interface ChatFilesSnapshot {
+  /** Most recently touched first (by `order`). At most CHAT_FILES_MAX. */
+  files: ChatFile[];
+  /** In the order attached. */
+  attachments: ChatAttachment[];
+  /** Newest first, no repeats. At most CHAT_LINKS_MAX. */
+  links: ChatWebLink[];
+}
+
+export const CHAT_FILES_MAX = 200;
+export const CHAT_LINKS_MAX = 100;
+
+/** `GET ROUTES.sessionFileChanges`: the edits this chat made to one file, oldest first. */
+export interface ChatFileChanges {
+  /**
+   * Oldest first. `cut` and `hiddenChars` as `ChangeSummary` gives them (the approval card's
+   * warnings), so the view can say when a change was cut short or had hidden characters made visible.
+   * `at` is null for a change rebuilt from history (stored messages carry no time).
+   */
+  changes: {
+    at: string | null;
+    tool: string;
+    change: ProposedChange;
+    cut: { lines: number; chars: number } | null;
+    hiddenChars: boolean;
+  }[];
+  /** True when older edits were dropped (over CHAT_FILE_CHANGES_MAX, or the chat's byte budget). */
+  truncated: boolean;
+}
+
+export const CHAT_FILE_CHANGES_MAX = 20;
+/** Most bytes of kept Write/Edit input per chat; the oldest kept edits go first. */
+export const CHAT_FILE_CHANGES_BUDGET = 4 * 1024 * 1024;
+/** Most tool use ids kept per file (the newest). */
+export const CHAT_FILE_TOOL_IDS_MAX = 50;
+/** Longer web addresses are not kept. */
+export const CHAT_LINK_MAX_CHARS = 2000;
 
 export interface SequencedEvent {
   /** Starts at 1 and rises by one per event within a session. Used to replay after a reconnect. */
@@ -1181,6 +1290,12 @@ export const ROUTES = {
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
   /**
+   * `GET`: ChatFileChanges for one `ChatFile.key` of a live chat. 404 `not-found` for an unknown chat
+   * or a key with no edits in it; `session-closed` as for the other session routes. `no-store`.
+   */
+  sessionFileChanges: (id: string, key: string) =>
+    `/api/sessions/${encodeURIComponent(id)}/file-changes/${encodeURIComponent(key)}`,
+  /**
    * `POST`: the file's bytes. Errors (all ApiError, sent with `Connection: close`):
    * 400 `bad-request` for a missing or bad name, a type not in UPLOAD_TYPES, a bad Content-Length
    * or an upload cut short; 403 `not-allowed` when uploads are switched off; 409 `busy` when the
@@ -1230,8 +1345,15 @@ export const ROUTES = {
    * and never shows it inside the app, whatever is in it. `no-store`.
    */
   libraryFile: (id: string) => `/api/library/file/${encodeURIComponent(id)}`,
-  stream: (sessionId?: string | null, after = 0) =>
-    sessionId ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}` : '/api/stream',
+  /**
+   * `files`: the page understands `files` chat events (plan 2026-11-13-chat-files). Without it the
+   * server leaves them out of the stream, replay and live, so a tab from an older version (whose
+   * reducer resets a chat on an unknown event) keeps working until it reloads.
+   */
+  stream: (sessionId?: string | null, after = 0, files = false) =>
+    sessionId
+      ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}${files ? '&files=1' : ''}`
+      : '/api/stream',
 } as const;
 
 /**

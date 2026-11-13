@@ -16,7 +16,14 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { ClientInfo, LibraryItem } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { createBrainReaders } from './index.ts';
-import { createLibrary, type LibraryOptions, looksLikeRaster, readChecked, svgSize } from './library.ts';
+import {
+  createLibrary,
+  idFor,
+  type LibraryOptions,
+  looksLikeRaster,
+  readChecked,
+  svgSize,
+} from './library.ts';
 import { copyFixture, FIXTURE } from './test-helpers.ts';
 
 const temps: string[] = [];
@@ -620,5 +627,156 @@ describe('freshness', () => {
       items: [],
       truncated: false,
     });
+  });
+});
+
+describe('itemForPath', () => {
+  const ACME_SCOPE = { id: 'client:acme-heating', name: 'Acme Heating Ltd', kind: 'client' };
+  const PERSONAL_SCOPE = { id: 'personal', name: 'My personal files', kind: 'personal' };
+
+  it('resolves client and personal paths with key = the listed item id', async () => {
+    const root = copyFixture();
+    const brain = createBrainReaders(root);
+    const listing = await brain.library('client:acme-heating');
+    const report = listing?.items.find((i) => i.path === `${ACME}reports/monthly-report.md`);
+    const got = await brain.libraryItemForPath?.(`${ACME}reports/monthly-report.md`);
+    expect(got?.key).toBe(report?.id);
+    expect(got?.scope).toEqual(ACME_SCOPE);
+    expect(got?.item).toMatchObject({ id: report?.id, path: `${ACME}reports/monthly-report.md` });
+
+    const personal = await brain.libraryItemForPath?.('personal/notes/idea.md');
+    const idea = (await brain.library('personal'))?.items.find((i) => i.path === 'personal/notes/idea.md');
+    expect(personal?.key).toBe(idea?.id);
+    expect(personal?.scope).toEqual(PERSONAL_SCOPE);
+    expect(personal?.item?.id).toBe(idea?.id);
+  });
+
+  it('matches the listing without regard to case, keeping the listed id', async () => {
+    const root = copyFixture();
+    const library = lib(root);
+    const listed = (await library.list('client:acme-heating'))?.items.find((i) => i.name === 'logo.png');
+    const got = await library.itemForPath(`${ACME}CONTEXT/Brand/Logo.PNG`);
+    expect(got?.key).toBe(listed?.id);
+    expect(got?.item?.path).toBe(`${ACME}context/brand/logo.png`);
+  });
+
+  it('gives a fresh size and date from the disk for a listed file', async () => {
+    const root = copyFixture();
+    const library = lib(root);
+    library.setLive('clients', true);
+    const before = (await library.list('client:acme-heating'))?.items.find((i) => i.name === 'profile.md');
+    writeFileSync(join(root, ACME, 'profile.md'), '# Longer than it was before, by quite a lot of text\n');
+    const got = await library.itemForPath(`${ACME}profile.md`);
+    expect(got?.item?.bytes).not.toBe(before?.bytes);
+  });
+
+  it('refuses never-listed paths, unlisted types and paths outside every scope', async () => {
+    const root = copyFixture();
+    const library = lib(root);
+    for (const rel of [
+      '.env',
+      '.claude/settings.json',
+      '.claude/skills/x/SKILL.md',
+      'os/README.md',
+      'todo/x.md',
+      'CLAUDE.md',
+      'clients/README.md',
+      `${ACME}config/secret.png`,
+      `${ACME}config/.env`,
+      `${ACME}.private/hidden.md`,
+      `${ACME}reports/.draft.md`,
+      `${ACME}scripts/run.js`,
+      'clients/_archive/x.md',
+      'clients/.hidden/x.md',
+      'clients/nope/report.md',
+      'personal/todo/x.md',
+      'personal',
+      'personal/',
+      'personal/../.env',
+      '/etc/passwd',
+      `${ACME}reports\\monthly-report.md`,
+      '',
+    ]) {
+      expect(await library.itemForPath(rel), rel).toBeNull();
+    }
+  });
+
+  it('gives a key and no item for a missing file in a scope', async () => {
+    const root = copyFixture();
+    const library = lib(root);
+    const rel = `${ACME}reports/not-yet.md`;
+    const got = await library.itemForPath(rel);
+    expect(got).toEqual({ key: idFor('client:acme-heating', rel), scope: ACME_SCOPE, item: null });
+    const gone = await library.itemForPath('personal/deep/er/gone.pdf');
+    expect(gone).toEqual({
+      key: idFor('personal', 'personal/deep/er/gone.pdf'),
+      scope: PERSONAL_SCOPE,
+      item: null,
+    });
+  });
+
+  it('finds a file made since the scope was listed, and its key is the id it would have', async () => {
+    const root = copyFixture();
+    const walks: string[] = [];
+    const library = lib(root, { onWalk: (s) => walks.push(s) });
+    library.setLive('clients', true);
+    const rel = `${ACME}reports/new-audit.md`;
+    // Asked first while missing, so the key is known before the file exists.
+    const before = await library.itemForPath(rel);
+    expect(before?.item).toBeNull();
+    put(root, rel, '# New audit\n');
+    const got = await library.itemForPath(rel);
+    expect(got?.key).toBe(before?.key);
+    expect(got?.item).toMatchObject({ id: before?.key, path: rel, title: 'New audit' });
+    expect(walks).toEqual(['client:acme-heating', 'client:acme-heating']);
+  });
+
+  it('refuses a present file the listing leaves out (a symbolic link, too deep), walking once more only', async () => {
+    const root = copyFixture();
+    const outside = tempDir();
+    put(outside, 'x.md', '# outside');
+    const linked = `${ACME}reports/linked.md`;
+    symlinkSync(join(outside, 'x.md'), join(root, linked));
+    const walks: string[] = [];
+    const library = lib(root, { onWalk: (s) => walks.push(s), limits: { depth: 1 } });
+    library.setLive('clients', true);
+    // Cold: the walk made for this lookup is the re-list.
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(1);
+    // Asked again (and at once, as at a turn's end) while the listing is current: no more walks.
+    await Promise.all([library.itemForPath(linked), library.itemForPath(linked)]);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(1);
+    put(root, `${ACME}a/b/c/deep.md`);
+    expect(await library.itemForPath(`${ACME}a/b/c/deep.md`)).toBeNull();
+  });
+
+  it('walks once more for a left-out file in a listed scope, then not again until the watcher says so', async () => {
+    const root = copyFixture();
+    const walks: string[] = [];
+    const library = lib(root, { onWalk: (s) => walks.push(s) });
+    library.setLive('clients', true);
+    await library.list('client:acme-heating');
+    const linked = `${ACME}reports/linked.md`;
+    const outside = tempDir();
+    put(outside, 'x.md', '# outside');
+    symlinkSync(join(outside, 'x.md'), join(root, linked));
+    // Concurrent lookups share one re-list.
+    const both = await Promise.all([library.itemForPath(linked), library.itemForPath(linked)]);
+    expect(both).toEqual([null, null]);
+    expect(walks).toHaveLength(2);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(2);
+    // A change in that scope: the next lookup lists it again.
+    library.changed(`${ACME}reports/other.md`);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(3);
+    expect(await library.itemForPath(linked)).toBeNull();
+    expect(walks).toHaveLength(3);
+  });
+
+  it('is wired into the brain readers and never throws for a missing brain', async () => {
+    const brain = createBrainReaders('/nonexistent/brain');
+    expect(await brain.libraryItemForPath?.('personal/x.md')).toBeNull();
   });
 });

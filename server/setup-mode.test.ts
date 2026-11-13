@@ -90,6 +90,7 @@ describe('createSetupSessions', () => {
       expect((err as SessionError).code).toBe('not-found');
     }
     expect(() => s.subscribe('x', 0, () => {})).toThrow(SessionError);
+    expect(() => s.fileChanges('x', 'k')).toThrow(SessionError);
   });
 
   it('closes everything at once with nothing to close, and changes never fire', async () => {

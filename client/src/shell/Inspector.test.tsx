@@ -49,6 +49,7 @@ const chatState = (items: ChatState['items']): ChatState => ({
   stateDetail: null,
   stateSince: null,
   sdkSessionId: null,
+  files: { files: [], attachments: [], links: [] },
   items,
 });
 

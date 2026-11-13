@@ -21,6 +21,7 @@ import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/ins
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
+import { SessionError } from '../engine/session-manager.ts';
 import {
   createEngineHealth,
   createSetupBrain,
@@ -1534,5 +1535,78 @@ describe('validatePrefsPatch: todoSeen', () => {
     }
     const max = Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`k${i}`, '2026-11-13']));
     expect(await validatePrefsPatch({ todoSeen: max }, brain)).toEqual({ todoSeen: max });
+  });
+});
+
+describe('GET file changes of a chat (chat files)', () => {
+  const CHANGES = {
+    changes: [
+      {
+        at: null,
+        tool: 'Edit',
+        change: { kind: 'edit', path: 'clients/acme/plan.md', hunks: [] },
+        cut: null,
+        hiddenChars: false,
+      },
+    ],
+    truncated: false,
+  };
+
+  async function call(path: string, method = 'GET') {
+    const asked: [string, string][] = [];
+    const sessions = {
+      fileChanges(id: string, key: string) {
+        asked.push([id, key]);
+        if (id === 'gone')
+          throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
+        if (id !== 'chat-1') throw new SessionError('not-found', 'That chat could not be found.');
+        return key === 'client:acme.abc/1' ? CHANGES : null;
+      },
+    };
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number, headers: Record<string, unknown> = {}) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      { sessions, log: () => {} } as unknown as RouteContext,
+    );
+    return { ...sent, asked, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('answers the changes, never cached, with the key decoded', async () => {
+    const sent = await call(ROUTES.sessionFileChanges('chat-1', 'client:acme.abc/1'));
+    expect(sent.status).toBe(200);
+    expect(sent.headers['Cache-Control']).toBe('no-store');
+    expect(sent.json).toEqual(CHANGES);
+    expect(sent.asked).toEqual([['chat-1', 'client:acme.abc/1']]);
+  });
+
+  it('is not found for a key with no changes or an unknown chat, and gone for a closed one', async () => {
+    const none = await call(ROUTES.sessionFileChanges('chat-1', 'other'));
+    expect(none.status).toBe(404);
+    expect(none.json).toEqual({ error: { code: 'not-found', message: 'Those changes could not be found.' } });
+    expect((await call(ROUTES.sessionFileChanges('nope', 'k'))).status).toBe(404);
+    const gone = await call(ROUTES.sessionFileChanges('gone', 'k'));
+    expect(gone.status).toBe(410);
+    expect(gone.json.error.code).toBe('session-closed');
+  });
+
+  it('refuses a badly encoded key and anything but GET', async () => {
+    const bad = await call('/api/sessions/chat-1/file-changes/%E0%A4%A');
+    expect(bad.status).toBe(400);
+    expect(bad.json.error.code).toBe('bad-request');
+    expect(bad.asked).toEqual([]);
+    expect((await call(ROUTES.sessionFileChanges('chat-1', 'client:acme.abc/1'), 'POST')).status).toBe(405);
   });
 });

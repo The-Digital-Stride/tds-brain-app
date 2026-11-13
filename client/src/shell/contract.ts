@@ -21,8 +21,8 @@ import type { ChatItem } from '../state/chat-reducer.ts';
 /** The left drawers. Only one is open at a time. */
 export type DrawerName = 'chats' | 'todos' | 'skills';
 
-/** Tabs in the right panel ("This chat"). */
-export type PanelTab = 'steps' | 'details';
+/** Tabs in the right panel ("This chat"). `files`: plan 2026-11-13-chat-files. */
+export type PanelTab = 'steps' | 'files' | 'details';
 
 export interface ShellState {
   /** True: the rail shows names beside the icons. False: icons only. */
@@ -31,6 +31,12 @@ export interface ShellState {
   /** The person's choice. The panel only shows while a live chat is on the sheet. */
   panelOpen: boolean;
   panelTab: PanelTab;
+  /**
+   * The chat file open in the panel's Files tab, or null for the list. Never saved; cleared when the
+   * tab changes. Tagged with its chat: the panel shows the preview only while that chat is the
+   * active one and the key is in its snapshot, so switching chats needs no clearing.
+   */
+  panelFile: { chat: string; key: string } | null;
   /** Never saved: the palette is always shut after a reload. */
   paletteOpen: boolean;
   /** Single-key shortcuts ([, T, C, S) on or off. Cmd/Ctrl+K and Esc always work. */
@@ -45,6 +51,12 @@ export type ShellAction =
   | { type: 'toggle-panel' }
   | { type: 'set-panel'; open: boolean }
   | { type: 'set-panel-tab'; tab: PanelTab }
+  /**
+   * Opens the panel on the Files tab showing `key` of chat `chat` (null: the Files list). Used by
+   * reply links, steps and the list's rows and Back button. Sets `panelOpen`, `panelTab: 'files'` and
+   * `panelFile` in one update. It opens the panel, so `ShellProvider` treats it like `set-panel` open.
+   */
+  | { type: 'show-chat-file'; chat: string; key: string | null }
   | { type: 'set-palette'; open: boolean }
   | { type: 'set-single-keys'; on: boolean };
 
@@ -52,7 +64,7 @@ export type ShellAction =
 export type ShellReducer = (state: ShellState, action: ShellAction) => ShellState;
 /** Reads what was saved. Anything missing, malformed or of the wrong type falls back to the default. */
 export type LoadShell = (raw: string | null) => ShellState;
-/** The saved part of the state as JSON: everything except `paletteOpen`. */
+/** The saved part of the state as JSON: everything except `paletteOpen` and `panelFile`. */
 export type SaveShell = (state: ShellState) => string;
 export const SHELL_STORAGE_KEY = 'tds-brain-shell';
 

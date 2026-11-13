@@ -87,6 +87,21 @@ including label or padding, reaches 24px), visible focus on everything.
 - Blockquote and Claude's side notes: 2px `--line-strong` left rule, 12px padding, 13px iron.
 - "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut).
 - Your message: 14/1.5, wash fill, radius 14 14 4 14, padding 8px 12px. Record lines: 13px iron with an 8px #B9C0CE dot.
+- File links in a reply (a brain path the chat reported, plan 2026-11-13-chat-files): link colour with a
+  small file icon before them; they open the file in the panel's Files tab, never a new tab. A step that
+  touched a file has its label as the same link. Any other relative link is plain text.
+
+## The chat's Files tab
+
+"This chat" has three tabs: Steps, Files, Details. Files lists, in order, **Made or changed**, **Attached**,
+**Mentioned in replies**, **Looked at** (a `Fold`, shut unless it is the only group) and **Web links**
+(new tab). A row is a button: the format icon, the title, the client (or "My personal files") and the
+strongest action word (Made, Changed, Filed, Mentioned, Read). Choosing one shows it in the panel with an
+"All files" back button: text, Markdown and pictures show there; PDFs and web pages offer **Open in
+Documents** (or Images), which closes a floating panel first; Word, Excel and PowerPoint say "This type
+can't be shown here." with Download first. Escape goes back to the list. A file the chat edited has
+"What changed", using the approval card's change view. Empty: "No files yet. Files Claude reads, makes or
+names in this chat appear here."
 
 ## Height (shadows)
 

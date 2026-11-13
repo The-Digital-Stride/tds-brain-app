@@ -22,6 +22,7 @@ vi.mock('../store.tsx', () => ({
       clients: [],
       usedOften: [],
       identity: { role: 'team' },
+      brain: { path: '/brain' },
     },
     activeChat: { kind: 'live', sessionId: 's1' },
     chats: { s1: h.chat },
@@ -62,6 +63,7 @@ const chatState = (sessionState: ChatState['sessionState'], stepLabel?: string):
   stateDetail: null,
   stateSince: null,
   sdkSessionId: null,
+  files: { files: [], attachments: [], links: [] },
   items: [
     { kind: 'user', id: 'u', text: 'hi' },
     ...(stepLabel

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
-import type { SessionState } from '../../../shared/contract.ts';
+import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
+import { findPathMentions, indexChatFiles, normaliseBrainPath } from '../../../shared/chat-files.ts';
+import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { currentStep, toBlocks } from '../state/blocks.ts';
@@ -8,10 +9,45 @@ import { STEP_WORDS } from '../state/steps.ts';
 import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
+/** What the transcript needs to turn file names and steps into links (plan 2026-11-13-chat-files). */
+interface FileLinks {
+  link: (raw: string) => string | null;
+  byToolUse: ReadonlyMap<string, string>;
+  onFile: (key: string) => void;
+}
+const FileLinksContext = createContext<FileLinks | null>(null);
+
+/**
+ * A reply. The linker is rebuilt whenever the chat's files change, and newly reported files must
+ * still link older replies, so each reply works out which keys its own paths resolve to and only
+ * renders again when that signature (or its text) changes.
+ */
+const AssistantText = memo(function AssistantText({ text }: { text: string }) {
+  const links = useContext(FileLinksContext);
+  const mentions = useMemo(() => findPathMentions(text), [text]);
+  const signature = links ? mentions.map((m) => links.link(m) ?? '').join('|') : '';
+  const latest = useRef(links);
+  latest.current = links;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable for a signature; reads the latest linker.
+  const link = useMemo(
+    () => (links ? (raw: string) => latest.current?.link(raw) ?? null : undefined),
+    [signature, links === null],
+  );
+  return <Markdown text={text} link={link} onFile={links?.onFile} />;
+});
+
 function ToolLine({ tool }: { tool: ToolItem }) {
+  const links = useContext(FileLinksContext);
+  const key = links?.byToolUse.get(tool.id);
   return (
     <li>
-      <span>{tool.label}</span>{' '}
+      {key !== undefined && links ? (
+        <button type="button" className="link-btn" onClick={() => links.onFile(key)}>
+          {tool.label}
+        </button>
+      ) : (
+        <span>{tool.label}</span>
+      )}{' '}
       <span className="tool-status" data-status={tool.status}>
         ({STEP_WORDS[tool.status]})
       </span>
@@ -86,7 +122,7 @@ function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; not
     case 'assistant':
       return (
         <div className="msg-assistant" data-note={note}>
-          <Markdown text={item.text} />
+          <AssistantText text={item.text} />
         </div>
       );
     // A card still waiting on the person shows in the floater above the message box, not here.
@@ -119,11 +155,27 @@ export function Transcript({
   items,
   sessionId,
   sessionState,
+  files,
+  brainRoot = '',
+  onFile,
 }: {
   items: ChatItem[];
   sessionId: string;
   sessionState: SessionState;
+  /** The chat's files, for links in replies and steps. Without them nothing is linked. */
+  files?: readonly ChatFile[];
+  brainRoot?: string;
+  onFile?: (key: string) => void;
 }) {
+  const fileLinks = useMemo<FileLinks | null>(() => {
+    if (!files || !onFile) return null;
+    const index = indexChatFiles(files);
+    return {
+      link: (raw) => index.byPath.get(normaliseBrainPath(raw, brainRoot) ?? '') ?? null,
+      byToolUse: index.byToolUse,
+      onFile,
+    };
+  }, [files, brainRoot, onFile]);
   const blocks = useMemo(() => toBlocks(items), [items]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
@@ -144,20 +196,22 @@ export function Transcript({
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
     >
-      <div className="thread-col">
-        {blocks.map((b, i) =>
-          b.kind === 'tools' ? (
-            <ActivityGroup
-              key={`tools-${b.id}`}
-              tools={b.tools}
-              active={busy && i === lastTools}
-              waiting={sessionState === 'waiting'}
-            />
-          ) : (
-            <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
-          ),
-        )}
-      </div>
+      <FileLinksContext.Provider value={fileLinks}>
+        <div className="thread-col">
+          {blocks.map((b, i) =>
+            b.kind === 'tools' ? (
+              <ActivityGroup
+                key={`tools-${b.id}`}
+                tools={b.tools}
+                active={busy && i === lastTools}
+                waiting={sessionState === 'waiting'}
+              />
+            ) : (
+              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
+            ),
+          )}
+        </div>
+      </FileLinksContext.Provider>
     </div>
   );
 }

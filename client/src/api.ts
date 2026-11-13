@@ -5,6 +5,7 @@ import type {
   Bootstrap,
   ChangelogResponse,
   ChangeTodoRequest,
+  ChatFileChanges,
   ClientGuessRequest,
   ClientGuessResponse,
   ClientPickOutcomeRequest,
@@ -145,6 +146,8 @@ export const api = {
       opts,
     ),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
+  chatFileChanges: (sessionId: string, key: string) =>
+    request<ChatFileChanges>('GET', ROUTES.sessionFileChanges(sessionId, key)),
   clientGuess: (req: ClientGuessRequest) => request<ClientGuessResponse>('POST', ROUTES.clientGuess, req),
   /** Counted in the app's data folder only; a failure is ignored by the caller. */
   clientPickOutcome: (outcome: ClientPickReported) =>
@@ -186,5 +189,5 @@ export async function discardUpload(id: string, keepalive = false): Promise<void
 
 /** The URL for the one event stream a tab holds. */
 export function streamUrl(sessionId: string | null, after: number): string {
-  return ROUTES.stream(sessionId, after);
+  return ROUTES.stream(sessionId, after, true);
 }

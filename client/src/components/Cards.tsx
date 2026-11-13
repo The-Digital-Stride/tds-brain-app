@@ -113,7 +113,7 @@ const EMPTY_WORDS: Record<ProposedChange['kind'], string> = {
  * What a Write or Edit will do, closed to one line that says how much changes; opening it shows
  * the lines. Plain text only, never markdown or HTML. Warnings stay on the card, outside it.
  */
-function ChangeView({ change }: { change: ProposedChange }) {
+export function ChangeView({ change }: { change: ProposedChange }) {
   const isEdit = change.kind === 'edit';
   const many = change.parts.length > 1;
   if (change.parts.every((p) => p.lines.length === 0)) {

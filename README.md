@@ -25,6 +25,12 @@ here is published.**
   the brain where `.claude/rules/save-locations.md` says, asks if the client or folder isn't clear,
   and tells you where each went. The app keeps only a private copy in its data folder until then
   (an hour if unsent, a day once sent).
+- **Chat files**: the "This chat" panel's Files tab lists what the chat made or changed, the
+  attachments and where they were filed, files named in replies, files it looked at, and web links.
+  Text, Markdown and pictures preview in the panel; PDFs and web pages open in Documents or Images.
+  File paths in replies and file steps open the file there, and "What changed" shows a file's edits.
+  Only files Documents would show you are listed. A reopened chat rebuilds the list from Claude Code's
+  own history, which keeps no helper-agent steps, so files only a helper touched don't show there.
 - **To-dos**: your to-dos and the team's open ones. Ticking, adding, editing, passing to a teammate,
   setting a due date and deleting are off by default, because they change the shared brain; switch
   them on in Settings ("Let the app change to-dos"). A tick records who did it and when. Every change

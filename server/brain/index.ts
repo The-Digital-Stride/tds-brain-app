@@ -73,6 +73,7 @@ export function createBrainReaders(
     librarySearch: (q, kind) => library.search(q, kind),
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
+    libraryItemForPath: (rel) => library.itemForPath(rel),
     sync: () => syncReader.read(),
     watch: (onChange) =>
       watchBrain(root, onChange, {

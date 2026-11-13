@@ -190,4 +190,22 @@ describe('chatReducer', () => {
     const plain = apply([seq(1, { type: 'user-message', messageId: 'u2', text: 'Hi' })]);
     expect(plain.items[0]).not.toHaveProperty('attachments');
   });
+
+  it('replaces the files snapshot when a files event arrives', () => {
+    const link = { url: 'https://example.com/' };
+    const s = apply([seq(1, { type: 'files', files: [], attachments: [], links: [link] } as ChatEvent)]);
+    expect(s.files.links).toHaveLength(1);
+    const again = apply([seq(2, { type: 'files', files: [], attachments: [], links: [] })], s);
+    expect(again.files).toEqual({ files: [], attachments: [], links: [] });
+  });
+
+  it('starts with an empty files snapshot', () => {
+    expect(initialChatState.files).toEqual({ files: [], attachments: [], links: [] });
+  });
+
+  it('keeps the chat as it is for an unknown event, only moving lastSeq', () => {
+    const before = apply([seq(1, { type: 'user-message', messageId: 'u', text: 'Hi' })]);
+    const after = apply([seq(2, { type: 'from-the-future' } as unknown as ChatEvent)], before);
+    expect(after).toEqual({ ...before, lastSeq: 2 });
+  });
 });

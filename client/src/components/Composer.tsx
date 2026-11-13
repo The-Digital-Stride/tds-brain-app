@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { type Attention, MAX_ATTACHMENTS, type SkillInfo, UPLOAD_TYPES } from '../../../shared/contract.ts';
 import { discardUpload, uploadFile } from '../api.ts';
 import { Icon } from '../shell/Icon.tsx';
@@ -38,6 +38,10 @@ export interface ComposerProps {
   focusSignal: number;
   /** Colours the ring round the box. null for a chat that has stopped, or a new chat. */
   attention?: Attention | null;
+  /** Extra controls in the foot, after the attach button (Home puts its client select here). */
+  tools?: ReactNode;
+  /** Replaces the "Enter to send" hint (not the upload warnings). */
+  hint?: string;
 }
 
 export function Composer({
@@ -50,6 +54,8 @@ export function Composer({
   attention = null,
   dropZone,
   attachDisabled = false,
+  tools,
+  hint,
 }: ComposerProps) {
   const [text, setText] = useState(initial);
   const [skill, setSkill] = useState(initialSkill);
@@ -62,11 +68,14 @@ export function Composer({
   const picker = useRef<HTMLInputElement>(null);
   const filesRef = useRef<AttachmentChip[]>([]);
   const mounted = useRef(true);
+  // While a message is going (Home may be asking a question), files can't change: they were read at Send.
+  const sendingRef = useRef(false);
   const sayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ids that went with a message being sent; the unmount clean-up must not discard these.
   const inFlight = useRef<Set<string>>(new Set());
   // Read-only, not disabled, so the box can still take focus and its reason can be read.
   const blocked = disabledReason !== null || sending;
+  sendingRef.current = sending;
   const { uploading, errored, ready } = summarise(files);
   const canSend =
     !blocked && uploading === 0 && errored === 0 && (text.trim() !== '' || skill !== null || ready > 0);
@@ -216,6 +225,7 @@ export function Composer({
   );
 
   const removeFile = (chip: AttachmentChip) => {
+    if (sendingRef.current) return;
     mutate((cur) => cur.filter((c) => c.localId !== chip.localId));
     if (chip.serverId) void discardUpload(chip.serverId);
     area.current?.focus();
@@ -229,13 +239,14 @@ export function Composer({
     const enter = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
       e.preventDefault();
+      if (sendingRef.current) return;
       depth++;
       setDragging(true);
     };
     const over = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      if (e.dataTransfer) e.dataTransfer.dropEffect = sendingRef.current ? 'none' : 'copy';
     };
     const leave = (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
@@ -247,6 +258,7 @@ export function Composer({
       e.preventDefault();
       depth = 0;
       setDragging(false);
+      if (sendingRef.current) return;
       if (e.dataTransfer) addFileList(e.dataTransfer.files, e.dataTransfer.items);
     };
     target.addEventListener('dragenter', enter);
@@ -340,7 +352,7 @@ export function Composer({
               file={c}
               status={c.status}
               message={c.message}
-              onRemove={() => removeFile(c)}
+              onRemove={sending ? undefined : () => removeFile(c)}
             />
           ))}
         </div>
@@ -369,6 +381,7 @@ export function Composer({
         onPaste={(e) => {
           if (
             attachDisabled ||
+            sendingRef.current ||
             !pasteShouldAttach(e.clipboardData.files.length > 0, e.clipboardData.getData('text/plain'))
           )
             return;
@@ -405,11 +418,13 @@ export function Composer({
             className="icon-btn attach-btn"
             aria-label={`Attach files, up to ${MAX_ATTACHMENTS}`}
             title={`Attach files (up to ${MAX_ATTACHMENTS})`}
+            disabled={sending}
             onClick={() => picker.current?.click()}
           >
             <Icon name="paperclip" />
           </button>
         )}
+        {tools}
         {disabledReason ? (
           <p className="visually-hidden" id="composer-reason">
             {disabledReason}
@@ -422,7 +437,7 @@ export function Composer({
                 ? "Remove the file that can't be attached, then send."
                 : errored > 1
                   ? "Remove the files that can't be attached, then send."
-                  : 'Enter to send, Shift and Enter for a new line.'}
+                  : (hint ?? 'Enter to send, Shift and Enter for a new line.')}
           </p>
         )}
         <p className="visually-hidden" role="status" aria-live="polite">

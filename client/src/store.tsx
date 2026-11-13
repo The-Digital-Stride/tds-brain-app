@@ -77,6 +77,8 @@ export interface NewChat {
   skill: SkillInfo | null;
   /** The to-do this chat is about, when it was started from one. */
   todoId: string | null;
+  /** A client this chat was opened with (palette, to-do): a slug, or null for no client. Absent = work it out. */
+  client?: string | null;
 }
 export interface LiveChat {
   kind: 'live';
@@ -109,7 +111,12 @@ export interface Store {
   actionError: string | null;
   clearError: () => void;
   openView: (view: View) => void;
-  newChat: (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null }) => void;
+  newChat: (opts?: {
+    draft?: string;
+    skill?: SkillInfo | null;
+    todoId?: string | null;
+    client?: string | null;
+  }) => void;
   startSkill: (skill: SkillInfo) => void;
   openChat: (sessionId: string) => void;
   openPast: (sdkSessionId: string) => Promise<void>;
@@ -176,9 +183,16 @@ function messageOf(err: unknown): string {
 }
 
 let newChatKey = 0;
-function freshNewChat(draft = '', skill: SkillInfo | null = null, todoId: string | null = null): NewChat {
+function freshNewChat(
+  draft = '',
+  skill: SkillInfo | null = null,
+  todoId: string | null = null,
+  client?: string | null,
+): NewChat {
   newChatKey += 1;
-  return { kind: 'new', key: newChatKey, draft, skill, todoId };
+  return client === undefined
+    ? { kind: 'new', key: newChatKey, draft, skill, todoId }
+    : { kind: 'new', key: newChatKey, draft, skill, todoId, client };
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -396,8 +410,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openView = useCallback((v: View) => setView(v), []);
 
   const newChat = useCallback(
-    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null }) => {
-      setActiveChat(freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null));
+    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null; client?: string | null }) => {
+      setActiveChat(freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null, opts?.client));
       setView('chat');
       setActionError(null);
     },

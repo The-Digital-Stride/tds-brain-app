@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   sync: vi.fn(async () => ({ lastSync: null })),
   changelog: vi.fn(async () => ({ versions: [] })),
   startSession: vi.fn(),
+  clientGuess: vi.fn(async () => ({ kind: 'none' })),
   close: vi.fn(),
   updatePrefs: vi.fn(),
   librarySearch: vi.fn(),
@@ -435,8 +436,9 @@ describe('global search', () => {
     fireEvent.change(input(), { target: { value: 'north' } });
     expect(groupTitles()).toContain('Clients');
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('option', { name: 'Northwind' }));
-    await waitFor(() => expect(clientChoice.get()).toBe('client:northwind'));
     await screen.findByRole('heading', { level: 1, name: 'Home' });
+    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('northwind');
+    expect(clientChoice.get()).toBe('');
   });
 
   it('finds an earlier chat by title and reopens it', async () => {

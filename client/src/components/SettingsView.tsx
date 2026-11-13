@@ -73,6 +73,15 @@ export function SettingsView() {
               onChange={(e) => dispatch({ type: 'set-single-keys', on: e.target.checked })}
             />
           </div>
+          <div className="setting">
+            <div>
+              <p className="setting-label">Working out the client</p>
+              <p className="setting-help">
+                With Client set to Auto, the first message of a new chat and your client list go to Jev, a
+                TypeSafe service, to work out the client. Choose a client, or No client, and nothing is sent.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

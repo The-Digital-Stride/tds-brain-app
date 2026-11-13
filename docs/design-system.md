@@ -181,9 +181,15 @@ there is no Open), then the file utilities (Download, Copy file path) as standar
 an `<a class="btn" download>` to `ROUTES.libraryFile`, named "Download <file name>" for screen readers;
 the server sends the file as an attachment, so it is saved and the app stays where it is.
 
-The client chosen on Home or in any app is shared: moving between them stays on it until the page is
-reloaded, when Home falls back to the last client a chat used. "No client" on Home leaves the apps
-where they are. Choosing the client an app already shows keeps what is ticked, open and in the panel.
+The client chosen in an app is shared between the apps. Home no longer shares it (and no longer
+pre-fills the last client a chat used): its Client select sits in the composer's foot (`tools` slot),
+a native `.field` with a visible small "Client" label: "Auto" (default), "No client", then the
+clients. With auto, Send works the client out from the first message (`POST /api/client-guess`); a short
+"Working out the client…" note (`aria-live="polite"`) shows after 400 ms, and when the app can't tell,
+a `.pending` card above the composer asks "Which client is this for?" (`ClientAsk`: a `.btn` per likely
+client, "No client", an "Another client…" `.field` select, "Cancel"; Escape cancels and the text
+stays in the box). A chat opened from search (a client) or a to-do (its client) starts with that client
+chosen. Choosing the client an app already shows keeps what is ticked, open and in the panel.
 
 Opening a file ("Open" in the panel) swaps the sheet's list for the viewer and adds a quiet small
 "Back to ..." button to the sheet bar. When the panel floats, Open also closes it, and the viewer takes

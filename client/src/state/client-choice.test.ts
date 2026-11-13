@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { clientChoice, clientSlugOf, NO_CLIENT, scopeForClient } from './client-choice.ts';
+import { clientChoice, clientSlugOf, NO_CLIENT, scopeForClient, todoChatClient } from './client-choice.ts';
 
 beforeEach(() => clientChoice.set(''));
 
@@ -34,5 +34,16 @@ describe('clientSlugOf and scopeForClient', () => {
   it('turns a client picked on Home into the choice', () => {
     expect(scopeForClient('acme')).toBe('client:acme');
     expect(scopeForClient('')).toBe(NO_CLIENT);
+  });
+});
+
+describe('todoChatClient', () => {
+  const clients = [{ slug: 'acme' }];
+  it('keeps a listed client, gives a personal to-do none, and leaves the rest to be worked out', () => {
+    expect(todoChatClient({ key: 'a.md', client: 'acme' }, clients)).toBe('acme');
+    expect(todoChatClient({ key: 'personal/a.md', client: 'acme' }, clients)).toBeNull();
+    // A client folder that has gone, or no client at all: worked out from the message.
+    expect(todoChatClient({ key: 'a.md', client: 'gone' }, clients)).toBeUndefined();
+    expect(todoChatClient({ key: 'a.md', client: null }, clients)).toBeUndefined();
   });
 });

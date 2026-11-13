@@ -679,3 +679,21 @@ describe('which sections start open', () => {
     expect(expanded(/^No date/)).toBe('false');
   });
 });
+
+describe('starting a chat from a to-do', () => {
+  it("passes the to-do's client, and no client for a personal to-do", () => {
+    setStore([todo('a.md', 'Renew contract', { client: 'acme' })]);
+    const { unmount } = render(<TodosDrawer />);
+    fireEvent.click(screen.getByText('Renew contract', { exact: false }));
+    expect(fns.newChat).toHaveBeenLastCalledWith(expect.objectContaining({ todoId: 'a.md', client: 'acme' }));
+    unmount();
+
+    setStore([personal('p.md', 'Secret plan', { client: 'acme' })], { canUsePersonal: true });
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
+    fireEvent.click(screen.getByText('Secret plan', { exact: false }));
+    expect(fns.newChat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ todoId: 'personal/p.md', client: null }),
+    );
+  });
+});

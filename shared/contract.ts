@@ -373,6 +373,27 @@ export interface ClientInfo {
   name: string;
 }
 
+/**
+ * `POST /api/client-guess`: which client a new chat's first message is for, worked out before the
+ * chat starts (exact name match, then Jev). Text is a string of at most 100,000 characters (the chat
+ * limit), else `bad-request`; only the first 4,000 are used. Empty text answers `none`.
+ */
+export interface ClientGuessRequest {
+  text: string;
+}
+
+/**
+ * - `sure`: start the chat with `client` (a slug from `Bootstrap.clients`). `how` says whether the
+ *   message named it (`named`) or Jev picked it (`jev`).
+ * - `none`: not client work; start with no client and ask nothing.
+ * - `ask`: ask the person. `options` are the likeliest slugs, best first (0 to 3); empty when nothing
+ *   could be guessed (Jev unavailable), so the person picks from the full list.
+ */
+export type ClientGuessResponse =
+  | { kind: 'sure'; client: string; how: 'named' | 'jev' }
+  | { kind: 'none' }
+  | { kind: 'ask'; options: string[] };
+
 export interface UsedSkill {
   name: string;
   count: number;
@@ -1118,6 +1139,8 @@ export const ROUTES = {
   /** `GET`: SyncStatus. `no-store`. */
   sync: '/api/brain/sync',
   sessions: '/api/sessions',
+  /** `POST`: ClientGuessRequest → ClientGuessResponse. */
+  clientGuess: '/api/client-guess',
   sessionMessages: (id: string) => `/api/sessions/${encodeURIComponent(id)}/messages`,
   sessionPermission: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permission`,
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,

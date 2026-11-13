@@ -42,3 +42,17 @@ export function clientSlugOf(choice: string): string | null {
 export function scopeForClient(slug: string): string {
   return slug ? `client:${slug}` : NO_CLIENT;
 }
+
+/**
+ * The client a chat about a to-do starts with, as `newChat`'s `client` option: a personal to-do has
+ * none (null); a TDS to-do keeps its client while that client is still in the brain; otherwise
+ * undefined, so the client is worked out from the message like any new chat.
+ */
+export function todoChatClient(
+  todo: { key: string; client: string | null },
+  clients: readonly { slug: string }[],
+): string | null | undefined {
+  if (todo.key.startsWith('personal/')) return null;
+  const slug = todo.client;
+  return slug && clients.some((c) => c.slug === slug) ? slug : undefined;
+}

@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   sync: vi.fn(async () => ({ lastSync: null })),
   changelog: vi.fn(async () => ({ versions: [] })),
   startSession: vi.fn(),
+  clientGuess: vi.fn(),
   close: vi.fn(),
   updatePrefs: vi.fn(),
 }));
@@ -33,7 +34,7 @@ class FakeEventSource {
 }
 
 const { App } = await import('../App.tsx');
-const { clientChoice, NO_CLIENT } = await import('../state/client-choice.ts');
+const { clientChoice } = await import('../state/client-choice.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
   name,
@@ -209,34 +210,254 @@ describe('Home', () => {
     expect(card('Open chats').getByText('Loading')).toBeTruthy();
   });
 
-  it('sends the first message with the chosen client', async () => {
-    const box = await renderHome();
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'northwind' } });
-    fireEvent.change(box, { target: { value: 'Hello there' } });
+  const typeAndSend = (box: HTMLElement, value: string) => {
+    fireEvent.change(box, { target: { value } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  };
+  const select = () => screen.getByLabelText('Client') as HTMLSelectElement;
+
+  it('has no separate client row; the select sits in the composer foot and starts on auto', async () => {
+    await renderHome();
+    expect(document.querySelector('.home-client')).toBeNull();
+    expect(select().closest('.composer-foot')).toBeTruthy();
+    expect(select().value).toBe('@auto');
+    expect([...select().options].map((o) => o.text)).toEqual([
+      'Auto',
+      'No client',
+      'Acme Heating',
+      'Northwind',
+    ]);
+  });
+
+  it('a chosen client skips the guess and is sent', async () => {
+    const box = await renderHome();
+    fireEvent.change(select(), { target: { value: 'northwind' } });
+    typeAndSend(box, 'Hello there');
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
+    expect(api.clientGuess).not.toHaveBeenCalled();
   });
 
-  it('choosing a client on Home is remembered for the apps, and "No client" is too', async () => {
-    await renderHome();
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'northwind' } });
-    expect(clientChoice.get()).toBe('client:northwind');
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: '' } });
-    expect(clientChoice.get()).toBe(NO_CLIENT);
-    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
+  it('"No client" skips the guess and sends no client', async () => {
+    const box = await renderHome();
+    fireEvent.change(select(), { target: { value: '@none' } });
+    typeAndSend(box, 'Hello there');
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+    expect(api.clientGuess).not.toHaveBeenCalled();
   });
 
-  it('opens on the client chosen in an app', async () => {
+  it("does not read or write the apps' client choice, nor the last client", async () => {
     clientChoice.set('client:northwind');
+    api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, lastClient: 'acme' } });
     await renderHome();
-    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('northwind');
+    expect(select().value).toBe('@auto');
+    fireEvent.change(select(), { target: { value: 'acme' } });
+    expect(clientChoice.get()).toBe('client:northwind');
   });
 
-  it('opens on "No client" when the person\'s own files were chosen in an app', async () => {
-    clientChoice.set('personal');
+  it('auto: a sure guess starts the chat with that client', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'sure', client: 'acme', how: 'named' });
+    const box = await renderHome();
+    typeAndSend(box, 'Acme need a report');
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.clientGuess).toHaveBeenCalledWith({ text: 'Acme need a report' });
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Acme need a report', client: 'acme' });
+  });
+
+  it('auto: only the first 4,000 characters are sent to be guessed', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'none' });
+    const box = await renderHome();
+    typeAndSend(box, 'x'.repeat(5000));
+    await waitFor(() => expect(api.clientGuess).toHaveBeenCalledTimes(1));
+    expect(api.clientGuess.mock.calls[0]?.[0].text).toHaveLength(4000);
+  });
+
+  it('auto: "none" starts with no client', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'none' });
+    const box = await renderHome();
+    typeAndSend(box, 'Plan the away day');
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+  });
+
+  it('auto: empty text (a skill alone) is treated as none without asking', async () => {
+    const box = await renderHome();
+    expect(box).toBeTruthy();
+    fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
+    await screen.findByText('Meeting notes', { selector: 'strong' });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.clientGuess).not.toHaveBeenCalled();
+    expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+  });
+
+  it('shows a polite status when the guess is slow, with the box read-only and unchanged', async () => {
+    let finish: (v: unknown) => void = () => {};
+    api.clientGuess.mockReturnValue(new Promise((r) => (finish = r)));
+    const box = (await renderHome()) as HTMLTextAreaElement;
+    typeAndSend(box, 'Slow one');
+    const status = await screen.findByText('Working out the client…');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(box.readOnly).toBe(true);
+    expect(box.value).toBe('Slow one');
+    finish({ kind: 'none' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('Working out the client…')).toBeNull());
+  });
+
+  it('asks when unsure; choosing an option sends with that client', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: ['northwind'] });
+    const box = await renderHome();
+    typeAndSend(box, 'Something vague');
+    const group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    await waitFor(() => expect(document.activeElement).toBe(group));
+    expect(api.startSession).not.toHaveBeenCalled();
+    fireEvent.click(within(group).getByRole('button', { name: 'Northwind' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Something vague', client: 'northwind' });
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull(),
+    );
+  });
+
+  it('"No client" sends with no client', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    const box = await renderHome();
+    typeAndSend(box, 'Vague one');
+    const group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    fireEvent.click(within(group).getByRole('button', { name: 'No client' }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
+  });
+
+  it('"Another client…" lists every client and sends the one chosen', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    const box = await renderHome();
+    typeAndSend(box, 'Vague two');
+    const group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    const other = within(group).getByLabelText('Another client') as HTMLSelectElement;
+    expect([...other.options].map((o) => o.text)).toEqual(['Another client…', 'Acme Heating', 'Northwind']);
+    const use = within(group).getByRole('button', { name: 'Use this client' }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+    fireEvent.change(other, { target: { value: 'acme' } });
+    // Choosing in the list sends nothing by itself.
+    expect(api.startSession).not.toHaveBeenCalled();
+    expect(use.disabled).toBe(false);
+    fireEvent.click(use);
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession.mock.calls[0]?.[0].client).toBe('acme');
+  });
+
+  it('an error from the guess asks with no options', async () => {
+    api.clientGuess.mockRejectedValue(new Error('down'));
+    const box = await renderHome();
+    typeAndSend(box, 'Hello');
+    const group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['No client', 'Use this client', 'Cancel']);
+  });
+
+  it('an unknown kind asks with no options', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'maybe' });
+    const box = await renderHome();
+    typeAndSend(box, 'Hello');
+    await screen.findByRole('group', { name: 'Which client is this for?' });
+  });
+
+  it('disables the Client select while a guess or question is pending, and frees it on Cancel', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    const box = await renderHome();
+    expect(select().disabled).toBe(false);
+    typeAndSend(box, 'Hold on');
+    const group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    expect(select().disabled).toBe(true);
+    fireEvent.click(within(group).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(select().disabled).toBe(false));
+  });
+
+  it('shows a visible Client label, and swaps the hint while the question is open', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    const box = await renderHome();
+    expect(screen.getByText('Client', { selector: 'label' }).className).not.toContain('visually-hidden');
+    expect(screen.getByText('Enter to send, Shift and Enter for a new line.')).toBeTruthy();
+    typeAndSend(box, 'Vague');
+    await screen.findByText('Answer the question above, or Cancel to change your message.');
+    expect(screen.queryByText('Enter to send, Shift and Enter for a new line.')).toBeNull();
+  });
+
+  it('the status region is in the page before it has text', async () => {
     await renderHome();
-    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
+    expect(document.querySelector('.home-status[role="status"]')).toBeTruthy();
+  });
+
+  it('a guess that lands after Home moved to another chat is dropped', async () => {
+    for (const kind of ['ask', 'sure'] as const) {
+      let finish: (v: unknown) => void = () => {};
+      api.clientGuess.mockReturnValue(new Promise((r) => (finish = r)));
+      const box = await renderHome();
+      typeAndSend(box, 'Old message');
+      await waitFor(() => expect(api.clientGuess).toHaveBeenCalled());
+      fireEvent.click(await card('Needs you').findByRole('button', { name: /Check the monthly reports/ }));
+      await waitFor(() =>
+        expect(
+          (screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value,
+        ).toContain('Check the monthly reports'),
+      );
+      finish(kind === 'ask' ? { kind: 'ask', options: [] } : { kind: 'sure', client: 'acme', how: 'named' });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(api.startSession).not.toHaveBeenCalled();
+      expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull();
+      expect(
+        (screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value,
+      ).toContain('Check the monthly reports');
+      expect(select().disabled).toBe(false);
+      cleanup();
+      vi.clearAllMocks();
+      api.bootstrap.mockResolvedValue(boot);
+      api.todos.mockResolvedValue(todoList);
+      api.sessions.mockResolvedValue({ live: [], past: [] });
+    }
+  });
+
+  it('Cancel and Escape close the question and keep the text', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    const box = (await renderHome()) as HTMLTextAreaElement;
+    typeAndSend(box, 'Keep me');
+    let group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    fireEvent.click(within(group).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull(),
+    );
+    expect(box.value).toBe('Keep me');
+    expect(box.readOnly).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    group = await screen.findByRole('group', { name: 'Which client is this for?' });
+    fireEvent.keyDown(group, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull(),
+    );
+    expect(box.value).toBe('Keep me');
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it("a to-do chat opens on the to-do's client; a personal to-do on No client", async () => {
+    api.todos.mockResolvedValue({
+      ...todoList,
+      mine: [
+        todo('t-a.md', 'Acme thing', dayOffset(0), 'acme'),
+        { ...todo('personal/t-p.md', 'My own thing', dayOffset(0), 'acme'), scope: 'personal' },
+      ],
+    });
+    await renderHome();
+    fireEvent.click(await card('Needs you').findByRole('button', { name: /Acme thing/ }));
+    await waitFor(() => expect(select().value).toBe('acme'));
+    fireEvent.click(card('Needs you').getByRole('button', { name: /My own thing/ }));
+    await waitFor(() => expect(select().value).toBe('@none'));
   });
 
   it('never sends /clear: it just empties the box', async () => {
@@ -256,9 +477,12 @@ describe('Home', () => {
       ),
     );
     expect(box).toBeTruthy();
+    // A to-do with no client is worked out like any new chat.
+    api.clientGuess.mockResolvedValue({ kind: 'none' });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
-    expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md' });
+    expect(api.clientGuess).toHaveBeenCalledTimes(1);
+    expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md', client: null });
   });
 
   it('marks a to-do passed to you as seen when it is opened from Home', async () => {

@@ -1,13 +1,21 @@
-import { attentionFor, type SkillInfo, type TodoItem } from '../../../shared/contract.ts';
+import { useEffect, useRef, useState } from 'react';
+import {
+  attentionFor,
+  type ClientGuessResponse,
+  type SkillInfo,
+  type TodoItem,
+} from '../../../shared/contract.ts';
+import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { sortChats } from '../state/chats.ts';
-import { clientChoice, clientSlugOf, scopeForClient, useClientChoice } from '../state/client-choice.ts';
+import { todoChatClient } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, needsYou, summary } from '../state/home.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
+import { ClientAsk } from './ClientAsk.tsx';
 import type { DrawerName } from './contract.ts';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -26,6 +34,13 @@ function metaParts(
   return parts;
 }
 
+const AUTO = '@auto';
+const NONE = '@none';
+/** How much of the first message is used to work out the client. */
+const GUESS_CHARS = 4000;
+/** The "Working out the client…" note only appears when the guess is slow. */
+const STATUS_DELAY_MS = 400;
+
 /** The light dashboard shown for a new chat: greeting, composer, and three cards of what needs you. */
 export function Home() {
   const {
@@ -42,13 +57,27 @@ export function Home() {
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
-  // The client chosen here or in an app; until one is, the last client a chat was started for.
-  const listed = (slug: string | null | undefined): slug is string =>
-    typeof slug === 'string' && clients.some((c) => c.slug === slug);
-  const picked = clientSlugOf(useClientChoice());
-  const last = boot?.prefs.lastClient;
-  const client = picked === '' || listed(picked) ? picked : listed(last) ? last : '';
-  const setClient = (slug: string) => clientChoice.set(scopeForClient(slug));
+  // The select's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
+  const [picked, setPicked] = useState<{ key: number; value: string } | null>(null);
+  const [ask, setAsk] = useState<{
+    options: string[];
+    choose: (slug: string | null) => void;
+    cancel: () => void;
+  } | null>(null);
+  const [status, setStatus] = useState('');
+  // True from Send (with auto) until the chat starts or the question is cancelled.
+  const [busy, setBusy] = useState(false);
+  const cancelAsk = useRef<(() => void) | null>(null);
+  // A pending question ends (as "not sent") when Home goes away.
+  useEffect(() => () => cancelAsk.current?.(), []);
+  // So does opening another new chat.
+  const chatKey = activeChat.kind === 'new' ? activeChat.key : -1;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the chat changes
+  useEffect(() => () => cancelAsk.current?.(), [chatKey]);
+  const initial =
+    activeChat.kind === 'new' && activeChat.client !== undefined ? (activeChat.client ?? NONE) : AUTO;
+  const choice = activeChat.kind === 'new' && picked?.key === activeChat.key ? picked.value : initial;
+  const listed = (slug: string) => clients.some((c) => c.slug === slug);
 
   if (!boot) return null;
 
@@ -64,7 +93,10 @@ export function Home() {
     if (isNewToYou(todo, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date())) markTodosSeen([todo]);
     const chat = chatForTodo(todo.key, live);
     if (chat) openChat(chat.id);
-    else newChat({ draft: todoChatDraft(todo), todoId: todo.key });
+    else {
+      const client = todoChatClient(todo, clients);
+      newChat({ draft: todoChatDraft(todo), todoId: todo.key, ...(client !== undefined ? { client } : {}) });
+    }
   };
 
   const { pinned, often } = starterSkills(boot);
@@ -91,22 +123,6 @@ export function Home() {
 
           {activeChat.kind === 'new' ? (
             <div className="home-composer">
-              <div className="home-client">
-                <label htmlFor="client-select">Client</label>
-                <select
-                  id="client-select"
-                  className="field"
-                  value={client}
-                  onChange={(e) => setClient(e.target.value)}
-                >
-                  <option value="">No client</option>
-                  {clients.map((c) => (
-                    <option key={c.slug} value={c.slug}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
               {activeChat.skill ? (
                 <div className="home-skill">
                   <strong>{activeChat.skill.title}</strong>
@@ -116,6 +132,17 @@ export function Home() {
                   ) : null}
                 </div>
               ) : null}
+              {ask ? (
+                <ClientAsk
+                  clients={clients}
+                  options={ask.options}
+                  onChoose={ask.choose}
+                  onCancel={ask.cancel}
+                />
+              ) : null}
+              <p className="home-status" role="status" aria-live="polite">
+                {status}
+              </p>
               <Composer
                 key={`new-${activeChat.key}`}
                 initial={activeChat.draft}
@@ -124,10 +151,91 @@ export function Home() {
                 autoFocus={true}
                 focusSignal={composerFocus}
                 attention={null}
+                hint={ask ? 'Answer the question above, or Cancel to change your message.' : undefined}
+                tools={
+                  <>
+                    <label className="client-label" htmlFor="client-select">
+                      Client
+                    </label>
+                    <select
+                      id="client-select"
+                      className="field client-select"
+                      value={choice}
+                      disabled={busy}
+                      onChange={(e) => setPicked({ key: activeChat.key, value: e.target.value })}
+                    >
+                      <option value={AUTO}>Auto</option>
+                      <option value={NONE}>No client</option>
+                      {clients.map((c) => (
+                        <option key={c.slug} value={c.slug}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                }
                 onSend={async (text, uploadIds) => {
                   // "/clear" on Home just empties the box; it is never sent.
                   if (isClearCommand(text)) return true;
-                  return send(text, client || null, uploadIds);
+                  if (choice === NONE) return send(text, null, uploadIds);
+                  if (choice !== AUTO) return send(text, choice, uploadIds);
+                  // The skill's name alone is not something to read a client from.
+                  const name = activeChat.skill ? `/${activeChat.skill.name}` : null;
+                  const message =
+                    name && (text === name || text.startsWith(`${name} `))
+                      ? text.slice(name.length).trim()
+                      : text;
+                  if (message.trim() === '') return send(text, null, uploadIds);
+                  setBusy(true);
+                  try {
+                    const timer = setTimeout(() => setStatus('Working out the client…'), STATUS_DELAY_MS);
+                    // Leaving this chat (or Home) while the guess is out drops it: nothing is sent or shown.
+                    let gone = false;
+                    cancelAsk.current = () => {
+                      gone = true;
+                      cancelAsk.current = null;
+                      clearTimeout(timer);
+                      setStatus('');
+                      setAsk(null);
+                      setBusy(false);
+                    };
+                    let guess: ClientGuessResponse = { kind: 'ask', options: [] };
+                    try {
+                      guess = await api.clientGuess({ text: message.slice(0, GUESS_CHARS) });
+                    } catch {
+                      // Any failure is a question with nothing to suggest.
+                    }
+                    if (gone) return false;
+                    cancelAsk.current = null;
+                    clearTimeout(timer);
+                    setStatus('');
+                    if (guess?.kind === 'sure' && listed(guess.client))
+                      return await send(text, guess.client, uploadIds);
+                    if (guess?.kind === 'none') return await send(text, null, uploadIds);
+                    const options =
+                      guess?.kind === 'ask' && Array.isArray(guess.options) ? guess.options : [];
+                    return await new Promise<boolean>((resolve) => {
+                      const done = () => {
+                        cancelAsk.current = null;
+                        setAsk(null);
+                      };
+                      const cancel = () => {
+                        done();
+                        resolve(false);
+                      };
+                      cancelAsk.current = cancel;
+                      setAsk({
+                        options,
+                        cancel,
+                        choose: (slug) => {
+                          done();
+                          resolve(send(text, slug, uploadIds));
+                        },
+                      });
+                    });
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
               />
             </div>

@@ -156,6 +156,28 @@ quietly cut or accepted. The app never sends any of these. Claude, if it does, g
   held pass-on uses the version after the save's own steps; `changed` shows its message and reloads;
   "Open to anyone" only with `canAddOpen`.
 
-## Review outcomes
+## Review outcomes (2026-11-13)
 
-(To fill in.)
+- **Overseer pre-review (fable):** three blockers, all applied: H1 replaced only when it matched the old
+  title (102 of 150 real to-dos have a deliberately different heading); temp names end in `~` so the
+  brain's `.gitignore` covers them; keep a `todo` shim for one release. Also applied: hash bytes on both
+  sides, the server checks `expect` too, lookup by presence, no version gate, symlink and no-write
+  refusal, frozen parser fixtures.
+- **Ian, mid-build:** prefix `app-` → `tdsapp-` (`app-` is generic and already used in the brain); the
+  rule is for TDS Brain App files only.
+- **Correctness (opus):** two client bugs, fixed in b617046 with tests. Save after a conflict overwrote
+  a teammate's untouched fields (the draft now rebases: untouched fields take the fresh values), and text
+  typed during a failing save could be lost (functional state updates).
+- **Backward compatibility (opus):** no findings. Old and new script run side by side on copies of all
+  237 real to-dos: due and assignee byte-identical, edits differ only by the intended quoting, history and
+  heading; every result read back the same by the real Workbench parser, the Reminders sync's parse and
+  the app's parser; the v0.5.0 app works through the shim; temp files are git-ignored.
+- **Security (opus):** no findings.
+- **UX (sonnet):** the conflict message pointed at a "latest version below" that didn't exist. Now a plain
+  server message, an in-form note listing their version where it differs, "Press Save to replace it with
+  yours, or Cancel to keep theirs", and its own text for held changes; clearer partial-save text.
+- **Overseer sign-off (fable):** signed off, no blockers; re-ran the shim on all 238 real to-dos.
+- **Browser check** (throwaway brain): add open to anyone wrote no assignee, a quoted title and
+  `source: added from TDS Brain App`; a teammate's edit during editing was refused, the note appeared,
+  their date and details were adopted, and Save again kept them and added a title history line. Found
+  that the preview was serving a stale build; rebuilt before the check.

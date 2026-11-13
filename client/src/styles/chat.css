@@ -931,22 +931,17 @@
 .version-list > li + li {
   border-top: 1px solid var(--line);
 }
-.version-summary {
-  padding: 10px 4px;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.version-summary:hover {
-  background: rgba(2, 27, 67, 0.05);
-}
 .version-more {
   margin-top: 8px;
 }
+.version-list .fold {
+  margin: 4px 0;
+}
+/* Lined up under the version's title: the fold button's 8px padding, 14px chevron and 8px gap. */
 .version-changes {
-  margin: 0 0 12px;
-  padding-left: 18px;
+  margin: 2px 0 10px;
+  padding-left: 48px;
+  list-style: disc;
   font-size: 13px;
   line-height: 1.5;
 }

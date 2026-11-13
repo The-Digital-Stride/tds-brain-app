@@ -14,6 +14,7 @@ import {
   type VersionNotes,
 } from '../../shared/contract.ts';
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
+import type { Updater } from '../../shared/update-contract.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
 import { handleApi, sendError, sendPageError } from './routes.ts';
@@ -179,6 +180,16 @@ export async function serveStatic(
   let file: string | null = null;
   if (!unsafe && inside && target !== root && (await fileIfExists(target))) {
     file = target;
+  } else if (!unsafe && inside && segments[0] === 'assets' && segments.length > 1) {
+    // A tab left open across an update still asks for the old build's chunks: they wait in
+    // `<clientDir>.prev/assets` until the next update. Same checks as above, against that folder.
+    const prevAssets = resolve(`${root}.prev`, 'assets');
+    const prevTarget = resolve(prevAssets, ...segments.slice(1));
+    if (prevTarget.startsWith(prevAssets + sep) && (await fileIfExists(prevTarget))) file = prevTarget;
+    else {
+      sendHtml(res, 404, plainPage('Page not found', ['There is nothing at that address.']), method);
+      return;
+    }
   } else if (unsafe || !inside || extname(decoded) !== '') {
     sendHtml(res, 404, plainPage('Page not found', ['There is nothing at that address.']), method);
     return;
@@ -194,7 +205,9 @@ export async function serveStatic(
 
   const ext = extname(file).toLowerCase();
   const info = await stat(file);
-  const immutable = file.startsWith(resolve(root, 'assets') + sep);
+  const immutable =
+    file.startsWith(resolve(root, 'assets') + sep) ||
+    file.startsWith(resolve(`${root}.prev`, 'assets') + sep);
   res.writeHead(200, {
     'Content-Type': CONTENT_TYPES[ext] ?? 'application/octet-stream',
     'Content-Length': info.size,
@@ -218,6 +231,8 @@ export interface ServerDeps {
   appVersion: string;
   /** The app's own version history (Settings, owners and scouts). Default: none. */
   changelog?: () => Promise<VersionNotes[]>;
+  /** In-app updates. Default: none (the update routes say this copy can't update itself). */
+  updater?: Updater;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
   brain: BrainReaders;
@@ -271,6 +286,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     setup: deps.setup,
     appVersion: deps.appVersion,
     changelog: deps.changelog ?? (async () => []),
+    updater: deps.updater,
     underService: deps.underService,
     serverStartedAt,
     launchToken: deps.launchToken,

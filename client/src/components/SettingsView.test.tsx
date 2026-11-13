@@ -30,6 +30,9 @@ vi.mock('../shell/ShellProvider.tsx', () => ({
   useShell: () => ({ state: { singleKeys: true }, dispatch: vi.fn() }),
 }));
 
+const upd = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+vi.mock('../state/update.ts', () => ({ useUpdate: () => upd.current }));
+
 vi.mock('./VersionHistory.tsx', () => ({ VersionHistory: () => <p>History</p> }));
 
 const { SettingsView } = await import('./SettingsView.tsx');
@@ -40,7 +43,36 @@ const chromeEvent = (type: string, extra: object = {}) =>
     window.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), extra));
   });
 
+const updStatus = (over: Record<string, unknown> = {}) => ({
+  current: '1.0.0',
+  latest: '1.0.0',
+  available: false,
+  blocked: null,
+  checkedAt: null,
+  checkFailed: false,
+  unfinished: false,
+  phase: 'idle',
+  error: null,
+  notes: [],
+  openChats: 0,
+  ...over,
+});
+const setUpd = (over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+  upd.current = {
+    status: updStatus(over),
+    stalled: false,
+    checking: false,
+    dismissed: false,
+    check: vi.fn(),
+    start: vi.fn(),
+    later: vi.fn(),
+    ...extra,
+  };
+  return upd.current as { check: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn> };
+};
+
 afterEach(() => {
+  setUpd();
   cleanup();
   vi.unstubAllGlobals();
   live.streamUp = true;
@@ -120,5 +152,68 @@ describe("what's changed", () => {
       cleanup();
     }
     boot.identity.role = 'team';
+  });
+});
+
+describe('check for updates', () => {
+  it('shows phase words while running, and the error with Try again when failed', () => {
+    standalone(false);
+    setUpd({ available: true, phase: 'building' });
+    const { unmount } = render(<SettingsView />);
+    expect(screen.getByText('Building the update…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
+    unmount();
+    const h = setUpd({ available: true, phase: 'failed', error: "The update couldn't be built." });
+    render(<SettingsView />);
+    expect(screen.getByText(/couldn't be built/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(h.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks by hand and shows Checking… while it runs', () => {
+    standalone(false);
+    const h = setUpd();
+    const { unmount } = render(<SettingsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(h.check).toHaveBeenCalledTimes(1);
+    unmount();
+    setUpd({}, { checking: true });
+    render(<SettingsView />);
+    const busy = screen.getByRole('button', { name: 'Checking…' });
+    expect(busy.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(busy);
+    expect(upd.current.check).not.toHaveBeenCalled();
+  });
+
+  it('says you have the newest version, with the time of the last check', () => {
+    standalone(false);
+    setUpd({ checkedAt: '2026-11-13T14:05:00' });
+    render(<SettingsView />);
+    expect(screen.getByText(/You have the newest version\./)).toBeTruthy();
+    expect(screen.getByText(/Last checked 14:05/)).toBeTruthy();
+  });
+
+  it('offers the update when a newer version is ready', () => {
+    standalone(false);
+    const h = setUpd({ available: true, latest: '1.1.0', checkedAt: '2026-11-13T14:05:00' });
+    render(<SettingsView />);
+    expect(screen.getByText(/1\.1\.0 is available\./)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
+    expect(h.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why this copy cannot update itself', () => {
+    standalone(false);
+    setUpd({ blocked: 'not-git' });
+    render(<SettingsView />);
+    expect(screen.getByText(/wasn't installed from GitHub/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
+  });
+
+  it('says when GitHub could not be reached', () => {
+    standalone(false);
+    setUpd({ checkFailed: true });
+    render(<SettingsView />);
+    expect(screen.getByText(/Couldn't check for updates/)).toBeTruthy();
   });
 });

@@ -1,6 +1,14 @@
+import {
+  UPDATE_BLOCKED_TEXT,
+  UPDATE_CHECK_FAILED_TEXT,
+  UPDATE_UNFINISHED_TEXT,
+} from '../../../shared/update-contract.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
+import { phaseText, UpdateAction } from '../shell/UpdateBanner.tsx';
+import { syncWords } from '../shell/words.ts';
+import { useUpdate } from '../state/update.ts';
 import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
 import { HealthPanel } from './HealthPanel.tsx';
@@ -12,6 +20,7 @@ export function SettingsView() {
   const { boot, updatePrefs } = useStore();
   const dock = useDockApp();
   const { state: shell, dispatch } = useShell();
+  const update = useUpdate();
   if (!boot) return null;
   const { prefs, identity, engine, appVersion } = boot;
   return (
@@ -97,7 +106,22 @@ export function SettingsView() {
               "If TDS Brain isn't in your Dock yet, choose Install TDS Brain from Chrome's menu or the address bar."}
           </dd>
           <dt>App version</dt>
-          <dd>{appVersion}</dd>
+          <dd>
+            {appVersion}{' '}
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              aria-disabled={update.checking}
+              onClick={() => {
+                if (!update.checking) void update.check();
+              }}
+            >
+              {update.checking ? 'Checking…' : 'Check for updates'}
+            </button>
+            <UpdateResult update={update} />
+          </dd>
         </dl>
       </section>
 
@@ -111,5 +135,47 @@ export function SettingsView() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+function UpdateResult({ update }: { update: ReturnType<typeof useUpdate> }) {
+  const { status } = update;
+  const running = phaseText(status, update.stalled, update.restarting);
+  const failed = status?.phase === 'failed';
+  let line = '';
+  let action = false;
+  if (status && !update.checking) {
+    if (running) line = running;
+    else if (failed) {
+      line = status.error ?? UPDATE_UNFINISHED_TEXT;
+      action = !status.blocked;
+    } else if (status.blocked) line = UPDATE_BLOCKED_TEXT[status.blocked];
+    else if (status.available) {
+      line = `${status.latest} is available.`;
+      action = true;
+    } else if (status.unfinished) {
+      line = UPDATE_UNFINISHED_TEXT;
+      action = true;
+    } else if (status.checkedAt && !status.checkFailed) line = 'You have the newest version.';
+    if (status.checkFailed && !running)
+      line = line ? `${line} ${UPDATE_CHECK_FAILED_TEXT}` : UPDATE_CHECK_FAILED_TEXT;
+  }
+  const checked = status?.checkedAt ? syncWords(status.checkedAt, Date.now()).time : '';
+  return (
+    <>
+      {/* Always mounted, so a sentence is announced when it arrives. Only sentences go in it. */}
+      <span className="kv-note" aria-live="polite">
+        {line}
+      </span>
+      {action && !running ? (
+        <span className="kv-note">
+          <UpdateAction
+            update={update}
+            label={failed || status?.unfinished ? 'Try again' : 'Update and restart'}
+          />
+        </span>
+      ) : null}
+      {checked ? <span className="kv-note">Last checked {checked}</span> : null}
+    </>
   );
 }

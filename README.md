@@ -77,7 +77,12 @@ pins across once. The old folder is renamed to `data.moved`.
 | `sign-out-everywhere` | Signs every browser out by making a new sign-in secret, then restarts |
 | `uninstall` | Stops the service and removes it and TDS Brain Sign-in. `--all` also removes `data/`; the code is never removed |
 
-**To update:** `cd "$APP" && git pull --ff-only && pnpm install --frozen-lockfile && pnpm build && bin/tds-brain restart`.
+**To update:** TDS Brain checks GitHub `main` a few times a day and, when a newer version is there,
+shows "TDS Brain x.y.z is available" at the top of the app with an "Update and restart" button
+(Settings also has "Check for updates"). The button downloads, installs, builds, checks the new
+version starts, then restarts; if any step fails it goes back to the version you had. By hand:
+`cd "$APP" && git -c core.hooksPath=/dev/null pull --ff-only && pnpm install --frozen-lockfile && pnpm build && bin/tds-brain restart`,
+or `/update-brain-app`. Copies older than in-app updates need one update by hand first.
 The service log is `~/Library/Logs/TDS Brain/server.log`.
 
 ## Run it from a clone

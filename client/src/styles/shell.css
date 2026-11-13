@@ -583,6 +583,17 @@
 .update-banner .btn[data-variant="quiet"]:hover:not(:disabled) {
   background: var(--paper);
 }
+.update-banner[data-wrap] {
+  flex-wrap: wrap;
+}
+.update-banner .close-confirm {
+  color: var(--navy);
+}
+.update-notes {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 18px;
+}
 .error-banner {
   flex: none;
   display: flex;

@@ -2,13 +2,15 @@
 name: update-brain-app
 description: Update the TDS Brain app on this Mac to the newest version - shows what's new, warns that restarting closes open chats, then downloads, builds and restarts the app and checks it. Also finishes an update that stopped halfway. USE WHEN someone says "/update-brain-app", "update TDS Brain", "update the brain app", "get the latest TDS Brain", or the app's Settings or a teammate says a new version is out.
 version: 1.0
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 maturity: beta
 members: false
 agency: true
 ---
 
 # Update the TDS Brain app
+
+From this version on, TDS Brain offers updates itself: a line at the top of the app with "Update and restart". This skill remains for finishing a stuck update or updating from the terminal.
 
 The person may not be technical. Say what each step does in a plain UK English sentence before it
 runs, and summarise output rather than pasting it.
@@ -83,7 +85,7 @@ Options: "Update and restart now" and "Not now". On "Not now", stop.
 
 ```bash
 APP="$HOME/Library/Application Support/TDS Brain/app"
-cd "$APP" && git pull --ff-only && export PATH="$APP/bin:$PATH" \
+cd "$APP" && git -c core.hooksPath=/dev/null pull --ff-only && export PATH="$APP/bin:$PATH" \
   && npx --yes pnpm@10 install --frozen-lockfile && npx --yes pnpm@10 build
 ```
 

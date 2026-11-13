@@ -64,6 +64,11 @@ including label or padding, reaches 24px), visible focus on everything.
 - Settings and the Details tab: plain content, hairline rows (`border-top: 1px solid var(--line)`). No cards.
 - **Answer box** (the approval or question waiting on you, `.pending`): ONE amber-glass surface. Radius 14, padding 12px 14px, 1px rgba(245,158,11,.5), fill rgba(255,248,232,.72), blur 20, `--lift-3`. Nothing inside it has its own border, box or shadow. Text stays navy. The focus ring belongs to the surface: `.pending:has(> :focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px }`, and the card inside has no outline of its own.
 
+- **Update line** (`UpdateBanner`, top of the sheet, above the other notices): "TDS Brain x.y.z is
+  available." with a quiet "What's new" (owners and scouts), a small plain "Update and restart" and a
+  quiet "Later". Open chats get the in-place `fieldset.close-confirm` before anything restarts. Only
+  one version line shows at a time: once the page is out of date, the Reload line replaces it.
+
 ## Thread content
 
 - Reply headings h1/h2 18, h3 15, h4 14 (`--head`, 600, margin 16px 0 6px). Lists: padding-left 20px.

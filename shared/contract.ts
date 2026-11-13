@@ -11,6 +11,7 @@
  */
 
 import type { AppState } from './install-contract.ts';
+import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
 /** The app is served on this host only. `localhost` is refused: cookies do not carry between the two names. */
@@ -940,6 +941,18 @@ export const ROUTES = {
    * scouts only: 403 `not-allowed` for anyone else. An unreadable file gives `{versions: []}`.
    */
   changelog: '/api/changelog',
+  /**
+   * `GET`: UpdateStatus. `no-store`, every role. Never waits on git; a stale or missing `checkedAt`
+   * starts a background check. `notes` is [] for roles other than owner and scout.
+   */
+  updateStatus: UPDATE_ROUTES.status,
+  /** `POST`: UpdateStatus after a fresh check. 409 `busy` while an update runs. */
+  updateCheck: UPDATE_ROUTES.check,
+  /**
+   * `POST` `{confirm: true}` (else 400 `bad-request`) → 202 UpdateStatus. 409 `busy` if an update is
+   * running; 403 `not-allowed` when the copy is blocked or there is nothing to update to.
+   */
+  updateStart: UPDATE_ROUTES.start,
   /** `GET`: SyncStatus. `no-store`. */
   sync: '/api/brain/sync',
   sessions: '/api/sessions',

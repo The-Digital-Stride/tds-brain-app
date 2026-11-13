@@ -37,6 +37,12 @@ import {
   type VersionNotes,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
+import {
+  UPDATE_CHECK_EVERY_MS,
+  UpdateRefused,
+  type Updater,
+  type UpdateStatus,
+} from '../../shared/update-contract.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
@@ -70,6 +76,8 @@ export interface RouteContext {
   appVersion: string;
   /** The app's own version history, newest first (from its CHANGELOG.md, never the brain). */
   changelog: () => Promise<VersionNotes[]>;
+  /** In-app updates. Absent: the routes say this copy can't update itself (`not-service`). */
+  updater?: Updater;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
   serverStartedAt: string;
@@ -689,6 +697,79 @@ function methodNotAllowed(): HttpError {
   return new HttpError(405, 'bad-request', 'That is not something this address does.');
 }
 
+/** What the update routes answer when the server was built without an updater. */
+function noUpdaterStatus(ctx: RouteContext): UpdateStatus {
+  return {
+    current: ctx.appVersion,
+    latest: null,
+    available: false,
+    blocked: 'not-service',
+    checkedAt: null,
+    checkFailed: false,
+    unfinished: false,
+    phase: 'idle',
+    error: null,
+    notes: [],
+    openChats: 0,
+  };
+}
+
+/** `GET /api/update`, `POST /api/update/check`, `POST /api/update/start` (in-app updates, decision 6). */
+async function updateRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+  ctx: RouteContext,
+): Promise<void> {
+  const method = (req.method ?? 'GET').toUpperCase();
+  const updater = ctx.updater;
+  // Notes are the version history, so they follow the changelog's rule: owners and scouts only.
+  const shape = async (status: UpdateStatus): Promise<UpdateStatus> => {
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const allowed = identity.role === 'owner' || identity.role === 'scout';
+    return allowed ? status : { ...status, notes: [] };
+  };
+  try {
+    if (path === ROUTES.updateStatus) {
+      if (method !== 'GET') throw methodNotAllowed();
+      if (!updater) {
+        sendJson(res, 200, noUpdaterStatus(ctx));
+        return;
+      }
+      const status = await updater.status();
+      const stale =
+        status.checkedAt === null || Date.now() - Date.parse(status.checkedAt) > UPDATE_CHECK_EVERY_MS;
+      if (stale && !status.blocked) {
+        updater.check().catch(() => {});
+      }
+      sendJson(res, 200, await shape(status));
+      return;
+    }
+    if (path === ROUTES.updateCheck) {
+      if (method !== 'POST') throw methodNotAllowed();
+      sendJson(res, 200, await shape(updater ? await updater.check() : noUpdaterStatus(ctx)));
+      return;
+    }
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new HttpError(400, 'bad-request', 'That request was not understood.');
+    }
+    const keys = Object.keys(body);
+    if (keys.length !== 1 || (body as { confirm?: unknown }).confirm !== true) {
+      throw new HttpError(400, 'bad-request', 'That request was not understood.');
+    }
+    if (!updater) throw new HttpError(403, 'not-allowed', "This copy of TDS Brain can't update itself.");
+    sendJson(res, 202, await shape(await updater.start()));
+  } catch (err) {
+    if (err instanceof UpdateRefused) {
+      if (err.reason === 'busy') throw new HttpError(409, 'busy', 'An update is already running.');
+      throw new HttpError(403, 'not-allowed', "This copy of TDS Brain can't update right now.");
+    }
+    throw err;
+  }
+}
+
 async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: RouteContext): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
   const path = url.pathname;
@@ -728,6 +809,11 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     }
     const body: ChangelogResponse = { versions: await safe(ctx.changelog(), []) };
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.updateStatus || path === ROUTES.updateCheck || path === ROUTES.updateStart) {
+    await updateRoute(req, res, path, ctx);
     return;
   }
 

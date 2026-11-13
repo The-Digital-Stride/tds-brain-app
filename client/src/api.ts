@@ -29,6 +29,7 @@ import {
   type SetBrainResponse,
   type SetupCandidatesResponse,
 } from '../../shared/install-contract.ts';
+import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../../shared/update-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
 export class ApiFailure extends Error {
@@ -117,6 +118,10 @@ export const api = {
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
   libraryText: (id: string) => request<LibraryText>('GET', ROUTES.libraryText(id)),
+  updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
+  updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
+  updateStart: () =>
+    request<UpdateStatus>('POST', UPDATE_ROUTES.start, { confirm: true } satisfies StartUpdateRequest),
   getSetupCandidates: () => request<SetupCandidatesResponse>('GET', SETUP_ROUTES.candidates),
   saveBrainFolder: (path: string) =>
     request<SetBrainResponse>('PUT', SETUP_ROUTES.brain, { path } satisfies SetBrainRequest),

@@ -206,4 +206,28 @@ fake tracker or the real one once B lands. A's `shared/chat-files.ts` is used by
 
 ## Review outcomes
 
-(Filled at step 10.)
+Gates run 2026-11-13: type-check clean, lint clean (7 warnings already on main), 1,933 tests pass,
+preview build on 3878 checked in a browser.
+
+Confirmed and fixed:
+- Security (opus): links inside `<svg>` skipped the link rule (an outside link could open in the app's
+  own tab; the gap was already on main). Fixed: `svg`/`math` forbidden and the hook compares the tag in
+  lower case; tested. Path scanning was quadratic on crafted text (40 KB took 1.2 s); now bounded
+  (7 ms). An unlisted file re-walked its client folder at every turn end (also found by the
+  correctness reviewer); misses are now remembered per listing generation, and concurrent lookups share
+  one re-list; tested.
+- UX (opus): panel focus fixes (preview heading focused after the dock records its opener; a stale focus
+  request no longer steals focus later; Back from a shut "Looked at" fold reopens it), one live status
+  region, long web addresses wrap, row meta uses ", ", 15px title, existing `.link-btn` and a quiet
+  chevron toggle with `aria-controls` for What changed, web links say they open a new tab.
+- Correctness (opus): replies re-rendered on every step; now each reply re-renders only when its own file
+  links change. Missing tests added (merge of two spellings, caps, tracked/pending limits).
+- Requirement and copy (sonnet): no findings.
+- Lead, in the browser: the review fixes had cut 1,100 lines of existing styles from `chat.css` (a
+  builder's edit removed far more than the block it meant to); restored from the previous commit with
+  only the intended changes. Lint and tests could not catch it; the browser check did.
+
+Known and accepted: in a narrow window (floating panel) a reply link focuses the panel heading "This
+chat", not the file title (the "Opened …" status still announces it). A reopened chat replays no steps,
+so its steps can't be clicked (its files still list). Paths Claude writes without `clients/…` (e.g.
+`weightmans/context/business.md`) don't link; `FILES_LINE` asks for full paths from now on.

@@ -373,6 +373,59 @@ export interface ClientInfo {
   name: string;
 }
 
+/**
+ * `POST /api/client-guess`: which client a new chat's first message is for, worked out before the
+ * chat starts (exact name match, then Jev). Text is a string of at most 100,000 characters (the chat
+ * limit), else `bad-request`; only the first 4,000 are used. Empty text answers `none`.
+ */
+export interface ClientGuessRequest {
+  text: string;
+}
+
+/**
+ * - `sure`: start the chat with `client` (a slug from `Bootstrap.clients`). `how` says whether the
+ *   message named it (`named`) or Jev picked it (`jev`).
+ * - `none`: not client work; start with no client and ask nothing.
+ * - `ask`: ask the person. `options` are the likeliest slugs, best first (0 to 3); empty when nothing
+ *   could be guessed (Jev unavailable), so the person picks from the full list.
+ */
+export type ClientGuessResponse =
+  | { kind: 'sure'; client: string; how: 'named' | 'jev' }
+  | { kind: 'none' }
+  | { kind: 'ask'; options: string[] };
+
+/**
+ * How a new chat's client was decided, counted by month in the app's own data folder
+ * (`client-pick-tally.json`, never the brain) so we can see how often people are asked.
+ * The server counts the guess itself: `named`, `jev`, `not-client`, `asked`, `asked-blank` (asked with
+ * nothing to suggest). Home reports the rest with `POST ROUTES.clientPickOutcome`.
+ * Known gap: a sure guess for a client added to the brain after Home loaded is counted by the server
+ * and then asked by Home, so that one chat appears twice. Rare; Home's list catches up on reload.
+ */
+export const CLIENT_PICK_REPORTED = [
+  /** The person chose a client, or No client, in the select before sending. */
+  'by-hand',
+  /** The chat arrived with its client set (a to-do, or a client found in search). */
+  'preset',
+  /** The question was answered with one of its suggestions. */
+  'ask-suggested',
+  /** The question was answered with another client from the full list. */
+  'ask-other',
+  /** The question was answered with No client. */
+  'ask-no-client',
+  /** The question was cancelled, or left by opening something else. */
+  'ask-cancelled',
+  /** A skill sent on its own with Client on Auto: no client, nothing guessed. */
+  'skill-only',
+] as const;
+export type ClientPickReported = (typeof CLIENT_PICK_REPORTED)[number];
+export type ClientPickOutcome = ClientPickReported | 'named' | 'jev' | 'not-client' | 'asked' | 'asked-blank';
+
+/** `POST ROUTES.clientPickOutcome`: answered with `{}`. Anything else in `outcome` is `bad-request`. */
+export interface ClientPickOutcomeRequest {
+  outcome: ClientPickReported;
+}
+
 export interface UsedSkill {
   name: string;
   count: number;
@@ -1118,6 +1171,10 @@ export const ROUTES = {
   /** `GET`: SyncStatus. `no-store`. */
   sync: '/api/brain/sync',
   sessions: '/api/sessions',
+  /** `POST`: ClientGuessRequest → ClientGuessResponse. */
+  clientGuess: '/api/client-guess',
+  /** `POST`: ClientPickOutcomeRequest → `{}`. */
+  clientPickOutcome: '/api/client-guess/outcome',
   sessionMessages: (id: string) => `/api/sessions/${encodeURIComponent(id)}/messages`,
   sessionPermission: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permission`,
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,

@@ -15,6 +15,9 @@ import {
   type BrainHealth,
   type BrainReaders,
   type ChangelogResponse,
+  CLIENT_PICK_REPORTED,
+  type ClientGuessResponse,
+  type ClientPickReported,
   type EngineHealth,
   type Identity,
   LIBRARY_SEARCH_QUERY,
@@ -47,10 +50,19 @@ import {
   type Updater,
   type UpdateStatus,
 } from '../../shared/update-contract.ts';
+import { readClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
+import {
+  CLIENT_GUESS_MAX_CHARS,
+  type ClientAlias,
+  createClientGuesser,
+  type JevAsk,
+} from '../engine/client-guess.ts';
+import { jevFromBrain } from '../engine/jev.ts';
 import { SessionError, type SessionManager } from '../engine/session-manager.ts';
+import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
 import {
   hasValidSession,
@@ -90,6 +102,13 @@ export interface RouteContext {
   /** The port the app listens on; the session cookie's name depends on it (`sessionCookieName`). */
   port: number;
   log: (line: string) => void;
+  /**
+   * Works out a new chat's client (`POST /api/client-guess`). Absent: one guesser per brain, asking
+   * Jev with the config read from the brain at call time (`jevFromBrain`).
+   */
+  clientGuess?: (text: string, clients: ClientAlias[]) => Promise<ClientGuessResponse>;
+  /** Counts how each new chat's client was decided, in the app's data folder. Absent: nothing is counted. */
+  clientPickTally?: ClientPickTally;
 }
 
 export class HttpError extends Error {
@@ -319,6 +338,38 @@ export function parseStartRequest(body: unknown): StartSessionRequest {
   }
   if ('attachments' in body) out.attachments = parseAttachments(body.attachments);
   return out;
+}
+
+/** The longest message a chat accepts (session-manager's MAX_PROMPT_CHARS). */
+const CLIENT_GUESS_MAX_TEXT = 100_000;
+
+/**
+ * `POST /api/client-guess`: `{text}` (ClientGuessRequest), any text up to the chat limit; only the
+ * first CLIENT_GUESS_MAX_CHARS are used. Empty text is allowed (the guess is then `none`).
+ */
+export function parseClientGuessRequest(body: unknown): string {
+  if (!isRec(body) || typeof body.text !== 'string')
+    throw new HttpError(400, 'bad-request', 'That request was not understood.');
+  if (body.text.length > CLIENT_GUESS_MAX_TEXT)
+    throw new HttpError(400, 'bad-request', 'That message is too long to send.');
+  return body.text.slice(0, CLIENT_GUESS_MAX_CHARS);
+}
+
+/** One guesser per brain, so Jev's 60-second back-off after a failure holds across requests. */
+const guessers = new WeakMap<BrainReaders, NonNullable<RouteContext['clientGuess']>>();
+
+function clientGuesser(ctx: RouteContext): NonNullable<RouteContext['clientGuess']> {
+  if (ctx.clientGuess) return ctx.clientGuess;
+  let guess = guessers.get(ctx.brain);
+  if (!guess) {
+    const root = ctx.brain.root;
+    // Config is read on every ask, so setting Jev up needs no restart; no config counts as a failure.
+    const ask: JevAsk = async (state, criteria, signal) =>
+      (await jevFromBrain(root, process.env)?.(state, criteria, signal)) ?? null;
+    guess = createClientGuesser({ ask });
+    guessers.set(ctx.brain, guess);
+  }
+  return guess;
 }
 
 // ---------------------------------------------------------------------------
@@ -956,6 +1007,32 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (method !== 'PUT') throw methodNotAllowed();
     const patch = await validatePrefsPatch(await readJson(req), ctx.brain);
     sendJson(res, 200, await ctx.store.update(patch));
+    return;
+  }
+
+  if (path === '/api/client-guess') {
+    if (method !== 'POST') throw methodNotAllowed();
+    const text = parseClientGuessRequest(await readJson(req));
+    const clients = await safe(
+      safe(ctx.brain.clients(), []).then((list) => readClientAliases(ctx.brain.root, list)),
+      [],
+    );
+    const fallback: ClientGuessResponse = { kind: 'ask', options: [] };
+    const guess = await safe(clientGuesser(ctx)(text, clients), fallback);
+    ctx.clientPickTally?.record(guessOutcome(guess));
+    sendJson(res, 200, guess);
+    return;
+  }
+
+  if (path === ROUTES.clientPickOutcome) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = (await readJson(req)) as { outcome?: unknown } | null;
+    const outcome = body?.outcome;
+    if (!(CLIENT_PICK_REPORTED as readonly unknown[]).includes(outcome)) {
+      throw new HttpError(400, 'bad-request', 'That outcome was not understood.');
+    }
+    ctx.clientPickTally?.record(outcome as ClientPickReported);
+    sendJson(res, 200, {});
     return;
   }
 

@@ -361,3 +361,49 @@ describe('useBlockStrayDrops', () => {
     expect(drag('drop', ['text/uri-list'])).toBe(false);
   });
 });
+
+describe('while a message is being sent', () => {
+  async function sendingWithFile() {
+    const d = deferred<boolean>();
+    const { box } = setup({ onSend: () => d.promise });
+    pick(file('report.pdf', 2048));
+    await screen.findByText('2 KB');
+    fireEvent.change(box, { target: { value: 'Hello' } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect((box as HTMLTextAreaElement).readOnly).toBe(true));
+    return { d, box };
+  }
+
+  it('the attach button is disabled and the chip cannot be removed', async () => {
+    await sendingWithFile();
+    expect(
+      (screen.getByRole('button', { name: 'Attach files, up to 10' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Remove report.pdf' })).toBeNull();
+    expect(screen.getByText('report.pdf')).toBeTruthy();
+  });
+
+  it('a paste of files is ignored', async () => {
+    const { box } = await sendingWithFile();
+    api.uploadFile.mockClear();
+    fireEvent.paste(box, { clipboardData: { files: [file('shot.png')], getData: () => '' } });
+    expect(api.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('a drop of files is ignored and draws no ring', async () => {
+    const { box } = await sendingWithFile();
+    api.uploadFile.mockClear();
+    const area = box.closest('.composer') as HTMLElement;
+    const dt = { files: [file('d.pdf')], items: [], types: ['Files'] };
+    fireEvent.dragEnter(area, { dataTransfer: dt });
+    expect(area.hasAttribute('data-drop')).toBe(false);
+    fireEvent.drop(area, { dataTransfer: dt });
+    expect(api.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('the chip can be removed again once the send is cancelled', async () => {
+    const { d } = await sendingWithFile();
+    d.resolve(false);
+    await screen.findByRole('button', { name: 'Remove report.pdf' });
+  });
+});

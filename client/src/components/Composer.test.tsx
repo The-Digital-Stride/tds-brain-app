@@ -58,3 +58,29 @@ describe('Composer keys', () => {
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('/time', []));
   });
 });
+
+describe('Composer tools and pending sends', () => {
+  it('shows the tools slot in the foot', () => {
+    setup({ tools: <select aria-label="Client" /> });
+    expect(screen.getByLabelText('Client').closest('.composer-foot')).toBeTruthy();
+  });
+
+  it('stays read-only and keeps its text while onSend is pending, then clears on true', async () => {
+    let finish: (ok: boolean) => void = () => {};
+    const { box } = setup({ onSend: () => new Promise<boolean>((r) => (finish = r)) });
+    fireEvent.change(box, { target: { value: 'Hello' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).readOnly).toBe(true));
+    expect((box as HTMLTextAreaElement).value).toBe('Hello');
+    finish(true);
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''));
+  });
+
+  it('keeps the text when onSend resolves false', async () => {
+    const { box } = setup({ onSend: () => Promise.resolve(false) });
+    fireEvent.change(box, { target: { value: 'Hello' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).readOnly).toBe(false));
+    expect((box as HTMLTextAreaElement).value).toBe('Hello');
+  });
+});

@@ -8,6 +8,7 @@ import {
 } from '../../../shared/contract.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
+import { todoChatClient } from '../state/client-choice.ts';
 import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
@@ -149,7 +150,10 @@ function TodoRow({
   const choose = () => {
     onOpened(todo);
     if (chat) openChat(chat.id);
-    else newChat({ draft: todoChatDraft(todo), todoId: todo.key });
+    else {
+      const client = todoChatClient(todo, boot?.clients ?? []);
+      newChat({ draft: todoChatDraft(todo), todoId: todo.key, ...(client !== undefined ? { client } : {}) });
+    }
     if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
   };
 

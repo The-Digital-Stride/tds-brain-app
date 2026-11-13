@@ -36,17 +36,48 @@
   display: grid;
   gap: 8px;
 }
-.home-client {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.home-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--iron);
 }
-.home-client label {
+.home-status:empty {
+  /* Stays in the tree so the live region is announced when text arrives, but takes no room. */
+  height: 0;
+  overflow: hidden;
+}
+.client-label {
+  flex: none;
   font-size: 12px;
   font-weight: 600;
   color: var(--iron);
 }
-.home-client .field {
+.composer-foot .client-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: 190px;
+  min-height: 32px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 13px;
+}
+.client-ask {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.client-ask h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.client-ask-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.client-ask .field {
   width: auto;
   max-width: 100%;
 }

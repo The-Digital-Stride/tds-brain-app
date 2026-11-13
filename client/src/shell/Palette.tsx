@@ -1,6 +1,5 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { openLibraryItem, warmLibrarySearch } from '../apps/shared/search.ts';
-import { clientChoice, scopeForClient } from '../state/client-choice.ts';
 import {
   asyncLooking,
   asyncPending,
@@ -165,8 +164,7 @@ function PaletteDialog() {
       revealTodo(todo);
     },
     chooseClient: (slug) => {
-      newChat();
-      clientChoice.set(scopeForClient(slug));
+      newChat({ client: slug });
     },
     openLibraryItem: (appId, scope, item) => {
       skipRestore.current = true;

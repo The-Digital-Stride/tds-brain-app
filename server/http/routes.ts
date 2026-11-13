@@ -801,6 +801,7 @@ async function libraryRoute(
 }
 
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close)$/;
+const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
 
 function methodNotAllowed(): HttpError {
   return new HttpError(405, 'bad-request', 'That is not something this address does.');
@@ -1047,6 +1048,23 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       return;
     }
     throw methodNotAllowed();
+  }
+
+  const fc = SESSION_FILE_CHANGES.exec(path);
+  if (fc?.[1] && fc[2]) {
+    if (method !== 'GET') throw methodNotAllowed();
+    let id: string;
+    let key: string;
+    try {
+      id = decodeURIComponent(fc[1]);
+      key = decodeURIComponent(fc[2]);
+    } catch {
+      throw new HttpError(400, 'bad-request', 'That file was not understood.');
+    }
+    const changes = ctx.sessions.fileChanges(id, key);
+    if (!changes) throw new HttpError(404, 'not-found', 'Those changes could not be found.');
+    sendJson(res, 200, changes);
+    return;
   }
 
   const m = SESSION_ACTION.exec(path);

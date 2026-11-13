@@ -79,6 +79,9 @@ export function createSetupSessions(): SessionManager {
       throw new SessionError('not-found', NO_CHAT);
     },
     onChange: () => () => {},
+    fileChanges: () => {
+      throw new SessionError('not-found', NO_CHAT);
+    },
   };
 }
 

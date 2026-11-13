@@ -57,6 +57,9 @@ export interface StreamContext {
  */
 export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, ctx: StreamContext): void {
   const sessionId = url.searchParams.get('session');
+  // Only a page that understands `files` events gets them; an older page's reducer would reset the chat.
+  const wantFiles = url.searchParams.get('files') === '1';
+  const shown = (item: SequencedEvent) => wantFiles || item.event.type !== 'files';
   // A reconnecting EventSource sends the last id it saw; it wins over the original `after`.
   const after = Math.max(parseSeq(url.searchParams.get('after')), parseSeq(req.headers['last-event-id']));
 
@@ -71,9 +74,9 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
   let chat: Subscription | null = null;
   if (sessionId) {
     // Subscribing first and replaying in the same tick means no event can fall in between.
-    chat = ctx.sessions.subscribe(sessionId, after, (item: SequencedEvent) =>
-      writeFrame({ kind: 'chat', sessionId, item }, item.seq),
-    );
+    chat = ctx.sessions.subscribe(sessionId, after, (item: SequencedEvent) => {
+      if (shown(item)) writeFrame({ kind: 'chat', sessionId, item }, item.seq);
+    });
   }
 
   let offApp: (() => void) | null = null;
@@ -96,7 +99,9 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
     write('retry: 3000\n\n');
     writeFrame({ kind: 'app', event: { type: 'hello', serverStartedAt: ctx.serverStartedAt } });
     if (chat && sessionId) {
-      for (const item of chat.replay) writeFrame({ kind: 'chat', sessionId, item }, item.seq);
+      for (const item of chat.replay) {
+        if (shown(item)) writeFrame({ kind: 'chat', sessionId, item }, item.seq);
+      }
     }
     offApp = ctx.hub.subscribe((event) => writeFrame({ kind: 'app', event }));
     // A named event, not an SSE comment: the page can see it and spot a stream that has gone silent.

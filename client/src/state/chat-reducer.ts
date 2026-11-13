@@ -2,6 +2,7 @@ import type {
   AskQuestion,
   AttachmentInfo,
   ChatEvent,
+  ProposedChange,
   SequencedEvent,
   SessionState,
 } from '../../../shared/contract.ts';
@@ -44,6 +45,8 @@ export interface PermissionItem {
   detail: string;
   warning: string | null;
   sessionAllowLabel: string | null;
+  /** The lines a Write or Edit will remove and add; null for other tools and older servers. */
+  change: ProposedChange | null;
   outcome: Outcome | null;
 }
 
@@ -221,6 +224,7 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
           detail: event.detail,
           warning: event.warning,
           sessionAllowLabel: event.sessionAllowLabel,
+          change: event.change ?? null,
           outcome: null,
         },
       ];

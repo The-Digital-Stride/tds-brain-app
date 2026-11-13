@@ -668,6 +668,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             detail: card.detail,
             warning: card.warning,
             sessionAllowLabel: describeSessionAllow(pending.kept),
+            ...(card.change ? { change: card.change } : {}),
           });
         }
         setState(s, 'waiting');

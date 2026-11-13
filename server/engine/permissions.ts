@@ -4,10 +4,12 @@
  * "Allow for this chat" may only ever widen access for THIS session: anything that could become a
  * permanent rule, deny something, or switch to a looser mode is dropped here.
  */
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
+import type { ProposedChange } from '../../shared/contract.ts';
 import { humaniseMcpServer } from './event-map.ts';
+import { proposedChange } from './file-change.ts';
 
 type Rec = Record<string, unknown>;
 
@@ -146,6 +148,8 @@ function stringifyInput(input: Rec): string {
 
 export const OUTSIDE_BRAIN_WARNING = 'This file is outside the brain folder.';
 export const LONG_COMMAND_WARNING = 'This is a long command. Scroll to the end before you allow it.';
+export const HIDDEN_CHARS_WARNING =
+  'This change has hidden characters that can make text look different from what is saved. They are shown as codes such as ⟨U+202E⟩. Only allow it if you expected them.';
 const LONG_COMMAND_CHARS = 600;
 const LONG_COMMAND_LINES = 8;
 
@@ -199,6 +203,8 @@ export interface PermissionCard {
   warning: string | null;
   /** True for a `Bash` command too long to show in full: refuse it instead of asking (A12). */
   refuse: boolean;
+  /** For Write, Edit and MultiEdit: the lines removed and added. Null for anything else. */
+  change: ProposedChange | null;
 }
 
 /** The card's plain-text title, detail and warning. Nothing here is rendered as markdown or HTML. */
@@ -283,6 +289,11 @@ export function permissionCard(toolName: string, input: Rec, ctx: PermissionCard
   const command = toolName === 'Bash' ? str(input.command) : null;
   const refuse = command !== null && command.length > MAX_DETAIL_CHARS;
 
+  // Only whether the file is there is checked; its contents are never read (see file-change.ts).
+  const fileExists =
+    toolName === 'Write' && filePath !== null && existsSync(resolve(roots[0] ?? '/', filePath));
+  const { change, cut, hiddenChars } = proposedChange(toolName, input, fileExists);
+
   const warnings: string[] = [];
   if (outside) warnings.push(OUTSIDE_BRAIN_WARNING);
   if (
@@ -299,5 +310,12 @@ export function permissionCard(toolName: string, input: Rec, ctx: PermissionCard
       `This is too long to show in full (${n} characters). Only allow it if you know what Claude is doing.`,
     );
   }
-  return { title, detail, warning: warnings.length > 0 ? warnings.join(' ') : null, refuse };
+  if (cut !== null) {
+    const lines = cut.lines === 1 ? '1 line' : `${cut.lines.toLocaleString('en-GB')} lines`;
+    warnings.push(
+      `This change is too long to show in full (${lines}, ${cut.chars.toLocaleString('en-GB')} characters). Only allow it if you know what Claude is doing.`,
+    );
+  }
+  if (hiddenChars) warnings.push(HIDDEN_CHARS_WARNING);
+  return { title, detail, warning: warnings.length > 0 ? warnings.join(' ') : null, refuse, change };
 }

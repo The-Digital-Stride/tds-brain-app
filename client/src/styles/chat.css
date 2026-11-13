@@ -372,6 +372,72 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The change a Write or Edit will make: one closed line (the chat's `.activity` fold) that opens
+   to one row per line, − removed and + added. ------------------------------------------------ */
+.change-fold,
+.change-empty {
+  margin: 8px 0 0;
+}
+.change-key {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+/* Never taller than a quarter of the chat, so the buttons stay in view on a laptop. */
+.approval-detail.approval-change {
+  max-height: min(280px, 25cqb);
+  margin-top: 6px;
+}
+.approval-change pre {
+  padding: 6px 0;
+}
+.diff-part + .diff-part {
+  margin-top: 8px;
+}
+.diff-part-head {
+  margin: 0;
+  padding: 6px 10px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+/* The sign sits in its own column, so a long line wraps under its text, not under the sign. */
+.diff-line {
+  position: relative;
+  display: block;
+  min-height: 1.5em;
+  padding: 0 10px 0 26px;
+}
+.diff-sign {
+  position: absolute;
+  left: 10px;
+  font-weight: 700;
+}
+.diff-line[data-kind="removed"] {
+  background: var(--danger-wash);
+}
+.diff-line[data-kind="removed"] .diff-sign {
+  color: var(--danger);
+}
+.diff-line[data-kind="added"] {
+  background: var(--ok-wash);
+}
+.diff-line[data-kind="added"] .diff-sign {
+  color: var(--ok);
+}
+/* A new or replacing file: every line is new, so no sign column. */
+.diff-line[data-kind="plain"] {
+  padding-left: 10px;
+}
+.diff-gap {
+  display: block;
+  margin: 2px 0;
+  padding: 1px 10px 1px 26px;
+  font: 12px / 1.5 var(--body);
+  color: var(--iron);
+  background: rgba(2, 27, 67, 0.04);
+}
+
 .approval-warning {
   margin: 8px 0 0;
   font-size: 13px;

@@ -55,6 +55,7 @@ describe('stepsOf', () => {
         detail: '',
         warning: null,
         sessionAllowLabel: null,
+        change: null,
         outcome: null,
       },
       { kind: 'notice', id: 'n', level: 'info', text: 'x' },

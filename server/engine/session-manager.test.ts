@@ -1022,6 +1022,41 @@ describe('long and outside-the-brain requests (A12)', () => {
       warning: 'This file is outside the brain folder.',
     });
   });
+
+  it('sends the lines an Edit changes with the card, and no change for a command', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask(
+        'Edit',
+        { file_path: `${BRAIN}/clients/acme/notes.md`, old_string: 'old line', new_string: 'new line' },
+        { requestId: 'r1' },
+      ).promise;
+      await q.ask('Bash', { command: 'ls' }, { requestId: 'r2' }).promise;
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(events(mgr, s.id).find((e) => e.type === 'permission-request')).toMatchObject({
+      detail: 'clients/acme/notes.md',
+      change: {
+        kind: 'edit',
+        parts: [
+          {
+            everyMatch: false,
+            lines: [
+              { kind: 'removed', text: 'old line' },
+              { kind: 'added', text: 'new line' },
+            ],
+          },
+        ],
+      },
+    });
+    await mgr.replyPermission(s.id, { requestId: 'r1', decision: 'allow' });
+    await flush();
+    const second = events(mgr, s.id).filter((e) => e.type === 'permission-request')[1];
+    expect(second).toMatchObject({ tool: 'Bash' });
+    expect(second && 'change' in second).toBe(false);
+  });
 });
 
 describe('engine failure', () => {

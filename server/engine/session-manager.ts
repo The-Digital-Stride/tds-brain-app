@@ -43,7 +43,7 @@ import {
   type ResolvePath,
   type TrackedAttachment,
 } from './chat-files.ts';
-import { createEventMapper, type EventMapper, type RawMessage } from './event-map.ts';
+import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
@@ -1058,6 +1058,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       });
       return;
     }
+    /** Steps replayed and still waiting for their stored result. */
+    const started = new Set<string>();
     for (const m of messages) {
       // Helpers' steps count too; the tracker ignores their text.
       s.files?.observe(m, { history: true });
@@ -1080,7 +1082,35 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         if (text)
           emit(s, { type: 'assistant-message', messageId: `h:${m.uuid}`, text, parentToolUseId: null });
       }
+      // The steps too, so a reopened chat shows what Claude did and its file steps can be opened.
+      if (Array.isArray(content)) {
+        for (const b of content) {
+          if (!isRec(b)) continue;
+          if (
+            m.type === 'assistant' &&
+            b.type === 'tool_use' &&
+            typeof b.id === 'string' &&
+            typeof b.name === 'string'
+          ) {
+            if (started.has(b.id)) continue;
+            started.add(b.id);
+            const input = isRec(b.input) ? b.input : {};
+            emit(s, {
+              type: 'tool-start',
+              toolUseId: b.id,
+              tool: b.name,
+              label: toolLabel(b.name, input),
+              parentToolUseId: null,
+            });
+          } else if (m.type === 'user' && b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+            if (!started.delete(b.tool_use_id)) continue;
+            emit(s, { type: 'tool-end', toolUseId: b.tool_use_id, ok: b.is_error !== true });
+          }
+        }
+      }
     }
+    // A step with no stored result was cut short (the chat was stopped or closed mid-step).
+    for (const id of started) emit(s, { type: 'tool-end', toolUseId: id, ok: false });
     // Not awaited: walking cold scopes must not hold up reopening the chat (decision 4).
     requestFiles(s);
   }

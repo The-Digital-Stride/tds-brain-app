@@ -1,5 +1,5 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
-import { findPathMentions, indexChatFiles, normaliseBrainPath } from '../../../shared/chat-files.ts';
+import { chatFileFor, findPathMentions, indexChatFiles } from '../../../shared/chat-files.ts';
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
@@ -171,7 +171,7 @@ export function Transcript({
     if (!files || !onFile) return null;
     const index = indexChatFiles(files);
     return {
-      link: (raw) => index.byPath.get(normaliseBrainPath(raw, brainRoot) ?? '') ?? null,
+      link: (raw) => chatFileFor(index, raw, brainRoot ?? ''),
       byToolUse: index.byToolUse,
       onFile,
     };

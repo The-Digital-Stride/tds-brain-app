@@ -143,22 +143,29 @@ function Preview({
   sessionId,
   live,
   onBack,
+  request,
 }: {
   file: ChatFile;
   sessionId: string;
   live: boolean;
   onBack: () => void;
+  /**
+   * The shell's `panelFile`: a new object for every `show-chat-file`, so asking for the file again
+   * (a reply link after the panel was shut on it) moves focus to it again.
+   */
+  request: unknown;
 }) {
   const { libraryVersion, openView } = useStore();
   const { dispatch, modes } = useShell();
   const heading = useRef<HTMLHeadingElement>(null);
-  // Focus moves to the heading when a file opens (or a different one replaces it). A frame later, so
-  // a panel that is opening has recorded its opener and focused its own heading first.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger.
+  // Focus moves to the heading each time the file is asked for (a different one, or the same one
+  // again after the panel was shut). A frame later, so a panel that is opening has recorded its
+  // opener and focused its own heading first.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the request is the trigger.
   useEffect(() => {
     const frame = requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
-  }, [file.key]);
+  }, [file.key, request]);
 
   const item = file.item;
   const title = nameOf(file);
@@ -310,7 +317,13 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
         {announce}
       </span>
       {shown ? (
-        <Preview file={shown} sessionId={sessionId} live={sessionState !== 'closed'} onBack={back} />
+        <Preview
+          file={shown}
+          sessionId={sessionId}
+          live={sessionState !== 'closed'}
+          onBack={back}
+          request={state.panelFile}
+        />
       ) : null}
       <div hidden={shown !== null}>
         {empty ? (

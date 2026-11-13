@@ -796,6 +796,46 @@ describe('reopening a past chat (A4)', () => {
     });
   });
 
+  it('replays the steps of a reopened chat, and marks one with no stored result as not done', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Steps', lastModified: 1 });
+    fx.history['old-1'] = [
+      { type: 'user', uuid: 'u1', message: { role: 'user', content: 'Read it' }, parent_tool_use_id: null },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: '/b/clients/x/a.md' } }],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'r1', content: 'x' }] },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'assistant',
+        uuid: 'a2',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'e1', name: 'Edit', input: { file_path: '/b/clients/x/a.md' } }],
+        },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    const ev = events(mgr, s.id).filter((e) => e.type === 'tool-start' || e.type === 'tool-end');
+    expect(ev).toEqual([
+      { type: 'tool-start', toolUseId: 'r1', tool: 'Read', label: 'Reading a.md', parentToolUseId: null },
+      { type: 'tool-end', toolUseId: 'r1', ok: true },
+      { type: 'tool-start', toolUseId: 'e1', tool: 'Edit', label: 'Editing a.md', parentToolUseId: null },
+      { type: 'tool-end', toolUseId: 'e1', ok: false },
+    ]);
+  });
+
   it('refuses an unknown session and one that is already open', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });

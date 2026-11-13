@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ROUTES, SESSION_COOKIE } from '../../shared/contract.ts';
+import { ROUTES, sessionCookieName } from '../../shared/contract.ts';
 import { UpdateRefused, type Updater, type UpdateStatus } from '../../shared/update-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
@@ -15,7 +15,7 @@ import { type AppServer, createAppServer } from './server.ts';
 const PORT = 45878;
 const HOST = `127.0.0.1:${PORT}`;
 const TOKEN = 'launch-token-update-123';
-const GOOD = { cookie: `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`, origin: `http://${HOST}` };
+const GOOD = { cookie: `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`, origin: `http://${HOST}` };
 
 const NOTES = [{ version: '0.9.0', date: '2026-11-13', changes: [{ kind: 'feat', text: 'x' }] }];
 

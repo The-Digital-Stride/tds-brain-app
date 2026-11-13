@@ -17,6 +17,15 @@ export const DEFAULT_PORT = 3877;
 /** The app is served on this host only. `localhost` is refused: cookies do not carry between the two names. */
 export const APP_HOST = '127.0.0.1';
 export const SESSION_COOKIE = 'tba_session';
+/**
+ * The session cookie's name for the app on `port`. Browsers share cookies across ports on one host, so
+ * two copies on 127.0.0.1 (the live app and a test copy) would overwrite each other's sign-in. The
+ * default port keeps the original name, so the live app never asks anyone to sign in again; every
+ * other port gets its own.
+ */
+export function sessionCookieName(port: number): string {
+  return port === DEFAULT_PORT ? SESSION_COOKIE : `${SESSION_COOKIE}_${port}`;
+}
 export const APP_NAME = 'TDS Brain';
 export const MAX_LIVE_SESSIONS = 4;
 

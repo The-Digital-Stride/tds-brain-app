@@ -355,6 +355,43 @@ describe('app slots', () => {
     expect(screen.queryByText('The ads app')).toBeNull();
     expect(railButton('Home').getAttribute('aria-current')).toBe('page');
   });
+
+  it('opening an app closes the open drawer; a drawer opened inside the app stays open', async () => {
+    apps.push(
+      { id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet, search: null },
+      { id: 'maps', title: 'Maps', icon: 'skills', Sheet: AdsSheet, search: null },
+    );
+    await renderHome();
+    openWithClick(railButton('To-dos'));
+    expect(drawerDock().hasAttribute('inert')).toBe(false);
+
+    openWithClick(railButton('Ads'));
+    await screen.findByRole('heading', { level: 1, name: 'Ads' });
+    expect(drawerDock().hasAttribute('inert')).toBe(true);
+    expect(railButton('To-dos').getAttribute('aria-expanded')).toBe('false');
+
+    openWithClick(railButton('Chats'));
+    expect(drawerDock().hasAttribute('inert')).toBe(false);
+    expect(drawerDock().getAttribute('aria-label')).toBe('Chats');
+
+    // Moving to another app closes it again.
+    openWithClick(railButton('Maps'));
+    await screen.findByRole('heading', { level: 1, name: 'Maps' });
+    expect(drawerDock().hasAttribute('inert')).toBe(true);
+  });
+
+  it('focus left in the drawer goes to the app, not back to the drawer’s rail button', async () => {
+    apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet, search: null });
+    await renderHome();
+    openWithClick(railButton('To-dos'));
+    expect(drawerDock().contains(document.activeElement)).toBe(true);
+
+    // A click that doesn't move focus (Safari, or the palette handing focus back to the drawer).
+    fireEvent.click(railButton('Ads'));
+    await screen.findByRole('heading', { level: 1, name: 'Ads' });
+    expect(drawerDock().hasAttribute('inert')).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById('main'));
+  });
 });
 
 function AdsPanel() {

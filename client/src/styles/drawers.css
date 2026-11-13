@@ -106,9 +106,6 @@
 .skill-more {
   color: var(--iron);
 }
-.skill-more .icon {
-  transition: transform 120ms var(--ease);
-}
 /* The pin shows on the row under the pointer or the keyboard; a pinned skill keeps its pin. */
 @media (hover: hover) {
   .skill-row .icon-btn[aria-pressed="false"] {
@@ -119,13 +116,9 @@
     opacity: 1;
   }
 }
-.skill-more[aria-expanded="false"] .icon {
-  transform: rotate(-90deg);
-}
 @media (prefers-reduced-motion: reduce) {
   .todo .go,
-  .skill-row .icon-btn,
-  .skill-more .icon {
+  .skill-row .icon-btn {
     transition: none;
   }
 }
@@ -191,9 +184,8 @@
 .drawer-tools.todo-filters[data-stacked] > .seg {
   flex: 1 1 100%;
 }
-.todo-actions .link-btn {
+.todo-actions .todo-more {
   margin-left: auto;
-  font-size: 12px;
 }
 .todo-field > .todo-label {
   font-size: 12px;
@@ -274,9 +266,6 @@
   align-items: center;
   gap: 8px;
 }
-.todo-actions .btn {
-  min-height: 36px;
-}
 .todo-finish {
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -287,13 +276,6 @@
 }
 .todo-delete {
   margin-left: auto;
-}
-/* Beats the quiet variant's blue: deleting reads as the risky one. */
-.btn.todo-delete[data-variant="quiet"] {
-  color: var(--danger);
-}
-.btn.todo-delete[data-variant="quiet"]:hover:not(:disabled) {
-  background: var(--danger-wash);
 }
 .todo-done {
   margin: 0;
@@ -328,10 +310,6 @@
 .todo-gone {
   color: var(--iron);
   text-decoration: line-through;
-}
-.todo-undo {
-  min-height: 32px;
-  padding: 0 12px;
 }
 .todo-sending {
   align-self: center;
@@ -396,7 +374,12 @@
   font: inherit;
   color: var(--blue-ink);
   text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
+}
+/* Only for text inside a sentence, so it behaves like a link. */
+.link-btn:hover {
+  text-decoration-thickness: 2px;
 }
 
 .todo-status[data-tone="error"] {

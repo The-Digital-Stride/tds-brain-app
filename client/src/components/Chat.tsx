@@ -115,7 +115,13 @@ export function ChatView() {
             }}
           >
             <span>{closeConfirmText(state)}</span>
-            <button type="button" className="btn" data-size="small" onClick={() => void closeChat(sessionId)}>
+            <button
+              type="button"
+              className="btn"
+              data-variant="danger"
+              data-size="small"
+              onClick={() => void closeChat(sessionId)}
+            >
               Close chat
             </button>
             {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}

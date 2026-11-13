@@ -79,7 +79,13 @@ export function VersionHistory({ current }: { current: string }) {
         ))}
       </ol>
       {hidden > 0 ? (
-        <button type="button" className="link-btn version-more" onClick={() => setAll(true)}>
+        <button
+          type="button"
+          className="btn version-more"
+          data-variant="quiet"
+          data-size="small"
+          onClick={() => setAll(true)}
+        >
           Show older versions ({hidden})
         </button>
       ) : null}

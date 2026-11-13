@@ -90,7 +90,11 @@ describe('VersionHistory', () => {
     changelog.mockResolvedValue({ versions: many });
     const { container } = render(<VersionHistory current="0.7.0" />);
     await waitFor(() => expect(container.querySelectorAll('.fold')).toHaveLength(5));
-    fireEvent.click(screen.getByRole('button', { name: 'Show older versions (2)' }));
+    const older = screen.getByRole('button', { name: 'Show older versions (2)' });
+    expect(older.classList.contains('btn')).toBe(true);
+    expect(older.getAttribute('data-variant')).toBe('quiet');
+    expect(older.classList.contains('link-btn')).toBe(false);
+    fireEvent.click(older);
     expect(container.querySelectorAll('.fold')).toHaveLength(7);
     expect(screen.queryByRole('button', { name: /Show older/ })).toBeNull();
   });

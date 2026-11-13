@@ -295,7 +295,7 @@ export function SetupView({
                   {useLabel}
                 </button>
                 {onCancel ? (
-                  <button type="button" className="btn" data-variant="quiet" onClick={onCancel}>
+                  <button type="button" className="btn" onClick={onCancel}>
                     Cancel
                   </button>
                 ) : null}
@@ -305,7 +305,7 @@ export function SetupView({
         )}
         {onCancel && (envOverride || phase === 'saved-manual' || phase === 'timed-out') ? (
           <div>
-            <button type="button" className="btn" data-variant="quiet" onClick={onCancel}>
+            <button type="button" className="btn" onClick={onCancel}>
               Cancel
             </button>
           </div>

@@ -97,6 +97,7 @@ afterEach(cleanup);
 describe('quick add', () => {
   it('opens a one-line add from the + button and Enter adds it to me with no date', async () => {
     render(<TodosDrawer />);
+    expect(screen.getByRole('button', { name: 'Add a to-do' }).getAttribute('data-variant')).toBe('primary');
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
     expect(screen.queryByLabelText('Due date (optional)')).toBeNull();
     fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: ' Ring Bob ' } });
@@ -320,7 +321,7 @@ describe('the + button', () => {
     expect(add().textContent).toBe('Add a to-do');
     expect(add().classList.contains('btn')).toBe(true);
     expect(add().classList.contains('todo-add-label')).toBe(true);
-    expect(add().getAttribute('data-variant')).toBe('quiet');
+    expect(add().getAttribute('data-variant')).toBe('primary');
     expect(add().getAttribute('data-size')).toBe('small');
   });
 

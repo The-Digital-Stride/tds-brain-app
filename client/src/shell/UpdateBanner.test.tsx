@@ -44,7 +44,10 @@ describe('UpdateBanner', () => {
     const h = set();
     render(<UpdateBanner />);
     expect(screen.getAllByText('TDS Brain 0.9.0 is available.')[0]).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
+    const go = screen.getByRole('button', { name: 'Update and restart' });
+    expect(go.getAttribute('data-variant')).toBe('primary');
+    expect(go.getAttribute('data-size')).toBe('small');
+    fireEvent.click(go);
     expect(h.start).toHaveBeenCalledTimes(1);
   });
 
@@ -92,7 +95,10 @@ describe('UpdateBanner', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Not now' }), { key: 'Escape' });
     expect(screen.queryByRole('button', { name: 'Update now' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Update now' }));
+    const now = screen.getByRole('button', { name: 'Update now' });
+    expect(now.getAttribute('data-variant')).toBe('primary');
+    expect(now.getAttribute('data-size')).toBe('small');
+    fireEvent.click(now);
     expect(h.start).toHaveBeenCalledTimes(1);
   });
 
@@ -152,6 +158,8 @@ describe('UpdateBanner', () => {
     set({ notes: [{ version: '0.9.0', date: null, changes: [{ kind: 'feat', text: 'One' }] }] });
     render(<UpdateBanner />);
     const toggle = screen.getByRole('button', { name: "What's new" });
+    expect(toggle.hasAttribute('data-chevron')).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(document.getElementById(toggle.getAttribute('aria-controls') ?? '')?.textContent).toBe('One');

@@ -55,6 +55,7 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
         <button
           type="button"
           className="icon-btn skill-more"
+          data-chevron
           aria-expanded={open}
           aria-controls={about}
           aria-label={`Description of ${skill.title}`}

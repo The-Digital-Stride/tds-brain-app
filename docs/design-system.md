@@ -41,7 +41,7 @@ including label or padding, reaches 24px), visible focus on everything.
 - Sheet bar 48px, padding 0 10px 0 18px, no border.
 - Header band: the rail's logo, every dock header and the sheet bar fill the top 48px of their layer, with their contents centred on one line (y 36 from the desk's top edge); 32px controls sit 8px from top and bottom.
 - A drawer's search or filter (the Skills search, the To-dos switch and client select) sits on the drawer's own glass between the header and the list (`.drawer-tools`, padding 0 10px 8px); only the list scrolls (`.drawer-scroll`). Nothing in a drawer has a backing of its own (Ian, 2026-11-11: a whiter strip behind the search was "not good").
-- The To-dos drawer has no search row: "/" and Search or jump to search everything, and choosing a to-do there opens this drawer on it (its tab, filters cleared, its group open, its row focused). The add button shows whenever the person can add. With a filter (the kind switch, the client select) it is a 32px `+` icon (`icon-btn`, "Add a to-do") at the right end of the filter row (`.todo-filters`): with both filters the switch has the first line and the select and `+` share the second, never wrapping. With no filter, the row holds only a labelled quiet small `btn` "Add a to-do", right-aligned so it lines up with that `+` (the tabs row has no room for an icon at 316px: "Open to anyone, N" truncates).
+- The To-dos drawer has no search row: "/" and Search or jump to search everything, and choosing a to-do there opens this drawer on it (its tab, filters cleared, its group open, its row focused). The add button shows whenever the person can add. With a filter (the kind switch, the client select) it is a 32px `+` primary icon button (`icon-btn` `data-variant="primary"`, "Add a to-do") at the right end of the filter row (`.todo-filters`): with both filters the switch has the first line and the select and `+` share the second, never wrapping. With no filter, the row holds only a labelled primary small `btn` with a `+` and "Add a to-do", right-aligned so it lines up with that `+` (the tabs row has no room for an icon at 316px: "Open to anyone, N" truncates).
 - A skill row shows its title and one clipped line of description. A chevron (28px, right when closed, down when open) opens the full text; clicking the title still starts the skill. The pin shows on the row under the pointer or the keyboard; a pinned skill keeps its pin. The pin sits left of the chevron, so the chevron is always at the row's right edge.
 - Tray: gap and padding 6px. Card: padding 12px 6px 6px (its heading row is inset 8px so text lines up with the rows).
 - Home: top padding 32px; greeting margin 0 0 4px; summary line 14px, margin 0 0 18px.
@@ -51,12 +51,20 @@ including label or padding, reaches 24px), visible focus on everything.
 
 ## Controls
 
-- **Button** `.btn`: 32px high, padding 0 12px, radius 9, 13/600, tray fill. `data-size="small"`: 28px, padding 0 10px, 12px. `data-variant="primary"`: navy. `data-variant="quiet"`: transparent, blue-ink text.
-- **Icon button** `.icon-btn`: 32px, radius 9 (28px inside rows). Always has an `aria-label`.
+- **Buttons: one language** (Ian, 2026-11-13: "every button should be a button, not text. Unless within inline text"). Six kinds, each with one meaning:
+  - **Primary** `.btn[data-variant="primary"]`: navy, paper text. The action the area exists for; one per area (an edit form's Save, a confirm step's "Mark as done", New chat, Send, Update and restart).
+  - **Standard** `.btn` (no variant): white, 1px `--line-strong` edge, `--lift-0`, navy text. Every other option: Cancel, Keep open, Not now, Don't allow, Stop, Copy path, Try again.
+  - **Quiet** `[data-variant="quiet"]`: `--tint-1` fill, navy text, no edge. Minor and "see all" actions: Later, Reload, Dismiss, Back, Clear date, All chats, Mark all as seen, Show older versions, More options.
+  - **Danger** `[data-variant="danger"]`: standard with `--danger` text. Removes something or ends work that can't be got back: Delete, the "Close chat" confirm.
+  - **Icon** `.icon-btn`: 32px, radius 9 (28px inside rows), always with an `aria-label`. Bare, `--ink-soft`, for utilities (close, toggle, pin, attach, edit, more): the icon is the shape. `data-variant="primary"` (navy fill, paper icon) only for the one icon button that creates the main thing in its area, such as the To-dos `+`.
+  - **Link** `.link-btn` or `a`: blue-ink, underlined. Only inside a sentence ("…in Settings.").
+  - Sizes: 32px by default (header bands, forms, cards, sheets); `data-size="small"` 28px for a button on a line with text (card head, Fold action, notice strips, inline confirms, the selection bar, inside rows). No other heights.
+  - Colour meanings: navy "do it", white "another option", grey "minor", red "careful", light blue (wash + blue-ink) only "switched on" or "open", underlined blue only a link in a sentence.
+  - Not boxed, because something else shows they're clickable: list rows (they lift), fold heads and "What Claude did" (chevron), Seg options (the track), `.chip-remove` (inside its chip) (Ian, 2026-11-13: keep headings as text with an arrow). Nothing else that you click is bare text.
 - **Show/hide toggles are icons, top right, always** (Ian, 2026-11-13: "put the icon in the top right ALWAYS everywhere it appears - it's a rule"). The rail's names toggle (`rail` icon) and the right panel's toggle (`panel` icon) are icon buttons with no visible words; the name lives in `aria-label` and a hover tip. The rail's sits at the top right of its header band, 10px from the edge like a dock's close button; with the rail at icons only it takes the mark's place (on hover or keyboard focus where the pointer hovers, always on touch). The panel's is the last thing in the sheet bar, after "Search or jump to": pass `panel` to `SheetBar` and never place `PanelToggle` yourself.
 - **Field and select** `.field`: 32px, padding 0 10px, 1px `--field-edge`, radius 9, 13px, white fill.
 - **Tick** `.tick` (on `input[type=checkbox]` or `input[type=radio]`): 18px, `appearance: none`, 1.5px solid `--tick-edge` (#7C8AA5), fill rgba(255,255,255,.7), radius 5 (radio 50%). Checked checkbox: navy fill, white check. Checked radio: navy border, centred 8px navy dot. Hit area: wrap in `label.tick-hit` (24px box) when the input stands alone.
-- **Switch** `.switch` (on `input[type=checkbox][role=switch]`), for on/off settings that apply at once: track 30×18, radius 999, off #8A94A6, on navy; knob 14px white with `0 1px 2px rgba(2,27,67,.2)`, moves 12px. Row: grid `1fr auto`, gap 16; title 14/500; help 12 iron, margin-top 2.
+- **Switch** `.switch` (on `input[type=checkbox][role=switch]`), for on/off settings that apply at once: track 30×18, radius 999, off `--grey-dot`, on navy; knob 14px white with `0 1px 2px rgba(2,27,67,.2)`, moves 12px. Row: grid `1fr auto`, gap 16; title 14/500; help 12 iron, margin-top 2.
 - **Seg**: options 28px, 3px padding, 3px gap between options (so a hovered or focused one never touches its neighbour), radius 10 / 8, 13px.
 - **Chip** `.chip`: 12/500, padding 2px 9px, tray fill. **Count** `.count`: 12/600, line-height 18.
 
@@ -64,11 +72,11 @@ including label or padding, reaches 24px), visible focus on everything.
 
 - Recessed **tray** holding raised **cards**: the one card device, on Home and for any collection an app shows on the sheet (Ian, 2026-11-11: an app's content must use "the other card type devices", not a look of its own). A picture sits flat on the white card with a 1px hairline edge and no shadow.
 - Settings and the Details tab: plain content, hairline rows (`border-top: 1px solid var(--line)`). No cards.
-- **Answer box** (the approval or question waiting on you, `.pending`): ONE amber-glass surface. Radius 14, padding 12px 14px, 1px rgba(245,158,11,.5), fill rgba(255,248,232,.72), blur 20, `--lift-3`. Nothing inside it has its own border, box or shadow. Text stays navy. The focus ring belongs to the surface: `.pending:has(> :focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px }`, and the card inside has no outline of its own.
+- **Answer box** (the approval or question waiting on you, `.pending`): ONE amber-glass surface. Radius 14, padding 12px 14px, 1px rgba(245,158,11,.5), fill rgba(255,248,232,.72), blur 20, `--lift-3`. Nothing inside it has its own border, box or shadow, buttons and fields excepted. Text stays navy. The focus ring belongs to the surface: `.pending:has(> :focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px }`, and the card inside has no outline of its own.
 
 - **Update line** (`UpdateBanner`, top of the sheet, above the other notices): "TDS Brain x.y.z is
-  available." with a quiet "What's new" (owners and scouts), a small plain "Update and restart" and a
-  quiet "Later". Open chats get the in-place `fieldset.close-confirm` before anything restarts. Only
+  available." with a quiet "What's new" (owners and scouts; a chevron shows it open), a primary small "Update and
+  restart" and a quiet "Later". Open chats get the in-place `fieldset.close-confirm` before anything restarts. Only
   one version line shows at a time: once the page is out of date, the Reload line replaces it.
 
 ## Thread content
@@ -90,7 +98,7 @@ stylesheet writes its own.
 | Token | Height | Shadow | What sits there |
 |---|---|---|---|
 | `--recess` | one step down | `inset 0 1px 2px rgba(2,27,67,.06)` | the tray |
-| `--lift-0` | touching | `0 1px 2px rgba(2,27,67,.1)` | a switch's knob, the chosen segment, a plain button or "Search or jump to" under the pointer |
+| `--lift-0` | touching | `0 1px 2px rgba(2,27,67,.1)` | a switch's knob, the chosen segment, a standard button at rest |
 | `--lift-1` | 1 step | `0 1px 2px rgba(2,27,67,.06), 0 6px 16px rgba(2,27,67,.06)` | the sheet, rail and drawers on the desk; a card in the tray; anything hovered or current that rises off its surface (row, tile, rail item, palette option); the composer |
 | `--lift-2` | 2 steps | `0 1px 2px rgba(2,27,67,.06), 0 12px 32px rgba(2,27,67,.1)` | what floats over the sheet: menus, tooltips, the selection bar, a floating composer, the sign-in card |
 | `--lift-3` | 3 steps | `0 1px 2px rgba(2,27,67,.06), 0 18px 48px rgba(2,27,67,.14)` | what sits over everything: the palette, the answer box, a floating drawer or panel |
@@ -116,15 +124,19 @@ distinct from hover by its fill or weight, not by a deeper shadow.
 |---|---|---|---|
 | Rail item | rgba(255,255,255,.8) + `--lift-1` | no shadow | #fff + `--lift-1` + 600 (an open drawer's item gets the hover surface plus its 3px bar) |
 | Drawer row, answer-box option (these lift) | rgba(255,255,255,.92) + `--lift-1` + `translateY(-1px)` | no transform | #fff + `--lift-1`; a current row's title goes to 600. No coloured edge (Ian, 2026-11-11: "the blue edge" is an old style) |
-| Row or tile inside a card: Home rows, "N more", an app's items | stays #fff + `--lift-1` + up 1px, above its neighbours; no edge | `--tray` fill, no shadow | wash fill + `--lift-1` + title 600 (hover #D9E8FC) |
-| `.btn` | #EAE6DE + `--lift-0` | #E2DDD3, no shadow | n/a |
-| `.btn` primary | #0A2A5E + `--lift-1` | navy, no shadow | n/a |
-| `.btn` quiet | wash | #D9E8FC | n/a |
-| `.icon-btn`, fold header | rgba(2,27,67,.08) | rgba(2,27,67,.12) | `aria-pressed`: wash + blue-ink |
-| "Search or jump to" | #EAE6DE + the `.btn` shadow | #E2DDD3 | n/a |
+| Row or tile inside a card: Home rows, an app's items | stays #fff + `--lift-1` + up 1px, above its neighbours; no edge | `--tray` fill, no shadow | wash fill + `--lift-1` + title 600 (hover `--wash-strong`) |
+| `.btn` primary, `.icon-btn` primary | `--navy-hover` + `--lift-1` + up 1px | navy, no shadow | toggled or open: wash + blue-ink (hover `--wash-strong`, pressed wash) |
+| `.btn` standard | #fff + `--lift-1` + up 1px (reduced motion: `--glass-solid` fill instead of the move) | `--tray`, no shadow | n/a |
+| `.btn` danger | `--danger-wash` + `--lift-1` + up 1px | `--danger-wash-strong`, no shadow | n/a |
+| `.btn` quiet | `--tint-2` | `--tint-3` | never the wash; open is shown by a chevron (`data-chevron`) |
+| `.icon-btn`, fold header, chip remove, "What Claude did" | `--tint-2` | `--tint-3` | `.icon-btn` toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash + blue-ink, unless it carries `data-chevron` |
+| "Search or jump to" | `--tint-2` | `--tint-3` | n/a |
 | Seg option | rgba(255,255,255,.55) | n/a | #fff + seg shadow + 600 |
 | Palette option | rgba(255,255,255,.85) + `--lift-1` | n/a | #fff + `--lift-1` + 1.5px blue-ink inset ring |
 | Links | 2px underline, offset 2 | n/a | n/a |
+
+Disabled everywhere (`:disabled` or `aria-disabled="true"`): opacity .5, a not-allowed cursor, no hover
+or press.
 
 Focus everywhere: 2px blue-ink outline, offset 2 (offset −2 inside clipping scrollers: drawer rows,
 palette, seg).
@@ -150,7 +162,7 @@ Every app declares `search` (global search); a new list or inventory is searchab
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
 with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,
-then a `.card-more` "Show all N"), `SelectionBar`, `LibraryBar` (Back, details), `DetailActions`,
+then a quiet small `btn` "Show all N"), `SelectionBar`, `LibraryBar` (Back, details), `DetailActions`,
 `LibraryNotice` (loading, failed with "Try again", empty), `Thumb`, `Viewer`, the data hooks and a
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples

@@ -132,7 +132,6 @@ function Shell() {
                   type="button"
                   className="btn"
                   data-variant="primary"
-                  data-size="small"
                   onClick={() => {
                     newChat();
                     // A floating drawer closes once a choice is made; a pushing one stays.

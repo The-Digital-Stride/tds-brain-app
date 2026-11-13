@@ -5,6 +5,7 @@ import {
   type UpdateStatus,
 } from '../../../shared/update-contract.ts';
 import { type UpdateActions, type UpdateView, useUpdate } from '../state/update.ts';
+import { Icon } from './Icon.tsx';
 
 const PHASE_TEXT: Partial<Record<UpdatePhase, string>> = {
   downloading: 'Downloading the update…',
@@ -80,6 +81,7 @@ export function UpdateAction({
         <button
           type="button"
           className="btn"
+          data-variant="primary"
           data-size="small"
           onClick={() => {
             wasConfirming.current = false;
@@ -107,6 +109,7 @@ export function UpdateAction({
     <button
       type="button"
       className="btn"
+      data-variant="primary"
       data-size="small"
       ref={trigger}
       onClick={() => {
@@ -212,10 +215,12 @@ export function UpdateBanner() {
             className="btn"
             data-variant="quiet"
             data-size="small"
+            data-chevron
             aria-expanded={notesOpen}
             aria-controls={notesId}
             onClick={() => setNotesOpen((o) => !o)}
           >
+            <Icon name="chevron" size={14} />
             What's new
           </button>
         ) : null}

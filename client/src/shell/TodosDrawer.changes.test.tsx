@@ -114,7 +114,11 @@ describe('To-dos drawer, changing to-dos', () => {
   it('adds with the person themselves as the default assignee', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+    const moreOpts = screen.getByRole('button', { name: 'More options' });
+    expect(moreOpts.classList.contains('btn')).toBe(true);
+    expect(moreOpts.getAttribute('data-variant')).toBe('quiet');
+    expect(moreOpts.classList.contains('link-btn')).toBe(false);
+    fireEvent.click(moreOpts);
     type('What needs doing?', '  Ring the client ');
     const who = screen.getByLabelText('Assigned to') as HTMLSelectElement;
     expect(who.value).toBe('sam-example');
@@ -215,6 +219,7 @@ describe('To-dos drawer, changing to-dos', () => {
   it('deletes without a second question, held with an Undo and nothing sent yet', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBe('danger');
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(holdTodo).toHaveBeenCalled());
     expect(holdTodo).toHaveBeenCalledWith({

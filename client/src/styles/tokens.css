@@ -13,6 +13,18 @@
   --paper: #faf8f4;
   --iron: #525252;
   --wash: #e7f1fe;
+  /* Wash under the pointer: a switched-on or open button. Blue-ink on it is 5.26:1. */
+  --wash-strong: #d9e8fc;
+  /* Primary under the pointer: 1.63:1 against navy, where paper text stays 9.79:1. */
+  --navy-hover: #213f73;
+  /* Icon, seg and rail text: a step softer than navy. */
+  --ink-soft: #33456a;
+  /* Ink tints for flat buttons and rows: rest (quiet button, seg track), hover, pressed. */
+  --tint-1: rgba(2, 27, 67, 0.07);
+  --tint-2: rgba(2, 27, 67, 0.11);
+  --tint-3: rgba(2, 27, 67, 0.15);
+  /* A switch that is off and an idle status dot. */
+  --grey-dot: #8a94a6;
 
   /* Layers, back to front: desk, tray, glass, sheet */
   --desk: #e9e5dd;
@@ -77,5 +89,7 @@
 
   --danger: #a4261b;
   --danger-wash: #fdeceb;
+  /* Danger wash when pressed. */
+  --danger-wash-strong: #f9d9d6;
   --ok: #17673a;
 }

@@ -310,6 +310,7 @@ describe('Skills drawer', () => {
     render(<SkillsDrawer />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), { target: { value: 'beta' } });
     const more = screen.getByRole('button', { name: 'Description of Beta' });
+    expect(more.hasAttribute('data-chevron')).toBe(true);
     const row = more.closest('li') as HTMLElement;
     expect(more.getAttribute('aria-expanded')).toBe('false');
     expect(row.dataset.open).toBe('false');

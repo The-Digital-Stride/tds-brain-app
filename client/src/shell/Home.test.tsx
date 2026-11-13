@@ -157,7 +157,8 @@ describe('Home', () => {
     expect(needs.getByText('Acme Heating').className).toBe('');
     expect(needs.getByText('due today').className).toBe('');
     expect(needs.queryByText('Plan the quarter')).toBeNull();
-    expect(needs.getByRole('button', { name: '1 more to-do' })).toBeTruthy();
+    expect(needs.queryByRole('button', { name: /more to-do/ })).toBeNull();
+    expect(document.querySelector('.card-more')).toBeNull();
     expect(needs.queryByRole('checkbox')).toBeNull();
 
     const chats = card('Open chats');
@@ -179,8 +180,10 @@ describe('Home', () => {
     api.sessions.mockResolvedValue({ live: [], past: [] });
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, pins: [] } });
     await renderHome();
-    await screen.findByText('Nothing due today or tomorrow.');
-    expect(screen.getByRole('button', { name: 'See all 1 to-do' })).toBeTruthy();
+    await screen.findByText('Nothing due today or tomorrow. 1 other to-do.');
+    expect(screen.getByText('Nothing due today or tomorrow. 1 other to-do.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /See all/ })).toBeNull();
+    expect(document.querySelector('.card-more')).toBeNull();
     expect(screen.getByText('No open chats.')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Pinned skills' })).toBeTruthy();
     expect(screen.getByText('Pin a skill to keep it here.')).toBeTruthy();
@@ -297,6 +300,9 @@ describe('Home', () => {
     await renderHome();
     const drawer = () => document.getElementById('drawer') as HTMLElement;
     expect(drawer().hasAttribute('inert')).toBe(true);
+    for (const name of ['All to-dos', 'All chats', 'All skills']) {
+      expect(screen.getByRole('button', { name }).getAttribute('data-size')).toBe('small');
+    }
     fireEvent.click(screen.getByRole('button', { name: 'All to-dos' }));
     await waitFor(() => expect(drawer().hasAttribute('inert')).toBe(false));
     expect(within(drawer()).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
@@ -304,13 +310,5 @@ describe('Home', () => {
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Chats' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'All skills' }));
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Skills' })).toBeTruthy());
-  });
-
-  it('"N more to-dos" opens the To-dos drawer', async () => {
-    await renderHome();
-    fireEvent.click(await card('Needs you').findByRole('button', { name: '1 more to-do' }));
-    await waitFor(() =>
-      expect((document.getElementById('drawer') as HTMLElement).hasAttribute('inert')).toBe(false),
-    );
   });
 });

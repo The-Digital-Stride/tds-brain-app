@@ -141,7 +141,13 @@ export function FolderCard<T extends { id: string }>({
         {shown.map(renderItem)}
       </ul>
       {open && shown.length < items.length ? (
-        <button type="button" className="card-more" onClick={() => setAll(true)}>
+        <button
+          type="button"
+          className="btn"
+          data-variant="quiet"
+          data-size="small"
+          onClick={() => setAll(true)}
+        >
           Show all {items.length.toLocaleString('en-GB')} <span className="visually-hidden">in {title}</span>
         </button>
       ) : null}

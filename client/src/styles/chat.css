@@ -197,8 +197,11 @@
   transition: background-color 120ms var(--ease);
 }
 .activity summary:hover {
-  background: rgba(2, 27, 67, 0.08);
+  background: var(--tint-2);
   color: var(--navy);
+}
+.activity summary:active {
+  background: var(--tint-3);
 }
 .activity summary::-webkit-details-marker {
   display: none;
@@ -392,17 +395,6 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
-}
-.pending .btn:not([data-variant]) {
-  background: rgba(255, 255, 255, 0.75);
-}
-.pending .btn:not([data-variant]):hover:not(:disabled) {
-  background: #eae6de;
-  box-shadow: var(--lift-0);
-}
-.pending .btn:not([data-variant]):active:not(:disabled) {
-  background: #e2ddd3;
-  box-shadow: none;
 }
 .approval .why {
   margin-top: 6px;
@@ -634,10 +626,10 @@
   border-radius: 999px;
 }
 .chip-remove:hover {
-  background: rgba(2, 27, 67, 0.08);
+  background: var(--tint-2);
 }
 .chip-remove:active {
-  background: rgba(2, 27, 67, 0.12);
+  background: var(--tint-3);
 }
 
 /* Attached files ------------------------------------------------------------------------------ */
@@ -1030,7 +1022,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #8a94a6;
+  background: var(--grey-dot);
 }
 .health-dot[data-state="ok"] {
   background: var(--attn-ready-edge);

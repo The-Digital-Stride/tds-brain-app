@@ -146,6 +146,7 @@ export function Home() {
                   type="button"
                   className="btn"
                   data-variant="quiet"
+                  data-size="small"
                   onClick={() => openDrawer('todos')}
                 >
                   All to-dos
@@ -154,37 +155,27 @@ export function Home() {
               {!todos ? (
                 <p className="card-note">Loading</p>
               ) : need.rows.length === 0 ? (
-                <>
-                  <p className="card-note">Nothing due today or tomorrow.</p>
-                  {mine.length > 0 ? (
-                    <button type="button" className="card-more" onClick={() => openDrawer('todos')}>
-                      See all {mine.length} {mine.length === 1 ? 'to-do' : 'to-dos'}
-                    </button>
-                  ) : null}
-                </>
+                <p className="card-note">
+                  {`Nothing due today or tomorrow.${
+                    mine.length > 0 ? ` ${mine.length} other ${mine.length === 1 ? 'to-do' : 'to-dos'}.` : ''
+                  }`}
+                </p>
               ) : (
-                <>
-                  {need.rows.map((t) => (
-                    <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
-                      <span className="line-text">
-                        <span className="line-title">{t.title}</span>
-                        <span className="line-meta">
-                          {metaParts(t, today, clientName).map((part, i) => (
-                            <span key={part.text}>
-                              {i > 0 ? ', ' : ''}
-                              <span className={part.late ? 'late' : undefined}>{part.text}</span>
-                            </span>
-                          ))}
-                        </span>
+                need.rows.map((t) => (
+                  <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
+                    <span className="line-text">
+                      <span className="line-title">{t.title}</span>
+                      <span className="line-meta">
+                        {metaParts(t, today, clientName).map((part, i) => (
+                          <span key={part.text}>
+                            {i > 0 ? ', ' : ''}
+                            <span className={part.late ? 'late' : undefined}>{part.text}</span>
+                          </span>
+                        ))}
                       </span>
-                    </button>
-                  ))}
-                  {need.more > 0 ? (
-                    <button type="button" className="card-more" onClick={() => openDrawer('todos')}>
-                      {need.more} more {need.more === 1 ? 'to-do' : 'to-dos'}
-                    </button>
-                  ) : null}
-                </>
+                    </span>
+                  </button>
+                ))
               )}
             </section>
 
@@ -195,6 +186,7 @@ export function Home() {
                   type="button"
                   className="btn"
                   data-variant="quiet"
+                  data-size="small"
                   onClick={() => openDrawer('chats')}
                 >
                   All chats
@@ -228,6 +220,7 @@ export function Home() {
                   type="button"
                   className="btn"
                   data-variant="quiet"
+                  data-size="small"
                   onClick={() => openDrawer('skills')}
                 >
                   All skills

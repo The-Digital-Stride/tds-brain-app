@@ -234,7 +234,13 @@ export function AddTodoForm({
           Cancel
         </button>
         {full ? null : (
-          <button type="button" className="link-btn" onClick={() => setFull(true)}>
+          <button
+            type="button"
+            className="btn todo-more"
+            data-variant="quiet"
+            data-size="small"
+            onClick={() => setFull(true)}
+          >
             More options
           </button>
         )}
@@ -515,7 +521,7 @@ export function TodoEditor({
         <button
           type="button"
           className="btn todo-delete"
-          data-variant="quiet"
+          data-variant="danger"
           disabled={busy}
           onClick={onDelete}
         >

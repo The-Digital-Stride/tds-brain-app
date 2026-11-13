@@ -179,14 +179,16 @@ describe('the page', () => {
   });
 
   it('also hides the form when the server reports an override', async () => {
-    await show(READY, info({ envOverride: true }));
+    await show(READY, info({ envOverride: true }), { onCancel: vi.fn() });
     expect(screen.queryByLabelText('Folder path')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' }).getAttribute('data-variant')).toBeNull();
   });
 
   it('offers Cancel and warns about open chats only when opened from Settings', async () => {
     const onCancel = vi.fn();
     await show(READY, info({ openChats: 2 }), { onCancel });
     expect(screen.getByText(/restart and close your 2 open chats/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel' }).getAttribute('data-variant')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
     cleanup();

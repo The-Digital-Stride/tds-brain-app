@@ -600,14 +600,15 @@ export function TodosDrawer() {
   };
 
   // The tools sit on the drawer above the list: only the list scrolls.
-  // With a filter row the + icon closes it at the right end. With none, a labelled quiet button on a row
-  // of its own, right-aligned to line up with that +.
+  // With a filter row the + icon closes it at the right end. With none, a labelled button on a row of its
+  // own, right-aligned to line up with that +. Both primary: adding is the drawer's main action.
   const hasFilterRow = showKind || showClient;
   const addToggle = canChange ? (
     hasFilterRow ? (
       <button
         type="button"
         className="icon-btn todo-add-btn"
+        data-variant="primary"
         ref={addButton}
         aria-label="Add a to-do"
         aria-expanded={adding}
@@ -619,12 +620,13 @@ export function TodosDrawer() {
       <button
         type="button"
         className="btn todo-add-label"
-        data-variant="quiet"
+        data-variant="primary"
         data-size="small"
         ref={addButton}
         aria-expanded={adding}
         onClick={toggleAdd}
       >
+        <Icon name="plus" size={14} />
         Add a to-do
       </button>
     )

@@ -106,16 +106,14 @@
  * A row in a card rises one step off it on hover, like every other hover in the app: it stays
  * white and casts the one-step shadow (`--lift-1`), with no edge of its own.
  */
-.tray .line:hover,
-.card-more:hover {
+.tray .line:hover {
   position: relative;
   z-index: 1;
   background: #fff;
   box-shadow: var(--lift-1);
   transform: translateY(-1px);
 }
-.tray .line:active,
-.card-more:active {
+.tray .line:active {
   background: var(--tray);
   box-shadow: none;
   transform: none;
@@ -129,22 +127,6 @@
   font-size: 13px;
   color: var(--iron);
 }
-.card-more {
-  display: block;
-  width: 100%;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  text-align: left;
-  font-size: 13px;
-  color: var(--iron);
-  cursor: pointer;
-}
-.card-more:hover {
-  color: var(--navy);
-}
-
 @media (max-width: 480px) {
   .home-scroll {
     padding: 24px 16px 20px;

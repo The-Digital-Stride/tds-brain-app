@@ -217,7 +217,9 @@ describe('the left dock', () => {
     await renderHome();
     openWithClick(railButton('Chats'));
     expect(drawerDock().getAttribute('aria-label')).toBe('Chats');
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    const newChat = screen.getByRole('button', { name: 'New chat' });
+    expect(newChat.getAttribute('data-variant')).toBe('primary');
+    expect(newChat.hasAttribute('data-size')).toBe(false);
     openWithClick(railButton('Skills'));
     expect(drawerDock().getAttribute('aria-label')).toBe('Skills');
     expect(railButton('Chats').getAttribute('aria-expanded')).toBe('false');

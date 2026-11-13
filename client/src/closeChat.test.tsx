@@ -113,6 +113,7 @@ describe('closing a chat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     expect(screen.getByText('Claude is still working. Close anyway?')).toBeTruthy();
     expect(api.close).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Close chat' }).getAttribute('data-variant')).toBe('danger');
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
     await screen.findByRole('heading', { level: 1, name: 'Home' });

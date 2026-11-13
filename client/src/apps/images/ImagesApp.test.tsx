@@ -169,7 +169,11 @@ describe('ImagesSheet', () => {
     const brand = await card('Brand');
     expect(brand.querySelectorAll('li')).toHaveLength(60);
     expect(brand.textContent).toContain('75');
-    fireEvent.click(within(brand).getByRole('button', { name: 'Show all 75 in Brand' }));
+    const showAll = within(brand).getByRole('button', { name: 'Show all 75 in Brand' });
+    expect(showAll.classList.contains('btn')).toBe(true);
+    expect(showAll.getAttribute('data-variant')).toBe('quiet');
+    expect(showAll.classList.contains('link-btn')).toBe(false);
+    fireEvent.click(showAll);
     expect(brand.querySelectorAll('li')).toHaveLength(75);
     expect(within(brand).queryByRole('button', { name: /Show all/ })).toBeNull();
   });

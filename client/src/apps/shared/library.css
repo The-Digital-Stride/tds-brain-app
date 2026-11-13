@@ -172,7 +172,7 @@
   box-shadow: var(--lift-1);
 }
 .lib .lib-list > [data-current="true"]:hover {
-  background: #d9e8fc;
+  background: var(--wash-strong);
   box-shadow: var(--lift-1);
 }
 /* Pressed is the tray fill with no shadow, on the current item too. */

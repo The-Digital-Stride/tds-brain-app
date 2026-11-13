@@ -163,7 +163,11 @@ kbd {
     transform 120ms var(--ease);
 }
 
-/* Buttons: `data-variant` primary (navy) or quiet (text only); `data-size` small. ------------- */
+/*
+ * Buttons: one language (docs/plans/2026-11-13-button-language.md).
+ * `.btn` is standard (white, raised) by default; `data-variant` primary (navy), quiet (flat tint) or danger
+ * (red text); `data-size` small. Raised kinds lift on hover, flat kinds darken. Hover and press never apply
+ * to a disabled or aria-disabled button. -------------------------------------------------------- */
 .btn {
   appearance: none;
   display: inline-flex;
@@ -178,8 +182,9 @@ kbd {
   height: 32px;
   padding: 0 12px;
   border-radius: 9px;
-  border: 1px solid transparent;
-  background: var(--tray);
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  box-shadow: var(--lift-0);
   color: var(--navy);
   text-align: center;
   white-space: nowrap;
@@ -188,41 +193,47 @@ a.btn,
 a.btn:hover {
   text-decoration: none;
 }
-.btn:hover:not(:disabled) {
-  background: #eae6de;
-  box-shadow: var(--lift-0);
+.btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+  box-shadow: var(--lift-1);
 }
-.btn:active:not(:disabled) {
-  background: #e2ddd3;
+.btn:where(:not(:disabled, [aria-disabled="true"])):active {
+  background: var(--tray);
   box-shadow: none;
-}
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 .btn[data-variant="primary"] {
   background: var(--navy);
+  border-color: transparent;
+  box-shadow: none;
   color: var(--paper);
 }
-.btn[data-variant="primary"]:hover:not(:disabled) {
-  background: #0a2a5e;
+.btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--navy-hover);
   box-shadow: var(--lift-1);
 }
-.btn[data-variant="primary"]:active:not(:disabled) {
+.btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
   background: var(--navy);
   box-shadow: none;
 }
 .btn[data-variant="quiet"] {
-  background: transparent;
-  color: var(--blue-ink);
-  padding-inline: 8px;
-}
-.btn[data-variant="quiet"]:hover:not(:disabled) {
-  background: var(--wash);
+  background: var(--tint-1);
+  border-color: transparent;
   box-shadow: none;
 }
-.btn[data-variant="quiet"]:active:not(:disabled) {
-  background: #d9e8fc;
+.btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--tint-2);
+  box-shadow: none;
+}
+.btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):active {
+  background: var(--tint-3);
+}
+.btn[data-variant="danger"] {
+  color: var(--danger);
+}
+.btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--danger-wash);
+}
+.btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):active {
+  background: var(--danger-wash-strong);
 }
 .btn[data-size="small"] {
   height: 28px;
@@ -230,7 +241,11 @@ a.btn:hover {
   font-size: 12px;
 }
 
-/* A square icon button. Give it an aria-label. `aria-pressed="true"` or `data-on` lights it. */
+/*
+ * A square icon button. Give it an aria-label. Bare by default, for utilities (close, toggle, pin, attach,
+ * edit, more); `data-variant="primary"` fills it navy for the one icon button that creates or starts the
+ * main thing in its area (the To-dos +).
+ */
 .icon-btn {
   appearance: none;
   flex: none;
@@ -242,7 +257,7 @@ a.btn:hover {
   border: 0;
   border-radius: 9px;
   background: none;
-  color: #33456a;
+  color: var(--ink-soft);
   cursor: pointer;
 }
 /* Inside a row, a step smaller. */
@@ -251,17 +266,88 @@ a.btn:hover {
   width: 28px;
   height: 28px;
 }
-.icon-btn:hover {
-  background: rgba(2, 27, 67, 0.08);
+.icon-btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--tint-2);
   color: var(--navy);
 }
-.icon-btn:active {
-  background: rgba(2, 27, 67, 0.12);
+.icon-btn:where(:not(:disabled, [aria-disabled="true"])):active {
+  background: var(--tint-3);
 }
-.icon-btn[aria-pressed="true"],
-.icon-btn[data-on="true"] {
+.icon-btn[data-variant="primary"] {
+  background: var(--navy);
+  color: var(--paper);
+}
+.icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--navy-hover);
+  color: var(--paper);
+  box-shadow: var(--lift-1);
+}
+.icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+  background: var(--navy);
+  box-shadow: none;
+}
+
+/* Disabled, by the attribute or by aria: one look, and no reaction. */
+.btn:is(:disabled, [aria-disabled="true"]),
+.icon-btn:is(:disabled, [aria-disabled="true"]) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Raised kinds rise 1px on hover and settle flat when pressed. Under reduced motion they only change shadow. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:where(:not([data-variant="quiet"])):where(:not(:disabled, [aria-disabled="true"])):hover,
+  .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    transform: translateY(-1px);
+  }
+  .btn:where(:not(:disabled, [aria-disabled="true"])):active,
+  .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    transform: none;
+  }
+}
+/* With no movement, a white button's hover is only a shadow swap: a fill step keeps it visible. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--glass-solid);
+  }
+  .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tray);
+  }
+}
+
+/*
+ * Toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash with blue ink, on primary and icon
+ * buttons only. A quiet button would vanish (a grey tint on wash is about 1.01:1), so a button that shows
+ * open by a chevron (`data-chevron`) opts out and turns the chevron instead. After hover, so order wins.
+ */
+.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+  [data-chevron]
+),
+.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]) {
   background: var(--wash);
   color: var(--blue-ink);
+  box-shadow: none;
+  transform: none;
+}
+.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+  [data-chevron]
+):where(:not(:disabled, [aria-disabled="true"])):hover,
+.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+  :not(:disabled, [aria-disabled="true"])
+):hover {
+  background: var(--wash-strong);
+  color: var(--blue-ink);
+  box-shadow: none;
+  transform: none;
+}
+/* Pressing an "on" button steps back from the hover shade, so the click still shows. */
+.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+  [data-chevron]
+):where(:not(:disabled, [aria-disabled="true"])):active,
+.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+  :not(:disabled, [aria-disabled="true"])
+):active {
+  background: var(--wash);
 }
 
 .field {
@@ -326,7 +412,7 @@ a.btn:hover {
   height: 18px;
   margin: 0;
   border-radius: 999px;
-  background: #8a94a6;
+  background: var(--grey-dot);
   cursor: pointer;
   transition: background-color 120ms var(--ease);
 }
@@ -390,7 +476,7 @@ a.btn:hover {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #8a94a6;
+  background: var(--grey-dot);
 }
 .dot[data-attention="ready"] {
   background: var(--attn-ready-edge);
@@ -426,7 +512,7 @@ a.btn:hover {
   gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
   padding: 3px;
   border-radius: 10px;
-  background: rgba(2, 27, 67, 0.07);
+  background: var(--tint-1);
 }
 .seg > button {
   flex: 1;
@@ -438,7 +524,7 @@ a.btn:hover {
   background: none;
   font-size: 13px;
   font-weight: 500;
-  color: #33456a;
+  color: var(--ink-soft);
   cursor: pointer;
 }
 .seg > button:hover {
@@ -477,15 +563,20 @@ a.btn:hover {
   cursor: pointer;
 }
 .fold-head > button:hover {
-  background: rgba(2, 27, 67, 0.08);
+  background: var(--tint-2);
 }
 .fold-head > button:active {
-  background: rgba(2, 27, 67, 0.12);
+  background: var(--tint-3);
 }
-.fold-head .icon {
+/* A button that shows open or closed by a chevron inside it (`data-chevron`) turns it the same way. */
+.fold-head .icon,
+.btn[data-chevron] .icon,
+.icon-btn[data-chevron] .icon {
   transition: transform 160ms;
 }
-.fold-head > button[aria-expanded="false"] .icon {
+.fold-head > button[aria-expanded="false"] .icon,
+.btn[data-chevron][aria-expanded="false"] .icon,
+.icon-btn[data-chevron][aria-expanded="false"] .icon {
   transform: rotate(-90deg);
 }
 .fold-title {
@@ -612,6 +703,8 @@ button.todo {
 
 @media (prefers-reduced-motion: reduce) {
   .fold-head .icon,
+  .btn[data-chevron] .icon,
+  .icon-btn[data-chevron] .icon,
   .switch,
   .switch::before {
     transition: none;

@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.16.0 — 2026-11-13
+
+- **feat**: chat files tracker, library lookup, Files tab and reply links
+- **feat**: send each chat's files to the page and serve what changed
+- **fix**: chat files review findings
+- **fix**: restore chat styles lost in the review fixes
+- **fix**: restore chat styles lost in the review fixes
+
 ## v0.15.0 — 2026-11-13
 
 - **feat**: inline Open on library items; Documents drops ticks; search closes the drawer

@@ -73,7 +73,8 @@ export function extOf(name: string): string {
 
 /**
  * True for a path (from the brain's root) that must never be listed or served: any empty, `.` or
- * `..` segment, any name starting with a dot, `node_modules`, `clients/_*`, and inside a client a
+ * `..` segment, any name starting with a dot, `node_modules`, `clients/_*`, personal to-dos
+ * (`personal/todo/` and its done and deleted folders: the To-dos drawer shows those), and inside a client a
  * `config/`, `crm/data/` or `context/google-ads/data/` folder. Case is ignored throughout.
  */
 export function isNeverListed(relFromRoot: string): boolean {
@@ -82,6 +83,8 @@ export function isNeverListed(relFromRoot: string): boolean {
   for (const s of segs) {
     if (s === '' || s.startsWith('.') || s === 'node_modules') return true;
   }
+  // Personal to-dos (TODO_PERSONAL_DIR) are to-dos, not documents. Shared ones (`todo/`) are in no scope.
+  if (segs[0] === 'personal' && segs[1] === 'todo') return true;
   if (segs[0] === 'clients') {
     if (segs[1]?.startsWith('_')) return true;
     // The folders themselves count too, so a walk never goes into them.

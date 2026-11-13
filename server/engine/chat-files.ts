@@ -407,12 +407,29 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   }
 
   async function build(): Promise<ChatFilesSnapshot> {
+    const wasAll = resolveAll;
     const paths = resolveAll ? [...tracked.keys()] : [...touched];
     resolveAll = false;
     touched.clear();
     const filed = filings.splice(0);
-    const found = new Map<string, Resolved>();
     const wanted = [...new Set([...paths, ...filed.flatMap((f) => f.candidates)])];
+    try {
+      return await resolveAndList(paths, filed, wanted);
+    } catch (err) {
+      // Put the work back, so the next snapshot tries these paths again instead of waiting for the turn end.
+      if (wasAll) resolveAll = true;
+      for (const p of paths) if (tracked.has(p)) touched.add(p);
+      filings.unshift(...filed);
+      throw err;
+    }
+  }
+
+  async function resolveAndList(
+    paths: string[],
+    filed: Filing[],
+    wanted: string[],
+  ): Promise<ChatFilesSnapshot> {
+    const found = new Map<string, Resolved>();
     await pool(wanted, RESOLVE_CONCURRENCY, async (p) => {
       found.set(p, await safeResolve(p));
     });

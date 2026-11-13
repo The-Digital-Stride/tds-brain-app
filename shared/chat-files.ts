@@ -172,5 +172,28 @@ export function indexChatFiles(files: readonly ChatFile[]): ChatFileIndex {
   return { byPath, byToolUse };
 }
 
+/**
+ * The key a path in a reply links to, or null. A full path must match exactly. A shorter one
+ * (Claude wrote `weightmans/context/business.md`, leaving out `clients/`) links only when it is the
+ * end of exactly ONE of this chat's files, at a folder boundary: nothing is guessed beyond the files
+ * the server already reported for this chat, and an ambiguous path, or a bare file name with no
+ * folder, links to nothing.
+ */
+export function chatFileFor(index: ChatFileIndex, raw: string, brainRoot: string): string | null {
+  const rel = normaliseBrainPath(raw, brainRoot);
+  if (!rel) return null;
+  const exact = index.byPath.get(rel);
+  if (exact) return exact;
+  // A bare name (`profile.md`) says nothing about which client it means, so it never links.
+  if (!rel.includes('/') || rel.startsWith('clients/') || rel.startsWith('personal/')) return null;
+  let found: string | null = null;
+  for (const [path, key] of index.byPath) {
+    if (!path.endsWith(`/${rel}`)) continue;
+    if (found !== null && found !== key) return null;
+    found = key;
+  }
+  return found;
+}
+
 /** The URL fragment a reply link to a chat file is rewritten to. Click handling looks for this prefix. */
 export const CHAT_FILE_HREF_PREFIX = '#chat-file=';

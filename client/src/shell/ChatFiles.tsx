@@ -137,28 +137,42 @@ function Changes({ sessionId, file }: { sessionId: string; file: ChatFile }) {
   );
 }
 
+// The `show-chat-file` requests whose preview has already taken focus.
+const focusedRequests = new WeakSet<object>();
+
 /** The file open in the panel: Back, its name and where it is, its body, then what can be done with it. */
 function Preview({
   file,
   sessionId,
   live,
   onBack,
+  request,
 }: {
   file: ChatFile;
   sessionId: string;
   live: boolean;
   onBack: () => void;
+  /**
+   * The shell's `panelFile`: a new object for every `show-chat-file`, so asking for the file again
+   * (a reply link after the panel was shut on it) moves focus to it again.
+   */
+  request: object | null;
 }) {
   const { libraryVersion, openView } = useStore();
   const { dispatch, modes } = useShell();
   const heading = useRef<HTMLHeadingElement>(null);
-  // Focus moves to the heading when a file opens (or a different one replaces it). A frame later, so
-  // a panel that is opening has recorded its opener and focused its own heading first.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger.
+  // Focus moves to the heading each time the file is asked for (a different one, or the same one
+  // again after the panel was shut). A frame later, so a panel that is opening has recorded its
+  // opener and focused its own heading first. Each request takes focus once: coming back to the
+  // chat later mounts this again with the same request, and that must not pull focus into the panel.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
+    if (request === null || focusedRequests.has(request)) return;
+    const frame = requestAnimationFrame(() => {
+      focusedRequests.add(request);
+      heading.current?.focus({ preventScroll: true });
+    });
     return () => cancelAnimationFrame(frame);
-  }, [file.key]);
+  }, [request]);
 
   const item = file.item;
   const title = nameOf(file);
@@ -310,7 +324,13 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
         {announce}
       </span>
       {shown ? (
-        <Preview file={shown} sessionId={sessionId} live={sessionState !== 'closed'} onBack={back} />
+        <Preview
+          file={shown}
+          sessionId={sessionId}
+          live={sessionState !== 'closed'}
+          onBack={back}
+          request={state.panelFile}
+        />
       ) : null}
       <div hidden={shown !== null}>
         {empty ? (

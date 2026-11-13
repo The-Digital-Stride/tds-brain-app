@@ -315,6 +315,30 @@ describe('createChatFiles: snapshot', () => {
     step(t, 'Read', { file_path: `${ROOT}/personal/a.md` });
     expect((await snap(t)).files).toEqual([]);
   });
+
+  it('puts the paths back when building a snapshot fails, so the next one has them without a turn end', async () => {
+    let broken = true;
+    const t = createChatFiles({
+      brainRoots: [ROOT],
+      resolve: async (rel) => {
+        const scope = broken
+          ? {
+              get id(): string {
+                throw new Error('boom');
+              },
+              name: 'Acme',
+              kind: 'client' as const,
+            }
+          : ACME;
+        return { key: `key:${rel}`, scope, item: itemOf(rel) };
+      },
+    });
+    step(t, 'Read', { file_path: `${ROOT}/clients/acme/a.md` });
+    expect(await t.snapshot()).toBeNull();
+    broken = false;
+    const s = await snap(t);
+    expect(s.files.map((f) => f.path)).toEqual(['clients/acme/a.md']);
+  });
 });
 
 describe('createChatFiles: replies', () => {

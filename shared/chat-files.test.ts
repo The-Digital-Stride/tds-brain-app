@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_FILE_HREF_PREFIX,
+  chatFileFor,
   chatFileGroup,
   findPathMentions,
   findWebLinks,
@@ -156,6 +157,48 @@ describe('indexChatFiles', () => {
     expect(idx.byPath.get('personal/b.md')).toBe('k2');
     expect(idx.byToolUse.get('t2')).toBe('k1');
     expect(idx.byToolUse.get('t3')).toBe('k2');
+  });
+});
+
+describe('chatFileFor', () => {
+  const idx = indexChatFiles([
+    file('k1', 'clients/weightmans/context/business.md', ['changed'], []),
+    file('k2', 'clients/weightmans/profile.md', ['read'], []),
+    file('k3', 'clients/acme/profile.md', ['read'], []),
+    file('k4', 'personal/notes/plan.md', ['created'], []),
+  ]);
+  const f = (raw: string) => chatFileFor(idx, raw, ROOT);
+
+  it('matches a full path exactly, as before', () => {
+    expect(f('clients/weightmans/profile.md')).toBe('k2');
+    expect(f('/Users/me/brain/personal/notes/plan.md')).toBe('k4');
+  });
+
+  it('links a path written without clients/ when it ends exactly one of the chat files', () => {
+    expect(f('weightmans/context/business.md')).toBe('k1');
+    expect(f('`context/business.md`')).toBe('k1');
+    expect(f('notes/plan.md')).toBe('k4');
+  });
+
+  it('links nothing when the short path fits more than one file, or none', () => {
+    expect(f('profile.md')).toBeNull();
+    expect(f('acme/profile.md')).toBe('k3');
+    expect(f('weightmans/brief.md')).toBeNull();
+  });
+
+  it('never links a bare file name, even when only one file has it (it may be about another client)', () => {
+    expect(f('business.md')).toBeNull();
+    expect(f('plan.md')).toBeNull();
+  });
+
+  it('matches whole folder names only, never part of one', () => {
+    expect(f('mans/profile.md')).toBeNull();
+    expect(f('ess.md')).toBeNull();
+  });
+
+  it('never guesses for a path that already names a scope', () => {
+    expect(f('clients/other/context/business.md')).toBeNull();
+    expect(f('personal/plan.md')).toBeNull();
   });
 });
 

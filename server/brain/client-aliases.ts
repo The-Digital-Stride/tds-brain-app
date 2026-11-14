@@ -44,3 +44,30 @@ export async function readClientAliases(root: string, clients: ClientInfo[]): Pr
   for (const c of clients) if (!done.has(c.slug)) out.push({ slug: c.slug, name: c.name, aliases: [] });
   return out;
 }
+
+/** "Urban_Cooling", "urban cooling" and "urban-cooling" all read as the same name. */
+const sameName = (text: string) =>
+  text
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '-');
+
+/**
+ * The clients, in the order given, each with the other names and codes `clients/map.json` holds for
+ * it (`aliases`), for search. Names that only repeat its name or slug (case, spaces, `_` and `-`
+ * ignored) are left out, and a client with none left has no `aliases` field. Read only.
+ */
+export async function withClientAliases(root: string, clients: ClientInfo[]): Promise<ClientInfo[]> {
+  const bySlug = new Map((await readClientAliases(root, clients)).map((a) => [a.slug, a.aliases]));
+  return clients.map((c) => {
+    const seen = new Set([sameName(c.name), sameName(c.slug)]);
+    const aliases: string[] = [];
+    for (const a of bySlug.get(c.slug) ?? []) {
+      const key = sameName(a);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      aliases.push(a);
+    }
+    return aliases.length > 0 ? { ...c, aliases } : c;
+  });
+}

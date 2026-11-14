@@ -377,6 +377,11 @@ export interface ClientInfo {
   /** Folder name under `clients/`, e.g. "urban-cooling". */
   slug: string;
   name: string;
+  /**
+   * Other names and codes from `clients/map.json` ("UC", "Air Con"), for finding the client in a
+   * picker; never shown. Absent when it has none, and from older servers.
+   */
+  aliases?: string[];
 }
 
 /**

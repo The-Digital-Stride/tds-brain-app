@@ -53,14 +53,9 @@
   color: var(--iron);
 }
 .composer-foot .client-select {
-  flex: 0 1 auto;
+  flex: 0 1 180px;
   min-width: 0;
-  width: auto;
-  max-width: 190px;
-  min-height: 32px;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  font-size: 13px;
+  width: 180px;
 }
 .client-ask {
   display: grid;
@@ -77,8 +72,8 @@
   align-items: center;
   gap: 8px;
 }
-.client-ask .field {
-  width: auto;
+.client-ask-pick {
+  width: 240px;
   max-width: 100%;
 }
 .home-skill {

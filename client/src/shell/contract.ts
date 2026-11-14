@@ -160,6 +160,7 @@ export type IconName =
   | 'close'
   | 'search'
   | 'chevron'
+  | 'check'
   | 'go'
   | 'link'
   | 'image'

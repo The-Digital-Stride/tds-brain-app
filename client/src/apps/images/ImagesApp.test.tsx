@@ -2,12 +2,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROUTES } from '../../../../shared/contract.ts';
+import { openPicker, pickOption } from '../../test/pick.ts';
 import { item, listing, SCOPES } from '../shared/testing.ts';
 
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   libraryVersion: 0,
-  boot: { prefs: { lastClient: null as string | null } },
+  boot: {
+    prefs: { lastClient: null as string | null },
+    clients: [{ slug: 'northwind', name: 'Northwind', aliases: ['NW'] }],
+  },
 }));
 const shell = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -88,10 +92,28 @@ describe('ImagesSheet', () => {
     await card('Brand');
     expect(api.library).toHaveBeenCalledWith('client:northwind');
     expect(api.library).not.toHaveBeenCalledWith('personal');
-    const picker = screen.getByLabelText('Library') as HTMLSelectElement;
-    expect(picker.value).toBe('client:northwind');
-    const groups = [...picker.querySelectorAll('optgroup')].map((g) => g.label);
-    expect(groups).toEqual(['Mine', 'Clients']);
+    const picker = screen.getByRole('combobox', { name: 'Library' }) as HTMLInputElement;
+    expect(picker.value).toBe('Northwind');
+    fireEvent.click(picker);
+    expect(
+      screen
+        .getAllByRole('group')
+        .map(
+          (g) =>
+            g.getAttribute('aria-labelledby') &&
+            document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent,
+        ),
+    ).toEqual(['Mine', 'Clients']);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+  });
+
+  it('finds a client library by its code', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    const picker = openPicker('Library');
+    fireEvent.change(picker, { target: { value: 'nw' } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Northwind']);
+    fireEvent.keyDown(picker, { key: 'Escape' });
   });
 
   it('opens on the first client when none was used', async () => {
@@ -193,7 +215,7 @@ describe('ImagesSheet', () => {
     await card('Brand');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select acme-mark.png' }));
     expect(screen.getByRole('group', { name: 'Selected images' })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Library'), { target: { value: 'personal' } });
+    pickOption('Library', 'My personal files');
     await waitFor(() => expect(api.library).toHaveBeenCalledWith('personal'));
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Selected images' })).toBeNull());
   });

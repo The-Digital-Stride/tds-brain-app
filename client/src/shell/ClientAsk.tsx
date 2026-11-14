@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ClientInfo } from '../../../shared/contract.ts';
+import { SearchSelect } from './SearchSelect.tsx';
+import { clientOptions } from './search-select.ts';
 
 export interface ClientAskProps {
   clients: ClientInfo[];
@@ -52,14 +54,15 @@ export function ClientAsk({ clients, options, onChoose, onCancel }: ClientAskPro
         <label className="visually-hidden" htmlFor={selectId}>
           Another client
         </label>
-        <select id={selectId} className="field" value={other} onChange={(e) => setOther(e.target.value)}>
-          <option value="">Another client…</option>
-          {clients.map((c) => (
-            <option key={c.slug} value={c.slug}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <SearchSelect
+          id={selectId}
+          className="client-ask-pick"
+          value={other}
+          options={clientOptions(clients)}
+          placeholder="Another client…"
+          recentKey="clients"
+          onChange={setOther}
+        />
         <button type="button" className="btn" disabled={other === ''} onClick={() => onChoose(other)}>
           Use this client
         </button>

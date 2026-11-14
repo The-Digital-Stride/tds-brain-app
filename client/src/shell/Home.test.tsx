@@ -169,7 +169,7 @@ describe('Home', () => {
     expect(chats.getByText('Needs your answer')).toBeTruthy();
     expect(chats.getByText('Working')).toBeTruthy();
 
-    const skills = card('Pinned skills');
+    const skills = card('Favourite skills');
     expect(skills.getByText('Meeting notes')).toBeTruthy();
     expect(skills.queryByText('Standup')).toBeNull();
   });
@@ -188,8 +188,8 @@ describe('Home', () => {
     expect(screen.queryByRole('button', { name: /See all/ })).toBeNull();
     expect(document.querySelector('.card-more')).toBeNull();
     expect(screen.getByText('No open chats.')).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Pinned skills' })).toBeTruthy();
-    expect(screen.getByText('Pin a skill to keep it here.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Favourite skills' })).toBeTruthy();
+    expect(screen.getByText('Star a skill to keep it here.')).toBeTruthy();
     expect(screen.getByText('Nothing is waiting for you.')).toBeTruthy();
   });
 
@@ -289,7 +289,7 @@ describe('Home', () => {
   it('auto: empty text (a skill alone) is treated as none without asking', async () => {
     const box = await renderHome();
     expect(box).toBeTruthy();
-    fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
+    fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
     await screen.findByText('Meeting notes', { selector: 'strong' });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
@@ -531,7 +531,7 @@ describe('Home', () => {
 
   it('starts a pinned skill', async () => {
     await renderHome();
-    fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
+    fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
     await screen.findByText('Meeting notes', { selector: 'strong' });
   });
 

@@ -156,7 +156,7 @@ const DRAWERS: Record<DrawerName, { go: Omit<GoTo, 'run'>; source: SearchSource 
           (a, b) => (pinRank(a) === pinRank(b) ? 0 : pinRank(a) < pinRank(b) ? -1 : 1),
         );
       },
-      // Pinned skills, in pin order.
+      // Favourite skills, in the order they were starred (kept as the prefs' `pins`).
       idle: (ctx) =>
         ctx.pins.flatMap((name) => {
           const skill = ctx.skills.find((s) => s.name === name);

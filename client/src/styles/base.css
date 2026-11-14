@@ -256,7 +256,7 @@ a.btn:hover {
 }
 
 /*
- * A square icon button. Give it an aria-label. Bare by default, for utilities (close, toggle, pin, attach,
+ * A square icon button. Give it an aria-label. Bare by default, for utilities (close, toggle, star, attach,
  * edit, more); `data-variant="primary"` fills it navy for the one icon button that creates or starts the
  * main thing in its area (the To-dos +).
  */

@@ -93,7 +93,7 @@
 .skill-more {
   color: var(--iron);
 }
-/* The skill pin and the chat and to-do stars show on the row under the pointer or the keyboard; one that is on
+/* The skill star and the chat and to-do stars show on the row under the pointer or the keyboard; one that is on
    stays. */
 @media (hover: hover) {
   .skill-row .icon-btn[aria-pressed="false"],

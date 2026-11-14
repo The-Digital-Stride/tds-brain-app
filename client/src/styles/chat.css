@@ -244,10 +244,12 @@
 .activity .tool-status[data-status="failed"] {
   color: var(--danger);
 }
-/* A note Claude wrote between steps, in its place among them: the fold's size, quieter than a step. */
+/* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
 .activity-note {
   line-height: 1.5;
   color: var(--iron);
+  border-left: 2px solid var(--line-strong);
+  padding-left: 8px;
   margin: 2px 0;
 }
 /* A bullet list Claude wrote in a note or a helper's text keeps its markdown look, not the steps'. */
@@ -932,19 +934,13 @@
 .step-status::first-letter {
   text-transform: uppercase;
 }
-/* A note Claude wrote between steps: no number, quieter than a step, at most four lines here
-   (the whole note is in the thread's "What Claude did"). */
+/* A note Claude wrote between steps: no number, quieter than a step. */
 .step-note-text {
   min-width: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--iron);
   overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  overflow: hidden;
 }
 .step-note-text .markdown > :not(:last-child) {
   margin-bottom: 4px;

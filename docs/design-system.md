@@ -84,8 +84,9 @@ including label or padding, reaches 24px), visible focus on everything.
 - Reply headings h1/h2 18, h3 15, h4 14 (`--head`, 600, margin 16px 0 6px). Lists: padding-left 20px.
 - Tables 14px; `td` padding 8px 10px 8px 0 with a 1px `--line` rule; `th` 12/600 iron with a 1.5px navy rule.
 - Inline code: tray fill. Code block: tray fill, radius 10, padding 10px 12px, 12.5px.
-- Blockquote and Claude's side notes: 2px `--line-strong` left rule, 12px padding, 13px iron.
-- "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut).
+- Blockquote: 2px `--line-strong` left rule, 12px padding, 13px iron.
+- "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut). It holds the turn's steps and Claude's side notes (text a step follows in the same turn) in order, so a turn reads: your message, one fold, the answer. A side note in the fold, like a helper's text: 2px `--line-strong` left rule, 8px padding, iron. The count is steps only.
+- Steps tab ("This chat" panel): numbered steps, with Claude's side notes between them unnumbered, 13px iron, in full (screen readers hear "Claude's note:" first).
 - Your message: 14/1.5, wash fill, radius 14 14 4 14, padding 8px 12px. Record lines: 13px iron with an 8px #B9C0CE dot.
 - File links in a reply (a brain path the chat reported, plan 2026-11-13-chat-files): link colour with a
   small file icon before them; they open the file in the panel's Files tab, never a new tab. A step that

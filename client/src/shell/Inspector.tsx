@@ -35,14 +35,14 @@ function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: st
           <li key={s.id} className="step step-note">
             <span aria-hidden="true" />
             <div className="step-note-text">
+              <span className="visually-hidden">Claude's note: </span>
               <Markdown text={s.text} />
             </div>
           </li>
         ) : (
           <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
-            <span className="step-n" aria-hidden="true">
-              {++n}
-            </span>
+            {/* Read out: screen readers count notes as list items, so the list position would not match. */}
+            <span className="step-n">{++n}</span>
             <span className="step-text">
               {byToolUse.has(s.id) ? (
                 <button

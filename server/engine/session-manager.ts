@@ -536,6 +536,19 @@ function historyText(content: unknown): string {
     .join('\n\n');
 }
 
+/**
+ * A stored user turn that is Claude Code waking Claude when a background helper is done:
+ * `task-notification` (it finished) or `agent-message` (its report, sometimes after a one-line
+ * lead-in). Not the person's words, but it starts a new turn of Claude's.
+ */
+function isHelperTurn(raw: string): boolean {
+  const text = raw.trim();
+  return (
+    text.startsWith('<task-notification>') ||
+    /^(Another Claude session sent a message:\s*)?<agent-message[\s>]/.test(text)
+  );
+}
+
 /** Turns a stored user turn into what the person typed, or null for Claude Code's own wrappers. */
 function cleanUserText(raw: string): string | null {
   const text = raw.trim();
@@ -546,13 +559,9 @@ function cleanUserText(raw: string): string | null {
     const slash = name.startsWith('/') ? name : `/${name}`;
     return args ? `${slash} ${args}` : slash;
   }
-  // `task-notification` (a background helper finished) and `agent-message` (a helper's report handed
-  // back, sometimes after a one-line lead-in) are Claude Code talking to Claude, not the person.
   if (
-    /^<(local-command-[\w-]+|command-message|system-reminder|bash-[\w-]+|user-prompt-submit-hook|task-notification)>/.test(
-      text,
-    ) ||
-    /^(Another Claude session sent a message:\s*)?<agent-message[\s>]/.test(text)
+    isHelperTurn(text) ||
+    /^<(local-command-[\w-]+|command-message|system-reminder|bash-[\w-]+|user-prompt-submit-hook)>/.test(text)
   ) {
     return null;
   }
@@ -1237,7 +1246,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (m.parent_tool_use_id) continue;
       const content = isRec(m.message) ? m.message.content : undefined;
       if (m.type === 'user') {
-        const cleaned = cleanUserText(historyText(content));
+        const raw = historyText(content);
+        const cleaned = cleanUserText(raw);
+        // Stored history has no turn ends. A helper's wake-up is hidden but still ends Claude's
+        // previous turn, so its answer stays an answer instead of folding into the next steps.
+        if (isHelperTurn(raw))
+          emit(s, { type: 'turn-end', ok: true, interrupted: false, durationMs: null, errorText: null });
         if (cleaned) {
           const { text, attachments } = splitAttachmentNote(cleaned);
           if (attachments.length > 0) s.files?.addAttachments(notedAttachments(cleaned));

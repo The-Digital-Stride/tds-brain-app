@@ -30,6 +30,9 @@ export function toBlocks(items: ChatItem[]): Block[] {
   const notes = noteIds(items);
   const blocks: Block[] = [];
   for (const item of items) {
+    // A turn that ended well shows nothing, so it must not split a fold either (a helper waking
+    // Claude between two runs of steps). It still ends the turn for `noteIds`.
+    if (item.kind === 'turn-end' && item.ok && !item.interrupted) continue;
     const isNote = item.kind === 'assistant' && notes.has(item.id);
     if (item.kind !== 'tool' && !isNote) {
       blocks.push({ kind: 'item', item });

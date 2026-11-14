@@ -1220,6 +1220,44 @@ describe('reopening a past chat (A4)', () => {
     ]);
   });
 
+  it('ends Claude’s turn where a hidden helper notice woke it, so its earlier answer stays an answer', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Audit', lastModified: 1 });
+    const said = (uuid: string, text: string) => ({
+      type: 'assistant',
+      uuid,
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+      parent_tool_use_id: null,
+    });
+    fx.history['old-1'] = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'Run the audit' },
+        parent_tool_use_id: null,
+      },
+      said('a1', 'It is running; I will tell you when it is done.'),
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: {
+          role: 'user',
+          content: '<task-notification>\n<status>completed</status>\n</task-notification>',
+        },
+        parent_tool_use_id: null,
+      },
+      said('a2', 'Here are the results.'),
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(events(mgr, s.id).map((e) => e.type)).toEqual([
+      'user-message',
+      'assistant-message',
+      'turn-end',
+      'assistant-message',
+      'state',
+    ]);
+  });
+
   it('replays the steps of a reopened chat, and marks one with no stored result as not done', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'Steps', lastModified: 1 });

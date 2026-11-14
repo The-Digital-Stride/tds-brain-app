@@ -2092,7 +2092,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         await Promise.all(
           [...live.values()].filter((s) => !s.closing).map((s) => announceLevel(s).catch(() => {})),
         );
-        return;
+        // "Choose myself" also reaches open chats at once, as in v0.19.0.
+        if (levelMode === 'auto') return;
       }
       const jobs: Promise<void>[] = [];
       for (const s of live.values()) {

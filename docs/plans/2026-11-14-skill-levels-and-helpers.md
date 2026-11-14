@@ -215,6 +215,9 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
     Named `tdsapp-` so they can't clash with a person's own agents.
     Plain: three kinds of helper, each on the cheapest model that does its job well. The scout and
     expert can't change anything; the worker's commands and connectors still ask, as in the main chat.
+    Built: the worker also disallows Workflow, CronCreate, ScheduleWakeup, RemoteTrigger and
+    EnterWorktree. It inherits every other tool, so **on each Claude Agent SDK upgrade, re-check its
+    disallow list** against the SDK's tool list (`sdk-tools.d.ts`): a new tool arrives allowed.
 
 11. **When Claude uses helpers.** A short instruction added to the chat's existing system-prompt
     line (`appendLine`), distilled from agent-workforce: most requests need no helpers; use them
@@ -237,6 +240,10 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
     it returns, so a card can't undo it.
     Plain: no helper silently runs on the most expensive model or outlives the reply, and helpers
     can't multiply without limit.
+    Built: with levels on, the three helpers, foreground-only, the caps and dropping `isolation`
+    apply in both modes; the built-in model rule and the nudge are automatic mode only. App helpers
+    always run on their own tier's model, whatever model the call names. In "Choose myself" mode a
+    Settings change still reaches open chats at once, as in v0.19.0.
 
 13. **Approvals.** Starting one of the three app helpers needs no card. Any command or connector a
     helper uses still asks, labelled with the helper ("Worker wants to run …", from `ctx.agentID`).
@@ -326,4 +333,36 @@ persist chat levels. Verdict: ready to build.
 
 ## Review outcomes
 
-(Filled at the end.)
+**Phase 1 (levels).**
+- Correctness (Opus): the chat-level route answered a bare `TurnLevel` while the client expected
+  `{ level }`, which blanked the page (blocking, fixed in the route, test and a store guard); the
+  offer showed before the skill ran (now `pendingOffer`, sent at `result`, never for a message
+  stopped before it was sent); the line didn't update after a raised turn (`levelAfterTurn`).
+- Recheck: a team-level `/name` stopped before it was sent left the line on the team level (fixed,
+  with a test).
+- Security (Opus): no findings. UX expert: S1–S10 and N1–N4 applied ("an Owner", not a name).
+- Browser check: skills with their own model were offered a team level in Settings; they now read
+  "Set by the skill itself, so a team level doesn't apply" and don't count as missing. The first
+  pick after the app starts can miss 4 s (spike result 13), accepted.
+
+**Phase 2 (helpers).**
+- Spike result 12: the worker inherits the chat's tools with a disallow list.
+- Correctness (Opus): the nudge leaked into a `/skill`'s arguments (no nudge on a `/skill` now); an
+  app helper called with its own model escaped its tier (app helpers always run on their tier, in
+  both modes); a helper call stopped by another rule kept its slot until the reply ended (freed on
+  `permission_denied`).
+- Security (Opus): `isolation` (remote, worktree) passed through the rewrite (now dropped); the
+  worker could reach Workflow, CronCreate, ScheduleWakeup, RemoteTrigger and EnterWorktree (now
+  disallowed). Recheck of the fixes: no findings.
+- Builder's choice: in manual mode with levels on, helpers, foreground-only and the caps still
+  apply; the built-in model rule and the nudge are automatic mode only.
+- Browser check: two `tdsapp-scout` helpers ran together on Haiku, shown as "Asking the scout ·
+  Quick". Ian's own `require-agent-model.sh` blocked the first call (it sees the call before the
+  app's rewrite) and Claude retried with a model: decision 15, still to do in his skills repo.
+
+**Gates:** type-check clean; 2,275 of 2,275 tests; lint no errors; build OK; no large deletions.
+
+**Overseer sign-off (2026-11-14):** signed off, no blockers. Should items taken: "Choose myself"
+reaches open chats at once again (restored v0.19.0 behaviour, with tests); the manual-mode choice and
+the SDK-upgrade check of the worker's disallow list are recorded under decisions 10 and 12. Nice item
+left: a stop pressed while the pick is running can take up to about 4 s to show.

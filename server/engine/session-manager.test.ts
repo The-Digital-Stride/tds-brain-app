@@ -3060,16 +3060,30 @@ describe('levels', () => {
     expect(fx.prewarmed).toEqual(['What is next?']);
   });
 
-  it('a Settings change takes effect from the next message', async () => {
+  it('"Choose myself" reaches open chats at once, as in v0.19.0', async () => {
     const fx = setupLevels({ picks: () => ready(STANDARD) });
     await auto();
     const s = await mgr.start({ prompt: 'one' });
     await flush();
     await mgr.setEngineChoice({ model: 'opus', effort: 'low', levelMode: 'manual' });
-    expect(fx.log).toEqual(['push:one']);
+    expect(fx.log).toEqual(['push:one', 'model:opus', 'effort:low']);
     await mgr.send(s.id, 'two');
     await flush();
-    expect(fx.log).toEqual(['push:one', 'model:opus', 'effort:low', 'push:two']);
+    expect(fx.log.at(-1)).toBe('push:two');
+    expect(fx.log.filter((l) => l.startsWith('model:'))).toEqual(['model:opus']);
+  });
+
+  it('going back to automatic takes effect from the next message', async () => {
+    const fx = setupLevels({ picks: () => ready(STANDARD) });
+    await mgr.setEngineChoice({ model: 'opus', effort: 'low', levelMode: 'manual' });
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    const before = fx.log.length;
+    await auto();
+    expect(fx.log.length).toBe(before);
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(fx.log.slice(before)).toEqual(['model:sonnet', 'effort:medium', 'push:two']);
   });
 
   it('the default picker runs a one-shot query on the engine, outside the brain, with the scrubbed environment', async () => {

@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TodoHandover, TodoItem, TodoList } from '../../../shared/contract.ts';
+import { pickOption } from '../test/pick.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
@@ -221,7 +222,7 @@ describe('filters', () => {
   it('shows the client select with two or more clients, and filters by it', () => {
     setStore(items);
     render(<TodosDrawer />);
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
+    pickOption('Client', 'Bolt');
     expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
     expect(screen.queryByText('Renew contract', { exact: false })).toBeNull();
   });
@@ -235,12 +236,12 @@ describe('filters', () => {
     );
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
+    pickOption('Client', 'Bolt');
     expect(screen.getByText('No to-dos match.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
     // The keyboard lands on a filter, now reset, not on the unnamed scroll area.
-    expect(document.activeElement).toBe(screen.getByLabelText('Client'));
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Client' }));
   });
 
   it('announces the number of matches a moment after a filter changes, and only while filtering', async () => {
@@ -248,7 +249,7 @@ describe('filters', () => {
     render(<TodosDrawer />);
     const live = () => screen.getAllByRole('status').map((n) => n.textContent);
     expect(live().join('')).toBe('');
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'bolt' } });
+    pickOption('Client', 'Bolt');
     await waitFor(() => expect(live()).toContain('1 to-do matches'), { timeout: 2000 });
   });
 
@@ -261,7 +262,7 @@ describe('filters', () => {
     render(<TodosDrawer />);
     const noDate = () => screen.getByRole('button', { name: /No date/ });
     expect(noDate().getAttribute('aria-expanded')).toBe('false');
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
+    pickOption('Client', 'Acme');
     expect(noDate().getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -305,9 +306,11 @@ describe('the + button', () => {
     setStore([...two, personal('p.md', 'Secret plan')], { canUsePersonal: true });
     render(<TodosDrawer />);
     expect(row().getAttribute('data-stacked')).toBe('true');
-    const kids = [...row().children].map((c) => c.tagName + (c.classList.contains('seg') ? '.seg' : ''));
+    const kids = [...row().children].map(
+      (c) => c.tagName + (c.classList.contains('seg') ? '.seg' : c.classList.contains('ss') ? '.ss' : ''),
+    );
     expect(kids.at(-1)).toBe('BUTTON');
-    expect(kids.at(-2)).toBe('SELECT');
+    expect(kids.at(-2)).toBe('DIV.ss');
     expect(kids[0]).toBe('DIV.seg');
     expect(add().classList.contains('icon-btn')).toBe(true);
   });
@@ -408,11 +411,11 @@ describe('revealTodo (from the global search)', () => {
     const b = todo('b.md', 'Ring Bob', { client: 'bolt' });
     setStore([a, b]);
     const { rerender } = render(<TodosDrawer />);
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
+    pickOption('Client', 'Acme');
     expect(screen.queryByText('Ring Bob', { exact: false })).toBeNull();
     ask(b);
     rerender(<TodosDrawer />);
-    expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement).value).toBe('All clients');
     expect(document.activeElement).toBe(chatButton('Ring Bob'));
   });
 
@@ -823,8 +826,8 @@ describe('Favourites', () => {
     fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
     expect(overdue().getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(overdue());
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
-    fireEvent.change(screen.getByLabelText('Client'), { target: { value: '' } });
+    pickOption('Client', 'Acme');
+    pickOption('Client', 'All clients');
     expect(overdue().getAttribute('aria-expanded')).toBe('true');
   });
 

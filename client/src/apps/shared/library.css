@@ -40,8 +40,11 @@
 }
 .lib-client {
   flex: none;
-  width: auto;
+  width: 220px;
+  max-width: 100%;
   min-width: 180px;
+}
+.lib-client .field {
   font-weight: 600;
 }
 .lib-search {

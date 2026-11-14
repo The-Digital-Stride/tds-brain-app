@@ -1,6 +1,7 @@
 import { type ReactNode, useId, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
+import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { useCopy } from './copy.ts';
 import { FIRST_SHOWN } from './library.ts';
 import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
@@ -58,30 +59,26 @@ export function LibraryTools({
   placeholder: string;
   children?: ReactNode;
 }) {
-  const option = (s: LibraryScope) => (
-    <option key={s.id} value={s.id}>
-      {s.name}
-    </option>
-  );
-  const mine = scopes.filter((s) => s.kind === 'personal');
-  const clients = scopes.filter((s) => s.kind === 'client');
-  const shared = scopes.filter((s) => s.kind === 'shared');
+  const option = (group: string) => (s: LibraryScope) => ({ value: s.id, label: s.name, group });
+  const options = [
+    ...scopes.filter((s) => s.kind === 'personal').map(option('Mine')),
+    ...scopes.filter((s) => s.kind === 'client').map(option('Clients')),
+    ...scopes.filter((s) => s.kind === 'shared').map(option('Shared')),
+  ];
   return (
     <div className="lib-tools">
       <label className="visually-hidden" htmlFor={`${id}-scope`}>
         Library
       </label>
-      <select
+      <SearchSelect
         id={`${id}-scope`}
-        className="field lib-client"
+        className="lib-client"
         value={scope}
+        options={options}
+        recentKey="library"
         disabled={scopes.length === 0}
-        onChange={(e) => onScope(e.target.value)}
-      >
-        {mine.length > 0 ? <optgroup label="Mine">{mine.map(option)}</optgroup> : null}
-        {clients.length > 0 ? <optgroup label="Clients">{clients.map(option)}</optgroup> : null}
-        {shared.length > 0 ? <optgroup label="Shared">{shared.map(option)}</optgroup> : null}
-      </select>
+        onChange={onScope}
+      />
       <div className="lib-search">
         <Icon name="search" size={16} />
         <label className="visually-hidden" htmlFor={`${id}-search`}>

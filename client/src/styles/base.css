@@ -375,6 +375,18 @@ a.btn:hover {
   padding: 0 10px;
   width: 100%;
 }
+/* A native select keeps a short fixed list: our chevron (the `chevron` icon path) in place of the browser's. */
+select.field {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2333456a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+}
+select.field:disabled {
+  opacity: 0.6;
+}
 .field::placeholder {
   color: var(--iron);
 }

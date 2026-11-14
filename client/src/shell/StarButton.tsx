@@ -22,6 +22,7 @@ export function StarButton({
       className="icon-btn star-btn"
       aria-pressed={on}
       aria-label={`Favourite: ${title}`}
+      data-tip="Favourite"
       data-star-id={id}
       onClick={(e) => onPress(id, e.currentTarget)}
     >

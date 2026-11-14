@@ -239,6 +239,7 @@ function TodoRow({
           className="icon-btn todo-edit"
           data-edit-for={todo.key}
           aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
+          data-tip={editing.canEdit ? 'Edit' : 'Options'}
           disabled={editing.busy}
           onClick={() => {
             onOpened(todo);
@@ -253,6 +254,7 @@ function TodoRow({
         className="icon-btn todo-go"
         data-todo-open={todo.key}
         aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+        data-tip={chat ? 'Open chat' : 'Start a chat'}
         aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
         onClick={choose}
       >

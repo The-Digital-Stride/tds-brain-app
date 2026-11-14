@@ -58,6 +58,7 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
         className="icon-btn"
         aria-pressed={pinned}
         aria-label={`${pinned ? 'Unpin' : 'Pin'} ${skill.title}`}
+        data-tip={pinned ? 'Unpin' : 'Pin'}
         onClick={() => void togglePin(skill.name)}
       >
         <Icon name="pin" size={16} />
@@ -70,6 +71,7 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
           aria-expanded={open}
           aria-controls={about}
           aria-label={`Description of ${skill.title}`}
+          data-tip={open ? 'Hide description' : 'Show description'}
           onClick={() => setOpen((o) => !o)}
         >
           <Icon name="chevron" size={14} />

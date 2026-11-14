@@ -14,7 +14,6 @@ export function PanelToggle({ label }: { label: string }) {
       type="button"
       className="icon-btn"
       aria-label={label}
-      title={label}
       aria-pressed={state.panelOpen}
       aria-controls={DOCK_IDS.right}
       onClick={() => dispatch({ type: 'toggle-panel' })}

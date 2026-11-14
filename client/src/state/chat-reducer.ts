@@ -75,8 +75,19 @@ export interface TurnEndItem {
   durationMs: number | null;
 }
 
+/** A background helper's report, handed back to Claude. Shown inside "What Claude did". */
+export interface ReportItem {
+  kind: 'report';
+  id: string;
+  /** The description of the step that started the helper, or null when not known. */
+  name: string | null;
+  /** Markdown. */
+  text: string;
+}
+
 export type ChatItem =
   | UserItem
+  | ReportItem
   | AssistantItem
   | ToolItem
   | PermissionItem
@@ -268,6 +279,12 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
           errorText: event.errorText,
           durationMs: event.durationMs,
         },
+      ];
+      return next;
+    case 'helper-report':
+      next.items = [
+        ...state.items,
+        { kind: 'report', id: event.messageId, name: event.name, text: event.text },
       ];
       return next;
     case 'notice':

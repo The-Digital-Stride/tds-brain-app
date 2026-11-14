@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { indexChatFiles } from '../../../shared/chat-files.ts';
 import { approvalsSentence } from '../approvals.ts';
+import { Markdown } from '../markdown.tsx';
 import type { ChatState } from '../state/chat-reducer.ts';
-import { STEP_WORDS, stepsOf } from '../state/steps.ts';
+import { reportTitle, STEP_WORDS, stepsOf } from '../state/steps.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
 import type { PanelTab } from './contract.ts';
@@ -23,35 +24,52 @@ function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: st
   const { dispatch } = useShell();
   const files = chat?.files.files;
   const byToolUse = useMemo(() => indexChatFiles(files ?? []).byToolUse, [files]);
-  const steps = stepsOf(chat?.items ?? []);
-  if (steps.length === 0) return <p className="dock-empty">No steps yet.</p>;
+  const entries = stepsOf(chat?.items ?? []);
+  if (!entries.some((e) => e.kind === 'step')) return <p className="dock-empty">No steps yet.</p>;
+  let n = 0;
   return (
     <ol className="steps">
-      {steps.map((s, i) => (
-        <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
-          <span className="step-n" aria-hidden="true">
-            {i + 1}
-          </span>
-          <span className="step-text">
-            {byToolUse.has(s.id) ? (
-              <button
-                type="button"
-                className="step-label link-btn"
-                onClick={() =>
-                  dispatch({ type: 'show-chat-file', chat: sessionId, key: byToolUse.get(s.id) ?? null })
-                }
-              >
-                {s.label}
-              </button>
-            ) : (
-              <span className="step-label">{s.label}</span>
-            )}
-            <span className="step-status" data-status={s.status}>
-              {STEP_WORDS[s.status]}
+      {entries.map((s) =>
+        s.kind === 'note' ? (
+          // What Claude said between steps, the same notes the thread folds into "What Claude did".
+          <li key={s.id} className="step step-note">
+            <span aria-hidden="true" />
+            <div className="step-note-text">
+              <span className="visually-hidden">Claude's note: </span>
+              <Markdown text={s.text} />
+            </div>
+          </li>
+        ) : s.kind === 'report' ? (
+          // A helper's report came back here; its text is in the thread's "What Claude did".
+          <li key={s.id} className="step step-note">
+            <span aria-hidden="true" />
+            <span className="step-note-text">{reportTitle(s.name)}</span>
+          </li>
+        ) : (
+          <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
+            {/* Read out: screen readers count notes as list items, so the list position would not match. */}
+            <span className="step-n">{++n}</span>
+            <span className="step-text">
+              {byToolUse.has(s.id) ? (
+                <button
+                  type="button"
+                  className="step-label link-btn"
+                  onClick={() =>
+                    dispatch({ type: 'show-chat-file', chat: sessionId, key: byToolUse.get(s.id) ?? null })
+                  }
+                >
+                  {s.label}
+                </button>
+              ) : (
+                <span className="step-label">{s.label}</span>
+              )}
+              <span className="step-status" data-status={s.status}>
+                {STEP_WORDS[s.status]}
+              </span>
             </span>
-          </span>
-        </li>
-      ))}
+          </li>
+        ),
+      )}
     </ol>
   );
 }

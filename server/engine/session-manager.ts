@@ -52,6 +52,7 @@ import {
 } from './chat-files.ts';
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
+import { HelperNames, isHelperTurn, parseHelperReport } from './helper-reports.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
@@ -547,6 +548,7 @@ function cleanUserText(raw: string): string | null {
     return args ? `${slash} ${args}` : slash;
   }
   if (
+    isHelperTurn(text) ||
     /^<(local-command-[\w-]+|command-message|system-reminder|bash-[\w-]+|user-prompt-submit-hook)>/.test(text)
   ) {
     return null;
@@ -1226,13 +1228,30 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
     /** Steps replayed and still waiting for their stored result. */
     const started = new Set<string>();
+    const helpers = new HelperNames();
     for (const m of messages) {
       // Helpers' steps count too; the tracker ignores their text.
       s.files?.observe(m, { history: true });
       if (m.parent_tool_use_id) continue;
+      helpers.observe(m);
       const content = isRec(m.message) ? m.message.content : undefined;
       if (m.type === 'user') {
-        const cleaned = cleanUserText(historyText(content));
+        const raw = historyText(content);
+        const cleaned = cleanUserText(raw);
+        // Stored history has no turn ends. A helper's wake-up is hidden but still ends Claude's
+        // previous turn, so its answer stays an answer instead of folding into the next steps.
+        if (isHelperTurn(raw)) {
+          emit(s, { type: 'turn-end', ok: true, interrupted: false, durationMs: null, errorText: null });
+          // Its report, if it carries one, shows in "What Claude did" instead of as the person's words.
+          const report = parseHelperReport(raw);
+          if (report)
+            emit(s, {
+              type: 'helper-report',
+              messageId: `h:${m.uuid}`,
+              name: helpers.name(report.from),
+              text: report.text,
+            });
+        }
         if (cleaned) {
           const { text, attachments } = splitAttachmentNote(cleaned);
           if (attachments.length > 0) s.files?.addAttachments(notedAttachments(cleaned));

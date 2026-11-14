@@ -80,14 +80,6 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
-/* A side note Claude writes before a step: quieter than the answer itself. */
-.msg-assistant[data-note="true"] {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--iron);
-  border-left: 2px solid var(--line-strong);
-  padding-left: 12px;
-}
 
 .markdown > :first-child {
   margin-top: 0;
@@ -118,10 +110,10 @@
 }
 .markdown h1,
 .markdown h2 {
-  font-size: 18px;
+  font-size: var(--md-h2, 18px);
 }
 .markdown h3 {
-  font-size: 15px;
+  font-size: var(--md-h3, 15px);
 }
 .markdown h4 {
   font-size: 14px;
@@ -249,8 +241,67 @@
 .activity-steps {
   margin-left: 10px;
 }
+/* A grid item grows to fit its widest content: without this a report's wide table pushes its card
+   out of the panel instead of scrolling inside it. */
+.activity-steps > li {
+  min-width: 0;
+}
 .activity .tool-status[data-status="failed"] {
   color: var(--danger);
+}
+/* The thread's "What Claude did" sits on its own faint panel, so Claude's working reads apart from
+   its answers and your messages: as wide as its line when shut, the column's width when open. */
+.step-fold {
+  background: var(--tint-1);
+  border-radius: 12px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
+}
+.step-fold[open] {
+  width: auto;
+  padding-bottom: 10px;
+}
+/* While Claude works the line names each step in turn: a full-width panel doesn't jump with it. */
+.step-fold[data-running="true"] {
+  width: auto;
+}
+/* A helper's report: its own fold inside, opening to the report on a white card. */
+.activity-report > details[open] > summary .icon {
+  transform: none;
+}
+.activity-report-body {
+  margin: 4px 8px 4px 0;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--navy);
+  /* Not `anywhere`: that lets a table squeeze a short column ("HIGH") letter by letter. */
+  overflow-wrap: break-word;
+  /* Its headings stay below the answer's (18px), to suit the card's 13.5px text. */
+  --md-h2: 15px;
+  --md-h3: 14px;
+}
+/* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
+.activity-note {
+  line-height: 1.5;
+  color: var(--iron);
+  border-left: 2px solid var(--line-strong);
+  padding-left: 8px;
+  margin: 2px 0;
+}
+/* A bullet list Claude wrote in a note or a helper's text keeps its markdown look, not the steps'. */
+.activity-steps .markdown ul,
+.activity-steps .markdown ol {
+  list-style: revert;
+  display: block;
+  border-left: 0;
+  padding: 0 0 0 20px;
+}
+.activity-note .markdown > :not(:last-child) {
+  margin-bottom: 6px;
 }
 .helper-text {
   border-left: 2px solid var(--line-strong);
@@ -922,6 +973,17 @@
 /* Row meta: lower case in the text, first letter capitalised here ("Done", "Working"). */
 .step-status::first-letter {
   text-transform: uppercase;
+}
+/* A note Claude wrote between steps: no number, quieter than a step. */
+.step-note-text {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--iron);
+  overflow-wrap: anywhere;
+}
+.step-note-text .markdown > :not(:last-child) {
+  margin-bottom: 4px;
 }
 .step-status[data-status="failed"] {
   color: var(--danger);

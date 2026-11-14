@@ -244,7 +244,9 @@ describe('Palette', () => {
     const drawer = document.getElementById('drawer') as HTMLElement;
     await waitFor(() => expect(drawer.hasAttribute('inert')).toBe(false));
     expect(within(drawer).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
-    const row = within(drawer).getByText('Check the monthly reports', { exact: false }).closest('button');
+    const row = within(drawer).getByRole('button', {
+      name: 'Start a chat on this: Check the monthly reports',
+    });
     await waitFor(() => expect(document.activeElement).toBe(row));
     fireEvent.click(row as HTMLElement);
     await waitFor(() =>
@@ -276,7 +278,7 @@ describe('Palette', () => {
           .getAttribute('aria-checked'),
       ).toBe('true'),
     );
-    const row = within(drawer).getByText('Pick up the audit', { exact: false }).closest('button');
+    const row = within(drawer).getByRole('button', { name: 'Start a chat on this: Pick up the audit' });
     await waitFor(() => expect(document.activeElement).toBe(row));
   });
 
@@ -297,7 +299,7 @@ describe('Palette', () => {
     fireEvent.click(screen.getByRole('option', { name: /Private errand/ }));
     const drawer = document.getElementById('drawer') as HTMLElement;
     const row = await waitFor(() => {
-      const r = within(drawer).getByText('Private errand', { exact: false }).closest('button');
+      const r = within(drawer).getByRole('button', { name: 'Start a chat on this: Private errand' });
       expect(document.activeElement).toBe(r);
       return r as HTMLElement;
     });

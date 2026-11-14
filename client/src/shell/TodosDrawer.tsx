@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   ATTENTION_LABEL,
   attentionFor,
@@ -9,6 +9,7 @@ import {
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatClient } from '../state/client-choice.ts';
+import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
@@ -18,6 +19,7 @@ import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { AddTodoForm, type EditDraft, TodoDonePanel, TodoEditor } from './TodoForms.tsx';
 import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
 
@@ -119,6 +121,8 @@ function TodoRow({
   fresh,
   showScope,
   onOpened,
+  favourite,
+  onStar,
 }: {
   todo: TodoItem;
   editing: Editing | null;
@@ -128,9 +132,16 @@ function TodoRow({
   showScope: boolean;
   /** The row was opened (chat or editor): "New to you" marks it seen. */
   onOpened: (todo: TodoItem) => void;
+  /** Starred: it sits in Favourites, at the top. */
+  favourite: boolean;
+  onStar: (todo: TodoItem, button: HTMLElement) => void;
 }) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
+  // The arrow is named by its action and title; "New to you" and the details line describe it, so a keyboard or
+  // screen-reader user who lands on it hears them too.
+  const newId = useId();
+  const metaId = useId();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
@@ -188,17 +199,19 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      <button type="button" className="todo-main" data-todo-open={todo.key} onClick={choose}>
+      {/* The row itself is not a button (Ian, 2026-11-14): only the arrow starts or opens the chat. */}
+      <div className="todo-main">
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
           <span className="line-title">
-            <span className="visually-hidden">
-              {fresh ? 'New to you. ' : ''}
-              {chat ? 'Open chat:' : 'Start a chat on this:'}
-            </span>{' '}
+            {fresh ? (
+              <span className="visually-hidden" id={newId}>
+                New to you.{' '}
+              </span>
+            ) : null}
             {todo.title}
           </span>{' '}
-          <span className="line-meta">
+          <span className="line-meta" id={metaId}>
             {parts.map((part, i) => (
               <span key={part.text}>
                 {i > 0 ? ', ' : ''}
@@ -212,10 +225,14 @@ function TodoRow({
             ))}
           </span>
         </span>
-        <span className="go" aria-hidden="true">
-          <Icon name="go" size={16} />
-        </span>
-      </button>
+      </div>
+      {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
+      <StarButton
+        id={todo.key}
+        title={todo.title}
+        on={favourite}
+        onPress={(_, button) => onStar(todo, button)}
+      />
       {editing ? (
         <button
           type="button"
@@ -231,6 +248,16 @@ function TodoRow({
           <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
         </button>
       ) : null}
+      <button
+        type="button"
+        className="icon-btn todo-go"
+        data-todo-open={todo.key}
+        aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+        aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
+        onClick={choose}
+      >
+        <Icon name="go" size={16} />
+      </button>
     </li>
   );
 }
@@ -267,7 +294,9 @@ export function TodosDrawer() {
     markTodosSeen,
     reveal,
     clearReveal,
+    toggleFavouriteTodo,
   } = useStore();
+  const favs = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
   const [undoMessageFor, setUndoMessageFor] = useState<string | null>(null);
@@ -284,6 +313,13 @@ export function TodosDrawer() {
     setRevealed(null);
     setTabState(t);
   };
+  // Sections the person opened or closed by hand, or that a star press opened. They hold only while the tab,
+  // the filtering and the last global-search reveal stay the same (`scope`); after that every section is back
+  // to its default (`defaultOpen` below).
+  const [foldChoice, setFoldChoice] = useState<{ scope: string; open: Record<string, boolean> }>({
+    scope: '',
+    open: {},
+  });
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TodoFilter>(EMPTY_FILTER);
@@ -308,6 +344,8 @@ export function TodosDrawer() {
   const [refocus, setRefocus] = useState<string | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const filtersRef = useRef<HTMLDivElement>(null);
+  // Focus follows a to-do whose star moved it (`useStarFocus`).
+  const rememberStar = useStarFocus(scrollRef, favs);
 
   // The global search chose a to-do (`revealTodo`): show its tab with no filters, hold its group open and
   // focus its row. The request is taken at once, so it happens once. It waits for the list to load.
@@ -392,16 +430,46 @@ export function TodosDrawer() {
   };
   const filtering = filterActive(active);
   const shown = filterTodos(items, active, clients);
+  // "New to you" is worked out over every row, so a starred new to-do keeps its dot and is marked seen when
+  // opened. Then the starred ones go to Favourites, the only place they show; new ones not starred go to
+  // "New to you"; the rest are grouped by date.
   const fresh = tab === 'mine' ? newToYou(shown, me, seenMap, new Date()) : [];
   const freshKeys = new Set(fresh.map((t) => t.key));
+  const { favourites, rest } = splitFavouriteTodos(shown, favs);
+  const freshRows = favourites.length > 0 ? fresh.filter((t) => !favs.includes(t.key)) : fresh;
   const groups = groupTodos(
-    fresh.length > 0 ? shown.filter((t) => !freshKeys.has(t.key)) : shown,
+    freshRows.length > 0 ? rest.filter((t) => !freshKeys.has(t.key)) : rest,
     todayIso(),
   );
   const showScope = tab === 'mine' && active.scope === 'all';
   // The group the global search sent us to stays open, whatever else is closed.
   const holdsRevealed = (list: TodoItem[]) => revealed !== null && list.some((t) => t.key === revealed.key);
   const revealN = revealed?.n ?? 0;
+  const foldScope = `${tab}-${filtering}-${revealN}`;
+  // A new tab, filtering or reveal starts every section at its default, and coming back doesn't bring old
+  // choices back: they are dropped as soon as the scope changes (React's adjust-state-while-rendering pattern).
+  if (foldChoice.scope !== foldScope) setFoldChoice({ scope: foldScope, open: {} });
+  const chosen = foldChoice.scope === foldScope ? foldChoice.open : {};
+  const setFold = (id: string, open: boolean) =>
+    setFoldChoice((c) => ({
+      scope: foldScope,
+      open: { ...(c.scope === foldScope ? c.open : {}), [id]: open },
+    }));
+  // Favourites starts open, and so does the section under it ("New to you", else the top date group). While a
+  // filter is on every section opens; the group the global search sent us to is held open.
+  const foldOpen = (id: string, byDefault: boolean) => chosen[id] ?? byDefault;
+
+  const onStar = (todo: TodoItem, button: HTMLElement) => {
+    rememberStar(todo.key, button);
+    // Open the section the to-do moves to, so focus can follow it there.
+    const to = !favs.includes(todo.key)
+      ? 'favourites'
+      : freshKeys.has(todo.key)
+        ? 'new'
+        : groupTodos([todo], todayIso())[0]?.key;
+    if (to) setFold(to, true);
+    void toggleFavouriteTodo(todo.key);
+  };
 
   const opened = (todo: TodoItem) => {
     if (tab === 'mine' && freshKeys.has(todo.key) && !visitSeen.has(todo.key)) {
@@ -599,6 +667,8 @@ export function TodosDrawer() {
         fresh={isFresh && !visitSeen.has(t.key)}
         showScope={showScope}
         onOpened={opened}
+        favourite={favs.includes(t.key)}
+        onStar={onStar}
       />
     );
   };
@@ -740,11 +810,24 @@ export function TodosDrawer() {
             )
           ) : (
             <>
-              {fresh.length > 0 ? (
+              {favourites.length > 0 ? (
                 <Fold
-                  key={`${tab}-new-${filtering}-${revealN}`}
+                  key="favourites"
+                  title="Favourites"
+                  count={favourites.length}
+                  open={foldOpen('favourites', true)}
+                  onToggle={(o) => setFold('favourites', o)}
+                >
+                  <ul className="drawer-list">{favourites.map((t) => row(t, freshKeys.has(t.key)))}</ul>
+                </Fold>
+              ) : null}
+              {freshRows.length > 0 ? (
+                <Fold
+                  key="new"
                   title="New to you"
-                  count={fresh.length}
+                  count={freshRows.length}
+                  open={foldOpen('new', true)}
+                  onToggle={(o) => setFold('new', o)}
                   action={
                     <button
                       type="button"
@@ -752,6 +835,7 @@ export function TodosDrawer() {
                       data-variant="quiet"
                       data-size="small"
                       onClick={() => {
+                        // Starred new to-dos too, so no dot is left anywhere.
                         markTodosSeen(fresh);
                         setVisitSeen(new Set());
                         setMessage('Marked as seen.');
@@ -763,18 +847,21 @@ export function TodosDrawer() {
                     </button>
                   }
                 >
-                  <ul className="drawer-list">{fresh.map((t) => row(t, true))}</ul>
+                  <ul className="drawer-list">{freshRows.map((t) => row(t, true))}</ul>
                 </Fold>
               ) : null}
               {groups.map((g, i) => (
                 <Fold
-                  // Only the top section starts open ("New to you" when there is one), so the list isn't
-                  // overwhelming (Ian, 2026-11-13). While a filter is on, every group opens. The key
-                  // remounts a group when either changes, so the new top group opens once "New to you" empties.
-                  key={`${tab}-${g.key}-${filtering}-${fresh.length === 0 && i === 0}-${holdsRevealed(g.items)}-${revealN}`}
+                  // Only the top section starts open (below Favourites), so the list isn't overwhelming (Ian,
+                  // 2026-11-13). Worked out on every render, so the new top group opens once "New to you" empties.
+                  key={g.key}
                   title={g.title}
                   count={g.items.length}
-                  defaultOpen={filtering || (fresh.length === 0 && i === 0) || holdsRevealed(g.items)}
+                  open={foldOpen(
+                    g.key,
+                    filtering || (freshRows.length === 0 && i === 0) || holdsRevealed(g.items),
+                  )}
+                  onToggle={(o) => setFold(g.key, o)}
                 >
                   <ul className="drawer-list">{g.items.map((t) => row(t, false))}</ul>
                 </Fold>

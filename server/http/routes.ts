@@ -22,6 +22,7 @@ import {
   type EffortLevel,
   type EngineHealth,
   FAVOURITE_CHATS_MAX,
+  FAVOURITE_TODOS_MAX,
   type Identity,
   LIBRARY_SEARCH_QUERY,
   type LibraryFile,
@@ -40,6 +41,7 @@ import {
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
+  TODO_KEY_MAX,
   TODO_SEEN_MAX,
   type TodoAction,
   TodoChangeError,
@@ -252,7 +254,7 @@ const EMPTY_TODOS: TodoList = {
 };
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
-const SEEN_KEY_MAX = 300;
+const SEEN_KEY_MAX = TODO_KEY_MAX;
 const SEEN_VALUE_MAX = 40;
 
 /** `PUT /api/prefs`: only known keys, each of the right type. */
@@ -328,6 +330,17 @@ export async function validatePrefsPatch(
           throw bad('The favourite chats were not understood.');
         }
         patch.favouriteChats = [...new Set(value as string[])];
+        break;
+      }
+      case 'favouriteTodos': {
+        if (
+          !Array.isArray(value) ||
+          value.length > FAVOURITE_TODOS_MAX ||
+          !value.every((v) => typeof v === 'string' && v !== '' && v.length <= TODO_KEY_MAX)
+        ) {
+          throw bad('The favourite to-dos were not understood.');
+        }
+        patch.favouriteTodos = [...new Set(value as string[])];
         break;
       }
       case 'levelMode': {

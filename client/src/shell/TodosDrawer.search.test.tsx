@@ -43,6 +43,12 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
 const personal = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem =>
   todo(id, title, { scope: 'personal', key: `personal/${id}`, path: `personal/todo/${id}`, ...over });
 
+/** A row's chat button ("Start a chat on this: …" or "Open chat: …"): the row itself is not a button. */
+const chatButton = (title: string) =>
+  screen.getByRole('button', {
+    name: new RegExp(`^(Start a chat on this|Open chat): ${title}$`),
+  }) as HTMLElement;
+
 const fns = {
   changeTodos: vi.fn(),
   markTodosSeen: vi.fn(),
@@ -51,6 +57,7 @@ const fns = {
   undoHeld: vi.fn(),
   newChat: vi.fn(),
   openChat: vi.fn(),
+  toggleFavouriteTodo: vi.fn(),
 };
 
 function setStore(mine: TodoItem[], over: Partial<TodoList> = {}, seen: Record<string, string> = {}) {
@@ -381,7 +388,7 @@ describe('revealTodo (from the global search)', () => {
     ).toBe('true');
     // "No date" is a closed group when nothing asked for it.
     expect(screen.getByRole('button', { name: /No date/ }).getAttribute('aria-expanded')).toBe('true');
-    const rowButton = screen.getByText('Pick me up', { exact: false }).closest('button') as HTMLElement;
+    const rowButton = chatButton('Pick me up') as HTMLElement;
     expect(document.activeElement).toBe(rowButton);
   });
 
@@ -393,9 +400,7 @@ describe('revealTodo (from the global search)', () => {
     render(<TodosDrawer />);
     expect(screen.getByRole('button', { name: /^Overdue/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: /^No date/ }).getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
   });
 
   it('clears the filters first, so the to-do is not hidden by them', () => {
@@ -408,7 +413,7 @@ describe('revealTodo (from the global search)', () => {
     ask(b);
     rerender(<TodosDrawer />);
     expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
-    expect(document.activeElement).toBe(screen.getByText('Ring Bob', { exact: false }).closest('button'));
+    expect(document.activeElement).toBe(chatButton('Ring Bob'));
   });
 
   it('opens a group the person closed by hand when the same to-do is revealed again', () => {
@@ -425,9 +430,7 @@ describe('revealTodo (from the global search)', () => {
     ask(target, 2);
     rerender(<TodosDrawer />);
     expect(noDate().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
   });
 
   it('does the same for "New to you", so the row is never left in a hidden group', () => {
@@ -442,9 +445,7 @@ describe('revealTodo (from the global search)', () => {
     ask(fresh, 2);
     rerender(<TodosDrawer />);
     expect(group().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Handed over', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Handed over') as HTMLElement);
   });
 
   it('does nothing visible for a to-do that has gone, but still takes the request', () => {
@@ -497,7 +498,7 @@ describe('New to you', () => {
   it('marks a row seen when it is opened, and all of them with Mark all as seen', () => {
     setStore([passed, todo('m.md', 'Another', { handover: handover() })]);
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByText('Fresh from Ben', { exact: false }));
+    fireEvent.click(chatButton('Fresh from Ben'));
     expect(fns.markTodosSeen).toHaveBeenCalledWith([passed]);
     expect(fns.newChat).toHaveBeenCalledWith({
       draft: 'Help me with this to-do: todo/n.md (Fresh from Ben)',
@@ -684,16 +685,180 @@ describe('starting a chat from a to-do', () => {
   it("passes the to-do's client, and no client for a personal to-do", () => {
     setStore([todo('a.md', 'Renew contract', { client: 'acme' })]);
     const { unmount } = render(<TodosDrawer />);
-    fireEvent.click(screen.getByText('Renew contract', { exact: false }));
+    fireEvent.click(chatButton('Renew contract'));
     expect(fns.newChat).toHaveBeenLastCalledWith(expect.objectContaining({ todoId: 'a.md', client: 'acme' }));
     unmount();
 
     setStore([personal('p.md', 'Secret plan', { client: 'acme' })], { canUsePersonal: true });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
-    fireEvent.click(screen.getByText('Secret plan', { exact: false }));
+    fireEvent.click(chatButton('Secret plan'));
     expect(fns.newChat).toHaveBeenLastCalledWith(
       expect.objectContaining({ todoId: 'personal/p.md', client: null }),
     );
+  });
+});
+
+describe('Favourites', () => {
+  const expanded = (name: RegExp) => screen.getByRole('button', { name }).getAttribute('aria-expanded');
+  const star = (title: string) => screen.getByRole('button', { name: `Favourite: ${title}` });
+  const section = (name: RegExp) => screen.getByRole('heading', { name }).closest('section') as HTMLElement;
+  const starred = (keys: string[]) => {
+    (store.current.boot as { prefs: Record<string, unknown> }).prefs.favouriteTodos = keys;
+  };
+  const late = todo('late.md', 'Late thing', { due: '2000-01-01' });
+  const later = todo('later.md', 'Later thing', { due: '2999-01-01' });
+  const undated = todo('none.md', 'Undated thing', { due: null });
+
+  it('puts starred to-dos first, in the order shown, and only there', () => {
+    setStore([late, later, undated]);
+    starred(['none.md', 'later.md']);
+    render(<TodosDrawer />);
+    const fav = section(/^Favourites/);
+    const titles = within(fav)
+      .getAllByRole('button', { name: /^Start a chat on this:/ })
+      .map((b) => b.getAttribute('aria-label'));
+    expect(titles).toEqual(['Start a chat on this: Later thing', 'Start a chat on this: Undated thing']);
+    expect(screen.getAllByText('Later thing', { exact: false })).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: /^No date/ })).toBeNull();
+    expect(star('Later thing').getAttribute('aria-pressed')).toBe('true');
+    expect(star('Late thing').getAttribute('aria-pressed')).toBe('false');
+    // The first section of the page is Favourites.
+    expect(document.querySelector('.fold h3')?.textContent).toMatch(/^Favourites/);
+  });
+
+  it('stars and unstars by key, on either tab, and shows the star when changes are off', () => {
+    setStore([late], { changes: 'switched-off' });
+    (store.current.boot as { prefs: Record<string, unknown> }).prefs.directWrites = false;
+    render(<TodosDrawer />);
+    fireEvent.click(star('Late thing'));
+    expect(fns.toggleFavouriteTodo).toHaveBeenLastCalledWith('late.md');
+    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    fireEvent.click(star('Open thing'));
+    expect(fns.toggleFavouriteTodo).toHaveBeenLastCalledWith('o1.md');
+  });
+
+  it('shows a starred open-to-anyone to-do in Favourites on that tab only', () => {
+    setStore([late]);
+    starred(['o1.md']);
+    render(<TodosDrawer />);
+    expect(screen.queryByRole('heading', { name: /^Favourites/ })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    expect(within(section(/^Favourites/)).getByText('Open thing', { exact: false })).toBeTruthy();
+  });
+
+  it('has no star on a row waiting out its Undo', () => {
+    setStore([late, later]);
+    store.current.heldTodos = [
+      { todoId: 'late.md', title: 'Late thing', kind: 'tick', label: 'Marked as done', action: null },
+    ];
+    render(<TodosDrawer />);
+    expect(document.querySelector('[data-star-id="late.md"]')).toBeNull();
+    // Later thing sits in a closed section, still in the page.
+    expect(document.querySelector('[data-star-id="later.md"]')).not.toBeNull();
+  });
+
+  it('keeps a starred new to-do in Favourites with its dot; "Mark all as seen" clears it too', () => {
+    const fresh = todo('n.md', 'Fresh from Ben', { handover: handover() });
+    const other = todo('m.md', 'Another', { handover: handover() });
+    setStore([late, fresh, other]);
+    starred(['n.md']);
+    render(<TodosDrawer />);
+    const fav = section(/^Favourites/);
+    expect(within(fav).getByText('Fresh from Ben', { exact: false })).toBeTruthy();
+    expect(fav.querySelector('[data-new="true"]')).not.toBeNull();
+    const go = within(fav).getByRole('button', { name: 'Start a chat on this: Fresh from Ben' });
+    const firstSaid = document.getElementById(go.getAttribute('aria-describedby')?.split(' ')[0] ?? '');
+    expect(firstSaid?.textContent).toMatch(/^New to you\./);
+    const fresher = section(/^New to you/);
+    expect(within(fresher).queryByText('Fresh from Ben', { exact: false })).toBeNull();
+    expect(within(fresher).getByText('Another', { exact: false })).toBeTruthy();
+    // Opening the starred one marks it seen.
+    fireEvent.click(within(fav).getByRole('button', { name: 'Start a chat on this: Fresh from Ben' }));
+    expect(fns.markTodosSeen).toHaveBeenLastCalledWith([fresh]);
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all as seen' }));
+    expect(
+      fns.markTodosSeen.mock.calls
+        .at(-1)?.[0]
+        .map((t: TodoItem) => t.key)
+        .sort(),
+    ).toEqual(['m.md', 'n.md']);
+  });
+
+  it('opens Favourites and the section under it, and only those', () => {
+    setStore([late, later, undated]);
+    starred(['later.md']);
+    const { unmount } = render(<TodosDrawer />);
+    expect(expanded(/^Favourites/)).toBe('true');
+    expect(expanded(/^Overdue/)).toBe('true');
+    expect(expanded(/^No date/)).toBe('false');
+    unmount();
+    // With something new, the section under Favourites is "New to you".
+    setStore([late, todo('n.md', 'Fresh from Ben', { handover: handover() })]);
+    starred(['late.md']);
+    render(<TodosDrawer />);
+    expect(expanded(/^Favourites/)).toBe('true');
+    expect(expanded(/^New to you\s*\d/)).toBe('true');
+  });
+
+  it('keeps a section closed by hand closed when the list re-renders', () => {
+    setStore([late, later, undated]);
+    starred(['later.md']);
+    const { rerender } = render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: /^Overdue/ }));
+    expect(expanded(/^Overdue/)).toBe('false');
+    rerender(<TodosDrawer />);
+    expect(expanded(/^Overdue/)).toBe('false');
+  });
+
+  it('starts every section at its default again after a trip to the other tab or a filter', () => {
+    const a = todo('late.md', 'Late thing', { due: '2000-01-01', client: 'acme' });
+    const b = todo('later.md', 'Later thing', { due: '2999-01-01', client: 'bolt' });
+    setStore([a, b]);
+    render(<TodosDrawer />);
+    const overdue = () => screen.getByRole('button', { name: /^Overdue/ });
+    fireEvent.click(overdue());
+    expect(overdue().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
+    expect(overdue().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(overdue());
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'acme' } });
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: '' } });
+    expect(overdue().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens the top date group when the only new to-do is starred, as there is no "New to you"', () => {
+    setStore([late, undated, todo('n.md', 'Fresh from Ben', { handover: handover() })]);
+    starred(['n.md']);
+    render(<TodosDrawer />);
+    expect(screen.queryByRole('heading', { name: /^New to you/ })).toBeNull();
+    expect(expanded(/^Overdue/)).toBe('true');
+    expect(expanded(/^No date/)).toBe('false');
+  });
+
+  it('opens the closed section an unstarred to-do moves to, and focus follows it there', () => {
+    setStore([late, undated]);
+    starred(['none.md']);
+    const { rerender } = render(<TodosDrawer />);
+    star('Undated thing').focus();
+    fireEvent.click(star('Undated thing'));
+    expect(fns.toggleFavouriteTodo).toHaveBeenCalledWith('none.md');
+    // The save lands: the row leaves Favourites, its button goes, and focus falls to the page.
+    starred([]);
+    rerender(<TodosDrawer />);
+    expect(expanded(/^No date/)).toBe('true');
+    expect(document.activeElement).toBe(star('Undated thing'));
+  });
+
+  it('opens Favourites when a to-do is starred, and focus follows it there', () => {
+    setStore([late, undated]);
+    const { rerender } = render(<TodosDrawer />);
+    star('Late thing').focus();
+    fireEvent.click(star('Late thing'));
+    starred(['late.md']);
+    rerender(<TodosDrawer />);
+    expect(within(section(/^Favourites/)).getByText('Late thing', { exact: false })).toBeTruthy();
+    expect(document.activeElement).toBe(star('Late thing'));
   });
 });

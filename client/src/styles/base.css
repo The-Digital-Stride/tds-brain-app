@@ -623,15 +623,17 @@ button.todo {
   background: none;
   cursor: pointer;
 }
-.line:hover,
-.todo:hover {
+.line:hover {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--lift-1);
   transform: translateY(-1px);
 }
-.line:active,
-.todo:active {
+.line:active {
   transform: none;
+}
+/* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
+.todo:hover {
+  background: rgba(255, 255, 255, 0.92);
 }
 .line[aria-current="true"],
 .line[data-current="true"],
@@ -709,8 +711,7 @@ button.todo {
   .switch::before {
     transition: none;
   }
-  .line:hover,
-  .todo:hover {
+  .line:hover {
     transform: none;
   }
 }

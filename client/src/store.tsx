@@ -22,11 +22,17 @@ import type {
   TodoList,
   TodoScope,
 } from '../../shared/contract.ts';
-import { FAVOURITE_CHATS_MAX, STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
+import {
+  FAVOURITE_CHATS_MAX,
+  FAVOURITE_TODOS_MAX,
+  STREAM_PING_EVENT,
+  STREAM_STALL_MS,
+} from '../../shared/contract.ts';
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
+import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
 import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
@@ -174,6 +180,11 @@ export interface Store {
    * and shows in `actionError`.
    */
   toggleFavouriteChat: (sdkSessionId: string) => Promise<void>;
+  /**
+   * Stars or unstars a to-do by its `TodoItem.key` (kept in prefs, never in the to-do file). The same rules as
+   * `toggleFavouriteChat`. A to-do that moves (TDS ⇄ personal) keeps its star under its new key.
+   */
+  toggleFavouriteTodo: (key: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
   /** Counts up each time focus should return to the message box. */
@@ -475,72 +486,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions, requestFocus],
   );
 
-  // Favourite chats. `favRef` is the latest list, so quick taps each build on the one before; `favSaved` is the
-  // last list the server confirmed; `favTurn` counts the saves so only the newest reply (or failure) is shown;
-  // `favPending` counts saves still waiting, while which another setting's reply must not replace the stars.
-  const favRef = useRef<string[]>([]);
-  const favSaved = useRef<string[]>([]);
-  const favTurn = useRef(0);
-  const favPending = useRef(0);
-  const favSavedTurn = useRef(0);
-  /** The newest tap whose save failed, so a late success from an older tap can still correct the stars. */
-  const favFailedTurn = useRef(0);
-  useEffect(() => {
-    if (favPending.current > 0) return;
-    favRef.current = boot?.prefs.favouriteChats ?? [];
-    favSaved.current = favRef.current;
-  }, [boot?.prefs.favouriteChats]);
-  /** A prefs reply for another setting, with the stars kept as shown while a star save is waiting. */
-  const keepStars = useCallback((prefs: AppPrefs): AppPrefs => {
-    if (favPending.current === 0) return prefs;
-    favSaved.current = prefs.favouriteChats ?? [];
-    return { ...prefs, favouriteChats: favRef.current };
+  // Favourites (chats and to-dos): one save engine per list, in `state/favourite-list.ts`.
+  const showFavourites = useCallback((field: FavouriteField, list: string[]) => {
+    setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, [field]: list } } : b));
   }, []);
-  const saveFavouriteChats = useCallback(async (favouriteChats: string[]) => {
-    favRef.current = favouriteChats;
-    const turn = ++favTurn.current;
-    const show = (list: string[]) =>
-      setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, favouriteChats: list } } : b));
-    show(favouriteChats);
-    favPending.current += 1;
-    try {
-      const prefs = await api.updatePrefs({ favouriteChats });
-      // A late reply to an older tap must not stand in for a newer saved list.
-      if (turn > favSavedTurn.current) {
-        favSavedTurn.current = turn;
-        favSaved.current = prefs.favouriteChats ?? [];
-      }
-      favPending.current -= 1;
-      if (turn === favTurn.current)
-        setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, favouriteChats: favSaved.current } } : b));
-      else if (favPending.current === 0 && favFailedTurn.current === favTurn.current) {
-        // The newest tap failed and this older one was saved after all: show what the server holds.
-        favRef.current = favSaved.current;
-        show(favSaved.current);
-      }
-    } catch (err) {
-      favPending.current -= 1;
-      setActionError(messageOf(err));
-      // The change did not stick: show what the server last saved, unless a newer tap has moved on.
-      if (turn === favTurn.current) {
-        favFailedTurn.current = turn;
-        favRef.current = favSaved.current;
-        show(favSaved.current);
-      }
-    }
-  }, []);
-  const toggleFavouriteChat = useCallback(
-    async (sdkSessionId: string) => {
-      const favs = favRef.current;
-      // Over the cap the oldest star goes, as the server keeps the newest (it refuses a longer list).
-      await saveFavouriteChats(
-        favs.includes(sdkSessionId)
-          ? favs.filter((f) => f !== sdkSessionId)
-          : [...favs, sdkSessionId].slice(-FAVOURITE_CHATS_MAX),
-      );
-    },
-    [saveFavouriteChats],
+  const favouriteError = useCallback((err: unknown) => setActionError(messageOf(err)), []);
+  const chatFavourites = useFavouriteList({
+    field: 'favouriteChats',
+    max: FAVOURITE_CHATS_MAX,
+    current: boot?.prefs.favouriteChats,
+    save: api.updatePrefs,
+    show: showFavourites,
+    onError: favouriteError,
+  });
+  const todoFavourites = useFavouriteList({
+    field: 'favouriteTodos',
+    max: FAVOURITE_TODOS_MAX,
+    current: boot?.prefs.favouriteTodos,
+    save: api.updatePrefs,
+    show: showFavourites,
+    onError: favouriteError,
+  });
+  const keepChatStars = chatFavourites.keep;
+  const keepTodoStars = todoFavourites.keep;
+  /** A prefs reply for another setting, with each star list kept as shown while one of its saves is waiting. */
+  const keepStars = useCallback(
+    (prefs: AppPrefs): AppPrefs => keepTodoStars(keepChatStars(prefs)),
+    [keepChatStars, keepTodoStars],
   );
+  const toggleFavouriteChat = chatFavourites.toggle;
+  const toggleFavouriteTodo = todoFavourites.toggle;
+  const renameFavouriteTodo = todoFavourites.rename;
 
   const deletePastChat = useCallback(
     async (sdkSessionId: string) => {
@@ -773,77 +749,82 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const changeTodos = useCallback(async (actions: TodoAction[]): Promise<ChangeTodosResult> => {
-    let done = 0;
-    let latest: TodoList | undefined;
-    let moved: { from: string; to: string } | undefined;
-    // After a `move`, later steps for the same to-do go to its new place (and new name, after a clash).
-    const renamed = new Map<string, string>();
-    const keyOf = (id: string, scope: TodoScope | undefined) =>
-      scope === 'personal' ? `personal/${id}` : id;
-    const found = () => (moved ? { moved } : {});
-    for (const [i, original] of actions.entries()) {
-      let action = original;
-      if (action.kind !== 'add') {
-        // The editor addresses steps after a `move` by the key it expects the file to have there.
-        const to = renamed.get(keyOf(action.id, action.scope));
-        if (to !== undefined) {
-          const personal = to.startsWith('personal/');
-          const { scope: _old, ...rest } = action;
-          action = {
-            ...rest,
-            id: personal ? to.slice('personal/'.length) : to,
-            ...(personal ? { scope: 'personal' as const } : {}),
-          } as TodoAction;
-        }
-      }
-      // Each step after the first checks against the version the previous step left behind (the
-      // person's own change), so only someone else's change can stop the save. Never sent without it.
-      if (i > 0 && action.kind !== 'add') {
-        const key = keyOf(action.id, action.scope);
-        const version = latest && [...latest.mine, ...latest.open].find((t) => t.key === key)?.version;
-        if (!version) {
-          return {
-            done,
-            error: {
-              code: 'not-found',
-              message: 'This to-do is no longer in your list, so the rest of your changes were not saved.',
-            },
-            ...(latest ? { todos: latest } : {}),
-            ...found(),
-          };
-        }
-        action = { ...action, expect: version };
-      }
-      try {
-        latest = await api.changeTodo(action);
-        setTodos(latest);
-        done += 1;
-        if (action.kind === 'move' && latest.moved) {
-          // The reply names the new key. If a name clash changed it, later steps go to the new name.
-          const expected = keyOf(action.id, action.to);
-          if (expected !== latest.moved.to) renamed.set(expected, latest.moved.to);
-          moved = { from: moved?.from ?? latest.moved.from, to: latest.moved.to };
-        }
-      } catch (err) {
-        const error =
-          err instanceof ApiFailure
-            ? { code: err.code, message: err.message }
-            : { code: 'internal', message: messageOf(err) };
-        if (error.code === 'changed') {
-          // Someone else changed it: load what is there now so the editor can adopt the new version.
-          try {
-            latest = await api.todos();
-            setTodos(latest);
-          } catch {
-            // The next change will try again.
+  const changeTodos = useCallback(
+    async (actions: TodoAction[]): Promise<ChangeTodosResult> => {
+      let done = 0;
+      let latest: TodoList | undefined;
+      let moved: { from: string; to: string } | undefined;
+      // After a `move`, later steps for the same to-do go to its new place (and new name, after a clash).
+      const renamed = new Map<string, string>();
+      const keyOf = (id: string, scope: TodoScope | undefined) =>
+        scope === 'personal' ? `personal/${id}` : id;
+      const found = () => (moved ? { moved } : {});
+      for (const [i, original] of actions.entries()) {
+        let action = original;
+        if (action.kind !== 'add') {
+          // The editor addresses steps after a `move` by the key it expects the file to have there.
+          const to = renamed.get(keyOf(action.id, action.scope));
+          if (to !== undefined) {
+            const personal = to.startsWith('personal/');
+            const { scope: _old, ...rest } = action;
+            action = {
+              ...rest,
+              id: personal ? to.slice('personal/'.length) : to,
+              ...(personal ? { scope: 'personal' as const } : {}),
+            } as TodoAction;
           }
         }
-        return { done, error, ...(latest ? { todos: latest } : {}), ...found() };
+        // Each step after the first checks against the version the previous step left behind (the
+        // person's own change), so only someone else's change can stop the save. Never sent without it.
+        if (i > 0 && action.kind !== 'add') {
+          const key = keyOf(action.id, action.scope);
+          const version = latest && [...latest.mine, ...latest.open].find((t) => t.key === key)?.version;
+          if (!version) {
+            return {
+              done,
+              error: {
+                code: 'not-found',
+                message: 'This to-do is no longer in your list, so the rest of your changes were not saved.',
+              },
+              ...(latest ? { todos: latest } : {}),
+              ...found(),
+            };
+          }
+          action = { ...action, expect: version };
+        }
+        try {
+          latest = await api.changeTodo(action);
+          setTodos(latest);
+          done += 1;
+          if (action.kind === 'move' && latest.moved) {
+            // The reply names the new key. If a name clash changed it, later steps go to the new name.
+            const expected = keyOf(action.id, action.to);
+            if (expected !== latest.moved.to) renamed.set(expected, latest.moved.to);
+            moved = { from: moved?.from ?? latest.moved.from, to: latest.moved.to };
+            // A starred to-do keeps its star under its new key, swapped with the list so it never shows unstarred.
+            void renameFavouriteTodo(latest.moved.from, latest.moved.to);
+          }
+        } catch (err) {
+          const error =
+            err instanceof ApiFailure
+              ? { code: err.code, message: err.message }
+              : { code: 'internal', message: messageOf(err) };
+          if (error.code === 'changed') {
+            // Someone else changed it: load what is there now so the editor can adopt the new version.
+            try {
+              latest = await api.todos();
+              setTodos(latest);
+            } catch {
+              // The next change will try again.
+            }
+          }
+          return { done, error, ...(latest ? { todos: latest } : {}), ...found() };
+        }
       }
-    }
-    return { done, ...(latest ? { todos: latest } : {}), ...found() };
-  }, []);
+      return { done, ...(latest ? { todos: latest } : {}), ...found() };
+    },
+    [renameFavouriteTodo],
+  );
 
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
   // A held change is 'waiting' (Undo works) until its time is up, then 'queued' behind any change still
@@ -984,6 +965,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deletePastChat,
       setChatKind,
       toggleFavouriteChat,
+      toggleFavouriteTodo,
       notice,
       run,
     }),
@@ -1034,6 +1016,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deletePastChat,
       setChatKind,
       toggleFavouriteChat,
+      toggleFavouriteTodo,
       notice,
       run,
     ],

@@ -48,6 +48,7 @@ describe('app store', () => {
       'directWrites',
       'effort',
       'favouriteChats',
+      'favouriteTodos',
       'lastClient',
       'levelMode',
       'model',
@@ -78,6 +79,28 @@ describe('app store', () => {
       (_, i) => `0f8fad5b-d9cb-469f-a165-${String(i).padStart(12, '0')}`,
     );
     expect((await store.update({ favouriteChats: many })).favouriteChats).toEqual(many.slice(5));
+  });
+
+  it('keeps favourite to-dos: an old file reads as none; empty, long and repeated keys are dropped; the newest 200 stay', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'] }));
+    const store = createAppStore(dir);
+    expect((await store.get()).favouriteTodos).toEqual([]);
+    const long = 'x'.repeat(301);
+    expect(
+      (await store.update({ favouriteTodos: ['a1', '', 'a1', 3, long, 'personal/b2'] as never }))
+        .favouriteTodos,
+    ).toEqual(['a1', 'personal/b2']);
+    expect((await store.update({ favouriteTodos: 'nope' as never })).favouriteTodos).toEqual([
+      'a1',
+      'personal/b2',
+    ]);
+    expect((await createAppStore(dir).get()).favouriteTodos).toEqual(['a1', 'personal/b2']);
+    const many = Array.from({ length: 205 }, (_, i) => `t${i}`);
+    expect((await store.update({ favouriteTodos: many })).favouriteTodos).toEqual(many.slice(5));
+    // A chat star save leaves the to-do stars alone.
+    expect((await store.update({ favouriteChats: [] })).favouriteTodos).toEqual(many.slice(5));
   });
 
   it('validates types: pins unique strings, max 100; booleans are booleans', async () => {
@@ -111,6 +134,7 @@ describe('app store', () => {
       effort: null,
       levelMode: 'auto',
       favouriteChats: [],
+      favouriteTodos: [],
     });
   });
 

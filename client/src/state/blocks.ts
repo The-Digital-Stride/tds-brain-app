@@ -1,30 +1,48 @@
-import type { ChatItem, ToolItem } from './chat-reducer.ts';
+import type { AssistantItem, ChatItem, ToolItem } from './chat-reducer.ts';
+
+/** One line in a "What Claude did" fold: a step, or a note Claude wrote between steps. */
+export type ActivityEntry = ToolItem | AssistantItem;
 
 export type Block =
-  | { kind: 'tools'; id: string; tools: ToolItem[] }
-  /** `note` is true for assistant text that is followed by a tool step in the same turn. */
-  | { kind: 'item'; item: ChatItem; note: boolean };
+  /** `id` is the first entry's, so a fold keeps its key (and its open state) as it grows. */
+  | { kind: 'tools'; id: string; entries: ActivityEntry[]; tools: ToolItem[] }
+  | { kind: 'item'; item: ChatItem };
 
-export function toBlocks(items: ChatItem[]): Block[] {
-  const notes = new Set<number>();
+/**
+ * The ids of Claude's working notes: its own text that a step follows in the same turn. They
+ * fold away with the steps (and show in the Steps tab), leaving the answer that ends the turn.
+ * Text still being written counts once a step follows it.
+ */
+export function noteIds(items: ChatItem[]): Set<string> {
+  const notes = new Set<string>();
   let toolAhead = false;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (!item) continue;
     if (item.kind === 'user' || item.kind === 'turn-end') toolAhead = false;
     else if (item.kind === 'tool') toolAhead = true;
-    else if (item.kind === 'assistant' && toolAhead) notes.add(i);
+    else if (item.kind === 'assistant' && toolAhead) notes.add(item.id);
   }
+  return notes;
+}
+
+export function toBlocks(items: ChatItem[]): Block[] {
+  const notes = noteIds(items);
   const blocks: Block[] = [];
-  items.forEach((item, i) => {
-    if (item.kind === 'tool') {
-      const last = blocks.at(-1);
-      if (last?.kind === 'tools') last.tools.push(item);
-      else blocks.push({ kind: 'tools', id: item.id, tools: [item] });
-    } else {
-      blocks.push({ kind: 'item', item, note: notes.has(i) });
+  for (const item of items) {
+    const isNote = item.kind === 'assistant' && notes.has(item.id);
+    if (item.kind !== 'tool' && !isNote) {
+      blocks.push({ kind: 'item', item });
+      continue;
     }
-  });
+    let fold = blocks.at(-1);
+    if (fold?.kind !== 'tools') {
+      fold = { kind: 'tools', id: item.id, entries: [], tools: [] };
+      blocks.push(fold);
+    }
+    fold.entries.push(item);
+    if (item.kind === 'tool') fold.tools.push(item);
+  }
   return blocks;
 }
 

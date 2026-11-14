@@ -25,18 +25,48 @@ const turnEnd: ChatItem = {
   durationMs: 1,
 };
 
-const noteFlags = (blocks: Block[]) =>
-  blocks.flatMap((b) => (b.kind === 'item' && b.item.kind === 'assistant' ? [b.note] : []));
+/** Each block as a short code: the item's id, or `[...]` for a fold of steps and notes. */
+const shape = (blocks: Block[]) =>
+  blocks.map((b) =>
+    b.kind === 'tools'
+      ? `[${b.entries.map((e) => e.id).join(' ')}]`
+      : 'id' in b.item
+        ? b.item.id
+        : b.item.kind,
+  );
 
 describe('toBlocks', () => {
-  it('treats text followed by a tool step in the same turn as a working note', () => {
+  it('folds text followed by a step in the same turn in with the steps, and leaves the answer out', () => {
     const blocks = toBlocks([user, text('a'), tool('1'), text('b'), turnEnd]);
-    expect(noteFlags(blocks)).toEqual([true, false]);
+    expect(shape(blocks)).toEqual(['u', '[a 1]', 'b', 't']);
   });
 
-  it('does not let a tool in a later turn turn the earlier answer into a note', () => {
+  it('makes one fold of a whole turn of notes and steps, in order', () => {
+    const blocks = toBlocks([
+      user,
+      text('a'),
+      tool('1'),
+      text('b'),
+      text('c'),
+      tool('2'),
+      tool('3'),
+      text('d'),
+    ]);
+    expect(shape(blocks)).toEqual(['u', '[a 1 b c 2 3]', 'd']);
+    const fold = blocks[1];
+    expect(fold?.kind === 'tools' && fold.tools.map((t) => t.id)).toEqual(['1', '2', '3']);
+    expect(fold?.kind === 'tools' && fold.id).toBe('a');
+  });
+
+  it('does not let a tool in a later turn fold the earlier answer', () => {
     const blocks = toBlocks([user, text('a'), turnEnd, user, tool('1')]);
-    expect(noteFlags(blocks)).toEqual([false]);
+    expect(shape(blocks)).toEqual(['u', 'a', 't', 'u', '[1]']);
+  });
+
+  it('leaves text that is still being written out until a step follows it', () => {
+    const writing: ChatItem = { kind: 'assistant', id: 'w', text: 'Let me', done: false };
+    expect(shape(toBlocks([user, tool('1'), writing]))).toEqual(['u', '[1]', 'w']);
+    expect(shape(toBlocks([user, tool('1'), writing, tool('2')]))).toEqual(['u', '[1 w 2]']);
   });
 
   it('groups consecutive tools into one block', () => {

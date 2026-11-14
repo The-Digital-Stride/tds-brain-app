@@ -546,11 +546,13 @@ function cleanUserText(raw: string): string | null {
     const slash = name.startsWith('/') ? name : `/${name}`;
     return args ? `${slash} ${args}` : slash;
   }
-  // `task-notification`: a background helper finished. It is Claude Code talking to Claude, not the person.
+  // `task-notification` (a background helper finished) and `agent-message` (a helper's report handed
+  // back, sometimes after a one-line lead-in) are Claude Code talking to Claude, not the person.
   if (
     /^<(local-command-[\w-]+|command-message|system-reminder|bash-[\w-]+|user-prompt-submit-hook|task-notification)>/.test(
       text,
-    )
+    ) ||
+    /^(Another Claude session sent a message:\s*)?<agent-message[\s>]/.test(text)
   ) {
     return null;
   }

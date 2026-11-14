@@ -1160,7 +1160,7 @@ describe('reopening a past chat (A4)', () => {
     });
   });
 
-  it('never shows a background helper’s finish notice as something the person said', async () => {
+  it('never shows a background helper’s finish notice or report as something the person said', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'Audit', lastModified: 1 });
     const notice = [
@@ -1184,10 +1184,40 @@ describe('reopening a past chat (A4)', () => {
         message: { role: 'user', content: [{ type: 'text', text: `\n${notice}` }] },
         parent_tool_use_id: null,
       },
+      {
+        type: 'user',
+        uuid: 'u4',
+        message: {
+          role: 'user',
+          content:
+            'Another Claude session sent a message:\n<agent-message from="a8bf8aa67175f8d2d">\n[Subagent hand-back] The report.\n</agent-message>',
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u5',
+        message: { role: 'user', content: '<agent-message from="a0f1">\nThe report.\n</agent-message>' },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u6',
+        message: { role: 'user', content: 'Another Claude session sent a message: tell me about it' },
+        parent_tool_use_id: null,
+      },
     ];
     const s = await mgr.start({ resume: 'old-1' });
     const said = events(mgr, s.id).filter((e) => e.type === 'user-message');
-    expect(said).toEqual([{ type: 'user-message', messageId: expect.any(String), text: 'Run the audit' }]);
+    // Only the wrapper is hidden: the person's own words that merely start the same way still show.
+    expect(said).toEqual([
+      { type: 'user-message', messageId: expect.any(String), text: 'Run the audit' },
+      {
+        type: 'user-message',
+        messageId: expect.any(String),
+        text: 'Another Claude session sent a message: tell me about it',
+      },
+    ]);
   });
 
   it('replays the steps of a reopened chat, and marks one with no stored result as not done', async () => {

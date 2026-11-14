@@ -381,6 +381,7 @@ export interface HomeLogic {
 // ── Right panel ────────────────────────────────────────────────────────────────────────────────
 
 export interface StepRow {
+  kind: 'step';
   id: string;
   label: string;
   status: 'running' | 'ok' | 'failed';
@@ -388,8 +389,20 @@ export interface StepRow {
   depth: number;
 }
 
-/** `client/src/state/steps.ts`. Every tool step of the chat, in order, helpers' steps nested after their parent. */
-export type StepsOf = (items: ChatItem[]) => StepRow[];
+/** A note Claude wrote between its steps ("Let me check the brief first."), as markdown. */
+export interface NoteRow {
+  kind: 'note';
+  id: string;
+  text: string;
+}
+
+export type StepEntry = StepRow | NoteRow;
+
+/**
+ * `client/src/state/steps.ts`. Every tool step of the chat, in order, helpers' steps nested after
+ * their parent, with Claude's notes between steps where it wrote them.
+ */
+export type StepsOf = (items: ChatItem[]) => StepEntry[];
 
 // ── Chats drawer ───────────────────────────────────────────────────────────────────────────────
 

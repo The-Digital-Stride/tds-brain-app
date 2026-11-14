@@ -9,7 +9,7 @@ import {
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
-import { currentStep, toBlocks } from '../state/blocks.ts';
+import { type ActivityEntry, currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
 import { STEP_WORDS } from '../state/steps.ts';
 import { SentFiles } from './Attachments.tsx';
@@ -97,7 +97,17 @@ function countAll(tools: ToolItem[]): number {
   );
 }
 
-function ActivityGroup({ tools, active, waiting }: { tools: ToolItem[]; active: boolean; waiting: boolean }) {
+function ActivityGroup({
+  entries,
+  tools,
+  active,
+  waiting,
+}: {
+  entries: ActivityEntry[];
+  tools: ToolItem[];
+  active: boolean;
+  waiting: boolean;
+}) {
   const step = active ? currentStep(tools) : null;
   const total = countAll(tools);
   let summary = `What Claude did (${total} ${total === 1 ? 'step' : 'steps'})`;
@@ -110,9 +120,16 @@ function ActivityGroup({ tools, active, waiting }: { tools: ToolItem[]; active: 
         {summary}
       </summary>
       <ul className="activity-steps">
-        {tools.map((t) => (
-          <ToolLine key={t.id} tool={t} />
-        ))}
+        {entries.map((e) =>
+          e.kind === 'tool' ? (
+            <ToolLine key={e.id} tool={e} />
+          ) : (
+            // A note Claude wrote between steps: folded in here, so the thread keeps just the answer.
+            <li key={e.id} className="activity-note">
+              <AssistantText text={e.text} />
+            </li>
+          ),
+        )}
       </ul>
     </details>
   );
@@ -124,7 +141,7 @@ function itemKey(item: ChatItem): string {
     : `${item.kind}-${item.id}`;
 }
 
-function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; note: boolean }) {
+function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -135,7 +152,7 @@ function Row({ item, sessionId, note }: { item: ChatItem; sessionId: string; not
       );
     case 'assistant':
       return (
-        <div className="msg-assistant" data-note={note}>
+        <div className="msg-assistant">
           <AssistantText text={item.text} />
         </div>
       );
@@ -217,12 +234,13 @@ export function Transcript({
             b.kind === 'tools' ? (
               <ActivityGroup
                 key={`tools-${b.id}`}
+                entries={b.entries}
                 tools={b.tools}
                 active={busy && i === lastTools}
                 waiting={sessionState === 'waiting'}
               />
             ) : (
-              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} note={b.note} />
+              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} />
             ),
           )}
         </div>

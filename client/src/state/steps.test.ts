@@ -49,6 +49,19 @@ describe('stepsOf', () => {
     ]);
   });
 
+  it('lists a helper’s report where it came back, by name', () => {
+    const items: ChatItem[] = [
+      tool('1'),
+      { kind: 'report', id: 'r', name: 'Audit memory', text: '## Long report' },
+      tool('2'),
+    ];
+    expect(stepsOf(items)).toEqual([
+      { kind: 'step', id: '1', label: 'Step 1', status: 'ok', depth: 0 },
+      { kind: 'report', id: 'r', name: 'Audit memory' },
+      { kind: 'step', id: '2', label: 'Step 2', status: 'ok', depth: 0 },
+    ]);
+  });
+
   it("puts a helper's steps straight after their parent, one level deeper per helper", () => {
     const items: ChatItem[] = [
       tool('1', 'ok', [text('h'), tool('1a', 'ok', [tool('1a-i', 'running')]), tool('1b', 'failed')]),

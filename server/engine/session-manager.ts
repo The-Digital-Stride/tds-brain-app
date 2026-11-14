@@ -52,6 +52,7 @@ import {
 } from './chat-files.ts';
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
+import { HelperNames, isHelperTurn, parseHelperReport } from './helper-reports.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
@@ -534,19 +535,6 @@ function historyText(content: unknown): string {
     .filter((b): b is Rec => isRec(b) && b.type === 'text' && typeof b.text === 'string')
     .map((b) => b.text as string)
     .join('\n\n');
-}
-
-/**
- * A stored user turn that is Claude Code waking Claude when a background helper is done:
- * `task-notification` (it finished) or `agent-message` (its report, sometimes after a one-line
- * lead-in). Not the person's words, but it starts a new turn of Claude's.
- */
-function isHelperTurn(raw: string): boolean {
-  const text = raw.trim();
-  return (
-    text.startsWith('<task-notification>') ||
-    /^(Another Claude session sent a message:\s*)?<agent-message[\s>]/.test(text)
-  );
 }
 
 /** Turns a stored user turn into what the person typed, or null for Claude Code's own wrappers. */
@@ -1240,18 +1228,30 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
     /** Steps replayed and still waiting for their stored result. */
     const started = new Set<string>();
+    const helpers = new HelperNames();
     for (const m of messages) {
       // Helpers' steps count too; the tracker ignores their text.
       s.files?.observe(m, { history: true });
       if (m.parent_tool_use_id) continue;
+      helpers.observe(m);
       const content = isRec(m.message) ? m.message.content : undefined;
       if (m.type === 'user') {
         const raw = historyText(content);
         const cleaned = cleanUserText(raw);
         // Stored history has no turn ends. A helper's wake-up is hidden but still ends Claude's
         // previous turn, so its answer stays an answer instead of folding into the next steps.
-        if (isHelperTurn(raw))
+        if (isHelperTurn(raw)) {
           emit(s, { type: 'turn-end', ok: true, interrupted: false, durationMs: null, errorText: null });
+          // Its report, if it carries one, shows in "What Claude did" instead of as the person's words.
+          const report = parseHelperReport(raw);
+          if (report)
+            emit(s, {
+              type: 'helper-report',
+              messageId: `h:${m.uuid}`,
+              name: helpers.name(report.from),
+              text: report.text,
+            });
+        }
         if (cleaned) {
           const { text, attachments } = splitAttachmentNote(cleaned);
           if (attachments.length > 0) s.files?.addAttachments(notedAttachments(cleaned));

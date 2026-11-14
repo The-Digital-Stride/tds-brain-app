@@ -912,6 +912,12 @@ export type ChatEvent =
   | { type: 'assistant-message'; messageId: string; text: string; parentToolUseId: string | null }
   | { type: 'tool-start'; toolUseId: string; tool: string; label: string; parentToolUseId: string | null }
   | { type: 'tool-end'; toolUseId: string; ok: boolean }
+  /**
+   * A background helper's report, handed back to Claude when it finished (as markdown). `name` is
+   * the description of the step that started it, or null when it is not known. Sent only on streams
+   * opened with `files=1`, like `files`: those pages ignore events they do not know.
+   */
+  | { type: 'helper-report'; messageId: string; name: string | null; text: string }
   | {
       type: 'permission-request';
       requestId: string;

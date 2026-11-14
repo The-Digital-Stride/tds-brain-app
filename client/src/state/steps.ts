@@ -22,10 +22,17 @@ export const stepsOf: StepsOf = (items) => {
     // Claude's own notes only: a helper's text is its report, shown under its step in the thread.
     if (item.kind === 'assistant' && notes.has(item.id) && item.text.trim())
       out.push({ kind: 'note', id: item.id, text: item.text });
+    // A report is long: the panel names it, and the thread's fold holds the text.
+    else if (item.kind === 'report') out.push({ kind: 'report', id: item.id, name: item.name });
     else collect([item], 0, out);
   }
   return out;
 };
+
+/** A helper's report's title, the same in the thread's fold and the panel. */
+export function reportTitle(name: string | null): string {
+  return name ? `Helper's report: ${name}` : "A helper's report";
+}
 
 /** A step's status in words, the same in the thread and the panel. */
 export const STEP_WORDS: Record<StepRow['status'], string> = {

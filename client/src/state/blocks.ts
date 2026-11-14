@@ -1,7 +1,7 @@
-import type { AssistantItem, ChatItem, ToolItem } from './chat-reducer.ts';
+import type { AssistantItem, ChatItem, ReportItem, ToolItem } from './chat-reducer.ts';
 
-/** One line in a "What Claude did" fold: a step, or a note Claude wrote between steps. */
-export type ActivityEntry = ToolItem | AssistantItem;
+/** One line in a "What Claude did" fold: a step, a note Claude wrote between steps, or a helper's report. */
+export type ActivityEntry = ToolItem | AssistantItem | ReportItem;
 
 export type Block =
   /** `id` is the first entry's, so a fold keeps its key (and its open state) as it grows. */
@@ -34,7 +34,7 @@ export function toBlocks(items: ChatItem[]): Block[] {
     // Claude between two runs of steps). It still ends the turn for `noteIds`.
     if (item.kind === 'turn-end' && item.ok && !item.interrupted) continue;
     const isNote = item.kind === 'assistant' && notes.has(item.id);
-    if (item.kind !== 'tool' && !isNote) {
+    if (item.kind !== 'tool' && item.kind !== 'report' && !isNote) {
       blocks.push({ kind: 'item', item });
       continue;
     }

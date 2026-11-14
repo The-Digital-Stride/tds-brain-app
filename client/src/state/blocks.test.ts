@@ -76,6 +76,16 @@ describe('toBlocks', () => {
     expect(shape(toBlocks([user, tool('1'), writing, tool('2')]))).toEqual(['u', '[1 w 2]']);
   });
 
+  it('folds a helper’s report in with the steps, without making the text before it a note', () => {
+    const report: ChatItem = { kind: 'report', id: 'r', name: 'Audit', text: '## Found' };
+    // The answer that ended the last turn stays out; the report and the steps after it fold together.
+    const blocks = toBlocks([user, text('a'), turnEnd, report, tool('1'), text('b')]);
+    expect(shape(blocks)).toEqual(['u', 'a', '[r 1]', 'b']);
+    const fold = blocks[2];
+    expect(fold?.kind === 'tools' && fold.tools.map((t) => t.id)).toEqual(['1']);
+    expect(shape(toBlocks([user, report, text('b')]))).toEqual(['u', '[r]', 'b']);
+  });
+
   it('groups consecutive tools into one block', () => {
     const blocks = toBlocks([tool('1'), tool('2'), text('a')]);
     expect(blocks.map((b) => b.kind)).toEqual(['tools', 'item']);

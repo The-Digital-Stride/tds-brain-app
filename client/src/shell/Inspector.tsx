@@ -3,7 +3,7 @@ import { indexChatFiles } from '../../../shared/chat-files.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { Markdown } from '../markdown.tsx';
 import type { ChatState } from '../state/chat-reducer.ts';
-import { STEP_WORDS, stepsOf } from '../state/steps.ts';
+import { reportTitle, STEP_WORDS, stepsOf } from '../state/steps.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
 import type { PanelTab } from './contract.ts';
@@ -38,6 +38,14 @@ function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: st
               <span className="visually-hidden">Claude's note: </span>
               <Markdown text={s.text} />
             </div>
+          </li>
+        ) : s.kind === 'report' ? (
+          // A helper's report came back here; its text is in the thread's "What Claude did".
+          <li key={s.id} className="step step-note">
+            <span aria-hidden="true" />
+            <span className="step-text">
+              <span className="step-label">{reportTitle(s.name)}</span>
+            </span>
           </li>
         ) : (
           <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>

@@ -396,7 +396,14 @@ export interface NoteRow {
   text: string;
 }
 
-export type StepEntry = StepRow | NoteRow;
+/** A background helper's report came back here. Its text is in the thread's "What Claude did". */
+export interface ReportRow {
+  kind: 'report';
+  id: string;
+  name: string | null;
+}
+
+export type StepEntry = StepRow | NoteRow | ReportRow;
 
 /**
  * `client/src/state/steps.ts`. Every tool step of the chat, in order, helpers' steps nested after

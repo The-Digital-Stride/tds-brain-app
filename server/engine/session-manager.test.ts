@@ -1220,6 +1220,56 @@ describe('reopening a past chat (A4)', () => {
     ]);
   });
 
+  it('replays a helper’s hand-back as its report, named after the step that started it', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Audit', lastModified: 1 });
+    fx.history['old-1'] = [
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'ag1', name: 'Agent', input: { description: 'Audit drawing cost' } },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'r1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'ag1', content: 'Launched.\nagentId: ab74 (internal)' },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: {
+          role: 'user',
+          content:
+            'Another Claude session sent a message:\n<agent-message from="ab74">\nThe report follows:\n  ## Frame time\n  Shadows cost most.\n</agent-message>\n\nThat "other Claude session" is an agent.',
+        },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    const ev = events(mgr, s.id);
+    expect(ev.filter((e) => e.type === 'helper-report')).toEqual([
+      {
+        type: 'helper-report',
+        messageId: expect.any(String),
+        name: 'Audit drawing cost',
+        text: '## Frame time\nShadows cost most.',
+      },
+    ]);
+    expect(ev.some((e) => e.type === 'user-message')).toBe(false);
+  });
+
   it('ends Claude’s turn where a hidden helper notice woke it, so its earlier answer stays an answer', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'Audit', lastModified: 1 });

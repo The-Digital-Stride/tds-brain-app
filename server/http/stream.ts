@@ -58,8 +58,10 @@ export interface StreamContext {
 export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, ctx: StreamContext): void {
   const sessionId = url.searchParams.get('session');
   // Only a page that understands `files` events gets them; an older page's reducer would reset the chat.
+  // Pages that do also ignore events they don't know, so later event types ride on the same flag.
   const wantFiles = url.searchParams.get('files') === '1';
-  const shown = (item: SequencedEvent) => wantFiles || item.event.type !== 'files';
+  const shown = (item: SequencedEvent) =>
+    wantFiles || (item.event.type !== 'files' && item.event.type !== 'helper-report');
   // A reconnecting EventSource sends the last id it saw; it wins over the original `after`.
   const after = Math.max(parseSeq(url.searchParams.get('after')), parseSeq(req.headers['last-event-id']));
 

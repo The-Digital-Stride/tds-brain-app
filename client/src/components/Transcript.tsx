@@ -11,7 +11,7 @@ import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { type ActivityEntry, currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
-import { STEP_WORDS } from '../state/steps.ts';
+import { reportTitle, STEP_WORDS } from '../state/steps.ts';
 import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
@@ -110,11 +110,16 @@ function ActivityGroup({
 }) {
   const step = active ? currentStep(tools) : null;
   const total = countAll(tools);
-  let summary = `What Claude did (${total} ${total === 1 ? 'step' : 'steps'})`;
+  const reports = entries.filter((e) => e.kind === 'report').length;
+  const counts = [
+    total > 0 ? `${total} ${total === 1 ? 'step' : 'steps'}` : '',
+    reports > 0 ? `${reports} ${reports === 1 ? 'helper report' : 'helper reports'}` : '',
+  ].filter(Boolean);
+  let summary = `What Claude did (${counts.join(', ')})`;
   if (active && waiting) summary = 'Waiting for you';
   else if (step) summary = `Claude is working: ${step}`;
   return (
-    <details className="activity" data-running={step !== null}>
+    <details className="activity step-fold" data-running={step !== null}>
       <summary>
         <Icon name="chevron" size={14} />
         {summary}
@@ -123,6 +128,19 @@ function ActivityGroup({
         {entries.map((e) =>
           e.kind === 'tool' ? (
             <ToolLine key={e.id} tool={e} />
+          ) : e.kind === 'report' ? (
+            // A helper's report: long, so it opens on its own, inside the fold.
+            <li key={e.id} className="activity-report">
+              <details>
+                <summary>
+                  <Icon name="chevron" size={14} />
+                  {reportTitle(e.name)}
+                </summary>
+                <div className="activity-report-body">
+                  <AssistantText text={e.text} />
+                </div>
+              </details>
+            </li>
           ) : (
             // A note Claude wrote between steps: folded in here, so the thread keeps just the answer.
             <li key={e.id} className="activity-note">

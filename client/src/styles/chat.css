@@ -244,6 +244,34 @@
 .activity .tool-status[data-status="failed"] {
   color: var(--danger);
 }
+/* The thread's "What Claude did" sits on its own faint panel, so Claude's working reads apart from
+   its answers and your messages: as wide as its line when shut, the column's width when open. */
+.step-fold {
+  background: var(--tint-1);
+  border-radius: 12px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
+}
+.step-fold[open] {
+  width: auto;
+  padding-bottom: 10px;
+}
+/* A helper's report: its own fold inside, opening to the report on a white card. */
+.activity-report > details[open] > summary .icon {
+  transform: none;
+}
+.activity-report-body {
+  margin: 4px 8px 4px 0;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--navy);
+  /* Not `anywhere`: that lets a table squeeze a short column ("HIGH") letter by letter. */
+  overflow-wrap: break-word;
+}
 /* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
 .activity-note {
   line-height: 1.5;

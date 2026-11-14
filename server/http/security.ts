@@ -27,9 +27,10 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * `GET /api/library/page/<id>` replaces the app's policy with this one, on success and on error: the
- * page is sandboxed (no scripts, an opaque origin), may load nothing from anywhere, and only the app
- * itself may frame it.
+ * `GET /api/library/page/<id>` replaces the app's policy with this one on an error or a gate refusal
+ * (a successful HTML file goes out under `PAGE_PREVIEW_CSP`, plan 2026-11-14-artifacts-in-app R7):
+ * the page is sandboxed (no scripts, an opaque origin), may load nothing from anywhere, and only the
+ * app itself may frame it.
  */
 export const PAGE_CSP =
   "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'";
@@ -42,14 +43,59 @@ export const PAGE_CSP =
  */
 export const PDF_CSP = "default-src 'none'; object-src 'self'; frame-ancestors 'self'";
 
-const LIBRARY_FRAME_PREFIXES = ['/api/library/page/', '/api/library/pdf/'];
+/**
+ * `GET ROUTES.chatPage(…)` (a page Claude wrote in a chat, plan 2026-11-14-artifacts-in-app, decision 3)
+ * replaces the app's policy with this one, on success and on error; so does a successful
+ * `GET /api/library/page/<id>` (R7: an HTML file in the brain shown in Documents). The page's scripts run in an
+ * opaque origin (`sandbox` without `allow-same-origin`): no cookies, no reach into the app or its API.
+ * It may load only what claude.ai lets artifacts load (these script, style and font hosts), nothing
+ * else: no fetches, no pictures from the web, no forms. Popups it opens stay sandboxed (never
+ * `allow-popups-to-escape-sandbox`) and it can never move the app's tab (no `allow-top-navigation*`).
+ * Only the app itself may frame it.
+ *
+ * Not a seal: a page can still send its own contents out by navigating itself (its frame) to another
+ * site with them in the address. The viewer notices a second load of the frame and replaces it with a
+ * notice (security review 2); what a page holds is what Claude wrote in this chat.
+ */
+export const PAGE_PREVIEW_CSP = [
+  'sandbox allow-scripts allow-popups',
+  "default-src 'none'",
+  "script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/ https://unpkg.com https://cdn.tailwindcss.com https://code.jquery.com",
+  "style-src 'unsafe-inline' https://fonts.googleapis.com",
+  'font-src https://fonts.gstatic.com data:',
+  'img-src data: blob:',
+  'media-src data: blob:',
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'self'",
+].join('; ');
 
 /**
- * True for the library routes shown in a frame (a page, a PDF), whose errors are HTML under
- * `PAGE_CSP`, never JSON, because the frame shows them.
+ * The branded copy's own `<meta>` policy (O2): the preview policy without `sandbox` (the wrapper's
+ * frame carries the sandbox as an attribute, and a meta policy can't set it) and `frame-ancestors`
+ * (ignored in a meta policy). Derived from the one constant so the two never drift.
+ */
+export const PAGE_WRAPPER_CSP = PAGE_PREVIEW_CSP.split('; ')
+  .filter((d) => !/^(sandbox|frame-ancestors)(\s|$)/.test(d))
+  .join('; ');
+
+const LIBRARY_FRAME_PREFIXES = ['/api/library/page/', '/api/library/pdf/'];
+/**
+ * `ROUTES.chatPage` (any last segment but `ask`, which is JSON) and `ROUTES.chatPageBranded` (a
+ * download, whose errors are the same small page).
+ */
+const CHAT_PAGE_PATH = /^\/api\/sessions\/[^/]+\/pages\/[^/]+\/(?:(?!ask$)[^/]+|[^/]+\/branded)$/;
+
+/**
+ * True for the routes shown in a frame (a library page or PDF, a chat's page), whose errors are HTML
+ * under a page policy, never JSON, because the frame shows them.
  */
 export function isLibraryPagePath(path: string): boolean {
-  return LIBRARY_FRAME_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length);
+  return (
+    LIBRARY_FRAME_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length) ||
+    CHAT_PAGE_PATH.test(path)
+  );
 }
 
 export type HeaderBag = Record<string, string | string[] | undefined>;

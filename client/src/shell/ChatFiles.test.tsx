@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatFile, ChatFilesSnapshot, LibraryItem } from '../../../shared/contract.ts';
+import type { ChatPage } from '../../../shared/pages-contract.ts';
 import type { ShellState } from './contract.ts';
 
 const h = vi.hoisted(() => ({
@@ -106,14 +107,30 @@ function Toggle() {
 }
 
 // Watches the shell's file viewer and stands in for a reply link asking for any file.
-let viewerShown: ShellState['viewer'] = null;
+let viewerShown: Extract<NonNullable<ShellState['viewer']>, { item: unknown }> | null = null;
+let rawViewer: ShellState['viewer'] = null;
 let askFor: (key: string) => void = () => {};
 function ViewerProbe() {
   const { state, dispatch } = useShell();
-  viewerShown = state.viewer;
+  rawViewer = state.viewer;
+  viewerShown = state.viewer && state.viewer.kind !== 'page' ? state.viewer : null;
   askFor = (key) => dispatch({ type: 'show-chat-file', chat: 's1', key });
   return null;
 }
+
+const pageOf = (over: Partial<ChatPage> = {}): ChatPage => ({
+  key: 'pg1',
+  title: 'Quarterly page',
+  url: 'https://claude.ai/artifact/abc123',
+  versions: [{ n: 1, remote: 2, at: null, hasCopy: true }],
+  draft: false,
+  fileKey: null,
+  live: false,
+  multiFile: false,
+  toolUseIds: [],
+  order: 1,
+  ...over,
+});
 
 const headings = () => Array.from(document.querySelectorAll('.fold-title')).map((e) => e.textContent);
 
@@ -402,5 +419,56 @@ describe('the preview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'What changed' }));
     await waitFor(() => expect(screen.getByText('The changes are no longer available.')).toBeTruthy());
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('the Pages fold', () => {
+  it('shows only when the chat has pages, above Web links, and opens the viewer from a row', () => {
+    renderTab();
+    expect(headings()).not.toContain('Pages');
+    cleanup();
+    set({
+      files: [],
+      links: [{ url: 'https://example.com/a' }, { url: 'https://claude.ai/artifact/abc123' }],
+      pages: [pageOf()],
+    });
+    render(
+      <ShellProvider>
+        <ViewerProbe />
+        <ChatFiles sessionId="s1" />
+      </ShellProvider>,
+    );
+    expect(headings()).toEqual(['Pages', 'Web links']);
+    // The page's address is not repeated as a web link.
+    expect(screen.queryByText('claude.ai')).toBeNull();
+    expect(screen.getByText('example.com')).toBeTruthy();
+    expect(screen.getByText('Version 2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Quarterly page/ }));
+    expect(rawViewer).toEqual({ kind: 'page', chat: 's1', key: 'pg1' });
+  });
+
+  it('shows a page file under Pages, not under Made', () => {
+    set({
+      files: [file('page-src', ['created']), file('other', ['created'])],
+      pages: [pageOf({ fileKey: 'page-src' })],
+    });
+    renderTab();
+    expect(headings()).toEqual(['Made or changed', 'Pages']);
+    expect(screen.queryByRole('button', { name: /Title page-src/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Title other/ })).toBeTruthy();
+  });
+
+  it('says a page is being written while it is a draft and the chat is busy', () => {
+    h.sessionState = 'working';
+    set({ pages: [pageOf({ draft: true, versions: [] })] });
+    renderTab();
+    expect(screen.getByText('Being written')).toBeTruthy();
+  });
+
+  it('says Latest for a draft once the chat is idle', () => {
+    set({ pages: [pageOf({ draft: true, versions: [] })] });
+    renderTab();
+    expect(screen.queryByText('Being written')).toBeNull();
+    expect(screen.getByText('Latest')).toBeTruthy();
   });
 });

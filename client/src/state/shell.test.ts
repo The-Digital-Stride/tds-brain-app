@@ -51,6 +51,14 @@ describe('shellReducer', () => {
     expect(list).toMatchObject({ panelOpen: true, panelTab: 'files', panelFile: null });
   });
 
+  it('open-viewer takes a page request too, and it is never saved', () => {
+    const page = { kind: 'page' as const, chat: 'c1', key: 'k1' };
+    const shown = shellReducer(base, { type: 'open-viewer', viewer: page });
+    expect(shown.viewer).toBe(page);
+    expect(JSON.parse(saveShell(shown))).not.toHaveProperty('viewer');
+    expect(shellReducer(shown, { type: 'close-viewer' }).viewer).toBeNull();
+  });
+
   it('open-viewer shows a file (replacing one shown) and close-viewer shuts it, leaving the docks alone', () => {
     const docked = { ...base, panelOpen: true, drawer: 'chats' as const };
     const a = { item: { id: 'a' } as LibraryItem };

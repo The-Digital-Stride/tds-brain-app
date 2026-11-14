@@ -4,6 +4,7 @@ import { openLibraryItem } from '../apps/shared/search.ts';
 import { FileStage } from '../apps/shared/Viewer.tsx';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
+import { PageStage } from './PageStage.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
 
 const APP_WORDS = { documents: 'Open in Documents', images: 'Open in Images' } as const;
@@ -29,7 +30,12 @@ export function FileViewer() {
 
   // Each file asked for takes focus at its heading (a second file replacing the first, too). A newer
   // copy of the same file (Claude changed it) leaves focus where it is.
-  const shownId = request?.item.id ?? null;
+  const shownId =
+    request === null
+      ? null
+      : request.kind === 'page'
+        ? `page:${request.chat}:${request.key}`
+        : request.item.id;
   useEffect(() => {
     if (shownId !== null) heading.current?.focus({ preventScroll: true });
   }, [shownId]);
@@ -49,8 +55,32 @@ export function FileViewer() {
   }, [shown, viewerOpener]);
 
   if (!request) return null;
-  const { item, place, openIn } = request;
   const close = () => dispatch({ type: 'close-viewer' });
+  if (request.kind === 'page') {
+    return (
+      <div className="viewer-layer">
+        <div className="viewer-veil" aria-hidden="true" onClick={close} />
+        <div className="viewer-drawer glass" role="dialog" aria-modal="true" aria-labelledby={headingId}>
+          <PageStage
+            chat={request.chat}
+            pageKey={request.key}
+            headingId={headingId}
+            headingRef={heading}
+            onClose={close}
+            onOpenInDocuments={(file) => {
+              if (!file.item) return;
+              leaving.current = true;
+              dispatch({ type: 'close-viewer' });
+              openLibraryItem('documents', file.scope.id, file.item);
+              openView('app:documents');
+              if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+  const { item, place, openIn } = request;
   const openInApp = () => {
     if (!openIn) return;
     leaving.current = true;

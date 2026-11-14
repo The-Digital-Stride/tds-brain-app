@@ -18,6 +18,7 @@ import {
   type UploadResponse,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
+import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { SkillLevelError } from '../brain/skill-levels.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
@@ -39,7 +40,14 @@ import {
   type RouteContext,
   validatePrefsPatch,
 } from './routes.ts';
-import { cookieValueFor, PAGE_CSP, PDF_CSP, SECURITY_HEADERS, sessionSetCookie } from './security.ts';
+import {
+  cookieValueFor,
+  PAGE_CSP,
+  PAGE_PREVIEW_CSP,
+  PDF_CSP,
+  SECURITY_HEADERS,
+  sessionSetCookie,
+} from './security.ts';
 
 const tempDirs: string[] = [];
 const stagings: UploadStaging[] = [];
@@ -1072,12 +1080,13 @@ describe('library routes', () => {
     expect(Buffer.byteLength(body.text)).toBe(1024 * 1024 - 1);
   });
 
-  it('sends an HTML page under its own sandboxed policy', async () => {
+  it('sends an HTML page under the script-running preview policy, replacing the app’s (R7)', async () => {
     const { root, ctx } = setup();
     const id = await idOf(ctx, 'page.html');
     const sent = await call(ctx, ROUTES.libraryPage(id));
     expect(sent.status).toBe(200);
-    expect(sent.headers['content-security-policy']).toBe(PAGE_CSP);
+    expect(sent.headers['content-security-policy']).toBe(PAGE_PREVIEW_CSP);
+    expect(sent.headers['cache-control']).toBe('no-store');
     expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(sent.headers['x-content-type-options']).toBe('nosniff');
     expect(
@@ -2174,5 +2183,258 @@ describe('DELETE /api/sessions/past/:id', () => {
   it('refuses a badly encoded id', async () => {
     const sent = await send('DELETE', '/api/sessions/past/%E0%A4%A', async () => {});
     expect(sent.status).toBe(400);
+  });
+});
+
+describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and 7)', () => {
+  type Sent = { status: number; headers: Record<string, string | number>; cspSets: number; body: Buffer };
+  const SID = 'live-chat-1';
+  const KEY = 'pAgEkEy_0123-ab';
+
+  function sessions(over: Record<string, unknown> = {}) {
+    const asks: unknown[] = [];
+    return {
+      asks,
+      fake: {
+        pageCopy: async (id: string, key: string, n: number) => {
+          if (id !== SID) throw new SessionError('not-found', 'That chat could not be found.');
+          if (key !== KEY) return null;
+          if (n === 1) return Buffer.from('<h1>Fragment</h1><script>1</script>');
+          if (n === 2) return Buffer.from('﻿  <!DOCTYPE html><html><body>Whole</body></html>');
+          return null;
+        },
+        brandedCopy: async (id: string, key: string, n: number) => {
+          if (id !== SID) throw new SessionError('not-found', 'That chat could not be found.');
+          if (key !== KEY || n > 1) return null;
+          return {
+            name: 'budget “q3”-tds-2026-11-14.html',
+            html: `<!DOCTYPE html><p>Branded ${n}</p>`,
+            selfContained: n === 1,
+          };
+        },
+        askPage: async (id: string, key: string, req: unknown) => {
+          asks.push({ id, key, req });
+        },
+        ...over,
+      },
+    };
+  }
+
+  async function call(
+    path: string,
+    o: { method?: string; body?: unknown; sessions?: Record<string, unknown> } = {},
+  ): Promise<Sent> {
+    const raw =
+      o.body === undefined ? [] : [Buffer.from(typeof o.body === 'string' ? o.body : JSON.stringify(o.body))];
+    const req = Object.assign(Readable.from(raw), { method: o.method ?? 'GET', headers: {} });
+    const sent: Sent = { status: 0, headers: {}, cspSets: 0, body: Buffer.alloc(0) };
+    const res = {
+      headersSent: false,
+      setHeader(name: string, value: string | number) {
+        if (name.toLowerCase() === 'content-security-policy') sent.cspSets++;
+        sent.headers[name.toLowerCase()] = value;
+      },
+      writeHead(status: number, headers: Record<string, string | number> = {}) {
+        sent.status = status;
+        for (const [k, v] of Object.entries(headers)) sent.headers[k.toLowerCase()] = v;
+        res.headersSent = true;
+      },
+      end(body?: string | Buffer) {
+        if (body !== undefined) sent.body = Buffer.isBuffer(body) ? body : Buffer.from(body);
+      },
+    };
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      { sessions: o.sessions ?? sessions().fake, log: () => {} } as unknown as RouteContext,
+    );
+    return sent;
+  }
+
+  it('sends a page under the preview policy, replacing the app’s, wrapped in the page skeleton', async () => {
+    const sent = await call(ROUTES.chatPage(SID, KEY, 1));
+    expect(sent.status).toBe(200);
+    expect(sent.headers['content-security-policy']).toBe(PAGE_PREVIEW_CSP);
+    expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(sent.headers['x-content-type-options']).toBe('nosniff');
+    expect(sent.headers['cache-control']).toBe('no-store');
+    const html = sent.body.toString('utf8');
+    expect(html.startsWith('<!doctype html>\n')).toBe(true);
+    expect(html).toContain('<meta charset="utf-8">');
+    expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
+    expect(html).toContain('body{margin:0;font:14px system-ui');
+    expect(html).toContain('img{max-width:100%}');
+    expect(html).toContain('[hidden]{display:none}');
+    expect(html).toContain('<h1>Fragment</h1><script>1</script>');
+    expect(sent.headers['content-length']).toBe(sent.body.length);
+  });
+
+  it('leaves a page that starts with a doctype exactly as stored', async () => {
+    const sent = await call(ROUTES.chatPage(SID, KEY, 2));
+    expect(sent.status).toBe(200);
+    expect(sent.body.toString('utf8')).toBe('﻿  <!DOCTYPE html><html><body>Whole</body></html>');
+  });
+
+  it('answers every miss as a small page under the same policy, never JSON', async () => {
+    const cases: [string, number, string][] = [
+      [ROUTES.chatPage('other-chat', KEY, 1), 404, 'GET'],
+      [ROUTES.chatPage(SID, 'unknown', 1), 404, 'GET'],
+      [ROUTES.chatPage(SID, KEY, 3), 404, 'GET'],
+      [ROUTES.chatPage(SID, 'a.b', 1), 404, 'GET'],
+      [ROUTES.chatPage(SID, 'a b', 1), 404, 'GET'],
+      [`/api/sessions/${SID}/pages/${KEY}/00`, 404, 'GET'],
+      [`/api/sessions/${SID}/pages/${KEY}/1.5`, 404, 'GET'],
+      [`/api/sessions/${SID}/pages/%E0%A4%A/1`, 404, 'GET'],
+      [ROUTES.chatPage(SID, KEY, 1), 405, 'POST'],
+    ];
+    for (const [path, status, method] of cases) {
+      const sent = await call(path, { method });
+      expect(sent.status, path).toBe(status);
+      expect(sent.headers['content-security-policy'], path).toBe(PAGE_PREVIEW_CSP);
+      expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
+      expect(sent.headers['x-content-type-options']).toBe('nosniff');
+      expect(sent.body.toString('utf8')).toMatch(/^<!doctype html>/);
+    }
+    // A server whose chats can't hold pages (setup mode) says the same.
+    const none = await call(ROUTES.chatPage(SID, KEY, 1), { sessions: {} });
+    expect(none.status).toBe(404);
+    expect(none.headers['content-security-policy']).toBe(PAGE_PREVIEW_CSP);
+    const broken = await call(ROUTES.chatPage(SID, KEY, 1), {
+      sessions: { pageCopy: async () => Promise.reject(new Error('boom /secret/path')) },
+    });
+    expect(broken.status).toBe(500);
+    expect(broken.body.toString('utf8')).not.toContain('/secret/path');
+  });
+
+  it('serves the copy Claude is still working on as version 0, and says when it isn’t kept', async () => {
+    const draft = await call(ROUTES.chatPage(SID, KEY, 0), {
+      sessions: sessions({
+        pageCopy: async (_i: string, _k: string, n: number) => (n === 0 ? Buffer.from('<p>Draft</p>') : null),
+      }).fake,
+    });
+    expect(draft.status).toBe(200);
+    expect(draft.body.toString('utf8')).toContain('<p>Draft</p>');
+    const none = await call(ROUTES.chatPage(SID, KEY, 0));
+    expect(none.status).toBe(404);
+    expect(none.body.toString('utf8')).toContain('couldn&#39;t keep a copy');
+  });
+
+  it('sends the TDS-branded copy as a download, never shown in place (R5, O1)', async () => {
+    const sent = await call(ROUTES.chatPageBranded(SID, KEY, 1));
+    expect(sent.status).toBe(200);
+    expect(sent.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+    expect(sent.cspSets).toBe(2);
+    expect(sent.headers['content-type']).toBe('application/octet-stream');
+    expect(sent.headers['content-disposition']).toBe(
+      `attachment; filename="budget _q3_-tds-2026-11-14.html"; filename*=UTF-8''budget%20%E2%80%9Cq3%E2%80%9D-tds-2026-11-14.html`,
+    );
+    expect(sent.headers['x-content-type-options']).toBe('nosniff');
+    expect(sent.headers['cache-control']).toBe('no-store');
+    expect(sent.body.toString('utf8')).toBe('<!DOCTYPE html><p>Branded 1</p>');
+    expect(sent.headers['content-length']).toBe(sent.body.length);
+    expect(sent.headers['x-page-self-contained']).toBe('yes');
+    const partly = await call(ROUTES.chatPageBranded(SID, KEY, 0));
+    expect(partly.status).toBe(200);
+    // R8: the viewer words its status line from this.
+    expect(partly.headers['x-page-self-contained']).toBe('partial');
+  });
+
+  it('answers every miss on the branded download as the same small page', async () => {
+    const cases: [string, number, string][] = [
+      [ROUTES.chatPageBranded('other-chat', KEY, 1), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, 'unknown', 1), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, KEY, 3), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, 'a.b', 1), 404, 'GET'],
+      [`/api/sessions/${SID}/pages/${KEY}/x/branded`, 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, KEY, 1), 405, 'POST'],
+    ];
+    for (const [path, status, method] of cases) {
+      const sent = await call(path, { method });
+      expect(sent.status, path).toBe(status);
+      expect(sent.headers['content-security-policy'], path).toBe(PAGE_PREVIEW_CSP);
+      expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
+      expect(sent.body.toString('utf8')).toMatch(/^<!doctype html>/);
+    }
+    expect((await call(ROUTES.chatPageBranded(SID, KEY, 1), { sessions: {} })).status).toBe(404);
+    const broken = await call(ROUTES.chatPageBranded(SID, KEY, 1), {
+      sessions: { brandedCopy: async () => Promise.reject(new Error('boom /secret/path')) },
+    });
+    expect(broken.status).toBe(500);
+    expect(broken.body.toString('utf8')).not.toContain('/secret/path');
+  });
+
+  it('passes a change or a branding ask to the chat', async () => {
+    const s = sessions();
+    const ok = await call(ROUTES.chatPageAsk(SID, KEY), {
+      method: 'POST',
+      body: { kind: 'change', note: 'Bigger title' },
+      sessions: s.fake,
+    });
+    expect(ok.status).toBe(200);
+    expect(JSON.parse(ok.body.toString('utf8'))).toEqual({ ok: true });
+    await call(ROUTES.chatPageAsk(SID, KEY), { method: 'POST', body: { kind: 'brand' }, sessions: s.fake });
+    expect(s.asks).toEqual([
+      { id: SID, key: KEY, req: { kind: 'change', note: 'Bigger title' } },
+      { id: SID, key: KEY, req: { kind: 'brand' } },
+    ]);
+  });
+
+  it('refuses an ask that is not understood, before the chat sees it', async () => {
+    const s = sessions();
+    for (const body of [
+      { kind: 'change', note: '' },
+      { kind: 'change', note: '   ' },
+      { kind: 'change', note: 'x'.repeat(PAGE_NOTE_MAX + 1) },
+      { kind: 'change' },
+      { kind: 'change', note: 5 },
+      { kind: 'brand', note: 'x' },
+      { kind: 'other' },
+      [],
+      'not json',
+    ]) {
+      const sent = await call(ROUTES.chatPageAsk(SID, KEY), { method: 'POST', body, sessions: s.fake });
+      expect(sent.status, JSON.stringify(body)).toBe(400);
+      expect(JSON.parse(sent.body.toString('utf8')).error.code).toBe('bad-request');
+    }
+    expect(s.asks).toEqual([]);
+    expect(
+      (
+        await call(ROUTES.chatPageAsk(SID, KEY), {
+          method: 'POST',
+          body: { kind: 'change', note: 'x'.repeat(PAGE_NOTE_MAX) },
+          sessions: s.fake,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await call(ROUTES.chatPageAsk(SID, KEY), { sessions: s.fake })).status).toBe(405);
+  });
+
+  it('says busy, not-found and not-allowed as the chat does', async () => {
+    for (const [code, status] of [
+      ['busy', 409],
+      ['not-found', 404],
+      ['not-allowed', 403],
+      ['session-closed', 410],
+    ] as const) {
+      const sent = await call(ROUTES.chatPageAsk(SID, KEY), {
+        method: 'POST',
+        body: { kind: 'brand' },
+        sessions: {
+          askPage: async () => {
+            throw new SessionError(code, 'Nope.');
+          },
+        },
+      });
+      expect(sent.status, code).toBe(status);
+      expect(JSON.parse(sent.body.toString('utf8')).error.code).toBe(code);
+    }
+    const none = await call(ROUTES.chatPageAsk(SID, KEY), {
+      method: 'POST',
+      body: { kind: 'brand' },
+      sessions: {},
+    });
+    expect(none.status).toBe(404);
   });
 });

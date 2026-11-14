@@ -74,6 +74,14 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
     outside the brain: 20/20 valid JSON with sensible tiers; median 2.3 s, p90 5.0 s, max 5.2 s. A
     kept-warm process was only ~1.6 s and drifted into answering the request, so it's not used.
 11. Cost on a trivial skill: Haiku run $0.07, Opus run $0.30.
+12. **`mcp__*` in `AgentDefinition.tools` is NOT honoured** (`spike/spike3.mjs`, in-process MCP
+    server `probe`): with `['Read', 'mcp__*']` the helper had only Read. A server prefix
+    (`mcp__probe`) or a full tool name (`mcp__probe__ping`) does work. The app can't know each
+    person's connector names when the chat starts, so the worker uses the decision 10 fallback:
+    `tools: null` (inherits the chat's tools) plus the disallow list.
+13. **First pick after the app starts can miss the 4 s limit** (browser check): the first chat fell
+    back to Standard and the late Quick pick applied from its next message; later chats picked in
+    time. Measured directly, the picker took about 2 s per pick. Accepted: the fallback is safe.
 
 ## Decisions
 

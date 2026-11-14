@@ -1,6 +1,6 @@
 # Levels and helpers: the right model for every chat, skill and helper
 
-Date: 2026-11-14 · Size: XL (two phases, one release) · Branch: `skill-levels-and-helpers` · Release: v0.20.0 · Explainer: https://claude.ai/artifact/DHPTdUcdhL3Xz6vRkF76nr
+Date: 2026-11-14 · Size: XL (two phases, one release) · Branch: `skill-levels-and-helpers` · Release: v0.22.0 · Explainer: https://claude.ai/artifact/DHPTdUcdhL3Xz6vRkF76nr
 
 Supersedes the parked `docs/plans/2026-11-14-skill-levels.md`.
 
@@ -37,7 +37,7 @@ works when it runs them.
 
 ## User decisions (fixed)
 
-- **One plan, one release: v0.20.0** (from v0.19.0). Phase 1 (levels) and phase 2 (helpers) are
+- **One plan, one release: v0.22.0.** Planned as v0.20.0, but main reached v0.21.0 (other work) while this was built. Phase 1 (levels) and phase 2 (helpers) are
   built in this branch and merged together.
 - **App-level, not skill edits.** The app never changes a skill's `SKILL.md`.
 - **A skill's own frontmatter `model` / `effort` wins.** (None of the 188 brain skills set them today.)
@@ -91,7 +91,7 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
    `effort` is set (keep their choice), else `'auto'`. Manual mode ignores team levels, the pick and
    the forced helper models: people who chose get exactly what they chose.
    Plain: anyone who picked a model keeps it; everyone else moves from always-Opus to automatic.
-   "What's new" for v0.20.0 says so plainly.
+   "What's new" for v0.22.0 says so plainly (it comes from the feat commit subject).
 
 3. **Which level a reply runs at**, one pure function `resolveLevel()` in `server/engine/levels.ts`:
    1. `manual` mode: the Settings choice (as v0.19.0).

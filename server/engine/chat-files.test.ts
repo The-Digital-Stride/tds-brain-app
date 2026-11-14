@@ -796,7 +796,9 @@ describe('createChatFiles: review follow-ups', () => {
     for (const f of ['report.md', 'notes.md', 'y.md', 'hit.md']) disk.add(`clients/acme/${f}`);
     step(t, 'Bash', { command: `cd ${ROOT}/clients/acme` });
     step(t, 'Bash', {
-      command: 'grep -l report.md hit.md; rg -e notes.md .; echo notes.md; printf y.md; git commit -m y.md',
+      command:
+        'grep -l report.md hit.md; rg -e notes.md .; echo notes.md; printf y.md; git commit -m y.md; ' +
+        'grep -A 3 report.md hit.md; grep -e notes.md -e y.md hit.md; git commit -am y.md',
     });
     expect(kinds(await snap(t))).toEqual([['clients/acme/hit.md', ['read']]]);
   });

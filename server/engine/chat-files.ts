@@ -348,6 +348,42 @@ function skipHeredocs(command: string, start: number, docs: { delim: string; das
   return Math.min(i, command.length);
 }
 
+/** grep-family flags whose value is the next word. */
+const SEARCH_VALUE_FLAGS = new Set([
+  '-A',
+  '-B',
+  '-C',
+  '-m',
+  '-e',
+  '-f',
+  '-t',
+  '-T',
+  '-g',
+  '--max-count',
+  '--regexp',
+  '--file',
+  '--type',
+  '--glob',
+]);
+
+/** The files a grep-like command searches: the words left once flags, flag values and the pattern are gone. */
+function searchFiles(rest: string[]): string[] {
+  const files: string[] = [];
+  let patternGiven = false;
+  for (let i = 0; i < rest.length; i++) {
+    const w = rest[i] as string;
+    if (SEARCH_VALUE_FLAGS.has(w)) {
+      if (w === '-e' || w === '-f' || w === '--regexp' || w === '--file') patternGiven = true;
+      i++;
+    } else if (/^(-e|--regexp=|-f|--file=)/.test(w)) {
+      patternGiven = true; // -epattern, --regexp=pattern
+    } else if (!w.startsWith('-')) {
+      files.push(w);
+    }
+  }
+  return patternGiven ? files : files.slice(1);
+}
+
 /** Words that run the next word as the command. */
 const SHELL_PREFIXES = new Set(['sudo', 'command', 'time', 'nice', 'env', 'xargs', 'nohup', 'exec']);
 
@@ -382,7 +418,7 @@ function shellUse(seg: ShellSegment): { reads: string[]; changes: string[]; cd?:
     case 'rg':
     case 'ag':
     case 'ack':
-      out.reads.push(...args.slice(1));
+      out.reads.push(...searchFiles(rest));
       break;
     // Removed, or not a file of the brain's: nothing to show.
     case 'rm':
@@ -413,9 +449,14 @@ function shellUse(seg: ShellSegment): { reads: string[]; changes: string[]; cd?:
       break;
     case 'git': {
       // Leave out flag values that are not files: a commit message, a folder or a setting.
-      const gitArgs = rest.filter(
-        (w, i) => !w.startsWith('-') && !['-m', '--message', '-C', '-c'].includes(rest[i - 1] as string),
-      );
+      const gitArgs = rest.filter((w, i) => {
+        const before = rest[i - 1] ?? '';
+        return (
+          !w.startsWith('-') &&
+          !['--message', '-C', '-c', '-F', '--file'].includes(before) &&
+          !/^-[A-Za-z]*m$/.test(before) // -m, -am
+        );
+      });
       if (gitArgs[0] === 'rm') break;
       if (gitArgs[0] === 'mv') out.changes.push(...gitArgs.slice(-1));
       else out.reads.push(...gitArgs.slice(1));

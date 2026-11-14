@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { dueInWords, EFFORT_OPTION_WORDS, engineLine, levelLineText, modelName } from './format.ts';
+import type { LiveHelper } from '../../shared/contract.ts';
+import {
+  dueInWords,
+  EFFORT_OPTION_WORDS,
+  elapsedWords,
+  engineLine,
+  helperMeta,
+  levelLineText,
+  modelName,
+} from './format.ts';
 
 describe('dueInWords', () => {
   const today = '2026-11-11'; // a Wednesday
@@ -74,5 +83,56 @@ describe('levelLineText', () => {
     const t = levelLineText({ tier: null, source: { kind: 'skill-own', skill: 'deep-dive' } });
     expect(t).toMatchObject({ tier: null, note: 'Set by /deep-dive', engine: null });
     expect(levelLineText({ tier: null, source: { kind: 'manual' } })).toBeNull();
+  });
+});
+
+describe('elapsedWords', () => {
+  it('says seconds, minutes and hours plainly', () => {
+    expect(elapsedWords(0)).toBe('0 s');
+    expect(elapsedWords(900)).toBe('0 s');
+    expect(elapsedWords(40_000)).toBe('40 s');
+    expect(elapsedWords(60_000)).toBe('1 min');
+    expect(elapsedWords(80_000)).toBe('1 min 20 s');
+    expect(elapsedWords(3_780_000)).toBe('1 h 3 min');
+    expect(elapsedWords(3_600_000)).toBe('1 h');
+    expect(elapsedWords(-5)).toBe('0 s');
+  });
+});
+
+describe('helperMeta', () => {
+  const base: LiveHelper = {
+    id: 'a',
+    name: 'Scout',
+    brief: '',
+    tier: 'quick',
+    model: 'haiku',
+    status: 'working',
+    startedAt: '2026-11-14T10:00:00.000Z',
+    endedAt: null,
+    steps: 3,
+    lastStep: 'Reading files',
+  };
+  const now = Date.parse('2026-11-14T10:01:20.000Z');
+  // The time is joined with non-breaking spaces; compare with plain ones.
+  const meta = (h: LiveHelper) => helperMeta(h, now).replace(/\u00a0/g, ' ');
+  it('keeps the time on one line', () => {
+    expect(helperMeta(base, now)).toMatch(/1\u00a0min\u00a020\u00a0s$/);
+  });
+  it('says what it is doing, level, model and time while working', () => {
+    expect(meta(base)).toBe('Reading files · Quick · Haiku · 1 min 20 s');
+  });
+  it('names a model id the way people say it', () => {
+    expect(meta({ ...base, model: 'claude-haiku-5-5' })).toBe(
+      'Reading files · Quick · Haiku 5.5 · 1 min 20 s',
+    );
+  });
+  it('leaves out what is unknown, but always says it is working', () => {
+    expect(meta({ ...base, lastStep: null, tier: null, model: null })).toBe('Working · 1 min 20 s');
+  });
+  it('says how it ended, with the time it took', () => {
+    const ended = { endedAt: '2026-11-14T10:02:05.000Z' };
+    expect(meta({ ...base, ...ended, status: 'done' })).toBe('Done · Quick · Haiku · 2 min 5 s');
+    expect(helperMeta({ ...base, ...ended, status: 'failed' }, now)).toMatch(/^Failed · /);
+    expect(helperMeta({ ...base, ...ended, status: 'stopped' }, now)).toMatch(/^Stopped · /);
   });
 });

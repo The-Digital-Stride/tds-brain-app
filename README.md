@@ -19,6 +19,10 @@ here is published.**
   chats and your pinned skills (or the ones you use most).
 - **Chats**: talk to Claude in the brain folder, as in the terminal. Approvals and Claude's questions
   appear as cards in the chat. Up to four chats can be open at once; past chats can be reopened.
+  When a chat hands parts of a job to helpers, the Chats drawer lists them under that chat: who each one
+  is, what it was asked, its level and model, what it is doing now and for how long, then Done, Failed or
+  Stopped. They stay listed until you send the next message. Closing a chat stops its helpers too, and
+  the close question says so.
   The approval mode follows your Claude Code settings (never "skip permissions").
   A chat is TDS or Personal: one started from a personal to-do is Personal, and "This chat" → Details → Kind
   changes it. Once any chat is Personal, the Chats drawer filters by kind (All / TDS / Personal), like To-dos.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { attentionFor, type LiveSession, type PastSession } from '../../../shared/contract.ts';
 import { type ChatKindFilter, filterChats, kindOf } from '../state/chat-filter.ts';
 import { groupChatsByDay } from '../state/chat-groups.ts';
@@ -6,6 +6,7 @@ import { sortChats } from '../state/chats.ts';
 import { useStore } from '../store.tsx';
 import type { ChatsTab } from './contract.ts';
 import { Fold } from './Fold.tsx';
+import { HelperRows, helperCount, helpersWorking } from './HelperRows.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -16,6 +17,7 @@ function OpenRow({ chat, showKind }: { chat: LiveSession; showKind: boolean }) {
   const { dispatch, modes } = useShell();
   const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const title = chat.title || 'New chat';
+  const busyHelpers = helpersWorking(chat);
   const clientName = chat.client ? placeName(chat.client, boot?.clients ?? []) : null;
   return (
     <li className="line" aria-current={current ? 'true' : undefined}>
@@ -35,6 +37,7 @@ function OpenRow({ chat, showKind }: { chat: LiveSession; showKind: boolean }) {
             {clientName ? `, ${clientName}` : ''}
             {/* No lock, unlike a personal to-do: a personal chat is only sorted apart, not kept private. */}
             {showKind && kindOf(chat) === 'personal' ? ', personal' : ''}
+            {busyHelpers > 0 ? `, ${helperCount(busyHelpers)} working` : ''}
           </span>
         </span>
       </button>
@@ -178,7 +181,10 @@ export function ChatsDrawer() {
         ) : (
           <ul className="drawer-list">
             {shownOpen.map((c) => (
-              <OpenRow key={c.id} chat={c} showKind={active === 'all'} />
+              <Fragment key={c.id}>
+                <OpenRow chat={c} showKind={active === 'all'} />
+                <HelperRows chat={c} />
+              </Fragment>
             ))}
           </ul>
         )

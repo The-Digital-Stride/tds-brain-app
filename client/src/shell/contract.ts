@@ -280,6 +280,9 @@ export interface FoldProps {
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  /** Set to control it from outside (with `onToggle`); left out, the fold keeps its own state. */
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
   /** Shown beside the heading, never inside its toggle (e.g. "Mark all as seen"). */
   action?: ReactNode;
   children: ReactNode;

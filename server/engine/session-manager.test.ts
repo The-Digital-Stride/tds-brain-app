@@ -3529,6 +3529,207 @@ describe('levels', () => {
       text: 'Audit all three clients',
     });
   });
+
+  // -- helpers in the Chats drawer (live helper list) -------------------------
+
+  const liveHelpers = async () => (await mgr.list()).live[0]?.helpers;
+  const startedMsg = (id: string, over: Record<string, unknown> = {}) => ({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: `task-${id}`,
+    tool_use_id: id,
+    description: 'Look it up',
+    task_type: 'local_agent',
+    subagent_type: 'Explore',
+    ...over,
+  });
+
+  it('lists helpers during a reply, keeps them after it, and clears them on the next send', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    helperChat(async (q, turn) => {
+      if (turn > 0) return;
+      await callAgent(q, { subagent_type: 'tdsapp-scout', description: 'Find reports', prompt: 'x' }, 'h1');
+      await callAgent(q, { description: 'Check links', prompt: 'y' }, 'h2');
+      toolUse(q, 'st1', 'Read', { file_path: '/a/report.md' }, 'h1');
+      await gate;
+      await agentEnded(q, 'h1');
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(await liveHelpers()).toMatchObject([
+      {
+        id: 'h1',
+        name: 'Scout',
+        brief: 'Find reports',
+        tier: 'quick',
+        model: 'haiku',
+        status: 'working',
+        steps: 1,
+      },
+      { id: 'h2', name: 'Helper', brief: 'Check links', status: 'working' },
+    ]);
+    release();
+    await flush();
+    // The reply is over: the one that reported stays done, the other is stopped. Both stay listed.
+    expect((await liveHelpers())?.map((h) => [h.id, h.status])).toEqual([
+      ['h1', 'done'],
+      ['h2', 'stopped'],
+    ]);
+    expect((await liveHelpers())?.every((h) => h.endedAt)).toBe(true);
+    await mgr.send(s.id, 'next');
+    await flush();
+    expect(await liveHelpers()).toEqual([]);
+  });
+
+  it('a built-in helper Claude put on a model itself gets no app level', async () => {
+    helperChat(async (q, turn) => {
+      if (turn > 0) return;
+      await callAgent(
+        q,
+        { subagent_type: 'Explore', model: 'haiku', description: 'Look', prompt: 'x' },
+        'h1',
+      );
+      await new Promise<void>(() => {});
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(await liveHelpers()).toMatchObject([
+      { id: 'h1', name: 'Helper (Explore)', model: 'haiku', tier: null },
+    ]);
+  });
+
+  it('adds a helper from the stream alone, and ignores nested and non-agent tasks', async () => {
+    helperChat(async (q) => {
+      q.emit(startedMsg('h1'));
+      q.emit(startedMsg('h2', { spawn_depth: 2 }));
+      q.emit(startedMsg('h3', { task_type: 'local_bash' }));
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    // Left stopped by the end of the reply, but listed: only the one real helper.
+    expect(((await liveHelpers()) ?? []).map((h) => h.id)).toEqual(['h1']);
+  });
+
+  it('a helper whose card was refused is not listed', async () => {
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      await callAgent(q, { description: 'Refused one', prompt: 'x' }, 't1');
+      const asked = q.ask('Agent', { prompt: 'x' }, { toolUseID: 't1' }).promise;
+      await flush();
+      await mgr.replyPermission(s?.id ?? '', { requestId: 'req-1', decision: 'deny' });
+      await asked;
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush(60);
+    expect(await liveHelpers()).toEqual([]);
+  });
+
+  it('a helper another rule stops (permission_denied) is not listed', async () => {
+    helperChat(async (q) => {
+      await callAgent(q, { prompt: 'x' }, 't1');
+      q.emit({
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Agent',
+        tool_use_id: 't1',
+        message: 'no',
+      });
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(await liveHelpers()).toEqual([]);
+  });
+
+  it('an interrupted reply leaves its helpers stopped', async () => {
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      q.onInterrupt = () => q.result('error_during_execution');
+      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      await new Promise<void>(() => {});
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect((await liveHelpers())?.[0]?.status).toBe('working');
+    await mgr.interrupt(s.id);
+    await flush();
+    expect((await liveHelpers())?.[0]).toMatchObject({ status: 'stopped' });
+  });
+
+  it('an engine that stops mid-reply leaves its helpers stopped', async () => {
+    helperChat(async (q) => {
+      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      q.finish();
+      await new Promise<void>(() => {});
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect((await liveHelpers())?.[0]).toMatchObject({ status: 'stopped' });
+  });
+
+  it('a failed or interrupted helper step ends as failed or stopped', async () => {
+    helperChat(async (q) => {
+      await callAgent(q, { prompt: 'a' }, 'h1');
+      await callAgent(q, { prompt: 'b' }, 'h2');
+      await agentEnded(q, 'h1', true);
+      await hookOf(q, 'PostToolUseFailure', 'Agent|Task')(
+        {
+          hook_event_name: 'PostToolUseFailure',
+          tool_name: 'Agent',
+          tool_input: {},
+          tool_use_id: 'h2',
+          error: 'x',
+          is_interrupt: true,
+          ...base,
+        } as never,
+        'h2',
+        { signal: new AbortController().signal },
+      );
+      await new Promise<void>(() => {});
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect((await liveHelpers())?.map((h) => h.status)).toEqual(['failed', 'stopped']);
+  });
+
+  it('notifies at once on start and end, and coalesces progress to one notify per 5 seconds', async () => {
+    const changes: number[] = [];
+    let go: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      go = r;
+    });
+    helperChat(async (q) => {
+      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      await gate;
+      for (let i = 1; i <= 10; i++) toolUse(q, `st${i}`, 'Read', { file_path: `/a/${i}.md` }, 'h1');
+      // The reply stays open, so its own end doesn't notify.
+      await new Promise<void>(() => {});
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    mgr.onChange(() => changes.push(changes.length));
+    go();
+    await flush();
+    // Ten progress steps, no notify yet: they wait for the shared timer.
+    expect((await liveHelpers())?.[0]?.steps).toBe(10);
+    expect(changes).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(changes).toHaveLength(1);
+    // Nothing changed since: the timer doesn't fire a notify again.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(changes).toHaveLength(1);
+  });
 });
 
 const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;

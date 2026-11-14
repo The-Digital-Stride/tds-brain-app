@@ -741,3 +741,63 @@ describe('createChatFiles: short names in replies', () => {
     expect((await snap(t)).files).toEqual([]);
   });
 });
+
+describe('createChatFiles: review follow-ups', () => {
+  const kinds = (s: ChatFilesSnapshot | null) => (s?.files ?? []).map((f) => [f.path, f.actions]).sort();
+
+  it('prefers the folder a reply names over a personal file with the same name', async () => {
+    const { t, disk } = setup();
+    disk.add('personal/notes.md');
+    disk.add('clients/acme/reports/notes.md');
+    t.observe(say('All in `clients/acme/reports/`:\n\n| `notes.md` | x |'));
+    const s = await snap(t);
+    expect(kinds(s)).toEqual([['clients/acme/reports/notes.md', ['mentioned']]]);
+  });
+
+  it('keeps a cd inside brackets, $( ) or backticks to that part of the command', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/a/profile.md');
+    disk.add('clients/acme/b/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme/b` });
+    step(t, 'Bash', { command: '(cd ../a && ls); x=$(cd ../a; pwd); y=`cd ../a`; cat profile.md' });
+    step(t, 'Bash', { command: 'cat profile.md' });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/b/profile.md', ['read']]]);
+  });
+
+  it('reads files from inside brackets from the folder moved to there', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/a/profile.md');
+    step(t, 'Bash', { command: `(cd ${ROOT}/clients/acme/a && cat profile.md)` });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/a/profile.md', ['read']]]);
+  });
+
+  it('cannot follow popd', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme && pushd reports && popd && cat profile.md` });
+    expect(kinds(await t.snapshot())).toEqual([]);
+  });
+
+  it('counts perl and sed as changing a file only with an in-place flag', async () => {
+    const { t, disk } = setup();
+    for (const f of ['x.md', 'y.md', 'z.md']) disk.add(`clients/acme/${f}`);
+    step(t, 'Bash', { command: "perl -Mwarnings -ne 'print if /a/' clients/acme/x.md" });
+    step(t, 'Bash', { command: "perl -pi -e 's/a/b/' clients/acme/y.md" });
+    step(t, 'Bash', { command: "sed --in-place 's/a/b/' clients/acme/z.md" });
+    expect(kinds(await snap(t))).toEqual([
+      ['clients/acme/x.md', ['read']],
+      ['clients/acme/y.md', ['changed']],
+      ['clients/acme/z.md', ['changed']],
+    ]);
+  });
+
+  it('does not count search patterns, echoed text or commit messages as files read', async () => {
+    const { t, disk } = setup();
+    for (const f of ['report.md', 'notes.md', 'y.md', 'hit.md']) disk.add(`clients/acme/${f}`);
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme` });
+    step(t, 'Bash', {
+      command: 'grep -l report.md hit.md; rg -e notes.md .; echo notes.md; printf y.md; git commit -m y.md',
+    });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/hit.md', ['read']]]);
+  });
+});

@@ -213,10 +213,14 @@ export function shellWords(command: string): string[] {
   return out;
 }
 
-/** One simple command of a shell line: its words, and the files its output goes to (`>`, `>>`). */
+/**
+ * One simple command of a shell line: its words, the files its output goes to (`>`, `>>`), and the
+ * subshells it runs in (`( … )`, `$( … )`, backticks), outermost first: a `cd` there moves only them.
+ */
 export interface ShellSegment {
   words: string[];
   outputs: string[];
+  groups: number[];
 }
 
 /**
@@ -226,13 +230,16 @@ export interface ShellSegment {
  */
 export function shellSegments(command: string): ShellSegment[] {
   const segs: ShellSegment[] = [];
-  let seg: ShellSegment = { words: [], outputs: [] };
+  let seg: Omit<ShellSegment, 'groups'> = { words: [], outputs: [] };
   let cur = '';
   let has = false;
   let quote: string | null = null;
   let next: 'word' | 'output' | 'heredoc' | 'drop' = 'word';
   let dash = false;
   const heredocs: { delim: string; dash: boolean }[] = [];
+  const stack: number[] = [];
+  let groupId = 0;
+  let backtick: number | null = null;
   const endWord = () => {
     if (has) {
       if (next === 'output') seg.outputs.push(cur);
@@ -246,7 +253,7 @@ export function shellSegments(command: string): ShellSegment[] {
   const endSeg = () => {
     endWord();
     next = 'word';
-    if (seg.words.length > 0 || seg.outputs.length > 0) segs.push(seg);
+    if (seg.words.length > 0 || seg.outputs.length > 0) segs.push({ ...seg, groups: [...stack] });
     seg = { words: [], outputs: [] };
   };
   for (let i = 0; i < command.length; i++) {
@@ -292,7 +299,26 @@ export function shellSegments(command: string): ShellSegment[] {
         }
       }
       // `< file` reads the file: it stays a word.
-    } else if (/[;&|()`]/.test(c)) {
+    } else if (c === '(') {
+      if (cur === '$' && has) {
+        cur = ''; // $( … )
+        has = false;
+      }
+      endSeg();
+      stack.push(++groupId);
+    } else if (c === ')') {
+      endSeg();
+      stack.pop();
+    } else if (c === '`') {
+      endSeg();
+      if (backtick !== null && stack.at(-1) === backtick) {
+        stack.pop();
+        backtick = null;
+      } else {
+        backtick = ++groupId;
+        stack.push(backtick);
+      }
+    } else if (/[;&|]/.test(c)) {
       endSeg();
     } else if (/\s/.test(c)) {
       endWord();
@@ -343,6 +369,21 @@ function shellUse(seg: ShellSegment): { reads: string[]; changes: string[]; cd?:
     case 'pushd':
       out.cd = args[0] ?? '~';
       break;
+    case 'popd':
+      out.cd = '~'; // back to a folder not followed here
+      break;
+    // Text and search patterns, not files (where output goes still counts).
+    case 'echo':
+    case 'printf':
+      break;
+    case 'grep':
+    case 'egrep':
+    case 'fgrep':
+    case 'rg':
+    case 'ag':
+    case 'ack':
+      out.reads.push(...args.slice(1));
+      break;
     // Removed, or not a file of the brain's: nothing to show.
     case 'rm':
     case 'rmdir':
@@ -366,14 +407,20 @@ function shellUse(seg: ShellSegment): { reads: string[]; changes: string[]; cd?:
       break;
     case 'sed':
     case 'perl':
-      if (rest.some((w) => /^-[A-Za-z]*i/.test(w))) out.changes.push(...args);
+      if (rest.some((w) => /^-i/.test(w) || /^-[a-hj-z]{1,3}i$/.test(w) || /^--in-place(=|$)/.test(w)))
+        out.changes.push(...args);
       else out.reads.push(...args);
       break;
-    case 'git':
-      if (args[0] === 'rm') break;
-      if (args[0] === 'mv') out.changes.push(...args.slice(-1));
-      else out.reads.push(...args.slice(1));
+    case 'git': {
+      // Leave out flag values that are not files: a commit message, a folder or a setting.
+      const gitArgs = rest.filter(
+        (w, i) => !w.startsWith('-') && !['-m', '--message', '-C', '-c'].includes(rest[i - 1] as string),
+      );
+      if (gitArgs[0] === 'rm') break;
+      if (gitArgs[0] === 'mv') out.changes.push(...gitArgs.slice(-1));
+      else out.reads.push(...gitArgs.slice(1));
       break;
+    }
     default:
       out.reads.push(...args);
   }
@@ -563,10 +610,12 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     const placesNewest = [...places.keys()].reverse();
     for (const p of short) {
       const tiers = [
-        [p, `clients/${p}`, `personal/${p}`],
+        [p, `clients/${p}`],
         folders.map((f) => `${f}/${p}`),
         cwd && scoped(cwd) ? [`${cwd}/${p}`] : [],
         placesNewest.map((place) => `${place}/${p}`),
+        // Last: a personal file never wins over a client folder the reply or the chat points to.
+        [`personal/${p}`],
       ].filter((tier) => tier.length > 0);
       sightings.push({ kind: 'short', alias: p, tiers, order: ++counter });
       dirty = true;
@@ -627,20 +676,34 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       // The files the command reads or writes, from the folder its shell is in (`cd` carries over).
       const before = cwds.has(shell) ? (cwds.get(shell) as string | null) : '';
       let cwd = before;
+      // A subshell starts in the folder of the shell around it, and its cd ends with it.
+      const sub = new Map<number, string | null>();
+      const cwdIn = (groups: number[]): string | null => {
+        let c = cwd;
+        for (const g of groups) {
+          if (!sub.has(g)) sub.set(g, c);
+          c = sub.get(g) as string | null;
+        }
+        return c;
+      };
       const reads = new Set<string>();
       const changes = new Set<string>();
       for (const seg of shellSegments(command)) {
         const use = shellUse(seg);
+        const here = cwdIn(seg.groups);
         if (use.cd !== undefined) {
-          cwd = cdTo(use.cd, cwd);
+          const to = cdTo(use.cd, here);
+          const inner = seg.groups.at(-1);
+          if (inner === undefined) cwd = to;
+          else sub.set(inner, to);
           continue;
         }
         for (const w of use.changes) {
-          const p = staged(w) ? null : shellPath(w, cwd);
+          const p = staged(w) ? null : shellPath(w, here);
           if (p) changes.add(p);
         }
         for (const w of use.reads) {
-          const p = staged(w) ? null : shellPath(w, cwd);
+          const p = staged(w) ? null : shellPath(w, here);
           if (p) reads.add(p);
         }
       }

@@ -405,7 +405,7 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Icon name="go" />
+                  <Icon name="link" />
                   <span className="line-text">
                     <span className="line-title">{hostOf(l.url)}</span>
                     <span className="visually-hidden"> (opens in a new tab)</span>

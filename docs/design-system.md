@@ -99,7 +99,7 @@ including label or padding, reaches 24px), visible focus on everything.
 
 "This chat" has two tabs: Files, Details (a Steps tab was removed in v0.21: the chat's "What Claude did" folds show every step, note and helper report). Files lists, in order, **Made or changed**, **Attached**,
 **Mentioned in replies**, **Looked at** (a `Fold`, shut unless it is the only group) and **Web links**
-(new tab). A row is a button: the format icon, the title, the client (or "My personal files") and the
+(new tab, each with the `link` icon, two chain links; Ian, 2026-11-14). A row is a button: the format icon, the title, the client (or "My personal files") and the
 strongest action word (Made, Changed, Filed, Mentioned, Read). Choosing one shows it in the panel with an
 "All files" back button: text, Markdown and pictures show there; PDFs and web pages offer **Open in
 Documents** (or Images), which closes a floating panel first; Word, Excel and PowerPoint say "This type

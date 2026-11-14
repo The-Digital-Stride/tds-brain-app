@@ -124,6 +124,8 @@ export function ChatView() {
           <button
             type="button"
             className="btn stop-btn"
+            // Shown only while the sheet is narrow and the word "Stop" is hidden (Tooltips.tsx skips shown words).
+            data-tip="Stop"
             onClick={() => void run(() => api.interrupt(sessionId))}
           >
             <Icon name="stop" size={16} />
@@ -163,7 +165,6 @@ export function ChatView() {
             type="button"
             className="icon-btn"
             aria-label="Close chat"
-            title="Close chat"
             ref={closeButton}
             onClick={() => requestClose(sessionId)}
           >

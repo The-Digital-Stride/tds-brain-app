@@ -319,30 +319,41 @@
   }
 }
 
-/* Names for an icons-only rail, on hover and on keyboard focus. */
-.rail [data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: calc(100% + 14px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 30;
+/* Tooltips (Tooltips.tsx): the name of an icon-only button, under it (to the right of the rail's icons), drawn
+   into the body so no drawer clips it. Navy, as the search's tooltips. */
+.tip {
+  position: fixed;
+  z-index: 80;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: 240px;
+  visibility: hidden;
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--navy);
   color: var(--paper);
+  box-shadow: var(--lift-2);
   font-size: 12px;
   font-weight: 500;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  /* It can be pointed at (WCAG 1.4.13); it is not a button. */
+  cursor: default;
 }
-.rail [data-tip]:hover::after {
-  opacity: 1;
-  transition: opacity 120ms 350ms;
+.tip[data-placed="true"] {
+  visibility: visible;
+  animation: tip-fade 120ms var(--ease);
 }
-.rail [data-tip]:focus-visible::after {
-  opacity: 1;
+@keyframes tip-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (forced-colors: active) {
+  .tip {
+    border: 1px solid CanvasText;
+  }
 }
 
 /* Layer 2: docks (left drawer, right panel) --------------------------------------------------- */
@@ -655,13 +666,14 @@
   .rail,
   .rail-label,
   .rail[data-wide="false"] .rail-label,
-  .rail [data-tip]::after,
-  .rail [data-tip]:hover::after,
   .dock,
   .dock-panel,
   .dock[data-overlay="true"] .dock-panel,
   .dock[data-overlay="true"][data-open="true"] .dock-panel,
   .veil {
     transition: none;
+  }
+  .tip[data-placed="true"] {
+    animation: none;
   }
 }

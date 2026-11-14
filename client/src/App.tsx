@@ -19,6 +19,7 @@ import { SheetNotices } from './shell/SheetNotices.tsx';
 import { ShellProvider, useDesk, useShell } from './shell/ShellProvider.tsx';
 import { SkillsDrawer } from './shell/SkillsDrawer.tsx';
 import { TodosDrawer } from './shell/TodosDrawer.tsx';
+import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
 import { StoreProvider, useStore } from './store.tsx';
 
@@ -175,6 +176,7 @@ function Shell() {
       </div>
       <Palette />
       <FileViewer />
+      <Tooltips />
       <Announcer />
     </>
   );

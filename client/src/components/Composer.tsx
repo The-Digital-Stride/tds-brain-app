@@ -340,6 +340,7 @@ export function Composer({
                 type="button"
                 className="chip-remove"
                 aria-label={`Remove ${skill.title}`}
+                data-tip="Remove"
                 onClick={() => setSkill(null)}
               >
                 <Icon name="close" size={12} />
@@ -417,7 +418,6 @@ export function Composer({
             type="button"
             className="icon-btn attach-btn"
             aria-label={`Attach files, up to ${MAX_ATTACHMENTS}`}
-            title={`Attach files (up to ${MAX_ATTACHMENTS})`}
             disabled={sending}
             onClick={() => picker.current?.click()}
           >

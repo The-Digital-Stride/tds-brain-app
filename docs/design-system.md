@@ -86,7 +86,6 @@ including label or padding, reaches 24px), visible focus on everything.
 - Inline code: tray fill. Code block: tray fill, radius 10, padding 10px 12px, 12.5px.
 - Blockquote: 2px `--line-strong` left rule, 12px padding, 13px iron.
 - "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut). It holds the turn's steps and Claude's side notes (text a step follows in the same turn) in order, so a turn reads: your message, one fold, the answer. A side note in the fold, like a helper's text: 2px `--line-strong` left rule, 8px padding, iron. The fold sits on a `--tint-1` panel (radius 12, padding 3px), as wide as its line when shut and the column's width when open or while Claude works, so Claude's working reads apart from answers and your messages. A background helper's report is its own fold inside ("Helper's report: name"), opening on a #fff card (radius 10, padding 10px 12px, 13.5px navy; its headings 15/14px). The count is steps, then helper reports.
-- Steps tab ("This chat" panel): numbered steps, with Claude's side notes between them unnumbered, 13px iron, in full (screen readers hear "Claude's note:" first), and an unnumbered "Helper's report: name" row where each report came back (its text is in the thread's fold).
 - Your message: 14/1.5, wash fill, radius 14 14 4 14, padding 8px 12px. Record lines: 13px iron with an 8px #B9C0CE dot.
 - File links in a reply (a brain path the chat reported, plan 2026-11-13-chat-files): link colour with a
   small file icon before them; they open the file in the panel's Files tab, never a new tab. A step that
@@ -94,7 +93,7 @@ including label or padding, reaches 24px), visible focus on everything.
 
 ## The chat's Files tab
 
-"This chat" has three tabs: Steps, Files, Details. Files lists, in order, **Made or changed**, **Attached**,
+"This chat" has two tabs: Files, Details (a Steps tab was removed in v0.21: the chat's "What Claude did" folds show every step, note and helper report). Files lists, in order, **Made or changed**, **Attached**,
 **Mentioned in replies**, **Looked at** (a `Fold`, shut unless it is the only group) and **Web links**
 (new tab). A row is a button: the format icon, the title, the client (or "My personal files") and the
 strongest action word (Made, Changed, Filed, Mentioned, Read). Choosing one shows it in the panel with an

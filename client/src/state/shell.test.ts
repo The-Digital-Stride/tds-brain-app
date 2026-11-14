@@ -64,7 +64,7 @@ describe('shellReducer', () => {
 
   it('changing tab clears the chosen file', () => {
     const shown = shellReducer(base, { type: 'show-chat-file', chat: 'c1', key: 'a.md' });
-    expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'steps' }).panelFile).toBeNull();
+    expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'details' }).panelFile).toBeNull();
     expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'files' }).panelFile).toBeNull();
   });
 });
@@ -96,6 +96,11 @@ describe('loadShell', () => {
     expect(loadShell(JSON.stringify({ railWide: !DEFAULT_SHELL.railWide })).railWide).toBe(
       !DEFAULT_SHELL.railWide,
     );
+  });
+
+  it('opens on Files, also for a panel last left on the Steps tab (removed in v0.21)', () => {
+    expect(DEFAULT_SHELL.panelTab).toBe('files');
+    expect(loadShell(JSON.stringify({ panelOpen: true, panelTab: 'steps' })).panelTab).toBe('files');
   });
 
   it('never restores a chosen file', () => {

@@ -10,7 +10,7 @@ export type Block =
 
 /**
  * The ids of Claude's working notes: its own text that a step follows in the same turn. They
- * fold away with the steps (and show in the Steps tab), leaving the answer that ends the turn.
+ * fold away with the steps, leaving the answer that ends the turn.
  * Text still being written counts once a step follows it.
  */
 export function noteIds(items: ChatItem[]): Set<string> {

@@ -135,14 +135,14 @@ describe('closing a chat', () => {
     await openChat();
     chatEvent(1, { type: 'state', state: 'idle' });
     const panel = () => document.getElementById('panel') as HTMLElement;
-    fireEvent.click(screen.getByRole('button', { name: 'Steps and details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Files and details' }));
     expect(panel().hasAttribute('inert')).toBe(false);
-    expect(screen.getByRole('radio', { name: 'Steps' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Files' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     expect(panel().hasAttribute('inert')).toBe(true);
     expect(panel().getAttribute('aria-hidden')).toBe('true');
-    expect(screen.queryByRole('button', { name: 'Steps and details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Files and details' })).toBeNull();
   });
 });

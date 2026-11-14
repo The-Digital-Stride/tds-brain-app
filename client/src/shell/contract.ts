@@ -14,15 +14,17 @@ import type {
   TodoItem,
   TodoList,
 } from '../../../shared/contract.ts';
-import type { ChatItem } from '../state/chat-reducer.ts';
 
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
 
 /** The left drawers. Only one is open at a time. */
 export type DrawerName = 'chats' | 'todos' | 'skills';
 
-/** Tabs in the right panel ("This chat"). `files`: plan 2026-11-13-chat-files. */
-export type PanelTab = 'steps' | 'files' | 'details';
+/**
+ * Tabs in the right panel ("This chat"). `files`: plan 2026-11-13-chat-files. A Steps tab was
+ * removed in v0.21 (the chat's "What Claude did" folds show them); a saved `steps` loads as `files`.
+ */
+export type PanelTab = 'files' | 'details';
 
 export interface ShellState {
   /** True: the rail shows names beside the icons. False: icons only. */
@@ -70,7 +72,7 @@ export type ShellAction =
   | { type: 'set-panel-tab'; tab: PanelTab }
   /**
    * Opens the panel on the Files tab showing `key` of chat `chat` (null: the Files list). Used by
-   * reply links, steps and the list's rows and Back button. Sets `panelOpen`, `panelTab: 'files'` and
+   * reply links, the chat's steps and the list's rows and Back button. Sets `panelOpen`, `panelTab: 'files'` and
    * `panelFile` in one update. It opens the panel, so `ShellProvider` treats it like `set-panel` open.
    */
   | { type: 'show-chat-file'; chat: string; key: string | null }
@@ -212,7 +214,7 @@ export interface DockProps {
 export interface SheetBarProps {
   title: string;
   crumb?: string;
-  /** The right panel's toggle label ("Steps and details"). Given, the toggle sits last: top right. */
+  /** The right panel's toggle label ("Files and details"). Given, the toggle sits last: top right. */
   panel?: string;
   /** Sheet buttons, placed before "Search or jump to". */
   children?: ReactNode;
@@ -377,39 +379,6 @@ export interface HomeLogic {
    */
   summary: (counts: { overdue: number; dueToday: number; asking: number }) => string;
 }
-
-// ── Right panel ────────────────────────────────────────────────────────────────────────────────
-
-export interface StepRow {
-  kind: 'step';
-  id: string;
-  label: string;
-  status: 'running' | 'ok' | 'failed';
-  /** 0 for Claude's own steps, 1+ for a helper's steps under one of them. */
-  depth: number;
-}
-
-/** A note Claude wrote between its steps ("Let me check the brief first."), as markdown. */
-export interface NoteRow {
-  kind: 'note';
-  id: string;
-  text: string;
-}
-
-/** A background helper's report came back here. Its text is in the thread's "What Claude did". */
-export interface ReportRow {
-  kind: 'report';
-  id: string;
-  name: string | null;
-}
-
-export type StepEntry = StepRow | NoteRow | ReportRow;
-
-/**
- * `client/src/state/steps.ts`. Every tool step of the chat, in order, helpers' steps nested after
- * their parent, with Claude's notes between steps where it wrote them.
- */
-export type StepsOf = (items: ChatItem[]) => StepEntry[];
 
 // ── Chats drawer ───────────────────────────────────────────────────────────────────────────────
 

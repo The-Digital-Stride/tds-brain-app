@@ -1,9 +1,4 @@
-import { useMemo } from 'react';
-import { indexChatFiles } from '../../../shared/chat-files.ts';
 import { approvalsSentence } from '../approvals.ts';
-import { Markdown } from '../markdown.tsx';
-import type { ChatState } from '../state/chat-reducer.ts';
-import { reportTitle, STEP_WORDS, stepsOf } from '../state/steps.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
 import type { PanelTab } from './contract.ts';
@@ -15,67 +10,12 @@ import { placeName, STATE_WORDS, whenWords } from './words.ts';
 export const APPROVALS_SHORT = 'Same as your terminal';
 
 const TABS: { value: PanelTab; label: string }[] = [
-  { value: 'steps', label: 'Steps' },
   { value: 'files', label: 'Files' },
   { value: 'details', label: 'Details' },
 ];
 
-function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: string }) {
-  const { dispatch } = useShell();
-  const files = chat?.files.files;
-  const byToolUse = useMemo(() => indexChatFiles(files ?? []).byToolUse, [files]);
-  const entries = stepsOf(chat?.items ?? []);
-  if (!entries.some((e) => e.kind === 'step')) return <p className="dock-empty">No steps yet.</p>;
-  let n = 0;
-  return (
-    <ol className="steps">
-      {entries.map((s) =>
-        s.kind === 'note' ? (
-          // What Claude said between steps, the same notes the thread folds into "What Claude did".
-          <li key={s.id} className="step step-note">
-            <span aria-hidden="true" />
-            <div className="step-note-text">
-              <span className="visually-hidden">Claude's note: </span>
-              <Markdown text={s.text} />
-            </div>
-          </li>
-        ) : s.kind === 'report' ? (
-          // A helper's report came back here; its text is in the thread's "What Claude did".
-          <li key={s.id} className="step step-note">
-            <span aria-hidden="true" />
-            <span className="step-note-text">{reportTitle(s.name)}</span>
-          </li>
-        ) : (
-          <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
-            {/* Read out: screen readers count notes as list items, so the list position would not match. */}
-            <span className="step-n">{++n}</span>
-            <span className="step-text">
-              {byToolUse.has(s.id) ? (
-                <button
-                  type="button"
-                  className="step-label link-btn"
-                  onClick={() =>
-                    dispatch({ type: 'show-chat-file', chat: sessionId, key: byToolUse.get(s.id) ?? null })
-                  }
-                >
-                  {s.label}
-                </button>
-              ) : (
-                <span className="step-label">{s.label}</span>
-              )}
-              <span className="step-status" data-status={s.status}>
-                {STEP_WORDS[s.status]}
-              </span>
-            </span>
-          </li>
-        ),
-      )}
-    </ol>
-  );
-}
-
 /**
- * The body of the right panel, "This chat": the chat's steps, files and details. The right `Dock`
+ * The body of the right panel, "This chat": the chat's files and details. The right `Dock`
  * supplies the region, heading and close button. Nothing shows unless a live chat is on the sheet.
  */
 export function Inspector() {
@@ -103,9 +43,7 @@ export function Inspector() {
         options={TABS}
         onChange={(tab) => dispatch({ type: 'set-panel-tab', tab })}
       />
-      {state.panelTab === 'steps' ? (
-        <Steps chat={chat} sessionId={id} />
-      ) : state.panelTab === 'files' ? (
+      {state.panelTab === 'files' ? (
         <ChatFiles sessionId={id} />
       ) : (
         <dl className="kv">

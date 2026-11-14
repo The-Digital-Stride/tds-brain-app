@@ -88,38 +88,26 @@ afterEach(() => {
 });
 
 describe('the "This chat" panel', () => {
-  it('lists every step, numbered, with its status in words and helpers indented', () => {
+  it('offers Files and Details, opening on Files (the steps are in the chat itself)', () => {
     renderPanel();
-    const rows = screen.getAllByRole('listitem');
-    expect(rows.map((r) => r.textContent)).toEqual([
-      '1Asked a helperdone',
-      '2Read business.mddid not work',
-      '3Counted enquiriesworking',
-    ]);
-    expect(rows.map((r) => r.getAttribute('data-depth'))).toEqual(['0', '1', '0']);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Files', 'Details']);
+    expect(screen.getByRole('radio', { name: 'Files' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByText('No steps yet.')).toBeNull();
   });
 
-  it('says so when there are no steps yet', () => {
-    h.chat = chatState([{ kind: 'user', id: 'u', text: 'hi' }]);
+  it('switches between Files and Details', () => {
     renderPanel();
-    expect(screen.getByText('No steps yet.')).toBeTruthy();
-  });
-
-  it('switches between Steps and Details', () => {
-    renderPanel();
-    const steps = screen.getByRole('radio', { name: 'Steps' });
-    expect(steps.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
     expect(screen.getByRole('radio', { name: 'Details' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.queryByRole('list')).toBeNull();
     const terms = Array.from(document.querySelectorAll('dt')).map((d) => d.textContent);
     expect(terms).toEqual(['Client', 'To-do', 'Started', 'State', 'Approvals', 'Continue in the terminal']);
     expect(screen.getByText('Acme Heating')).toBeTruthy();
     expect(screen.getByText('Write the call tracking case')).toBeTruthy();
     expect(screen.getByText('Working')).toBeTruthy();
     expect(screen.getByText('Claude asks before it changes a file or runs a command.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'Steps' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('radio', { name: 'Files' }));
+    expect(screen.getByRole('radio', { name: 'Files' }).getAttribute('aria-checked')).toBe('true');
+    expect(document.querySelectorAll('dt')).toHaveLength(0);
   });
 
   it('leaves out the to-do when the chat has none, and says "No client" when there is none', () => {

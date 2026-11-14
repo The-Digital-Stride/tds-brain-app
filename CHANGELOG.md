@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.19.0 — 2026-11-14
+
+- **feat**: choose the model and effort for chats in Settings
+
 ## v0.18.0 — 2026-11-14
 
 - **feat**: show each chat's model and effort under the message box

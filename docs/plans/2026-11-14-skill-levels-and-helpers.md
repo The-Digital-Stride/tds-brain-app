@@ -1,6 +1,6 @@
 # Levels and helpers: the right model for every chat, skill and helper
 
-Date: 2026-11-14 · Size: XL (two phases, one release) · Branch: `skill-levels-and-helpers` · Release: v0.20.0 · Explainer: (to come)
+Date: 2026-11-14 · Size: XL (two phases, one release) · Branch: `skill-levels-and-helpers` · Release: v0.20.0 · Explainer: https://claude.ai/artifact/DHPTdUcdhL3Xz6vRkF76nr
 
 Supersedes the parked `docs/plans/2026-11-14-skill-levels.md`.
 

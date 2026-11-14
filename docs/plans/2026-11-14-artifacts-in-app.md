@@ -368,3 +368,20 @@ Reviews ran after each build round; every finding below was checked in code befo
   the download instead (tested); the R8 Plain line no longer promises offline use. Follow-ups: open
   ordinary links in a new tab instead of hitting the stop notice; don't cache unpinned library
   addresses (or expire them after 30 days).
+- **After sign-off: user follow-ups.** Claude now asks where a new document goes when nobody has
+  said (`SAVE_LINE`), offering places from the brain's save rules or "just show it here". The page
+  Claude made opens in the app when its turn ends (`useOpenPageAfterTurn`), and Claude is told to
+  save pages with Write/Edit (the app sees nothing written by Bash) and never to open a browser or
+  local server to show one. Browser-checked: the page opened by itself after an edit; a reopened
+  chat opened nothing.
+- **Robustness and efficiency review (expert, Opus).** Confirmed and fixed: "Latest" failed for a
+  chat that closed with a page in progress (now falls back to the newest kept copy); the page didn't
+  open when the file list arrived just after the turn ended (the hook now waits for that list);
+  closed chats kept their whole transcript in memory (cleared on close); every page write read into
+  a 16 MB buffer (now sized to the file); a change to a page whose file had gone made a second page
+  (now saved back to the page's original path) and the save question fired for quick visuals and
+  existing pages (now skipped). Not done, follow-ups: version clean-up rescans the chat folder on
+  each keep; half-written `.tmp` files after a crash aren't swept.
+- **Correctness check of that fix round (Opus).** No findings; safe to merge. Optional test gaps
+  left as follow-ups: clearing a closed chat's transcript, and "no copy when the file grew while
+  being read".

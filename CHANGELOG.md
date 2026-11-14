@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.30.0 — 2026-11-14
+
+- **feat**: search logic and client codes for the client picker
+- **feat**: type-to-search client picker in place of the client selects
+- **fix**: picker selects the name again so typing replaces it
+- **fix**: keep the name selected on a real click; codes in Library
+- **fix**: picker chevron points up while the list is open
+- **fix**: picker double-click keeps the name selected; sign-off tidy-ups
+
 ## v0.29.2 — 2026-11-14
 
 - **fix**: star skills as favourites, like chats and to-dos

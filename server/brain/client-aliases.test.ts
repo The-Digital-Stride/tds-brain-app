@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { readClientAliases } from './client-aliases.ts';
+import { readClientAliases, withClientAliases } from './client-aliases.ts';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -63,5 +63,28 @@ describe('readClientAliases', () => {
     expect(await readClientAliases(brainWithMap(null), CLIENTS)).toEqual(plain);
     expect(await readClientAliases(brainWithMap('{nope'), CLIENTS)).toEqual(plain);
     expect(await readClientAliases(brainWithMap('[1,2]'), CLIENTS)).toEqual(plain);
+  });
+});
+
+describe('withClientAliases', () => {
+  it('adds the other names and codes, keeps the order, and drops repeats of the name or slug', async () => {
+    const root = brainWithMap(
+      JSON.stringify({
+        'urban-cooling': {
+          name: 'Urban Cooling',
+          aliases: ['Urban Cooling', 'UC', 'AC', 'Air Con', 'urban_cooling', 'urban-cooling', 'uc'],
+        },
+        skyseal: { name: 'Skyseal Ltd', aliases: ['skyseal', 'Rooflights'] },
+      }),
+    );
+    expect(await withClientAliases(root, CLIENTS)).toEqual([
+      { slug: 'astrum', name: 'Astrum' },
+      { slug: 'skyseal', name: 'Skyseal', aliases: ['Rooflights', 'Skyseal Ltd'] },
+      { slug: 'urban-cooling', name: 'Urban Cooling', aliases: ['UC', 'AC', 'Air Con'] },
+    ]);
+  });
+
+  it('gives the clients unchanged when there is no map', async () => {
+    expect(await withClientAliases(brainWithMap(null), CLIENTS)).toEqual(CLIENTS);
   });
 });

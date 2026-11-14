@@ -18,8 +18,10 @@ import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import { ClientAsk } from './ClientAsk.tsx';
 import type { DrawerName } from './contract.ts';
+import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { clientOptions } from './search-select.ts';
 import { placeName, STATE_WORDS, starterSkills, todoChatDraft } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
@@ -58,7 +60,7 @@ export function Home() {
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
-  // The select's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
+  // The client picker's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
   const [picked, setPicked] = useState<{ key: number; value: string } | null>(null);
   const [ask, setAsk] = useState<{
     options: string[];
@@ -163,21 +165,19 @@ export function Home() {
                     <label className="client-label" htmlFor="client-select">
                       Client
                     </label>
-                    <select
+                    <SearchSelect
                       id="client-select"
-                      className="field client-select"
+                      className="client-select"
                       value={choice}
+                      options={[
+                        { value: AUTO, label: 'Auto' },
+                        { value: NONE, label: 'No client' },
+                        ...clientOptions(clients),
+                      ]}
+                      recentKey="clients"
                       disabled={busy}
-                      onChange={(e) => setPicked({ key: activeChat.key, value: e.target.value })}
-                    >
-                      <option value={AUTO}>Auto</option>
-                      <option value={NONE}>No client</option>
-                      {clients.map((c) => (
-                        <option key={c.slug} value={c.slug}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setPicked({ key: activeChat.key, value })}
+                    />
                   </>
                 }
                 onSend={async (text, uploadIds) => {

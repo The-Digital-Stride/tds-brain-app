@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import { openPicker, pickOption } from '../test/pick.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -216,14 +217,15 @@ describe('Home', () => {
     fireEvent.change(box, { target: { value } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   };
-  const select = () => screen.getByLabelText('Client') as HTMLSelectElement;
+  const select = () => screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement;
 
   it('has no separate client row; the select sits in the composer foot and starts on auto', async () => {
     await renderHome();
     expect(document.querySelector('.home-client')).toBeNull();
     expect(select().closest('.composer-foot')).toBeTruthy();
-    expect(select().value).toBe('@auto');
-    expect([...select().options].map((o) => o.text)).toEqual([
+    expect(select().value).toBe('Auto');
+    openPicker('Client');
+    expect(screen.getAllByRole('option').map((o) => o.textContent?.replace(/, chosen$/, ''))).toEqual([
       'Auto',
       'No client',
       'Acme Heating',
@@ -233,7 +235,7 @@ describe('Home', () => {
 
   it('a chosen client skips the guess and is sent', async () => {
     const box = await renderHome();
-    fireEvent.change(select(), { target: { value: 'northwind' } });
+    pickOption('Client', 'Northwind');
     typeAndSend(box, 'Hello there');
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
@@ -243,7 +245,7 @@ describe('Home', () => {
 
   it('"No client" skips the guess and sends no client', async () => {
     const box = await renderHome();
-    fireEvent.change(select(), { target: { value: '@none' } });
+    pickOption('Client', 'No client');
     typeAndSend(box, 'Hello there');
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
@@ -254,8 +256,8 @@ describe('Home', () => {
     clientChoice.set('client:northwind');
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, lastClient: 'acme' } });
     await renderHome();
-    expect(select().value).toBe('@auto');
-    fireEvent.change(select(), { target: { value: 'acme' } });
+    expect(select().value).toBe('Auto');
+    pickOption('Client', 'Acme Heating');
     expect(clientChoice.get()).toBe('client:northwind');
   });
 
@@ -344,11 +346,15 @@ describe('Home', () => {
     const box = await renderHome();
     typeAndSend(box, 'Vague two');
     const group = await screen.findByRole('group', { name: 'Which client is this for?' });
-    const other = within(group).getByLabelText('Another client') as HTMLSelectElement;
-    expect([...other.options].map((o) => o.text)).toEqual(['Another client…', 'Acme Heating', 'Northwind']);
+    const other = within(group).getByRole('combobox', { name: 'Another client' }) as HTMLInputElement;
+    expect(other.value).toBe('');
+    expect(other.placeholder).toBe('Another client…');
+    openPicker('Another client');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Acme Heating', 'Northwind']);
+    fireEvent.keyDown(other, { key: 'Escape' });
     const use = within(group).getByRole('button', { name: 'Use this client' }) as HTMLButtonElement;
     expect(use.disabled).toBe(true);
-    fireEvent.change(other, { target: { value: 'acme' } });
+    pickOption('Another client', 'Acme Heating');
     // Choosing in the list sends nothing by itself.
     expect(api.startSession).not.toHaveBeenCalled();
     expect(use.disabled).toBe(false);
@@ -465,9 +471,9 @@ describe('Home', () => {
     });
     await renderHome();
     fireEvent.click(await card('Needs you').findByRole('button', { name: /Acme thing/ }));
-    await waitFor(() => expect(select().value).toBe('acme'));
+    await waitFor(() => expect(select().value).toBe('Acme Heating'));
     fireEvent.click(card('Needs you').getByRole('button', { name: /My own thing/ }));
-    await waitFor(() => expect(select().value).toBe('@none'));
+    await waitFor(() => expect(select().value).toBe('No client'));
     // Sending a chat whose client arrived with it counts as preset, not chosen by hand.
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));

@@ -11,6 +11,7 @@ import './styles/shell.css';
 import './styles/drawers.css';
 import './styles/home.css';
 import './styles/palette.css';
+import './styles/search-select.css';
 import './styles/chat.css';
 import './styles/viewer.css';
 

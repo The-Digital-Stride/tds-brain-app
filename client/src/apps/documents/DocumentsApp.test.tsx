@@ -145,8 +145,12 @@ describe('DocumentsSheet', () => {
     expect(await screen.findByText('Could not reach TDS Brain.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await card('Reports');
-    const picker = screen.getByLabelText('Library') as HTMLSelectElement;
-    expect([...picker.querySelectorAll('optgroup')].map((g) => g.label)).toEqual(['Mine', 'Clients']);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Library' }));
+    expect(
+      screen
+        .getAllByRole('group')
+        .map((g) => document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent),
+    ).toEqual(['Mine', 'Clients']);
   });
 
   it('says so when the library has no documents', async () => {

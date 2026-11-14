@@ -17,6 +17,7 @@ import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '.
 import type { TodoFilter } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
+import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
@@ -490,7 +491,7 @@ export function TodosDrawer() {
     // The button leaves with the "No to-dos match" panel: put the keyboard on a filter, now reset.
     const row = filtersRef.current;
     const filter =
-      row?.querySelector<HTMLElement>('select') ??
+      row?.querySelector<HTMLElement>('[role="combobox"]') ??
       row?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
     (filter ?? scrollRef.current)?.focus();
   };
@@ -762,19 +763,25 @@ export function TodosDrawer() {
               <label className="visually-hidden" htmlFor="todo-client">
                 Client
               </label>
-              <select
+              <SearchSelect
                 id="todo-client"
-                className="field"
+                className="todo-client-pick"
                 value={active.client ?? ''}
-                onChange={(e) => setFilter({ ...filter, client: e.target.value || null })}
-              >
-                <option value="">All clients</option>
-                {clientSlugs.map((slug) => (
-                  <option key={slug} value={slug}>
-                    {clients.find((c) => c.slug === slug)?.name ?? slug}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'All clients' },
+                  ...clientSlugs.map((slug) => {
+                    const known = clients.find((c) => c.slug === slug);
+                    return {
+                      value: slug,
+                      label: known?.name ?? slug,
+                      terms: [slug, ...(known?.aliases ?? [])],
+                      group: 'Clients',
+                    };
+                  }),
+                ]}
+                recentKey="clients"
+                onChange={(value) => setFilter({ ...filter, client: value || null })}
+              />
             </>
           ) : null}
           {addToggle}

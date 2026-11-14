@@ -2023,6 +2023,41 @@ describe('skill levels and chat levels', () => {
     });
     expect(sent.json.skillLevels).toEqual({ levels: { a: rec('deep') }, canSet: false, writable: true });
   });
+
+  it('bootstrap clients carry their codes from clients/map.json, for the client pickers', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'tba-boot-aliases-'));
+    try {
+      mkdirSync(join(root, 'clients'));
+      writeFileSync(
+        join(root, 'clients', 'map.json'),
+        JSON.stringify({ 'urban-cooling': { name: 'Urban Cooling', aliases: ['UC', 'urban_cooling'] } }),
+      );
+      const sent = await call(ROUTES.bootstrap, 'GET', undefined, {
+        brain: {
+          ...member.brain,
+          root,
+          health: async () => ({ ok: true, path: root, problems: [] }),
+          profile: async () => ({}),
+          skills: async () => [],
+          usedOften: async () => [],
+          clients: async () => [
+            { slug: 'astrum', name: 'Astrum' },
+            { slug: 'urban-cooling', name: 'Urban Cooling' },
+          ],
+        },
+        store: { get: async () => ({}) },
+        engineHealth: () => ({ ok: true }),
+        launchToken: 't',
+        port: 3877,
+      });
+      expect(sent.json.clients).toEqual([
+        { slug: 'astrum', name: 'Astrum' },
+        { slug: 'urban-cooling', name: 'Urban Cooling', aliases: ['UC'] },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('POST /api/sessions/:id/kind', () => {

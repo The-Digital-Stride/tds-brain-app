@@ -171,9 +171,11 @@
   text-overflow: ellipsis;
 }
 .drawer-tools.todo-filters .field {
+  padding-left: 10px;
+}
+.drawer-tools.todo-filters .todo-client-pick {
   flex: 1 1 0;
   min-width: 0;
-  padding-left: 10px;
 }
 .todo-nomatch {
   display: grid;
@@ -257,9 +259,6 @@
   padding: 8px 10px;
   line-height: 1.45;
   resize: vertical;
-}
-.todo-field select.field {
-  padding-right: 6px;
 }
 .todo-field textarea.field[readonly] {
   background: var(--tray);

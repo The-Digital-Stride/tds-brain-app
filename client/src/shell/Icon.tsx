@@ -52,6 +52,7 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   chevron: <path d="M5 8l5 5 5-5" />,
+  check: <path d="M4.5 10.5l3.5 3.5 7.5-8" />,
   go: <path d="M4 10h11M11 5l5 5-5 5" />,
   // Two chain links: a web address.
   link: (

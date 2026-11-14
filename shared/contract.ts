@@ -11,6 +11,7 @@
  */
 
 import type { AppState } from './install-contract.ts';
+import type { LevelMode, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
 import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
@@ -82,6 +83,11 @@ export interface SkillInfo {
   argumentHint: string | null;
   /** From the `roles:` frontmatter line. null means everyone may run it. */
   restrictedTo: Role[] | null;
+  /**
+   * The skill's own frontmatter `model` / `effort` (plan 2026-11-14-skill-levels-and-helpers,
+   * decision 3). null when neither is set; absent from older servers. Read only.
+   */
+  ownLevel?: OwnLevel | null;
 }
 
 /**
@@ -689,6 +695,13 @@ export interface AppPrefs {
   model: string | null;
   /** The effort chats use. null (the default) means "Same as Claude Code". Shown in Settings as "Effort". */
   effort: EffortLevel | null;
+  /**
+   * 'auto' (the default): the app picks each chat's level (plan 2026-11-14-skill-levels-and-helpers,
+   * decision 2). 'manual': `model` and `effort` above, as in v0.19.0. A prefs file without it reads
+   * as 'manual' when `model` or `effort` is set, else 'auto'. Shown in Settings as "Automatic" /
+   * "Choose myself".
+   */
+  levelMode: LevelMode;
 }
 
 export const MODEL_PREF_MAX = 100;
@@ -707,6 +720,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   todoSeen: {},
   model: null,
   effort: null,
+  levelMode: 'auto',
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */
@@ -958,7 +972,14 @@ export type ChatEvent =
    * newest in its replay log. Sent only on streams opened with `files=1` (see `ROUTES.stream`):
    * an older page's reducer would reset the chat on an event it does not know.
    */
-  | ({ type: 'files' } & ChatFilesSnapshot);
+  | ({ type: 'files' } & ChatFilesSnapshot)
+  /**
+   * The level the chat's next (or current) reply runs at, and why (plan
+   * 2026-11-14-skill-levels-and-helpers, decision 7). Sent whenever it changes. Only on streams opened
+   * with `levels=1` (see `ROUTES.stream`), for the same reason as `files`; the server keeps only the
+   * newest in its replay log.
+   */
+  | { type: 'level'; level: TurnLevel };
 
 // ---------------------------------------------------------------------------
 // Chat files: the documents, attachments and web links of one chat (plan 2026-11-13-chat-files)
@@ -1104,6 +1125,8 @@ export interface Bootstrap {
   clients: ClientInfo[];
   usedOften: UsedSkill[];
   prefs: AppPrefs;
+  /** Team skill levels (plan 2026-11-14-skill-levels-and-helpers, decision 8). Absent from older servers. */
+  skillLevels?: SkillLevels;
 }
 
 /**
@@ -1285,6 +1308,9 @@ export interface ApiError {
  *   POST /api/sessions/:id/answer     QuestionReply      → OkResponse
  *   POST /api/sessions/:id/interrupt  {}                 → OkResponse
  *   POST /api/sessions/:id/close      {}                 → OkResponse
+ *   POST /api/sessions/:id/level      ChatLevelRequest   → { level: TurnLevel }
+ *   GET  /api/skill-levels                      → SkillLevels
+ *   POST /api/skill-levels     SetSkillLevelRequest → SkillLevels
  *   GET  /api/stream?session=<id>&after=<seq>   Server-Sent Events. Each `data:` is a StreamFrame.
  *                                               `session` and `after` are optional. With `session`,
  *                                               the chat's events with seq > after are sent first
@@ -1325,6 +1351,19 @@ export const ROUTES = {
   prefs: '/api/prefs',
   /** `GET`: EngineChoices. `no-store`, every role. */
   engineChoices: '/api/engine/choices',
+  /**
+   * `GET`: SkillLevels (every role, `no-store`). `POST` SetSkillLevelRequest → the fresh SkillLevels:
+   * 403 `not-allowed` unless owner or scout, or while `writable` is false; 400 `bad-request` for an
+   * unknown skill or tier; 500 `internal` when the brain skill's script fails. The app never writes
+   * the file itself.
+   */
+  skillLevels: '/api/skill-levels',
+  /**
+   * `POST` ChatLevelRequest → `{ level: TurnLevel }`: the person picks a tier for the rest of this
+   * chat (null = back to automatic). Applies from the next message. 404 `not-found` for an unknown
+   * chat; 400 `bad-request` for an unknown tier; ignored (answers with the manual level) in manual mode.
+   */
+  chatLevel: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/level`,
   /**
    * `GET`: ChangelogResponse, read from the app's own CHANGELOG.md (never a brain file). Owners and
    * scouts only: 403 `not-allowed` for anyone else. An unreadable file gives `{versions: []}`.
@@ -1413,11 +1452,12 @@ export const ROUTES = {
   /**
    * `files`: the page understands `files` chat events (plan 2026-11-13-chat-files). Without it the
    * server leaves them out of the stream, replay and live, so a tab from an older version (whose
-   * reducer resets a chat on an unknown event) keeps working until it reloads.
+   * reducer resets a chat on an unknown event) keeps working until it reloads. `levels`: the same
+   * for `level` events (plan 2026-11-14-skill-levels-and-helpers).
    */
-  stream: (sessionId?: string | null, after = 0, files = false) =>
+  stream: (sessionId?: string | null, after = 0, files = false, levels = false) =>
     sessionId
-      ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}${files ? '&files=1' : ''}`
+      ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}${files ? '&files=1' : ''}${levels ? '&levels=1' : ''}`
       : '/api/stream',
 } as const;
 

@@ -82,6 +82,8 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
       o.effort === null || (EFFORT_LEVELS as readonly unknown[]).includes(o.effort)
         ? (o.effort as EffortLevel | null)
         : base.effort,
+    // Placeholder so the contract type-checks; Builder B adds the old-file read rule (plan decision 2).
+    levelMode: o.levelMode === 'auto' || o.levelMode === 'manual' ? o.levelMode : base.levelMode,
   };
 }
 

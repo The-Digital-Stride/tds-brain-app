@@ -203,3 +203,41 @@ export interface ChatLevelRecord {
 
 /** At most this many chats are remembered (`Record<sdkSessionId, ChatLevelRecord>`). */
 export const CHAT_LEVELS_MAX = 500;
+
+// ---------------------------------------------------------------------------
+// Hand-off between the engine (Builder A) and the server wiring (Builder B)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the session manager reads to resolve a level. Builder B implements it in
+ * `server/brain/skill-levels.ts` + `server/brain/skills.ts` and passes it as
+ * `SessionManagerOptions.levels`. Without it the manager behaves as v0.19.0 (manual).
+ */
+export interface LevelSources {
+  /** Fresh team levels from SKILL_LEVELS_FILE; {} when missing or unreadable. Never throws. */
+  teamLevels(): Promise<Record<string, SkillLevel>>;
+  /**
+   * A skill's (or command's) own frontmatter `model` / `effort`, by name, for any skill on disk
+   * including hidden ones. null when neither is set or nothing has that name. Never throws.
+   */
+  ownLevel(skill: string): Promise<OwnLevel | null>;
+}
+
+/** Chat levels kept across resume (Builder B: `server/store/chat-levels.ts`, in the app's data folder). */
+export interface ChatLevelStore {
+  get(sdkSessionId: string): Promise<ChatLevelRecord | null>;
+  /** Caps at CHAT_LEVELS_MAX, pruning the oldest `at` first. Never throws. */
+  set(sdkSessionId: string, record: ChatLevelRecord): Promise<void>;
+}
+
+/**
+ * Session manager additions (Builder A), called by Builder B's routes and `server/index.ts`:
+ * - `setEngineChoice(choice)` now takes `EngineChoice & { levelMode?: LevelMode }`; an absent
+ *   `levelMode` means 'manual' (v0.19.0 behaviour, so older callers and tests are unchanged).
+ * - `setChatLevel(sessionId, tier)` → `TurnLevel` for `POST ROUTES.chatLevel`.
+ * - `prewarmPick(text)`: called by the client-guess route with the message text; fire and forget.
+ */
+export interface LevelSessionApi {
+  setChatLevel(sessionId: string, tier: LevelTier | null): Promise<TurnLevel>;
+  prewarmPick(text: string): void;
+}

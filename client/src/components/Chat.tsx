@@ -120,19 +120,6 @@ export function ChatView() {
       <SheetBar crumb="Chats" title={title} panel="Files and details">
         {/* With no client the chip is left out; the panel's Details says so. */}
         {clientName ? <span className="chip">{clientName}</span> : null}
-        {working && !confirming ? (
-          <button
-            type="button"
-            className="btn stop-btn"
-            // Shown only while the sheet is narrow and the word "Stop" is hidden (Tooltips.tsx skips shown words).
-            data-tip="Stop"
-            onClick={() => void run(() => api.interrupt(sessionId))}
-          >
-            <Icon name="stop" size={16} />
-            {/* Hidden visually (not from screen readers) when the sheet is narrow. */}
-            <span className="btn-label">Stop</span>
-          </button>
-        ) : null}
         {confirming ? (
           <fieldset
             className="close-confirm"
@@ -221,6 +208,7 @@ export function ChatView() {
             attention={attentionFor(state)}
             dropZone={column}
             attachDisabled={state === 'closed'}
+            onStop={working && !confirming ? () => void run(() => api.interrupt(sessionId)) : undefined}
             onSend={async (text, uploadIds) => {
               if (isClearCommand(text)) {
                 // "Start afresh": handled here, never sent to Claude.

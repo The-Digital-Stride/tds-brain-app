@@ -20,7 +20,7 @@ export function tipText(el: HTMLElement): string | null {
   return text && text.trim() !== '' ? text : null;
 }
 
-/** A button whose words show (`.btn-label`, as Stop has until the sheet is narrow) needs no tooltip. */
+/** A button whose words show (`.btn-label`, unless a narrow layout hides them) needs no tooltip. */
 function showsWords(el: HTMLElement): boolean {
   const label = el.querySelector('.btn-label');
   return label !== null && label.getBoundingClientRect().width > 1;

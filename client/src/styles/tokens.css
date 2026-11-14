@@ -88,9 +88,11 @@
   --attn-asking-pulse: #b45309;
 
   --danger: #a4261b;
+  --danger-hover: #861e15;
   --danger-wash: #fdeceb;
   /* Danger wash when pressed. */
   --danger-wash-strong: #f9d9d6;
   --ok: #17673a;
+  --ok-hover: #11522e;
   --ok-wash: #e6f4ea;
 }

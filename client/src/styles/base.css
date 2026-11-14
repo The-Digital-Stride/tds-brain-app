@@ -166,7 +166,7 @@ kbd {
 /*
  * Buttons: one language (docs/plans/2026-11-13-button-language.md).
  * `.btn` is standard (white, raised) by default; `data-variant` primary (navy), quiet (flat tint) or danger
- * (red text); `data-size` small. Raised kinds lift on hover, flat kinds darken. Hover and press never apply
+ * (red text), and the message box's send (green) and stop (red); `data-size` small. Raised kinds lift on hover, flat kinds darken. Hover and press never apply
  * to a disabled or aria-disabled button. -------------------------------------------------------- */
 .btn {
   appearance: none;
@@ -234,6 +234,30 @@ a.btn:hover {
 }
 .btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):active {
   background: var(--danger-wash-strong);
+}
+/* The message box's own pair (Ian, 2026-11-14): a green Send, and the red Stop that takes its place while Claude
+   works. White on either is 6.9:1 or better. */
+.btn:is([data-variant="send"], [data-variant="stop"]) {
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--on-accent);
+}
+.btn[data-variant="send"] {
+  background: var(--ok);
+}
+.btn[data-variant="send"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--ok-hover);
+  box-shadow: var(--lift-1);
+}
+.btn[data-variant="stop"] {
+  background: var(--danger);
+}
+.btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+  background: var(--danger-hover);
+  box-shadow: var(--lift-1);
+}
+.btn:is([data-variant="send"], [data-variant="stop"]):where(:not(:disabled, [aria-disabled="true"])):active {
+  box-shadow: none;
 }
 .btn[data-size="small"] {
   height: 28px;

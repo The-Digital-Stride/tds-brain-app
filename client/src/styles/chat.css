@@ -1214,21 +1214,6 @@
 }
 
 /* Narrow sheets and windows ------------------------------------------------------------------- */
-/* The bar wraps below 560px; Stop keeps its icon, and its name for screen readers. */
-@container sheet (max-width: 560px) {
-  .stop-btn {
-    padding: 0 9px;
-  }
-  .stop-btn .btn-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
 @media (max-width: 599px) {
   .thread {
     padding: 16px;

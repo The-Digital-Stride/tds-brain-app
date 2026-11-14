@@ -1,4 +1,12 @@
-import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { type Attention, MAX_ATTACHMENTS, type SkillInfo, UPLOAD_TYPES } from '../../../shared/contract.ts';
 import { discardUpload, uploadFile } from '../api.ts';
 import { Icon } from '../shell/Icon.tsx';
@@ -42,6 +50,8 @@ export interface ComposerProps {
   tools?: ReactNode;
   /** Replaces the "Enter to send" hint (not the upload warnings). */
   hint?: string;
+  /** Given while Claude works on a reply: Send turns into a red Stop that calls it (Ian, 2026-11-14). */
+  onStop?: () => void;
 }
 
 export function Composer({
@@ -56,6 +66,7 @@ export function Composer({
   attachDisabled = false,
   tools,
   hint,
+  onStop,
 }: ComposerProps) {
   const [text, setText] = useState(initial);
   const [skill, setSkill] = useState(initialSkill);
@@ -73,6 +84,16 @@ export function Composer({
   const sayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ids that went with a message being sent; the unmount clean-up must not discard these.
   const inFlight = useRef<Set<string>>(new Set());
+  // Send, or Stop in its place while Claude works.
+  const action = useRef<HTMLButtonElement>(null);
+  const stopping = onStop !== undefined;
+  const wasStopping = useRef(stopping);
+  // When the reply ends, Stop turns back into Send, which is disabled with an empty box. Focus on it would fall to
+  // the page, so it goes to the message box instead.
+  useLayoutEffect(() => {
+    if (wasStopping.current && !stopping && document.activeElement === action.current) area.current?.focus();
+    wasStopping.current = stopping;
+  }, [stopping]);
   // Read-only, not disabled, so the box can still take focus and its reason can be read.
   const blocked = disabledReason !== null || sending;
   sendingRef.current = sending;
@@ -443,15 +464,35 @@ export function Composer({
         <p className="visually-hidden" role="status" aria-live="polite">
           {announce}
         </p>
-        <button
-          type="button"
-          className="btn"
-          data-variant="primary"
-          disabled={!canSend}
-          onClick={() => void submit()}
-        >
-          Send
-        </button>
+        {/* One button that changes, not two, so focus on Send stays on it as it becomes Stop. */}
+        {onStop ? (
+          <button
+            ref={action}
+            type="button"
+            className="btn"
+            data-variant="stop"
+            onClick={(e) => {
+              // Stop takes Send's place: the second click of a double-click on Send must not stop the reply it sent.
+              if (e.detail >= 2) return;
+              say('Stopping');
+              onStop();
+            }}
+          >
+            <Icon name="stop" size={16} />
+            Stop
+          </button>
+        ) : (
+          <button
+            ref={action}
+            type="button"
+            className="btn"
+            data-variant="send"
+            disabled={!canSend}
+            onClick={() => void submit()}
+          >
+            Send
+          </button>
+        )}
       </div>
     </div>
   );

@@ -154,7 +154,8 @@ R8. **The branded file is self-contained.** When building a branded copy (downlo
    The download is fetched by the viewer (not a plain link) so it can read `X-Page-Self-Contained:
    yes|partial`; on `partial` the status line says "Downloaded. Some parts still need the internet
    to show." The filing message (`brandingMessage`) is unchanged.
-   Plain: the copy you send a client works offline, in any browser, charts included.
+   Plain: the copy you send a client carries its charts, scripts and fonts inside it, so it shows the
+   same in any browser; when something couldn't be included, the download says so.
 
 ## Decisions
 
@@ -361,3 +362,9 @@ Reviews ran after each build round; every finding below was checked in code befo
   the cache folder is cleared, so an unpinned address (`cdn.tailwindcss.com`) stays at the version
   first fetched. Filing into a client folder was not exercised in the browser (it writes to the
   brain; to be tried with the user).
+- **Overseer sign-off (round 3).** Signed off, no blockers, on condition that filing into a client
+  folder is run once with the user before merge. Rulings: the stop notice in Documents is right;
+  the three known limits are acceptable. Acted on: a branded copy too large to file now says to use
+  the download instead (tested); the R8 Plain line no longer promises offline use. Follow-ups: open
+  ordinary links in a new tab instead of hitting the stop notice; don't cache unpinned library
+  addresses (or expire them after 30 days).

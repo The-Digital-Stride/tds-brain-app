@@ -37,7 +37,7 @@ import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
-import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
+import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   AT_ONCE_REASON,
   appModelReason,
@@ -4450,6 +4450,27 @@ describe('pages', () => {
     const replayed = events(mgr, again.id).filter((e) => e.type === 'user-message');
     expect(replayed[0]).toMatchObject({ attachments: [expect.objectContaining({ kind: 'document' })] });
     expect(filesOf(events(mgr, again.id)).at(-1)?.attachments).toHaveLength(1);
+    staging.close();
+  });
+
+  it('says to download a branded copy that is too large to file, and puts nothing in the chat', async () => {
+    const staging = stagingFor();
+    staging.save = async () => {
+      throw new UploadError('too-large', 'That file is too large to attach. Files can be up to 32 MB.');
+    };
+    const fx = withPages(writing, { uploads: staging });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    const err = await Promise.resolve()
+      .then(() => mgr.askPage?.(s.id, key, { kind: 'brand' }))
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe('bad-request');
+    expect((err as SessionError).message).toContain('Download with TDS branding');
+    expect(fx.queries[0]?.received).toHaveLength(1);
     staging.close();
   });
 

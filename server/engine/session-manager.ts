@@ -2397,6 +2397,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       try {
         staged = (await uploads.save(Readable.from([bytes]), file.name, bytes.length)).id;
       } catch (err) {
+        if (err instanceof UploadError && err.code === 'too-large') {
+          throw new SessionError(
+            'bad-request',
+            "This branded copy is too large to file through Claude. Use “Download with TDS branding” and save it in the client's folder yourself.",
+          );
+        }
         throw asSessionError(err);
       }
       const msg = brandingMessage(ref, s.client);

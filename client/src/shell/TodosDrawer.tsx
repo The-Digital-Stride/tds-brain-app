@@ -138,7 +138,7 @@ function TodoRow({
 }) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
-  // The arrow is named by its action and title; "New to you" and the details line describe it, so a keyboard or
+  // The chat button is named by its action and title; "New to you" and the details line describe it, so a keyboard or
   // screen-reader user who lands on it hears them too.
   const newId = useId();
   const metaId = useId();
@@ -199,7 +199,7 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      {/* The row itself is not a button (Ian, 2026-11-14): only the arrow starts or opens the chat. */}
+      {/* The row itself is not a button (Ian, 2026-11-14): only the chat button starts or opens the chat. */}
       <div className="todo-main">
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
@@ -256,7 +256,7 @@ function TodoRow({
         aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
         onClick={choose}
       >
-        <Icon name="go" size={16} />
+        <Icon name="chat" size={16} />
       </button>
     </li>
   );

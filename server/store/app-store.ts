@@ -6,8 +6,10 @@ import {
   DEFAULT_PREFS,
   EFFORT_LEVELS,
   type EffortLevel,
+  FAVOURITE_CHATS_MAX,
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
+  SESSION_UUID_PATTERN,
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
 } from '../../shared/contract.ts';
@@ -24,6 +26,16 @@ function cleanPins(v: unknown): string[] | undefined {
     if (seen.size >= MAX_PINS) break;
   }
   return [...seen];
+}
+
+/** Valid session ids once each, in the order given; over the cap, the newest-starred (the last) are kept. */
+function cleanFavouriteChats(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const seen = new Set<string>();
+  for (const x of v) {
+    if (typeof x === 'string' && SESSION_UUID_PATTERN.test(x)) seen.add(x);
+  }
+  return [...seen].slice(-FAVOURITE_CHATS_MAX);
 }
 
 const SEEN_KEY_MAX = 300;
@@ -90,6 +102,7 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     // A missing or invalid value keeps `base`: the current choice on a patch. `read` replaces it
     // with the old-file rule when the file itself had none.
     levelMode: isLevelMode(o.levelMode) ? o.levelMode : base.levelMode,
+    favouriteChats: cleanFavouriteChats(o.favouriteChats) ?? [...(base.favouriteChats ?? [])],
   };
 }
 

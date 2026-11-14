@@ -22,7 +22,7 @@ import type {
   TodoList,
   TodoScope,
 } from '../../shared/contract.ts';
-import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
+import { FAVOURITE_CHATS_MAX, STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
@@ -169,6 +169,11 @@ export interface Store {
   deletePastChat: (sdkSessionId: string) => Promise<boolean>;
   /** Marks an open chat TDS or personal; the list updates at once, and a failure shows in `actionError`. */
   setChatKind: (id: string, kind: ChatKind) => Promise<void>;
+  /**
+   * Stars or unstars a chat by its `sdkSessionId`. The star moves at once; a failure puts the saved list back
+   * and shows in `actionError`.
+   */
+  toggleFavouriteChat: (sdkSessionId: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
   /** Counts up each time focus should return to the message box. */
@@ -470,6 +475,73 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions, requestFocus],
   );
 
+  // Favourite chats. `favRef` is the latest list, so quick taps each build on the one before; `favSaved` is the
+  // last list the server confirmed; `favTurn` counts the saves so only the newest reply (or failure) is shown;
+  // `favPending` counts saves still waiting, while which another setting's reply must not replace the stars.
+  const favRef = useRef<string[]>([]);
+  const favSaved = useRef<string[]>([]);
+  const favTurn = useRef(0);
+  const favPending = useRef(0);
+  const favSavedTurn = useRef(0);
+  /** The newest tap whose save failed, so a late success from an older tap can still correct the stars. */
+  const favFailedTurn = useRef(0);
+  useEffect(() => {
+    if (favPending.current > 0) return;
+    favRef.current = boot?.prefs.favouriteChats ?? [];
+    favSaved.current = favRef.current;
+  }, [boot?.prefs.favouriteChats]);
+  /** A prefs reply for another setting, with the stars kept as shown while a star save is waiting. */
+  const keepStars = useCallback((prefs: AppPrefs): AppPrefs => {
+    if (favPending.current === 0) return prefs;
+    favSaved.current = prefs.favouriteChats ?? [];
+    return { ...prefs, favouriteChats: favRef.current };
+  }, []);
+  const saveFavouriteChats = useCallback(async (favouriteChats: string[]) => {
+    favRef.current = favouriteChats;
+    const turn = ++favTurn.current;
+    const show = (list: string[]) =>
+      setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, favouriteChats: list } } : b));
+    show(favouriteChats);
+    favPending.current += 1;
+    try {
+      const prefs = await api.updatePrefs({ favouriteChats });
+      // A late reply to an older tap must not stand in for a newer saved list.
+      if (turn > favSavedTurn.current) {
+        favSavedTurn.current = turn;
+        favSaved.current = prefs.favouriteChats ?? [];
+      }
+      favPending.current -= 1;
+      if (turn === favTurn.current)
+        setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, favouriteChats: favSaved.current } } : b));
+      else if (favPending.current === 0 && favFailedTurn.current === favTurn.current) {
+        // The newest tap failed and this older one was saved after all: show what the server holds.
+        favRef.current = favSaved.current;
+        show(favSaved.current);
+      }
+    } catch (err) {
+      favPending.current -= 1;
+      setActionError(messageOf(err));
+      // The change did not stick: show what the server last saved, unless a newer tap has moved on.
+      if (turn === favTurn.current) {
+        favFailedTurn.current = turn;
+        favRef.current = favSaved.current;
+        show(favSaved.current);
+      }
+    }
+  }, []);
+  const toggleFavouriteChat = useCallback(
+    async (sdkSessionId: string) => {
+      const favs = favRef.current;
+      // Over the cap the oldest star goes, as the server keeps the newest (it refuses a longer list).
+      await saveFavouriteChats(
+        favs.includes(sdkSessionId)
+          ? favs.filter((f) => f !== sdkSessionId)
+          : [...favs, sdkSessionId].slice(-FAVOURITE_CHATS_MAX),
+      );
+    },
+    [saveFavouriteChats],
+  );
+
   const deletePastChat = useCallback(
     async (sdkSessionId: string) => {
       try {
@@ -588,7 +660,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (client && boot && boot.prefs.lastClient !== client) {
             void api
               .updatePrefs({ lastClient: client })
-              .then((prefs) => setBoot((b) => (b ? { ...b, prefs } : b)))
+              .then((prefs) => setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b)))
               .catch(() => {});
           }
           void loadSessions();
@@ -605,13 +677,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [activeChat, boot, todos, loadSessions, loadTodos],
+    [activeChat, boot, todos, loadSessions, loadTodos, keepStars],
   );
 
   const updatePrefs = useCallback(
     async (patch: Partial<AppPrefs>) => {
       try {
-        const prefs = await api.updatePrefs(patch);
+        const prefs = keepStars(await api.updatePrefs(patch));
         setBoot((b) => (b ? { ...b, prefs } : b));
         // The server works out whether to-dos can be changed from this switch, so ask again.
         if ('directWrites' in patch) await loadTodos();
@@ -619,7 +691,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setActionError(messageOf(err));
       }
     },
-    [loadTodos],
+    [loadTodos, keepStars],
   );
 
   const setSkillLevel = useCallback(async (skill: string, tier: LevelTier | null) => {
@@ -665,29 +737,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     seenRef.current = boot?.prefs.todoSeen ?? {};
   }, [boot?.prefs.todoSeen]);
-  const markTodosSeen = useCallback((items: TodoItem[]) => {
-    const next = { ...seenRef.current };
-    let changed = false;
-    for (const t of items) {
-      const at = t.handover?.at;
-      if (at && next[t.key] !== at) {
-        next[t.key] = at;
-        changed = true;
+  const markTodosSeen = useCallback(
+    (items: TodoItem[]) => {
+      const next = { ...seenRef.current };
+      let changed = false;
+      for (const t of items) {
+        const at = t.handover?.at;
+        if (at && next[t.key] !== at) {
+          next[t.key] = at;
+          changed = true;
+        }
       }
-    }
-    if (!changed) return;
-    seenRef.current = next;
-    // Optimistic, so the dot goes at once; the server's reply (pruned, capped) replaces it.
-    setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoSeen: next } } : b));
-    api
-      .updatePrefs({ todoSeen: next })
-      .then((prefs) => {
-        if (seenRef.current === next) setBoot((b) => (b ? { ...b, prefs } : b));
-      })
-      .catch(() => {
-        // Not saved: it shows as new again next time. Nothing to tell the person.
-      });
-  }, []);
+      if (!changed) return;
+      seenRef.current = next;
+      // Optimistic, so the dot goes at once; the server's reply (pruned, capped) replaces it.
+      setBoot((b) => (b ? { ...b, prefs: { ...b.prefs, todoSeen: next } } : b));
+      api
+        .updatePrefs({ todoSeen: next })
+        .then((prefs) => {
+          if (seenRef.current === next) setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b));
+        })
+        .catch(() => {
+          // Not saved: it shows as new again next time. Nothing to tell the person.
+        });
+    },
+    [keepStars],
+  );
 
   const completeTodo = useCallback(async (id: string) => {
     try {
@@ -908,6 +983,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       closeChat,
       deletePastChat,
       setChatKind,
+      toggleFavouriteChat,
       notice,
       run,
     }),
@@ -957,6 +1033,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       closeChat,
       deletePastChat,
       setChatKind,
+      toggleFavouriteChat,
       notice,
       run,
     ],

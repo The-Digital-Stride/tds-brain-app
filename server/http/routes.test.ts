@@ -1633,6 +1633,25 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     expect(sent.choices).toEqual([]);
   });
 
+  it('saves favourite chats as a list of session ids, once each', async () => {
+    const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const sent = await call('/api/prefs', 'PUT', { favouriteChats: [id, id] });
+    expect(sent.status).toBe(200);
+    expect(sent.json.favouriteChats).toEqual([id]);
+  });
+
+  it('refuses favourite chats that are not a list of session ids, or too many', async () => {
+    const ids = Array.from(
+      { length: 201 },
+      (_, i) => `0f8fad5b-d9cb-469f-a165-${String(i).padStart(12, '0')}`,
+    );
+    for (const favouriteChats of ['nope', ['not-a-uuid'], [3], ids]) {
+      const sent = await call('/api/prefs', 'PUT', { favouriteChats });
+      expect(sent.status).toBe(400);
+      expect(sent.json.error.message).toBe('The favourite chats were not understood.');
+    }
+  });
+
   it('answers a bad value with 400 and does not touch the sessions', async () => {
     const sent = await call('/api/prefs', 'PUT', { model: 'no no' });
     expect(sent.status).toBe(400);

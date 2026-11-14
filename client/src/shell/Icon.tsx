@@ -4,6 +4,8 @@ import type { IconName, IconProps } from './contract.ts';
 /** 20×20 line icons, drawn with the current text colour. */
 const PATHS: Record<IconName, ReactNode> = {
   plus: <path d="M10 4v12M4 10h12" />,
+  // Five points on a 20 grid. Outlined by default; a favourite's button fills it (drawers.css).
+  star: <path className="icon-star" d="M10 2.8l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 8.1l5-.7z" />,
   lock: (
     <>
       <rect x="4.5" y="9" width="11" height="8" rx="1.5" />

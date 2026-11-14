@@ -106,19 +106,26 @@
 .skill-more {
   color: var(--iron);
 }
-/* The pin shows on the row under the pointer or the keyboard; a pinned skill keeps its pin. */
+/* The skill pin and the chat star show on the row under the pointer or the keyboard; one that is on stays. */
 @media (hover: hover) {
-  .skill-row .icon-btn[aria-pressed="false"] {
+  .skill-row .icon-btn[aria-pressed="false"],
+  .line .star-btn[aria-pressed="false"] {
     opacity: 0;
     transition: opacity 0.12s;
   }
-  .skill-row:is(:hover, :focus-within) .icon-btn[aria-pressed="false"] {
+  .skill-row:is(:hover, :focus-within) .icon-btn[aria-pressed="false"],
+  .line:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
     opacity: 1;
   }
 }
+/* A favourite's star is filled. */
+.star-btn[aria-pressed="true"] .icon-star {
+  fill: currentColor;
+}
 @media (prefers-reduced-motion: reduce) {
   .todo .go,
-  .skill-row .icon-btn {
+  .skill-row .icon-btn,
+  .line .star-btn {
     transition: none;
   }
 }

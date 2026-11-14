@@ -21,6 +21,7 @@ import {
   EFFORT_LEVELS,
   type EffortLevel,
   type EngineHealth,
+  FAVOURITE_CHATS_MAX,
   type Identity,
   LIBRARY_SEARCH_QUERY,
   type LibraryFile,
@@ -33,6 +34,7 @@ import {
   type PermissionReply,
   type QuestionReply,
   ROUTES,
+  SESSION_UUID_PATTERN,
   type StartSessionRequest,
   type SyncStatus,
   THUMB_WIDTHS,
@@ -315,6 +317,17 @@ export async function validatePrefsPatch(
           throw bad('That model name was not understood.');
         }
         patch.model = value as string | null;
+        break;
+      }
+      case 'favouriteChats': {
+        if (
+          !Array.isArray(value) ||
+          value.length > FAVOURITE_CHATS_MAX ||
+          !value.every((v) => typeof v === 'string' && SESSION_UUID_PATTERN.test(v))
+        ) {
+          throw bad('The favourite chats were not understood.');
+        }
+        patch.favouriteChats = [...new Set(value as string[])];
         break;
       }
       case 'levelMode': {

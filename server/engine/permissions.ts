@@ -328,14 +328,11 @@ export function permissionCard(toolName: string, input: Rec, ctx: PermissionCard
 
 /**
  * Starting a helper (decision 13): one of the app's own needs no card; any other keeps today's
- * "Claude wants to start a helper". Either way the input allowed is the Agent hook's rewrite, so a
- * card can't undo it. Null for any other tool.
+ * "Claude wants to start a helper". Either way the call is allowed exactly as written: the Agent
+ * hook has already refused any call that breaks a helper rule, and never rewrites one. Null for any
+ * other tool.
  */
-export function agentStart(
-  toolName: string,
-  input: Rec,
-  rewrite: (input: Rec) => Rec,
-): { card: boolean; input: Rec } | null {
+export function agentStart(toolName: string, input: Rec): { card: boolean; input: Rec } | null {
   if (toolName !== 'Agent' && toolName !== 'Task') return null;
-  return { card: !isAppHelper(input.subagent_type), input: rewrite(input) };
+  return { card: !isAppHelper(input.subagent_type), input };
 }

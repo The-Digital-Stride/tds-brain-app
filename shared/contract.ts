@@ -1427,6 +1427,13 @@ export const ROUTES = {
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
+  /**
+   * `DELETE`: moves an earlier chat's history (Claude Code's `<id>.jsonl` and its `<id>/` folder) to the macOS
+   * Bin, so it can be put back. Reply 200 `{}`. The id must be a UUID (else 400 `bad-request`) that is in
+   * `SessionList.past` (else 404 `not-found`); an open chat is 409 `already-open` (close it first). If the Bin
+   * move fails, 500 `internal` with a plain message, and nothing is deleted.
+   */
+  pastSession: (sdkSessionId: string) => `/api/sessions/past/${encodeURIComponent(sdkSessionId)}`,
   /** `POST`: SetChatKindRequest → StartSessionResponse (`{ session }`). */
   sessionKind: (id: string) => `/api/sessions/${encodeURIComponent(id)}/kind`,
   /**

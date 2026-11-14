@@ -92,6 +92,7 @@ import {
 } from './levels.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { agentStart, describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
+import { TrashMissingError } from './trash-session.ts';
 
 // ---------------------------------------------------------------------------
 // Injected engine functions (the real ones come from the SDK)
@@ -135,6 +136,11 @@ export interface EngineFns {
   query(params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }): EngineQuery;
   listSessions(opts: { dir: string }): Promise<PastInfo[]>;
   getSessionMessages(sessionId: string, opts: { dir: string }): Promise<HistoryMessage[]>;
+  /**
+   * Moves one earlier chat's history to the macOS Bin (never erases it). Optional so older engines and test
+   * fakes still fit: without it, deleting is `internal`.
+   */
+  trashSession?(sessionId: string, opts: { dir: string }): Promise<void>;
 }
 
 export interface SessionManagerOptions {
@@ -200,6 +206,8 @@ export interface Subscription {
 }
 
 export interface SessionManager extends LevelSessionApi {
+  /** Moves an earlier chat to the Bin. Throws SessionError: bad-request | not-found | already-open | internal. */
+  deletePast(sdkSessionId: string): Promise<void>;
   list(): Promise<SessionList>;
   start(req: StartSessionRequest): Promise<LiveSession>;
   /** `attachments`: upload ids; with them, `text` may be empty. */
@@ -248,6 +256,8 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_CHARS = 100_000;
 const MAX_ANSWER_CHARS = 10_000;
 const TITLE_CHARS = 60;
+/** A chat id is a UUID, nothing else, so it can never point outside the history folder. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A resumed chat with no stored level runs at this, and re-picks upward only (decision 6). */
 const RESUMED_TIER: LevelTier = 'standard';
 /** "Why?" for a level kept from before the chat was reopened (the store keeps no reason). */
@@ -700,6 +710,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   let modelList: ModelChoice[] | null = null;
   const chatKinds = opts.chatKinds ?? createChatKindStore(null);
   const live = new Map<string, Session>();
+  /** Chats dropped from `live` whose engine is still finishing; their history is still being written. */
+  const closingSessions = new Set<Session>();
+  /** Earlier chats whose files are being moved to the Bin right now. */
+  const deleting = new Set<string>();
   const closedIds = new Set<string>();
   const changeListeners = new Set<() => void>();
   const itemForPath = opts.brain.libraryItemForPath;
@@ -1701,8 +1715,20 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     live.delete(s.id);
     closedIds.add(s.id);
     clearIdle(s);
+    closingSessions.add(s);
     notifyChanged();
     s.closed = (async () => {
+      try {
+        await closeEngine(s);
+      } finally {
+        closingSessions.delete(s);
+      }
+    })();
+    return s.closed;
+  }
+
+  async function closeEngine(s: Session): Promise<void> {
+    {
       settleAll(s, 'The chat was closed.');
       const q = s.query;
       if (q) {
@@ -1724,8 +1750,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       setState(s, 'closed');
       s.listeners.clear();
       notifyChanged();
-    })();
-    return s.closed;
+    }
   }
 
   /** At the cap, close the longest-idle chat; refuse when every chat is busy. */
@@ -1923,6 +1948,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (resume && [...live.values()].some((s) => s.sdkSessionId === resume)) {
         throw new SessionError('already-open', 'That chat is already open.');
       }
+      if (resume && deleting.has(resume)) {
+        throw new SessionError('already-open', 'That chat is being deleted.');
+      }
       // After the last check that can refuse: synchronously claim the files. Any refusal from here on
       // puts them back.
       const claim = claimFiles(ids);
@@ -2087,6 +2115,51 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (s.sdkSessionId) void chatKinds.set(s.sdkSessionId, kind);
       notifyChanged();
       return snapshot(s);
+    },
+
+    async deletePast(sdkSessionId) {
+      if (typeof sdkSessionId !== 'string' || !UUID_RE.test(sdkSessionId)) {
+        throw new SessionError('bad-request', 'That chat was not understood.');
+      }
+      const trash = opts.engine.trashSession;
+      if (!trash) throw new SessionError('internal', "Deleting chats isn't available here.");
+      if (!(await listPast()).some((p) => p.sessionId === sdkSessionId)) {
+        throw new SessionError('not-found', 'That chat could not be found.');
+      }
+      // Re-check synchronously: other requests may have run while we awaited. A chat that is still closing
+      // counts as open, because its engine may still be writing the file.
+      if ([...live.values()].some((s) => s.sdkSessionId === sdkSessionId)) {
+        throw new SessionError('already-open', 'That chat is open. Close it first, then delete it.');
+      }
+      if ([...closingSessions].some((s) => s.sdkSessionId === sdkSessionId)) {
+        throw new SessionError('already-open', 'That chat is still closing. Try again in a moment.');
+      }
+      if (deleting.has(sdkSessionId)) {
+        throw new SessionError('already-open', 'That chat is being deleted.');
+      }
+      deleting.add(sdkSessionId);
+      try {
+        try {
+          await trash(sdkSessionId, { dir: opts.brainRoot });
+        } catch (err) {
+          if (err instanceof SessionError) throw err;
+          if (err instanceof TrashMissingError) {
+            throw new SessionError(
+              'internal',
+              'Deleting chats needs macOS 15 or later. Nothing was deleted.',
+            );
+          }
+          throw new SessionError(
+            'internal',
+            "That chat couldn't be moved to the Bin, so it hasn't been deleted. Try again.",
+          );
+        }
+        await chatKinds.set(sdkSessionId, 'tds').catch(() => {});
+        log('Moved an earlier chat to the Bin.');
+        notifyChanged();
+      } finally {
+        deleting.delete(sdkSessionId);
+      }
     },
 
     async closeAll() {

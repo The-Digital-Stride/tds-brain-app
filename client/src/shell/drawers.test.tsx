@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 
@@ -58,6 +58,7 @@ const fns = {
   openChat: vi.fn(),
   openPast: vi.fn(),
   requestClose: vi.fn(),
+  deletePastChat: vi.fn(),
   startSkill: vi.fn(),
   togglePin: vi.fn(),
 };
@@ -334,8 +335,127 @@ describe('Chats drawer', () => {
   it('Earlier rows open the past chat', () => {
     render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    fireEvent.click(screen.getByRole('button', { name: /Old chat/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Old chat/ }));
     expect(fns.openPast).toHaveBeenCalledWith('p1');
+  });
+
+  describe('deleting an earlier chat', () => {
+    const openEarlier = () => {
+      render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    };
+
+    it('gives each Earlier row a bin button', () => {
+      setStore({
+        sessions: {
+          live: [],
+          past: [
+            { sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' },
+            { sdkSessionId: 'p2', title: 'Other chat', lastModified: '2026-11-01T09:00:00Z', kind: 'tds' },
+          ],
+        },
+      });
+      openEarlier();
+      expect(screen.getByRole('button', { name: 'Delete chat: Old chat' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Delete chat: Other chat' })).toBeTruthy();
+    });
+
+    it('asks first, with Keep chat focused and the title still shown', () => {
+      openEarlier();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+      expect(screen.getByText(/Move this chat to the Bin\?/)).toBeTruthy();
+      expect(screen.getByText('Old chat')).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep chat' }));
+      expect(fns.deletePastChat).not.toHaveBeenCalled();
+    });
+
+    it('Keep chat cancels', () => {
+      openEarlier();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Keep chat' }));
+      expect(screen.queryByText(/Move this chat to the Bin/)).toBeNull();
+      expect(fns.deletePastChat).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+    });
+
+    it('Esc cancels without reaching the shell', () => {
+      const onKey = vi.fn();
+      document.addEventListener('keydown', onKey);
+      openEarlier();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Keep chat' }), { key: 'Escape' });
+      document.removeEventListener('keydown', onKey);
+      expect(screen.queryByText(/Move this chat to the Bin/)).toBeNull();
+      expect(onKey).not.toHaveBeenCalled();
+      expect(fns.deletePastChat).not.toHaveBeenCalled();
+    });
+
+    it('Delete chat calls the action', () => {
+      fns.deletePastChat.mockResolvedValue(true);
+      openEarlier();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
+      expect(fns.deletePastChat).toHaveBeenCalledWith('p1');
+    });
+
+    it('while deleting, Esc stays in the question and other bins wait', async () => {
+      let finish: (ok: boolean) => void = () => {};
+      fns.deletePastChat.mockReturnValue(new Promise<boolean>((r) => (finish = r)));
+      setStore({
+        sessions: {
+          live: [],
+          past: [
+            { sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' },
+            { sdkSessionId: 'p2', title: 'Other chat', lastModified: '2026-11-01T09:00:00Z', kind: 'tds' },
+          ],
+        },
+      });
+      const onKey = vi.fn();
+      document.addEventListener('keydown', onKey);
+      openEarlier();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
+      const del = screen.getByRole('button', { name: 'Delete chat' });
+      del.focus();
+      fireEvent.click(del);
+      // Still focusable (a disabled button would drop focus to the page, so Esc would miss the question).
+      expect((del as HTMLButtonElement).disabled).toBe(false);
+      expect(del.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(del);
+      fireEvent.click(screen.getByRole('button', { name: 'Keep chat' }));
+      fireEvent.click(del);
+      expect(fns.deletePastChat).toHaveBeenCalledTimes(1);
+      fireEvent.keyDown(del, { key: 'Escape' });
+      document.removeEventListener('keydown', onKey);
+      expect(onKey).not.toHaveBeenCalled();
+      expect(screen.getByText(/Move this chat to the Bin/)).toBeTruthy();
+      expect(
+        (screen.getByRole('button', { name: 'Delete chat: Other chat' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      await act(async () => finish(false));
+    });
+
+    it('after a delete, focus goes to the next chat in the list as shown, even in a later group', async () => {
+      const today = new Date().toISOString();
+      const rows = [
+        { sdkSessionId: 'a', title: 'Chat A', lastModified: today, kind: 'tds' as const },
+        { sdkSessionId: 'b', title: 'Chat B', lastModified: today, kind: 'tds' as const },
+        { sdkSessionId: 'c', title: 'Chat C', lastModified: '2025-01-02T10:00:00Z', kind: 'tds' as const },
+        { sdkSessionId: 'd', title: 'Chat D', lastModified: '2025-01-02T09:00:00Z', kind: 'tds' as const },
+      ];
+      setStore({ sessions: { live: [], past: rows } });
+      fns.deletePastChat.mockResolvedValue(true);
+      const view = render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+      // The older group starts folded: open it.
+      for (const b of screen.getAllByRole('button', { expanded: false })) fireEvent.click(b);
+      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Chat C' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
+      });
+      setStore({ sessions: { live: [], past: rows.filter((r) => r.sdkSessionId !== 'c') } });
+      view.rerender(<ChatsDrawer />);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete chat: Chat D' }));
+    });
   });
 
   it('Open rows open the chat and have a separate close button', () => {

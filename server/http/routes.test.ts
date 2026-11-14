@@ -2045,3 +2045,65 @@ describe('POST /api/sessions/:id/kind', () => {
     expect(sent.status).toBe(404);
   });
 });
+
+describe('DELETE /api/sessions/past/:id', () => {
+  const ID = '11111111-2222-4333-8444-555555555555';
+  async function send(method: string, path: string, deletePast: (id: string) => Promise<void>) {
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      { sessions: { deletePast }, log: () => {} } as unknown as RouteContext,
+    );
+    return { status: sent.status, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('answers 200 with an empty object and passes the decoded id on', async () => {
+    const seen: string[] = [];
+    const sent = await send('DELETE', ROUTES.pastSession(ID), async (id) => {
+      seen.push(id);
+    });
+    expect(sent).toEqual({ status: 200, json: {} });
+    expect(seen).toEqual([ID]);
+  });
+
+  it.each([
+    ['bad-request', 400],
+    ['not-found', 404],
+    ['already-open', 409],
+    ['internal', 500],
+  ] as const)('maps %s to %i', async (code, status) => {
+    const sent = await send('DELETE', ROUTES.pastSession(ID), async () => {
+      throw new SessionError(code, 'Plain message.');
+    });
+    expect(sent.status).toBe(status);
+    expect(sent.json.error.code).toBe(code);
+  });
+
+  it('refuses other methods with 405, without deleting', async () => {
+    let called = false;
+    for (const method of ['GET', 'POST', 'PUT']) {
+      const sent = await send(method, ROUTES.pastSession(ID), async () => {
+        called = true;
+      }).catch((e: { status?: number }) => ({ status: e.status ?? 0 }));
+      expect(sent.status).toBe(405);
+    }
+    expect(called).toBe(false);
+  });
+
+  it('refuses a badly encoded id', async () => {
+    const sent = await send('DELETE', '/api/sessions/past/%E0%A4%A', async () => {});
+    expect(sent.status).toBe(400);
+  });
+});

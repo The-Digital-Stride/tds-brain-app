@@ -40,6 +40,42 @@ describe('api.engineChoices', () => {
   });
 });
 
+describe('api.deletePastChat', () => {
+  it('sends a DELETE that passes the server request check (JSON, like every changing request)', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'));
+    vi.stubGlobal('fetch', fetchMock);
+    const id = '6127dcf1-a50e-43e0-bc6d-f370942a7e48';
+    await api.deletePastChat(id);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`/api/sessions/past/${id}`);
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBe('{}');
+    // The browser adds Host, Origin, Sec-Fetch-Site and the cookie; the app adds the rest.
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const decision = checkRequest(
+      {
+        method: 'DELETE',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+});
+
 describe('streamUrl', () => {
   it('opens the stream with files and levels', () => {
     expect(streamUrl('s1', 4)).toBe('/api/stream?session=s1&after=4&files=1&levels=1');

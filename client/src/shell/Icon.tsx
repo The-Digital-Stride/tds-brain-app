@@ -37,6 +37,11 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   rail: <path d="M3 4h14v12H3zM8 4v12" />,
   panel: <path d="M3 4h14v12H3zM12 4v12" />,
+  bin: (
+    <>
+      <path d="M4 6h12M8 6V4h4v2M5.5 6l.7 10a1 1 0 0 0 1 .9h5.6a1 1 0 0 0 1-.9l.7-10M8.5 9v5M11.5 9v5" />
+    </>
+  ),
   close: <path d="M5 5l10 10M15 5L5 15" />,
   search: (
     <>

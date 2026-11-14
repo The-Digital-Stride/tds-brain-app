@@ -47,6 +47,7 @@ import {
   type SessionManager,
   splitAttachmentNote,
 } from './session-manager.ts';
+import { TrashMissingError } from './trash-session.ts';
 
 const BRAIN = '/tmp/fake-brain-root';
 const CLAUDE = '/usr/local/bin/claude';
@@ -3634,5 +3635,183 @@ describe('chat kinds (TDS / Personal)', () => {
     await expectCode(mgr.setKind(s.id, 'work' as never), 'bad-request');
     await mgr.close(s.id);
     await expectCode(mgr.setKind(s.id, 'personal'), 'session-closed');
+  });
+});
+
+describe('deleting an earlier chat', () => {
+  const ID = '11111111-2222-4333-8444-555555555555';
+
+  function withTrash(
+    trash: (id: string, o: { dir: string }) => Promise<void> = async () => {},
+    script?: Script,
+    kinds?: ChatKindStore,
+  ) {
+    const fx = setup(script, { chatKinds: kinds });
+    fx.past.push({ sessionId: ID, summary: 'Old chat', lastModified: 1_700_000_000_000 });
+    const trashSession = vi.fn(trash);
+    fx.engine.trashSession = trashSession;
+    return { ...fx, trashSession };
+  }
+
+  it('refuses an id that is not a UUID, without asking the engine', async () => {
+    const { trashSession } = withTrash();
+    for (const bad of ['old-1', '../../x', `${ID}/..`, '', ID.toUpperCase().slice(1)]) {
+      await expectCode(mgr.deletePast(bad), 'bad-request');
+    }
+    expect(trashSession).not.toHaveBeenCalled();
+  });
+
+  it('says not-found for an id that is not in the earlier list', async () => {
+    const { trashSession } = withTrash();
+    await expectCode(mgr.deletePast('99999999-2222-4333-8444-555555555555'), 'not-found');
+    expect(trashSession).not.toHaveBeenCalled();
+  });
+
+  it('moves the chat to the Bin in the brain folder, clears the Personal mark and tells every tab', async () => {
+    const kinds = createChatKindStore(null);
+    await kinds.set(ID, 'personal');
+    const { trashSession } = withTrash(undefined, undefined, kinds);
+    let changes = 0;
+    mgr.onChange(() => changes++);
+    await mgr.deletePast(ID);
+    expect(trashSession).toHaveBeenCalledWith(ID, { dir: BRAIN });
+    expect(await kinds.kindOf(ID)).toBe('tds');
+    expect(changes).toBeGreaterThan(0);
+  });
+
+  it('leaves the Personal mark and says nothing changed when the move fails', async () => {
+    const kinds = createChatKindStore(null);
+    await kinds.set(ID, 'personal');
+    withTrash(
+      async () => {
+        throw Object.assign(new Error('denied /Users/x/.claude/projects/p'), { stderr: '/secret/path' });
+      },
+      undefined,
+      kinds,
+    );
+    let changes = 0;
+    mgr.onChange(() => changes++);
+    const err = await mgr.deletePast(ID).then(
+      () => null,
+      (e: unknown) => e as SessionError,
+    );
+    expect(err?.code).toBe('internal');
+    expect(err?.message).toBe(
+      "That chat couldn't be moved to the Bin, so it hasn't been deleted. Try again.",
+    );
+    expect(err?.message).not.toMatch(/\/|denied/);
+    expect(await kinds.kindOf(ID)).toBe('personal');
+    expect(changes).toBe(0);
+  });
+
+  it('words a missing trash command for the person, with no path', async () => {
+    withTrash(async () => {
+      throw new TrashMissingError();
+    });
+    const err = await mgr.deletePast(ID).then(
+      () => null,
+      (e: unknown) => e as SessionError,
+    );
+    expect(err?.code).toBe('internal');
+    expect(err?.message).toBe('Deleting chats needs macOS 15 or later. Nothing was deleted.');
+  });
+
+  it("passes the engine's own plain refusals on (not-found)", async () => {
+    withTrash(async () => {
+      throw new SessionError('not-found', "That chat's files couldn't be found, so nothing was deleted.");
+    });
+    await expectCode(mgr.deletePast(ID), 'not-found');
+  });
+
+  it('is internal when the engine cannot delete', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: ID, summary: 'Old chat', lastModified: 1 });
+    const err = await mgr.deletePast(ID).then(
+      () => null,
+      (e: unknown) => e as SessionError,
+    );
+    expect(err?.code).toBe('internal');
+    expect(err?.message).toBe("Deleting chats isn't available here.");
+  });
+
+  it('refuses a chat that is open, and lets it go once closed', async () => {
+    const { trashSession, past } = withTrash();
+    const s = await mgr.start({ resume: ID });
+    await flush();
+    await expectCode(mgr.deletePast(ID), 'already-open');
+    expect(trashSession).not.toHaveBeenCalled();
+    await mgr.close(s.id);
+    past.splice(0, past.length, { sessionId: ID, summary: 'Old chat', lastModified: 1 });
+    await mgr.deletePast(ID);
+    expect(trashSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a chat that is still closing (its engine may still be writing)', async () => {
+    const { trashSession } = withTrash(undefined, () => new Promise<void>(() => {}), undefined);
+    const s = await mgr.start({ resume: ID, prompt: 'hello' });
+    await flush();
+    const closing = mgr.close(s.id);
+    await flush();
+    expect((await mgr.list()).live).toHaveLength(0);
+    const err = await mgr.deletePast(ID).then(
+      () => null,
+      (e: unknown) => e as SessionError,
+    );
+    expect(err?.code).toBe('already-open');
+    expect(err?.message).toBe('That chat is still closing. Try again in a moment.');
+    expect(trashSession).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+    await closing;
+    await mgr.deletePast(ID);
+    expect(trashSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a reopen while the delete is running, and allows it after a failed delete', async () => {
+    let release: () => void = () => {};
+    let fail = true;
+    const { trashSession } = withTrash(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          release = () => (fail ? reject(new Error('no')) : resolve());
+        }),
+    );
+    const deleting = mgr.deletePast(ID);
+    deleting.catch(() => {});
+    await flush();
+    expect(trashSession).toHaveBeenCalledTimes(1);
+    const err = await mgr.start({ resume: ID }).then(
+      () => null,
+      (e: unknown) => e as SessionError,
+    );
+    expect(err?.code).toBe('already-open');
+    expect(err?.message).toBe('That chat is being deleted.');
+    // A second delete of the same chat is refused too.
+    await expectCode(mgr.deletePast(ID), 'already-open');
+    release();
+    await expectCode(deleting, 'internal');
+    fail = false;
+    const s = await mgr.start({ resume: ID });
+    expect(s.sdkSessionId).toBe(ID);
+  });
+
+  it('a chat opened while the delete was checking is not deleted', async () => {
+    const { trashSession, engine } = withTrash();
+    // The earlier list is slow; a reopen lands while deletePast waits for it.
+    let finishList: () => void = () => {};
+    const original = engine.listSessions;
+    engine.listSessions = vi.fn(
+      (o) =>
+        new Promise((resolve) => {
+          finishList = () => resolve(original(o));
+        }),
+    ) as EngineFns['listSessions'];
+    const deleting = mgr.deletePast(ID);
+    deleting.catch(() => {});
+    await flush();
+    engine.listSessions = original;
+    await mgr.start({ resume: ID });
+    finishList();
+    await expectCode(deleting, 'already-open');
+    expect(trashSession).not.toHaveBeenCalled();
   });
 });

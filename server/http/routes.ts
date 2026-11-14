@@ -872,6 +872,7 @@ async function libraryRoute(
   return true;
 }
 
+const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
 const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
@@ -1183,6 +1184,20 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       return;
     }
     throw methodNotAllowed();
+  }
+
+  const past = PAST_SESSION.exec(path);
+  if (past?.[1]) {
+    if (method !== 'DELETE') throw methodNotAllowed();
+    let id: string;
+    try {
+      id = decodeURIComponent(past[1]);
+    } catch {
+      throw new HttpError(400, 'bad-request', 'That chat was not understood.');
+    }
+    await ctx.sessions.deletePast(id);
+    sendJson(res, 200, {});
+    return;
   }
 
   const fc = SESSION_FILE_CHANGES.exec(path);

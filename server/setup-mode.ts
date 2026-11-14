@@ -76,6 +76,7 @@ export function createSetupSessions(): SessionManager {
     replyQuestion: notFound,
     interrupt: notFound,
     close: notFound,
+    deletePast: notFound,
     setKind: notFound,
     closeAll: async () => {},
     subscribe: () => {

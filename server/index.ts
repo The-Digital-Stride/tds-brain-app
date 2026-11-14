@@ -20,6 +20,7 @@ import { createChangelogReader } from './changelog.ts';
 import { resolveConfig } from './config.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
+import { createTrashSession } from './engine/trash-session.ts';
 import { createAuthCodes } from './http/security.ts';
 import { createAppServer } from './http/server.ts';
 import {
@@ -76,6 +77,7 @@ const engine: EngineFns = {
   query: (params) => query(params),
   listSessions: (opts) => listSessions(opts),
   getSessionMessages: (id, opts) => getSessionMessages(id, opts),
+  trashSession: createTrashSession({ log }),
 };
 
 const store = createAppStore(config.dataDir);

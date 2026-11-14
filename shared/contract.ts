@@ -938,9 +938,9 @@ export interface ChatFile {
   /** Successful edits and writes in this chat; above 0, "What changed" is offered. */
   edits: number;
   /**
-   * Shorter names a reply used for it (`context/business.md`, or `audit.md` under a heading naming its
-   * folder), which the server matched to this one file. Matched exactly against reply text, like
-   * `path`. Absent when there are none (and from servers before 0.16.2).
+   * Sent only by server 0.16.2: shorter names replies used for it, matched across the whole chat.
+   * No longer sent, and ignored when present: a short name links only into a folder the same reply
+   * names (`chatFileFor`), since `profile.md` in one reply may be another client's in the next.
    */
   aliases?: string[];
   /**

@@ -9,7 +9,13 @@
  * person could not open in Documents is never reported, and nothing outside the brain is either.
  */
 import { basename } from 'node:path';
-import { findPathMentions, findWebLinks, normaliseBrainPath } from '../../shared/chat-files.ts';
+import {
+  findPathMentions,
+  findWebLinks,
+  normaliseBrainPath,
+  replyFolders,
+  shortPathPlaces,
+} from '../../shared/chat-files.ts';
 import type {
   ChatFile,
   ChatFileAction,
@@ -108,12 +114,8 @@ export const TRACKED_MAX = 1000;
 export const PENDING_MAX = 500;
 /** Destinations tried per attachment in one Bash command, and files taken from one Bash command. */
 const CANDIDATES_MAX = 50;
-/** Short names looked up per reply, folders a reply names, and client folders kept as places to look. */
+/** Short names looked up per reply. */
 const SHORT_MAX = 50;
-const FOLDERS_MAX = 10;
-const PLACES_MAX = 10;
-/** Names a file keeps for linking. */
-const ALIASES_MAX = 10;
 const RESOLVE_CONCURRENCY = 8;
 
 interface Kept {
@@ -134,8 +136,6 @@ interface Tracked {
   order: number;
   kept: Kept[];
   truncated: boolean;
-  /** Shorter names a reply gave it (`context/business.md`), sent so those link too. */
-  aliases: string[];
 }
 
 interface Attachment extends TrackedAttachment {
@@ -163,11 +163,11 @@ interface Filing {
 
 /**
  * Something seen that only counts once its paths resolve to listed files: the files a shell command
- * named, or a short name in a reply with the places it could mean, most likely first.
+ * named, or a short name in a reply with the places it could mean, as written first.
  */
 type Sighting =
   | { kind: 'shell'; reads: string[]; changes: string[]; toolUseId: string; order: number }
-  | { kind: 'short'; alias: string; tiers: string[][]; order: number };
+  | { kind: 'short'; tiers: string[][]; order: number };
 
 /** An http(s) address without a user name or password, short enough to keep. */
 function okLink(url: unknown): url is string {
@@ -507,8 +507,6 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   const sightings: Sighting[] = [];
   /** Each shell's folder, brain-relative (`''` the root; null once it has left the brain or can't be followed). */
   const cwds = new Map<string, string | null>();
-  /** Client folders (and `personal`) this chat has worked in; insertion order is age, the newest last. */
-  const places = new Map<string, true>();
   /** Insertion order is age: the newest is last. */
   const links = new Map<string, true>();
   const touched = new Set<string>();
@@ -544,7 +542,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   function ensure(path: string): Tracked {
     let t = tracked.get(path);
     if (!t) {
-      t = { path, actions: [], toolUseIds: [], edits: 0, order: 0, kept: [], truncated: false, aliases: [] };
+      t = { path, actions: [], toolUseIds: [], edits: 0, order: 0, kept: [], truncated: false };
       tracked.set(path, t);
       if (tracked.size > TRACKED_MAX) {
         let oldest: Tracked | null = null;
@@ -609,56 +607,25 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     }
   }
 
-  /** Remembers the client folder (or `personal`) a brain path is in, as a place short names may mean. */
-  function notePlace(path: string | null): void {
-    if (!path) return;
-    const parts = path.split('/');
-    const place =
-      parts[0] === 'clients' && parts.length > 2
-        ? `clients/${parts[1]}`
-        : parts[0] === 'personal'
-          ? 'personal'
-          : null;
-    if (!place) return;
-    places.delete(place);
-    places.set(place, true);
-    while (places.size > PLACES_MAX) {
-      const first = places.keys().next().value;
-      if (first === undefined) break;
-      places.delete(first);
-    }
-  }
-
   const scoped = (p: string) => p.startsWith('clients/') || p.startsWith('personal/');
 
   function text(body: string): void {
-    const folders: string[] = [];
+    const paths = findPathMentions(body).map(normalise);
     const short: string[] = [];
-    for (const raw of findPathMentions(body)) {
-      const p = normalise(raw);
+    for (const p of paths) {
       if (!p) continue;
       const isFile = FILE_WORD.test(p.split('/').pop() ?? '');
-      if (scoped(p)) {
-        if (!isFile && folders.length < FOLDERS_MAX) folders.push(p);
-        addAction(touch(p), 'mentioned');
-      } else if (isFile && short.length < SHORT_MAX) {
-        short.push(p);
-      }
+      if (scoped(p)) addAction(touch(p), 'mentioned');
+      else if (isFile && short.length < SHORT_MAX) short.push(p);
     }
-    // A short name (`context/business.md`, or `audit.md` under "all in `clients/acme/reports/`") may mean
-    // several places; each tier is tried in turn, and it counts only when one file in a tier fits.
-    const cwd = cwds.get('') ?? '';
-    const placesNewest = [...places.keys()].reverse();
+    // A short name (`context/business.md`, or `audit.md` under "all in `clients/acme/reports/`") counts
+    // only as written from the brain's root, or where this same reply puts it (`shortPathPlaces`), and
+    // only when one file fits. Never from the folder the chat worked in or an earlier reply: a lone
+    // `profile.md` may be any client's. The client links reply text by the same rule.
+    const folders = replyFolders(paths);
     for (const p of short) {
-      const tiers = [
-        [p, `clients/${p}`],
-        folders.map((f) => `${f}/${p}`),
-        cwd && scoped(cwd) ? [`${cwd}/${p}`] : [],
-        placesNewest.map((place) => `${place}/${p}`),
-        // Last: a personal file never wins over a client folder the reply or the chat points to.
-        [`personal/${p}`],
-      ].filter((tier) => tier.length > 0);
-      sightings.push({ kind: 'short', alias: p, tiers, order: ++counter });
+      const tiers = [[p], shortPathPlaces(p, folders)];
+      sightings.push({ kind: 'short', tiers, order: ++counter });
       dirty = true;
     }
     for (const url of findWebLinks(body)) addLink(url);
@@ -785,17 +752,14 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     } else if (p.kind === 'bash') {
       // The shell keeps a folder only when the command worked.
       cwds.set(p.shell, p.cwd);
-      if (p.cwd) notePlace(p.cwd);
       if (p.filings.length === 0 && p.reads.length === 0 && p.changes.length === 0) return;
       const order = ++counter;
       for (const f of p.filings) filings.push({ ...f, order });
       if (p.reads.length > 0 || p.changes.length > 0) {
         sightings.push({ kind: 'shell', reads: p.reads, changes: p.changes, toolUseId: id, order });
-        for (const path of [...p.reads, ...p.changes]) notePlace(path);
       }
       dirty = true;
     } else {
-      notePlace(p.path);
       const known = tracked.get(p.path);
       const seen = known?.actions.some((a) => a === 'read' || a === 'created' || a === 'changed') ?? false;
       const t = touch(p.path);
@@ -912,10 +876,6 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       const c = [...keys.values()][0] as string;
       const t = listAs(c, resolved.get(c) as NonNullable<Resolved>, s.order);
       addAction(t, 'mentioned');
-      if (!t.aliases.includes(s.alias)) {
-        t.aliases.push(s.alias);
-        if (t.aliases.length > ALIASES_MAX) t.aliases.shift();
-      }
       return;
     }
   }
@@ -969,7 +929,6 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
             toolUseIds: [...t.toolUseIds],
             edits: t.edits,
             order: t.order,
-            ...(t.aliases.length > 0 ? { aliases: [...t.aliases] } : {}),
           },
         });
         continue;
@@ -979,7 +938,6 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       for (const a of t.actions) if (!f.actions.includes(a)) f.actions.push(a);
       f.toolUseIds = [...f.toolUseIds, ...t.toolUseIds].slice(-CHAT_FILE_TOOL_IDS_MAX);
       f.edits += t.edits;
-      for (const a of t.aliases) if (!f.aliases?.includes(a)) f.aliases = [...(f.aliases ?? []), a];
       if (t.order > same.newest) {
         same.newest = t.order;
         f.order = t.order;

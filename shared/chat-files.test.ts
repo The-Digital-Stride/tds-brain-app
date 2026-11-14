@@ -7,6 +7,7 @@ import {
   findWebLinks,
   indexChatFiles,
   normaliseBrainPath,
+  replyFolders,
 } from './chat-files.ts';
 import type { ChatFile, ChatFileAction } from './contract.ts';
 
@@ -166,64 +167,91 @@ describe('chatFileFor', () => {
     file('k2', 'clients/weightmans/profile.md', ['read'], []),
     file('k3', 'clients/acme/profile.md', ['read'], []),
     file('k4', 'personal/notes/plan.md', ['created'], []),
+    file('k5', 'clients/acme/reports/audit.md', ['mentioned'], []),
   ]);
-  const f = (raw: string) => chatFileFor(idx, raw, ROOT);
+  const f = (raw: string, folders: string[] = []) => chatFileFor(idx, raw, ROOT, folders);
 
   it('matches a full path exactly, as before', () => {
     expect(f('clients/weightmans/profile.md')).toBe('k2');
     expect(f('/Users/me/brain/personal/notes/plan.md')).toBe('k4');
   });
 
-  it('links a path written without clients/ when it ends exactly one of the chat files', () => {
+  it('links a path that names its client folder without clients/', () => {
     expect(f('weightmans/context/business.md')).toBe('k1');
-    expect(f('`context/business.md`')).toBe('k1');
-    expect(f('notes/plan.md')).toBe('k4');
-  });
-
-  it('links nothing when the short path fits more than one file, or none', () => {
-    expect(f('profile.md')).toBeNull();
     expect(f('acme/profile.md')).toBe('k3');
     expect(f('weightmans/brief.md')).toBeNull();
   });
 
-  it('never links a bare file name, even when only one file has it (it may be about another client)', () => {
+  it("never links a lone name or a part path from the chat's files alone (another client may have one)", () => {
+    expect(f('profile.md')).toBeNull();
     expect(f('business.md')).toBeNull();
-    expect(f('plan.md')).toBeNull();
+    expect(f('`context/business.md`')).toBeNull();
+    expect(f('notes/plan.md')).toBeNull();
+    expect(f('reports/audit.md')).toBeNull();
+  });
+
+  it('links a lone name or part path only in the folder this reply names', () => {
+    expect(f('`audit.md`', ['clients/acme/reports'])).toBe('k5');
+    expect(f('reports/audit.md', ['clients/acme'])).toBe('k5');
+    expect(f('context/business.md', ['clients/weightmans'])).toBe('k1');
+    expect(f('plan.md', ['personal/notes'])).toBe('k4');
+    // Named folder, but the file is in another client's: no link.
+    expect(f('business.md', ['clients/acme'])).toBeNull();
+    // Only directly in the folder, never further down.
+    expect(f('audit.md', ['clients/acme'])).toBeNull();
+  });
+
+  it('links no lone name in a reply that names folders of more than one client', () => {
+    expect(f('profile.md', ['clients/acme', 'clients/weightmans'])).toBeNull();
+    // Only one of them is in the chat's list, but the other client may well have one too.
+    expect(f('profile.md', ['clients/acme', 'clients/other'])).toBeNull();
+    expect(f('plan.md', ['personal/notes', 'clients/acme'])).toBeNull();
+    // Two folders of one client are fine.
+    expect(f('audit.md', ['clients/acme/reports', 'clients/acme/drafts'])).toBe('k5');
+    // A path naming its client still links.
+    expect(f('acme/profile.md', ['clients/acme', 'clients/other'])).toBe('k3');
   });
 
   it('matches whole folder names only, never part of one', () => {
     expect(f('mans/profile.md')).toBeNull();
-    expect(f('ess.md')).toBeNull();
+    expect(f('ess.md', ['clients/weightmans/context/busin'])).toBeNull();
   });
 
   it('never guesses for a path that already names a scope', () => {
-    expect(f('clients/other/context/business.md')).toBeNull();
-    expect(f('personal/plan.md')).toBeNull();
+    expect(f('clients/other/context/business.md', ['clients/weightmans'])).toBeNull();
+    expect(f('personal/plan.md', ['personal/notes'])).toBeNull();
+  });
+
+  it("ignores the old chat-wide names a server sent (aliases), which could point at another reply's client", () => {
+    const old = indexChatFiles([
+      { ...file('k1', 'clients/acme/profile.md', ['mentioned']), aliases: ['profile.md'] },
+    ]);
+    expect(chatFileFor(old, 'profile.md', ROOT)).toBeNull();
   });
 });
 
-describe('chatFileFor: names the server matched', () => {
-  const withAliases = (f: ChatFile, aliases: string[]): ChatFile => ({ ...f, aliases });
-
-  it('links a short name the server matched to a file, even a bare file name', () => {
-    const idx = indexChatFiles([
-      withAliases(file('k1', 'clients/acme/reports/audit.md', ['mentioned']), [
-        'audit.md',
-        'reports/audit.md',
-      ]),
+describe('replyFolders', () => {
+  it('gives the folders a reply names, and the folders of the files it names in full', () => {
+    const mentions = findPathMentions(
+      'All in `clients/acme/reports/`. See `clients/beta/context/profile.md`, `/Users/me/brain/personal/notes/` and `audit.md`.',
+    );
+    expect(replyFolders(mentions.map((m) => n(m)))).toEqual([
+      'clients/acme/reports',
+      'clients/beta/context',
+      'personal/notes',
     ]);
-    expect(chatFileFor(idx, '`audit.md`', ROOT)).toBe('k1');
-    expect(chatFileFor(idx, 'reports/audit.md', ROOT)).toBe('k1');
   });
 
-  it('links neither file when the server matched one name to two files, and never lets a name hide a real path', () => {
-    const idx = indexChatFiles([
-      withAliases(file('k1', 'clients/acme/profile.md', ['mentioned']), ['profile.md', 'personal/x.md']),
-      withAliases(file('k2', 'clients/beta/profile.md', ['mentioned']), ['profile.md']),
-      file('k3', 'personal/x.md', ['read']),
-    ]);
-    expect(chatFileFor(idx, 'profile.md', ROOT)).toBeNull();
-    expect(chatFileFor(idx, 'personal/x.md', ROOT)).toBe('k3');
+  it('skips paths outside clients/ and personal/, clients/ itself, and repeats', () => {
+    const mentions = [
+      'context/',
+      'reports/audit.md',
+      'clients/',
+      'personal',
+      'clients/a/x.md',
+      'clients/a/y.md',
+    ];
+    expect(replyFolders(mentions.map((m) => n(m)))).toEqual(['personal', 'clients/a']);
   });
 });
 

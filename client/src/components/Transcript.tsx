@@ -1,5 +1,11 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
-import { chatFileFor, findPathMentions, indexChatFiles } from '../../../shared/chat-files.ts';
+import {
+  chatFileFor,
+  findPathMentions,
+  indexChatFiles,
+  normaliseBrainPath,
+  replyFolders,
+} from '../../../shared/chat-files.ts';
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
@@ -11,7 +17,9 @@ import { PermissionCard, QuestionCard } from './Cards.tsx';
 
 /** What the transcript needs to turn file names and steps into links (plan 2026-11-13-chat-files). */
 interface FileLinks {
-  link: (raw: string) => string | null;
+  /** `folders`: the folders the reply itself names (`replyFolders`), where its short names may be. */
+  link: (raw: string, folders: readonly string[]) => string | null;
+  brainRoot: string;
   byToolUse: ReadonlyMap<string, string>;
   onFile: (key: string) => void;
 }
@@ -25,13 +33,19 @@ const FileLinksContext = createContext<FileLinks | null>(null);
 const AssistantText = memo(function AssistantText({ text }: { text: string }) {
   const links = useContext(FileLinksContext);
   const mentions = useMemo(() => findPathMentions(text), [text]);
-  const signature = links ? mentions.map((m) => links.link(m) ?? '').join('|') : '';
+  // A short name in this reply (`audit.md`) links only into a folder this same reply names.
+  const brainRoot = links?.brainRoot ?? '';
+  const folders = useMemo(
+    () => replyFolders(mentions.map((m) => normaliseBrainPath(m, brainRoot))),
+    [mentions, brainRoot],
+  );
+  const signature = links ? mentions.map((m) => links.link(m, folders) ?? '').join('|') : '';
   const latest = useRef(links);
   latest.current = links;
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable for a signature; reads the latest linker.
   const link = useMemo(
-    () => (links ? (raw: string) => latest.current?.link(raw) ?? null : undefined),
-    [signature, links === null],
+    () => (links ? (raw: string) => latest.current?.link(raw, folders) ?? null : undefined),
+    [signature, links === null, folders],
   );
   return <Markdown text={text} link={link} onFile={links?.onFile} />;
 });
@@ -171,7 +185,8 @@ export function Transcript({
     if (!files || !onFile) return null;
     const index = indexChatFiles(files);
     return {
-      link: (raw) => chatFileFor(index, raw, brainRoot ?? ''),
+      link: (raw, folders) => chatFileFor(index, raw, brainRoot ?? '', folders),
+      brainRoot: brainRoot ?? '',
       byToolUse: index.byToolUse,
       onFile,
     };

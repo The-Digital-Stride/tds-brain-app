@@ -155,8 +155,9 @@ export function chatFileGroup(file: ChatFile): ChatFileGroup {
 }
 
 /**
- * For linking reply text and steps: maps each file's normalised `path` (and each `aliases` name only
- * one file has) → `key`, and each tool use id → `key`. Built once per snapshot on the client.
+ * For linking reply text and steps: maps each file's normalised `path` → `key`, and each tool use id
+ * → `key`. Built once per snapshot on the client. (Servers 0.16.2 sent chat-wide `aliases` too; they
+ * are ignored, since a name one reply placed in one client's folder may mean another's in the next.)
  */
 export interface ChatFileIndex {
   byPath: ReadonlyMap<string, string>;
@@ -165,38 +166,82 @@ export interface ChatFileIndex {
 export function indexChatFiles(files: readonly ChatFile[]): ChatFileIndex {
   const byPath = new Map<string, string>();
   const byToolUse = new Map<string, string>();
-  // Shorter names the server matched (`aliases`): one that two files share links to neither.
-  const aliases = new Map<string, string | null>();
   for (const f of files) {
     byPath.set(f.path, f.key);
     for (const id of f.toolUseIds) byToolUse.set(id, f.key);
-    for (const a of f.aliases ?? []) {
-      const had = aliases.get(a);
-      aliases.set(a, had === undefined || had === f.key ? f.key : null);
-    }
   }
-  // A real path always wins over a name.
-  for (const [a, key] of aliases) if (key !== null && !byPath.has(a)) byPath.set(a, key);
   return { byPath, byToolUse };
 }
 
+const FILE_NAME = /\.[A-Za-z0-9]{1,8}$/;
+const REPLY_FOLDERS_MAX = 20;
+
+/** True when a path names a client's or the person's own folder (`clients/…`, `personal/…`). */
+export function isScopedPath(rel: string): boolean {
+  return rel.startsWith('clients/') || rel.startsWith('personal/') || rel === 'personal';
+}
+
 /**
- * The key a path in a reply links to, or null. A full path must match exactly. A shorter one
- * (Claude wrote `weightmans/context/business.md`, leaving out `clients/`) links only when it is the
- * end of exactly ONE of this chat's files, at a folder boundary: nothing is guessed beyond the files
- * the server already reported for this chat, and an ambiguous path, or a bare file name with no
- * folder, links to nothing.
+ * The folders one reply names: each folder path it gives (`clients/acme/reports/`), and the folder of
+ * each file it gives in full (`clients/acme/context/business.md` gives `clients/acme/context`). Only
+ * under `clients/<client>` or `personal`, each once, in order. At most 20.
+ * `paths` are the reply's `findPathMentions`, each through `normaliseBrainPath` (null when it gave none).
  */
-export function chatFileFor(index: ChatFileIndex, raw: string, brainRoot: string): string | null {
+export function replyFolders(paths: readonly (string | null)[]): string[] {
+  const out: string[] = [];
+  for (const rel of paths) {
+    if (!rel || !isScopedPath(rel)) continue;
+    const parts = rel.split('/');
+    if (FILE_NAME.test(parts.at(-1) ?? '')) parts.pop();
+    const folder = parts.join('/');
+    // `clients` alone says nothing about which client.
+    if (folder === '' || folder === 'clients') continue;
+    if (!out.includes(folder)) out.push(folder);
+    if (out.length >= REPLY_FOLDERS_MAX) break;
+  }
+  return out;
+}
+
+/** The client folder (`clients/acme`) or `personal` a scoped path is in. */
+function scopeOf(rel: string): string {
+  return rel.startsWith('clients/') ? rel.split('/').slice(0, 2).join('/') : 'personal';
+}
+
+/**
+ * Where a path written short in a reply may be, besides as written: under `clients/` (Claude left it
+ * out: `acme/context/business.md`), or in one of the folders the same reply names (`audit.md` under
+ * "all in `clients/acme/reports/`"). Nothing for a path that already names its scope. Never the
+ * folder the chat worked in, nor one an earlier reply or step used: a lone `profile.md` may be any
+ * client's, so it means one only when this reply says which. A reply naming folders of two clients
+ * (or a client and `personal`) says nothing certain about which one a lone name means, so then only
+ * `clients/` is tried.
+ */
+export function shortPathPlaces(rel: string, folders: readonly string[]): string[] {
+  if (isScopedPath(rel)) return [];
+  const oneScope = new Set(folders.map(scopeOf)).size <= 1;
+  return [`clients/${rel}`, ...(oneScope ? folders.map((f) => `${f}/${rel}`) : [])];
+}
+
+/**
+ * The key a path in a reply links to, or null. A full path must match one of the chat's files
+ * exactly. A shorter one links only where `shortPathPlaces` puts it (under `clients/`, or in a folder
+ * named by the same reply: `folders`, from `replyFolders`) and only when exactly one of the chat's
+ * files is there; an ambiguous name, or one the reply gives no folder for, links to nothing.
+ */
+export function chatFileFor(
+  index: ChatFileIndex,
+  raw: string,
+  brainRoot: string,
+  folders: readonly string[] = [],
+): string | null {
   const rel = normaliseBrainPath(raw, brainRoot);
   if (!rel) return null;
   const exact = index.byPath.get(rel);
   if (exact) return exact;
-  // A bare name (`profile.md`) says nothing about which client it means, so it never links.
-  if (!rel.includes('/') || rel.startsWith('clients/') || rel.startsWith('personal/')) return null;
   let found: string | null = null;
-  for (const [path, key] of index.byPath) {
-    if (!path.endsWith(`/${rel}`)) continue;
+  for (const place of shortPathPlaces(rel, folders)) {
+    const key = index.byPath.get(place);
+    if (key === undefined) continue;
     if (found !== null && found !== key) return null;
     found = key;
   }

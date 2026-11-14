@@ -699,7 +699,9 @@ describe('createChatFiles: shell steps', () => {
 });
 
 describe('createChatFiles: short names in replies', () => {
-  it('finds a name written under a folder the reply names, and keeps the name for linking', async () => {
+  const kinds = (s: ChatFilesSnapshot | null) => (s?.files ?? []).map((f) => [f.path, f.actions]).sort();
+
+  it('finds a name written under a folder the reply names', async () => {
     const { t, disk } = setup();
     disk.add('clients/acme/reports/audit.md');
     disk.add('clients/acme/reports/sub/deep.md');
@@ -707,26 +709,61 @@ describe('createChatFiles: short names in replies', () => {
       say('## Recent reports (all in `clients/acme/reports/`)\n\n| `audit.md` | x |\n| `sub/deep.md` | y |'),
     );
     const s = await snap(t);
-    expect(byPath(s, 'clients/acme/reports/audit.md')).toMatchObject({
-      actions: ['mentioned'],
-      aliases: ['audit.md'],
-    });
-    expect(byPath(s, 'clients/acme/reports/sub/deep.md')?.aliases).toEqual(['sub/deep.md']);
+    expect(kinds(s)).toEqual([
+      ['clients/acme/reports/audit.md', ['mentioned']],
+      ['clients/acme/reports/sub/deep.md', ['mentioned']],
+    ]);
+    // Linking is decided per reply on the client, so no chat-wide names are sent.
+    expect(byPath(s, 'clients/acme/reports/audit.md')).not.toHaveProperty('aliases');
   });
 
-  it('finds a path written from clients/ or from a client folder the chat used', async () => {
+  it('finds a name in the folder of a file the reply names in full', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/context/business.md');
+    disk.add('clients/acme/context/profile.md');
+    t.observe(say('I read `clients/acme/context/business.md`; `profile.md` is out of date.'));
+    expect(kinds(await snap(t))).toEqual([
+      ['clients/acme/context/business.md', ['mentioned']],
+      ['clients/acme/context/profile.md', ['mentioned']],
+    ]);
+  });
+
+  it('finds a path that names its client folder without clients/', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/context/business.md');
+    t.observe(say('Updated `acme/context/business.md`.'));
+    expect(kinds(await snap(t))).toEqual([['clients/acme/context/business.md', ['mentioned']]]);
+  });
+
+  it('never takes a lone name from the folder the chat worked in, or a client folder it used before', async () => {
     const { t, disk } = setup();
     disk.add('clients/acme/profile.md');
     disk.add('clients/acme/context/business.md');
-    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme/reports` }, {});
-    step(t, 'Bash', { command: 'cat ../profile.md' });
-    t.observe(say('Updated `acme/context/business.md`. Also `context/business.md` is out of date.'));
-    const f = byPath(await snap(t), 'clients/acme/context/business.md');
-    expect(f?.actions).toEqual(['mentioned']);
-    expect(f?.aliases?.sort()).toEqual(['acme/context/business.md', 'context/business.md']);
+    disk.add('personal/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme` });
+    step(t, 'Read', { file_path: `${ROOT}/personal/profile.md` });
+    t.observe(say('`profile.md` and `context/business.md` need updating.'));
+    expect(kinds(await snap(t))).toEqual([['personal/profile.md', ['read']]]);
   });
 
-  it('links nothing when a short name fits files in two of the places it could mean', async () => {
+  it("never takes a lone name from another reply's folder", async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/reports/audit.md');
+    t.observe(say('Reports are in `clients/acme/reports/`.'));
+    t.observe(say('For Beta, `audit.md` is due.'));
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
+  });
+
+  it('never takes a lone name from personal/ unless the reply names that folder', async () => {
+    const { t, disk } = setup();
+    disk.add('personal/notes.md');
+    t.observe(say('See `notes.md`.'));
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
+    t.observe(say('In `personal/`: `notes.md`.'));
+    expect(kinds(await snap(t))).toEqual([['personal/notes.md', ['mentioned']]]);
+  });
+
+  it('links nothing when a short name fits files in two folders the reply names', async () => {
     const { t, disk } = setup();
     disk.add('clients/acme/reports/x.md');
     disk.add('clients/acme/drafts/x.md');
@@ -734,11 +771,22 @@ describe('createChatFiles: short names in replies', () => {
     expect((await snap(t)).files).toEqual([]);
   });
 
-  it('never guesses a short name with no folder the reply or the chat gives', async () => {
+  it('never takes a lone name from a reply that names folders of two clients', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/context/profile.md');
+    t.observe(
+      say(
+        "Compared `clients/acme/context/` with `clients/beta/context/`. Beta's `profile.md` is out of date.",
+      ),
+    );
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
+  });
+
+  it('never guesses a short name with no folder in the reply', async () => {
     const { t, disk } = setup();
     disk.add('clients/acme/reports/audit.md');
     t.observe(say('See `audit.md`.'));
-    expect((await snap(t)).files).toEqual([]);
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
   });
 });
 

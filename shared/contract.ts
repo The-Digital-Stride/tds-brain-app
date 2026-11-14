@@ -11,7 +11,7 @@
  */
 
 import type { AppState } from './install-contract.ts';
-import type { LevelMode, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
+import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
 import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
@@ -848,6 +848,36 @@ export interface LiveSession {
   state: SessionState;
   startedAt: string;
   lastActivityAt: string;
+  /**
+   * The helpers this chat's current or last reply started (plan 2026-11-14-helpers-in-chats-drawer),
+   * in start order (oldest first). Cleared when the next message is sent. Absent from older servers; treat as [].
+   */
+  helpers?: LiveHelper[];
+}
+
+/** 'stopped': the reply ended or the chat closed before the helper reported back. */
+export type LiveHelperStatus = 'working' | 'done' | 'failed' | 'stopped';
+
+/** One helper in `LiveSession.helpers`. Only the main chat's helpers, never a helper's own helpers. */
+export interface LiveHelper {
+  /** The Agent / Task step's tool use id. */
+  id: string;
+  /** "Scout", "Worker", "Expert", "Helper (Explore)" or "Helper". UK English, ready to show. */
+  name: string;
+  /** What it was asked, one line, at most 120 characters. Empty when unknown. */
+  brief: string;
+  /** The app level it runs at, when known. */
+  tier: LevelTier | null;
+  /** The model alias or id it runs on ("haiku", "claude-opus-5-5"), when known. */
+  model: string | null;
+  status: LiveHelperStatus;
+  startedAt: string;
+  /** Null while working. */
+  endedAt: string | null;
+  /** Tool steps it has taken so far. */
+  steps: number;
+  /** What it is doing now, plain words ("reading files"), or null. */
+  lastStep: string | null;
 }
 
 /** A chat's kind: the same two values as a to-do's scope, so both lists filter the same way. */

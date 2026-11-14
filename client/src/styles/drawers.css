@@ -432,3 +432,18 @@
   background: var(--tint-1);
   color: var(--ink-soft);
 }
+
+/* A chat's helpers: one nested list under its row, indented to sit beneath the chat's title. */
+.helpers {
+  margin: 0 0 4px 18px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line-strong);
+  list-style: none;
+}
+.helpers .line {
+  padding: 4px 6px;
+  gap: 8px;
+}
+.helpers .line-title {
+  font-size: 13px;
+}

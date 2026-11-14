@@ -79,6 +79,7 @@ export function ChatView() {
   const latestItems = useRef(chat.items);
   latestItems.current = chat.items;
   const live = sessionId ? sessions?.live.find((s) => s.id === sessionId) : undefined;
+  const helpersWorking = (live?.helpers ?? []).filter((h) => h.status === 'working').length;
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
 
@@ -142,7 +143,7 @@ export function ChatView() {
               }
             }}
           >
-            <span>{closeConfirmText(state)}</span>
+            <span>{closeConfirmText(state, helpersWorking)}</span>
             <button
               type="button"
               className="btn"

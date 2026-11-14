@@ -70,6 +70,7 @@ import {
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
 import { HelperNames, isHelperTurn, parseHelperReport } from './helper-reports.ts';
+import { createHelperTracker, type HelperTracker } from './helper-tracker.ts';
 import {
   beforeHelpersNudge,
   decideAgentCall,
@@ -600,6 +601,8 @@ interface Session {
   helpersRunning: Set<string>;
   /** Main-chat helpers started in this reply. */
   helpersStarted: number;
+  /** The helpers listed for the Chats drawer (plan 2026-11-14-helpers-in-chats-drawer). */
+  helperList: HelperTracker;
   /** Each running helper's type, by agent id, so its cards can name it. */
   helperTypes: Map<string, string>;
   /** The helpers nudge has been sent (once per chat). */
@@ -737,6 +740,42 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
   }
 
+  /** Helper progress notifies share one timer, so the page isn't told about every step. */
+  const PROGRESS_NOTIFY_MS = 5000;
+  let progressTimer: ReturnType<typeof setTimeout> | null = null;
+  let progressDirty = false;
+
+  function notifyHelpers(how: 'now' | 'soon' | null): void {
+    if (how === 'now') {
+      progressDirty = false;
+      notifyChanged();
+    } else if (how === 'soon') {
+      progressDirty = true;
+      if (progressTimer) return;
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        if (!progressDirty) return;
+        progressDirty = false;
+        notifyChanged();
+      }, PROGRESS_NOTIFY_MS);
+      progressTimer.unref?.();
+    }
+  }
+
+  function clearProgressTimer(): void {
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = null;
+    progressDirty = false;
+  }
+
+  /** A helper that never started: free its slot and take it off the list. */
+  function dropHelper(s: Session, id: string): void {
+    s.helpersRunning.delete(id);
+    const before = s.helperList.list().length;
+    s.helperList.dropped(id);
+    if (s.helperList.list().length !== before) notifyHelpers('now');
+  }
+
   function emit(s: Session, event: ChatEvent): void {
     const now = new Date();
     s.lastActivityAt = now.toISOString();
@@ -810,6 +849,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       state: s.state,
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,
+      helpers: s.helperList.list(),
     };
   }
 
@@ -898,6 +938,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       unsavedLevel: null,
       helpersRunning: new Set(),
       helpersStarted: 0,
+      helperList: createHelperTracker(),
       helperTypes: new Map(),
       nudged: false,
     };
@@ -971,7 +1012,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             if (result.behavior === 'deny' && ctx.toolUseID) {
               s.deniedTools.add(ctx.toolUseID);
               // A refused helper never runs: free its slot.
-              s.helpersRunning.delete(ctx.toolUseID);
+              dropHelper(s, ctx.toolUseID);
             }
             signal?.removeEventListener('abort', onAbort);
             emit(s, { type: 'request-resolved', requestId, outcome });
@@ -1059,15 +1100,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }))
       emit(s, event);
     s.files?.observe(raw);
+    notifyHelpers(s.helperList.observe(raw));
     // A helper call our hook allowed but another rule then stopped never runs: free its slot.
     if (raw.type === 'system' && raw.subtype === 'permission_denied' && typeof raw.tool_use_id === 'string') {
-      s.helpersRunning.delete(raw.tool_use_id);
+      dropHelper(s, raw.tool_use_id);
     }
     if (raw.type === 'result') {
       s.turnRunning = false;
       s.interruptRequested = false;
       // Helpers run in the foreground, so none outlives the reply: free every slot.
       s.helpersRunning.clear();
+      // One that never reported back is left 'stopped' (the setState below tells the page).
+      s.helperList.stopAll();
       if (levels) levelAfterTurn(s);
       settleAll(s, 'The turn ended.');
       setState(s, 'idle');
@@ -1091,6 +1135,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.input?.end();
       s.input = null;
       settleAll(s, 'Claude Code stopped.');
+      if (s.helperList.stopAll()) notifyHelpers('now');
       if (!s.closing) {
         log('A chat engine stopped unexpectedly.');
         if (s.turnRunning) {
@@ -1271,6 +1316,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.pendingOffer = null;
     s.helpersRunning.clear();
     s.helpersStarted = 0;
+    s.helperList.clear();
     const needsEngine = !s.query;
     setState(s, needsEngine ? 'starting' : 'working');
     const messageId = `u${++s.userCounter}`;
@@ -1611,6 +1657,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       }
       s.helpersRunning.add(id);
       s.helpersStarted++;
+      // Only a real tool use id can be matched with the stream's own messages.
+      const realId = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : '');
+      if (realId) {
+        s.helperList.started(realId, d.input, undefined, d.input.model !== toolInput.model);
+        notifyHelpers('now');
+      }
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: d.input } };
     };
   }
@@ -1621,7 +1673,17 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const input: unknown = raw;
       if (isRec(input) && !input.agent_id) {
         const id = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : null);
-        if (id) s.helpersRunning.delete(id);
+        if (id) {
+          s.helpersRunning.delete(id);
+          const how =
+            input.hook_event_name !== 'PostToolUseFailure'
+              ? 'done'
+              : input.is_interrupt === true
+                ? 'stopped'
+                : 'failed';
+          s.helperList.ended(id, how);
+          notifyHelpers('now');
+        }
       }
       return { continue: true };
     };
@@ -1730,6 +1792,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   async function closeEngine(s: Session): Promise<void> {
     {
       settleAll(s, 'The chat was closed.');
+      s.helperList.stopAll();
       const q = s.query;
       if (q) {
         if (s.turnRunning) {
@@ -2163,6 +2226,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     },
 
     async closeAll() {
+      clearProgressTimer();
       await Promise.all([...live.values()].map((s) => closeSession(s)));
     },
 

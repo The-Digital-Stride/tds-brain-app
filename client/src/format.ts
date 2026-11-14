@@ -1,4 +1,4 @@
-import type { EffortLevel } from '../../shared/contract.ts';
+import type { EffortLevel, LiveHelper } from '../../shared/contract.ts';
 import { LEVEL_TIERS, type TurnLevel } from '../../shared/levels-contract.ts';
 
 const DAY_MS = 86_400_000;
@@ -126,4 +126,37 @@ export function levelLineText(level: TurnLevel): LevelLineText | null {
     default:
       return { tier: label, note: 'picked by the app for this chat', why: source.reason, engine };
   }
+}
+
+/** Elapsed time in words: "40 s", "1 min 20 s", "1 h 3 min". Under a second, or negative, is "0 s". */
+export function elapsedWords(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  if (m > 0) return s > 0 ? `${m} min ${s} s` : `${m} min`;
+  return `${s} s`;
+}
+
+const HELPER_ENDED_WORDS = { done: 'Done', failed: 'Failed', stopped: 'Stopped' } as const;
+
+/** A helper's quiet line: "Reading files · Quick · Haiku 5.5 · 1 min 20 s". Unknown parts are left out. */
+export function helperMeta(h: LiveHelper, now: number): string {
+  const parts: string[] = [];
+  if (h.status === 'working') {
+    // Said in words as well as by the dot, which screen readers skip.
+    parts.push(h.lastStep || 'Working');
+  } else {
+    parts.push(HELPER_ENDED_WORDS[h.status]);
+  }
+  if (h.tier) parts.push(LEVEL_TIERS[h.tier].label);
+  const model = h.model?.trim();
+  if (model) parts.push(model.startsWith('claude-') ? modelName(model) : aliasName(model));
+  const start = Date.parse(h.startedAt);
+  const end = h.endedAt ? Date.parse(h.endedAt) : now;
+  // Non-breaking spaces keep "1 min 20 s" on one line when the meta wraps.
+  if (!Number.isNaN(start) && !Number.isNaN(end))
+    parts.push(elapsedWords(end - start).replace(/ /g, '\u00a0'));
+  return parts.join(' · ');
 }

@@ -1397,6 +1397,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           emit(s, { type: 'turn-end', ok: false, interrupted: true, durationMs: null, errorText: null });
           setState(s, 'idle');
           armIdle(s);
+          // A team level or raise was for that message only: show the chat's own level again (no offer).
+          if (levels) levelAfterTurn(s);
           return;
         }
         s.turnSent = true;

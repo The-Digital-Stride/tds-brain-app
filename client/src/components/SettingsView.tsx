@@ -258,13 +258,15 @@ function SkillLevelsSection({
   save,
 }: {
   levels: SkillLevels;
-  skills: { name: string; title: string }[];
+  skills: { name: string; title: string; ownLevel?: unknown }[];
   save: (skill: string, tier: LevelTier | null) => void;
 }) {
   const [query, setQuery] = useState('');
   const searchId = useId();
   const editable = levels.canSet && levels.writable;
   const titles = useMemo(() => new Map(skills.map((s) => [s.name, s.title])), [skills]);
+  // A skill's own model or effort always wins, so a team level would never apply to it.
+  const ownSet = useMemo(() => new Set(skills.filter((s) => s.ownLevel).map((s) => s.name)), [skills]);
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const names = new Set(Object.keys(levels.levels));
@@ -276,7 +278,7 @@ function SkillLevelsSection({
       .sort((a, b) => a.title.localeCompare(b.title, 'en-GB'));
   }, [levels.levels, skills, titles, query, editable]);
   const total = Object.keys(levels.levels).length;
-  const missing = skills.filter((s) => !(s.name in levels.levels)).length;
+  const missing = skills.filter((s) => !(s.name in levels.levels) && !ownSet.has(s.name)).length;
   return (
     <section aria-labelledby="levels-h">
       <h2 id="levels-h">Skill levels</h2>
@@ -319,17 +321,20 @@ function SkillLevelsSection({
           {rows.map((r) => {
             const level = levels.levels[r.name];
             const tier = level && isLevelTier(level.tier) ? level.tier : null;
+            const own = ownSet.has(r.name);
             return (
               <li key={r.name} className="levels-row">
                 <div className="levels-who">
                   <span className="setting-label">{r.title}</span>
                   <span className="setting-help">
-                    {level
-                      ? `${tier ? LEVEL_TIERS[tier].label : 'Unknown level'} · ${level.setBy === 'prefill' ? 'suggested by the app and reviewed' : `set by ${setByWords(level.setBy)}`}${whenWords(level.at) ? `, ${whenWords(level.at)}` : ''}`
-                      : 'No team level'}
+                    {own
+                      ? "Set by the skill itself, so a team level doesn't apply"
+                      : level
+                        ? `${tier ? LEVEL_TIERS[tier].label : 'Unknown level'} · ${level.setBy === 'prefill' ? 'suggested by the app and reviewed' : `set by ${setByWords(level.setBy)}`}${whenWords(level.at) ? `, ${whenWords(level.at)}` : ''}`
+                        : 'No team level'}
                   </span>
                 </div>
-                {editable ? (
+                {editable && !own ? (
                   <span className="levels-actions">
                     <select
                       className="field"

@@ -2942,6 +2942,22 @@ describe('levels', () => {
     expect(shown()).toEqual([quick, deep, quick, deep, quick]);
   });
 
+  it('a team-level /name stopped before it reaches Claude puts the line back to the chat level', async () => {
+    const fx = setupLevels({ picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const seen = watch(s.id);
+    await mgr.send(s.id, '/audit Acme');
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(fx.log).not.toContain('push:/audit Acme');
+    const shown = seen().flatMap((e) => (e.type === 'level' ? [e.level] : []));
+    expect(shown.at(-1)).toEqual({ tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } });
+    expect(lastLevel(s.id)?.tier).toBe('quick');
+    expect(seen().filter(isOffer)).toEqual([]);
+  });
+
   it('keeps only the newest level event in the replay log', async () => {
     const fx = setupLevels({ picks: () => ready(QUICK) });
     await auto();

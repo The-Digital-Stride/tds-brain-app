@@ -346,6 +346,10 @@ describe('a new chat', () => {
     expect(o.includePartialMessages).toBe(true);
     expect(o.settingSources).toEqual(['user', 'project', 'local']);
     expect(o.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code', append: FILES_LINE });
+    // A new document's home is asked, not guessed: people can't be expected to know the brain's folders.
+    expect(FILES_LINE).toContain(
+      'if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first',
+    );
     expect(o.model).toBeUndefined();
     expect(o.resume).toBeUndefined();
     expect(queries[0]?.received).toEqual(['Hello there']);

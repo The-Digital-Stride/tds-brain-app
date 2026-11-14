@@ -555,7 +555,14 @@ export const PAGES_LINE =
  * Every chat's system prompt append asks for brain-relative paths, so the app can link them (decision
  * 7), and says how pages show (R3).
  */
-export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE}`;
+/**
+ * Where a new document goes is the person's call: they can't be expected to know the brain's folders,
+ * so Claude asks (the app shows AskUserQuestion as a card) unless they, or a skill, already said.
+ */
+export const SAVE_LINE =
+  "Before saving a new document, page, deck or template, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), or just for you, not shared (`personal/`). The app shows the file wherever it is saved. Don't ask when changing a file that already exists.";
+
+export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE}`;
 
 /** The TDS logo sprite the branded copy uses (R5), read from the brain; never larger than this. */
 export const LOGO_SPRITE_PATH = 'templates/tds-doc-system/logo-symbol.svg';

@@ -101,7 +101,7 @@ export function ChatView() {
 
   return (
     <div className="chat chat-live" ref={column}>
-      <SheetBar crumb="Chats" title={title} panel="Steps and details">
+      <SheetBar crumb="Chats" title={title} panel="Files and details">
         {/* With no client the chip is left out; the panel's Details says so. */}
         {clientName ? <span className="chip">{clientName}</span> : null}
         {working && !confirming ? (

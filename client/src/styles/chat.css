@@ -927,68 +927,6 @@
 .inspector > .seg {
   margin: 0 4px;
 }
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
-.step {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 10px;
-  padding: 7px 8px;
-  border-radius: 10px;
-}
-/* A helper's steps sit under the step that started the helper. */
-.step[data-depth="1"] {
-  margin-left: 16px;
-}
-.step[data-depth="2"] {
-  margin-left: 32px;
-}
-.step[data-depth="3"] {
-  margin-left: 48px;
-}
-.step-n {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: rgba(2, 27, 67, 0.08);
-  font: 600 11.5px / 1 var(--body);
-}
-.step-label {
-  display: block;
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-.step-status {
-  display: block;
-  font-size: 12px;
-  color: var(--iron);
-}
-/* Row meta: lower case in the text, first letter capitalised here ("Done", "Working"). */
-.step-status::first-letter {
-  text-transform: uppercase;
-}
-/* A note Claude wrote between steps: no number, quieter than a step. */
-.step-note-text {
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--iron);
-  overflow-wrap: anywhere;
-}
-.step-note-text .markdown > :not(:last-child) {
-  margin-bottom: 4px;
-}
-.step-status[data-status="failed"] {
-  color: var(--danger);
-  font-weight: 600;
-}
 
 /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
 .kv {

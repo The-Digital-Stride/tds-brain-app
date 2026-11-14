@@ -153,7 +153,7 @@ describe('the sheet bar', () => {
     // No client: no chip (the panel's Details says "No client").
     expect(screen.queryByText('No client')).toBeNull();
     expect(screen.getByRole('button', { name: 'Close chat' })).toBeTruthy();
-    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    const toggle = screen.getByRole('button', { name: 'Files and details' });
     expect(toggle.getAttribute('aria-controls')).toBe('panel');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(toggle);
@@ -163,7 +163,7 @@ describe('the sheet bar', () => {
   it('puts the panel toggle last, at the top right, after "Search or jump to"', () => {
     h.chat = chatState('idle');
     render(sheet());
-    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    const toggle = screen.getByRole('button', { name: 'Files and details' });
     expect(toggle.parentElement?.lastElementChild).toBe(toggle);
     expect(toggle.previousElementSibling).toBe(screen.getByRole('button', { name: 'Search or jump to' }));
   });

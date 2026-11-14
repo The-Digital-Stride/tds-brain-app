@@ -1216,7 +1216,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (tier !== null && !isLevelTier(tier)) {
       throw new HttpError(400, 'bad-request', 'That level was not understood.');
     }
-    sendJson(res, 200, await ctx.sessions.setChatLevel(id, tier));
+    sendJson(res, 200, { level: await ctx.sessions.setChatLevel(id, tier) });
     return;
   }
 

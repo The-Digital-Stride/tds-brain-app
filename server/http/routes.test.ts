@@ -1907,11 +1907,11 @@ describe('skill levels and chat levels', () => {
     expect((await call(ROUTES.skillLevels, 'PUT', {})).status).toBe(405);
   });
 
-  it('POST chat level hands the tier to the session and answers the TurnLevel', async () => {
+  it('POST chat level hands the tier to the session and answers { level: TurnLevel }', async () => {
     const sent = await call(ROUTES.chatLevel('s 1'), 'POST', { tier: 'deep' });
     expect(sent.status).toBe(200);
     expect(sent.levelCalls).toEqual([['s 1', 'deep']]);
-    expect(sent.json).toEqual({ tier: 'deep', source: { kind: 'chat' } });
+    expect(sent.json).toEqual({ level: { tier: 'deep', source: { kind: 'chat' } } });
     const auto = await call(ROUTES.chatLevel('s1'), 'POST', { tier: null });
     expect(auto.levelCalls).toEqual([['s1', null]]);
     for (const body of [{}, { tier: 'huge' }, { tier: 3 }]) {

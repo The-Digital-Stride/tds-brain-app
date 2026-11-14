@@ -595,8 +595,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setChatLevel = useCallback(async (sessionId: string, tier: LevelTier | null) => {
     try {
-      const { level } = await api.setChatLevel(sessionId, tier);
-      dispatchChat({ sessionId, local: { type: 'level', level } });
+      const res = await api.setChatLevel(sessionId, tier);
+      // Only a real TurnLevel reaches the reducer; the server's own `level` event follows anyway.
+      const level = res && typeof res === 'object' ? res.level : undefined;
+      if (level && typeof level === 'object' && level.source && typeof level.source === 'object') {
+        dispatchChat({ sessionId, local: { type: 'level', level } });
+      }
     } catch (err) {
       setActionError(messageOf(err));
     }

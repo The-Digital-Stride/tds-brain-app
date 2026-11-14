@@ -708,9 +708,18 @@ export interface AppPrefs {
    * an older server sends none, which reads as [].
    */
   favouriteChats?: string[];
+  /**
+   * Favourite to-dos (plan 2026-11-14-todo-favourites): `TodoItem.key`s in the order they were starred, at most
+   * FAVOURITE_TODOS_MAX, each at most TODO_KEY_MAX characters. Shown first in the To-dos drawer. Kept only here,
+   * never in a to-do file. This server always sends it; optional because an older server sends none, which reads as [].
+   */
+  favouriteTodos?: string[];
 }
 
 export const FAVOURITE_CHATS_MAX = 200;
+export const FAVOURITE_TODOS_MAX = 200;
+/** The longest `TodoItem.key` the app's prefs keep (favourites and "New to you" markers). */
+export const TODO_KEY_MAX = 300;
 /** Claude Code's session ids, which favourite chats are keyed by. */
 export const SESSION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -732,6 +741,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   effort: null,
   levelMode: 'auto',
   favouriteChats: [],
+  favouriteTodos: [],
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */

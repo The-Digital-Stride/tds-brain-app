@@ -11,41 +11,10 @@ import { HelperRows, helperCount, helpersWorking } from './HelperRows.tsx';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
-/**
- * The star that keeps a chat at the top of its list. The label stays the same and `aria-pressed` says whether
- * it is on. Before the chat's first reply starts it has no lasting id, so there is no star yet.
- */
-function StarButton({
-  sdkSessionId,
-  title,
-  on,
-  onPress,
-}: {
-  sdkSessionId: string;
-  title: string;
-  on: boolean;
-  onPress: (sdkSessionId: string, button: HTMLElement) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="icon-btn star-btn"
-      aria-pressed={on}
-      aria-label={`Favourite: ${title}`}
-      data-star-id={sdkSessionId}
-      onClick={(e) => onPress(sdkSessionId, e.currentTarget)}
-    >
-      <Icon name="star" size={16} />
-    </button>
-  );
-}
-
 type OnStar = (sdkSessionId: string, button: HTMLElement) => void;
-const NO_FAVOURITES: readonly string[] = [];
-/** How long after a star press focus may still follow that chat (a failed save puts it back). */
-const STAR_FOCUS_MS = 15_000;
 
 function OpenRow({
   chat,
@@ -87,7 +56,7 @@ function OpenRow({
         </span>
       </button>
       {chat.sdkSessionId ? (
-        <StarButton sdkSessionId={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
+        <StarButton id={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
       ) : null}
       <button
         type="button"
@@ -142,7 +111,7 @@ function PastRow({
           </span>
         </span>
       </button>
-      <StarButton sdkSessionId={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
+      <StarButton id={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
       <button
         type="button"
         className="icon-btn"
@@ -184,38 +153,12 @@ export function ChatsDrawer() {
     (target ?? body.current)?.focus();
   }, [sessions, confirmId]);
 
-  // A starred or unstarred chat moves to another place in the list (on Earlier, another section), so its
-  // button is a new one and focus drops to the page. When the list moves, focus goes back to that chat's star,
-  // else the star that came next when it was pressed, else the drawer. The press is kept for a while, not for
-  // one move only, so a failed save that puts the star back also brings focus back.
-  const starFocus = useRef<{ id: string; next: string | null; favs: readonly string[]; at: number } | null>(
-    null,
-  );
-  useEffect(() => {
-    const want = starFocus.current;
-    // Only a real change of stars moves a row; a reply with the same list must not take focus.
-    if (!want || sameList(want.favs, favs)) return;
-    if (Date.now() - want.at > STAR_FOCUS_MS) {
-      starFocus.current = null;
-      return;
-    }
-    want.favs = favs;
-    // Only when the row's move dropped focus to the page: never from something the person has moved on to.
-    const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected) return;
-    const stars = visibleStars(body.current);
-    const target =
-      stars.find((b) => b.dataset.starId === want.id) ?? stars.find((b) => b.dataset.starId === want.next);
-    if (target && active !== target) target.focus();
-    else if (!target) body.current?.focus();
-  }, [favs]);
+  // Focus follows a chat whose star moved it (`useStarFocus`).
+  const rememberStar = useStarFocus(body, favs);
   // Which Earlier sections are open: the person's own choice, else Favourites and the newest day section.
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const onStar: OnStar = (id, button) => {
-    const stars = visibleStars(body.current);
-    const at = stars.indexOf(button as HTMLButtonElement);
-    const next = stars[at + 1] ?? stars[at - 1];
-    starFocus.current = { id, next: next?.dataset.starId ?? null, favs, at: Date.now() };
+    rememberStar(id, button);
     // Open the section the chat moves to, so focus can follow it there.
     const chat = sessions?.past.find((p) => p.sdkSessionId === id);
     if (chat) {
@@ -403,13 +346,3 @@ export function ChatsDrawer() {
     </div>
   );
 }
-
-/** The star buttons a person can reach: rows in a folded group stay in the page but hidden. */
-function visibleStars(root: HTMLElement | null): HTMLButtonElement[] {
-  return Array.from(root?.querySelectorAll<HTMLButtonElement>('[data-star-id]') ?? []).filter(
-    (b) => !b.closest('[hidden]'),
-  );
-}
-
-const sameList = (a: readonly string[], b: readonly string[]) =>
-  a === b || (a.length === b.length && a.every((x, i) => x === b[i]));

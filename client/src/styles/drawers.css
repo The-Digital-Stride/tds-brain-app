@@ -106,15 +106,18 @@
 .skill-more {
   color: var(--iron);
 }
-/* The skill pin and the chat star show on the row under the pointer or the keyboard; one that is on stays. */
+/* The skill pin and the chat and to-do stars show on the row under the pointer or the keyboard; one that is on
+   stays. */
 @media (hover: hover) {
   .skill-row .icon-btn[aria-pressed="false"],
-  .line .star-btn[aria-pressed="false"] {
+  .line .star-btn[aria-pressed="false"],
+  .todo .star-btn[aria-pressed="false"] {
     opacity: 0;
     transition: opacity 0.12s;
   }
   .skill-row:is(:hover, :focus-within) .icon-btn[aria-pressed="false"],
-  .line:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
+  .line:is(:hover, :focus-within) .star-btn[aria-pressed="false"],
+  .todo:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
     opacity: 1;
   }
 }
@@ -125,7 +128,8 @@
 @media (prefers-reduced-motion: reduce) {
   .todo .go,
   .skill-row .icon-btn,
-  .line .star-btn {
+  .line .star-btn,
+  .todo .star-btn {
     transition: none;
   }
 }
@@ -139,6 +143,20 @@
   align-self: center;
   width: 32px;
   height: 32px;
+}
+/* A to-do row with a star: the main button, the star, then the edit button when changes are on. */
+.todo[data-editable="true"]:has(> .star-btn) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.todo:has(> .star-btn) > .todo-main {
+  grid-column: 1;
+}
+.todo > .star-btn {
+  grid-column: 2;
+  align-self: center;
+}
+.todo:has(> .star-btn) > .todo-edit {
+  grid-column: 3;
 }
 .drawer-tools.todo-add {
   display: block;

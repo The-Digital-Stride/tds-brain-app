@@ -7,9 +7,11 @@ import {
   EFFORT_LEVELS,
   type EffortLevel,
   FAVOURITE_CHATS_MAX,
+  FAVOURITE_TODOS_MAX,
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
   SESSION_UUID_PATTERN,
+  TODO_KEY_MAX,
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
 } from '../../shared/contract.ts';
@@ -38,7 +40,17 @@ function cleanFavouriteChats(v: unknown): string[] | undefined {
   return [...seen].slice(-FAVOURITE_CHATS_MAX);
 }
 
-const SEEN_KEY_MAX = 300;
+/** To-do keys once each, in the order given; over the cap, the newest-starred (the last) are kept. */
+function cleanFavouriteTodos(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const seen = new Set<string>();
+  for (const x of v) {
+    if (typeof x === 'string' && x !== '' && x.length <= TODO_KEY_MAX) seen.add(x);
+  }
+  return [...seen].slice(-FAVOURITE_TODOS_MAX);
+}
+
+const SEEN_KEY_MAX = TODO_KEY_MAX;
 const SEEN_VALUE_MAX = 40;
 const DAY_MS = 86_400_000;
 
@@ -103,6 +115,7 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     // with the old-file rule when the file itself had none.
     levelMode: isLevelMode(o.levelMode) ? o.levelMode : base.levelMode,
     favouriteChats: cleanFavouriteChats(o.favouriteChats) ?? [...(base.favouriteChats ?? [])],
+    favouriteTodos: cleanFavouriteTodos(o.favouriteTodos) ?? [...(base.favouriteTodos ?? [])],
   };
 }
 

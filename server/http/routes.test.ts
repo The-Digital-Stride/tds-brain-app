@@ -1652,6 +1652,21 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     }
   });
 
+  it('saves favourite to-dos as a list of to-do keys, once each', async () => {
+    const sent = await call('/api/prefs', 'PUT', { favouriteTodos: ['a1', 'personal/b2', 'a1'] });
+    expect(sent.status).toBe(200);
+    expect(sent.json.favouriteTodos).toEqual(['a1', 'personal/b2']);
+  });
+
+  it('refuses favourite to-dos that are not a list of to-do keys, or too many', async () => {
+    const keys = Array.from({ length: 201 }, (_, i) => `t${i}`);
+    for (const favouriteTodos of ['nope', [''], [3], ['x'.repeat(301)], keys]) {
+      const sent = await call('/api/prefs', 'PUT', { favouriteTodos });
+      expect(sent.status).toBe(400);
+      expect(sent.json.error.message).toBe('The favourite to-dos were not understood.');
+    }
+  });
+
   it('answers a bad value with 400 and does not touch the sessions', async () => {
     const sent = await call('/api/prefs', 'PUT', { model: 'no no' });
     expect(sent.status).toBe(400);

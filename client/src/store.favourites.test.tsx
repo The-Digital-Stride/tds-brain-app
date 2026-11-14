@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   todos: vi.fn(),
   sessions: vi.fn(),
   updatePrefs: vi.fn(),
+  changeTodo: vi.fn(),
   sync: vi.fn(async () => ({ lastSync: null })),
 }));
 vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
@@ -28,15 +29,22 @@ const { StoreProvider, useStore } = await import('./store.tsx');
 
 let toggle: ((id: string) => Promise<void>) | null = null;
 let pin: ((name: string) => Promise<void>) | null = null;
+let toggleTodo: ((key: string) => Promise<void>) | null = null;
+let changeTodos: ReturnType<typeof useStore>['changeTodos'] | null = null;
 function Probe() {
   const store = useStore();
   toggle = store.toggleFavouriteChat;
   pin = store.togglePin;
+  toggleTodo = store.toggleFavouriteTodo;
+  changeTodos = store.changeTodos;
   return (
-    <p>
-      favs {store.boot ? (store.boot.prefs.favouriteChats ?? []).join(' ') || 'none' : 'loading'}
-      {store.actionError ? `, error ${store.actionError}` : ''}
-    </p>
+    <>
+      <p>
+        favs {store.boot ? (store.boot.prefs.favouriteChats ?? []).join(' ') || 'none' : 'loading'}
+        {store.actionError ? `, error ${store.actionError}` : ''}
+      </p>
+      <p>todo favs {store.boot ? (store.boot.prefs.favouriteTodos ?? []).join(' ') || 'none' : 'loading'}</p>
+    </>
   );
 }
 
@@ -166,5 +174,115 @@ describe('toggleFavouriteChat', () => {
     });
     await act(async () => calls[2]?.no(new Error('Could not save.')));
     expect(screen.getByText(/favs a b, error/)).toBeTruthy();
+  });
+});
+
+describe('toggleFavouriteTodo', () => {
+  it('stars to-dos by key in their own list, and two quick taps each build on the one before', async () => {
+    const replies: ((p: AppPrefs) => void)[] = [];
+    api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
+    await start();
+    expect(screen.getByText('todo favs none')).toBeTruthy();
+    await act(async () => {
+      void toggleTodo?.('a1');
+      void toggleTodo?.('personal/b2');
+    });
+    expect(screen.getByText('todo favs a1 personal/b2')).toBeTruthy();
+    expect(api.updatePrefs.mock.calls.map((c) => c[0])).toEqual([
+      { favouriteTodos: ['a1'] },
+      { favouriteTodos: ['a1', 'personal/b2'] },
+    ]);
+    await act(async () => replies[1]?.({ ...DEFAULT_PREFS, favouriteTodos: ['a1', 'personal/b2'] }));
+    await act(async () => replies[0]?.({ ...DEFAULT_PREFS, favouriteTodos: ['a1'] }));
+    expect(screen.getByText('todo favs a1 personal/b2')).toBeTruthy();
+    // Unstarring takes it out.
+    api.updatePrefs.mockResolvedValueOnce({ ...DEFAULT_PREFS, favouriteTodos: ['personal/b2'] });
+    await act(async () => toggleTodo?.('a1'));
+    expect(screen.getByText('todo favs personal/b2')).toBeTruthy();
+  });
+
+  it('puts the saved list back and shows the error when the save fails', async () => {
+    api.updatePrefs.mockResolvedValueOnce({ ...DEFAULT_PREFS, favouriteTodos: ['a1'] });
+    await start();
+    await act(async () => toggleTodo?.('a1'));
+    api.updatePrefs.mockRejectedValueOnce(new Error('Could not save.'));
+    await act(async () => toggleTodo?.('b2'));
+    expect(screen.getByText('todo favs a1')).toBeTruthy();
+    expect(screen.getByText(/, error/)).toBeTruthy();
+  });
+
+  it('keeps each list as shown while a chat star and a to-do star save at the same time', async () => {
+    const replies: ((p: AppPrefs) => void)[] = [];
+    api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
+    await start();
+    await act(async () => {
+      void pin?.('gm');
+      void toggle?.('c');
+      void toggleTodo?.('t');
+    });
+    // The server saves one at a time, in order: the pin's reply has no stars, the chat star's no to-do star.
+    await act(async () => replies[0]?.({ ...DEFAULT_PREFS, pins: ['gm'] }));
+    expect(screen.getByText('favs c')).toBeTruthy();
+    expect(screen.getByText('todo favs t')).toBeTruthy();
+    await act(async () => replies[1]?.({ ...DEFAULT_PREFS, pins: ['gm'], favouriteChats: ['c'] }));
+    expect(screen.getByText('favs c')).toBeTruthy();
+    expect(screen.getByText('todo favs t')).toBeTruthy();
+    await act(async () =>
+      replies[2]?.({ ...DEFAULT_PREFS, pins: ['gm'], favouriteChats: ['c'], favouriteTodos: ['t'] }),
+    );
+    expect(screen.getByText('favs c')).toBeTruthy();
+    expect(screen.getByText('todo favs t')).toBeTruthy();
+    expect(api.updatePrefs.mock.calls.map((c) => c[0])).toEqual([
+      { pins: ['gm'] },
+      { favouriteChats: ['c'] },
+      { favouriteTodos: ['t'] },
+    ]);
+  });
+
+  it("keeps a to-do star that is still saving when another setting's reply lands", async () => {
+    const replies: ((p: AppPrefs) => void)[] = [];
+    api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
+    await start();
+    await act(async () => {
+      void pin?.('gm');
+      void toggleTodo?.('t');
+    });
+    await act(async () => replies[0]?.({ ...DEFAULT_PREFS, pins: ['gm'] }));
+    expect(screen.getByText('todo favs t')).toBeTruthy();
+  });
+
+  it('moves the star to the new key when a starred to-do moves between TDS and personal', async () => {
+    api.updatePrefs.mockImplementation(async (patch: Partial<AppPrefs>) => ({ ...DEFAULT_PREFS, ...patch }));
+    api.changeTodo.mockResolvedValue({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      moved: { from: 'x', to: 'personal/x' },
+    });
+    await start();
+    await act(async () => toggleTodo?.('w'));
+    await act(async () => toggleTodo?.('x'));
+    await act(async () => {
+      await changeTodos?.([{ kind: 'move', id: 'x', scope: 'tds', to: 'personal', expect: 'v1' }]);
+    });
+    expect(api.updatePrefs.mock.calls.at(-1)?.[0]).toEqual({ favouriteTodos: ['w', 'personal/x'] });
+    expect(screen.getByText('todo favs w personal/x')).toBeTruthy();
+  });
+
+  it('leaves the stars alone when an unstarred to-do moves', async () => {
+    api.updatePrefs.mockImplementation(async (patch: Partial<AppPrefs>) => ({ ...DEFAULT_PREFS, ...patch }));
+    api.changeTodo.mockResolvedValue({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      moved: { from: 'y', to: 'personal/y' },
+    });
+    await start();
+    await act(async () => toggleTodo?.('w'));
+    const before = api.updatePrefs.mock.calls.length;
+    await act(async () => {
+      await changeTodos?.([{ kind: 'move', id: 'y', scope: 'tds', to: 'personal', expect: 'v1' }]);
+    });
+    expect(api.updatePrefs.mock.calls.length).toBe(before);
   });
 });

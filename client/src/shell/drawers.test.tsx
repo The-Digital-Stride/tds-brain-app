@@ -187,8 +187,11 @@ describe('To-dos drawer', () => {
       },
     });
     render(<TodosDrawer />);
-    expect(screen.getByRole('button', { name: /Renew contract/ }).textContent).toContain('Acme Heating');
-    const second = screen.getByRole('button', { name: /Plan the pages/ }).textContent ?? '';
+    expect(
+      screen.getByRole('button', { name: /Start a chat on this: Renew contract/ }).textContent,
+    ).toContain('Acme Heating');
+    const second =
+      screen.getByRole('button', { name: /Start a chat on this: Plan the pages/ }).textContent ?? '';
     expect(second).toContain('UC AI search');
     expect(second).not.toContain('uc-ai-search');
   });

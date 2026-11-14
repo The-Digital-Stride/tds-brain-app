@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openPicker, pickerText, pickOption } from '../test/pick.ts';
-import { SearchSelect } from './SearchSelect.tsx';
+import { place, SearchSelect } from './SearchSelect.tsx';
 import type { PickOption } from './search-select.ts';
 
 const fixed: PickOption[] = [
@@ -297,6 +297,31 @@ describe('SearchSelect', () => {
     expect(up.defaultPrevented).toBe(true);
   });
 
+  it('selects the label again after a pick or Escape, so typing replaces it', async () => {
+    render(<Harness />);
+    act(() => box().focus());
+    fireEvent.click(box());
+    fireEvent.change(box(), { target: { value: 'uc' } });
+    key('Enter');
+    expect(box().value).toBe('Urban Cooling');
+    // Still focused and closed: the label is selected, ready to be typed over.
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
+    // A click on the focused box (the caret lands at the end) and ArrowDown both reselect it.
+    box().setSelectionRange(13, 13);
+    fireEvent.click(box());
+    expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
+    key('Escape');
+    box().setSelectionRange(13, 13);
+    key('ArrowDown');
+    expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
+    // Typing opens the list without selecting what was typed.
+    key('Escape');
+    fireEvent.change(box(), { target: { value: 'a' } });
+    expect(box().value).toBe('a');
+    expect(box().selectionStart).toBe(1);
+  });
+
   it('a disabled picker cannot open', () => {
     render(<Harness disabled />);
     expect(box().disabled).toBe(true);
@@ -344,5 +369,46 @@ describe('SearchSelect', () => {
   it('pickerText reads the box', () => {
     render(<Harness initial="bolt" />);
     expect(pickerText('Client')).toBe('Bolt Plumbing');
+  });
+});
+
+describe('place', () => {
+  const at = (w: number, h: number) => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(w);
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(h);
+  };
+  afterEach(() => vi.restoreAllMocks());
+
+  it('opens below, at least 260px wide, when there is room', () => {
+    at(1280, 800);
+    expect(place({ top: 100, bottom: 132, left: 400, width: 180 })).toEqual({
+      left: 400,
+      width: 260,
+      top: 136,
+      maxHeight: 320,
+    });
+  });
+
+  it('opens above when there is little room below and more above', () => {
+    at(900, 420);
+    expect(place({ top: 230, bottom: 262, left: 200, width: 180 })).toEqual({
+      left: 200,
+      width: 260,
+      bottom: 420 - 230 + 4,
+      maxHeight: 218,
+    });
+  });
+
+  it('stays below when above has even less room', () => {
+    at(900, 300);
+    expect(place({ top: 100, bottom: 132, left: 200, width: 180 }).top).toBe(136);
+  });
+
+  it('keeps 8px inside the window edges', () => {
+    at(400, 800);
+    const p = place({ top: 100, bottom: 132, left: 300, width: 180 });
+    expect(p.left + p.width).toBe(392);
+    at(240, 800);
+    expect(place({ top: 100, bottom: 132, left: 0, width: 100 })).toMatchObject({ left: 8, width: 224 });
   });
 });

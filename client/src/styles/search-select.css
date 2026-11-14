@@ -80,6 +80,16 @@
   background: var(--tint-1);
   box-shadow: inset 0 0 0 1.5px var(--blue-ink);
 }
+/* Windows High Contrast drops fills and shadows: keep the keyboard's place and the list's edge visible. */
+@media (forced-colors: active) {
+  .ss-opt[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .ss-pop {
+    border-color: CanvasText;
+  }
+}
 .ss-empty {
   margin: 0;
   padding: 8px 16px;

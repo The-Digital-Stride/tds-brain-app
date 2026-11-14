@@ -54,7 +54,7 @@ const MAX_HEIGHT = 320;
 const ROOM_NEEDED = 260;
 
 /** Where the list goes: below the box, or above when there is little room below and more above. */
-function place(box: DOMRect): Place {
+export function place(box: Pick<DOMRect, 'top' | 'bottom' | 'left' | 'width'>): Place {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const below = vh - box.bottom - GAP - EDGE;
@@ -119,17 +119,26 @@ export function SearchSelect({
     rows.find((r) => r.key === moved) ?? (typed ? rows[0] : rows.find((r) => r.option.value === value));
   const optionId = (r: ShownOption) => `${uid}-opt-${r.key}`;
 
-  const show = () => {
+  /** Selects the shown label, so the next key typed replaces it (only while it shows the label). */
+  const selectLabel = () => {
+    const box = inputRef.current;
+    if (box && document.activeElement === box) box.select();
+  };
+  /** Opens the list. `fresh`: opened by click, ArrowDown or Enter, not by typing, so the label is selected. */
+  const show = (fresh = true) => {
     if (disabled) return;
     if (!open) {
       setRecent(recentKey ? readRecent(recentKey) : []);
       setOpen(true);
+      if (fresh && text === null) selectLabel();
     }
   };
   const close = () => {
     setOpen(false);
     setText(null);
     setMoved(null);
+    // After a pick or Escape focus stays here: select the label once it is back in the box.
+    requestAnimationFrame(selectLabel);
   };
   const pick = (option: PickOption) => {
     if (option.value !== value) onChange(option.value);
@@ -234,7 +243,7 @@ export function SearchSelect({
         onChange={(e) => {
           setText(e.target.value);
           setMoved(null);
-          show();
+          show(false);
         }}
         onFocus={(e) => e.currentTarget.select()}
         onMouseDown={(e) => {
@@ -244,7 +253,7 @@ export function SearchSelect({
         onMouseUp={(e) => {
           if (!wasFocused.current) e.preventDefault();
         }}
-        onClick={show}
+        onClick={() => show()}
         onKeyDown={onKeyDown}
         onBlur={() => {
           if (open) close();

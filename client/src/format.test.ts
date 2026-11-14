@@ -48,7 +48,7 @@ describe('levelLineText', () => {
       levelLineText({ tier: 'standard', source: { kind: 'auto', reason: 'A short writing job' } }),
     ).toEqual({
       tier: 'Standard',
-      note: 'picked for this chat',
+      note: 'picked by the app for this chat',
       why: 'A short writing job',
       engine: 'Sonnet · Medium effort',
     });
@@ -68,7 +68,7 @@ describe('levelLineText', () => {
   it('falls back to the plain pick wording', () => {
     const t = levelLineText({ tier: 'standard', source: { kind: 'fallback' } });
     expect(t?.tier).toBe('Standard');
-    expect(t?.note).toBe('picked for this chat');
+    expect(t?.note).toBe("the app's usual level");
   });
   it('reads "Set by /name" for a skill with its own setting, and nothing for manual', () => {
     const t = levelLineText({ tier: null, source: { kind: 'skill-own', skill: 'deep-dive' } });

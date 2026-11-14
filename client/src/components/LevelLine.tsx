@@ -5,7 +5,8 @@ import {
   type LevelTier,
   type TurnLevel,
 } from '../../../shared/levels-contract.ts';
-import { levelLineText } from '../format.ts';
+import { aliasName, levelLineText } from '../format.ts';
+import { Icon } from '../shell/Icon.tsx';
 
 /**
  * The line under the message box in automatic mode: "Standard · picked for this chat", a "Why?"
@@ -21,6 +22,7 @@ export function LevelLine({
   onPick: (tier: LevelTier | null) => void;
 }) {
   const text = levelLineText(level);
+  const spec = level.tier ? LEVEL_TIERS[level.tier] : null;
   const [why, setWhy] = useState(false);
   const [menu, setMenu] = useState(false);
   const whyId = useId();
@@ -35,7 +37,7 @@ export function LevelLine({
     <div className="level-line">
       <p className="engine-line level-row">
         <span className="engine-text">
-          <span className="visually-hidden">Claude is working at </span>
+          <span className="visually-hidden">Level: </span>
           {text.tier ? <strong>{text.tier}</strong> : null}
           {text.tier ? ' · ' : null}
           {text.note}
@@ -46,27 +48,34 @@ export function LevelLine({
           data-variant="quiet"
           data-size="small"
           aria-expanded={why}
+          data-chevron
           aria-controls={whyId}
           onClick={() => setWhy((o) => !o)}
         >
+          <Icon name="chevron" size={14} />
           Why?
         </button>
-        <button
-          ref={menuButton}
-          type="button"
-          className="btn"
-          data-variant="quiet"
-          data-size="small"
-          aria-expanded={menu}
-          aria-controls={menuId}
-          onClick={() => setMenu((o) => !o)}
-        >
-          Change
-        </button>
+        {level.source.kind === 'skill-own' ? null : (
+          <button
+            ref={menuButton}
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            data-chevron
+            aria-label="Change the level for this chat"
+            aria-expanded={menu}
+            aria-controls={menuId}
+            onClick={() => setMenu((o) => !o)}
+          >
+            <Icon name="chevron" size={14} />
+            Change
+          </button>
+        )}
       </p>
       <p className="level-why" id={whyId} hidden={!why}>
         {text.why}
-        {text.engine ? ` It uses ${text.engine}.` : ''}
+        {spec ? ` It runs on ${aliasName(spec.model)} at ${spec.effort.toLowerCase()} effort.` : ''}
       </p>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group. */}
       <div
@@ -87,7 +96,7 @@ export function LevelLine({
             key={t}
             type="button"
             className="level-option"
-            aria-pressed={level.source.kind === 'chat' && level.tier === t}
+            aria-current={level.tier === t ? 'true' : undefined}
             onClick={() => {
               onPick(t);
               closeMenu();
@@ -131,7 +140,7 @@ export function LevelOffer({
   const used = usedTier ? ` This chat used ${LEVEL_TIERS[usedTier].label}.` : '';
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
-    <div className="level-offer" role="group" aria-label={`Team level for /${skill}`}>
+    <div className="notice level-offer" role="group" aria-label={`Team level for /${skill}`}>
       <p className="level-offer-text">{`Set a team level for /${skill}?${used}`}</p>
       <span className="level-offer-actions">
         {LEVEL_TIERS_ORDER.map((t) => (
@@ -139,7 +148,7 @@ export function LevelOffer({
             {LEVEL_TIERS[t].label}
           </button>
         ))}
-        <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onDismiss}>
+        <button type="button" className="btn" data-size="small" onClick={onDismiss}>
           Dismiss
         </button>
       </span>

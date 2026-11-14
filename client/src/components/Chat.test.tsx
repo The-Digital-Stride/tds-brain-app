@@ -306,7 +306,7 @@ describe('the level line under the message box', () => {
     h.chat = withLevel(auto);
     render(sheet());
     const line = document.querySelector('.level-row');
-    expect(line?.textContent).toContain('Standard · picked for this chat');
+    expect(line?.textContent).toContain('Standard · picked by the app for this chat');
     expect(line?.querySelector('strong')?.textContent).toBe('Standard');
     expect(screen.queryByRole('button', { name: 'Change model and effort' })).toBeNull();
   });
@@ -347,20 +347,20 @@ describe('the level line under the message box', () => {
     fireEvent.click(why);
     expect(why.getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('.level-why')?.textContent).toBe(
-      'A short writing job It uses Sonnet · Medium effort.',
+      'A short writing job It runs on Sonnet at medium effort.',
     );
   });
 
   it('the menu sets a tier for this chat, and goes back to automatic only after a choice', () => {
     h.chat = withLevel(auto);
     const { rerender } = render(sheet());
-    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Change the level for this chat' }));
     expect(screen.queryByRole('button', { name: /Back to automatic/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Quick for this chat/ }));
     expect(h.setChatLevel).toHaveBeenCalledWith('s1', 'quick');
     h.chat = withLevel({ tier: 'quick', source: { kind: 'chat' } });
     rerender(sheet());
-    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Change the level for this chat' }));
     fireEvent.click(screen.getByRole('button', { name: /Back to automatic/ }));
     expect(h.setChatLevel).toHaveBeenLastCalledWith('s1', null);
   });
@@ -368,7 +368,7 @@ describe('the level line under the message box', () => {
   it('closes the menu with Escape and puts focus back on Change', () => {
     h.chat = withLevel(auto);
     render(sheet());
-    const change = screen.getByRole('button', { name: 'Change' });
+    const change = screen.getByRole('button', { name: 'Change the level for this chat' });
     fireEvent.click(change);
     fireEvent.keyDown(screen.getByRole('button', { name: /Deep for this chat/ }), { key: 'Escape' });
     expect(change.getAttribute('aria-expanded')).toBe('false');

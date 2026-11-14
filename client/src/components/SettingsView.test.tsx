@@ -361,7 +361,11 @@ describe('Model: automatic or choose myself', () => {
     const radios = screen.getAllByRole('radio');
     expect(radios.map((r) => r.textContent)).toEqual(['Automatic (recommended)', 'Choose myself']);
     expect(radios[0]?.getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText('The app picks Quick, Standard or Deep for each chat.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.',
+      ),
+    ).toBeTruthy();
     expect(screen.queryByLabelText('Effort')).toBeNull();
   });
 
@@ -408,7 +412,7 @@ describe('Skill levels', () => {
   it('says when the skill-levels skill is not in the brain yet', () => {
     st.skillLevels = levels({ canSet: true, writable: false });
     render(<SettingsView />);
-    expect(screen.getByText(/skill-levels skill isn't in the brain yet/)).toBeTruthy();
+    expect(screen.getByText(/once the brain has the skill-levels update/)).toBeTruthy();
     expect(screen.queryByLabelText('Team level for Google Ads audit')).toBeNull();
   });
 
@@ -430,6 +434,16 @@ describe('Skill levels', () => {
     fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'post' } });
     fireEvent.change(screen.getByLabelText('Team level for Write a post'), { target: { value: 'standard' } });
     expect(st.setSkillLevel).toHaveBeenCalledWith('write-post', 'standard');
+  });
+
+  it('tells an editor how many skills have no team level, and words a pre-filled row', () => {
+    st.skillLevels = levels({
+      canSet: true,
+      levels: { 'google-ads-audit': { tier: 'standard', setBy: 'prefill', at: '2026-11-14T09:00:00Z' } },
+    });
+    render(<SettingsView />);
+    expect(screen.getByText(/no team level yet\. Search to set one\./)).toBeTruthy();
+    expect(screen.getByText('Standard · suggested by the app and reviewed, 14 Nov 2026')).toBeTruthy();
   });
 
   it('is absent on an older server', () => {

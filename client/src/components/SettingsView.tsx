@@ -134,16 +134,16 @@ export function SettingsView() {
             <div className="setting level-mode">
               <div>
                 <p className="setting-label" id="level-mode-label">
-                  Model
+                  Level
                 </p>
                 <p className="setting-help" id="level-mode-help">
                   {prefs.levelMode === 'auto'
-                    ? 'The app picks Quick, Standard or Deep for each chat.'
+                    ? 'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.'
                     : 'You choose the model and effort below for every chat.'}
                 </p>
               </div>
               <Seg<LevelMode>
-                label="How the model is chosen"
+                label="How the level is chosen"
                 value={prefs.levelMode}
                 options={[
                   { value: 'auto', label: 'Automatic (recommended)' },
@@ -238,9 +238,8 @@ export function SettingsView() {
 
 const WHEN = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-/** "ian-hancock" → "Ian Hancock"; the reviewed first batch says so. */
+/** "ian-hancock" → "Ian Hancock". */
 function setByWords(slug: string): string {
-  if (slug === 'prefill') return 'Pre-filled and reviewed';
   return slug
     .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -277,17 +276,23 @@ function SkillLevelsSection({
       .sort((a, b) => a.title.localeCompare(b.title, 'en-GB'));
   }, [levels.levels, skills, titles, query, editable]);
   const total = Object.keys(levels.levels).length;
+  const missing = skills.filter((s) => !(s.name in levels.levels)).length;
   return (
     <section aria-labelledby="levels-h">
       <h2 id="levels-h">Skill levels</h2>
       <p className="setting-help">
         How hard Claude works when a chat runs a skill. A skill's own setting always wins.
       </p>
+      {editable && missing > 0 ? (
+        <p className="setting-help" id="levels-missing">
+          {missing === 1 ? '1 skill has' : `${missing} skills have`} no team level yet. Search to set one.
+        </p>
+      ) : null}
       {editable ? null : (
         <p className="setting-help" id="levels-readonly">
-          {levels.writable
-            ? 'Only Owners and scouts can change these.'
-            : "Only Owners and scouts can change these, and the skill-levels skill isn't in the brain yet."}
+          {levels.canSet
+            ? 'You can change these once the brain has the skill-levels update. Sync the brain, or ask an Owner.'
+            : 'Only Owners and scouts can change these.'}
         </p>
       )}
       {total > 8 || editable ? (
@@ -320,7 +325,7 @@ function SkillLevelsSection({
                   <span className="setting-label">{r.title}</span>
                   <span className="setting-help">
                     {level
-                      ? `${tier ? LEVEL_TIERS[tier].label : 'Unknown level'} · set by ${setByWords(level.setBy)}${whenWords(level.at) ? `, ${whenWords(level.at)}` : ''}`
+                      ? `${tier ? LEVEL_TIERS[tier].label : 'Unknown level'} · ${level.setBy === 'prefill' ? 'suggested by the app and reviewed' : `set by ${setByWords(level.setBy)}`}${whenWords(level.at) ? `, ${whenWords(level.at)}` : ''}`
                       : 'No team level'}
                   </span>
                 </div>

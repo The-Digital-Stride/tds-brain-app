@@ -80,7 +80,7 @@ export function aliasName(alias: string): string {
 export interface LevelLineText {
   /** "Standard" (bold), or null when no tier applies. */
   tier: string | null;
-  /** What follows it, e.g. "picked for this chat". */
+  /** What follows it, e.g. "picked by the app for this chat". */
   note: string;
   /** One plain sentence for "Why?". */
   why: string;
@@ -119,11 +119,11 @@ export function levelLineText(level: TurnLevel): LevelLineText | null {
     case 'fallback':
       return {
         tier: label,
-        note: 'picked for this chat',
+        note: "the app's usual level",
         why: "The app couldn't pick in time, so it used Standard.",
         engine,
       };
     default:
-      return { tier: label, note: 'picked for this chat', why: source.reason, engine };
+      return { tier: label, note: 'picked by the app for this chat', why: source.reason, engine };
   }
 }

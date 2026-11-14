@@ -284,7 +284,7 @@ describe('Skills drawer', () => {
     expect(screen.getByText('Still being tested')).toBeTruthy();
   });
 
-  it('shows a tier chip for a team level, and "Own setting" for a skill with its own', () => {
+  it('shows a tier chip for a team level, and "Set by skill" for a skill with its own', () => {
     setStore({
       skillLevels: { levels: { b: { tier: 'deep', setBy: 'x', at: '' } }, canSet: false, writable: true },
     });
@@ -293,7 +293,7 @@ describe('Skills drawer', () => {
     render(<SkillsDrawer />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), { target: { value: 'e' } });
     const chips = Array.from(document.querySelectorAll('.skill-level-chip')).map((c) => c.textContent);
-    expect(chips.sort()).toEqual(['Deep', 'Own setting']);
+    expect(chips.sort()).toEqual(['Deep', 'Set by skill']);
   });
 
   it('shows no chip on an older server', () => {

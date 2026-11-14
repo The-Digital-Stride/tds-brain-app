@@ -237,10 +237,16 @@ export function ChatView() {
               usedTier={chat.level?.tier ?? null}
               onSet={(tier) => {
                 void setSkillLevel?.(offerSkill, tier).then((ok) => {
-                  if (ok) dismissLevelOffer?.(sessionId);
+                  if (ok) {
+                    dismissLevelOffer?.(sessionId);
+                    requestComposerFocus?.();
+                  }
                 });
               }}
-              onDismiss={() => dismissLevelOffer?.(sessionId)}
+              onDismiss={() => {
+                dismissLevelOffer?.(sessionId);
+                requestComposerFocus?.();
+              }}
             />
           ) : null}
           {engine && !levelShown ? (

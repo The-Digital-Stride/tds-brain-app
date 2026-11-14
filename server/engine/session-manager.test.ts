@@ -2498,6 +2498,15 @@ describe('levels', () => {
     return e?.type === 'level' ? e.level : undefined;
   }
 
+  /** Every event of a chat from now on, live, after what the replay log holds (it keeps one level event). */
+  function watch(id: string): () => ChatEvent[] {
+    const seen: ChatEvent[] = [];
+    const sub = mgr.subscribe(id, 0, (item) => seen.push(item.event));
+    const replay = sub.replay.map((r) => r.event);
+    return () => [...replay, ...seen];
+  }
+  const isOffer = (e: ChatEvent) => e.type === 'level' && !!e.unlevelledSkill;
+
   /** Calls the engine's PostToolUse(Skill) hook as Claude Code would after a Skill step. */
   async function ranSkill(q: FakeQuery | undefined, skill: string, extra: Record<string, unknown> = {}) {
     const matcher = q?.options.hooks?.PostToolUse?.[0];
@@ -2615,10 +2624,15 @@ describe('levels', () => {
     const fx = setupLevels({ picks: () => ready(QUICK) });
     await auto();
     const s = await mgr.start({ prompt: '/audit Acme' });
+    const seen = watch(s.id);
     await flush();
     expect(fx.picks).toEqual([]);
     expect(fx.log).toEqual(['model:opus', 'effort:high', 'push:/audit Acme']);
-    expect(lastLevel(s.id)).toEqual({ tier: 'deep', source: { kind: 'team', skill: 'audit' } });
+    // Deep for its reply; once it ends, the line shows what a plain message would run at.
+    expect(seen().flatMap((e) => (e.type === 'level' ? [e.level] : []))).toEqual([
+      { tier: 'deep', source: { kind: 'team', skill: 'audit' } },
+      { tier: 'standard', source: { kind: 'fallback' } },
+    ]);
     await mgr.send(s.id, 'Thanks, what next?');
     await flush();
     expect(fx.picks).toEqual(['Thanks, what next?']);
@@ -2713,6 +2727,7 @@ describe('levels', () => {
     const fx = setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(STANDARD) });
     await auto();
     const s = await mgr.start({ prompt: 'Look at Acme [skill]' });
+    const seen = watch(s.id);
     await flush();
     expect([...fx.log, ...log]).toEqual([
       'model:opus',
@@ -2720,7 +2735,14 @@ describe('levels', () => {
       'push:Look at Acme [skill]',
       'after-skill',
     ]);
-    expect(lastLevel(s.id)).toEqual({ tier: 'deep', source: { kind: 'team', skill: 'audit' } });
+    expect(seen().flatMap((e) => (e.type === 'level' ? [e.level.tier] : []))).toEqual([
+      'standard',
+      'deep',
+      'standard',
+    ]);
+    expect(seen().filter((e) => e.type === 'level')[1]).toMatchObject({
+      level: { tier: 'deep', source: { kind: 'team', skill: 'audit' } },
+    });
 
     const low: string[] = [];
     const fx2 = setupLevels({ script: skillScript(low, 'notes'), picks: () => ready(STANDARD) });
@@ -2827,11 +2849,16 @@ describe('levels', () => {
     const s = await mgr.start({ prompt: 'first [skill]' });
     await flush();
     expect(fx.log.slice(-2)).toEqual(['model:opus', 'effort:high']);
+    const seen = watch(s.id);
     await mgr.send(s.id, '/own-skill [skill]');
     await flush();
     // Back to Quick at turn start; no switch mid-reply, so the skill's own model stays on top.
     expect(fx.log.slice(3)).toEqual(['model:haiku', 'effort:medium']);
-    expect(lastLevel(s.id)).toEqual({ tier: null, source: { kind: 'skill-own', skill: 'own-skill' } });
+    expect(seen().filter((e) => e.type === 'level')).toContainEqual({
+      type: 'level',
+      level: { tier: null, source: { kind: 'skill-own', skill: 'own-skill' } },
+    });
+    expect(lastLevel(s.id)?.tier).toBe('quick');
   });
 
   it('offers a team level once, after a skill that has none', async () => {
@@ -2847,16 +2874,72 @@ describe('levels', () => {
     expect(offers[0]).toMatchObject({ unlevelledSkill: 'unlevelled', level: { tier: 'standard' } });
   });
 
-  it('offers it for a typed /name with no level, but not for an unknown name or a helper', async () => {
+  it('offers it for a typed /name with no level once the reply ends, but not for an unknown name or a helper', async () => {
     const log: string[] = [];
     setupLevels({ script: skillScript(log, 'not-in-brain'), picks: () => ready(STANDARD) });
     await auto();
     const s = await mgr.start({ prompt: '/gm' });
+    const seen = watch(s.id);
     await flush();
+    // Only after Claude ran it: the offer follows the reply and the turn's end, never before.
+    const first = seen();
+    const offerAt = first.findIndex(isOffer);
+    expect(offerAt).toBeGreaterThan(first.findIndex((e) => e.type === 'assistant-message'));
+    expect(offerAt).toBeGreaterThan(first.findIndex((e) => e.type === 'turn-end'));
+    expect(first[offerAt]).toMatchObject({ unlevelledSkill: 'gm', level: { tier: 'standard' } });
     await mgr.send(s.id, '/nothing-here [skill]');
     await flush();
-    const offers = events(mgr, s.id).filter((e) => e.type === 'level' && e.unlevelledSkill);
+    const offers = seen().filter(isOffer);
     expect(offers.map((e) => e.type === 'level' && e.unlevelledSkill)).toEqual(['gm']);
+  });
+
+  it('never offers for a typed /name stopped before it reaches Claude', async () => {
+    const late = latePick();
+    let first = true;
+    const fx = setupLevels({
+      picks: () => {
+        if (!first) return ready(STANDARD);
+        first = false;
+        return { now: late.attempt.settled, settled: late.attempt.settled };
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: '/gm' });
+    const seen = watch(s.id);
+    await flush();
+    await mgr.interrupt(s.id);
+    late.arrive(STANDARD);
+    await flush();
+    expect(fx.queries[0]?.received).toEqual([]);
+    expect(seen().filter(isOffer)).toEqual([]);
+    // Sent this time: the offer comes, once the reply ends.
+    await mgr.send(s.id, '/gm');
+    await flush();
+    expect(fx.queries[0]?.received).toHaveLength(1);
+    expect(seen().filter(isOffer)).toHaveLength(1);
+  });
+
+  it('when a raised or team-level reply ends, the line shows the level the next message runs at', async () => {
+    const log: string[] = [];
+    setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    const seen = watch(s.id);
+    await flush();
+    const shown = () => seen().flatMap((e) => (e.type === 'level' ? [e.level] : []));
+    const quick: TurnLevel = { tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } };
+    const deep: TurnLevel = { tier: 'deep', source: { kind: 'team', skill: 'audit' } };
+    // Raised mid-reply, then back to the chat's own level once it ends.
+    expect(shown()).toEqual([quick, deep, quick]);
+    expect(lastLevel(s.id)).toEqual(quick);
+    // A typed /name with a team level runs at it, then the line goes back.
+    await mgr.send(s.id, '/audit Acme');
+    await flush();
+    expect(shown()).toEqual([quick, deep, quick, deep, quick]);
+    // Nothing changed: no repeat.
+    await mgr.send(s.id, 'thanks');
+    await flush();
+    expect(shown()).toEqual([quick, deep, quick, deep, quick]);
   });
 
   it('keeps only the newest level event in the replay log', async () => {

@@ -557,6 +557,8 @@ interface Session {
   levelKey: string | null;
   /** Skills already offered for a team level in this chat. */
   offered: Set<string>;
+  /** A typed `/name` with no level: offered when its reply ends, only if Claude got the message. */
+  pendingOffer: string | null;
   /** A level to store once Claude Code has given the chat its id. */
   unsavedLevel: ChatLevelRecord | null;
 }
@@ -839,6 +841,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       level: null,
       levelKey: null,
       offered: new Set(),
+      pendingOffer: null,
       unsavedLevel: null,
     };
   }
@@ -985,6 +988,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     if (raw.type === 'result') {
       s.turnRunning = false;
       s.interruptRequested = false;
+      if (levels) levelAfterTurn(s);
       settleAll(s, 'The turn ended.');
       setState(s, 'idle');
       armIdle(s);
@@ -1172,6 +1176,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.turnRunning = true;
     s.interruptRequested = false;
     s.turnSent = false;
+    s.pendingOffer = null;
     const needsEngine = !s.query;
     setState(s, needsEngine ? 'starting' : 'working');
     const messageId = `u${++s.userCounter}`;
@@ -1375,8 +1380,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         s.turnTier = resolved.level.tier;
         s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
         if (q && s.query === q) await applyChoice(s, q, resolved.choice);
-        if (skill && unlevelled) offerTeamLevel(s, skill, resolved.level);
-        else setLevel(s, resolved.level);
+        // Offered once the reply ends (levelAfterTurn), so never for a message stopped before it is sent.
+        s.pendingOffer = skill && unlevelled && !s.offered.has(skill) ? skill : null;
+        setLevel(s, resolved.level);
       })
       .catch(() => {
         log('Could not set the level of a chat.');
@@ -1387,6 +1393,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           // Stopped before Claude saw it: end the turn here, as the engine would have.
           s.turnRunning = false;
           s.interruptRequested = false;
+          s.pendingOffer = null;
           emit(s, { type: 'turn-end', ok: false, interrupted: true, durationMs: null, errorText: null });
           setState(s, 'idle');
           armIdle(s);
@@ -1394,6 +1401,27 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         }
         s.turnSent = true;
         input.push(message);
+      });
+  }
+
+  /**
+   * A reply ended: the line shows the level the next message runs at (a raise or a team level was for
+   * this reply only), with the offer for a typed `/name` that has no level. On the choice chain, so
+   * the next turn's own level always lands after it.
+   */
+  function levelAfterTurn(s: Session): void {
+    const offer = s.turnSent ? s.pendingOffer : null;
+    s.pendingOffer = null;
+    if (levelMode !== 'auto') return;
+    s.choiceChain = s.choiceChain
+      .then(async () => {
+        if (s.closing) return;
+        const { resolved } = await levelFor(s, null, null);
+        if (offer) offerTeamLevel(s, offer, resolved.level);
+        else setLevel(s, resolved.level);
+      })
+      .catch(() => {
+        log('Could not show the level of a chat.');
       });
   }
 

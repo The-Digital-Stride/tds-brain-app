@@ -10,7 +10,7 @@ import { starterSkills } from './words.ts';
 function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
   const { startSkill, togglePin, skillLevels } = useStore();
   const teamTier = skillLevels?.levels[skill.name]?.tier;
-  const chip = skill.ownLevel ? 'Own setting' : isLevelTier(teamTier) ? LEVEL_TIERS[teamTier].label : null;
+  const chip = skill.ownLevel ? 'Set by skill' : isLevelTier(teamTier) ? LEVEL_TIERS[teamTier].label : null;
   const { dispatch, modes } = useShell();
   // The description is long (it tells Claude when to use the skill), so a row shows one line of it.
   const [open, setOpen] = useState(false);

@@ -424,7 +424,7 @@
   grid-column: 1 / -1;
 }
 
-/* A skill's team level (or "Own setting") beside its title in the Skills drawer. */
+/* A skill's team level (or "Set by skill") beside its title in the Skills drawer. */
 .skill-level-chip {
   font-weight: 500;
 }

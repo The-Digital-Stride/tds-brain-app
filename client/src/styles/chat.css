@@ -1431,8 +1431,7 @@
   display: grid;
   gap: 2px;
   border-radius: 10px;
-  background: var(--glass-solid);
-  box-shadow: var(--lift-2);
+  background: var(--tint-1);
 }
 .level-menu[hidden],
 .level-why[hidden] {
@@ -1452,7 +1451,7 @@
 .level-option:hover {
   background: var(--tint-1);
 }
-.level-option[aria-pressed="true"] {
+.level-option[aria-current="true"] {
   background: var(--wash);
 }
 .level-option-name {
@@ -1465,14 +1464,10 @@
 }
 .level-offer {
   margin: 4px 16px 0;
-  padding: 8px 10px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
-  border-radius: 10px;
-  background: var(--tint-1);
-  font-size: 12.5px;
 }
 .level-offer-text {
   margin: 0;

@@ -1,16 +1,25 @@
 import { type KeyboardEvent, type RefObject, useEffect, useId, useRef, useState } from 'react';
-import { ROUTES, type SessionState } from '../../../shared/contract.ts';
-import { type ChatPage, type ChatPageVersion, PAGE_NOTE_MAX } from '../../../shared/pages-contract.ts';
+import { type ChatFile, ROUTES, type SessionState } from '../../../shared/contract.ts';
+import {
+  type ChatPage,
+  type ChatPageVersion,
+  PAGE_NOTE_MAX,
+  type PageAskRequest,
+} from '../../../shared/pages-contract.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 
 /** What the form area at the foot of the page viewer says and allows (plan decision 6). */
 export type PageFormState = 'ready' | 'running' | 'waiting' | 'replied' | 'closed';
 
-/** What was asked from this viewer: the page's version count then, and whether Claude has started on it. */
+/**
+ * What was asked from this viewer: the page's write mark then (`writeMark`), and whether Claude has
+ * started on it.
+ */
 export interface PageAsked {
-  versions: number;
+  mark: string;
   sawBusy: boolean;
+  kind?: 'change' | 'brand';
 }
 
 const BUSY: SessionState[] = ['starting', 'working'];
@@ -18,19 +27,29 @@ const BUSY: SessionState[] = ['starting', 'working'];
 /**
  * The chat's state as the form area shows it. An idle chat takes a message like the composer does;
  * only a closed chat does not. After a request from here, "running" holds until Claude has started and
- * finished, and a finish with no new version of the page says "replied".
+ * finished, and a finish in which Claude didn't write the page says "replied". Whether it wrote it is
+ * told by the write mark, not by version numbers: the server files the previous draft as a version
+ * the moment a message is sent, so a new number alone doesn't mean the page changed.
  */
 export function pageFormState(
   sessionState: SessionState | null,
   asked: PageAsked | null,
-  versionCount: number,
+  mark: string,
 ): PageFormState {
   if (sessionState === 'closed') return 'closed';
   if (sessionState !== null && BUSY.includes(sessionState)) return 'running';
   if (sessionState === 'waiting') return 'waiting';
   if (asked && !asked.sawBusy) return 'running';
-  if (asked && versionCount <= asked.versions) return 'replied';
+  if (asked && mark === asked.mark) return 'replied';
   return 'ready';
+}
+
+/**
+ * Changes exactly when Claude writes or publishes the page: the id of the newest step that touched
+ * it (the list is capped, so its length can't be used).
+ */
+export function writeMark(page: ChatPage | null): string {
+  return page?.toolUseIds.at(-1) ?? '';
 }
 
 /** "Version 3" with claude.ai's own number when it gave one, else "Version 2 of 3". */
@@ -46,10 +65,14 @@ const STATUS_WORDS: Record<PageFormState, string> = {
   closed: 'Reopen this chat to suggest changes.',
 };
 
+/** The in-progress copy (O5) as a version: `n = 0`, served by the same route. */
+const DRAFT: ChatPageVersion = { n: 0, remote: null, at: null, hasCopy: true };
+
 /**
  * The body of the page viewer (`FileViewer` draws the drawer around it): the page in a locked-down
  * frame, its versions, and the form for asking Claude to change it. Plan 2026-11-14-artifacts-in-app,
- * decisions 3 to 7. The frame's sandbox never gets `allow-same-origin`, so the page can't reach the app.
+ * decisions 3 to 7 and revision 2. The frame's sandbox never gets `allow-same-origin`, so the page
+ * can't reach the app.
  */
 export function PageStage({
   chat,
@@ -57,56 +80,84 @@ export function PageStage({
   headingId,
   headingRef,
   onClose,
+  onOpenInDocuments,
 }: {
   chat: string;
   pageKey: string;
   headingId: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
   onClose: () => void;
+  /** Opens the page's source file in Documents (the viewer closes itself first). */
+  onOpenInDocuments?: (file: ChatFile) => void;
 }) {
-  const { chats, sessions, boot, askPage, openChat } = useStore();
+  const { chats, sessions, askPage, openChat } = useStore();
   const snapshot = chats[chat];
   const page: ChatPage | null = (snapshot?.files.pages ?? []).find((p) => p.key === pageKey) ?? null;
   const live = sessions?.live.find((s) => s.id === chat);
   const sessionState: SessionState | null = snapshot?.sessionState ?? live?.state ?? null;
+  const sourceFile = page?.fileKey
+    ? (snapshot?.files.files.find((f) => f.key === page.fileKey) ?? null)
+    : null;
 
-  const versions = page?.versions ?? [];
+  const numbered = page?.versions ?? [];
+  const draft = page?.draft === true;
+  const versions = draft ? [...numbered, DRAFT] : numbered;
   const newest = versions[versions.length - 1] ?? null;
+  const mark = writeMark(page);
   // null follows the newest version; a choice of an older one stays put.
   const [picked, setPicked] = useState<number | null>(null);
   const shown = (picked !== null ? versions.find((v) => v.n === picked) : null) ?? newest;
   const following = shown !== null && shown === newest;
 
-  // A new version while on the newest: the frame moves to it (its src changes) and a polite "Updated" says so.
   const [announce, setAnnounce] = useState('');
-  const lastNewest = useRef<number | null>(newest?.n ?? null);
+  const [copied, setCopied] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  // Messages are read once, then cleared.
   useEffect(() => {
-    const n = newest?.n ?? null;
-    if (n !== null && lastNewest.current !== null && n > lastNewest.current && following)
-      setAnnounce('Updated');
-    lastNewest.current = n;
-  }, [newest?.n, following]);
+    if (!announce) return;
+    const t = setTimeout(() => setAnnounce(''), 4000);
+    return () => clearTimeout(t);
+  }, [announce]);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  // Claude wrote the page while the newest is shown: the frame reloads (frameId) and a polite line says so.
+  const lastMark = useRef<string>(mark);
+  useEffect(() => {
+    const last = lastMark.current;
+    lastMark.current = mark;
+    if (mark !== last && last !== '' && following) setAnnounce('Page updated.');
+  }, [mark, following]);
+
+  // The in-progress copy is rewritten as Claude works: any sign the page changed reloads its frame.
+  const draftStamp = draft ? `${page?.order ?? 0}-${page?.toolUseIds.length ?? 0}` : '';
 
   const [note, setNote] = useState('');
-  const [failure, setFailure] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [asked, setAsked] = useState<PageAsked | null>(null);
+  const [downloadedN, setDownloadedN] = useState<number | null>(null);
   const busy = sessionState !== null && (BUSY.includes(sessionState) || sessionState === 'waiting');
   useEffect(() => {
     if (busy) setAsked((a) => (a && !a.sawBusy ? { ...a, sawBusy: true } : a));
   }, [busy]);
-  // A new version ends the wait: the form is ready again.
-  const versionCount = versions.length;
+  // A write to the page after the ask ends the wait once the turn is over (the form shows "running" until then).
   useEffect(() => {
-    setAsked((a) => (a && versionCount > a.versions ? null : a));
-  }, [versionCount]);
+    setAsked((a) => (a && mark !== a.mark ? null : a));
+  }, [mark]);
 
-  const form = pageFormState(sessionState, asked, versionCount);
+  const form = pageFormState(sessionState, asked, mark);
   const canSend = (form === 'ready' || form === 'replied') && !sending;
-  const hasBranding = boot?.skills.some((s) => s.name === 'tds-doc') === true;
 
-  const [copied, setCopied] = useState('');
+  // Frame self-navigation guard: a sandboxed page that navigates itself loads a second time.
+  const [reloads, setReloads] = useState(0);
+  const [stopped, setStopped] = useState<string | null>(null);
+  const loads = useRef<{ id: string; count: number }>({ id: '', count: 0 });
+
   const noteId = useId();
+  const statusId = useId();
 
   if (!page || !shown) {
     return (
@@ -128,7 +179,7 @@ export function PageStage({
     );
   }
 
-  const send = async (req: { kind: 'change'; note: string } | { kind: 'brand' }) => {
+  const send = async (req: PageAskRequest) => {
     setSending(true);
     setFailure(null);
     const reason = await askPage(chat, pageKey, req);
@@ -138,13 +189,18 @@ export function PageStage({
       return;
     }
     if (req.kind === 'change') setNote('');
-    setAsked({ versions: versionCount, sawBusy: false });
+    setDownloadedN(null);
+    setAsked({ mark, sawBusy: busy, kind: req.kind });
     setAnnounce('');
   };
   const submit = () => {
     const text = note.trim();
     if (!canSend || !text) return;
     void send({ kind: 'change', note: text });
+  };
+  const fileCopy = () => {
+    if (!canSend) return;
+    void send({ kind: 'brand' });
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
@@ -156,9 +212,11 @@ export function PageStage({
     if (!page.url) return;
     try {
       await navigator.clipboard.writeText(page.url);
-      setCopied('Link copied');
+      setFailure(null);
+      setCopied(true);
+      setAnnounce('Link copied');
     } catch {
-      setCopied("Couldn't copy the link");
+      setFailure("Couldn't copy the link. Select it on claude.ai and copy it from there.");
     }
   };
 
@@ -178,7 +236,30 @@ export function PageStage({
   };
 
   const index = versions.indexOf(shown);
-  const status = STATUS_WORDS[form];
+  const isDraft = shown.n === 0;
+  const frameId = `${page.key}-${shown.n}-${isDraft ? draftStamp : ''}-${reloads}`;
+  const onFrameLoad = () => {
+    const l = loads.current;
+    if (l.id !== frameId) loads.current = { id: frameId, count: 1 };
+    else l.count += 1;
+    if (loads.current.count > 1) setStopped(frameId);
+  };
+  const frameStopped = stopped === frameId;
+  const offerFiling = form === 'ready' && downloadedN === shown.n;
+  const status =
+    form === 'running' && asked?.kind === 'brand'
+      ? 'Asked Claude to file the TDS-branded copy.'
+      : offerFiling
+        ? "Downloaded. Want a copy filed in the client's folder too?"
+        : STATUS_WORDS[form];
+  // The draft stays the newest copy after Claude's reply until the person's next message (O4): it is
+  // "in progress" only while Claude is still running, and simply "Latest" after that.
+  const working = sessionState !== null && BUSY.includes(sessionState);
+  const draftWorking = isDraft && working;
+  const heading = (v: ChatPageVersion) =>
+    v.n === 0 ? (working ? 'In progress' : 'Latest') : versionLabel(v, numbered.indexOf(v), numbered.length);
+  const titleSuffix = draftWorking ? ' (in progress)' : versions.length > 1 ? ` (${heading(shown)})` : '';
+  const sendBlocked = !canSend || note.trim() === '';
 
   return (
     <>
@@ -190,14 +271,19 @@ export function PageStage({
           <p className="viewer-place">Page from this chat</p>
         </div>
         <div className="viewer-actions">
-          {hasBranding ? (
-            <button
-              type="button"
+          {shown.hasCopy ? (
+            <a
               className="btn"
-              disabled={!canSend}
-              onClick={() => void send({ kind: 'brand' })}
+              href={ROUTES.chatPageBranded(chat, page.key, shown.n)}
+              download
+              onClick={() => setDownloadedN(shown.n)}
             >
-              Convert to TDS branding
+              Download with TDS branding
+            </a>
+          ) : null}
+          {sourceFile?.item && onOpenInDocuments ? (
+            <button type="button" className="btn" onClick={() => onOpenInDocuments(sourceFile)}>
+              Open in Documents
             </button>
           ) : null}
           {page.url ? (
@@ -207,7 +293,7 @@ export function PageStage({
                 <span className="visually-hidden"> (opens in a new tab)</span>
               </a>
               <button type="button" className="btn" onClick={() => void copy()}>
-                Copy link
+                {copied ? 'Copied' : 'Copy link'}
               </button>
             </>
           ) : null}
@@ -228,14 +314,15 @@ export function PageStage({
                 setPicked(n === newest?.n ? null : n);
               }}
             >
-              {versions.map((v, i) => (
+              {versions.map((v) => (
                 <option key={v.n} value={v.n}>
-                  {versionLabel(v, i, versions.length)}
+                  {heading(v)}
                 </option>
               ))}
             </select>
           </label>
         ) : null}
+        {draftWorking ? <p className="notice">Claude is still working on this page.</p> : null}
         {page.live ? (
           <p className="notice" data-level="warning">
             Some parts of this page only work on claude.ai.
@@ -246,35 +333,54 @@ export function PageStage({
             Some files this page uses aren't shown here.
           </p>
         ) : null}
-        {shown.hasCopy ? (
+        {!shown.hasCopy ? (
+          <p className="notice">
+            This version isn't kept in the app.{page.url ? ' Open it on claude.ai.' : ''}
+          </p>
+        ) : frameStopped ? (
+          <div className="notice" data-level="warning">
+            <p>This page tried to open another site, so it was stopped.</p>
+            <button type="button" className="btn" onClick={() => setReloads((n) => n + 1)}>
+              Show the page again
+            </button>
+          </div>
+        ) : (
           <iframe
-            key={`${page.key}-${shown.n}`}
+            key={frameId}
             className="page-frame"
-            title={`Page: ${page.title} (${versionLabel(shown, index, versions.length)})`}
+            title={`Page: ${page.title}${titleSuffix}`}
             src={ROUTES.chatPage(chat, page.key, shown.n)}
             sandbox="allow-scripts allow-popups"
             referrerPolicy="no-referrer"
+            onLoad={onFrameLoad}
           />
-        ) : (
-          <p className="notice">This version isn't kept in the app. Open it on claude.ai.</p>
         )}
         <span className="visually-hidden" role="status">
-          {announce || copied}
+          {announce}
         </span>
       </section>
       <footer className="page-ask">
-        {status || form === 'waiting' || form === 'replied' ? (
-          <div className="page-ask-state">
-            <p role="status" className="page-ask-line">
-              {status}
-            </p>
-            {form === 'waiting' || form === 'replied' ? (
-              <button type="button" className="btn" data-size="small" onClick={goToChat}>
-                Go to chat
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="page-ask-state">
+          <p role="status" id={statusId} className="page-ask-line">
+            {status}
+          </p>
+          {offerFiling ? (
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              aria-disabled={!canSend}
+              onClick={fileCopy}
+            >
+              File in client's folder
+            </button>
+          ) : null}
+          {form === 'waiting' || form === 'replied' ? (
+            <button type="button" className="btn" data-size="small" onClick={goToChat}>
+              Go to chat
+            </button>
+          ) : null}
+        </div>
         {form !== 'closed' ? (
           <div className="page-ask-form">
             <label htmlFor={noteId}>Suggest a change</label>
@@ -285,17 +391,22 @@ export function PageStage({
                 rows={2}
                 maxLength={PAGE_NOTE_MAX}
                 value={note}
-                disabled={!canSend}
-                onChange={(e) => setNote(e.target.value)}
+                readOnly={!canSend}
+                aria-disabled={!canSend}
+                aria-describedby={statusId}
+                onChange={(e) => {
+                  if (canSend) setNote(e.target.value);
+                }}
                 onKeyDown={onKeyDown}
               />
               <button
                 type="button"
                 className="btn"
                 data-variant="primary"
-                disabled={!canSend || note.trim() === ''}
+                aria-disabled={sendBlocked}
                 onClick={submit}
               >
+                <Icon name="send" size={16} />
                 Send
               </button>
             </div>

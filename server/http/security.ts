@@ -43,13 +43,17 @@ export const PAGE_CSP =
 export const PDF_CSP = "default-src 'none'; object-src 'self'; frame-ancestors 'self'";
 
 /**
- * `GET ROUTES.chatPage(…)` (a page Claude published, plan 2026-11-14-artifacts-in-app, decision 3)
+ * `GET ROUTES.chatPage(…)` (a page Claude wrote in a chat, plan 2026-11-14-artifacts-in-app, decision 3)
  * replaces the app's policy with this one, on success and on error. The page's scripts run in an
  * opaque origin (`sandbox` without `allow-same-origin`): no cookies, no reach into the app or its API.
  * It may load only what claude.ai lets artifacts load (these script, style and font hosts), nothing
- * else: no fetches, no pictures from the web (no beacon), no forms. Popups it opens stay sandboxed
- * (never `allow-popups-to-escape-sandbox`) and it can never move the app's tab (no
- * `allow-top-navigation*`). Only the app itself may frame it.
+ * else: no fetches, no pictures from the web, no forms. Popups it opens stay sandboxed (never
+ * `allow-popups-to-escape-sandbox`) and it can never move the app's tab (no `allow-top-navigation*`).
+ * Only the app itself may frame it.
+ *
+ * Not a seal: a page can still send its own contents out by navigating itself (its frame) to another
+ * site with them in the address. The viewer notices a second load of the frame and replaces it with a
+ * notice (security review 2); what a page holds is what Claude wrote in this chat.
  */
 export const PAGE_PREVIEW_CSP = [
   'sandbox allow-scripts allow-popups',
@@ -65,9 +69,21 @@ export const PAGE_PREVIEW_CSP = [
   "frame-ancestors 'self'",
 ].join('; ');
 
+/**
+ * The branded copy's own `<meta>` policy (O2): the preview policy without `sandbox` (the wrapper's
+ * frame carries the sandbox as an attribute, and a meta policy can't set it) and `frame-ancestors`
+ * (ignored in a meta policy). Derived from the one constant so the two never drift.
+ */
+export const PAGE_WRAPPER_CSP = PAGE_PREVIEW_CSP.split('; ')
+  .filter((d) => !/^(sandbox|frame-ancestors)(\s|$)/.test(d))
+  .join('; ');
+
 const LIBRARY_FRAME_PREFIXES = ['/api/library/page/', '/api/library/pdf/'];
-/** `ROUTES.chatPage`: one version of a chat's page (any last segment but `ask`, which is JSON). */
-const CHAT_PAGE_PATH = /^\/api\/sessions\/[^/]+\/pages\/[^/]+\/(?!ask$)[^/]+$/;
+/**
+ * `ROUTES.chatPage` (any last segment but `ask`, which is JSON) and `ROUTES.chatPageBranded` (a
+ * download, whose errors are the same small page).
+ */
+const CHAT_PAGE_PATH = /^\/api\/sessions\/[^/]+\/pages\/[^/]+\/(?:(?!ask$)[^/]+|[^/]+\/branded)$/;
 
 /**
  * True for the routes shown in a frame (a library page or PDF, a chat's page), whose errors are HTML

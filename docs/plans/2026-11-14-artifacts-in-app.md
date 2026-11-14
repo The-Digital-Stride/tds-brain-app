@@ -22,6 +22,112 @@ document ("Convert to TDS branding") from the viewer.
   and `clients/photobubble/reports/podww-2026-11-12-cheat-sheet.html`.
 - Base branch `main`. No explainer.
 
+## Revision 2 (after the first build): pages are the HTML Claude writes; branding is a wrapper
+
+Found in the browser check: the app's chats (Agent SDK, entrypoint `sdk-ts`) are never offered the
+Artifact tool. Every Artifact call in local transcripts came from the terminal, and setting
+`enableArtifact: true` in the SDK's settings changes nothing (probed: identical tool lists). The user
+then decided (fixed): show pages visually in the app from the chat and the client's storage, with the
+claude.ai link when one exists; "Convert to TDS branding" WRAPS the page in a TDS presentation bar
+(not a rebuild with tds-doc), like
+`clients/weightmans/landing-pages/solihull-divorce/review/solihull-2026-11-06-review-tds.html`; the
+branded copy goes to the client's folder (filed by Claude) AND is downloadable.
+
+These revisions replace the matching parts of decisions 1, 2, 5 and 7 below. Everything else stands.
+
+R1. **A page is an HTML file Claude writes in the chat.** A successful `Write`, `Edit` or `MultiEdit`
+   (any parent) of an absolute `.html`/`.htm` path inside the allowed roots (decision 2) makes or
+   updates a page. The key is a hash of the real path (stable for the chat). One version per turn per
+   page: at `endTurn` (and at a successful Artifact publish) the server copies each page written in
+   that turn, so ten edits in one reply make one version, not ten. Copies are named by the id of the
+   last tool use that touched the page in that turn (`v-<toolUseId>.html`), not by a running number,
+   so replay can never pair a version with another version's file; the route still takes `n`, mapped
+   server side. The title comes from the file's `<title>` (`pageTitle`).
+   An `.html` file that is a page is listed under Pages, not also under Made (it still opens in
+   Documents from there as before).
+   Plain: any page Claude makes in a chat shows up as a page, with one version per reply that changed it.
+
+R2. **Artifact publishes still count, when they happen.** The Artifact tracking built in decision 1
+   stays: a publish whose `filePath` matches a page attaches its claude.ai address (and `remote`
+   version) to that page; a publish of a file not otherwise written in the chat makes a page as
+   before. In app chats this is dormant today.
+   Plain: if a page ever gets a claude.ai link, the viewer offers it.
+
+R3. **Claude knows pages show in the app.** The chat's appended system line (`appendLine`) gains one
+   sentence: visual pages should be one self-contained HTML file written with Write; the app shows it
+   to the person; don't look for an Artifact tool.
+   Plain: asking for "a visual" in the app reliably gives a page you can open.
+
+R4. **TDS wrapper (pure, `shared/pages.ts`).** `brandedPage(html, meta)` returns one self-contained
+   HTML file: a navy (`#021B43`) bar with the TDS logo (the brain's
+   `templates/tds-doc-system/logo-symbol.svg`, read by the server, inlined as an `<svg><use>`), a
+   separator, the page title in bold and a line "<Client> · <date> · Prepared by The Digital Stride"
+   (client left out when unknown; date like "14 November 2026"), Poppins/Inter from Google Fonts with
+   system fallbacks; below it an `<iframe srcdoc>` holding the page unchanged (attribute-escaped),
+   filling the rest of the window, so the page's own styles and scripts are untouched. `<title>` is
+   "<title> | The Digital Stride". A page that is already branded (its `<title>` ends
+   "| The Digital Stride") is wrapped again only if asked; the viewer just offers it as normal.
+   Plain: the client gets your page exactly as you saw it, presented under the TDS banner.
+
+R5. **Convert to TDS branding: file it and download it.** The header button "Convert to TDS
+   branding" (no longer gated on tds-doc):
+   - `GET ROUTES.chatPageBranded(id, key, n)` builds the wrapped file from the stored copy and sends
+     it as a download (`Content-Disposition: attachment; filename="<slug>-tds.html"`, the download
+     policy, `nosniff`); the button starts this download.
+   - At the same time it posts `PageAskRequest { kind: 'brand' }`: the server stages the same wrapped
+     file through the existing upload staging (as an attachment the person added), and sends it into
+     the chat with the visible line `Here's the TDS-branded copy of “<title>”. Please file it with
+     the client's reports.` Claude files it under `clients/<client>/reports/` by the existing
+     attachment rules (asking when the client isn't known), and the Files tab shows where it went,
+     exactly as for any attachment. The app writes nothing in the brain.
+   - After the click the form area says "Asked Claude to file the TDS-branded copy. Your download
+     has started." until the turn ends (UX finding 4).
+   Plain: one click gives you the branded file now and a filed copy in the client's folder.
+
+R6. **Review fixes folded in** (all confirmed in code by the lead):
+   - Form state: record `sawBusy: busy` when sending, and detect a new version by the newest `n`,
+     not the count (correctness 1, 2).
+   - Copies named by tool use id (R1) also fixes the replay/helper mismatch and the reused-key after
+     a dropped page (correctness 3, 5).
+   - Start-up sweep: page folders are stored per brain (`pages/<brainHash>/<chat>/…`) and only the
+     current brain's folders are swept (correctness 4). Existing folders from this branch need no
+     migration (never released).
+   - Titles and paths in notes: `<` and `>` become `‹` and `›` (security 1).
+   - Frame self-navigation: count the iframe's `load` events; on a second load replace the frame with
+     "This page tried to open another site, so it was stopped." and a "Show the page again" button
+     (security 2). The plan's Plain lines and the CSP comment say a page can still send its own
+     contents out by navigating itself.
+   - Temp root trusted only when `lstat` shows a directory owned by this user with no group/world
+     write (security 3).
+   - UX 1–5 and the two minor points exactly as the UX gate gave them (readOnly + aria-disabled,
+     always-present status region, "Copied" on the button and visible copy errors, "Updated to
+     Version n", the send icon, frame title without "1 of 1", no claude.ai line without a link).
+
+### Overseer rulings on revision 2 (these override R1, R4 and R5 where they differ)
+
+O1. **Two actions, not one.** "Download with TDS branding" (header button) is a plain GET of
+   `ROUTES.chatPageBranded`, available whenever the shown version has a copy (busy, closed or
+   client-less chat included); it sends no chat message. "File in client's folder" is the chat ask
+   (`{ kind: 'brand' }`; open, not busy). After a download, the status line says "Downloaded. Want a
+   copy filed in the client's folder too?" with the "File in client's folder" button.
+   Plain: one click never both saves a file and writes to the shared brain, and a repeat download
+   never refiles.
+O2. **The wrapper sandboxes the page.** The deliverable's `<iframe srcdoc>` carries
+   `sandbox="allow-scripts allow-popups"` (never `allow-same-origin`), and the wrapper has a
+   `<meta http-equiv="Content-Security-Policy">` mirroring `PAGE_PREVIEW_CSP` without `sandbox` and
+   `frame-ancestors` (the srcdoc frame inherits it).
+   Plain: the page inside can't rewrite the TDS bar or reach anything where the file is hosted.
+O3. **No outside fonts in the wrapper.** A system font stack (no Google Fonts link): the deliverable
+   makes no outside request of its own.
+O4. **Version boundary = the person's next message**, in both live and replay; also take copies on
+   interrupt, error and close. Test live/replay parity with a helper writing mid-turn.
+O5. **Show a page on its first successful write**, with "Claude is still working on this page" in
+   the viewer until the turn ends; the version is taken at the boundary.
+O6. **Pages leave "Made" on the client**, not in the server snapshot (older open tabs keep them).
+O7. **Branding note:** tell Claude to move the staged file with a shell command and not read it.
+O8. **Only real pages:** a written `.html` is a page only if it has a `<title>` or a doctype (keeps
+   fragments such as tds-doc's `body.html` out).
+
 ## Decisions
 
 1. **Follow Artifact publishes in the chat-files tracker.** `server/engine/chat-files.ts` `observe`

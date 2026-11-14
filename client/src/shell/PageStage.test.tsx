@@ -7,17 +7,19 @@ import type { ChatPage } from '../../../shared/pages-contract.ts';
 const h = vi.hoisted(() => ({
   pages: [] as unknown[],
   sessionState: 'idle' as string,
-  skills: [{ name: 'tds-doc' }] as { name: string }[],
+  files: [] as unknown[],
   askPage: vi.fn(),
   openChat: vi.fn(),
 }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
     chats: {
-      s1: { files: { files: [], attachments: [], links: [], pages: h.pages }, sessionState: h.sessionState },
+      s1: {
+        files: { files: h.files, attachments: [], links: [], pages: h.pages },
+        sessionState: h.sessionState,
+      },
     },
     sessions: { live: [{ id: 's1', state: h.sessionState }], past: [] },
-    boot: { skills: h.skills },
     askPage: h.askPage,
     openChat: h.openChat,
     libraryVersion: 0,
@@ -25,7 +27,7 @@ vi.mock('../store.tsx', () => ({
   }),
 }));
 
-const { PageStage, pageFormState, versionLabel } = await import('./PageStage.tsx');
+const { PageStage, pageFormState, versionLabel, writeMark } = await import('./PageStage.tsx');
 const { FileViewer } = await import('./FileViewer.tsx');
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
 
@@ -34,6 +36,8 @@ const page = (over: Partial<ChatPage> = {}): ChatPage => ({
   title: 'Quarterly page',
   url: 'https://claude.ai/artifact/abc123',
   versions: [{ n: 1, remote: null, at: null, hasCopy: true }],
+  draft: false,
+  fileKey: null,
   live: false,
   multiFile: false,
   toolUseIds: [],
@@ -80,7 +84,7 @@ const rerenderWith = (view: ReturnType<typeof mount>) =>
 beforeEach(() => {
   h.pages = [page()];
   h.sessionState = 'idle';
-  h.skills = [{ name: 'tds-doc' }];
+  h.files = [];
   h.askPage.mockReset();
   h.askPage.mockResolvedValue(null);
   h.openChat.mockReset();
@@ -91,8 +95,8 @@ afterEach(() => {
 });
 
 describe('pageFormState', () => {
-  const st = (s: SessionState | null, asked: { versions: number; sawBusy: boolean } | null = null, n = 1) =>
-    pageFormState(s, asked, n);
+  const st = (s: SessionState | null, asked: { mark: string; sawBusy: boolean } | null = null, mark = 'w1') =>
+    pageFormState(s, asked, mark);
   it('maps the chat state', () => {
     expect(st('idle')).toBe('ready');
     expect(st('error')).toBe('ready');
@@ -102,10 +106,32 @@ describe('pageFormState', () => {
     expect(st('closed')).toBe('closed');
     expect(st(null)).toBe('ready');
   });
-  it('after asking: running until Claude has started, then replied unless a new version came', () => {
-    expect(st('idle', { versions: 1, sawBusy: false })).toBe('running');
-    expect(st('idle', { versions: 1, sawBusy: true })).toBe('replied');
-    expect(st('idle', { versions: 1, sawBusy: true }, 2)).toBe('ready');
+  it('after asking: running until Claude has started, then replied unless Claude wrote the page', () => {
+    expect(st('idle', { mark: 'w1', sawBusy: false })).toBe('running');
+    expect(st('idle', { mark: 'w1', sawBusy: true })).toBe('replied');
+    expect(st('idle', { mark: 'w1', sawBusy: true }, 'w2')).toBe('ready');
+    // A chat already busy when the ask was made counts as seen.
+    expect(st('idle', { mark: 'w1', sawBusy: true })).toBe('replied');
+  });
+  it('the write mark follows the newest step, not version numbers (filing a draft changes no mark)', () => {
+    const base = {
+      key: 'k',
+      title: 't',
+      url: null,
+      versions: [],
+      live: false,
+      multiFile: false,
+      order: 1,
+      draft: true,
+      fileKey: null,
+    };
+    expect(writeMark(null)).toBe('');
+    expect(writeMark({ ...base, toolUseIds: [] })).toBe('');
+    const drafted = { ...base, toolUseIds: ['a', 'b'] };
+    const filed = { ...drafted, draft: false, versions: [{ n: 1, remote: null, at: null, hasCopy: true }] };
+    expect(writeMark(filed)).toBe(writeMark(drafted));
+    // A capped list still moves on: same length, newer last id.
+    expect(writeMark({ ...base, toolUseIds: ['b', 'c'] })).not.toBe(writeMark(drafted));
   });
   it('labels versions with the remote number when there is one', () => {
     expect(versionLabel(v(2, { remote: 3 }), 1, 3)).toBe('Version 3');
@@ -130,17 +156,30 @@ describe('the page viewer', () => {
   });
 
   it('picks between versions and follows a new one when on the newest', () => {
-    h.pages = [page({ versions: [v(1, { remote: 1 }), v(2, { remote: 2 })] })];
+    h.pages = [page({ versions: [v(1, { remote: 1 }), v(2, { remote: 2 })], toolUseIds: ['w1', 'w2'] })];
     const view = mount();
     const select = screen.getByLabelText('Version') as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Version 1', 'Version 2']);
     expect(select.value).toBe('2');
-    h.pages = [page({ versions: [v(1, { remote: 1 }), v(2, { remote: 2 }), v(3, { remote: 3 })] })];
+    h.pages = [
+      page({
+        versions: [v(1, { remote: 1 }), v(2, { remote: 2 }), v(3, { remote: 3 })],
+        toolUseIds: ['w1', 'w2', 'w3'],
+      }),
+    ];
     rerenderWith(view);
     expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe(
       '/api/sessions/s1/pages/pg1/3',
     );
-    expect(screen.getAllByRole('status').some((e) => e.textContent === 'Updated')).toBe(true);
+    expect(screen.getAllByRole('status').some((e) => e.textContent === 'Page updated.')).toBe(true);
+  });
+
+  it("doesn't announce an update when only the draft was filed as a version (no new write)", () => {
+    h.pages = [page({ draft: true, versions: [v(1)], toolUseIds: ['w1', 'w2'] })];
+    const view = mount();
+    h.pages = [page({ draft: false, versions: [v(1), v(2)], toolUseIds: ['w1', 'w2'] })];
+    rerenderWith(view);
+    expect(screen.queryByText('Page updated.')).toBeNull();
   });
 
   it('stays on an older version the person chose when a new one arrives', () => {
@@ -152,7 +191,7 @@ describe('the page viewer', () => {
     expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe(
       '/api/sessions/s1/pages/pg1/1',
     );
-    expect(screen.queryByText('Updated')).toBeNull();
+    expect(screen.queryByText(/^Updated/)).toBeNull();
   });
 
   it('says so for live pages, multi-file pages and a version without a copy', () => {
@@ -164,16 +203,85 @@ describe('the page viewer', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
-  it('shows Convert to TDS branding only when tds-doc is among the skills', () => {
-    h.skills = [];
+  it('downloads with TDS branding whatever the chat is doing, then offers to file a copy', async () => {
+    h.sessionState = 'working';
     const view = mount();
-    expect(screen.queryByRole('button', { name: 'Convert to TDS branding' })).toBeNull();
-    cleanup();
-    h.skills = [{ name: 'tds-doc' }];
-    view.unmount();
-    mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Convert to TDS branding' }));
+    const dl = screen.getByRole('link', { name: 'Download with TDS branding' });
+    expect(dl.getAttribute('href')).toBe('/api/sessions/s1/pages/pg1/1/branded');
+    expect(dl.hasAttribute('download')).toBe(true);
+    expect(screen.queryByRole('button', { name: "File in client's folder" })).toBeNull();
+    h.sessionState = 'idle';
+    rerenderWith(view);
+    fireEvent.click(screen.getByRole('link', { name: 'Download with TDS branding' }));
+    expect(h.askPage).not.toHaveBeenCalled();
+    expect(screen.getByText("Downloaded. Want a copy filed in the client's folder too?")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: "File in client's folder" }));
     expect(h.askPage).toHaveBeenCalledWith('s1', 'pg1', { kind: 'brand' });
+    expect(await screen.findByText('Asked Claude to file the TDS-branded copy.')).toBeTruthy();
+  });
+
+  it('calls the draft "Latest", without the working notice, once Claude has finished', () => {
+    h.pages = [page({ draft: true, versions: [v(1)] })];
+    mount();
+    expect(screen.queryByText('Claude is still working on this page.')).toBeNull();
+    const select = screen.getByLabelText('Version') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Version 1 of 1', 'Latest']);
+  });
+
+  it('shows the in-progress copy as version 0 and moves to the numbered one at the boundary', () => {
+    h.sessionState = 'working';
+    h.pages = [page({ draft: true, versions: [] })];
+    const view = mount();
+    expect(screen.getByText('Claude is still working on this page.')).toBeTruthy();
+    expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe(
+      '/api/sessions/s1/pages/pg1/0',
+    );
+    expect(screen.getByRole('link', { name: 'Download with TDS branding' }).getAttribute('href')).toBe(
+      '/api/sessions/s1/pages/pg1/0/branded',
+    );
+    h.pages = [page({ draft: false, versions: [v(1)] })];
+    rerenderWith(view);
+    expect(screen.queryByText('Claude is still working on this page.')).toBeNull();
+    expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe(
+      '/api/sessions/s1/pages/pg1/1',
+    );
+  });
+
+  it('reloads the frame when the draft is written again', () => {
+    h.pages = [page({ draft: true, versions: [], order: 1 })];
+    const view = mount();
+    const first = document.querySelector('iframe');
+    h.pages = [page({ draft: true, versions: [], order: 2 })];
+    rerenderWith(view);
+    expect(document.querySelector('iframe')).not.toBe(first);
+  });
+
+  it('stops a page that navigates itself and can show it again', () => {
+    mount();
+    const frame = document.querySelector('iframe') as HTMLIFrameElement;
+    fireEvent.load(frame);
+    expect(document.querySelector('iframe')).toBe(frame);
+    fireEvent.load(frame);
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(screen.getByText('This page tried to open another site, so it was stopped.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the page again' }));
+    expect(document.querySelector('iframe')).not.toBeNull();
+  });
+
+  it('offers Open in Documents for a page with a source file, and says nothing of claude.ai without a link', () => {
+    h.pages = [page({ url: null, fileKey: 'k1', versions: [v(1, { hasCopy: false })] })];
+    h.files = [{ key: 'k1', item: { id: 'i' }, scope: { id: 'sc', name: 'S' } }];
+    mount();
+    expect(screen.getByRole('button', { name: 'Open in Documents' })).toBeTruthy();
+    expect(screen.getByText("This version isn't kept in the app.")).toBeTruthy();
+    expect(screen.queryByText(/claude\.ai/)).toBeNull();
+  });
+
+  it('leaves the version out of the frame title when there is only one', () => {
+    mount();
+    expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('title')).toBe(
+      'Page: Quarterly page',
+    );
   });
 });
 
@@ -207,7 +315,12 @@ describe('suggesting a change', () => {
     h.sessionState = 'working';
     mount();
     expect(screen.getByText('Claude is working on this chat.')).toBeTruthy();
-    expect((screen.getByLabelText('Suggest a change') as HTMLTextAreaElement).disabled).toBe(true);
+    const box = screen.getByLabelText('Suggest a change') as HTMLTextAreaElement;
+    expect(box.readOnly).toBe(true);
+    expect(box.getAttribute('aria-disabled')).toBe('true');
+    expect(box.getAttribute('aria-describedby')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(h.askPage).not.toHaveBeenCalled();
   });
 
   it('points to the chat when Claude needs an answer, and Go to chat closes the viewer', () => {

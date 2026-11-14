@@ -123,6 +123,8 @@ const pageOf = (over: Partial<ChatPage> = {}): ChatPage => ({
   title: 'Quarterly page',
   url: 'https://claude.ai/artifact/abc123',
   versions: [{ n: 1, remote: 2, at: null, hasCopy: true }],
+  draft: false,
+  fileKey: null,
   live: false,
   multiFile: false,
   toolUseIds: [],
@@ -443,5 +445,22 @@ describe('the Pages fold', () => {
     expect(screen.getByText('Version 2')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Quarterly page/ }));
     expect(rawViewer).toEqual({ kind: 'page', chat: 's1', key: 'pg1' });
+  });
+
+  it('shows a page file under Pages, not under Made', () => {
+    set({
+      files: [file('page-src', ['created']), file('other', ['created'])],
+      pages: [pageOf({ fileKey: 'page-src' })],
+    });
+    renderTab();
+    expect(headings()).toEqual(['Made or changed', 'Pages']);
+    expect(screen.queryByRole('button', { name: /Title page-src/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Title other/ })).toBeTruthy();
+  });
+
+  it('says a page is being written while it is a draft', () => {
+    set({ pages: [pageOf({ draft: true, versions: [] })] });
+    renderTab();
+    expect(screen.getByText('Being written')).toBeTruthy();
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -31,7 +31,9 @@ import type {
   SkillLevel,
   TurnLevel,
 } from '../../shared/levels-contract.ts';
+import { isRealPage, pageTitle } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
+import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
@@ -4025,116 +4027,257 @@ describe('deleting an earlier chat', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pages (plan 2026-11-14-artifacts-in-app, decisions 2, 6, 7 and 8)
+// Pages (plan 2026-11-14-artifacts-in-app, revision 2 and the overseer's rulings)
 // ---------------------------------------------------------------------------
 
 describe('pages', () => {
   const SRC = '/private/tmp/claude-501/p/scratchpad/budget.html';
+  const HTML = '<!doctype html><title>Budget</title><p>v</p>';
   const URL1 = 'https://claude.ai/artifact/BuDgEt00000000000000aa';
   const OLD = '11111111-2222-4333-8444-555555555555';
   const NEW = '22222222-2222-4333-8444-555555555555';
+  const temps: string[] = [];
 
+  afterEach(() => {
+    for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+  });
+
+  /** The app's copies in memory: `disk` is the source files now. */
   function fakeCopies() {
-    const held = new Map<string, string>();
-    const sources = new Set<string>([SRC]);
+    const disk = new Map<string, string>([[SRC, HTML]]);
+    const drafts = new Map<string, { id: string; html: string }>();
+    const kept = new Map<string, string>();
     const store: PageCopyStore = {
-      copy: vi.fn(async (chat: string, key: string, n: number, source: string) => {
-        if (!sources.has(source)) return null;
-        held.set(`${chat}/${key}/${n}`, '<title>Budget</title><p>v</p>');
-        return { title: 'Budget', evicted: [] };
+      locate: async (p) => (p.startsWith('/private/tmp/') && /\.html?$/.test(p) ? p : null),
+      draft: vi.fn(async (chat: string, key: string, id: string, source: string, mustBePage: boolean) => {
+        const html = disk.get(source);
+        if (html === undefined) return null;
+        const page = isRealPage(html);
+        const title = pageTitle(html, source);
+        if (mustBePage && !page) return { title, page };
+        drafts.set(`${chat}/${key}`, { id, html });
+        return { title, page };
       }),
-      held: vi.fn(async (chat: string, key: string, n: number) =>
-        held.has(`${chat}/${key}/${n}`) ? { title: 'Budget' } : null,
-      ),
-      read: async (chat, key, n) => {
-        const body = held.get(`${chat}/${key}/${n}`);
-        return body === undefined ? null : Buffer.from(body);
+      keep: vi.fn(async (chat: string, key: string, id: string) => {
+        if (kept.has(`${chat}/${key}/${id}`)) return { evicted: [] };
+        const d = drafts.get(`${chat}/${key}`);
+        if (!d || d.id !== id) return null;
+        drafts.delete(`${chat}/${key}`);
+        kept.set(`${chat}/${key}/${id}`, d.html);
+        return { evicted: [] };
+      }),
+      copy: vi.fn(async (chat: string, key: string, id: string, source: string) => {
+        const html = disk.get(source);
+        if (html === undefined) return null;
+        kept.set(`${chat}/${key}/${id}`, html);
+        return { title: pageTitle(html, source), evicted: [] };
+      }),
+      held: async (chat, key, id) => {
+        const html = kept.get(`${chat}/${key}/${id}`);
+        return html === undefined ? null : { title: pageTitle(html, '') };
       },
-      copyPath: async (chat, key, n) =>
-        held.has(`${chat}/${key}/${n}`) ? `/data/pages/${chat}/${key}/v${n}.html` : null,
-      sourceOk: async (source) => sources.has(source),
+      read: async (chat, key, id, which) => {
+        const html =
+          which === 'kept'
+            ? kept.get(`${chat}/${key}/${id}`)
+            : drafts.get(`${chat}/${key}`)?.id === id
+              ? drafts.get(`${chat}/${key}`)?.html
+              : undefined;
+        return html === undefined ? null : Buffer.from(html);
+      },
+      keptPath: async (chat, key, id) => `/data/pages/${chat}/${key}/v-${id}.html`,
+      isPage: async (p) => {
+        const html = disk.get(p);
+        return html === undefined ? null : isRealPage(html);
+      },
+      sourceOk: async (source) => disk.has(source),
       rename: vi.fn(async (from: string, to: string) => {
-        for (const [k, v] of [...held]) {
-          if (!k.startsWith(`${from}/`)) continue;
-          held.delete(k);
-          held.set(`${to}/${k.slice(from.length + 1)}`, v);
+        for (const m of [kept, drafts] as Map<string, unknown>[]) {
+          for (const [k, v] of [...m]) {
+            if (!k.startsWith(`${from}/`)) continue;
+            m.delete(k);
+            m.set(`${to}/${k.slice(from.length + 1)}`, v);
+          }
         }
       }),
       trashChat: vi.fn(async () => {}),
       sweep: async () => 0,
     };
-    return { store, held, sources };
+    return { store, disk, drafts, kept };
   }
 
-  function publishStep(q: FakeQuery, id: string, remote = 1) {
-    toolUse(q, id, 'Artifact', { file_path: SRC });
+  function result(q: FakeQuery, id: string, content: unknown = 'ok', parent: string | null = null) {
     q.emit({
       type: 'user',
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: id,
-            content: `Published ${SRC} at ${URL1} (Version ${remote}, version id 1-a)`,
-          },
-        ],
-      },
-      parent_tool_use_id: null,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+      parent_tool_use_id: parent,
       session_id: q.sid,
     });
   }
 
-  /** Turn 0 publishes the page; every later turn just replies. */
-  const publishing: Script = ({ q, turn }) => {
+  function writeStep(q: FakeQuery, id: string, parent: string | null = null) {
+    toolUse(q, id, 'Write', { file_path: SRC, content: HTML }, parent);
+    result(q, id, 'ok', parent);
+  }
+
+  /** Turn 0 writes the page; every later turn just replies. */
+  const writing: Script = ({ q, turn }) => {
     q.init();
-    if (turn === 0) publishStep(q, 'art1');
+    if (turn === 0) writeStep(q, 'w1');
     q.text(`msg_${turn}`, `Reply ${turn}`);
     q.result();
   };
 
-  function withPages(script: Script = publishing, over: Parameters<typeof setup>[1] = {}) {
+  function withPages(script: Script = writing, over: Parameters<typeof setup>[1] = {}) {
     const copies = fakeCopies();
     const fx = setup(script, { ...over, pageCopies: copies.store });
     return { ...fx, copies };
   }
 
+  function stagingFor() {
+    const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-pages-')));
+    temps.push(dataDir);
+    return createUploadStaging({ dataDir, brainRoot: BRAIN, sweepMs: 0 });
+  }
+
+  const lastPage = (id: string) => filesOf(events(mgr, id)).at(-1)?.pages?.[0];
+
   async function pageKey(id: string): Promise<string> {
     await flush();
-    const files = filesOf(events(mgr, id)).at(-1);
-    const key = files?.pages?.[0]?.key;
+    const key = lastPage(id)?.key;
     if (!key) throw new Error('no page');
     return key;
   }
 
-  it('lists a published page and keeps a copy of it under the chat’s id', async () => {
-    const { copies } = withPages();
+  it('shows a written page while it is in progress, and keeps one version at the person’s next message', async () => {
+    const fx = withPages();
     const s = await mgr.start({ prompt: 'Make a budget page' });
     const key = await pageKey(s.id);
-    const page = filesOf(events(mgr, s.id)).at(-1)?.pages?.[0];
-    expect(page).toMatchObject({ title: 'Budget', url: URL1, toolUseIds: ['art1'] });
-    expect(page?.versions[0]).toMatchObject({ n: 1, remote: 1, hasCopy: true });
-    expect(copies.store.copy).toHaveBeenCalledWith('sdk-new-1', key, 1, SRC);
-    expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe('<title>Budget</title><p>v</p>');
-    expect(await mgr.pageCopy?.(s.id, key, 2)).toBeNull();
+    expect(lastPage(s.id)).toMatchObject({
+      title: 'Budget',
+      url: null,
+      draft: true,
+      versions: [],
+      fileKey: null,
+      toolUseIds: ['w1'],
+    });
+    // The in-progress copy is version 0; nothing is numbered until the person's next message.
+    expect((await mgr.pageCopy?.(s.id, key, 0))?.toString()).toBe(HTML);
+    expect(await mgr.pageCopy?.(s.id, key, 1)).toBeNull();
+    expect(fx.copies.store.keep).not.toHaveBeenCalled();
+    await mgr.send(s.id, 'Thanks');
+    await flush();
+    expect(fx.copies.store.keep).toHaveBeenCalledWith('sdk-new-1', key, 'w1');
+    expect(lastPage(s.id)).toMatchObject({ draft: false, versions: [{ n: 1, hasCopy: true }] });
+    expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe(HTML);
+    expect(await mgr.pageCopy?.(s.id, key, 0)).toBeNull();
     expect(await mgr.pageCopy?.(s.id, 'nope', 1)).toBeNull();
     expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
-    // The Artifact step reads as a page being published.
-    expect(events(mgr, s.id)).toContainEqual(
-      expect.objectContaining({ type: 'tool-start', toolUseId: 'art1', label: 'Publishing a page' }),
-    );
   });
 
-  it('still shows a closed chat’s page copies, and none for a chat it never knew', async () => {
+  it('keeps a version when the person stops the reply', async () => {
+    let release: () => void = () => {};
+    withPages(async ({ q, turn }) => {
+      q.init();
+      if (turn === 0) writeStep(q, 'w1');
+      q.onInterrupt = () => q.result('error_during_execution');
+      await new Promise<void>((r) => {
+        release = r;
+      });
+    });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    expect(lastPage(s.id)?.draft).toBe(true);
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(lastPage(s.id)).toMatchObject({ key, draft: false, versions: [{ n: 1, hasCopy: true }] });
+    release();
+  });
+
+  it('keeps a closed chat’s pages viewable, its last reply’s page as a version', async () => {
     withPages();
     const s = await mgr.start({ prompt: 'Make a budget page' });
     const key = await pageKey(s.id);
     await mgr.close(s.id);
-    expect(await mgr.pageCopy?.(s.id, key, 1)).not.toBeNull();
+    await flush();
+    expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe(HTML);
     await expectCode(
       Promise.resolve().then(() => mgr.pageCopy?.('nobody', key, 1)),
       'not-found',
     );
+  });
+
+  it('gives a reopened chat the same versions as it had live, with a helper writing mid-reply', async () => {
+    const fx = withPages(({ q, turn }) => {
+      q.init();
+      if (turn === 0) {
+        writeStep(q, 'w1');
+        toolUse(q, 'agent1', 'Agent', { prompt: 'polish it' });
+        writeStep(q, 'w2', 'agent1');
+        result(q, 'agent1');
+      }
+      if (turn === 1) writeStep(q, 'w3');
+      q.text(`msg_${turn}`, `Reply ${turn}`);
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    await flush();
+    await mgr.send(s.id, 'Now add totals');
+    await flush();
+    await mgr.send(s.id, 'Lovely');
+    await flush();
+    const live = lastPage(s.id);
+    expect(live?.versions.map((v) => [v.n, v.hasCopy])).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    expect(live?.toolUseIds).toEqual(['w1', 'w2', 'w3']);
+
+    const user = (uuid: string, text: string): HistoryMessage => ({
+      type: 'user',
+      uuid,
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+    });
+    const use = (id: string, name: string, input: Record<string, unknown>, parent: string | null = null) => ({
+      type: 'assistant',
+      uuid: `a-${id}`,
+      message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+      parent_tool_use_id: parent,
+    });
+    const done = (id: string, parent: string | null = null) => ({
+      type: 'user',
+      uuid: `r-${id}`,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+      parent_tool_use_id: parent,
+    });
+    const w = { file_path: SRC, content: HTML };
+    // The engine kept it under its own id; the copies followed it there.
+    await fx.copies.store.rename('sdk-new-1', OLD);
+    fx.past.push({ sessionId: OLD, summary: 'Earlier', lastModified: 1 });
+    fx.history[OLD] = [
+      user('h1', 'Make a budget page'),
+      use('w1', 'Write', w),
+      done('w1'),
+      use('agent1', 'Agent', { prompt: 'polish it' }),
+      use('w2', 'Write', w, 'agent1'),
+      done('w2', 'agent1'),
+      done('agent1'),
+      user('h2', 'Now add totals'),
+      use('w3', 'Write', w),
+      done('w3'),
+    ] as HistoryMessage[];
+    const again = await mgr.start({ resume: OLD });
+    await flush();
+    const replayed = lastPage(again.id);
+    expect(replayed?.key).toBe(live?.key);
+    expect(replayed?.versions.map((v) => [v.n, v.hasCopy])).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    expect(replayed?.toolUseIds).toEqual(live?.toolUseIds);
+    // Both copies were already kept: nothing is copied from the source again.
+    expect(fx.copies.store.copy).not.toHaveBeenCalled();
   });
 
   it('asks for a change: the transcript shows only the short line, Claude gets the path behind a marker', async () => {
@@ -4154,6 +4297,8 @@ describe('pages', () => {
     expect(shown.at(-1)).toMatchObject({ text: 'Change the page “Budget”: Make the header blue' });
     expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
     expect(JSON.stringify(events(mgr, s.id))).not.toContain('tds-page-request');
+    // The ask is the person's next message: the page written before it is now version 1.
+    expect(lastPage(s.id)?.versions.map((v) => v.n)).toEqual([1]);
 
     // Reopened later: the stored message is split the same way.
     fx.past.push({ sessionId: 'old-ask', summary: 'Earlier', lastModified: 1 });
@@ -4194,35 +4339,83 @@ describe('pages', () => {
     const fx = withPages();
     const s = await mgr.start({ prompt: 'Make a budget page' });
     const key = await pageKey(s.id);
-    fx.copies.sources.clear();
+    fx.copies.disk.clear();
     await mgr.askPage?.(s.id, key, { kind: 'change', note: 'Shorter' });
     await flush();
     const sent = fx.queries[0]?.received[1] ?? '';
-    expect(sent).toContain(`\`/data/pages/sdk-new-1/${key}/v1.html\``);
+    // Sending the ask keeps the in-progress copy: Claude is pointed at where it is kept.
+    expect(sent).toContain(`\`/data/pages/sdk-new-1/${key}/v-w1.html\``);
     expect(sent).toContain('stored copy');
     expect(sent).not.toContain(`\`${SRC}\``);
+    expect(fx.copies.kept.has(`sdk-new-1/${key}/w1`)).toBe(true);
   });
 
-  it('sends the branding ask as /tds-doc through the role check, naming the chat’s client', async () => {
-    const fx = withPages(publishing, {
-      brain: { skillAccess: async (_i, name) => (name === 'tds-doc' ? 'allowed' : 'unknown-skill') },
-    });
+  it('makes the TDS-branded copy of a version for download (R5, O1)', async () => {
+    withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page', client: 'urban-cooling' });
+    const key = await pageKey(s.id);
+    const draft = await mgr.brandedCopy?.(s.id, key, 0);
+    expect(draft?.name).toMatch(/^budget-tds-\d{4}-\d{2}-\d{2}\.html$/);
+    expect(draft?.html).toContain('<title>Budget | The Digital Stride</title>');
+    expect(draft?.html).toContain('Urban Cooling');
+    expect(draft?.html).toContain('sandbox="allow-scripts allow-popups"');
+    expect(draft?.html).toContain(`content="${PAGE_WRAPPER_CSP.replace(/'/g, "'")}"`);
+    expect(draft?.html).not.toContain('frame-ancestors');
+    expect(await mgr.brandedCopy?.(s.id, key, 1)).toBeNull();
+    expect(await mgr.brandedCopy?.(s.id, 'nope', 0)).toBeNull();
+    await expectCode(
+      Promise.resolve().then(() => mgr.brandedCopy?.('nobody', key, 0)),
+      'not-found',
+    );
+  });
+
+  it('files the branded copy by sending it as an attachment with the branding note (O1, O7)', async () => {
+    const staging = stagingFor();
+    const fx = withPages(writing, { uploads: staging });
     const s = await mgr.start({ prompt: 'Make a budget page', client: 'urban-cooling' });
     const key = await pageKey(s.id);
     await mgr.askPage?.(s.id, key, { kind: 'brand' });
     await flush();
     const sent = fx.queries[0]?.received[1] ?? '';
-    expect(sent.startsWith('/tds-doc Convert the page “Budget” to TDS branding')).toBe(true);
+    expect(
+      sent.startsWith('Here’s the TDS-branded copy of “Budget”.') ||
+        sent.startsWith("Here's the TDS-branded copy of “Budget”."),
+    ).toBe(true);
+    expect(sent).toContain('<tds-attachments>');
     expect(sent).toContain('clients/urban-cooling/reports/');
+    expect(sent.endsWith('\n</tds-page-request>')).toBe(true);
+    const line = sent.split('\n').find((l) => l.startsWith('- budget-tds-'));
+    const stagedPath = line?.slice(line.indexOf(': ') + 2) ?? '';
+    expect(stagedPath.startsWith(`${staging.root}/`)).toBe(true);
+    expect(readFileSync(stagedPath, 'utf8')).toContain('<title>Budget | The Digital Stride</title>');
+    // The transcript shows the short line and the attachment, like one the person added.
+    const shown = events(mgr, s.id)
+      .filter((e) => e.type === 'user-message')
+      .at(-1);
+    expect(shown).toMatchObject({ attachments: [expect.objectContaining({ kind: 'document' })] });
+    expect(JSON.stringify(shown)).not.toContain(staging.root as string);
+    expect(filesOf(events(mgr, s.id)).at(-1)?.attachments).toEqual([
+      expect.objectContaining({ name: expect.stringMatching(/^budget-tds-.*\.html$/), filedKey: null }),
+    ]);
+
+    // Reopened: the attachment is still found behind the page note.
+    fx.past.push({ sessionId: 'old-filed', summary: 'Earlier', lastModified: 1 });
+    fx.history['old-filed'] = [
+      { type: 'user', uuid: 'h1', message: { role: 'user', content: sent }, parent_tool_use_id: null },
+    ];
+    const again = await mgr.start({ resume: 'old-filed' });
+    await flush();
+    const replayed = events(mgr, again.id).filter((e) => e.type === 'user-message');
+    expect(replayed[0]).toMatchObject({ attachments: [expect.objectContaining({ kind: 'document' })] });
+    expect(filesOf(events(mgr, again.id)).at(-1)?.attachments).toHaveLength(1);
+    staging.close();
   });
 
-  it('refuses the branding ask for a role that can’t run /tds-doc', async () => {
-    const fx = withPages(publishing, {
-      brain: { skillAccess: async (_i, name) => (name === 'tds-doc' ? 'restricted' : 'unknown-skill') },
-    });
+  it('refuses to file a branded copy with attachments off, and puts nothing in the chat', async () => {
+    const fx = withPages();
     const s = await mgr.start({ prompt: 'Make a budget page' });
     const key = await pageKey(s.id);
-    await expectCode(mgr.askPage?.(s.id, key, { kind: 'brand' }) as Promise<void>, 'not-allowed');
+    await expectCode(mgr.askPage?.(s.id, key, { kind: 'brand' }) as Promise<void>, 'bad-request');
     expect(fx.queries[0]?.received).toHaveLength(1);
   });
 
@@ -4230,7 +4423,7 @@ describe('pages', () => {
     let release: () => void = () => {};
     withPages(async ({ q, turn }) => {
       q.init();
-      if (turn === 0) publishStep(q, 'art1');
+      if (turn === 0) writeStep(q, 'w1');
       await new Promise<void>((r) => {
         release = r;
       });
@@ -4283,7 +4476,8 @@ describe('pages', () => {
     const s = await mgr.start({ resume: OLD });
     const key = await pageKey(s.id);
     // Rebuilt from history: the newest version had no copy and its file is there, so it is copied now.
-    expect(fx.copies.store.copy).toHaveBeenCalledWith(OLD, key, 1, SRC);
+    expect(fx.copies.store.copy).toHaveBeenCalledWith(OLD, key, 'art1', SRC);
+    expect(lastPage(s.id)).toMatchObject({ url: URL1, draft: false, versions: [{ n: 1, hasCopy: true }] });
     expect(fx.queries).toHaveLength(0);
     await mgr.askPage?.(s.id, key, { kind: 'change', note: 'Add a total' });
     await flush();

@@ -75,6 +75,8 @@ describe('reply links to pages', () => {
     url: 'https://claude.ai/artifact/abc123',
     versions: [{ n: 1, remote: null, at: null, hasCopy: true }],
     live: false,
+    draft: false,
+    fileKey: null,
     multiFile: false,
     toolUseIds: ['tu1'],
     order: 1,

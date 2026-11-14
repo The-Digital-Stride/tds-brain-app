@@ -112,9 +112,15 @@ function buildBrainSide(path: string | null) {
   };
   const levelOptions = { levels, chatLevels: createChatLevelStore(config.dataDir) };
   const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
-  // Pages Claude publishes (plan 2026-11-14-artifacts-in-app): copied into the app's data folder, never
-  // the brain. Sources may sit in Claude's temporary folder or the brain (each chat's folder is the brain).
-  const pageCopies: PageCopyStore = createPageCopies({ dataDir: config.dataDir, roots: [path], log });
+  // Pages Claude writes (plan 2026-11-14-artifacts-in-app): copied into the app's data folder, kept per
+  // brain, never in the brain. Sources may sit in Claude's temporary folder or the brain (each chat's
+  // folder is the brain).
+  const pageCopies: PageCopyStore = createPageCopies({
+    dataDir: config.dataDir,
+    brainRoot: path,
+    roots: [path],
+    log,
+  });
   const sessions = createSessionManager({
     ...levelOptions,
     brain,

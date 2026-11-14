@@ -25,6 +25,7 @@ import {
   MAX_LIVE_CODES,
   PAGE_CSP,
   PAGE_PREVIEW_CSP,
+  PAGE_WRAPPER_CSP,
   parseCookies,
   pingProof,
   SECURITY_HEADERS,
@@ -717,6 +718,40 @@ describe('the page preview (plan 2026-11-14-artifacts-in-app, decision 3)', () =
     expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc`)).toBe(false);
     expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc/1/x`)).toBe(false);
     expect(isLibraryPagePath(`/api/sessions/${SID}/file-changes/abc`)).toBe(false);
+    // The branded download's errors are the same small page.
+    expect(isLibraryPagePath(ROUTES.chatPageBranded(SID, 'abc_DEF-1', 0))).toBe(true);
+    expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc/1/branded/x`)).toBe(false);
+  });
+
+  it('gives the branded copy the preview policy without sandbox and frame-ancestors (O2)', () => {
+    expect(PAGE_WRAPPER_CSP).toBe(
+      PAGE_PREVIEW_CSP.split('; ')
+        .filter((d) => !d.startsWith('sandbox') && !d.startsWith('frame-ancestors'))
+        .join('; '),
+    );
+    expect(PAGE_WRAPPER_CSP.startsWith("default-src 'none'; script-src")).toBe(true);
+    expect(PAGE_WRAPPER_CSP).toContain("connect-src 'none'");
+    expect(PAGE_WRAPPER_CSP).not.toMatch(/sandbox|frame-ancestors/);
+  });
+
+  it('lets the app download a branded copy, and nobody else (the gate the client really meets)', () => {
+    const path = ROUTES.chatPageBranded(SID, 'abc', 1);
+    for (const dest of ['document', 'empty']) {
+      const headers = { 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': dest };
+      expect(checkRequest(req({ path, headers }), ctx), dest).toEqual({ action: 'allow' });
+    }
+    expect(checkRequest(req({ path, headers: { cookie: undefined } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 401,
+    });
+    expect(checkRequest(req({ path, headers: { 'sec-fetch-site': 'cross-site' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(checkRequest(req({ path, headers: { origin: 'null' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
   });
 
   it('lets the viewer frame a page, and refuses a page’s own requests (null or foreign origin)', () => {
@@ -774,6 +809,13 @@ describe('the page preview through the real server', () => {
         onChange: () => () => {},
         pageCopy: async (id: string, key: string, n: number) =>
           id === SID && key === KEY && n === 1 ? Buffer.from('<p>Hi</p>') : null,
+        brandedCopy: async (id: string, key: string, n: number) =>
+          id === SID && key === KEY && n === 0
+            ? {
+                name: 'budget-tds-2026-11-14.html',
+                html: '<!DOCTYPE html><title>Budget | The Digital Stride</title>',
+              }
+            : null,
       } as never,
       thumbs: {} as never,
       uploads: {} as never,
@@ -819,6 +861,32 @@ describe('the page preview through the real server', () => {
     const miss = await get(ROUTES.chatPage(SID, KEY, 2), { cookie });
     expect(miss.status).toBe(404);
     expect(csps(miss.raw)).toEqual([PAGE_PREVIEW_CSP]);
+  });
+
+  it('sends the branded copy as a download under one policy, the download one', async () => {
+    const cookie = `${SESSION_COOKIE}=${COOKIE}`;
+    const ok = await get(ROUTES.chatPageBranded(SID, KEY, 0), {
+      cookie,
+      'sec-fetch-site': 'same-origin',
+      'sec-fetch-dest': 'document',
+    });
+    expect(ok.status).toBe(200);
+    expect(csps(ok.raw)).toEqual(["sandbox; default-src 'none'"]);
+    const header = (name: string) =>
+      ok.raw[ok.raw.findIndex((h, i) => i % 2 === 0 && h.toLowerCase() === name) + 1];
+    expect(header('content-disposition')).toBe(
+      `attachment; filename="budget-tds-2026-11-14.html"; filename*=UTF-8''budget-tds-2026-11-14.html`,
+    );
+    expect(header('content-type')).toBe('application/octet-stream');
+    expect(header('x-content-type-options')).toBe('nosniff');
+    expect(header('cache-control')).toBe('no-store');
+    expect(ok.body).toContain('The Digital Stride');
+    const miss = await get(ROUTES.chatPageBranded(SID, KEY, 1), { cookie });
+    expect(miss.status).toBe(404);
+    expect(csps(miss.raw)).toEqual([PAGE_PREVIEW_CSP]);
+    const refused = await get(ROUTES.chatPageBranded(SID, KEY, 0));
+    expect(refused.status).toBe(401);
+    expect(refused.body).toMatch(/^<!doctype html>/);
   });
 
   it('answers a gate refusal on the page route as a framable page, not JSON', async () => {

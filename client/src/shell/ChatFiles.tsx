@@ -322,14 +322,16 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
 
   const inGroup = (g: ReturnType<typeof chatFileGroup>) =>
     snapshot.files.filter((f) => chatFileGroup(f) === g);
-  const made = inGroup('made');
+  const pages = snapshot.pages ?? [];
+  // A page's source file is shown as the page, not again under Made (client side, so older tabs keep working).
+  const pageFileKeys = new Set(pages.map((p) => p.fileKey).filter((k): k is string => k != null));
+  const made = inGroup('made').filter((f) => !pageFileKeys.has(f.key));
   const mentioned = inGroup('mentioned');
   const looked = inGroup('looked-at');
   const attachedOrphans = inGroup('attached').filter(
     (f) => !snapshot.attachments.some((a) => a.filedKey === f.key),
   );
   const attachedCount = snapshot.attachments.length + attachedOrphans.length;
-  const pages = snapshot.pages ?? [];
   // A page's address is shown as a page, not repeated as a web link.
   const pageUrls = new Set(pages.map((p) => p.url).filter((u): u is string => u !== null));
   const links = snapshot.links.filter((l) => !pageUrls.has(l.url));
@@ -411,7 +413,7 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
                   <span className="line-text">
                     <span className="line-title">{p.title}</span>
                     <span className="line-meta">
-                      {newest ? `Version ${newest.remote ?? newest.n}` : 'Page'}
+                      {p.draft ? 'Being written' : newest ? `Version ${newest.remote ?? newest.n}` : 'Page'}
                     </span>
                   </span>
                 </button>

@@ -38,8 +38,17 @@ export interface ChatPage {
   title: string;
   /** The claude.ai address (always passes `isArtifactUrl`), or null when the result gave none. */
   url: string | null;
-  /** Oldest first. At least one. At most PAGE_VERSIONS_MAX (oldest dropped). */
+  /** Oldest first. At most PAGE_VERSIONS_MAX (oldest dropped). Empty only while `draft` is the sole copy. */
   versions: ChatPageVersion[];
+  /**
+   * (O5) Claude wrote the page in the turn still running: an in-progress copy is served as version
+   * `n = 0` (`ROUTES.chatPage(id, key, 0)`), refreshed on each write, and becomes a numbered version
+   * at the boundary (the person's next message, or interrupt, error, close). The viewer shows it with
+   * "Claude is still working on this page." False otherwise.
+   */
+  draft: boolean;
+  /** (R1) The page's source file in the brain, as a library key, when it is in the brain (opens in Documents); else null. */
+  fileKey: string | null;
   /**
    * The publish asked for runtime capabilities (shared data, "ask Claude", sign-in…): those parts
    * only work on claude.ai, so the viewer says so and leads with "Open on claude.ai".
@@ -111,15 +120,44 @@ export interface ArtifactPublish {
  *   stored copy, to copy it to a new file in the scratchpad first and edit and publish that, with
  *   `url` set to the same address.
  *
- * - `brandingMessage(page: PageRef, client: string | null): PageMessage`
- *   `visible`: `/tds-doc Convert the page “<title>” to TDS branding` (leading `/tds-doc`, so the
- *   existing `checkSkill` role check applies and Claude Code loads the skill). `note` (engine only):
- *   the source path in a code span and address; rebuild its content as a TDS-branded client document
- *   with the tds-doc skill (self-contained HTML plus PDF); save in `clients/<client>/reports/` when
- *   the client is known, else ask which client; keep every figure and finding; interactive parts
- *   become static; don't publish it to claude.ai; say where both files went.
+ * - `brandingMessage(page: PageRef, client: string | null): PageMessage`   (REVISION 2, R5)
+ *   Sent WITH the wrapped file staged as an attachment, so the existing attachment note and filing
+ *   rules do the work. `visible`: `Here's the TDS-branded copy of “<title>”. Please file it with the
+ *   client's reports.` `note` (engine only): it is the page from this chat wrapped in the TDS bar;
+ *   file it unchanged under `clients/<client>/reports/` (naming the client when known, else ask);
+ *   don't edit or rebuild it.
  *
+ * - `brandedPage(html: string, meta: BrandMeta): string`   (REVISION 2, R4 + O2, O3)
+ *   One self-contained HTML file: TDS bar (logo, title, "<Client> · <date> · Prepared by The
+ *   Digital Stride") over an `<iframe srcdoc sandbox="allow-scripts allow-popups">` holding `html`
+ *   unchanged (attribute-escaped), filling the rest of the window. A
+ *   `<meta http-equiv="Content-Security-Policy">` mirrors PAGE_PREVIEW_CSP minus `sandbox` and
+ *   `frame-ancestors` (pass it in as `meta.csp` to keep the one source of truth on the server). System
+ *   font stack only; no outside requests of its own. Every meta string is HTML-escaped. `<title>`:
+ *   "<title> | The Digital Stride".
+ *
+ * - `brandedFileName(title: string, date: string): string`
+ *   `<slug>-tds-<YYYY-MM-DD>.html`, slug from the title (a–z, 0–9, hyphens, at most 60), else "page".
+ *
+ * Titles and paths placed in any note have `<` → `‹` and `>` → `›` (security review).
  * UK English in all of it.
+ */
+export interface BrandMeta {
+  title: string;
+  /** The client's display name, or null to leave it out. */
+  client: string | null;
+  /** ISO date (YYYY-MM-DD); shown as "14 November 2026". */
+  date: string;
+  /** The brain's `templates/tds-doc-system/logo-symbol.svg` contents (a `<symbol id="tds">` sprite), or null for a text wordmark. */
+  logoSprite: string | null;
+  /** The policy for the wrapper's meta tag (PAGE_PREVIEW_CSP without `sandbox` and `frame-ancestors`). */
+  csp: string;
+}
+
+/**
+ * - `isRealPage(html: string): boolean`   (O8)
+ *   True when the first 64 KB has a `<title>` element or starts (after whitespace and comments) with
+ *   a doctype. Fragments are not pages.
  */
 export interface PageMessage {
   /** What the transcript shows as the person's words (live and when the chat is reopened). */

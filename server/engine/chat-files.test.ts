@@ -8,11 +8,13 @@ import {
   CHAT_LINK_MAX_CHARS,
   CHAT_LINKS_MAX,
 } from '../../shared/contract.ts';
+import { isRealPage, pageTitle } from '../../shared/pages.ts';
 import { CHAT_PAGES_MAX, PAGE_VERSIONS_MAX } from '../../shared/pages-contract.ts';
 import { isPageKey } from '../store/page-copies.ts';
 import {
   type ChatFilesTracker,
   createChatFiles,
+  type EvictedCopies,
   type PageCopyPort,
   PENDING_MAX,
   type ResolvePath,
@@ -857,7 +859,7 @@ describe('createChatFiles: review follow-ups', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pages (plan docs/plans/2026-11-14-artifacts-in-app.md, decisions 1 and 2)
+// Pages (plan docs/plans/2026-11-14-artifacts-in-app.md, revision 2 and the overseer's rulings)
 // ---------------------------------------------------------------------------
 
 interface FixtureCall {
@@ -875,47 +877,110 @@ const call = (name: string): FixtureCall => {
   return c;
 };
 
-/** Copies the fake way: a source "exists" when it is in `sources`; `held` is what is on disk. */
+const TMP = '/private/tmp/claude-501/p/scratchpad';
+const page = (title: string, body = '') =>
+  `<!doctype html><html><head><title>${title}</title></head><body>${body}</body></html>`;
+
+/**
+ * Copies the fake way: `files` is the disk now (a source path → its HTML); `drafts` and `kept` are the
+ * app's copies. `/tmp/` is a link to `/private/tmp/`; `/outside/` is not an allowed root.
+ */
 function fakePages() {
-  const sources = new Map<string, string>();
-  const held = new Map<string, string>();
-  const copies: string[] = [];
-  const looks: string[] = [];
-  let evict: { key: string; n: number }[] = [];
+  const files = new Map<string, string>();
+  const drafts = new Map<string, { id: string; html: string }>();
+  const kept = new Map<string, string>();
+  const log: string[] = [];
+  let evict: EvictedCopies = [];
+  const takeEvictions = (): EvictedCopies => {
+    const e = evict;
+    evict = [];
+    for (const x of e) kept.delete(`${x.key}/${x.id}`);
+    return e;
+  };
   const port: PageCopyPort = {
-    async copy(key, n, filePath) {
-      copies.push(`${key}/${n}`);
-      const title = sources.get(filePath);
-      if (title === undefined) return null;
-      held.set(`${key}/${n}`, title);
-      const evicted = evict;
-      evict = [];
-      for (const e of evicted) held.delete(`${e.key}/${e.n}`);
-      return { title, evicted };
+    async locate(p) {
+      if (p.startsWith('/outside/')) return null;
+      return p.replace(/^\/tmp\//, '/private/tmp/');
     },
-    async held(key, n) {
-      looks.push(`${key}/${n}`);
-      const title = held.get(`${key}/${n}`);
-      return title === undefined ? null : { title };
+    async draft(key, id, p, mustBePage) {
+      log.push(`draft ${key}/${id}`);
+      const html = files.get(p);
+      if (html === undefined) return null;
+      const isPage = isRealPage(html);
+      const title = pageTitle(html, p);
+      if (mustBePage && !isPage) return { title, page: false };
+      drafts.set(key, { id, html });
+      return { title, page: isPage };
+    },
+    async keep(key, id) {
+      log.push(`keep ${key}/${id}`);
+      if (kept.has(`${key}/${id}`)) return { evicted: [] };
+      const d = drafts.get(key);
+      if (!d || d.id !== id) return null;
+      drafts.delete(key);
+      kept.set(`${key}/${id}`, d.html);
+      return { evicted: takeEvictions() };
+    },
+    async copy(key, id, p) {
+      log.push(`copy ${key}/${id}`);
+      const html = files.get(p);
+      if (html === undefined) return null;
+      kept.set(`${key}/${id}`, html);
+      return { title: pageTitle(html, p), evicted: takeEvictions() };
+    },
+    async held(key, id) {
+      const html = kept.get(`${key}/${id}`);
+      return html === undefined ? null : { title: pageTitle(html, '') };
+    },
+    async isPage(p) {
+      const html = files.get(p);
+      return html === undefined ? null : isRealPage(html);
     },
   };
   return {
     port,
-    sources,
-    held,
-    copies,
-    looks,
-    evictNext: (e: { key: string; n: number }[]) => {
+    files,
+    drafts,
+    kept,
+    log,
+    evictNext: (e: EvictedCopies) => {
       evict = e;
     },
   };
 }
 
-function setupPages(over: { now?: () => Date } = {}) {
+function setupPages(over: { now?: () => Date; pages?: ReturnType<typeof fakePages> } = {}) {
   const brain = fakeBrain();
-  const pages = fakePages();
-  const t = createChatFiles({ brainRoots: [ROOT, REAL], resolve: brain.resolve, pages: pages.port, ...over });
+  const pages = over.pages ?? fakePages();
+  const t = createChatFiles({
+    brainRoots: [ROOT, REAL],
+    resolve: brain.resolve,
+    pages: pages.port,
+    ...(over.now ? { now: over.now } : {}),
+  });
   return { ...brain, pages, t };
+}
+
+/** A successful Write of `content` to `path`; live, the disk then holds it. */
+function write(
+  x: { t: ChatFilesTracker; pages: ReturnType<typeof fakePages> },
+  path: string,
+  content: string,
+  o: { parent?: string | null; history?: boolean; ok?: boolean } = {},
+): string {
+  if (!o.history && o.ok !== false) x.pages.files.set(path, content);
+  return step(x.t, 'Write', { file_path: path, content }, o);
+}
+
+/** A successful Edit of `path`; live, the disk then holds `after`. */
+function edit(
+  x: { t: ChatFilesTracker; pages: ReturnType<typeof fakePages> },
+  path: string,
+  after: string,
+  o: { parent?: string | null; history?: boolean } = {},
+): string {
+  if (!o.history) x.pages.files.set(path, after);
+  return step(x.t, 'Edit', { file_path: path, old_string: 'a', new_string: 'b' }, o);
 }
 
 function publish(
@@ -949,13 +1014,254 @@ function pub(path: string, url: string, remote: number | null = 1) {
 }
 
 const pagesOf = (s: ChatFilesSnapshot) => s.pages ?? [];
+/** What a page's versions say, without the times. */
+const shape = (s: ChatFilesSnapshot) =>
+  pagesOf(s).map((p) => ({
+    key: p.key,
+    title: p.title,
+    draft: p.draft,
+    versions: p.versions.map((v) => [v.n, v.hasCopy]),
+    toolUseIds: p.toolUseIds,
+  }));
 
-describe('createChatFiles: pages', () => {
+describe('createChatFiles: pages Claude writes', () => {
+  it('shows a page from its first write as in progress, then one version per boundary', async () => {
+    const now = new Date('2026-11-14T10:00:00.000Z');
+    const x = setupPages({ now: () => now });
+    const path = `${TMP}/plan.html`;
+    const first = write(x, path, page('The plan', 'one'));
+    const draft = pagesOf(await snap(x.t));
+    expect(draft).toHaveLength(1);
+    expect(draft[0]).toMatchObject({
+      title: 'The plan',
+      draft: true,
+      versions: [],
+      url: null,
+      fileKey: null,
+    });
+    expect(draft[0]?.toolUseIds).toEqual([first]);
+    const key = draft[0]?.key as string;
+    expect(isPageKey(key)).toBe(true);
+    expect(x.t.page(key)).toEqual({
+      title: 'The plan',
+      url: null,
+      filePath: path,
+      draft: { id: first, hasCopy: true },
+      versions: [],
+    });
+    // Ten edits in one reply: still one page in progress, its copy refreshed each time.
+    const ids = [first];
+    for (let i = 0; i < 10; i++) ids.push(edit(x, path, page('The plan', `edit ${i}`)));
+    await x.t.settled();
+    expect(x.pages.drafts.get(key)).toEqual({ id: ids.at(-1), html: page('The plan', 'edit 9') });
+    x.t.boundary();
+    const one = pagesOf(await snap(x.t));
+    expect(one[0]).toMatchObject({ draft: false });
+    expect(one[0]?.versions).toEqual([{ n: 1, remote: null, at: now.toISOString(), hasCopy: true }]);
+    // The kept copy is named by the last tool use that touched the page.
+    expect([...x.pages.kept.keys()]).toEqual([`${key}/${ids.at(-1)}`]);
+    expect(x.t.page(key)?.versions).toEqual([{ n: 1, id: ids.at(-1), hasCopy: true }]);
+    // A boundary with nothing written since makes no version.
+    x.t.boundary();
+    expect(await x.t.snapshot()).toBeNull();
+    const again = write(x, path, page('The plan v2'));
+    x.t.boundary();
+    const two = pagesOf(await snap(x.t));
+    expect(two).toHaveLength(1);
+    expect(two[0]?.title).toBe('The plan v2');
+    expect(two[0]?.versions.map((v) => v.n)).toEqual([1, 2]);
+    expect(x.t.page(key)?.versions[1]?.id).toBe(again);
+  });
+
+  it('takes only real pages: a fragment is not one until the file becomes a page (O8)', async () => {
+    const x = setupPages();
+    const path = `${TMP}/body.html`;
+    write(x, path, '<section><p>part of a page</p></section>');
+    expect(await x.t.snapshot()).toBeNull();
+    const id = write(x, path, '<html><title>Now whole</title></html>');
+    const [p] = pagesOf(await snap(x.t));
+    expect(p).toMatchObject({ title: 'Now whole', toolUseIds: [id] });
+  });
+
+  it('leaves out writes that failed, aren’t HTML, are relative or sit outside the allowed folders', async () => {
+    const x = setupPages();
+    write(x, `${TMP}/failed.html`, page('Failed'), { ok: false });
+    write(x, `${TMP}/notes.md`, page('Notes'));
+    write(x, 'scratchpad/rel.html', page('Relative'));
+    write(x, '/outside/secret.html', page('Secret'));
+    x.pages.files.set(`${TMP}/x\n.html`, page('Control'));
+    step(x.t, 'Write', { file_path: `${TMP}/x\n.html`, content: page('Control') });
+    expect('pages' in (await snap(x.t))).toBe(false);
+  });
+
+  it('counts an edit of a file that was already a page, and a helper’s writes', async () => {
+    const x = setupPages();
+    const path = `${TMP}/existing.html`;
+    x.pages.files.set(path, page('Existing'));
+    const e = edit(x, path, page('Existing', 'changed'));
+    const h = write(x, path, page('Existing', 'by helper'), { parent: 'toolu_helper' });
+    const [p] = pagesOf(await snap(x.t));
+    expect(p?.toolUseIds).toEqual([e, h]);
+  });
+
+  it('keys a page by where it really is, so two spellings are one page', async () => {
+    const x = setupPages();
+    write(x, '/tmp/claude-501/p/scratchpad/a.html', page('A'));
+    write(x, `${TMP}/a.html`, page('A again'));
+    expect(pagesOf(await snap(x.t))).toHaveLength(1);
+  });
+
+  it('gives a page in the brain its library key (it opens in Documents too)', async () => {
+    const x = setupPages();
+    x.disk.add('clients/acme/reports/r.html');
+    write(x, `${ROOT}/clients/acme/reports/r.html`, page('Report'));
+    write(x, `${TMP}/t.html`, page('Temp'));
+    const s = await snap(x.t);
+    expect(pagesOf(s).map((p) => [p.title, p.fileKey])).toEqual([
+      ['Temp', null],
+      ['Report', 'key:clients/acme/reports/r.html'],
+    ]);
+    // It stays in the files list as well: the client leaves it out of "Made" (O6).
+    expect(byPath(s, 'clients/acme/reports/r.html')).toBeDefined();
+  });
+
+  it('builds the same pages and versions from history as live, with a helper writing mid-turn (O4)', async () => {
+    const pages = fakePages();
+    const path = `${TMP}/report.html`;
+    // Live: the person's message, Claude writes, a helper edits, Claude edits; next message; one more write.
+    const live = setupPages({ pages });
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      write(x, path, page('Report', '1'), { history });
+      edit(x, path, page('Report', '2'), { parent: 'toolu_helper', history });
+      say('working on it');
+      edit(x, path, page('Report', '3'), { history });
+      x.t.boundary({ history });
+      write(x, path, page('Report', '4'), { history });
+      x.t.boundary({ history });
+    };
+    n = 1000;
+    script(live, false);
+    const liveSnap = shape(await snap(live.t));
+    expect(liveSnap[0]?.versions).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    // Reopened: the same messages from history, the same boundaries, and the copies live kept.
+    n = 1000;
+    pages.log.length = 0;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    expect(shape(await snap(replay.t))).toEqual(liveSnap);
+    expect(pages.log.filter((l) => !l.startsWith('keep'))).toEqual([]);
+    expect(replay.t.page(liveSnap[0]?.key as string)?.versions).toEqual(
+      live.t.page(liveSnap[0]?.key as string)?.versions,
+    );
+  });
+
+  it('from history: decides page-ness from a Write’s content, or the file now for an edit', async () => {
+    const x = setupPages();
+    write(x, `${TMP}/frag.html`, '<p>fragment</p>', { history: true });
+    write(x, `${TMP}/whole.html`, page('Whole'), { history: true });
+    x.pages.files.set(`${TMP}/pre.html`, page('Was there'));
+    edit(x, `${TMP}/pre.html`, '', { history: true });
+    edit(x, `${TMP}/gone.html`, '', { history: true });
+    x.t.boundary({ history: true });
+    expect(
+      pagesOf(await snap(x.t))
+        .map((p) => p.title)
+        .sort(),
+    ).toEqual(['Was there', 'Whole']);
+  });
+
+  it('from history: copies only a missing newest version, and keeps a copy left in progress', async () => {
+    const x = setupPages();
+    const path = `${TMP}/b.html`;
+    const start = n;
+    const a = write(x, path, page('B1'), { history: true });
+    x.t.boundary({ history: true });
+    const b = write(x, path, page('B2'), { history: true });
+    x.t.boundary({ history: true });
+    x.pages.files.set(path, page('B now'));
+    const [p] = pagesOf(await snap(x.t));
+    const key = p?.key as string;
+    // The older one would get today's content: never copied.
+    expect(x.pages.log.filter((l) => l.startsWith('copy'))).toEqual([`copy ${key}/${b}`]);
+    expect(p?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
+    expect(p?.title).toBe('B now');
+
+    // A stop left an in-progress copy of version 1: it is exactly that version, so it is kept.
+    const y = setupPages();
+    n = start;
+    y.pages.drafts.set(key, { id: a, html: page('B1') });
+    write(y, path, page('B1'), { history: true });
+    y.t.boundary({ history: true });
+    write(y, path, page('B2'), { history: true });
+    y.t.boundary({ history: true });
+    const [q] = pagesOf(await snap(y.t));
+    expect(q?.versions.map((v) => v.hasCopy)).toEqual([true, false]);
+    expect(y.pages.kept.get(`${key}/${a}`)).toBe(page('B1'));
+  });
+
+  it('never copies a newest version from its source while the page is being written again', async () => {
+    const x = setupPages();
+    const path = `${TMP}/c.html`;
+    write(x, path, page('C'), { history: true });
+    x.t.boundary({ history: true });
+    x.pages.files.set(path, page('C live'));
+    write(x, path, page('C live'));
+    await snap(x.t);
+    expect(x.pages.log.filter((l) => l.startsWith('copy'))).toEqual([]);
+  });
+
+  it('marks versions whose copies made room for a newer one as not kept', async () => {
+    const x = setupPages();
+    const path = `${TMP}/e.html`;
+    const first = write(x, path, page('E'));
+    x.t.boundary();
+    const key = pagesOf(await snap(x.t))[0]?.key as string;
+    x.pages.evictNext([{ key, id: first }]);
+    write(x, path, page('E2'));
+    x.t.boundary();
+    expect(pagesOf(await snap(x.t))[0]?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
+  });
+
+  it('keeps at most PAGE_VERSIONS_MAX versions and CHAT_PAGES_MAX pages, newest first', async () => {
+    const x = setupPages();
+    const path = `${TMP}/v.html`;
+    for (let i = 1; i <= PAGE_VERSIONS_MAX + 5; i++) {
+      write(x, path, page(`V${i}`));
+      x.t.boundary();
+    }
+    const [p] = pagesOf(await snap(x.t));
+    expect(p?.versions).toHaveLength(PAGE_VERSIONS_MAX);
+    expect(p?.versions[0]?.n).toBe(6);
+    for (let i = 0; i < CHAT_PAGES_MAX + 5; i++) write(x, `${TMP}/p${i}.html`, page(`P${i}`));
+    const s = pagesOf(await snap(x.t));
+    expect(s).toHaveLength(CHAT_PAGES_MAX);
+    expect(s[0]?.title).toBe(`P${CHAT_PAGES_MAX + 4}`);
+    expect(s.map((y) => y.order)).toEqual([...s.map((y) => y.order)].sort((a, b) => b - a));
+  });
+
+  it('works without a copy store: pages from what the history shows, none kept', async () => {
+    const { t } = setup();
+    step(t, 'Write', { file_path: `${TMP}/w.html`, content: page('Written') });
+    t.boundary();
+    const [p] = pagesOf(await snap(t));
+    expect(p).toMatchObject({ title: 'Written', draft: false });
+    expect(p?.versions[0]?.hasCopy).toBe(false);
+  });
+});
+
+describe('createChatFiles: Artifact publishes (R2)', () => {
   it('follows every fixture call: publishes and republishes count, nothing else does', async () => {
-    const { t, pages } = setupPages();
-    const ids = FIXTURE.calls.map((c) => publish(t, c));
+    const { t } = setupPages();
+    const ids = FIXTURE.calls.map((c) => {
+      const id = publish(t, c);
+      t.boundary();
+      return id;
+    });
     const byName = (name: string) => ids[FIXTURE.calls.findIndex((c) => c.name === name)];
-    pages.sources.set(call('new page').input.file_path as string, 'Budget');
     const s = pagesOf(await snap(t));
     expect(s.map((p) => p.url)).toEqual([
       'https://claude.ai/artifact/BlOcKs00000000000000aa',
@@ -979,51 +1285,17 @@ describe('createChatFiles: pages', () => {
     expect(new Set(s.map((p) => p.key)).size).toBe(5);
   });
 
-  it('keeps a page’s key from its first publish, and copies each version as it lands', async () => {
-    const now = new Date('2026-11-14T10:00:00.000Z');
-    const { t, pages } = setupPages({ now: () => now });
-    const path = '/private/tmp/claude-501/p/scratchpad/plan.html';
+  it('gives a written page its claude.ai address and version when the same file is published', async () => {
+    const x = setupPages();
+    const path = `${TMP}/plan.html`;
     const url = 'https://claude.ai/artifact/PlAn0000000000000000aa';
-    pages.sources.set(path, 'The plan');
-    publish(t, pub(path, url, 1));
-    const first = pagesOf(await snap(t))[0];
-    expect(first).toMatchObject({ title: 'The plan', url, live: false, multiFile: false });
-    expect(first?.versions).toEqual([{ n: 1, remote: 1, at: now.toISOString(), hasCopy: true }]);
-    // The same address with a trailing slash is the same page.
-    publish(t, pub(path, `${url}/`, 2));
-    const again = pagesOf(await snap(t));
-    expect(again).toHaveLength(1);
-    expect(again[0]?.key).toBe(first?.key);
-    expect(again[0]?.versions.map((v) => v.n)).toEqual([1, 2]);
-    expect(pages.copies).toEqual([`${first?.key}/1`, `${first?.key}/2`]);
-    expect(t.page(first?.key as string)).toEqual({
-      title: 'The plan',
-      url,
-      filePath: path,
-      newest: 2,
-      versions: [
-        { n: 1, hasCopy: true },
-        { n: 2, hasCopy: true },
-      ],
-    });
-    expect(t.page('nope')).toBeNull();
-  });
-
-  it('shows a version it could not copy as not kept, named after its file', async () => {
-    const { t } = setupPages();
-    publish(
-      t,
-      pub('/private/tmp/claude-501/p/q/big-report.html', 'https://claude.ai/artifact/BiG00000000000000000aa'),
-    );
-    const [p] = pagesOf(await snap(t));
-    expect(p?.title).toBe('big-report');
-    expect(p?.versions[0]?.hasCopy).toBe(false);
-  });
-
-  it('counts a helper’s publish', async () => {
-    const { t } = setupPages();
-    const id = publish(t, call('new page'), { parent: 'toolu_helper' });
-    expect(pagesOf(await snap(t))[0]?.toolUseIds).toEqual([id]);
+    const w = write(x, path, page('The plan'));
+    const pubId = publish(x.t, pub(path, `${url}/`, 3));
+    x.t.boundary();
+    const s = pagesOf(await snap(x.t));
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ title: 'The plan', url, toolUseIds: [w, pubId] });
+    expect(s[0]?.versions.map((v) => [v.n, v.remote, v.hasCopy])).toEqual([[1, 3, true]]);
   });
 
   it('leaves a page’s address out of the web links', async () => {
@@ -1045,84 +1317,5 @@ describe('createChatFiles: pages', () => {
     t.observe(say('See https://example.com/a'));
     const s = await snap(t);
     expect('pages' in s).toBe(false);
-  });
-
-  it('rebuilds the same pages from history, reusing copies and copying only a missing newest version', async () => {
-    const live = setupPages();
-    const path = call('new page').input.file_path as string;
-    publish(live.t, call('new page'));
-    publish(live.t, call('republish same file, no url'));
-    const liveSnap = pagesOf(await snap(live.t));
-
-    const { t, pages } = setupPages();
-    const key = liveSnap[0]?.key as string;
-    pages.held.set(`${key}/1`, 'Budget v1');
-    pages.sources.set(path, 'Budget now');
-    publish(t, call('new page'), { history: true });
-    publish(t, call('republish same file, no url'), { history: true });
-    const s = pagesOf(await snap(t));
-    expect(s.map((p) => p.key)).toEqual([key]);
-    expect(s[0]?.versions).toEqual([
-      { n: 1, remote: 1, at: null, hasCopy: true },
-      { n: 2, remote: 2, at: null, hasCopy: true },
-    ]);
-    expect(pages.copies).toEqual([`${key}/2`]);
-    expect(s[0]?.title).toBe('Budget now');
-
-    // Reopened again: both copies are on disk now, so nothing is copied.
-    const again = setupPages();
-    again.pages.held.set(`${key}/1`, 'Budget v1');
-    again.pages.held.set(`${key}/2`, 'Budget now');
-    publish(again.t, call('new page'), { history: true });
-    publish(again.t, call('republish same file, no url'), { history: true });
-    await snap(again.t);
-    expect(again.pages.copies).toEqual([]);
-  });
-
-  it('never copies an older version from history (it would get today’s content)', async () => {
-    const { t, pages } = setupPages();
-    pages.sources.set(call('new page').input.file_path as string, 'B');
-    publish(t, call('new page'), { history: true });
-    publish(t, call('republish same file, no url'), { history: true });
-    const [p] = pagesOf(await snap(t));
-    expect(pages.copies).toEqual([`${p?.key}/2`]);
-    expect(p?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
-  });
-
-  it('marks versions whose copies made room for a newer one as not kept', async () => {
-    const { t, pages } = setupPages();
-    const path = '/private/tmp/claude-501/p/a.html';
-    const url = 'https://claude.ai/artifact/EvIcT000000000000000aa';
-    pages.sources.set(path, 'A');
-    publish(t, pub(path, url, 1));
-    const key = pagesOf(await snap(t))[0]?.key as string;
-    pages.evictNext([{ key, n: 1 }]);
-    publish(t, pub(path, url, 2));
-    expect(pagesOf(await snap(t))[0]?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
-  });
-
-  it('keeps at most PAGE_VERSIONS_MAX versions and CHAT_PAGES_MAX pages, newest first', async () => {
-    const { t } = setupPages();
-    const path = '/private/tmp/claude-501/p/v.html';
-    for (let i = 1; i <= PAGE_VERSIONS_MAX + 5; i++)
-      publish(t, pub(path, 'https://claude.ai/artifact/VeRs', i));
-    const [p] = pagesOf(await snap(t));
-    expect(p?.versions).toHaveLength(PAGE_VERSIONS_MAX);
-    expect(p?.versions[0]?.n).toBe(6);
-    for (let i = 0; i < CHAT_PAGES_MAX + 5; i++) {
-      publish(t, pub(`/private/tmp/claude-501/p/p${i}.html`, `https://claude.ai/artifact/MaNy${i}`));
-    }
-    const s = pagesOf(await snap(t));
-    expect(s).toHaveLength(CHAT_PAGES_MAX);
-    expect(s[0]?.url).toBe(`https://claude.ai/artifact/MaNy${CHAT_PAGES_MAX + 4}`);
-    expect(s.map((x) => x.order)).toEqual([...s.map((x) => x.order)].sort((a, b) => b - a));
-  });
-
-  it('works without a copy store: pages are listed, none kept', async () => {
-    const { t } = setup();
-    publish(t, call('new page'));
-    const [p] = pagesOf(await snap(t));
-    expect(p?.versions[0]?.hasCopy).toBe(false);
-    expect(p?.title).toBe('budget-tracker');
   });
 });

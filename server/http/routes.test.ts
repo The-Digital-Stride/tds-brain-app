@@ -2167,6 +2167,11 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
           if (n === 2) return Buffer.from('﻿  <!DOCTYPE html><html><body>Whole</body></html>');
           return null;
         },
+        brandedCopy: async (id: string, key: string, n: number) => {
+          if (id !== SID) throw new SessionError('not-found', 'That chat could not be found.');
+          if (key !== KEY || n > 1) return null;
+          return { name: 'budget “q3”-tds-2026-11-14.html', html: `<!DOCTYPE html><p>Branded ${n}</p>` };
+        },
         askPage: async (id: string, key: string, req: unknown) => {
           asks.push({ id, key, req });
         },
@@ -2239,7 +2244,7 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
       [ROUTES.chatPage(SID, KEY, 3), 404, 'GET'],
       [ROUTES.chatPage(SID, 'a.b', 1), 404, 'GET'],
       [ROUTES.chatPage(SID, 'a b', 1), 404, 'GET'],
-      [`/api/sessions/${SID}/pages/${KEY}/0`, 404, 'GET'],
+      [`/api/sessions/${SID}/pages/${KEY}/00`, 404, 'GET'],
       [`/api/sessions/${SID}/pages/${KEY}/1.5`, 404, 'GET'],
       [`/api/sessions/${SID}/pages/%E0%A4%A/1`, 404, 'GET'],
       [ROUTES.chatPage(SID, KEY, 1), 405, 'POST'],
@@ -2258,6 +2263,59 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
     expect(none.headers['content-security-policy']).toBe(PAGE_PREVIEW_CSP);
     const broken = await call(ROUTES.chatPage(SID, KEY, 1), {
       sessions: { pageCopy: async () => Promise.reject(new Error('boom /secret/path')) },
+    });
+    expect(broken.status).toBe(500);
+    expect(broken.body.toString('utf8')).not.toContain('/secret/path');
+  });
+
+  it('serves the copy Claude is still working on as version 0, and says when it isn’t kept', async () => {
+    const draft = await call(ROUTES.chatPage(SID, KEY, 0), {
+      sessions: sessions({
+        pageCopy: async (_i: string, _k: string, n: number) => (n === 0 ? Buffer.from('<p>Draft</p>') : null),
+      }).fake,
+    });
+    expect(draft.status).toBe(200);
+    expect(draft.body.toString('utf8')).toContain('<p>Draft</p>');
+    const none = await call(ROUTES.chatPage(SID, KEY, 0));
+    expect(none.status).toBe(404);
+    expect(none.body.toString('utf8')).toContain('couldn&#39;t keep a copy');
+  });
+
+  it('sends the TDS-branded copy as a download, never shown in place (R5, O1)', async () => {
+    const sent = await call(ROUTES.chatPageBranded(SID, KEY, 1));
+    expect(sent.status).toBe(200);
+    expect(sent.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+    expect(sent.cspSets).toBe(2);
+    expect(sent.headers['content-type']).toBe('application/octet-stream');
+    expect(sent.headers['content-disposition']).toBe(
+      `attachment; filename="budget _q3_-tds-2026-11-14.html"; filename*=UTF-8''budget%20%E2%80%9Cq3%E2%80%9D-tds-2026-11-14.html`,
+    );
+    expect(sent.headers['x-content-type-options']).toBe('nosniff');
+    expect(sent.headers['cache-control']).toBe('no-store');
+    expect(sent.body.toString('utf8')).toBe('<!DOCTYPE html><p>Branded 1</p>');
+    expect(sent.headers['content-length']).toBe(sent.body.length);
+    expect((await call(ROUTES.chatPageBranded(SID, KEY, 0))).status).toBe(200);
+  });
+
+  it('answers every miss on the branded download as the same small page', async () => {
+    const cases: [string, number, string][] = [
+      [ROUTES.chatPageBranded('other-chat', KEY, 1), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, 'unknown', 1), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, KEY, 3), 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, 'a.b', 1), 404, 'GET'],
+      [`/api/sessions/${SID}/pages/${KEY}/x/branded`, 404, 'GET'],
+      [ROUTES.chatPageBranded(SID, KEY, 1), 405, 'POST'],
+    ];
+    for (const [path, status, method] of cases) {
+      const sent = await call(path, { method });
+      expect(sent.status, path).toBe(status);
+      expect(sent.headers['content-security-policy'], path).toBe(PAGE_PREVIEW_CSP);
+      expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
+      expect(sent.body.toString('utf8')).toMatch(/^<!doctype html>/);
+    }
+    expect((await call(ROUTES.chatPageBranded(SID, KEY, 1), { sessions: {} })).status).toBe(404);
+    const broken = await call(ROUTES.chatPageBranded(SID, KEY, 1), {
+      sessions: { brandedCopy: async () => Promise.reject(new Error('boom /secret/path')) },
     });
     expect(broken.status).toBe(500);
     expect(broken.body.toString('utf8')).not.toContain('/secret/path');

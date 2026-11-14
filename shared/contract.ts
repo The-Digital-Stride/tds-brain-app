@@ -1506,6 +1506,12 @@ export const ROUTES = {
    */
   chatPage: (id: string, key: string, n: number) =>
     `/api/sessions/${encodeURIComponent(id)}/pages/${encodeURIComponent(key)}/${n}`,
+  /**
+   * `GET`: version `n` of a chat's page wrapped in the TDS bar (`brandedPage`), as a download
+   * (`brandedFileName`), under the download policy. Errors as for `chatPage`.
+   */
+  chatPageBranded: (id: string, key: string, n: number) =>
+    `/api/sessions/${encodeURIComponent(id)}/pages/${encodeURIComponent(key)}/${n}/branded`,
   /** `POST` PageAskRequest (`shared/pages-contract.ts`): ask Claude to change or brand a page. */
   chatPageAsk: (id: string, key: string) =>
     `/api/sessions/${encodeURIComponent(id)}/pages/${encodeURIComponent(key)}/ask`,

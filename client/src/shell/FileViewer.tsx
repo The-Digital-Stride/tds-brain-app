@@ -67,6 +67,14 @@ export function FileViewer() {
             headingId={headingId}
             headingRef={heading}
             onClose={close}
+            onOpenInDocuments={(file) => {
+              if (!file.item) return;
+              leaving.current = true;
+              dispatch({ type: 'close-viewer' });
+              openLibraryItem('documents', file.scope.id, file.item);
+              openView('app:documents');
+              if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+            }}
           />
         </div>
       </div>

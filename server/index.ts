@@ -38,6 +38,7 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createRunner } from './update/run.ts';
@@ -117,6 +118,7 @@ function buildBrainSide(path: string | null) {
     log,
     uploads,
     dataDir: config.dataDir,
+    chatKinds: createChatKindStore(config.dataDir, log),
   });
   return { brain, thumbs, uploads, sessions, skillLevels };
 }

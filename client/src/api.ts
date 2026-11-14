@@ -6,6 +6,7 @@ import type {
   ChangelogResponse,
   ChangeTodoRequest,
   ChatFileChanges,
+  ChatKind,
   ClientGuessRequest,
   ClientGuessResponse,
   ClientPickOutcomeRequest,
@@ -22,6 +23,7 @@ import type {
   QuestionReply,
   SendMessageRequest,
   SessionList,
+  SetChatKindRequest,
   StartSessionRequest,
   StartSessionResponse,
   SyncStatus,
@@ -143,6 +145,8 @@ export const api = {
     request<OkResponse>('POST', ROUTES.sessionAnswer(id), reply),
   interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
+  setChatKind: (id: string, kind: ChatKind) =>
+    request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
   /** Global search over every library folder the person can see; `kind` is sent as `image` or `doc`. */

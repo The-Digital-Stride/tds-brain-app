@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.22.0 — 2026-11-14
+
+- **feat**: TDS / Personal kind for chats, with a filter in the Chats drawer
+
 ## v0.21.0 — 2026-11-14
 
 - **feat**: remove the Steps tab from the This chat panel

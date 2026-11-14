@@ -839,15 +839,34 @@ export interface LiveSession {
    * Kept only while the chat is open: a chat reopened from History has null.
    */
   todoId: string | null;
+  /**
+   * Work (TDS) or personal. Worked out when the chat is created (a chat on a personal to-do is
+   * 'personal'; a reopened chat keeps what was saved for it; anything else is 'tds') and changed with
+   * `ROUTES.sessionKind`. The app saves it in its own data folder, keyed by `sdkSessionId`.
+   */
+  kind: ChatKind;
   state: SessionState;
   startedAt: string;
   lastActivityAt: string;
 }
 
+/** A chat's kind: the same two values as a to-do's scope, so both lists filter the same way. */
+export type ChatKind = TodoScope;
+
 export interface PastSession {
   sdkSessionId: string;
   title: string;
   lastModified: string;
+  /** What the app saved for this chat; 'tds' when nothing was saved. */
+  kind: ChatKind;
+}
+
+/**
+ * `POST ROUTES.sessionKind(id)` body. Reply 200 `{ session: LiveSession }`. A `kind` other than 'tds' or
+ * 'personal' is 400 `bad-request`; an unknown chat 404 `not-found`; a closing chat `session-closed`.
+ */
+export interface SetChatKindRequest {
+  kind: ChatKind;
 }
 
 export interface SessionList {
@@ -1408,6 +1427,8 @@ export const ROUTES = {
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
+  /** `POST`: SetChatKindRequest → StartSessionResponse (`{ session }`). */
+  sessionKind: (id: string) => `/api/sessions/${encodeURIComponent(id)}/kind`,
   /**
    * `GET`: ChatFileChanges for one `ChatFile.key` of a live chat. 404 `not-found` for an unknown chat
    * or a key with no edits in it; `session-closed` as for the other session routes. `no-store`.

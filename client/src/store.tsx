@@ -12,6 +12,7 @@ import {
 import type {
   AppPrefs,
   Bootstrap,
+  ChatKind,
   SequencedEvent,
   SessionList,
   SkillInfo,
@@ -164,6 +165,8 @@ export interface Store {
   /** Closes at once when idle; otherwise switches to the chat and asks first. */
   requestClose: (id: string) => void;
   closeChat: (id: string) => Promise<boolean>;
+  /** Marks an open chat TDS or personal; the list updates at once, and a failure shows in `actionError`. */
+  setChatKind: (id: string, kind: ChatKind) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
   /** Counts up each time focus should return to the message box. */
@@ -463,6 +466,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [loadSessions, requestFocus],
+  );
+
+  const setChatKind = useCallback(
+    async (id: string, kind: ChatKind) => {
+      // The switch moves at once (a radio group checks what it moves to); a failure reloads the truth.
+      setSessions((s) => (s ? { ...s, live: s.live.map((c) => (c.id === id ? { ...c, kind } : c)) } : s));
+      try {
+        const { session } = await api.setChatKind(id, kind);
+        setActionError(null);
+        setSessions((s) => (s ? { ...s, live: s.live.map((c) => (c.id === id ? session : c)) } : s));
+      } catch (err) {
+        setActionError(messageOf(err));
+        void loadSessions();
+      }
+    },
+    [loadSessions],
   );
 
   const requestClose = useCallback(
@@ -867,6 +886,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelClose: () => setCloseRequest(null),
       requestClose,
       closeChat,
+      setChatKind,
       notice,
       run,
     }),
@@ -914,6 +934,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       closeRequest,
       requestClose,
       closeChat,
+      setChatKind,
       notice,
       run,
     ],

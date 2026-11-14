@@ -1981,3 +1981,67 @@ describe('skill levels and chat levels', () => {
     expect(sent.json.skillLevels).toEqual({ levels: { a: rec('deep') }, canSet: false, writable: true });
   });
 });
+
+describe('POST /api/sessions/:id/kind', () => {
+  async function post(path: string, body: unknown, setKind: (id: string, kind: string) => Promise<unknown>) {
+    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      { sessions: { setKind }, log: () => {} } as unknown as RouteContext,
+    );
+    return { status: sent.status, json: JSON.parse(sent.body) };
+  }
+
+  it('accepts tds and personal and replies with the session', async () => {
+    const calls: unknown[] = [];
+    const setKind = async (id: string, kind: string) => {
+      calls.push([id, kind]);
+      return { id, kind };
+    };
+    for (const kind of ['tds', 'personal']) {
+      const sent = await post('/api/sessions/abc%20d/kind', { kind }, setKind);
+      expect(sent.status).toBe(200);
+      expect(sent.json).toEqual({ session: { id: 'abc d', kind } });
+    }
+    expect(calls).toEqual([
+      ['abc d', 'tds'],
+      ['abc d', 'personal'],
+    ]);
+  });
+
+  it('refuses anything else with bad-request, without calling the sessions', async () => {
+    let called = false;
+    const setKind = async () => {
+      called = true;
+      return {};
+    };
+    for (const body of [{ kind: 'work' }, { kind: 5 }, {}, { kind: null }]) {
+      const sent = await post('/api/sessions/abc/kind', body, setKind);
+      expect(sent.status).toBe(400);
+      expect(sent.json.error?.code ?? sent.json.code).toBe('bad-request');
+    }
+    expect(called).toBe(false);
+  });
+
+  it('maps an unknown chat to 404', async () => {
+    const sent = await post('/api/sessions/zzz/kind', { kind: 'tds' }, async () => {
+      throw new SessionError('not-found', 'That chat could not be found.');
+    });
+    expect(sent.status).toBe(404);
+  });
+});

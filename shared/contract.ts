@@ -979,7 +979,16 @@ export type ChatEvent =
    * with `levels=1` (see `ROUTES.stream`), for the same reason as `files`; the server keeps only the
    * newest in its replay log.
    */
-  | { type: 'level'; level: TurnLevel };
+  | {
+      type: 'level';
+      level: TurnLevel;
+      /**
+       * Set once, right after Claude ran a skill that has no team level and no own setting, so Owners
+       * and scouts can be offered "Set a team level for /x?" (decision 7). The client shows the offer
+       * only when `SkillLevels.canSet`.
+       */
+      unlevelledSkill?: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Chat files: the documents, attachments and web links of one chat (plan 2026-11-13-chat-files)

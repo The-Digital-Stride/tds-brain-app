@@ -1,14 +1,23 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import type { SkillInfo } from '../../../shared/contract.ts';
 import { isLevelTier, LEVEL_TIERS } from '../../../shared/levels-contract.ts';
 import { useStore } from '../store.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { starterSkills } from './words.ts';
 
-function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
-  const { startSkill, togglePin, skillLevels } = useStore();
+function SkillRow({
+  skill,
+  favourite,
+  onStar,
+}: {
+  skill: SkillInfo;
+  favourite: boolean;
+  onStar: (id: string, button: HTMLElement) => void;
+}) {
+  const { startSkill, skillLevels } = useStore();
   const teamTier = skillLevels?.levels[skill.name]?.tier;
   const chip = skill.ownLevel ? 'Set by skill' : isLevelTier(teamTier) ? LEVEL_TIERS[teamTier].label : null;
   const { dispatch, modes } = useShell();
@@ -52,17 +61,9 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
           ) : null}
         </span>
       </button>
-      {/* The pin comes first so the chevron always sits at the row's right edge. */}
-      <button
-        type="button"
-        className="icon-btn"
-        aria-pressed={pinned}
-        aria-label={`${pinned ? 'Unpin' : 'Pin'} ${skill.title}`}
-        data-tip={pinned ? 'Unpin' : 'Pin'}
-        onClick={() => void togglePin(skill.name)}
-      >
-        <Icon name="pin" size={16} />
-      </button>
+      {/* The star, as chats and to-dos have (Ian, 2026-11-14), comes first so the chevron always sits at the row's
+          right edge. A favourite is still kept in the prefs' `pins` list, so older versions of the app agree. */}
+      <StarButton id={skill.name} title={skill.title} on={favourite} onPress={onStar} />
       {skill.description ? (
         <button
           type="button"
@@ -82,10 +83,29 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
 }
 
 export function SkillsDrawer() {
-  const { boot } = useStore();
+  const { boot, togglePin } = useStore();
   const [query, setQuery] = useState('');
   const skills = boot?.skills;
-  const pins = boot?.prefs.pins ?? [];
+  const favs = boot?.prefs.pins ?? NO_FAVOURITES;
+  const body = useRef<HTMLDivElement>(null);
+  const starFocus = useStarFocus(body, favs);
+  // Which sections are open: the person's own choice, else Favourites, and Used often when nothing is starred.
+  const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
+  const onStar = (name: string, button: HTMLElement) => {
+    starFocus(name, button);
+    // Open the section the skill moves to, so focus can follow it there, as chats and to-dos do.
+    const to = !favs.includes(name)
+      ? 'favourites'
+      : (boot?.usedOften ?? []).some((u) => u.name === name)
+        ? 'often'
+        : 'all';
+    setOpenFolds((o) => ({ ...o, [to]: true }));
+    void togglePin(name);
+  };
+  const fold = (key: string, fallback: boolean) => ({
+    open: openFolds[key] ?? fallback,
+    onToggle: (o: boolean) => setOpenFolds((f) => ({ ...f, [key]: o })),
+  });
 
   const all = useMemo(
     () => [...(skills ?? [])].sort((a, b) => a.title.localeCompare(b.title, 'en-GB')),
@@ -102,7 +122,7 @@ export function SkillsDrawer() {
   const list = (items: SkillInfo[]) => (
     <ul className="drawer-list">
       {items.map((s) => (
-        <SkillRow key={s.name} skill={s} pinned={pins.includes(s.name)} />
+        <SkillRow key={s.name} skill={s} favourite={favs.includes(s.name)} onStar={onStar} />
       ))}
     </ul>
   );
@@ -125,7 +145,7 @@ export function SkillsDrawer() {
         />
       </div>
       <div className="drawer-scroll">
-        <div className="drawer-body">
+        <div className="drawer-body" ref={body} tabIndex={-1}>
           {shown ? (
             shown.length === 0 ? (
               <p className="dock-empty">No skills match that search.</p>
@@ -135,16 +155,16 @@ export function SkillsDrawer() {
           ) : (
             <>
               {pinned.length > 0 ? (
-                <Fold title="Pinned" count={pinned.length}>
+                <Fold title="Favourites" count={pinned.length} {...fold('favourites', true)}>
                   {list(pinned)}
                 </Fold>
               ) : null}
               {often.length > 0 ? (
-                <Fold title="Used often" count={often.length} defaultOpen={pinned.length === 0}>
+                <Fold title="Used often" count={often.length} {...fold('often', pinned.length === 0)}>
                   {list(often)}
                 </Fold>
               ) : null}
-              <Fold title="All skills" count={all.length} defaultOpen={false}>
+              <Fold title="All skills" count={all.length} {...fold('all', false)}>
                 {list(all)}
               </Fold>
             </>

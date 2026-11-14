@@ -8,6 +8,8 @@ const h = vi.hoisted(() => ({
   lastActivityAt: '2026-11-11T10:00:00.000Z',
   composerFocus: 0,
   requestComposerFocus: vi.fn(),
+  openView: vi.fn(),
+  requestSettingsFocus: vi.fn(),
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
@@ -38,7 +40,8 @@ vi.mock('../store.tsx', () => ({
     actionError: null,
     clearError: () => {},
     startSkill: () => {},
-    openView: () => {},
+    openView: h.openView,
+    requestSettingsFocus: h.requestSettingsFocus,
     composerFocus: h.composerFocus,
     requestComposerFocus: h.requestComposerFocus,
     closeRequest: null,
@@ -124,8 +127,19 @@ describe('model and effort under the message box', () => {
     h.chat = { ...chatState('idle'), model: 'claude-opus-5-5', effort: 'high' };
     rerender(sheet());
     const line = document.querySelector('.engine-line');
-    expect(line?.textContent).toBe('Claude is using Opus 5.5 · High effort');
+    expect(line?.querySelector('.engine-text')?.textContent).toBe('Claude is using Opus 5.5 · High effort');
     expect(line?.previousElementSibling?.classList.contains('composer')).toBe(true);
+  });
+
+  it('offers Change with the line, and it opens Settings and asks for focus on Model', () => {
+    h.chat = chatState('idle');
+    const { rerender } = render(sheet());
+    expect(screen.queryByRole('button', { name: 'Change model and effort' })).toBeNull();
+    h.chat = { ...chatState('idle'), model: 'claude-opus-5-5', effort: 'high' };
+    rerender(sheet());
+    fireEvent.click(screen.getByRole('button', { name: 'Change model and effort' }));
+    expect(h.requestSettingsFocus).toHaveBeenCalledTimes(1);
+    expect(h.openView).toHaveBeenCalledWith('settings');
   });
 });
 

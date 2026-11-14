@@ -26,9 +26,14 @@ import {
   type ChatFileChanges,
   EFFORT_LEVELS,
   type EffortLevel,
+  type EngineChoice,
+  type EngineChoices,
   type LiveSession,
   MAX_ATTACHMENTS,
   MAX_LIVE_SESSIONS,
+  MODEL_PREF_MAX,
+  MODEL_PREF_PATTERN,
+  type ModelChoice,
   type PastSession,
   type PermissionReply,
   type QuestionReply,
@@ -45,6 +50,7 @@ import {
   type ResolvePath,
   type TrackedAttachment,
 } from './chat-files.ts';
+import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
@@ -61,6 +67,15 @@ export interface EngineQuery extends AsyncIterable<unknown> {
    * Agent SDK but not in its published types, so it is optional and every use is guarded.
    */
   getSettings?(): Promise<unknown>;
+  /**
+   * Switches the model for the chat's next reply (`undefined` = Claude Code's built-in default).
+   * Present on the SDK's live query; optional so older engines and test fakes still fit, and every use is guarded.
+   */
+  setModel?(model?: string): Promise<void>;
+  /** Changes flag-layer settings on the live engine (here only `effortLevel`, which takes `'max'` and null to clear). */
+  applyFlagSettings?(settings: { effortLevel: EffortLevel | null }): Promise<void>;
+  /** The models Claude Code offers this account (`value`, `displayName`, `supportedEffortLevels`). */
+  supportedModels?(): Promise<unknown[]>;
 }
 
 export interface PastInfo {
@@ -104,6 +119,11 @@ export interface SessionManagerOptions {
    * person's and the brain's Claude Code settings; tests inject their own.
    */
   permissionMode?: () => AppPermissionMode;
+  /**
+   * What "Same as Claude Code" means for the model, read afresh each time. Defaults to reading the
+   * person's and the brain's Claude Code settings; tests inject their own.
+   */
+  engineDefaults?: () => { model: string | null };
   /**
    * Chat attachments. When given and on, each engine may read (never change) the staging folder,
    * and messages may carry upload ids. Without it, attachments are refused.
@@ -149,9 +169,24 @@ export interface SessionManager {
    * Throws `not-found` / `session-closed` for the chat.
    */
   fileChanges(id: string, key: string): ChatFileChanges | null;
+  /**
+   * Stores the model and effort chats use (null = "Same as Claude Code") for chats started from now
+   * on, and switches every live chat's engine to it for its next reply. Never throws: a failure is
+   * logged as a short line and the chat carries on.
+   */
+  setEngineChoice(choice: EngineChoice): Promise<void>;
+  /** What Settings offers for Model and Effort (`GET /api/engine/choices`). */
+  engineChoices(): Promise<EngineChoices>;
 }
 
 // ---------------------------------------------------------------------------
+
+/** Offered in Settings until an engine has listed the real models. */
+const FALLBACK_MODELS: ModelChoice[] = [
+  { value: 'opus', label: 'Opus', efforts: null },
+  { value: 'sonnet', label: 'Sonnet', efforts: null },
+  { value: 'haiku', label: 'Haiku', efforts: null },
+];
 
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
@@ -442,6 +477,16 @@ interface Session {
   warnedKeySource: boolean;
   /** The last model and effort sent to the screen, so a repeat is not sent again. */
   settingsKey: string | null;
+  /** The model and effort this engine started with or was last given (decision 3). */
+  appliedChoice: EngineChoice;
+  /** Choice changes for this chat run one after another, in order. */
+  choiceChain: Promise<void>;
+  /** The model and effort Claude Code reported while the app's effort was unset: what clearing the effort goes back to. */
+  reportedDefault: { model: string | null; effort: EffortLevel | null } | null;
+  /** The model Claude Code last reported for this engine. */
+  reportedModel: string | null;
+  /** The flag layer holds an effort the app re-applied on reverting; a model change must clear it. */
+  effortPinned: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
   closing: boolean;
   closed: Promise<void> | null;
@@ -543,6 +588,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   const log = opts.log ?? (() => {});
   const engineSettings = permissionSettings(opts.uploads?.root ?? null, opts.dataDir ?? null);
   const resolveMode = opts.permissionMode ?? (() => resolvePermissionMode(opts.brainRoot, homedir()));
+  const resolveDefaults = opts.engineDefaults ?? (() => resolveEngineDefaults(opts.brainRoot, homedir()));
+  /** The model and effort the person chose in Settings; null = "Same as Claude Code". */
+  let choice: EngineChoice = { model: null, effort: null };
+  /** The newest engine's model list, kept for Settings (null until an engine has answered). */
+  let modelList: ModelChoice[] | null = null;
   const live = new Map<string, Session>();
   const closedIds = new Set<string>();
   const changeListeners = new Set<() => void>();
@@ -694,6 +744,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       interruptRequested: false,
       warnedKeySource: false,
       settingsKey: null,
+      appliedChoice: { model: null, effort: null },
+      choiceChain: Promise.resolve(),
+      reportedDefault: null,
+      reportedModel: null,
+      effortPinned: false,
       idleTimer: null,
       closing: false,
       closed: null,
@@ -810,6 +865,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       ? (applied.effort as EffortLevel)
       : null;
     if (!model && !effort) return;
+    s.reportedModel = model;
+    if (s.appliedChoice.effort === null) s.reportedDefault = { model, effort };
     const key = `${model ?? ''}|${effort ?? ''}`;
     if (key === s.settingsKey) return;
     s.settingsKey = key;
@@ -888,6 +945,70 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
   }
 
+  /** Keeps the newest engine's model list for Settings. Never blocks or breaks the chat. */
+  async function fetchModels(q: EngineQuery): Promise<void> {
+    try {
+      if (typeof q.supportedModels !== 'function') return;
+      const rows = await q.supportedModels();
+      if (!Array.isArray(rows)) return;
+      const out: ModelChoice[] = [];
+      for (const r of rows) {
+        if (!isRec(r) || typeof r.value !== 'string' || r.value === 'default') continue;
+        if (!MODEL_PREF_PATTERN.test(r.value) || r.value.length > MODEL_PREF_MAX) continue;
+        const efforts = Array.isArray(r.supportedEffortLevels)
+          ? r.supportedEffortLevels.filter((e): e is EffortLevel =>
+              (EFFORT_LEVELS as readonly unknown[]).includes(e),
+            )
+          : [];
+        const name = typeof r.displayName === 'string' ? r.displayName.trim() : '';
+        out.push({
+          value: r.value,
+          label: name || modelLabel(r.value),
+          efforts: efforts.length > 0 ? efforts : null,
+        });
+      }
+      if (out.length > 0) modelList = out;
+    } catch {
+      log('Could not read the list of models from Claude Code.');
+    }
+  }
+
+  /** Moves one live engine to the new choice, changing only what differs from what it has (decision 3). */
+  async function applyChoice(s: Session, q: EngineQuery, next: EngineChoice): Promise<void> {
+    if (s.closing || s.query !== q) return;
+    const had = s.appliedChoice;
+    if (next.model !== had.model && typeof q.setModel === 'function') {
+      try {
+        await q.setModel(next.model ?? resolveDefaults().model ?? undefined);
+        s.appliedChoice = { ...s.appliedChoice, model: next.model };
+        // A re-applied effort belongs to the old model: let the new one use its own.
+        if (s.effortPinned && next.effort === null && had.effort === null && q.applyFlagSettings) {
+          await q.applyFlagSettings({ effortLevel: null });
+          s.effortPinned = false;
+        }
+      } catch {
+        log('Could not change the model of an open chat.');
+      }
+    }
+    if (next.effort !== had.effort && typeof q.applyFlagSettings === 'function') {
+      try {
+        let level: EffortLevel | null = next.effort;
+        if (level === null) {
+          // Back to what Claude Code reported before the app set one, only when the model is still the
+          // one it reported it for (like-for-like ids, and not changed in this save).
+          const was = s.reportedDefault;
+          if (was?.effort && next.model === had.model && was.model === s.reportedModel) level = was.effort;
+        }
+        await q.applyFlagSettings({ effortLevel: level });
+        s.effortPinned = next.effort === null && level !== null;
+        s.appliedChoice = { ...s.appliedChoice, effort: next.effort };
+      } catch {
+        log('Could not change the effort of an open chat.');
+      }
+    }
+    await readSettings(s, q);
+  }
+
   function startEngine(s: Session): void {
     const input = createInputQueue();
     const options: Options = {
@@ -905,10 +1026,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     };
     if (s.sdkSessionId) options.resume = s.sdkSessionId;
     if (engineSettings) options.settings = engineSettings;
+    // Only what the person chose in Settings; left out, Claude Code's own settings decide (as before).
+    s.appliedChoice = { ...choice };
+    s.reportedDefault = null;
+    s.reportedModel = null;
+    s.effortPinned = false;
+    if (choice.model) options.model = choice.model;
+    if (choice.effort) options.effort = choice.effort;
     s.input = input;
     try {
       const q = opts.engine.query({ prompt: input, options });
       s.query = q;
+      void fetchModels(q);
       s.pump = pump(s, q);
     } catch {
       s.input = null;
@@ -1404,6 +1533,31 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const s = getLive(id);
       if (typeof key !== 'string' || !key) return null;
       return s.files?.changes(key) ?? null;
+    },
+
+    async setEngineChoice(next) {
+      choice = { model: next.model, effort: next.effort };
+      const jobs: Promise<void>[] = [];
+      for (const s of live.values()) {
+        const q = s.query;
+        if (!q || s.closing) continue;
+        const target = { ...choice };
+        s.choiceChain = s.choiceChain
+          .then(() => applyChoice(s, q, target))
+          .catch(() => {
+            log('Could not change the model or effort of an open chat.');
+          });
+        jobs.push(s.choiceChain);
+      }
+      await Promise.all(jobs);
+    },
+
+    async engineChoices() {
+      const models = [...(modelList ?? FALLBACK_MODELS)];
+      if (choice.model && !models.some((m) => m.value === choice.model)) {
+        models.push({ value: choice.model, label: modelLabel(choice.model), efforts: null });
+      }
+      return { models, claudeCode: { model: resolveDefaults().model } };
     },
   };
 }

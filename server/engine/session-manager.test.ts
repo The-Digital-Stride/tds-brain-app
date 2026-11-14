@@ -146,7 +146,7 @@ const replyScript: Script = ({ q, turn }) => {
   q.result();
 };
 
-function makeEngine(script: Script = replyScript) {
+function makeEngine(script: Script = replyScript, decorate?: (q: FakeQuery) => void) {
   const queries: FakeQuery[] = [];
   const past: PastInfo[] = [];
   const history: Record<string, HistoryMessage[]> = {};
@@ -155,6 +155,7 @@ function makeEngine(script: Script = replyScript) {
       const q = new FakeQuery(options);
       if (options.resume) q.sid = options.resume;
       queries.push(q);
+      decorate?.(q);
       void (async () => {
         let turn = 0;
         for await (const m of prompt as AsyncIterable<SDKUserMessage>) {
@@ -250,12 +251,15 @@ function setup(
     brain?: Partial<BrainReaders>;
     env?: NodeJS.ProcessEnv;
     claudePath?: string | null;
+    log?: (line: string) => void;
+    decorate?: (q: FakeQuery) => void;
     permissionMode?: () => AppPermissionMode;
+    engineDefaults?: () => { model: string | null };
     uploads?: UploadStaging;
     dataDir?: string;
   } = {},
 ) {
-  const fx = makeEngine(script);
+  const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
     uploads: opts.uploads,
     dataDir: opts.dataDir,
@@ -266,7 +270,8 @@ function setup(
     env: opts.env ?? { PATH: '/bin', HOME: '/home/x' },
     // Never read the real home folder in tests.
     permissionMode: opts.permissionMode ?? (() => 'default'),
-    log: () => {},
+    engineDefaults: opts.engineDefaults ?? (() => ({ model: null })),
+    log: opts.log ?? (() => {}),
   });
   return fx;
 }
@@ -483,6 +488,312 @@ describe('model and effort', () => {
     const s = await mgr.start({ prompt: 'hi' });
     await flush();
     expect(settingsEvents(s.id)).toEqual([]);
+  });
+});
+
+describe('the model and effort choice', () => {
+  type Controls = FakeQuery & {
+    getSettings?: () => Promise<unknown>;
+    setModel?: (model?: string) => Promise<void>;
+    applyFlagSettings?: (settings: Record<string, unknown>) => Promise<void>;
+    supportedModels?: () => Promise<unknown[]>;
+  };
+  /** Gives each engine the live controls, logging every call in order. */
+  function controls(calls: string[], over: Partial<Controls> = {}, applied?: () => unknown) {
+    return ({ q }: { q: FakeQuery }) => {
+      const c = q as Controls;
+      c.setModel = async (m) => {
+        calls.push(`model:${m ?? 'undefined'}`);
+      };
+      c.applyFlagSettings = async (st) => {
+        calls.push(`flag:${JSON.stringify(st)}`);
+      };
+      if (applied) c.getSettings = async () => ({ applied: applied() });
+      Object.assign(c, over);
+    };
+  }
+  const withControls = (calls: string[], over: Partial<Controls> = {}, applied?: () => unknown): Script => {
+    const give = controls(calls, over, applied);
+    return (ctx) => {
+      give(ctx);
+      ctx.q.init();
+      ctx.q.result();
+    };
+  };
+
+  it('passes model and effort to a new engine only when set, and leaves settings alone', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'one' });
+    await flush();
+    expect(queries[0]?.options.model).toBeUndefined();
+    expect(queries[0]?.options.effort).toBeUndefined();
+    await mgr.setEngineChoice({ model: 'opus', effort: null });
+    await mgr.start({ prompt: 'two' });
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.start({ prompt: 'three' });
+    await mgr.setEngineChoice({ model: 'sonnet', effort: 'low' });
+    await mgr.start({ prompt: 'four' });
+    await flush();
+    expect(queries[1]?.options.model).toBe('opus');
+    expect(queries[1]?.options.effort).toBeUndefined();
+    expect(queries[2]?.options.model).toBeUndefined();
+    expect(queries[2]?.options.effort).toBe('max');
+    expect(queries[3]?.options).toMatchObject({ model: 'sonnet', effort: 'low' });
+    for (const q of queries) expect(q.options.settings).toBeUndefined();
+  });
+
+  it('calls setModel and applyFlagSettings on live engines only for the parts that changed', async () => {
+    const calls: string[] = [];
+    setup(withControls(calls));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'opus', effort: null });
+    expect(calls).toEqual(['model:opus']);
+    await mgr.setEngineChoice({ model: 'opus', effort: 'high' });
+    expect(calls).toEqual(['model:opus', 'flag:{"effortLevel":"high"}']);
+    await mgr.setEngineChoice({ model: 'opus', effort: 'high' });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not call a chat that has no running engine (a reopened one waits for its next message)', async () => {
+    const calls: string[] = [];
+    const fx = setup(withControls(calls));
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    await mgr.setEngineChoice({ model: 'opus', effort: 'low' });
+    expect(calls).toEqual([]);
+    const { queries } = fx;
+    expect(queries).toHaveLength(0);
+  });
+
+  it('puts two quick changes in order, one after another', async () => {
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    setup(
+      withControls(order, {
+        setModel: async (m) => {
+          order.push(`start:${m}`);
+          await gate;
+          order.push(`end:${m}`);
+        },
+      }),
+    );
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const a = mgr.setEngineChoice({ model: 'opus', effort: null });
+    const b = mgr.setEngineChoice({ model: 'sonnet', effort: null });
+    await flush();
+    expect(order).toEqual(['start:opus']);
+    release();
+    await Promise.all([a, b]);
+    expect(order).toEqual(['start:opus', 'end:opus', 'start:sonnet', 'end:sonnet']);
+  });
+
+  it('goes back to the settings-file model on null, else clears the model', async () => {
+    const calls: string[] = [];
+    setup(withControls(calls), { engineDefaults: () => ({ model: 'claude-opus-5-5' }) });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'sonnet', effort: null });
+    await mgr.setEngineChoice({ model: null, effort: null });
+    expect(calls).toEqual(['model:sonnet', 'model:claude-opus-5-5']);
+
+    const other: string[] = [];
+    setup(withControls(other));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'sonnet', effort: null });
+    await mgr.setEngineChoice({ model: null, effort: null });
+    expect(other).toEqual(['model:sonnet', 'model:undefined']);
+  });
+
+  it('on null effort, re-applies the effort reported while it was unset for the same model, else clears it', async () => {
+    const calls: string[] = [];
+    const applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    setup(withControls(calls, {}, () => applied));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.setEngineChoice({ model: null, effort: null });
+    expect(calls).toEqual(['flag:{"effortLevel":"max"}', 'flag:{"effortLevel":"medium"}']);
+
+    const other: string[] = [];
+    setup(withControls(other));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.setEngineChoice({ model: null, effort: null });
+    expect(other).toEqual(['flag:{"effortLevel":"max"}', 'flag:{"effortLevel":null}']);
+  });
+
+  it('clears the effort, not the old one, when the model changed in an earlier save', async () => {
+    const calls: string[] = [];
+    const applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    setup(withControls(calls, {}, () => applied));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    applied.model = 'claude-haiku-5';
+    await mgr.setEngineChoice({ model: 'haiku', effort: 'max' });
+    await mgr.setEngineChoice({ model: 'haiku', effort: null });
+    expect(calls).toEqual(['flag:{"effortLevel":"max"}', 'model:haiku', 'flag:{"effortLevel":null}']);
+  });
+
+  it('unpins a re-applied effort when the model later changes while the effort is unset', async () => {
+    const calls: string[] = [];
+    const applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    setup(withControls(calls, {}, () => applied));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.setEngineChoice({ model: null, effort: null });
+    await mgr.setEngineChoice({ model: 'haiku', effort: null });
+    expect(calls).toEqual([
+      'flag:{"effortLevel":"max"}',
+      'flag:{"effortLevel":"medium"}',
+      'model:haiku',
+      'flag:{"effortLevel":null}',
+    ]);
+  });
+
+  it('clears the effort when the model changes in the same save', async () => {
+    const calls: string[] = [];
+    const applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    setup(withControls(calls, {}, () => applied));
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.setEngineChoice({ model: 'haiku', effort: null });
+    expect(calls).toEqual(['flag:{"effortLevel":"max"}', 'model:haiku', 'flag:{"effortLevel":null}']);
+  });
+
+  it("does not carry an old engine's reported effort into a restarted engine", async () => {
+    const calls: string[] = [];
+    const fx = setup(async (ctx) => {
+      controls(calls, {}, () => ({ model: 'claude-opus-5-5', effort: 'medium' }))(ctx);
+      ctx.q.init();
+      if (fx.queries.length === 1 && ctx.turn === 0) {
+        ctx.q.finish();
+        return;
+      }
+      ctx.q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: null, effort: 'max' });
+    await mgr.send(s.id, 'again');
+    await flush();
+    expect(fx.queries).toHaveLength(2);
+    await mgr.setEngineChoice({ model: null, effort: null });
+    expect(calls).toEqual(['flag:{"effortLevel":null}']);
+  });
+
+  it('refreshes the line under the message box after a change', async () => {
+    const applied = { model: 'claude-opus-5-5', effort: 'high' };
+    setup(withControls([], {}, () => applied));
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    applied.model = 'claude-sonnet-5';
+    await mgr.setEngineChoice({ model: 'sonnet', effort: null });
+    const last = events(mgr, s.id)
+      .filter((e) => e.type === 'engine-settings')
+      .at(-1);
+    expect(last).toEqual({ type: 'engine-settings', model: 'claude-sonnet-5', effort: 'high' });
+  });
+
+  it('survives an engine that rejects, throws or lacks the calls, and logs no model text', async () => {
+    const lines: string[] = [];
+    setup(
+      withControls([], {
+        setModel: async () => {
+          throw new Error('secret-model-name failed');
+        },
+        applyFlagSettings: () => {
+          throw new Error('sync boom');
+        },
+      }),
+      { log: (l) => lines.push(l) },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await expect(mgr.setEngineChoice({ model: 'secret-model-name', effort: 'low' })).resolves.toBeUndefined();
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l).not.toContain('secret-model-name');
+    await mgr.send(s.id, 'still works');
+    await flush();
+    expect((await mgr.list()).live[0]?.state).toBe('idle');
+
+    setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    await expect(mgr.setEngineChoice({ model: 'opus', effort: 'low' })).resolves.toBeUndefined();
+  });
+});
+
+describe('the list of models', () => {
+  type WithModels = FakeQuery & { supportedModels?: () => Promise<unknown[]> };
+  const row = (value: string, displayName: string, efforts?: string[]) => ({
+    value,
+    displayName,
+    description: '',
+    ...(efforts ? { supportedEffortLevels: efforts } : {}),
+  });
+
+  it('is the fixed fallback before any engine has run', async () => {
+    const { queries } = setup();
+    expect(await mgr.engineChoices()).toEqual({
+      models: [
+        { value: 'opus', label: 'Opus', efforts: null },
+        { value: 'sonnet', label: 'Sonnet', efforts: null },
+        { value: 'haiku', label: 'Haiku', efforts: null },
+      ],
+      claudeCode: { model: null },
+    });
+    expect(queries).toHaveLength(0);
+  });
+
+  it("is the newest engine's list, without 'default', once an engine has run", async () => {
+    setup(undefined, {
+      decorate: (q) => {
+        (q as WithModels).supportedModels = async () => [
+          row('default', 'Default (recommended)'),
+          row('opus', 'Opus 5.5', ['low', 'high', 'max']),
+          row('sonnet', 'Sonnet 5'),
+        ];
+      },
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await mgr.engineChoices()).models).toEqual([
+      { value: 'opus', label: 'Opus 5.5', efforts: ['low', 'high', 'max'] },
+      { value: 'sonnet', label: 'Sonnet 5', efforts: null },
+    ]);
+  });
+
+  it('keeps the saved model in the list, named from its id, and reads what Claude Code uses', async () => {
+    setup(undefined, { engineDefaults: () => ({ model: 'sonnet' }) });
+    await mgr.setEngineChoice({ model: 'claude-opus-5-5', effort: null });
+    const c = await mgr.engineChoices();
+    expect(c.models.at(-1)).toEqual({ value: 'claude-opus-5-5', label: 'Opus 5.5', efforts: null });
+    expect(c.models.filter((m) => m.value === 'claude-opus-5-5')).toHaveLength(1);
+    await mgr.setEngineChoice({ model: 'opus', effort: null });
+    expect((await mgr.engineChoices()).models.filter((m) => m.value === 'opus')).toHaveLength(1);
+    expect(c.claudeCode).toEqual({ model: 'sonnet' });
+  });
+
+  it('keeps the fallback when the engine cannot list models', async () => {
+    setup(undefined, {
+      decorate: (q) => {
+        (q as WithModels).supportedModels = async () => {
+          throw new Error('nope');
+        };
+      },
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await mgr.engineChoices()).models.map((m) => m.value)).toEqual(['opus', 'sonnet', 'haiku']);
   });
 });
 

@@ -4,6 +4,10 @@ import {
   type AppPrefs,
   type AppStore,
   DEFAULT_PREFS,
+  EFFORT_LEVELS,
+  type EffortLevel,
+  MODEL_PREF_MAX,
+  MODEL_PREF_PATTERN,
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
 } from '../../shared/contract.ts';
@@ -69,6 +73,15 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     todoPanelOpen: typeof o.todoPanelOpen === 'boolean' ? o.todoPanelOpen : base.todoPanelOpen,
     directWrites: typeof o.directWrites === 'boolean' ? o.directWrites : base.directWrites,
     todoSeen: cleanSeen(o.todoSeen) ?? { ...base.todoSeen },
+    model:
+      o.model === null ||
+      (typeof o.model === 'string' && o.model.length <= MODEL_PREF_MAX && MODEL_PREF_PATTERN.test(o.model))
+        ? (o.model as string | null)
+        : base.model,
+    effort:
+      o.effort === null || (EFFORT_LEVELS as readonly unknown[]).includes(o.effort)
+        ? (o.effort as EffortLevel | null)
+        : base.effort,
   };
 }
 

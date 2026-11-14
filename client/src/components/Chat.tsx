@@ -44,6 +44,8 @@ export function ChatView() {
     run,
     composerFocus,
     requestComposerFocus,
+    requestSettingsFocus,
+    openView,
     closeRequest,
     cancelClose,
     requestClose,
@@ -212,8 +214,23 @@ export function ChatView() {
           />
           {engine ? (
             <p className="engine-line">
-              <span className="visually-hidden">Claude is using </span>
-              {engine}
+              <span className="engine-text">
+                <span className="visually-hidden">Claude is using </span>
+                {engine}
+              </span>
+              <button
+                type="button"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
+                aria-label="Change model and effort"
+                onClick={() => {
+                  requestSettingsFocus();
+                  openView('settings');
+                }}
+              >
+                Change
+              </button>
             </p>
           ) : null}
         </div>

@@ -11,6 +11,7 @@ import type {
   ClientPickOutcomeRequest,
   ClientPickReported,
   CompleteTodoRequest,
+  EngineChoices,
   LibraryKind,
   LibraryListing,
   LibraryScope,
@@ -121,6 +122,7 @@ export const api = {
   changeTodo: (action: TodoAction, opts?: SendOptions) =>
     request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
+  engineChoices: () => request<EngineChoices>('GET', ROUTES.engineChoices),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),
   startSession: (req: StartSessionRequest) => request<StartSessionResponse>('POST', ROUTES.sessions, req),
   sendMessage: (id: string, text: string, attachments?: string[]) =>

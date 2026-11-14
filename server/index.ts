@@ -109,6 +109,11 @@ function buildBrainSide(path: string | null) {
 }
 
 const { brain, thumbs, uploads, sessions } = buildBrainSide(brainPath);
+// The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
+void store
+  .get()
+  .then((prefs) => sessions.setEngineChoice({ model: prefs.model, effort: prefs.effort }))
+  .catch(() => {});
 const engineHealth = createEngineHealth(brainPath, config.claudePath, home, resolvePermissionMode);
 
 const setup = createSetupService({

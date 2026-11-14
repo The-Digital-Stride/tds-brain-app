@@ -37,6 +37,11 @@ interface Desk extends Omit<Layout, 'modes'> {
   width: number;
   /** Which dock a person just asked to open, so it (and only it) takes focus. */
   focusIntent: RefObject<DockSide | null>;
+  /**
+   * What had focus when the file viewer was asked for, so closing it can put focus back. Taken in
+   * `dispatch`, before the desk goes inert and the browser moves focus away from it.
+   */
+  viewerOpener: RefObject<HTMLElement | null>;
 }
 
 const ShellContext = createContext<ShellApi | null>(null);
@@ -98,6 +103,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const focusIntent = useRef<DockSide | null>(null);
+  const viewerOpener = useRef<HTMLElement | null>(null);
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
@@ -133,6 +139,10 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       if (next.railWide !== s.railWide)
         rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
       return;
+    }
+    if (action.type === 'open-viewer' && s.viewer === null) {
+      const active = document.activeElement;
+      viewerOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
     }
     const opensDrawer =
       (action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer;
@@ -208,6 +218,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       panelShowing: layout.panelShowing,
       panelModal: layout.panelModal,
       focusIntent,
+      viewerOpener,
     }),
     [width, layout],
   );

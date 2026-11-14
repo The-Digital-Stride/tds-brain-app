@@ -9,6 +9,7 @@ import { APPS } from './shell/apps.ts';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import type { DrawerName } from './shell/contract.ts';
 import { Dock } from './shell/Dock.tsx';
+import { FileViewer } from './shell/FileViewer.tsx';
 import { Home } from './shell/Home.tsx';
 import { Inspector } from './shell/Inspector.tsx';
 import { Palette } from './shell/Palette.tsx';
@@ -106,6 +107,8 @@ function Shell() {
   const drawer = state.drawer ?? lastDrawer.current;
   const drawerOpen = state.drawer !== null;
   const modal = drawerModal || panelModal;
+  // The file viewer floats over the whole desk, which is out of reach while it shows.
+  const viewing = state.viewer !== null;
   const DrawerBody = DRAWER_BODIES[drawer];
   // An app with a panel of its own fills the right dock while it is on the sheet.
   const app = APPS.find((a) => view === `app:${a.id}`);
@@ -113,10 +116,14 @@ function Shell() {
 
   return (
     <>
-      <a className="skip-link" href="#main">
+      <a className="skip-link" href="#main" inert={viewing}>
         Skip to the main content
       </a>
-      <div className="desk" data-rail={railShowsNames ? 'wide' : 'icons'} inert={state.paletteOpen}>
+      <div
+        className="desk"
+        data-rail={railShowsNames ? 'wide' : 'icons'}
+        inert={state.paletteOpen || viewing}
+      >
         <Rail inert={modal} />
         {/* A floating panel makes the drawer behind it unreachable too. */}
         <div className="dock-slot" inert={panelModal}>
@@ -167,6 +174,7 @@ function Shell() {
         </Dock>
       </div>
       <Palette />
+      <FileViewer />
       <Announcer />
     </>
   );

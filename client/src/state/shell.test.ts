@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { LibraryItem } from '../../../shared/contract.ts';
 import type { ShellState } from '../shell/contract.ts';
 import {
   DEFAULT_SHELL,
@@ -48,6 +49,17 @@ describe('shellReducer', () => {
     });
     const list = shellReducer(shown, { type: 'show-chat-file', chat: 'c1', key: null });
     expect(list).toMatchObject({ panelOpen: true, panelTab: 'files', panelFile: null });
+  });
+
+  it('open-viewer shows a file (replacing one shown) and close-viewer shuts it, leaving the docks alone', () => {
+    const docked = { ...base, panelOpen: true, drawer: 'chats' as const };
+    const a = { item: { id: 'a' } as LibraryItem };
+    const b = { item: { id: 'b' } as LibraryItem, place: 'Acme' };
+    const shown = shellReducer(docked, { type: 'open-viewer', viewer: a });
+    expect(shown).toEqual({ ...docked, viewer: a });
+    expect(shellReducer(shown, { type: 'open-viewer', viewer: b }).viewer).toBe(b);
+    expect(shellReducer(shown, { type: 'close-viewer' })).toEqual(docked);
+    expect(shellReducer(docked, { type: 'close-viewer' })).toBe(docked);
   });
 
   it('changing tab clears the chosen file', () => {
@@ -105,11 +117,13 @@ describe('saveShell', () => {
       panelTab: 'details',
       panelFile: { chat: 'c', key: 'k' },
       paletteOpen: true,
+      viewer: { item: { id: 'x' } as LibraryItem, place: 'Acme' },
       singleKeys: false,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
     expect(saved).not.toHaveProperty('panelFile');
+    expect(saved).not.toHaveProperty('viewer');
     expect(saved).toEqual({
       railWide: true,
       drawer: 'chats',
@@ -117,7 +131,12 @@ describe('saveShell', () => {
       panelTab: 'details',
       singleKeys: false,
     });
-    expect(loadShell(saveShell(state))).toEqual({ ...state, panelFile: null, paletteOpen: false });
+    expect(loadShell(saveShell(state))).toEqual({
+      ...state,
+      panelFile: null,
+      paletteOpen: false,
+      viewer: null,
+    });
   });
 });
 

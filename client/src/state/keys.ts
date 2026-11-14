@@ -9,6 +9,9 @@ const LETTER_DRAWERS: Record<string, DrawerName> = { t: 'todos', c: 'chats', s: 
 export const keyAction: KeyAction = (e, { typing, state, panelFloating = false }) => {
   const key = e.key.toLowerCase();
 
+  // The file viewer sits over everything and the desk behind it is inert: only Esc, to close it.
+  if (state.viewer) return e.key === 'Escape' ? { type: 'close-viewer' } : null;
+
   // Cmd+K or Ctrl+K: works everywhere, even in a text field.
   if ((e.metaKey || e.ctrlKey) && !e.altKey && key === 'k') {
     return { type: 'set-palette', open: !state.paletteOpen };

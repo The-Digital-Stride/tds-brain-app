@@ -39,8 +39,25 @@ export interface ShellState {
   panelFile: { chat: string; key: string } | null;
   /** Never saved: the palette is always shut after a reload. */
   paletteOpen: boolean;
+  /**
+   * The file shown large over the desk (`FileViewer`), or null. Never saved. While it shows, the
+   * desk is `inert`, Esc closes it, and focus goes back to whatever opened it.
+   */
+  viewer: ViewerRequest | null;
   /** Single-key shortcuts ([, T, C, S) on or off. Cmd/Ctrl+K and Esc always work. */
   singleKeys: boolean;
+}
+
+/**
+ * A file to show in the file viewer: a drawer that slides over the sheet, so the person reads the
+ * file without leaving what they were doing (a chat, say). Any part of the app can ask for one.
+ */
+export interface ViewerRequest {
+  item: LibraryItem;
+  /** Where the file is, shown under its name (the client or library's name). */
+  place?: string;
+  /** Offer "Open in Documents" (or Images): the app and library scope that hold the file. */
+  openIn?: { app: 'documents' | 'images'; scope: string };
 }
 
 export type ShellAction =
@@ -58,13 +75,16 @@ export type ShellAction =
    */
   | { type: 'show-chat-file'; chat: string; key: string | null }
   | { type: 'set-palette'; open: boolean }
+  /** Shows a file in the viewer over the desk (replacing one already shown). */
+  | { type: 'open-viewer'; viewer: ViewerRequest }
+  | { type: 'close-viewer' }
   | { type: 'set-single-keys'; on: boolean };
 
 /** `client/src/state/shell.ts` */
 export type ShellReducer = (state: ShellState, action: ShellAction) => ShellState;
 /** Reads what was saved. Anything missing, malformed or of the wrong type falls back to the default. */
 export type LoadShell = (raw: string | null) => ShellState;
-/** The saved part of the state as JSON: everything except `paletteOpen` and `panelFile`. */
+/** The saved part of the state as JSON: everything except `paletteOpen`, `panelFile` and `viewer`. */
 export type SaveShell = (state: ShellState) => string;
 export const SHELL_STORAGE_KEY = 'tds-brain-shell';
 
@@ -110,6 +130,7 @@ export interface KeyContext {
 /**
  * `client/src/state/keys.ts`. The shell action a key press means, or null to leave it alone.
  * - Cmd+K or Ctrl+K: toggle the palette, even while typing.
+ * - While the file viewer shows: Esc closes it, and no other key does anything to the desk behind it.
  * - Esc: shut the palette; else close a floating panel; else close the open drawer; else null.
  *   One thing per press. A pushing panel never closes on Esc.
  *

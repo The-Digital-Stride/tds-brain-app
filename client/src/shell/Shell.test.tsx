@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatEvent, LiveSession, StreamFrame } from '../../../shared/contract.ts';
+import type { ChatEvent, LibraryItem, LiveSession, StreamFrame } from '../../../shared/contract.ts';
 import type { AppSlot } from './contract.ts';
 
 const api = vi.hoisted(() => ({
@@ -699,5 +699,38 @@ describe('sign-off fixes', () => {
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
     expect(panelDock().hasAttribute('inert')).toBe(true);
     expect(document.activeElement).toBe(document.getElementById('main'));
+  });
+});
+
+// An app whose sheet opens the file viewer, as the chat's Files panel does.
+function ViewerSheet() {
+  const { dispatch } = useShell();
+  const file = { id: 'p:a.md', title: 'Audit', name: 'a.md', view: null } as unknown as LibraryItem;
+  return (
+    <button type="button" onClick={() => dispatch({ type: 'open-viewer', viewer: { item: file } })}>
+      Show the file
+    </button>
+  );
+}
+
+describe('the file viewer', () => {
+  it('makes the desk and skip link inert while it shows, and gives them back on close', async () => {
+    apps.push({ id: 'files', title: 'Files', icon: 'doc', Sheet: ViewerSheet, search: null });
+    await renderHome();
+    fireEvent.click(railButton('Files'));
+    const show = await screen.findByRole('button', { name: 'Show the file' });
+    const desk = document.querySelector('.desk') as HTMLElement;
+    const skip = screen.getByText('Skip to the main content');
+    show.focus();
+    fireEvent.click(show);
+    expect(screen.getByRole('dialog', { name: 'Audit' })).toBeTruthy();
+    expect(desk.hasAttribute('inert')).toBe(true);
+    expect(skip.hasAttribute('inert')).toBe(true);
+
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(desk.hasAttribute('inert')).toBe(false);
+    expect(skip.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(show);
   });
 });

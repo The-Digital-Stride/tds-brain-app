@@ -4,7 +4,6 @@ import { type ChatFile, type ChatFileAction, ROUTES, type SessionState } from '.
 import { ApiFailure, api } from '../api.ts';
 import { FORMAT_ICONS } from '../apps/documents/icons.ts';
 import { useLoaded } from '../apps/shared/data.ts';
-import { openLibraryItem } from '../apps/shared/search.ts';
 import { PictureBody, TextBody } from '../apps/shared/Viewer.tsx';
 import { ChangeView } from '../components/Cards.tsx';
 import { useStore } from '../store.tsx';
@@ -158,8 +157,8 @@ function Preview({
    */
   request: object | null;
 }) {
-  const { libraryVersion, openView } = useStore();
-  const { dispatch, modes } = useShell();
+  const { libraryVersion } = useStore();
+  const { state, dispatch } = useShell();
   const heading = useRef<HTMLHeadingElement>(null);
   // Focus moves to the heading each time the file is asked for (a different one, or the same one
   // again after the panel was shut). A frame later, so a panel that is opening has recorded its
@@ -182,15 +181,23 @@ function Preview({
     onBack();
   };
 
-  const appId = item?.kind === 'image' ? 'images' : 'documents';
+  // Claude changed the file while the viewer shows it: show the newer copy there too.
+  const viewing = state.viewer?.item.id === item?.id ? state.viewer : null;
+  useEffect(() => {
+    if (!viewing || !item || viewing.item.modified === item.modified) return;
+    dispatch({ type: 'open-viewer', viewer: { ...viewing, item } });
+  }, [viewing, item, dispatch]);
+
+  // "Open" shows the file large in the viewer over the chat; closing it comes back here. The viewer
+  // offers "Open in Documents" (or Images) for going on to the app.
   const open = () => {
     if (!item) return;
-    openLibraryItem(appId, file.scope.id, item);
-    openView(`app:${appId}`);
-    // A floating panel would hide the file it opens, so it closes; a docked one stays.
-    if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+    const app = item.kind === 'image' ? 'images' : 'documents';
+    dispatch({
+      type: 'open-viewer',
+      viewer: { item, place: file.scope.name, openIn: { app, scope: file.scope.id } },
+    });
   };
-  const openLabel = item?.kind === 'image' ? 'Open in Images' : 'Open in Documents';
 
   let body: ReactNode = null;
   if (!item) {
@@ -242,8 +249,14 @@ function Preview({
         <div className="files-actions">
           {item.view === null ? download : null}
           {canOpen ? (
-            <button type="button" className="btn" data-variant="primary" onClick={open}>
-              {openLabel}
+            <button
+              type="button"
+              className="btn"
+              data-variant="primary"
+              aria-label={`Open ${title}`}
+              onClick={open}
+            >
+              Open
             </button>
           ) : null}
           {item.view !== null ? download : null}

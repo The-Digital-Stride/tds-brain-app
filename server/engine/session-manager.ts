@@ -549,7 +549,7 @@ function clientLine(slug: string): string {
 
 /** Every chat is told how pages reach the person in the app (pages plan, revision 2, R3). */
 export const PAGES_LINE =
-  "When the user asks for something visual (a page, chart, dashboard or mock-up), write it as one self-contained HTML file with the Write tool: the app shows that file to the user as a page, so don't look for an Artifact tool.";
+  "When the user asks for something visual (a page, chart, dashboard, deck or mock-up), write it as one self-contained HTML file with the Write tool: the app shows that file to the user as a page and opens it for them when your reply ends, so don't look for an Artifact tool. Even when you build it from a template or a script, save the finished file with Write or Edit, not Bash, cp or a script: the app only sees files written that way. Never open it in a browser, a browser tool or a local server to show it to the user; if you need to check how it looks yourself, use a headless screenshot.";
 
 /**
  * Every chat's system prompt append asks for brain-relative paths, so the app can link them (decision

@@ -346,6 +346,9 @@ describe('a new chat', () => {
     expect(o.includePartialMessages).toBe(true);
     expect(o.settingSources).toEqual(['user', 'project', 'local']);
     expect(o.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code', append: FILES_LINE });
+    // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
+    expect(FILES_LINE).toContain('save the finished file with Write or Edit, not Bash');
+    expect(FILES_LINE).toContain('Never open it in a browser');
     // A new document's home is asked, not guessed: people can't be expected to know the brain's folders.
     expect(FILES_LINE).toContain(
       'if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first',

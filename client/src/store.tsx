@@ -166,6 +166,13 @@ export interface Store {
   reveal: { todo: TodoItem; n: number } | null;
   revealTodo: (todo: TodoItem) => void;
   clearReveal: () => void;
+  /**
+   * True when the chat's "Change" button asked Settings to put the cursor on Model. One-shot, like
+   * `reveal`: Settings takes it once it has rendered and calls `clearSettingsFocus`.
+   */
+  settingsFocus: boolean;
+  requestSettingsFocus: () => void;
+  clearSettingsFocus: () => void;
   /** Runs a chat action (answer, stop) and reports a failure in plain words. */
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }
@@ -209,6 +216,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
+  const [settingsFocus, setSettingsFocus] = useState(false);
+  const requestSettingsFocus = useCallback(() => setSettingsFocus(true), []);
+  const clearSettingsFocus = useCallback(() => setSettingsFocus(false), []);
   const [reveal, setReveal] = useState<{ todo: TodoItem; n: number } | null>(null);
   const revealCount = useRef(0);
   const revealTodo = useCallback((todo: TodoItem) => {
@@ -807,6 +817,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reveal,
       revealTodo,
       clearReveal,
+      settingsFocus,
+      requestSettingsFocus,
+      clearSettingsFocus,
       closeRequest,
       cancelClose: () => setCloseRequest(null),
       requestClose,
@@ -848,6 +861,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reveal,
       revealTodo,
       clearReveal,
+      settingsFocus,
+      requestSettingsFocus,
+      clearSettingsFocus,
       closeRequest,
       requestClose,
       closeChat,

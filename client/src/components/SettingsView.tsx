@@ -1,9 +1,18 @@
+import { useEffect, useState } from 'react';
+import {
+  EFFORT_LEVELS,
+  type EffortLevel,
+  type EngineChoices,
+  type ModelChoice,
+} from '../../../shared/contract.ts';
 import {
   UPDATE_BLOCKED_TEXT,
   UPDATE_CHECK_FAILED_TEXT,
   UPDATE_UNFINISHED_TEXT,
 } from '../../../shared/update-contract.ts';
+import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
+import { EFFORT_OPTION_WORDS, modelName } from '../format.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { phaseText, UpdateAction } from '../shell/UpdateBanner.tsx';
@@ -17,7 +26,27 @@ import { VersionHistory } from './VersionHistory.tsx';
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
 export function SettingsView() {
-  const { boot, updatePrefs } = useStore();
+  const { boot, updatePrefs, settingsFocus, clearSettingsFocus } = useStore();
+  const [choices, setChoices] = useState<EngineChoices | null>(null);
+  useEffect(() => {
+    let live = true;
+    // Never blocks the page: until this arrives (or if it fails) the selects use the fallback model list.
+    Promise.resolve()
+      .then(() => api.engineChoices())
+      .then((c) => live && setChoices(c))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  const ready = Boolean(boot);
+  useEffect(() => {
+    if (!settingsFocus || !ready) return;
+    const el = document.getElementById('set-model');
+    el?.focus();
+    el?.scrollIntoView?.({ block: 'center' });
+    clearSettingsFocus();
+  }, [settingsFocus, ready, clearSettingsFocus]);
   const dock = useDockApp();
   const { state: shell, dispatch } = useShell();
   const update = useUpdate();
@@ -85,6 +114,19 @@ export function SettingsView() {
         </div>
       </section>
 
+      <section aria-labelledby="claude-h">
+        <h2 id="claude-h">Claude in chats</h2>
+        <p className="setting-help" id="claude-help">
+          Used by new chats, and by open chats from their next reply.
+        </p>
+        <ClaudeChoices
+          choices={choices}
+          model={prefs.model ?? null}
+          effort={prefs.effort ?? null}
+          save={(patch) => void updatePrefs(patch)}
+        />
+      </section>
+
       <section aria-labelledby="about-h">
         <h2 id="about-h">About TDS Brain on this computer</h2>
         <dl className="kv about">
@@ -143,6 +185,85 @@ export function SettingsView() {
           <VersionHistory current={appVersion} />
         </section>
       ) : null}
+    </div>
+  );
+}
+
+/** Shown until the server's list arrives, and if it never does. */
+const FALLBACK_MODELS: ModelChoice[] = [
+  { value: 'opus', label: 'Opus', efforts: null },
+  { value: 'sonnet', label: 'Sonnet', efforts: null },
+  { value: 'haiku', label: 'Haiku', efforts: null },
+];
+
+function ClaudeChoices({
+  choices,
+  model,
+  effort,
+  save,
+}: {
+  choices: EngineChoices | null;
+  model: string | null;
+  effort: EffortLevel | null;
+  save: (patch: { model: string | null } | { effort: EffortLevel | null }) => void;
+}) {
+  const models = choices?.models.length ? choices.models : FALLBACK_MODELS;
+  const codeModel = choices?.claudeCode.model ?? null;
+  const modelOptions =
+    model && !models.some((m) => m.value === model)
+      ? [...models, { value: model, label: modelName(model) }]
+      : models;
+  const codeRow = codeModel ? models.find((m) => m.value === codeModel) : undefined;
+  const row =
+    (model ? models.find((m) => m.value === model) : null) ??
+    (model ? null : models.find((m) => m.value === codeModel));
+  const known = row?.efforts ?? null;
+  const efforts = EFFORT_LEVELS.filter((e) => e === effort || !known || known.includes(e));
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border and spacing; the heading names the group.
+    <div className="setting-rows" role="group" aria-labelledby="claude-h">
+      <div className="setting">
+        <label className="setting-label" htmlFor="set-model">
+          Model
+        </label>
+        <select
+          id="set-model"
+          className="field"
+          aria-describedby="claude-help"
+          value={model ?? ''}
+          onChange={(e) => save({ model: e.target.value || null })}
+        >
+          <option value="">
+            {codeModel
+              ? `Same as Claude Code (${codeRow?.label ?? modelName(codeModel)})`
+              : 'Same as Claude Code'}
+          </option>
+          {modelOptions.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting">
+        <label className="setting-label" htmlFor="set-effort">
+          Effort
+        </label>
+        <select
+          id="set-effort"
+          className="field"
+          aria-describedby="claude-help"
+          value={effort ?? ''}
+          onChange={(e) => save({ effort: (e.target.value || null) as EffortLevel | null })}
+        >
+          <option value="">Same as Claude Code</option>
+          {efforts.map((e) => (
+            <option key={e} value={e}>
+              {EFFORT_OPTION_WORDS[e]}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }

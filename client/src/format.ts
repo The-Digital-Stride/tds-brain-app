@@ -43,8 +43,17 @@ const EFFORT_WORDS: Record<EffortLevel, string> = {
   max: 'Max effort',
 };
 
+/** Effort as a list option under a label that already says "Effort": "Low", "Extra high". */
+export const EFFORT_OPTION_WORDS: Record<EffortLevel, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+};
+
 /** "claude-opus-5-5" → "Opus 5.5". A model id it does not recognise is shown as it is. */
-function modelName(id: string): string {
+export function modelName(id: string): string {
   const m = /claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(id);
   if (!m?.[1] || !m[2]) return id;
   const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);

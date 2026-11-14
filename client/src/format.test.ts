@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueInWords, engineLine } from './format.ts';
+import { dueInWords, EFFORT_OPTION_WORDS, engineLine, modelName } from './format.ts';
 
 describe('dueInWords', () => {
   const today = '2026-11-11'; // a Wednesday
@@ -28,5 +28,16 @@ describe('engineLine', () => {
     expect(engineLine(null, 'low')).toBe('Low effort');
     expect(engineLine(null, null)).toBeNull();
     expect(engineLine('  ', null)).toBeNull();
+  });
+});
+
+describe('modelName and EFFORT_OPTION_WORDS', () => {
+  it('names a model, and leaves an unknown one as it is', () => {
+    expect(modelName('claude-opus-5-5')).toBe('Opus 5.5');
+    expect(modelName('opus')).toBe('opus');
+  });
+  it('has a plain word for each effort', () => {
+    expect(EFFORT_OPTION_WORDS.xhigh).toBe('Extra high');
+    expect(Object.values(EFFORT_OPTION_WORDS)).toEqual(['Low', 'Medium', 'High', 'Extra high', 'Max']);
   });
 });

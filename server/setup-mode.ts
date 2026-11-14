@@ -82,6 +82,8 @@ export function createSetupSessions(): SessionManager {
     fileChanges: () => {
       throw new SessionError('not-found', NO_CHAT);
     },
+    setEngineChoice: async () => {},
+    engineChoices: async () => ({ models: [], claudeCode: { model: null } }),
   };
 }
 

@@ -18,6 +18,8 @@ import {
   CLIENT_PICK_REPORTED,
   type ClientGuessResponse,
   type ClientPickReported,
+  EFFORT_LEVELS,
+  type EffortLevel,
   type EngineHealth,
   type Identity,
   LIBRARY_SEARCH_QUERY,
@@ -26,6 +28,8 @@ import {
   type LibraryText,
   MAX_ATTACHMENTS,
   type MemberProfile,
+  MODEL_PREF_MAX,
+  MODEL_PREF_PATTERN,
   type PermissionReply,
   type QuestionReply,
   ROUTES,
@@ -290,6 +294,23 @@ export async function validatePrefsPatch(
       case 'directWrites': {
         if (typeof value !== 'boolean') throw bad('That setting must be on or off.');
         patch[key] = value;
+        break;
+      }
+      case 'model': {
+        if (
+          value !== null &&
+          !(typeof value === 'string' && value.length <= MODEL_PREF_MAX && MODEL_PREF_PATTERN.test(value))
+        ) {
+          throw bad('That model name was not understood.');
+        }
+        patch.model = value as string | null;
+        break;
+      }
+      case 'effort': {
+        if (value !== null && !(EFFORT_LEVELS as readonly unknown[]).includes(value)) {
+          throw bad('That effort level was not understood.');
+        }
+        patch.effort = value as EffortLevel | null;
         break;
       }
       default:
@@ -1007,7 +1028,24 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (path === '/api/prefs') {
     if (method !== 'PUT') throw methodNotAllowed();
     const patch = await validatePrefsPatch(await readJson(req), ctx.brain);
-    sendJson(res, 200, await ctx.store.update(patch));
+    const saved = await ctx.store.update(patch);
+    if ('model' in patch || 'effort' in patch) {
+      // Settings never waits on an engine, and a failure here must not fail the save.
+      try {
+        void Promise.resolve(
+          ctx.sessions.setEngineChoice({ model: saved.model, effort: saved.effort }),
+        ).catch(() => {});
+      } catch {
+        // the choice reaches new chats at the next start
+      }
+    }
+    sendJson(res, 200, saved);
+    return;
+  }
+
+  if (path === ROUTES.engineChoices) {
+    if (method !== 'GET') throw methodNotAllowed();
+    sendJson(res, 200, await ctx.sessions.engineChoices());
     return;
   }
 

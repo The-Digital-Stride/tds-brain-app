@@ -29,3 +29,13 @@ describe('api.librarySearch', () => {
     await expect(api.librarySearch('ab', 'image', { signal: controller.signal })).rejects.toBe(abort);
   });
 });
+
+describe('api.engineChoices', () => {
+  it('gets the model and effort choices', async () => {
+    const body = { models: [], claudeCode: { model: null } };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(body)));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.engineChoices()).resolves.toEqual(body);
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/api/engine/choices');
+  });
+});

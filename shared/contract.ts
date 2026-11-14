@@ -680,7 +680,20 @@ export interface AppPrefs {
    * (a patch with more is refused). Keys at most 300 characters, markers at most 40.
    */
   todoSeen: Record<string, string>;
+  /**
+   * The model chats use: an alias such as 'opus' or a full id, at most MODEL_PREF_MAX characters
+   * and matching MODEL_PREF_PATTERN. null (the default, and what older prefs files read as) means
+   * "Same as Claude Code": the app passes no model, exactly as before this setting existed.
+   * Shown in Settings as "Model".
+   */
+  model: string | null;
+  /** The effort chats use. null (the default) means "Same as Claude Code". Shown in Settings as "Effort". */
+  effort: EffortLevel | null;
 }
+
+export const MODEL_PREF_MAX = 100;
+/** A model alias or id: letters, digits and . _ : - [ ] only (e.g. 'opus', 'claude-opus-5-5[1m]'). */
+export const MODEL_PREF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
 
 export const TODO_SEEN_MAX = 500;
 /** A handover counts as "New to you" for this long. */
@@ -692,6 +705,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   todoPanelOpen: true,
   directWrites: false,
   todoSeen: {},
+  model: null,
+  effort: null,
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */
@@ -715,6 +730,38 @@ export type AppPermissionMode = 'default' | 'acceptEdits' | 'auto';
 /** How much thinking Claude puts in, as Claude Code applies it for the chat's next message. */
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+/** One model the person can pick in Settings. */
+export interface ModelChoice {
+  /** What is saved in `AppPrefs.model` and passed to Claude Code, e.g. 'opus'. */
+  value: string;
+  /** Shown in the list, e.g. 'Opus 5.5'. */
+  label: string;
+  /** Effort levels this model takes; null when not known. */
+  efforts: EffortLevel[] | null;
+}
+
+/**
+ * `GET /api/engine/choices`: what Settings offers for Model and Effort.
+ * - `models`: from Claude Code's own model list, read from the most recent chat engine (cached in
+ *   memory); before any chat has started this session, a fixed fallback list (Opus, Sonnet, Haiku).
+ *   The saved `AppPrefs.model` is always in the list, even if Claude Code no longer offers it.
+ * - `claudeCode.model`: what "Same as Claude Code" means for Model right now: top-level `model`
+ *   read from ~/.claude/settings.json, then the brain's .claude/settings.json, then its
+ *   settings.local.json (last file that sets it wins). null when no file sets it. There is no
+ *   effort counterpart: Claude Code resolves effort per model (`modelSettings`), so the app never
+ *   names it.
+ */
+export interface EngineChoices {
+  models: ModelChoice[];
+  claudeCode: { model: string | null };
+}
+
+/** The model and effort the app asks Claude Code for. null for either = "Same as Claude Code". */
+export interface EngineChoice {
+  model: string | null;
+  effort: EffortLevel | null;
+}
 
 export interface EngineHealth {
   ok: boolean;
@@ -1276,6 +1323,8 @@ export const ROUTES = {
    */
   changeTodo: '/api/todos/change',
   prefs: '/api/prefs',
+  /** `GET`: EngineChoices. `no-store`, every role. */
+  engineChoices: '/api/engine/choices',
   /**
    * `GET`: ChangelogResponse, read from the app's own CHANGELOG.md (never a brain file). Owners and
    * scouts only: 403 `not-allowed` for anyone else. An unreadable file gives `{versions: []}`.

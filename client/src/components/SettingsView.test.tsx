@@ -1,24 +1,33 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureInstallPrompt } from '../installPrompt.ts';
 
 const boot = {
   appVersion: '1.0.0',
   appState: { kind: 'ready' as const },
   service: { underService: true },
-  prefs: { directWrites: false },
+  prefs: { directWrites: false } as Record<string, unknown>,
   identity: { name: 'Sam', role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', permissionMode: 'default' },
 };
 const setSetupOpen = vi.fn();
+const st = vi.hoisted(() => ({
+  updatePrefs: vi.fn(),
+  clearSettingsFocus: vi.fn(),
+  settingsFocus: false,
+  engineChoices: vi.fn(),
+}));
+vi.mock('../api.ts', () => ({ api: { engineChoices: st.engineChoices } }));
 const live = { streamUp: true, lastSync: new Date().toISOString() as string | null | undefined };
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
     boot,
     setSetupOpen,
-    updatePrefs: vi.fn(),
+    updatePrefs: st.updatePrefs,
+    settingsFocus: st.settingsFocus,
+    clearSettingsFocus: st.clearSettingsFocus,
     streamUp: live.streamUp,
     lists: { todos: 'loaded', chats: 'loaded' },
   }),
@@ -71,12 +80,128 @@ const setUpd = (over: Record<string, unknown> = {}, extra: Record<string, unknow
   return upd.current as { check: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn> };
 };
 
+const choices = {
+  models: [
+    { value: 'opus', label: 'Opus 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    { value: 'sonnet', label: 'Sonnet 5.5', efforts: ['low', 'medium', 'high'] },
+  ],
+  claudeCode: { model: 'claude-opus-5-5' as string | null },
+};
+
+beforeEach(() => {
+  st.engineChoices.mockResolvedValue(choices);
+  st.settingsFocus = false;
+  boot.prefs = { directWrites: false, model: null, effort: null } as typeof boot.prefs;
+});
+
 afterEach(() => {
   setUpd();
   cleanup();
   vi.unstubAllGlobals();
   live.streamUp = true;
   live.lastSync = new Date().toISOString();
+});
+
+const optionTexts = (el: HTMLElement) => Array.from((el as HTMLSelectElement).options).map((o) => o.text);
+const selectOf = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
+
+describe('Claude in chats', () => {
+  it('shows both selects with their first options, before and after the choices load', async () => {
+    standalone(false);
+    st.engineChoices.mockReturnValue(new Promise(() => {}));
+    const { unmount } = render(<SettingsView />);
+    expect(screen.getByRole('heading', { name: 'Claude in chats' })).toBeTruthy();
+    expect(selectOf('Model').getAttribute('aria-describedby')).toBe('claude-help');
+    expect(selectOf('Effort').getAttribute('aria-describedby')).toBe('claude-help');
+    expect(document.getElementById('claude-help')?.textContent).toMatch(/^Used by new chats/);
+    expect(screen.getByRole('group', { name: 'Claude in chats' })).toBeTruthy();
+    expect(optionTexts(selectOf('Model'))).toEqual(['Same as Claude Code', 'Opus', 'Sonnet', 'Haiku']);
+    expect(optionTexts(selectOf('Effort'))[0]).toBe('Same as Claude Code');
+    unmount();
+    st.engineChoices.mockResolvedValue(choices);
+    render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Sonnet 5.5' });
+    expect(optionTexts(selectOf('Model'))).toEqual([
+      'Same as Claude Code (Opus 5.5)',
+      'Opus 5.5',
+      'Sonnet 5.5',
+    ]);
+    expect(optionTexts(selectOf('Effort'))).toEqual([
+      'Same as Claude Code',
+      'Low',
+      'Medium',
+      'High',
+      'Extra high',
+      'Max',
+    ]);
+    expect(screen.getByText('Used by new chats, and by open chats from their next reply.')).toBeTruthy();
+  });
+
+  it('names Same as Claude Code after the matching model row, for an alias', async () => {
+    standalone(false);
+    st.engineChoices.mockResolvedValue({ ...choices, claudeCode: { model: 'opus' } });
+    render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Same as Claude Code (Opus 5.5)' });
+  });
+
+  it('uses the fallback models when the server returns an empty list', async () => {
+    standalone(false);
+    st.engineChoices.mockResolvedValue({ models: [], claudeCode: { model: null } });
+    render(<SettingsView />);
+    await act(async () => {});
+    expect(optionTexts(selectOf('Model'))).toEqual(['Same as Claude Code', 'Opus', 'Sonnet', 'Haiku']);
+  });
+
+  it('still renders when the choices fail to load', async () => {
+    standalone(false);
+    st.engineChoices.mockRejectedValue(new Error('down'));
+    render(<SettingsView />);
+    await act(async () => {});
+    expect(optionTexts(selectOf('Model'))).toEqual(['Same as Claude Code', 'Opus', 'Sonnet', 'Haiku']);
+  });
+
+  it('saves a model or effort on change, and null for Same as Claude Code', async () => {
+    standalone(false);
+    render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Sonnet 5.5' });
+    fireEvent.change(selectOf('Model'), { target: { value: 'sonnet' } });
+    expect(st.updatePrefs).toHaveBeenCalledWith({ model: 'sonnet' });
+    fireEvent.change(selectOf('Effort'), { target: { value: 'xhigh' } });
+    expect(st.updatePrefs).toHaveBeenCalledWith({ effort: 'xhigh' });
+    boot.prefs = { directWrites: false, model: 'sonnet', effort: 'high' } as typeof boot.prefs;
+    fireEvent.change(selectOf('Effort'), { target: { value: '' } });
+    expect(st.updatePrefs).toHaveBeenCalledWith({ effort: null });
+  });
+
+  it('lists the efforts of the picked model and keeps a saved effort that is missing', async () => {
+    standalone(false);
+    boot.prefs = { directWrites: false, model: 'sonnet', effort: null } as typeof boot.prefs;
+    const { unmount } = render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Sonnet 5.5' });
+    expect(optionTexts(selectOf('Effort'))).toEqual(['Same as Claude Code', 'Low', 'Medium', 'High']);
+    unmount();
+    boot.prefs = { directWrites: false, model: 'sonnet', effort: 'max' } as typeof boot.prefs;
+    render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Sonnet 5.5' });
+    expect(optionTexts(selectOf('Effort'))).toEqual(['Same as Claude Code', 'Low', 'Medium', 'High', 'Max']);
+    expect(selectOf('Effort').value).toBe('max');
+  });
+
+  it('keeps a saved model the list no longer offers', async () => {
+    standalone(false);
+    boot.prefs = { directWrites: false, model: 'claude-opus-4-1', effort: null } as typeof boot.prefs;
+    render(<SettingsView />);
+    await screen.findByRole('option', { name: 'Sonnet 5.5' });
+    expect(selectOf('Model').value).toBe('claude-opus-4-1');
+  });
+
+  it('moves focus to Model when the chat asked for it, once', async () => {
+    standalone(false);
+    st.settingsFocus = true;
+    render(<SettingsView />);
+    expect(document.activeElement).toBe(selectOf('Model'));
+    expect(st.clearSettingsFocus).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('health panel', () => {

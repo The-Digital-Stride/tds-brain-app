@@ -1538,6 +1538,140 @@ describe('validatePrefsPatch: todoSeen', () => {
   });
 });
 
+describe('validatePrefsPatch: model and effort', () => {
+  const brain = { clients: async () => [] };
+
+  it('accepts null, an alias, an id and every effort level', async () => {
+    expect(await validatePrefsPatch({ model: null, effort: null }, brain)).toEqual({
+      model: null,
+      effort: null,
+    });
+    expect(await validatePrefsPatch({ model: 'opus' }, brain)).toEqual({ model: 'opus' });
+    expect(await validatePrefsPatch({ model: 'claude-opus-5-5[1m]' }, brain)).toEqual({
+      model: 'claude-opus-5-5[1m]',
+    });
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      expect(await validatePrefsPatch({ effort }, brain)).toEqual({ effort });
+    }
+    expect(await validatePrefsPatch({ model: 'a'.repeat(100) }, brain)).toEqual({ model: 'a'.repeat(100) });
+  });
+
+  it('refuses a bad pattern, a long model, a non-string, and an unknown effort', async () => {
+    const bad: Record<string, unknown>[] = [
+      { model: 'has space' },
+      { model: '-opus' },
+      { model: 'opus; rm -rf' },
+      { model: '' },
+      { model: 'a'.repeat(101) },
+      { model: 5 },
+      { effort: 'turbo' },
+      { effort: 'HIGH' },
+      { effort: 3 },
+      { effort: '' },
+    ];
+    for (const patch of bad) {
+      const err = await validatePrefsPatch(patch, brain).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err, JSON.stringify(patch)).toBeInstanceOf(HttpError);
+      expect((err as HttpError).status).toBe(400);
+    }
+  });
+});
+
+describe('PUT /api/prefs and GET /api/engine/choices', () => {
+  async function call(path: string, method: string, body: unknown, ctxOver: Record<string, unknown> = {}) {
+    const choices: unknown[] = [];
+    const saved = { model: 'sonnet', effort: 'high' };
+    const ctx = {
+      brain: { clients: async () => [] },
+      store: { update: async (patch: object) => ({ ...saved, ...patch }) },
+      sessions: {
+        setEngineChoice: async (c: unknown) => {
+          choices.push(c);
+        },
+        engineChoices: async () => ({ models: [], claudeCode: { model: null } }),
+      },
+      log: () => {},
+      ...ctxOver,
+    };
+    const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]), {
+      method,
+      headers: { 'content-type': 'application/json' },
+    });
+    const sent = { status: 0, headers: {} as Record<string, unknown>, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number, headers: Record<string, unknown> = {}) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx as unknown as RouteContext,
+    );
+    return { ...sent, choices, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('saves a model and effort and hands the saved choice to the sessions', async () => {
+    const sent = await call('/api/prefs', 'PUT', { model: 'opus' });
+    expect(sent.status).toBe(200);
+    expect(sent.choices).toEqual([{ model: 'opus', effort: 'high' }]);
+  });
+
+  it('does not touch the sessions when the patch has neither', async () => {
+    const sent = await call('/api/prefs', 'PUT', { pins: [] });
+    expect(sent.status).toBe(200);
+    expect(sent.choices).toEqual([]);
+  });
+
+  it('answers a bad value with 400 and does not touch the sessions', async () => {
+    const sent = await call('/api/prefs', 'PUT', { model: 'no no' });
+    expect(sent.status).toBe(400);
+    expect(sent.choices).toEqual([]);
+  });
+
+  it('answers 200 even when the sessions reject or throw', async () => {
+    const rejecting = await call(
+      '/api/prefs',
+      'PUT',
+      { effort: 'low' },
+      {
+        sessions: { setEngineChoice: () => Promise.reject(new Error('boom')) },
+      },
+    );
+    expect(rejecting.status).toBe(200);
+    const throwing = await call(
+      '/api/prefs',
+      'PUT',
+      { effort: 'low' },
+      {
+        sessions: {
+          setEngineChoice: () => {
+            throw new Error('boom');
+          },
+        },
+      },
+    );
+    expect(throwing.status).toBe(200);
+  });
+
+  it('answers the choices, never cached, and refuses other methods', async () => {
+    const sent = await call(ROUTES.engineChoices, 'GET', undefined);
+    expect(sent.status).toBe(200);
+    expect(sent.headers['Cache-Control']).toBe('no-store');
+    expect(sent.json).toEqual({ models: [], claudeCode: { model: null } });
+    expect((await call(ROUTES.engineChoices, 'POST', {})).status).toBe(405);
+  });
+});
+
 describe('GET file changes of a chat (chat files)', () => {
   const CHANGES = {
     changes: [

@@ -46,7 +46,9 @@ describe('app store', () => {
     await store.update({ pins: ['a'], evil: 1 } as never);
     expect(Object.keys(JSON.parse(readFileSync(join(dir, 'prefs.json'), 'utf8'))).sort()).toEqual([
       'directWrites',
+      'effort',
       'lastClient',
+      'model',
       'pins',
       'todoPanelOpen',
       'todoSeen',
@@ -82,6 +84,8 @@ describe('app store', () => {
       todoPanelOpen: false,
       directWrites: true,
       todoSeen: {},
+      model: null,
+      effort: null,
     });
   });
 
@@ -119,5 +123,35 @@ describe('app store', () => {
     expect(Object.keys((await store.update({ todoSeen: big })).todoSeen)).toHaveLength(500);
     const mixed = { ok: '2026-11-13T08:00:00Z', long: 'x'.repeat(41), n: 5 } as never;
     expect(Object.keys((await store.update({ todoSeen: mixed })).todoSeen)).toEqual(['ok']);
+  });
+
+  it('reads an older prefs file as no model and no effort', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'], directWrites: true }));
+    const p = await createAppStore(dir).get();
+    expect(p.model).toBeNull();
+    expect(p.effort).toBeNull();
+  });
+
+  it('keeps a valid model and effort, and falls back for bad stored values', async () => {
+    const dir = fresh();
+    const store = createAppStore(dir);
+    expect(await store.update({ model: 'opus', effort: 'max' })).toMatchObject({
+      model: 'opus',
+      effort: 'max',
+    });
+    expect(await createAppStore(dir).get()).toMatchObject({ model: 'opus', effort: 'max' });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ model: 'bad model!', effort: 'turbo' }));
+    expect(await store.get()).toMatchObject({ model: null, effort: null });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ model: 'x'.repeat(101), effort: 5 }));
+    expect(await store.get()).toMatchObject({ model: null, effort: null });
+    await store.update({ model: 'sonnet', effort: 'low' });
+    // A bad patch keeps what was saved; null clears.
+    expect(await store.update({ model: '--bad', effort: 'nope' } as never)).toMatchObject({
+      model: 'sonnet',
+      effort: 'low',
+    });
+    expect(await store.update({ model: null, effort: null })).toMatchObject({ model: null, effort: null });
   });
 });

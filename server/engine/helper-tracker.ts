@@ -7,16 +7,15 @@
  * chat's helpers are listed, never a helper's own helpers.
  */
 import type { LiveHelper, LiveHelperStatus } from '../../shared/contract.ts';
-import { LEVEL_TIERS, LEVEL_TIERS_ORDER, type LevelTier } from '../../shared/levels-contract.ts';
+import { LEVEL_TIERS, type LevelTier } from '../../shared/levels-contract.ts';
 import { toolLabel } from './event-map.ts';
-import { APP_HELPERS, BUILT_IN_HELPERS, isAppHelper } from './helpers.ts';
+import { APP_HELPERS, isAppHelper } from './helpers.ts';
 
 type Rec = Record<string, unknown>;
 
 export interface HelperTracker {
   /** Agent PreToolUse hook, allow path only, with the call as it will run. */
-  /** `appSetModel`: the app's own rule gave this call its model (so a built-in helper has an app level). */
-  started(toolUseId: string, input: Record<string, unknown>, now?: Date, appSetModel?: boolean): void;
+  started(toolUseId: string, input: Record<string, unknown>, now?: Date): void;
   /** Agent end hooks. Unknown ids are ignored; an ended helper never changes again. */
   ended(toolUseId: string, how: 'done' | 'failed' | 'stopped', now?: Date): void;
   /** The call was refused before it ran: remove its row. */
@@ -54,27 +53,20 @@ function nameOf(type: string | null): string {
   return type ? `Helper (${type})` : 'Helper';
 }
 
-/**
- * An app helper's own tier; a built-in (or untyped) helper's tier only when the app set its model
- * (`rewriteAgentInput`), never when Claude picked the model itself.
- */
-function tierOf(type: string | null, model: string | null, appSetModel: boolean): LevelTier | null {
-  if (isAppHelper(type)) return APP_HELPERS[type].tier;
-  if (!appSetModel || (type && !BUILT_IN_HELPERS.includes(type))) return null;
-  return LEVEL_TIERS_ORDER.find((t) => LEVEL_TIERS[t].model === model) ?? null;
+/** An app helper's own tier. Any other helper has no app level: Claude or its agent file picks its model. */
+function tierOf(type: string | null): LevelTier | null {
+  return isAppHelper(type) ? APP_HELPERS[type].tier : null;
+}
+
+/** The model a call runs on before its first message says: the one named, else an app helper's own. */
+function modelOf(type: string | null, named: string | null): string | null {
+  return named ?? (isAppHelper(type) ? LEVEL_TIERS[APP_HELPERS[type].tier].model : null);
 }
 
 export function createHelperTracker(): HelperTracker {
   const rows = new Map<string, Row>();
 
-  function add(
-    id: string,
-    type: string | null,
-    description: unknown,
-    model: string | null,
-    now: Date,
-    appSetModel = false,
-  ): Row {
+  function add(id: string, type: string | null, description: unknown, model: string | null, now: Date): Row {
     const row: Row = {
       type,
       stepIds: new Set(),
@@ -82,8 +74,8 @@ export function createHelperTracker(): HelperTracker {
         id,
         name: nameOf(type),
         brief: briefOf(description),
-        tier: tierOf(type, model, appSetModel),
-        model,
+        tier: tierOf(type),
+        model: modelOf(type, model),
         status: 'working',
         startedAt: now.toISOString(),
         endedAt: null,
@@ -96,13 +88,7 @@ export function createHelperTracker(): HelperTracker {
   }
 
   /** Fill what a row doesn't know yet; never overwrite. True if anything changed. */
-  function fill(
-    row: Row,
-    type: string | null,
-    description: unknown,
-    model: string | null,
-    appSetModel = false,
-  ): boolean {
+  function fill(row: Row, type: string | null, description: unknown, model: string | null): boolean {
     const h = row.helper;
     if (h.status !== 'working') return false;
     let changed = false;
@@ -118,11 +104,12 @@ export function createHelperTracker(): HelperTracker {
         changed = true;
       }
     }
-    if (!h.model && model) {
-      h.model = model;
+    const known = modelOf(row.type, model);
+    if (!h.model && known) {
+      h.model = known;
       changed = true;
     }
-    const tier = h.tier ?? tierOf(row.type, h.model, appSetModel);
+    const tier = h.tier ?? tierOf(row.type);
     if (tier !== h.tier) {
       h.tier = tier;
       changed = true;
@@ -147,8 +134,7 @@ export function createHelperTracker(): HelperTracker {
     const type = str(raw.subagent_type);
     const existing = rows.get(id);
     if (existing) return fill(existing, type, raw.description, null) ? 'now' : null;
-    const app = isAppHelper(type) ? LEVEL_TIERS[APP_HELPERS[type].tier].model : null;
-    add(id, type, raw.description, app, now);
+    add(id, type, raw.description, null, now);
     return 'now';
   }
 
@@ -215,13 +201,13 @@ export function createHelperTracker(): HelperTracker {
   }
 
   return {
-    started(id, input, now = new Date(), appSetModel = false) {
+    started(id, input, now = new Date()) {
       if (!id) return;
       const type = str(input.subagent_type);
       const model = str(input.model);
       const existing = rows.get(id);
-      if (existing) fill(existing, type, input.description, model, appSetModel);
-      else add(id, type, input.description, model, now, appSetModel);
+      if (existing) fill(existing, type, input.description, model);
+      else add(id, type, input.description, model, now);
     },
     ended(id, how, now = new Date()) {
       const row = rows.get(id);

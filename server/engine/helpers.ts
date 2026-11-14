@@ -109,7 +109,7 @@ export const HELPERS_LINE = [
   'Helpers: most requests need no helpers, so do the work yourself.',
   'Use helpers only when the job splits into two or more independent parts, such as several clients, channels or sources.',
   "Then prefer the app's own: tdsapp-scout to find files, facts and figures, tdsapp-worker to do one part of the job, tdsapp-expert for checks and judgement.",
-  'Give each a self-contained brief, naming any SKILL.md it should follow.',
+  'Give each a self-contained brief, naming any SKILL.md it should follow, and start it with run_in_background set to false.',
   'Check and combine their reports yourself, and do any filing in the brain yourself.',
   `At most ${HELPERS_AT_ONCE_MAX} helpers at once and ${HELPERS_PER_REPLY_MAX} in one reply.`,
 ].join(' ');
@@ -174,38 +174,56 @@ export interface AgentCallContext {
   startedThisReply: number;
 }
 
-export type AgentCallDecision = { allow: true; input: Rec } | { allow: false; reason: string };
+/**
+ * Allowed calls run exactly as Claude wrote them. The hook never rewrites a call: Claude Code's auto-mode
+ * safety check treats a call a hook changed after its review as unchecked and refuses it ("Classifier
+ * unavailable"), so every rewritten helper was refused. A call that breaks a rule is refused instead,
+ * with a reason Claude acts on.
+ */
+export type AgentCallDecision = { allow: true } | { allow: false; reason: string };
 
 export const AT_ONCE_REASON = `Only ${HELPERS_AT_ONCE_MAX} helpers can run at once, and that many are running. Wait for one to finish before you start another, or do this part yourself.`;
 export const PER_REPLY_REASON = `This reply has already started ${HELPERS_PER_REPLY_MAX} helpers, the most allowed in one reply. Finish the job yourself with the reports you have.`;
+export const BACKGROUND_REASON =
+  'In this app helpers run in the foreground. Start it again with run_in_background set to false.';
+export const ISOLATION_REASON =
+  'In this app helpers run in the brain folder as it is. Start it again without isolation.';
+export const appModelReason = (type: HelperName): string =>
+  `${type} runs at its own level. Start it again without a model.`;
+export const DEEP_MODEL_REASON = `On this level, a helper that is not one of the app's own needs a model. Start it again with model "${LEVEL_TIERS[OTHER_HELPER_TIER].model}", or use an app helper (tdsapp-scout, tdsapp-worker or tdsapp-expert).`;
 
 /**
- * The call as it should run, as a new object: always in the foreground (the app ends a turn on
- * `result`, which would cut off a background helper's cards), and in automatic mode on Deep a
- * built-in helper that names no model gets OTHER_HELPER_TIER. Agents with their own model keep it.
+ * Why the call breaks the app's helper rules, or null when it can run as written:
+ * - always in the foreground (the app ends a turn on `result`, which would cut off a background helper);
+ * - no isolation (remote helpers always run in the background, worktree helpers run git in the brain);
+ * - the app's helpers run on their own tier (set in their definitions), so a call naming another model
+ *   is refused, and one naming none or the same one runs;
+ * - in automatic mode on Deep, a built-in helper must name a model, so it never silently runs on the
+ *   chat's most expensive one. Agents from brain or personal agent files keep their own model.
  */
-export function rewriteAgentInput(input: Rec, ctx: Pick<AgentCallContext, 'mode' | 'turnTier'>): Rec {
-  const out: Rec = { ...input, run_in_background: false };
-  // Remote helpers always run in the background and worktree helpers run git in the brain.
-  delete out.isolation;
+export function agentCallProblem(
+  input: Rec,
+  ctx: Pick<AgentCallContext, 'mode' | 'turnTier'>,
+): string | null {
+  // Left out, a helper may run in the background, so the call must say false.
+  if (input.run_in_background !== false) return BACKGROUND_REASON;
+  if (input.isolation !== undefined && input.isolation !== null && input.isolation !== '')
+    return ISOLATION_REASON;
   const type = input.subagent_type;
-  // The app's helpers always run on their own tier, whatever model the call names.
+  const named = typeof input.model === 'string' && input.model.length > 0;
   if (isAppHelper(type)) {
-    out.model = LEVEL_TIERS[APP_HELPERS[type].tier].model;
-    return out;
+    return named && input.model !== LEVEL_TIERS[APP_HELPERS[type].tier].model ? appModelReason(type) : null;
   }
   const builtIn =
     type === undefined || type === null || type === '' || BUILT_IN_HELPERS.includes(type as string);
-  const named = typeof input.model === 'string' && input.model.length > 0;
-  if (ctx.mode === 'auto' && ctx.turnTier === 'deep' && builtIn && !named) {
-    out.model = LEVEL_TIERS[OTHER_HELPER_TIER].model;
-  }
-  return out;
+  if (ctx.mode === 'auto' && ctx.turnTier === 'deep' && builtIn && !named) return DEEP_MODEL_REASON;
+  return null;
 }
 
-/** Caps first (per reply, then at once), then the rewrite. */
+/** Caps first (per reply, then at once), then the rules. */
 export function decideAgentCall(input: Rec, ctx: AgentCallContext): AgentCallDecision {
   if (ctx.startedThisReply >= HELPERS_PER_REPLY_MAX) return { allow: false, reason: PER_REPLY_REASON };
   if (ctx.running >= HELPERS_AT_ONCE_MAX) return { allow: false, reason: AT_ONCE_REASON };
-  return { allow: true, input: rewriteAgentInput(input, ctx) };
+  const problem = agentCallProblem(input, ctx);
+  return problem ? { allow: false, reason: problem } : { allow: true };
 }

@@ -64,6 +64,8 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
 5. **The Agent hook can rewrite the call.** `PreToolUse` `updatedInput` with `model` and
    `run_in_background: false` held: the helper ran on the forced model and the reply waited for it.
    A call's `model` beats the agent definition's own model (also in `sdk-tools.d.ts`).
+   Changed: in auto mode a rewritten Agent call is refused ("Classifier unavailable"), so the app
+   no longer rewrites; see "Addendum: no rewrite" at the end.
 6. **Helpers run in the background by default** (an un-rewritten call let the reply end first).
 7. **Two foreground helpers started in one message run at the same time** and the reply ends after both.
 8. **A helper's tool approval reaches `canUseTool` with `ctx.agentID`** (a different id per helper),
@@ -238,6 +240,8 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
       e.g. `newsletter-idea-extractor` on Haiku) keep it.
     If an Agent call does reach `canUseTool`, the app applies the same rewrite to the `updatedInput`
     it returns, so a card can't undo it.
+    Changed: the hook now refuses a call that breaks these rules, with a reason, instead of
+    rewriting it; see "Addendum: no rewrite" at the end.
     Plain: no helper silently runs on the most expensive model or outlives the reply, and helpers
     can't multiply without limit.
     Built: with levels on, the three helpers, foreground-only, the caps and dropping `isolation`
@@ -366,3 +370,32 @@ persist chat levels. Verdict: ready to build.
 reaches open chats at once again (restored v0.19.0 behaviour, with tests); the manual-mode choice and
 the SDK-upgrade check of the worker's disallow list are recorded under decisions 10 and 12. Nice item
 left: a stop pressed while the pick is running can take up to about 4 s to show.
+
+## Addendum: no rewrite (2026-11-14)
+
+**Problem.** In automatic mode, every helper call was refused by Claude Code's safety check with
+"Classifier unavailable", so helpers never ran. Manual mode was not affected.
+
+**Cause (confirmed in Claude Code 2.1.325).** In auto mode a server-side check reviews each tool call
+before hooks run. When a `PreToolUse` hook returns `updatedInput`, that review no longer matches the
+call (`server_input_rewritten`). The call falls back to a local check, and when that is unavailable
+the call is refused. The Agent tool always refuses in that case. The app's hook always rewrote helper
+calls (decision 12), so every helper was refused.
+
+**Fix.** The hook never returns `updatedInput`. A call that breaks a rule is refused with a reason
+Claude acts on, and Claude starts it again correctly:
+- `run_in_background` must be `false`. Fact 6 says a call that leaves it out runs in the background,
+  so leaving it out is refused too. The helpers line in the system prompt asks for it up front, so
+  Claude rarely needs a second try.
+- `isolation` set: refused.
+- An app helper naming a model other than its own tier's: refused. No model, or its own, runs.
+- Auto mode on Deep, a built-in helper with no model: refused, asking for the other-helper model.
+- The caps are unchanged.
+`agentStart` (the `canUseTool` path) returns the input unchanged too. A built-in helper's level in the
+Chats drawer now comes only from the model the call names.
+
+Plain: helpers work in automatic mode again. Claude has to ask for them the app's way, and when it
+doesn't, it is told why and tries again.
+
+Browser check: in auto mode on a preview, two `tdsapp-scout` helpers ran together in the foreground
+and the Chats drawer listed both, ending "Done · Quick · Haiku 5.5".

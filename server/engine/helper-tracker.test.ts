@@ -70,18 +70,19 @@ describe('helper tracker', () => {
     expect(t.workingCount()).toBe(1);
   });
 
-  it('names other helpers "Helper (type)" or "Helper", and gives a built-in a level only when the app set its model', () => {
+  it('names other helpers "Helper (type)" or "Helper", with no app level; an app helper gets its own model', () => {
     const t = createHelperTracker();
-    t.started('a', { subagent_type: 'Explore', model: 'haiku' }, undefined, true);
+    t.started('a', { subagent_type: 'Explore', model: 'haiku' });
     t.started('b', { prompt: 'x' });
     t.started('c', { subagent_type: 'brain-agent', model: 'haiku' });
-    t.started('d', { subagent_type: 'Explore', model: 'haiku' });
-    const [a, b, c] = t.list();
-    expect([a?.name, a?.tier, a?.model]).toEqual(['Helper (Explore)', 'quick', 'haiku']);
+    t.started('d', { subagent_type: 'tdsapp-worker' });
+    const [a, b, c, d] = t.list();
+    // Claude (or the agent file) chose the model, not the app: no app level.
+    expect([a?.name, a?.tier, a?.model]).toEqual(['Helper (Explore)', null, 'haiku']);
     expect([b?.name, b?.tier, b?.model]).toEqual(['Helper', null, null]);
     expect(c?.tier).toBeNull();
-    // Claude chose Haiku itself: no app level.
-    expect(t.list().find((h) => h.id === 'd')?.tier).toBeNull();
+    // An app helper's call names no model: its own level's model until its first message says.
+    expect([d?.name, d?.tier, d?.model]).toEqual(['Worker', 'standard', 'sonnet']);
   });
 
   it('task_started for a local agent alone adds a helper, and says so', () => {
@@ -115,18 +116,17 @@ describe('helper tracker', () => {
 
   it('a hook start and task_started for one id make one row, in either order', () => {
     const hookFirst = createHelperTracker();
-    // The app gave this built-in helper its model, so it has the app's Standard level.
-    hookFirst.started('h1', { subagent_type: 'Explore', description: 'Find', model: 'sonnet' }, T0, true);
+    hookFirst.started('h1', { subagent_type: 'Explore', description: 'Find', model: 'sonnet' }, T0);
     hookFirst.observe(taskStarted({ description: 'Other' }), T1);
     const taskFirst = createHelperTracker();
     taskFirst.observe(taskStarted({ description: 'Find' }), T0);
-    taskFirst.started('h1', { subagent_type: 'Explore', description: 'Other', model: 'sonnet' }, T1, true);
+    taskFirst.started('h1', { subagent_type: 'Explore', description: 'Other', model: 'sonnet' }, T1);
     for (const t of [hookFirst, taskFirst]) {
       expect(t.list()).toHaveLength(1);
       expect(t.list()[0]).toMatchObject({
         brief: 'Find',
         model: 'sonnet',
-        tier: 'standard',
+        tier: null,
         startedAt: T0.toISOString(),
       });
     }

@@ -77,7 +77,6 @@ import {
   HELPERS_LINE,
   helperActor,
   helperAgents,
-  rewriteAgentInput,
   shouldNudge,
   withHelpersNudge,
   withoutHelpersNudge,
@@ -964,13 +963,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           message: 'The app could not show that question. Ask it in plain text instead.',
         });
       }
-      // Decisions 12 and 13: a main-chat helper keeps the Agent hook's rewrite; the app's own start without a card.
-      const start =
-        levels && !ctx.agentID
-          ? agentStart(toolName, input, (i) =>
-              rewriteAgentInput(i, { mode: levelMode, turnTier: s.turnTier }),
-            )
-          : null;
+      // Decision 13: the app's own helpers start without a card, as written (the Agent hook already
+      // refused any call that breaks a helper rule).
+      const start = levels && !ctx.agentID ? agentStart(toolName, input) : null;
       if (start && !start.card) return Promise.resolve({ behavior: 'allow', updatedInput: start.input });
       const askInput = start?.input ?? input;
       const actor = levels && ctx.agentID ? helperActor(s.helperTypes.get(ctx.agentID)) : null;
@@ -1628,7 +1623,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
   /**
    * Decision 12, main chat only: every helper runs in the foreground, at most HELPERS_AT_ONCE_MAX at
-   * once and HELPERS_PER_REPLY_MAX per reply, and on Deep in auto a built-in one gets the other-helper tier.
+   * once and HELPERS_PER_REPLY_MAX per reply, and on Deep in auto a built-in one names a model.
+   * An allowed call runs exactly as written: a hook that changes a call makes Claude Code's auto-mode
+   * check refuse it ("Classifier unavailable"), so calls that break a rule are refused with a reason.
    */
   function agentHook(s: Session): HookCallback {
     return async (raw, toolUseID) => {
@@ -1660,10 +1657,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       // Only a real tool use id can be matched with the stream's own messages.
       const realId = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : '');
       if (realId) {
-        s.helperList.started(realId, d.input, undefined, d.input.model !== toolInput.model);
+        s.helperList.started(realId, toolInput);
         notifyHelpers('now');
       }
-      return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: d.input } };
+      return { continue: true };
     };
   }
 

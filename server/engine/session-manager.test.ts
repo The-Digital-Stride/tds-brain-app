@@ -33,7 +33,16 @@ import type {
 } from '../../shared/levels-contract.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
-import { AT_ONCE_REASON, HELPERS_LINE, HELPERS_NUDGE, PER_REPLY_REASON } from './helpers.ts';
+import {
+  AT_ONCE_REASON,
+  appModelReason,
+  BACKGROUND_REASON,
+  DEEP_MODEL_REASON,
+  HELPERS_LINE,
+  HELPERS_NUDGE,
+  ISOLATION_REASON,
+  PER_REPLY_REASON,
+} from './helpers.ts';
 import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
@@ -3147,7 +3156,8 @@ describe('levels', () => {
       {
         hook_event_name: 'PreToolUse',
         tool_name: 'Agent',
-        tool_input: toolInput,
+        // Calls run in the foreground unless a test says otherwise.
+        tool_input: { run_in_background: false, ...toolInput },
         tool_use_id: id,
         ...base,
         ...extra,
@@ -3220,44 +3230,43 @@ describe('levels', () => {
     expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(FILES_LINE);
   });
 
-  it('runs every helper in the foreground and, on Deep in auto, gives a built-in one the Standard model', async () => {
+  it('refuses a call that breaks a helper rule, with a reason, and allows the rest exactly as written', async () => {
     const seen: (Record<string, unknown> | null)[] = [];
     const fx = helperChat(async (q) => {
-      seen.push(await callAgent(q, { prompt: 'a', run_in_background: true }, 't1'));
+      seen.push(await callAgent(q, { prompt: 'a', model: 'sonnet', run_in_background: true }, 't1'));
       seen.push(await callAgent(q, { prompt: 'b', subagent_type: 'Explore' }, 't2'));
       seen.push(await callAgent(q, { prompt: 'c', subagent_type: 'newsletter-idea-extractor' }, 't3'));
       seen.push(await callAgent(q, { prompt: 'd', subagent_type: 'tdsapp-scout' }, 't4'));
+      seen.push(await callAgent(q, { prompt: 'e', subagent_type: 'Explore', model: 'sonnet' }, 't5'));
+      seen.push(
+        await callAgent(q, { prompt: 'f', subagent_type: 'tdsapp-scout', isolation: 'worktree' }, 't6'),
+      );
+      seen.push(await callAgent(q, { prompt: 'g', subagent_type: 'tdsapp-scout', model: 'opus' }, 't7'));
     });
     await auto();
     await mgr.start({ prompt: 'Audit all three clients' });
     await flush();
     expect(fx.queries).toHaveLength(1);
+    const deny = (reason: string) => ({
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    });
+    // Allowed calls get no hook output at all: never an updatedInput, which auto mode would refuse.
     expect(seen).toEqual([
-      {
-        hookEventName: 'PreToolUse',
-        updatedInput: { prompt: 'a', run_in_background: false, model: 'sonnet' },
-      },
-      {
-        hookEventName: 'PreToolUse',
-        updatedInput: { prompt: 'b', subagent_type: 'Explore', run_in_background: false, model: 'sonnet' },
-      },
-      {
-        hookEventName: 'PreToolUse',
-        updatedInput: { prompt: 'c', subagent_type: 'newsletter-idea-extractor', run_in_background: false },
-      },
-      {
-        hookEventName: 'PreToolUse',
-        updatedInput: {
-          prompt: 'd',
-          subagent_type: 'tdsapp-scout',
-          run_in_background: false,
-          model: 'haiku',
-        },
-      },
+      deny(BACKGROUND_REASON),
+      deny(DEEP_MODEL_REASON),
+      null,
+      null,
+      null,
+      deny(ISOLATION_REASON),
+      deny(appModelReason('tdsapp-scout')),
     ]);
+    // Only the allowed ones are listed in the drawer.
+    expect((await mgr.list()).live[0]?.helpers?.map((h) => h.id)).toEqual(['t3', 't4', 't5']);
   });
 
-  it('leaves the model alone below Deep and in manual mode, but still keeps helpers in the foreground', async () => {
+  it('allows a built-in helper with no model below Deep and in manual mode, unchanged', async () => {
     const seen: (Record<string, unknown> | null)[] = [];
     helperChat(async (q) => {
       seen.push(await callAgent(q, { prompt: 'a' }, `t${seen.length}`));
@@ -3269,21 +3278,19 @@ describe('levels', () => {
     const s = (await mgr.list()).live[0];
     await mgr.send(s?.id ?? '', 'two');
     await flush();
-    expect(seen.map((o) => o?.updatedInput)).toEqual([
-      { prompt: 'a', run_in_background: false },
-      { prompt: 'a', run_in_background: false },
-    ]);
+    expect(seen).toEqual([null, null]);
   });
 
   it('caps helpers at once, and frees a slot when one finishes or fails', async () => {
     const seen: (Record<string, unknown> | null)[] = [];
     helperChat(async (q) => {
-      for (let i = 1; i <= 5; i++) seen.push(await callAgent(q, { prompt: `p${i}` }, `t${i}`));
+      for (let i = 1; i <= 5; i++)
+        seen.push(await callAgent(q, { prompt: `p${i}`, model: 'sonnet' }, `t${i}`));
       await agentEnded(q, 't1');
-      seen.push(await callAgent(q, { prompt: 'p6' }, 't6'));
-      seen.push(await callAgent(q, { prompt: 'p7' }, 't7'));
+      seen.push(await callAgent(q, { prompt: 'p6', model: 'sonnet' }, 't6'));
+      seen.push(await callAgent(q, { prompt: 'p7', model: 'sonnet' }, 't7'));
       await agentEnded(q, 't2', true);
-      seen.push(await callAgent(q, { prompt: 'p8' }, 't8'));
+      seen.push(await callAgent(q, { prompt: 'p8', model: 'sonnet' }, 't8'));
     });
     await auto();
     await mgr.start({ prompt: 'go' });
@@ -3302,7 +3309,7 @@ describe('levels', () => {
     helperChat(async (q, turn) => {
       const row: boolean[] = [];
       for (let i = 1; i <= 9; i++) {
-        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        const o = await callAgent(q, { prompt: 'x', model: 'sonnet' }, `t${turn}-${i}`);
         row.push(o?.permissionDecision === 'deny');
         if (o?.permissionDecision === 'deny') expect(o.permissionDecisionReason).toBe(PER_REPLY_REASON);
         await agentEnded(q, `t${turn}-${i}`);
@@ -3322,7 +3329,7 @@ describe('levels', () => {
     const seen: boolean[] = [];
     helperChat(async (q) => {
       for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
-        await callAgent(q, { prompt: 'x' }, `t${i}`);
+        await callAgent(q, { prompt: 'x', model: 'sonnet' }, `t${i}`);
         // Allowed by the app's hook, then stopped by another hook or a settings rule: it never runs.
         q.emit({
           type: 'system',
@@ -3333,7 +3340,7 @@ describe('levels', () => {
         });
         for (let k = 0; k < 10; k++) await Promise.resolve();
       }
-      const o = await callAgent(q, { prompt: 'x' }, 'next');
+      const o = await callAgent(q, { prompt: 'x', model: 'sonnet' }, 'next');
       seen.push(o?.permissionDecision === 'deny');
     });
     await auto();
@@ -3346,7 +3353,7 @@ describe('levels', () => {
     const seen: boolean[] = [];
     helperChat(async (q, turn) => {
       for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
-        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        const o = await callAgent(q, { prompt: 'x', model: 'sonnet' }, `t${turn}-${i}`);
         seen.push(o?.permissionDecision === 'deny');
       }
     });
@@ -3362,21 +3369,20 @@ describe('levels', () => {
     const seen: (Record<string, unknown> | null)[] = [];
     helperChat(async (q) => {
       for (let i = 1; i <= 6; i++)
-        seen.push(await callAgent(q, { prompt: 'x' }, `t${i}`, { agent_id: 'ag1' }));
-      seen.push(await callAgent(q, { prompt: 'x' }, 'main'));
+        seen.push(await callAgent(q, { prompt: 'x', run_in_background: true }, `t${i}`, { agent_id: 'ag1' }));
+      seen.push(await callAgent(q, { prompt: 'x', run_in_background: true }, 'main'));
     });
     await auto();
     await mgr.start({ prompt: 'go' });
     await flush();
     expect(seen.slice(0, 6)).toEqual(new Array(6).fill(null));
-    expect(seen[6]?.updatedInput).toMatchObject({ run_in_background: false });
+    expect(seen[6]?.permissionDecisionReason).toBe(BACKGROUND_REASON);
   });
 
-  it('starts an app helper without a card, with the rewrite', async () => {
+  it('starts an app helper without a card, exactly as written', async () => {
     let result: PermissionResult | null = null;
     const fx = helperChat(async (q) => {
-      result = await q.ask('Agent', { subagent_type: 'tdsapp-worker', prompt: 'x', run_in_background: true })
-        .promise;
+      result = await q.ask('Agent', { subagent_type: 'tdsapp-worker', prompt: 'x' }).promise;
     });
     await auto();
     const s = await mgr.start({ prompt: 'go' });
@@ -3384,17 +3390,12 @@ describe('levels', () => {
     expect(fx.queries).toHaveLength(1);
     expect(result).toEqual({
       behavior: 'allow',
-      updatedInput: {
-        subagent_type: 'tdsapp-worker',
-        prompt: 'x',
-        run_in_background: false,
-        model: 'sonnet',
-      },
+      updatedInput: { subagent_type: 'tdsapp-worker', prompt: 'x' },
     });
     expect(events(mgr, s.id).some((e) => e.type === 'permission-request')).toBe(false);
   });
 
-  it('asks before any other helper, and the card’s answer keeps the rewrite', async () => {
+  it('asks before any other helper, and the card’s answer allows it as written', async () => {
     let result: PermissionResult | null = null;
     helperChat(async (q) => {
       result = await q.ask('Agent', { description: 'Check links', prompt: 'x' }).promise;
@@ -3408,7 +3409,7 @@ describe('levels', () => {
     await flush();
     expect(result).toEqual({
       behavior: 'allow',
-      updatedInput: { description: 'Check links', prompt: 'x', run_in_background: false, model: 'sonnet' },
+      updatedInput: { description: 'Check links', prompt: 'x' },
     });
   });
 
@@ -3416,12 +3417,12 @@ describe('levels', () => {
     const seen: boolean[] = [];
     let s: { id: string } | null = null;
     helperChat(async (q) => {
-      for (let i = 1; i <= 4; i++) await callAgent(q, { prompt: 'x' }, `t${i}`);
+      for (let i = 1; i <= 4; i++) await callAgent(q, { prompt: 'x', model: 'sonnet' }, `t${i}`);
       const asked = q.ask('Agent', { prompt: 'x' }, { toolUseID: 't4' }).promise;
       await flush();
       await mgr.replyPermission(s?.id ?? '', { requestId: 'req-1', decision: 'deny' });
       await asked;
-      seen.push((await callAgent(q, { prompt: 'x' }, 't5'))?.permissionDecision === 'deny');
+      seen.push((await callAgent(q, { prompt: 'x', model: 'sonnet' }, 't5'))?.permissionDecision === 'deny');
     });
     await auto();
     s = await mgr.start({ prompt: 'go' });
@@ -3552,7 +3553,7 @@ describe('levels', () => {
     helperChat(async (q, turn) => {
       if (turn > 0) return;
       await callAgent(q, { subagent_type: 'tdsapp-scout', description: 'Find reports', prompt: 'x' }, 'h1');
-      await callAgent(q, { description: 'Check links', prompt: 'y' }, 'h2');
+      await callAgent(q, { description: 'Check links', prompt: 'y', model: 'sonnet' }, 'h2');
       toolUse(q, 'st1', 'Read', { file_path: '/a/report.md' }, 'h1');
       await gate;
       await agentEnded(q, 'h1');
@@ -3619,7 +3620,7 @@ describe('levels', () => {
   it('a helper whose card was refused is not listed', async () => {
     let s: { id: string } | null = null;
     helperChat(async (q) => {
-      await callAgent(q, { description: 'Refused one', prompt: 'x' }, 't1');
+      await callAgent(q, { description: 'Refused one', prompt: 'x', model: 'sonnet' }, 't1');
       const asked = q.ask('Agent', { prompt: 'x' }, { toolUseID: 't1' }).promise;
       await flush();
       await mgr.replyPermission(s?.id ?? '', { requestId: 'req-1', decision: 'deny' });
@@ -3633,7 +3634,7 @@ describe('levels', () => {
 
   it('a helper another rule stops (permission_denied) is not listed', async () => {
     helperChat(async (q) => {
-      await callAgent(q, { prompt: 'x' }, 't1');
+      await callAgent(q, { prompt: 'x', model: 'sonnet' }, 't1');
       q.emit({
         type: 'system',
         subtype: 'permission_denied',
@@ -3652,7 +3653,7 @@ describe('levels', () => {
     let s: { id: string } | null = null;
     helperChat(async (q) => {
       q.onInterrupt = () => q.result('error_during_execution');
-      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      await callAgent(q, { description: 'Slow', prompt: 'x', model: 'sonnet' }, 'h1');
       await new Promise<void>(() => {});
     });
     await auto();
@@ -3666,7 +3667,7 @@ describe('levels', () => {
 
   it('an engine that stops mid-reply leaves its helpers stopped', async () => {
     helperChat(async (q) => {
-      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      await callAgent(q, { description: 'Slow', prompt: 'x', model: 'sonnet' }, 'h1');
       q.finish();
       await new Promise<void>(() => {});
     });
@@ -3678,8 +3679,8 @@ describe('levels', () => {
 
   it('a failed or interrupted helper step ends as failed or stopped', async () => {
     helperChat(async (q) => {
-      await callAgent(q, { prompt: 'a' }, 'h1');
-      await callAgent(q, { prompt: 'b' }, 'h2');
+      await callAgent(q, { prompt: 'a', model: 'sonnet' }, 'h1');
+      await callAgent(q, { prompt: 'b', model: 'sonnet' }, 'h2');
       await agentEnded(q, 'h1', true);
       await hookOf(q, 'PostToolUseFailure', 'Agent|Task')(
         {
@@ -3709,7 +3710,7 @@ describe('levels', () => {
       go = r;
     });
     helperChat(async (q) => {
-      await callAgent(q, { description: 'Slow', prompt: 'x' }, 'h1');
+      await callAgent(q, { description: 'Slow', prompt: 'x', model: 'sonnet' }, 'h1');
       await gate;
       for (let i = 1; i <= 10; i++) toolUse(q, `st${i}`, 'Read', { file_path: `/a/${i}.md` }, 'h1');
       // The reply stays open, so its own end doesn't notify.

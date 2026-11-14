@@ -9,14 +9,19 @@ import {
 import {
   type AgentCallContext,
   APP_HELPERS,
+  AT_ONCE_REASON,
+  agentCallProblem,
+  appModelReason,
+  BACKGROUND_REASON,
+  DEEP_MODEL_REASON,
   decideAgentCall,
   HELPERS_LINE,
   HELPERS_NUDGE,
   helperActor,
   helperAgents,
   helperRowLabel,
+  ISOLATION_REASON,
   isAppHelper,
-  rewriteAgentInput,
   shouldNudge,
   withHelpersNudge,
   withoutHelpersNudge,
@@ -180,82 +185,95 @@ describe('the Agent hook (decision 12)', () => {
   });
   const STANDARD_MODEL = LEVEL_TIERS[OTHER_HELPER_TIER].model;
 
-  it('always runs helpers in the foreground', () => {
+  const problem = (
+    input: Record<string, unknown>,
+    mode: 'auto' | 'manual' = 'auto',
+    turnTier: 'quick' | 'standard' | 'deep' | null = 'quick',
+  ) => agentCallProblem({ run_in_background: false, ...input }, { mode, turnTier });
+
+  it('allows a call that follows the rules exactly as written (never a rewrite)', () => {
     for (const mode of ['auto', 'manual'] as const) {
-      for (const input of [
-        { subagent_type: 'tdsapp-scout', prompt: 'x' },
-        { subagent_type: 'my-agent', prompt: 'x', run_in_background: true },
-        { prompt: 'x' },
-      ]) {
-        expect(rewriteAgentInput(input, { mode, turnTier: 'quick' }).run_in_background).toBe(false);
-      }
+      expect(problem({ subagent_type: 'tdsapp-scout', prompt: 'x' }, mode)).toBeNull();
+      expect(problem({ subagent_type: 'Explore', prompt: 'x', run_in_background: false }, mode)).toBeNull();
+      expect(problem({ prompt: 'x' }, mode)).toBeNull();
     }
+    const d = decideAgentCall(
+      { subagent_type: 'Explore', model: STANDARD_MODEL, run_in_background: false },
+      ctx(),
+    );
+    expect(d).toEqual({ allow: true });
   });
 
-  it('keeps the rest of the call and never changes its input object', () => {
-    const input = { subagent_type: 'Explore', prompt: 'do it', description: 'One part' };
-    const out = rewriteAgentInput(input, { mode: 'auto', turnTier: 'quick' });
-    expect(out).toEqual({ ...input, run_in_background: false });
-    expect(input).not.toHaveProperty('run_in_background');
-  });
-
-  it('drops isolation, so no helper runs remotely or in a git worktree of the brain', () => {
-    for (const isolation of ['remote', 'worktree']) {
-      const input = { subagent_type: 'tdsapp-worker', prompt: 'x', isolation };
-      expect(rewriteAgentInput(input, { mode: 'manual', turnTier: null })).not.toHaveProperty('isolation');
-      expect(
-        rewriteAgentInput({ ...input, subagent_type: 'Explore' }, { mode: 'auto', turnTier: 'quick' }),
-      ).not.toHaveProperty('isolation');
-      expect(input.isolation).toBe(isolation);
-    }
-  });
-
-  it('runs an app helper on its own tier in every mode, whatever model the call names', () => {
+  it('refuses a call that leaves run_in_background out, as it may then run in the background', () => {
     for (const mode of ['auto', 'manual'] as const) {
-      expect(
-        rewriteAgentInput({ subagent_type: 'tdsapp-scout', model: 'opus' }, { mode, turnTier: 'deep' }).model,
-      ).toBe('haiku');
-      expect(rewriteAgentInput({ subagent_type: 'tdsapp-worker' }, { mode, turnTier: 'quick' }).model).toBe(
-        STANDARD_MODEL,
+      const ask = { mode, turnTier: 'quick' as const };
+      expect(agentCallProblem({ subagent_type: 'tdsapp-scout', prompt: 'x' }, ask)).toBe(BACKGROUND_REASON);
+      expect(agentCallProblem({ prompt: 'x', run_in_background: 'false' }, ask)).toBe(BACKGROUND_REASON);
+    }
+    expect(BACKGROUND_REASON).toMatch(/run_in_background set to false/);
+    expect(HELPERS_LINE).toMatch(/run_in_background set to false/);
+  });
+
+  it('refuses a background helper, telling Claude to run it in the foreground', () => {
+    for (const mode of ['auto', 'manual'] as const) {
+      expect(problem({ subagent_type: 'my-agent', prompt: 'x', run_in_background: true }, mode)).toBe(
+        BACKGROUND_REASON,
       );
-      expect(
-        rewriteAgentInput({ subagent_type: 'tdsapp-expert', model: 'haiku' }, { mode, turnTier: null }).model,
-      ).toBe('opus');
+    }
+    expect(BACKGROUND_REASON).toMatch(/foreground/);
+  });
+
+  it('refuses isolation, so no helper runs remotely or in a git worktree of the brain', () => {
+    for (const isolation of ['remote', 'worktree']) {
+      expect(problem({ subagent_type: 'tdsapp-worker', prompt: 'x', isolation }, 'manual', null)).toBe(
+        ISOLATION_REASON,
+      );
+      expect(problem({ subagent_type: 'Explore', prompt: 'x', isolation })).toBe(ISOLATION_REASON);
     }
   });
 
-  it('on Deep in auto, gives a built-in helper with no model the other-helper tier', () => {
-    for (const type of [undefined, 'general-purpose', 'Explore', 'Plan']) {
-      const input = type ? { subagent_type: type, prompt: 'x' } : { prompt: 'x' };
-      expect(rewriteAgentInput(input, { mode: 'auto', turnTier: 'deep' }).model).toBe(STANDARD_MODEL);
+  it('runs an app helper on its own tier: no model or its own is fine, another is refused', () => {
+    for (const mode of ['auto', 'manual'] as const) {
+      expect(problem({ subagent_type: 'tdsapp-worker' }, mode, 'deep')).toBeNull();
+      expect(problem({ subagent_type: 'tdsapp-scout', model: 'haiku' }, mode, 'deep')).toBeNull();
+      expect(problem({ subagent_type: 'tdsapp-scout', model: 'opus' }, mode, 'deep')).toBe(
+        appModelReason('tdsapp-scout'),
+      );
+      expect(problem({ subagent_type: 'tdsapp-expert', model: 'haiku' }, mode, null)).toBe(
+        appModelReason('tdsapp-expert'),
+      );
     }
+    expect(appModelReason('tdsapp-scout')).toMatch(/without a model/);
   });
 
-  it('leaves the model alone when the call names one, the agent has its own, or not Deep/auto', () => {
-    const r = (
-      input: Record<string, unknown>,
-      mode: 'auto' | 'manual',
-      tier: 'quick' | 'standard' | 'deep',
-    ) => rewriteAgentInput(input, { mode, turnTier: tier }).model;
-    expect(r({ subagent_type: 'Explore', model: 'opus' }, 'auto', 'deep')).toBe('opus');
-    expect(r({ subagent_type: 'newsletter-idea-extractor' }, 'auto', 'deep')).toBeUndefined();
-    expect(r({ subagent_type: 'Explore' }, 'auto', 'standard')).toBeUndefined();
-    expect(r({ subagent_type: 'Explore' }, 'manual', 'deep')).toBeUndefined();
-    expect(rewriteAgentInput({}, { mode: 'auto', turnTier: null }).model).toBeUndefined();
+  it('on Deep in auto, a built-in helper with no model is asked to name the other-helper model', () => {
+    for (const type of [undefined, '', 'general-purpose', 'Explore', 'Plan']) {
+      const input = type === undefined ? { prompt: 'x' } : { subagent_type: type, prompt: 'x' };
+      expect(problem(input, 'auto', 'deep')).toBe(DEEP_MODEL_REASON);
+    }
+    expect(DEEP_MODEL_REASON).toContain(`"${STANDARD_MODEL}"`);
   });
 
-  it('allows up to the caps, with the rewritten input', () => {
-    const d = decideAgentCall({ subagent_type: 'Explore' }, ctx());
-    expect(d).toEqual({
-      allow: true,
-      input: { subagent_type: 'Explore', run_in_background: false, model: STANDARD_MODEL },
-    });
+  it('leaves the model to the call when it names one, the agent has its own, or not Deep/auto', () => {
+    expect(problem({ subagent_type: 'Explore', model: 'opus' }, 'auto', 'deep')).toBeNull();
+    expect(problem({ subagent_type: 'newsletter-idea-extractor' }, 'auto', 'deep')).toBeNull();
+    expect(problem({ subagent_type: 'Explore' }, 'auto', 'standard')).toBeNull();
+    expect(problem({ subagent_type: 'Explore' }, 'manual', 'deep')).toBeNull();
+    expect(problem({}, 'auto', null)).toBeNull();
+  });
+
+  it('allows up to the caps', () => {
     expect(
       decideAgentCall(
-        {},
+        { model: STANDARD_MODEL, run_in_background: false },
         ctx({ running: HELPERS_AT_ONCE_MAX - 1, startedThisReply: HELPERS_PER_REPLY_MAX - 1 }),
       ).allow,
     ).toBe(true);
+  });
+
+  it('checks the caps before the rules', () => {
+    const d = decideAgentCall({ run_in_background: true }, ctx({ running: HELPERS_AT_ONCE_MAX }));
+    expect(d).toEqual({ allow: false, reason: AT_ONCE_REASON });
   });
 
   it('denies a helper over the at-once cap with a reason Claude can act on', () => {

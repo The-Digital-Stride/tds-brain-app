@@ -135,7 +135,7 @@ describe('pageFormState', () => {
   });
   it('labels versions with the remote number when there is one', () => {
     expect(versionLabel(v(2, { remote: 3 }), 1, 3)).toBe('Version 3');
-    expect(versionLabel(v(2), 1, 3)).toBe('Version 2 of 3');
+    expect(versionLabel(v(2), 1, 3)).toBe('Version 2');
   });
 });
 
@@ -225,7 +225,7 @@ describe('the page viewer', () => {
     mount();
     expect(screen.queryByText('Claude is still working on this page.')).toBeNull();
     const select = screen.getByLabelText('Version') as HTMLSelectElement;
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Version 1 of 1', 'Latest']);
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Version 1', 'Latest']);
   });
 
   it('shows the in-progress copy as version 0 and moves to the numbered one at the boundary', () => {

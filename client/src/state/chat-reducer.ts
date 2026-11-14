@@ -308,6 +308,8 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
       return next;
     case 'files':
       next.files = { files: event.files, attachments: event.attachments, links: event.links };
+      // Optional (older servers don't send it): kept when sent; the screen treats a missing one as [].
+      if (event.pages) next.files.pages = event.pages;
       return next;
     case 'level':
       next.level = event.level;

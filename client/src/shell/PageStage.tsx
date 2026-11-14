@@ -52,9 +52,12 @@ export function writeMark(page: ChatPage | null): string {
   return page?.toolUseIds.at(-1) ?? '';
 }
 
-/** "Version 3" with claude.ai's own number when it gave one, else "Version 2 of 3". */
-export function versionLabel(v: ChatPageVersion, index: number, total: number): string {
-  return v.remote !== null ? `Version ${v.remote}` : `Version ${index + 1} of ${total}`;
+/**
+ * "Version 3" with claude.ai's own number when it gave one, else by position ("Version 2"). No
+ * "of n": beside the in-progress "Latest" it read as if Latest were not one of them.
+ */
+export function versionLabel(v: ChatPageVersion, index: number, _total?: number): string {
+  return v.remote !== null ? `Version ${v.remote}` : `Version ${index + 1}`;
 }
 
 const STATUS_WORDS: Record<PageFormState, string> = {

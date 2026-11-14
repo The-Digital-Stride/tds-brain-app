@@ -230,6 +230,14 @@ describe('suggestionMessage', () => {
     expect(m.note).not.toMatch(/stored copy/i);
     expect(m.visible).not.toContain(REF.sourcePath);
   });
+  it('never mentions publishing for a page with no claude.ai address (the usual case in app chats)', () => {
+    const m = suggestionMessage({ ...REF, url: null }, 'x');
+    expect(m.note).not.toMatch(/Artifact tool|republish/i);
+    expect(m.note).toMatch(/editing that file in place/);
+    const copy = suggestionMessage({ ...REF, url: null, sourceIsCopy: true }, 'x');
+    expect(copy.note).not.toMatch(/Artifact tool|republish/i);
+    expect(copy.note).toMatch(/scratchpad/);
+  });
   it('says what to do with the app copy when the source is a copy', () => {
     const m = suggestionMessage({ ...REF, sourceIsCopy: true }, 'x');
     expect(m.note).toMatch(/stored copy/i);

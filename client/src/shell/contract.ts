@@ -161,6 +161,7 @@ export type IconName =
   | 'search'
   | 'chevron'
   | 'go'
+  | 'link'
   | 'pin'
   | 'image'
   | 'doc'

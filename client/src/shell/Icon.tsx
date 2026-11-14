@@ -53,6 +53,10 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   chevron: <path d="M5 8l5 5 5-5" />,
   go: <path d="M4 10h11M11 5l5 5-5 5" />,
+  // Two chain links: a web address.
+  link: (
+    <path d="M8.33 10.83a4.17 4.17 0 0 0 6.28.45l2.5-2.5a4.17 4.17 0 0 0-5.89-5.89l-1.43 1.42M11.67 9.17a4.17 4.17 0 0 0-6.28-.45l-2.5 2.5a4.17 4.17 0 0 0 5.89 5.89l1.42-1.42" />
+  ),
   pin: <path d="M12 3l5 5M14.5 5.5 11 9l1 4-1 1-6-6 1-1 4 1 3.5-3.5M8 12l-5 5" />,
   image: (
     <>

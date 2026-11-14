@@ -24,6 +24,8 @@ import {
   type BrainReaders,
   type ChatEvent,
   type ChatFileChanges,
+  EFFORT_LEVELS,
+  type EffortLevel,
   type LiveSession,
   MAX_ATTACHMENTS,
   MAX_LIVE_SESSIONS,
@@ -54,6 +56,11 @@ import { describeSessionAllow, narrowSuggestions, permissionCard } from './permi
 export interface EngineQuery extends AsyncIterable<unknown> {
   interrupt(): Promise<unknown>;
   close(): void;
+  /**
+   * The engine's applied settings (`applied.model`, `applied.effort`). Present at run time in the
+   * Agent SDK but not in its published types, so it is optional and every use is guarded.
+   */
+  getSettings?(): Promise<unknown>;
 }
 
 export interface PastInfo {
@@ -433,6 +440,8 @@ interface Session {
   turnRunning: boolean;
   interruptRequested: boolean;
   warnedKeySource: boolean;
+  /** The last model and effort sent to the screen, so a repeat is not sent again. */
+  settingsKey: string | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
   closing: boolean;
   closed: Promise<void> | null;
@@ -684,6 +693,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       turnRunning: false,
       interruptRequested: false,
       warnedKeySource: false,
+      settingsKey: null,
       idleTimer: null,
       closing: false,
       closed: null,
@@ -780,6 +790,32 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
   // -- the engine -----------------------------------------------------------
 
+  /**
+   * Asks the engine which model and effort it will use, and tells the screen when they change.
+   * Claude Code sends its start-of-turn message once a turn, so a `/model` or `/effort` change
+   * shows by the next turn. Anything odd or missing is left out; this never affects the chat.
+   */
+  async function readSettings(s: Session, q: EngineQuery): Promise<void> {
+    let res: unknown;
+    try {
+      if (typeof q.getSettings !== 'function') return;
+      res = await q.getSettings();
+    } catch {
+      return;
+    }
+    const applied = isRec(res) && isRec(res.applied) ? res.applied : null;
+    if (!applied || s.closing || s.query !== q) return;
+    const model = typeof applied.model === 'string' && applied.model.trim() ? applied.model.trim() : null;
+    const effort = (EFFORT_LEVELS as readonly unknown[]).includes(applied.effort)
+      ? (applied.effort as EffortLevel)
+      : null;
+    if (!model && !effort) return;
+    const key = `${model ?? ''}|${effort ?? ''}`;
+    if (key === s.settingsKey) return;
+    s.settingsKey = key;
+    emit(s, { type: 'engine-settings', model, effort });
+  }
+
   function handleMessage(s: Session, raw: RawMessage): void {
     if (raw.type === 'system' && raw.subtype === 'init') {
       const sid = typeof raw.session_id === 'string' ? raw.session_id : null;
@@ -788,6 +824,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         notifyChanged();
       }
       if (s.turnRunning && s.state === 'starting') setState(s, 'working');
+      if (s.query) void readSettings(s, s.query);
       if (!s.warnedKeySource && typeof raw.apiKeySource === 'string' && raw.apiKeySource !== 'none') {
         s.warnedKeySource = true;
         emit(s, {

@@ -1,3 +1,5 @@
+import type { EffortLevel } from '../../shared/contract.ts';
+
 const DAY_MS = 86_400_000;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -31,4 +33,30 @@ export function isOverdue(due: string, today: string = todayIso()): boolean {
   const d = dayNumber(due);
   const t = dayNumber(today);
   return d !== null && t !== null && d < t;
+}
+
+const EFFORT_WORDS: Record<EffortLevel, string> = {
+  low: 'Low effort',
+  medium: 'Medium effort',
+  high: 'High effort',
+  xhigh: 'Extra-high effort',
+  max: 'Max effort',
+};
+
+/** "claude-opus-5-5" → "Opus 5.5". A model id it does not recognise is shown as it is. */
+function modelName(id: string): string {
+  const m = /claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(id);
+  if (!m?.[1] || !m[2]) return id;
+  const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+  const version = m[3] ? `${m[2]}.${m[3]}` : m[2];
+  return `${family} ${version}${/\[1m\]/i.test(id) ? ' (1M context)' : ''}`;
+}
+
+/** The quiet line under a chat's message box, e.g. "Opus 5.5 · High effort"; null when nothing is known. */
+export function engineLine(model: string | null, effort: EffortLevel | null): string | null {
+  const parts: string[] = [];
+  const id = model?.trim();
+  if (id) parts.push(modelName(id));
+  if (effort) parts.push(EFFORT_WORDS[effort]);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }

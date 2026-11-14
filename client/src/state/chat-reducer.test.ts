@@ -149,6 +149,35 @@ describe('chatReducer', () => {
     expect(s.items[0]).toMatchObject({ kind: 'notice', level: 'warning', text: 'Careful' });
   });
 
+  it('keeps the model and effort, the newest report winning', () => {
+    expect(apply([]).model).toBeNull();
+    expect(apply([]).effort).toBeNull();
+    const s = apply([
+      seq(1, { type: 'session-info', sdkSessionId: 'abc', model: 'claude-opus-5-5', claudeVersion: null }),
+    ]);
+    expect([s.model, s.effort]).toEqual(['claude-opus-5-5', null]);
+    const t = apply([
+      seq(1, { type: 'session-info', sdkSessionId: 'abc', model: 'claude-opus-5-5', claudeVersion: null }),
+      seq(2, { type: 'engine-settings', model: 'claude-opus-5-5', effort: 'high' }),
+      seq(3, { type: 'session-info', sdkSessionId: 'abc', model: null, claudeVersion: null }),
+      seq(4, { type: 'engine-settings', model: 'claude-sonnet-5-5', effort: 'low' }),
+    ]);
+    expect([t.model, t.effort]).toEqual(['claude-sonnet-5-5', 'low']);
+    expect(t.items).toEqual([]);
+  });
+
+  it('keeps the known model when a later report has none', () => {
+    const info = (n: number, model: string | null) =>
+      seq(n, { type: 'session-info', sdkSessionId: 'abc', model, claudeVersion: null });
+    const s = apply([info(1, 'claude-opus-5-5'), info(2, null)]);
+    expect(s.model).toBe('claude-opus-5-5');
+    const t = apply([
+      info(1, 'claude-opus-5-5'),
+      seq(2, { type: 'engine-settings', model: null, effort: 'high' }),
+    ]);
+    expect([t.model, t.effort]).toEqual(['claude-opus-5-5', 'high']);
+  });
+
   describe('stateSince', () => {
     const at = (n: number, event: ChatEvent): SequencedEvent => ({
       seq: n,

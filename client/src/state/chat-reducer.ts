@@ -3,6 +3,7 @@ import type {
   AttachmentInfo,
   ChatEvent,
   ChatFilesSnapshot,
+  EffortLevel,
   ProposedChange,
   SequencedEvent,
   SessionState,
@@ -91,6 +92,9 @@ export interface ChatState {
   /** When (ms) the chat last changed attention state, from the events' own times. null until seen. */
   stateSince: number | null;
   sdkSessionId: string | null;
+  /** The model and effort Claude Code is using for this chat, as last reported. null until known. */
+  model: string | null;
+  effort: EffortLevel | null;
   /** The files, attachments and links this chat has touched. */
   files: ChatFilesSnapshot;
 }
@@ -102,6 +106,8 @@ export const initialChatState: ChatState = {
   stateDetail: null,
   stateSince: null,
   sdkSessionId: null,
+  model: null,
+  effort: null,
   files: { files: [], attachments: [], links: [] },
 };
 
@@ -172,6 +178,11 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
       return next;
     case 'session-info':
       next.sdkSessionId = event.sdkSessionId;
+      if (event.model) next.model = event.model;
+      return next;
+    case 'engine-settings':
+      next.model = event.model ?? state.model;
+      next.effort = event.effort;
       return next;
     case 'user-message': {
       next.items = [

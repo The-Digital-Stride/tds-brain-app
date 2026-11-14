@@ -63,6 +63,8 @@ const chatState = (sessionState: ChatState['sessionState'], stepLabel?: string):
   stateDetail: null,
   stateSince: null,
   sdkSessionId: null,
+  model: null,
+  effort: null,
   files: { files: [], attachments: [], links: [] },
   items: [
     { kind: 'user', id: 'u', text: 'hi' },
@@ -111,6 +113,19 @@ describe('status line above the message box', () => {
       expect(lines()).toHaveLength(1);
       expect(lines()[0]?.textContent?.trim()).toMatch(expected);
     }
+  });
+});
+
+describe('model and effort under the message box', () => {
+  it('shows the model and effort once known, after the message box', () => {
+    h.chat = chatState('idle');
+    const { rerender } = render(sheet());
+    expect(document.querySelector('.engine-line')).toBeNull();
+    h.chat = { ...chatState('idle'), model: 'claude-opus-5-5', effort: 'high' };
+    rerender(sheet());
+    const line = document.querySelector('.engine-line');
+    expect(line?.textContent).toBe('Claude is using Opus 5.5 · High effort');
+    expect(line?.previousElementSibling?.classList.contains('composer')).toBe(true);
   });
 });
 

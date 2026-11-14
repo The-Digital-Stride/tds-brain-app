@@ -43,6 +43,12 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
 const personal = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem =>
   todo(id, title, { scope: 'personal', key: `personal/${id}`, path: `personal/todo/${id}`, ...over });
 
+/** A row's chat button ("Start a chat on this: …" or "Open chat: …"): the row itself is not a button. */
+const chatButton = (title: string) =>
+  screen.getByRole('button', {
+    name: new RegExp(`^(Start a chat on this|Open chat): ${title}$`),
+  }) as HTMLElement;
+
 const fns = {
   changeTodos: vi.fn(),
   markTodosSeen: vi.fn(),
@@ -382,7 +388,7 @@ describe('revealTodo (from the global search)', () => {
     ).toBe('true');
     // "No date" is a closed group when nothing asked for it.
     expect(screen.getByRole('button', { name: /No date/ }).getAttribute('aria-expanded')).toBe('true');
-    const rowButton = screen.getByText('Pick me up', { exact: false }).closest('button') as HTMLElement;
+    const rowButton = chatButton('Pick me up') as HTMLElement;
     expect(document.activeElement).toBe(rowButton);
   });
 
@@ -394,9 +400,7 @@ describe('revealTodo (from the global search)', () => {
     render(<TodosDrawer />);
     expect(screen.getByRole('button', { name: /^Overdue/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: /^No date/ }).getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
   });
 
   it('clears the filters first, so the to-do is not hidden by them', () => {
@@ -409,7 +413,7 @@ describe('revealTodo (from the global search)', () => {
     ask(b);
     rerender(<TodosDrawer />);
     expect((screen.getByLabelText('Client') as HTMLSelectElement).value).toBe('');
-    expect(document.activeElement).toBe(screen.getByText('Ring Bob', { exact: false }).closest('button'));
+    expect(document.activeElement).toBe(chatButton('Ring Bob'));
   });
 
   it('opens a group the person closed by hand when the same to-do is revealed again', () => {
@@ -426,9 +430,7 @@ describe('revealTodo (from the global search)', () => {
     ask(target, 2);
     rerender(<TodosDrawer />);
     expect(noDate().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Undated thing', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
   });
 
   it('does the same for "New to you", so the row is never left in a hidden group', () => {
@@ -443,9 +445,7 @@ describe('revealTodo (from the global search)', () => {
     ask(fresh, 2);
     rerender(<TodosDrawer />);
     expect(group().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      screen.getByText('Handed over', { exact: false }).closest('button') as HTMLElement,
-    );
+    expect(document.activeElement).toBe(chatButton('Handed over') as HTMLElement);
   });
 
   it('does nothing visible for a to-do that has gone, but still takes the request', () => {
@@ -498,7 +498,7 @@ describe('New to you', () => {
   it('marks a row seen when it is opened, and all of them with Mark all as seen', () => {
     setStore([passed, todo('m.md', 'Another', { handover: handover() })]);
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByText('Fresh from Ben', { exact: false }));
+    fireEvent.click(chatButton('Fresh from Ben'));
     expect(fns.markTodosSeen).toHaveBeenCalledWith([passed]);
     expect(fns.newChat).toHaveBeenCalledWith({
       draft: 'Help me with this to-do: todo/n.md (Fresh from Ben)',
@@ -685,14 +685,14 @@ describe('starting a chat from a to-do', () => {
   it("passes the to-do's client, and no client for a personal to-do", () => {
     setStore([todo('a.md', 'Renew contract', { client: 'acme' })]);
     const { unmount } = render(<TodosDrawer />);
-    fireEvent.click(screen.getByText('Renew contract', { exact: false }));
+    fireEvent.click(chatButton('Renew contract'));
     expect(fns.newChat).toHaveBeenLastCalledWith(expect.objectContaining({ todoId: 'a.md', client: 'acme' }));
     unmount();
 
     setStore([personal('p.md', 'Secret plan', { client: 'acme' })], { canUsePersonal: true });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
-    fireEvent.click(screen.getByText('Secret plan', { exact: false }));
+    fireEvent.click(chatButton('Secret plan'));
     expect(fns.newChat).toHaveBeenLastCalledWith(
       expect.objectContaining({ todoId: 'personal/p.md', client: null }),
     );
@@ -717,10 +717,8 @@ describe('Favourites', () => {
     const fav = section(/^Favourites/);
     const titles = within(fav)
       .getAllByRole('button', { name: /^Start a chat on this:/ })
-      .map((b) => b.textContent);
-    expect(
-      titles.map((t) => (t?.includes('Later thing') ? 'later' : t?.includes('Undated') ? 'none' : t)),
-    ).toEqual(['later', 'none']);
+      .map((b) => b.getAttribute('aria-label'));
+    expect(titles).toEqual(['Start a chat on this: Later thing', 'Start a chat on this: Undated thing']);
     expect(screen.getAllByText('Later thing', { exact: false })).toHaveLength(1);
     expect(screen.queryByRole('heading', { name: /^No date/ })).toBeNull();
     expect(star('Later thing').getAttribute('aria-pressed')).toBe('true');
@@ -773,7 +771,7 @@ describe('Favourites', () => {
     expect(within(fresher).queryByText('Fresh from Ben', { exact: false })).toBeNull();
     expect(within(fresher).getByText('Another', { exact: false })).toBeTruthy();
     // Opening the starred one marks it seen.
-    fireEvent.click(within(fav).getByText('Fresh from Ben', { exact: false }));
+    fireEvent.click(within(fav).getByRole('button', { name: 'Start a chat on this: Fresh from Ben' }));
     expect(fns.markTodosSeen).toHaveBeenLastCalledWith([fresh]);
     fireEvent.click(screen.getByRole('button', { name: 'Mark all as seen' }));
     expect(

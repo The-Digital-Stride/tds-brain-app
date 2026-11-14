@@ -29,22 +29,7 @@
   flex: 1;
 }
 .todo-main {
-  grid-column: 1 / -1;
-  justify-content: space-between;
-}
-.todo .go {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: var(--blue-ink);
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.todo:hover .go,
-.todo:focus-within .go {
-  opacity: 1;
+  cursor: default;
 }
 .line .icon-btn {
   width: 28px;
@@ -126,7 +111,6 @@
   fill: currentColor;
 }
 @media (prefers-reduced-motion: reduce) {
-  .todo .go,
   .skill-row .icon-btn,
   .line .star-btn,
   .todo .star-btn {
@@ -135,28 +119,26 @@
 }
 
 /* Changing to-dos: the add button, the add form and the inline editor. ------------------------- */
-.todo[data-editable="true"] .todo-main {
-  grid-column: 1;
-}
 .todo-edit {
-  grid-column: 2;
-  align-self: center;
   width: 32px;
   height: 32px;
 }
-/* A to-do row with a star: the main button, the star, then the edit button when changes are on. */
-.todo[data-editable="true"]:has(> .star-btn) {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+/* A to-do row: its text, then its buttons in a line: the star, Edit (when changes are on) and the chat arrow,
+   which is the row's main action. The row itself is not a button. */
+.todo:has(> .todo-go) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
+  column-gap: 2px;
 }
-.todo:has(> .star-btn) > .todo-main {
-  grid-column: 1;
+.todo:has(> .todo-go) > .todo-main {
+  margin-right: 6px;
 }
-.todo > .star-btn {
-  grid-column: 2;
+.todo:has(> .todo-go) > .icon-btn {
   align-self: center;
 }
-.todo:has(> .star-btn) > .todo-edit {
-  grid-column: 3;
+.todo-go {
+  color: var(--blue-ink);
 }
 .drawer-tools.todo-add {
   display: block;

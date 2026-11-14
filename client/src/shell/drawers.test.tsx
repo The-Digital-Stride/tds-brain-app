@@ -187,16 +187,14 @@ describe('To-dos drawer', () => {
       },
     });
     render(<TodosDrawer />);
-    expect(
-      screen.getByRole('button', { name: /Start a chat on this: Renew contract/ }).textContent,
-    ).toContain('Acme Heating');
-    const second =
-      screen.getByRole('button', { name: /Start a chat on this: Plan the pages/ }).textContent ?? '';
+    const rowOf = (name: RegExp) => screen.getByRole('button', { name }).closest('li')?.textContent ?? '';
+    expect(rowOf(/Start a chat on this: Renew contract/)).toContain('Acme Heating');
+    const second = rowOf(/Start a chat on this: Plan the pages/);
     expect(second).toContain('UC AI search');
     expect(second).not.toContain('uc-ai-search');
   });
 
-  it('names the row button with its action, title, due words and client', () => {
+  it('names the chat button with its action and title, and shows the due words and client on the row', () => {
     setStore({
       boot: {
         clients: [{ slug: 'acme', name: 'Acme Heating' }],
@@ -215,11 +213,12 @@ describe('To-dos drawer', () => {
       },
     });
     render(<TodosDrawer />);
-    const name =
-      screen.getByRole('button', { name: /^Start a chat on this: Renew contract/ }).textContent ?? '';
-    expect(name).toContain('overdue by');
-    expect(name).toContain('Acme Heating');
-    expect(screen.getByRole('button', { name: /Acme Heating/ })).toBeTruthy();
+    const go = screen.getByRole('button', { name: 'Start a chat on this: Renew contract' });
+    const row = go.closest('li')?.textContent ?? '';
+    expect(row).toContain('overdue by');
+    expect(row).toContain('Acme Heating');
+    // The row itself is not a button: only its own buttons act.
+    expect(screen.queryByRole('button', { name: /Acme Heating/ })).toBeNull();
   });
 
   it('keeps the line about other people, and the old group of to-dos open to anyone', () => {

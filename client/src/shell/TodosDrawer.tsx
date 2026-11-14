@@ -195,14 +195,12 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      <button type="button" className="todo-main" data-todo-open={todo.key} onClick={choose}>
+      {/* The row itself is not a button (Ian, 2026-11-14): only the arrow starts or opens the chat. */}
+      <div className="todo-main">
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
           <span className="line-title">
-            <span className="visually-hidden">
-              {fresh ? 'New to you. ' : ''}
-              {chat ? 'Open chat:' : 'Start a chat on this:'}
-            </span>{' '}
+            {fresh ? <span className="visually-hidden">New to you. </span> : null}
             {todo.title}
           </span>{' '}
           <span className="line-meta">
@@ -219,10 +217,7 @@ function TodoRow({
             ))}
           </span>
         </span>
-        <span className="go" aria-hidden="true">
-          <Icon name="go" size={16} />
-        </span>
-      </button>
+      </div>
       {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
       <StarButton
         id={todo.key}
@@ -245,6 +240,15 @@ function TodoRow({
           <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
         </button>
       ) : null}
+      <button
+        type="button"
+        className="icon-btn todo-go"
+        data-todo-open={todo.key}
+        aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+        onClick={choose}
+      >
+        <Icon name="go" size={16} />
+      </button>
     </li>
   );
 }

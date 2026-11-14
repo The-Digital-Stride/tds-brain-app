@@ -20,6 +20,21 @@
   color: var(--ink-soft);
   pointer-events: none;
 }
+.ss-chevron svg {
+  transition: transform 160ms var(--ease);
+}
+/* Points up while the list is open, so the box shows its state. */
+.ss-input[aria-expanded="true"] + .ss-chevron svg {
+  transform: rotate(180deg);
+}
+.ss-input:disabled + .ss-chevron {
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ss-chevron svg {
+    transition: none;
+  }
+}
 /* Above the floating dock (41) and drawers, below the viewer (50), palette (70) and tooltips (80). */
 .ss-pop {
   position: fixed;

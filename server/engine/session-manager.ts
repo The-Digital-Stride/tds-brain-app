@@ -68,6 +68,17 @@ import {
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
 import { HelperNames, isHelperTurn, parseHelperReport } from './helper-reports.ts';
+import {
+  beforeHelpersNudge,
+  decideAgentCall,
+  HELPERS_LINE,
+  helperActor,
+  helperAgents,
+  rewriteAgentInput,
+  shouldNudge,
+  withHelpersNudge,
+  withoutHelpersNudge,
+} from './helpers.ts';
 import { createLevelPicker, type LevelPicker, pickNeed } from './level-picker.ts';
 import {
   hasOwnLevel,
@@ -78,7 +89,7 @@ import {
   tierChoice,
 } from './levels.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
-import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
+import { agentStart, describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
 // ---------------------------------------------------------------------------
 // Injected engine functions (the real ones come from the SDK)
@@ -232,6 +243,8 @@ const TITLE_CHARS = 60;
 const RESUMED_TIER: LevelTier = 'standard';
 /** "Why?" for a level kept from before the chat was reopened (the store keeps no reason). */
 const KEPT_REASON = 'Kept from earlier in this chat';
+/** Claude Code's helper tools (`Task` is the older name of `Agent`). */
+const AGENT_TOOLS = 'Agent|Task';
 /** A6 and A16: nothing that could bill an API key or a cloud account instead of the person's sign-in. */
 const SCRUBBED_ENV = [
   'ANTHROPIC_API_KEY',
@@ -371,8 +384,9 @@ export function notedAttachments(text: string): TrackedAttachment[] {
 }
 
 /** A past chat's title source without the note, which may be cut short there. */
-function withoutNote(raw: string | undefined): string {
-  if (!raw) return '';
+function withoutNote(stored: string | undefined): string {
+  if (!stored) return '';
+  const raw = beforeHelpersNudge(stored);
   const at = raw.indexOf(NOTE_OPEN);
   if (at < 0) return raw;
   const before = raw.slice(0, at).trim();
@@ -561,6 +575,15 @@ interface Session {
   pendingOffer: string | null;
   /** A level to store once Claude Code has given the chat its id. */
   unsavedLevel: ChatLevelRecord | null;
+  // Helpers (phase 2); unused without `levels`.
+  /** Main-chat helper steps started and not yet finished, by tool use id. */
+  helpersRunning: Set<string>;
+  /** Main-chat helpers started in this reply. */
+  helpersStarted: number;
+  /** Each running helper's type, by agent id, so its cards can name it. */
+  helperTypes: Map<string, string>;
+  /** The helpers nudge has been sent (once per chat). */
+  nudged: boolean;
 }
 
 type Rec = Record<string, unknown>;
@@ -800,7 +823,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       title: fields.title,
       client: fields.client,
       todoId: fields.todoId,
-      appendLine: fields.client ? `${clientLine(fields.client)}\n${FILES_LINE}` : FILES_LINE,
+      appendLine: [fields.client ? clientLine(fields.client) : null, FILES_LINE, levels ? HELPERS_LINE : null]
+        .filter(Boolean)
+        .join('\n'),
       state: 'idle',
       startedAt: now.toISOString(),
       lastActivityAt: now.toISOString(),
@@ -843,6 +868,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       offered: new Set(),
       pendingOffer: null,
       unsavedLevel: null,
+      helpersRunning: new Set(),
+      helpersStarted: 0,
+      helperTypes: new Map(),
+      nudged: false,
     };
   }
 
@@ -866,6 +895,16 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           message: 'The app could not show that question. Ask it in plain text instead.',
         });
       }
+      // Decisions 12 and 13: a main-chat helper keeps the Agent hook's rewrite; the app's own start without a card.
+      const start =
+        levels && !ctx.agentID
+          ? agentStart(toolName, input, (i) =>
+              rewriteAgentInput(i, { mode: levelMode, turnTier: s.turnTier }),
+            )
+          : null;
+      if (start && !start.card) return Promise.resolve({ behavior: 'allow', updatedInput: start.input });
+      const askInput = start?.input ?? input;
+      const actor = levels && ctx.agentID ? helperActor(s.helperTypes.get(ctx.agentID)) : null;
       const card = isQuestion
         ? null
         : permissionCard(toolName, input, {
@@ -873,6 +912,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             blockedPath: ctx.blockedPath,
             brainRoot: opts.brainRoot,
             uploadsRoot: opts.uploads?.root ?? null,
+            actor,
           });
       if (card?.refuse) {
         if (ctx.toolUseID) s.deniedTools.add(ctx.toolUseID);
@@ -894,13 +934,17 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         const pending: Pending = {
           kind: isQuestion ? 'question' : 'permission',
           requestId,
-          input,
+          input: askInput,
           kept: isQuestion ? [] : narrowSuggestions(ctx.suggestions, ctx.suppressAlwaysAllowRule),
           questions,
           settle(result, outcome) {
             if (s.pending.get(requestId) !== pending) return;
             s.pending.delete(requestId);
-            if (result.behavior === 'deny' && ctx.toolUseID) s.deniedTools.add(ctx.toolUseID);
+            if (result.behavior === 'deny' && ctx.toolUseID) {
+              s.deniedTools.add(ctx.toolUseID);
+              // A refused helper never runs: free its slot.
+              s.helpersRunning.delete(ctx.toolUseID);
+            }
             signal?.removeEventListener('abort', onAbort);
             emit(s, { type: 'request-resolved', requestId, outcome });
             if (s.pending.size === 0 && s.turnRunning) setState(s, 'working');
@@ -985,9 +1029,15 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }))
       emit(s, event);
     s.files?.observe(raw);
+    // A helper call our hook allowed but another rule then stopped never runs: free its slot.
+    if (raw.type === 'system' && raw.subtype === 'permission_denied' && typeof raw.tool_use_id === 'string') {
+      s.helpersRunning.delete(raw.tool_use_id);
+    }
     if (raw.type === 'result') {
       s.turnRunning = false;
       s.interruptRequested = false;
+      // Helpers run in the foreground, so none outlives the reply: free every slot.
+      s.helpersRunning.clear();
       if (levels) levelAfterTurn(s);
       settleAll(s, 'The turn ended.');
       setState(s, 'idle');
@@ -1124,7 +1174,19 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.effortPinned = false;
     if (initial.model) options.model = initial.model;
     if (initial.effort) options.effort = initial.effort;
-    if (levels) options.hooks = { PostToolUse: [{ matcher: 'Skill', hooks: [skillHook(s)] }] };
+    if (levels) {
+      options.agents = helperAgents();
+      options.hooks = {
+        PreToolUse: [{ matcher: AGENT_TOOLS, hooks: [agentHook(s)] }],
+        PostToolUse: [
+          { matcher: 'Skill', hooks: [skillHook(s)] },
+          { matcher: AGENT_TOOLS, hooks: [agentEndHook(s)] },
+        ],
+        PostToolUseFailure: [{ matcher: AGENT_TOOLS, hooks: [agentEndHook(s)] }],
+        SubagentStart: [{ hooks: [subagentHook(s)] }],
+        SubagentStop: [{ hooks: [subagentHook(s)] }],
+      };
+    }
     s.input = input;
     try {
       const q = opts.engine.query({ prompt: input, options });
@@ -1177,6 +1239,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.interruptRequested = false;
     s.turnSent = false;
     s.pendingOffer = null;
+    s.helpersRunning.clear();
+    s.helpersStarted = 0;
     const needsEngine = !s.query;
     setState(s, needsEngine ? 'starting' : 'working');
     const messageId = `u${++s.userCounter}`;
@@ -1373,11 +1437,20 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   ): void {
     const input = s.input;
     const q = s.query;
+    let nudge = false;
     s.choiceChain = s.choiceChain
       .then(async () => {
         await s.levelReady;
+        const before = s.pick;
         const { resolved, unlevelled } = await levelFor(s, skill, { text, files });
         s.turnTier = resolved.level.tier;
+        // Decision 11: the message a helpers pick was made for, once, at Standard or above.
+        // Never for a /skill: Claude Code would file the nudge inside the skill's arguments.
+        nudge =
+          levelMode === 'auto' &&
+          !skill &&
+          s.pick !== before &&
+          shouldNudge({ helpers: !!s.pick?.helpers, turnTier: s.turnTier, nudged: s.nudged });
         s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
         if (q && s.query === q) await applyChoice(s, q, resolved.choice);
         // Offered once the reply ends (levelAfterTurn), so never for a message stopped before it is sent.
@@ -1402,7 +1475,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           return;
         }
         s.turnSent = true;
-        input.push(message);
+        if (nudge) s.nudged = true;
+        input.push(nudge ? withHelpersNudge(message) : message);
       });
   }
 
@@ -1471,6 +1545,68 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         await skillRan(s, input);
       } catch {
         log('Could not check the level of a skill.');
+      }
+      return { continue: true };
+    };
+  }
+
+  /**
+   * Decision 12, main chat only: every helper runs in the foreground, at most HELPERS_AT_ONCE_MAX at
+   * once and HELPERS_PER_REPLY_MAX per reply, and on Deep in auto a built-in one gets the other-helper tier.
+   */
+  function agentHook(s: Session): HookCallback {
+    return async (raw, toolUseID) => {
+      const input: unknown = raw;
+      if (!isRec(input) || input.agent_id || s.closing) return { continue: true };
+      const toolInput = isRec(input.tool_input) ? input.tool_input : {};
+      const id =
+        toolUseID ??
+        (typeof input.tool_use_id === 'string' && input.tool_use_id ? input.tool_use_id : randomUUID());
+      const d = decideAgentCall(toolInput, {
+        mode: levelMode,
+        turnTier: s.turnTier,
+        running: s.helpersRunning.size,
+        startedThisReply: s.helpersStarted,
+      });
+      if (!d.allow) {
+        // Claude is told why and acts on it; the person needn't see a safety-check notice.
+        s.deniedTools.add(id);
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: d.reason,
+          },
+        };
+      }
+      s.helpersRunning.add(id);
+      s.helpersStarted++;
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: d.input } };
+    };
+  }
+
+  /** A main-chat helper finished or failed: free its slot. */
+  function agentEndHook(s: Session): HookCallback {
+    return async (raw, toolUseID) => {
+      const input: unknown = raw;
+      if (isRec(input) && !input.agent_id) {
+        const id = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : null);
+        if (id) s.helpersRunning.delete(id);
+      }
+      return { continue: true };
+    };
+  }
+
+  /** Remembers each helper's type while it runs, so its cards say who is asking (decision 13). */
+  function subagentHook(s: Session): HookCallback {
+    return async (raw) => {
+      const input: unknown = raw;
+      if (isRec(input) && typeof input.agent_id === 'string' && input.agent_id) {
+        if (input.hook_event_name === 'SubagentStart' && typeof input.agent_type === 'string') {
+          s.helperTypes.set(input.agent_id, input.agent_type);
+        } else if (input.hook_event_name === 'SubagentStop') {
+          s.helperTypes.delete(input.agent_id);
+        }
       }
       return { continue: true };
     };
@@ -1624,7 +1760,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const content = isRec(m.message) ? m.message.content : undefined;
       if (m.type === 'user') {
         const raw = historyText(content);
-        const cleaned = cleanUserText(raw);
+        const cleaned = cleanUserText(withoutHelpersNudge(raw.trimEnd()));
         // Stored history has no turn ends. A helper's wake-up is hidden but still ends Claude's
         // previous turn, so its answer stays an answer instead of folding into the next steps.
         if (isHelperTurn(raw)) {

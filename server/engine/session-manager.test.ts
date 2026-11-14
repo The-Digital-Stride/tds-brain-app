@@ -32,6 +32,7 @@ import type {
   TurnLevel,
 } from '../../shared/levels-contract.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
+import { AT_ONCE_REASON, HELPERS_LINE, HELPERS_NUDGE, PER_REPLY_REASON } from './helpers.ts';
 import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
@@ -2557,7 +2558,8 @@ describe('levels', () => {
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    const fx = setupLevels({ picks: () => ready(DEEP), gateModel: gate });
+    // A pick without helpers, so the message reaches Claude with no nudge.
+    const fx = setupLevels({ picks: () => ready({ ...DEEP, helpers: false }), gateModel: gate });
     await auto();
     const s = await mgr.start({ prompt: 'Audit three clients' });
     await flush();
@@ -3098,4 +3100,416 @@ describe('levels', () => {
     expect(pickQ?.received).toEqual(['<request>Audit Acme</request>']);
     expect(lastLevel(s.id)?.tier).toBe('deep');
   });
+
+  // -- helpers (phase 2) ------------------------------------------------------
+
+  type HookFn = (input: never, toolUseID: string | undefined, o: { signal: AbortSignal }) => Promise<unknown>;
+
+  function hookOf(q: FakeQuery | undefined, event: string, matcher?: string): HookFn {
+    const all = (q?.options.hooks as Record<string, { matcher?: string; hooks: HookFn[] }[]> | undefined)?.[
+      event
+    ];
+    const m = all?.find((x) => x.matcher === matcher);
+    const hook = m?.hooks[0];
+    if (!hook) throw new Error(`no ${event} hook`);
+    return hook;
+  }
+
+  const base = { session_id: 'sdk-new-1', transcript_path: '/x', cwd: BRAIN };
+
+  /** The PreToolUse(Agent) hook's answer for one call, as Claude Code would ask it. */
+  async function callAgent(
+    q: FakeQuery | undefined,
+    toolInput: Record<string, unknown>,
+    id: string,
+    extra = {},
+  ) {
+    const out = (await hookOf(q, 'PreToolUse', 'Agent|Task')(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        tool_input: toolInput,
+        tool_use_id: id,
+        ...base,
+        ...extra,
+      } as never,
+      id,
+      { signal: new AbortController().signal },
+    )) as { hookSpecificOutput?: Record<string, unknown> };
+    return out.hookSpecificOutput ?? null;
+  }
+
+  async function agentEnded(q: FakeQuery | undefined, id: string, failed = false) {
+    const event = failed ? 'PostToolUseFailure' : 'PostToolUse';
+    await hookOf(q, event, 'Agent|Task')(
+      {
+        hook_event_name: event,
+        tool_name: 'Agent',
+        tool_input: {},
+        tool_use_id: id,
+        ...(failed ? { error: 'x' } : { tool_response: {} }),
+        ...base,
+      } as never,
+      id,
+      { signal: new AbortController().signal },
+    );
+  }
+
+  async function subagent(
+    q: FakeQuery | undefined,
+    event: 'SubagentStart' | 'SubagentStop',
+    id: string,
+    type: string,
+  ) {
+    await hookOf(q, event)(
+      { hook_event_name: event, agent_id: id, agent_type: type, ...base } as never,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+  }
+
+  /** A chat whose turns wait on `step(q, turn)` before they end. */
+  function helperChat(step: (q: FakeQuery, turn: number, text: string) => Promise<void>, picks = DEEP) {
+    return setupLevels({
+      picks: () => ready(picks),
+      script: async ({ q, turn, text }) => {
+        q.init();
+        await step(q, turn, text);
+        q.result();
+      },
+    });
+  }
+
+  it('a levelled chat gets the three app helpers, the helper instruction and the Agent hook', async () => {
+    const { queries } = setupLevels();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const o = queries[0]?.options;
+    expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
+    expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
+    expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
+      `${FILES_LINE}\n${HELPERS_LINE}`,
+    );
+    expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBe('Agent|Task');
+  });
+
+  it('without levels there are no app helpers and no helper instruction (v0.19.0)', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(queries[0]?.options.agents).toBeUndefined();
+    expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(FILES_LINE);
+  });
+
+  it('runs every helper in the foreground and, on Deep in auto, gives a built-in one the Standard model', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    const fx = helperChat(async (q) => {
+      seen.push(await callAgent(q, { prompt: 'a', run_in_background: true }, 't1'));
+      seen.push(await callAgent(q, { prompt: 'b', subagent_type: 'Explore' }, 't2'));
+      seen.push(await callAgent(q, { prompt: 'c', subagent_type: 'newsletter-idea-extractor' }, 't3'));
+      seen.push(await callAgent(q, { prompt: 'd', subagent_type: 'tdsapp-scout' }, 't4'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'Audit all three clients' });
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(seen).toEqual([
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'a', run_in_background: false, model: 'sonnet' },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'b', subagent_type: 'Explore', run_in_background: false, model: 'sonnet' },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'c', subagent_type: 'newsletter-idea-extractor', run_in_background: false },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: {
+          prompt: 'd',
+          subagent_type: 'tdsapp-scout',
+          run_in_background: false,
+          model: 'haiku',
+        },
+      },
+    ]);
+  });
+
+  it('leaves the model alone below Deep and in manual mode, but still keeps helpers in the foreground', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      seen.push(await callAgent(q, { prompt: 'a' }, `t${seen.length}`));
+    }, STANDARD);
+    await auto();
+    await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'opus', effort: 'high', levelMode: 'manual' });
+    const s = (await mgr.list()).live[0];
+    await mgr.send(s?.id ?? '', 'two');
+    await flush();
+    expect(seen.map((o) => o?.updatedInput)).toEqual([
+      { prompt: 'a', run_in_background: false },
+      { prompt: 'a', run_in_background: false },
+    ]);
+  });
+
+  it('caps helpers at once, and frees a slot when one finishes or fails', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= 5; i++) seen.push(await callAgent(q, { prompt: `p${i}` }, `t${i}`));
+      await agentEnded(q, 't1');
+      seen.push(await callAgent(q, { prompt: 'p6' }, 't6'));
+      seen.push(await callAgent(q, { prompt: 'p7' }, 't7'));
+      await agentEnded(q, 't2', true);
+      seen.push(await callAgent(q, { prompt: 'p8' }, 't8'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    const denied = (o: Record<string, unknown> | null) => o?.permissionDecision === 'deny';
+    expect(seen.map(denied)).toEqual([false, false, false, false, true, false, true, false]);
+    expect(seen[4]).toEqual({
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: AT_ONCE_REASON,
+    });
+  });
+
+  it('caps helpers per reply, and the next reply starts afresh', async () => {
+    const seen: boolean[][] = [];
+    helperChat(async (q, turn) => {
+      const row: boolean[] = [];
+      for (let i = 1; i <= 9; i++) {
+        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        row.push(o?.permissionDecision === 'deny');
+        if (o?.permissionDecision === 'deny') expect(o.permissionDecisionReason).toBe(PER_REPLY_REASON);
+        await agentEnded(q, `t${turn}-${i}`);
+      }
+      seen.push(row);
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    const row = [false, false, false, false, false, false, false, false, true];
+    expect(seen).toEqual([row, row]);
+  });
+
+  it('a helper call another rule stops frees its slot at once', async () => {
+    const seen: boolean[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
+        await callAgent(q, { prompt: 'x' }, `t${i}`);
+        // Allowed by the app's hook, then stopped by another hook or a settings rule: it never runs.
+        q.emit({
+          type: 'system',
+          subtype: 'permission_denied',
+          tool_name: 'Agent',
+          tool_use_id: `t${i}`,
+          message: 'no',
+        });
+        for (let k = 0; k < 10; k++) await Promise.resolve();
+      }
+      const o = await callAgent(q, { prompt: 'x' }, 'next');
+      seen.push(o?.permissionDecision === 'deny');
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(seen).toEqual([false]);
+  });
+
+  it('a turn that ends frees the slots of helpers that never reported back', async () => {
+    const seen: boolean[] = [];
+    helperChat(async (q, turn) => {
+      for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
+        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        seen.push(o?.permissionDecision === 'deny');
+      }
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(seen).toEqual(new Array(HELPERS_AT_ONCE_MAX_FOR_TEST * 2).fill(false));
+  });
+
+  it('ignores Agent calls made inside a helper (main chat only)', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= 6; i++)
+        seen.push(await callAgent(q, { prompt: 'x' }, `t${i}`, { agent_id: 'ag1' }));
+      seen.push(await callAgent(q, { prompt: 'x' }, 'main'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(seen.slice(0, 6)).toEqual(new Array(6).fill(null));
+    expect(seen[6]?.updatedInput).toMatchObject({ run_in_background: false });
+  });
+
+  it('starts an app helper without a card, with the rewrite', async () => {
+    let result: PermissionResult | null = null;
+    const fx = helperChat(async (q) => {
+      result = await q.ask('Agent', { subagent_type: 'tdsapp-worker', prompt: 'x', run_in_background: true })
+        .promise;
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: {
+        subagent_type: 'tdsapp-worker',
+        prompt: 'x',
+        run_in_background: false,
+        model: 'sonnet',
+      },
+    });
+    expect(events(mgr, s.id).some((e) => e.type === 'permission-request')).toBe(false);
+  });
+
+  it('asks before any other helper, and the card’s answer keeps the rewrite', async () => {
+    let result: PermissionResult | null = null;
+    helperChat(async (q) => {
+      result = await q.ask('Agent', { description: 'Check links', prompt: 'x' }).promise;
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({ title: 'Claude wants to start a helper', detail: 'Check links' });
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    await flush();
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { description: 'Check links', prompt: 'x', run_in_background: false, model: 'sonnet' },
+    });
+  });
+
+  it('a card refused for a helper frees its slot', async () => {
+    const seen: boolean[] = [];
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      for (let i = 1; i <= 4; i++) await callAgent(q, { prompt: 'x' }, `t${i}`);
+      const asked = q.ask('Agent', { prompt: 'x' }, { toolUseID: 't4' }).promise;
+      await flush();
+      await mgr.replyPermission(s?.id ?? '', { requestId: 'req-1', decision: 'deny' });
+      await asked;
+      seen.push((await callAgent(q, { prompt: 'x' }, 't5'))?.permissionDecision === 'deny');
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush(60);
+    expect(seen).toEqual([false]);
+  });
+
+  it('labels a helper’s cards with the helper', async () => {
+    const titles: string[] = [];
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      await subagent(q, 'SubagentStart', 'ag1', 'tdsapp-worker');
+      await subagent(q, 'SubagentStart', 'ag2', 'my-agent');
+      for (const [i, agentID] of [
+        ['1', 'ag1'],
+        ['2', 'ag2'],
+        ['3', 'ag9'],
+        ['4', undefined],
+      ] as const) {
+        const asked = q.ask('Bash', { command: 'ls' }, { requestId: `r${i}`, agentID }).promise;
+        await flush();
+        const req = events(mgr, s?.id ?? '')
+          .filter((e) => e.type === 'permission-request')
+          .at(-1);
+        if (req?.type === 'permission-request') titles.push(req.title);
+        await mgr.replyPermission(s?.id ?? '', { requestId: `r${i}`, decision: 'allow' });
+        await asked;
+      }
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush(400);
+    expect(titles).toEqual([
+      'Worker wants to run a command',
+      'A helper wants to run a command',
+      'A helper wants to run a command',
+      'Claude wants to run a command',
+    ]);
+  });
+
+  it('nudges the first message of a helpers pick, once, and never on Quick', async () => {
+    const fx = setupLevels({ picks: () => ready(DEEP) });
+    await auto();
+    const s = await mgr.start({ prompt: 'Audit all three clients' });
+    await flush();
+    await mgr.send(s.id, 'And the fourth');
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual([
+      `push:Audit all three clients\n\n${HELPERS_NUDGE}`,
+      'push:And the fourth',
+    ]);
+    // The person's own words are all the chat shows.
+    expect(events(mgr, s.id).find((e) => e.type === 'user-message')).toMatchObject({
+      text: 'Audit all three clients',
+    });
+  });
+
+  it('no nudge on a Quick chat, a pick without helpers, or manual mode', async () => {
+    const quickHelpers: LevelPick = { tier: 'quick', helpers: true, reason: 'Several look-ups' };
+    for (const [pick, mode] of [
+      [quickHelpers, 'auto'],
+      [STANDARD, 'auto'],
+      [DEEP, 'manual'],
+    ] as const) {
+      const fx = setupLevels({ picks: () => ready(pick) });
+      if (mode === 'auto') await auto();
+      await mgr.start({ prompt: 'Look up three things' });
+      await flush();
+      expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual(['push:Look up three things']);
+      await mgr.closeAll();
+    }
+  });
+
+  it('no nudge on a /skill message, so it never lands in the skill’s arguments', async () => {
+    const fx = setupLevels({ picks: () => ready(DEEP) });
+    await auto();
+    const s = await mgr.start({ prompt: '/gm for all three clients' });
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual(['push:/gm for all three clients']);
+    // The nudge belongs to the message the pick was made for, so it isn't carried over either.
+    await mgr.send(s.id, 'Now the same for the fourth');
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:')).at(-1)).toBe('push:Now the same for the fourth');
+  });
+
+  it('a reopened chat never shows the nudge as the person’s words', async () => {
+    const fx = setupLevels();
+    fx.past.push({
+      sessionId: 'old-1',
+      summary: '',
+      firstPrompt: `Audit\n\n${HELPERS_NUDGE}`,
+      lastModified: 1_700_000_000_000,
+    });
+    fx.history['old-1'] = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: `Audit all three clients\n\n${HELPERS_NUDGE}` },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(s.title).toBe('Audit');
+    expect(events(mgr, s.id).find((e) => e.type === 'user-message')).toMatchObject({
+      text: 'Audit all three clients',
+    });
+  });
 });
+
+const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;

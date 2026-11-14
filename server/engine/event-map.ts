@@ -5,6 +5,7 @@
  * records and picks out only the fields it needs. Everything the client sees goes through here.
  */
 import type { ChatEvent } from '../../shared/contract.ts';
+import { HelperNames, parseHelperReport } from './helper-reports.ts';
 
 /** Any SDK message, read loosely. */
 export type RawMessage = { type: string; [key: string]: unknown };
@@ -117,6 +118,8 @@ export function createEventMapper(): EventMapper {
   const doneTextCount = new Map<string, number>();
   /** tool use id → its plain label, for naming a step the safety check stopped */
   const toolLabels = new Map<string, string>();
+  /** Background helpers' names, for their reports. */
+  const helpers = new HelperNames();
 
   function parentOf(msg: RawMessage): string | null {
     return str(msg.parent_tool_use_id);
@@ -224,7 +227,28 @@ export function createEventMapper(): EventMapper {
 
   function mapUser(msg: RawMessage): ChatEvent[] {
     const message = msg.message;
-    if (!isRec(message) || !Array.isArray(message.content)) return [];
+    if (!isRec(message)) return [];
+    // A background helper's report, handed back to Claude as a user turn the person never typed.
+    const said =
+      typeof message.content === 'string'
+        ? message.content
+        : Array.isArray(message.content)
+          ? message.content
+              .filter((b): b is Rec => isRec(b) && b.type === 'text' && typeof b.text === 'string')
+              .map((b) => b.text as string)
+              .join('\n\n')
+          : '';
+    const report = parentOf(msg) === null ? parseHelperReport(said) : null;
+    if (report)
+      return [
+        {
+          type: 'helper-report',
+          messageId: str(msg.uuid) ?? `report-${++anon}`,
+          name: helpers.name(report.from),
+          text: report.text,
+        },
+      ];
+    if (!Array.isArray(message.content)) return [];
     const out: ChatEvent[] = [];
     for (const block of message.content) {
       if (!isRec(block) || block.type !== 'tool_result') continue;
@@ -256,8 +280,10 @@ export function createEventMapper(): EventMapper {
         case 'stream_event':
           return mapStream(msg);
         case 'assistant':
+          if (parentOf(msg) === null) helpers.observe(msg);
           return mapAssistant(msg);
         case 'user':
+          if (parentOf(msg) === null) helpers.observe(msg);
           return mapUser(msg);
         case 'result':
           return mapResult(msg, opts?.interrupted === true);

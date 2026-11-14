@@ -221,6 +221,55 @@ describe('tools', () => {
   });
 });
 
+describe('helper reports', () => {
+  const handBack = (from: string, parent: string | null = null): RawMessage => ({
+    type: 'user',
+    uuid: 'u-report',
+    isSynthetic: true,
+    message: {
+      role: 'user',
+      content: `Another Claude session sent a message:\n<agent-message from="${from}">\nThe report follows:\n  ## Found\n  It works.\n</agent-message>\n\nThat "other Claude session" is an agent.`,
+    },
+    parent_tool_use_id: parent,
+    session_id: SID,
+  });
+
+  it('turns a hand-back into a named report, never a message from the person', () => {
+    const started = assistant('m1', [
+      { type: 'tool_use', id: 'ag1', name: 'Agent', input: { description: 'Audit memory', prompt: 'p' } },
+    ]);
+    const launched: RawMessage = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'ag1', content: 'agentId: ab12' }],
+      },
+      parent_tool_use_id: null,
+      session_id: SID,
+    };
+    expect(run([started, launched, handBack('ab12')]).filter((e) => e.type === 'helper-report')).toEqual([
+      { type: 'helper-report', messageId: 'u-report', name: 'Audit memory', text: '## Found\nIt works.' },
+    ]);
+  });
+
+  it('has no name for a helper it did not see start, and ignores a helper’s own inner turns', () => {
+    expect(run([handBack('zz')])).toEqual([
+      { type: 'helper-report', messageId: 'u-report', name: null, text: '## Found\nIt works.' },
+    ]);
+    expect(run([handBack('zz', 'parent-tool')])).toEqual([]);
+  });
+
+  it('shows nothing for a finish notice or other plain user text', () => {
+    const plain = (content: string): RawMessage => ({
+      type: 'user',
+      message: { role: 'user', content },
+      parent_tool_use_id: null,
+      session_id: SID,
+    });
+    expect(run([plain('<task-notification>\n</task-notification>'), plain('hello')])).toEqual([]);
+  });
+});
+
 describe('turn-end', () => {
   it('maps a successful result', () => {
     expect(

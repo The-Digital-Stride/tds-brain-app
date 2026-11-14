@@ -11,6 +11,17 @@ function apply(events: SequencedEvent[], from: ChatState = initialChatState): Ch
 }
 
 describe('chatReducer', () => {
+  it('keeps a helper’s report as its own item, in order', () => {
+    const s = apply([
+      seq(1, { type: 'helper-report', messageId: 'r1', name: 'Audit memory', text: '## Found' }),
+      seq(2, { type: 'helper-report', messageId: 'r2', name: null, text: 'More.' }),
+    ]);
+    expect(s.items).toEqual([
+      { kind: 'report', id: 'r1', name: 'Audit memory', text: '## Found' },
+      { kind: 'report', id: 'r2', name: null, text: 'More.' },
+    ]);
+  });
+
   it('builds one assistant block from deltas, then replaces it with the finished text', () => {
     const s = apply([
       seq(1, { type: 'assistant-delta', messageId: 'm1', text: 'Hel', parentToolUseId: null }),

@@ -19,7 +19,7 @@ export const DEFAULT_SHELL: ShellState = {
   railWide: false,
   drawer: null,
   panelOpen: false,
-  panelTab: 'steps',
+  panelTab: 'files',
   panelFile: null,
   paletteOpen: false,
   viewer: null,
@@ -30,7 +30,8 @@ export const DEFAULT_SHELL: ShellState = {
 export const RAIL_NAMES_FROM = 900;
 
 const DRAWERS: readonly DrawerName[] = ['chats', 'todos', 'skills'];
-const TABS: readonly PanelTab[] = ['steps', 'files', 'details'];
+// A saved tab not listed here (the removed `steps`) loads as the default.
+const TABS: readonly PanelTab[] = ['files', 'details'];
 
 export const shellReducer: ShellReducer = (state, action) => {
   switch (action.type) {

@@ -507,7 +507,7 @@ describe('the two docks give way to each other', () => {
     localStorage.setItem('tds-brain-shell', JSON.stringify({ drawer: 'chats' }));
     await renderLiveChat();
     expect(drawerDock().hasAttribute('inert')).toBe(false);
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(panelDock().hasAttribute('inert')).toBe(false);
     expect(drawerDock().hasAttribute('inert')).toBe(true);
     expect(document.getElementById('main')?.hasAttribute('inert')).toBe(false);
@@ -516,7 +516,7 @@ describe('the two docks give way to each other', () => {
   it('a floating panel closes on Esc and focus returns to its toggle', async () => {
     vi.stubGlobal('innerWidth', 1000);
     await renderLiveChat();
-    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    const toggle = screen.getByRole('button', { name: 'Files and details' });
     openWithClick(toggle);
     expect(panelDock().hasAttribute('inert')).toBe(false);
     expect((panelDock().parentElement as HTMLElement).getAttribute('data-overlay')).toBe('true');
@@ -526,7 +526,7 @@ describe('the two docks give way to each other', () => {
     press('Escape', heading);
     expect(panelDock().hasAttribute('inert')).toBe(true);
     expect(document.getElementById('main')?.hasAttribute('inert')).toBe(false);
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Steps and details' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Files and details' }));
   });
 });
 
@@ -586,14 +586,14 @@ describe('the panel holds the rail to icons', () => {
     await renderLiveChat();
     expect(nav().getAttribute('data-wide')).toBe('true');
 
-    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    const toggle = screen.getByRole('button', { name: 'Files and details' });
     openWithClick(toggle);
     expect(panelDock().hasAttribute('inert')).toBe(false);
     expect(nav().getAttribute('data-wide')).toBe('false');
     expect(saved().railWide).toBe(true);
     expect(railButton('Home').getAttribute('aria-label')).toBe('Home');
 
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(panelDock().hasAttribute('inert')).toBe(true);
     expect(nav().getAttribute('data-wide')).toBe('true');
     expect(saved().railWide).toBe(true);
@@ -615,10 +615,10 @@ describe('the panel holds the rail to icons', () => {
     expect(nav().getAttribute('data-wide')).toBe('true');
 
     // Closing the panel ends the override; opening it again holds the rail again.
-    const toggle = screen.getByRole('button', { name: 'Steps and details' });
+    const toggle = screen.getByRole('button', { name: 'Files and details' });
     openWithClick(toggle);
     expect(nav().getAttribute('data-wide')).toBe('true');
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(nav().getAttribute('data-wide')).toBe('false');
   });
 
@@ -650,17 +650,17 @@ describe('sign-off fixes', () => {
     expect(nav().getAttribute('data-wide')).toBe('true');
 
     // Closing the panel clears the override: open it again and the hold is back.
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(panelDock().hasAttribute('inert')).toBe(true);
     expect(nav().getAttribute('data-wide')).toBe('true');
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(nav().getAttribute('data-wide')).toBe('false');
   });
 
   it('Esc closes a floating panel wherever focus is', async () => {
     vi.stubGlobal('innerWidth', 1000);
     await renderLiveChat();
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(panelDock().hasAttribute('inert')).toBe(false);
     (document.activeElement as HTMLElement).blur();
     press('Escape', document.body);
@@ -680,7 +680,7 @@ describe('sign-off fixes', () => {
     localStorage.setItem('tds-brain-shell', JSON.stringify({ drawer: 'chats' }));
     await renderLiveChat();
     expect(drawerDock().hasAttribute('inert')).toBe(false);
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(panelDock().hasAttribute('inert')).toBe(false);
     press('Escape', document.body);
     expect(panelDock().hasAttribute('inert')).toBe(true);
@@ -692,7 +692,7 @@ describe('sign-off fixes', () => {
   it('when the dock closes and its opener has gone, focus lands on the sheet', async () => {
     vi.stubGlobal('innerWidth', 1500);
     await renderLiveChat();
-    openWithClick(screen.getByRole('button', { name: 'Steps and details' }));
+    openWithClick(screen.getByRole('button', { name: 'Files and details' }));
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'This chat' }));
     // Leaving the chat unmounts the panel toggle and hides the panel.
     fireEvent.click(railButton('Settings'));

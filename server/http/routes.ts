@@ -463,9 +463,9 @@ async function uploadFile(req: IncomingMessage, res: ServerResponse, ctx: RouteC
   }
 }
 
-/** The skill-levels service: `ctx.skillLevels`, or the one `server/index.ts` hangs on the brain readers. */
+/** The skill-levels service; absent in setup mode. */
 function skillLevelsOf(ctx: RouteContext): SkillLevelsService | undefined {
-  return ctx.skillLevels ?? (ctx.brain as { skillLevels?: SkillLevelsService } | undefined)?.skillLevels;
+  return ctx.skillLevels;
 }
 
 function canSetSkillLevels(identity: Identity): boolean {
@@ -876,24 +876,9 @@ const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|i
 const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
 
-/** The level methods of the session manager (`LevelSessionApi`). */
-interface LevelCalls {
-  setEngineChoice(choice: {
-    model: string | null;
-    effort: EffortLevel | null;
-    levelMode: AppPrefs['levelMode'];
-  }): Promise<void> | void;
-  setChatLevel(sessionId: string, tier: LevelTier | null): Promise<TurnLevel>;
-  prewarmPick(text: string): void;
-}
-
-function levelApi(ctx: RouteContext): LevelCalls {
-  return ctx.sessions as unknown as LevelCalls;
-}
-
 function prewarmPick(ctx: RouteContext, text: string): void {
   try {
-    levelApi(ctx).prewarmPick?.(text);
+    ctx.sessions.prewarmPick(text);
   } catch {
     // the pick is made at the first message instead
   }
@@ -1108,7 +1093,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       // Settings never waits on an engine, and a failure here must not fail the save.
       try {
         void Promise.resolve(
-          levelApi(ctx).setEngineChoice({
+          ctx.sessions.setEngineChoice({
             model: saved.model,
             effort: saved.effort,
             levelMode: saved.levelMode,
@@ -1231,7 +1216,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (tier !== null && !isLevelTier(tier)) {
       throw new HttpError(400, 'bad-request', 'That level was not understood.');
     }
-    sendJson(res, 200, await levelApi(ctx).setChatLevel(id, tier));
+    sendJson(res, 200, await ctx.sessions.setChatLevel(id, tier));
     return;
   }
 

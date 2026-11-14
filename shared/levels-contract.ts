@@ -30,9 +30,24 @@ export interface TierSpec {
 
 /** The only place tiers become models. */
 export const LEVEL_TIERS: Record<LevelTier, TierSpec> = {
-  quick: { model: 'haiku', effort: 'medium', label: 'Quick', blurb: 'Look-ups, short answers and simple edits' },
-  standard: { model: 'sonnet', effort: 'medium', label: 'Standard', blurb: 'Most writing, reports and everyday work' },
-  deep: { model: 'opus', effort: 'high', label: 'Deep', blurb: 'Audits, strategy and anything that needs careful judgement' },
+  quick: {
+    model: 'haiku',
+    effort: 'medium',
+    label: 'Quick',
+    blurb: 'Look-ups, short answers and simple edits',
+  },
+  standard: {
+    model: 'sonnet',
+    effort: 'medium',
+    label: 'Standard',
+    blurb: 'Most writing, reports and everyday work',
+  },
+  deep: {
+    model: 'opus',
+    effort: 'high',
+    label: 'Deep',
+    blurb: 'Audits, strategy and anything that needs careful judgement',
+  },
 };
 
 export function isLevelTier(v: unknown): v is LevelTier {

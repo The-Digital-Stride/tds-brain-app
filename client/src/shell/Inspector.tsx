@@ -1,8 +1,4 @@
-import { useMemo } from 'react';
-import { indexChatFiles } from '../../../shared/chat-files.ts';
 import { approvalsSentence } from '../approvals.ts';
-import type { ChatState } from '../state/chat-reducer.ts';
-import { STEP_WORDS, stepsOf } from '../state/steps.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
 import type { PanelTab } from './contract.ts';
@@ -14,50 +10,12 @@ import { placeName, STATE_WORDS, whenWords } from './words.ts';
 export const APPROVALS_SHORT = 'Same as your terminal';
 
 const TABS: { value: PanelTab; label: string }[] = [
-  { value: 'steps', label: 'Steps' },
   { value: 'files', label: 'Files' },
   { value: 'details', label: 'Details' },
 ];
 
-function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: string }) {
-  const { dispatch } = useShell();
-  const files = chat?.files.files;
-  const byToolUse = useMemo(() => indexChatFiles(files ?? []).byToolUse, [files]);
-  const steps = stepsOf(chat?.items ?? []);
-  if (steps.length === 0) return <p className="dock-empty">No steps yet.</p>;
-  return (
-    <ol className="steps">
-      {steps.map((s, i) => (
-        <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>
-          <span className="step-n" aria-hidden="true">
-            {i + 1}
-          </span>
-          <span className="step-text">
-            {byToolUse.has(s.id) ? (
-              <button
-                type="button"
-                className="step-label link-btn"
-                onClick={() =>
-                  dispatch({ type: 'show-chat-file', chat: sessionId, key: byToolUse.get(s.id) ?? null })
-                }
-              >
-                {s.label}
-              </button>
-            ) : (
-              <span className="step-label">{s.label}</span>
-            )}
-            <span className="step-status" data-status={s.status}>
-              {STEP_WORDS[s.status]}
-            </span>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 /**
- * The body of the right panel, "This chat": the chat's steps, files and details. The right `Dock`
+ * The body of the right panel, "This chat": the chat's files and details. The right `Dock`
  * supplies the region, heading and close button. Nothing shows unless a live chat is on the sheet.
  */
 export function Inspector() {
@@ -85,9 +43,7 @@ export function Inspector() {
         options={TABS}
         onChange={(tab) => dispatch({ type: 'set-panel-tab', tab })}
       />
-      {state.panelTab === 'steps' ? (
-        <Steps chat={chat} sessionId={id} />
-      ) : state.panelTab === 'files' ? (
+      {state.panelTab === 'files' ? (
         <ChatFiles sessionId={id} />
       ) : (
         <dl className="kv">

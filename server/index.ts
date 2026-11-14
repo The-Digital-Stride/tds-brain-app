@@ -106,13 +106,7 @@ function buildBrainSide(path: string | null) {
     ownLevel: (skill) => ownLevel(path, skill),
   };
   const levelOptions = { levels, chatLevels: createChatLevelStore(config.dataDir) };
-  // The routes find the skill-levels service on the brain readers (see `skillLevelsOf` in routes.ts).
-  const brain = Object.assign(
-    createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null }),
-    {
-      skillLevels,
-    },
-  );
+  const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
   const sessions = createSessionManager({
     ...levelOptions,
     brain,
@@ -124,18 +118,16 @@ function buildBrainSide(path: string | null) {
     uploads,
     dataDir: config.dataDir,
   });
-  return { brain, thumbs, uploads, sessions };
+  return { brain, thumbs, uploads, sessions, skillLevels };
 }
 
-const { brain, thumbs, uploads, sessions } = buildBrainSide(brainPath);
+const { brain, thumbs, uploads, sessions, skillLevels } = buildBrainSide(brainPath);
 // The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
 void store
   .get()
   .then((prefs) => {
     const { model, effort, levelMode } = prefs;
-    // A variable, not a literal, so this type-checks against the session manager before and after it takes `levelMode`.
-    const choice = { model, effort, levelMode };
-    return sessions.setEngineChoice(choice);
+    return sessions.setEngineChoice({ model, effort, levelMode });
   })
   .catch(() => {});
 const engineHealth = createEngineHealth(brainPath, config.claudePath, home, resolvePermissionMode);
@@ -188,6 +180,7 @@ const app = createAppServer({
   brain,
   store,
   sessions,
+  skillLevels,
   thumbs,
   uploads,
   engineHealth,

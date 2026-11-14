@@ -25,18 +25,65 @@ const turnEnd: ChatItem = {
   durationMs: 1,
 };
 
-const noteFlags = (blocks: Block[]) =>
-  blocks.flatMap((b) => (b.kind === 'item' && b.item.kind === 'assistant' ? [b.note] : []));
+/** Each block as a short code: the item's id, or `[...]` for a fold of steps and notes. */
+const shape = (blocks: Block[]) =>
+  blocks.map((b) =>
+    b.kind === 'tools'
+      ? `[${b.entries.map((e) => e.id).join(' ')}]`
+      : 'id' in b.item
+        ? b.item.id
+        : b.item.kind,
+  );
 
 describe('toBlocks', () => {
-  it('treats text followed by a tool step in the same turn as a working note', () => {
+  it('folds text followed by a step in the same turn in with the steps, and leaves the answer out', () => {
     const blocks = toBlocks([user, text('a'), tool('1'), text('b'), turnEnd]);
-    expect(noteFlags(blocks)).toEqual([true, false]);
+    expect(shape(blocks)).toEqual(['u', '[a 1]', 'b']);
   });
 
-  it('does not let a tool in a later turn turn the earlier answer into a note', () => {
+  it('makes one fold of a whole turn of notes and steps, in order', () => {
+    const blocks = toBlocks([
+      user,
+      text('a'),
+      tool('1'),
+      text('b'),
+      text('c'),
+      tool('2'),
+      tool('3'),
+      text('d'),
+    ]);
+    expect(shape(blocks)).toEqual(['u', '[a 1 b c 2 3]', 'd']);
+    const fold = blocks[1];
+    expect(fold?.kind === 'tools' && fold.tools.map((t) => t.id)).toEqual(['1', '2', '3']);
+    expect(fold?.kind === 'tools' && fold.id).toBe('a');
+  });
+
+  it('makes one fold of steps either side of a turn end that shows nothing, but splits at one that does', () => {
+    // A helper woke Claude between two runs of steps with no answer between them.
+    expect(shape(toBlocks([user, tool('1'), turnEnd, tool('2'), text('a')]))).toEqual(['u', '[1 2]', 'a']);
+    const stopped: ChatItem = { ...turnEnd, id: 's', ok: false, interrupted: true };
+    expect(shape(toBlocks([user, tool('1'), stopped, tool('2')]))).toEqual(['u', '[1]', 's', '[2]']);
+  });
+
+  it('does not let a tool in a later turn fold the earlier answer', () => {
     const blocks = toBlocks([user, text('a'), turnEnd, user, tool('1')]);
-    expect(noteFlags(blocks)).toEqual([false]);
+    expect(shape(blocks)).toEqual(['u', 'a', 'u', '[1]']);
+  });
+
+  it('leaves text that is still being written out until a step follows it', () => {
+    const writing: ChatItem = { kind: 'assistant', id: 'w', text: 'Let me', done: false };
+    expect(shape(toBlocks([user, tool('1'), writing]))).toEqual(['u', '[1]', 'w']);
+    expect(shape(toBlocks([user, tool('1'), writing, tool('2')]))).toEqual(['u', '[1 w 2]']);
+  });
+
+  it('folds a helper’s report in with the steps, without making the text before it a note', () => {
+    const report: ChatItem = { kind: 'report', id: 'r', name: 'Audit', text: '## Found' };
+    // The answer that ended the last turn stays out; the report and the steps after it fold together.
+    const blocks = toBlocks([user, text('a'), turnEnd, report, tool('1'), text('b')]);
+    expect(shape(blocks)).toEqual(['u', 'a', '[r 1]', 'b']);
+    const fold = blocks[2];
+    expect(fold?.kind === 'tools' && fold.tools.map((t) => t.id)).toEqual(['1']);
+    expect(shape(toBlocks([user, report, text('b')]))).toEqual(['u', '[r]', 'b']);
   });
 
   it('groups consecutive tools into one block', () => {

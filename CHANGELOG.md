@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.27.0 — 2026-11-14
+
+- **feat**: star a to-do to keep it at the top of the To-dos drawer
+- **fix**: start a chat from a to-do's arrow button, not the whole row
+- **fix**: read a to-do's details with its chat button
+
 ## v0.26.0 — 2026-11-14
 
 - **feat**: star a chat to keep it at the top of the Chats drawer

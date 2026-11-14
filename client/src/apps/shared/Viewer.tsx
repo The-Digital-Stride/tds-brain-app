@@ -79,8 +79,14 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
   const [blocked, setBlocked] = useState(false);
   // A page that navigates itself (its scripts run here) loads a second time: stop it, offer to put it back.
   const frameId = `${item.id}|${item.modified}|${reloads}`;
-  const { stopped, onLoad } = useFrameGuard(frameId);
-  // A link to another site is refused by the app's policy and leaves the frame blank: put the page back.
+  const guard = useFrameGuard(frameId);
+  // A move to another site is refused by the app's policy and leaves the frame blank. Stop the frame
+  // and offer to put it back, never reload it unasked: a page that leaves as soon as it opens (a
+  // script or a meta refresh) would otherwise reload for ever, each reload a fresh frame to the guard.
+  const [violatedId, setViolatedId] = useState<string | null>(null);
+  const frameRef = useRef(frameId);
+  frameRef.current = frameId;
+  const stopped = guard.stopped || violatedId === frameId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the file's id and version clear the line.
   useEffect(() => {
     setBlocked(false);
@@ -88,7 +94,7 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
     const onViolation = (e: Event) => {
       const directive = (e as Partial<SecurityPolicyViolationEvent>).violatedDirective ?? '';
       if (!directive.startsWith('frame-src')) return;
-      setReloads((n) => n + 1);
+      setViolatedId(frameRef.current);
       setBlocked(true);
     };
     document.addEventListener('securitypolicyviolation', onViolation);
@@ -113,7 +119,14 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
             {stopped ? (
               <div className="notice" data-level="warning">
                 <p>This page tried to open another site, so it was stopped.</p>
-                <button type="button" className="btn" onClick={() => setReloads((n) => n + 1)}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setBlocked(false);
+                    setReloads((n) => n + 1);
+                  }}
+                >
                   Show the page again
                 </button>
               </div>
@@ -125,7 +138,7 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
                 referrerPolicy="no-referrer"
                 title={item.title}
                 src={ROUTES.libraryPage(item.id)}
-                onLoad={onLoad}
+                onLoad={guard.onLoad}
               />
             )}
           </div>

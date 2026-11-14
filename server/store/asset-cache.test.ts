@@ -267,6 +267,20 @@ describe('inlinePageAssets', () => {
     expect(noBody.html).toBe('<p>x</p><script>A()</script>');
   });
 
+  it('leaves every later deferred script alone once one could not be inlined, so they still run in order', async () => {
+    const a = 'https://unpkg.com/a.js';
+    const b = 'https://unpkg.com/b.js';
+    const c = 'https://unpkg.com/c.js';
+    // a is in the cache; b is not (offline, budget spent); c, which may need b, must not jump ahead of it.
+    const { cache } = fakeCache({ [a]: 'A()', [c]: 'C()' });
+    const html = `<html><head><script defer src="${a}"></script><script defer src="${b}"></script><script defer src="${c}"></script></head><body></body></html>`;
+    const out = await inlinePageAssets(html, cache);
+    expect(out.html).toBe(
+      `<html><head><script defer src="${b}"></script><script defer src="${c}"></script></head><body><script>A()</script></body></html>`,
+    );
+    expect(out.selfContained).toBe(false);
+  });
+
   it('checks a script against its integrity value, and leaves it when it doesn’t match', async () => {
     const body = 'lib()';
     const good = `sha384-${createHash('sha384').update(body).digest('base64')}`;
@@ -290,6 +304,9 @@ describe('inlinePageAssets', () => {
       `<script type="module" src="https://unpkg.com/lit?module"></script>`,
       '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5/dist/css/bootstrap.min.css">',
       `<link rel="stylesheet" href="${FONTS}">`,
+      // Loaded later as a stylesheet or script (the preload-then-swap trick): still needs the internet.
+      `<link rel="preload" as="style" href="${FONTS}" onload="this.rel='stylesheet'">`,
+      `<link rel="modulepreload" href="https://unpkg.com/lit?module">`,
     ];
     for (const tag of tags) {
       const out = await inlinePageAssets(`<head>${tag}</head>`, cache);

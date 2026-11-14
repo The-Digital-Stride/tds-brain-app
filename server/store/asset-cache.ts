@@ -462,6 +462,7 @@ export async function inlinePageAssets(
 
   const edits: { start: number; end: number; text: string }[] = [];
   const deferred: string[] = [];
+  let deferLeft = false;
   let bodyClose = -1;
 
   async function onScript(tag: Tag, start: number, closeEnd: number): Promise<void> {
@@ -470,9 +471,17 @@ export async function inlinePageAssets(
     const type = (attrOf(tag, 'type') ?? '').trim();
     const classic = type === '' || JS_TYPE.test(type);
     const url = absolute(src);
+    // An inlined deferred script runs as the body is read, ahead of a deferred one left remote (which
+    // runs after): once one is left, later ones stay as they were so they still run in page order.
+    const ordered = hasAttr(tag, 'defer') && !hasAttr(tag, 'async');
+    if (ordered && deferLeft) {
+      selfContained = false;
+      return;
+    }
     const data = classic && closeEnd > 0 ? await fetchOne(url, 'script') : null;
     if (!data || !integrityOk(attrOf(tag, 'integrity'), data)) {
       if (data) budget += data.length;
+      if (ordered) deferLeft = true;
       selfContained = false;
       return;
     }
@@ -487,6 +496,11 @@ export async function inlinePageAssets(
   async function onLink(tag: Tag, start: number): Promise<void> {
     const rel = (attrOf(tag, 'rel') ?? '').toLowerCase().split(/\s+/);
     const href = attrOf(tag, 'href');
+    // Fetched later and swapped in as a stylesheet or script: the copy still needs the internet.
+    if ((rel.includes('preload') || rel.includes('modulepreload')) && href !== null && REMOTE.test(href)) {
+      selfContained = false;
+      return;
+    }
     if (!rel.includes('stylesheet') || rel.includes('alternate') || href === null || !REMOTE.test(href))
       return;
     const css = await fontSheet(absolute(href));

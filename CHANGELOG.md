@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.20.0 — 2026-11-14
+
+- **fix**: hide background helper notices when reopening a chat
+- **feat**: fold Claude's working notes into What Claude did and the Steps tab
+- **fix**: keep answers and single folds around hidden helper turns; review fixes
+- **feat**: show helpers' reports inside What Claude did; give the fold its own panel
+- **fix**: review fixes for helper reports and the fold panel
+
 ## v0.19.0 — 2026-11-14
 
 - **feat**: choose the model and effort for chats in Settings

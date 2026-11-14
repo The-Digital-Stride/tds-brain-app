@@ -263,8 +263,8 @@ export function SearchSelect({
         onMouseDown={(e) => {
           wasFocused.current = document.activeElement === e.currentTarget;
           // A browser puts the caret down on the press, after the click has selected the label. While
-          // the box shows the chosen label, keep the press from moving it (focus is already here).
-          pressKept.current = wasFocused.current && !open && text === null;
+          // the box shows the chosen label (open or not: a double-click), keep the press from moving it.
+          pressKept.current = wasFocused.current && text === null;
           if (pressKept.current) e.preventDefault();
         }}
         // The click that focuses the box would drop its selection on mouseup; keep the select-all.
@@ -336,8 +336,9 @@ export function SearchSelect({
                     </div>
                   );
                 })}
-                {rows.length === 0 ? <p className="ss-empty">Nothing matches</p> : null}
               </div>
+              {/* Outside the listbox, which may hold only options and groups. */}
+              {rows.length === 0 ? <p className="ss-empty">Nothing matches</p> : null}
             </div>,
             document.body,
           )

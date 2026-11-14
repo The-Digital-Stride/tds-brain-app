@@ -9,7 +9,7 @@
   text-overflow: ellipsis;
 }
 .ss-input:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .ss-chevron {
   position: absolute;
@@ -28,7 +28,7 @@
   transform: rotate(180deg);
 }
 .ss-input:disabled + .ss-chevron {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 @media (prefers-reduced-motion: reduce) {
   .ss-chevron svg {

@@ -124,7 +124,8 @@ describe('SearchSelect', () => {
     openPicker('Client');
     type('zzzz');
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(within(screen.getByRole('listbox')).getByText('Nothing matches')).toBeTruthy();
+    expect(within(screen.getByRole('listbox')).queryByText('Nothing matches')).toBeNull();
+    expect(document.querySelector('.ss-pop > .ss-empty')?.textContent).toBe('Nothing matches');
     expect(screen.getByRole('status').textContent).toBe('Nothing matches');
   });
 
@@ -315,6 +316,10 @@ describe('SearchSelect', () => {
     box().setSelectionRange(13, 13);
     fireEvent.click(box());
     expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
+    // A second press on the open list (a double-click) keeps the label selected too.
+    fireEvent.click(box());
+    expect(box().getAttribute('aria-expanded')).toBe('true');
+    expect(fireEvent.mouseDown(box())).toBe(false);
     // Once open with a query, a press places the caret as normal, for editing what was typed.
     fireEvent.change(box(), { target: { value: 'urb' } });
     expect(fireEvent.mouseDown(box())).toBe(true);

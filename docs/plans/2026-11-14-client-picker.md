@@ -192,4 +192,20 @@ export function SearchSelect(props: SearchSelectProps): JSX.Element;
 
 ## Review outcomes
 
-<Filled at step 10.>
+- Overseer pre-review (Fable): 3 blocking, 4 should, 3 nice. All applied (decision 11).
+- Correctness (Opus): 1 confirmed: after a pick, Escape or a click on an already-focused box, typing
+  went in after the old name ("Urban Coolingair", nothing matches). Fixed in 0028cbc. It still failed in
+  Chrome, because Chrome collapses the selection after the click handler. Fixed in 8eead08: a press on
+  a focused, closed box showing the chosen label doesn't move the caret, and the label is selected
+  again on the next frame (typing cancels that). Both "consider" items were done: a bootstrap
+  aliases route test and a `place()` unit test.
+- Recheck of the fix (Opus): 1 confirmed: the frame-delayed reselect could select a letter typed fast.
+  Fixed (cancelled on change, and on unmount) and tested.
+- UI and accessibility (Sonnet): 0 blocking, 2 applied: a forced-colors outline for the active row,
+  and the docs wording for the flip rule.
+- Browser check (Chrome, preview :3665): Home (below; above in a short window), codes ("uc", "air"),
+  Enter doesn't send, Escape restores, Recent, the To-dos filter, the Library (grouped), Settings
+  native selects. ClientAsk was not run live (it would start a real chat); covered by Home.test.
+- Design crit: the chevron points up while open (applied). Client libraries in Images and Documents also
+  match by client codes (applied, tested). Left as is: Settings native selects clip long text with
+  no ellipsis at their existing width (this predates the change).

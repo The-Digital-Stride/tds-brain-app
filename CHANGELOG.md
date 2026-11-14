@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.23.0 — 2026-11-14
+
+- **feat**: the app picks Quick, Standard or Deep for each chat, with team levels per skill
+- **fix**: the chat level answer matches what the page expects
+- **fix**: level line and offer review fixes
+- **fix**: skills with their own setting skip team levels, and a stopped /skill resets the level line
+- **feat**: the app's own helpers (scout, worker, expert) each run on the right model
+- **fix**: Choose myself applies to open chats straight away again
+
 ## v0.22.0 — 2026-11-14
 
 - **feat**: TDS / Personal kind for chats, with a filter in the Chats drawer

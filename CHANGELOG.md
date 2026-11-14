@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.24.0 — 2026-11-14
+
+- **feat**: delete an earlier chat by moving it to the Bin
+
 ## v0.23.0 — 2026-11-14
 
 - **feat**: the app picks Quick, Standard or Deep for each chat, with team levels per skill

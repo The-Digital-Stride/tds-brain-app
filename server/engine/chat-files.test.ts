@@ -771,6 +771,17 @@ describe('createChatFiles: short names in replies', () => {
     expect((await snap(t)).files).toEqual([]);
   });
 
+  it('never takes a lone name from a reply that names folders of two clients', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/context/profile.md');
+    t.observe(
+      say(
+        "Compared `clients/acme/context/` with `clients/beta/context/`. Beta's `profile.md` is out of date.",
+      ),
+    );
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
+  });
+
   it('never guesses a short name with no folder in the reply', async () => {
     const { t, disk } = setup();
     disk.add('clients/acme/reports/audit.md');

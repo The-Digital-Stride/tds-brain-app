@@ -201,9 +201,15 @@ describe('chatFileFor', () => {
     expect(f('audit.md', ['clients/acme'])).toBeNull();
   });
 
-  it('links nothing when the reply names two folders that both have the name', () => {
+  it('links no lone name in a reply that names folders of more than one client', () => {
     expect(f('profile.md', ['clients/acme', 'clients/weightmans'])).toBeNull();
-    expect(f('profile.md', ['clients/acme', 'clients/other'])).toBe('k3');
+    // Only one of them is in the chat's list, but the other client may well have one too.
+    expect(f('profile.md', ['clients/acme', 'clients/other'])).toBeNull();
+    expect(f('plan.md', ['personal/notes', 'clients/acme'])).toBeNull();
+    // Two folders of one client are fine.
+    expect(f('audit.md', ['clients/acme/reports', 'clients/acme/drafts'])).toBe('k5');
+    // A path naming its client still links.
+    expect(f('acme/profile.md', ['clients/acme', 'clients/other'])).toBe('k3');
   });
 
   it('matches whole folder names only, never part of one', () => {

@@ -202,16 +202,24 @@ export function replyFolders(paths: readonly (string | null)[]): string[] {
   return out;
 }
 
+/** The client folder (`clients/acme`) or `personal` a scoped path is in. */
+function scopeOf(rel: string): string {
+  return rel.startsWith('clients/') ? rel.split('/').slice(0, 2).join('/') : 'personal';
+}
+
 /**
  * Where a path written short in a reply may be, besides as written: under `clients/` (Claude left it
  * out: `acme/context/business.md`), or in one of the folders the same reply names (`audit.md` under
  * "all in `clients/acme/reports/`"). Nothing for a path that already names its scope. Never the
  * folder the chat worked in, nor one an earlier reply or step used: a lone `profile.md` may be any
- * client's, so it means one only when this reply says which.
+ * client's, so it means one only when this reply says which. A reply naming folders of two clients
+ * (or a client and `personal`) says nothing certain about which one a lone name means, so then only
+ * `clients/` is tried.
  */
 export function shortPathPlaces(rel: string, folders: readonly string[]): string[] {
   if (isScopedPath(rel)) return [];
-  return [`clients/${rel}`, ...folders.map((f) => `${f}/${rel}`)];
+  const oneScope = new Set(folders.map(scopeOf)).size <= 1;
+  return [`clients/${rel}`, ...(oneScope ? folders.map((f) => `${f}/${rel}`) : [])];
 }
 
 /**

@@ -199,7 +199,8 @@ function TodoRow({
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
-      {/* The row itself is not a button (Ian, 2026-11-14): only the chat button starts or opens the chat. */}
+      {/* The row itself is not a button (Ian, 2026-11-14): only the chat button starts or opens the chat. The title
+          has the row's whole width; its details and buttons share the line below (Ian, 2026-11-14). */}
       <div className="todo-main">
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
@@ -210,56 +211,58 @@ function TodoRow({
               </span>
             ) : null}
             {todo.title}
-          </span>{' '}
-          <span className="line-meta" id={metaId}>
-            {parts.map((part, i) => (
-              <span key={part.text}>
-                {i > 0 ? ', ' : ''}
-                {part.icon ? (
-                  <span className="todo-lock">
-                    <Icon name={part.icon} size={12} />
-                  </span>
-                ) : null}
-                <span className={part.late ? 'late' : undefined}>{part.text}</span>
-              </span>
-            ))}
           </span>
         </span>
       </div>
-      {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
-      <StarButton
-        id={todo.key}
-        title={todo.title}
-        on={favourite}
-        onPress={(_, button) => onStar(todo, button)}
-      />
-      {editing ? (
+      <div className="todo-foot">
+        <span className="line-meta todo-meta" id={metaId}>
+          {parts.map((part, i) => (
+            <span key={part.text}>
+              {i > 0 ? ', ' : ''}
+              {part.icon ? (
+                <span className="todo-lock">
+                  <Icon name={part.icon} size={12} />
+                </span>
+              ) : null}
+              <span className={part.late ? 'late' : undefined}>{part.text}</span>
+            </span>
+          ))}
+        </span>
+        {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
+        <StarButton
+          id={todo.key}
+          title={todo.title}
+          on={favourite}
+          onPress={(_, button) => onStar(todo, button)}
+        />
+        {editing ? (
+          <button
+            type="button"
+            className="icon-btn todo-edit"
+            data-edit-for={todo.key}
+            aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
+            data-tip={editing.canEdit ? 'Edit' : 'Options'}
+            disabled={editing.busy}
+            onClick={() => {
+              onOpened(todo);
+              editing.open(todo);
+            }}
+          >
+            <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
-          className="icon-btn todo-edit"
-          data-edit-for={todo.key}
-          aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
-          data-tip={editing.canEdit ? 'Edit' : 'Options'}
-          disabled={editing.busy}
-          onClick={() => {
-            onOpened(todo);
-            editing.open(todo);
-          }}
+          className="icon-btn todo-go"
+          data-todo-open={todo.key}
+          aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+          data-tip={chat ? 'Open chat' : 'Start a chat'}
+          aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
+          onClick={choose}
         >
-          <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
+          <Icon name="chat" size={16} />
         </button>
-      ) : null}
-      <button
-        type="button"
-        className="icon-btn todo-go"
-        data-todo-open={todo.key}
-        aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
-        data-tip={chat ? 'Open chat' : 'Start a chat'}
-        aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
-        onClick={choose}
-      >
-        <Icon name="chat" size={16} />
-      </button>
+      </div>
     </li>
   );
 }
@@ -318,7 +321,10 @@ export function TodosDrawer() {
   // Sections the person opened or closed by hand, or that a star press opened. They hold only while the tab,
   // the filtering and the last global-search reveal stay the same (`scope`); after that every section is back
   // to its default (`defaultOpen` below).
-  const [foldChoice, setFoldChoice] = useState<{ scope: string; open: Record<string, boolean> }>({
+  const [foldChoice, setFoldChoice] = useState<{
+    scope: string;
+    open: Record<string, boolean>;
+  }>({
     scope: '',
     open: {},
   });
@@ -616,7 +622,13 @@ export function TodosDrawer() {
                     ? 'Assigned to you'
                     : `Passed to ${who ?? passed.assignee}`;
               const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
-              hold({ todoId: finalKey, title, kind: 'assignee', label, action: passed });
+              hold({
+                todoId: finalKey,
+                title,
+                kind: 'assignee',
+                label,
+                action: passed,
+              });
             } else {
               setMessage('Saved.');
               setRefocus(finalKey);
@@ -633,7 +645,13 @@ export function TodosDrawer() {
               action: null,
               // A personal to-do is ticked through the brain script, which needs its scope and version.
               ...(todo.scope === 'personal'
-                ? { tick: { id: todo.id, scope: todo.scope, expect: todo.version } }
+                ? {
+                    tick: {
+                      id: todo.id,
+                      scope: todo.scope,
+                      expect: todo.version,
+                    },
+                  }
                 : {}),
             });
           },

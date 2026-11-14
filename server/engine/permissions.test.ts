@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
+import { rewriteAgentInput } from './helpers.ts';
 import {
+  agentStart,
   describeSessionAllow,
   HIDDEN_CHARS_WARNING,
   narrowSuggestions,
@@ -367,5 +369,62 @@ describe('attached files (decision 10)', () => {
       detail: `${UPLOADS}/1234/report.pdf`,
       warning: 'This file is outside the brain folder.',
     });
+  });
+});
+
+describe('helpers (decision 13)', () => {
+  const rewrite = (i: Record<string, unknown>) => rewriteAgentInput(i, { mode: 'auto', turnTier: 'deep' });
+
+  it('the app helpers start without a card', () => {
+    for (const type of ['tdsapp-scout', 'tdsapp-worker', 'tdsapp-expert']) {
+      for (const tool of ['Agent', 'Task']) {
+        expect(agentStart(tool, { subagent_type: type, prompt: 'x' }, rewrite)?.card).toBe(false);
+      }
+    }
+  });
+
+  it('any other helper still asks, with today’s card', () => {
+    for (const input of [{ subagent_type: 'general-purpose' }, { subagent_type: 'my-agent' }, {}]) {
+      expect(agentStart('Agent', input, rewrite)?.card).toBe(true);
+    }
+    expect(
+      permissionCard('Agent', { subagent_type: 'my-agent', description: 'Check links' }, { brainRoot: '/b' }),
+    ).toMatchObject({ title: 'Claude wants to start a helper', detail: 'Check links' });
+  });
+
+  it('the input it allows keeps the Agent hook’s rewrite, so a card cannot undo it', () => {
+    const input = { prompt: 'x', run_in_background: true };
+    const r = agentStart('Agent', input, rewrite);
+    expect(r?.input).toEqual({ prompt: 'x', run_in_background: false, model: 'sonnet' });
+    expect(agentStart('Task', { subagent_type: 'tdsapp-scout' }, rewrite)?.input).toEqual({
+      subagent_type: 'tdsapp-scout',
+      run_in_background: false,
+      model: 'haiku',
+    });
+    expect(input.run_in_background).toBe(true);
+  });
+
+  it('is not about other tools', () => {
+    expect(agentStart('Bash', { command: 'ls' }, rewrite)).toBeNull();
+  });
+
+  it('a helper’s cards are labelled with the helper', () => {
+    const ctx = { brainRoot: '/b', actor: 'Worker' };
+    expect(permissionCard('Bash', { command: 'node x.js' }, ctx).title).toBe('Worker wants to run a command');
+    expect(permissionCard('mcp__claude_ai_Slack__send', { text: 'hi' }, ctx).title).toBe(
+      'Worker wants to use send from Slack',
+    );
+    expect(
+      permissionCard('Bash', { command: 'ls' }, { ...ctx, title: 'Claude wants to list files' }).title,
+    ).toBe('Worker wants to list files');
+    expect(permissionCard('Bash', { command: 'ls' }, { ...ctx, title: 'Allow listing?' }).title).toBe(
+      'Worker: Allow listing?',
+    );
+    expect(permissionCard('Bash', { command: 'ls' }, { brainRoot: '/b', actor: 'A helper' }).title).toBe(
+      'A helper wants to run a command',
+    );
+    expect(permissionCard('Bash', { command: 'ls' }, { brainRoot: '/b' }).title).toBe(
+      'Claude wants to run a command',
+    );
   });
 });

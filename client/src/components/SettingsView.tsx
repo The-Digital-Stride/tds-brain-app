@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   EFFORT_LEVELS,
   type EffortLevel,
   type EngineChoices,
   type ModelChoice,
 } from '../../../shared/contract.ts';
+import {
+  isLevelTier,
+  LEVEL_TIERS,
+  LEVEL_TIERS_ORDER,
+  type LevelMode,
+  type LevelTier,
+  type SkillLevels,
+} from '../../../shared/levels-contract.ts';
 import {
   UPDATE_BLOCKED_TEXT,
   UPDATE_CHECK_FAILED_TEXT,
@@ -14,6 +22,7 @@ import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { EFFORT_OPTION_WORDS, modelName } from '../format.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
+import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { phaseText, UpdateAction } from '../shell/UpdateBanner.tsx';
 import { syncWords } from '../shell/words.ts';
@@ -26,7 +35,7 @@ import { VersionHistory } from './VersionHistory.tsx';
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
 
 export function SettingsView() {
-  const { boot, updatePrefs, settingsFocus, clearSettingsFocus } = useStore();
+  const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel } = useStore();
   const [choices, setChoices] = useState<EngineChoices | null>(null);
   useEffect(() => {
     let live = true;
@@ -119,13 +128,51 @@ export function SettingsView() {
         <p className="setting-help" id="claude-help">
           Used by new chats, and by open chats from their next reply.
         </p>
-        <ClaudeChoices
-          choices={choices}
-          model={prefs.model ?? null}
-          effort={prefs.effort ?? null}
-          save={(patch) => void updatePrefs(patch)}
-        />
+        {/* An older server sends no levelMode: the Model and Effort controls stay as they were. */}
+        {prefs.levelMode ? (
+          <div className="setting-rows">
+            <div className="setting level-mode">
+              <div>
+                <p className="setting-label" id="level-mode-label">
+                  Level
+                </p>
+                <p className="setting-help" id="level-mode-help">
+                  {prefs.levelMode === 'auto'
+                    ? 'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.'
+                    : 'You choose the model and effort below for every chat.'}
+                </p>
+              </div>
+              <Seg<LevelMode>
+                label="How the level is chosen"
+                value={prefs.levelMode}
+                options={[
+                  { value: 'auto', label: 'Automatic (recommended)' },
+                  { value: 'manual', label: 'Choose myself' },
+                ]}
+                onChange={(levelMode) => {
+                  if (levelMode !== prefs.levelMode) void updatePrefs({ levelMode });
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+        {prefs.levelMode === 'auto' ? null : (
+          <ClaudeChoices
+            choices={choices}
+            model={prefs.model ?? null}
+            effort={prefs.effort ?? null}
+            save={(patch) => void updatePrefs(patch)}
+          />
+        )}
       </section>
+
+      {skillLevels ? (
+        <SkillLevelsSection
+          levels={skillLevels}
+          skills={boot.skills}
+          save={(skill, tier) => void setSkillLevel(skill, tier)}
+        />
+      ) : null}
 
       <section aria-labelledby="about-h">
         <h2 id="about-h">About TDS Brain on this computer</h2>
@@ -186,6 +233,145 @@ export function SettingsView() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+const WHEN = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** "ian-hancock" → "Ian Hancock". */
+function setByWords(slug: string): string {
+  return slug
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function whenWords(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? '' : WHEN.format(new Date(t));
+}
+
+/** Settings → Skill levels: the team's level for each skill; Owners and scouts can change them. */
+function SkillLevelsSection({
+  levels,
+  skills,
+  save,
+}: {
+  levels: SkillLevels;
+  skills: { name: string; title: string; ownLevel?: unknown }[];
+  save: (skill: string, tier: LevelTier | null) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const searchId = useId();
+  const editable = levels.canSet && levels.writable;
+  const titles = useMemo(() => new Map(skills.map((s) => [s.name, s.title])), [skills]);
+  // A skill's own model or effort always wins, so a team level would never apply to it.
+  const ownSet = useMemo(() => new Set(skills.filter((s) => s.ownLevel).map((s) => s.name)), [skills]);
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const names = new Set(Object.keys(levels.levels));
+    // Searching an editable list also finds skills with no level yet, so a level can be set for them.
+    if (editable && q) for (const s of skills) names.add(s.name);
+    return [...names]
+      .map((name) => ({ name, title: titles.get(name) ?? name }))
+      .filter((r) => !q || `${r.title} ${r.name}`.toLowerCase().includes(q))
+      .sort((a, b) => a.title.localeCompare(b.title, 'en-GB'));
+  }, [levels.levels, skills, titles, query, editable]);
+  const total = Object.keys(levels.levels).length;
+  const missing = skills.filter((s) => !(s.name in levels.levels) && !ownSet.has(s.name)).length;
+  return (
+    <section aria-labelledby="levels-h">
+      <h2 id="levels-h">Skill levels</h2>
+      <p className="setting-help">
+        How hard Claude works when a chat runs a skill. A skill's own setting always wins.
+      </p>
+      {editable && missing > 0 ? (
+        <p className="setting-help" id="levels-missing">
+          {missing === 1 ? '1 skill has' : `${missing} skills have`} no team level yet. Search to set one.
+        </p>
+      ) : null}
+      {editable ? null : (
+        <p className="setting-help" id="levels-readonly">
+          {levels.canSet
+            ? 'You can change these once the brain has the skill-levels update. Sync the brain, or ask an Owner.'
+            : 'Only Owners and scouts can change these.'}
+        </p>
+      )}
+      {total > 8 || editable ? (
+        <div className="levels-search">
+          <label className="visually-hidden" htmlFor={searchId}>
+            Search skills
+          </label>
+          <input
+            id={searchId}
+            type="search"
+            className="field"
+            placeholder={editable ? 'Search skills to set a level' : 'Search skills'}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      ) : null}
+      {rows.length === 0 ? (
+        <p className="setting-help">
+          {query.trim() ? 'No skills match that search.' : 'No skill has a team level yet.'}
+        </p>
+      ) : (
+        <ul className="levels-list">
+          {rows.map((r) => {
+            const level = levels.levels[r.name];
+            const tier = level && isLevelTier(level.tier) ? level.tier : null;
+            const own = ownSet.has(r.name);
+            return (
+              <li key={r.name} className="levels-row">
+                <div className="levels-who">
+                  <span className="setting-label">{r.title}</span>
+                  <span className="setting-help">
+                    {own
+                      ? "Set by the skill itself, so a team level doesn't apply"
+                      : level
+                        ? `${tier ? LEVEL_TIERS[tier].label : 'Unknown level'} · ${level.setBy === 'prefill' ? 'suggested by the app and reviewed' : `set by ${setByWords(level.setBy)}`}${whenWords(level.at) ? `, ${whenWords(level.at)}` : ''}`
+                        : 'No team level'}
+                  </span>
+                </div>
+                {editable && !own ? (
+                  <span className="levels-actions">
+                    <select
+                      className="field"
+                      aria-label={`Team level for ${r.title}`}
+                      value={tier ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (isLevelTier(v)) save(r.name, v);
+                      }}
+                    >
+                      {tier ? null : <option value="">Not set</option>}
+                      {LEVEL_TIERS_ORDER.map((t) => (
+                        <option key={t} value={t}>
+                          {LEVEL_TIERS[t].label}
+                        </option>
+                      ))}
+                    </select>
+                    {level ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        data-variant="quiet"
+                        data-size="small"
+                        aria-label={`Clear the team level for ${r.title}`}
+                        onClick={() => save(r.name, null)}
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 

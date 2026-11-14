@@ -10,6 +10,7 @@ import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import type { ProposedChange } from '../../shared/contract.ts';
 import { humaniseMcpServer } from './event-map.ts';
 import { proposedChange } from './file-change.ts';
+import { isAppHelper } from './helpers.ts';
 
 type Rec = Record<string, unknown>;
 
@@ -194,6 +195,8 @@ export interface PermissionCardContext {
   brainRoot: string;
   /** The app's attachments folder (a real path), or null when uploads are off. */
   uploadsRoot?: string | null;
+  /** Who is asking when it isn't the main chat: a helper's label, e.g. "Worker" (decision 13). */
+  actor?: string | null;
 }
 
 export interface PermissionCard {
@@ -278,6 +281,9 @@ export function permissionCard(toolName: string, input: Rec, ctx: PermissionCard
   }
   const engineTitle = str(ctx.title);
   if (engineTitle) title = engineTitle;
+  const actor = str(ctx.actor);
+  if (actor)
+    title = title.startsWith('Claude ') ? `${actor} ${title.slice('Claude '.length)}` : `${actor}: ${title}`;
 
   const blocked = str(ctx.blockedPath);
   if (blocked) {
@@ -318,4 +324,18 @@ export function permissionCard(toolName: string, input: Rec, ctx: PermissionCard
   }
   if (hiddenChars) warnings.push(HIDDEN_CHARS_WARNING);
   return { title, detail, warning: warnings.length > 0 ? warnings.join(' ') : null, refuse, change };
+}
+
+/**
+ * Starting a helper (decision 13): one of the app's own needs no card; any other keeps today's
+ * "Claude wants to start a helper". Either way the input allowed is the Agent hook's rewrite, so a
+ * card can't undo it. Null for any other tool.
+ */
+export function agentStart(
+  toolName: string,
+  input: Rec,
+  rewrite: (input: Rec) => Rec,
+): { card: boolean; input: Rec } | null {
+  if (toolName !== 'Agent' && toolName !== 'Task') return null;
+  return { card: !isAppHelper(input.subagent_type), input: rewrite(input) };
 }

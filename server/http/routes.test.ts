@@ -19,6 +19,7 @@ import {
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
+import { SkillLevelError } from '../brain/skill-levels.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
 import { SessionError } from '../engine/session-manager.ts';
@@ -1742,6 +1743,242 @@ describe('GET file changes of a chat (chat files)', () => {
     expect(bad.json.error.code).toBe('bad-request');
     expect(bad.asked).toEqual([]);
     expect((await call(ROUTES.sessionFileChanges('chat-1', 'client:acme.abc/1'), 'POST')).status).toBe(405);
+  });
+});
+
+describe('skill levels and chat levels', () => {
+  const rec = (tier: string) => ({ tier, setBy: 'sam-example', at: '2026-11-14T10:00:00.000Z' });
+
+  async function call(path: string, method: string, body: unknown, over: Record<string, unknown> = {}) {
+    const changes: unknown[][] = [];
+    const levelCalls: unknown[][] = [];
+    const prewarmed: string[] = [];
+    let stored: Record<string, unknown> = { a: rec('deep') };
+    const ctx = {
+      brain: {
+        root: '/x',
+        identity: async () => ({ name: 'Sam', slug: 'sam', email: null, role: 'scout', knownMember: true }),
+        clients: async () => [],
+      },
+      store: {
+        update: async (patch: object) => ({ model: null, effort: null, levelMode: 'auto', ...patch }),
+      },
+      skillLevels: {
+        read: async () => stored,
+        writable: async () => true,
+        change: async (...args: unknown[]) => {
+          changes.push(args);
+          stored = { ...stored, [args[0] as string]: rec(String(args[1])) };
+        },
+      },
+      sessions: {
+        setChatLevel: async (...args: unknown[]) => {
+          levelCalls.push(args);
+          return { tier: args[1], source: { kind: 'chat' } };
+        },
+        prewarmPick: (text: string) => {
+          prewarmed.push(text);
+        },
+        setEngineChoice: async () => {},
+      },
+      clientGuess: async () => ({ kind: 'none' }),
+      log: () => {},
+      ...over,
+    };
+    const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]), {
+      method,
+      headers: { 'content-type': 'application/json' },
+    });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      ctx as unknown as RouteContext,
+    );
+    return { ...sent, changes, levelCalls, prewarmed, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  const member = {
+    brain: {
+      root: '/x',
+      identity: async () => ({ name: 'Ben', slug: 'ben', email: null, role: 'team', knownMember: true }),
+      clients: async () => [],
+    },
+  };
+
+  it('GET answers the levels with canSet and writable, for everyone', async () => {
+    const sent = await call(ROUTES.skillLevels, 'GET', undefined);
+    expect(sent.status).toBe(200);
+    expect(sent.json).toEqual({ levels: { a: rec('deep') }, canSet: true, writable: true });
+    const team = await call(ROUTES.skillLevels, 'GET', undefined, member);
+    expect(team.json.canSet).toBe(false);
+    const none = await call(ROUTES.skillLevels, 'GET', undefined, { skillLevels: undefined });
+    expect(none.json).toEqual({ levels: {}, canSet: false, writable: false });
+  });
+
+  it('POST sets or clears through the skill service and answers the fresh levels', async () => {
+    const set = await call(ROUTES.skillLevels, 'POST', { skill: 'b', tier: 'quick', note: 'Short' });
+    expect(set.status).toBe(200);
+    expect(set.changes).toEqual([['b', 'quick', 'Short']]);
+    expect(set.json.levels.b.tier).toBe('quick');
+    const clear = await call(ROUTES.skillLevels, 'POST', { skill: 'a', tier: null });
+    expect(clear.status).toBe(200);
+    expect(clear.changes).toEqual([['a', null, undefined]]);
+  });
+
+  it('POST is 403 for team members, and when the brain has no skill yet, without running anything', async () => {
+    const team = await call(ROUTES.skillLevels, 'POST', { skill: 'b', tier: 'quick' }, member);
+    expect(team.status).toBe(403);
+    expect(team.changes).toEqual([]);
+    const notWritable = await call(
+      ROUTES.skillLevels,
+      'POST',
+      { skill: 'b', tier: 'quick' },
+      { skillLevels: { read: async () => ({}), writable: async () => false, change: async () => {} } },
+    );
+    expect(notWritable.status).toBe(403);
+    const absent = await call(
+      ROUTES.skillLevels,
+      'POST',
+      { skill: 'b', tier: 'quick' },
+      { skillLevels: undefined },
+    );
+    expect(absent.status).toBe(403);
+  });
+
+  it('POST is 400 for a bad skill, tier or note, and passes the script’s refusals on', async () => {
+    for (const body of [
+      {},
+      { skill: 'b' },
+      { skill: 'b', tier: 'huge' },
+      { skill: '../x', tier: 'deep' },
+      { skill: 7, tier: 'deep' },
+      { skill: 'b', tier: 'deep', note: 'x'.repeat(161) },
+      { skill: 'b', tier: 'deep', note: 3 },
+      [],
+    ]) {
+      const sent = await call(ROUTES.skillLevels, 'POST', body);
+      expect(sent.status).toBe(400);
+      expect(sent.changes).toEqual([]);
+    }
+    const unknown = await call(
+      ROUTES.skillLevels,
+      'POST',
+      { skill: 'b', tier: 'deep' },
+      {
+        skillLevels: {
+          read: async () => ({}),
+          writable: async () => true,
+          change: async () => {
+            throw new SkillLevelError('bad-request', 'x');
+          },
+        },
+      },
+    );
+    expect(unknown.status).toBe(400);
+    const broken = await call(
+      ROUTES.skillLevels,
+      'POST',
+      { skill: 'b', tier: 'deep' },
+      {
+        skillLevels: {
+          read: async () => ({}),
+          writable: async () => true,
+          change: async () => {
+            throw new Error('boom');
+          },
+        },
+      },
+    );
+    expect(broken.status).toBe(500);
+  });
+
+  it('refuses other methods', async () => {
+    expect((await call(ROUTES.skillLevels, 'PUT', {})).status).toBe(405);
+  });
+
+  it('POST chat level hands the tier to the session and answers { level: TurnLevel }', async () => {
+    const sent = await call(ROUTES.chatLevel('s 1'), 'POST', { tier: 'deep' });
+    expect(sent.status).toBe(200);
+    expect(sent.levelCalls).toEqual([['s 1', 'deep']]);
+    expect(sent.json).toEqual({ level: { tier: 'deep', source: { kind: 'chat' } } });
+    const auto = await call(ROUTES.chatLevel('s1'), 'POST', { tier: null });
+    expect(auto.levelCalls).toEqual([['s1', null]]);
+    for (const body of [{}, { tier: 'huge' }, { tier: 3 }]) {
+      expect((await call(ROUTES.chatLevel('s1'), 'POST', body)).status).toBe(400);
+    }
+    expect((await call(ROUTES.chatLevel('s1'), 'GET', undefined)).status).toBe(405);
+  });
+
+  it('POST chat level passes a SessionError on as its status', async () => {
+    const sent = await call(
+      ROUTES.chatLevel('gone'),
+      'POST',
+      { tier: 'deep' },
+      {
+        sessions: {
+          setChatLevel: async () => {
+            throw new SessionError('not-found', 'That chat has closed.');
+          },
+        },
+      },
+    );
+    expect(sent.status).toBe(404);
+  });
+
+  it('the client guess pre-warms the pick, and still answers when that throws', async () => {
+    const sent = await call('/api/client-guess', 'POST', { text: 'audit acme ads' });
+    expect(sent.status).toBe(200);
+    expect(sent.prewarmed).toEqual(['audit acme ads']);
+    const broken = await call(
+      '/api/client-guess',
+      'POST',
+      { text: 'hi' },
+      {
+        sessions: {
+          prewarmPick: () => {
+            throw new Error('boom');
+          },
+        },
+      },
+    );
+    expect(broken.status).toBe(200);
+  });
+
+  it('saving levelMode passes it, with the saved model and effort, to the sessions', async () => {
+    const choices: unknown[] = [];
+    const sessions = { setEngineChoice: async (c: unknown) => void choices.push(c) };
+    const sent = await call('/api/prefs', 'PUT', { levelMode: 'manual' }, { sessions });
+    expect(sent.status).toBe(200);
+    expect(choices).toEqual([{ model: null, effort: null, levelMode: 'manual' }]);
+    expect((await call('/api/prefs', 'PUT', { levelMode: 'turbo' }, { sessions })).status).toBe(400);
+  });
+
+  it('bootstrap carries the skill levels', async () => {
+    const sent = await call(ROUTES.bootstrap, 'GET', undefined, {
+      brain: {
+        ...member.brain,
+        health: async () => ({ ok: true, path: '/x', problems: [] }),
+        profile: async () => ({}),
+        skills: async () => [],
+        usedOften: async () => [],
+      },
+      store: { get: async () => ({}) },
+      engineHealth: () => ({ ok: true }),
+      launchToken: 't',
+      port: 3877,
+    });
+    expect(sent.json.skillLevels).toEqual({ levels: { a: rec('deep') }, canSet: false, writable: true });
   });
 });
 

@@ -70,6 +70,8 @@ export function createSetupSessions(): SessionManager {
       throw new SessionError('brain-missing', 'Choose your brain folder before starting a chat.');
     },
     send: notFound,
+    setChatLevel: notFound,
+    prewarmPick: () => {},
     replyPermission: notFound,
     replyQuestion: notFound,
     interrupt: notFound,

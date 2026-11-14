@@ -49,6 +49,14 @@ import {
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import {
+  isLevelTier,
+  type LevelTier,
+  SKILL_LEVEL_NOTE_MAX,
+  SKILL_LEVEL_SETTERS,
+  type SkillLevels,
+  type TurnLevel,
+} from '../../shared/levels-contract.ts';
+import {
   UPDATE_CHECK_EVERY_MS,
   UpdateRefused,
   type Updater,
@@ -57,6 +65,7 @@ import {
 import { readClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
+import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
 import {
   CLIENT_GUESS_MAX_CHARS,
@@ -113,6 +122,8 @@ export interface RouteContext {
   clientGuess?: (text: string, clients: ClientAlias[]) => Promise<ClientGuessResponse>;
   /** Counts how each new chat's client was decided, in the app's data folder. Absent: nothing is counted. */
   clientPickTally?: ClientPickTally;
+  /** Team skill levels: reads the brain's file and runs its skill script to change it. Absent: none (older tests). */
+  skillLevels?: SkillLevelsService;
 }
 
 export class HttpError extends Error {
@@ -306,6 +317,11 @@ export async function validatePrefsPatch(
         patch.model = value as string | null;
         break;
       }
+      case 'levelMode': {
+        if (value !== 'auto' && value !== 'manual') throw bad('That level setting was not understood.');
+        patch.levelMode = value;
+        break;
+      }
       case 'effort': {
         if (value !== null && !(EFFORT_LEVELS as readonly unknown[]).includes(value)) {
           throw bad('That effort level was not understood.');
@@ -447,6 +463,39 @@ async function uploadFile(req: IncomingMessage, res: ServerResponse, ctx: RouteC
   }
 }
 
+/** The skill-levels service; absent in setup mode. */
+function skillLevelsOf(ctx: RouteContext): SkillLevelsService | undefined {
+  return ctx.skillLevels;
+}
+
+function canSetSkillLevels(identity: Identity): boolean {
+  return (SKILL_LEVEL_SETTERS as readonly string[]).includes(identity.role);
+}
+
+async function skillLevelsFor(ctx: RouteContext, identity: Identity): Promise<SkillLevels | undefined> {
+  const service = skillLevelsOf(ctx);
+  if (!service) return undefined;
+  const [levels, writable] = await Promise.all([safe(service.read(), {}), safe(service.writable(), false)]);
+  return { levels, canSet: canSetSkillLevels(identity), writable };
+}
+
+/** `POST ROUTES.skillLevels`: `{ skill, tier | null, note? }`. */
+function parseSetSkillLevel(body: unknown): { skill: string; tier: LevelTier | null; note?: string } {
+  const bad = () => new HttpError(400, 'bad-request', SKILL_LEVEL_MESSAGES['bad-request']);
+  if (!isRec(body)) throw bad();
+  const { skill, tier, note } = body;
+  if (typeof skill !== 'string' || !SKILL_NAME.test(skill)) throw bad();
+  if (tier !== null && !isLevelTier(tier)) throw bad();
+  if (
+    note !== undefined &&
+    note !== null &&
+    (typeof note !== 'string' || note.length > SKILL_LEVEL_NOTE_MAX)
+  ) {
+    throw bad();
+  }
+  return typeof note === 'string' && tier !== null ? { skill, tier, note } : { skill, tier };
+}
+
 async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
   const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
   const brainFallback: BrainHealth = {
@@ -454,13 +503,14 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     path: ctx.brain.root,
     problems: ['The app could not read your brain folder.'],
   };
-  const [brain, profile, skills, clients, usedOften, prefs] = await Promise.all([
+  const [brain, profile, skills, clients, usedOften, prefs, levelsInfo] = await Promise.all([
     safe(ctx.brain.health(), brainFallback),
     safe(ctx.brain.profile(identity), EMPTY_PROFILE),
     safe(ctx.brain.skills(identity), []),
     safe(ctx.brain.clients(), []),
     safe(ctx.brain.usedOften(identity), []),
     ctx.store.get(),
+    skillLevelsFor(ctx, identity),
   ]);
   return {
     appVersion: ctx.appVersion,
@@ -474,6 +524,7 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     clients,
     usedOften,
     prefs,
+    ...(levelsInfo ? { skillLevels: levelsInfo } : {}),
   };
 }
 
@@ -823,7 +874,16 @@ async function libraryRoute(
 
 const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
+const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
+
+function prewarmPick(ctx: RouteContext, text: string): void {
+  try {
+    ctx.sessions.prewarmPick(text);
+  } catch {
+    // the pick is made at the first message instead
+  }
+}
 
 function methodNotAllowed(): HttpError {
   return new HttpError(405, 'bad-request', 'That is not something this address does.');
@@ -1030,17 +1090,52 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (method !== 'PUT') throw methodNotAllowed();
     const patch = await validatePrefsPatch(await readJson(req), ctx.brain);
     const saved = await ctx.store.update(patch);
-    if ('model' in patch || 'effort' in patch) {
+    if ('model' in patch || 'effort' in patch || 'levelMode' in patch) {
       // Settings never waits on an engine, and a failure here must not fail the save.
       try {
         void Promise.resolve(
-          ctx.sessions.setEngineChoice({ model: saved.model, effort: saved.effort }),
+          ctx.sessions.setEngineChoice({
+            model: saved.model,
+            effort: saved.effort,
+            levelMode: saved.levelMode,
+          }),
         ).catch(() => {});
       } catch {
         // the choice reaches new chats at the next start
       }
     }
     sendJson(res, 200, saved);
+    return;
+  }
+
+  if (path === ROUTES.skillLevels) {
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    if (method === 'GET') {
+      sendJson(
+        res,
+        200,
+        (await skillLevelsFor(ctx, identity)) ?? { levels: {}, canSet: false, writable: false },
+      );
+      return;
+    }
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const service = skillLevelsOf(ctx);
+    if (!canSetSkillLevels(identity))
+      throw new HttpError(403, 'not-allowed', SKILL_LEVEL_MESSAGES['not-allowed']);
+    if (!service || !(await safe(service.writable(), false))) {
+      throw new HttpError(403, 'not-allowed', "Skill levels can't be changed in this brain yet.");
+    }
+    const change = parseSetSkillLevel(body);
+    try {
+      await service.change(change.skill, change.tier, change.note);
+    } catch (err) {
+      if (err instanceof SkillLevelError) throw new HttpError(statusFor(err.code), err.code, err.message);
+      ctx.log('A skill level change failed unexpectedly.');
+      throw new HttpError(500, 'internal', SKILL_LEVEL_MESSAGES.internal);
+    }
+    ctx.log(`Changed a skill level (${change.tier === null ? 'clear' : 'set'}).`);
+    sendJson(res, 200, (await skillLevelsFor(ctx, identity)) as SkillLevels);
     return;
   }
 
@@ -1053,6 +1148,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (path === '/api/client-guess') {
     if (method !== 'POST') throw methodNotAllowed();
     const text = parseClientGuessRequest(await readJson(req));
+    // Starts the level pick while the person is still choosing a client; fire and forget.
+    prewarmPick(ctx, text);
     const clients = await safe(
       safe(ctx.brain.clients(), []).then((list) => readClientAliases(ctx.brain.root, list)),
       [],
@@ -1117,6 +1214,24 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     const changes = ctx.sessions.fileChanges(id, key);
     if (!changes) throw new HttpError(404, 'not-found', 'Those changes could not be found.');
     sendJson(res, 200, changes);
+    return;
+  }
+
+  const lv = SESSION_LEVEL.exec(path);
+  if (lv?.[1]) {
+    if (method !== 'POST') throw methodNotAllowed();
+    let id: string;
+    try {
+      id = decodeURIComponent(lv[1]);
+    } catch {
+      throw new HttpError(400, 'bad-request', 'That chat was not understood.');
+    }
+    const body = await readJson(req);
+    const tier = isRec(body) ? body.tier : undefined;
+    if (tier !== null && !isLevelTier(tier)) {
+      throw new HttpError(400, 'bad-request', 'That level was not understood.');
+    }
+    sendJson(res, 200, { level: await ctx.sessions.setChatLevel(id, tier) });
     return;
   }
 

@@ -688,6 +688,15 @@
 .composer-foot .btn {
   margin-left: auto;
 }
+/* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
+.engine-line {
+  margin: -4px 0 0;
+  padding: 0 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+  overflow-wrap: anywhere;
+}
 /* The chosen skill: the shared chip, in wash and blue ink, with a small remove button. */
 .chip-row .chip {
   background: var(--wash);

@@ -712,6 +712,10 @@ export interface AppStore {
  */
 export type AppPermissionMode = 'default' | 'acceptEdits' | 'auto';
 
+/** How much thinking Claude puts in, as Claude Code applies it for the chat's next message. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
 export interface EngineHealth {
   ok: boolean;
   /** The mode the next chat will start in. Read afresh for each new chat. */
@@ -844,6 +848,12 @@ export interface ProposedChange {
 export type ChatEvent =
   | { type: 'state'; state: SessionState; detail?: string }
   | { type: 'session-info'; sdkSessionId: string; model: string | null; claudeVersion: string | null }
+  /**
+   * The model and effort Claude Code will use for the chat's next message, after its settings,
+   * environment, organisation caps and model support are applied. Sent when the engine can say and
+   * whenever either changes. `effort` is null when no effort level applies (or it is not known).
+   */
+  | { type: 'engine-settings'; model: string | null; effort: EffortLevel | null }
   /**
    * `text` never includes the app's attachment note, and `attachments` never carries a path. On
    * history replay the note is recognised and turned back into `attachments`.

@@ -433,6 +433,59 @@ describe('a chat started on a to-do (A19)', () => {
   });
 });
 
+describe('model and effort', () => {
+  type WithSettings = FakeQuery & { getSettings?: () => Promise<unknown> };
+  const settingsEvents = (id: string) => events(mgr, id).filter((e) => e.type === 'engine-settings');
+
+  it('reports the model and effort Claude Code applies, and again only when they change', async () => {
+    const applied = { model: 'claude-opus-5-5', effort: 'high' };
+    setup(({ q, turn }) => {
+      (q as WithSettings).getSettings = async () => ({ applied: { ...applied, ultracode: false } });
+      if (turn === 2) applied.effort = 'low';
+      q.init();
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    await mgr.send(s.id, 'three');
+    await flush();
+    expect(settingsEvents(s.id)).toEqual([
+      { type: 'engine-settings', model: 'claude-opus-5-5', effort: 'high' },
+      { type: 'engine-settings', model: 'claude-opus-5-5', effort: 'low' },
+    ]);
+  });
+
+  it('keeps the model when the effort is unknown, and says nothing when the engine cannot tell', async () => {
+    setup(({ q, turn }) => {
+      (q as WithSettings).getSettings =
+        turn === 0
+          ? async () => ({ applied: { model: 'claude-sonnet-5-5', effort: 'turbo' } })
+          : async () => {
+              throw new Error('get_settings is not supported');
+            };
+      q.init();
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(settingsEvents(s.id)).toEqual([
+      { type: 'engine-settings', model: 'claude-sonnet-5-5', effort: null },
+    ]);
+    expect((await mgr.list()).live[0]?.state).toBe('idle');
+  });
+
+  it('sends nothing for an engine without getSettings (older SDKs)', async () => {
+    setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(settingsEvents(s.id)).toEqual([]);
+  });
+});
+
 describe('restricted skills', () => {
   it('refuses a typed /name for a restricted skill on start and on send', async () => {
     setup();

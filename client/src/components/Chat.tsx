@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
+import { engineLine } from '../format.ts';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
@@ -56,6 +57,7 @@ export function ChatView() {
 
   const sessionId = activeChat.kind === 'live' ? activeChat.sessionId : null;
   const chat = sessionId ? (chats[sessionId] ?? initialChatState) : initialChatState;
+  const engine = engineLine(chat.model, chat.effort);
   // Read when an answer goes through, which is after this render.
   const latestItems = useRef(chat.items);
   latestItems.current = chat.items;
@@ -208,6 +210,12 @@ export function ChatView() {
               return send(text, null, uploadIds);
             }}
           />
+          {engine ? (
+            <p className="engine-line">
+              <span className="visually-hidden">Claude is using </span>
+              {engine}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

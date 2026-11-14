@@ -25,6 +25,17 @@ describe('parseHelperReport', () => {
     );
     expect(r).toEqual({ from: 'a8bf', text: '## Findings\n\n1. **Drawing cost** is high.\n  - nested' });
   });
+  it('keeps a report whole when it quotes the closing tag itself (only the real one starts a line)', () => {
+    const r = parseHelperReport(
+      handBack(
+        'a1',
+        '  1. The parser stops at the first `</agent-message>` in the text.\n  2. Second finding.',
+      ),
+    );
+    expect(r?.text).toBe(
+      '1. The parser stops at the first `</agent-message>` in the text.\n2. Second finding.',
+    );
+  });
   it('keeps the whole body when there is no frame line', () => {
     expect(parseHelperReport('<agent-message from="x">\nJust this.\n</agent-message>')).toEqual({
       from: 'x',

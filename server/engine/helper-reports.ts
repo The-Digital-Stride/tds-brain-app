@@ -26,7 +26,9 @@ const FRAME_END = 'The report follows:';
 export function parseHelperReport(raw: string): { from: string; text: string } | null {
   const text = raw.trim();
   if (!HAND_BACK.test(text)) return null;
-  const m = /<agent-message\b([^>]*)>([\s\S]*?)<\/agent-message>/.exec(text);
+  // The real closing tag starts a line; every line of the report is indented, so a report that
+  // quotes the tag never ends it early.
+  const m = /<agent-message\b([^>]*)>([\s\S]*?)\n<\/agent-message>/.exec(text);
   if (!m) return null;
   const from = /\bfrom="([^"]*)"/.exec(m[1] ?? '')?.[1] ?? '';
   let body = m[2] ?? '';

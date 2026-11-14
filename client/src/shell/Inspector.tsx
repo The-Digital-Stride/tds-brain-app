@@ -43,9 +43,7 @@ function Steps({ chat, sessionId }: { chat: ChatState | undefined; sessionId: st
           // A helper's report came back here; its text is in the thread's "What Claude did".
           <li key={s.id} className="step step-note">
             <span aria-hidden="true" />
-            <span className="step-text">
-              <span className="step-label">{reportTitle(s.name)}</span>
-            </span>
+            <span className="step-note-text">{reportTitle(s.name)}</span>
           </li>
         ) : (
           <li key={s.id} className="step" data-depth={Math.min(s.depth, 3)}>

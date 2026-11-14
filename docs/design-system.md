@@ -60,7 +60,7 @@ including label or padding, reaches 24px), visible focus on everything.
   - **Link** `.link-btn` or `a`: blue-ink, underlined. Only inside a sentence ("…in Settings.").
   - Sizes: 32px by default (header bands, forms, cards, sheets); `data-size="small"` 28px for a button on a line with text (card head, Fold action, notice strips, inline confirms, the selection bar, inside rows). No other heights.
   - Colour meanings: navy "do it", white "another option", grey "minor", red "careful", light blue (wash + blue-ink) only "switched on" or "open", underlined blue only a link in a sentence.
-  - Not boxed, because something else shows they're clickable: list rows (they lift), fold heads and "What Claude did" (chevron), Seg options (the track), `.chip-remove` (inside its chip) (Ian, 2026-11-13: keep headings as text with an arrow). Nothing else that you click is bare text.
+  - Not boxed, because something else shows they're clickable: list rows (they lift), fold heads (chevron), Seg options (the track), `.chip-remove` (inside its chip) (Ian, 2026-11-13: keep headings as text with an arrow). Nothing else that you click is bare text.
 - **Show/hide toggles are icons, top right, always** (Ian, 2026-11-13: "put the icon in the top right ALWAYS everywhere it appears - it's a rule"). The rail's names toggle (`rail` icon) and the right panel's toggle (`panel` icon) are icon buttons with no visible words; the name lives in `aria-label` and a hover tip. The rail's sits at the top right of its header band, 10px from the edge like a dock's close button; with the rail at icons only it takes the mark's place (on hover or keyboard focus where the pointer hovers, always on touch). The panel's is the last thing in the sheet bar, after "Search or jump to": pass `panel` to `SheetBar` and never place `PanelToggle` yourself.
 - **Field and select** `.field`: 32px, padding 0 10px, 1px `--field-edge`, radius 9, 13px, white fill.
 - **Tick** `.tick` (on `input[type=checkbox]` or `input[type=radio]`): 18px, `appearance: none`, 1.5px solid `--tick-edge` (#7C8AA5), fill rgba(255,255,255,.7), radius 5 (radio 50%). Checked checkbox: navy fill, white check. Checked radio: navy border, centred 8px navy dot. Hit area: wrap in `label.tick-hit` (24px box) when the input stands alone.
@@ -85,8 +85,8 @@ including label or padding, reaches 24px), visible focus on everything.
 - Tables 14px; `td` padding 8px 10px 8px 0 with a 1px `--line` rule; `th` 12/600 iron with a 1.5px navy rule.
 - Inline code: tray fill. Code block: tray fill, radius 10, padding 10px 12px, 12.5px.
 - Blockquote: 2px `--line-strong` left rule, 12px padding, 13px iron.
-- "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut). It holds the turn's steps and Claude's side notes (text a step follows in the same turn) in order, so a turn reads: your message, one fold, the answer. A side note in the fold, like a helper's text: 2px `--line-strong` left rule, 8px padding, iron. The count is steps only.
-- Steps tab ("This chat" panel): numbered steps, with Claude's side notes between them unnumbered, 13px iron, in full (screen readers hear "Claude's note:" first).
+- "What Claude did": 13px iron, padding 3px 8px 3px 4px, a 14px chevron `Icon` (rotated −90° when shut). It holds the turn's steps and Claude's side notes (text a step follows in the same turn) in order, so a turn reads: your message, one fold, the answer. A side note in the fold, like a helper's text: 2px `--line-strong` left rule, 8px padding, iron. The fold sits on a `--tint-1` panel (radius 12, padding 3px), as wide as its line when shut and the column's width when open or while Claude works, so Claude's working reads apart from answers and your messages. A background helper's report is its own fold inside ("Helper's report: name"), opening on a #fff card (radius 10, padding 10px 12px, 13.5px navy; its headings 15/14px). The count is steps, then helper reports.
+- Steps tab ("This chat" panel): numbered steps, with Claude's side notes between them unnumbered, 13px iron, in full (screen readers hear "Claude's note:" first), and an unnumbered "Helper's report: name" row where each report came back (its text is in the thread's fold).
 - Your message: 14/1.5, wash fill, radius 14 14 4 14, padding 8px 12px. Record lines: 13px iron with an 8px #B9C0CE dot.
 - File links in a reply (a brain path the chat reported, plan 2026-11-13-chat-files): link colour with a
   small file icon before them; they open the file in the panel's Files tab, never a new tab. A step that
@@ -145,7 +145,7 @@ distinct from hover by its fill or weight, not by a deeper shadow.
 | `.btn` standard | #fff + `--lift-1` + up 1px (reduced motion: `--glass-solid` fill instead of the move) | `--tray`, no shadow | n/a |
 | `.btn` danger | `--danger-wash` + `--lift-1` + up 1px | `--danger-wash-strong`, no shadow | n/a |
 | `.btn` quiet | `--tint-2` | `--tint-3` | never the wash; open is shown by a chevron (`data-chevron`) |
-| `.icon-btn`, fold header, chip remove, "What Claude did" | `--tint-2` | `--tint-3` | `.icon-btn` toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash + blue-ink, unless it carries `data-chevron` |
+| `.icon-btn`, fold header, chip remove, "What Claude did" (over its `--tint-1` panel) | `--tint-2` | `--tint-3` | `.icon-btn` toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash + blue-ink, unless it carries `data-chevron` |
 | "Search or jump to" | `--tint-2` | `--tint-3` | n/a |
 | Seg option | rgba(255,255,255,.55) | n/a | #fff + seg shadow + 600 |
 | Palette option | rgba(255,255,255,.85) + `--lift-1` | n/a | #fff + `--lift-1` + 1.5px blue-ink inset ring |

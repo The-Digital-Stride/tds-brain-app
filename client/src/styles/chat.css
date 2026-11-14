@@ -110,10 +110,10 @@
 }
 .markdown h1,
 .markdown h2 {
-  font-size: 18px;
+  font-size: var(--md-h2, 18px);
 }
 .markdown h3 {
-  font-size: 15px;
+  font-size: var(--md-h3, 15px);
 }
 .markdown h4 {
   font-size: 14px;
@@ -241,6 +241,11 @@
 .activity-steps {
   margin-left: 10px;
 }
+/* A grid item grows to fit its widest content: without this a report's wide table pushes its card
+   out of the panel instead of scrolling inside it. */
+.activity-steps > li {
+  min-width: 0;
+}
 .activity .tool-status[data-status="failed"] {
   color: var(--danger);
 }
@@ -257,6 +262,10 @@
   width: auto;
   padding-bottom: 10px;
 }
+/* While Claude works the line names each step in turn: a full-width panel doesn't jump with it. */
+.step-fold[data-running="true"] {
+  width: auto;
+}
 /* A helper's report: its own fold inside, opening to the report on a white card. */
 .activity-report > details[open] > summary .icon {
   transform: none;
@@ -271,6 +280,9 @@
   color: var(--navy);
   /* Not `anywhere`: that lets a table squeeze a short column ("HIGH") letter by letter. */
   overflow-wrap: break-word;
+  /* Its headings stay below the answer's (18px), to suit the card's 13.5px text. */
+  --md-h2: 15px;
+  --md-h3: 14px;
 }
 /* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
 .activity-note {

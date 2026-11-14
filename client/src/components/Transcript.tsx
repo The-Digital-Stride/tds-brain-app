@@ -115,7 +115,7 @@ function ActivityGroup({
     total > 0 ? `${total} ${total === 1 ? 'step' : 'steps'}` : '',
     reports > 0 ? `${reports} ${reports === 1 ? 'helper report' : 'helper reports'}` : '',
   ].filter(Boolean);
-  let summary = `What Claude did (${counts.join(', ')})`;
+  let summary = counts.length > 0 ? `What Claude did (${counts.join(', ')})` : 'What Claude did';
   if (active && waiting) summary = 'Waiting for you';
   else if (step) summary = `Claude is working: ${step}`;
   return (

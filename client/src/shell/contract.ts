@@ -54,7 +54,9 @@ export interface ShellState {
  * A file to show in the file viewer: a drawer that slides over the sheet, so the person reads the
  * file without leaving what they were doing (a chat, say). Any part of the app can ask for one.
  */
-export interface ViewerRequest {
+export interface LibraryViewerRequest {
+  /** Missing means a library file (every request written before pages existed). */
+  kind?: 'file';
   item: LibraryItem;
   /** Where the file is, shown under its name (the client or library's name). */
   place?: string;
@@ -62,6 +64,17 @@ export interface ViewerRequest {
   openIn?: { app: 'documents' | 'images'; scope: string };
 }
 
+/**
+ * A page Claude published in a chat (plan 2026-11-14-artifacts-in-app, decision 4): `key` is the
+ * page's key in that chat's files snapshot. The viewer follows the page as it gains versions.
+ */
+export interface PageViewerRequest {
+  kind: 'page';
+  chat: string;
+  key: string;
+}
+
+export type ViewerRequest = LibraryViewerRequest | PageViewerRequest;
 export type ShellAction =
   | { type: 'toggle-rail' }
   | { type: 'toggle-drawer'; drawer: DrawerName }

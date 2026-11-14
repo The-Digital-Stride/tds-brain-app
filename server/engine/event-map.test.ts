@@ -222,6 +222,13 @@ describe('tools', () => {
     expect(toolLabel('mcp__claude_ai_Gmail__search_threads', {})).toBe('Using Gmail');
     expect(toolLabel('mcp__slack__slack_post_message', {})).toBe('Using slack');
     expect(toolLabel('SomethingNew', {})).toBe('SomethingNew');
+    // Pages (plan 2026-11-14-artifacts-in-app, decision 5).
+    expect(toolLabel('Artifact', { file_path: '/tmp/a.html' })).toBe('Publishing a page');
+    expect(toolLabel('Artifact', { action: 'publish', url: 'https://claude.ai/artifact/x' })).toBe(
+      'Publishing a page',
+    );
+    expect(toolLabel('Artifact', { action: 'list' })).toBe('Checking pages on claude.ai');
+    expect(toolLabel('Artifact', { action: 'quickstart' })).toBe('Checking pages on claude.ai');
   });
 });
 

@@ -8,6 +8,7 @@
  * Read-only: never touches the brain. Every path goes through `resolve` (the library), so a file the
  * person could not open in Documents is never reported, and nothing outside the brain is either.
  */
+import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import {
   findPathMentions,
@@ -32,6 +33,13 @@ import {
   CHAT_LINK_MAX_CHARS,
   CHAT_LINKS_MAX,
 } from '../../shared/contract.ts';
+import { artifactPublish, artifactPublishResult, pageTitle } from '../../shared/pages.ts';
+import {
+  type ArtifactPublish,
+  CHAT_PAGES_MAX,
+  type ChatPage,
+  PAGE_VERSIONS_MAX,
+} from '../../shared/pages-contract.ts';
 import { proposedChange } from './file-change.ts';
 
 export type ResolvePath = (
@@ -45,6 +53,31 @@ export interface TrackedAttachment {
   stagedPath: string;
 }
 
+/**
+ * Where the chat's page copies live (`server/store/page-copies.ts`, bound to the chat). Without it
+ * pages are still listed, with no copies.
+ */
+export interface PageCopyPort {
+  /** Copies `filePath` as version `n` of page `key`; null when it could not be copied. */
+  copy(
+    key: string,
+    n: number,
+    filePath: string,
+  ): Promise<{ title: string; evicted: { key: string; n: number }[] } | null>;
+  /** The copy already on disk ('' title when untitled), or null. */
+  held(key: string, n: number): Promise<{ title: string } | null>;
+}
+
+/** What the server knows of one page: never sent to the browser as is (`filePath` stays here). */
+export interface PageInfo {
+  title: string;
+  url: string | null;
+  /** The newest version's source, as Claude gave it. */
+  filePath: string;
+  newest: number;
+  versions: { n: number; hasCopy: boolean }[];
+}
+
 export interface ChatFilesOptions {
   /**
    * The brain root as configured and as its real path (they differ when it sits behind a symbolic
@@ -54,6 +87,8 @@ export interface ChatFilesOptions {
   resolve: ResolvePath;
   /** Stamps live edits for `changes`. */
   now?: () => Date;
+  /** Page copies (plan 2026-11-14-artifacts-in-app, decision 2). */
+  pages?: PageCopyPort;
 }
 
 export interface ChatFilesTracker {
@@ -71,6 +106,11 @@ export interface ChatFilesTracker {
    *   marked `filed` and the attachment's `filedKey` set (the last one wins).
    * - tool_use WebFetch: its `url`, when http(s), without credentials and at most
    *   CHAT_LINK_MAX_CHARS, is added to `links` on success.
+   * - tool_use Artifact (any parent): `artifactPublish(input)`; a page publish only when its
+   *   tool_result has no `is_error` and `artifactPublishResult(content)` is non-null. Its address
+   *   finds the page (a new version) or makes a new one, keyed at that first publish. A live publish
+   *   is copied at once (`pages.copy`); a stored one only at the next snapshot, and only when it is
+   *   its page's newest version and has no copy yet (`pages.held`).
    * - text blocks of an `assistant` message with no parent (never a helper's text):
    *   `findPathMentions` → `mentioned`; `findWebLinks` → links (same URL rules).
    * Marks the tracker dirty when anything changed. `history: true`: a stored message, so its kept
@@ -98,6 +138,8 @@ export interface ChatFilesTracker {
    * item and it has kept edits.
    */
   changes(key: string): ChatFileChanges | null;
+  /** One page by its key, with its newest source path (server only), or null. */
+  page(key: string): PageInfo | null;
 }
 
 type Rec = Record<string, unknown>;
@@ -153,7 +195,36 @@ type Pending =
       shell: string;
       cwd: string | null;
     }
-  | { kind: 'web'; url: string };
+  | { kind: 'web'; url: string }
+  | { kind: 'page'; publish: ArtifactPublish; history: boolean };
+
+interface PageVersionRec {
+  n: number;
+  remote: number | null;
+  at: string | null;
+  filePath: string;
+  hasCopy: boolean;
+  /** The copy's title, once known ('' when the page has none). */
+  title: string | null;
+  /** Whether the disk has been asked about this version (always true for a live one). */
+  checked: boolean;
+  /** A stored version that is its page's newest gets one try at a copy. */
+  tried: boolean;
+}
+
+interface PageRec {
+  key: string;
+  url: string | null;
+  versions: PageVersionRec[];
+  nextN: number;
+  live: boolean;
+  multiFile: boolean;
+  toolUseIds: string[];
+  order: number;
+}
+
+/** One address however it is written: no trailing slash. */
+const pageUrlKey = (url: string): string => url.replace(/\/+$/, '');
 
 interface Filing {
   att: Attachment;
@@ -515,6 +586,10 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   let keptBytes = 0;
   let dirty = false;
   let resolveAll = true;
+  /** By address (`pageUrlKey`), oldest first in insertion order. */
+  const pages = new Map<string, PageRec>();
+  /** Copies under way; a snapshot waits for them. */
+  const copying = new Set<Promise<void>>();
 
   function normalise(raw: unknown): string | null {
     if (typeof raw !== 'string') return null;
@@ -729,7 +804,145 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       setPending(id, { kind: 'bash', filings: filingsHere, reads: read, changes: changed, shell, cwd });
     } else if (name === 'WebFetch' && okLink(input.url)) {
       setPending(id, { kind: 'web', url: input.url });
+    } else if (name === 'Artifact') {
+      const publish = artifactPublish(input);
+      if (publish) setPending(id, { kind: 'page', publish, history });
     }
+  }
+
+  function pageKey(url: string): string {
+    return createHash('sha256')
+      .update(`page:${pageUrlKey(url)}`)
+      .digest('base64url')
+      .slice(0, 22);
+  }
+
+  function startCopy(page: PageRec, v: PageVersionRec): void {
+    const port = opts.pages;
+    if (!port) return;
+    v.tried = true;
+    const job = (async () => {
+      try {
+        const got = await port.copy(page.key, v.n, v.filePath);
+        if (!got) return;
+        v.hasCopy = true;
+        v.title = got.title;
+        for (const e of got.evicted) {
+          for (const p of pages.values()) {
+            if (p.key !== e.key) continue;
+            for (const x of p.versions) if (x.n === e.n) x.hasCopy = false;
+          }
+        }
+      } catch {
+        // no copy: the version shows as not kept
+      }
+    })();
+    copying.add(job);
+    void job.finally(() => copying.delete(job));
+  }
+
+  function addPublish(id: string, publish: ArtifactPublish, history: boolean, content: unknown): void {
+    const done = artifactPublishResult(content);
+    if (!done) return;
+    const at = pageUrlKey(done.url);
+    let page = pages.get(at);
+    if (!page) {
+      page = {
+        key: pageKey(done.url),
+        url: at,
+        versions: [],
+        nextN: 1,
+        live: false,
+        multiFile: false,
+        toolUseIds: [],
+        order: 0,
+      };
+      pages.set(at, page);
+      while (pages.size > CHAT_PAGES_MAX) {
+        let oldest: [string, PageRec] | null = null;
+        for (const e of pages) if (!oldest || e[1].order < oldest[1].order) oldest = e;
+        if (!oldest || oldest[1] === page) break;
+        pages.delete(oldest[0]);
+      }
+    }
+    page.order = ++counter;
+    // claude.ai keeps a page's capabilities and files on a redeploy that leaves them out.
+    page.live ||= publish.live;
+    page.multiFile ||= publish.multiFile;
+    if (!page.toolUseIds.includes(id)) page.toolUseIds.push(id);
+    if (page.toolUseIds.length > CHAT_FILE_TOOL_IDS_MAX)
+      page.toolUseIds.splice(0, page.toolUseIds.length - CHAT_FILE_TOOL_IDS_MAX);
+    const v: PageVersionRec = {
+      n: page.nextN++,
+      remote: done.remote,
+      at: history ? null : now().toISOString(),
+      filePath: publish.filePath,
+      hasCopy: false,
+      title: null,
+      checked: !history,
+      tried: !history,
+    };
+    page.versions.push(v);
+    if (page.versions.length > PAGE_VERSIONS_MAX)
+      page.versions.splice(0, page.versions.length - PAGE_VERSIONS_MAX);
+    if (!history) startCopy(page, v);
+    dirty = true;
+  }
+
+  /** Waits for copies under way, asks the disk about stored versions, and copies a missing newest one. */
+  async function settlePages(): Promise<void> {
+    const port = opts.pages;
+    if (!port) return;
+    const looks: Promise<void>[] = [];
+    for (const page of pages.values()) {
+      for (const v of page.versions) {
+        if (v.checked) continue;
+        v.checked = true;
+        looks.push(
+          port.held(page.key, v.n).then(
+            (got) => {
+              if (got) {
+                v.hasCopy = true;
+                v.title = got.title;
+              }
+            },
+            () => {},
+          ),
+        );
+      }
+    }
+    await Promise.all(looks);
+    for (const page of pages.values()) {
+      const newest = page.versions.at(-1);
+      if (newest && !newest.hasCopy && !newest.tried) startCopy(page, newest);
+    }
+    while (copying.size > 0) await Promise.all([...copying]);
+  }
+
+  function pageTitleOf(page: PageRec): string {
+    for (let i = page.versions.length - 1; i >= 0; i--) {
+      const t = page.versions[i]?.title;
+      if (t) return t;
+    }
+    const newest = page.versions.at(-1);
+    return newest ? pageTitle('', newest.filePath) : '';
+  }
+
+  function listPages(): ChatPage[] {
+    return [...pages.values()]
+      .filter((p) => p.versions.length > 0)
+      .sort((a, b) => b.order - a.order)
+      .slice(0, CHAT_PAGES_MAX)
+      .map((p) => ({
+        key: p.key,
+        title: pageTitleOf(p),
+        url: p.url,
+        versions: p.versions.map((v) => ({ n: v.n, remote: v.remote, at: v.at, hasCopy: v.hasCopy })),
+        live: p.live,
+        multiFile: p.multiFile,
+        toolUseIds: [...p.toolUseIds],
+        order: p.order,
+      }));
   }
 
   function setPending(id: string, p: Pending): void {
@@ -742,12 +955,14 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     }
   }
 
-  function toolResult(id: string, failed: boolean): void {
+  function toolResult(id: string, failed: boolean, content: unknown): void {
     const p = pending.get(id);
     if (!p) return;
     pending.delete(id);
     if (failed) return;
-    if (p.kind === 'web') {
+    if (p.kind === 'page') {
+      addPublish(id, p.publish, p.history, content);
+    } else if (p.kind === 'web') {
       addLink(p.url);
     } else if (p.kind === 'bash') {
       // The shell keeps a folder only when the command worked.
@@ -816,6 +1031,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       ]),
     ];
     try {
+      await settlePages();
       return await resolveAndList(paths, filed, seen, wanted);
     } catch (err) {
       // Put the work back, so the next snapshot tries these paths again instead of waiting for the turn end.
@@ -950,7 +1166,10 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       .sort((a, b) => b.order - a.order)
       .slice(0, CHAT_FILES_MAX);
     const shown = new Set(files.map((f) => f.key));
-    return {
+    const listed = listPages();
+    // A page's own address is shown as the page, not again as a web link.
+    const pageUrls = new Set(listed.flatMap((p) => (p.url ? [pageUrlKey(p.url)] : [])));
+    const snap: ChatFilesSnapshot = {
       files,
       attachments: attachments.map((a) => ({
         name: a.name,
@@ -959,9 +1178,13 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       })),
       links: [...links.keys()]
         .reverse()
+        .filter((url) => !pageUrls.has(pageUrlKey(url)))
         .slice(0, CHAT_LINKS_MAX)
         .map((url) => ({ url })),
     };
+    // Left out for a chat with none, so it looks exactly as before.
+    if (listed.length > 0) snap.pages = listed;
+    return snap;
   }
 
   return {
@@ -993,7 +1216,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         } else if (message.type === 'user' && Array.isArray(content)) {
           for (const b of content) {
             if (isRec(b) && b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-              toolResult(b.tool_use_id, b.is_error === true);
+              toolResult(b.tool_use_id, b.is_error === true, b.content);
             }
           }
         }
@@ -1033,6 +1256,21 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         dirty = true;
         return null;
       }
+    },
+
+    page(key) {
+      for (const p of pages.values()) {
+        const newest = p.versions.at(-1);
+        if (p.key !== key || !newest) continue;
+        return {
+          title: pageTitleOf(p),
+          url: p.url,
+          filePath: newest.filePath,
+          newest: newest.n,
+          versions: p.versions.map((v) => ({ n: v.n, hasCopy: v.hasCopy })),
+        };
+      }
+      return null;
     },
 
     changes(key) {

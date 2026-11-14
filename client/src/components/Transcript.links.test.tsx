@@ -67,3 +67,83 @@ describe('reply links to chat files', () => {
     expect(linksIn(0)).toHaveLength(2);
   });
 });
+
+describe('reply links to pages', () => {
+  const page = {
+    key: 'pg1',
+    title: 'Quarterly page',
+    url: 'https://claude.ai/artifact/abc123',
+    versions: [{ n: 1, remote: null, at: null, hasCopy: true }],
+    live: false,
+    multiFile: false,
+    toolUseIds: ['tu1'],
+    order: 1,
+  };
+
+  function renderWithPages(texts: string[], pages = [page]) {
+    const onPage = vi.fn();
+    const onFile = vi.fn();
+    render(
+      <Transcript
+        items={texts.map((t, i) => reply(`a${i}`, t))}
+        sessionId="s"
+        sessionState="idle"
+        files={[]}
+        pages={pages}
+        brainRoot="/brain"
+        onFile={onFile}
+        onPage={onPage}
+      />,
+    );
+    return { onPage, onFile };
+  }
+
+  it('opens the viewer for a known address, written as a link or a bare address', () => {
+    const { onPage, onFile } = renderWithPages([
+      'Here: [the page](https://claude.ai/artifact/abc123) and https://claude.ai/artifact/abc123.',
+    ]);
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(2);
+    fireEvent.click(links[0] as Element);
+    expect(onPage).toHaveBeenCalledWith('pg1');
+    expect(onFile).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unknown address as an outside link', () => {
+    const { onPage } = renderWithPages(['See [it](https://claude.ai/artifact/zzz999).']);
+    const a = screen.getByRole('link', { name: 'it' });
+    expect(a.getAttribute('href')).toBe('https://claude.ai/artifact/zzz999');
+    expect(a.getAttribute('target')).toBe('_blank');
+    fireEvent.click(a);
+    expect(onPage).not.toHaveBeenCalled();
+  });
+
+  it('links a page that arrives after the reply that names it', () => {
+    const onPage = vi.fn();
+    const items = [reply('a0', 'Published: https://claude.ai/artifact/abc123')];
+    const view = render(
+      <Transcript
+        items={items}
+        sessionId="s"
+        sessionState="idle"
+        files={[]}
+        pages={[]}
+        onFile={vi.fn()}
+        onPage={onPage}
+      />,
+    );
+    expect(document.querySelectorAll('a[href^="#chat-file="]')).toHaveLength(0);
+    view.rerender(
+      <Transcript
+        items={items}
+        sessionId="s"
+        sessionState="idle"
+        files={[]}
+        pages={[page]}
+        onFile={vi.fn()}
+        onPage={onPage}
+      />,
+    );
+    expect(document.querySelectorAll('a[href^="#chat-file="]')).toHaveLength(1);
+  });
+});

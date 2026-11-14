@@ -42,14 +42,42 @@ export const PAGE_CSP =
  */
 export const PDF_CSP = "default-src 'none'; object-src 'self'; frame-ancestors 'self'";
 
+/**
+ * `GET ROUTES.chatPage(…)` (a page Claude published, plan 2026-11-14-artifacts-in-app, decision 3)
+ * replaces the app's policy with this one, on success and on error. The page's scripts run in an
+ * opaque origin (`sandbox` without `allow-same-origin`): no cookies, no reach into the app or its API.
+ * It may load only what claude.ai lets artifacts load (these script, style and font hosts), nothing
+ * else: no fetches, no pictures from the web (no beacon), no forms. Popups it opens stay sandboxed
+ * (never `allow-popups-to-escape-sandbox`) and it can never move the app's tab (no
+ * `allow-top-navigation*`). Only the app itself may frame it.
+ */
+export const PAGE_PREVIEW_CSP = [
+  'sandbox allow-scripts allow-popups',
+  "default-src 'none'",
+  "script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/ https://unpkg.com https://cdn.tailwindcss.com https://code.jquery.com",
+  "style-src 'unsafe-inline' https://fonts.googleapis.com",
+  'font-src https://fonts.gstatic.com data:',
+  'img-src data: blob:',
+  'media-src data: blob:',
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'self'",
+].join('; ');
+
 const LIBRARY_FRAME_PREFIXES = ['/api/library/page/', '/api/library/pdf/'];
+/** `ROUTES.chatPage`: one version of a chat's page (any last segment but `ask`, which is JSON). */
+const CHAT_PAGE_PATH = /^\/api\/sessions\/[^/]+\/pages\/[^/]+\/(?!ask$)[^/]+$/;
 
 /**
- * True for the library routes shown in a frame (a page, a PDF), whose errors are HTML under
- * `PAGE_CSP`, never JSON, because the frame shows them.
+ * True for the routes shown in a frame (a library page or PDF, a chat's page), whose errors are HTML
+ * under a page policy, never JSON, because the frame shows them.
  */
 export function isLibraryPagePath(path: string): boolean {
-  return LIBRARY_FRAME_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length);
+  return (
+    LIBRARY_FRAME_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length) ||
+    CHAT_PAGE_PATH.test(path)
+  );
 }
 
 export type HeaderBag = Record<string, string | string[] | undefined>;

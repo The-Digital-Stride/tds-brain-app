@@ -1,0 +1,77 @@
+{
+  "note": "Artifact tool calls in the shapes Claude Code really produces (checked against local transcripts, 2026-11-14). Ids, paths and text are invented. Only a successful result starting \"Published \" is a page publish.",
+  "calls": [
+    {
+      "name": "new page",
+      "input": { "file_path": "/private/tmp/claude-501/-Users-x-agencybrain/0000-session/scratchpad/budget-tracker.html", "icon": "chart", "description": "A budget tracker." },
+      "is_error": false,
+      "result": "Published /private/tmp/claude-501/-Users-x-agencybrain/0000-session/scratchpad/budget-tracker.html at https://claude.ai/artifact/AbCdEf0123456789xyzQrs (Version 1, version id 1794676602-7d5a) Icon: \"chart\".\n\nLive subscription: arming in the background — not connected yet, so this is not a watch until `status` shows it connected."
+    },
+    {
+      "name": "republish same file, no url",
+      "input": { "file_path": "/private/tmp/claude-501/-Users-x-agencybrain/0000-session/scratchpad/budget-tracker.html" },
+      "is_error": false,
+      "result": "Published /private/tmp/claude-501/-Users-x-agencybrain/0000-session/scratchpad/budget-tracker.html at https://claude.ai/artifact/AbCdEf0123456789xyzQrs (Version 2, version id 1794677000-aa11)\n\nLive subscription: already connected from earlier in this session."
+    },
+    {
+      "name": "update by url, file in the brain",
+      "input": { "action": "publish", "url": "https://claude.ai/artifact/ZzYyXx9876543210abcDef", "file_path": "/Users/x/agencybrain/clients/acme/reports/acme-review.html", "description": "Review.", "label": "Tab added" },
+      "is_error": false,
+      "result": "Published /Users/x/agencybrain/clients/acme/reports/acme-review.html at https://claude.ai/artifact/ZzYyXx9876543210abcDef (Version 3, version id 1794407379-c358)\n\nTo update: publish the same file path here (keeps the same URL)."
+    },
+    {
+      "name": "refused publish (live version not viewed)",
+      "input": { "action": "publish", "url": "https://claude.ai/artifact/ZzYyXx9876543210abcDef", "file_path": "/Users/x/agencybrain/clients/acme/reports/acme-review.html" },
+      "is_error": true,
+      "result": "You hadn't viewed the live version of this artifact, so the publish was refused. Its full source is saved at /Users/x/.claude/projects/p/tool-results/artifact-1.html: Read every line of that file and merge your edits onto it, then publish again."
+    },
+    {
+      "name": "permission denied",
+      "input": { "file_path": "/private/tmp/claude-501/p/scratchpad/page.html" },
+      "is_error": true,
+      "result": "The user doesn't want to proceed with this tool use. The tool use was rejected."
+    },
+    {
+      "name": "typed artifact data file (not a page)",
+      "input": { "url": "https://claude.ai/artifact/TyPeD0000000000000000a", "root": "/private/tmp/claude-501/p/scratchpad/canvas", "file_path": "/private/tmp/claude-501/p/scratchpad/canvas/project/Main.dc.html", "files": ["project/Panel.dc.html"] },
+      "is_error": false,
+      "result": "Updated the Artifact at https://claude.ai/artifact/TyPeD0000000000000000a (Version 2, version id 1793113063-7f6f) with /private/tmp/claude-501/p/scratchpad/canvas/project/Main.dc.html (served at \"project/Main.dc.html\") and any `files` listed. Its page comes from the Artifact type https://claude.ai/artifact/QKN21svewxgyPb6SYRqWnd and can't be changed here."
+    },
+    {
+      "name": "page with supporting files",
+      "input": { "file_path": "/private/tmp/claude-501/p/scratchpad/site/index.html", "files": { "app.js": "/private/tmp/claude-501/p/scratchpad/site/app.js" }, "icon": "code" },
+      "is_error": false,
+      "result": "Published /private/tmp/claude-501/p/scratchpad/site/index.html at https://claude.ai/code/artifact/0b5c3c2e-1111-4a2b-9c3d-123456789abc (Version 1, version id 1794000000-0001) with 1 file."
+    },
+    {
+      "name": "page with capabilities",
+      "input": { "file_path": "/private/tmp/claude-501/p/scratchpad/signup.html", "capabilities": { "db": {} }, "icon": "list" },
+      "is_error": false,
+      "result": "Published /private/tmp/claude-501/p/scratchpad/signup.html at https://claude.ai/artifact/CaPaB1l1t1e5000000000x (Version 1, version id 1794000001-0002)"
+    },
+    {
+      "name": "quickstart (mentions artifact addresses, not a publish)",
+      "input": { "action": "quickstart", "intent": "other" },
+      "is_error": false,
+      "result": "Quickstart. For a dashboard, start from the Dashboard type: publish with `type_url`: \"https://claude.ai/artifact/GZLZthZ2sQjn7T16skfdeF\", a `title`, no files."
+    },
+    {
+      "name": "list (many addresses, not a publish)",
+      "input": { "action": "list", "limit": 40 },
+      "is_error": false,
+      "result": "Showing 2 of 2 published artifacts:\n- (mine) Site Backup Plan — https://claude.ai/artifact/MSdG6UfiNnZiDfPoiYPfzS — updated 2026-11-09\n- (mine) Other — https://claude.ai/artifact/R7iMxPeGfzFRqYHJ5Jygzz — updated 2026-11-10"
+    },
+    {
+      "name": "open (not a publish)",
+      "input": { "action": "open", "url": "https://claude.ai/artifact/R7iMxPeGfzFRqYHJ5Jygzz" },
+      "is_error": false,
+      "result": "Opened the Artifact at https://claude.ai/artifact/R7iMxPeGfzFRqYHJ5Jygzz for the user. Nothing was published or changed."
+    },
+    {
+      "name": "result as text blocks",
+      "input": { "file_path": "/private/tmp/claude-501/p/scratchpad/blocks.html" },
+      "is_error": false,
+      "result": [{ "type": "text", "text": "Published /private/tmp/claude-501/p/scratchpad/blocks.html at https://claude.ai/artifact/BlOcKs00000000000000aa (Version 1, version id 1794000002-0003)." }]
+    }
+  ]
+}

@@ -29,6 +29,7 @@ import {
   STREAM_STALL_MS,
 } from '../../shared/contract.ts';
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
+import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
@@ -132,6 +133,8 @@ export interface Store {
   openPast: (sdkSessionId: string) => Promise<void>;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
+  /** Asks Claude, in `sessionId`, to change a page or brand it. Returns null when sent, else the plain reason it wasn't. */
+  askPage: (sessionId: string, key: string, req: PageAskRequest) => Promise<string | null>;
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
   /** Team skill levels: from the server's bootstrap, then whatever the last change returned. null on an older server. */
   skillLevels: SkillLevels | null;
@@ -656,6 +659,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeChat, boot, todos, loadSessions, loadTodos, keepStars],
   );
 
+  const askPage = useCallback(async (sessionId: string, key: string, req: PageAskRequest) => {
+    try {
+      await api.askPage(sessionId, key, req);
+      return null;
+    } catch (err) {
+      return messageOf(err);
+    }
+  }, []);
+
   const updatePrefs = useCallback(
     async (patch: Partial<AppPrefs>) => {
       try {
@@ -934,6 +946,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openChat,
       openPast,
       send,
+      askPage,
       updatePrefs,
       skillLevels: levelsOverride ?? boot?.skillLevels ?? null,
       setSkillLevel,
@@ -987,6 +1000,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openChat,
       openPast,
       send,
+      askPage,
       updatePrefs,
       levelsOverride,
       setSkillLevel,

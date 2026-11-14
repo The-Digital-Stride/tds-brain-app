@@ -89,6 +89,12 @@ export function ChatView() {
     },
     [sessionId, shellDispatch],
   );
+  const openPage = useCallback(
+    (key: string) => {
+      if (sessionId) shellDispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key } });
+    },
+    [sessionId, shellDispatch],
+  );
 
   const confirming = sessionId !== null && closeRequest === sessionId;
   useEffect(() => {
@@ -180,6 +186,8 @@ export function ChatView() {
           files={chat.files.files}
           brainRoot={boot?.brain.path}
           onFile={openFile}
+          pages={chat.files.pages ?? []}
+          onPage={openPage}
         />
       ) : (
         <div className="thread">

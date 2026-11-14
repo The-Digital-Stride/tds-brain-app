@@ -182,7 +182,8 @@ function Preview({
   };
 
   // Claude changed the file while the viewer shows it: show the newer copy there too.
-  const viewing = state.viewer?.item.id === item?.id ? state.viewer : null;
+  const viewing =
+    state.viewer && state.viewer.kind !== 'page' && state.viewer.item.id === item?.id ? state.viewer : null;
   useEffect(() => {
     if (!viewing || !item || viewing.item.modified === item.modified) return;
     dispatch({ type: 'open-viewer', viewer: { ...viewing, item } });
@@ -278,7 +279,7 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
   const { chats, sessions } = useStore();
   const { state, dispatch } = useShell();
   const chat = chats[sessionId];
-  const snapshot = chat?.files ?? { files: [], attachments: [], links: [] };
+  const snapshot = chat?.files ?? { files: [], attachments: [], links: [], pages: [] };
   const live = sessions?.live.find((s) => s.id === sessionId);
   const sessionState = chat?.sessionState ?? live?.state ?? null;
   const busy = sessionState !== null && BUSY.includes(sessionState);
@@ -328,7 +329,13 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
     (f) => !snapshot.attachments.some((a) => a.filedKey === f.key),
   );
   const attachedCount = snapshot.attachments.length + attachedOrphans.length;
-  const groups = [made.length, attachedCount, mentioned.length, looked.length, snapshot.links.length];
+  const pages = snapshot.pages ?? [];
+  // A page's address is shown as a page, not repeated as a web link.
+  const pageUrls = new Set(pages.map((p) => p.url).filter((u): u is string => u !== null));
+  const links = snapshot.links.filter((l) => !pageUrls.has(l.url));
+  const openPage = (key: string) =>
+    dispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key } });
+  const groups = [made.length, attachedCount, mentioned.length, looked.length, pages.length, links.length];
   const empty = groups.every((n) => n === 0);
 
   return (
@@ -387,15 +394,34 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
             title="Looked at"
             count={looked.length}
             defaultOpen={
-              lookedReset > 0 || made.length + attachedCount + mentioned.length + snapshot.links.length === 0
+              lookedReset > 0 ||
+              made.length + attachedCount + mentioned.length + pages.length + links.length === 0
             }
           >
             {looked.map(row)}
           </Fold>
         ) : null}
-        {snapshot.links.length > 0 ? (
-          <Fold title="Web links" count={snapshot.links.length}>
-            {snapshot.links.map((l) => {
+        {pages.length > 0 ? (
+          <Fold title="Pages" count={pages.length}>
+            {pages.map((p) => {
+              const newest = p.versions[p.versions.length - 1];
+              return (
+                <button type="button" key={p.key} className="line files-row" onClick={() => openPage(p.key)}>
+                  <Icon name="doc" />
+                  <span className="line-text">
+                    <span className="line-title">{p.title}</span>
+                    <span className="line-meta">
+                      {newest ? `Version ${newest.remote ?? newest.n}` : 'Page'}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </Fold>
+        ) : null}
+        {links.length > 0 ? (
+          <Fold title="Web links" count={links.length}>
+            {links.map((l) => {
               const address = l.url.replace(/^https?:\/\//, '');
               return (
                 <a

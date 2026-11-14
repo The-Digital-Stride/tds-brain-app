@@ -63,6 +63,11 @@ export function toolLabel(tool: string, input: Rec): string {
       return 'Planning the steps';
     case 'AskUserQuestion':
       return 'Asking you a question';
+    case 'Artifact':
+      // Its other actions (list, read, open, quickstart) only look things up.
+      return input.action === undefined || input.action === 'publish'
+        ? 'Publishing a page'
+        : 'Checking pages on claude.ai';
   }
   const mcp = /^mcp__(.+?)__(.+)$/.exec(tool);
   if (mcp?.[1]) return `Using ${humaniseMcpServer(mcp[1])}`;

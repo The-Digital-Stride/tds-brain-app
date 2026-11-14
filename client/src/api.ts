@@ -46,6 +46,7 @@ import type {
   SkillLevels,
   TurnLevel,
 } from '../../shared/levels-contract.ts';
+import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../../shared/update-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
@@ -147,6 +148,9 @@ export const api = {
   interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
   /** Moves an earlier chat's history to the macOS Bin (the server refuses an open chat). */
+  /** Asks Claude, in that chat, to change a page or turn it into a TDS-branded document. */
+  askPage: (sessionId: string, key: string, req: PageAskRequest) =>
+    request<OkResponse>('POST', ROUTES.chatPageAsk(sessionId, key), req),
   deletePastChat: (id: string) => request<Record<string, never>>('DELETE', ROUTES.pastSession(id)),
   setChatKind: (id: string, kind: ChatKind) =>
     request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),

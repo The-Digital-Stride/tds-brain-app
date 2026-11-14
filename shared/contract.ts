@@ -12,6 +12,7 @@
 
 import type { AppState } from './install-contract.ts';
 import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
+import type { ChatPage } from './pages-contract.ts';
 import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
@@ -1134,6 +1135,11 @@ export interface ChatFilesSnapshot {
   attachments: ChatAttachment[];
   /** Newest first, no repeats. At most CHAT_LINKS_MAX. */
   links: ChatWebLink[];
+  /**
+   * Pages Claude published with its Artifact tool (`shared/pages-contract.ts`), newest first. Sent
+   * by servers from 0.28; treat as `[]` when missing. Their claude.ai addresses are left out of `links`.
+   */
+  pages?: ChatPage[];
 }
 
 export const CHAT_FILES_MAX = 200;
@@ -1493,6 +1499,16 @@ export const ROUTES = {
    */
   sessionFileChanges: (id: string, key: string) =>
     `/api/sessions/${encodeURIComponent(id)}/file-changes/${encodeURIComponent(key)}`,
+  /**
+   * `GET`: one stored version of a chat's page, as HTML under PAGE_PREVIEW_CSP (sandboxed, scripts
+   * allowed, opaque origin), wrapped in claude.ai's page skeleton when it has no doctype. Errors are a
+   * small HTML page under the same policy. Plan docs/plans/2026-11-14-artifacts-in-app.md.
+   */
+  chatPage: (id: string, key: string, n: number) =>
+    `/api/sessions/${encodeURIComponent(id)}/pages/${encodeURIComponent(key)}/${n}`,
+  /** `POST` PageAskRequest (`shared/pages-contract.ts`): ask Claude to change or brand a page. */
+  chatPageAsk: (id: string, key: string) =>
+    `/api/sessions/${encodeURIComponent(id)}/pages/${encodeURIComponent(key)}/ask`,
   /**
    * `POST`: the file's bytes. Errors (all ApiError, sent with `Connection: close`):
    * 400 `bad-request` for a missing or bad name, a type not in UPLOAD_TYPES, a bad Content-Length

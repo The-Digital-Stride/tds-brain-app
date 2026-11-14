@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ChatFile, ChatFilesSnapshot, LibraryItem, LibraryScope } from '../../shared/contract.ts';
 import {
@@ -7,9 +8,12 @@ import {
   CHAT_LINK_MAX_CHARS,
   CHAT_LINKS_MAX,
 } from '../../shared/contract.ts';
+import { CHAT_PAGES_MAX, PAGE_VERSIONS_MAX } from '../../shared/pages-contract.ts';
+import { isPageKey } from '../store/page-copies.ts';
 import {
   type ChatFilesTracker,
   createChatFiles,
+  type PageCopyPort,
   PENDING_MAX,
   type ResolvePath,
   TRACKED_MAX,
@@ -849,5 +853,276 @@ describe('createChatFiles: review follow-ups', () => {
         'grep -A 3 report.md hit.md; grep -e notes.md -e y.md hit.md; git commit -am y.md',
     });
     expect(kinds(await snap(t))).toEqual([['clients/acme/hit.md', ['read']]]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pages (plan docs/plans/2026-11-14-artifacts-in-app.md, decisions 1 and 2)
+// ---------------------------------------------------------------------------
+
+interface FixtureCall {
+  name: string;
+  input: Record<string, unknown>;
+  is_error: boolean;
+  result: unknown;
+}
+const FIXTURE = JSON.parse(
+  readFileSync(new URL('../../test/fixtures/artifact-calls.json', import.meta.url), 'utf8'),
+) as { calls: FixtureCall[] };
+const call = (name: string): FixtureCall => {
+  const c = FIXTURE.calls.find((x) => x.name === name);
+  if (!c) throw new Error(`no fixture ${name}`);
+  return c;
+};
+
+/** Copies the fake way: a source "exists" when it is in `sources`; `held` is what is on disk. */
+function fakePages() {
+  const sources = new Map<string, string>();
+  const held = new Map<string, string>();
+  const copies: string[] = [];
+  const looks: string[] = [];
+  let evict: { key: string; n: number }[] = [];
+  const port: PageCopyPort = {
+    async copy(key, n, filePath) {
+      copies.push(`${key}/${n}`);
+      const title = sources.get(filePath);
+      if (title === undefined) return null;
+      held.set(`${key}/${n}`, title);
+      const evicted = evict;
+      evict = [];
+      for (const e of evicted) held.delete(`${e.key}/${e.n}`);
+      return { title, evicted };
+    },
+    async held(key, n) {
+      looks.push(`${key}/${n}`);
+      const title = held.get(`${key}/${n}`);
+      return title === undefined ? null : { title };
+    },
+  };
+  return {
+    port,
+    sources,
+    held,
+    copies,
+    looks,
+    evictNext: (e: { key: string; n: number }[]) => {
+      evict = e;
+    },
+  };
+}
+
+function setupPages(over: { now?: () => Date } = {}) {
+  const brain = fakeBrain();
+  const pages = fakePages();
+  const t = createChatFiles({ brainRoots: [ROOT, REAL], resolve: brain.resolve, pages: pages.port, ...over });
+  return { ...brain, pages, t };
+}
+
+function publish(
+  t: ChatFilesTracker,
+  c: Pick<FixtureCall, 'input' | 'is_error' | 'result'>,
+  o: { parent?: string | null; history?: boolean } = {},
+): string {
+  const u = use('Artifact', c.input, o.parent ?? null);
+  t.observe(u.msg, { history: o.history });
+  t.observe(
+    {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: u.id, is_error: c.is_error, content: c.result }],
+      },
+      parent_tool_use_id: o.parent ?? null,
+    },
+    { history: o.history },
+  );
+  return u.id;
+}
+
+/** A publish of `path` that claude.ai answered with `url`, version `remote`. */
+function pub(path: string, url: string, remote: number | null = 1) {
+  return {
+    input: { file_path: path },
+    is_error: false,
+    result: `Published ${path} at ${url}${remote === null ? '' : ` (Version ${remote}, version id 1-a)`}`,
+  };
+}
+
+const pagesOf = (s: ChatFilesSnapshot) => s.pages ?? [];
+
+describe('createChatFiles: pages', () => {
+  it('follows every fixture call: publishes and republishes count, nothing else does', async () => {
+    const { t, pages } = setupPages();
+    const ids = FIXTURE.calls.map((c) => publish(t, c));
+    const byName = (name: string) => ids[FIXTURE.calls.findIndex((c) => c.name === name)];
+    pages.sources.set(call('new page').input.file_path as string, 'Budget');
+    const s = pagesOf(await snap(t));
+    expect(s.map((p) => p.url)).toEqual([
+      'https://claude.ai/artifact/BlOcKs00000000000000aa',
+      'https://claude.ai/artifact/CaPaB1l1t1e5000000000x',
+      'https://claude.ai/code/artifact/0b5c3c2e-1111-4a2b-9c3d-123456789abc',
+      'https://claude.ai/artifact/ZzYyXx9876543210abcDef',
+      'https://claude.ai/artifact/AbCdEf0123456789xyzQrs',
+    ]);
+    const budget = s[4];
+    expect(budget?.versions.map((v) => [v.n, v.remote])).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(budget?.toolUseIds).toEqual([byName('new page'), byName('republish same file, no url')]);
+    expect(s[3]?.versions.map((v) => v.remote)).toEqual([3]);
+    expect(s[2]?.multiFile).toBe(true);
+    expect(s[2]?.live).toBe(false);
+    expect(s[1]?.live).toBe(true);
+    expect(s[1]?.multiFile).toBe(false);
+    for (const p of s) expect(isPageKey(p.key)).toBe(true);
+    expect(new Set(s.map((p) => p.key)).size).toBe(5);
+  });
+
+  it('keeps a page’s key from its first publish, and copies each version as it lands', async () => {
+    const now = new Date('2026-11-14T10:00:00.000Z');
+    const { t, pages } = setupPages({ now: () => now });
+    const path = '/private/tmp/claude-501/p/scratchpad/plan.html';
+    const url = 'https://claude.ai/artifact/PlAn0000000000000000aa';
+    pages.sources.set(path, 'The plan');
+    publish(t, pub(path, url, 1));
+    const first = pagesOf(await snap(t))[0];
+    expect(first).toMatchObject({ title: 'The plan', url, live: false, multiFile: false });
+    expect(first?.versions).toEqual([{ n: 1, remote: 1, at: now.toISOString(), hasCopy: true }]);
+    // The same address with a trailing slash is the same page.
+    publish(t, pub(path, `${url}/`, 2));
+    const again = pagesOf(await snap(t));
+    expect(again).toHaveLength(1);
+    expect(again[0]?.key).toBe(first?.key);
+    expect(again[0]?.versions.map((v) => v.n)).toEqual([1, 2]);
+    expect(pages.copies).toEqual([`${first?.key}/1`, `${first?.key}/2`]);
+    expect(t.page(first?.key as string)).toEqual({
+      title: 'The plan',
+      url,
+      filePath: path,
+      newest: 2,
+      versions: [
+        { n: 1, hasCopy: true },
+        { n: 2, hasCopy: true },
+      ],
+    });
+    expect(t.page('nope')).toBeNull();
+  });
+
+  it('shows a version it could not copy as not kept, named after its file', async () => {
+    const { t } = setupPages();
+    publish(
+      t,
+      pub('/private/tmp/claude-501/p/q/big-report.html', 'https://claude.ai/artifact/BiG00000000000000000aa'),
+    );
+    const [p] = pagesOf(await snap(t));
+    expect(p?.title).toBe('big-report');
+    expect(p?.versions[0]?.hasCopy).toBe(false);
+  });
+
+  it('counts a helper’s publish', async () => {
+    const { t } = setupPages();
+    const id = publish(t, call('new page'), { parent: 'toolu_helper' });
+    expect(pagesOf(await snap(t))[0]?.toolUseIds).toEqual([id]);
+  });
+
+  it('leaves a page’s address out of the web links', async () => {
+    const { t } = setupPages();
+    publish(t, call('new page'));
+    t.observe(
+      say(
+        'Here it is: https://claude.ai/artifact/AbCdEf0123456789xyzQrs and the docs at https://example.com/docs',
+      ),
+    );
+    const s = await snap(t);
+    expect(s.links).toEqual([{ url: 'https://example.com/docs' }]);
+    expect(pagesOf(s)).toHaveLength(1);
+  });
+
+  it('leaves `pages` out of a snapshot for a chat with none (as before)', async () => {
+    const { t } = setupPages();
+    publish(t, call('quickstart (mentions artifact addresses, not a publish)'));
+    t.observe(say('See https://example.com/a'));
+    const s = await snap(t);
+    expect('pages' in s).toBe(false);
+  });
+
+  it('rebuilds the same pages from history, reusing copies and copying only a missing newest version', async () => {
+    const live = setupPages();
+    const path = call('new page').input.file_path as string;
+    publish(live.t, call('new page'));
+    publish(live.t, call('republish same file, no url'));
+    const liveSnap = pagesOf(await snap(live.t));
+
+    const { t, pages } = setupPages();
+    const key = liveSnap[0]?.key as string;
+    pages.held.set(`${key}/1`, 'Budget v1');
+    pages.sources.set(path, 'Budget now');
+    publish(t, call('new page'), { history: true });
+    publish(t, call('republish same file, no url'), { history: true });
+    const s = pagesOf(await snap(t));
+    expect(s.map((p) => p.key)).toEqual([key]);
+    expect(s[0]?.versions).toEqual([
+      { n: 1, remote: 1, at: null, hasCopy: true },
+      { n: 2, remote: 2, at: null, hasCopy: true },
+    ]);
+    expect(pages.copies).toEqual([`${key}/2`]);
+    expect(s[0]?.title).toBe('Budget now');
+
+    // Reopened again: both copies are on disk now, so nothing is copied.
+    const again = setupPages();
+    again.pages.held.set(`${key}/1`, 'Budget v1');
+    again.pages.held.set(`${key}/2`, 'Budget now');
+    publish(again.t, call('new page'), { history: true });
+    publish(again.t, call('republish same file, no url'), { history: true });
+    await snap(again.t);
+    expect(again.pages.copies).toEqual([]);
+  });
+
+  it('never copies an older version from history (it would get today’s content)', async () => {
+    const { t, pages } = setupPages();
+    pages.sources.set(call('new page').input.file_path as string, 'B');
+    publish(t, call('new page'), { history: true });
+    publish(t, call('republish same file, no url'), { history: true });
+    const [p] = pagesOf(await snap(t));
+    expect(pages.copies).toEqual([`${p?.key}/2`]);
+    expect(p?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
+  });
+
+  it('marks versions whose copies made room for a newer one as not kept', async () => {
+    const { t, pages } = setupPages();
+    const path = '/private/tmp/claude-501/p/a.html';
+    const url = 'https://claude.ai/artifact/EvIcT000000000000000aa';
+    pages.sources.set(path, 'A');
+    publish(t, pub(path, url, 1));
+    const key = pagesOf(await snap(t))[0]?.key as string;
+    pages.evictNext([{ key, n: 1 }]);
+    publish(t, pub(path, url, 2));
+    expect(pagesOf(await snap(t))[0]?.versions.map((v) => v.hasCopy)).toEqual([false, true]);
+  });
+
+  it('keeps at most PAGE_VERSIONS_MAX versions and CHAT_PAGES_MAX pages, newest first', async () => {
+    const { t } = setupPages();
+    const path = '/private/tmp/claude-501/p/v.html';
+    for (let i = 1; i <= PAGE_VERSIONS_MAX + 5; i++)
+      publish(t, pub(path, 'https://claude.ai/artifact/VeRs', i));
+    const [p] = pagesOf(await snap(t));
+    expect(p?.versions).toHaveLength(PAGE_VERSIONS_MAX);
+    expect(p?.versions[0]?.n).toBe(6);
+    for (let i = 0; i < CHAT_PAGES_MAX + 5; i++) {
+      publish(t, pub(`/private/tmp/claude-501/p/p${i}.html`, `https://claude.ai/artifact/MaNy${i}`));
+    }
+    const s = pagesOf(await snap(t));
+    expect(s).toHaveLength(CHAT_PAGES_MAX);
+    expect(s[0]?.url).toBe(`https://claude.ai/artifact/MaNy${CHAT_PAGES_MAX + 4}`);
+    expect(s.map((x) => x.order)).toEqual([...s.map((x) => x.order)].sort((a, b) => b - a));
+  });
+
+  it('works without a copy store: pages are listed, none kept', async () => {
+    const { t } = setup();
+    publish(t, call('new page'));
+    const [p] = pagesOf(await snap(t));
+    expect(p?.versions[0]?.hasCopy).toBe(false);
+    expect(p?.title).toBe('budget-tracker');
   });
 });

@@ -42,6 +42,7 @@ import { createAppStore } from './store/app-store.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
+import { createPageCopies, type PageCopyStore } from './store/page-copies.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
@@ -93,6 +94,7 @@ function buildBrainSide(path: string | null) {
       thumbs: createSetupThumbs(),
       uploads: createSetupUploads(),
       sessions: createSetupSessions(),
+      pageCopies: null,
     };
   }
   // Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
@@ -110,6 +112,9 @@ function buildBrainSide(path: string | null) {
   };
   const levelOptions = { levels, chatLevels: createChatLevelStore(config.dataDir) };
   const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
+  // Pages Claude publishes (plan 2026-11-14-artifacts-in-app): copied into the app's data folder, never
+  // the brain. Sources may sit in Claude's temporary folder or the brain (each chat's folder is the brain).
+  const pageCopies: PageCopyStore = createPageCopies({ dataDir: config.dataDir, roots: [path], log });
   const sessions = createSessionManager({
     ...levelOptions,
     brain,
@@ -121,11 +126,12 @@ function buildBrainSide(path: string | null) {
     uploads,
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
+    pageCopies,
   });
-  return { brain, thumbs, uploads, sessions, skillLevels };
+  return { brain, thumbs, uploads, sessions, skillLevels, pageCopies };
 }
 
-const { brain, thumbs, uploads, sessions, skillLevels } = buildBrainSide(brainPath);
+const { brain, thumbs, uploads, sessions, skillLevels, pageCopies } = buildBrainSide(brainPath);
 // The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
 void store
   .get()
@@ -219,6 +225,7 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
 
 app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
+  sweepPageCopies();
   updater.startTimer();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
@@ -258,6 +265,23 @@ function logBrainDecision(d: BrainDecision): void {
   log(
     `Brain folder ${JSON.stringify(d.tried)} (${FROM[d.source]}) can't be used (${REFUSAL_LOG[d.reason]}). Waiting for one to be chosen in the app; Claude is off.`,
   );
+}
+
+/**
+ * Once started (a second `pnpm start` that finds the port taken leaves them alone): the pages of chats
+ * whose history is gone go to the Bin. Skipped when the chats can't be listed, so a failed read never
+ * sweeps everything.
+ */
+function sweepPageCopies(): void {
+  if (!brainPath || !pageCopies) return;
+  const store = pageCopies;
+  void engine
+    .listSessions({ dir: brainPath })
+    .then((past) => store.sweep(new Set(past.map((p) => p.sessionId))))
+    .then((moved) => {
+      if (moved > 0) log(`Moved the pages of ${moved} deleted chat${moved === 1 ? '' : 's'} to the Bin.`);
+    })
+    .catch(() => log('Could not tidy the pages of deleted chats.'));
 }
 
 let shuttingDown = false;

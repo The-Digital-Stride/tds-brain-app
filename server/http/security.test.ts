@@ -1,7 +1,13 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { request } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROUTES, SESSION_COOKIE, sessionCookieName } from '../../shared/contract.ts';
 import { AUTH_COOKIE_MAX_AGE_SECONDS, PUBLIC_PATHS } from '../../shared/install-contract.ts';
+import { createBrainReaders } from '../brain/index.ts';
+import { copyFixture } from '../brain/test-helpers.ts';
 import {
   AUTH_CODE_TTL_MS,
   AUTH_PING_PATH,
@@ -18,12 +24,14 @@ import {
   MAX_BODY_BYTES,
   MAX_LIVE_CODES,
   PAGE_CSP,
+  PAGE_PREVIEW_CSP,
   parseCookies,
   pingProof,
   SECURITY_HEADERS,
   safeEqual,
   sessionSetCookie,
 } from './security.ts';
+import { type AppServer, createAppServer } from './server.ts';
 
 const PORT = 3877;
 const TOKEN = 'launch-token-abc123';
@@ -656,5 +664,168 @@ describe('session cookie name per port (a test copy never signs the live app out
     const c = createAuthCodes(TOKEN, () => 5);
     const r = authExchange(c.mint(), c, TOKEN, 3899);
     expect(r.ok && r.setCookie.startsWith(`${SESSION_COOKIE}_3899=`)).toBe(true);
+  });
+});
+
+describe('the page preview (plan 2026-11-14-artifacts-in-app, decision 3)', () => {
+  const SID = '0b5c3c2e-1111-4a2b-9c3d-123456789abc';
+  const directives = new Map(
+    PAGE_PREVIEW_CSP.split(';').map((d) => {
+      const [name = '', ...values] = d.trim().split(/\s+/);
+      return [name.toLowerCase(), values] as const;
+    }),
+  );
+
+  it('is the policy the plan fixes, word for word', () => {
+    expect(PAGE_PREVIEW_CSP).toBe(
+      "sandbox allow-scripts allow-popups; default-src 'none'; " +
+        "script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/ " +
+        'https://unpkg.com https://cdn.tailwindcss.com https://code.jquery.com; ' +
+        "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; " +
+        "img-src data: blob:; media-src data: blob:; connect-src 'none'; form-action 'none'; " +
+        "base-uri 'none'; frame-ancestors 'self'",
+    );
+  });
+
+  it('runs scripts in an opaque origin that can never escape or steer the app', () => {
+    const sandbox = directives.get('sandbox') ?? [];
+    expect(sandbox).toContain('allow-scripts');
+    for (const never of [
+      'allow-same-origin',
+      'allow-popups-to-escape-sandbox',
+      'allow-forms',
+      'allow-modals',
+    ]) {
+      expect(sandbox).not.toContain(never);
+    }
+    expect(sandbox.some((v) => v.startsWith('allow-top-navigation'))).toBe(false);
+    expect(directives.get('connect-src')).toEqual(["'none'"]);
+    expect(directives.get('frame-ancestors')).toEqual(["'self'"]);
+    expect(directives.get('default-src')).toEqual(["'none'"]);
+    // No beacon: pictures only from the page itself.
+    expect(directives.get('img-src')).toEqual(['data:', 'blob:']);
+    // The library's page policy is unchanged.
+    expect(PAGE_CSP).toBe(
+      "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'",
+    );
+  });
+
+  it('answers gate errors on the page route as a framable page; the ask route stays JSON', () => {
+    expect(isLibraryPagePath(ROUTES.chatPage(SID, 'abc_DEF-1', 3))).toBe(true);
+    expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc/x`)).toBe(true);
+    expect(isLibraryPagePath(ROUTES.chatPageAsk(SID, 'abc_DEF-1'))).toBe(false);
+    expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc`)).toBe(false);
+    expect(isLibraryPagePath(`/api/sessions/${SID}/pages/abc/1/x`)).toBe(false);
+    expect(isLibraryPagePath(`/api/sessions/${SID}/file-changes/abc`)).toBe(false);
+  });
+
+  it('lets the viewer frame a page, and refuses a page’s own requests (null or foreign origin)', () => {
+    const path = ROUTES.chatPage(SID, 'abc', 1);
+    const frame = { 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': 'iframe' };
+    expect(checkRequest(req({ path, headers: frame }), ctx)).toEqual({ action: 'allow' });
+    expect(checkRequest(req({ path, headers: { ...frame, cookie: undefined } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 401,
+    });
+    expect(checkRequest(req({ path, headers: { origin: 'null' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+    expect(checkRequest(req({ path, headers: { 'sec-fetch-site': 'cross-site' } }), ctx)).toMatchObject({
+      action: 'reject',
+      status: 403,
+    });
+  });
+
+  it('takes the ask as JSON from the app only (the gate the client really meets)', () => {
+    const path = ROUTES.chatPageAsk(SID, 'abc');
+    const good = { origin: ORIGIN, 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' };
+    expect(checkRequest(req({ method: 'POST', path, headers: good }), ctx)).toEqual({ action: 'allow' });
+    expect(
+      checkRequest(req({ method: 'POST', path, headers: { ...good, 'content-type': 'text/plain' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 415 });
+    expect(
+      checkRequest(req({ method: 'POST', path, headers: { ...good, origin: undefined } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+    expect(
+      checkRequest(req({ method: 'POST', path, headers: { ...good, origin: 'null' } }), ctx),
+    ).toMatchObject({ action: 'reject', status: 403 });
+  });
+});
+
+describe('the page preview through the real server', () => {
+  const SID = 'live-chat-1';
+  const KEY = 'pAgEkEy_01';
+  let app: AppServer;
+  let port: number;
+  const clientDir = mkdtempSync(join(tmpdir(), 'tba-sec-client-'));
+
+  beforeAll(async () => {
+    app = createAppServer({
+      port: PORT,
+      clientDir,
+      launchToken: TOKEN,
+      authCodes: createAuthCodes(TOKEN),
+      appVersion: '0',
+      underService: false,
+      brain: createBrainReaders(copyFixture()),
+      store: {} as never,
+      sessions: {
+        onChange: () => () => {},
+        pageCopy: async (id: string, key: string, n: number) =>
+          id === SID && key === KEY && n === 1 ? Buffer.from('<p>Hi</p>') : null,
+      } as never,
+      thumbs: {} as never,
+      uploads: {} as never,
+      engineHealth: () => ({}) as never,
+      appState: { kind: 'ready' },
+      setup: {} as never,
+    });
+    await new Promise<void>((done) => app.server.listen(0, '127.0.0.1', done));
+    port = (app.server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    app.stop();
+    await new Promise((done) => app.server.close(done));
+    rmSync(clientDir, { recursive: true, force: true });
+  });
+
+  function get(path: string, headers: Record<string, string> = {}) {
+    return new Promise<{ status: number; raw: string[]; body: string }>((resolve, reject) => {
+      const r = request(
+        { host: '127.0.0.1', port, path, headers: { host: `127.0.0.1:${PORT}`, ...headers } },
+        (res) => {
+          let body = '';
+          res.on('data', (c: Buffer) => {
+            body += c.toString();
+          });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, raw: res.rawHeaders, body }));
+        },
+      );
+      r.on('error', reject);
+      r.end();
+    });
+  }
+  const csps = (raw: string[]) =>
+    raw.filter((_, i) => i % 2 === 1 && raw[i - 1]?.toLowerCase() === 'content-security-policy');
+
+  it('sends exactly one policy, the preview one, on a page and on a miss', async () => {
+    const cookie = `${SESSION_COOKIE}=${COOKIE}`;
+    const ok = await get(ROUTES.chatPage(SID, KEY, 1), { cookie });
+    expect(ok.status).toBe(200);
+    expect(csps(ok.raw)).toEqual([PAGE_PREVIEW_CSP]);
+    expect(ok.body).toContain('<p>Hi</p>');
+    const miss = await get(ROUTES.chatPage(SID, KEY, 2), { cookie });
+    expect(miss.status).toBe(404);
+    expect(csps(miss.raw)).toEqual([PAGE_PREVIEW_CSP]);
+  });
+
+  it('answers a gate refusal on the page route as a framable page, not JSON', async () => {
+    const refused = await get(ROUTES.chatPage(SID, KEY, 1));
+    expect(refused.status).toBe(401);
+    expect(csps(refused.raw)).toHaveLength(1);
+    expect(csps(refused.raw)[0]).toContain("frame-ancestors 'self'");
+    expect(refused.body).toMatch(/^<!doctype html>/);
   });
 });

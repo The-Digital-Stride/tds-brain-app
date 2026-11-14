@@ -168,6 +168,7 @@ export type IconName =
   | 'sheet'
   | 'slides'
   | 'stop'
+  | 'send'
   | 'paperclip'
   | 'plus'
   | 'lock'

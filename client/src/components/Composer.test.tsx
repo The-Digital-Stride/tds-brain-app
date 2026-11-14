@@ -86,9 +86,9 @@ describe('Composer tools and pending sends', () => {
 });
 
 describe('Send and Stop (Ian, 2026-11-14)', () => {
-  it('shows a green Send while Claude is idle', () => {
+  it('shows a navy Send while Claude is idle', () => {
     setup();
-    expect(screen.getByRole('button', { name: 'Send' }).getAttribute('data-variant')).toBe('send');
+    expect(screen.getByRole('button', { name: 'Send' }).getAttribute('data-variant')).toBe('primary');
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
   });
 

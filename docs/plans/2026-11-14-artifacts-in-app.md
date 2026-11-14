@@ -128,6 +128,34 @@ O7. **Branding note:** tell Claude to move the staged file with a shell command 
 O8. **Only real pages:** a written `.html` is a page only if it has a `<title>` or a doctype (keeps
    fragments such as tds-doc's `body.html` out).
 
+### Revision 3 (user, after trying the preview)
+
+The user opened the test page in Documents and its chart was blank, and asked that it "must build a
+self contained HTML file". Cause: Documents shows HTML under `PAGE_CSP` with `sandbox=""` (no
+scripts at all), and the page loads Chart.js from a CDN.
+
+R7. **Documents runs an HTML file's scripts, locked down like the page viewer.** `GET
+   ROUTES.libraryPage` sends a successful HTML file under `PAGE_PREVIEW_CSP` (errors and gate
+   refusals keep `PAGE_CSP`), and the Documents/Images viewer frame (`client/src/apps/shared/Viewer.tsx`)
+   uses `sandbox="allow-scripts allow-popups"` with the same second-load guard as `PageStage` (moved
+   to a small shared hook, `useFrameGuard`, used by both). Never `allow-same-origin`.
+   Plain: charts and interactive parts of any HTML file in the brain show in Documents too, still
+   unable to reach the app.
+
+R8. **The branded file is self-contained.** When building a branded copy (download and filing), the
+   server inlines what the page loads from the allowed sources: `<script src>` from
+   cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, code.jquery.com and cdn.tailwindcss.com
+   become inline `<script>` (any `</script` inside escaped as `<\/script`); `<link rel="stylesheet">`
+   from fonts.googleapis.com becomes `<style>`, with each `fonts.gstatic.com` font inside it turned
+   into a `data:` address. New `server/store/asset-cache.ts`: https only, exactly those hosts (port
+   443, no credentials), redirects only within the same host, 10 s timeout, 5 MB per file and 25 MB
+   per page, cached by address in `<dataDir>/asset-cache/` (0o700/0o600) so each library is fetched
+   once. Anything not on the list, or that fails, is left as it is.
+   The download is fetched by the viewer (not a plain link) so it can read `X-Page-Self-Contained:
+   yes|partial`; on `partial` the status line says "Downloaded. Some parts still need the internet
+   to show." The filing message (`brandingMessage`) is unchanged.
+   Plain: the copy you send a client works offline, in any browser, charts included.
+
 ## Decisions
 
 1. **Follow Artifact publishes in the chat-files tracker.** `server/engine/chat-files.ts` `observe`

@@ -250,18 +250,25 @@ header.bar{flex:none;height:56px;display:flex;align-items:center;gap:14px;paddin
 iframe.page{flex:1 1 auto;min-height:0;width:100%;border:0;background:#fff}
 @media (max-width:640px){header.bar{padding:0 12px;gap:10px}.bar-brand{gap:10px}.bar-sep{display:none}.bar-logo{width:${Math.round(LOGO_W * 0.75)}px;height:${Math.round(LOGO_H * 0.75)}px}.bar-title strong{font-size:13px}.bar-title span{font-size:11px}}`;
 
-/** The brain's sprite is trusted data, but a sprite carrying script or an outside address is dropped. */
-function usableSprite(sprite: string | null): string | null {
+/**
+ * The logo as a picture: the sprite's `<symbol id="tds">` turned into a standalone SVG (white where it
+ * says `currentColor`, for the navy bar) inside an `<img>` data address. An SVG shown as an image runs
+ * no script and loads nothing (SVG 2, secure static mode), so whatever the brain's file holds can't
+ * act in the client's copy; no deny-list needed. Null (text wordmark) when there's no usable symbol.
+ */
+function logoImage(sprite: string | null): string | null {
   if (!sprite) return null;
-  if (/<script|\son\w+\s*=|javascript:|<foreignObject/i.test(sprite)) return null;
-  return /<symbol[^>]*\sid="tds"/.test(sprite) ? sprite.trim() : null;
+  const m = /<symbol\b([^>]*)>([\s\S]*?)<\/symbol>/i.exec(sprite);
+  if (!m || !/\sid="tds"/.test(m[1] ?? '')) return null;
+  const viewBox = /\sviewBox="([\d.\s-]+)"/.exec(m[1] ?? '')?.[1];
+  if (!viewBox) return null;
+  const inner = (m[2] ?? '').replace(/currentColor/g, '#FFFFFF');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">${inner}</svg>`;
+  return `<img class="bar-logo" alt="The Digital Stride" src="data:image/svg+xml,${encodeURIComponent(svg)}">`;
 }
 
 export function brandedPage(html: string, meta: BrandMeta): string {
-  const sprite = usableSprite(meta.logoSprite);
-  const brand = sprite
-    ? `${sprite}\n<svg class="bar-logo" viewBox="0 0 1250.47 476.91" role="img" aria-label="The Digital Stride"><use href="#tds"/></svg>`
-    : '<span class="bar-wordmark">The Digital Stride</span>';
+  const brand = logoImage(meta.logoSprite) ?? '<span class="bar-wordmark">The Digital Stride</span>';
   const title = esc(meta.title);
   const line = [
     meta.client ? esc(meta.client) : null,

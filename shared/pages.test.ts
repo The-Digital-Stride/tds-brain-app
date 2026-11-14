@@ -357,12 +357,23 @@ describe('brandedPage', () => {
     const none = brandedPage('x', { ...META, client: null });
     expect(none).toContain('<span>14 November 2026 · Prepared by The Digital Stride</span>');
   });
-  it('uses the sprite, or a text wordmark without one', () => {
-    expect(brandedPage('x', META)).toContain('<use href="#tds"/>');
+  it('shows the logo as a picture, or a text wordmark without one', () => {
+    const out = brandedPage('x', META);
+    expect(out).toContain('<img class="bar-logo" alt="The Digital Stride" src="data:image/svg+xml,');
+    expect(out).not.toContain('<symbol');
     const text = brandedPage('x', { ...META, logoSprite: null });
     expect(text).toContain('The Digital Stride</span>');
-    expect(text).not.toContain('<use');
-    expect(brandedPage('x', { ...META, logoSprite: '<svg><script>x</script></svg>' })).not.toContain('<use');
+    expect(text).not.toContain('<img');
+    expect(brandedPage('x', { ...META, logoSprite: '<svg><script>x</script></svg>' })).not.toContain('<img');
+  });
+  it('can never run anything a logo file holds: it only ever appears inside an image address', () => {
+    // Both of these got past the old deny-list (security review, round 2).
+    for (const evil of ['<svg/onload=alert(1)>', '<a href="javascript&#58;alert(1)">x</a>']) {
+      const sprite = `<svg><symbol id="tds" viewBox="0 0 10 10">${evil}<path d="M0 0h1"/></symbol></svg>`;
+      const out = brandedPage('x', { ...META, logoSprite: sprite });
+      const outside = out.replace(/src="data:image\/svg\+xml,[^"]*"/, '');
+      expect(outside).not.toMatch(/onload|javascript/i);
+    }
   });
   it('has a navy fixed-height bar, a filling frame and a phone breakpoint', () => {
     const out = brandedPage('x', META);

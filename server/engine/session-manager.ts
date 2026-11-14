@@ -24,6 +24,7 @@ import {
   type BrainReaders,
   type ChatEvent,
   type ChatFileChanges,
+  type ChatKind,
   EFFORT_LEVELS,
   type EffortLevel,
   type EngineChoice,
@@ -43,6 +44,7 @@ import {
   type StartSessionRequest,
   UPLOAD_TYPES,
 } from '../../shared/contract.ts';
+import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   type ChatFilesTracker,
@@ -135,6 +137,8 @@ export interface SessionManagerOptions {
    * token in runtime.json, the prefs and library stores, and their temporary copies).
    */
   dataDir?: string;
+  /** Which chats are personal. Without it the kinds are kept in memory only. */
+  chatKinds?: ChatKindStore;
 }
 
 export class SessionError extends Error {
@@ -160,6 +164,11 @@ export interface SessionManager {
   replyQuestion(id: string, reply: QuestionReply): Promise<void>;
   interrupt(id: string): Promise<void>;
   close(id: string): Promise<void>;
+  /**
+   * Marks a live chat TDS or Personal and saves it (at once when the engine's id is known, else when
+   * it arrives). Throws `bad-request` for another kind, `not-found` / `session-closed` for the chat.
+   */
+  setKind(id: string, kind: ChatKind): Promise<LiveSession>;
   closeAll(): Promise<void>;
   /** Events with seq > after, then live ones. Throws `not-found` / `session-closed`. */
   subscribe(id: string, after: number, listener: (item: SequencedEvent) => void): Subscription;
@@ -458,6 +467,7 @@ interface Session {
   client: string | null;
   /** The to-do this chat was started on (A19), kept while the chat is open. */
   todoId: string | null;
+  kind: ChatKind;
   appendLine: string;
   state: SessionState;
   startedAt: string;
@@ -595,6 +605,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   let choice: EngineChoice = { model: null, effort: null };
   /** The newest engine's model list, kept for Settings (null until an engine has answered). */
   let modelList: ModelChoice[] | null = null;
+  const chatKinds = opts.chatKinds ?? createChatKindStore(null);
   const live = new Map<string, Session>();
   const closedIds = new Set<string>();
   const changeListeners = new Set<() => void>();
@@ -686,6 +697,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       title: s.title,
       client: s.client,
       todoId: s.todoId,
+      kind: s.kind,
       state: s.state,
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,
@@ -719,6 +731,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     title: string;
     client: string | null;
     todoId: string | null;
+    kind: ChatKind;
     sdkSessionId: string | null;
   }): Session {
     const now = new Date();
@@ -728,6 +741,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       title: fields.title,
       client: fields.client,
       todoId: fields.todoId,
+      kind: fields.kind,
       appendLine: fields.client ? `${clientLine(fields.client)}\n${FILES_LINE}` : FILES_LINE,
       state: 'idle',
       startedAt: now.toISOString(),
@@ -880,6 +894,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const sid = typeof raw.session_id === 'string' ? raw.session_id : null;
       if (sid && sid !== s.sdkSessionId) {
         s.sdkSessionId = sid;
+        // A personal chat is saved under every id it gets (the old entry stays).
+        if (s.kind === 'personal') void chatKinds.set(sid, 'personal');
         notifyChanged();
       }
       if (s.turnRunning && s.state === 'starting') setState(s, 'working');
@@ -1308,6 +1324,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         .map(snapshot)
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
       const liveIds = new Set(liveList.map((s) => s.sdkSessionId).filter(Boolean));
+      // If the saved kinds cannot be read, every earlier chat counts as TDS.
+      const personal = await chatKinds.personal().catch(() => new Set<string>());
       const past: PastSession[] = (await listPast())
         .filter((p) => typeof p.sessionId === 'string' && !liveIds.has(p.sessionId))
         .sort((a, b) => b.lastModified - a.lastModified)
@@ -1315,6 +1333,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           sdkSessionId: p.sessionId,
           title: pastTitle(p, 'Untitled chat'),
           lastModified: new Date(p.lastModified).toISOString(),
+          kind: personal.has(p.sessionId) ? 'personal' : 'tds',
         }));
       return { live: liveList, past };
     },
@@ -1343,6 +1362,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (prompt) await checkSkill(prompt);
 
       let client: string | null = null;
+      let kind: ChatKind = 'tds';
       let title = prompt ? makeTitle(prompt) : peeked[0] ? makeTitle(peeked[0].name) : 'Chat';
       if (resume) {
         if ([...live.values()].some((s) => s.sdkSessionId === resume)) {
@@ -1351,6 +1371,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         const past = (await listPast()).find((p) => p.sessionId === resume);
         if (!past) throw new SessionError('not-found', 'That past chat could not be found.');
         title = pastTitle(past, 'Earlier chat');
+        // Read here, in the awaited part: never between the re-check below and `live.set`.
+        kind = await chatKinds.kindOf(resume).catch(() => 'tds' as const);
       } else if (req.client !== undefined && req.client !== null) {
         const slug = req.client;
         const known = typeof slug === 'string' && (await opts.brain.clients()).some((c) => c.slug === slug);
@@ -1366,7 +1388,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           const identity = await opts.brain.identity();
           const list = await opts.brain.todos(identity);
           // Sessions store the `key`: a bare id for TDS (as before), `personal/<id>` for personal.
-          listed = [...list.mine, ...list.open].find((t) => t.key === id)?.key ?? null;
+          const found = [...list.mine, ...list.open].find((t) => t.key === id);
+          listed = found?.key ?? null;
+          if (found) kind = found.scope;
         }
         if (!listed) throw new SessionError('bad-request', 'That to-do is not on your list any more.');
         todoId = listed;
@@ -1381,7 +1405,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const claim = claimFiles(ids);
       try {
         makeRoom();
-        const s = newSession({ title, client, todoId, sdkSessionId: resume });
+        const s = newSession({ title, client, todoId, kind, sdkSessionId: resume });
         live.set(s.id, s);
         notifyChanged();
         log(resume ? 'Reopened a past chat.' : 'Started a chat.');
@@ -1522,6 +1546,17 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         throw new SessionError('not-found', 'That chat could not be found.');
       }
       await closeSession(s);
+    },
+
+    async setKind(id, kind) {
+      const s = getLive(id);
+      if (kind !== 'tds' && kind !== 'personal') {
+        throw new SessionError('bad-request', 'Choose TDS or Personal.');
+      }
+      s.kind = kind;
+      if (s.sdkSessionId) void chatKinds.set(s.sdkSessionId, kind);
+      notifyChanged();
+      return snapshot(s);
     },
 
     async closeAll() {

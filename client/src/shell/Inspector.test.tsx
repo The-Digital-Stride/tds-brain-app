@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession } from '../../../shared/contract.ts';
 import type { ChatState } from '../state/chat-reducer.ts';
@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   activeChat: { kind: 'live', sessionId: 's1' } as unknown,
   chat: undefined as unknown,
   live: null as unknown,
+  setChatKind: vi.fn(),
 }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
@@ -18,10 +19,11 @@ vi.mock('../store.tsx', () => ({
       engine: { permissionMode: 'default' },
     },
     activeChat: h.activeChat,
+    setChatKind: h.setChatKind,
     chats: h.chat ? { s1: h.chat } : {},
     sessions: { live: h.live ? [h.live] : [], past: [] },
     todos: {
-      mine: [{ id: '20261111-board.md', title: 'Write the call tracking case' }],
+      mine: [{ key: '20261111-board.md', title: 'Write the call tracking case' }],
       open: [],
       othersCount: 0,
     },
@@ -40,6 +42,7 @@ const liveChat = (over: Partial<LiveSession> = {}): LiveSession => ({
   state: 'idle',
   startedAt: '2026-11-11T16:42:00.000Z',
   lastActivityAt: '2026-11-11T16:50:00.000Z',
+  kind: 'tds',
   ...over,
 });
 
@@ -66,6 +69,7 @@ function renderPanel() {
 beforeEach(() => {
   h.role = 'scout';
   h.activeChat = { kind: 'live', sessionId: 's1' };
+  h.setChatKind.mockReset();
   h.live = liveChat();
   h.chat = chatState([
     { kind: 'user', id: 'u', text: 'hi' },
@@ -100,7 +104,15 @@ describe('the "This chat" panel', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
     expect(screen.getByRole('radio', { name: 'Details' }).getAttribute('aria-checked')).toBe('true');
     const terms = Array.from(document.querySelectorAll('dt')).map((d) => d.textContent);
-    expect(terms).toEqual(['Client', 'To-do', 'Started', 'State', 'Approvals', 'Continue in the terminal']);
+    expect(terms).toEqual([
+      'Client',
+      'Kind',
+      'To-do',
+      'Started',
+      'State',
+      'Approvals',
+      'Continue in the terminal',
+    ]);
     expect(screen.getByText('Acme Heating')).toBeTruthy();
     expect(screen.getByText('Write the call tracking case')).toBeTruthy();
     expect(screen.getByText('Working')).toBeTruthy();
@@ -132,6 +144,16 @@ describe('the "This chat" panel', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
     expect(screen.queryByText(/claude --resume/)).toBeNull();
     expect(screen.queryByText('Continue in the terminal')).toBeNull();
+  });
+
+  it('shows the chat kind and switches it', () => {
+    h.live = liveChat({ kind: 'personal' });
+    renderPanel();
+    fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
+    const group = screen.getByRole('radiogroup', { name: 'Kind of chat' });
+    expect(within(group).getByRole('radio', { name: 'Personal' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'TDS' }));
+    expect(h.setChatKind).toHaveBeenCalledWith('s1', 'tds');
   });
 
   it('renders nothing on Home (a new chat)', () => {

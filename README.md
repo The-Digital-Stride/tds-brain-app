@@ -20,6 +20,9 @@ here is published.**
 - **Chats**: talk to Claude in the brain folder, as in the terminal. Approvals and Claude's questions
   appear as cards in the chat. Up to four chats can be open at once; past chats can be reopened.
   The approval mode follows your Claude Code settings (never "skip permissions").
+  A chat is TDS or Personal: one started from a personal to-do is Personal, and "This chat" → Details → Kind
+  changes it. Once any chat is Personal, the Chats drawer filters by kind (All / TDS / Personal), like To-dos.
+  The app keeps which chats are personal in its own data folder (`chat-kinds.json`), never in the brain.
 - **Attachments**: drop files on a chat, paste a screenshot, or use the paperclip (up to 10 files,
   32 MB each; documents, spreadsheets, slides, text and pictures). Claude files every attachment in
   the brain where `.claude/rules/save-locations.md` says, asks if the client or folder isn't clear,

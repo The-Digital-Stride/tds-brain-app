@@ -74,6 +74,7 @@ export function createSetupSessions(): SessionManager {
     replyQuestion: notFound,
     interrupt: notFound,
     close: notFound,
+    setKind: notFound,
     closeAll: async () => {},
     subscribe: () => {
       throw new SessionError('not-found', NO_CHAT);

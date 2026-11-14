@@ -112,6 +112,7 @@ const chat = (
   state,
   startedAt: '',
   lastActivityAt: '2026-11-11T10:00:00.000Z',
+  kind: 'tds',
 });
 
 const todoList = {
@@ -444,7 +445,9 @@ describe('global search', () => {
   it('finds an earlier chat by title and reopens it', async () => {
     api.sessions.mockResolvedValue({
       live: [],
-      past: [{ sdkSessionId: 'sdk-1', title: 'Old SEO audit', lastModified: '2026-11-01T10:00:00Z' }],
+      past: [
+        { sdkSessionId: 'sdk-1', title: 'Old SEO audit', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' },
+      ],
     });
     api.startSession.mockResolvedValue({
       session: { ...chat('s9', 'Old SEO audit', 'idle'), sdkSessionId: 'sdk-1' },

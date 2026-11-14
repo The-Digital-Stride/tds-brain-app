@@ -73,6 +73,7 @@ const liveChat: LiveSession = {
   state: 'idle',
   startedAt: '',
   lastActivityAt: '',
+  kind: 'tds',
 };
 
 function chatEvent(seq: number, event: ChatEvent) {

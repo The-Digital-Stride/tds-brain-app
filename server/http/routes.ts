@@ -821,7 +821,7 @@ async function libraryRoute(
   return true;
 }
 
-const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close)$/;
+const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
 
 function methodNotAllowed(): HttpError {
@@ -1116,6 +1116,11 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     }
     const body = await readJson(req);
     if (!isRec(body)) throw new HttpError(400, 'bad-request', 'That request was not understood.');
+    if (m[2] === 'kind') {
+      if (!isTodoScope(body.kind)) throw new HttpError(400, 'bad-request', 'Choose TDS or Personal.');
+      sendJson(res, 200, { session: await ctx.sessions.setKind(id, body.kind) });
+      return;
+    }
     switch (m[2]) {
       case 'messages':
         // The text is validated by the session manager.

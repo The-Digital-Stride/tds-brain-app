@@ -33,6 +33,7 @@ const live = (state: LiveSession['state']): LiveSession => ({
   state,
   startedAt: '',
   lastActivityAt: '',
+  kind: 'tds',
 });
 
 describe('todoChatDraft', () => {

@@ -101,6 +101,7 @@ const chat = (
   state,
   startedAt: '',
   lastActivityAt: '2026-11-11T10:00:00.000Z',
+  kind: 'tds',
 });
 
 const todoList = {

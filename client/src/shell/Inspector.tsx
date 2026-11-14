@@ -1,3 +1,4 @@
+import type { ChatKind } from '../../../shared/contract.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
@@ -19,7 +20,7 @@ const TABS: { value: PanelTab; label: string }[] = [
  * supplies the region, heading and close button. Nothing shows unless a live chat is on the sheet.
  */
 export function Inspector() {
-  const { boot, activeChat, chats, sessions, todos } = useStore();
+  const { boot, activeChat, chats, sessions, todos, setChatKind } = useStore();
   const { state, dispatch } = useShell();
   if (!boot || activeChat.kind !== 'live') return null;
 
@@ -28,7 +29,7 @@ export function Inspector() {
   const live = sessions?.live.find((s) => s.id === id);
   const clientName = live?.client ? placeName(live.client, boot.clients) : 'No client';
   const todo = live?.todoId
-    ? [...(todos?.mine ?? []), ...(todos?.open ?? [])].find((t) => t.id === live.todoId)
+    ? [...(todos?.mine ?? []), ...(todos?.open ?? [])].find((t) => t.key === live.todoId)
     : undefined;
   const started = live ? whenWords(live.startedAt) : '';
   const sessionState = chat?.sessionState ?? live?.state ?? null;
@@ -49,6 +50,25 @@ export function Inspector() {
         <dl className="kv">
           <dt>Client</dt>
           <dd>{clientName}</dd>
+          {live ? (
+            <>
+              <dt>Kind</dt>
+              <dd>
+                <Seg<ChatKind>
+                  label="Kind of chat"
+                  value={live.kind ?? 'tds'}
+                  options={[
+                    { value: 'tds', label: 'TDS' },
+                    { value: 'personal', label: 'Personal' },
+                  ]}
+                  onChange={(kind) => void setChatKind(id, kind)}
+                />
+                <span className="kv-note">
+                  Only sorts your Chats list. The chat still uses the shared brain.
+                </span>
+              </dd>
+            </>
+          ) : null}
           {todo ? (
             <>
               <dt>To-do</dt>

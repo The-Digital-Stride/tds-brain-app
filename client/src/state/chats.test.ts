@@ -11,6 +11,7 @@ const chat = (id: string, state: LiveSession['state'], lastActivityAt: string): 
   state,
   startedAt: '2026-11-11T09:00:00.000Z',
   lastActivityAt,
+  kind: 'tds',
 });
 
 describe('sortChats', () => {

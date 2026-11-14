@@ -30,11 +30,13 @@ const live = (
   state: 'idle',
   startedAt: '',
   lastActivityAt: at,
+  kind: 'tds',
 });
 const past = (id: string, title: string, lastModified = '2026-11-01T10:00:00Z'): PastSession => ({
   sdkSessionId: id,
   title,
   lastModified,
+  kind: 'tds',
 });
 const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem => ({
   id,

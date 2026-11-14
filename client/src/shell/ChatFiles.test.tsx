@@ -263,6 +263,33 @@ describe('the preview', () => {
     expect(screen.getByRole('region', { name: 'Preview of Title made1' })).toBeTruthy();
   });
 
+  it('shows the newer copy in the viewer when Claude changes the file it shows', () => {
+    set({ files: [file('made1', ['created'])] });
+    const view = render(
+      <ShellProvider>
+        <ViewerProbe />
+        <ChatFiles sessionId="s1" />
+      </ShellProvider>,
+    );
+    openRow(/Title made1/);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Title made1' }));
+    const newer = item({
+      id: 'made1',
+      title: 'Title made1',
+      name: 'made1.md',
+      modified: '2026-11-14T09:00:00.000Z',
+    });
+    set({ files: [file('made1', ['created', 'changed'], { item: newer })] });
+    view.rerender(
+      <ShellProvider>
+        <ViewerProbe />
+        <ChatFiles sessionId="s1" />
+      </ShellProvider>,
+    );
+    expect(viewerShown?.item.modified).toBe('2026-11-14T09:00:00.000Z');
+    expect(viewerShown?.place).toBe('Acme Heating');
+  });
+
   it('opens a picture with the way on to Images', () => {
     set({
       files: [

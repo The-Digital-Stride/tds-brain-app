@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../shared/contract.ts';
 import type { ViewerRequest } from './contract.ts';
@@ -46,17 +47,23 @@ const request: ViewerRequest = {
 let viewing = false;
 let close: () => void = () => {};
 // Stands in for the part of the app that opens the viewer: a button that keeps focus as it asks.
+// Shuts the opener's part of the page (as a panel shutting underneath the viewer would).
+let setShut: (on: boolean) => void = () => {};
 function Opener({ ask = request, gone = false }: { ask?: ViewerRequest; gone?: boolean }) {
   const { state, dispatch } = useShell();
+  const [shut, setShutState] = useState(false);
+  setShut = setShutState;
   viewing = state.viewer !== null;
   close = () => dispatch({ type: 'close-viewer' });
   return (
     <main id="main" tabIndex={-1}>
-      {gone && viewing ? null : (
-        <button type="button" onClick={() => dispatch({ type: 'open-viewer', viewer: ask })}>
-          Open it
-        </button>
-      )}
+      <div inert={shut}>
+        {gone && viewing ? null : (
+          <button type="button" onClick={() => dispatch({ type: 'open-viewer', viewer: ask })}>
+            Open it
+          </button>
+        )}
+      </div>
     </main>
   );
 }
@@ -141,6 +148,21 @@ describe('the file viewer', () => {
     expect(screen.queryByRole('button', { name: 'Open it' })).toBeNull();
     act(() => close());
     expect(document.activeElement).toBe(document.getElementById('main'));
+  });
+
+  it('lands on the sheet when what opened it is still there but out of reach', () => {
+    renderViewer();
+    openIt();
+    act(() => setShut(true));
+    act(() => close());
+    expect(document.activeElement).toBe(document.getElementById('main'));
+  });
+
+  it('the file body is a named region the keyboard can reach, to scroll a long file', () => {
+    renderViewer();
+    openIt();
+    const body = screen.getByRole('region', { name: 'Contents of Audit' });
+    expect(body.tabIndex).toBe(0);
   });
 
   it('Open in Documents closes it and opens the file in the app', () => {

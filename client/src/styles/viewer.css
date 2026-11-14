@@ -36,23 +36,25 @@
   }
 }
 
-/* The header band: name and place on the left, the actions on the right; it wraps on a phone. */
+/* The header band: name and place, the actions, then close at the top right. On a narrow drawer
+   the actions take a second line and close stays top right. */
 .viewer-head {
   flex: none;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "name actions close";
   align-items: center;
-  gap: 6px 10px;
+  gap: 6px 8px;
   min-height: 47px;
   padding: 8px 10px 8px 16px;
 }
 .viewer-name {
-  flex: 1 1 220px;
+  grid-area: name;
   min-width: 0;
 }
 .viewer-name h2 {
   margin: 0;
-  font: 600 15px / 1.3 var(--head);
+  font: 600 14px / 1.3 var(--head);
   overflow-wrap: anywhere;
 }
 /* The heading takes focus only so the reader starts there; it needs no ring. */
@@ -65,10 +67,23 @@
   color: var(--iron);
 }
 .viewer-actions {
+  grid-area: actions;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+}
+.viewer-close {
+  grid-area: close;
+  align-self: start;
+}
+@media (max-width: 640px) {
+  .viewer-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name close"
+      "actions actions";
+  }
 }
 
 /* The file: one white card on the tray, filling the drawer; only the body scrolls. */
@@ -81,6 +96,7 @@
   overflow-y: auto;
   padding: 0 12px 12px;
 }
+.viewer-body:focus-visible,
 .viewer-body :focus-visible {
   outline-offset: -2px;
 }

@@ -27,10 +27,12 @@ export function FileViewer() {
   const leaving = useRef(false);
   const shown = request !== null;
 
-  // Each file asked for takes focus at its heading (a second file replacing the first, too).
+  // Each file asked for takes focus at its heading (a second file replacing the first, too). A newer
+  // copy of the same file (Claude changed it) leaves focus where it is.
+  const shownId = request?.item.id ?? null;
   useEffect(() => {
-    if (request) heading.current?.focus({ preventScroll: true });
-  }, [request]);
+    if (shownId !== null) heading.current?.focus({ preventScroll: true });
+  }, [shownId]);
 
   // On close, back to the opener while it is still on the page; failing that, the sheet.
   useEffect(() => {
@@ -40,7 +42,9 @@ export function FileViewer() {
     const toApp = leaving.current;
     leaving.current = false;
     // Off to the app: the sheet holds focus until the app's own viewer takes it.
-    if (!toApp && opener?.isConnected) opener.focus({ preventScroll: true });
+    // An opener that went inert meanwhile (its panel shut as the window narrowed) can't take focus.
+    const reachable = opener?.isConnected === true && opener.closest('[inert]') === null;
+    if (!toApp && reachable) opener.focus({ preventScroll: true });
     else if (toApp || opener) document.getElementById('main')?.focus({ preventScroll: true });
   }, [shown, viewerOpener]);
 
@@ -71,31 +75,32 @@ export function FileViewer() {
           </div>
           <div className="viewer-actions">
             {openIn ? (
-              <button type="button" className="btn" data-size="small" onClick={openInApp}>
+              <button type="button" className="btn" onClick={openInApp}>
                 {APP_WORDS[openIn.app]}
               </button>
             ) : null}
             <a
               className="btn"
-              data-size="small"
               href={ROUTES.libraryFile(item.id)}
               download={item.name}
               aria-label={`Download ${item.name}`}
             >
               Download
             </a>
-            <button type="button" className="icon-btn" aria-label="Close file" onClick={close}>
-              <Icon name="close" />
-            </button>
           </div>
+          <button type="button" className="icon-btn viewer-close" aria-label="Close file" onClick={close}>
+            <Icon name="close" />
+          </button>
         </header>
-        <div className="viewer-body">
+        {/* Focusable so the keyboard can scroll a long file (Safari doesn't reach scroll areas by Tab). */}
+        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus to scroll. */}
+        <section className="viewer-body" aria-label={`Contents of ${item.title}`} tabIndex={0}>
           {item.view === null ? (
             <p className="lib-note">This type can't be shown here. Download it to open it.</p>
           ) : (
             <FileStage key={item.id} item={item} version={String(libraryVersion)} />
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

@@ -158,7 +158,7 @@ function Preview({
   request: object | null;
 }) {
   const { libraryVersion } = useStore();
-  const { dispatch } = useShell();
+  const { state, dispatch } = useShell();
   const heading = useRef<HTMLHeadingElement>(null);
   // Focus moves to the heading each time the file is asked for (a different one, or the same one
   // again after the panel was shut). A frame later, so a panel that is opening has recorded its
@@ -180,6 +180,13 @@ function Preview({
     e.stopPropagation();
     onBack();
   };
+
+  // Claude changed the file while the viewer shows it: show the newer copy there too.
+  const viewing = state.viewer?.item.id === item?.id ? state.viewer : null;
+  useEffect(() => {
+    if (!viewing || !item || viewing.item.modified === item.modified) return;
+    dispatch({ type: 'open-viewer', viewer: { ...viewing, item } });
+  }, [viewing, item, dispatch]);
 
   // "Open" shows the file large in the viewer over the chat; closing it comes back here. The viewer
   // offers "Open in Documents" (or Images) for going on to the app.

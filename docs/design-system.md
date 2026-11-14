@@ -223,6 +223,22 @@ no shadow); text and Markdown in a card up to 760px wide; an HTML page fills a c
 an empty `sandbox`; a PDF opens in the browser's own reader, edge to edge in its card (no padding), at
 `#navpanes=0&view=FitH`, unsandboxed because browsers refuse PDFs in a sandboxed frame; if a link to another site is blocked the frame reloads and a quiet line says "Links to other sites are switched off here." Items are clickable across their whole box, not only the inner button.
 
+**File viewer** (`client/src/shell/FileViewer.tsx`, `styles/viewer.css`; Ian, 2026-11-14: a file opened
+from a chat should open "over the current chat … and when closed, go back to the source of the open").
+For showing one file large without leaving where the person is. Any part of the app opens it with
+`dispatch({ type: 'open-viewer', viewer: { item, place?, openIn? } })`; the chat's Files panel uses it
+for its **Open** button (named "Open <title>"). It is a glass drawer from the right over a veil, up to
+1040px wide, leaving the rail and an edge of the page in view (full width under 640px). The header has
+the title (14 / 600, focused when it opens) with the place under it (12px, iron), then the actions as
+standard 32px buttons: "Open in Documents" or "Open in Images" when `openIn` is given (closes the viewer
+and opens the file in the app), and Download; the close icon button ("Close file") sits top right, and
+under 640px the actions take a second line below it. The body is the same stage as the sheet's viewer
+(`FileStage`), in a scrolling region named "Contents of <title>" that the keyboard can reach. While it
+shows, the desk and skip link are `inert` and no shortcut but Esc reaches the desk; Esc, the veil and
+close shut it, and focus goes back to the control that opened it (or the sheet, if that has gone or
+can't take focus). Esc does nothing while focus is inside a PDF or page frame (the browser keeps the
+key there); close still works.
+
 Both are on the rail in every build.
 
 ## Old tokens being retired

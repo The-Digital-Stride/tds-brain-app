@@ -121,7 +121,7 @@
 }
 
 /* Changing to-dos: the add button, the add form and the inline editor. ------------------------- */
-/* A to-do row: its text, then its buttons in a line: the star, Edit (when changes are on) and the chat arrow,
+/* A to-do row: its text, then its buttons in a line: the star, Edit (when changes are on) and the chat button,
    which is the row's main action. The row itself is not a button. */
 .todo:has(> .todo-go) {
   grid-template-columns: minmax(0, 1fr);

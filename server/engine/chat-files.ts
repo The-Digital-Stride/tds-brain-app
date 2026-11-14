@@ -106,8 +106,14 @@ const KEPT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 export const TRACKED_MAX = 1000;
 /** Tool uses waiting for a result (a long history can leave some unanswered). */
 export const PENDING_MAX = 500;
-/** Destinations tried per attachment in one Bash command. */
+/** Destinations tried per attachment in one Bash command, and files taken from one Bash command. */
 const CANDIDATES_MAX = 50;
+/** Short names looked up per reply, folders a reply names, and client folders kept as places to look. */
+const SHORT_MAX = 50;
+const FOLDERS_MAX = 10;
+const PLACES_MAX = 10;
+/** Names a file keeps for linking. */
+const ALIASES_MAX = 10;
 const RESOLVE_CONCURRENCY = 8;
 
 interface Kept {
@@ -128,6 +134,8 @@ interface Tracked {
   order: number;
   kept: Kept[];
   truncated: boolean;
+  /** Shorter names a reply gave it (`context/business.md`), sent so those link too. */
+  aliases: string[];
 }
 
 interface Attachment extends TrackedAttachment {
@@ -136,7 +144,15 @@ interface Attachment extends TrackedAttachment {
 
 type Pending =
   | { kind: 'file'; tool: string; path: string; input: Rec; history: boolean }
-  | { kind: 'bash'; filings: { att: Attachment; candidates: string[] }[] }
+  | {
+      kind: 'bash';
+      filings: { att: Attachment; candidates: string[] }[];
+      reads: string[];
+      changes: string[];
+      /** Whose shell (the chat's, or a helper's), and its folder once the command has run. */
+      shell: string;
+      cwd: string | null;
+    }
   | { kind: 'web'; url: string };
 
 interface Filing {
@@ -144,6 +160,14 @@ interface Filing {
   candidates: string[];
   order: number;
 }
+
+/**
+ * Something seen that only counts once its paths resolve to listed files: the files a shell command
+ * named, or a short name in a reply with the places it could mean, most likely first.
+ */
+type Sighting =
+  | { kind: 'shell'; reads: string[]; changes: string[]; toolUseId: string; order: number }
+  | { kind: 'short'; alias: string; tiers: string[][]; order: number };
 
 /** An http(s) address without a user name or password, short enough to keep. */
 function okLink(url: unknown): url is string {
@@ -189,6 +213,280 @@ export function shellWords(command: string): string[] {
   return out;
 }
 
+/**
+ * One simple command of a shell line: its words, the files its output goes to (`>`, `>>`), and the
+ * subshells it runs in (`( … )`, `$( … )`, backticks), outermost first: a `cd` there moves only them.
+ */
+export interface ShellSegment {
+  words: string[];
+  outputs: string[];
+  groups: number[];
+}
+
+/**
+ * A shell line split into simple commands (at `;`, `&`, `|`, brackets and new lines), roughly: quotes
+ * and backslashes honoured, `> file` kept apart as an output, here-document bodies and here-strings
+ * skipped (their text is data, not paths). Good enough to find the files a command touches.
+ */
+export function shellSegments(command: string): ShellSegment[] {
+  const segs: ShellSegment[] = [];
+  let seg: Omit<ShellSegment, 'groups'> = { words: [], outputs: [] };
+  let cur = '';
+  let has = false;
+  let quote: string | null = null;
+  let next: 'word' | 'output' | 'heredoc' | 'drop' = 'word';
+  let dash = false;
+  const heredocs: { delim: string; dash: boolean }[] = [];
+  const stack: number[] = [];
+  let groupId = 0;
+  let backtick: number | null = null;
+  const endWord = () => {
+    if (has) {
+      if (next === 'output') seg.outputs.push(cur);
+      else if (next === 'heredoc') heredocs.push({ delim: cur, dash });
+      else if (next === 'word') seg.words.push(cur);
+      next = 'word';
+    }
+    cur = '';
+    has = false;
+  };
+  const endSeg = () => {
+    endWord();
+    next = 'word';
+    if (seg.words.length > 0 || seg.outputs.length > 0) segs.push({ ...seg, groups: [...stack] });
+    seg = { words: [], outputs: [] };
+  };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i] as string;
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === '\\' && quote === '"' && i + 1 < command.length) cur += command[++i];
+      else cur += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      has = true;
+    } else if (c === '\\' && command[i + 1] === '\n') {
+      i++; // a line carried on
+    } else if (c === '\\' && i + 1 < command.length) {
+      cur += command[++i];
+      has = true;
+    } else if (c === '\n') {
+      endSeg();
+      if (heredocs.length > 0) {
+        i = skipHeredocs(command, i + 1, heredocs) - 1;
+        heredocs.length = 0;
+      }
+    } else if (c === '>') {
+      endWord();
+      if (command[i + 1] === '>' || command[i + 1] === '|') i++;
+      if (command[i + 1] === '&') {
+        i++;
+        next = 'drop'; // >&2: a stream, not a file
+      } else next = 'output';
+    } else if (c === '<') {
+      endWord();
+      if (command[i + 1] === '<') {
+        i++;
+        if (command[i + 1] === '<') {
+          i++;
+          next = 'drop'; // <<< here-string
+        } else {
+          dash = command[i + 1] === '-';
+          if (dash) i++;
+          next = 'heredoc';
+        }
+      }
+      // `< file` reads the file: it stays a word.
+    } else if (c === '(') {
+      if (cur === '$' && has) {
+        cur = ''; // $( … )
+        has = false;
+      }
+      endSeg();
+      stack.push(++groupId);
+    } else if (c === ')') {
+      endSeg();
+      stack.pop();
+    } else if (c === '`') {
+      endSeg();
+      if (backtick !== null && stack.at(-1) === backtick) {
+        stack.pop();
+        backtick = null;
+      } else {
+        backtick = ++groupId;
+        stack.push(backtick);
+      }
+    } else if (/[;&|]/.test(c)) {
+      endSeg();
+    } else if (/\s/.test(c)) {
+      endWord();
+    } else {
+      cur += c;
+      has = true;
+    }
+  }
+  endSeg();
+  return segs;
+}
+
+// The index just past the last here-document body that starts at `start`, or the end of the command.
+function skipHeredocs(command: string, start: number, docs: { delim: string; dash: boolean }[]): number {
+  let i = start;
+  for (const d of docs) {
+    for (;;) {
+      if (i >= command.length) return command.length;
+      let end = command.indexOf('\n', i);
+      if (end < 0) end = command.length;
+      let line = command.slice(i, end);
+      i = end + 1;
+      if (d.dash) line = line.replace(/^\t+/, '');
+      if (line.trimEnd() === d.delim) break;
+    }
+  }
+  return Math.min(i, command.length);
+}
+
+/** grep-family flags whose value is the next word. */
+const SEARCH_VALUE_FLAGS = new Set([
+  '-A',
+  '-B',
+  '-C',
+  '-m',
+  '-e',
+  '-f',
+  '-t',
+  '-T',
+  '-g',
+  '--max-count',
+  '--regexp',
+  '--file',
+  '--type',
+  '--glob',
+]);
+
+/** The files a grep-like command searches: the words left once flags, flag values and the pattern are gone. */
+function searchFiles(rest: string[]): string[] {
+  const files: string[] = [];
+  let patternGiven = false;
+  for (let i = 0; i < rest.length; i++) {
+    const w = rest[i] as string;
+    if (SEARCH_VALUE_FLAGS.has(w)) {
+      if (w === '-e' || w === '-f' || w === '--regexp' || w === '--file') patternGiven = true;
+      i++;
+    } else if (/^(-e|--regexp=|-f|--file=)/.test(w)) {
+      patternGiven = true; // -epattern, --regexp=pattern
+    } else if (!w.startsWith('-')) {
+      files.push(w);
+    }
+  }
+  return patternGiven ? files : files.slice(1);
+}
+
+/** Words that run the next word as the command. */
+const SHELL_PREFIXES = new Set(['sudo', 'command', 'time', 'nice', 'env', 'xargs', 'nohup', 'exec']);
+
+/** What one simple command does with the words in it: reads them, changes them, or moves to a folder. */
+function shellUse(seg: ShellSegment): { reads: string[]; changes: string[]; cd?: string } {
+  const words = seg.words;
+  let k = 0;
+  while (
+    k < words.length &&
+    (SHELL_PREFIXES.has(words[k] as string) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[k] as string))
+  )
+    k++;
+  const verb = words[k] ?? '';
+  const rest = words.slice(k + 1);
+  const args = rest.filter((w) => !w.startsWith('-'));
+  const out: { reads: string[]; changes: string[]; cd?: string } = { reads: [], changes: [...seg.outputs] };
+  switch (verb) {
+    case 'cd':
+    case 'pushd':
+      out.cd = args[0] ?? '~';
+      break;
+    case 'popd':
+      out.cd = '~'; // back to a folder not followed here
+      break;
+    // Text and search patterns, not files (where output goes still counts).
+    case 'echo':
+    case 'printf':
+      break;
+    case 'grep':
+    case 'egrep':
+    case 'fgrep':
+    case 'rg':
+    case 'ag':
+    case 'ack':
+      out.reads.push(...searchFiles(rest));
+      break;
+    // Removed, or not a file of the brain's: nothing to show.
+    case 'rm':
+    case 'rmdir':
+    case 'unlink':
+    case 'trash':
+    case 'mkdir':
+    case 'ln':
+      break;
+    case 'mv':
+      out.changes.push(...args.slice(-1));
+      break;
+    case 'cp':
+    case 'install':
+    case 'rsync':
+      out.reads.push(...args.slice(0, -1));
+      out.changes.push(...args.slice(-1));
+      break;
+    case 'tee':
+    case 'touch':
+      out.changes.push(...args);
+      break;
+    case 'sed':
+    case 'perl':
+      if (rest.some((w) => /^-i/.test(w) || /^-[a-hj-z]{1,3}i$/.test(w) || /^--in-place(=|$)/.test(w)))
+        out.changes.push(...args);
+      else out.reads.push(...args);
+      break;
+    case 'git': {
+      // Leave out flag values that are not files: a commit message, a folder or a setting.
+      const gitArgs = rest.filter((w, i) => {
+        const before = rest[i - 1] ?? '';
+        return (
+          !w.startsWith('-') &&
+          !['--message', '-C', '-c', '-F', '--file'].includes(before) &&
+          !/^-[A-Za-z]*m$/.test(before) // -m, -am
+        );
+      });
+      if (gitArgs[0] === 'rm') break;
+      if (gitArgs[0] === 'mv') out.changes.push(...gitArgs.slice(-1));
+      else out.reads.push(...gitArgs.slice(1));
+      break;
+    }
+    default:
+      out.reads.push(...args);
+  }
+  return out;
+}
+
+/** A word that names one file: a file extension, and no spaces, variables or wildcards. */
+const FILE_WORD = /\.[A-Za-z0-9]{1,8}$/;
+function fileWord(w: string): boolean {
+  return w.length > 0 && w.length <= 500 && !/[\s$*?[\]{}`]/.test(w) && FILE_WORD.test(w);
+}
+
+/** `rel` from the brain-relative folder `base` (`''` is the root), or null when `..` climbs out. */
+function joinRel(base: string, rel: string): string | null {
+  const out = base ? base.split('/') : [];
+  for (const s of rel.split('/')) {
+    if (s === '' || s === '.') continue;
+    if (s === '..') {
+      if (out.length === 0) return null;
+      out.pop();
+    } else out.push(s);
+  }
+  return out.join('/');
+}
+
 async function pool<T>(items: T[], size: number, job: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
   const worker = async () => {
@@ -206,6 +504,11 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   const pending = new Map<string, Pending>();
   const attachments: Attachment[] = [];
   const filings: Filing[] = [];
+  const sightings: Sighting[] = [];
+  /** Each shell's folder, brain-relative (`''` the root; null once it has left the brain or can't be followed). */
+  const cwds = new Map<string, string | null>();
+  /** Client folders (and `personal`) this chat has worked in; insertion order is age, the newest last. */
+  const places = new Map<string, true>();
   /** Insertion order is age: the newest is last. */
   const links = new Map<string, true>();
   const touched = new Set<string>();
@@ -241,7 +544,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   function ensure(path: string): Tracked {
     let t = tracked.get(path);
     if (!t) {
-      t = { path, actions: [], toolUseIds: [], edits: 0, order: 0, kept: [], truncated: false };
+      t = { path, actions: [], toolUseIds: [], edits: 0, order: 0, kept: [], truncated: false, aliases: [] };
       tracked.set(path, t);
       if (tracked.size > TRACKED_MAX) {
         let oldest: Tracked | null = null;
@@ -306,38 +609,157 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     }
   }
 
+  /** Remembers the client folder (or `personal`) a brain path is in, as a place short names may mean. */
+  function notePlace(path: string | null): void {
+    if (!path) return;
+    const parts = path.split('/');
+    const place =
+      parts[0] === 'clients' && parts.length > 2
+        ? `clients/${parts[1]}`
+        : parts[0] === 'personal'
+          ? 'personal'
+          : null;
+    if (!place) return;
+    places.delete(place);
+    places.set(place, true);
+    while (places.size > PLACES_MAX) {
+      const first = places.keys().next().value;
+      if (first === undefined) break;
+      places.delete(first);
+    }
+  }
+
+  const scoped = (p: string) => p.startsWith('clients/') || p.startsWith('personal/');
+
   function text(body: string): void {
+    const folders: string[] = [];
+    const short: string[] = [];
     for (const raw of findPathMentions(body)) {
       const p = normalise(raw);
-      if (p) addAction(touch(p), 'mentioned');
+      if (!p) continue;
+      const isFile = FILE_WORD.test(p.split('/').pop() ?? '');
+      if (scoped(p)) {
+        if (!isFile && folders.length < FOLDERS_MAX) folders.push(p);
+        addAction(touch(p), 'mentioned');
+      } else if (isFile && short.length < SHORT_MAX) {
+        short.push(p);
+      }
+    }
+    // A short name (`context/business.md`, or `audit.md` under "all in `clients/acme/reports/`") may mean
+    // several places; each tier is tried in turn, and it counts only when one file in a tier fits.
+    const cwd = cwds.get('') ?? '';
+    const placesNewest = [...places.keys()].reverse();
+    for (const p of short) {
+      const tiers = [
+        [p, `clients/${p}`],
+        folders.map((f) => `${f}/${p}`),
+        cwd && scoped(cwd) ? [`${cwd}/${p}`] : [],
+        placesNewest.map((place) => `${place}/${p}`),
+        // Last: a personal file never wins over a client folder the reply or the chat points to.
+        [`personal/${p}`],
+      ].filter((tier) => tier.length > 0);
+      sightings.push({ kind: 'short', alias: p, tiers, order: ++counter });
+      dirty = true;
     }
     for (const url of findWebLinks(body)) addLink(url);
   }
 
-  function toolUse(id: string, name: string, input: Rec, history: boolean): void {
+  /** The brain path a shell word names from folder `cwd`, or null. */
+  function shellPath(word: string, cwd: string | null): string | null {
+    if (!fileWord(word) || word.startsWith('~')) return null;
+    if (word.startsWith('/')) return normalise(word);
+    if (cwd === null) return null;
+    const joined = joinRel(cwd, word);
+    return joined ? normalise(joined) : null;
+  }
+
+  /** The shell's folder after `cd target` from `cwd`. */
+  function cdTo(target: string, cwd: string | null): string | null {
+    if (!target || target.startsWith('~') || /[$`*?]/.test(target)) return null;
+    if (target.startsWith('/')) {
+      const t = target.replace(/\/+$/, '');
+      for (const root of roots) if (root && t === root.trim().replace(/\/+$/, '')) return '';
+      return normalise(target);
+    }
+    return cwd === null ? null : joinRel(cwd, target);
+  }
+
+  function toolUse(id: string, name: string, input: Rec, history: boolean, shell: string): void {
     if (FILE_TOOLS.has(name)) {
       const path = normalise(input.file_path ?? input.notebook_path);
       if (path) setPending(id, { kind: 'file', tool: name, path, input, history });
     } else if (name === 'Bash' && typeof input.command === 'string') {
       const command = input.command;
       const words = shellWords(command);
+      const staged = (w: string) => attachments.some((a) => w.includes(a.stagedPath));
       const named = attachments.filter(
         (a) => command.includes(a.stagedPath) || words.some((w) => w.includes(a.stagedPath)),
       );
-      if (named.length === 0) return;
       const dests: string[] = [];
-      for (const w of words) {
-        if (attachments.some((a) => w.includes(a.stagedPath))) continue;
-        const p = normalise(w);
-        if (p) dests.push(p);
+      if (named.length > 0) {
+        for (const w of words) {
+          if (staged(w)) continue;
+          const p = normalise(w);
+          if (p) dests.push(p);
+        }
       }
-      if (dests.length === 0) return;
-      const filingsHere = named.map((att) => {
-        const name = basename(att.stagedPath);
-        const candidates = [...new Set(dests.flatMap((d) => [d, `${d}/${name}`]))].slice(-CANDIDATES_MAX);
-        return { att, candidates };
-      });
-      setPending(id, { kind: 'bash', filings: filingsHere });
+      const filingsHere =
+        dests.length === 0
+          ? []
+          : named.map((att) => {
+              const name = basename(att.stagedPath);
+              const candidates = [...new Set(dests.flatMap((d) => [d, `${d}/${name}`]))].slice(
+                -CANDIDATES_MAX,
+              );
+              return { att, candidates };
+            });
+
+      // The files the command reads or writes, from the folder its shell is in (`cd` carries over).
+      const before = cwds.has(shell) ? (cwds.get(shell) as string | null) : '';
+      let cwd = before;
+      // A subshell starts in the folder of the shell around it, and its cd ends with it.
+      const sub = new Map<number, string | null>();
+      const cwdIn = (groups: number[]): string | null => {
+        let c = cwd;
+        for (const g of groups) {
+          if (!sub.has(g)) sub.set(g, c);
+          c = sub.get(g) as string | null;
+        }
+        return c;
+      };
+      const reads = new Set<string>();
+      const changes = new Set<string>();
+      for (const seg of shellSegments(command)) {
+        const use = shellUse(seg);
+        const here = cwdIn(seg.groups);
+        if (use.cd !== undefined) {
+          const to = cdTo(use.cd, here);
+          const inner = seg.groups.at(-1);
+          if (inner === undefined) cwd = to;
+          else sub.set(inner, to);
+          continue;
+        }
+        for (const w of use.changes) {
+          const p = staged(w) ? null : shellPath(w, here);
+          if (p) changes.add(p);
+        }
+        for (const w of use.reads) {
+          const p = staged(w) ? null : shellPath(w, here);
+          if (p) reads.add(p);
+        }
+      }
+      for (const p of changes) reads.delete(p);
+      // Where an attachment was copied to is the filing's to report (as Attached, not as a change).
+      for (const f of filingsHere) {
+        for (const c of f.candidates) {
+          changes.delete(c);
+          reads.delete(c);
+        }
+      }
+      const changed = [...changes].slice(0, CANDIDATES_MAX);
+      const read = [...reads].slice(0, Math.max(0, CANDIDATES_MAX - changed.length));
+      if (filingsHere.length === 0 && read.length === 0 && changed.length === 0 && cwd === before) return;
+      setPending(id, { kind: 'bash', filings: filingsHere, reads: read, changes: changed, shell, cwd });
     } else if (name === 'WebFetch' && okLink(input.url)) {
       setPending(id, { kind: 'web', url: input.url });
     }
@@ -361,10 +783,19 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     if (p.kind === 'web') {
       addLink(p.url);
     } else if (p.kind === 'bash') {
+      // The shell keeps a folder only when the command worked.
+      cwds.set(p.shell, p.cwd);
+      if (p.cwd) notePlace(p.cwd);
+      if (p.filings.length === 0 && p.reads.length === 0 && p.changes.length === 0) return;
       const order = ++counter;
       for (const f of p.filings) filings.push({ ...f, order });
+      if (p.reads.length > 0 || p.changes.length > 0) {
+        sightings.push({ kind: 'shell', reads: p.reads, changes: p.changes, toolUseId: id, order });
+        for (const path of [...p.reads, ...p.changes]) notePlace(path);
+      }
       dirty = true;
     } else {
+      notePlace(p.path);
       const known = tracked.get(p.path);
       const seen = known?.actions.some((a) => a === 'read' || a === 'created' || a === 'changed') ?? false;
       const t = touch(p.path);
@@ -412,21 +843,87 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     resolveAll = false;
     touched.clear();
     const filed = filings.splice(0);
-    const wanted = [...new Set([...paths, ...filed.flatMap((f) => f.candidates)])];
+    const seen = sightings.splice(0);
+    const wanted = [
+      ...new Set([
+        ...paths,
+        ...filed.flatMap((f) => f.candidates),
+        ...seen.flatMap((s) => (s.kind === 'shell' ? [...s.reads, ...s.changes] : s.tiers.flat())),
+      ]),
+    ];
     try {
-      return await resolveAndList(paths, filed, wanted);
+      return await resolveAndList(paths, filed, seen, wanted);
     } catch (err) {
       // Put the work back, so the next snapshot tries these paths again instead of waiting for the turn end.
       if (wasAll) resolveAll = true;
       for (const p of paths) if (tracked.has(p)) touched.add(p);
       filings.unshift(...filed);
+      sightings.unshift(...seen);
       throw err;
+    }
+  }
+
+  /** The file at `path` (now known to be listed as `r`), shown as of `order` at the latest. */
+  function listAs(path: string, r: NonNullable<Resolved>, order: number): Tracked {
+    const t = ensure(path);
+    t.order = Math.max(t.order, order);
+    resolutions.set(path, r);
+    return t;
+  }
+
+  function settle(s: Sighting, resolved: Map<string, Resolved>): void {
+    if (s.kind === 'shell') {
+      const hits: Tracked[] = [];
+      for (const [paths, action] of [
+        [s.reads, 'read'],
+        [s.changes, 'changed'],
+      ] as const) {
+        for (const c of paths) {
+          const r = resolved.get(c);
+          if (!r?.item) continue;
+          const t = listAs(c, r, s.order);
+          addAction(t, action);
+          hits.push(t);
+        }
+      }
+      // A step opens its file only when it named just the one.
+      const only = hits[0];
+      if (
+        only &&
+        hits.length === 1 &&
+        s.reads.length + s.changes.length === 1 &&
+        !only.toolUseIds.includes(s.toolUseId)
+      ) {
+        only.toolUseIds.push(s.toolUseId);
+        if (only.toolUseIds.length > CHAT_FILE_TOOL_IDS_MAX)
+          only.toolUseIds.splice(0, only.toolUseIds.length - CHAT_FILE_TOOL_IDS_MAX);
+      }
+      return;
+    }
+    for (const tier of s.tiers) {
+      const keys = new Map<string, string>();
+      for (const c of tier) {
+        const r = resolved.get(c);
+        if (r?.item && !keys.has(r.key)) keys.set(r.key, c);
+      }
+      if (keys.size === 0) continue;
+      // Two files fit equally well: link neither rather than guess.
+      if (keys.size > 1) return;
+      const c = [...keys.values()][0] as string;
+      const t = listAs(c, resolved.get(c) as NonNullable<Resolved>, s.order);
+      addAction(t, 'mentioned');
+      if (!t.aliases.includes(s.alias)) {
+        t.aliases.push(s.alias);
+        if (t.aliases.length > ALIASES_MAX) t.aliases.shift();
+      }
+      return;
     }
   }
 
   async function resolveAndList(
     paths: string[],
     filed: Filing[],
+    seen: Sighting[],
     wanted: string[],
   ): Promise<ChatFilesSnapshot> {
     const found = new Map<string, Resolved>();
@@ -452,6 +949,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         f.att.filedKey = r.key;
       }
     }
+    for (const s of seen) settle(s, found);
 
     const byKey = new Map<string, { file: ChatFile; newest: number }>();
     for (const t of tracked.values()) {
@@ -471,6 +969,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
             toolUseIds: [...t.toolUseIds],
             edits: t.edits,
             order: t.order,
+            ...(t.aliases.length > 0 ? { aliases: [...t.aliases] } : {}),
           },
         });
         continue;
@@ -480,6 +979,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       for (const a of t.actions) if (!f.actions.includes(a)) f.actions.push(a);
       f.toolUseIds = [...f.toolUseIds, ...t.toolUseIds].slice(-CHAT_FILE_TOOL_IDS_MAX);
       f.edits += t.edits;
+      for (const a of t.aliases) if (!f.aliases?.includes(a)) f.aliases = [...(f.aliases ?? []), a];
       if (t.order > same.newest) {
         same.newest = t.order;
         f.order = t.order;
@@ -529,7 +1029,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
               typeof b.name === 'string' &&
               isRec(b.input)
             ) {
-              toolUse(b.id, b.name, b.input, history);
+              toolUse(b.id, b.name, b.input, history, parent ? (message.parent_tool_use_id as string) : '');
             }
           }
         } else if (message.type === 'user' && Array.isArray(content)) {

@@ -441,7 +441,8 @@ describe('createChatFiles: attachments', () => {
       ['Brief v2.pdf', null],
       ['pic.png', null],
     ]);
-    expect(s.files).toEqual([]);
+    // Not an attachment, but the copy still made a file in the brain.
+    expect(s.files.map((f) => [f.path, f.actions])).toEqual([['personal/x.pdf', ['changed']]]);
   });
 });
 
@@ -619,5 +620,186 @@ describe('createChatFiles: limits', () => {
     const paths = (await snap(t)).files.map((f) => f.path);
     expect(paths).not.toContain('personal/0.md');
     expect(paths[0]).toBe('personal/1.md');
+  });
+});
+
+describe('createChatFiles: shell steps', () => {
+  const kinds = (s: ChatFilesSnapshot) => s.files.map((f) => [f.path, f.actions]).sort();
+
+  it('counts the files a Bash step reads, from the folder it moved to, once the step worked', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    disk.add('clients/acme/reports/audit.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme && cat profile.md` }, { ok: false });
+    expect(await t.snapshot()).toBeNull();
+    step(t, 'Bash', {
+      command: `cd ${ROOT}/clients/acme && cat profile.md reports/audit.md missing.md 2>/dev/null | head -50`,
+    });
+    expect(kinds(await snap(t))).toEqual([
+      ['clients/acme/profile.md', ['read']],
+      ['clients/acme/reports/audit.md', ['read']],
+    ]);
+  });
+
+  it('remembers the folder for the next Bash step, as the shell does, and follows ..', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    disk.add('clients/acme/reports/audit.md');
+    step(t, 'Bash', { command: `cd "${ROOT}/clients/acme"` });
+    step(t, 'Bash', { command: "sed -n 1,80p reports/audit.md; echo '####'" });
+    step(t, 'Bash', { command: 'cd reports && wc -l ../profile.md' });
+    expect(kinds(await snap(t))).toEqual([
+      ['clients/acme/profile.md', ['read']],
+      ['clients/acme/reports/audit.md', ['read']],
+    ]);
+  });
+
+  it('marks files a Bash step writes as changed, and skips removed files and here-document text', async () => {
+    const { t, disk } = setup();
+    for (const f of ['new.md', 'a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'profile.md'])
+      disk.add(`clients/acme/${f}`);
+    step(t, 'Bash', {
+      command:
+        "cat > clients/acme/new.md <<'EOF'\nSee clients/acme/profile.md\nEOF\necho done >> clients/acme/e.md",
+    });
+    step(t, 'Bash', { command: 'cp clients/acme/a.md clients/acme/b.md && rm clients/acme/c.md' });
+    step(t, 'Bash', { command: "sed -i '' 's/x/y/' clients/acme/d.md" });
+    const s = await snap(t);
+    expect(kinds(s)).toEqual([
+      ['clients/acme/a.md', ['read']],
+      ['clients/acme/b.md', ['changed']],
+      ['clients/acme/d.md', ['changed']],
+      ['clients/acme/e.md', ['changed']],
+      ['clients/acme/new.md', ['changed']],
+    ]);
+    expect(byPath(s, 'clients/acme/new.md')?.edits).toBe(0);
+  });
+
+  it('links a Bash step to its file only when it named exactly one', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/a.md');
+    disk.add('clients/acme/b.md');
+    const one = step(t, 'Bash', { command: 'cat clients/acme/a.md' });
+    const two = step(t, 'Bash', { command: 'cat clients/acme/a.md clients/acme/b.md' });
+    const s = await snap(t);
+    expect(byPath(s, 'clients/acme/a.md')?.toolUseIds).toEqual([one]);
+    expect(byPath(s, 'clients/acme/b.md')?.toolUseIds).toEqual([]);
+    expect(two).toBeTruthy();
+  });
+
+  it("keeps a helper's folder apart from the chat's, and follows no cd it cannot place", async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme` }, { parent: 'task1' });
+    step(t, 'Bash', { command: 'cat profile.md' });
+    step(t, 'Bash', { command: 'cd ~/elsewhere && cat profile.md' });
+    step(t, 'Bash', { command: 'cd /tmp; cat profile.md; cat $f "*.md"' });
+    expect((await t.snapshot())?.files ?? []).toEqual([]);
+  });
+});
+
+describe('createChatFiles: short names in replies', () => {
+  it('finds a name written under a folder the reply names, and keeps the name for linking', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/reports/audit.md');
+    disk.add('clients/acme/reports/sub/deep.md');
+    t.observe(
+      say('## Recent reports (all in `clients/acme/reports/`)\n\n| `audit.md` | x |\n| `sub/deep.md` | y |'),
+    );
+    const s = await snap(t);
+    expect(byPath(s, 'clients/acme/reports/audit.md')).toMatchObject({
+      actions: ['mentioned'],
+      aliases: ['audit.md'],
+    });
+    expect(byPath(s, 'clients/acme/reports/sub/deep.md')?.aliases).toEqual(['sub/deep.md']);
+  });
+
+  it('finds a path written from clients/ or from a client folder the chat used', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    disk.add('clients/acme/context/business.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme/reports` }, {});
+    step(t, 'Bash', { command: 'cat ../profile.md' });
+    t.observe(say('Updated `acme/context/business.md`. Also `context/business.md` is out of date.'));
+    const f = byPath(await snap(t), 'clients/acme/context/business.md');
+    expect(f?.actions).toEqual(['mentioned']);
+    expect(f?.aliases?.sort()).toEqual(['acme/context/business.md', 'context/business.md']);
+  });
+
+  it('links nothing when a short name fits files in two of the places it could mean', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/reports/x.md');
+    disk.add('clients/acme/drafts/x.md');
+    t.observe(say('In `clients/acme/reports/` and `clients/acme/drafts/`: `x.md`.'));
+    expect((await snap(t)).files).toEqual([]);
+  });
+
+  it('never guesses a short name with no folder the reply or the chat gives', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/reports/audit.md');
+    t.observe(say('See `audit.md`.'));
+    expect((await snap(t)).files).toEqual([]);
+  });
+});
+
+describe('createChatFiles: review follow-ups', () => {
+  const kinds = (s: ChatFilesSnapshot | null) => (s?.files ?? []).map((f) => [f.path, f.actions]).sort();
+
+  it('prefers the folder a reply names over a personal file with the same name', async () => {
+    const { t, disk } = setup();
+    disk.add('personal/notes.md');
+    disk.add('clients/acme/reports/notes.md');
+    t.observe(say('All in `clients/acme/reports/`:\n\n| `notes.md` | x |'));
+    const s = await snap(t);
+    expect(kinds(s)).toEqual([['clients/acme/reports/notes.md', ['mentioned']]]);
+  });
+
+  it('keeps a cd inside brackets, $( ) or backticks to that part of the command', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/a/profile.md');
+    disk.add('clients/acme/b/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme/b` });
+    step(t, 'Bash', { command: '(cd ../a && ls); x=$(cd ../a; pwd); y=`cd ../a`; cat profile.md' });
+    step(t, 'Bash', { command: 'cat profile.md' });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/b/profile.md', ['read']]]);
+  });
+
+  it('reads files from inside brackets from the folder moved to there', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/a/profile.md');
+    step(t, 'Bash', { command: `(cd ${ROOT}/clients/acme/a && cat profile.md)` });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/a/profile.md', ['read']]]);
+  });
+
+  it('cannot follow popd', async () => {
+    const { t, disk } = setup();
+    disk.add('clients/acme/profile.md');
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme && pushd reports && popd && cat profile.md` });
+    expect(kinds(await t.snapshot())).toEqual([]);
+  });
+
+  it('counts perl and sed as changing a file only with an in-place flag', async () => {
+    const { t, disk } = setup();
+    for (const f of ['x.md', 'y.md', 'z.md']) disk.add(`clients/acme/${f}`);
+    step(t, 'Bash', { command: "perl -Mwarnings -ne 'print if /a/' clients/acme/x.md" });
+    step(t, 'Bash', { command: "perl -pi -e 's/a/b/' clients/acme/y.md" });
+    step(t, 'Bash', { command: "sed --in-place 's/a/b/' clients/acme/z.md" });
+    expect(kinds(await snap(t))).toEqual([
+      ['clients/acme/x.md', ['read']],
+      ['clients/acme/y.md', ['changed']],
+      ['clients/acme/z.md', ['changed']],
+    ]);
+  });
+
+  it('does not count search patterns, echoed text or commit messages as files read', async () => {
+    const { t, disk } = setup();
+    for (const f of ['report.md', 'notes.md', 'y.md', 'hit.md']) disk.add(`clients/acme/${f}`);
+    step(t, 'Bash', { command: `cd ${ROOT}/clients/acme` });
+    step(t, 'Bash', {
+      command:
+        'grep -l report.md hit.md; rg -e notes.md .; echo notes.md; printf y.md; git commit -m y.md; ' +
+        'grep -A 3 report.md hit.md; grep -e notes.md -e y.md hit.md; git commit -am y.md',
+    });
+    expect(kinds(await snap(t))).toEqual([['clients/acme/hit.md', ['read']]]);
   });
 });

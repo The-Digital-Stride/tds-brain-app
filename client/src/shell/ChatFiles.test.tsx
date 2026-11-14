@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatFile, ChatFilesSnapshot, LibraryItem } from '../../../shared/contract.ts';
+import type { ShellState } from './contract.ts';
 
 const h = vi.hoisted(() => ({
   files: { files: [], attachments: [], links: [] } as unknown,
@@ -104,6 +105,16 @@ function Toggle() {
   return on ? <ChatFiles sessionId="s1" /> : null;
 }
 
+// Watches the shell's file viewer and stands in for a reply link asking for any file.
+let viewerShown: ShellState['viewer'] = null;
+let askFor: (key: string) => void = () => {};
+function ViewerProbe() {
+  const { state, dispatch } = useShell();
+  viewerShown = state.viewer;
+  askFor = (key) => dispatch({ type: 'show-chat-file', chat: 's1', key });
+  return null;
+}
+
 const headings = () => Array.from(document.querySelectorAll('.fold-title')).map((e) => e.textContent);
 
 describe('the Files tab list', () => {
@@ -177,7 +188,7 @@ describe('the preview', () => {
     expect(screen.getAllByRole('status').map((e) => e.textContent)).toContain('Opened Title made1');
     await waitFor(() => expect(within(region).getByText('Body text')).toBeTruthy());
     expect(within(region).getByRole('link', { name: 'Download made1.md' })).toBeTruthy();
-    expect(within(region).getByRole('button', { name: 'Open in Documents' })).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Open Title made1' })).toBeTruthy();
     await waitFor(() =>
       expect(document.activeElement).toBe(within(region).getByRole('heading', { name: 'Title made1' })),
     );
@@ -233,7 +244,45 @@ describe('the preview', () => {
     expect(screen.queryByRole('region', { name: /Preview of/ })).toBeNull();
   });
 
-  it('offers Open in Documents (and Download) for a PDF, with no body', () => {
+  it('Open shows the file in the viewer over the chat, with where it is and the way on to Documents', () => {
+    set({ files: [file('made1', ['created'])] });
+    render(
+      <ShellProvider>
+        <ViewerProbe />
+        <ChatFiles sessionId="s1" />
+      </ShellProvider>,
+    );
+    openRow(/Title made1/);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Title made1' }));
+    expect(viewerShown).toMatchObject({
+      item: { id: 'made1', title: 'Title made1' },
+      place: 'Acme Heating',
+      openIn: { app: 'documents', scope: 'client:acme' },
+    });
+    // The panel stays on the file underneath, so closing the viewer comes back to it.
+    expect(screen.getByRole('region', { name: 'Preview of Title made1' })).toBeTruthy();
+  });
+
+  it('opens a picture with the way on to Images', () => {
+    set({
+      files: [
+        file('pic', ['read'], {
+          item: item({ id: 'pic', kind: 'image', view: 'image', title: 'Pic', name: 'pic.png', ext: 'png' }),
+        }),
+      ],
+    });
+    render(
+      <ShellProvider>
+        <ViewerProbe />
+        <ChatFiles sessionId="s1" />
+      </ShellProvider>,
+    );
+    act(() => askFor('pic'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Pic' }));
+    expect(viewerShown?.openIn).toEqual({ app: 'images', scope: 'client:acme' });
+  });
+
+  it('offers Open (and Download) for a PDF, with no body', () => {
     set({
       files: [
         file('report', ['created'], {
@@ -251,7 +300,7 @@ describe('the preview', () => {
     renderTab();
     openRow(/Report/);
     const region = screen.getByRole('region', { name: 'Preview of Report' });
-    expect(within(region).getByRole('button', { name: 'Open in Documents' })).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Open Report' })).toBeTruthy();
     expect(region.querySelector('iframe')).toBeNull();
     expect(api.libraryText).not.toHaveBeenCalled();
   });
@@ -276,7 +325,7 @@ describe('the preview', () => {
     const region = screen.getByRole('region', { name: 'Preview of Numbers' });
     expect(within(region).getByText("This type can't be shown here.")).toBeTruthy();
     expect(within(region).getByRole('link', { name: 'Download n.xlsx' })).toBeTruthy();
-    expect(within(region).queryByRole('button', { name: /Open in/ })).toBeNull();
+    expect(within(region).queryByRole('button', { name: /^Open/ })).toBeNull();
   });
 
   it('says "No longer there" for a gone file, with no buttons but Back', () => {

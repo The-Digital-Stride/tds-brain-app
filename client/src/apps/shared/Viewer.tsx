@@ -68,28 +68,12 @@ export function PictureBody({ item }: { item: LibraryItem }) {
 }
 
 /**
- * A file open on the sheet in place of the list. Focus moves here when it opens, and Escape goes
- * back while focus is inside it (handled here, not by the shell's own key handling).
+ * A file's body, large: a picture, a text or Markdown file, a web page or a PDF, on one white card
+ * on the tray, with a quiet line under it. Used by the sheet's viewer and by the file viewer that
+ * slides over the desk. `version` (the library's version) keeps a text file current as it changes.
  */
-export function Viewer({ item, onBack }: { item: LibraryItem; onBack: () => void }) {
+export function FileStage({ item, version }: { item: LibraryItem; version?: string }) {
   const { libraryVersion } = useStore();
-  const root = useRef<HTMLDivElement>(null);
-  // Take focus when the file opens. When "Open" also closes a floating panel, the sheet is inert for
-  // a moment and the panel hands focus back to its opener, so keep claiming it for a few frames.
-  useEffect(() => {
-    let frames = 0;
-    let frame = 0;
-    const take = () => {
-      const el = root.current;
-      if (!el) return;
-      if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
-      frames += 1;
-      if (frames < 10) frame = requestAnimationFrame(take);
-    };
-    take();
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
   const [reloads, setReloads] = useState(0);
   const [blocked, setBlocked] = useState(false);
   // A link to another site is refused by the app's policy and leaves the frame blank: put the page back.
@@ -107,23 +91,8 @@ export function Viewer({ item, onBack }: { item: LibraryItem; onBack: () => void
     return () => document.removeEventListener('securitypolicyviolation', onViolation);
   }, [item.id, item.modified, item.view]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    onBack();
-  };
-
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a labelled region that takes focus when a file opens.
-    <div
-      className="lib-viewer"
-      ref={root}
-      tabIndex={-1}
-      role="region"
-      aria-label={item.title}
-      onKeyDown={onKeyDown}
-    >
-      <h2 className="visually-hidden">{item.title}</h2>
+    <>
       <div className="tray lib-stage">
         {item.view === 'image' ? (
           <div className="card lib-pic">
@@ -132,7 +101,7 @@ export function Viewer({ item, onBack }: { item: LibraryItem; onBack: () => void
         ) : null}
         {item.view === 'text' ? (
           <div className="card lib-doc">
-            <TextBody item={item} />
+            <TextBody item={item} version={version} />
           </div>
         ) : null}
         {item.view === 'page' ? (
@@ -165,6 +134,50 @@ export function Viewer({ item, onBack }: { item: LibraryItem; onBack: () => void
       <p className="lib-note" role="status">
         {blocked ? 'Links to other sites are switched off here.' : ''}
       </p>
+    </>
+  );
+}
+
+/**
+ * A file open on the sheet in place of the list. Focus moves here when it opens, and Escape goes
+ * back while focus is inside it (handled here, not by the shell's own key handling).
+ */
+export function Viewer({ item, onBack }: { item: LibraryItem; onBack: () => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  // Take focus when the file opens. When "Open" also closes a floating panel, the sheet is inert for
+  // a moment and the panel hands focus back to its opener, so keep claiming it for a few frames.
+  useEffect(() => {
+    let frames = 0;
+    let frame = 0;
+    const take = () => {
+      const el = root.current;
+      if (!el) return;
+      if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+      frames += 1;
+      if (frames < 10) frame = requestAnimationFrame(take);
+    };
+    take();
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    onBack();
+  };
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a labelled region that takes focus when a file opens.
+    <div
+      className="lib-viewer"
+      ref={root}
+      tabIndex={-1}
+      role="region"
+      aria-label={item.title}
+      onKeyDown={onKeyDown}
+    >
+      <h2 className="visually-hidden">{item.title}</h2>
+      <FileStage item={item} />
     </div>
   );
 }

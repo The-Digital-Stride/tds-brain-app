@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { LibraryItem } from '../../../shared/contract.ts';
 import type { KeyLike, ShellState } from '../shell/contract.ts';
 import { keyAction } from './keys.ts';
 import { DEFAULT_SHELL } from './shell.ts';
@@ -13,6 +14,28 @@ const key = (k: string, mods: Partial<Omit<KeyLike, 'key'>> = {}): KeyLike => ({
 });
 const state = (patch: Partial<ShellState> = {}): ShellState => ({ ...DEFAULT_SHELL, ...patch });
 const ctx = (patch: Partial<ShellState> = {}, typing = false) => ({ typing, state: state(patch) });
+
+describe('keyAction: the file viewer', () => {
+  const viewer = { item: { id: 'a' } as LibraryItem };
+
+  it('Esc closes the viewer first, whatever else is open behind it', () => {
+    expect(keyAction(key('Escape'), ctx({ viewer, drawer: 'todos' }))).toEqual({ type: 'close-viewer' });
+    expect(
+      keyAction(key('Escape'), {
+        typing: false,
+        state: state({ viewer, panelOpen: true }),
+        panelFloating: true,
+      }),
+    ).toEqual({ type: 'close-viewer' });
+    expect(keyAction(key('Escape'), ctx({ viewer }, true))).toEqual({ type: 'close-viewer' });
+  });
+
+  it('no other key reaches the desk behind it', () => {
+    for (const k of ['[', 't', 'c', 's', '/']) expect(keyAction(key(k), ctx({ viewer }))).toBeNull();
+    expect(keyAction(key('k', { metaKey: true }), ctx({ viewer }))).toBeNull();
+    expect(keyAction(key('k', { ctrlKey: true }), ctx({ viewer }, true))).toBeNull();
+  });
+});
 
 describe('keyAction: the palette', () => {
   it('Cmd+K and Ctrl+K open the palette, even while typing', () => {

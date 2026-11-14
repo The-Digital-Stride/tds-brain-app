@@ -12,6 +12,7 @@ import './styles/drawers.css';
 import './styles/home.css';
 import './styles/palette.css';
 import './styles/chat.css';
+import './styles/viewer.css';
 
 const root = document.getElementById('root');
 if (root) {

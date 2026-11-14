@@ -22,6 +22,7 @@ export const DEFAULT_SHELL: ShellState = {
   panelTab: 'steps',
   panelFile: null,
   paletteOpen: false,
+  viewer: null,
   singleKeys: true,
 };
 
@@ -58,6 +59,10 @@ export const shellReducer: ShellReducer = (state, action) => {
       };
     case 'set-palette':
       return state.paletteOpen === action.open ? state : { ...state, paletteOpen: action.open };
+    case 'open-viewer':
+      return { ...state, viewer: action.viewer };
+    case 'close-viewer':
+      return state.viewer === null ? state : { ...state, viewer: null };
     case 'set-single-keys':
       return state.singleKeys === action.on ? state : { ...state, singleKeys: action.on };
     default:
@@ -89,6 +94,7 @@ export const loadShell: LoadShell = (raw) => {
     panelTab,
     panelFile: null,
     paletteOpen: false,
+    viewer: null,
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
   };
 };

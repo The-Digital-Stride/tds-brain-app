@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.27.2 — 2026-11-14
+
+- **fix**: show a link icon on Web links rows
+
 ## v0.27.1 — 2026-11-14
 
 - **fix**: show the chat icon on a to-do's chat button

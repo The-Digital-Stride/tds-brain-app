@@ -35,6 +35,7 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createChatKindStore } from './store/chat-kinds.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
@@ -104,6 +105,7 @@ function buildBrainSide(path: string | null) {
     log,
     uploads,
     dataDir: config.dataDir,
+    chatKinds: createChatKindStore(config.dataDir, log),
   });
   return { brain, thumbs, uploads, sessions };
 }

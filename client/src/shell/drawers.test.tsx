@@ -46,6 +46,7 @@ const live = (id: string, todoId: string | null = null): LiveSession => ({
   state: 'idle',
   startedAt: '',
   lastActivityAt: '',
+  kind: 'tds',
 });
 
 const fns = {
@@ -84,7 +85,7 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
     },
     sessions: {
       live: [],
-      past: [{ sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z' }],
+      past: [{ sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' }],
     },
     ...over,
   };
@@ -231,6 +232,82 @@ describe('To-dos drawer', () => {
     expect(screen.getByText('1 more belongs to other people.')).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: 'Open to anyone, 1' }));
     expect(screen.getByText('Anyone can do this')).toBeTruthy();
+  });
+});
+
+describe('Chats drawer kind filter', () => {
+  const personal = (id: string): LiveSession => ({ ...live(id), kind: 'personal' });
+  const kindSwitch = () => screen.queryByRole('radiogroup', { name: 'Which kind of chat' });
+
+  it('hides the switch when no chat is personal', () => {
+    setStore({ sessions: { live: [live('s1')], past: [] } });
+    render(<ChatsDrawer />);
+    expect(kindSwitch()).toBeNull();
+  });
+
+  it('shows the switch and marks personal rows, with counts unfiltered', () => {
+    setStore({ sessions: { live: [live('s1'), personal('s2')], past: [] } });
+    render(<ChatsDrawer />);
+    expect(kindSwitch()).not.toBeNull();
+    const meta = (id: string) =>
+      (screen.getByText(`Chat ${id}`).closest('li') as HTMLElement).querySelector('.line-meta')?.textContent;
+    expect(meta('s2')).toMatch(/, personal$/);
+    expect(meta('s1')).not.toMatch(/personal/);
+    // No lock: a personal chat is only sorted apart, not private.
+    expect(document.querySelector('.todo-lock')).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
+    expect(screen.queryByText('Chat s1')).toBeNull();
+    expect(screen.getByText('Chat s2')).toBeTruthy();
+    expect(meta('s2')).not.toMatch(/personal/);
+    expect(screen.getByRole('radio', { name: 'Open, 2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'TDS' }));
+    expect(screen.queryByText('Chat s2')).toBeNull();
+    expect(screen.getByText('Chat s1')).toBeTruthy();
+  });
+
+  it('filters earlier chats and says when none match', () => {
+    setStore({
+      sessions: {
+        live: [live('s1')],
+        past: [
+          { sdkSessionId: 'p1', title: 'Old work', lastModified: new Date().toISOString(), kind: 'tds' },
+          {
+            sdkSessionId: 'p2',
+            title: 'Old private',
+            lastModified: new Date().toISOString(),
+            kind: 'personal',
+          },
+        ],
+      },
+    });
+    render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    expect(screen.getByText('Old private')).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
+    expect(screen.queryByText('Old work')).toBeNull();
+    expect(screen.getByText('Old private')).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'Open, 1' }));
+    expect(screen.getByText('No personal chats open.')).toBeTruthy();
+  });
+
+  it('says so when no earlier chat is TDS', () => {
+    setStore({
+      sessions: {
+        live: [],
+        past: [
+          {
+            sdkSessionId: 'p2',
+            title: 'Old private',
+            lastModified: new Date().toISOString(),
+            kind: 'personal',
+          },
+        ],
+      },
+    });
+    render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'TDS' }));
+    expect(screen.getByText('No earlier TDS chats.')).toBeTruthy();
   });
 });
 

@@ -7,6 +7,7 @@ const chat = (id: string, when: Date | string): PastSession => ({
   sdkSessionId: id,
   title: id,
   lastModified: typeof when === 'string' ? when : when.toISOString(),
+  kind: 'tds',
 });
 const day = (back: number, hour = 9) => new Date(2026, 10, 13 - back, hour, 0);
 const shape = (past: PastSession[]) =>

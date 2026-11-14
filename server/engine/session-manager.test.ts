@@ -21,6 +21,7 @@ import type {
   TodoItem,
   TodoList,
 } from '../../shared/contract.ts';
+import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
 import {
   ATTACHMENT_NOTE,
@@ -257,12 +258,14 @@ function setup(
     engineDefaults?: () => { model: string | null };
     uploads?: UploadStaging;
     dataDir?: string;
+    chatKinds?: ChatKindStore;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
     uploads: opts.uploads,
     dataDir: opts.dataDir,
+    chatKinds: opts.chatKinds,
     brain: fakeBrain(opts.brain),
     brainRoot: BRAIN,
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
@@ -1371,6 +1374,7 @@ describe('reopening a past chat (A4)', () => {
       sdkSessionId: 'b',
       title: 'Bee',
       lastModified: new Date(3_000).toISOString(),
+      kind: 'tds',
     });
   });
 });
@@ -2355,5 +2359,111 @@ describe('the attachment note (chat files)', () => {
     });
     expect(notedAttachments(text)).toEqual([{ name: 'a.png', kind: 'image', stagedPath: '/up/1/a.png' }]);
     expect(notedAttachments('no note here')).toEqual([]);
+  });
+});
+
+describe('chat kinds (TDS / Personal)', () => {
+  it('a new chat is TDS, and one on a personal to-do is personal', async () => {
+    setup();
+    expect((await mgr.start({ prompt: 'hi' })).kind).toBe('tds');
+    expect((await mgr.start({ prompt: 'on tds', todoId: '20261111-mine.md' })).kind).toBe('tds');
+    const p = await mgr.start({ prompt: 'private', todoId: 'personal/20261111-mine.md' });
+    expect(p.kind).toBe('personal');
+    expect((await mgr.list()).live.find((l) => l.id === p.id)?.kind).toBe('personal');
+  });
+
+  it('saves a personal chat when system/init brings its id', async () => {
+    const chatKinds = createChatKindStore(null);
+    setup(undefined, { chatKinds });
+    const p = await mgr.start({ prompt: 'private', todoId: 'personal/20261111-mine.md' });
+    await flush();
+    expect(await chatKinds.kindOf('sdk-new-1')).toBe('personal');
+    expect(p.sdkSessionId).toBeNull();
+  });
+
+  it('a TDS chat saves nothing', async () => {
+    const chatKinds = createChatKindStore(null);
+    setup(undefined, { chatKinds });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await chatKinds.personal()).size).toBe(0);
+  });
+
+  it('a reopened chat keeps its saved kind, and the list shows earlier kinds', async () => {
+    const chatKinds = createChatKindStore(null);
+    await chatKinds.set('old-1', 'personal');
+    const fx = setup(undefined, { chatKinds });
+    fx.past.push({ sessionId: 'old-1', summary: 'Mine', lastModified: 2_000 });
+    fx.past.push({ sessionId: 'old-2', summary: 'Work', lastModified: 1_000 });
+    const past = (await mgr.list()).past;
+    expect(past.map((p) => [p.sdkSessionId, p.kind])).toEqual([
+      ['old-1', 'personal'],
+      ['old-2', 'tds'],
+    ]);
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(s.kind).toBe('personal');
+    const t = await mgr.start({ resume: 'old-2' });
+    expect(t.kind).toBe('tds');
+  });
+
+  it('if the saved kinds cannot be read, earlier chats count as TDS and reopening works', async () => {
+    const chatKinds: ChatKindStore = {
+      personal: () => Promise.reject(new Error('boom')),
+      kindOf: () => Promise.reject(new Error('boom')),
+      set: async () => {},
+    };
+    const fx = setup(undefined, { chatKinds });
+    fx.past.push({ sessionId: 'old-1', summary: 'Mine', lastModified: 2_000 });
+    expect((await mgr.list()).past[0]?.kind).toBe('tds');
+    expect((await mgr.start({ resume: 'old-1' })).kind).toBe('tds');
+  });
+
+  it('a personal chat is saved under a new id when the engine gives it one', async () => {
+    const chatKinds = createChatKindStore(null);
+    await chatKinds.set('old-1', 'personal');
+    const fx = setup(undefined, { chatKinds });
+    fx.past.push({ sessionId: 'old-1', summary: 'Mine', lastModified: 2_000 });
+    await mgr.start({ resume: 'old-1', prompt: 'carry on' });
+    await flush();
+    fx.queries[0]?.emit({ type: 'system', subtype: 'init', session_id: 'forked-9', apiKeySource: 'none' });
+    await flush();
+    expect(await chatKinds.personal()).toEqual(new Set(['old-1', 'forked-9']));
+  });
+
+  it('setKind updates, saves, notifies and returns the snapshot', async () => {
+    const chatKinds = createChatKindStore(null);
+    setup(undefined, { chatKinds });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const fn = vi.fn();
+    mgr.onChange(fn);
+    const out = await mgr.setKind(s.id, 'personal');
+    expect(out.kind).toBe('personal');
+    expect(out.id).toBe(s.id);
+    expect(fn).toHaveBeenCalled();
+    expect(await chatKinds.kindOf('sdk-new-1')).toBe('personal');
+    expect((await mgr.list()).live[0]?.kind).toBe('personal');
+    await mgr.setKind(s.id, 'tds');
+    expect(await chatKinds.kindOf('sdk-new-1')).toBe('tds');
+  });
+
+  it('setKind before init reaches the store on init', async () => {
+    const chatKinds = createChatKindStore(null);
+    const fx = setup(async () => {}, { chatKinds });
+    const s = await mgr.start({ prompt: 'hi' });
+    await mgr.setKind(s.id, 'personal');
+    expect((await chatKinds.personal()).size).toBe(0);
+    fx.queries[0]?.init();
+    await flush();
+    expect(await chatKinds.kindOf('sdk-new-1')).toBe('personal');
+  });
+
+  it('setKind refuses an unknown or closed chat and a bad kind', async () => {
+    setup();
+    await expectCode(mgr.setKind('nope', 'personal'), 'not-found');
+    const s = await mgr.start({ prompt: 'hi' });
+    await expectCode(mgr.setKind(s.id, 'work' as never), 'bad-request');
+    await mgr.close(s.id);
+    await expectCode(mgr.setKind(s.id, 'personal'), 'session-closed');
   });
 });

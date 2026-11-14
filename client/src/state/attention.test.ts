@@ -11,6 +11,7 @@ const chat = (id: string, state: LiveSession['state'], todoId: string | null): L
   state,
   startedAt: '',
   lastActivityAt: '',
+  kind: 'tds',
 });
 
 describe('formatElapsed', () => {

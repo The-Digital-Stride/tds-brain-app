@@ -148,6 +148,7 @@ export type KeyAction = (e: KeyLike, ctx: KeyContext) => ShellAction | null;
 
 export type IconName =
   | 'home'
+  | 'star'
   | 'edit'
   | 'more'
   | 'chat'

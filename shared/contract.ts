@@ -702,7 +702,17 @@ export interface AppPrefs {
    * "Choose myself".
    */
   levelMode: LevelMode;
+  /**
+   * Favourite chats (plan 2026-11-14-chat-favourites): `sdkSessionId`s (UUIDs) in the order they were starred,
+   * at most FAVOURITE_CHATS_MAX. Shown first in the Chats drawer. This server always sends it; optional because
+   * an older server sends none, which reads as [].
+   */
+  favouriteChats?: string[];
 }
+
+export const FAVOURITE_CHATS_MAX = 200;
+/** Claude Code's session ids, which favourite chats are keyed by. */
+export const SESSION_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const MODEL_PREF_MAX = 100;
 /** A model alias or id: letters, digits and . _ : - [ ] only (e.g. 'opus', 'claude-opus-5-5[1m]'). */
@@ -721,6 +731,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   model: null,
   effort: null,
   levelMode: 'auto',
+  favouriteChats: [],
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */

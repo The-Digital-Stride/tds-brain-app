@@ -47,6 +47,7 @@ describe('app store', () => {
     expect(Object.keys(JSON.parse(readFileSync(join(dir, 'prefs.json'), 'utf8'))).sort()).toEqual([
       'directWrites',
       'effort',
+      'favouriteChats',
       'lastClient',
       'levelMode',
       'model',
@@ -56,6 +57,27 @@ describe('app store', () => {
     ]);
     writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['z'], extra: true }));
     expect(await store.get()).toEqual({ ...DEFAULT_PREFS, pins: ['z'] });
+  });
+
+  it('keeps favourite chats: an old file reads as none; bad ids and repeats are dropped; the newest 200 stay', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'] }));
+    const store = createAppStore(dir);
+    expect((await store.get()).favouriteChats).toEqual([]);
+    const a = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const b = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    expect((await store.update({ favouriteChats: [a, 'x', a, 3, b] as never })).favouriteChats).toEqual([
+      a,
+      b,
+    ]);
+    expect((await store.update({ favouriteChats: 'nope' as never })).favouriteChats).toEqual([a, b]);
+    expect((await createAppStore(dir).get()).favouriteChats).toEqual([a, b]);
+    const many = Array.from(
+      { length: 205 },
+      (_, i) => `0f8fad5b-d9cb-469f-a165-${String(i).padStart(12, '0')}`,
+    );
+    expect((await store.update({ favouriteChats: many })).favouriteChats).toEqual(many.slice(5));
   });
 
   it('validates types: pins unique strings, max 100; booleans are booleans', async () => {
@@ -88,6 +110,7 @@ describe('app store', () => {
       model: null,
       effort: null,
       levelMode: 'auto',
+      favouriteChats: [],
     });
   });
 

@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import { attentionFor, type LiveSession, type PastSession } from '../../../shared/contract.ts';
+import { favouritesFirst, isFavourite, splitFavourites } from '../state/chat-favourites.ts';
 import { type ChatKindFilter, filterChats, kindOf } from '../state/chat-filter.ts';
 import { groupChatsByDay } from '../state/chat-groups.ts';
 import { sortChats } from '../state/chats.ts';
@@ -12,7 +13,51 @@ import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
-function OpenRow({ chat, showKind }: { chat: LiveSession; showKind: boolean }) {
+/**
+ * The star that keeps a chat at the top of its list. The label stays the same and `aria-pressed` says whether
+ * it is on. Before the chat's first reply starts it has no lasting id, so there is no star yet.
+ */
+function StarButton({
+  sdkSessionId,
+  title,
+  on,
+  onPress,
+}: {
+  sdkSessionId: string;
+  title: string;
+  on: boolean;
+  onPress: (sdkSessionId: string, button: HTMLElement) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="icon-btn star-btn"
+      aria-pressed={on}
+      aria-label={`Favourite: ${title}`}
+      data-star-id={sdkSessionId}
+      onClick={(e) => onPress(sdkSessionId, e.currentTarget)}
+    >
+      <Icon name="star" size={16} />
+    </button>
+  );
+}
+
+type OnStar = (sdkSessionId: string, button: HTMLElement) => void;
+const NO_FAVOURITES: readonly string[] = [];
+/** How long after a star press focus may still follow that chat (a failed save puts it back). */
+const STAR_FOCUS_MS = 15_000;
+
+function OpenRow({
+  chat,
+  showKind,
+  favourite,
+  onStar,
+}: {
+  chat: LiveSession;
+  showKind: boolean;
+  favourite: boolean;
+  onStar: OnStar;
+}) {
   const { boot, openChat, requestClose, activeChat, view } = useStore();
   const { dispatch, modes } = useShell();
   const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
@@ -41,6 +86,9 @@ function OpenRow({ chat, showKind }: { chat: LiveSession; showKind: boolean }) {
           </span>
         </span>
       </button>
+      {chat.sdkSessionId ? (
+        <StarButton sdkSessionId={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
+      ) : null}
       <button
         type="button"
         className="icon-btn"
@@ -62,12 +110,16 @@ function PastRow({
   showKind,
   busy,
   onAsk,
+  favourite,
+  onStar,
 }: {
   chat: PastSession;
   showKind: boolean;
   /** A delete is running: no second question until it ends. */
   busy: boolean;
   onAsk: () => void;
+  favourite: boolean;
+  onStar: OnStar;
 }) {
   const { openPast } = useStore();
   const { dispatch, modes } = useShell();
@@ -90,6 +142,7 @@ function PastRow({
           </span>
         </span>
       </button>
+      <StarButton sdkSessionId={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
       <button
         type="button"
         className="icon-btn"
@@ -105,7 +158,9 @@ function PastRow({
 }
 
 export function ChatsDrawer() {
-  const { sessions, openPast, deletePastChat } = useStore();
+  const { sessions, boot, deletePastChat, toggleFavouriteChat } = useStore();
+  // One shared empty list, so a server that sends none doesn't look like a change on every render.
+  const favs = boot?.prefs.favouriteChats ?? NO_FAVOURITES;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -129,11 +184,53 @@ export function ChatsDrawer() {
     (target ?? body.current)?.focus();
   }, [sessions, confirmId]);
 
+  // A starred or unstarred chat moves to another place in the list (on Earlier, another section), so its
+  // button is a new one and focus drops to the page. When the list moves, focus goes back to that chat's star,
+  // else the star that came next when it was pressed, else the drawer. The press is kept for a while, not for
+  // one move only, so a failed save that puts the star back also brings focus back.
+  const starFocus = useRef<{ id: string; next: string | null; favs: readonly string[]; at: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    const want = starFocus.current;
+    // Only a real change of stars moves a row; a reply with the same list must not take focus.
+    if (!want || sameList(want.favs, favs)) return;
+    if (Date.now() - want.at > STAR_FOCUS_MS) {
+      starFocus.current = null;
+      return;
+    }
+    want.favs = favs;
+    // Only when the row's move dropped focus to the page: never from something the person has moved on to.
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const stars = visibleStars(body.current);
+    const target =
+      stars.find((b) => b.dataset.starId === want.id) ?? stars.find((b) => b.dataset.starId === want.next);
+    if (target && active !== target) target.focus();
+    else if (!target) body.current?.focus();
+  }, [favs]);
+  // Which Earlier sections are open: the person's own choice, else Favourites and the newest day section.
+  const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
+  const onStar: OnStar = (id, button) => {
+    const stars = visibleStars(body.current);
+    const at = stars.indexOf(button as HTMLButtonElement);
+    const next = stars[at + 1] ?? stars[at - 1];
+    starFocus.current = { id, next: next?.dataset.starId ?? null, favs, at: Date.now() };
+    // Open the section the chat moves to, so focus can follow it there.
+    const chat = sessions?.past.find((p) => p.sdkSessionId === id);
+    if (chat) {
+      const to = favs.includes(id) ? groupChatsByDay([chat], new Date())[0]?.key : 'favourites';
+      if (to) setOpenFolds((o) => ({ ...o, [to]: true }));
+    }
+    void toggleFavouriteChat(id);
+  };
+
   const { dispatch, modes } = useShell();
   const [tab, setTab] = useState<ChatsTab>('open');
   const [kind, setKind] = useState<ChatKindFilter>('all');
   if (!sessions) return <p className="dock-empty">Loading your chats.</p>;
-  const open = sortChats(sessions.live);
+  // Favourites first; within each part, needs an answer first, then working, ready, stopped (`sortChats`).
+  const open = favouritesFirst(sortChats(sessions.live), favs);
   // The switch shows once any chat is personal (or while a kind is picked); hidden, it counts as All.
   const showKind =
     kind !== 'all' ||
@@ -143,12 +240,91 @@ export function ChatsDrawer() {
   const shownOpen = filterChats(open, active);
   const shownPast = filterChats(sessions.past, active);
   const kindWord = active === 'personal' ? 'personal' : 'TDS';
-  const pastGroups = groupChatsByDay(shownPast, new Date());
-  const pastOrder = pastGroups.flatMap((g) => g.items.map((s) => s.sdkSessionId));
+  const { favourites: favPast, rest: restPast } = splitFavourites(shownPast, favs);
+  const pastGroups = groupChatsByDay(restPast, new Date());
+  const pastOrder = [...favPast, ...pastGroups.flatMap((g) => g.items)].map((s) => s.sdkSessionId);
   const neighbour = (id: string): string | null => {
     const at = pastOrder.indexOf(id);
     return pastOrder[at + 1] ?? pastOrder[at - 1] ?? null;
   };
+  const pastItem = (s: PastSession): ReactNode =>
+    confirmId === s.sdkSessionId ? (
+      <li className="line line-confirm" key={s.sdkSessionId}>
+        <div className="line-text">
+          <span className="line-title">{s.title || 'New chat'}</span>
+          <fieldset
+            className="close-confirm"
+            aria-label="Delete this chat"
+            aria-describedby={`delete-q-${s.sdkSessionId}`}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return;
+              // Always handled here, so the shell's Esc never closes the drawer mid-question or
+              // mid-delete; while the delete runs it does nothing.
+              e.preventDefault();
+              e.stopPropagation();
+              if (busyId) return;
+              refocus.current = { id: s.sdkSessionId, next: null };
+              setConfirmId(null);
+            }}
+          >
+            <span id={`delete-q-${s.sdkSessionId}`}>
+              Move this chat to the Bin? It also leaves Claude Code in the terminal.
+            </span>
+            <button
+              type="button"
+              className="btn"
+              data-variant="danger"
+              data-size="small"
+              // aria-disabled, not disabled: a disabled button loses focus to the page, and Esc
+              // would then miss this question and close the drawer mid-delete.
+              aria-disabled={busyId !== null || undefined}
+              onClick={() => {
+                if (busyId) return;
+                setBusyId(s.sdkSessionId);
+                void deletePastChat(s.sdkSessionId).then((ok) => {
+                  seen.current = sessions;
+                  refocus.current = {
+                    id: s.sdkSessionId,
+                    next: neighbour(s.sdkSessionId),
+                    afterReload: ok,
+                  };
+                  setBusyId(null);
+                  // Failed: the row comes back (the error shows). Done: the list reloads without it.
+                  setConfirmId(null);
+                });
+              }}
+            >
+              Delete chat
+            </button>
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              // biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared.
+              autoFocus
+              aria-disabled={busyId !== null || undefined}
+              onClick={() => {
+                if (busyId) return;
+                refocus.current = { id: s.sdkSessionId, next: null };
+                setConfirmId(null);
+              }}
+            >
+              Keep chat
+            </button>
+          </fieldset>
+        </div>
+      </li>
+    ) : (
+      <PastRow
+        key={s.sdkSessionId}
+        chat={s}
+        showKind={active === 'all'}
+        busy={busyId !== null}
+        onAsk={() => setConfirmId(s.sdkSessionId)}
+        favourite={isFavourite(s, favs)}
+        onStar={onStar}
+      />
+    );
   return (
     <div className="drawer-body" ref={body} tabIndex={-1}>
       <Seg
@@ -182,7 +358,12 @@ export function ChatsDrawer() {
           <ul className="drawer-list">
             {shownOpen.map((c) => (
               <Fragment key={c.id}>
-                <OpenRow chat={c} showKind={active === 'all'} />
+                <OpenRow
+                  chat={c}
+                  showKind={active === 'all'}
+                  favourite={isFavourite(c, favs)}
+                  onStar={onStar}
+                />
                 <HelperRows chat={c} />
               </Fragment>
             ))}
@@ -193,91 +374,42 @@ export function ChatsDrawer() {
       ) : shownPast.length === 0 ? (
         <p className="dock-empty">No earlier {kindWord} chats.</p>
       ) : (
-        // Grouped by when they were last used, with only the newest group open, like the to-dos.
-        pastGroups.map((g, i) => (
-          <Fold key={g.key} title={g.title} count={g.items.length} defaultOpen={i === 0}>
-            <ul className="drawer-list">
-              {g.items.map((s) =>
-                confirmId === s.sdkSessionId ? (
-                  <li className="line line-confirm" key={s.sdkSessionId}>
-                    <div className="line-text">
-                      <span className="line-title">{s.title || 'New chat'}</span>
-                      <fieldset
-                        className="close-confirm"
-                        aria-label="Delete this chat"
-                        aria-describedby={`delete-q-${s.sdkSessionId}`}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Escape') return;
-                          // Always handled here, so the shell's Esc never closes the drawer mid-question or
-                          // mid-delete; while the delete runs it does nothing.
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (busyId) return;
-                          refocus.current = { id: s.sdkSessionId, next: null };
-                          setConfirmId(null);
-                        }}
-                      >
-                        <span id={`delete-q-${s.sdkSessionId}`}>
-                          Move this chat to the Bin? It also leaves Claude Code in the terminal.
-                        </span>
-                        <button
-                          type="button"
-                          className="btn"
-                          data-variant="danger"
-                          data-size="small"
-                          // aria-disabled, not disabled: a disabled button loses focus to the page, and Esc
-                          // would then miss this question and close the drawer mid-delete.
-                          aria-disabled={busyId !== null || undefined}
-                          onClick={() => {
-                            if (busyId) return;
-                            setBusyId(s.sdkSessionId);
-                            void deletePastChat(s.sdkSessionId).then((ok) => {
-                              seen.current = sessions;
-                              refocus.current = {
-                                id: s.sdkSessionId,
-                                next: neighbour(s.sdkSessionId),
-                                afterReload: ok,
-                              };
-                              setBusyId(null);
-                              // Failed: the row comes back (the error shows). Done: the list reloads without it.
-                              setConfirmId(null);
-                            });
-                          }}
-                        >
-                          Delete chat
-                        </button>
-                        <button
-                          type="button"
-                          className="btn"
-                          data-size="small"
-                          // biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared.
-                          autoFocus
-                          aria-disabled={busyId !== null || undefined}
-                          onClick={() => {
-                            if (busyId) return;
-                            refocus.current = { id: s.sdkSessionId, next: null };
-                            setConfirmId(null);
-                          }}
-                        >
-                          Keep chat
-                        </button>
-                      </fieldset>
-                    </div>
-                  </li>
-                ) : (
-                  <PastRow
-                    key={s.sdkSessionId}
-                    chat={s}
-                    showKind={active === 'all'}
-                    busy={busyId !== null}
-                    onAsk={() => setConfirmId(s.sdkSessionId)}
-                  />
-                ),
-              )}
-            </ul>
-          </Fold>
-        ))
+        <>
+          {/* Favourites first, open; then the rest grouped by when they were last used, the newest group open. */}
+          {favPast.length > 0 ? (
+            <Fold
+              key="favourites"
+              title="Favourites"
+              count={favPast.length}
+              open={openFolds.favourites ?? true}
+              onToggle={(o) => setOpenFolds((f) => ({ ...f, favourites: o }))}
+            >
+              <ul className="drawer-list">{favPast.map(pastItem)}</ul>
+            </Fold>
+          ) : null}
+          {pastGroups.map((g, i) => (
+            <Fold
+              key={g.key}
+              title={g.title}
+              count={g.items.length}
+              open={openFolds[g.key] ?? i === 0}
+              onToggle={(o) => setOpenFolds((f) => ({ ...f, [g.key]: o }))}
+            >
+              <ul className="drawer-list">{g.items.map(pastItem)}</ul>
+            </Fold>
+          ))}
+        </>
       )}
     </div>
   );
 }
+
+/** The star buttons a person can reach: rows in a folded group stay in the page but hidden. */
+function visibleStars(root: HTMLElement | null): HTMLButtonElement[] {
+  return Array.from(root?.querySelectorAll<HTMLButtonElement>('[data-star-id]') ?? []).filter(
+    (b) => !b.closest('[hidden]'),
+  );
+}
+
+const sameList = (a: readonly string[], b: readonly string[]) =>
+  a === b || (a.length === b.length && a.every((x, i) => x === b[i]));

@@ -61,6 +61,7 @@ const fns = {
   deletePastChat: vi.fn(),
   startSkill: vi.fn(),
   togglePin: vi.fn(),
+  toggleFavouriteChat: vi.fn(),
 };
 
 function setStore(over: Record<string, unknown> = {}, directWrites = false, pins: string[] = []) {
@@ -309,6 +310,127 @@ describe('Chats drawer kind filter', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
     fireEvent.click(screen.getByRole('radio', { name: 'TDS' }));
     expect(screen.getByText('No earlier TDS chats.')).toBeTruthy();
+  });
+});
+
+describe('Chats drawer favourites', () => {
+  const A = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const B = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const C = '16fd2706-8baf-433b-82eb-8c7fada847da';
+  const now = new Date().toISOString();
+  const past = (id: string, title: string) => ({
+    sdkSessionId: id,
+    title,
+    lastModified: now,
+    kind: 'tds' as const,
+  });
+  const withFavs = (favouriteChats: string[], sessions: unknown) => {
+    setStore({ sessions });
+    const boot = store.current.boot as { prefs: Record<string, unknown> };
+    store.current.boot = { ...boot, prefs: { ...boot.prefs, favouriteChats } };
+  };
+  const titles = () => Array.from(document.querySelectorAll('.line-title')).map((t) => t.textContent);
+
+  it('puts favourite open chats first and stars them, with no star before a chat has an id', () => {
+    withFavs([B], {
+      live: [
+        { ...live('s1'), sdkSessionId: A, lastActivityAt: '2026-11-14T10:00:00Z' },
+        { ...live('s2'), sdkSessionId: B, lastActivityAt: '2026-11-14T09:00:00Z' },
+        live('s3'),
+      ],
+      past: [],
+    });
+    render(<ChatsDrawer />);
+    expect(titles()).toEqual(['Chat s2', 'Chat s1', 'Chat s3']);
+    const on = screen.getByRole('button', { name: 'Favourite: Chat s2' });
+    expect(on.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Favourite: Chat s1' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(screen.queryByRole('button', { name: 'Favourite: Chat s3' })).toBeNull();
+    fireEvent.click(on);
+    expect(fns.toggleFavouriteChat).toHaveBeenCalledWith(B);
+  });
+
+  it('shows earlier favourites in an open Favourites section, once, with today still open', () => {
+    withFavs([C], { live: [], past: [past(A, 'Alpha chat'), past(C, 'Gamma chat')] });
+    render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const favs = screen.getByRole('button', { name: /Favourites/ });
+    expect(favs.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /Today/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(titles()).toEqual(['Gamma chat', 'Alpha chat']);
+  });
+
+  it('opens the closed section an unstarred chat moves to, and focus follows it there', () => {
+    const old = { ...past(B, 'Beta chat'), lastModified: '2020-01-01T10:00:00Z' };
+    withFavs([B], { live: [], past: [past(A, 'Alpha chat'), old] });
+    const view = render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    star.focus();
+    fireEvent.click(star);
+    withFavs([], { live: [], past: [past(A, 'Alpha chat'), old] });
+    view.rerender(<ChatsDrawer />);
+    expect(screen.getByRole('button', { name: /^Earlier/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Favourite: Beta chat');
+  });
+
+  it('brings focus back when a failed save puts the star back', () => {
+    const sessions = { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat')] };
+    withFavs([], sessions);
+    const view = render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    star.focus();
+    fireEvent.click(star);
+    withFavs([B], sessions);
+    view.rerender(<ChatsDrawer />);
+    // The save failed: the store puts the list back, so the row moves again.
+    withFavs([], sessions);
+    view.rerender(<ChatsDrawer />);
+    const back = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    expect(back.getAttribute('aria-pressed')).toBe('false');
+    expect(document.activeElement).toBe(back);
+  });
+
+  it('does not take focus back when a reply brings the same stars again', () => {
+    const sessions = { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat'), past(C, 'Gamma chat')] };
+    withFavs([], sessions);
+    const view = render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    star.focus();
+    fireEvent.click(star);
+    withFavs([B], sessions);
+    view.rerender(<ChatsDrawer />);
+    // The person moves on to another star, then the save's reply lands with an equal, new list.
+    const other = screen.getByRole('button', { name: 'Favourite: Alpha chat' });
+    other.focus();
+    withFavs([B], sessions);
+    view.rerender(<ChatsDrawer />);
+    expect(document.activeElement).toBe(other);
+    // Or moves focus off the drawer entirely: still not taken back.
+    other.blur();
+    withFavs([B], sessions);
+    view.rerender(<ChatsDrawer />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('moves focus with the chat to its new place after a star press', () => {
+    withFavs([], { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat')] });
+    const view = render(<ChatsDrawer />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    star.focus();
+    fireEvent.click(star);
+    expect(fns.toggleFavouriteChat).toHaveBeenCalledWith(B);
+    // The store saves it: the list moves Beta into Favourites, a new row.
+    withFavs([B], { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat')] });
+    view.rerender(<ChatsDrawer />);
+    const moved = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    expect(moved.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(moved);
   });
 });
 

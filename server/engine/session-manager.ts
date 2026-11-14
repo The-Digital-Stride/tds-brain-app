@@ -39,6 +39,7 @@ import {
   type PastSession,
   type PermissionReply,
   type QuestionReply,
+  SESSION_UUID_PATTERN,
   type SequencedEvent,
   type SessionList,
   type SessionState,
@@ -257,7 +258,7 @@ const MAX_PROMPT_CHARS = 100_000;
 const MAX_ANSWER_CHARS = 10_000;
 const TITLE_CHARS = 60;
 /** A chat id is a UUID, nothing else, so it can never point outside the history folder. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = SESSION_UUID_PATTERN;
 /** A resumed chat with no stored level runs at this, and re-picks upward only (decision 6). */
 const RESUMED_TIER: LevelTier = 'standard';
 /** "Why?" for a level kept from before the chat was reopened (the store keeps no reason). */

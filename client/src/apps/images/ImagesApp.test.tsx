@@ -2,13 +2,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROUTES } from '../../../../shared/contract.ts';
-import { pickOption } from '../../test/pick.ts';
+import { openPicker, pickOption } from '../../test/pick.ts';
 import { item, listing, SCOPES } from '../shared/testing.ts';
 
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   libraryVersion: 0,
-  boot: { prefs: { lastClient: null as string | null } },
+  boot: {
+    prefs: { lastClient: null as string | null },
+    clients: [{ slug: 'northwind', name: 'Northwind', aliases: ['NW'] }],
+  },
 }));
 const shell = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -101,6 +104,15 @@ describe('ImagesSheet', () => {
             document.getElementById(g.getAttribute('aria-labelledby') ?? '')?.textContent,
         ),
     ).toEqual(['Mine', 'Clients']);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+  });
+
+  it('finds a client library by its code', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    const picker = openPicker('Library');
+    fireEvent.change(picker, { target: { value: 'nw' } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Northwind']);
     fireEvent.keyDown(picker, { key: 'Escape' });
   });
 

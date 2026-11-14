@@ -2,6 +2,7 @@ import { type ReactNode, useId, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { useStore } from '../../store.tsx';
 import { useCopy } from './copy.ts';
 import { FIRST_SHOWN } from './library.ts';
 import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
@@ -59,7 +60,19 @@ export function LibraryTools({
   placeholder: string;
   children?: ReactNode;
 }) {
-  const option = (group: string) => (s: LibraryScope) => ({ value: s.id, label: s.name, group });
+  // A client's library is found by the client's codes and other names too ("UC"), as in every client picker.
+  const clients = useStore().boot?.clients ?? [];
+  const termsFor = (s: LibraryScope) => {
+    if (s.kind !== 'client') return {};
+    const slug = s.id.slice('client:'.length);
+    return { terms: [slug, ...(clients.find((c) => c.slug === slug)?.aliases ?? [])] };
+  };
+  const option = (group: string) => (s: LibraryScope) => ({
+    value: s.id,
+    label: s.name,
+    group,
+    ...termsFor(s),
+  });
   const options = [
     ...scopes.filter((s) => s.kind === 'personal').map(option('Mine')),
     ...scopes.filter((s) => s.kind === 'client').map(option('Clients')),

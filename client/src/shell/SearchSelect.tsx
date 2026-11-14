@@ -109,6 +109,11 @@ export function SearchSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const wasFocused = useRef(false);
+  // True when the press landed on a focused box showing the chosen label (so it must not move the caret).
+  const pressKept = useRef(false);
+  // The reselect after a pick or Escape, waiting for the next frame; dropped as soon as anything is typed.
+  const reselect = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(reselect.current), []);
 
   const chosen = options.find((o) => o.value === value);
   const query = text ?? '';
@@ -124,13 +129,21 @@ export function SearchSelect({
     const box = inputRef.current;
     if (box && document.activeElement === box) box.select();
   };
+  /** Selects the label again on the next frame (Chrome collapses a selection after the click); typing cancels it. */
+  const reselectSoon = () => {
+    cancelAnimationFrame(reselect.current);
+    reselect.current = requestAnimationFrame(selectLabel);
+  };
   /** Opens the list. `fresh`: opened by click, ArrowDown or Enter, not by typing, so the label is selected. */
   const show = (fresh = true) => {
     if (disabled) return;
     if (!open) {
       setRecent(recentKey ? readRecent(recentKey) : []);
       setOpen(true);
-      if (fresh && text === null) selectLabel();
+      if (fresh && text === null) {
+        selectLabel();
+        reselectSoon();
+      }
     }
   };
   const close = () => {
@@ -138,7 +151,7 @@ export function SearchSelect({
     setText(null);
     setMoved(null);
     // After a pick or Escape focus stays here: select the label once it is back in the box.
-    requestAnimationFrame(selectLabel);
+    reselectSoon();
   };
   const pick = (option: PickOption) => {
     if (option.value !== value) onChange(option.value);
@@ -241,6 +254,7 @@ export function SearchSelect({
         placeholder={placeholder}
         value={text ?? chosen?.label ?? ''}
         onChange={(e) => {
+          cancelAnimationFrame(reselect.current);
           setText(e.target.value);
           setMoved(null);
           show(false);
@@ -248,10 +262,14 @@ export function SearchSelect({
         onFocus={(e) => e.currentTarget.select()}
         onMouseDown={(e) => {
           wasFocused.current = document.activeElement === e.currentTarget;
+          // A browser puts the caret down on the press, after the click has selected the label. While
+          // the box shows the chosen label, keep the press from moving it (focus is already here).
+          pressKept.current = wasFocused.current && !open && text === null;
+          if (pressKept.current) e.preventDefault();
         }}
         // The click that focuses the box would drop its selection on mouseup; keep the select-all.
         onMouseUp={(e) => {
-          if (!wasFocused.current) e.preventDefault();
+          if (!wasFocused.current || pressKept.current) e.preventDefault();
         }}
         onClick={() => show()}
         onKeyDown={onKeyDown}

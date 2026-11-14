@@ -308,9 +308,17 @@ describe('SearchSelect', () => {
     await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
     expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
     // A click on the focused box (the caret lands at the end) and ArrowDown both reselect it.
+    // A real browser puts the caret down on the press, after any click handler, so the press itself is
+    // stopped from moving the caret while the box shows a chosen label.
+    expect(fireEvent.mouseDown(box())).toBe(false);
+    expect(fireEvent.mouseUp(box())).toBe(false);
     box().setSelectionRange(13, 13);
     fireEvent.click(box());
     expect([box().selectionStart, box().selectionEnd]).toEqual([0, 'Urban Cooling'.length]);
+    // Once open with a query, a press places the caret as normal, for editing what was typed.
+    fireEvent.change(box(), { target: { value: 'urb' } });
+    expect(fireEvent.mouseDown(box())).toBe(true);
+    key('Escape');
     key('Escape');
     box().setSelectionRange(13, 13);
     key('ArrowDown');
@@ -320,6 +328,18 @@ describe('SearchSelect', () => {
     fireEvent.change(box(), { target: { value: 'a' } });
     expect(box().value).toBe('a');
     expect(box().selectionStart).toBe(1);
+  });
+
+  it('a letter typed straight after a pick or Escape is not selected by the delayed reselect', async () => {
+    render(<Harness />);
+    act(() => box().focus());
+    fireEvent.click(box());
+    key('Escape');
+    // Typed before the next frame.
+    fireEvent.change(box(), { target: { value: 'a' } });
+    box().setSelectionRange(1, 1);
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect([box().selectionStart, box().selectionEnd]).toEqual([1, 1]);
   });
 
   it('a disabled picker cannot open', () => {

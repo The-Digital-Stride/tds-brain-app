@@ -1160,6 +1160,36 @@ describe('reopening a past chat (A4)', () => {
     });
   });
 
+  it('never shows a background helper’s finish notice as something the person said', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Audit', lastModified: 1 });
+    const notice = [
+      '<task-notification>',
+      '<task-id>ab74d8a35073d71cf</task-id>',
+      '<status>completed</status>',
+      '<summary>Agent "Audit" finished</summary>',
+      '</task-notification>',
+    ].join('\n');
+    fx.history['old-1'] = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'Run the audit' },
+        parent_tool_use_id: null,
+      },
+      { type: 'user', uuid: 'u2', message: { role: 'user', content: notice }, parent_tool_use_id: null },
+      {
+        type: 'user',
+        uuid: 'u3',
+        message: { role: 'user', content: [{ type: 'text', text: `\n${notice}` }] },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    const said = events(mgr, s.id).filter((e) => e.type === 'user-message');
+    expect(said).toEqual([{ type: 'user-message', messageId: expect.any(String), text: 'Run the audit' }]);
+  });
+
   it('replays the steps of a reopened chat, and marks one with no stored result as not done', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'Steps', lastModified: 1 });

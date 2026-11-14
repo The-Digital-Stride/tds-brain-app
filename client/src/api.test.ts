@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './api.ts';
+import { api, streamUrl } from './api.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,5 +37,30 @@ describe('api.engineChoices', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(api.engineChoices()).resolves.toEqual(body);
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/api/engine/choices');
+  });
+});
+
+describe('streamUrl', () => {
+  it('opens the stream with files and levels', () => {
+    expect(streamUrl('s1', 4)).toBe('/api/stream?session=s1&after=4&files=1&levels=1');
+  });
+});
+
+describe('levels routes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('posts a skill level, a clear and a chat level', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ levels: {}, canSet: true, writable: true })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await api.setSkillLevel({ skill: 'a', tier: 'deep' });
+    await api.setSkillLevel({ skill: 'a', tier: null });
+    await api.setChatLevel('s 1', 'quick');
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0]?.[0]).toBe('/api/skill-levels');
+    expect(JSON.parse(String(calls[0]?.[1].body))).toEqual({ skill: 'a', tier: 'deep' });
+    expect(JSON.parse(String(calls[1]?.[1].body))).toEqual({ skill: 'a', tier: null });
+    expect(calls[2]?.[0]).toBe('/api/sessions/s%201/level');
+    expect(JSON.parse(String(calls[2]?.[1].body))).toEqual({ tier: 'quick' });
   });
 });

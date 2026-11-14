@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueInWords, EFFORT_OPTION_WORDS, engineLine, modelName } from './format.ts';
+import { dueInWords, EFFORT_OPTION_WORDS, engineLine, levelLineText, modelName } from './format.ts';
 
 describe('dueInWords', () => {
   const today = '2026-11-11'; // a Wednesday
@@ -39,5 +39,40 @@ describe('modelName and EFFORT_OPTION_WORDS', () => {
   it('has a plain word for each effort', () => {
     expect(EFFORT_OPTION_WORDS.xhigh).toBe('Extra high');
     expect(Object.values(EFFORT_OPTION_WORDS)).toEqual(['Low', 'Medium', 'High', 'Extra high', 'Max']);
+  });
+});
+
+describe('levelLineText', () => {
+  it('says a pick was made for this chat, with the model and effort for Why?', () => {
+    expect(
+      levelLineText({ tier: 'standard', source: { kind: 'auto', reason: 'A short writing job' } }),
+    ).toEqual({
+      tier: 'Standard',
+      note: 'picked by the app for this chat',
+      why: 'A short writing job',
+      engine: 'Sonnet · Medium effort',
+    });
+  });
+  it('names the skill for a team level', () => {
+    const t = levelLineText({ tier: 'deep', source: { kind: 'team', skill: 'google-ads-audit' } });
+    expect(t?.tier).toBe('Deep');
+    expect(t?.note).toBe('for /google-ads-audit · team level');
+    expect(t?.engine).toBe('Opus · High effort');
+  });
+  it('says it was your choice after the chat menu', () => {
+    expect(levelLineText({ tier: 'quick', source: { kind: 'chat' } })?.note).toBe(
+      'your choice for this chat',
+    );
+    expect(levelLineText({ tier: 'quick', source: { kind: 'chat' } })?.engine).toBe('Haiku · Medium effort');
+  });
+  it('falls back to the plain pick wording', () => {
+    const t = levelLineText({ tier: 'standard', source: { kind: 'fallback' } });
+    expect(t?.tier).toBe('Standard');
+    expect(t?.note).toBe("the app's usual level");
+  });
+  it('reads "Set by /name" for a skill with its own setting, and nothing for manual', () => {
+    const t = levelLineText({ tier: null, source: { kind: 'skill-own', skill: 'deep-dive' } });
+    expect(t).toMatchObject({ tier: null, note: 'Set by /deep-dive', engine: null });
+    expect(levelLineText({ tier: null, source: { kind: 'manual' } })).toBeNull();
   });
 });

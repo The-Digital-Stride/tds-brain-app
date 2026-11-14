@@ -21,8 +21,20 @@ import type {
   TodoItem,
   TodoList,
 } from '../../shared/contract.ts';
+import type {
+  ChatLevelRecord,
+  ChatLevelStore,
+  LevelPick,
+  LevelSessionApi,
+  LevelSources,
+  OwnLevel,
+  SkillLevel,
+  TurnLevel,
+} from '../../shared/levels-contract.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
+import { AT_ONCE_REASON, HELPERS_LINE, HELPERS_NUDGE, PER_REPLY_REASON } from './helpers.ts';
+import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
   createSessionManager,
@@ -244,7 +256,7 @@ async function expectCode(p: Promise<unknown>, code: string): Promise<void> {
   expect((err as SessionError).code).toBe(code);
 }
 
-let mgr: SessionManager;
+let mgr: SessionManager & LevelSessionApi;
 
 function setup(
   script?: Script,
@@ -258,11 +270,17 @@ function setup(
     engineDefaults?: () => { model: string | null };
     uploads?: UploadStaging;
     dataDir?: string;
+    levels?: LevelSources;
+    chatLevels?: ChatLevelStore;
+    picker?: LevelPicker;
     chatKinds?: ChatKindStore;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    levels: opts.levels,
+    chatLevels: opts.chatLevels,
+    picker: opts.picker,
     uploads: opts.uploads,
     dataDir: opts.dataDir,
     chatKinds: opts.chatKinds,
@@ -2362,6 +2380,1157 @@ describe('the attachment note (chat files)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Levels (plan 2026-11-14-skill-levels-and-helpers, decisions 3 to 7)
+// ---------------------------------------------------------------------------
+
+describe('levels', () => {
+  const lvl = (tier: SkillLevel['tier']): SkillLevel => ({
+    tier,
+    setBy: 'ian-hancock',
+    at: '2026-11-14T00:00:00Z',
+  });
+  const TEAM: Record<string, SkillLevel> = {
+    audit: lvl('deep'),
+    notes: lvl('quick'),
+    report: lvl('standard'),
+  };
+  const OWN: Record<string, OwnLevel> = { 'own-skill': { model: 'haiku', effort: null } };
+  const QUICK: LevelPick = { tier: 'quick', helpers: false, reason: 'A short look-up' };
+  const STANDARD: LevelPick = { tier: 'standard', helpers: false, reason: 'Everyday writing' };
+  const DEEP: LevelPick = { tier: 'deep', helpers: true, reason: 'A full audit' };
+  const ready = (p: LevelPick | null): PickAttempt => ({
+    now: Promise.resolve(p),
+    settled: Promise.resolve(p),
+  });
+
+  /** A pick that misses the timeout: `now` is null at once, `settled` waits for `arrive`. */
+  function latePick() {
+    let arrive: (p: LevelPick | null) => void = () => {};
+    const settled = new Promise<LevelPick | null>((r) => {
+      arrive = r;
+    });
+    return { attempt: { now: Promise.resolve(null), settled } as PickAttempt, arrive };
+  }
+
+  type Controls = FakeQuery & {
+    setModel?: (model?: string) => Promise<void>;
+    applyFlagSettings?: (settings: { effortLevel: unknown }) => Promise<void>;
+  };
+
+  const skillsInBrain = (_id: unknown, name: string) =>
+    Promise.resolve(
+      name === 'key-rotation'
+        ? ('restricted' as const)
+        : ['gm', 'audit', 'notes', 'report', 'own-skill', 'unlevelled'].includes(name)
+          ? ('allowed' as const)
+          : ('unknown-skill' as const),
+    );
+
+  function setupLevels(
+    o: {
+      script?: Script;
+      picks?: (text: string) => PickAttempt;
+      records?: Record<string, ChatLevelRecord>;
+      gateModel?: Promise<void>;
+      noPicker?: boolean;
+      env?: NodeJS.ProcessEnv;
+      uploads?: UploadStaging;
+    } = {},
+  ) {
+    const log: string[] = [];
+    const decorate = (q: FakeQuery) => {
+      const c = q as Controls;
+      c.setModel = async (m) => {
+        log.push(`model:${m}`);
+        if (o.gateModel) await o.gateModel;
+      };
+      c.applyFlagSettings = async (st) => {
+        log.push(`effort:${String(st.effortLevel)}`);
+      };
+    };
+    const script: Script =
+      o.script ??
+      (({ q, turn, text }) => {
+        log.push(`push:${text}`);
+        q.init();
+        q.text(`msg_${turn}`, `Reply ${turn}`);
+        q.result();
+      });
+    const picks: string[] = [];
+    const prewarmed: string[] = [];
+    const picker: LevelPicker = {
+      pick: (t) => {
+        picks.push(t);
+        return (o.picks ?? (() => ready(STANDARD)))(t);
+      },
+      prewarm: (t) => {
+        prewarmed.push(t);
+      },
+    };
+    const records = new Map(Object.entries(o.records ?? {}));
+    const saved: [string, ChatLevelRecord][] = [];
+    const fx = setup(script, {
+      decorate,
+      env: o.env,
+      uploads: o.uploads,
+      brain: { skillAccess: skillsInBrain },
+      levels: {
+        teamLevels: async () => TEAM,
+        ownLevel: async (n) => OWN[n] ?? null,
+      },
+      chatLevels: {
+        get: async (id) => records.get(id) ?? null,
+        set: async (id, r) => {
+          saved.push([id, r]);
+          records.set(id, r);
+        },
+      },
+      picker: o.noPicker ? undefined : picker,
+    });
+    return { ...fx, log, picks, prewarmed, saved };
+  }
+
+  async function auto(): Promise<void> {
+    await mgr.setEngineChoice({ model: null, effort: null, levelMode: 'auto' });
+  }
+
+  function levelEvents(id: string): ChatEvent[] {
+    return events(mgr, id).filter((e) => e.type === 'level');
+  }
+  function lastLevel(id: string): TurnLevel | undefined {
+    const e = levelEvents(id).at(-1);
+    return e?.type === 'level' ? e.level : undefined;
+  }
+
+  /** Every event of a chat from now on, live, after what the replay log holds (it keeps one level event). */
+  function watch(id: string): () => ChatEvent[] {
+    const seen: ChatEvent[] = [];
+    const sub = mgr.subscribe(id, 0, (item) => seen.push(item.event));
+    const replay = sub.replay.map((r) => r.event);
+    return () => [...replay, ...seen];
+  }
+  const isOffer = (e: ChatEvent) => e.type === 'level' && !!e.unlevelledSkill;
+
+  /** Calls the engine's PostToolUse(Skill) hook as Claude Code would after a Skill step. */
+  async function ranSkill(q: FakeQuery | undefined, skill: string, extra: Record<string, unknown> = {}) {
+    const matcher = q?.options.hooks?.PostToolUse?.[0];
+    expect(matcher?.matcher).toBe('Skill');
+    const hook = matcher?.hooks[0];
+    if (!hook) throw new Error('no hook');
+    return hook(
+      {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Skill',
+        tool_input: { skill },
+        tool_response: {},
+        tool_use_id: 'toolu_s',
+        session_id: 'sdk-new-1',
+        transcript_path: '/x',
+        cwd: BRAIN,
+        ...extra,
+      } as never,
+      'toolu_s',
+      { signal: new AbortController().signal },
+    );
+  }
+
+  /** A turn that runs `skill` through the Skill tool before it replies. */
+  const skillScript =
+    (log: string[], skill: string, extra: Record<string, unknown> = {}): Script =>
+    async ({ q, turn, text }) => {
+      log.push(`push:${text}`);
+      q.init();
+      if (text.includes('[skill]')) {
+        await ranSkill(q, skill, extra);
+        log.push('after-skill');
+      }
+      q.text(`msg_${turn}`, `Reply ${turn}`);
+      q.result();
+    };
+
+  it('without levels, a new chat has no hook and no level events (v0.19.0)', async () => {
+    const { queries } = setup();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(queries[0]?.options.hooks).toBeUndefined();
+    expect(levelEvents(s.id)).toEqual([]);
+  });
+
+  it('applies the level, on the choice chain, before the message reaches Claude', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    // A pick without helpers, so the message reaches Claude with no nudge.
+    const fx = setupLevels({ picks: () => ready({ ...DEEP, helpers: false }), gateModel: gate });
+    await auto();
+    const s = await mgr.start({ prompt: 'Audit three clients' });
+    await flush();
+    expect(fx.queries[0]?.options).toMatchObject({ model: 'sonnet', effort: 'medium' });
+    expect(fx.log).toEqual(['model:opus']);
+    expect(fx.queries[0]?.received).toEqual([]);
+    release();
+    await flush();
+    expect(fx.log).toEqual(['model:opus', 'effort:high', 'push:Audit three clients']);
+    expect(lastLevel(s.id)).toEqual({ tier: 'deep', source: { kind: 'auto', reason: 'A full audit' } });
+  });
+
+  it('a pick that matches the starting level changes nothing', async () => {
+    const fx = setupLevels({ picks: () => ready(STANDARD) });
+    await auto();
+    await mgr.start({ prompt: 'Write a report' });
+    await flush();
+    expect(fx.log).toEqual(['push:Write a report']);
+  });
+
+  it('in manual mode it uses the Settings choice and never picks', async () => {
+    const fx = setupLevels();
+    await mgr.setEngineChoice({ model: 'opus', effort: 'max', levelMode: 'manual' });
+    const s = await mgr.start({ prompt: '/audit Acme' });
+    await flush();
+    expect(fx.picks).toEqual([]);
+    expect(fx.queries[0]?.options).toMatchObject({ model: 'opus', effort: 'max' });
+    expect(fx.log).toEqual(['push:/audit Acme']);
+    expect(lastLevel(s.id)).toEqual({ tier: null, source: { kind: 'manual' } });
+  });
+
+  it('an absent levelMode means manual', async () => {
+    const fx = setupLevels();
+    await mgr.setEngineChoice({ model: null, effort: null });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(fx.picks).toEqual([]);
+  });
+
+  it('picks for chats started from a skill with no level, a client, a to-do or only files', async () => {
+    const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-lvl-')));
+    const uploads = createUploadStaging({ dataDir, brainRoot: BRAIN, sweepMs: 0 });
+    try {
+      const fx = setupLevels({ uploads });
+      await auto();
+      await mgr.start({ prompt: '/gm' });
+      await mgr.start({ prompt: 'Check the ads', client: 'urban-cooling' });
+      await mgr.start({ prompt: 'Do this to-do', todoId: '20261111-mine.md' });
+      const up = await uploads.save(Readable.from([Buffer.alloc(6, 0x61)]), 'brief.pdf', 6);
+      await mgr.start({ attachments: [up.id] });
+      await flush();
+      expect(fx.picks).toHaveLength(4);
+      expect(fx.picks.slice(0, 3)).toEqual(['/gm', 'Check the ads', 'Do this to-do']);
+      expect(fx.picks[3]).toContain('brief.pdf');
+      await mgr.closeAll();
+    } finally {
+      uploads.close();
+      await uploads.sweep();
+      rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
+    }
+  });
+
+  it('a /name with a team level runs at it without a pick, and the chat picks on its next message', async () => {
+    const fx = setupLevels({ picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: '/audit Acme' });
+    const seen = watch(s.id);
+    await flush();
+    expect(fx.picks).toEqual([]);
+    expect(fx.log).toEqual(['model:opus', 'effort:high', 'push:/audit Acme']);
+    // Deep for its reply; once it ends, the line shows what a plain message would run at.
+    expect(seen().flatMap((e) => (e.type === 'level' ? [e.level] : []))).toEqual([
+      { tier: 'deep', source: { kind: 'team', skill: 'audit' } },
+      { tier: 'standard', source: { kind: 'fallback' } },
+    ]);
+    await mgr.send(s.id, 'Thanks, what next?');
+    await flush();
+    expect(fx.picks).toEqual(['Thanks, what next?']);
+    expect(fx.log.slice(3)).toEqual(['model:haiku', 'effort:medium', 'push:Thanks, what next?']);
+    expect(lastLevel(s.id)).toEqual({ tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } });
+  });
+
+  it('keeps the chat tier for follow-ups, and re-picks a Quick chat upward only', async () => {
+    let next: LevelPick = QUICK;
+    const fx = setupLevels({ picks: () => ready(next) });
+    await auto();
+    const s = await mgr.start({ prompt: 'next meeting?' });
+    await flush();
+    await mgr.send(s.id, 'and the one after?');
+    await flush();
+    expect(fx.picks).toHaveLength(1);
+    // A long follow-up re-picks; a lower or equal answer changes nothing.
+    next = { ...QUICK, reason: 'Still small' };
+    await mgr.send(s.id, 'x'.repeat(250));
+    await flush();
+    expect(fx.picks).toHaveLength(2);
+    expect(lastLevel(s.id)).toEqual({ tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } });
+    next = DEEP;
+    await mgr.send(s.id, '/unlevelled please');
+    await flush();
+    expect(fx.picks).toHaveLength(3);
+    expect(lastLevel(s.id)).toEqual({ tier: 'deep', source: { kind: 'auto', reason: 'A full audit' } });
+    // On Deep nothing re-picks any more.
+    await mgr.send(s.id, 'y'.repeat(500));
+    await flush();
+    expect(fx.picks).toHaveLength(3);
+  });
+
+  it('a timed-out pick gives the fallback now and the late pick from the next message', async () => {
+    const late = latePick();
+    let first = true;
+    const fx = setupLevels({
+      picks: () => {
+        if (first) {
+          first = false;
+          return late.attempt;
+        }
+        return ready(QUICK);
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'Write the newsletter' });
+    await flush();
+    expect(lastLevel(s.id)).toEqual({ tier: 'standard', source: { kind: 'fallback' } });
+    expect(fx.log).toEqual(['push:Write the newsletter']);
+    late.arrive(DEEP);
+    await flush();
+    await mgr.send(s.id, 'go on');
+    await flush();
+    expect(fx.picks).toHaveLength(1);
+    expect(fx.log.slice(1)).toEqual(['model:opus', 'effort:high', 'push:go on']);
+    expect(lastLevel(s.id)?.tier).toBe('deep');
+  });
+
+  it('a pick still running at the next message is waited for, not asked again', async () => {
+    const late = latePick();
+    const fx = setupLevels({ picks: () => late.attempt });
+    await auto();
+    const s = await mgr.start({ prompt: 'Write the newsletter' });
+    await flush();
+    const sent = mgr.send(s.id, 'go on');
+    await flush();
+    late.arrive(QUICK);
+    await sent;
+    await flush();
+    expect(fx.picks).toHaveLength(1);
+    // Standard to Quick: both are medium effort, so only the model changes.
+    expect(fx.log.slice(1)).toEqual(['model:haiku', 'push:go on']);
+  });
+
+  it('a failed pick runs on the fallback and picks again on the next message', async () => {
+    let answer: LevelPick | null = null;
+    const fx = setupLevels({ picks: () => ready(answer) });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    expect(lastLevel(s.id)).toEqual({ tier: 'standard', source: { kind: 'fallback' } });
+    answer = QUICK;
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(fx.picks).toEqual(['one', 'two']);
+    expect(lastLevel(s.id)?.tier).toBe('quick');
+  });
+
+  it('PostToolUse(Skill) raises the level for the rest of the reply, and never lowers it', async () => {
+    const log: string[] = [];
+    const fx = setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(STANDARD) });
+    await auto();
+    const s = await mgr.start({ prompt: 'Look at Acme [skill]' });
+    const seen = watch(s.id);
+    await flush();
+    expect([...fx.log, ...log]).toEqual([
+      'model:opus',
+      'effort:high',
+      'push:Look at Acme [skill]',
+      'after-skill',
+    ]);
+    expect(seen().flatMap((e) => (e.type === 'level' ? [e.level.tier] : []))).toEqual([
+      'standard',
+      'deep',
+      'standard',
+    ]);
+    expect(seen().filter((e) => e.type === 'level')[1]).toMatchObject({
+      level: { tier: 'deep', source: { kind: 'team', skill: 'audit' } },
+    });
+
+    const low: string[] = [];
+    const fx2 = setupLevels({ script: skillScript(low, 'notes'), picks: () => ready(STANDARD) });
+    await auto();
+    await mgr.start({ prompt: 'Look at Acme [skill]' });
+    await flush();
+    expect(fx2.log).toEqual([]);
+  });
+
+  it('never switches for a helper, a skill with its own level, a chat the person set, or manual mode', async () => {
+    for (const variant of ['agent', 'own', 'chat', 'manual'] as const) {
+      const log: string[] = [];
+      const fx = setupLevels({
+        script: skillScript(
+          log,
+          variant === 'own' ? 'own-skill' : 'audit',
+          variant === 'agent' ? { agent_id: 'a1' } : {},
+        ),
+        picks: () => ready(STANDARD),
+      });
+      if (variant === 'manual')
+        await mgr.setEngineChoice({ model: 'sonnet', effort: 'medium', levelMode: 'manual' });
+      else await auto();
+      const s = await mgr.start({ prompt: 'hello' });
+      await flush();
+      if (variant === 'chat') await mgr.setChatLevel(s.id, 'standard');
+      const before = fx.log.length;
+      await mgr.send(s.id, 'now [skill]');
+      await flush();
+      expect(fx.log.slice(before), variant).toEqual([]);
+    }
+  });
+
+  it('does not restore at the end of a reply; the next turn re-applies its own level', async () => {
+    const log: string[] = [];
+    const fx = setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    expect(fx.log).toEqual(['model:haiku', 'model:opus', 'effort:high']);
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(fx.log.slice(3)).toEqual(['model:haiku', 'effort:medium']);
+  });
+
+  it('re-applies after an interrupt and after the engine fails', async () => {
+    const fx = setupLevels({
+      picks: () => ready(QUICK),
+      script: async ({ q, text }) => {
+        fx.log.push(`push:${text}`);
+        q.init();
+        if (text === 'stop me') {
+          q.onInterrupt = () => q.result('error_during_execution');
+          await ranSkill(q, 'audit');
+          return;
+        }
+        if (text === 'crash') {
+          q.finish();
+          return;
+        }
+        q.result();
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'stop me' });
+    await flush();
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(fx.log).toEqual(['model:haiku', 'push:stop me', 'model:opus', 'effort:high']);
+    await mgr.send(s.id, 'crash');
+    await flush();
+    expect(fx.log.slice(4)).toEqual(['model:haiku', 'effort:medium', 'push:crash']);
+    expect((await mgr.list()).live[0]?.state).toBe('error');
+    await mgr.send(s.id, 'again');
+    await flush();
+    // A new engine starts on the chat's tier, so nothing needs switching.
+    expect(fx.queries[1]?.options).toMatchObject({ model: 'haiku', effort: 'medium' });
+    expect(fx.log.slice(7)).toEqual(['push:again']);
+  });
+
+  it('a stop before the message reaches Claude ends the turn without sending it', async () => {
+    const late = latePick();
+    const fx = setupLevels({ picks: () => ({ now: late.attempt.settled, settled: late.attempt.settled }) });
+    await auto();
+    const s = await mgr.start({ prompt: 'hello' });
+    await flush();
+    await mgr.interrupt(s.id);
+    late.arrive(QUICK);
+    await flush();
+    expect(fx.queries[0]?.received).toEqual([]);
+    expect(fx.queries[0]?.interrupts).toBe(0);
+    const ev = events(mgr, s.id);
+    expect(ev.find((e) => e.type === 'turn-end')).toMatchObject({ ok: false, interrupted: true });
+    expect((await mgr.list()).live[0]?.state).toBe('idle');
+    await mgr.send(s.id, 'again');
+    await flush();
+    expect(fx.queries[0]?.received).toEqual(['again']);
+  });
+
+  it("a skill-own turn starts from the chat's base level, not the last raised one", async () => {
+    const log: string[] = [];
+    const fx = setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    expect(fx.log.slice(-2)).toEqual(['model:opus', 'effort:high']);
+    const seen = watch(s.id);
+    await mgr.send(s.id, '/own-skill [skill]');
+    await flush();
+    // Back to Quick at turn start; no switch mid-reply, so the skill's own model stays on top.
+    expect(fx.log.slice(3)).toEqual(['model:haiku', 'effort:medium']);
+    expect(seen().filter((e) => e.type === 'level')).toContainEqual({
+      type: 'level',
+      level: { tier: null, source: { kind: 'skill-own', skill: 'own-skill' } },
+    });
+    expect(lastLevel(s.id)?.tier).toBe('quick');
+  });
+
+  it('offers a team level once, after a skill that has none', async () => {
+    const log: string[] = [];
+    setupLevels({ script: skillScript(log, 'unlevelled'), picks: () => ready(STANDARD) });
+    await auto();
+    const s = await mgr.start({ prompt: 'one [skill]' });
+    await flush();
+    await mgr.send(s.id, 'two [skill]');
+    await flush();
+    const offers = events(mgr, s.id).filter((e) => e.type === 'level' && e.unlevelledSkill);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toMatchObject({ unlevelledSkill: 'unlevelled', level: { tier: 'standard' } });
+  });
+
+  it('offers it for a typed /name with no level once the reply ends, but not for an unknown name or a helper', async () => {
+    const log: string[] = [];
+    setupLevels({ script: skillScript(log, 'not-in-brain'), picks: () => ready(STANDARD) });
+    await auto();
+    const s = await mgr.start({ prompt: '/gm' });
+    const seen = watch(s.id);
+    await flush();
+    // Only after Claude ran it: the offer follows the reply and the turn's end, never before.
+    const first = seen();
+    const offerAt = first.findIndex(isOffer);
+    expect(offerAt).toBeGreaterThan(first.findIndex((e) => e.type === 'assistant-message'));
+    expect(offerAt).toBeGreaterThan(first.findIndex((e) => e.type === 'turn-end'));
+    expect(first[offerAt]).toMatchObject({ unlevelledSkill: 'gm', level: { tier: 'standard' } });
+    await mgr.send(s.id, '/nothing-here [skill]');
+    await flush();
+    const offers = seen().filter(isOffer);
+    expect(offers.map((e) => e.type === 'level' && e.unlevelledSkill)).toEqual(['gm']);
+  });
+
+  it('never offers for a typed /name stopped before it reaches Claude', async () => {
+    const late = latePick();
+    let first = true;
+    const fx = setupLevels({
+      picks: () => {
+        if (!first) return ready(STANDARD);
+        first = false;
+        return { now: late.attempt.settled, settled: late.attempt.settled };
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: '/gm' });
+    const seen = watch(s.id);
+    await flush();
+    await mgr.interrupt(s.id);
+    late.arrive(STANDARD);
+    await flush();
+    expect(fx.queries[0]?.received).toEqual([]);
+    expect(seen().filter(isOffer)).toEqual([]);
+    // Sent this time: the offer comes, once the reply ends.
+    await mgr.send(s.id, '/gm');
+    await flush();
+    expect(fx.queries[0]?.received).toHaveLength(1);
+    expect(seen().filter(isOffer)).toHaveLength(1);
+  });
+
+  it('when a raised or team-level reply ends, the line shows the level the next message runs at', async () => {
+    const log: string[] = [];
+    setupLevels({ script: skillScript(log, 'audit'), picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    const seen = watch(s.id);
+    await flush();
+    const shown = () => seen().flatMap((e) => (e.type === 'level' ? [e.level] : []));
+    const quick: TurnLevel = { tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } };
+    const deep: TurnLevel = { tier: 'deep', source: { kind: 'team', skill: 'audit' } };
+    // Raised mid-reply, then back to the chat's own level once it ends.
+    expect(shown()).toEqual([quick, deep, quick]);
+    expect(lastLevel(s.id)).toEqual(quick);
+    // A typed /name with a team level runs at it, then the line goes back.
+    await mgr.send(s.id, '/audit Acme');
+    await flush();
+    expect(shown()).toEqual([quick, deep, quick, deep, quick]);
+    // Nothing changed: no repeat.
+    await mgr.send(s.id, 'thanks');
+    await flush();
+    expect(shown()).toEqual([quick, deep, quick, deep, quick]);
+  });
+
+  it('a team-level /name stopped before it reaches Claude puts the line back to the chat level', async () => {
+    const fx = setupLevels({ picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const seen = watch(s.id);
+    await mgr.send(s.id, '/audit Acme');
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(fx.log).not.toContain('push:/audit Acme');
+    const shown = seen().flatMap((e) => (e.type === 'level' ? [e.level] : []));
+    expect(shown.at(-1)).toEqual({ tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } });
+    expect(lastLevel(s.id)?.tier).toBe('quick');
+    expect(seen().filter(isOffer)).toEqual([]);
+  });
+
+  it('keeps only the newest level event in the replay log', async () => {
+    const fx = setupLevels({ picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: '/audit Acme' });
+    await flush();
+    await mgr.send(s.id, 'thanks');
+    await flush();
+    expect(fx.log).toContain('push:thanks');
+    expect(levelEvents(s.id)).toHaveLength(1);
+    expect(lastLevel(s.id)?.tier).toBe('quick');
+  });
+
+  it("the person's chat level wins from the next message, is saved, and back to automatic re-uses the pick", async () => {
+    const fx = setupLevels({ picks: () => ready(QUICK) });
+    await auto();
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const set = await mgr.setChatLevel(s.id, 'deep');
+    expect(set).toEqual({ tier: 'deep', source: { kind: 'chat' } });
+    expect(lastLevel(s.id)).toEqual(set);
+    expect(fx.saved.at(-1)).toEqual(['sdk-new-1', expect.objectContaining({ tier: 'deep', source: 'chat' })]);
+    await mgr.send(s.id, '/notes');
+    await flush();
+    expect(fx.log.slice(-3)).toEqual(['model:opus', 'effort:high', 'push:/notes']);
+    const back = await mgr.setChatLevel(s.id, null);
+    expect(back).toEqual({ tier: 'quick', source: { kind: 'auto', reason: 'A short look-up' } });
+    expect(fx.saved.at(-1)?.[1]).toMatchObject({ tier: 'quick', source: 'auto' });
+    expect(fx.picks).toHaveLength(1);
+    await expectCode(mgr.setChatLevel('nope', 'deep'), 'not-found');
+    await expectCode(mgr.setChatLevel(s.id, 'huge' as never), 'bad-request');
+  });
+
+  it("saves the pick by the chat's sdkSessionId once Claude Code has given it", async () => {
+    const fx = setupLevels({ picks: () => ready(DEEP) });
+    await auto();
+    await mgr.start({ prompt: 'Audit' });
+    await flush();
+    expect(fx.saved).toEqual([['sdk-new-1', expect.objectContaining({ tier: 'deep', source: 'auto' })]]);
+  });
+
+  it('a resumed chat keeps its stored level without a pick', async () => {
+    const fx = setupLevels({
+      records: { 'old-1': { tier: 'deep', source: 'auto', at: '2026-11-14T09:00:00Z' } },
+      picks: () => ready(QUICK),
+    });
+    fx.past.push({ sessionId: 'old-1', summary: 'Old chat', lastModified: 1 });
+    await auto();
+    const s = await mgr.start({ resume: 'old-1' });
+    await flush();
+    expect(lastLevel(s.id)?.tier).toBe('deep');
+    await mgr.send(s.id, 'carry on');
+    await flush();
+    expect(fx.picks).toEqual([]);
+    expect(fx.queries[0]?.options).toMatchObject({ model: 'opus', effort: 'high', resume: 'old-1' });
+    expect(fx.log).toEqual(['push:carry on']);
+
+    const fx2 = setupLevels({
+      records: { 'old-2': { tier: 'quick', source: 'chat', at: '2026-11-14T09:00:00Z' } },
+    });
+    fx2.past.push({ sessionId: 'old-2', summary: 'Old chat', lastModified: 1 });
+    await auto();
+    const s2 = await mgr.start({ resume: 'old-2', prompt: 'go' });
+    await flush();
+    expect(lastLevel(s2.id)).toEqual({ tier: 'quick', source: { kind: 'chat' } });
+    expect(fx2.picks).toEqual([]);
+  });
+
+  it('a resumed chat with no stored level starts on Standard and re-picks upward only', async () => {
+    let next: LevelPick = QUICK;
+    const fx = setupLevels({ picks: () => ready(next) });
+    fx.past.push({ sessionId: 'old-1', summary: 'Old chat', lastModified: 1 });
+    await auto();
+    const s = await mgr.start({ resume: 'old-1' });
+    await flush();
+    expect(lastLevel(s.id)?.tier).toBe('standard');
+    await mgr.send(s.id, 'quick one');
+    await flush();
+    expect(fx.picks).toEqual(['quick one']);
+    expect(lastLevel(s.id)?.tier).toBe('standard');
+    expect(fx.log).toEqual(['push:quick one']);
+
+    next = DEEP;
+    const fx2 = setupLevels({ picks: () => ready(next) });
+    fx2.past.push({ sessionId: 'old-3', summary: 'Old chat', lastModified: 1 });
+    await auto();
+    const s2 = await mgr.start({ resume: 'old-3', prompt: 'big job' });
+    await flush();
+    expect(lastLevel(s2.id)?.tier).toBe('deep');
+    expect(fx2.saved.at(-1)).toEqual(['old-3', expect.objectContaining({ tier: 'deep', source: 'auto' })]);
+  });
+
+  it('pre-warms a pick in automatic mode only', async () => {
+    const fx = setupLevels();
+    mgr.prewarmPick('What is next?');
+    expect(fx.prewarmed).toEqual([]);
+    await auto();
+    mgr.prewarmPick('What is next?');
+    expect(fx.prewarmed).toEqual(['What is next?']);
+  });
+
+  it('"Choose myself" reaches open chats at once, as in v0.19.0', async () => {
+    const fx = setupLevels({ picks: () => ready(STANDARD) });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'opus', effort: 'low', levelMode: 'manual' });
+    expect(fx.log).toEqual(['push:one', 'model:opus', 'effort:low']);
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(fx.log.at(-1)).toBe('push:two');
+    expect(fx.log.filter((l) => l.startsWith('model:'))).toEqual(['model:opus']);
+  });
+
+  it('going back to automatic takes effect from the next message', async () => {
+    const fx = setupLevels({ picks: () => ready(STANDARD) });
+    await mgr.setEngineChoice({ model: 'opus', effort: 'low', levelMode: 'manual' });
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    const before = fx.log.length;
+    await auto();
+    expect(fx.log.length).toBe(before);
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(fx.log.slice(before)).toEqual(['model:sonnet', 'effort:medium', 'push:two']);
+  });
+
+  it('the default picker runs a one-shot query on the engine, outside the brain, with the scrubbed environment', async () => {
+    const fx = setupLevels({
+      noPicker: true,
+      env: { PATH: '/bin', ANTHROPIC_API_KEY: 'sk-secret' },
+      script: ({ q, text }) => {
+        if (q.options.maxTurns === 1) {
+          q.emit({ type: 'result', subtype: 'success', result: JSON.stringify(DEEP) });
+          return;
+        }
+        fx.log.push(`push:${text}`);
+        q.init();
+        q.result();
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'Audit Acme' });
+    await flush();
+    const pickQ = fx.queries.find((q) => q.options.maxTurns === 1);
+    expect(pickQ?.options).toMatchObject({
+      cwd: tmpdir(),
+      tools: [],
+      settingSources: [],
+      persistSession: false,
+    });
+    expect(pickQ?.options.env).toEqual({ PATH: '/bin' });
+    expect(pickQ?.received).toEqual(['<request>Audit Acme</request>']);
+    expect(lastLevel(s.id)?.tier).toBe('deep');
+  });
+
+  // -- helpers (phase 2) ------------------------------------------------------
+
+  type HookFn = (input: never, toolUseID: string | undefined, o: { signal: AbortSignal }) => Promise<unknown>;
+
+  function hookOf(q: FakeQuery | undefined, event: string, matcher?: string): HookFn {
+    const all = (q?.options.hooks as Record<string, { matcher?: string; hooks: HookFn[] }[]> | undefined)?.[
+      event
+    ];
+    const m = all?.find((x) => x.matcher === matcher);
+    const hook = m?.hooks[0];
+    if (!hook) throw new Error(`no ${event} hook`);
+    return hook;
+  }
+
+  const base = { session_id: 'sdk-new-1', transcript_path: '/x', cwd: BRAIN };
+
+  /** The PreToolUse(Agent) hook's answer for one call, as Claude Code would ask it. */
+  async function callAgent(
+    q: FakeQuery | undefined,
+    toolInput: Record<string, unknown>,
+    id: string,
+    extra = {},
+  ) {
+    const out = (await hookOf(q, 'PreToolUse', 'Agent|Task')(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        tool_input: toolInput,
+        tool_use_id: id,
+        ...base,
+        ...extra,
+      } as never,
+      id,
+      { signal: new AbortController().signal },
+    )) as { hookSpecificOutput?: Record<string, unknown> };
+    return out.hookSpecificOutput ?? null;
+  }
+
+  async function agentEnded(q: FakeQuery | undefined, id: string, failed = false) {
+    const event = failed ? 'PostToolUseFailure' : 'PostToolUse';
+    await hookOf(q, event, 'Agent|Task')(
+      {
+        hook_event_name: event,
+        tool_name: 'Agent',
+        tool_input: {},
+        tool_use_id: id,
+        ...(failed ? { error: 'x' } : { tool_response: {} }),
+        ...base,
+      } as never,
+      id,
+      { signal: new AbortController().signal },
+    );
+  }
+
+  async function subagent(
+    q: FakeQuery | undefined,
+    event: 'SubagentStart' | 'SubagentStop',
+    id: string,
+    type: string,
+  ) {
+    await hookOf(q, event)(
+      { hook_event_name: event, agent_id: id, agent_type: type, ...base } as never,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+  }
+
+  /** A chat whose turns wait on `step(q, turn)` before they end. */
+  function helperChat(step: (q: FakeQuery, turn: number, text: string) => Promise<void>, picks = DEEP) {
+    return setupLevels({
+      picks: () => ready(picks),
+      script: async ({ q, turn, text }) => {
+        q.init();
+        await step(q, turn, text);
+        q.result();
+      },
+    });
+  }
+
+  it('a levelled chat gets the three app helpers, the helper instruction and the Agent hook', async () => {
+    const { queries } = setupLevels();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const o = queries[0]?.options;
+    expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
+    expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
+    expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
+      `${FILES_LINE}\n${HELPERS_LINE}`,
+    );
+    expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBe('Agent|Task');
+  });
+
+  it('without levels there are no app helpers and no helper instruction (v0.19.0)', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(queries[0]?.options.agents).toBeUndefined();
+    expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(FILES_LINE);
+  });
+
+  it('runs every helper in the foreground and, on Deep in auto, gives a built-in one the Standard model', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    const fx = helperChat(async (q) => {
+      seen.push(await callAgent(q, { prompt: 'a', run_in_background: true }, 't1'));
+      seen.push(await callAgent(q, { prompt: 'b', subagent_type: 'Explore' }, 't2'));
+      seen.push(await callAgent(q, { prompt: 'c', subagent_type: 'newsletter-idea-extractor' }, 't3'));
+      seen.push(await callAgent(q, { prompt: 'd', subagent_type: 'tdsapp-scout' }, 't4'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'Audit all three clients' });
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(seen).toEqual([
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'a', run_in_background: false, model: 'sonnet' },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'b', subagent_type: 'Explore', run_in_background: false, model: 'sonnet' },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: { prompt: 'c', subagent_type: 'newsletter-idea-extractor', run_in_background: false },
+      },
+      {
+        hookEventName: 'PreToolUse',
+        updatedInput: {
+          prompt: 'd',
+          subagent_type: 'tdsapp-scout',
+          run_in_background: false,
+          model: 'haiku',
+        },
+      },
+    ]);
+  });
+
+  it('leaves the model alone below Deep and in manual mode, but still keeps helpers in the foreground', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      seen.push(await callAgent(q, { prompt: 'a' }, `t${seen.length}`));
+    }, STANDARD);
+    await auto();
+    await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'opus', effort: 'high', levelMode: 'manual' });
+    const s = (await mgr.list()).live[0];
+    await mgr.send(s?.id ?? '', 'two');
+    await flush();
+    expect(seen.map((o) => o?.updatedInput)).toEqual([
+      { prompt: 'a', run_in_background: false },
+      { prompt: 'a', run_in_background: false },
+    ]);
+  });
+
+  it('caps helpers at once, and frees a slot when one finishes or fails', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= 5; i++) seen.push(await callAgent(q, { prompt: `p${i}` }, `t${i}`));
+      await agentEnded(q, 't1');
+      seen.push(await callAgent(q, { prompt: 'p6' }, 't6'));
+      seen.push(await callAgent(q, { prompt: 'p7' }, 't7'));
+      await agentEnded(q, 't2', true);
+      seen.push(await callAgent(q, { prompt: 'p8' }, 't8'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    const denied = (o: Record<string, unknown> | null) => o?.permissionDecision === 'deny';
+    expect(seen.map(denied)).toEqual([false, false, false, false, true, false, true, false]);
+    expect(seen[4]).toEqual({
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: AT_ONCE_REASON,
+    });
+  });
+
+  it('caps helpers per reply, and the next reply starts afresh', async () => {
+    const seen: boolean[][] = [];
+    helperChat(async (q, turn) => {
+      const row: boolean[] = [];
+      for (let i = 1; i <= 9; i++) {
+        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        row.push(o?.permissionDecision === 'deny');
+        if (o?.permissionDecision === 'deny') expect(o.permissionDecisionReason).toBe(PER_REPLY_REASON);
+        await agentEnded(q, `t${turn}-${i}`);
+      }
+      seen.push(row);
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    const row = [false, false, false, false, false, false, false, false, true];
+    expect(seen).toEqual([row, row]);
+  });
+
+  it('a helper call another rule stops frees its slot at once', async () => {
+    const seen: boolean[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
+        await callAgent(q, { prompt: 'x' }, `t${i}`);
+        // Allowed by the app's hook, then stopped by another hook or a settings rule: it never runs.
+        q.emit({
+          type: 'system',
+          subtype: 'permission_denied',
+          tool_name: 'Agent',
+          tool_use_id: `t${i}`,
+          message: 'no',
+        });
+        for (let k = 0; k < 10; k++) await Promise.resolve();
+      }
+      const o = await callAgent(q, { prompt: 'x' }, 'next');
+      seen.push(o?.permissionDecision === 'deny');
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(seen).toEqual([false]);
+  });
+
+  it('a turn that ends frees the slots of helpers that never reported back', async () => {
+    const seen: boolean[] = [];
+    helperChat(async (q, turn) => {
+      for (let i = 1; i <= HELPERS_AT_ONCE_MAX_FOR_TEST; i++) {
+        const o = await callAgent(q, { prompt: 'x' }, `t${turn}-${i}`);
+        seen.push(o?.permissionDecision === 'deny');
+      }
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.send(s.id, 'two');
+    await flush();
+    expect(seen).toEqual(new Array(HELPERS_AT_ONCE_MAX_FOR_TEST * 2).fill(false));
+  });
+
+  it('ignores Agent calls made inside a helper (main chat only)', async () => {
+    const seen: (Record<string, unknown> | null)[] = [];
+    helperChat(async (q) => {
+      for (let i = 1; i <= 6; i++)
+        seen.push(await callAgent(q, { prompt: 'x' }, `t${i}`, { agent_id: 'ag1' }));
+      seen.push(await callAgent(q, { prompt: 'x' }, 'main'));
+    });
+    await auto();
+    await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(seen.slice(0, 6)).toEqual(new Array(6).fill(null));
+    expect(seen[6]?.updatedInput).toMatchObject({ run_in_background: false });
+  });
+
+  it('starts an app helper without a card, with the rewrite', async () => {
+    let result: PermissionResult | null = null;
+    const fx = helperChat(async (q) => {
+      result = await q.ask('Agent', { subagent_type: 'tdsapp-worker', prompt: 'x', run_in_background: true })
+        .promise;
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: {
+        subagent_type: 'tdsapp-worker',
+        prompt: 'x',
+        run_in_background: false,
+        model: 'sonnet',
+      },
+    });
+    expect(events(mgr, s.id).some((e) => e.type === 'permission-request')).toBe(false);
+  });
+
+  it('asks before any other helper, and the card’s answer keeps the rewrite', async () => {
+    let result: PermissionResult | null = null;
+    helperChat(async (q) => {
+      result = await q.ask('Agent', { description: 'Check links', prompt: 'x' }).promise;
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    const req = events(mgr, s.id).find((e) => e.type === 'permission-request');
+    expect(req).toMatchObject({ title: 'Claude wants to start a helper', detail: 'Check links' });
+    await mgr.replyPermission(s.id, { requestId: 'req-1', decision: 'allow' });
+    await flush();
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { description: 'Check links', prompt: 'x', run_in_background: false, model: 'sonnet' },
+    });
+  });
+
+  it('a card refused for a helper frees its slot', async () => {
+    const seen: boolean[] = [];
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      for (let i = 1; i <= 4; i++) await callAgent(q, { prompt: 'x' }, `t${i}`);
+      const asked = q.ask('Agent', { prompt: 'x' }, { toolUseID: 't4' }).promise;
+      await flush();
+      await mgr.replyPermission(s?.id ?? '', { requestId: 'req-1', decision: 'deny' });
+      await asked;
+      seen.push((await callAgent(q, { prompt: 'x' }, 't5'))?.permissionDecision === 'deny');
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush(60);
+    expect(seen).toEqual([false]);
+  });
+
+  it('labels a helper’s cards with the helper', async () => {
+    const titles: string[] = [];
+    let s: { id: string } | null = null;
+    helperChat(async (q) => {
+      await subagent(q, 'SubagentStart', 'ag1', 'tdsapp-worker');
+      await subagent(q, 'SubagentStart', 'ag2', 'my-agent');
+      for (const [i, agentID] of [
+        ['1', 'ag1'],
+        ['2', 'ag2'],
+        ['3', 'ag9'],
+        ['4', undefined],
+      ] as const) {
+        const asked = q.ask('Bash', { command: 'ls' }, { requestId: `r${i}`, agentID }).promise;
+        await flush();
+        const req = events(mgr, s?.id ?? '')
+          .filter((e) => e.type === 'permission-request')
+          .at(-1);
+        if (req?.type === 'permission-request') titles.push(req.title);
+        await mgr.replyPermission(s?.id ?? '', { requestId: `r${i}`, decision: 'allow' });
+        await asked;
+      }
+    });
+    await auto();
+    s = await mgr.start({ prompt: 'go' });
+    await flush(400);
+    expect(titles).toEqual([
+      'Worker wants to run a command',
+      'A helper wants to run a command',
+      'A helper wants to run a command',
+      'Claude wants to run a command',
+    ]);
+  });
+
+  it('nudges the first message of a helpers pick, once, and never on Quick', async () => {
+    const fx = setupLevels({ picks: () => ready(DEEP) });
+    await auto();
+    const s = await mgr.start({ prompt: 'Audit all three clients' });
+    await flush();
+    await mgr.send(s.id, 'And the fourth');
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual([
+      `push:Audit all three clients\n\n${HELPERS_NUDGE}`,
+      'push:And the fourth',
+    ]);
+    // The person's own words are all the chat shows.
+    expect(events(mgr, s.id).find((e) => e.type === 'user-message')).toMatchObject({
+      text: 'Audit all three clients',
+    });
+  });
+
+  it('no nudge on a Quick chat, a pick without helpers, or manual mode', async () => {
+    const quickHelpers: LevelPick = { tier: 'quick', helpers: true, reason: 'Several look-ups' };
+    for (const [pick, mode] of [
+      [quickHelpers, 'auto'],
+      [STANDARD, 'auto'],
+      [DEEP, 'manual'],
+    ] as const) {
+      const fx = setupLevels({ picks: () => ready(pick) });
+      if (mode === 'auto') await auto();
+      await mgr.start({ prompt: 'Look up three things' });
+      await flush();
+      expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual(['push:Look up three things']);
+      await mgr.closeAll();
+    }
+  });
+
+  it('no nudge on a /skill message, so it never lands in the skill’s arguments', async () => {
+    const fx = setupLevels({ picks: () => ready(DEEP) });
+    await auto();
+    const s = await mgr.start({ prompt: '/gm for all three clients' });
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:'))).toEqual(['push:/gm for all three clients']);
+    // The nudge belongs to the message the pick was made for, so it isn't carried over either.
+    await mgr.send(s.id, 'Now the same for the fourth');
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('push:')).at(-1)).toBe('push:Now the same for the fourth');
+  });
+
+  it('a reopened chat never shows the nudge as the person’s words', async () => {
+    const fx = setupLevels();
+    fx.past.push({
+      sessionId: 'old-1',
+      summary: '',
+      firstPrompt: `Audit\n\n${HELPERS_NUDGE}`,
+      lastModified: 1_700_000_000_000,
+    });
+    fx.history['old-1'] = [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: `Audit all three clients\n\n${HELPERS_NUDGE}` },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(s.title).toBe('Audit');
+    expect(events(mgr, s.id).find((e) => e.type === 'user-message')).toMatchObject({
+      text: 'Audit all three clients',
+    });
+  });
+});
+
+const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;
 describe('chat kinds (TDS / Personal)', () => {
   it('a new chat is TDS, and one on a personal to-do is personal', async () => {
     setup();

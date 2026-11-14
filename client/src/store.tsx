@@ -23,8 +23,9 @@ import type {
   TodoScope,
 } from '../../shared/contract.ts';
 import { STREAM_PING_EVENT, STREAM_STALL_MS } from '../../shared/contract.ts';
+import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
-import { type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
+import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
 import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
@@ -88,11 +89,13 @@ export interface LiveChat {
 export type ActiveChat = NewChat | LiveChat;
 
 type Chats = Record<string, ChatState>;
-type ChatsAction = { sessionId: string; item: SequencedEvent };
+type ChatsAction =
+  | { sessionId: string; item: SequencedEvent }
+  | { sessionId: string; local: Extract<ChatAction, { type: 'level' | 'clear-offer' }> };
 
 function chatsReducer(chats: Chats, action: ChatsAction): Chats {
   const current = chats[action.sessionId] ?? initialChatState;
-  const next = chatReducer(current, { type: 'event', item: action.item });
+  const next = chatReducer(current, 'local' in action ? action.local : { type: 'event', item: action.item });
   return next === current && action.sessionId in chats ? chats : { ...chats, [action.sessionId]: next };
 }
 
@@ -124,6 +127,14 @@ export interface Store {
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
+  /** Team skill levels: from the server's bootstrap, then whatever the last change returned. null on an older server. */
+  skillLevels: SkillLevels | null;
+  /** Sets (or, with null, clears) a skill's team level. Returns false, with `actionError` set, when it failed. */
+  setSkillLevel: (skill: string, tier: LevelTier | null) => Promise<boolean>;
+  /** The person's tier for the rest of this chat; null goes back to automatic. */
+  setChatLevel: (sessionId: string, tier: LevelTier | null) => Promise<void>;
+  /** Hides the "Set a team level" offer for this chat. */
+  dismissLevelOffer: (sessionId: string) => void;
   /** Marks these to-dos' handovers as seen ("New to you"): saves `prefs.todoSeen` with the full map. */
   markTodosSeen: (todos: TodoItem[]) => void;
   togglePin: (name: string) => Promise<void>;
@@ -214,6 +225,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeChat, setActiveChat] = useState<ActiveChat>(() => freshNewChat());
   const [chats, dispatchChat] = useReducer(chatsReducer, {} as Chats);
   const [streamUp, setStreamUp] = useState(true);
+  const [levelsOverride, setLevelsOverride] = useState<SkillLevels | null>(null);
   const [todosState, setTodosState] = useState<ListState>('loading');
   const [chatsState, setChatsState] = useState<ListState>('loading');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -590,6 +602,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadTodos],
   );
 
+  const setSkillLevel = useCallback(async (skill: string, tier: LevelTier | null) => {
+    try {
+      setLevelsOverride(await api.setSkillLevel({ skill, tier }));
+      return true;
+    } catch (err) {
+      setActionError(messageOf(err));
+      return false;
+    }
+  }, []);
+
+  const setChatLevel = useCallback(async (sessionId: string, tier: LevelTier | null) => {
+    try {
+      const res = await api.setChatLevel(sessionId, tier);
+      // Only a real TurnLevel reaches the reducer; the server's own `level` event follows anyway.
+      const level = res && typeof res === 'object' ? res.level : undefined;
+      if (level && typeof level === 'object' && level.source && typeof level.source === 'object') {
+        dispatchChat({ sessionId, local: { type: 'level', level } });
+      }
+    } catch (err) {
+      setActionError(messageOf(err));
+    }
+  }, []);
+
+  const dismissLevelOffer = useCallback((sessionId: string) => {
+    dispatchChat({ sessionId, local: { type: 'clear-offer' } });
+  }, []);
+
   const togglePin = useCallback(
     async (name: string) => {
       if (!boot) return;
@@ -820,6 +859,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openPast,
       send,
       updatePrefs,
+      skillLevels: levelsOverride ?? boot?.skillLevels ?? null,
+      setSkillLevel,
+      setChatLevel,
+      dismissLevelOffer,
       markTodosSeen,
       togglePin,
       completeTodo,
@@ -866,6 +909,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openPast,
       send,
       updatePrefs,
+      levelsOverride,
+      setSkillLevel,
+      setChatLevel,
+      dismissLevelOffer,
       markTodosSeen,
       togglePin,
       completeTodo,

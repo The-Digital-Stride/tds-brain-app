@@ -423,3 +423,12 @@
 .drawer-body > .fold[data-action] > .fold-rows {
   grid-column: 1 / -1;
 }
+
+/* A skill's team level (or "Set by skill") beside its title in the Skills drawer. */
+.skill-level-chip {
+  font-weight: 500;
+}
+.skill-level-chip[data-kind="own"] {
+  background: var(--tint-1);
+  color: var(--ink-soft);
+}

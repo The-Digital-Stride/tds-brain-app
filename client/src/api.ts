@@ -39,6 +39,13 @@ import {
   type SetBrainResponse,
   type SetupCandidatesResponse,
 } from '../../shared/install-contract.ts';
+import type {
+  ChatLevelRequest,
+  LevelTier,
+  SetSkillLevelRequest,
+  SkillLevels,
+  TurnLevel,
+} from '../../shared/levels-contract.ts';
 import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../../shared/update-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
@@ -160,6 +167,12 @@ export const api = {
     request<Record<string, never>>('POST', ROUTES.clientPickOutcome, {
       outcome,
     } satisfies ClientPickOutcomeRequest),
+  skillLevels: () => request<SkillLevels>('GET', ROUTES.skillLevels),
+  setSkillLevel: (req: SetSkillLevelRequest) => request<SkillLevels>('POST', ROUTES.skillLevels, req),
+  setChatLevel: (sessionId: string, tier: LevelTier | null) =>
+    request<{ level: TurnLevel }>('POST', ROUTES.chatLevel(sessionId), {
+      tier,
+    } satisfies ChatLevelRequest),
   updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
   updateStart: () =>
@@ -195,5 +208,5 @@ export async function discardUpload(id: string, keepalive = false): Promise<void
 
 /** The URL for the one event stream a tab holds. */
 export function streamUrl(sessionId: string | null, after: number): string {
-  return ROUTES.stream(sessionId, after, true);
+  return ROUTES.stream(sessionId, after, true, true);
 }

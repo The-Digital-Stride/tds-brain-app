@@ -1,7 +1,16 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import type { Identity, Role, SkillInfo } from '../../shared/contract.ts';
-import { asString, parseFrontmatter } from './frontmatter.ts';
+import {
+  EFFORT_LEVELS,
+  type EffortLevel,
+  type Identity,
+  MODEL_PREF_MAX,
+  MODEL_PREF_PATTERN,
+  type Role,
+  type SkillInfo,
+} from '../../shared/contract.ts';
+import type { OwnLevel } from '../../shared/levels-contract.ts';
+import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
 import { humanise, mapRole, readText } from './util.ts';
 
 interface Entry {
@@ -34,6 +43,24 @@ function firstParagraph(body: string): string {
   return '';
 }
 
+/**
+ * A skill's own `model` / `effort` lines. null when neither is usable. `inherit` means "the chat's
+ * model", so it counts as not set; an effort the app doesn't know counts as not set too.
+ */
+function ownLevelOf(data: Record<string, FrontmatterValue>): OwnLevel | null {
+  const rawModel = asString(data.model).trim();
+  const model =
+    rawModel !== '' &&
+    rawModel.toLowerCase() !== 'inherit' &&
+    rawModel.length <= MODEL_PREF_MAX &&
+    MODEL_PREF_PATTERN.test(rawModel)
+      ? rawModel
+      : null;
+  const rawEffort = asString(data.effort).trim().toLowerCase();
+  const effort = (EFFORT_LEVELS as readonly string[]).includes(rawEffort) ? (rawEffort as EffortLevel) : null;
+  return model === null && effort === null ? null : { model, effort };
+}
+
 function build(name: string, kind: 'skill' | 'command', text: string): Entry {
   const { data, body } = parseFrontmatter(text);
   const mat = (asString(data.maturity) || asString(data.status)).toLowerCase();
@@ -47,6 +74,7 @@ function build(name: string, kind: 'skill' | 'command', text: string): Entry {
       maturity: mat === 'draft' || mat === 'live' || mat === 'trusted' ? mat : null,
       argumentHint: asString(data['argument-hint']).trim() || null,
       restrictedTo: parseRoles(asString(data.roles)),
+      ownLevel: ownLevelOf(data),
     },
     userInvocable: asString(data['user-invocable']).trim().toLowerCase() !== 'false',
   };
@@ -101,4 +129,36 @@ export async function skillAccess(
   const e = (await loadAll(root)).get(name);
   if (!e) return 'unknown-skill';
   return mayRun(e, identity) ? 'allowed' : 'restricted';
+}
+
+const OWN_LEVEL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
+const ownLevelCache = new Map<string, { stamp: string; level: OwnLevel | null }>();
+
+async function ownLevelOfFile(file: string): Promise<{ found: boolean; level: OwnLevel | null }> {
+  try {
+    const st = await fs.stat(file);
+    if (!st.isFile()) return { found: false, level: null };
+    const stamp = `${st.mtimeMs}:${st.size}`;
+    const hit = ownLevelCache.get(file);
+    if (hit?.stamp === stamp) return { found: true, level: hit.level };
+    const text = await readText(file);
+    if (text === null) return { found: false, level: null };
+    const level = ownLevelOf(parseFrontmatter(text).data);
+    ownLevelCache.set(file, { stamp, level });
+    return { found: true, level };
+  } catch {
+    return { found: false, level: null };
+  }
+}
+
+/**
+ * One skill's (or command's) own `model` / `effort`, by name, for ANY skill on disk including ones
+ * hidden from the list. Reads only that one file, cached by mtime. A skill beats a command of the
+ * same name. null when neither is set or nothing has that name. Never throws.
+ */
+export async function ownLevel(root: string, name: string): Promise<OwnLevel | null> {
+  if (!OWN_LEVEL_NAME.test(name)) return null;
+  const skill = await ownLevelOfFile(join(root, '.claude', 'skills', name, 'SKILL.md'));
+  if (skill.found) return skill.level;
+  return (await ownLevelOfFile(join(root, '.claude', 'commands', `${name}.md`))).level;
 }

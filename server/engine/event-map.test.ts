@@ -213,6 +213,10 @@ describe('tools', () => {
     expect(toolLabel('Skill', { skill: 'meeting-notes' })).toBe('Using the meeting-notes skill');
     expect(toolLabel('Agent', {})).toBe('Asking a helper');
     expect(toolLabel('Task', {})).toBe('Asking a helper');
+    expect(toolLabel('Agent', { subagent_type: 'tdsapp-scout' })).toBe('Asking the scout · Quick');
+    expect(toolLabel('Task', { subagent_type: 'tdsapp-worker' })).toBe('Asking the worker · Standard');
+    expect(toolLabel('Agent', { subagent_type: 'tdsapp-expert' })).toBe('Asking the expert · Deep');
+    expect(toolLabel('Agent', { subagent_type: 'general-purpose' })).toBe('Asking a helper');
     expect(toolLabel('WebFetch', { url: 'https://x' })).toBe('Looking on the web');
     expect(toolLabel('WebSearch', { query: 'x' })).toBe('Looking on the web');
     expect(toolLabel('mcp__claude_ai_Gmail__search_threads', {})).toBe('Using Gmail');

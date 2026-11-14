@@ -8,6 +8,10 @@ const boot = {
   appState: { kind: 'ready' as const },
   service: { underService: true },
   prefs: { directWrites: false } as Record<string, unknown>,
+  skills: [
+    { name: 'google-ads-audit', title: 'Google Ads audit' },
+    { name: 'write-post', title: 'Write a post' },
+  ],
   identity: { name: 'Sam', role: 'team', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', permissionMode: 'default' },
@@ -18,6 +22,8 @@ const st = vi.hoisted(() => ({
   clearSettingsFocus: vi.fn(),
   settingsFocus: false,
   engineChoices: vi.fn(),
+  setSkillLevel: vi.fn(),
+  skillLevels: null as unknown,
 }));
 vi.mock('../api.ts', () => ({ api: { engineChoices: st.engineChoices } }));
 const live = { streamUp: true, lastSync: new Date().toISOString() as string | null | undefined };
@@ -26,6 +32,8 @@ vi.mock('../store.tsx', () => ({
     boot,
     setSetupOpen,
     updatePrefs: st.updatePrefs,
+    skillLevels: st.skillLevels,
+    setSkillLevel: st.setSkillLevel,
     settingsFocus: st.settingsFocus,
     clearSettingsFocus: st.clearSettingsFocus,
     streamUp: live.streamUp,
@@ -91,6 +99,9 @@ const choices = {
 beforeEach(() => {
   st.engineChoices.mockResolvedValue(choices);
   st.settingsFocus = false;
+  st.skillLevels = null;
+  st.setSkillLevel.mockReset();
+  st.updatePrefs.mockReset();
   boot.prefs = { directWrites: false, model: null, effort: null } as typeof boot.prefs;
 });
 
@@ -340,5 +351,103 @@ describe('check for updates', () => {
     setUpd({ checkFailed: true });
     render(<SettingsView />);
     expect(screen.getByText(/Couldn't check for updates/)).toBeTruthy();
+  });
+});
+
+describe('Model: automatic or choose myself', () => {
+  it('shows Automatic (recommended) first, with its line, and hides Model and Effort', () => {
+    boot.prefs = { directWrites: false, model: null, effort: null, levelMode: 'auto' };
+    render(<SettingsView />);
+    const radios = screen.getAllByRole('radio');
+    expect(radios.map((r) => r.textContent)).toEqual(['Automatic (recommended)', 'Choose myself']);
+    expect(radios[0]?.getAttribute('aria-checked')).toBe('true');
+    expect(
+      screen.getByText(
+        'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Effort')).toBeNull();
+  });
+
+  it('Choose myself saves levelMode and shows the v0.19.0 controls', () => {
+    boot.prefs = { directWrites: false, model: null, effort: null, levelMode: 'auto' };
+    render(<SettingsView />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Choose myself' }));
+    expect(st.updatePrefs).toHaveBeenCalledWith({ levelMode: 'manual' });
+    cleanup();
+    boot.prefs = { directWrites: false, model: 'opus', effort: 'high', levelMode: 'manual' };
+    render(<SettingsView />);
+    expect(selectOf('Model').value).toBe('opus');
+    expect(selectOf('Effort').value).toBe('high');
+  });
+
+  it('keeps the old controls, with no choice, on a server that sends no levelMode', () => {
+    render(<SettingsView />);
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(selectOf('Model')).toBeTruthy();
+  });
+});
+
+describe('Skill levels', () => {
+  const levels = (over: Record<string, unknown> = {}) => ({
+    levels: {
+      'google-ads-audit': { tier: 'deep', setBy: 'ian-hancock', at: '2026-11-03T10:00:00.000Z' },
+    },
+    canSet: false,
+    writable: true,
+    ...over,
+  });
+
+  it('is a read-only list for the team, with one line saying who can change it', () => {
+    st.skillLevels = levels();
+    render(<SettingsView />);
+    expect(screen.getByRole('heading', { name: 'Skill levels' })).toBeTruthy();
+    expect(screen.getByText('Google Ads audit')).toBeTruthy();
+    expect(screen.getByText('Deep · set by Ian Hancock, 3 Nov 2026')).toBeTruthy();
+    expect(screen.getByText('Only Owners and scouts can change these.')).toBeTruthy();
+    expect(screen.queryByLabelText('Team level for Google Ads audit')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Clear/ })).toBeNull();
+  });
+
+  it('says when the skill-levels skill is not in the brain yet', () => {
+    st.skillLevels = levels({ canSet: true, writable: false });
+    render(<SettingsView />);
+    expect(screen.getByText(/once the brain has the skill-levels update/)).toBeTruthy();
+    expect(screen.queryByLabelText('Team level for Google Ads audit')).toBeNull();
+  });
+
+  it('lets an Owner or scout change and clear a level', () => {
+    st.skillLevels = levels({ canSet: true });
+    render(<SettingsView />);
+    fireEvent.change(screen.getByLabelText('Team level for Google Ads audit'), {
+      target: { value: 'quick' },
+    });
+    expect(st.setSkillLevel).toHaveBeenCalledWith('google-ads-audit', 'quick');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear the team level for Google Ads audit' }));
+    expect(st.setSkillLevel).toHaveBeenCalledWith('google-ads-audit', null);
+  });
+
+  it('finds a skill with no level by search, so one can be set', () => {
+    st.skillLevels = levels({ canSet: true });
+    render(<SettingsView />);
+    expect(screen.queryByText('Write a post')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'post' } });
+    fireEvent.change(screen.getByLabelText('Team level for Write a post'), { target: { value: 'standard' } });
+    expect(st.setSkillLevel).toHaveBeenCalledWith('write-post', 'standard');
+  });
+
+  it('tells an editor how many skills have no team level, and words a pre-filled row', () => {
+    st.skillLevels = levels({
+      canSet: true,
+      levels: { 'google-ads-audit': { tier: 'standard', setBy: 'prefill', at: '2026-11-14T09:00:00Z' } },
+    });
+    render(<SettingsView />);
+    expect(screen.getByText(/no team level yet\. Search to set one\./)).toBeTruthy();
+    expect(screen.getByText('Standard · suggested by the app and reviewed, 14 Nov 2026')).toBeTruthy();
+  });
+
+  it('is absent on an older server', () => {
+    render(<SettingsView />);
+    expect(screen.queryByRole('heading', { name: 'Skill levels' })).toBeNull();
   });
 });

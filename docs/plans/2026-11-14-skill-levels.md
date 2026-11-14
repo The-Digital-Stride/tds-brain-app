@@ -1,8 +1,7 @@
 # Skill levels: a team-wide model and effort per skill
 
 Date: 2026-11-14 · Size: L (expected) · Branch: none yet · Explainer: none yet
-**Status: parked.** Saved for later at Ian's request. Don't start building until he says so;
-when he does, run the full L flow (agent-workforce) from this draft.
+**Status: superseded** by `docs/plans/2026-11-14-skill-levels-and-helpers.md` (planned together with helpers). Kept for history.
 
 ## Objective
 

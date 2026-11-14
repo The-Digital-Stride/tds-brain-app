@@ -15,6 +15,7 @@ import {
 } from '../../shared/contract.ts';
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
 import type { Updater } from '../../shared/update-contract.ts';
+import type { SkillLevelsService } from '../brain/skill-levels.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import type { ClientPickTally } from '../store/client-pick-tally.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
@@ -239,6 +240,8 @@ export interface ServerDeps {
   brain: BrainReaders;
   store: AppStore;
   sessions: SessionManager;
+  /** Team skill levels (plan 2026-11-14-skill-levels-and-helpers). Absent in setup mode. */
+  skillLevels?: SkillLevelsService;
   /** The library's small pictures, cached in the app's data folder. */
   thumbs: Thumbnailer;
   /** Chat attachments waiting in the app's data folder. */
@@ -281,6 +284,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     brain: deps.brain,
     store: deps.store,
     sessions: deps.sessions,
+    skillLevels: deps.skillLevels,
     thumbs: deps.thumbs,
     uploads: deps.uploads,
     hub,

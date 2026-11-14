@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
   requestComposerFocus: vi.fn(),
   openView: vi.fn(),
   requestSettingsFocus: vi.fn(),
+  setChatLevel: vi.fn().mockResolvedValue(undefined),
+  setSkillLevel: vi.fn().mockResolvedValue(true),
+  dismissLevelOffer: vi.fn(),
+  skillLevels: null as unknown,
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
@@ -48,6 +52,10 @@ vi.mock('../store.tsx', () => ({
     cancelClose: () => {},
     requestClose: () => {},
     closeChat: async () => true,
+    skillLevels: h.skillLevels,
+    setChatLevel: h.setChatLevel,
+    setSkillLevel: h.setSkillLevel,
+    dismissLevelOffer: h.dismissLevelOffer,
   }),
 }));
 
@@ -68,6 +76,8 @@ const chatState = (sessionState: ChatState['sessionState'], stepLabel?: string):
   sdkSessionId: null,
   model: null,
   effort: null,
+  level: null,
+  unlevelledSkill: null,
   files: { files: [], attachments: [], links: [] },
   items: [
     { kind: 'user', id: 'u', text: 'hi' },
@@ -91,6 +101,10 @@ const lines = () => document.querySelectorAll('.attn-text');
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  h.skillLevels = null;
+  h.setChatLevel.mockClear();
+  h.setSkillLevel.mockClear();
+  h.dismissLevelOffer.mockClear();
 });
 
 describe('status line above the message box', () => {
@@ -275,5 +289,122 @@ describe('the card waiting on you', () => {
     const form = screen.getByRole('form', { name: 'Claude has a question for you' });
     expect(floater().contains(form)).toBe(true);
     expect(document.activeElement).toBe(form);
+  });
+});
+
+describe('the level line under the message box', () => {
+  const withLevel = (level: unknown, extra: object = {}) => ({
+    ...chatState('idle'),
+    model: 'claude-sonnet-5-5',
+    effort: 'medium' as const,
+    level,
+    ...extra,
+  });
+  const auto = { tier: 'standard', source: { kind: 'auto', reason: 'A short writing job' } };
+
+  it('replaces the engine line in automatic mode', () => {
+    h.chat = withLevel(auto);
+    render(sheet());
+    const line = document.querySelector('.level-row');
+    expect(line?.textContent).toContain('Standard · picked by the app for this chat');
+    expect(line?.querySelector('strong')?.textContent).toBe('Standard');
+    expect(screen.queryByRole('button', { name: 'Change model and effort' })).toBeNull();
+  });
+
+  it('keeps the v0.19.0 line with no level event, and in manual mode', () => {
+    h.chat = withLevel(null);
+    const { rerender } = render(sheet());
+    expect(document.querySelector('.engine-text')?.textContent).toBe(
+      'Claude is using Sonnet 5.5 · Medium effort',
+    );
+    h.chat = withLevel({ tier: null, source: { kind: 'manual' } });
+    rerender(sheet());
+    expect(document.querySelector('.engine-text')?.textContent).toBe(
+      'Claude is using Sonnet 5.5 · Medium effort',
+    );
+    expect(screen.getByRole('button', { name: 'Change model and effort' })).toBeTruthy();
+  });
+
+  it('words team, chat and skill-own levels', () => {
+    h.chat = withLevel({ tier: 'deep', source: { kind: 'team', skill: 'google-ads-audit' } });
+    const { rerender } = render(sheet());
+    expect(document.querySelector('.level-row')?.textContent).toContain(
+      'Deep · for /google-ads-audit · team level',
+    );
+    h.chat = withLevel({ tier: 'quick', source: { kind: 'chat' } });
+    rerender(sheet());
+    expect(document.querySelector('.level-row')?.textContent).toContain('Quick · your choice for this chat');
+    h.chat = withLevel({ tier: null, source: { kind: 'skill-own', skill: 'deep-dive' } });
+    rerender(sheet());
+    expect(document.querySelector('.level-row')?.textContent).toContain('Set by /deep-dive');
+  });
+
+  it('shows the reason, model and effort under Why?', () => {
+    h.chat = withLevel(auto);
+    render(sheet());
+    const why = screen.getByRole('button', { name: 'Why?' });
+    expect(why.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(why);
+    expect(why.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.level-why')?.textContent).toBe(
+      'A short writing job It runs on Sonnet at medium effort.',
+    );
+  });
+
+  it('the menu sets a tier for this chat, and goes back to automatic only after a choice', () => {
+    h.chat = withLevel(auto);
+    const { rerender } = render(sheet());
+    fireEvent.click(screen.getByRole('button', { name: 'Change the level for this chat' }));
+    expect(screen.queryByRole('button', { name: /Back to automatic/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Quick for this chat/ }));
+    expect(h.setChatLevel).toHaveBeenCalledWith('s1', 'quick');
+    h.chat = withLevel({ tier: 'quick', source: { kind: 'chat' } });
+    rerender(sheet());
+    fireEvent.click(screen.getByRole('button', { name: 'Change the level for this chat' }));
+    fireEvent.click(screen.getByRole('button', { name: /Back to automatic/ }));
+    expect(h.setChatLevel).toHaveBeenLastCalledWith('s1', null);
+  });
+
+  it('closes the menu with Escape and puts focus back on Change', () => {
+    h.chat = withLevel(auto);
+    render(sheet());
+    const change = screen.getByRole('button', { name: 'Change the level for this chat' });
+    fireEvent.click(change);
+    fireEvent.keyDown(screen.getByRole('button', { name: /Deep for this chat/ }), { key: 'Escape' });
+    expect(change.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(change);
+  });
+});
+
+describe('the team-level offer', () => {
+  const offerChat = () => ({
+    ...chatState('idle'),
+    level: { tier: 'standard', source: { kind: 'auto', reason: 'x' } },
+    unlevelledSkill: 'write-post',
+  });
+  it('is shown to people who can set levels, and sets or dismisses', async () => {
+    h.skillLevels = { levels: {}, canSet: true, writable: true };
+    h.chat = offerChat();
+    render(sheet());
+    expect(screen.getByText('Set a team level for /write-post? This chat used Standard.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Deep' }));
+    expect(h.setSkillLevel).toHaveBeenCalledWith('write-post', 'deep');
+    await waitFor(() => expect(h.dismissLevelOffer).toHaveBeenCalledWith('s1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(h.dismissLevelOffer).toHaveBeenCalledTimes(2);
+  });
+  it('is hidden for the team, when not writable, and once the skill has a level', () => {
+    h.chat = offerChat();
+    for (const sl of [
+      { levels: {}, canSet: false, writable: true },
+      { levels: {}, canSet: true, writable: false },
+      { levels: { 'write-post': { tier: 'quick', setBy: 'x', at: '' } }, canSet: true, writable: true },
+      null,
+    ]) {
+      h.skillLevels = sl;
+      const { unmount } = render(sheet());
+      expect(screen.queryByText(/Set a team level/)).toBeNull();
+      unmount();
+    }
   });
 });

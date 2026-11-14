@@ -6,6 +6,7 @@
  */
 import type { ChatEvent } from '../../shared/contract.ts';
 import { HelperNames, parseHelperReport } from './helper-reports.ts';
+import { helperRowLabel } from './helpers.ts';
 
 /** Any SDK message, read loosely. */
 export type RawMessage = { type: string; [key: string]: unknown };
@@ -54,7 +55,7 @@ export function toolLabel(tool: string, input: Rec): string {
     }
     case 'Agent':
     case 'Task':
-      return 'Asking a helper';
+      return helperRowLabel(input) ?? 'Asking a helper';
     case 'WebFetch':
     case 'WebSearch':
       return 'Looking on the web';

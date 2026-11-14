@@ -143,3 +143,56 @@ describe('chat files events (opt-in)', () => {
     expect(chatFrames()[1]?.item.event.type).toBe('files');
   });
 });
+
+describe('chat level events (opt-in)', () => {
+  const item = (seq: number, event: SequencedEvent['event']): SequencedEvent => ({ seq, at: 'now', event });
+  const levelEvent = {
+    type: 'level',
+    level: { tier: 'deep', source: { kind: 'auto', reason: 'An audit' } },
+  } as SequencedEvent['event'];
+  const filesEvent: SequencedEvent['event'] = { type: 'files', files: [], attachments: [], links: [] };
+
+  function openChat(query: string) {
+    let push: (item: SequencedEvent) => void = () => {};
+    const sessions = {
+      subscribe: vi.fn((_id: string, _after: number, listener: (item: SequencedEvent) => void) => {
+        push = listener;
+        return {
+          replay: [item(1, { type: 'state', state: 'idle' }), item(2, levelEvent), item(3, filesEvent)],
+          unsubscribe: () => {},
+        };
+      }),
+    };
+    const req = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+    req.headers = {};
+    const res = fakeRes();
+    openStream(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877/api/stream?session=s1${query}`),
+      { sessions: sessions as unknown as SessionManager, hub: createAppEventHub(), serverStartedAt: 'now' },
+    );
+    const types = () =>
+      res.chunks
+        .filter((c) => c.includes('"kind":"chat"'))
+        .map(
+          (c) => (JSON.parse(c.slice(c.indexOf('data: ') + 6)) as { item: SequencedEvent }).item.event.type,
+        );
+    return { push: (i: SequencedEvent) => push(i), types };
+  }
+
+  it('leaves level events out of replay and live without levels=1', () => {
+    const { push, types } = openChat('&after=0&files=1');
+    push(item(4, levelEvent));
+    push(item(5, { type: 'state', state: 'idle' }));
+    expect(types()).toEqual(['state', 'files', 'state']);
+  });
+
+  it('sends them, replay and live, with levels=1, independently of files', () => {
+    const { push, types } = openChat('&after=0&levels=1');
+    push(item(4, levelEvent));
+    expect(types()).toEqual(['state', 'level', 'level']);
+    const both = openChat('&after=0&files=1&levels=1');
+    expect(both.types()).toEqual(['state', 'level', 'files']);
+  });
+});

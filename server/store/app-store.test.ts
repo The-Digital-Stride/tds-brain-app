@@ -48,6 +48,7 @@ describe('app store', () => {
       'directWrites',
       'effort',
       'lastClient',
+      'levelMode',
       'model',
       'pins',
       'todoPanelOpen',
@@ -86,6 +87,59 @@ describe('app store', () => {
       todoSeen: {},
       model: null,
       effort: null,
+      levelMode: 'auto',
+    });
+  });
+
+  describe('levelMode', () => {
+    const seed = (dir: string, prefs: object) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'prefs.json'), JSON.stringify(prefs));
+    };
+
+    it('is auto for a new install and for an old file with no model or effort', async () => {
+      expect((await createAppStore(fresh()).get()).levelMode).toBe('auto');
+      const dir = fresh();
+      seed(dir, { pins: ['a'], model: null, effort: null });
+      expect((await createAppStore(dir).get()).levelMode).toBe('auto');
+    });
+
+    it('reads an old file as manual when a model or an effort was chosen', async () => {
+      for (const prefs of [{ model: 'opus' }, { effort: 'high' }, { model: 'sonnet', effort: 'low' }]) {
+        const dir = fresh();
+        seed(dir, prefs);
+        const p = await createAppStore(dir).get();
+        expect(p.levelMode).toBe('manual');
+        expect(p).toMatchObject(prefs);
+      }
+    });
+
+    it('treats an invalid levelMode like a missing one', async () => {
+      const a = fresh();
+      seed(a, { levelMode: 'turbo', model: 'opus' });
+      expect((await createAppStore(a).get()).levelMode).toBe('manual');
+      const b = fresh();
+      seed(b, { levelMode: 7 });
+      expect((await createAppStore(b).get()).levelMode).toBe('auto');
+    });
+
+    it('keeps a saved levelMode, even beside a model', async () => {
+      const dir = fresh();
+      seed(dir, { levelMode: 'auto', model: 'opus' });
+      expect((await createAppStore(dir).get()).levelMode).toBe('auto');
+      seed(dir, { levelMode: 'manual' });
+      expect((await createAppStore(dir).get()).levelMode).toBe('manual');
+    });
+
+    it('a patch without levelMode keeps the current one, and a bad one is ignored', async () => {
+      const dir = fresh();
+      seed(dir, { model: 'opus' }); // reads as manual
+      const store = createAppStore(dir);
+      expect((await store.update({ pins: ['x'] })).levelMode).toBe('manual');
+      expect((await store.update({ levelMode: 'nope' as never })).levelMode).toBe('manual');
+      expect((await store.update({ levelMode: 'auto' })).levelMode).toBe('auto');
+      expect((await store.update({ model: 'haiku' })).levelMode).toBe('auto');
+      expect((await createAppStore(dir).get()).levelMode).toBe('auto');
     });
   });
 

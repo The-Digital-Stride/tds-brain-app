@@ -361,6 +361,24 @@ describe('Skills drawer', () => {
     expect(screen.getByText('Still being tested')).toBeTruthy();
   });
 
+  it('shows a tier chip for a team level, and "Set by skill" for a skill with its own', () => {
+    setStore({
+      skillLevels: { levels: { b: { tier: 'deep', setBy: 'x', at: '' } }, canSet: false, writable: true },
+    });
+    const boot = (store.current as { boot: { skills: Record<string, unknown>[] } }).boot;
+    boot.skills[1] = { ...boot.skills[1], ownLevel: { model: 'haiku', effort: null } };
+    render(<SkillsDrawer />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), { target: { value: 'e' } });
+    const chips = Array.from(document.querySelectorAll('.skill-level-chip')).map((c) => c.textContent);
+    expect(chips.sort()).toEqual(['Deep', 'Set by skill']);
+  });
+
+  it('shows no chip on an older server', () => {
+    render(<SkillsDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: /All skills/ }));
+    expect(document.querySelector('.skill-level-chip')).toBeNull();
+  });
+
   it('search filters to one flat list', () => {
     render(<SkillsDrawer />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), {

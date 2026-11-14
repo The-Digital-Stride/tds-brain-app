@@ -9,9 +9,12 @@ import { dirname } from 'node:path';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
 import { APP_HOST } from '../shared/contract.ts';
 import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
+import type { LevelSources } from '../shared/levels-contract.ts';
 import { appStateFor, decideBrain } from './brain/decide.ts';
 import { createBrainReaders } from './brain/index.ts';
 import { checkBrain, findBrainCandidates } from './brain/locate.ts';
+import { createSkillLevels } from './brain/skill-levels.ts';
+import { ownLevel } from './brain/skills.ts';
 import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
 import { createChangelogReader } from './changelog.ts';
 import { resolveConfig } from './config.ts';
@@ -36,6 +39,7 @@ import {
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
+import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
@@ -91,12 +95,21 @@ function buildBrainSide(path: string | null) {
   }
   // Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
   const quickLook = quickLookAvailable() ? { command: QUICK_LOOK_COMMAND } : null;
-  const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
   const thumbs = createThumbnailer(config.dataDir, { brainRoot: path, quickLook });
   // Off (root null) when the data folder and the brain overlap; it logs why. It sweeps only once
   // started, after `listen`: a second `pnpm start` that finds the port taken must leave it alone.
   const uploads = createUploadStaging({ dataDir: config.dataDir, brainRoot: path, log });
+  // Levels and helpers (plan 2026-11-14-skill-levels-and-helpers): the team file and each skill's own
+  // setting are only read here; the chat levels are kept in the app's data folder, never the brain.
+  const skillLevels = createSkillLevels(path);
+  const levels: LevelSources = {
+    teamLevels: () => skillLevels.read(),
+    ownLevel: (skill) => ownLevel(path, skill),
+  };
+  const levelOptions = { levels, chatLevels: createChatLevelStore(config.dataDir) };
+  const brain = createBrainReaders(path, { dataDir: config.dataDir, docThumbs: quickLook !== null });
   const sessions = createSessionManager({
+    ...levelOptions,
     brain,
     brainRoot: path,
     claudePath: config.claudePath,
@@ -107,14 +120,17 @@ function buildBrainSide(path: string | null) {
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
   });
-  return { brain, thumbs, uploads, sessions };
+  return { brain, thumbs, uploads, sessions, skillLevels };
 }
 
-const { brain, thumbs, uploads, sessions } = buildBrainSide(brainPath);
+const { brain, thumbs, uploads, sessions, skillLevels } = buildBrainSide(brainPath);
 // The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
 void store
   .get()
-  .then((prefs) => sessions.setEngineChoice({ model: prefs.model, effort: prefs.effort }))
+  .then((prefs) => {
+    const { model, effort, levelMode } = prefs;
+    return sessions.setEngineChoice({ model, effort, levelMode });
+  })
   .catch(() => {});
 const engineHealth = createEngineHealth(brainPath, config.claudePath, home, resolvePermissionMode);
 
@@ -166,6 +182,7 @@ const app = createAppServer({
   brain,
   store,
   sessions,
+  skillLevels,
   thumbs,
   uploads,
   engineHealth,

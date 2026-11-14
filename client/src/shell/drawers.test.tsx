@@ -641,15 +641,32 @@ describe('Skills drawer', () => {
     expect(screen.getByText('No skills match that search.')).toBeTruthy();
   });
 
-  it('the pin toggle reflects and changes the pin, without starting the skill', () => {
+  it("the star reflects and changes a skill's favourite, under Favourites, without starting the skill", () => {
     setStore({}, false, ['a']);
     render(<SkillsDrawer />);
-    const unpin = screen.getAllByRole('button', { name: 'Unpin Alpha' })[0] as HTMLElement;
-    expect(unpin.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(unpin);
+    expect(screen.getByRole('button', { name: /^Favourites/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Pinned/ })).toBeNull();
+    const star = screen.getAllByRole('button', { name: 'Favourite: Alpha' })[0] as HTMLElement;
+    expect(star.getAttribute('aria-pressed')).toBe('true');
+    expect(star.dataset.tip).toBe('Favourite');
+    expect(star.querySelector('.icon-star')).not.toBeNull();
+    fireEvent.click(star);
     expect(fns.togglePin).toHaveBeenCalledWith('a');
     expect(fns.startSkill).not.toHaveBeenCalled();
     expect(shell.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('opens the section a skill moves to when its star is pressed, so it never vanishes into a closed one', () => {
+    setStore({}, false, ['a']);
+    const { rerender } = render(<SkillsDrawer />);
+    const allSkills = () => screen.getByRole('button', { name: /^All skills/ });
+    expect(allSkills().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Favourite: Alpha' })[0] as HTMLElement);
+    expect(fns.togglePin).toHaveBeenCalledWith('a');
+    // Alpha isn't used often, so un-starred it lives only under All skills.
+    setStore({}, false, []);
+    rerender(<SkillsDrawer />);
+    expect(allSkills().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('a skill shows one line of its description until it is expanded, without starting it', () => {

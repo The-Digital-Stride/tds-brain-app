@@ -106,7 +106,7 @@ export function Home() {
   };
 
   const { pinned, often } = starterSkills(boot);
-  const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Pinned skills';
+  const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Favourite skills';
   const skillRows: SkillInfo[] = (pinned.length > 0 ? pinned : often).slice(0, 5);
   const openChats = sortChats(live).slice(0, 4);
 
@@ -357,7 +357,7 @@ export function Home() {
                 </button>
               </div>
               {skillRows.length === 0 ? (
-                <p className="card-note">Pin a skill to keep it here.</p>
+                <p className="card-note">Star a skill to keep it here.</p>
               ) : (
                 skillRows.map((s) => (
                   <button key={s.name} type="button" className="line" onClick={() => startSkill(s)}>

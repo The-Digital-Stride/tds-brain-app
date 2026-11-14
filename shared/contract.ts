@@ -669,7 +669,7 @@ export interface Thumbnailer {
 // ---------------------------------------------------------------------------
 
 export interface AppPrefs {
-  /** Skill names, in the order the person pinned them. */
+  /** Favourite skills' names, in the order the person starred them (still called `pins`, so older versions agree). */
   pins: string[];
   lastClient: string | null;
   todoPanelOpen: boolean;

@@ -57,7 +57,6 @@ const PATHS: Record<IconName, ReactNode> = {
   link: (
     <path d="M8.33 10.83a4.17 4.17 0 0 0 6.28.45l2.5-2.5a4.17 4.17 0 0 0-5.89-5.89l-1.43 1.42M11.67 9.17a4.17 4.17 0 0 0-6.28-.45l-2.5 2.5a4.17 4.17 0 0 0 5.89 5.89l1.42-1.42" />
   ),
-  pin: <path d="M12 3l5 5M14.5 5.5 11 9l1 4-1 1-6-6 1-1 4 1 3.5-3.5M8 12l-5 5" />,
   image: (
     <>
       <rect x="3" y="4" width="14" height="12" rx="1.5" />
@@ -74,6 +73,8 @@ const PATHS: Record<IconName, ReactNode> = {
     <path d="M16 9.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3l-6 6a1.1 1.1 0 0 1-1.6-1.6L12 6.6" />
   ),
   stop: <rect x="5" y="5" width="10" height="10" rx="1.5" />,
+  // A paper plane: Send's, paired with Stop's square.
+  send: <path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8" />,
 };
 
 /** Decorative: always hidden from assistive tech. The control around it carries the name. */

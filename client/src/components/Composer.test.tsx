@@ -84,3 +84,62 @@ describe('Composer tools and pending sends', () => {
     expect((box as HTMLTextAreaElement).value).toBe('Hello');
   });
 });
+
+describe('Send and Stop (Ian, 2026-11-14)', () => {
+  it('shows a navy Send while Claude is idle', () => {
+    setup();
+    expect(screen.getByRole('button', { name: 'Send' }).getAttribute('data-variant')).toBe('primary');
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it('swaps Send for a red Stop while Claude works, which stops it and says so', async () => {
+    const onStop = vi.fn();
+    setup({ onStop, disabledReason: 'Claude is working' });
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    expect(stop.getAttribute('data-variant')).toBe('stop');
+    expect(stop.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(stop, { detail: 1 });
+    expect(onStop).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Stopping'));
+    // From the keyboard (no click count) it works too.
+    fireEvent.click(stop, { detail: 0 });
+    expect(onStop).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores the second click of a double-click on Send, which lands on Stop', () => {
+    const onStop = vi.fn();
+    setup({ onStop, disabledReason: 'Claude is working' });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }), { detail: 2 });
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same button, so focus on Send stays put when it becomes Stop', () => {
+    const props = {
+      initial: '',
+      skill: null,
+      onSend: vi.fn().mockResolvedValue(true),
+      autoFocus: false,
+      focusSignal: 0,
+    };
+    const { rerender } = render(<Composer {...props} disabledReason={null} />);
+    const send = screen.getByRole('button', { name: 'Send' });
+    rerender(<Composer {...props} disabledReason="Claude is working" onStop={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Stop' })).toBe(send);
+  });
+
+  it('moves focus to the message box when Stop turns back into a disabled Send', () => {
+    const props = {
+      initial: '',
+      skill: null,
+      onSend: vi.fn().mockResolvedValue(true),
+      autoFocus: false,
+      focusSignal: 0,
+    };
+    const { rerender } = render(<Composer {...props} disabledReason="Claude is working" onStop={() => {}} />);
+    screen.getByRole('button', { name: 'Stop' }).focus();
+    rerender(<Composer {...props} disabledReason={null} />);
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    expect(document.activeElement).toBe(screen.getByLabelText('Message to Claude'));
+  });
+});

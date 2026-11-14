@@ -275,7 +275,7 @@ export async function validatePrefsPatch(
           value.length > MAX_PINS ||
           !value.every((v) => typeof v === 'string' && SKILL_NAME.test(v))
         ) {
-          throw bad('The pinned skills were not understood.');
+          throw bad('The favourite skills were not understood.');
         }
         patch.pins = [...new Set(value as string[])];
         break;

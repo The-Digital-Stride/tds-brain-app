@@ -46,7 +46,13 @@ export function FileChip({
         <span className="file-note">{status === 'uploading' ? 'Uploading' : formatSize(file.size)}</span>
       )}
       {onRemove ? (
-        <button type="button" className="chip-remove" aria-label={`Remove ${file.name}`} onClick={onRemove}>
+        <button
+          type="button"
+          className="chip-remove"
+          aria-label={`Remove ${file.name}`}
+          data-tip="Remove"
+          onClick={onRemove}
+        >
           <Icon name="close" size={12} />
         </button>
       ) : null}

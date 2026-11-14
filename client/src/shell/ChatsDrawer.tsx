@@ -62,6 +62,7 @@ function OpenRow({
         type="button"
         className="icon-btn"
         aria-label={`Close chat: ${title}`}
+        data-tip="Close chat"
         onClick={() => {
           requestClose(chat.id);
           // The "Close anyway?" question shows on the sheet, which a floating drawer hides.
@@ -116,6 +117,7 @@ function PastRow({
         type="button"
         className="icon-btn"
         aria-label={`Delete chat: ${title}`}
+        data-tip="Delete chat"
         data-past-id={chat.sdkSessionId}
         disabled={busy}
         onClick={onAsk}

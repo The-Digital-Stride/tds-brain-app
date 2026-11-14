@@ -170,7 +170,8 @@ export type IconName =
   | 'plus'
   | 'lock'
   | 'calendar'
-  | 'person';
+  | 'person'
+  | 'bin';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {

@@ -154,6 +154,8 @@ export interface Store {
   /** Closes at once when idle; otherwise switches to the chat and asks first. */
   requestClose: (id: string) => void;
   closeChat: (id: string) => Promise<boolean>;
+  /** Moves an earlier chat to the Bin. True when done; a failure shows in `actionError`. */
+  deletePastChat: (sdkSessionId: string) => Promise<boolean>;
   /** Marks an open chat TDS or personal; the list updates at once, and a failure shows in `actionError`. */
   setChatKind: (id: string, kind: ChatKind) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
@@ -454,6 +456,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [loadSessions, requestFocus],
+  );
+
+  const deletePastChat = useCallback(
+    async (sdkSessionId: string) => {
+      try {
+        await api.deletePastChat(sdkSessionId);
+      } catch (err) {
+        setActionError(messageOf(err));
+        return false;
+      }
+      setActionError(null);
+      void loadSessions();
+      setNotice('Chat moved to the Bin. You can put it back from there.');
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+      return true;
+    },
+    [loadSessions],
   );
 
   const setChatKind = useCallback(
@@ -843,6 +863,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelClose: () => setCloseRequest(null),
       requestClose,
       closeChat,
+      deletePastChat,
       setChatKind,
       notice,
       run,
@@ -887,6 +908,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       closeRequest,
       requestClose,
       closeChat,
+      deletePastChat,
       setChatKind,
       notice,
       run,

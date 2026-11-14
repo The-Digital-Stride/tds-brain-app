@@ -65,7 +65,7 @@ export interface SendOptions {
 }
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
   raw?: { body: BodyInit; headers: Record<string, string> },
@@ -78,6 +78,7 @@ async function request<T>(
       credentials: 'same-origin',
       keepalive: opts?.keepalive === true,
       ...(opts?.signal ? { signal: opts.signal } : {}),
+      // Every changing request (DELETE included) is JSON: the server's request check refuses any that isn't.
       headers: raw
         ? raw.headers
         : method === 'GET'
@@ -138,6 +139,8 @@ export const api = {
     request<OkResponse>('POST', ROUTES.sessionAnswer(id), reply),
   interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
+  /** Moves an earlier chat's history to the macOS Bin (the server refuses an open chat). */
+  deletePastChat: (id: string) => request<Record<string, never>>('DELETE', ROUTES.pastSession(id)),
   setChatKind: (id: string, kind: ChatKind) =>
     request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),

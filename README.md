@@ -23,6 +23,9 @@ here is published.**
   A chat is TDS or Personal: one started from a personal to-do is Personal, and "This chat" → Details → Kind
   changes it. Once any chat is Personal, the Chats drawer filters by kind (All / TDS / Personal), like To-dos.
   The app keeps which chats are personal in its own data folder (`chat-kinds.json`), never in the brain.
+  An earlier chat can be deleted with its bin button (after a "Move this chat to the Bin?" question): its
+  Claude Code history moves to the macOS Bin, so Finder's Put Back restores it, and it also leaves the
+  terminal's `claude --resume` list. An open chat has to be closed first. Needs macOS 15 or later (`/usr/bin/trash`).
 - **Attachments**: drop files on a chat, paste a screenshot, or use the paperclip (up to 10 files,
   32 MB each; documents, spreadsheets, slides, text and pictures). Claude files every attachment in
   the brain where `.claude/rules/save-locations.md` says, asks if the client or folder isn't clear,

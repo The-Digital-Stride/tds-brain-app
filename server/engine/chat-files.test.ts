@@ -1159,6 +1159,31 @@ describe('createChatFiles: pages Claude writes', () => {
     );
   });
 
+  it('replays a page made by a shell copy then edited, after its source has gone, as live had it', async () => {
+    const pages = fakePages();
+    const path = `${TMP}/copied.html`;
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      // Not a write the tracker follows: the copy only puts the file on disk.
+      if (!history) x.pages.files.set(path, page('Copied'));
+      step(x.t, 'Bash', { command: `cp /Users/me/template.html ${path}` }, { history });
+      edit(x, path, page('Copied', 'edited'), { history });
+      x.t.boundary({ history });
+    };
+    n = 2000;
+    const live = setupPages({ pages });
+    script(live, false);
+    const liveSnap = shape(await snap(live.t));
+    expect(liveSnap).toHaveLength(1);
+    expect(liveSnap[0]?.versions).toEqual([[1, true]]);
+    // The temporary file is cleared before the chat is reopened.
+    pages.files.delete(path);
+    n = 2000;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    expect(shape(await snap(replay.t))).toEqual(liveSnap);
+  });
+
   it('from history: decides page-ness from a Write’s content, or the file now for an edit', async () => {
     const x = setupPages();
     write(x, `${TMP}/frag.html`, '<p>fragment</p>', { history: true });

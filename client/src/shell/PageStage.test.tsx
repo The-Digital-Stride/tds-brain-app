@@ -90,6 +90,8 @@ beforeEach(() => {
   h.openChat.mockReset();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   cleanup();
   localStorage.clear();
 });
@@ -203,21 +205,64 @@ describe('the page viewer', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
+  const stubDownload = (headers: Record<string, string> = {}) => {
+    const fetchMock = vi.fn(async () => new Response('<html></html>', { headers }));
+    vi.stubGlobal('fetch', fetchMock);
+    const created = vi.fn(() => 'blob:x');
+    const revoked = vi.fn();
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: created, revokeObjectURL: revoked }));
+    const names: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      names.push(this.download);
+    });
+    return { fetchMock, names, click };
+  };
+
   it('downloads with TDS branding whatever the chat is doing, then offers to file a copy', async () => {
+    const { fetchMock, names } = stubDownload({
+      'Content-Disposition': 'attachment; filename="Quarterly-tds.html"',
+      'X-Page-Self-Contained': 'yes',
+    });
     h.sessionState = 'working';
     const view = mount();
-    const dl = screen.getByRole('link', { name: 'Download with TDS branding' });
-    expect(dl.getAttribute('href')).toBe('/api/sessions/s1/pages/pg1/1/branded');
-    expect(dl.hasAttribute('download')).toBe(true);
+    const dl = screen.getByRole('button', { name: 'Download with TDS branding' });
     expect(screen.queryByRole('button', { name: "File in client's folder" })).toBeNull();
     h.sessionState = 'idle';
     rerenderWith(view);
-    fireEvent.click(screen.getByRole('link', { name: 'Download with TDS branding' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download with TDS branding' }));
+    expect(dl).toBeTruthy();
+    expect(await screen.findByText("Downloaded. Want a copy filed in the client's folder too?")).toBeTruthy();
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/api/sessions/s1/pages/pg1/1/branded');
+    expect(names).toEqual(['Quarterly-tds.html']);
     expect(h.askPage).not.toHaveBeenCalled();
-    expect(screen.getByText("Downloaded. Want a copy filed in the client's folder too?")).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: "File in client's folder" }));
     expect(h.askPage).toHaveBeenCalledWith('s1', 'pg1', { kind: 'brand' });
     expect(await screen.findByText('Asked Claude to file the TDS-branded copy.')).toBeTruthy();
+  });
+
+  it('says some parts still need the internet when the copy is partial, and falls back to a file name', async () => {
+    const { names } = stubDownload({ 'X-Page-Self-Contained': 'partial' });
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Download with TDS branding' }));
+    expect(
+      await screen.findByText(
+        "Downloaded. Some parts still need the internet to show. Want a copy filed in the client's folder too?",
+      ),
+    ).toBeTruthy();
+    expect(names).toEqual(['Quarterly page-tds.html']);
+  });
+
+  it('shows an error when the download fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('x', { status: 500 })),
+    );
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Download with TDS branding' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/download/i);
+    expect(screen.queryByText(/Downloaded\./)).toBeNull();
   });
 
   it('calls the draft "Latest", without the working notice, once Claude has finished', () => {
@@ -235,9 +280,6 @@ describe('the page viewer', () => {
     expect(screen.getByText('Claude is still working on this page.')).toBeTruthy();
     expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe(
       '/api/sessions/s1/pages/pg1/0',
-    );
-    expect(screen.getByRole('link', { name: 'Download with TDS branding' }).getAttribute('href')).toBe(
-      '/api/sessions/s1/pages/pg1/0/branded',
     );
     h.pages = [page({ draft: false, versions: [v(1)] })];
     rerenderWith(view);
@@ -282,6 +324,34 @@ describe('the page viewer', () => {
     expect((document.querySelector('iframe') as HTMLIFrameElement).getAttribute('title')).toBe(
       'Page: Quarterly page',
     );
+  });
+});
+
+describe('asking while the chat state changes during the send', () => {
+  it('counts a chat that went busy and finished while askPage was open as replied', async () => {
+    let resolve: (v: string | null) => void = () => {};
+    h.askPage.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const view = mount();
+    const box = screen.getByLabelText('Suggest a change') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Make it blue' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    h.sessionState = 'working';
+    rerenderWith(view);
+    h.sessionState = 'idle';
+    rerenderWith(view);
+    await act(async () => resolve(null));
+    expect(await screen.findByText('Claude replied in the chat.')).toBeTruthy();
+  });
+
+  it('treats a waiting chat as working for the draft', () => {
+    h.sessionState = 'waiting';
+    h.pages = [page({ draft: true, versions: [] })];
+    mount();
+    expect(screen.getByText('Claude is still working on this page.')).toBeTruthy();
   });
 });
 

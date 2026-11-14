@@ -39,6 +39,7 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
+import { createAssetCache } from './store/asset-cache.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
@@ -133,6 +134,8 @@ function buildBrainSide(path: string | null) {
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
     pageCopies,
+    // A branded copy's CDN scripts and Google Fonts, fetched once into the data folder (R8).
+    assets: createAssetCache({ dataDir: config.dataDir }),
   });
   return { brain, thumbs, uploads, sessions, skillLevels, pageCopies };
 }

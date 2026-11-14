@@ -1080,12 +1080,13 @@ describe('library routes', () => {
     expect(Buffer.byteLength(body.text)).toBe(1024 * 1024 - 1);
   });
 
-  it('sends an HTML page under its own sandboxed policy', async () => {
+  it('sends an HTML page under the script-running preview policy, replacing the app’s (R7)', async () => {
     const { root, ctx } = setup();
     const id = await idOf(ctx, 'page.html');
     const sent = await call(ctx, ROUTES.libraryPage(id));
     expect(sent.status).toBe(200);
-    expect(sent.headers['content-security-policy']).toBe(PAGE_CSP);
+    expect(sent.headers['content-security-policy']).toBe(PAGE_PREVIEW_CSP);
+    expect(sent.headers['cache-control']).toBe('no-store');
     expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(sent.headers['x-content-type-options']).toBe('nosniff');
     expect(
@@ -2170,7 +2171,11 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
         brandedCopy: async (id: string, key: string, n: number) => {
           if (id !== SID) throw new SessionError('not-found', 'That chat could not be found.');
           if (key !== KEY || n > 1) return null;
-          return { name: 'budget “q3”-tds-2026-11-14.html', html: `<!DOCTYPE html><p>Branded ${n}</p>` };
+          return {
+            name: 'budget “q3”-tds-2026-11-14.html',
+            html: `<!DOCTYPE html><p>Branded ${n}</p>`,
+            selfContained: n === 1,
+          };
         },
         askPage: async (id: string, key: string, req: unknown) => {
           asks.push({ id, key, req });
@@ -2294,7 +2299,11 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
     expect(sent.headers['cache-control']).toBe('no-store');
     expect(sent.body.toString('utf8')).toBe('<!DOCTYPE html><p>Branded 1</p>');
     expect(sent.headers['content-length']).toBe(sent.body.length);
-    expect((await call(ROUTES.chatPageBranded(SID, KEY, 0))).status).toBe(200);
+    expect(sent.headers['x-page-self-contained']).toBe('yes');
+    const partly = await call(ROUTES.chatPageBranded(SID, KEY, 0));
+    expect(partly.status).toBe(200);
+    // R8: the viewer words its status line from this.
+    expect(partly.headers['x-page-self-contained']).toBe('partial');
   });
 
   it('answers every miss on the branded download as the same small page', async () => {

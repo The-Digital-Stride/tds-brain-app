@@ -27,9 +27,10 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * `GET /api/library/page/<id>` replaces the app's policy with this one, on success and on error: the
- * page is sandboxed (no scripts, an opaque origin), may load nothing from anywhere, and only the app
- * itself may frame it.
+ * `GET /api/library/page/<id>` replaces the app's policy with this one on an error or a gate refusal
+ * (a successful HTML file goes out under `PAGE_PREVIEW_CSP`, plan 2026-11-14-artifacts-in-app R7):
+ * the page is sandboxed (no scripts, an opaque origin), may load nothing from anywhere, and only the
+ * app itself may frame it.
  */
 export const PAGE_CSP =
   "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'";
@@ -44,7 +45,8 @@ export const PDF_CSP = "default-src 'none'; object-src 'self'; frame-ancestors '
 
 /**
  * `GET ROUTES.chatPage(…)` (a page Claude wrote in a chat, plan 2026-11-14-artifacts-in-app, decision 3)
- * replaces the app's policy with this one, on success and on error. The page's scripts run in an
+ * replaces the app's policy with this one, on success and on error; so does a successful
+ * `GET /api/library/page/<id>` (R7: an HTML file in the brain shown in Documents). The page's scripts run in an
  * opaque origin (`sandbox` without `allow-same-origin`): no cookies, no reach into the app or its API.
  * It may load only what claude.ai lets artifacts load (these script, style and font hosts), nothing
  * else: no fetches, no pictures from the web, no forms. Popups it opens stay sandboxed (never

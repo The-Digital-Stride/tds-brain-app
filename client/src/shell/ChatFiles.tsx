@@ -413,7 +413,13 @@ export function ChatFiles({ sessionId }: { sessionId: string }) {
                   <span className="line-text">
                     <span className="line-title">{p.title}</span>
                     <span className="line-meta">
-                      {p.draft ? 'Being written' : newest ? `Version ${newest.remote ?? newest.n}` : 'Page'}
+                      {p.draft
+                        ? busy
+                          ? 'Being written'
+                          : 'Latest'
+                        : newest
+                          ? `Version ${newest.remote ?? newest.n}`
+                          : 'Page'}
                     </span>
                   </span>
                 </button>

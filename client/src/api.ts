@@ -217,3 +217,52 @@ export async function discardUpload(id: string, keepalive = false): Promise<void
 export function streamUrl(sessionId: string | null, after: number): string {
   return ROUTES.stream(sessionId, after, true, true);
 }
+
+/** The file name in a Content-Disposition header (plain or RFC 5987 form), or null. */
+export function dispositionName(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // fall through to the plain form
+    }
+  }
+  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/.exec(header);
+  const name = (plain?.[1] ?? plain?.[2] ?? '').trim();
+  return name || null;
+}
+
+/**
+ * Fetches a TDS-branded copy of a page (same-origin GET) and saves it through a temporary object URL.
+ * `partial` is true when the server could not make it fully self-contained (`X-Page-Self-Contained`).
+ * Throws an `ApiFailure` when the fetch fails.
+ */
+export async function downloadBranded(path: string, title: string): Promise<{ partial: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(path, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'text/html' } });
+  } catch {
+    throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
+  }
+  if (!res.ok) {
+    throw new ApiFailure('internal', "Couldn't download the page. Please try again.", res.status);
+  }
+  const blob = await res.blob();
+  const fallback = `${title.replace(/[^\w .-]+/g, '').trim() || 'page'}-tds.html`;
+  const name = dispositionName(res.headers.get('Content-Disposition')) ?? fallback;
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  return { partial: res.headers.get('X-Page-Self-Contained') === 'partial' };
+}

@@ -77,7 +77,12 @@ import {
   type JevAsk,
 } from '../engine/client-guess.ts';
 import { jevFromBrain } from '../engine/jev.ts';
-import { parsePageAsk, SessionError, type SessionManager } from '../engine/session-manager.ts';
+import {
+  type BrandedCopy,
+  parsePageAsk,
+  SessionError,
+  type SessionManager,
+} from '../engine/session-manager.ts';
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { isPageKey } from '../store/page-copies.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
@@ -834,7 +839,8 @@ async function sendPage(req: IncomingMessage, res: ServerResponse, rawId: string
       sendPageError(res, 400, 'That page is too large to open in the app.');
       return;
     }
-    sendPageHtml(res, 200, read.data);
+    // R7: the file's own scripts run, locked down as a chat's page is; errors stay script-free.
+    sendPreviewHtml(res, 200, read.data);
   } catch {
     if (res.headersSent) res.end();
     else sendPageError(res, 500, 'Something went wrong in the app. Try again.');
@@ -1002,6 +1008,12 @@ async function sendChatPage(
 }
 
 /**
+ * Says whether the branded download works offline (R8): `yes`, or `partial` when a script, stylesheet
+ * or font it uses still comes from the internet. The viewer reads it to word its status line.
+ */
+export const PAGE_SELF_CONTAINED_HEADER = 'X-Page-Self-Contained';
+
+/**
  * `GET ROUTES.chatPageBranded`: one stored copy wrapped in the TDS bar, as a download under the
  * download policy (never shown or run in place). Errors are the same small page as `chatPage`'s.
  */
@@ -1023,7 +1035,7 @@ async function sendBrandedPage(
       sendPreviewError(res, 404, PAGE_NOT_FOUND);
       return;
     }
-    let file: { name: string; html: string } | null;
+    let file: BrandedCopy | null;
     try {
       file = await branded.call(ctx.sessions, id, key, Number(raw.n));
     } catch (err) {
@@ -1043,6 +1055,7 @@ async function sendBrandedPage(
       'Content-Security-Policy': DOWNLOAD_CSP,
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': attachmentHeader(file.name),
+      [PAGE_SELF_CONTAINED_HEADER]: file.selfContained ? 'yes' : 'partial',
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
       'Content-Length': body.length,

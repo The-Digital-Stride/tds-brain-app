@@ -34,6 +34,7 @@ import type {
 import { isRealPage, pageTitle } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
+import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
@@ -291,11 +292,13 @@ function setup(
     picker?: LevelPicker;
     chatKinds?: ChatKindStore;
     pageCopies?: PageCopyStore;
+    assets?: AssetCache;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
     pageCopies: opts.pageCopies,
+    assets: opts.assets,
     levels: opts.levels,
     chatLevels: opts.chatLevels,
     picker: opts.picker,
@@ -4367,6 +4370,45 @@ describe('pages', () => {
       Promise.resolve().then(() => mgr.brandedCopy?.('nobody', key, 0)),
       'not-found',
     );
+  });
+
+  it('makes the branded copy self-contained, and says when some of it still needs the internet (R8)', async () => {
+    const LIB = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+    const OTHER = 'https://cdn.plot.ly/plotly.min.js';
+    const asked: string[] = [];
+    const assets: AssetCache = {
+      get: async (url) => {
+        asked.push(url);
+        return url === LIB ? Buffer.from('window.Chart = "</script>";') : null;
+      },
+    };
+    const staging = stagingFor();
+    const fx = withPages(writing, { assets, uploads: staging });
+    fx.copies.disk.set(SRC, `<!doctype html><title>Budget</title><script src="${LIB}"></script><p>v</p>`);
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    const whole = await mgr.brandedCopy?.(s.id, key, 0);
+    expect(whole?.selfContained).toBe(true);
+    // Inlined before wrapping: inside the frame's srcdoc, attribute-escaped.
+    expect(whole?.html).toContain(
+      '&lt;script&gt;window.Chart = &quot;&lt;\\/script&gt;&quot;;&lt;/script&gt;',
+    );
+    expect(whole?.html).not.toContain(LIB);
+    expect(asked).toEqual([LIB]);
+    // The filed copy is the same self-contained file.
+    await mgr.askPage?.(s.id, key, { kind: 'brand' });
+    await flush();
+    const sent = fx.queries[0]?.received[1] ?? '';
+    const line = sent.split('\n').find((l) => l.startsWith('- budget-tds-'));
+    const stagedPath = line?.slice(line.indexOf(': ') + 2) ?? '';
+    expect(readFileSync(stagedPath, 'utf8')).toContain('window.Chart = ');
+    staging.close();
+
+    fx.copies.disk.set(SRC, `<!doctype html><title>Budget</title><script src="${OTHER}"></script>`);
+    const t = await mgr.start({ prompt: 'Make another' });
+    const other = await mgr.brandedCopy?.(t.id, await pageKey(t.id), 0);
+    expect(other?.selfContained).toBe(false);
+    expect(other?.html).toContain(OTHER);
   });
 
   it('files the branded copy by sending it as an attachment with the branding note (O1, O7)', async () => {

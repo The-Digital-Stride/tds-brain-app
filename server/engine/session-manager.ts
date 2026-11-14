@@ -64,6 +64,7 @@ import {
 import { brandedFileName, brandedPage, brandingMessage, suggestionMessage } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX, type PageAskRequest, type PageRef } from '../../shared/pages-contract.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
+import { type AssetCache, inlinePageAssets } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
@@ -202,6 +203,19 @@ export interface SessionManagerOptions {
    * Without it pages are listed with no copies, and asks name Claude's own file.
    */
   pageCopies?: PageCopyStore;
+  /**
+   * Where a branded copy's outside scripts, stylesheets and fonts come from, so the copy is
+   * self-contained (R8). Without it the branded copy keeps them as addresses.
+   */
+  assets?: AssetCache;
+}
+
+/** A page wrapped in the TDS bar, ready to save or file. */
+export interface BrandedCopy {
+  name: string;
+  html: string;
+  /** False when a script, stylesheet or font it uses still has to be fetched from the internet. */
+  selfContained: boolean;
 }
 
 export class SessionError extends Error {
@@ -261,10 +275,12 @@ export interface SessionManager extends LevelSessionApi {
   pageCopy?(id: string, key: string, n: number): Promise<Buffer | null>;
   /**
    * Version `n` of a chat's page (`0` the in-progress copy) wrapped in the TDS bar (`brandedPage`),
-   * with the file name to save it as (`brandedFileName`). Null when there is no copy of it. Throws
-   * `not-found` for a chat it doesn't know (closed chats answer for a while, as for `pageCopy`).
+   * with the file name to save it as (`brandedFileName`). What the page loads from the allowed
+   * sources is written into it first (R8); `selfContained` is false when some of it still comes from
+   * the internet. Null when there is no copy of it. Throws `not-found` for a chat it doesn't know
+   * (closed chats answer for a while, as for `pageCopy`).
    */
-  brandedCopy?(id: string, key: string, n: number): Promise<{ name: string; html: string } | null>;
+  brandedCopy?(id: string, key: string, n: number): Promise<BrandedCopy | null>;
   /**
    * Asks Claude to change a page or to file its TDS-branded copy (`PageAskRequest`), sent like a typed
    * message: the same role check and busy rule, an idle chat starting its engine. Only the message's
@@ -1144,19 +1160,27 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     key: string,
     info: PageInfo,
     copy: { id: string; which: 'kept' | 'draft' },
-  ): Promise<{ name: string; html: string } | null> {
+  ): Promise<BrandedCopy | null> {
     const data = await onPagesChain(s, (st, sdk) => st.read(sdk, key, copy.id, copy.which));
     if (!data) return null;
     const date = localDate(new Date());
-    const [logo, client] = await Promise.all([logoSprite(), clientName(s.client)]);
-    const html = brandedPage(data.toString('utf8'), {
+    // The page itself is made self-contained before it is wrapped (R8); the wrapper is the app's own.
+    const [logo, client, page] = await Promise.all([
+      logoSprite(),
+      clientName(s.client),
+      inlinePageAssets(data.toString('utf8'), opts.assets ?? null).catch(() => ({
+        html: data.toString('utf8'),
+        selfContained: false,
+      })),
+    ]);
+    const html = brandedPage(page.html, {
       title: info.title,
       client,
       date,
       logoSprite: logo,
       csp: PAGE_WRAPPER_CSP,
     });
-    return { name: brandedFileName(info.title, date), html };
+    return { name: brandedFileName(info.title, date), html, selfContained: page.selfContained };
   }
 
   /** A chat that can still show its pages: live, or closed a short while ago. */

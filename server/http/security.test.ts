@@ -794,6 +794,7 @@ describe('the page preview through the real server', () => {
   let app: AppServer;
   let port: number;
   const clientDir = mkdtempSync(join(tmpdir(), 'tba-sec-client-'));
+  const brain = createBrainReaders(copyFixture());
 
   beforeAll(async () => {
     app = createAppServer({
@@ -803,7 +804,7 @@ describe('the page preview through the real server', () => {
       authCodes: createAuthCodes(TOKEN),
       appVersion: '0',
       underService: false,
-      brain: createBrainReaders(copyFixture()),
+      brain,
       store: {} as never,
       sessions: {
         onChange: () => () => {},
@@ -814,6 +815,7 @@ describe('the page preview through the real server', () => {
             ? {
                 name: 'budget-tds-2026-11-14.html',
                 html: '<!DOCTYPE html><title>Budget | The Digital Stride</title>',
+                selfContained: true,
               }
             : null,
       } as never,
@@ -880,6 +882,7 @@ describe('the page preview through the real server', () => {
     expect(header('content-type')).toBe('application/octet-stream');
     expect(header('x-content-type-options')).toBe('nosniff');
     expect(header('cache-control')).toBe('no-store');
+    expect(header('x-page-self-contained')).toBe('yes');
     expect(ok.body).toContain('The Digital Stride');
     const miss = await get(ROUTES.chatPageBranded(SID, KEY, 1), { cookie });
     expect(miss.status).toBe(404);
@@ -887,6 +890,22 @@ describe('the page preview through the real server', () => {
     const refused = await get(ROUTES.chatPageBranded(SID, KEY, 0));
     expect(refused.status).toBe(401);
     expect(refused.body).toMatch(/^<!doctype html>/);
+  });
+
+  it('sends a library HTML file under one policy, the preview one; misses and refusals keep the page one (R7)', async () => {
+    const cookie = `${SESSION_COOKIE}=${COOKIE}`;
+    const listing = await brain.library('client:acme-heating');
+    const id = listing?.items.find((i) => i.name === 'page.html')?.id;
+    if (!id) throw new Error('missing page.html');
+    const ok = await get(ROUTES.libraryPage(id), { cookie });
+    expect(ok.status).toBe(200);
+    expect(csps(ok.raw)).toEqual([PAGE_PREVIEW_CSP]);
+    const miss = await get(ROUTES.libraryPage('client:acme-heating.000000000000000000000000'), { cookie });
+    expect(miss.status).toBe(404);
+    expect(csps(miss.raw)).toEqual([PAGE_CSP]);
+    const refused = await get(ROUTES.libraryPage(id));
+    expect(refused.status).toBe(401);
+    expect(csps(refused.raw)).toEqual([PAGE_CSP]);
   });
 
   it('answers a gate refusal on the page route as a framable page, not JSON', async () => {

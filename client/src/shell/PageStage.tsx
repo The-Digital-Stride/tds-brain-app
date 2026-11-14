@@ -6,8 +6,10 @@ import {
   PAGE_NOTE_MAX,
   type PageAskRequest,
 } from '../../../shared/pages-contract.ts';
+import { downloadBranded } from '../api.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
+import { useFrameGuard } from './useFrameGuard.ts';
 
 /** What the form area at the foot of the page viewer says and allows (plan decision 6). */
 export type PageFormState = 'ready' | 'running' | 'waiting' | 'replied' | 'closed';
@@ -141,7 +143,8 @@ export function PageStage({
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [asked, setAsked] = useState<PageAsked | null>(null);
-  const [downloadedN, setDownloadedN] = useState<number | null>(null);
+  const [downloaded, setDownloaded] = useState<{ n: number; partial: boolean } | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const busy = sessionState !== null && (BUSY.includes(sessionState) || sessionState === 'waiting');
   useEffect(() => {
     if (busy) setAsked((a) => (a && !a.sawBusy ? { ...a, sawBusy: true } : a));
@@ -156,8 +159,15 @@ export function PageStage({
 
   // Frame self-navigation guard: a sandboxed page that navigates itself loads a second time.
   const [reloads, setReloads] = useState(0);
-  const [stopped, setStopped] = useState<string | null>(null);
-  const loads = useRef<{ id: string; count: number }>({ id: '', count: 0 });
+  const frameId = `${pageKey}-${shown?.n ?? 0}-${shown?.n === 0 ? draftStamp : ''}-${reloads}`;
+  const { stopped: frameStopped, onLoad: onFrameLoad } = useFrameGuard(frameId);
+  // The latest busy value, for reading after an await (the closure's own `busy` is then stale).
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  // Whether the chat was busy at any point since the current send began (it may start and finish
+  // while the request is still open).
+  const busySeen = useRef(false);
+  if (busy) busySeen.current = true;
 
   const noteId = useId();
   const statusId = useId();
@@ -185,6 +195,7 @@ export function PageStage({
   const send = async (req: PageAskRequest) => {
     setSending(true);
     setFailure(null);
+    busySeen.current = busyRef.current;
     const reason = await askPage(chat, pageKey, req);
     setSending(false);
     if (reason !== null) {
@@ -192,8 +203,8 @@ export function PageStage({
       return;
     }
     if (req.kind === 'change') setNote('');
-    setDownloadedN(null);
-    setAsked({ mark, sawBusy: busy, kind: req.kind });
+    setDownloaded(null);
+    setAsked({ mark, sawBusy: busyRef.current || busySeen.current, kind: req.kind });
     setAnnounce('');
   };
   const submit = () => {
@@ -209,6 +220,21 @@ export function PageStage({
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
     e.preventDefault();
     submit();
+  };
+
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    setFailure(null);
+    try {
+      const { partial } = await downloadBranded(ROUTES.chatPageBranded(chat, page.key, shown.n), page.title);
+      setDownloaded({ n: shown.n, partial });
+    } catch (err) {
+      setDownloading(false);
+      setFailure(err instanceof Error ? err.message : "Couldn't download the page. Please try again.");
+      return;
+    }
+    setDownloading(false);
   };
 
   const copy = async () => {
@@ -238,26 +264,19 @@ export function PageStage({
     );
   };
 
-  const index = versions.indexOf(shown);
   const isDraft = shown.n === 0;
-  const frameId = `${page.key}-${shown.n}-${isDraft ? draftStamp : ''}-${reloads}`;
-  const onFrameLoad = () => {
-    const l = loads.current;
-    if (l.id !== frameId) loads.current = { id: frameId, count: 1 };
-    else l.count += 1;
-    if (loads.current.count > 1) setStopped(frameId);
-  };
-  const frameStopped = stopped === frameId;
-  const offerFiling = form === 'ready' && downloadedN === shown.n;
+  const offerFiling = form === 'ready' && downloaded?.n === shown.n;
   const status =
     form === 'running' && asked?.kind === 'brand'
       ? 'Asked Claude to file the TDS-branded copy.'
       : offerFiling
-        ? "Downloaded. Want a copy filed in the client's folder too?"
+        ? downloaded?.partial
+          ? "Downloaded. Some parts still need the internet to show. Want a copy filed in the client's folder too?"
+          : "Downloaded. Want a copy filed in the client's folder too?"
         : STATUS_WORDS[form];
   // The draft stays the newest copy after Claude's reply until the person's next message (O4): it is
   // "in progress" only while Claude is still running, and simply "Latest" after that.
-  const working = sessionState !== null && BUSY.includes(sessionState);
+  const working = busy;
   const draftWorking = isDraft && working;
   const heading = (v: ChatPageVersion) =>
     v.n === 0 ? (working ? 'In progress' : 'Latest') : versionLabel(v, numbered.indexOf(v), numbered.length);
@@ -275,14 +294,9 @@ export function PageStage({
         </div>
         <div className="viewer-actions">
           {shown.hasCopy ? (
-            <a
-              className="btn"
-              href={ROUTES.chatPageBranded(chat, page.key, shown.n)}
-              download
-              onClick={() => setDownloadedN(shown.n)}
-            >
+            <button type="button" className="btn" aria-disabled={downloading} onClick={() => void download()}>
               Download with TDS branding
-            </a>
+            </button>
           ) : null}
           {sourceFile?.item && onOpenInDocuments ? (
             <button type="button" className="btn" onClick={() => onOpenInDocuments(sourceFile)}>

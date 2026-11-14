@@ -316,12 +316,12 @@ describe('opening a document', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Hello' })).toBeTruthy();
   });
 
-  it('opens an HTML page in a frame whose sandbox is present and empty', async () => {
+  it('opens an HTML page in a frame that may run scripts but never gets the app origin', async () => {
     const { container } = render(all());
     await openFrom(/^Explainer/);
     const frame = container.querySelector('iframe') as HTMLIFrameElement;
     expect(frame.hasAttribute('sandbox')).toBe(true);
-    expect(frame.getAttribute('sandbox')).toBe('');
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-popups');
     expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
     expect(frame.getAttribute('title')).toBe('Explainer');
     expect(frame.getAttribute('src')).toBe(`/api/library/page/${encodeURIComponent(page.id)}`);

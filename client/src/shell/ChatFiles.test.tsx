@@ -458,9 +458,17 @@ describe('the Pages fold', () => {
     expect(screen.getByRole('button', { name: /Title other/ })).toBeTruthy();
   });
 
-  it('says a page is being written while it is a draft', () => {
+  it('says a page is being written while it is a draft and the chat is busy', () => {
+    h.sessionState = 'working';
     set({ pages: [pageOf({ draft: true, versions: [] })] });
     renderTab();
     expect(screen.getByText('Being written')).toBeTruthy();
+  });
+
+  it('says Latest for a draft once the chat is idle', () => {
+    set({ pages: [pageOf({ draft: true, versions: [] })] });
+    renderTab();
+    expect(screen.queryByText('Being written')).toBeNull();
+    expect(screen.getByText('Latest')).toBeTruthy();
   });
 });

@@ -984,7 +984,13 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     if (known) isPage = true;
     else if (copied) isPage = copied.page;
     else if (w.writeIsPage !== null) isPage = w.writeIsPage;
-    else isPage = w.history && (await port.isPage(w.filePath)) === true;
+    else if (!w.history) isPage = false;
+    else {
+      // An edit from history: the file as it is now or, when that no longer says so (the source is
+      // gone), a copy live kept under this tool use, so replay finds the page the live chat had.
+      isPage =
+        (await port.isPage(w.filePath)) === true || (await port.held(key, id).catch(() => null)) !== null;
+    }
     if (!isPage) return;
     const page = known ?? newPage(located, w.filePath);
     touchPage(page, id, w.filePath, w.history, copied, w.writeTitle);

@@ -9,6 +9,7 @@ import type {
   SessionState,
 } from '../../../shared/contract.ts';
 import { attentionFor } from '../../../shared/contract.ts';
+import type { TurnLevel } from '../../../shared/levels-contract.ts';
 
 export type Outcome = 'allowed' | 'denied' | 'answered' | 'cancelled';
 
@@ -97,6 +98,10 @@ export interface ChatState {
   effort: EffortLevel | null;
   /** The files, attachments and links this chat has touched. */
   files: ChatFilesSnapshot;
+  /** The newest level event: which tier the chat runs at and why. null on an older server or before one arrives. */
+  level: TurnLevel | null;
+  /** The skill the newest `level` event offered a team level for, until dismissed or set. */
+  unlevelledSkill: string | null;
 }
 
 export const initialChatState: ChatState = {
@@ -109,9 +114,17 @@ export const initialChatState: ChatState = {
   model: null,
   effort: null,
   files: { files: [], attachments: [], links: [] },
+  level: null,
+  unlevelledSkill: null,
 };
 
-export type ChatAction = { type: 'event'; item: SequencedEvent } | { type: 'reset' };
+export type ChatAction =
+  | { type: 'event'; item: SequencedEvent }
+  | { type: 'reset' }
+  /** The answer to the chat-level route, applied at once (the server's own `level` event follows). */
+  | { type: 'level'; level: TurnLevel }
+  /** The person dismissed, or answered, the "Set a team level" offer. */
+  | { type: 'clear-offer' };
 
 /** The permission or question card that is still waiting on the person, if any. */
 export function pendingCard(state: ChatState): PermissionItem | QuestionItem | null {
@@ -279,6 +292,10 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
     case 'files':
       next.files = { files: event.files, attachments: event.attachments, links: event.links };
       return next;
+    case 'level':
+      next.level = event.level;
+      if (event.unlevelledSkill) next.unlevelledSkill = event.unlevelledSkill;
+      return next;
     default:
       // An event this app does not know yet: keep the chat as it is.
       return next;
@@ -287,6 +304,9 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   if (action.type === 'reset') return initialChatState;
+  if (action.type === 'level') return { ...state, level: action.level };
+  if (action.type === 'clear-offer')
+    return state.unlevelledSkill ? { ...state, unlevelledSkill: null } : state;
   // Replays and duplicates: anything at or before the last applied event is ignored.
   if (action.item.seq <= state.lastSeq) return state;
   return applyEvent(state, action.item.seq, action.item.event, action.item.at);

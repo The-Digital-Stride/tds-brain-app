@@ -1410,3 +1410,117 @@
 .files-row .line-title {
   overflow-wrap: anywhere;
 }
+
+/* Levels: the line under the message box in automatic mode, its "Why?" and menu, and the team-level offer. */
+.level-line {
+  margin: -4px 0 0;
+}
+.level-line .level-row {
+  margin: 0;
+}
+.level-why {
+  margin: 2px 0 0;
+  padding: 0 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.level-menu {
+  margin: 4px 16px 0;
+  padding: 4px;
+  display: grid;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--glass-solid);
+  box-shadow: var(--lift-2);
+}
+.level-menu[hidden],
+.level-why[hidden] {
+  display: none;
+}
+.level-option {
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.level-option:hover {
+  background: var(--tint-1);
+}
+.level-option[aria-pressed="true"] {
+  background: var(--wash);
+}
+.level-option-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.level-option-blurb {
+  font-size: 12px;
+  color: var(--iron);
+}
+.level-offer {
+  margin: 4px 16px 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-radius: 10px;
+  background: var(--tint-1);
+  font-size: 12.5px;
+}
+.level-offer-text {
+  margin: 0;
+  flex: 1 1 220px;
+  overflow-wrap: anywhere;
+}
+.level-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Settings: how the model is chosen, and the Skill levels list. */
+.setting.level-mode .seg {
+  flex-wrap: wrap;
+}
+.levels-search {
+  margin: 8px 0;
+}
+.levels-search .field {
+  width: 100%;
+  max-width: 320px;
+}
+.levels-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.levels-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 8px 0;
+}
+.levels-row + .levels-row {
+  border-top: 1px solid var(--line);
+}
+.levels-who {
+  display: grid;
+  min-width: 0;
+}
+.levels-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.levels-actions .field {
+  width: 140px;
+}

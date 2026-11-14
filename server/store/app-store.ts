@@ -11,6 +11,7 @@ import {
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
 } from '../../shared/contract.ts';
+import type { LevelMode } from '../../shared/levels-contract.ts';
 
 const MAX_PINS = 100;
 const MAX_TEXT = 200;
@@ -58,6 +59,10 @@ function pruneSeen(seen: Record<string, string>, now: Date): Record<string, stri
   return out;
 }
 
+function isLevelMode(v: unknown): v is LevelMode {
+  return v === 'auto' || v === 'manual';
+}
+
 /** Keeps only known keys with valid values; anything else falls back to `base`. */
 function sanitise(input: unknown, base: AppPrefs): AppPrefs {
   const o =
@@ -82,8 +87,9 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
       o.effort === null || (EFFORT_LEVELS as readonly unknown[]).includes(o.effort)
         ? (o.effort as EffortLevel | null)
         : base.effort,
-    // Placeholder so the contract type-checks; Builder B adds the old-file read rule (plan decision 2).
-    levelMode: o.levelMode === 'auto' || o.levelMode === 'manual' ? o.levelMode : base.levelMode,
+    // A missing or invalid value keeps `base`: the current choice on a patch. `read` replaces it
+    // with the old-file rule when the file itself had none.
+    levelMode: isLevelMode(o.levelMode) ? o.levelMode : base.levelMode,
   };
 }
 
@@ -93,7 +99,13 @@ export function createAppStore(dataDir: string, now: () => Date = () => new Date
 
   async function read(): Promise<AppPrefs> {
     try {
-      return sanitise(JSON.parse(await fs.readFile(file, 'utf8')), DEFAULT_PREFS);
+      const raw: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+      const prefs = sanitise(raw, DEFAULT_PREFS);
+      // A file from before levels: whoever picked a model or effort keeps that choice (plan decision 2).
+      const given = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).levelMode : undefined;
+      if (!isLevelMode(given))
+        prefs.levelMode = prefs.model !== null || prefs.effort !== null ? 'manual' : 'auto';
+      return prefs;
     } catch {
       return sanitise({}, DEFAULT_PREFS);
     }

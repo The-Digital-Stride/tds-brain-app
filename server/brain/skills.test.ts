@@ -1,6 +1,9 @@
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createBrainReaders } from './index.ts';
-import { FIXTURE, person } from './test-helpers.ts';
+import { ownLevel } from './skills.ts';
+import { copyFixture, FIXTURE, person } from './test-helpers.ts';
 
 const brain = createBrainReaders(FIXTURE);
 const names = (l: { name: string }[]) => l.map((s) => s.name);
@@ -85,5 +88,83 @@ describe('skills', () => {
 
   it('returns an empty list when the brain is missing', async () => {
     expect(await createBrainReaders('/nonexistent/brain').skills(person('a', 'scout'))).toEqual([]);
+  });
+});
+
+describe('own level (frontmatter model and effort)', () => {
+  function brainWith(files: Record<string, string>): string {
+    const root = copyFixture();
+    for (const [rel, text] of Object.entries(files)) {
+      const abs = join(root, '.claude', rel);
+      mkdirSync(join(abs, '..'), { recursive: true });
+      writeFileSync(abs, text);
+    }
+    return root;
+  }
+  const fm = (lines: string) => `---\nname: x\ndescription: d\n${lines}\n---\nBody\n`;
+
+  it('is null for skills that set neither', async () => {
+    const list = await createBrainReaders(FIXTURE).skills(person('sam-example', 'scout'));
+    expect(list.length).toBeGreaterThan(0);
+    for (const s of list) expect(s.ownLevel).toBeNull();
+  });
+
+  it('reads model and effort from a skill and from a command, either one alone', async () => {
+    const root = brainWith({
+      'skills/both/SKILL.md': fm('model: haiku\neffort: low'),
+      'skills/model-only/SKILL.md': fm('model: opus'),
+      'commands/effort-only.md': fm('effort: HIGH'),
+    });
+    const list = await createBrainReaders(root).skills(person('sam-example', 'scout'));
+    const get = (n: string) => list.find((s) => s.name === n)?.ownLevel;
+    expect(get('both')).toEqual({ model: 'haiku', effort: 'low' });
+    expect(get('model-only')).toEqual({ model: 'opus', effort: null });
+    expect(get('effort-only')).toEqual({ model: null, effort: 'high' });
+  });
+
+  it('ignores `inherit`, an unknown effort and a model that is not a model name', async () => {
+    const root = brainWith({
+      'skills/a/SKILL.md': fm('model: inherit\neffort: extreme'),
+      'skills/b/SKILL.md': fm('model: "no no"'),
+    });
+    expect(await ownLevel(root, 'a')).toBeNull();
+    expect(await ownLevel(root, 'b')).toBeNull();
+  });
+
+  it('looks any skill up by name, including hidden and role-restricted ones', async () => {
+    const root = brainWith({
+      'skills/secret/SKILL.md': fm('user-invocable: false\nroles: owner\nmodel: haiku'),
+    });
+    const list = await createBrainReaders(root).skills(person('ben', 'team'));
+    expect(list.find((s) => s.name === 'secret')).toBeUndefined();
+    expect(await ownLevel(root, 'secret')).toEqual({ model: 'haiku', effort: null });
+  });
+
+  it('a skill beats a command of the same name; unknown or odd names give null', async () => {
+    const root = brainWith({
+      'skills/dup/SKILL.md': fm('model: opus'),
+      'commands/dup.md': fm('model: haiku'),
+      'commands/only-cmd.md': fm('effort: max'),
+    });
+    expect(await ownLevel(root, 'dup')).toEqual({ model: 'opus', effort: null });
+    expect(await ownLevel(root, 'only-cmd')).toEqual({ model: null, effort: 'max' });
+    expect(await ownLevel(root, 'nothing-here')).toBeNull();
+    expect(await ownLevel(root, '../x')).toBeNull();
+    expect(await ownLevel(root, '.hidden')).toBeNull();
+    expect(await ownLevel('/nonexistent/brain', 'dup')).toBeNull();
+  });
+
+  it('notices a change to the file (cached by mtime)', async () => {
+    const root = brainWith({ 'skills/c/SKILL.md': fm('model: haiku') });
+    expect(await ownLevel(root, 'c')).toEqual({ model: 'haiku', effort: null });
+    const file = join(root, '.claude', 'skills', 'c', 'SKILL.md');
+    writeFileSync(file, fm('model: opus'));
+    const later = new Date(Date.now() + 5000);
+    utimesSync(file, later, later);
+    expect(await ownLevel(root, 'c')).toEqual({ model: 'opus', effort: null });
+    writeFileSync(file, fm('description: none'));
+    const later2 = new Date(Date.now() + 10000);
+    utimesSync(file, later2, later2);
+    expect(await ownLevel(root, 'c')).toBeNull();
   });
 });

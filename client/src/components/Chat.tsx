@@ -13,6 +13,7 @@ import { useStore } from '../store.tsx';
 import { AttentionBar } from './AttentionBar.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 import { Composer } from './Composer.tsx';
+import { LevelLine, LevelOffer } from './LevelLine.tsx';
 import { Transcript } from './Transcript.tsx';
 
 const REASONS = {
@@ -50,6 +51,10 @@ export function ChatView() {
     cancelClose,
     requestClose,
     closeChat,
+    skillLevels,
+    setSkillLevel,
+    setChatLevel,
+    dismissLevelOffer,
   } = useStore();
   const { dispatch: shellDispatch } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -60,6 +65,16 @@ export function ChatView() {
   const sessionId = activeChat.kind === 'live' ? activeChat.sessionId : null;
   const chat = sessionId ? (chats[sessionId] ?? initialChatState) : initialChatState;
   const engine = engineLine(chat.model, chat.effort);
+  // Automatic mode only: manual (and an older server) keep the v0.19.0 line.
+  const levelShown = chat.level !== null && chat.level.source.kind !== 'manual';
+  const offerSkill =
+    sessionId &&
+    chat.unlevelledSkill &&
+    skillLevels?.canSet &&
+    skillLevels.writable &&
+    !(chat.unlevelledSkill in skillLevels.levels)
+      ? chat.unlevelledSkill
+      : null;
   // Read when an answer goes through, which is after this render.
   const latestItems = useRef(chat.items);
   latestItems.current = chat.items;
@@ -212,7 +227,23 @@ export function ChatView() {
               return send(text, null, uploadIds);
             }}
           />
-          {engine ? (
+          {levelShown && chat.level && sessionId ? (
+            <LevelLine level={chat.level} onPick={(tier) => void setChatLevel?.(sessionId, tier)} />
+          ) : null}
+          {offerSkill && sessionId ? (
+            <LevelOffer
+              key={offerSkill}
+              skill={offerSkill}
+              usedTier={chat.level?.tier ?? null}
+              onSet={(tier) => {
+                void setSkillLevel?.(offerSkill, tier).then((ok) => {
+                  if (ok) dismissLevelOffer?.(sessionId);
+                });
+              }}
+              onDismiss={() => dismissLevelOffer?.(sessionId)}
+            />
+          ) : null}
+          {engine && !levelShown ? (
             <p className="engine-line">
               <span className="engine-text">
                 <span className="visually-hidden">Claude is using </span>

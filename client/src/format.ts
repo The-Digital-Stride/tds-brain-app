@@ -1,4 +1,5 @@
 import type { EffortLevel } from '../../shared/contract.ts';
+import { LEVEL_TIERS, type TurnLevel } from '../../shared/levels-contract.ts';
 
 const DAY_MS = 86_400_000;
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -68,4 +69,61 @@ export function engineLine(model: string | null, effort: EffortLevel | null): st
   if (id) parts.push(modelName(id));
   if (effort) parts.push(EFFORT_WORDS[effort]);
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** A tier's model alias, said the way people say it: "sonnet" → "Sonnet". */
+export function aliasName(alias: string): string {
+  return alias.charAt(0).toUpperCase() + alias.slice(1);
+}
+
+/** Everything the level line under the message box says, from the newest `level` event. */
+export interface LevelLineText {
+  /** "Standard" (bold), or null when no tier applies. */
+  tier: string | null;
+  /** What follows it, e.g. "picked for this chat". */
+  note: string;
+  /** One plain sentence for "Why?". */
+  why: string;
+  /** "Sonnet · Medium effort" for the tier, or null when no tier applies. */
+  engine: string | null;
+}
+
+/**
+ * The line for automatic mode, or null when the v0.19.0 engine line should stay (manual mode: the
+ * person's own choice). A skill's own setting reads "Set by /name".
+ */
+export function levelLineText(level: TurnLevel): LevelLineText | null {
+  const { tier, source } = level;
+  const spec = tier ? LEVEL_TIERS[tier] : null;
+  const engine = spec ? `${aliasName(spec.model)} · ${EFFORT_WORDS[spec.effort]}` : null;
+  const label = spec?.label ?? null;
+  switch (source.kind) {
+    case 'manual':
+      return null;
+    case 'skill-own':
+      return {
+        tier: null,
+        note: `Set by /${source.skill}`,
+        why: `/${source.skill} sets its own model and effort, so the app leaves it alone.`,
+        engine: null,
+      };
+    case 'team':
+      return {
+        tier: label,
+        note: `for /${source.skill} · team level`,
+        why: `Your team set ${label ?? 'a level'} for /${source.skill}.`,
+        engine,
+      };
+    case 'chat':
+      return { tier: label, note: 'your choice for this chat', why: 'You chose this for this chat.', engine };
+    case 'fallback':
+      return {
+        tier: label,
+        note: 'picked for this chat',
+        why: "The app couldn't pick in time, so it used Standard.",
+        engine,
+      };
+    default:
+      return { tier: label, note: 'picked for this chat', why: source.reason, engine };
+  }
 }

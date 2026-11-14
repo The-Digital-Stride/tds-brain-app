@@ -59,7 +59,10 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
   const sessionId = url.searchParams.get('session');
   // Only a page that understands `files` events gets them; an older page's reducer would reset the chat.
   const wantFiles = url.searchParams.get('files') === '1';
-  const shown = (item: SequencedEvent) => wantFiles || item.event.type !== 'files';
+  // The same for `level` events (`levels=1`).
+  const wantLevels = url.searchParams.get('levels') === '1';
+  const shown = (item: SequencedEvent) =>
+    (wantFiles || item.event.type !== 'files') && (wantLevels || item.event.type !== 'level');
   // A reconnecting EventSource sends the last id it saw; it wins over the original `after`.
   const after = Math.max(parseSeq(url.searchParams.get('after')), parseSeq(req.headers['last-event-id']));
 

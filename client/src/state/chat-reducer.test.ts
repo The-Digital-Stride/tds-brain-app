@@ -238,3 +238,42 @@ describe('chatReducer', () => {
     expect(after).toEqual({ ...before, lastSeq: 2 });
   });
 });
+
+describe('level events', () => {
+  const std = { tier: 'standard' as const, source: { kind: 'auto' as const, reason: 'Short job' } };
+  it('starts with no level, so an older server keeps the v0.19.0 line', () => {
+    expect(initialChatState.level).toBeNull();
+    expect(initialChatState.unlevelledSkill).toBeNull();
+  });
+  it('keeps the newest level only', () => {
+    const s = apply([
+      seq(1, { type: 'level', level: std }),
+      seq(2, { type: 'level', level: { tier: 'deep', source: { kind: 'chat' } } }),
+    ]);
+    expect(s.level).toEqual({ tier: 'deep', source: { kind: 'chat' } });
+  });
+  it('keeps the latest offer until it is cleared', () => {
+    let s = apply([seq(1, { type: 'level', level: std, unlevelledSkill: 'x-skill' })]);
+    expect(s.unlevelledSkill).toBe('x-skill');
+    s = apply([seq(2, { type: 'level', level: std })], s);
+    expect(s.unlevelledSkill).toBe('x-skill');
+    s = apply([seq(3, { type: 'level', level: std, unlevelledSkill: 'y-skill' })], s);
+    expect(s.unlevelledSkill).toBe('y-skill');
+    s = chatReducer(s, { type: 'clear-offer' });
+    expect(s.unlevelledSkill).toBeNull();
+  });
+  it('applies the chat-menu answer at once', () => {
+    const s = chatReducer(initialChatState, {
+      type: 'level',
+      level: { tier: 'quick', source: { kind: 'chat' } },
+    });
+    expect(s.level?.tier).toBe('quick');
+  });
+  it('does not touch the items', () => {
+    const s = apply([
+      seq(1, { type: 'user-message', messageId: 'u', text: 'Hi' }),
+      seq(2, { type: 'level', level: std }),
+    ]);
+    expect(s.items).toHaveLength(1);
+  });
+});

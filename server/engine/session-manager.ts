@@ -11,6 +11,7 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type {
+  HookCallback,
   Options,
   PermissionResult,
   PermissionUpdate,
@@ -43,6 +44,20 @@ import {
   type StartSessionRequest,
   UPLOAD_TYPES,
 } from '../../shared/contract.ts';
+import {
+  type ChatLevelRecord,
+  type ChatLevelStore,
+  FALLBACK_TIER,
+  isLevelTier,
+  LEVEL_PICK,
+  type LevelMode,
+  type LevelPick,
+  type LevelSessionApi,
+  type LevelSources,
+  type LevelTier,
+  type SkillLevel,
+  type TurnLevel,
+} from '../../shared/levels-contract.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   type ChatFilesTracker,
@@ -52,6 +67,15 @@ import {
 } from './chat-files.ts';
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
+import { createLevelPicker, type LevelPicker, pickNeed } from './level-picker.ts';
+import {
+  hasOwnLevel,
+  isHigherTier,
+  maxTier,
+  type ResolvedLevel,
+  resolveLevel,
+  tierChoice,
+} from './levels.ts';
 import { resolvePermissionMode } from './permission-mode.ts';
 import { describeSessionAllow, narrowSuggestions, permissionCard } from './permissions.ts';
 
@@ -134,6 +158,15 @@ export interface SessionManagerOptions {
    * token in runtime.json, the prefs and library stores, and their temporary copies).
    */
   dataDir?: string;
+  /**
+   * Team levels and skills' own levels (plan 2026-11-14-skill-levels-and-helpers). Without it the
+   * manager behaves exactly as v0.19.0: no pick, no hook, no `level` events.
+   */
+  levels?: LevelSources;
+  /** Chat levels kept across resume, by `sdkSessionId`. Optional: without it nothing is kept. */
+  chatLevels?: ChatLevelStore;
+  /** The automatic pick; defaults to a one-shot picker on `engine.query`. Used only with `levels`. */
+  picker?: LevelPicker;
 }
 
 export class SessionError extends Error {
@@ -150,7 +183,7 @@ export interface Subscription {
   unsubscribe(): void;
 }
 
-export interface SessionManager {
+export interface SessionManager extends Partial<LevelSessionApi> {
   list(): Promise<SessionList>;
   start(req: StartSessionRequest): Promise<LiveSession>;
   /** `attachments`: upload ids; with them, `text` may be empty. */
@@ -172,9 +205,10 @@ export interface SessionManager {
   /**
    * Stores the model and effort chats use (null = "Same as Claude Code") for chats started from now
    * on, and switches every live chat's engine to it for its next reply. Never throws: a failure is
-   * logged as a short line and the chat carries on.
+   * logged as a short line and the chat carries on. `levelMode` absent = 'manual' (v0.19.0). With
+   * `levels`, every chat applies it at its next turn start instead.
    */
-  setEngineChoice(choice: EngineChoice): Promise<void>;
+  setEngineChoice(choice: EngineChoice & { levelMode?: LevelMode }): Promise<void>;
   /** What Settings offers for Model and Effort (`GET /api/engine/choices`). */
   engineChoices(): Promise<EngineChoices>;
 }
@@ -193,6 +227,10 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_CHARS = 100_000;
 const MAX_ANSWER_CHARS = 10_000;
 const TITLE_CHARS = 60;
+/** A resumed chat with no stored level runs at this, and re-picks upward only (decision 6). */
+const RESUMED_TIER: LevelTier = 'standard';
+/** "Why?" for a level kept from before the chat was reopened (the store keeps no reason). */
+const KEPT_REASON = 'Kept from earlier in this chat';
 /** A6 and A16: nothing that could bill an API key or a cloud account instead of the person's sign-in. */
 const SCRUBBED_ENV = [
   'ANTHROPIC_API_KEY',
@@ -496,6 +534,30 @@ interface Session {
   /** A snapshot is being worked out; a request meanwhile sets `filesAgain`. */
   filesBusy: boolean;
   filesAgain: boolean;
+  // Levels (plan 2026-11-14-skill-levels-and-helpers); unused without `levels`.
+  /** The tier the person chose for this chat, or null for automatic. */
+  chatTier: LevelTier | null;
+  /** The chat's automatic pick, or null when it has none yet. */
+  pick: LevelPick | null;
+  /** A pick that missed the timeout and may still arrive. */
+  pickLate: Promise<LevelPick | null> | null;
+  /** A resumed chat with no stored level: its first pick never goes below this. */
+  pickFloor: LevelTier | null;
+  /** The stored level of a resumed chat has been read. */
+  levelReady: Promise<void>;
+  /** The tier the current reply runs at; null for manual or a skill's own level. */
+  turnTier: LevelTier | null;
+  /** This reply runs a skill with its own level: the app does not switch until it ends. */
+  turnSkillOwn: boolean;
+  /** The message of the current turn has been handed to the engine. */
+  turnSent: boolean;
+  /** The newest level sent, and its key so a repeat is not sent again. */
+  level: TurnLevel | null;
+  levelKey: string | null;
+  /** Skills already offered for a team level in this chat. */
+  offered: Set<string>;
+  /** A level to store once Claude Code has given the chat its id. */
+  unsavedLevel: ChatLevelRecord | null;
 }
 
 type Rec = Record<string, unknown>;
@@ -580,7 +642,11 @@ function delay(ms: number): { promise: Promise<void>; cancel(): void } {
 
 // ---------------------------------------------------------------------------
 
-export function createSessionManager(opts: SessionManagerOptions): SessionManager {
+/**
+ * The level calls (`LevelSessionApi`) are optional on `SessionManager` only so the setup-mode stand-in
+ * still fits; the real manager always has them.
+ */
+export function createSessionManager(opts: SessionManagerOptions): SessionManager & LevelSessionApi {
   const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
   const maxLive = opts.maxLive ?? MAX_LIVE_SESSIONS;
   const closeTimeoutMs = opts.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
@@ -591,6 +657,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   const resolveDefaults = opts.engineDefaults ?? (() => resolveEngineDefaults(opts.brainRoot, homedir()));
   /** The model and effort the person chose in Settings; null = "Same as Claude Code". */
   let choice: EngineChoice = { model: null, effort: null };
+  /** 'manual' until told otherwise, so callers that never pass it keep v0.19.0 behaviour. */
+  let levelMode: LevelMode = 'manual';
+  const levels = opts.levels ?? null;
+  const picker: LevelPicker | null = levels
+    ? (opts.picker ?? createLevelPicker({ query: opts.engine.query, claudePath: opts.claudePath, env, log }))
+    : null;
   /** The newest engine's model list, kept for Settings (null until an engine has answered). */
   let modelList: ModelChoice[] | null = null;
   const live = new Map<string, Session>();
@@ -630,6 +702,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     } else if (event.type === 'files') {
       // A whole snapshot: only the newest is worth replaying.
       s.events = s.events.filter((e) => e.event.type !== 'files');
+    } else if (event.type === 'level') {
+      s.events = s.events.filter((e) => e.event.type !== 'level');
     }
     s.events.push(item);
     for (const l of s.listeners) {
@@ -756,6 +830,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       files: resolveFile ? createChatFiles({ brainRoots, resolve: resolveFile }) : null,
       filesBusy: false,
       filesAgain: false,
+      chatTier: null,
+      pick: null,
+      pickLate: null,
+      pickFloor: null,
+      levelReady: Promise.resolve(),
+      turnTier: null,
+      turnSkillOwn: false,
+      turnSent: false,
+      level: null,
+      levelKey: null,
+      offered: new Set(),
+      unsavedLevel: null,
     };
   }
 
@@ -878,6 +964,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const sid = typeof raw.session_id === 'string' ? raw.session_id : null;
       if (sid && sid !== s.sdkSessionId) {
         s.sdkSessionId = sid;
+        if (s.unsavedLevel) saveLevel(s, s.unsavedLevel);
         notifyChanged();
       }
       if (s.turnRunning && s.state === 'starting') setState(s, 'working');
@@ -1027,12 +1114,15 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     if (s.sdkSessionId) options.resume = s.sdkSessionId;
     if (engineSettings) options.settings = engineSettings;
     // Only what the person chose in Settings; left out, Claude Code's own settings decide (as before).
-    s.appliedChoice = { ...choice };
+    // In automatic mode the chat's own tier, so the turn-start apply usually has nothing to change.
+    const initial = levels && levelMode === 'auto' ? tierChoice(baseTier(s)) : choice;
+    s.appliedChoice = { ...initial };
     s.reportedDefault = null;
     s.reportedModel = null;
     s.effortPinned = false;
-    if (choice.model) options.model = choice.model;
-    if (choice.effort) options.effort = choice.effort;
+    if (initial.model) options.model = initial.model;
+    if (initial.effort) options.effort = initial.effort;
+    if (levels) options.hooks = { PostToolUse: [{ matcher: 'Skill', hooks: [skillHook(s)] }] };
     s.input = input;
     try {
       const q = opts.engine.query({ prompt: input, options });
@@ -1045,9 +1135,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
   }
 
-  async function checkSkill(text: string): Promise<void> {
+  /** Refuses a typed `/name` the person's role can't run; answers the name of a brain skill it can, else null. */
+  async function checkSkill(text: string): Promise<string | null> {
     const name = /^\/([A-Za-z0-9][\w.:-]*)(?:\s|$)/.exec(text.trimStart())?.[1];
-    if (!name) return;
+    if (!name) return null;
     const identity = await opts.brain.identity();
     const access = await opts.brain.skillAccess(identity, name);
     if (access === 'restricted') {
@@ -1056,6 +1147,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         `Your role can't run /${name}. It is kept for owners and scouts; ask one of them if you need it.`,
       );
     }
+    return access === 'allowed' ? name : null;
   }
 
   function validText(text: unknown, what: string, allowEmpty = false): string {
@@ -1067,12 +1159,21 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     return trimmed;
   }
 
-  /** `text` is what the person typed; the engine also gets the note for any files. */
-  function beginTurn(s: Session, text: string, files: readonly StagedFile[] = []): void {
+  /**
+   * `text` is what the person typed; the engine also gets the note for any files. `skill`: the brain
+   * skill a typed `/name` runs, or null.
+   */
+  function beginTurn(
+    s: Session,
+    text: string,
+    files: readonly StagedFile[] = [],
+    skill: string | null = null,
+  ): void {
     if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
     clearIdle(s);
     s.turnRunning = true;
     s.interruptRequested = false;
+    s.turnSent = false;
     const needsEngine = !s.query;
     setState(s, needsEngine ? 'starting' : 'working');
     const messageId = `u${++s.userCounter}`;
@@ -1100,7 +1201,267 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.files?.addAttachments(files.map(({ name, kind, path }) => ({ name, kind, stagedPath: path })));
       requestFiles(s);
     }
-    s.input?.push(withAttachmentNote(text, files));
+    const message = withAttachmentNote(text, files);
+    if (!levels) {
+      s.turnSent = true;
+      s.input?.push(message);
+      return;
+    }
+    sendWhenLevelled(s, message, text, files, skill);
+  }
+
+  // -- levels (plan 2026-11-14-skill-levels-and-helpers) ------------------------
+
+  /** The chat's own tier without any skill: the person's, the pick, a resumed floor, else the fallback. */
+  function baseTier(s: Session): LevelTier {
+    return s.chatTier ?? s.pick?.tier ?? s.pickFloor ?? FALLBACK_TIER;
+  }
+
+  function setLevel(s: Session, level: TurnLevel, unlevelledSkill?: string): void {
+    s.level = level;
+    const key = JSON.stringify(level);
+    if (key === s.levelKey && !unlevelledSkill) return;
+    s.levelKey = key;
+    emit(s, unlevelledSkill ? { type: 'level', level, unlevelledSkill } : { type: 'level', level });
+  }
+
+  function saveLevel(s: Session, record: ChatLevelRecord): void {
+    const store = opts.chatLevels;
+    if (!store) return;
+    if (!s.sdkSessionId) {
+      s.unsavedLevel = record;
+      return;
+    }
+    s.unsavedLevel = null;
+    void store.set(s.sdkSessionId, record).catch(() => log('Could not keep the level of a chat.'));
+  }
+
+  function keepLevel(s: Session, tier: LevelTier, source: ChatLevelRecord['source']): void {
+    saveLevel(s, { tier, source, at: new Date().toISOString() });
+  }
+
+  /** A pick arrived: the chat's first, or a re-pick that only ever raises it. */
+  function adoptPick(s: Session, p: LevelPick): void {
+    const next = s.pickFloor ? { ...p, tier: maxTier(p.tier, s.pickFloor) } : p;
+    if (s.pick && !isHigherTier(next.tier, s.pick.tier)) return;
+    s.pick = next;
+    s.pickFloor = null;
+    if (!s.chatTier) keepLevel(s, next.tier, 'auto');
+  }
+
+  async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+    const wait = delay(ms);
+    try {
+      return await Promise.race([p, wait.promise.then(() => null)]);
+    } finally {
+      wait.cancel();
+    }
+  }
+
+  /** What the picker reads for a message with no text: only the files' names. */
+  function pickText(text: string, files: readonly StagedFile[]): string {
+    if (text || files.length === 0) return text;
+    return `(No text. The user attached: ${files.map((f) => f.name).join(', ')})`;
+  }
+
+  async function maybePick(
+    s: Session,
+    i: {
+      skill: string | null;
+      teamLevel: SkillLevel | null;
+      own: Awaited<ReturnType<LevelSources['ownLevel']>>;
+    },
+    text: string,
+    files: readonly StagedFile[],
+  ): Promise<void> {
+    if (!picker) return;
+    if (s.pickLate) {
+      const late = s.pickLate;
+      const p = await withTimeout(late, LEVEL_PICK.timeoutMs);
+      if (p) adoptPick(s, p);
+      // Still on its way: never ask twice at once.
+      if (s.pickLate === late) return;
+    }
+    const need = pickNeed({
+      chatTier: s.chatTier,
+      skill: i.skill,
+      teamLevel: i.teamLevel,
+      ownLevel: i.own,
+      pick: s.pick,
+      textLength: text.length,
+      attachments: files.length,
+    });
+    if (need === 'none') return;
+    const attempt = picker.pick(pickText(text, files));
+    const p = await attempt.now;
+    if (p) {
+      adoptPick(s, p);
+      return;
+    }
+    // Timed out (or failed): a late answer becomes the chat's pick from its next message.
+    s.pickLate = attempt.settled;
+    void attempt.settled.then((late) => {
+      if (s.pickLate === attempt.settled) s.pickLate = null;
+      if (late && !s.closing) adoptPick(s, late);
+    });
+  }
+
+  /** Decision 3 for this chat now; for a `turn`, first runs the pick when the rules say so. */
+  async function levelFor(
+    s: Session,
+    skill: string | null,
+    turn: { text: string; files: readonly StagedFile[] } | null,
+  ): Promise<{ resolved: ResolvedLevel; unlevelled: boolean }> {
+    if (!levels || levelMode === 'manual') {
+      return {
+        resolved: resolveLevel({
+          mode: 'manual',
+          manual: choice,
+          skill: null,
+          ownLevel: null,
+          teamLevels: {},
+          chatTier: null,
+          pick: null,
+        }),
+        unlevelled: false,
+      };
+    }
+    const [team, own] = await Promise.all([
+      levels.teamLevels().catch(() => ({}) as Record<string, SkillLevel>),
+      skill ? levels.ownLevel(skill).catch(() => null) : Promise.resolve(null),
+    ]);
+    const teamLevel = skill && Object.hasOwn(team, skill) ? (team[skill] ?? null) : null;
+    if (turn) await maybePick(s, { skill, teamLevel, own }, turn.text, turn.files);
+    const resolved = resolveLevel({
+      mode: levelMode,
+      manual: choice,
+      skill,
+      ownLevel: own,
+      teamLevels: team,
+      chatTier: s.chatTier,
+      pick: s.pick,
+    });
+    return { resolved, unlevelled: !!skill && !teamLevel && !hasOwnLevel(own) };
+  }
+
+  /** The level of the chat's next message without a skill, sent to the screen. */
+  async function announceLevel(s: Session): Promise<TurnLevel> {
+    const { resolved } = await levelFor(s, null, null);
+    setLevel(s, resolved.level);
+    return resolved.level;
+  }
+
+  function offerTeamLevel(s: Session, skill: string, level: TurnLevel): void {
+    if (s.offered.has(skill)) return;
+    s.offered.add(skill);
+    setLevel(s, level, skill);
+  }
+
+  /**
+   * Decision 4: resolve and apply the turn's level, then hand the message to the engine, all on the
+   * choice chain so nothing slips in between. No end-of-turn restore: every turn applies its own.
+   */
+  function sendWhenLevelled(
+    s: Session,
+    message: string,
+    text: string,
+    files: readonly StagedFile[],
+    skill: string | null,
+  ): void {
+    const input = s.input;
+    const q = s.query;
+    s.choiceChain = s.choiceChain
+      .then(async () => {
+        await s.levelReady;
+        const { resolved, unlevelled } = await levelFor(s, skill, { text, files });
+        s.turnTier = resolved.level.tier;
+        s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
+        if (q && s.query === q) await applyChoice(s, q, resolved.choice);
+        if (skill && unlevelled) offerTeamLevel(s, skill, resolved.level);
+        else setLevel(s, resolved.level);
+      })
+      .catch(() => {
+        log('Could not set the level of a chat.');
+      })
+      .then(() => {
+        if (s.closing || !input || s.input !== input || !s.turnRunning) return;
+        if (s.interruptRequested) {
+          // Stopped before Claude saw it: end the turn here, as the engine would have.
+          s.turnRunning = false;
+          s.interruptRequested = false;
+          emit(s, { type: 'turn-end', ok: false, interrupted: true, durationMs: null, errorText: null });
+          setState(s, 'idle');
+          armIdle(s);
+          return;
+        }
+        s.turnSent = true;
+        input.push(message);
+      });
+  }
+
+  /** Brain skills only: a team level for a name the brain doesn't have could never be set. */
+  async function inBrain(skill: string): Promise<boolean> {
+    try {
+      const identity = await opts.brain.identity();
+      return (await opts.brain.skillAccess(identity, skill)) === 'allowed';
+    } catch {
+      return false;
+    }
+  }
+
+  /** Decision 5: after a skill in the main chat, raise the level for the rest of the reply (never lower). */
+  async function skillRan(s: Session, input: unknown): Promise<void> {
+    if (!levels || !isRec(input) || input.agent_id) return;
+    if (levelMode !== 'auto' || s.chatTier || s.turnSkillOwn || s.closing) return;
+    const toolInput = isRec(input.tool_input) ? input.tool_input : {};
+    const skill = typeof toolInput.skill === 'string' ? toolInput.skill.trim().replace(/^\//, '') : '';
+    if (!skill) return;
+    if (hasOwnLevel(await levels.ownLevel(skill).catch(() => null))) return;
+    const team = await levels.teamLevels().catch(() => ({}) as Record<string, SkillLevel>);
+    const t = Object.hasOwn(team, skill) ? team[skill] : undefined;
+    if (!t) {
+      if (!s.offered.has(skill) && (await inBrain(skill))) {
+        offerTeamLevel(s, skill, s.level ?? { tier: baseTier(s), source: { kind: 'fallback' } });
+      }
+      return;
+    }
+    const q = s.query;
+    if (!q || !isHigherTier(t.tier, s.turnTier)) return;
+    s.turnTier = t.tier;
+    s.choiceChain = s.choiceChain
+      .then(() => applyChoice(s, q, tierChoice(t.tier)))
+      .catch(() => {
+        log('Could not change the level of an open chat.');
+      });
+    await s.choiceChain;
+    setLevel(s, { tier: t.tier, source: { kind: 'team', skill } });
+  }
+
+  function skillHook(s: Session): HookCallback {
+    return async (input) => {
+      try {
+        await skillRan(s, input);
+      } catch {
+        log('Could not check the level of a skill.');
+      }
+      return { continue: true };
+    };
+  }
+
+  /** A reopened chat keeps its stored level; with none it runs at Standard and re-picks upward only. */
+  async function loadLevel(s: Session, sdkSessionId: string): Promise<void> {
+    let record: ChatLevelRecord | null = null;
+    try {
+      record = (await opts.chatLevels?.get(sdkSessionId)) ?? null;
+    } catch {
+      record = null;
+    }
+    if (record && isLevelTier(record.tier)) {
+      if (record.source === 'chat') s.chatTier = record.tier;
+      else s.pick = { tier: record.tier, helpers: false, reason: KEPT_REASON };
+    } else {
+      s.pickFloor = RESUMED_TIER;
+    }
   }
 
   // -- attachments ----------------------------------------------------------
@@ -1321,7 +1682,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       }
       // Checked early, without using them: a refused message leaves its files attached (Blocking 2).
       const peeked = peekFiles(ids);
-      if (prompt) await checkSkill(prompt);
+      const skill = prompt ? await checkSkill(prompt) : null;
 
       let client: string | null = null;
       let title = prompt ? makeTitle(prompt) : peeked[0] ? makeTitle(peeked[0].name) : 'Chat';
@@ -1368,13 +1729,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         log(resume ? 'Reopened a past chat.' : 'Started a chat.');
 
         if (resume) {
+          if (levels) s.levelReady = loadLevel(s, resume);
           await replayHistory(s, resume);
           // The chat may have been closed while its history loaded: never start an engine for it then.
           if (s.closing)
             throw new SessionError('session-closed', 'That chat was closed while it was opening.');
           emit(s, { type: 'state', state: 'idle' });
+          if (levels && !hasTurn) {
+            await s.levelReady;
+            await announceLevel(s);
+          }
         }
-        if (hasTurn) beginTurn(s, prompt ?? '', claim.files);
+        if (hasTurn) beginTurn(s, prompt ?? '', claim.files, skill);
         return snapshot(s);
       } catch (err) {
         claim.release();
@@ -1398,7 +1764,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         );
       }
       peekFiles(ids);
-      await checkSkill(body);
+      const skill = await checkSkill(body);
       if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
       if (s.turnRunning)
         throw new SessionError(
@@ -1407,7 +1773,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         );
       const claim = claimFiles(ids);
       try {
-        beginTurn(s, body, claim.files);
+        beginTurn(s, body, claim.files, skill);
       } catch (err) {
         claim.release();
         throw err;
@@ -1492,6 +1858,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (!s.turnRunning) return;
       s.interruptRequested = true;
       settleAll(s, 'The user stopped this.');
+      // Not handed to Claude yet (its level is still being set): the turn ends before it is sent.
+      if (!s.turnSent) return;
       const q = s.query;
       if (q) await q.interrupt().catch(() => {});
     },
@@ -1537,6 +1905,14 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
     async setEngineChoice(next) {
       choice = { model: next.model, effort: next.effort };
+      levelMode = next.levelMode === 'auto' ? 'auto' : 'manual';
+      if (levels) {
+        // Decision 4: applied at each chat's next turn start; the line under the box updates now.
+        await Promise.all(
+          [...live.values()].filter((s) => !s.closing).map((s) => announceLevel(s).catch(() => {})),
+        );
+        return;
+      }
       const jobs: Promise<void>[] = [];
       for (const s of live.values()) {
         const q = s.query;
@@ -1550,6 +1926,21 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         jobs.push(s.choiceChain);
       }
       await Promise.all(jobs);
+    },
+
+    async setChatLevel(id, tier) {
+      const s = getLive(id);
+      if (tier !== null && !isLevelTier(tier))
+        throw new SessionError('bad-request', 'That level was not understood.');
+      s.chatTier = tier;
+      if (tier) keepLevel(s, tier, 'chat');
+      else keepLevel(s, s.pick?.tier ?? s.pickFloor ?? FALLBACK_TIER, 'auto');
+      return announceLevel(s);
+    },
+
+    prewarmPick(text) {
+      if (!picker || levelMode !== 'auto' || typeof text !== 'string') return;
+      picker.prewarm(text);
     },
 
     async engineChoices() {

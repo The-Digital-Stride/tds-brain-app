@@ -51,6 +51,8 @@ const chatState = (items: ChatState['items']): ChatState => ({
   sdkSessionId: null,
   model: null,
   effort: null,
+  level: null,
+  unlevelledSkill: null,
   files: { files: [], attachments: [], links: [] },
   items,
 });

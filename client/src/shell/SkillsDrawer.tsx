@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 import type { SkillInfo } from '../../../shared/contract.ts';
+import { isLevelTier, LEVEL_TIERS } from '../../../shared/levels-contract.ts';
 import { useStore } from '../store.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
@@ -7,7 +8,9 @@ import { useShell } from './ShellProvider.tsx';
 import { starterSkills } from './words.ts';
 
 function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
-  const { startSkill, togglePin } = useStore();
+  const { startSkill, togglePin, skillLevels } = useStore();
+  const teamTier = skillLevels?.levels[skill.name]?.tier;
+  const chip = skill.ownLevel ? 'Own setting' : isLevelTier(teamTier) ? LEVEL_TIERS[teamTier].label : null;
   const { dispatch, modes } = useShell();
   // The description is long (it tells Claude when to use the skill), so a row shows one line of it.
   const [open, setOpen] = useState(false);
@@ -30,6 +33,14 @@ function SkillRow({ skill, pinned }: { skill: SkillInfo; pinned: boolean }) {
                 {' '}
                 <span className="badge" data-tone="draft">
                   Still being tested
+                </span>
+              </>
+            ) : null}
+            {chip ? (
+              <>
+                {' '}
+                <span className="badge skill-level-chip" data-kind={skill.ownLevel ? 'own' : 'team'}>
+                  {chip}
                 </span>
               </>
             ) : null}

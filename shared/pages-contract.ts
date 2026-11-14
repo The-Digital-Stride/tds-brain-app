@@ -178,6 +178,11 @@ export interface PageRef {
   sourcePath: string;
   /** `sourcePath` is the app's stored copy (read-only, 0o444), not Claude's own file. */
   sourceIsCopy: boolean;
+  /**
+   * Where the page was first saved, when `sourcePath` is a copy: a change written back here carries on
+   * as the same page (pages are keyed by where they are saved). Optional: older callers leave it out.
+   */
+  originalPath?: string;
 }
 
 // ---------------------------------------------------------------------------

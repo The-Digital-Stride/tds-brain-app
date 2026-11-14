@@ -244,6 +244,19 @@ describe('suggestionMessage', () => {
     expect(m.note).toMatch(/scratchpad/i);
     expect(m.note).toContain(REF.url);
   });
+  it('has a change to a copy saved back where the page was first saved, so it stays the same page', () => {
+    const original = '/Users/me/brain/clients/acme/reports/q3.html';
+    const m = suggestionMessage(
+      { ...REF, url: null, sourcePath: '/data/pages/x/v-1.html', sourceIsCopy: true, originalPath: original },
+      'x',
+    );
+    expect(m.note).toContain(`\`${original}\``);
+    expect(m.note).toMatch(/Write tool/);
+    expect(m.note).toMatch(/same page/);
+    expect(m.note).not.toMatch(/scratchpad/);
+    // An existing page: the where-to-save question doesn't apply.
+    expect(m.note).toMatch(/don’t ask where to save it/);
+  });
   it('copes with no address', () => {
     const m = suggestionMessage({ ...REF, url: null }, 'x');
     expect(m.note).toContain(`\`${REF.sourcePath}\``);

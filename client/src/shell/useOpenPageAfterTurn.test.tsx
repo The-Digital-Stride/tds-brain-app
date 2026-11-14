@@ -69,6 +69,19 @@ describe('useOpenPageAfterTurn', () => {
     expect(open).toHaveBeenCalledExactlyOnceWith('a');
   });
 
+  it('still opens the page when its file list arrives just after the turn ends, and only for that list', () => {
+    const { open, rerender } = setup({ id: 's', state: 'idle', pages: [], viewerOpen: false });
+    rerender({ id: 's', state: 'working', pages: [], viewerOpen: false });
+    // The turn ends before the list carrying the page has been worked out.
+    rerender({ id: 's', state: 'idle', pages: [], viewerOpen: false });
+    expect(open).not.toHaveBeenCalled();
+    rerender({ id: 's', state: 'idle', pages: [page('a', ['w1'])], viewerOpen: false });
+    expect(open).toHaveBeenCalledExactlyOnceWith('a');
+    // A later list (no turn in between) opens nothing more.
+    rerender({ id: 's', state: 'idle', pages: [page('a', ['w1']), page('b', ['w2'], 2)], viewerOpen: false });
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
   it('never opens for pages a reopened chat reads back, over an open viewer, or after an error', () => {
     // Reopened: pages arrive from history while the chat sits idle.
     const a = setup({ id: 's', state: 'starting', pages: [], viewerOpen: false });

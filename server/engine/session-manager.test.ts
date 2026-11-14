@@ -4180,7 +4180,8 @@ describe('pages', () => {
     expect(fx.copies.store.keep).toHaveBeenCalledWith('sdk-new-1', key, 'w1');
     expect(lastPage(s.id)).toMatchObject({ draft: false, versions: [{ n: 1, hasCopy: true }] });
     expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe(HTML);
-    expect(await mgr.pageCopy?.(s.id, key, 0)).toBeNull();
+    // "Latest" (0) now means the newest kept copy: a viewer still on it keeps showing the page.
+    expect((await mgr.pageCopy?.(s.id, key, 0))?.toString()).toBe(HTML);
     expect(await mgr.pageCopy?.(s.id, 'nope', 1)).toBeNull();
     expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
   });
@@ -4356,7 +4357,9 @@ describe('pages', () => {
     // Sending the ask keeps the in-progress copy: Claude is pointed at where it is kept.
     expect(sent).toContain(`\`/data/pages/sdk-new-1/${key}/v-w1.html\``);
     expect(sent).toContain('stored copy');
-    expect(sent).not.toContain(`\`${SRC}\``);
+    // Read from the copy, saved back where the page was first saved so it stays the same page.
+    expect(sent).toContain(`save the result with the Write tool to \`${SRC}\``);
+    expect(sent).toContain(`Its source file is \`/data/pages/`);
     expect(fx.copies.kept.has(`sdk-new-1/${key}/w1`)).toBe(true);
   });
 

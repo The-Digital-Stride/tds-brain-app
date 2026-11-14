@@ -34,22 +34,39 @@ export function useOpenPageAfterTurn(
   open: (key: string) => void,
 ): void {
   const inTurn = state === 'working' || state === 'waiting';
-  const base = useRef<{ id: string | null; marks: PageMarks; inTurn: boolean }>({
-    id: null,
-    marks: new Map(),
-    inTurn: false,
-  });
+  const base = useRef<{
+    id: string | null;
+    marks: PageMarks;
+    inTurn: boolean;
+    /** The turn has ended but its file list may not be in yet: the next new list is still compared. */
+    waitingFor: readonly ChatPage[] | null;
+  }>({ id: null, marks: new Map(), inTurn: false, waitingFor: null });
   useEffect(() => {
     const b = base.current;
     if (b.id !== sessionId) {
-      base.current = { id: sessionId, marks: pageMarks(pages), inTurn };
+      base.current = { id: sessionId, marks: pageMarks(pages), inTurn, waitingFor: null };
       return;
     }
     const ended = b.inTurn && !inTurn;
     b.inTurn = inTurn;
     // During a turn the marks stay as they were when it started.
-    if (inTurn) return;
-    const key = ended && state === 'idle' ? pageWrittenSince(b.marks, pages) : null;
+    if (inTurn) {
+      b.waitingFor = null;
+      return;
+    }
+    let key: string | null = null;
+    if (ended && state === 'idle') {
+      key = pageWrittenSince(b.marks, pages);
+      // The list is sent after the turn's end is: give the next one a chance before moving on.
+      if (key === null) {
+        b.waitingFor = pages;
+        return;
+      }
+    } else if (b.waitingFor !== null) {
+      if (pages === b.waitingFor && state === 'idle') return;
+      key = state === 'idle' ? pageWrittenSince(b.marks, pages) : null;
+    }
+    b.waitingFor = null;
     b.marks = pageMarks(pages);
     if (key !== null && !viewerOpen) open(key);
   }, [sessionId, state, inTurn, pages, viewerOpen, open]);

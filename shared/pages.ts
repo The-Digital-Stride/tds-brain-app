@@ -150,7 +150,11 @@ export function suggestionMessage(page: PageRef, note: string): PageMessage {
   const republish = page.url
     ? ' Then republish it with the Artifact tool to the same address (set `url`) so the link and its versions carry on. If the Artifact tool isn’t available, just say the claude.ai copy wasn’t updated.'
     : ' The app shows the person the new version as soon as the file is saved; there is nothing to publish.';
-  if (page.sourceIsCopy) {
+  if (page.sourceIsCopy && page.originalPath) {
+    lines.push(
+      `That file is the app’s stored copy and is read-only. Make the change from it and save the result with the Write tool to ${codeSpan(page.originalPath)}, where the page was first saved, so it stays the same page. This is an existing page, so don’t ask where to save it.${republish}`,
+    );
+  } else if (page.sourceIsCopy) {
     lines.push(
       `That file is the app’s stored copy and is read-only. Copy it to a new file in your scratchpad first and make the change in that copy.${republish}`,
     );

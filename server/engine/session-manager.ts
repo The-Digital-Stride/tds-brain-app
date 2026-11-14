@@ -560,7 +560,7 @@ export const PAGES_LINE =
  * so Claude asks (the app shows AskUserQuestion as a card) unless they, or a skill, already said.
  */
 export const SAVE_LINE =
-  "Before saving a new document, page, deck or template, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), or just for you, not shared (`personal/`). The app shows the file wherever it is saved. Don't ask when changing a file that already exists.";
+  "Before saving a new document, page, deck or template the user will keep, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), just for you, not shared (`personal/`), or just show it here, not saved (your scratchpad). The app shows the file wherever it is saved. Don't ask for a quick visual that is only to look at (save it in your scratchpad), or when changing a page or file that already exists.";
 
 export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE}`;
 
@@ -1111,9 +1111,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     return v ? { id: v.id, which: 'kept' } : null;
   }
 
-  /** The copy `n` names (`0` the in-progress one), when the chat holds it. */
+  /**
+   * The copy `n` names, when the chat holds it. `0` is the latest: the in-progress one, or once that has
+   * been kept (a chat closing keeps it without telling a viewer still open on "Latest") the newest kept.
+   */
   function copyFor(info: PageInfo, n: number): { id: string; which: 'kept' | 'draft' } | null {
-    if (n === 0) return info.draft?.hasCopy ? { id: info.draft.id, which: 'draft' } : null;
+    if (n === 0) return latestCopy(info);
     const v = info.versions.find((x) => x.n === n && x.hasCopy);
     return v ? { id: v.id, which: 'kept' } : null;
   }
@@ -1130,7 +1133,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const latest = latestCopy(info);
     if (!latest) return own;
     const path = await onPagesChain(s, (st, sdk) => st.keptPath(sdk, key, latest.id));
-    return path ? { ...own, sourcePath: path, sourceIsCopy: true } : own;
+    return path ? { ...own, sourcePath: path, sourceIsCopy: true, originalPath: info.filePath } : own;
   }
 
   /** The brain's TDS logo sprite, or null (the wrapper then uses a text wordmark). */
@@ -2064,6 +2067,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       } finally {
         closingSessions.delete(s);
         s.files?.boundary();
+        // Kept a while only for its pages: let go of the transcript, which nothing reads once closed.
+        s.events = [];
       }
     })();
     return s.closed;

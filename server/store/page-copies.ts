@@ -269,8 +269,11 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
       // The file opened is the one the checked real path names (no folder swapped in between).
       const named = await fs.stat(real, { bigint: true });
       if (named.dev !== st.dev || named.ino !== st.ino) return null;
-      const data = await readUpTo(handle, PAGE_COPY_MAX_BYTES);
-      return data.length > PAGE_COPY_MAX_BYTES ? null : data;
+      // Sized to the file, not the cap: most pages are a few KB, and every Write of one is read here.
+      const size = Number(st.size);
+      const data = await readUpTo(handle, size);
+      // Grown since it was checked: changing under us, so no copy rather than a cut one.
+      return data.length > size ? null : data;
     } catch {
       return null;
     } finally {

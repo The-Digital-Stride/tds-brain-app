@@ -344,7 +344,7 @@ function clientLine(slug: string): string {
 
 /** Every chat's system prompt append asks for brain-relative paths, so the app can link them (decision 7). */
 export const FILES_LINE =
-  'When you mention a file in the brain, give its path from the brain folder in backticks, for example `clients/acme/reports/audit.md`, so the app can open it.';
+  'When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example `clients/acme/reports/audit.md`, even in a list or table under a heading that already names the folder, so the app can open it.';
 
 /** A push-based async iterable: the engine's streaming input. */
 function createInputQueue() {

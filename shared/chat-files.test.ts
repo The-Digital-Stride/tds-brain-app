@@ -202,6 +202,31 @@ describe('chatFileFor', () => {
   });
 });
 
+describe('chatFileFor: names the server matched', () => {
+  const withAliases = (f: ChatFile, aliases: string[]): ChatFile => ({ ...f, aliases });
+
+  it('links a short name the server matched to a file, even a bare file name', () => {
+    const idx = indexChatFiles([
+      withAliases(file('k1', 'clients/acme/reports/audit.md', ['mentioned']), [
+        'audit.md',
+        'reports/audit.md',
+      ]),
+    ]);
+    expect(chatFileFor(idx, '`audit.md`', ROOT)).toBe('k1');
+    expect(chatFileFor(idx, 'reports/audit.md', ROOT)).toBe('k1');
+  });
+
+  it('links neither file when the server matched one name to two files, and never lets a name hide a real path', () => {
+    const idx = indexChatFiles([
+      withAliases(file('k1', 'clients/acme/profile.md', ['mentioned']), ['profile.md', 'personal/x.md']),
+      withAliases(file('k2', 'clients/beta/profile.md', ['mentioned']), ['profile.md']),
+      file('k3', 'personal/x.md', ['read']),
+    ]);
+    expect(chatFileFor(idx, 'profile.md', ROOT)).toBeNull();
+    expect(chatFileFor(idx, 'personal/x.md', ROOT)).toBe('k3');
+  });
+});
+
 describe('CHAT_FILE_HREF_PREFIX', () => {
   it('is the fragment prefix', () => {
     expect(CHAT_FILE_HREF_PREFIX).toBe('#chat-file=');

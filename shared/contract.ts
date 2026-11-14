@@ -938,6 +938,12 @@ export interface ChatFile {
   /** Successful edits and writes in this chat; above 0, "What changed" is offered. */
   edits: number;
   /**
+   * Shorter names a reply used for it (`context/business.md`, or `audit.md` under a heading naming its
+   * folder), which the server matched to this one file. Matched exactly against reply text, like
+   * `path`. Absent when there are none (and from servers before 0.16.2).
+   */
+  aliases?: string[];
+  /**
    * Orders the list only; never shown (a reopened chat's history has no times, so it counts the
    * order things were seen instead). Newer is greater.
    */

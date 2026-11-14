@@ -155,8 +155,8 @@ export function chatFileGroup(file: ChatFile): ChatFileGroup {
 }
 
 /**
- * For linking reply text and steps: maps each file's normalised `path` → `key`, and each tool use
- * id → `key`. Built once per snapshot on the client.
+ * For linking reply text and steps: maps each file's normalised `path` (and each `aliases` name only
+ * one file has) → `key`, and each tool use id → `key`. Built once per snapshot on the client.
  */
 export interface ChatFileIndex {
   byPath: ReadonlyMap<string, string>;
@@ -165,10 +165,18 @@ export interface ChatFileIndex {
 export function indexChatFiles(files: readonly ChatFile[]): ChatFileIndex {
   const byPath = new Map<string, string>();
   const byToolUse = new Map<string, string>();
+  // Shorter names the server matched (`aliases`): one that two files share links to neither.
+  const aliases = new Map<string, string | null>();
   for (const f of files) {
     byPath.set(f.path, f.key);
     for (const id of f.toolUseIds) byToolUse.set(id, f.key);
+    for (const a of f.aliases ?? []) {
+      const had = aliases.get(a);
+      aliases.set(a, had === undefined || had === f.key ? f.key : null);
+    }
   }
+  // A real path always wins over a name.
+  for (const [a, key] of aliases) if (key !== null && !byPath.has(a)) byPath.set(a, key);
   return { byPath, byToolUse };
 }
 

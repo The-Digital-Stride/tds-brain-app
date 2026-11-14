@@ -66,7 +66,7 @@ import {
   type Updater,
   type UpdateStatus,
 } from '../../shared/update-contract.ts';
-import { readClientAliases } from '../brain/client-aliases.ts';
+import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
@@ -533,7 +533,11 @@ async function bootstrap(ctx: RouteContext): Promise<Bootstrap> {
     safe(ctx.brain.health(), brainFallback),
     safe(ctx.brain.profile(identity), EMPTY_PROFILE),
     safe(ctx.brain.skills(identity), []),
-    safe(ctx.brain.clients(), []),
+    // With their codes and other names from clients/map.json, so the client pickers can find them.
+    safe(
+      ctx.brain.clients().then((list) => withClientAliases(ctx.brain.root, list)),
+      [],
+    ),
     safe(ctx.brain.usedOften(identity), []),
     ctx.store.get(),
     skillLevelsFor(ctx, identity),

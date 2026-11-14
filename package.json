@@ -1,6 +1,6 @@
 {
   "name": "tds-brain-app",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "A local face for the TDS Agency Brain. Internal tool; never published.",

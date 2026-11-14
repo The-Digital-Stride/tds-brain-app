@@ -216,7 +216,8 @@ R8. **The branded file is self-contained.** When building a branded copy (downlo
    ignore ports, so it would be less isolated than the opaque origin.
    Plain: interactive pages work and look as they do on claude.ai, but a page can't read anything
    from the app or this Mac, and can only load what claude.ai would let it load. (A link the person
-   clicks can still open another site in a new tab.)
+   clicks can still open another site in a new tab. A sandboxed page can still move its own frame;
+   the second-load guard swaps the frame for a notice when it does, so it never shows another site.)
 
 4. **One viewer, two kinds of thing.** `ViewerRequest` (`client/src/shell/contract.ts`) becomes a
    union: the existing library-file shape, or `{ kind: 'page'; chat: string; key: string }`. The
@@ -332,4 +333,31 @@ Builder A runs first (small); B and C build against the contract in parallel.
 
 ## Review outcomes
 
-<Filled at step 10.>
+Reviews ran after each build round; every finding below was checked in code before it was acted on.
+
+- **Round 1 (first build, Artifact-tool design).** Browser check found the app's Claude has no
+  Artifact tool (it is CLI-only), so the design moved to revision 2 with the user.
+- **Round 2 (revision 2).** Browser check: the chat reducer dropped `pages` (no page ever showed) —
+  fixed with a test. The change note told Claude to republish with no link — fixed. Version labels
+  ("Version 1 of 1" beside "Latest") simplified. Form state keyed on version numbers gave false
+  "updated" notices — now keyed on the last write (`writeMark`). Security: the logo sprite deny-list
+  could be bypassed (`<svg/onload>`, `javascript&#58;`) — the logo is now an `<img>` data address.
+- **Round 3 (revision 3, R7/R8 + replay parity).** Security (Opus): one confirmed — a blocked move to
+  another site reloaded the Documents frame, and with scripts now running a page that redirects on
+  load reloaded for ever (each reload a fresh frame to the guard). Fixed: the frame is stopped and
+  offered back; test updated. Host checks, streaming size caps, cache naming, inlining escapes, the
+  srcdoc escaping and the single CSP header all checked sound. Correctness (Opus): the same loop
+  (fixed), plus two confirmed and fixed — an inlined `defer` script could run ahead of an earlier one
+  left remote (later deferred scripts now stay remote once one is left), and a remote
+  `preload`/`modulepreload` link was counted as self-contained (now partial). Tests added for both.
+  Dropped: none.
+- **Browser check (round 3).** Documents shows the test page's chart and runs its scripts; the
+  branded copy is served as `X-Page-Self-Contained: yes` (1.7 MB, Chart.js and four fonts inline)
+  and, rebuilt from the cache with the network refused, renders with the TDS bar, logo, chart and
+  fonts.
+- **Known limits.** A branded copy over 32 MB once inlined can't be attached for filing (the ask
+  fails with the "too large to attach" error). A script that adds another script at run time isn't
+  seen, so such a copy may be marked self-contained when it isn't. Cached libraries are kept until
+  the cache folder is cleared, so an unpinned address (`cdn.tailwindcss.com`) stays at the version
+  first fetched. Filing into a client folder was not exercised in the browser (it writes to the
+  brain; to be tried with the user).

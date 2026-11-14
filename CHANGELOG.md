@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.25.0 — 2026-11-14
+
+- **feat**: show each chat's helpers in the Chats drawer
+
 ## v0.24.0 — 2026-11-14
 
 - **feat**: delete an earlier chat by moving it to the Bin

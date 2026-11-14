@@ -486,10 +486,11 @@ export function Composer({
             ref={action}
             type="button"
             className="btn"
-            data-variant="send"
+            data-variant="primary"
             disabled={!canSend}
             onClick={() => void submit()}
           >
+            <Icon name="send" size={16} />
             Send
           </button>
         )}

@@ -74,6 +74,8 @@ const PATHS: Record<IconName, ReactNode> = {
     <path d="M16 9.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3l-6 6a1.1 1.1 0 0 1-1.6-1.6L12 6.6" />
   ),
   stop: <rect x="5" y="5" width="10" height="10" rx="1.5" />,
+  // A paper plane: Send's, paired with Stop's square.
+  send: <path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8" />,
 };
 
 /** Decorative: always hidden from assistive tech. The control around it carries the name. */

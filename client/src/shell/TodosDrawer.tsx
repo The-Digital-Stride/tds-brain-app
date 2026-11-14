@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   ATTENTION_LABEL,
   attentionFor,
@@ -138,6 +138,10 @@ function TodoRow({
 }) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
   const { dispatch, modes } = useShell();
+  // The arrow is named by its action and title; "New to you" and the details line describe it, so a keyboard or
+  // screen-reader user who lands on it hears them too.
+  const newId = useId();
+  const metaId = useId();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
@@ -200,10 +204,14 @@ function TodoRow({
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
           <span className="line-title">
-            {fresh ? <span className="visually-hidden">New to you. </span> : null}
+            {fresh ? (
+              <span className="visually-hidden" id={newId}>
+                New to you.{' '}
+              </span>
+            ) : null}
             {todo.title}
           </span>{' '}
-          <span className="line-meta">
+          <span className="line-meta" id={metaId}>
             {parts.map((part, i) => (
               <span key={part.text}>
                 {i > 0 ? ', ' : ''}
@@ -245,6 +253,7 @@ function TodoRow({
         className="icon-btn todo-go"
         data-todo-open={todo.key}
         aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+        aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
         onClick={choose}
       >
         <Icon name="go" size={16} />

@@ -86,4 +86,18 @@ UX gate: the UI reviewer's brief includes the design-system consistency check, p
 
 ## Review outcomes
 
-(To fill in.)
+- **Overseer pre-review:** one blocking item. Fold opening by remount-by-key would steal focus from an open editor or Undo row, and a section closed by hand wouldn't reopen for a later move. So decision 6 became controlled folds (`foldChoice`), reset on tab, filtering or reveal. Should items applied:
+  - a starred new to-do keeps its dot in Favourites, and "New to you" is worked out before the split;
+  - "Mark all as seen" covers starred new ones too;
+  - the star column and hover rules on `.todo`;
+  - one shared focus hook (`useStarFocus`).
+  Nice item applied: the star swaps at the move step inside `changeTodos`. Decided: carry the star over on move; star on both tabs.
+- **UI and accessibility reviewer:** no findings. Doc note added (which sections start open).
+- **Correctness reviewer:** one should-fix. Choices made by hand came back after a round trip to another tab or a filter, a regression from the remount scheme. Fixed by dropping them when the scope changes, with a round-trip test. The engine refactor was checked for parity with the old chat code.
+- **Mutation checks:** every new store and drawer rule was broken on purpose and a test failed.
+- **Mid-task request from Ian:** a to-do row is no longer one big button. An arrow icon button (last, after star and Edit) starts or opens the chat (commit `fix(todos)`). The overseer kept the arrow last, and Chats rows stay whole-row buttons. Dead `.todo-edit` sizing was removed, and the button gap widened to 4px.
+- **Browser check (preview, port 3517):**
+  - starring moves a row into an open Favourites;
+  - unstarring from the keyboard opens the closed Overdue section, and focus follows;
+  - stars are saved only in the app's prefs.json;
+  - the title no longer starts a chat, and the arrow does.

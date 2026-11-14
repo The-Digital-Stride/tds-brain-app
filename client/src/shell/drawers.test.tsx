@@ -219,6 +219,13 @@ describe('To-dos drawer', () => {
     expect(row).toContain('Acme Heating');
     // The row itself is not a button: only its own buttons act.
     expect(screen.queryByRole('button', { name: /Acme Heating/ })).toBeNull();
+    // A keyboard or screen-reader user on the arrow still hears the details.
+    const said = (go.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+    expect(said).toContain('overdue by');
+    expect(said).toContain('Acme Heating');
   });
 
   it('keeps the line about other people, and the old group of to-dos open to anyone', () => {

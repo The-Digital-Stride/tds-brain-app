@@ -767,6 +767,9 @@ describe('Favourites', () => {
     const fav = section(/^Favourites/);
     expect(within(fav).getByText('Fresh from Ben', { exact: false })).toBeTruthy();
     expect(fav.querySelector('[data-new="true"]')).not.toBeNull();
+    const go = within(fav).getByRole('button', { name: 'Start a chat on this: Fresh from Ben' });
+    const firstSaid = document.getElementById(go.getAttribute('aria-describedby')?.split(' ')[0] ?? '');
+    expect(firstSaid?.textContent).toMatch(/^New to you\./);
     const fresher = section(/^New to you/);
     expect(within(fresher).queryByText('Fresh from Ben', { exact: false })).toBeNull();
     expect(within(fresher).getByText('Another', { exact: false })).toBeTruthy();

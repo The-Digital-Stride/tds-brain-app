@@ -145,7 +145,7 @@ export const LEVEL_PICK = {
   maxChars: 4_000,
   /** The pick gets this long; then FALLBACK_TIER applies. Measured: median 2.3 s, p90 5.0 s (20 runs). */
   timeoutMs: 4_000,
-  /** After a failure, skip the picker for this long (fallback meanwhile). */
+  /** After a hard failure (engine missing, bad reply, error), skip the picker for this long. A timeout never starts it. */
   backoffMs: 60_000,
 } as const;
 
@@ -165,7 +165,9 @@ export interface HelperSpec {
    * Skill (deprecated in `tools`) or Agent. Only the worker gets Bash and connectors (mcp__*), and
    * those still ask. The definitions never set `permissionMode` or `background`.
    */
-  tools: string[];
+  /** null = inherit the chat's tools and rely on the disallow list (fallback if `mcp__*` in `tools` isn't honoured). */
+  tools: string[] | null;
+  disallowedTools: string[];
   maxTurns: number;
 }
 
@@ -185,3 +187,19 @@ export const FALLBACK_TIER: LevelTier = 'standard';
 
 /** A follow-up re-picks a chat on Quick only when it is at least this long, has attachments or names a skill with no level. */
 export const QUICK_REPICK_MIN_CHARS = 200;
+
+// ---------------------------------------------------------------------------
+// Chat levels kept across resume (app data folder, never the brain)
+// ---------------------------------------------------------------------------
+
+/** One chat's level, stored by `sdkSessionId` so a resumed chat keeps it. */
+export interface ChatLevelRecord {
+  tier: LevelTier;
+  /** 'auto' = the pick; 'chat' = the person chose it from the line under the message box. */
+  source: 'auto' | 'chat';
+  /** ISO timestamp of the last change; the oldest are pruned first. */
+  at: string;
+}
+
+/** At most this many chats are remembered (`Record<sdkSessionId, ChatLevelRecord>`). */
+export const CHAT_LEVELS_MAX = 500;

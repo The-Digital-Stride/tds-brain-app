@@ -10,8 +10,30 @@ Most of the team won't know which model or effort to choose, so today every chat
 Code's default: **Opus 5.5 at high effort**, whether it's "what's my next meeting?" or a full ads
 audit. The app will choose for them: quick look-ups on Haiku, everyday writing on Sonnet, audits and
 strategy on Opus. For big jobs that split into parts (several clients, several sources), the chat
-hands those parts to cheaper helpers and puts the results together. None of this changes the
-brain's skills, and the app never writes brain files itself.
+hands those parts to cheaper helpers and puts the results together. **No skill file in the brain
+is changed** (see "What this changes in the brain" below), and the app never writes brain files
+itself.
+
+## What this changes in the brain, and what it doesn't
+
+**Never changed.** None of the brain's existing skills: no `SKILL.md`, script, reference file or
+folder of the 188 skills is edited, renamed, moved or deleted, and no `model:` or `effort:` line is
+added to any of them. The app and the pre-fill script only *read* skill files (name,
+description, frontmatter, the first lines); the automatic pick reads only the person's message. A skill's level lives in a separate team file, not in
+the skill.
+
+**Added, each only with Ian's yes at the time:**
+1. One new skill folder, `.claude/skills/tdsapp-skill-levels/` (copied from this repo's
+   `brain-skills/`, as `tdsapp-todo` was). It's the only thing that writes the team file.
+2. One data file, `.claude/tdsapp-skill-levels.json`, created by that skill's script when the
+   reviewed batch is imported, and changed later only through the same script.
+
+**Where levels apply.** Only in the TDS Brain App, when it runs a chat. The same skill run from
+the terminal (`claude` in the brain folder) behaves exactly as today. Claude Code doesn't read the
+team file, and older app versions ignore it.
+
+Plain: the skills stay exactly as their authors wrote them; the app just chooses how hard Claude
+works when it runs them.
 
 ## User decisions (fixed)
 
@@ -73,7 +95,10 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
 
 3. **Which level a reply runs at**, one pure function `resolveLevel()` in `server/engine/levels.ts`:
    1. `manual` mode: the Settings choice (as v0.19.0).
-   2. The skill being run sets its own `model` or `effort` (`ownLevel`): no app switch for that reply.
+   2. The skill being run sets its own `model` or `effort` (`ownLevel`): the app applies the chat's
+      base level (rows 3 to 6, ignoring any team level) at turn start, then leaves the skill's own
+      setting to sit on top, with no further app switch in that reply. Builder A first tests that a
+      turn-start `setModel` doesn't defeat a skill's `model:` (not yet verified).
    3. The person changed the level for this chat (decision 7): that tier.
    4. A team level for the skill being run: that tier.
    5. The chat's automatic pick.
@@ -91,8 +116,9 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
    Plain: a stopped or failed reply can never leave a chat stuck on the wrong level.
 
 5. **Mid-reply skills.** On `PostToolUse(Skill)` (after the brain's own role gate has let the skill
-   through), if the hook input has **no `agent_id`** (the main chat, not a helper), the mode is auto
-   and the skill has no `ownLevel`: if its team level is **higher** than the current one, switch for
+   through), if the hook input has **no `agent_id`** (the main chat, not a helper), the mode is auto,
+   the person hasn't picked a level for this chat (decision 3, row 3) and the skill has no
+   `ownLevel`: if its team level is **higher** than the current one, switch for
    the rest of the reply and record it in `s.appliedChoice`. Never lower mid-reply.
    Plain: a big skill gets its level straight away; a small skill inside a big job can't drop the
    whole reply to the cheapest model, and a helper's skill never changes the main chat.
@@ -105,10 +131,21 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
      only, no attachments. JSON `{tier, helpers, reason}`; anything else is a failure.
    - **It runs server-side, in `start` and `send`**, for every new chat however it began (typed, a
      skill, a chosen client, a to-do, an attachment-only message). The engine starts at once; the
-     first message waits for the pick (timeout `LEVEL_PICK.timeoutMs` = 4 s, then Standard; after a
-     failure the pick is skipped for `backoffMs`). The client-guess request may **pre-warm** a pick
-     cache keyed by the message text, so in the common case the pick is ready before the person
-     presses Send. A resumed chat, or one with no text, picks on its first typed message.
+     first message waits for the pick (timeout `LEVEL_PICK.timeoutMs` = 4 s, then Standard). A
+     **timeout doesn't start the back-off**: the late pick, when it arrives, becomes the chat's pick
+     from its next message. Only a hard failure (engine missing, bad reply, error) skips the pick for
+     `backoffMs`. The client-guess request may **pre-warm** a pick cache keyed by the message text.
+     Chats started with a chosen client get no pre-warm and simply wait for the pick, which overlaps
+     the engine starting (no typing-pause pre-warm: it would spend several Haiku calls per message
+     and rarely match the final text). The browser check measures the added wait; revisit if the
+     median is over 1 s.
+   - **A chat with no pick yet** (started with a levelled `/skill`, or with no text) picks on the
+     first later message that needs one, rather than sitting on the fallback.
+   - **Resumed chats keep their level.** Chats close after 30 idle minutes, so reopening is routine.
+     The app stores each chat's tier and its source (the pick, or the person's own choice) by
+     `sdkSessionId` in the app's own data folder (never the brain), capped at `CHAT_LEVELS_MAX` and
+     pruned oldest first (`ChatLevelRecord`). A resumed chat with a record uses it; with none, it
+     starts on Standard and re-picks upward only.
    - Follow-ups keep the chat's tier. A chat on Quick re-picks (upward only) when a follow-up is
      `QUICK_REPICK_MIN_CHARS`+ long, has attachments, or names a skill with no level.
    - It runs on the person's own Claude login. Jev isn't used.
@@ -136,7 +173,9 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
    `capabilities`; `roles: owner, scout`, `maturity: draft`, `members: false`, `agency: true`), run
    by the app the way it runs `tdsapp-todo`. The script works out the person's role itself (from the
    brain's identity, never from what it's sent), validates skill names and tiers, and writes
-   atomically with sorted keys and one entry per line, so git merges cleanly. The app reads the file
+   atomically with sorted keys and one entry per line, so git merges cleanly. Its temporary file is
+   removed if a write fails, because the brain sync (`git add -A`) would otherwise share the leftover.
+   The app reads the file
    fresh; junk rows and unknown tiers are skipped, a missing file means no team levels, and
    `SkillLevels.writable` is false until the skill is in the brain.
    Plain: everyone's app uses the same levels, changes reach the team with the next brain sync, and
@@ -156,8 +195,12 @@ Scripts in the session scratchpad (`spike/spike.mjs`, `spike/spike2.mjs`, `spike
     or `background` in the definition:
     - `tdsapp-scout` (Quick): finds files, facts and figures. Read, Glob, Grep, WebSearch, WebFetch.
     - `tdsapp-worker` (Standard): does one part of a job. The scout's tools plus Bash and the
-      person's connectors (`mcp__*`). No Skill tool (deprecated in `tools`): its brief names the
+      person's connectors. No Skill tool (deprecated in `tools`): its brief names the
       `SKILL.md` to read and follow. Bash is needed because 142 of 188 skills run scripts.
+      The SDK documents `mcp__*` patterns only for `disallowedTools`, not `tools`, so Builder A
+      tests first whether `tools: [..., 'mcp__*']` gives the worker the connectors. If it doesn't,
+      the worker omits `tools` (inheriting everything) and disallows Write, Edit, MultiEdit,
+      NotebookEdit, Agent, Task and Skill instead (`HelperSpec.tools` is `string[] | null`).
     - `tdsapp-expert` (Deep): checks and judgement. Read-only tools plus web.
     All three disallow Write, Edit, MultiEdit, NotebookEdit and Agent. Their prompts say: work only
     on your brief, never file anything into the brain, return a short report. `maxTurns` 15 / 30 / 20.
@@ -222,7 +265,7 @@ Additive edits in `shared/contract.ts` (Builder B makes them first; everyone bui
 |---|---|---|---|
 | Overseer | `overseer`, fable, high | plan critique, product decisions, sign-off | (read-only) |
 | Builder A: engine | `builder`, opus, high | engine with tricky rules (precedence, turn-start apply chained with input, hook rules), permissions (helper approvals) | `server/engine/levels.ts`, `server/engine/level-picker.ts`, `server/engine/helpers.ts` (+ tests), `server/engine/session-manager.ts` (+ test), `server/engine/permissions.ts` (+ test), `server/engine/event-map.ts` (+ test) |
-| Builder B: brain and server | `builder`, sonnet, medium | default | `shared/contract.ts` edits, `brain-skills/tdsapp-skill-levels/**`, `brain-skills/README.md`, `server/brain/skill-levels.ts` (+ test), `server/brain/skills.ts` (+ test), `server/store/app-store.ts` (+ test), `server/http/routes.ts` (+ tests), `server/index.ts`, `scripts/suggest-skill-levels.ts` |
+| Builder B: brain and server | `builder`, sonnet, medium | default | `shared/contract.ts` edits, `brain-skills/tdsapp-skill-levels/**`, `brain-skills/README.md`, `server/brain/skill-levels.ts` (+ test), `server/brain/skills.ts` (+ test), `server/store/app-store.ts` (+ test), `server/store/chat-levels.ts` (+ test), `server/http/routes.ts` (+ tests), `server/index.ts`, `scripts/suggest-skill-levels.ts` |
 | Builder C: screens | `builder`, sonnet, medium | default | `client/src/components/SettingsView.tsx`, `client/src/components/Composer.tsx`, `client/src/components/Chat.tsx`, `client/src/shell/SkillsDrawer.tsx`, client api/reducer files for the new event and routes (+ tests), `CHANGELOG.md` "What's new" text |
 
 Phase 1 runs A, B, C in parallel; phase 2 is mostly A, with small follow-ups for C.
@@ -233,8 +276,9 @@ Phase 1 runs A, B, C in parallel; phase 2 is mostly A, with small follow-ups for
 |---|---|---|
 | `server/engine/levels.test.ts` | every row of decision 3; `ownLevel` with only one field set still skips; manual ignores team levels | A |
 | `server/engine/level-picker.test.ts` | JSON parsing; junk and wrong tiers rejected; timeout → Standard; backoff; message wrapped and cut; pre-warm cache hit; Quick re-pick rule (length, attachments, unlevelled skill; upward only) | A |
-| `server/engine/session-manager.test.ts` | level applied before the message is pushed, on the choice chain; no end-of-turn restore, next turn re-applies after interrupt and error; pick runs for skill-only, chosen-client, to-do and attachment-only starts; PostToolUse(Skill) raises only, never for `agent_id` or `ownLevel`; `level` event only on `levels=1` | A |
-| `server/engine/helpers.test.ts` | three definitions from the tier table, no write tools, no Skill, no permissionMode/background; Agent hook: background off, caps, model only for built-in types on Deep in auto | A |
+| `server/engine/session-manager.test.ts` | level applied before the message is pushed, on the choice chain; no end-of-turn restore, next turn re-applies after interrupt and error; pick runs for skill-only, chosen-client, to-do and attachment-only starts; PostToolUse(Skill) raises only, never for `agent_id`, `ownLevel` or a chat the person set; a skill-own turn starts from the chat's base level, not the last raised one; timeout doesn't back off and the late pick is used next message; no-pick chat picks on its next message; resumed chat uses its stored `ChatLevelRecord`, else Standard and upward-only; `level` event only on `levels=1` | A |
+| `server/store/chat-levels.test.ts` | records by `sdkSessionId`, cap and prune oldest, junk file ignored, app data folder only | B |
+| `server/engine/helpers.test.ts` | three definitions from the tier table, no write tools, no Skill, no permissionMode/background; the worker really gets connectors (or the disallow-list fallback); Agent hook: background off, caps, model only for built-in types on Deep in auto | A |
 | `server/engine/permissions.test.ts` | app helpers start without a card; other helpers still ask; helper tool cards carry the helper label; card `updatedInput` keeps the rewrite | A |
 | `brain-skills/tdsapp-skill-levels/scripts/*.test.ts` | set, clear, import, capabilities; role from identity, not input; name and tier validation; sorted atomic writes | B |
 | `server/brain/skill-levels.test.ts` | reader skips junk, missing file, unknown tiers; set route runs the script, 403 for team | B |
@@ -259,6 +303,18 @@ decision 12); helpers in the foreground (B5, decision 12); worker tools and hone
 4 s timeout, picker without session files, PostToolUse switch, own-level lookup for any skill,
 helper caps, script hardening and the pre-fill rule, Ian's hook exemption. Nice items taken: shorter
 level line, newest `level` event only. The five spikes it asked for were run (results 1, 5, 7, 8, 10).
+
+## Overseer second review (2026-11-14)
+
+All seven blocking items confirmed fixed and consistent with the contract. "What this changes in
+the brain" confirmed by reading only: no existing skill file is touched; the brain's
+`skills-manifest.json`, `featured-skills.json` and `originals.json` don't list `tdsapp-todo`, so a new
+skill needs no manifest edit; `.claude/tdsapp-skill-levels.json` isn't git-ignored, so it syncs.
+One new blocking item, fixed: resumed chats keep their level (decision 6). Should items taken:
+timeouts don't back off, a no-pick chat picks later, skill-own turns start from the base level,
+worker connectors tested first with a fallback. Nice items taken: temp-file clean-up, the pick
+reads only the message. Decisions: accept the pick wait for chosen-client chats (measure it);
+persist chat levels. Verdict: ready to build.
 
 ## Review outcomes
 

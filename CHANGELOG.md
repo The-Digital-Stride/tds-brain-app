@@ -2,6 +2,17 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.33.0 — 2026-11-15
+
+- **feat**: contract for opening a page's links in a new tab
+- **feat**: open page links in a new tab, show pages saved by scripts, keep libraries fresh, sweep leftovers
+- **fix**: let a page's own link handlers win, rebuild script-made pages on replay, allow coarse file times
+- **fix**: say quick pages go to personal/, as the brain's save rules do, not an unnamed scratchpad
+- **fix**: clearer stop notice and save choice, explainer says what is built
+- **fix**: offer the client's folder first in a client chat, and open a page's file link as the page
+- **feat**: show the brain's templates in Documents, and pages Claude makes with a script
+- **fix**: the page viewer's message box is the chat's own, so its ring and red Stop match
+
 ## v0.32.0 — 2026-11-15
 
 - **feat**: compaction notice, context meter, brain-aware summaries and held model switches

@@ -3,9 +3,19 @@ import type { DocFormat, LibraryItem } from '../../../../shared/contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { useStore } from '../../store.tsx';
 import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
-import { FolderCard, LibraryBar, LibraryNotice, LibraryTools, ViewButton } from '../shared/parts.tsx';
+import {
+  DeleteButton,
+  FolderCard,
+  LibraryBar,
+  LibraryNotice,
+  LibraryTools,
+  neighbourId,
+  useDeleteFocus,
+  ViewButton,
+} from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { Viewer } from '../shared/Viewer.tsx';
 import { dateWords } from '../shared/words.ts';
@@ -42,6 +52,7 @@ function Tile({
   current,
   onOpen,
   onView,
+  onDelete,
 }: {
   doc: LibraryItem;
   current: boolean;
@@ -49,9 +60,18 @@ function Tile({
   onOpen: () => void;
   /** Show it in the viewer straight away. */
   onView: () => void;
+  /** Delete it (shown as a bin when the file's `canDelete` is true). */
+  onDelete: () => void;
+  /** Only rows keep a place for a missing bin; a tile has nothing to line up. */
+  reserveBin?: boolean;
 }) {
   return (
     <li className="img-tile" data-current={current ? 'true' : undefined}>
+      {/* The picture sits outside the open button, so the bin can sit on the picture's own corner. */}
+      <div className="lib-tile-pic">
+        <Thumb item={doc} width={320} icon={FORMAT_ICONS[doc.format ?? 'doc']} iconSize={22} />
+        <DeleteButton item={doc} onDelete={onDelete} className="lib-delete" />
+      </div>
       <button
         type="button"
         className="lib-open"
@@ -59,7 +79,6 @@ function Tile({
         aria-current={current ? 'true' : undefined}
         onClick={onOpen}
       >
-        <Thumb item={doc} width={320} icon={FORMAT_ICONS[doc.format ?? 'doc']} iconSize={22} />
         <span className="line-text">
           <span className="line-title" title={doc.name}>
             {doc.title}
@@ -77,6 +96,8 @@ function Row({
   current,
   onOpen,
   onView,
+  onDelete,
+  reserveBin,
 }: {
   doc: LibraryItem;
   current: boolean;
@@ -84,6 +105,10 @@ function Row({
   onOpen: () => void;
   /** Show it in the viewer straight away. */
   onView: () => void;
+  /** Delete it (shown as a bin when the file's `canDelete` is true). */
+  onDelete: () => void;
+  /** Some file in the list has a bin: a row without one keeps its place empty. */
+  reserveBin?: boolean;
 }) {
   return (
     <li className="line lib-row" data-current={current ? 'true' : undefined}>
@@ -109,6 +134,7 @@ function Row({
         </span>
       </button>
       <ViewButton title={doc.title} onView={doc.view ? onView : null} />
+      <DeleteButton item={doc} onDelete={onDelete} className="lib-delete" reserve={reserveBin} />
     </li>
   );
 }
@@ -117,19 +143,24 @@ function Row({
 export function DocumentsSheet() {
   const s = useDocs();
   const { state, dispatch } = useShell();
+  const { deleteFile, hiddenFileIds } = useStore();
   const root = useRef<HTMLDivElement>(null);
   const summary = useRef<HTMLParagraphElement>(null);
   const data = useLibraryData(docsStore, 'document');
   useKeepCurrent(docsStore, data);
   useViewerReturn(docsStore, root, summary);
+  const focusAfterDelete = useDeleteFocus(root, summary, s.viewing !== null);
 
-  const found = useMemo(
-    () => filterDocs(data.items, { query: s.query, format: 'all' }),
-    [data.items, s.query],
+  // A file being deleted is out of the list at once, even if a refresh still carries it.
+  const items = useMemo(
+    () => data.items.filter((i) => !hiddenFileIds.has(i.id)),
+    [data.items, hiddenFileIds],
   );
+  const found = useMemo(() => filterDocs(items, { query: s.query, format: 'all' }), [items, s.query]);
   const shown = s.format === 'all' ? found : found.filter((d) => d.format === s.format);
   const groups = useMemo(() => groupItems(sortDocs(shown, s.sort), data.order), [shown, s.sort, data.order]);
   const ready = data.status === 'ready';
+  const reserveBin = shown.some((d) => d.canDelete === true);
   const formats = FORMATS.map((f) => ({
     value: f.value,
     label: `${f.label}, ${f.value === 'all' ? found.length : found.filter((d) => d.format === f.value).length}`,
@@ -140,9 +171,29 @@ export function DocumentsSheet() {
     if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
   };
 
+  // Delete with an Undo; the viewer closes and focus goes to the next file shown (found by id).
+  const remove = (doc: LibraryItem) => {
+    const next = neighbourId(
+      groups.flatMap((g) => g.items.map((i) => i.id)),
+      doc.id,
+    );
+    deleteFile(doc);
+    docsStore.set({
+      ...(s.current?.id === doc.id ? { current: null } : {}),
+      ...(s.viewing?.id === doc.id ? { viewing: null } : {}),
+    });
+    focusAfterDelete(next);
+  };
+
   return (
     <div className="lib docs" ref={root} data-layout={s.layout}>
-      {s.viewing ? <Viewer item={s.viewing} onBack={() => docsStore.set({ viewing: null })} /> : null}
+      {s.viewing ? (
+        <Viewer
+          item={s.viewing}
+          onBack={() => docsStore.set({ viewing: null })}
+          onDelete={() => remove(s.viewing as LibraryItem)}
+        />
+      ) : null}
       <div className="lib-main" hidden={s.viewing !== null}>
         <LibraryTools
           id="docs"
@@ -181,7 +232,7 @@ export function DocumentsSheet() {
           message={data.message}
           retry={data.retry}
           empty={
-            data.items.length === 0
+            items.length === 0
               ? "Nothing here yet. Documents saved in this library's folders will appear here."
               : shown.length === 0
                 ? 'No documents match. Try another search or type.'
@@ -204,6 +255,8 @@ export function DocumentsSheet() {
                       current={s.current?.id === doc.id}
                       onOpen={() => open(doc)}
                       onView={() => docsStore.set({ current: doc, viewing: doc })}
+                      onDelete={() => remove(doc)}
+                      reserveBin={reserveBin}
                     />
                   );
                 }}

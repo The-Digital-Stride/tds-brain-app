@@ -13,6 +13,7 @@ import type {
   AppPrefs,
   Bootstrap,
   ChatKind,
+  LibraryItem,
   SequencedEvent,
   SessionList,
   SkillInfo,
@@ -29,6 +30,7 @@ import {
   STREAM_PING_EVENT,
   STREAM_STALL_MS,
 } from '../../shared/contract.ts';
+import { FILES_CHANGE_MESSAGES, filesDeletedNotice } from '../../shared/files-contract.ts';
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
@@ -51,8 +53,33 @@ export interface ChangeTodosResult {
   moved?: { from: string; to: string };
 }
 
+/**
+ * A library file being deleted: held for TODO_UNDO_MS (Undo works), then sent. It leaves every list, the
+ * starred files and Home from the moment it is held, and stays out until the delete fails or Undo is pressed.
+ */
+export interface HeldFile {
+  id: string;
+  /** The name the person saw on the file (an image's file name, a document's title). */
+  title: string;
+  /** 'waiting': Undo works. 'sending': its time is up and the request is queued or on its way. */
+  phase: 'waiting' | 'sending';
+}
+
+/** The plain line for a failed library delete: the app's own words for the server's code. */
+function fileDeleteMessage(err: unknown): string {
+  if (err instanceof ApiFailure && err.code in FILES_CHANGE_MESSAGES) {
+    return FILES_CHANGE_MESSAGES[err.code as keyof typeof FILES_CHANGE_MESSAGES];
+  }
+  return err instanceof ApiFailure ? err.message : FILES_CHANGE_MESSAGES.internal;
+}
+
+/** How long a deleted file stays out of the lists after the server confirms (a refresh may still carry it). */
+const FILE_GONE_MS = 60_000;
+
 /** How long a held to-do change waits, with an Undo button, before it is sent. */
 export const TODO_UNDO_MS = 10_000;
+/** After one library file delete, presses on another bin are ignored for this long (a double-click, a held Enter). */
+export const FILE_DELETE_GUARD_MS = 600;
 
 /**
  * A to-do change waiting to be sent, so it can be undone. Nothing has been written to the brain yet:
@@ -163,6 +190,24 @@ export interface Store {
   holdTodo: (held: HeldTodo) => void;
   /** Drops a held change before it is sent. Nothing reaches the brain. */
   undoHeld: (todoId: string) => void;
+  /** Library files held for a delete or being sent, in the order they were deleted. */
+  heldFiles: HeldFile[];
+  /** Every id in `heldFiles`, plus files whose delete just went through: lists leave these out. */
+  hiddenFileIds: ReadonlySet<string>;
+  /** True while a delete is being sent, so every bin is disabled until it ends. */
+  fileDeleteBusy: boolean;
+  /**
+   * Deletes a library file with an Undo: it leaves the lists, the starred files and Home at once and
+   * nothing is sent for TODO_UNDO_MS. On success `notice` says so; on failure it comes back and `actionError`
+   * says why. Closing the page sends it at once.
+   */
+  deleteFile: (item: Pick<LibraryItem, 'id' | 'title' | 'version'>, name?: string) => void;
+  /** Brings a held file back before anything is sent. */
+  undoDeleteFile: (id: string) => void;
+  /** Stops the Undo clock while the pointer or focus is on the held line, so Undo can be reached. */
+  pauseFileDelete: (id: string) => void;
+  /** Starts the Undo time again from the full length when the pointer or focus leaves the held line. */
+  resumeFileDelete: (id: string) => void;
   /** Counts up when the library's files change or the server restarts; the library screens refetch. */
   libraryVersion: number;
   retry: () => void;
@@ -196,6 +241,8 @@ export interface Store {
   toggleFavouriteFile: (id: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
+  /** The part of `notice` that says a library file was deleted: the always-mounted status line speaks it. */
+  fileNotice: string | null;
   /** Counts up each time focus should return to the message box. */
   composerFocus: number;
   requestComposerFocus: () => void;
@@ -271,6 +318,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const restored = useRef(false);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -488,6 +536,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         requestFocus();
       }
       setNotice("Chat closed. It's under Earlier in Chats if you want it back.");
+      // The shared notice timer is replaced below, and it was the one that would clear the file notice.
+      setFileNotice(null);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
       noticeTimer.current = setTimeout(() => setNotice(null), 6000);
       return true;
@@ -548,6 +598,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setActionError(null);
       void loadSessions();
       setNotice('Chat moved to the Bin. You can put it back from there.');
+      // The shared notice timer is replaced below, and it was the one that would clear the file notice.
+      setFileNotice(null);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
       noticeTimer.current = setTimeout(() => setNotice(null), 6000);
       return true;
@@ -943,10 +995,148 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('pagehide', flush);
   }, [sendHeld]);
 
+  // Library deletes: held like to-do changes. `fileRows` is what the screens see; `fileEntries` holds the timers.
+  const [fileRows, setFileRows] = useState<(HeldFile & { gone?: true })[]>([]);
+  type FileEntry = {
+    item: Pick<LibraryItem, 'id' | 'version'> & { name: string };
+    timer: ReturnType<typeof setTimeout> | null;
+    state: 'waiting' | 'queued';
+  };
+  const fileEntries = useRef(new Map<string, FileEntry>());
+  const fileQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const sendFile = useCallback(async (item: FileEntry['item'], opts?: { keepalive: true }) => {
+    setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, phase: 'sending' } : r)));
+    try {
+      await api.deleteLibraryFile(item.id, item.version, opts);
+    } catch (err) {
+      // It comes back, with the reason. (On pagehide nothing can be shown: the file simply stays.)
+      setFileRows((rows) => rows.filter((r) => r.id !== item.id));
+      setActionError(fileDeleteMessage(err));
+      return;
+    }
+    setActionError(null);
+    // The server has already dropped the star; do the same here so the saved list matches.
+    setBoot((b) => {
+      const favs = b?.prefs.favouriteFiles;
+      return b && favs?.includes(item.id)
+        ? { ...b, prefs: { ...b.prefs, favouriteFiles: favs.filter((f) => f !== item.id) } }
+        : b;
+    });
+    const deleted = filesDeletedNotice(item.name);
+    setNotice(deleted);
+    setFileNotice(deleted);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => {
+      setNotice(null);
+      setFileNotice(null);
+    }, 8000);
+    // A list that was already loading may still carry it, so it stays out for a while.
+    setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, gone: true } : r)));
+    setTimeout(() => setFileRows((rows) => rows.filter((r) => !(r.id === item.id && r.gone))), FILE_GONE_MS);
+  }, []);
+
+  // Starts the Undo clock for a held file; when it runs out the request joins the queue.
+  const armFile = useCallback(
+    (entry: FileEntry) => {
+      const entries = fileEntries.current;
+      const { item } = entry;
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        entry.state = 'queued';
+        setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, phase: 'sending' } : r)));
+        // One at a time, so a second failure never races the first.
+        const next = fileQueue.current.then(() => {
+          // Closing the page may already have sent it.
+          if (entries.get(item.id) !== entry) return;
+          entries.delete(item.id);
+          return sendFile(item);
+        });
+        fileQueue.current = next;
+      }, TODO_UNDO_MS);
+    },
+    [sendFile],
+  );
+
+  const lastFileDelete = useRef(Number.NEGATIVE_INFINITY);
+  const deleteFile = useCallback(
+    (item: Pick<LibraryItem, 'id' | 'title' | 'version'>, name?: string) => {
+      const entries = fileEntries.current;
+      if (entries.has(item.id)) return;
+      // A delete just now slides the next file's bin under the pointer (or keeps Enter on a bin): a
+      // second press that quick was aimed at the first file, not this one (overseer, 2026-11-15).
+      const now = Date.now();
+      if (now - lastFileDelete.current < FILE_DELETE_GUARD_MS) return;
+      lastFileDelete.current = now;
+      const shown = name ?? item.title;
+      const entry: FileEntry = {
+        item: { id: item.id, version: item.version, name: shown },
+        timer: null,
+        state: 'waiting',
+      };
+      entries.set(item.id, entry);
+      armFile(entry);
+      setFileRows((rows) => [
+        ...rows.filter((r) => r.id !== item.id),
+        { id: item.id, title: shown, phase: 'waiting' },
+      ]);
+    },
+    [armFile],
+  );
+
+  const pauseFileDelete = useCallback((id: string) => {
+    const entry = fileEntries.current.get(id);
+    if (entry?.state !== 'waiting' || !entry.timer) return;
+    clearTimeout(entry.timer);
+    entry.timer = null;
+  }, []);
+
+  const resumeFileDelete = useCallback(
+    (id: string) => {
+      const entry = fileEntries.current.get(id);
+      if (entry?.state !== 'waiting' || entry.timer) return;
+      armFile(entry);
+    },
+    [armFile],
+  );
+
+  const undoDeleteFile = useCallback((id: string) => {
+    const entries = fileEntries.current;
+    const entry = entries.get(id);
+    // Once it is on its way Undo can't stop it.
+    if (entry?.state !== 'waiting') return;
+    if (entry.timer) clearTimeout(entry.timer);
+    entries.delete(id);
+    setFileRows((rows) => rows.filter((r) => r.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const flush = () => {
+      const entries = fileEntries.current;
+      for (const [id, entry] of entries) {
+        if (entry.timer) clearTimeout(entry.timer);
+        entries.delete(id);
+        void sendFile(entry.item, { keepalive: true });
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [sendFile]);
+
+  const heldFiles = useMemo(() => fileRows.filter((r) => !r.gone), [fileRows]);
+  const hiddenFileIds = useMemo<ReadonlySet<string>>(() => new Set(fileRows.map((r) => r.id)), [fileRows]);
+  const fileDeleteBusy = fileRows.some((r) => r.phase === 'sending' && !r.gone);
+  // Home and the stars read the saved list; a file being deleted is not shown in it.
+  const shownBoot = useMemo(() => {
+    const favs = boot?.prefs.favouriteFiles;
+    if (!boot || !favs?.some((id) => hiddenFileIds.has(id))) return boot;
+    return { ...boot, prefs: { ...boot.prefs, favouriteFiles: favs.filter((id) => !hiddenFileIds.has(id)) } };
+  }, [boot, hiddenFileIds]);
+
   const value = useMemo<Store>(
     () => ({
       gate,
-      boot,
+      boot: shownBoot,
       todos,
       sessions,
       view,
@@ -975,6 +1165,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       heldTodos,
       holdTodo,
       undoHeld,
+      heldFiles,
+      hiddenFileIds,
+      fileDeleteBusy,
+      deleteFile,
+      undoDeleteFile,
+      pauseFileDelete,
+      resumeFileDelete,
       libraryVersion,
       retry: loadAll,
       setupOpen,
@@ -997,11 +1194,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleFavouriteTodo,
       toggleFavouriteFile,
       notice,
+      fileNotice,
       run,
     }),
     [
       gate,
       boot,
+      shownBoot,
       todos,
       sessions,
       view,
@@ -1030,6 +1229,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       heldTodos,
       holdTodo,
       undoHeld,
+      heldFiles,
+      hiddenFileIds,
+      fileDeleteBusy,
+      deleteFile,
+      undoDeleteFile,
+      pauseFileDelete,
+      resumeFileDelete,
       libraryVersion,
       loadAll,
       setupOpen,
@@ -1050,6 +1256,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleFavouriteTodo,
       toggleFavouriteFile,
       notice,
+      fileNotice,
       run,
     ],
   );

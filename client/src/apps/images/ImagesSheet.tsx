@@ -7,11 +7,14 @@ import { useCopy } from '../shared/copy.ts';
 import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
 import {
+  DeleteButton,
   FolderCard,
   LibraryBar,
   LibraryNotice,
   LibraryTools,
+  neighbourId,
   SelectionBar,
+  useDeleteFocus,
   ViewButton,
 } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
@@ -37,6 +40,8 @@ function Item({
   ticked,
   onOpen,
   onView,
+  onDelete,
+  reserveBin,
 }: {
   image: LibraryItem;
   layout: 'grid' | 'list';
@@ -46,7 +51,14 @@ function Item({
   onOpen: () => void;
   /** Show it in the viewer straight away. */
   onView: () => void;
+  /** Delete it (shown as a bin when the file's `canDelete` is true). */
+  onDelete: () => void;
+  /** Some file in the list has a bin: a row without one keeps its place empty. */
+  reserveBin: boolean;
 }) {
+  const thumb = (
+    <Thumb item={image} width={layout === 'list' ? 96 : 320} iconSize={layout === 'list' ? 18 : 22} />
+  );
   return (
     <li
       className={layout === 'list' ? 'line lib-row' : 'img-tile'}
@@ -62,6 +74,13 @@ function Item({
           onChange={() => imagesStore.toggleTick(image.id)}
         />
       </label>
+      {/* A tile's picture sits outside the open button, so the bin can sit on the picture's own corner. */}
+      {layout === 'grid' ? (
+        <div className="lib-tile-pic">
+          {thumb}
+          <DeleteButton item={image} name={image.name} onDelete={onDelete} className="lib-delete" />
+        </div>
+      ) : null}
       <button
         type="button"
         className="lib-open"
@@ -69,7 +88,7 @@ function Item({
         aria-current={current ? 'true' : undefined}
         onClick={onOpen}
       >
-        <Thumb item={image} width={layout === 'list' ? 96 : 320} iconSize={layout === 'list' ? 18 : 22} />
+        {layout === 'list' ? thumb : null}
         <span className="line-text">
           <span className="line-title" title={image.name}>
             {image.name}
@@ -79,6 +98,15 @@ function Item({
         </span>
       </button>
       <ViewButton title={image.name} onView={image.view ? onView : null} />
+      {layout === 'list' ? (
+        <DeleteButton
+          item={image}
+          name={image.name}
+          onDelete={onDelete}
+          className="lib-delete"
+          reserve={reserveBin}
+        />
+      ) : null}
     </li>
   );
 }
@@ -87,24 +115,45 @@ function Item({
 export function ImagesSheet() {
   const s = useImages();
   const { state, dispatch } = useShell();
-  const { newChat } = useStore();
+  const { newChat, deleteFile, hiddenFileIds } = useStore();
   const { said, copy } = useCopy();
   const root = useRef<HTMLDivElement>(null);
   const summary = useRef<HTMLParagraphElement>(null);
   const data = useLibraryData(imagesStore, 'image');
   useKeepCurrent(imagesStore, data);
   useViewerReturn(imagesStore, root, summary);
+  const focusAfterDelete = useDeleteFocus(root, summary, s.viewing !== null);
 
-  const shown = useMemo(() => filterImages(data.items, s.query), [data.items, s.query]);
+  // A file being deleted is out of the list at once, even if a refresh still carries it.
+  const items = useMemo(
+    () => data.items.filter((i) => !hiddenFileIds.has(i.id)),
+    [data.items, hiddenFileIds],
+  );
+  const shown = useMemo(() => filterImages(items, s.query), [items, s.query]);
   const groups = useMemo(() => groupItems(shown, data.order), [shown, data.order]);
-  const picked = data.items.filter((i) => s.ticked.has(i.id));
+  const picked = items.filter((i) => s.ticked.has(i.id));
   const hidden = picked.filter((i) => !shown.includes(i)).length;
   const pickedWords = selectionWords(countWords(picked.length), hidden);
   const ready = data.status === 'ready';
+  const reserveBin = shown.some((i) => i.canDelete === true);
 
   const open = (image: LibraryItem) => {
     imagesStore.set({ current: image });
     if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
+  };
+
+  // Delete with an Undo; the viewer closes and focus goes to the next file shown (found by id).
+  const remove = (image: LibraryItem) => {
+    const next = neighbourId(
+      groups.flatMap((g) => g.items.map((i) => i.id)),
+      image.id,
+    );
+    deleteFile(image, image.name);
+    imagesStore.set({
+      ...(s.current?.id === image.id ? { current: null } : {}),
+      ...(s.viewing?.id === image.id ? { viewing: null } : {}),
+    });
+    focusAfterDelete(next);
   };
 
   return (
@@ -114,7 +163,14 @@ export function ImagesSheet() {
       data-layout={s.layout}
       data-picking={picked.length > 0 ? 'true' : undefined}
     >
-      {s.viewing ? <Viewer item={s.viewing} onBack={() => imagesStore.set({ viewing: null })} /> : null}
+      {s.viewing ? (
+        <Viewer
+          item={s.viewing}
+          onBack={() => imagesStore.set({ viewing: null })}
+          name={s.viewing.name}
+          onDelete={() => remove(s.viewing as LibraryItem)}
+        />
+      ) : null}
       <div className="lib-main" hidden={s.viewing !== null}>
         <LibraryTools
           id="imgs"
@@ -143,7 +199,7 @@ export function ImagesSheet() {
           message={data.message}
           retry={data.retry}
           empty={
-            data.items.length === 0
+            items.length === 0
               ? "Nothing here yet. Images saved in this library's folders will appear here."
               : shown.length === 0
                 ? 'No images match. Try another search.'
@@ -166,6 +222,8 @@ export function ImagesSheet() {
                     ticked={s.ticked.has(image.id)}
                     onOpen={() => open(image)}
                     onView={() => imagesStore.set({ current: image, viewing: image })}
+                    onDelete={() => remove(image)}
+                    reserveBin={reserveBin}
                   />
                 )}
               />

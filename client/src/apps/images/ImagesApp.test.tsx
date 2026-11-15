@@ -8,6 +8,11 @@ import { item, listing, SCOPES } from '../shared/testing.ts';
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   libraryVersion: 0,
+  deleteFile: vi.fn(),
+  undoDeleteFile: vi.fn(),
+  heldFiles: [] as { id: string; title: string; phase: 'waiting' | 'sending' }[],
+  hiddenFileIds: new Set<string>() as ReadonlySet<string>,
+  fileDeleteBusy: false,
   boot: {
     prefs: { lastClient: null as string | null },
     clients: [{ slug: 'northwind', name: 'Northwind', aliases: ['NW'] }],
@@ -61,6 +66,9 @@ const noPicture = item({
 beforeEach(() => {
   imagesStore.reset();
   store.libraryVersion = 0;
+  store.heldFiles = [];
+  store.hiddenFileIds = new Set();
+  store.fileDeleteBusy = false;
   store.boot.prefs.lastClient = null;
   shell.state = { panelOpen: false };
   shell.modes = {};
@@ -469,5 +477,103 @@ describe('opening a picture', () => {
       fireEvent.error(viewer.querySelector('img') as HTMLImageElement);
     });
     expect(screen.getByText('This picture could not be shown.')).toBeTruthy();
+  });
+});
+
+describe('deleting an image', () => {
+  const deletable = (over = {}) => ({ ...logo, canDelete: true, ...over });
+  beforeEach(() => {
+    api.library.mockImplementation(async (scope: string) =>
+      listing(scope, [deletable(), mark, { ...van, canDelete: false }, noPicture], ['Brand', 'Photography']),
+    );
+    store.deleteFile.mockImplementation((i: { id: string }) => {
+      store.hiddenFileIds = new Set([...store.hiddenFileIds, i.id]);
+    });
+  });
+
+  it('shows a bin only on the files the server says can be deleted', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    expect(
+      screen.getByRole('button', { name: 'Delete file: acme-logo.png' }).classList.contains('icon-btn'),
+    ).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Delete file: (acme-mark|van front)/ })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Delete file: / })).toHaveLength(1);
+  });
+
+  it('holds the delete, takes the row out, and moves focus to the next file by id', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete file: acme-logo.png' }));
+    expect(store.deleteFile).toHaveBeenCalledWith(expect.objectContaining({ id: logo.id }), 'acme-logo.png');
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Delete file: acme-logo.png' })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector(`[data-open-id="${mark.id}"]`) as HTMLElement,
+      ),
+    );
+  });
+
+  it('closes the viewer after a delete from it, and focus goes to the next file', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    fireEvent.click(screen.getByRole('button', { name: 'Open acme-logo.png' }));
+    const viewer = screen.getByRole('region', { name: 'Acme logo' });
+    fireEvent.click(within(viewer).getByRole('button', { name: 'Delete file: acme-logo.png' }));
+    expect(store.deleteFile).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: logo.id }),
+      'acme-logo.png',
+    );
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Acme logo' })).toBeNull());
+    expect(imagesStore.get().viewing).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector(`[data-open-id="${mark.id}"]`) as HTMLElement,
+      ),
+    );
+  });
+
+  it('keeps a held file out of the list when the library refreshes during the hold', async () => {
+    const { rerender } = render(<ImagesSheet />);
+    await card('Brand');
+    store.hiddenFileIds = new Set([logo.id]);
+    store.libraryVersion = 1;
+    rerender(<ImagesSheet />);
+    await waitFor(() => expect(api.library).toHaveBeenCalledTimes(2));
+    await card('Brand');
+    expect(screen.queryByText('acme-logo.png')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete file: acme-logo.png' })).toBeNull();
+  });
+
+  it('keeps every bin focusable but inert while a delete is being sent', async () => {
+    store.fileDeleteBusy = true;
+    render(<ImagesSheet />);
+    await card('Brand');
+    const bin = screen.getByRole('button', { name: 'Delete file: acme-logo.png' }) as HTMLButtonElement;
+    expect(bin.disabled).toBe(false);
+    expect(bin.getAttribute('aria-disabled')).toBe('true');
+    bin.focus();
+    expect(document.activeElement).toBe(bin);
+    fireEvent.click(bin);
+    expect(store.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('names the file as the list shows it: the bin, the tooltip and the held entry', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    const bin = screen.getByRole('button', { name: 'Delete file: acme-logo.png' });
+    expect(bin.getAttribute('data-tip')).toBe('Delete file');
+    fireEvent.click(bin);
+    expect(store.deleteFile).toHaveBeenCalledWith(expect.objectContaining({ id: logo.id }), 'acme-logo.png');
+  });
+
+  it('puts the bin on the picture\u2019s corner, not inside the name button', async () => {
+    render(<ImagesSheet />);
+    await card('Brand');
+    const bin = screen.getByRole('button', { name: 'Delete file: acme-logo.png' });
+    expect(bin.closest('.lib-tile-pic')).not.toBeNull();
+    expect(bin.closest('.lib-open')).toBeNull();
   });
 });

@@ -5,6 +5,7 @@
  * Read-only towards the brain. Image sizes and Markdown titles are kept in the app's own data folder
  * (`<dataDir>/library-meta.json`), never under the brain root.
  */
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants, type Dirent, promises as fs } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
@@ -19,8 +20,10 @@ import type {
   LibrarySearchHit,
   LibrarySearchResponse,
   LibraryView,
+  Role,
 } from '../../shared/contract.ts';
 import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
+import { PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import {
   classify,
@@ -71,6 +74,56 @@ export interface LibraryOptions {
   docThumbs?: boolean;
   /** Search limits. Tests lower them. */
   search?: Partial<{ budgetMs: number; concurrency: number }>;
+  /**
+   * Whether this person may delete library files at all (plan 2026-11-15-delete-library-files): the
+   * `tdsapp-files` skill reports its capability and its `roles:` allow them. Returns their role, or
+   * null for no. Missing: nothing is deletable, so older fakes and brains show no bin.
+   */
+  deletion?: () => Promise<{ role: Role } | null>;
+  /**
+   * The paths (from the brain's root) git ignores, out of those asked about, or null when git can't
+   * answer. Default: one `git check-ignore --stdin -z` in the brain. Tests inject a fake.
+   */
+  ignored?: (rels: string[]) => Promise<Set<string> | null>;
+}
+
+/** Names and paths the script refuses to delete (shared/files-contract.ts), checked case-insensitively. */
+export function isProtectedFile(rel: string): boolean {
+  const parts = rel.toLowerCase().split('/');
+  const name = parts[parts.length - 1] ?? '';
+  if ((PROTECTED_NAMES as readonly string[]).includes(name)) return true;
+  return (
+    parts.length === 3 &&
+    parts[0] === 'clients' &&
+    (PROTECTED_CLIENT_FILES as readonly string[]).includes(name)
+  );
+}
+
+const CHECK_IGNORE_TIMEOUT_MS = 10_000;
+
+/** Which of `rels` git ignores, from one `git check-ignore --stdin -z`; null when git can't say. */
+export function gitIgnored(root: string, rels: string[]): Promise<Set<string> | null> {
+  if (rels.length === 0) return Promise.resolve(new Set());
+  return new Promise((resolve) => {
+    try {
+      const child = execFile(
+        'git',
+        ['check-ignore', '--stdin', '-z'],
+        { cwd: root, timeout: CHECK_IGNORE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' },
+        (err, stdout) => {
+          const code = (err as { code?: unknown } | null)?.code;
+          // Exit 0: some are ignored. Exit 1: none are. Anything else (128, a missing git): no answer.
+          if (!err) resolve(new Set(String(stdout).split('\0').filter(Boolean)));
+          else if (code === 1) resolve(new Set());
+          else resolve(null);
+        },
+      );
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(`${rels.join('\0')}\0`);
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 /** How long a search waits for scopes that have never been listed, and how many it builds at once. */
@@ -604,9 +657,20 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           break outer;
         }
         try {
-          const st = await fs.lstat(join(dir.abs, name));
+          // Whole milliseconds from a bigint stat, as `file()` and the tdsapp-files script read it: a
+          // plain stat's fractional mtimeMs can round up a millisecond (x.999999999 s), and then the
+          // listed `version` never matches the script's and every delete of that file is "changed".
+          const st = await fs.lstat(join(dir.abs, name), { bigint: true });
           if (!st.isFile()) continue;
-          found.push({ rel, relInScope, name, ext, cls, bytes: st.size, mtimeMs: st.mtimeMs });
+          found.push({
+            rel,
+            relInScope,
+            name,
+            ext,
+            cls,
+            bytes: Number(st.size),
+            mtimeMs: Number(st.mtimeMs),
+          });
         } catch {
           // gone while walking
         }
@@ -652,6 +716,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       height: f.cls.kind === 'image' ? (m?.height ?? null) : null,
       thumb,
       view: viewFor(f.cls, f.ext, f.bytes),
+      version: versionOf(f.bytes, f.mtimeMs),
     };
   }
 
@@ -767,6 +832,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           modified: new Date(mtimeMs).toISOString(),
           thumb: canThumb(cls, ext, bytes, docThumbs),
           view: viewFor(cls, ext, bytes),
+          version: versionOf(bytes, mtimeMs),
         },
         absPath: real,
         version: versionOf(bytes, mtimeMs),
@@ -776,6 +842,67 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The listing with `canDelete` on each item (plan 2026-11-15-delete-library-files). True only when
+   * deleting is available to this person, the scope is a client's (any role) or Templates (owner), the
+   * name isn't protected and git doesn't ignore the file. One batched git call per built listing; if
+   * git can't answer, nothing is deletable. The cached listing itself is never changed.
+   */
+  async function withDeletable(scope: ScopeDef, entry: Entry): Promise<LibraryListing> {
+    const listing = entry.listing;
+    if (!(await mayDeleteIn(scope))) return listing;
+    const ok = await deletableIds(entry);
+    if (ok === null) return listing;
+    return { ...listing, items: listing.items.map((i) => (ok.has(i.id) ? { ...i, canDelete: true } : i)) };
+  }
+
+  /** Whether this person may delete in this scope right now (any known role for a client, the owner for Templates). */
+  async function mayDeleteIn(scope: ScopeDef): Promise<boolean> {
+    if (!opts.deletion || scope.kind === 'personal') return false;
+    let who: { role: Role } | null = null;
+    try {
+      who = await opts.deletion();
+    } catch {
+      who = null;
+    }
+    // Someone not on the team (`unknown`) gets no bin anywhere: the route and the script refuse them too.
+    if (who === null || who.role === 'unknown') return false;
+    return scope.kind === 'client' || who.role === 'owner';
+  }
+
+  /**
+   * The ids in a built listing that aren't protected names or git-ignored, worked out once per listing
+   * (one git call, one Set), so a gallery's many single-file requests don't each redo it. Null when git
+   * can't answer: then nothing is deletable.
+   */
+  const deletableFor = new WeakMap<Entry, Promise<Set<string> | null>>();
+  function deletableIds(entry: Entry): Promise<Set<string> | null> {
+    let ids = deletableFor.get(entry);
+    if (!ids) {
+      const candidates = entry.listing.items.filter((i) => !isProtectedFile(i.path));
+      const ask = opts.ignored ?? ((rels: string[]) => gitIgnored(root, rels));
+      ids = Promise.resolve(ask(candidates.map((i) => i.path)))
+        .then((hidden) =>
+          hidden === null ? null : new Set(candidates.filter((i) => !hidden.has(i.path)).map((i) => i.id)),
+        )
+        .catch(() => null);
+      deletableFor.set(entry, ids);
+    }
+    return ids;
+  }
+
+  /**
+   * One item with the `canDelete` its listing gives it, for the routes that hand out a single file
+   * (starred files on Home, a chat's files): without it the file viewer opened from there never shows
+   * the bin. Reuses the listing's cached answer, so a file costs a Set lookup, not a git call.
+   */
+  async function deletableItem(scope: ScopeDef, item: LibraryItem): Promise<LibraryItem> {
+    if (!(await mayDeleteIn(scope))) return item;
+    const entry = cache.get(scope.id) ?? (await entryFor(scope));
+    const ok = await deletableIds(entry);
+    return ok?.has(item.id) ? { ...item, canDelete: true } : item;
   }
 
   let defsInFlight: Promise<ScopeDef[]> | null = null;
@@ -965,7 +1092,8 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       try {
         const scope = await findScope(scopeId);
         if (!scope) return null;
-        return (await entryFor(scope)).listing;
+        const entry = await entryFor(scope);
+        return await withDeletable(scope, entry);
       } catch {
         return null;
       }
@@ -982,7 +1110,9 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           // Not known (after a restart, or a new file): list that one scope, then give up.
           item = (await entryFor(scope)).paths.get(id);
         }
-        return item ? await check(scope, item) : null;
+        // `canDelete` goes on before `check`, never on a copy after: readChecked/openChecked trust only
+        // the very object `check` returned.
+        return item ? await check(scope, await deletableItem(scope, item)) : null;
       } catch {
         return null;
       }
@@ -990,7 +1120,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
 
     async itemForPath(rel) {
       try {
-        return await itemForPath(rel);
+        const hit = await itemForPath(rel);
+        if (!hit?.item) return hit;
+        const scope = await findScope(hit.scope.id);
+        return scope ? { ...hit, item: await deletableItem(scope, hit.item) } : hit;
       } catch {
         return null;
       }

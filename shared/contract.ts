@@ -549,6 +549,15 @@ export interface BrainReaders {
   libraryItemForPath?(
     rel: string,
   ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
+  /**
+   * Deletes one library file through the brain's `tdsapp-files` script (plan
+   * 2026-11-15-delete-library-files): moves it to the holding folder and logs it. Throws a
+   * `FilesChangeError` (shared/files-contract.ts). Optional so older test fakes still satisfy the
+   * type; the route answers 404 `not-found` when it is missing.
+   */
+  deleteLibraryFile?(id: string, opts: { expect?: string }): Promise<void>;
+  /** Runs the script's `purge` (30-day clean-up). Resolves to the number erased; never throws (0 on any failure). */
+  purgeDeletedFiles?(): Promise<number>;
   /** When the brain last synced (see SyncStatus). Never throws. */
   sync(): Promise<SyncStatus>;
   /** Calls back (debounced) when an area changes on disk. Returns a function that stops watching. */
@@ -622,6 +631,17 @@ export interface LibraryItem {
    * text route sends the first 1 MB, marked `truncated`.
    */
   view: LibraryView | null;
+  /**
+   * `versionOf(bytes, mtimeMs)`, sent back as `expect` on a delete so a file changed since it was
+   * listed is refused (plan 2026-11-15-delete-library-files). Optional: older servers don't send it.
+   */
+  version?: string;
+  /**
+   * True when this person may delete it from the app: the `tdsapp-files` skill reports
+   * `FILES_CAPABILITY`, the scope and role allow it, git doesn't ignore the file and it isn't a
+   * protected name. The script checks all of this again. Missing or false: no bin.
+   */
+  canDelete?: boolean;
 }
 
 export interface LibraryListing {
@@ -1573,6 +1593,12 @@ export const ROUTES = {
    * 400 `bad-request` for a body that is not that.
    */
   libraryItems: '/api/library/items',
+  /**
+   * `DELETE`, JSON body `{ expect?: string }` (a `LibraryItem.version`) → 204. Plan 2026-11-15-delete-library-files.
+   * Errors: 400 `bad-request`, 403 `not-allowed`, 404 `not-found`, 409 `changed`, 500 `internal`, each with a
+   * plain UK-English `error` from FILES_CHANGE_MESSAGES.
+   */
+  libraryItem: (id: string) => `/api/library/items/${encodeURIComponent(id)}`,
   /**
    * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
    *

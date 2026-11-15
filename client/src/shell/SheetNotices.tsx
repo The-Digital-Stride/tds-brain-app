@@ -1,3 +1,4 @@
+import { FileDeleteNotice } from '../apps/shared/parts.tsx';
 import { CLIENT_VERSION, isOutdated } from '../build-version.ts';
 import { useUpdate } from '../state/update.ts';
 import { useStore } from '../store.tsx';
@@ -9,10 +10,11 @@ const UPDATE_TEXT =
 
 /**
  * The lines any sheet can show: a newer version is ready, lost connection, the last action's error,
- * and a brief notice.
+ * a brief notice, and any library file deletes still waiting out their Undo time (wherever they were
+ * started: a library sheet, Home or a chat's file viewer).
  */
 export function SheetNotices(_: SheetNoticesProps) {
-  const { boot, streamUp, actionError, clearError, notice } = useStore();
+  const { boot, streamUp, actionError, clearError, notice, fileNotice } = useStore();
   // Stays subscribed even when the banner is hidden, so the tab that started an update still reloads.
   const { restarting } = useUpdate();
   const outdated = isOutdated(CLIENT_VERSION, boot?.appVersion);
@@ -51,8 +53,14 @@ export function SheetNotices(_: SheetNoticesProps) {
           </button>
         </div>
       ) : null}
+      <FileDeleteNotice />
       {notice ? (
-        <p className="closed-note" role="status">
+        // A deleted file's note is spoken by the status line in FileDeleteNotice (always on the page).
+        <p
+          className="closed-note"
+          role={notice === fileNotice ? undefined : 'status'}
+          aria-hidden={notice === fileNotice ? true : undefined}
+        >
           {notice}
         </p>
       ) : null}

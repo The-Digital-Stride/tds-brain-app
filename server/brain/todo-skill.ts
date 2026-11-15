@@ -3,9 +3,7 @@
  * The app never writes these changes itself: it hands the Workbench route body to the script and
  * reads its one-line JSON reply. See the command line above TODO_SCRIPT_TIMEOUT_MS in the contract.
  */
-import { type ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { join, sep } from 'node:path';
 import {
   TODO_SCRIPT_MAX_OUTPUT_BYTES,
   TODO_SCRIPT_TIMEOUT_MS,
@@ -15,8 +13,17 @@ import {
   type TodoChangeErrorCode,
   type TodoScope,
 } from '../../shared/contract.ts';
-import { scrubEnv } from '../engine/session-manager.ts';
-import { isDir } from './util.ts';
+import {
+  createCapabilityProbe,
+  createQueue,
+  locateScript,
+  type Outcome,
+  parseReply,
+  runScript,
+  type ScriptOptions,
+  type ScriptSpawner,
+  withDefaults,
+} from './skill-runner.ts';
 
 /** The tool name the app records on to-dos it finishes or deletes. */
 export const APP_VIA = 'TDS Brain App';
@@ -35,7 +42,7 @@ export function todoChangeError(code: TodoChangeErrorCode): TodoChangeError {
 }
 
 /** Starts a child process. Tests inject one to see the arguments or to fail the start. */
-export type TodoSpawner = (file: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+export type TodoSpawner = ScriptSpawner;
 
 /**
  * A tick of a personal to-do, run by the script's `tick` (v0.4). Not a route action: the complete
@@ -61,9 +68,6 @@ const COMMAND: Record<TodoRunAction['kind'], string> = {
   move: 'move',
   tick: 'tick',
 };
-
-/** Variables the script must not inherit: `WORKBENCH_AS` would act as someone else, `NODE_OPTIONS` could load code. */
-const DROPPED_ENV = ['WORKBENCH_AS', 'NODE_OPTIONS'];
 
 /** Who a change is for, as the app knows them (the same identity its tick records use). */
 export interface TodoActor {
@@ -125,10 +129,6 @@ export function scriptPayload(action: TodoRunAction, by?: TodoActor): Record<str
   }
 }
 
-function inside(child: string, parent: string): boolean {
-  return child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
-}
-
 /** The skill the app uses: its name (for the roles check) and its script's real path, null if unusable. */
 export interface TodoSkillFound {
   skill: string;
@@ -141,22 +141,9 @@ export interface TodoSkillFound {
  * is no fallback to the next skill once a folder is found.
  */
 export async function findTodoSkill(root: string): Promise<TodoSkillFound | null> {
-  let realRoot: string;
-  try {
-    realRoot = await fs.realpath(root);
-  } catch {
-    return null;
-  }
   for (const entry of TODO_SKILLS) {
-    const folder = join(realRoot, '.claude', 'skills', entry.skill);
-    if (!(await isDir(folder))) continue;
-    try {
-      const real = await fs.realpath(join(realRoot, entry.script));
-      if (!inside(real, realRoot)) return { skill: entry.skill, script: null };
-      return { skill: entry.skill, script: (await fs.stat(real)).isFile() ? real : null };
-    } catch {
-      return { skill: entry.skill, script: null };
-    }
+    const found = await locateScript(root, entry.skill, entry.script);
+    if (found.folder) return { skill: entry.skill, script: found.script };
   }
   return null;
 }
@@ -166,13 +153,7 @@ export async function findTodoScript(root: string): Promise<string | null> {
   return (await findTodoSkill(root))?.script ?? null;
 }
 
-export interface TodoSkillOptions {
-  spawn?: TodoSpawner;
-  /** The environment to scrub and pass on. Default: this process's. */
-  env?: NodeJS.ProcessEnv;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-}
+export type TodoSkillOptions = ScriptOptions;
 
 /** What the script answered to a change that worked. `file` is its reply's `file` (a `move` can rename). */
 export interface TodoRunResult {
@@ -187,76 +168,6 @@ export interface TodoSkillRunner {
    * that doesn't know the command (v0.3) or fails gives none.
    */
   capabilities(): Promise<readonly string[]>;
-}
-
-interface Outcome {
-  code: number | null;
-  stdout: string;
-  failed: boolean;
-}
-
-function runScript(
-  script: string,
-  realRoot: string,
-  command: string,
-  input: string,
-  opts: Required<TodoSkillOptions>,
-): Promise<Outcome> {
-  return new Promise((resolve) => {
-    const env: Record<string, string> = { ...scrubEnv(opts.env), BRAIN_ROOT: realRoot };
-    for (const key of DROPPED_ENV) delete env[key];
-    let child: ChildProcess;
-    try {
-      child = opts.spawn(process.execPath, [script, command], {
-        cwd: realRoot,
-        env,
-        shell: false,
-        // stderr is ignored by the agreement; not piping it means a chatty script can't fill a pipe and stall.
-        stdio: ['pipe', 'pipe', 'ignore'],
-      });
-    } catch {
-      resolve({ code: null, stdout: '', failed: true });
-      return;
-    }
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let failed = false;
-    let settled = false;
-    const kill = () => {
-      failed = true;
-      child.kill('SIGKILL');
-    };
-    const timer = setTimeout(kill, opts.timeoutMs);
-    const finish = (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ code, stdout: Buffer.concat(chunks).toString('utf8'), failed });
-    };
-    child.stdout?.on('data', (chunk: Buffer) => {
-      if (failed) return;
-      size += chunk.length;
-      if (size > opts.maxOutputBytes) kill();
-      else chunks.push(chunk);
-    });
-    child.on('error', () => {
-      failed = true;
-      finish(null);
-    });
-    child.on('close', (code) => finish(code));
-    // A script that exits without reading stdin makes this write fail; the exit code tells the story.
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
-  });
-}
-
-function parseReply(stdout: string): Record<string, unknown> | null {
-  try {
-    const j: unknown = JSON.parse(stdout.trim());
-    return typeof j === 'object' && j !== null && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }
 
 /** What the script's exit code and reply mean for the app. */
@@ -275,13 +186,8 @@ function judge(outcome: Outcome): TodoChangeErrorCode | null {
 
 /** One runner per brain: changes run one at a time, in the order they were asked for. */
 export function createTodoSkillRunner(root: string, options: TodoSkillOptions = {}): TodoSkillRunner {
-  const opts: Required<TodoSkillOptions> = {
-    spawn: options.spawn ?? nodeSpawn,
-    env: options.env ?? process.env,
-    timeoutMs: options.timeoutMs ?? TODO_SCRIPT_TIMEOUT_MS,
-    maxOutputBytes: options.maxOutputBytes ?? TODO_SCRIPT_MAX_OUTPUT_BYTES,
-  };
-  let tail: Promise<unknown> = Promise.resolve();
+  const opts = withDefaults(options, TODO_SCRIPT_TIMEOUT_MS, TODO_SCRIPT_MAX_OUTPUT_BYTES);
+  const queue = createQueue();
 
   const runOnce = async (action: TodoRunAction, by?: TodoActor): Promise<TodoRunResult> => {
     const script = await findTodoScript(root);
@@ -305,40 +211,16 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
     return { file: typeof file === 'string' ? file : null };
   };
 
-  let probed: { key: string; features: readonly string[] } | null = null;
-
-  const probe = async (): Promise<readonly string[]> => {
-    let script: string | null;
-    let realRoot: string;
-    let key: string;
-    try {
-      script = await findTodoScript(root);
-      if (!script) return [];
-      realRoot = await fs.realpath(root);
-      key = `${script}\0${(await fs.stat(script)).mtimeMs}`;
-    } catch {
-      return [];
-    }
-    if (probed?.key === key) return probed.features;
-    const outcome = await runScript(script, realRoot, 'capabilities', '{}', opts);
-    const reply = outcome.failed ? null : parseReply(outcome.stdout);
-    let features: string[] | null = null;
-    if (reply !== null && outcome.code === 0 && Array.isArray(reply.features))
-      features = reply.features.filter((f): f is string => typeof f === 'string');
-    // A v0.3 script answers `unknown command` (400): that is a settled answer, so it is cached too.
-    // A crash or timeout is not: try again next time.
-    else if (reply !== null && outcome.code === 2 && reply.status === 400) features = [];
-    if (features === null) return [];
-    probed = { key, features };
-    return features;
-  };
+  // A v0.3 script answers `unknown command` (400): that is a settled answer, so it is cached too.
+  const probe = createCapabilityProbe(
+    root,
+    () => findTodoScript(root),
+    opts,
+    (r) => r.status === 400,
+  );
 
   return {
-    run(action, by) {
-      const next = tail.then(() => runOnce(action, by));
-      tail = next.catch(() => {});
-      return next;
-    },
+    run: (action, by) => queue(() => runOnce(action, by)),
     capabilities: probe,
   };
 }

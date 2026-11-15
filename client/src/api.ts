@@ -106,16 +106,25 @@ async function request<T>(
     let code: ApiErrorCode = res.status === 401 ? 'unauthorised' : 'internal';
     let message = 'Something went wrong. Please try again.';
     try {
-      const data = (await res.json()) as Partial<ApiError>;
-      if (data.error) {
-        code = data.error.code;
-        message = data.error.message;
+      const data = (await res.json()) as Partial<ApiError> | { error?: unknown; code?: unknown };
+      if (data.error && typeof data.error === 'object') {
+        const nested = data.error as ApiError['error'];
+        code = nested.code;
+        message = nested.message;
+      } else if (typeof data.error === 'string') {
+        // A flat `{ error, code }` body (the library delete's contract wording) reads the same way.
+        message = data.error;
+        if (typeof (data as { code?: unknown }).code === 'string') {
+          code = (data as { code: ApiErrorCode }).code;
+        }
       }
     } catch {
       // The reply was not JSON; keep the plain defaults.
     }
     throw new ApiFailure(code, message, res.status);
   }
+  // A 204 (the library delete) has no body to read.
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -157,6 +166,13 @@ export const api = {
   deletePastChat: (id: string) => request<Record<string, never>>('DELETE', ROUTES.pastSession(id)),
   setChatKind: (id: string, kind: ChatKind) =>
     request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),
+  /**
+   * Deletes a library file (it moves to the brain's holding folder for 30 days). JSON body like every
+   * changing request: `{ expect }` (the version the person saw) or `{}`. `keepalive` lets it finish while
+   * the page closes. Answers 204.
+   */
+  deleteLibraryFile: (id: string, expect?: string, opts?: SendOptions) =>
+    request<void>('DELETE', ROUTES.libraryItem(id), expect ? { expect } : {}, undefined, opts),
   libraryItems: (ids: string[]) => request<LibraryItemsResponse>('POST', ROUTES.libraryItems, { ids }),
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),

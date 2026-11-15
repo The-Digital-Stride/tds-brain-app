@@ -18,6 +18,12 @@ import {
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
+import {
+  FILES_CHANGE_MESSAGES,
+  FILES_CHANGE_STATUS,
+  FilesChangeError,
+  type FilesErrorCode,
+} from '../../shared/files-contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import { LINK_SCRIPT_TAG } from '../../shared/page-links.ts';
@@ -1015,7 +1021,8 @@ describe('library routes', () => {
     expect(files.map((f) => f.item.id)).toEqual([other, a]);
     expect(files[0]?.scope.id).toBe('client:acme-heating');
     // Never where the file is on this machine.
-    expect(JSON.stringify(json(sent))).not.toMatch(/absPath|version/);
+    // (`version` is the library version a delete sends back as `expect`: public on purpose.)
+    expect(JSON.stringify(json(sent))).not.toMatch(/absPath/);
   });
 
   it('refuses a files lookup that is not a list of ids, or too many, or not a POST', async () => {
@@ -2695,5 +2702,186 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
       sessions: {},
     });
     expect(none.status).toBe(404);
+  });
+});
+
+describe('DELETE ROUTES.libraryItem (plan 2026-11-15-delete-library-files)', () => {
+  const PORT = 3877;
+  const TOKEN = 'delete-file-token';
+  const ID = 'client:acme-heating.0123456789abcdef01234567';
+  const OTHER = 'client:acme-heating.aaaaaaaaaaaaaaaaaaaaaaaa';
+
+  function setup(deleteLibraryFile: unknown, starred: string[] = [ID, OTHER]) {
+    const state = { starred, published: [] as unknown[], logs: [] as string[] };
+    const ctx = {
+      brain: deleteLibraryFile === undefined ? {} : { deleteLibraryFile },
+      store: {
+        get: async () => ({ favouriteFiles: state.starred }),
+        update: async (patch: { favouriteFiles?: string[] }) => {
+          if (patch.favouriteFiles) state.starred = patch.favouriteFiles;
+          return {};
+        },
+      },
+      hub: { publish: (e: unknown) => state.published.push(e) },
+      log: (l: string) => state.logs.push(l),
+    } as unknown as RouteContext;
+    return { ctx, state };
+  }
+
+  /** Through the real gate first, as server.ts runs it, then the route. */
+  async function call(
+    ctx: RouteContext,
+    opts: { id?: string; rawPath?: string; body?: string; method?: string; contentType?: string | null } = {},
+  ) {
+    const method = opts.method ?? 'DELETE';
+    const path = opts.rawPath ?? ROUTES.libraryItem(opts.id ?? ID);
+    const headers: Record<string, string | undefined> = {
+      host: `127.0.0.1:${PORT}`,
+      cookie: `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`,
+      'sec-fetch-site': 'same-origin',
+      origin: `http://127.0.0.1:${PORT}`,
+      'content-type': opts.contentType === null ? undefined : (opts.contentType ?? 'application/json'),
+    };
+    const gate = checkRequest({ method, path, headers }, { port: PORT, launchToken: TOKEN });
+    if (gate.action !== 'allow')
+      return { gate: gate.action, status: gate.action === 'reject' ? gate.status : 0, json: null };
+    const req = Object.assign(Readable.from(opts.body === undefined ? [] : [Buffer.from(opts.body)]), {
+      method,
+      headers,
+    });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text?: string) => {
+        sent.body = text ?? '';
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:${PORT}${path}`),
+      ctx,
+    );
+    return { gate: gate.action, status: sent.status, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('passes the real gate with a JSON body, deletes, answers 204, clears the star and tells the pages', async () => {
+    const seen: { id: string; opts: { expect?: string } }[] = [];
+    const { ctx, state } = setup(async (id: string, opts: { expect?: string }) => {
+      seen.push({ id, opts });
+    });
+    const sent = await call(ctx, { body: '{"expect":"12-345"}' });
+    expect(sent).toMatchObject({ gate: 'allow', status: 204, json: null });
+    expect(seen).toEqual([{ id: ID, opts: { expect: '12-345' } }]);
+    expect(state.starred).toEqual([OTHER]);
+    expect(state.published).toEqual([{ type: 'brain-changed', area: 'library' }]);
+  });
+
+  it('accepts an empty body and a body with no expect', async () => {
+    const seen: unknown[] = [];
+    const { ctx } = setup(async (_id: string, opts: unknown) => {
+      seen.push(opts);
+    });
+    expect((await call(ctx)).status).toBe(204);
+    expect((await call(ctx, { body: '{}' })).status).toBe(204);
+    expect(seen).toEqual([{}, {}]);
+  });
+
+  it('is refused by the gate without a JSON content type (415), and with no session (401)', async () => {
+    let called = false;
+    const { ctx } = setup(async () => {
+      called = true;
+    });
+    expect((await call(ctx, { contentType: null })).status).toBe(415);
+    expect((await call(ctx, { contentType: 'text/plain' })).status).toBe(415);
+    expect(called).toBe(false);
+  });
+
+  it.each(Object.entries(FILES_CHANGE_STATUS).filter(([c]) => c !== 'exists') as [FilesErrorCode, number][])(
+    'maps %s to %i with the app’s own message, and keeps the star',
+    async (code, status) => {
+      const { ctx, state } = setup(async () => {
+        throw new FilesChangeError(code);
+      });
+      const sent = await call(ctx, { body: '{}' });
+      expect(sent.status).toBe(status);
+      expect(sent.json.error.message).toBe(FILES_CHANGE_MESSAGES[code]);
+      expect(sent.json.error.code).toBe(code);
+      expect(state.starred).toEqual([ID, OTHER]);
+      expect(state.published).toEqual([]);
+    },
+  );
+
+  it('answers 500 with the app’s words when something unexpected fails, and keeps the star', async () => {
+    const { ctx, state } = setup(async () => {
+      throw new Error('/Users/secret/path exploded');
+    });
+    const sent = await call(ctx, { body: '{}' });
+    expect(sent.status).toBe(500);
+    expect(JSON.stringify(sent.json)).not.toContain('secret');
+    expect(sent.json.error.message).toBe(FILES_CHANGE_MESSAGES.internal);
+    expect(state.starred).toEqual([ID, OTHER]);
+  });
+
+  it('answers 404 not-found when the brain cannot delete files (an older fake)', async () => {
+    const { ctx } = setup(undefined);
+    const sent = await call(ctx, { body: '{}' });
+    expect(sent.status).toBe(404);
+    expect(sent.json.error.code).toBe('not-found');
+  });
+
+  it('refuses a body that is not what it expects, without deleting', async () => {
+    let called = false;
+    const { ctx } = setup(async () => {
+      called = true;
+    });
+    for (const body of ['{"expect":5}', '{"expect":""}', '{"expect":["a"]}', '{not json']) {
+      expect((await call(ctx, { body })).status, body).toBe(400);
+    }
+    expect(called).toBe(false);
+  });
+
+  it('does not fail the delete when the star cannot be cleared', async () => {
+    const { ctx, state } = setup(async () => {});
+    (ctx.store as unknown as { update: () => Promise<never> }).update = async () => {
+      throw new Error('disk full');
+    };
+    expect((await call(ctx, { body: '{}' })).status).toBe(204);
+    expect(state.published).toHaveLength(1);
+  });
+
+  it('leaves the stars alone when the file was not starred, and refuses other methods', async () => {
+    let updates = 0;
+    const { ctx } = setup(async () => {}, [OTHER]);
+    (ctx.store as unknown as { update: () => Promise<unknown> }).update = async () => {
+      updates++;
+      return {};
+    };
+    expect((await call(ctx, { body: '{}' })).status).toBe(204);
+    expect(updates).toBe(0);
+    for (const method of ['GET', 'POST', 'PUT']) {
+      const sent = await call(ctx, { method, body: '{}' }).catch((e: { status?: number }) => ({
+        status: e.status ?? 0,
+      }));
+      expect(sent.status, method).toBe(405);
+    }
+  });
+
+  it('decodes the id and refuses a badly encoded one', async () => {
+    const seen: string[] = [];
+    const { ctx } = setup(async (id: string) => {
+      seen.push(id);
+    });
+    expect((await call(ctx, { body: '{}' })).status).toBe(204);
+    expect(seen).toEqual([ID]);
+    const bad = await call(ctx, { rawPath: '/api/library/items/%E0%A4%A', body: '{}' }).catch(
+      (e: { status?: number }) => ({
+        status: e.status ?? 0,
+      }),
+    );
+    expect(bad.status).toBe(404);
   });
 });

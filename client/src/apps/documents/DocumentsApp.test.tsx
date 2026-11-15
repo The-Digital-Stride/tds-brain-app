@@ -7,6 +7,11 @@ import { doc, item, listing, SCOPES } from '../shared/testing.ts';
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   libraryVersion: 0,
+  deleteFile: vi.fn(),
+  undoDeleteFile: vi.fn(),
+  heldFiles: [] as { id: string; title: string; phase: 'waiting' | 'sending' }[],
+  hiddenFileIds: new Set<string>() as ReadonlySet<string>,
+  fileDeleteBusy: false,
   boot: { prefs: { lastClient: null as string | null } },
 }));
 const shell = vi.hoisted(() => ({ dispatch: vi.fn(), state: { panelOpen: false } }));
@@ -73,6 +78,9 @@ const picture = item({ id: 'client:acme.i1', group: 'Brand' });
 beforeEach(() => {
   docsStore.reset();
   store.libraryVersion = 0;
+  store.heldFiles = [];
+  store.hiddenFileIds = new Set();
+  store.fileDeleteBusy = false;
   store.boot.prefs.lastClient = null;
   shell.state = { panelOpen: false };
   api.libraryScopes.mockResolvedValue(SCOPES);
@@ -421,5 +429,42 @@ describe('opening a document', () => {
     expect(document.activeElement).toBe(viewer);
     fireEvent.keyDown(viewer, { key: 'Escape' });
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Explainer/ }));
+  });
+});
+
+describe('deleting a document', () => {
+  it('shows a bin only where canDelete is true, and holds the delete when it is pressed', async () => {
+    api.library.mockImplementation(async (scope: string) =>
+      listing(
+        scope,
+        [{ ...audit, canDelete: true }, { ...lead, canDelete: false }, plan],
+        ['Reports', 'Plans', 'Brand'],
+      ),
+    );
+    store.deleteFile.mockImplementation((i: { id: string }) => {
+      store.hiddenFileIds = new Set([...store.hiddenFileIds, i.id]);
+    });
+    render(<DocumentsSheet />);
+    await card('Reports');
+    expect(screen.getAllByRole('button', { name: /^Delete file: / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete file: Google Ads audit' }));
+    expect(store.deleteFile).toHaveBeenCalledWith(expect.objectContaining({ id: audit.id }));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Delete file: Google Ads audit' })).toBeNull(),
+    );
+  });
+
+  it('keeps the bin\u2019s place in a list row that has none, so the rows line up', async () => {
+    api.library.mockImplementation(async (scope: string) =>
+      listing(scope, [{ ...audit, canDelete: true }, { ...lead, canDelete: false }, plan], ['Reports']),
+    );
+    const { container } = render(<DocumentsSheet />);
+    await card('Reports');
+    fireEvent.click(screen.getByRole('radio', { name: 'List' }));
+    await waitFor(() => expect(container.querySelector('.lib-row')).not.toBeNull());
+    expect(container.querySelectorAll('.lib-row .lib-delete')).toHaveLength(1);
+    expect(container.querySelectorAll('.lib-row .lib-delete-gap')).toHaveLength(
+      container.querySelectorAll('.lib-row').length - 1,
+    );
   });
 });

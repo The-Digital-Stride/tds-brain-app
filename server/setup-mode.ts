@@ -11,6 +11,7 @@ import {
   type Thumbnailer,
   TodoChangeError,
 } from '../shared/contract.ts';
+import { FilesChangeError } from '../shared/files-contract.ts';
 import type { SearchableBrain } from './brain/index.ts';
 import { SessionError, type SessionManager } from './engine/session-manager.ts';
 import { GONE_MESSAGE, UploadError, type UploadStaging } from './uploads/staging.ts';
@@ -54,6 +55,10 @@ export function createSetupBrain(): SearchableBrain {
     library: async () => null,
     libraryFile: async () => null,
     librarySearch: async () => ({ hits: [], total: 0, partial: false }),
+    deleteLibraryFile: async () => {
+      throw new FilesChangeError('not-allowed', NO_BRAIN);
+    },
+    purgeDeletedFiles: async () => 0,
     sync: async () => ({ lastSync: null }),
     watch: () => () => {},
   };

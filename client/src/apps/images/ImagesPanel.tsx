@@ -11,14 +11,15 @@ import { imagesStore, useImages } from './store.ts';
 /** The right panel for the Images app: the chosen image and the facts the file itself holds. */
 export function ImagesPanel() {
   const { current: image } = useImages();
-  const { newChat } = useStore();
+  const { newChat, hiddenFileIds } = useStore();
   const { dispatch, modes } = useShell();
   // A floating panel would hide the file it opens, so it closes; a docked one stays.
   const open = (item: LibraryItem) => {
     imagesStore.set({ viewing: item });
     if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
   };
-  if (!image) return <p className="dock-empty">Choose an image to see its details.</p>;
+  if (!image || hiddenFileIds.has(image.id))
+    return <p className="dock-empty">Choose an image to see its details.</p>;
   const size = pictureWords(image);
 
   return (

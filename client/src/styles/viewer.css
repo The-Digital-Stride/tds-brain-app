@@ -49,6 +49,36 @@
   cursor: col-resize;
   touch-action: none;
 }
+/* The grip: a small pill of dots centred on the edge, always visible, so the edge reads as draggable. */
+.viewer-resize::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 4px;
+  width: 12px;
+  height: 44px;
+  transform: translateY(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background-color: var(--glass-solid);
+  background-image: radial-gradient(circle, var(--grey-dot) 1.25px, transparent 1.75px);
+  background-size: 12px 7px;
+  background-position: center;
+  box-shadow: var(--lift-0);
+  transition: border-color var(--t) var(--ease);
+}
+.viewer-resize:hover::before,
+.viewer-resize:focus-visible::before,
+body.viewer-resizing .viewer-resize::before {
+  border-color: var(--focus);
+  background-image: radial-gradient(circle, var(--focus) 1.25px, transparent 1.75px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-resize::before {
+    transition: none;
+  }
+}
 .viewer-resize::after {
   content: "";
   position: absolute;

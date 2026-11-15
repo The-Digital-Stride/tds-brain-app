@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.36.0 — 2026-11-15
+
+- **feat**: kit logic, savings ledger, Tokens saved panel and the tdsapp-kits brain skill
+- **feat**: wire the kit tracker and savings ledger into chats (shadow mode)
+- **fix**: review fixes: typed names only count as real skills, salt repair, stdin cap, clearer copy, guard tests
+- **fix**: kit pick gets its own query so level picks stay exactly as before; close the sync switch's env back door
+- **fix**: never pick a reopened chat's kit from a later message
+
 ## v0.35.0 — 2026-11-15
 
 - **feat**: pinned to-dos, chats and files on Home, with a star on files

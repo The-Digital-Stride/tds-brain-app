@@ -9,6 +9,7 @@
  * Contract section (AppPrefs.levelMode, SkillInfo.ownLevel, Bootstrap.skillLevels, ChatEvent 'level',
  * ROUTES.skillLevels).
  */
+import type { KitId } from './kits-contract.ts';
 import type { EffortLevel } from './contract.ts';
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,8 @@ export interface LevelPick {
   helpers: boolean;
   /** Plain, at most 80 characters, shown as "Why?" under the message box. */
   reason: string;
+  /** Plan 2026-11-15-startup-kits decision 6: the kit the picker chose. Missing or unknown → `full`. */
+  kit?: KitId;
 }
 
 export const LEVEL_PICK = {

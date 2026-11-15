@@ -148,9 +148,9 @@ describe('DocumentsSheet', () => {
   });
 
   it('has the Library picker with Mine and Clients, and shows the failure with Try again', async () => {
-    api.libraryScopes.mockRejectedValueOnce(new Error('Could not reach TDS Brain.'));
+    api.libraryScopes.mockRejectedValueOnce(new Error('Could not reach TDS Cortex.'));
     render(<DocumentsSheet />);
-    expect(await screen.findByText('Could not reach TDS Brain.')).toBeTruthy();
+    expect(await screen.findByText('Could not reach TDS Cortex.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await card('Reports');
     fireEvent.click(screen.getByRole('combobox', { name: 'Library' }));

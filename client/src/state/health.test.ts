@@ -61,7 +61,7 @@ describe('healthChecks', () => {
       input({ boot: boot({ brain: { ok: false, path: '/b', problems: ['No team list found'] } }) }),
       'brain',
     );
-    expect(c?.text).toBe('No team list found. Tell whoever looks after TDS Brain.');
+    expect(c?.text).toBe('No team list found. Tell whoever looks after TDS Cortex.');
   });
 
   it("passes on the brain's own problems", () => {
@@ -72,7 +72,7 @@ describe('healthChecks', () => {
       'brain',
     );
     expect(c?.state).toBe('problem');
-    expect(c?.text).toBe('No team list found. No whoami. Tell whoever looks after TDS Brain.');
+    expect(c?.text).toBe('No team list found. No whoami. Tell whoever looks after TDS Cortex.');
     expect(c?.detail).toBe('/b');
   });
 

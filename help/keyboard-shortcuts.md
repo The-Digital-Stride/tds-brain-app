@@ -27,7 +27,7 @@ Cortex has a few keys that open drawers and search. Most are single keys, so the
 2. When you aren't typing, press **T** for To-dos, **C** for Chats and **S** for Skills.
 3. Press **[** to show or hide the names on the rail.
 4. Press the slash key (/) to open search.
-5. Owners can press **H** or **?** to open Help.
+5. Press **H** or **?** to open Help.
 6. Press Esc to close the search box, then a drawer, one step at a time.
 
 In the message box, press Enter to send. Press Shift and Enter for a new line.
@@ -37,6 +37,7 @@ In the message box, press Enter to send. Press Shift and Enter for a new line.
 - Single keys do nothing while you are typing in a box.
 - The **Single-key shortcuts** switch in Settings turns them on or off. It is on to begin with.
 - ⌘K and Esc work whether the switch is on or off.
+- While the first-run tour shows, single keys do nothing.
 - Each key press toggles its drawer, so pressing it again closes the drawer.
 
 ## Try this

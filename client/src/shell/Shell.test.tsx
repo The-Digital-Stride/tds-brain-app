@@ -61,7 +61,7 @@ const boot = {
   skills: [],
   clients: [],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false },
+  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1 },
 };
 
 const liveChat: LiveSession = {
@@ -754,9 +754,9 @@ describe('Help, for an owner', () => {
     expect(drawerDock().hasAttribute('inert')).toBe(false);
   });
 
-  it('a scout has no Help link', async () => {
+  it('a scout has a Help link too', async () => {
     await renderHome();
     openWithClick(railButton('To-dos'));
-    expect(screen.queryByRole('button', { name: 'Help: To-dos' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Help: To-dos' })).toBeTruthy();
   });
 });

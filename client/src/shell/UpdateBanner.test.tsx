@@ -43,7 +43,7 @@ describe('UpdateBanner', () => {
   it('says which version is available and starts at once with no chats open', () => {
     const h = set();
     render(<UpdateBanner />);
-    expect(screen.getAllByText('TDS Brain 0.9.0 is available.')[0]).toBeTruthy();
+    expect(screen.getAllByText('TDS Cortex 0.9.0 is available.')[0]).toBeTruthy();
     const go = screen.getByRole('button', { name: 'Update and restart' });
     expect(go.getAttribute('data-variant')).toBe('primary');
     expect(go.getAttribute('data-size')).toBe('small');
@@ -89,7 +89,7 @@ describe('UpdateBanner', () => {
     const h = set({ openChats: 2 });
     render(<UpdateBanner />);
     fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
-    expect(screen.getByText('Updating restarts TDS Brain and closes 2 open chats.')).toBeTruthy();
+    expect(screen.getByText('Updating restarts TDS Cortex and closes 2 open chats.')).toBeTruthy();
     expect(h.start).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Not now' }));
     fireEvent.keyDown(screen.getByRole('button', { name: 'Not now' }), { key: 'Escape' });
@@ -106,14 +106,14 @@ describe('UpdateBanner', () => {
     set({ openChats: 1 });
     render(<UpdateBanner />);
     fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
-    expect(screen.getByText('Updating restarts TDS Brain and closes 1 open chat.')).toBeTruthy();
+    expect(screen.getByText('Updating restarts TDS Cortex and closes 1 open chat.')).toBeTruthy();
   });
 
   it.each([
     ['downloading', 'Downloading the update…'],
     ['installing', 'Installing the update…'],
     ['building', 'Building the update…'],
-    ['restarting', 'Restarting TDS Brain…'],
+    ['restarting', 'Restarting TDS Cortex…'],
   ] as const)('says %s in words with role=status', (phase, words) => {
     set({ phase });
     render(<UpdateBanner />);
@@ -131,7 +131,7 @@ describe('UpdateBanner', () => {
   it('shows restarting when the server went quiet mid-update', () => {
     set({ phase: 'building' }, { restarting: true });
     render(<UpdateBanner />);
-    expect(screen.getByRole('status').textContent).toBe('Restarting TDS Brain…');
+    expect(screen.getByRole('status').textContent).toBe('Restarting TDS Cortex…');
   });
 
   it('ignores Later for a failure, and hides Later with no latest version', () => {
@@ -168,7 +168,7 @@ describe('UpdateBanner', () => {
   it('shows a failure with Try again', () => {
     const h = set({
       phase: 'failed',
-      error: "The update couldn't be built. TDS Brain is still on the version you had.",
+      error: "The update couldn't be built. TDS Cortex is still on the version you had.",
     });
     render(<UpdateBanner />);
     expect(screen.getAllByText(/couldn't be built/)[0]).toBeTruthy();

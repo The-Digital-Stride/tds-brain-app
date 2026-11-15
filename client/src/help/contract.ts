@@ -80,7 +80,7 @@ export const HELP_HEADINGS = [
 /** Pages that are free-form (decision: "Getting started" pages keep the reading rules but not the headings). */
 export const HELP_FREEFORM_AREAS: readonly HelpArea[] = ['getting-started'];
 /** Single pages that are free-form too: no fixed headings or word range, but still read, spelt and jargon-checked. */
-export const HELP_FREEFORM_PAGES: readonly string[] = ['glossary', 'fixing-problems'];
+export const HELP_FREEFORM_PAGES: readonly string[] = ['glossary', 'fixing-problems', 'whats-new'];
 /** Most terms help/glossary.md may define (each `### Term` line). Terms count as one syllable in the reading score. */
 export const HELP_GLOSSARY_MAX = 25;
 /** The glossary's fixed terms (plan 2026-11-15-cortex-help-phase-2). They score as one syllable, so the list is pinned. */
@@ -150,7 +150,7 @@ export interface HelpContext {
  * Modules and exports (builder A makes them; builder B imports them):
  *   library.ts     helpLibrary: HelpLibrary; helpImageUrl(src): string | null; parseHelpFile: ParseHelpFile
  *   context.ts     helpForContext: HelpForContext
- *   visibility.ts  helpVisible(role: Role): boolean        (Phase 1: owner only)
+ *   visibility.ts  helpVisible(role: Role): boolean        (everyone since 2026-11-15)
  *   render.ts      renderHelp: RenderHelp
  *   topics.ts      HELP_TOPIC_IDS: readonly string[]
  *   HelpArticle.tsx  HelpArticle({ topic, onOpen }: { topic: HelpTopic; onOpen: (id: string) => void })

@@ -1,4 +1,4 @@
-// tdsapp-kits: show, change and review the TDS Brain app's start-up kits.
+// tdsapp-kits: show, change and review TDS Cortex's start-up kits.
 //
 //   show [--json]                                   the kits as the app sees them
 //   set <kit> [--connectors a,b] [--plugins c,d]    change a kit's lists (owner and scouts only)

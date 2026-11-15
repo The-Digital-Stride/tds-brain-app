@@ -26,7 +26,7 @@ export function openBrowser(url: string): void {
     return;
   }
   // No reliable way to pick Chrome elsewhere yet: the person opens the link themselves.
-  console.log(`Open this link in Chrome to use TDS Brain:\n${url}`);
+  console.log(`Open this link in Chrome to use TDS Cortex:\n${url}`);
 }
 
 /**

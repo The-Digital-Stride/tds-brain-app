@@ -1,7 +1,7 @@
-# Brain skills for the TDS Brain app
+# Brain skills for TDS Cortex
 
 These are Claude Code skills for the Agency Brain, so a team member can install, update and check
-the TDS Brain app by typing one command in Claude in their brain folder:
+TDS Cortex by typing one command in Claude in their brain folder:
 
 | Skill | What it does |
 |---|---|
@@ -19,7 +19,7 @@ They're written and reviewed here, next to the code they drive. Copying them int
 everyone syncs. When a command or path in `bin/tds-brain` changes, update these skills in the same
 change and copy them across again.
 
-Everything the TDS Brain App adds to the brain is named `tdsapp-…` from 2026-11-13 (the three install,
+Everything TDS Cortex adds to the brain is named `tdsapp-…` from 2026-11-13 (the three install,
 update and doctor skills came first and keep their names). Every change stays backward compatible
 with older brain files, older copies of the app and the brain's other readers.
 

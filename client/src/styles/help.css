@@ -110,3 +110,39 @@
   border: 1px solid var(--line);
   border-radius: 10px;
 }
+
+/* The What's new card on Home (WhatsNewCard): a white card in the shared .card style, a little room between it and the box. */
+.whats-new {
+  margin: 0 0 14px;
+  padding: 12px 6px 8px;
+}
+.whats-new .card-head {
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+.whats-new .card-head h2 {
+  margin: 0;
+}
+.whats-new-text {
+  margin: 0;
+  padding: 0 8px 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--iron);
+}
+.whats-new-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 2px;
+}
+.whats-new-actions .btn:last-child {
+  margin-left: auto;
+}
+
+/* Take the tour and What's new, side by side under "Open the Cortex Guide". */
+.help-extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

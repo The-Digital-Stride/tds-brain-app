@@ -56,6 +56,8 @@ describe('app store', () => {
       'pins',
       'todoPanelOpen',
       'todoSeen',
+      'tourSeen',
+      'whatsNewSeen',
     ]);
     writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['z'], extra: true }));
     expect(await store.get()).toEqual({ ...DEFAULT_PREFS, pins: ['z'] });
@@ -102,6 +104,23 @@ describe('app store', () => {
     expect((await store.update({ favouriteTodos: many })).favouriteTodos).toEqual(many.slice(5));
     // A chat star save leaves the to-do stars alone.
     expect((await store.update({ favouriteChats: [] })).favouriteTodos).toEqual(many.slice(5));
+  });
+
+  it("keeps the tour and What's new markers: an old file reads as null; bad values keep the last good one", async () => {
+    const store = createAppStore(fresh());
+    expect(await store.get()).toMatchObject({ tourSeen: null, whatsNewSeen: null });
+    expect(await store.update({ tourSeen: 1, whatsNewSeen: '0.40.0' })).toMatchObject({
+      tourSeen: 1,
+      whatsNewSeen: '0.40.0',
+    });
+    const bad = await store.update({ tourSeen: -1 as never, whatsNewSeen: 'x'.repeat(41) as never });
+    expect(bad).toMatchObject({ tourSeen: 1, whatsNewSeen: '0.40.0' });
+    expect(
+      await store.update({ tourSeen: 1.5 as never, whatsNewSeen: 'not a version' as never }),
+    ).toMatchObject({
+      tourSeen: 1,
+      whatsNewSeen: '0.40.0',
+    });
   });
 
   it('keeps starred files: an old file reads as none; empty, long and repeated ids are dropped; the newest 100 stay', async () => {
@@ -155,6 +174,8 @@ describe('app store', () => {
       favouriteChats: [],
       favouriteTodos: [],
       favouriteFiles: [],
+      tourSeen: null,
+      whatsNewSeen: null,
     });
   });
 

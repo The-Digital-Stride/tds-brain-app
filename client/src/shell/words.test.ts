@@ -229,7 +229,7 @@ describe('handover words', () => {
     expect(handoverMeta(h({ byName: null }), 'sam-example', now)).toBe('from Ben, yesterday');
     expect(handoverMeta(h({ byName: null, by: null }), 'sam-example', now)).toBe('from someone, yesterday');
     expect(handoverLine(h({ byName: null, by: null }), 'sam-example')).toBe(
-      'Passed to you by someone, 12 Nov (TDS Brain App)',
+      'Passed to you by someone, 12 Nov (TDS Cortex)',
     );
   });
   it('says nothing for your own, old or missing handovers', () => {
@@ -242,8 +242,19 @@ describe('handover words', () => {
     expect(handoverLine(h({}, null), 'sam-example')).toBeNull();
     expect(handoverMeta(h({}, 'ben-mcadam'), 'sam-example', now)).toBeNull();
   });
+  it('shows to-dos stamped with the old app name under the new one, and other stamps as they are', () => {
+    expect(handoverLine(h({ via: 'TDS Brain App' }), 'sam-example')).toBe(
+      'Passed to you by Ben McAdam, 12 Nov (TDS Cortex)',
+    );
+    expect(handoverLine(h({ via: 'TDS Cortex' }), 'sam-example')).toBe(
+      'Passed to you by Ben McAdam, 12 Nov (TDS Cortex)',
+    );
+    expect(handoverLine(h({ via: 'Workbench' }), 'sam-example')).toBe(
+      'Passed to you by Ben McAdam, 12 Nov (Workbench)',
+    );
+  });
   it('words the editor line', () => {
-    expect(handoverLine(h(), 'sam-example')).toBe('Passed to you by Ben McAdam, 12 Nov (TDS Brain App)');
+    expect(handoverLine(h(), 'sam-example')).toBe('Passed to you by Ben McAdam, 12 Nov (TDS Cortex)');
     expect(handoverLine(h({ source: 'history', via: null }), 'sam-example')).toBe(
       'From Ben McAdam (git history), 12 Nov',
     );

@@ -93,9 +93,9 @@ function sendHtml(res: ServerResponse, status: number, html: string, method: str
 
 /** The signed-out page's wording (decision 6c), kept together for review. */
 export const SIGNED_OUT_COPY = {
-  heading: 'Sign in to TDS Brain',
+  heading: 'Sign in to TDS Cortex',
   paragraphs: [
-    "Press Command and Space, type TDS Brain Sign-in, then press Return. This page checks every few seconds and opens TDS Brain once you're signed in.",
+    "Press Command and Space, type TDS Brain Sign-in, then press Return. This page checks every few seconds and opens TDS Cortex once you're signed in.",
     'If Chrome opens with the wrong profile, close that window, switch to the Chrome profile you use for work, then open TDS Brain Sign-in again.',
   ],
 } as const;
@@ -113,7 +113,7 @@ const FAILED_CODE_PAGE = plainPage(SIGNED_OUT_COPY.heading, SIGNED_OUT_COPY.para
   refreshUrl: '/',
 });
 
-const NOT_BUILT_PAGE = plainPage('TDS Brain is not quite ready', [
+const NOT_BUILT_PAGE = plainPage('TDS Cortex is not quite ready', [
   'Its screens have not been set up on this computer yet. Ask whoever looks after the brain to finish setting it up.',
 ]);
 
@@ -336,7 +336,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
             sendHtml(
               res,
               decision.status,
-              plainPage('TDS Brain could not open that', [decision.message]),
+              plainPage('TDS Cortex could not open that', [decision.message]),
               method,
             );
           return;

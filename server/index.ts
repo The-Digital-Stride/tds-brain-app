@@ -291,7 +291,7 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     void codeFromRunningServer(config.port, config.launchToken).then((code) => {
       if (code) {
-        log(`TDS Brain is already running at ${appUrl}. Opening it.`);
+        log(`TDS Cortex is already running at ${appUrl}. Opening it.`);
         openBrowser(signInUrl(config.port, code));
         setTimeout(() => process.exit(0), 1500).unref();
       } else {
@@ -321,7 +321,7 @@ app.server.listen(config.port, APP_HOST, () => {
     enabled: brainPath !== null,
     log,
   });
-  log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
+  log(`TDS Cortex ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
   logBrainDecision(decision);
   if (!noOpen) {

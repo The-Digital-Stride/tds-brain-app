@@ -75,9 +75,9 @@ describe('Rail Help item', () => {
     expect(help.getAttribute('aria-keyshortcuts')).toBe('h');
   });
 
-  it.each(['team', 'scout', 'unknown'])('is not shown to %s', (role) => {
+  it.each(['team', 'scout', 'unknown'])('is shown to %s', (role) => {
     setStore([], {}, role);
     render(<Rail />);
-    expect(screen.queryByRole('button', { name: 'Help' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Help' })).toBeTruthy();
   });
 });

@@ -276,7 +276,7 @@ export function SettingsView() {
       <TokensSavedSection />
 
       <section aria-labelledby="about-h">
-        <h2 id="about-h">About TDS Brain on this computer</h2>
+        <h2 id="about-h">About TDS Cortex on this computer</h2>
         <dl className="kv about">
           <dt>You are</dt>
           <dd>
@@ -293,16 +293,16 @@ export function SettingsView() {
           </dd>
           <dt>Dock app</dt>
           <dd>
-            {dock.state === 'installed' && 'Installed. TDS Brain is in your Dock.'}
-            {dock.state === 'added' && 'Added. TDS Brain is in your Dock.'}
+            {dock.state === 'installed' && 'Installed. TDS Cortex is in your Dock.'}
+            {dock.state === 'added' && 'Added. TDS Cortex is in your Dock.'}
             {dock.state === 'dismissed' && "Not added. You can add it later from Chrome's menu."}
             {dock.state === 'can-install' && (
               <button type="button" className="btn" onClick={() => void dock.install()}>
-                Add TDS Brain to your Dock
+                Add TDS Cortex to your Dock
               </button>
             )}
             {dock.state === 'manual' &&
-              "If TDS Brain isn't in your Dock yet, choose Install TDS Brain from Chrome's menu or the address bar."}
+              "If TDS Cortex isn't in your Dock yet, choose Install TDS Cortex from Chrome's menu or the address bar."}
           </dd>
           {showHelp ? (
             <>

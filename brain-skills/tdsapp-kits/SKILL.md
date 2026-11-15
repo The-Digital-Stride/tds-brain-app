@@ -1,6 +1,6 @@
 ---
 name: tdsapp-kits
-description: Show, change and review the start-up kits the TDS Brain app uses. A kit is a short list of connectors and plugins that suits one kind of work, such as everyday agency work, ads and search, or websites and code. For now the app only notes which kit it would have picked for each chat and switches nothing off. USE WHEN asked to show, list, change or review the start-up kits, or someone says "what kits does the app have?", "add a connector to the ads kit", "take a plugin out of the web kit", "would the kits have been enough?", "how did the kit picks go this month?", "review the kits". The TDS Brain app also reads this skill's kits file.
+description: Show, change and review the start-up kits TDS Cortex uses. A kit is a short list of connectors and plugins that suits one kind of work, such as everyday agency work, ads and search, or websites and code. For now the app only notes which kit it would have picked for each chat and switches nothing off. USE WHEN asked to show, list, change or review the start-up kits, or someone says "what kits does the app have?", "add a connector to the ads kit", "take a plugin out of the web kit", "would the kits have been enough?", "how did the kit picks go this month?", "review the kits". TDS Cortex also reads this skill's kits file.
 version: 0.1
 last_updated: 2026-11-15
 roles: owner, scout
@@ -11,7 +11,7 @@ agency: true
 
 # tdsapp-kits
 
-When the TDS Brain app starts a chat, it loads every connector and plugin you have, and that costs a lot
+When TDS Cortex starts a chat, it loads every connector and plugin you have, and that costs a lot
 before you've typed a word. A **kit** is a shorter list that suits one kind of work. There are four:
 
 | Kit | For |

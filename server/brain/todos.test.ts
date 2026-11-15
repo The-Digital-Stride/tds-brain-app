@@ -81,13 +81,13 @@ describe('todos', () => {
         'completed: 2026-11-11',
         'completed_at: 2026-11-11T17:07:38+00:00',
         'completed_by: sam-example',
-        'completed_via: TDS Brain App',
+        'completed_via: TDS Cortex',
         '---',
         '# Send the monthly report',
         '',
         '## Done 2026-11-11',
         '',
-        'Ticked off by Sam Example at 17:07 UK time (TDS Brain App).',
+        'Ticked off by Sam Example at 17:07 UK time (TDS Cortex).',
         '',
       ].join('\n'),
     );
@@ -336,7 +336,7 @@ describe('changeTodo', () => {
         body: {
           file: '20261103-open-task.md',
           assignee: 'sam-example',
-          via: 'TDS Brain App',
+          via: 'TDS Cortex',
           by: 'sam-example',
           by_name: 'sam-example',
         },
@@ -347,7 +347,7 @@ describe('changeTodo', () => {
           title: 'Call Ben',
           due: '2026-11-20',
           assignee: 'sam-example',
-          via: 'TDS Brain App',
+          via: 'TDS Cortex',
           by: 'sam-example',
           by_name: 'sam-example',
         },
@@ -357,7 +357,7 @@ describe('changeTodo', () => {
         command: 'delete',
         body: {
           file: '20261010-undated-thing.md',
-          via: 'TDS Brain App',
+          via: 'TDS Cortex',
           by: 'sam-example',
           by_name: 'sam-example',
         },
@@ -582,7 +582,7 @@ describe('changeTodo: expect, open adds and the older skill', () => {
           title: 'Anyone',
           due: '',
           open: true,
-          via: 'TDS Brain App',
+          via: 'TDS Cortex',
           by: 'sam-example',
           by_name: 'sam-example',
         },
@@ -706,7 +706,7 @@ describe('handover', () => {
     const root = copyFixture();
     writeFileSync(
       join(root, 'todo', '20261112-stamped.md'),
-      '---\nassignee: sam-example\nassigned_to: sam-example\nassigned_at: 2026-11-12T09:00:00+00:00\nassigned_by: alex-sample\nassigned_from: open\nassigned_via: TDS Brain App\n---\n# S\n',
+      '---\nassignee: sam-example\nassigned_to: sam-example\nassigned_at: 2026-11-12T09:00:00+00:00\nassigned_by: alex-sample\nassigned_from: open\nassigned_via: TDS Cortex\n---\n# S\n',
     );
     const git = gitOf(
       'Zed',
@@ -719,7 +719,7 @@ describe('handover', () => {
       byName: 'Alex Sample',
       at: '2026-11-12T09:00:00+00:00',
       from: 'open',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
       source: 'stamp',
     });
     expect(git.calls).toContain('todo/20261112-stamped.md');
@@ -1048,6 +1048,6 @@ describe('changeTodo with the real v0.4 script', () => {
     await brain.changeTodo({ kind: 'assignee', id, assignee: 'alex-sample' }, me);
     const text = readFileSync(join(root, 'todo', id), 'utf8');
     expect(text).toContain('assigned_by: sam-example');
-    expect(text).toContain('assigned_via: TDS Brain App');
+    expect(text).toContain('assigned_via: TDS Cortex');
   });
 });

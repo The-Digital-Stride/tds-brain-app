@@ -32,7 +32,7 @@ Cortex needs the folder where you keep your copy of the Agency Brain. A screen c
 ## Good to know
 
 - If Cortex starts when you log in, it restarts after you choose. That closes any open chats, and Cortex warns you first.
-- If it can't restart, it says "Stop TDS Brain and start it again".
+- If it can't restart, it says "Stop TDS Cortex and start it again".
 - You need the Agency Brain on your Mac first. If you don't have it, ask whoever looks after Cortex.
 - Press **Check again** if Cortex hasn't come back after a minute.
 

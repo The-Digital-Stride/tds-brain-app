@@ -187,7 +187,7 @@ describe('service worker', () => {
     const { handlers, stores, state } = setup(down, ['tds-brain-offline-v0', 'something-else']);
     await dispatch(handlers.install).waited;
     await dispatch(handlers.activate).waited;
-    expect([...stores.keys()]).toEqual(['tds-brain-offline-v3']);
+    expect([...stores.keys()]).toEqual(['tds-brain-offline-v4']);
     expect(state.claimed).toBe(true);
   });
 });

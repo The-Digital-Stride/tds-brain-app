@@ -175,3 +175,10 @@ print preview on the demo server, owner and team.
 - **For Phase 3**: pin the Approvals mode and start time in demo mode when the shots are retaken for the rename;
   add a test for a non-owner on view `guide` before Help opens to everyone; Phase 1 pages and keyboard-shortcuts
   say "owners" for Help keys, which changes at launch.
+
+## Change after merge (2026-11-15)
+
+Ian asked for Help to be open to every Cortex user now, ahead of the rest of Phase 3. `helpVisible` returns true
+for every role (branch `help-for-everyone`); the "for now, only owners" lines in the pages are gone. The visible
+rename, the tour and the What's new card are still Phase 3, so the app's own labels still say "TDS Brain" while
+the help says "TDS Cortex" until then.

@@ -30,7 +30,6 @@ export const SESSION_COOKIE = 'tba_session';
 export function sessionCookieName(port: number): string {
   return port === DEFAULT_PORT ? SESSION_COOKIE : `${SESSION_COOKIE}_${port}`;
 }
-export const APP_NAME = 'TDS Brain';
 export const MAX_LIVE_SESSIONS = 4;
 
 // ---------------------------------------------------------------------------
@@ -755,7 +754,20 @@ export interface AppPrefs {
    * sends it; optional because an older server sends none, which reads as [].
    */
   favouriteFiles?: string[];
+  /**
+   * The first-run tour (plan 2026-11-15-cortex-help-phase-3): the TOUR_VERSION last finished or skipped, or null
+   * (never). A whole number from 1. Optional because an older server sends none, which reads as null.
+   */
+  tourSeen?: number | null;
+  /**
+   * What's new (plan 2026-11-15-cortex-help-phase-3): the newest note version the person has dismissed, as
+   * "major.minor.patch", or null (none). Optional because an older server sends none, which reads as null.
+   */
+  whatsNewSeen?: string | null;
 }
+
+/** "major.minor.patch", as app versions and What's new notes are named. */
+export const VERSION_PATTERN = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
 
 export const FAVOURITE_CHATS_MAX = 200;
 export const FAVOURITE_TODOS_MAX = 200;
@@ -787,6 +799,8 @@ export const DEFAULT_PREFS: AppPrefs = {
   favouriteChats: [],
   favouriteTodos: [],
   favouriteFiles: [],
+  tourSeen: null,
+  whatsNewSeen: null,
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */

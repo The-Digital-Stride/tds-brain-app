@@ -6,6 +6,7 @@ import {
   type HelpTopic,
 } from './contract.ts';
 import { parseHelpFile } from './frontmatter.ts';
+import { whatsNewNotes, whatsNewTopic } from './whats-new.ts';
 
 export { parseHelpFile };
 
@@ -73,7 +74,15 @@ const images = import.meta.glob('../../../help/images/*.webp', {
   eager: true,
 }) as Record<string, string>;
 
-export const helpLibrary: HelpLibrary = createHelpLibrary(loadHelpTopics(pages));
+const fileTopics = loadHelpTopics(pages);
+// The "What's new" page is built from help/whats-new/*.md, not a file of its own.
+const whatsNew = whatsNewTopic(
+  whatsNewNotes,
+  (id) => fileTopics.find((t) => t.id === id)?.title,
+  new Date().toISOString().slice(0, 10),
+);
+
+export const helpLibrary: HelpLibrary = createHelpLibrary(whatsNew ? [...fileTopics, whatsNew] : fileTopics);
 
 const imageByName = new Map(
   Object.entries(images).map(([path, url]) => [path.split('/').pop() ?? path, url]),

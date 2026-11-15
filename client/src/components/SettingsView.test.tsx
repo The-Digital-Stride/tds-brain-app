@@ -136,7 +136,7 @@ const optionTexts = (el: HTMLElement) => Array.from((el as HTMLSelectElement).op
 const selectOf = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
 
 describe('Single-key shortcuts text', () => {
-  it('lists "H or ? for Help" for an owner only', () => {
+  it('lists "H or ? for Help" for every role', () => {
     standalone(false);
     boot.identity = { ...boot.identity, role: 'owner' };
     const { unmount } = render(<SettingsView />);
@@ -144,7 +144,7 @@ describe('Single-key shortcuts text', () => {
     unmount();
     boot.identity = { ...boot.identity, role: 'team' };
     render(<SettingsView />);
-    expect(document.getElementById('set-keys-help')?.textContent).not.toContain('Help');
+    expect(document.getElementById('set-keys-help')?.textContent).toContain('H or ? for Help');
   });
 });
 
@@ -283,26 +283,26 @@ describe('Dock app row', () => {
   it('says installed when running as the installed app', () => {
     standalone(true);
     render(<SettingsView />);
-    expect(screen.getByText('Installed. TDS Brain is in your Dock.')).toBeTruthy();
+    expect(screen.getByText('Installed. TDS Cortex is in your Dock.')).toBeTruthy();
   });
 
   it('walks manual, button, dismissed, then added', async () => {
     standalone(false);
     captureInstallPrompt();
     render(<SettingsView />);
-    expect(screen.getByText(/If TDS Brain isn't in your Dock yet/)).toBeTruthy();
+    expect(screen.getByText(/If TDS Cortex isn't in your Dock yet/)).toBeTruthy();
     const prompt = vi.fn().mockResolvedValue(undefined);
     await chromeEvent('beforeinstallprompt', {
       prompt,
       userChoice: Promise.resolve({ outcome: 'dismissed' }),
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add TDS Brain to your Dock' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add TDS Cortex to your Dock' }));
     });
     expect(prompt).toHaveBeenCalled();
     expect(screen.getByText("Not added. You can add it later from Chrome's menu.")).toBeTruthy();
     await chromeEvent('appinstalled');
-    expect(screen.getByText('Added. TDS Brain is in your Dock.')).toBeTruthy();
+    expect(screen.getByText('Added. TDS Cortex is in your Dock.')).toBeTruthy();
   });
 });
 
@@ -567,13 +567,13 @@ describe('help links', () => {
     expect(screen.getByRole('button', { name: 'Help: skill-levels' })).toBeTruthy();
   });
 
-  it('is left out for a team member', () => {
+  it('is shown to a team member too', () => {
     boot.prefs = { directWrites: false, model: null, effort: null, levelMode: 'auto' } as typeof boot.prefs;
     st.skillLevels = { levels: {}, canSet: true, writable: true };
     setUpd();
     render(<SettingsView />);
-    expect(screen.queryByRole('button', { name: /^Help:/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Read the Cortex Guide' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Help:/ }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Read the Cortex Guide' })).toBeTruthy();
   });
 
   it('an owner can read the Cortex Guide from About', () => {

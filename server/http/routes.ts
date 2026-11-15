@@ -52,6 +52,7 @@ import {
   type TodoScope,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
+  VERSION_PATTERN,
   type VersionNotes,
 } from '../../shared/contract.ts';
 import { FILES_CHANGE_MESSAGES, FILES_CHANGE_STATUS, FilesChangeError } from '../../shared/files-contract.ts';
@@ -382,6 +383,23 @@ export async function validatePrefsPatch(
           throw bad('That effort level was not understood.');
         }
         patch.effort = value as EffortLevel | null;
+        break;
+      }
+      case 'tourSeen': {
+        if (
+          value !== null &&
+          !(Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 1000)
+        ) {
+          throw bad('That tour setting was not understood.');
+        }
+        patch.tourSeen = value as number | null;
+        break;
+      }
+      case 'whatsNewSeen': {
+        if (value !== null && !(typeof value === 'string' && VERSION_PATTERN.test(value))) {
+          throw bad("That What's new setting was not understood.");
+        }
+        patch.whatsNewSeen = value as string | null;
         break;
       }
       default:
@@ -1286,12 +1304,12 @@ async function updateRoute(
     if (keys.length !== 1 || (body as { confirm?: unknown }).confirm !== true) {
       throw new HttpError(400, 'bad-request', 'That request was not understood.');
     }
-    if (!updater) throw new HttpError(403, 'not-allowed', "This copy of TDS Brain can't update itself.");
+    if (!updater) throw new HttpError(403, 'not-allowed', "This copy of TDS Cortex can't update itself.");
     sendJson(res, 202, await shape(await updater.start()));
   } catch (err) {
     if (err instanceof UpdateRefused) {
       if (err.reason === 'busy') throw new HttpError(409, 'busy', 'An update is already running.');
-      throw new HttpError(403, 'not-allowed', "This copy of TDS Brain can't update right now.");
+      throw new HttpError(403, 'not-allowed', "This copy of TDS Cortex can't update right now.");
     }
     throw err;
   }

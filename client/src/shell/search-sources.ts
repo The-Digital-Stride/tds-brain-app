@@ -295,7 +295,7 @@ const earlierChats: SearchSource = {
     ),
 };
 
-/** Help pages (owners only, where `SearchContext.helpVisible`): the best five, each opening the Help drawer on its page. */
+/** Help pages (where `SearchContext.helpVisible`, which is everyone): the best five, each opening the Help drawer on its page. */
 const help: SearchSource = {
   id: 'help',
   title: 'Help',

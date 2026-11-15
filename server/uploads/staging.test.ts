@@ -222,7 +222,7 @@ describe('save', () => {
     }
     const err = (await staging.save(untouched().stream, 'tool.exe', 1).catch((e) => e)) as UploadError;
     expect(err.message).toBe(
-      "TDS Brain can't pass on .exe files. Attach a document, spreadsheet, slide deck, text file or picture.",
+      "TDS Cortex can't pass on .exe files. Attach a document, spreadsheet, slide deck, text file or picture.",
     );
     expect(await codeOf(staging.save(untouched().stream, undefined, 1))).toBe('bad-name');
     expect(await codeOf(staging.save(untouched().stream, '', 1))).toBe('bad-name');

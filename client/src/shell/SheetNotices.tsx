@@ -6,7 +6,7 @@ import type { SheetNoticesProps } from './contract.ts';
 import { UpdateBanner } from './UpdateBanner.tsx';
 
 const UPDATE_TEXT =
-  "A new version of TDS Brain is ready. Reload to start using it. Anything you haven't sent will be cleared.";
+  "A new version of TDS Cortex is ready. Reload to start using it. Anything you haven't sent will be cleared.";
 
 /**
  * The lines any sheet can show: a newer version is ready, lost connection, the last action's error,
@@ -42,7 +42,7 @@ export function SheetNotices(_: SheetNoticesProps) {
       ) : null}
       {streamUp || restarting ? null : (
         <div className="offline-banner" role="status">
-          Lost touch with TDS Brain. Trying to reconnect.
+          Lost touch with TDS Cortex. Trying to reconnect.
         </div>
       )}
       {actionError ? (

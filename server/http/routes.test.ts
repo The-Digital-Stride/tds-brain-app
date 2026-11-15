@@ -159,7 +159,7 @@ describe('POST /api/todos/complete', () => {
     expect(existsSync(join(root, 'todo', TODO))).toBe(false);
     const done = readFileSync(join(root, 'todo', 'done', TODO), 'utf8');
     expect(done).toContain('\ncompleted_at: 2026-11-11T17:07:38+00:00\ncompleted_by: sam-example\n');
-    expect(done).toContain('Ticked off by Sam Example at 17:07 UK time (TDS Brain App).');
+    expect(done).toContain('Ticked off by Sam Example at 17:07 UK time (TDS Cortex).');
     expect(JSON.parse(sent.body).mine.map((t: { id: string }) => t.id)).not.toContain(TODO);
   });
 
@@ -337,7 +337,7 @@ process.stdin.on('end', () => {
     expect(calls()).toEqual([
       {
         command: 'delete',
-        body: { file: MINE, via: 'TDS Brain App', by: 'sam-example', by_name: 'Sam Example' },
+        body: { file: MINE, via: 'TDS Cortex', by: 'sam-example', by_name: 'Sam Example' },
       },
     ]);
     expect(existsSync(join(root, 'todo', MINE))).toBe(false);
@@ -399,7 +399,7 @@ process.stdin.on('end', () => {
           command: 'tick',
           body: {
             file: PID,
-            via: 'TDS Brain App',
+            via: 'TDS Cortex',
             by: 'sam-example',
             by_name: 'Sam Example',
             expect: version,
@@ -1455,7 +1455,7 @@ describe('uploads', () => {
     const exe = await upload(ctx, 'tool.exe', 'abc');
     expect(exe.status).toBe(400);
     expect(json(exe).error.message).toBe(
-      "TDS Brain can't pass on .exe files. Attach a document, spreadsheet, slide deck, text file or picture.",
+      "TDS Cortex can't pass on .exe files. Attach a document, spreadsheet, slide deck, text file or picture.",
     );
   });
 
@@ -1717,6 +1717,23 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     const sent = await call('/api/prefs', 'PUT', { model: 'opus' });
     expect(sent.status).toBe(200);
     expect(sent.choices).toEqual([{ model: 'opus', effort: 'high' }]);
+  });
+
+  it("saves the tour and What's new markers through the real route, and refuses bad ones", async () => {
+    const sent = await call('/api/prefs', 'PUT', { tourSeen: 1, whatsNewSeen: '0.40.0' });
+    expect(sent.status).toBe(200);
+    expect(sent.json).toMatchObject({ tourSeen: 1, whatsNewSeen: '0.40.0' });
+    expect((await call('/api/prefs', 'PUT', { tourSeen: null, whatsNewSeen: null })).status).toBe(200);
+    for (const patch of [
+      { tourSeen: 0 },
+      { tourSeen: 1.5 },
+      { tourSeen: '1' },
+      { tourSeen: 1001 },
+      { whatsNewSeen: 'v1' },
+      { whatsNewSeen: 4 },
+    ]) {
+      expect((await call('/api/prefs', 'PUT', patch)).status).toBe(400);
+    }
   });
 
   it('does not touch the sessions when the patch has neither', async () => {

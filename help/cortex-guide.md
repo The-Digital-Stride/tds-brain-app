@@ -37,7 +37,7 @@ The Cortex Guide shows every help page in order, like a book. Contents sit on th
 - The guide starts with Welcome, Why Cortex and A day with Cortex. Then it goes area by area: Home, Chats, To-dos and so on.
 - Printing starts each page on a new sheet and keeps the pictures.
 - The rail, the contents and the top bar don't print.
-- For now, only owners can open it. Everyone gets it at launch.
+- Everyone who uses Cortex can open and print it.
 
 ## Try this
 

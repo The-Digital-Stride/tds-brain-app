@@ -37,7 +37,7 @@ export function checkMigrate(fromPath: string, toPath: string): MigrateResult {
       return { ok: false, message: `There is no data folder at ${from} to copy.` };
     }
     if (!existsSync(join(from, 'runtime.json'))) {
-      return { ok: false, message: `${from} has no runtime.json, so it does not look like TDS Brain data.` };
+      return { ok: false, message: `${from} has no runtime.json, so it does not look like TDS Cortex data.` };
     }
     if (from === to || inside(from, to) || inside(to, from)) {
       return { ok: false, message: 'The old and new data folders overlap, so nothing was copied.' };

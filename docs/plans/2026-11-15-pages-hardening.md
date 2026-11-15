@@ -184,3 +184,11 @@ The lead writes the contract additions, the plan's review outcomes and the tds-d
 - **Browser check.** A page Claude saved with `cat >` showed and opened by itself; a plain link and a
   `target="_blank"` link each opened one new tab with the page left in place; a `#` link scrolled
   the page. The explainer ran under the viewer's policy in a sandboxed origin with no requests.
+- **Overseer sign-off (Fable).** Signed off, subject to the user's live run (decision 9) and one
+  wording fix. The app's Claude, asked for "your scratchpad", saved test pages in the brain's
+  `personal/`. The brain's own save rules (`.claude/rules/save-locations.md`) send scratch work to
+  `personal/` (on this computer, never synced), so the fault was the app's promise of "not saved":
+  `SAVE_LINE` now offers "just show it here (`personal/`, which stays on this computer and is never
+  shared)" and quick visuals go to `personal/`; the read-only-copy note says the same (tested).
+  Known limit noted by the overseer: on replay, a shell command that named an already-known page
+  without changing it can add one version the live chat didn't show.

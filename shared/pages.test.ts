@@ -237,12 +237,12 @@ describe('suggestionMessage', () => {
     expect(m.note).toMatch(/editing that file in place/);
     const copy = suggestionMessage({ ...REF, url: null, sourceIsCopy: true }, 'x');
     expect(copy.note).not.toMatch(/Artifact tool|republish/i);
-    expect(copy.note).toMatch(/scratchpad/);
+    expect(copy.note).toMatch(/new file in `personal\/`/);
   });
   it('says what to do with the app copy when the source is a copy', () => {
     const m = suggestionMessage({ ...REF, sourceIsCopy: true }, 'x');
     expect(m.note).toMatch(/stored copy/i);
-    expect(m.note).toMatch(/scratchpad/i);
+    expect(m.note).toMatch(/new file in `personal\/`/);
     expect(m.note).toContain(REF.url);
   });
   it('has a change to a copy saved back where the page was first saved, so it stays the same page', () => {
@@ -254,7 +254,7 @@ describe('suggestionMessage', () => {
     expect(m.note).toContain(`\`${original}\``);
     expect(m.note).toMatch(/Write tool/);
     expect(m.note).toMatch(/same page/);
-    expect(m.note).not.toMatch(/scratchpad/);
+    expect(m.note).not.toMatch(/new file in `personal\/`/);
     // An existing page: the where-to-save question doesn't apply.
     expect(m.note).toMatch(/don’t ask where to save it/);
   });

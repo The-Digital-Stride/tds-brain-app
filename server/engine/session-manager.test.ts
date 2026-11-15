@@ -353,6 +353,10 @@ describe('a new chat', () => {
     expect(FILES_LINE).toContain(
       'if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first',
     );
+    // "Just show it here" follows the brain's save rules (`personal/`, on this computer, never shared),
+    // never an unnamed "scratchpad" or a promise that nothing is saved.
+    expect(FILES_LINE).toContain('just show it here (`personal/`');
+    expect(FILES_LINE).not.toMatch(/scratchpad|not saved/);
     expect(o.model).toBeUndefined();
     expect(o.resume).toBeUndefined();
     expect(queries[0]?.received).toEqual(['Hello there']);

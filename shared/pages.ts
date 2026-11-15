@@ -157,7 +157,7 @@ export function suggestionMessage(page: PageRef, note: string): PageMessage {
     );
   } else if (page.sourceIsCopy) {
     lines.push(
-      `That file is the app’s stored copy and is read-only. Copy it to a new file in your scratchpad first and make the change in that copy.${republish}`,
+      `That file is the app’s stored copy and is read-only. Copy it to a new file in \`personal/\` first and make the change in that copy.${republish}`,
     );
   } else {
     lines.push(`Make the change by editing that file in place.${republish}`);

@@ -346,9 +346,9 @@
       <div class="pgrid">
         <ol class="steps vert">
           <li><button type="button" class="stepbtn" data-goto="1"><span><b>You ask for something visual</b><small>For example: "Make a one-page chart of last month's traffic for Urban Cooling."</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="2"><span><b>Claude asks: "Where should I save this?"</b><small>If it is not clear, Claude shows places to pick from, taken from the team's filing rules. You can just show it here, or pick a client's folder.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="2"><span><b>Claude asks: "Where should I save this?"</b><small>If it is not clear, Claude shows places to pick from, taken from the team's filing rules. You can keep it just for you, or pick a client's folder.</small></span></button></li>
           <li><button type="button" class="stepbtn" data-goto="3"><span><b>Claude writes one file</b><small>The page is a single file with everything it needs inside, like a lunchbox with the food already packed.</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="4"><span><b>The app spots it and opens it</b><small>When Claude finishes, the viewer opens next to the chat. The viewer is a sandbox: a sealed box, like a fish tank. You can see in, but the page cannot reach out to your files.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="4"><span><b>The app spots it and opens it</b><small>When Claude finishes, the viewer opens next to the chat. The viewer is a sandbox: a sealed box, like a fish tank. You can see in, but the page cannot reach out to your files. To make the viewer wider, drag the small grip on its left edge. Double-click the grip to put it back.</small></span></button></li>
           <li><button type="button" class="stepbtn" data-goto="5"><span><b>"Suggest a change" makes a new version</b><small>Type what to change, like "make the bars blue". The old page is kept. Each try is a version, like numbered pages in a notebook, so you can step back and forth.</small></span></button></li>
           <li><button type="button" class="stepbtn" data-goto="6"><span><b>"Convert to TDS branding"</b><small>One click wraps the page in the TDS look: a navy bar with the logo, the title, the client and the date. Your page sits inside unchanged, and everything it needs is packed into the file. If something cannot be packed in, the app says so.</small></span></button></li>
           <li><button type="button" class="stepbtn" data-goto="7"><span><b>File it, or download it</b><small>Two separate buttons. "Download" saves the file to your computer. "File in client's folder" asks Claude to put it with the client's reports. Downloading never files anything by accident.</small></span></button></li>
@@ -357,7 +357,7 @@
           <div class="chat">
             <div class="msg me f f1">Make a one-page chart of last month's traffic for Urban Cooling.</div>
             <div class="msg ai f f2">Where should I save this?
-              <div class="opts"><span class="btn solid">Just show it here</span><span class="btn">Urban Cooling's reports</span><span class="btn">Somewhere else</span></div></div>
+              <div class="opts"><span class="btn solid">Just for me</span><span class="btn">Urban Cooling's reports</span><span class="btn">Somewhere else</span></div></div>
             <div class="chip f f3">Writing traffic-chart.html</div>
             <div class="msg ai f f4">Done. The page is open on the right.</div>
             <div class="msg me f f5">Make the bars blue.</div>
@@ -379,15 +379,15 @@
       <figcaption>The chat is on the left and the viewer on the right. The bars start grey, turn blue when you suggest a change, and the version counter ticks from 1 to 2. Then the TDS bar appears and the two buttons show up.</figcaption>
     </figure>
 
-    <h3 style="margin-top:1.8rem">Coming next <span class="tag">Planned</span></h3>
-    <p class="sub">These fixes are planned for pages. They do not change how you use them. They just make pages more dependable.</p>
+    <h3 style="margin-top:1.8rem">Added recently <span class="tag">New</span></h3>
+    <p class="sub">These fixes make pages more dependable. You use pages the same way as before.</p>
     <div class="nextgrid">
-      <div class="next"><h3>Links open in a new tab</h3><p>Today, clicking a link inside a page shows a stop sign. Soon the website will open in a new browser tab instead.</p></div>
-      <div class="next"><h3>Pages made by scripts still show</h3><p>Sometimes Claude saves a page by running a small program instead of the usual way. The app will spot those pages too.</p></div>
-      <div class="next"><h3>Borrowed code kept fresh</h3><p>Pages often borrow ready-made code, like borrowing a cookbook. The app keeps a copy. A copy with no version number gets renewed after a week. If the internet is down, the old copy still works.</p></div>
-      <div class="next"><h3>An honest "works offline" label</h3><p>A page that fetches extra code when you open it will say it needs the internet. The "works offline" label will only appear when it is true.</p></div>
-      <div class="next"><h3>Leftover files swept away</h3><p>If the app stops half-way through saving, a scrap of file can be left behind. When the app starts, it will clear away old scraps.</p></div>
-      <div class="next"><h3>More automatic checks</h3><p>New tests will follow the whole journey, from asking to downloading, the way you do. One check that sometimes failed for no reason is being fixed.</p></div>
+      <div class="next"><h3>Links open in a new tab</h3><p>Clicking a link inside a page opens the website in a new browser tab.</p></div>
+      <div class="next"><h3>Pages made by scripts still show</h3><p>Sometimes Claude saves a page by running a small program instead of the usual way. The app spots those pages too.</p></div>
+      <div class="next"><h3>Borrowed code kept fresh</h3><p>Pages often borrow ready-made code, like borrowing a cookbook. The app keeps a copy. A copy that doesn't say how old it is gets renewed after a week. If the internet is down, the old copy still works.</p></div>
+      <div class="next"><h3>An honest "works offline" label</h3><p>A page that fetches extra code when you open it says it needs the internet. The "works offline" label only appears when it is true.</p></div>
+      <div class="next"><h3>Leftover files swept away</h3><p>If the app stops half-way through saving, a scrap of file can be left behind. When the app starts, it clears away old scraps.</p></div>
+      <div class="next"><h3>More automatic checks</h3><p>New tests follow the whole journey, from asking to downloading, the way you do. One check that sometimes failed for no reason is fixed.</p></div>
     </div>
     <p class="today">One idea, not decided yet: pointing at part of a page and saying "change this".</p>
   </section>

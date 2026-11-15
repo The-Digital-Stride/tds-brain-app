@@ -387,7 +387,9 @@ describe('opening a document', () => {
     violate('frame-src https://example.com');
     // Stopped, not reloaded: a page that leaves as soon as it opens would otherwise reload for ever.
     expect(container.querySelector('iframe')).toBeNull();
-    expect(screen.getByText('This page tried to open another site, so it was stopped.')).toBeTruthy();
+    expect(
+      screen.getByText('This page tried to move the viewer to another site, so it was stopped.'),
+    ).toBeTruthy();
     expect(screen.getByText('Links to other sites are switched off here.').getAttribute('role')).toBe(
       'status',
     );

@@ -360,7 +360,7 @@ export function PageStage({
           </p>
         ) : frameStopped ? (
           <div className="notice" data-level="warning">
-            <p>This page tried to open another site, so it was stopped.</p>
+            <p>This page tried to move the viewer to another site, so it was stopped.</p>
             <button type="button" className="btn" onClick={() => setReloads((n) => n + 1)}>
               Show the page again
             </button>

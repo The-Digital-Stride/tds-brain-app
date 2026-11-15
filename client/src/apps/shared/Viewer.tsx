@@ -122,7 +122,7 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
           <div className="card lib-page">
             {stopped ? (
               <div className="notice" data-level="warning">
-                <p>This page tried to open another site, so it was stopped.</p>
+                <p>This page tried to move the viewer to another site, so it was stopped.</p>
                 <button
                   type="button"
                   className="btn"

@@ -305,7 +305,9 @@ describe('the page viewer', () => {
     expect(document.querySelector('iframe')).toBe(frame);
     fireEvent.load(frame);
     expect(document.querySelector('iframe')).toBeNull();
-    expect(screen.getByText('This page tried to open another site, so it was stopped.')).toBeTruthy();
+    expect(
+      screen.getByText('This page tried to move the viewer to another site, so it was stopped.'),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Show the page again' }));
     expect(document.querySelector('iframe')).not.toBeNull();
   });

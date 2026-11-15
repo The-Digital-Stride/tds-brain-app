@@ -118,3 +118,24 @@ replay from Help, Dock manifest name. Ian tries **Review app update** on one Mac
   carries the **Review app update** step in words (Chrome's own menu can't be photographed by the script, so
   `dock-app` describes it in words too).
 - **G starts after R, T and W**, so **Take the tour**, **Skip tour** and the new labels exist for the label check.
+
+## Review outcomes (2026-11-15)
+
+- **Security** (1, fixed): `validatePrefsPatch` refused `tourSeen` and `whatsNewSeen`, so the tour would have
+  shown on every load. Both now pass validation (bad values get a 400), with a test through the real route. The
+  sign-in, install, doctor and signed-out page behave as before; the keep-list holds (the guard pins it).
+- **Correctness** (3, fixed by the lead, each with a test): a brand-new person now also gets `whatsNewSeen` saved
+  when the tour ends, so they never see old notes; a tour interrupted by the palette asks again instead of being
+  lost; the tour moves to Home when it starts from Settings.
+- **UX/UI** (9, fixed): **Back** uses `aria-disabled` on the first step; a live region reads "Step N of M: title";
+  the dialog has `aria-modal`; focus falls back to `#main` if its starting point has gone; `[` is blocked while the
+  tour shows; the spotlight follows its anchor when the layout changes; the focus ring uses `--focus`; the step
+  words say ⌘K; the card offers "Stuck? Open Help" and "It only takes a moment".
+- **Copy** (4 plus the brain-skills wording, fixed): page wording matched to the new labels and timings.
+- **Label check**: **Review app update** is Chrome's own menu, not the app's, so it is allowed (`BROWSER_ALLOW`).
+- **Browser checks** (demo app): tour 7 steps, focus and announcements right, no repeat after **Done** and reload,
+  replay from Help, Esc closes; the What's new card shows at 0.40.0, **Close** moves focus to the message box and
+  it stays closed after reload; no page errors.
+- **Overseer**: signed off. Still Ian's step before pushing: try **Review app update** on one Mac.
+- **Known small gaps (Phase 4)**: if the chat list fails to load, an existing person is treated as new (they get
+  the new-person welcome); blocking by a floating drawer is untested in the browser.

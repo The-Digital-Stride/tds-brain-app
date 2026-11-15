@@ -780,3 +780,73 @@ describe('itemForPath', () => {
     expect(await brain.libraryItemForPath?.('personal/x.md')).toBeNull();
   });
 });
+
+describe('the Templates area', () => {
+  function brain(): string {
+    const root = tempDir();
+    put(root, 'personal/note.md');
+    return root;
+  }
+
+  it('is listed after personal when templates/ is a real folder, even with no clients/', async () => {
+    const root = brain();
+    put(root, 'templates/readme.md');
+    const l = lib(root);
+    const all = await l.scopes();
+    expect(all.map((s) => s.id)).toEqual(['personal', 'shared:templates']);
+    expect(all[1]).toMatchObject({ name: 'Templates', kind: 'shared' });
+  });
+
+  it('is absent when templates/ is missing or a symbolic link', async () => {
+    const root = brain();
+    expect((await lib(root).scopes()).map((s) => s.id)).toEqual(['personal']);
+    const outside = tempDir();
+    put(outside, 'x.md');
+    symlinkSync(outside, join(root, 'templates'));
+    expect((await lib(root).scopes()).map((s) => s.id)).toEqual(['personal']);
+  });
+
+  it('groups loose files under "Templates" first, then folders, with no client rules', async () => {
+    const root = brain();
+    put(root, 'templates/readme.md');
+    put(root, 'templates/reports/r.md');
+    put(root, 'templates/emails/e.md');
+    const listing = await lib(root).list('shared:templates');
+    expect(listing?.groups).toEqual(['Templates', 'Emails', 'Reports']);
+  });
+
+  it('hides AGENTS.md and CLAUDE.md in templates (listing and by id) but not in personal', async () => {
+    const root = brain();
+    put(root, 'templates/AGENTS.md');
+    put(root, 'templates/sub/claude.md');
+    put(root, 'templates/ok.md');
+    put(root, 'personal/CLAUDE.md');
+    const l = lib(root);
+    const t = await l.list('shared:templates');
+    expect(t?.items.map((i) => i.path)).toEqual(['templates/ok.md']);
+    const p = await l.list('personal');
+    expect(p?.items.map((i) => i.path).sort()).toEqual(['personal/CLAUDE.md', 'personal/note.md']);
+    // An id built by hand for a hidden file cannot fetch it.
+    expect(await l.file(idFor('shared:templates', 'templates/AGENTS.md'))).toBeNull();
+    expect(await l.file(idFor('personal', 'personal/CLAUDE.md'))).not.toBeNull();
+  });
+
+  it('refreshes on a change under templates/ and leaves the client areas alone', async () => {
+    const root = brain();
+    put(root, 'templates/a.md');
+    put(root, `${ACME}reports/r.md`);
+    const l = lib(root);
+    l.setLive('templates', true);
+    l.setLive('clients', true);
+    await l.list('shared:templates');
+    await l.list('client:acme-heating');
+    put(root, 'templates/b.md');
+    put(root, `${ACME}reports/s.md`);
+    l.changed('templates/b.md');
+    expect((await l.list('shared:templates'))?.items.map((i) => i.name)).toEqual(['a.md', 'b.md']);
+    expect((await l.list('client:acme-heating'))?.items.map((i) => i.name)).not.toContain('s.md');
+    put(root, 'templates/c.md');
+    l.changed(null, 'templates');
+    expect((await l.list('shared:templates'))?.items.map((i) => i.name)).toContain('c.md');
+  });
+});

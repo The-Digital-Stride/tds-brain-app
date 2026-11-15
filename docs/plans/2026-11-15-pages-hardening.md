@@ -86,6 +86,50 @@ Bring the app explainer up to date with pages, animated and self-contained, so i
    respects reduced motion, loads nothing from the internet, works with JavaScript off, and reads at a 12-year-old's
    level. Plain: anyone can open it in the app, offline, and understand how it works.
 
+### Phase A follow-up: found in the user test (15 Nov 2026, user approved both)
+
+13. **Pages made any other way still show.** In the user test Claude built a 16:9 deck with a Python script
+    (`python3 make16.py`), so neither the Write path nor the Bash words (decision 5) saw the file. New rule in
+    `chat-files.ts`: when Claude's own reply (not a helper's) names a brain `.html` / `.htm` path, and that file's
+    modified time is not before the turn started (less `MTIME_SLACK_MS`), it goes through `pageWritten` like a Bash
+    page word (`writeIsPage: null`, so the copy's own `isRealPage` decides). The tool use id is a stable id for
+    that reply that live and replay both see. Replay does no time check and brings the page back only when live
+    kept a copy under that id (`heldOnly`), as decision 5 does. A path a Write, Edit or Bash already recorded as a
+    page in this turn is skipped, so naming a page Claude just wrote never adds a second version. At most
+    `CANDIDATES_MAX` paths per reply. Mentions of `templates/…` are linked as long paths, like `clients/` and `personal/`.
+    Plain: whatever way Claude makes a page, if it says where it saved it, the page opens in the app with branding,
+    versions and "Suggest a change".
+14. **Templates show in Documents.** The library gains one shared area, `{ id: 'shared:templates', name: 'Templates',
+    kind: 'shared' }`, for the brain's `templates/` folder, only when that is a real folder (not a link), read-only
+    like the rest of the library, with the same never-listed rules. The watcher watches `templates/` too
+    (`WatchFolder` gains `'templates'`). The Documents picker already lists `shared` areas under "Shared". Files are
+    grouped by first folder, as personal files are. Plain: the team's templates are listed in Documents, and a
+    template Claude names in a reply is a link that opens it.
+
+Overseer pre-review of 13 and 14 (folded in):
+- **Blocking, fixed in 13:** with `heldOnly`, the held copy alone decides, known page or not (today `pageWritten`
+  says yes for any known page before the held check), trying `port.keep` first as the settle step does. This also
+  closes decision 5's replay limit.
+- The id is the reply's `message.id` (`msg_…`, read in `event-map.ts`); no id, no page. The turn start is stamped
+  at live `boundary()` and read in `text()`; replay never stamps, and unset means skip.
+- The skip is a time rule inside the queued job: no draft this turn → mtime ≥ turn start less slack; a draft
+  exists → mtime later than when that draft's copy began. Only full `.html` paths from the brain root, no short names.
+- `shared/chat-files.ts` (`BARE_PATH`, `isScopedPath`, `scopeOf`) learns `templates/`; server `scoped` uses it.
+- 14: all four two-folder spots in `library.ts` (`live`, `folderOf`, `bumpFolder`, `changed`) learn `templates`;
+  client grouping rules apply only to `kind === 'client'`; loose files in Templates go in a first card named
+  "Templates"; `AGENTS.md` and `CLAUDE.md` are hidden in the Templates area only.
+- Known limit: a page first named in a later turn is not picked up (its link still opens it in Documents).
+
+Review of 13 and 14: security found nothing (reply paths get Write's own gate; ids can't reach a path; nothing writes
+to the brain; Templates hides the same files listed or opened by id). Correctness found two points, both kept as
+known limits:
+- After a Write, a reply-named page counts only if its mtime is later than that copy, with no slack. Adding the
+  slack copies a just-written page again and reloads the viewer; the case it covers (a script rewriting the page
+  within the same second, on a drive that stores whole seconds) doesn't happen, as Claude's steps are seconds apart.
+- In a chat large enough that old copies were cleared to make room, replay can drop a version that came from a
+  reply mention or a Bash run, so later versions renumber. Fix if it is ever seen: a per-chat list of ids that
+  became versions.
+
 ### Phase B: point-and-click (only on the user's yes)
 
 12. **Point at a part of the page to change it.** In the viewer, a "Point at something" mode lets the user click an

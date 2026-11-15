@@ -61,7 +61,7 @@ function withoutFences(text: string): string {
 const MD_LINK = /\[[^\]\n]*\]\(\s*(?:<([^>\n]*)>|([^\s)]*))[^)\n]*\)/g;
 const CODE_SPAN = /`([^`\n]+)`/g;
 const BARE_PATH =
-  /(?<![\w/.~-])((?:\/[^\s/`]+){0,32}?\/(?:clients|personal)\/[^\s`<>"]+|(?:clients|personal)\/[^\s`<>"]+)/g;
+  /(?<![\w/.~-])((?:\/[^\s/`]+){0,32}?\/(?:clients|personal|templates)\/[^\s`<>"]+|(?:clients|personal|templates)\/[^\s`<>"]+)/g;
 const MAX_SCAN = 100_000;
 const MAX_CANDIDATE = 1000;
 const TRAILING = /[.,;:!?)\]]+$/;
@@ -69,7 +69,7 @@ const TRAILING = /[.,;:!?)\]]+$/;
 /**
  * Candidate file paths in a finished reply, raw (not normalised), each once, in order of first
  * appearance: Markdown link targets that are not web addresses, inline code spans, and bare
- * paths that start `clients/`, `personal/` or the brain root and end in a file extension.
+ * paths that start `clients/`, `personal/`, `templates/` or the brain root and end in a file extension.
  * Text inside fenced code blocks is skipped. At most 200.
  */
 export function findPathMentions(text: string): string[] {
@@ -176,15 +176,24 @@ export function indexChatFiles(files: readonly ChatFile[]): ChatFileIndex {
 const FILE_NAME = /\.[A-Za-z0-9]{1,8}$/;
 const REPLY_FOLDERS_MAX = 20;
 
-/** True when a path names a client's or the person's own folder (`clients/…`, `personal/…`). */
+/**
+ * True when a path names a client's folder, the person's own or the shared templates
+ * (`clients/…`, `personal/…`, `templates/…`).
+ */
 export function isScopedPath(rel: string): boolean {
-  return rel.startsWith('clients/') || rel.startsWith('personal/') || rel === 'personal';
+  return (
+    rel.startsWith('clients/') ||
+    rel.startsWith('personal/') ||
+    rel.startsWith('templates/') ||
+    rel === 'personal' ||
+    rel === 'templates'
+  );
 }
 
 /**
  * The folders one reply names: each folder path it gives (`clients/acme/reports/`), and the folder of
  * each file it gives in full (`clients/acme/context/business.md` gives `clients/acme/context`). Only
- * under `clients/<client>` or `personal`, each once, in order. At most 20.
+ * under `clients/<client>`, `personal` or `templates`, each once, in order. At most 20.
  * `paths` are the reply's `findPathMentions`, each through `normaliseBrainPath` (null when it gave none).
  */
 export function replyFolders(paths: readonly (string | null)[]): string[] {
@@ -202,9 +211,10 @@ export function replyFolders(paths: readonly (string | null)[]): string[] {
   return out;
 }
 
-/** The client folder (`clients/acme`) or `personal` a scoped path is in. */
+/** The client folder (`clients/acme`), `templates` or `personal` a scoped path is in. */
 function scopeOf(rel: string): string {
-  return rel.startsWith('clients/') ? rel.split('/').slice(0, 2).join('/') : 'personal';
+  if (rel.startsWith('clients/')) return rel.split('/').slice(0, 2).join('/');
+  return rel === 'templates' || rel.startsWith('templates/') ? 'templates' : 'personal';
 }
 
 /**
@@ -213,7 +223,7 @@ function scopeOf(rel: string): string {
  * "all in `clients/acme/reports/`"). Nothing for a path that already names its scope. Never the
  * folder the chat worked in, nor one an earlier reply or step used: a lone `profile.md` may be any
  * client's, so it means one only when this reply says which. A reply naming folders of two clients
- * (or a client and `personal`) says nothing certain about which one a lone name means, so then only
+ * (or a client and `personal`, or `templates` and either) says nothing certain about which one a lone name means, so then only
  * `clients/` is tried.
  */
 export function shortPathPlaces(rel: string, folders: readonly string[]): string[] {

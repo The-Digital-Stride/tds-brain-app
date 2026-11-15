@@ -14,6 +14,7 @@ import { basename, resolve as resolvePath } from 'node:path';
 import {
   findPathMentions,
   findWebLinks,
+  isScopedPath,
   normaliseBrainPath,
   replyFolders,
   shortPathPlaces,
@@ -41,7 +42,7 @@ import {
   type ChatPage,
   PAGE_VERSIONS_MAX,
 } from '../../shared/pages-contract.ts';
-import { sourceShapeOk } from '../store/page-copies.ts';
+import { isCopyId, sourceShapeOk } from '../store/page-copies.ts';
 import { proposedChange } from './file-change.ts';
 
 export type ResolvePath = (
@@ -138,7 +139,10 @@ export interface ChatFilesTracker {
    *   Each touched page becomes one numbered version at the next `boundary`, named by the last tool
    *   use that touched it.
    * - text blocks of an `assistant` message with no parent (never a helper's text):
-   *   `findPathMentions` → `mentioned`; `findWebLinks` → links (same URL rules).
+   *   `findPathMentions` → `mentioned`; `findWebLinks` → links (same URL rules). Each full brain
+   *   `.html` / `.htm` path in it (at most CANDIDATES_MAX) goes through the page checks like a Bash
+   *   page word, under the reply's `message.id` (no id, no page): live, only when the file changed
+   *   this turn (decision 13); from history, only when live kept a copy under that id.
    * Marks the tracker dirty when anything changed. `history: true`: a stored message, so its kept
    * edits get `at: null`.
    */
@@ -188,7 +192,7 @@ const KEPT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 export const TRACKED_MAX = 1000;
 /** Tool uses waiting for a result (a long history can leave some unanswered). */
 export const PENDING_MAX = 500;
-/** Destinations tried per attachment in one Bash command, and files taken from one Bash command. */
+/** Destinations tried per attachment in one Bash command, files taken from one Bash command, and pages one reply names. */
 const CANDIDATES_MAX = 50;
 /** Short names looked up per reply. */
 const SHORT_MAX = 50;
@@ -247,7 +251,10 @@ interface PageWrite {
   /** The title from a Write's content, when it has one. */
   writeTitle: string | null;
   history: boolean;
-  /** From history only: a shell word is a guess, so the page exists only when live kept a copy under this tool use. */
+  /**
+   * From history only: a shell word or a path named in a reply is a guess, so the page (or a new
+   * version of a known one) exists only when live kept a copy under this id.
+   */
   heldOnly?: boolean;
 }
 
@@ -258,6 +265,8 @@ interface PageTouch {
   filePath: string;
   hasCopy: boolean;
   title: string | null;
+  /** Live: when the copy of this touch began (ms), so a later change to the file can be told apart. */
+  copyAt: number | null;
 }
 
 interface PageVersionRec {
@@ -685,6 +694,8 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   let pageQueue: Promise<void> = Promise.resolve();
   /** A page changed since the last snapshot listed them (kept apart from `dirty`: page work runs late). */
   let pagesDirty = false;
+  /** When the live turn began (ms), stamped at each live boundary; null until one (replay never stamps). */
+  let turnStart: number | null = null;
 
   function normalise(raw: unknown): string | null {
     if (typeof raw !== 'string') return null;
@@ -777,10 +788,16 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     }
   }
 
-  const scoped = (p: string) => p.startsWith('clients/') || p.startsWith('personal/');
+  // A bare `personal` or `templates` names a folder, not a file: left to the short names, as before.
+  const scoped = (p: string) => p.includes('/') && isScopedPath(p);
 
-  function text(body: string): void {
+  /** The first absolute brain root, which brain-relative paths are joined to. */
+  const rootAbs = roots.map((r) => r.trim().replace(/\/+$/, '')).find((r) => r.startsWith('/')) ?? null;
+
+  /** `replyId`: the API message the text is from, null when it has none. */
+  function text(body: string, history: boolean, replyId: string | null): void {
     const paths = findPathMentions(body).map(normalise);
+    replyPages(paths, history, replyId);
     const short: string[] = [];
     for (const p of paths) {
       if (!p) continue;
@@ -799,6 +816,47 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       dirty = true;
     }
     for (const url of findWebLinks(body)) addLink(url);
+  }
+
+  /**
+   * Pages the reply names by their full brain path (decision 13): a script may have made them, which
+   * neither Write nor the Bash words see. Only paths as written from the brain root; never short names.
+   */
+  function replyPages(paths: readonly (string | null)[], history: boolean, replyId: string | null): void {
+    if (replyId === null || !isCopyId(replyId) || rootAbs === null) return;
+    // Read now: the job runs later, maybe after the next boundary has stamped a new turn.
+    const since = turnStart;
+    if (!history && since === null) return;
+    const named = [...new Set(paths.filter((p): p is string => p !== null && /\.html?$/i.test(p)))];
+    for (const rel of named.slice(0, CANDIDATES_MAX)) {
+      const filePath = `${rootAbs}/${rel}`;
+      queuePage(async () => {
+        if (history) {
+          // Replay: no time check. A page comes back only if live kept a copy under this reply.
+          await pageWritten(replyId, {
+            filePath,
+            writeIsPage: null,
+            writeTitle: null,
+            history: true,
+            heldOnly: true,
+          });
+          return;
+        }
+        const at = await modified(filePath);
+        if (at === null || since === null) return;
+        const located = await port.locate(filePath);
+        const draft = located ? (pagesByPath.get(located)?.draft ?? null) : null;
+        // Touched already this turn: only a change after that touch's copy is new. Otherwise the
+        // file must have changed this turn, so naming an older page adds nothing. (No slack here:
+        // with it, naming a page just written would copy it again and reload the viewer; a script
+        // change within the same second as that copy is not a real case, as Claude's steps are
+        // seconds apart.)
+        if (draft !== null && draft.copyAt !== null) {
+          if (at <= draft.copyAt) return;
+        } else if (at < since - MTIME_SLACK_MS) return;
+        await pageWritten(replyId, { filePath, writeIsPage: null, writeTitle: null, history: false });
+      });
+    }
   }
 
   /** The brain path a shell word names from folder `cwd`, or null. */
@@ -883,7 +941,6 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       const reads = new Set<string>();
       const changes = new Set<string>();
       const pagePaths = new Set<string>();
-      const rootAbs = roots.map((r) => r.trim().replace(/\/+$/, '')).find((r) => r.startsWith('/')) ?? null;
       // A page word as an absolute path: as written, or from the shell's brain folder.
       const absPage = (w: string, here: string | null): string | null => {
         if (!/\.html?$/i.test(w) || !fileWord(w) || w.startsWith('~')) return null;
@@ -1008,6 +1065,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     history: boolean,
     copied: { title: string } | null,
     title: string | null,
+    copyAt: number | null,
   ): void {
     page.filePath = filePath;
     page.order = ++counter;
@@ -1020,6 +1078,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       filePath,
       hasCopy: copied !== null,
       title: copied?.title || title,
+      copyAt,
     };
     pagesDirty = true;
   }
@@ -1029,7 +1088,15 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     if (!located) return;
     const known = pagesByPath.get(located) ?? null;
     const key = known?.key ?? pageKeyOf(located);
+    if (w.heldOnly === true) {
+      // Replay of a guess: the held copy alone decides, known page or not, or a known page would gain
+      // a version for every replayed mention of it.
+      if (!(await heldCopy(key, id))) return;
+      touchPage(known ?? newPage(located, w.filePath), id, w.filePath, w.history, null, w.writeTitle, null);
+      return;
+    }
     // Live: the file as it is now is exactly what this write left.
+    const copyAt = w.history ? null : Date.now();
     const copied = w.history ? null : await port.draft(key, id, w.filePath, known === null);
     let isPage: boolean;
     if (known) isPage = true;
@@ -1040,11 +1107,20 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       // An edit from history: the file as it is now or, when that no longer says so (the source is
       // gone), a copy live kept under this tool use, so replay finds the page the live chat had.
       const held = (await port.held(key, id).catch(() => null)) !== null;
-      isPage = held || (w.heldOnly !== true && (await port.isPage(w.filePath)) === true);
+      isPage = held || (await port.isPage(w.filePath)) === true;
     }
     if (!isPage) return;
     const page = known ?? newPage(located, w.filePath);
-    touchPage(page, id, w.filePath, w.history, copied, w.writeTitle);
+    touchPage(page, id, w.filePath, w.history, copied, w.writeTitle, copyAt);
+  }
+
+  /** Whether a copy live kept under `id` is on disk; an in-progress one left by a crash is kept first, as the settle step does. */
+  async function heldCopy(key: string, id: string): Promise<boolean> {
+    if (await port.held(key, id).catch(() => null)) return true;
+    const kept = await port.keep(key, id).catch(() => null);
+    if (!kept) return false;
+    dropEvicted(kept.evicted);
+    return (await port.held(key, id).catch(() => null)) !== null;
   }
 
   async function pagePublished(
@@ -1065,8 +1141,9 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     // claude.ai keeps a page's capabilities and files on a redeploy that leaves them out.
     page.live ||= publish.live;
     page.multiFile ||= publish.multiFile;
+    const copyAt = history ? null : Date.now();
     const copied = history ? null : await port.draft(page.key, id, publish.filePath, false);
-    touchPage(page, id, publish.filePath, history, copied, null);
+    touchPage(page, id, publish.filePath, history, copied, null, copyAt);
   }
 
   async function closePages(history: boolean): Promise<void> {
@@ -1455,15 +1532,17 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         const parent = typeof message.parent_tool_use_id === 'string' && message.parent_tool_use_id !== '';
         const content = isRec(message.message) ? message.message.content : undefined;
         if (message.type === 'assistant') {
+          const replyId =
+            isRec(message.message) && typeof message.message.id === 'string' ? message.message.id : null;
           if (typeof content === 'string') {
-            if (!parent) text(content);
+            if (!parent) text(content, history, replyId);
             return;
           }
           if (!Array.isArray(content)) return;
           for (const b of content) {
             if (!isRec(b)) continue;
             if (b.type === 'text' && typeof b.text === 'string') {
-              if (!parent) text(b.text);
+              if (!parent) text(b.text, history, replyId);
             } else if (
               b.type === 'tool_use' &&
               typeof b.id === 'string' &&
@@ -1524,6 +1603,8 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
 
     boundary(o) {
       const history = o?.history === true;
+      // Live, a boundary starts the next turn (beginTurn); a reply's pages are measured from it.
+      if (!history) turnStart = Date.now();
       queuePage(() => closePages(history));
     },
 

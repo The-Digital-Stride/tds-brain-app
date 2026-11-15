@@ -27,6 +27,7 @@ import {
   extOf,
   type FileClass,
   groupFor,
+  isHiddenInTemplates,
   isNeverListed,
   orderGroups,
   tidyFileName,
@@ -49,7 +50,7 @@ const MAX_ID_LENGTH = 400;
 const HASH_LENGTH = 24;
 const META_FILE = 'library-meta.json';
 
-export type WatchFolder = 'clients' | 'personal';
+export type WatchFolder = 'clients' | 'personal' | 'templates';
 
 export interface LibraryOptions {
   /** The brain's clients, as `BrainReaders.clients()` gives them. */
@@ -416,7 +417,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   const gens = new Map<string, number>();
   /** One build per scope at a time, with the generation it started at. */
   const inflight = new Map<string, { gen: number; promise: Promise<Entry> }>();
-  const live: Record<WatchFolder, boolean> = { clients: false, personal: false };
+  const live: Record<WatchFolder, boolean> = { clients: false, personal: false, templates: false };
 
   let meta: Map<string, MetaEntry> | null = null;
   let metaLoad: Promise<Map<string, MetaEntry>> | null = null;
@@ -491,6 +492,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       return [];
     }
     const out: ScopeDef[] = [{ id: 'personal', name: PERSONAL_NAME, kind: 'personal', folder: 'personal' }];
+    // The shared Templates area stands on its own: it needs `templates/` to be a real folder, not `clients/`.
+    if (await isRealFolder('templates')) {
+      out.push({ id: 'shared:templates', name: 'Templates', kind: 'shared', folder: 'templates' });
+    }
     // `clients/` itself must be the real folder in the brain: if it is a link elsewhere, no names
     // from there may appear.
     if (!(await isRealFolder('clients'))) return out;
@@ -532,7 +537,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   }
 
   function folderOf(scope: ScopeDef): WatchFolder {
-    return scope.kind === 'personal' ? 'personal' : 'clients';
+    return scope.kind === 'personal' ? 'personal' : scope.kind === 'shared' ? 'templates' : 'clients';
   }
 
   async function walk(scope: ScopeDef): Promise<{ found: Found[]; truncated: boolean }> {
@@ -570,7 +575,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         if (name.startsWith('.')) continue;
         const relInScope = dir.rel ? `${dir.rel}/${name}` : name;
         const rel = `${scope.folder}/${relInScope}`;
-        if (isNeverListed(rel)) continue;
+        if (isNeverListed(rel) || (scope.kind === 'shared' && isHiddenInTemplates(rel))) continue;
         let isDir = d.isDirectory();
         let isFile = d.isFile();
         if (d.isSymbolicLink()) continue;
@@ -721,7 +726,13 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   function bumpFolder(folder: WatchFolder): void {
     const ids = new Set([...cache.keys(), ...inflight.keys(), ...gens.keys()]);
     for (const id of ids) {
-      if (folder === 'personal' ? id === 'personal' : id.startsWith('client:')) bump(id);
+      const own =
+        folder === 'personal'
+          ? id === 'personal'
+          : folder === 'templates'
+            ? id === 'shared:templates'
+            : id.startsWith('client:');
+      if (own) bump(id);
     }
   }
 
@@ -730,6 +741,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const rel = item.path;
     const prefix = `${scope.folder}/`.toLowerCase();
     if (isNeverListed(rel) || !rel.toLowerCase().startsWith(prefix)) return null;
+    if (scope.kind === 'shared' && isHiddenInTemplates(rel)) return null;
     const abs = join(root, ...rel.split('/'));
     try {
       const l = await fs.lstat(abs);
@@ -740,6 +752,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       if (!isInside(real, base) || real === base) return null;
       const relReal = relative(base, real).split(sep).join('/');
       if (isNeverListed(relReal) || !relReal.toLowerCase().startsWith(prefix)) return null;
+      if (scope.kind === 'shared' && isHiddenInTemplates(relReal)) return null;
       const ext = extOf(basename(real));
       const cls = classify(ext);
       if (!cls || ext !== item.ext) return null;
@@ -990,6 +1003,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       }
       const segs = rel.split('/');
       if (segs[0] === 'personal') bump('personal');
+      else if (segs[0] === 'templates') bump('shared:templates');
       else if (segs[0] === 'clients') {
         if (segs[1]) bump(`client:${segs[1]}`);
         else bumpFolder('clients');

@@ -41,6 +41,7 @@ import {
   type SetBrainResponse,
   type SetupCandidatesResponse,
 } from '../../shared/install-contract.ts';
+import { type SavingsSummary, USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import type {
   ChatLevelRequest,
   LevelTier,
@@ -184,6 +185,8 @@ export const api = {
       tier,
     } satisfies ChatLevelRequest),
   chatContext: (sessionId: string) => request<ChatContextDetail>('GET', ROUTES.chatContext(sessionId)),
+  /** Tokens saved and reused, for Settings. */
+  usageSavings: () => request<SavingsSummary>('GET', USAGE_SAVINGS_PATH),
   updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
   updateStart: () =>

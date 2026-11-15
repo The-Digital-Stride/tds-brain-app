@@ -284,3 +284,7 @@ Both are on the rail in every build.
 `--accent` and `--accent-ink`→`--blue-ink`, `--accent-wash`→`--wash`, `--card`→`#fff`,
 `--text-soft`→`--iron`, `--radius`→`14px`, `--radius-sm`→`10px`, spacing as mapped above. They stay
 defined in `tokens.css` as aliases until no file uses them; the lead removes them last.
+
+## Tokens saved (Settings)
+
+A plain Settings section: an `h2`, `h3` labels, a `dl.kv` for the figures and `setting-help` text. Saved tokens and tokens reused from the cache are always separate lines. No team figure is shown. Token counts use `tokenWords` (k, M, B).

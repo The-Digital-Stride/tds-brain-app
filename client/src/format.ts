@@ -96,6 +96,9 @@ export function keptLineText(level: TurnLevel): string | null {
 
 /** Tokens for people: 9300 → "9.3k", 1200000 → "1.2M", under a thousand as they are. */
 export function tokenWords(n: number): string {
+  // Round first here too, so 999,950,000 reads "1B", never "1000M".
+  if (n >= 1_000_000_000 || Math.round(n / 100_000) / 10 >= 1000)
+    return `${Math.round(n / 100_000_000) / 10}B`;
   // Round first, so 999,950 reads "1M", never "1000k".
   if (n >= 1_000_000 || Math.round(n / 100) / 10 >= 1000) return `${Math.round(n / 100_000) / 10}M`;
   if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
@@ -173,4 +176,12 @@ export function helperMeta(h: LiveHelper, now: number): string {
   if (!Number.isNaN(start) && !Number.isNaN(end))
     parts.push(elapsedWords(end - start).replace(/ /g, '\u00a0'));
   return parts.join(' · ');
+}
+
+/** "3 Nov 2026" from a YYYY-MM-DD day; anything else comes back as it is. */
+export function dayWords(iso: string): string {
+  const d = dayNumber(iso);
+  if (d === null) return iso;
+  const date = new Date(d * DAY_MS);
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }

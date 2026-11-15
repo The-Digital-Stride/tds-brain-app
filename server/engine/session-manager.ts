@@ -57,6 +57,13 @@ import {
   UPLOAD_TYPES,
 } from '../../shared/contract.ts';
 import {
+  BUILT_IN_KITS,
+  type Kit,
+  type KitId,
+  type KitPick,
+  type KitTracker,
+} from '../../shared/kits-contract.ts';
+import {
   type ChatLevelRecord,
   type ChatLevelStore,
   FALLBACK_TIER,
@@ -103,6 +110,8 @@ import {
   withHelpersNudge,
   withoutHelpersNudge,
 } from './helpers.ts';
+import { createKitPicker, type KitPicker } from './kit-picker.ts';
+import { pluginOfSkill, rulePick } from './kits.ts';
 import { createLevelPicker, type LevelPicker, pickNeed } from './level-picker.ts';
 import {
   hasOwnLevel,
@@ -236,6 +245,15 @@ export interface SessionManagerOptions {
    * self-contained (R8). Without it the branded copy keeps them as addresses.
    */
   assets?: AssetCache;
+  /**
+   * Start-up kits in shadow mode and the token ledger (plan 2026-11-15-startup-kits). Told what each
+   * chat does; it never changes the engine's options (decision 13). Without it nothing is recorded.
+   */
+  kitTracker?: KitTracker;
+  /** The kits now, for a typed plugin skill's rule pick. Default: the built-in kits. */
+  kits?: () => Promise<Readonly<Record<KitId, Kit>>>;
+  /** Picks a new work chat's kit from its first message (its own query, never the level pick's). */
+  kitPicker?: KitPicker;
 }
 
 /** A page wrapped in the TDS bar, ready to save or file. */
@@ -796,12 +814,25 @@ interface Session {
   modelHook: 'unknown' | 'seen' | 'missing';
   /** An automatic downward switch is being held: the tier running and the one wanted. */
   kept: { running: LevelTier; wanted: LevelTier } | null;
+  // Start-up kits (plan 2026-11-15-startup-kits): the tracker hears from a chat once its engine has
+  // started and until it closes, never before or after.
+  kitStarted: boolean;
+  kitClosed: boolean;
+  /** The first message's kit is still to be decided. */
+  kitFirst: boolean;
+  /** A brand-new chat whose start-up has not been read yet (decision 7). */
+  kitStartup: boolean;
 }
 
 type Rec = Record<string, unknown>;
 
 function isRec(v: unknown): v is Rec {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** The name of a typed `/name` at the start of a message, or null. */
+function typedSkill(text: string): string | null {
+  return /^\/([A-Za-z0-9][\w.:-]*)(?:\s|$)/.exec(text.trimStart())?.[1] ?? null;
 }
 
 function parseQuestions(input: Rec): AskQuestion[] {
@@ -895,6 +926,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   /** 'manual' until told otherwise, so callers that never pass it keep v0.19.0 behaviour. */
   let levelMode: LevelMode = 'manual';
   const levels = opts.levels ?? null;
+  const kitTracker = opts.kitTracker ?? null;
+  const kitPicker: KitPicker | null = kitTracker
+    ? (opts.kitPicker ?? createKitPicker({ query: opts.engine.query, claudePath: opts.claudePath, env, log }))
+    : null;
   const picker: LevelPicker | null = levels
     ? (opts.picker ?? createLevelPicker({ query: opts.engine.query, claudePath: opts.claudePath, env, log }))
     : null;
@@ -1157,6 +1192,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       switchHookFired: false,
       modelHook: 'unknown',
       kept: null,
+      kitStarted: false,
+      kitClosed: false,
+      kitFirst: true,
+      kitStartup: false,
     };
     // Pages need no library: with copies on, a chat lists its pages even where files can't be looked up.
     if (resolveFile || opts.pageCopies) {
@@ -1438,6 +1477,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         // Queued behind any copy still going to the old folder, so that copy moves too.
         if (was) void onPagesChain(s, (store) => store.rename(was, sid));
         s.sdkSessionId = sid;
+        kitFor(s)?.onRekey(was ?? s.id, sid);
         if (s.unsavedLevel) saveLevel(s, s.unsavedLevel);
         // A personal chat is saved under every id it gets (the old entry stays).
         if (s.kind === 'personal') void chatKinds.set(sid, 'personal');
@@ -1462,6 +1502,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.files?.observe(raw);
     notifyHelpers(s.helperList.observe(raw));
     observeContext(s, raw);
+    // Live stream only: a reopened chat's history never reaches the tracker (decisions 1 and 8).
+    kitFor(s)?.onMessage(
+      kitKey(s),
+      raw,
+      raw.parent_tool_use_id !== null && raw.parent_tool_use_id !== undefined,
+    );
     // A helper call our hook allowed but another rule then stopped never runs: free its slot.
     if (raw.type === 'system' && raw.subtype === 'permission_denied' && typeof raw.tool_use_id === 'string') {
       dropHelper(s, raw.tool_use_id);
@@ -1482,7 +1528,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.files?.endTurn();
       requestFiles(s);
       // Decision 4: after turn-end, never before it, and never waited for.
-      if (s.query) void readContext(s, s.query, null);
+      const read = s.query ? readContext(s, s.query, null) : Promise.resolve();
+      kitTurnEnd(s, read);
     } else if (endsStepOrReply(raw)) {
       requestFiles(s);
     }
@@ -1600,6 +1647,112 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const reading: ContextEvent = { ...stored, source: 'stored' };
     s.context = reading;
     emit(s, reading);
+  }
+
+  // -- start-up kits in shadow mode (plan 2026-11-15-startup-kits) -------------
+  // Call sites only: what to record, and when, is the tracker's (`server/engine/kits.ts`). Nothing
+  // here changes the engine's options (decision 13).
+
+  /** The tracker's key for a chat: the engine's id once known, else the app's own (re-keyed at init). */
+  function kitKey(s: Session): string {
+    return s.sdkSessionId ?? s.id;
+  }
+
+  /** The tracker, while this chat is its to hear about: from its engine's start until it closes. */
+  function kitFor(s: Session): KitTracker | null {
+    return kitTracker && s.kitStarted && !s.kitClosed ? kitTracker : null;
+  }
+
+  /** The chat's first engine start. An engine started again after a failure is the same chat. */
+  function kitStart(s: Session): void {
+    if (!kitTracker || s.kitClosed) return;
+    if (s.kitStarted) {
+      // Its start-up now includes the history: not a new chat's start-up any more.
+      s.kitStartup = false;
+      return;
+    }
+    s.kitStarted = true;
+    const resumed = s.sdkSessionId !== null;
+    s.kitStartup = !resumed;
+    // A reopened chat already had its first message: never pick its kit from a later one.
+    if (resumed) s.kitFirst = false;
+    kitTracker.onStart(kitKey(s), { kind: s.kind, resumed });
+  }
+
+  async function kitsNow(): Promise<Readonly<Record<KitId, Kit>>> {
+    try {
+      return opts.kits ? await opts.kits() : BUILT_IN_KITS;
+    } catch {
+      return BUILT_IN_KITS;
+    }
+  }
+
+  /**
+   * Decision 6 (revised after the level-pick gate), for the chat's first message: a typed plugin
+   * skill's rule wins; else the kit picker's own one-shot answer for a work chat (late is fine: shadow
+   * data). The level pick is never involved, so its prompt and tiers are exactly as before. No answer:
+   * the tracker's fallback.
+   */
+  function settleKit(s: Session, typed: string | null, text: string, tier: LevelTier | null): void {
+    if (!kitFor(s)) return;
+    void (async () => {
+      const rule = typed && pluginOfSkill(typed) !== null ? rulePick(typed, await kitsNow()) : null;
+      const pick: KitPick | null =
+        rule ?? (kitPicker && s.kind !== 'personal' ? await kitPicker.pick(text) : null);
+      const tracker = kitFor(s);
+      if (tracker && pick) tracker.onPick(kitKey(s), pick, tier);
+    })().catch(() => log("Could not note a chat's start-up kit."));
+  }
+
+  /** A finished reply: the tracker hears at once; a brand-new chat's start-up is read once, after it. */
+  function kitTurnEnd(s: Session, read: Promise<unknown>): void {
+    const tracker = kitFor(s);
+    if (!tracker) return;
+    // The reading known now (from the reply's own usage), so the turn counts before anything else can happen.
+    const percent = usageReading(s, null)?.percent ?? s.context?.percent ?? null;
+    tracker.onTurnEnd(kitKey(s), { percent });
+    if (!s.kitStartup) return;
+    s.kitStartup = false;
+    // After the turn-end read, so the engine answers one read at a time.
+    void read.then(
+      () => readStartup(s),
+      () => readStartup(s),
+    );
+  }
+
+  /**
+   * Decision 7: one `full` read of a new chat's start-up, between replies only and within the Context
+   * panel's limit, which it shares. Skipped when a new reply started first or the chat is closing.
+   */
+  async function readStartup(s: Session): Promise<void> {
+    const q = s.query;
+    const now = Date.now();
+    const due = s.detailAt === null || now - s.detailAt >= CONTEXT_DETAIL_MIN_INTERVAL_MS;
+    if (!q || typeof q.getContextUsage !== 'function' || !due || s.turnRunning || s.closing || !kitFor(s)) {
+      return;
+    }
+    s.detailAt = now;
+    let res: unknown = null;
+    try {
+      res = await withTimeout(q.getContextUsage({ detail: 'full' }), CONTEXT_DETAIL_TIMEOUT_MS);
+    } catch {
+      res = null;
+    }
+    if (res === null || res === undefined) {
+      log("Could not read a new chat's start-up.");
+      return;
+    }
+    // The panel answers from these until its own next read is due.
+    const items = contextItems(res);
+    if (items.length > 0 && !s.closing) s.detailItems = items;
+    kitFor(s)?.onStartup(kitKey(s), res);
+  }
+
+  /** Close or idle close: the tracker hands off in the background, never waited for. */
+  function kitClose(s: Session): void {
+    const tracker = kitFor(s);
+    s.kitClosed = true;
+    tracker?.onClose(kitKey(s));
   }
 
   // -- decision 10: keeping the model -----------------------------------------
@@ -1949,7 +2102,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
   /** Refuses a typed `/name` the person's role can't run; answers the name of a brain skill it can, else null. */
   async function checkSkill(text: string): Promise<string | null> {
-    const name = /^\/([A-Za-z0-9][\w.:-]*)(?:\s|$)/.exec(text.trimStart())?.[1];
+    const name = typedSkill(text);
     if (!name) return null;
     const identity = await opts.brain.identity();
     const access = await opts.brain.skillAccess(identity, name);
@@ -2009,6 +2162,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         : { type: 'user-message', messageId, text },
     );
     if (needsEngine) {
+      kitStart(s);
       try {
         startEngine(s);
       } catch (err) {
@@ -2021,13 +2175,19 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.files?.addAttachments(files.map(({ name, kind, path }) => ({ name, kind, stagedPath: path })));
       requestFiles(s);
     }
+    const typed = typedSkill(text);
+    const kit = kitFor(s);
+    if (kit && typed) kit.onTypedSkill(kitKey(s), typed);
+    const kitFirst = kit !== null && s.kitFirst;
+    if (kit) s.kitFirst = false;
     const message = withPageNote(withAttachmentNote(text, files), pageNote);
     if (!levels) {
+      if (kitFirst) settleKit(s, typed, pickText(text, files), null);
       s.turnSent = true;
       s.input?.push(message);
       return;
     }
-    sendWhenLevelled(s, message, text, files, skill);
+    sendWhenLevelled(s, message, text, files, skill, kitFirst);
   }
 
   // -- levels (plan 2026-11-14-skill-levels-and-helpers) ------------------------
@@ -2187,6 +2347,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     text: string,
     files: readonly StagedFile[],
     skill: string | null,
+    kitFirst = false,
   ): void {
     const input = s.input;
     const q = s.query;
@@ -2197,6 +2358,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         const before = s.pick;
         const { resolved, unlevelled } = await levelFor(s, skill, { text, files });
         s.turnTier = resolved.level.tier;
+        // The kit is the tracker's, set once: never through adoptPick's raise-only rule.
+        if (kitFirst) settleKit(s, typedSkill(text), pickText(text, files), s.turnTier);
         // Decision 11: the message a helpers pick was made for, once, at Standard or above.
         // Never for a /skill: Claude Code would file the nudge inside the skill's arguments.
         nudge =
@@ -2472,6 +2635,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   function closeSession(s: Session): Promise<void> {
     if (s.closed) return s.closed;
     s.closing = true;
+    kitClose(s);
     live.delete(s.id);
     closedIds.add(s.id);
     // Its pages stay viewable for a while (the viewer may still be open on one).
@@ -3004,6 +3168,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       }
       s.kind = kind;
       if (s.sdkSessionId) void chatKinds.set(s.sdkSessionId, kind);
+      kitFor(s)?.onKind(kitKey(s), kind);
       notifyChanged();
       return snapshot(s);
     },

@@ -27,6 +27,7 @@ import type {
   TodoItem,
   TodoList,
 } from '../../shared/contract.ts';
+import type { Kit, KitId, KitPick, KitTracker } from '../../shared/kits-contract.ts';
 import type {
   ChatLevelRecord,
   ChatLevelStore,
@@ -55,6 +56,7 @@ import {
   ISOLATION_REASON,
   PER_REPLY_REASON,
 } from './helpers.ts';
+import type { KitPicker } from './kit-picker.ts';
 import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
@@ -280,6 +282,49 @@ async function expectCode(p: Promise<unknown>, code: string): Promise<void> {
   expect((err as SessionError).code).toBe(code);
 }
 
+/** Records every call the session manager makes on the start-up kit tracker, in order. */
+/** Never answers: the default in tests, so no kit pick ever reaches the fake engine. */
+const SILENT_KIT_PICKER: KitPicker = { pick: () => new Promise<KitPick>(() => {}) };
+
+/** Answers with `answer` (a promise for a late one) and counts the texts it was asked about. */
+function fakeKitPicker(answer: KitPick | Promise<KitPick>) {
+  const asked: string[] = [];
+  return {
+    asked,
+    picker: {
+      pick: async (text: string) => {
+        asked.push(text);
+        return answer;
+      },
+    } as KitPicker,
+  };
+}
+
+function fakeKitTracker(over: Partial<KitTracker> = {}) {
+  const calls: { m: keyof KitTracker; args: unknown[] }[] = [];
+  const rec =
+    (m: keyof KitTracker) =>
+    (...args: unknown[]) => {
+      calls.push({ m, args });
+    };
+  const tracker: KitTracker = {
+    onStart: rec('onStart'),
+    onKind: rec('onKind'),
+    onRekey: rec('onRekey'),
+    onPick: rec('onPick'),
+    onTypedSkill: rec('onTypedSkill'),
+    onMessage: rec('onMessage'),
+    onStartup: rec('onStartup'),
+    onTurnEnd: rec('onTurnEnd'),
+    onClose: rec('onClose'),
+    flushPending: async () => {},
+    ...over,
+  };
+  const of = (m: keyof KitTracker) => calls.filter((c) => c.m === m).map((c) => c.args);
+  const order = () => calls.map((c) => c.m).filter((m) => m !== 'onMessage');
+  return { tracker, calls, of, order };
+}
+
 let mgr: SessionManager & LevelSessionApi;
 
 function setup(
@@ -301,10 +346,16 @@ function setup(
     contextReadings?: ContextReadingStore;
     pageCopies?: PageCopyStore;
     assets?: AssetCache;
+    kitTracker?: KitTracker;
+    kits?: () => Promise<Readonly<Record<KitId, Kit>>>;
+    kitPicker?: KitPicker;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    kitTracker: opts.kitTracker,
+    kits: opts.kits,
+    kitPicker: opts.kitPicker ?? SILENT_KIT_PICKER,
     contextReadings: opts.contextReadings,
     pageCopies: opts.pageCopies,
     assets: opts.assets,
@@ -2496,6 +2547,8 @@ describe('levels', () => {
       switchHook?: { usd: number; warm?: boolean };
       usage?: () => Promise<unknown>;
       lines?: string[];
+      kitTracker?: KitTracker;
+      kitPicker?: KitPicker;
     } = {},
   ) {
     const log: string[] = [];
@@ -2576,6 +2629,8 @@ describe('levels', () => {
         },
       },
       picker: o.noPicker ? undefined : picker,
+      kitTracker: o.kitTracker,
+      kitPicker: o.kitPicker,
     });
     return { ...fx, log, picks, prewarmed, saved };
   }
@@ -3984,6 +4039,113 @@ describe('levels', () => {
     expect(fx.log).toEqual(['model:opus', 'effort:high']);
     expect(lastLevel(s.id)).toMatchObject({ tier: 'deep', kept: { wanted: 'standard' } });
   });
+
+  describe('the start-up kit pick (plan 2026-11-15-startup-kits, decision 6 as revised)', () => {
+    it("asks the kit picker once, on the first message only, never with the level pick's reason", async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      let n = 0;
+      setupLevels({
+        kitTracker: kit.tracker,
+        kitPicker: kp.picker,
+        picks: () => ready(n++ === 0 ? QUICK : DEEP),
+      });
+      await auto();
+      const s = await mgr.start({ prompt: 'Check my inbox for the Urban Cooling reply' });
+      await flush();
+      await mgr.send(s.id, 'Now audit their whole website, every page, and write up everything you find');
+      await flush();
+      const first = kit.of('onStart')[0]?.[0];
+      expect(kp.asked).toEqual(['Check my inbox for the Urban Cooling reply']);
+      expect(kit.of('onPick')).toEqual([[first, { kit: 'core', how: 'auto' }, 'quick']]);
+      expect(kit.of('onRekey')).toEqual([[first, 'sdk-new-1']]);
+      expect(JSON.stringify(kit.calls)).not.toContain(QUICK.reason);
+    });
+
+    it('a late kit answer still sets the kit, and a fallback answer is passed on as it is', async () => {
+      let arrive: (p: KitPick) => void = () => {};
+      const late = new Promise<KitPick>((r) => {
+        arrive = r;
+      });
+      const kit = fakeKitTracker();
+      setupLevels({
+        kitTracker: kit.tracker,
+        kitPicker: fakeKitPicker(late).picker,
+        picks: () => ready(STANDARD),
+      });
+      await auto();
+      await mgr.start({ prompt: 'Write the newsletter' });
+      await flush();
+      expect(kit.of('onPick')).toEqual([]);
+      expect(kit.of('onTurnEnd')).toHaveLength(1);
+      arrive({ kit: 'full', how: 'fallback' });
+      await flush();
+      expect(kit.of('onPick')).toEqual([['sdk-new-1', { kit: 'full', how: 'fallback' }, 'standard']]);
+    });
+
+    it('a chat that never runs the level picker still gets a kit pick (manual mode)', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'ads', how: 'auto' });
+      const fx = setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
+      const s = await mgr.start({ prompt: 'Check the Google Ads account' });
+      await flush();
+      await mgr.send(s.id, 'and the next one');
+      await flush();
+      expect(fx.picks).toEqual([]);
+      expect(kp.asked).toHaveLength(1);
+      // Manual mode has no automatic tier to note.
+      expect(kit.of('onPick')).toEqual([[kit.of('onStart')[0]?.[0], { kit: 'ads', how: 'auto' }, null]]);
+    });
+
+    it('a typed plugin skill picks by rule and never asks the kit picker', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
+      await auto();
+      await mgr.start({ prompt: '/superpowers:brainstorm a new landing page' });
+      await flush();
+      const first = kit.of('onStart')[0]?.[0];
+      expect(kit.of('onTypedSkill')).toEqual([[first, 'superpowers:brainstorm']]);
+      expect(kit.of('onPick')).toEqual([[first, { kit: 'web', how: 'rule' }, 'quick']]);
+      expect(kp.asked).toEqual([]);
+    });
+
+    it("a typed brain skill decides nothing: the kit picker's answer stands", async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'ads', how: 'auto' });
+      setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(STANDARD) });
+      await auto();
+      await mgr.start({ prompt: '/unlevelled for the April campaign report' });
+      await flush();
+      const first = kit.of('onStart')[0]?.[0];
+      expect(kit.of('onTypedSkill')).toEqual([[first, 'unlevelled']]);
+      expect(kit.of('onPick')).toEqual([[first, { kit: 'ads', how: 'auto' }, 'standard']]);
+    });
+
+    it('a reopened chat is never sent to the kit picker', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      const fx = setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
+      fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+      await auto();
+      const s = await mgr.start({ resume: 'old-1' });
+      await mgr.send(s.id, 'And ROAS?');
+      await flush();
+      expect(kit.of('onStart')).toEqual([['old-1', { kind: 'tds', resumed: true }]]);
+      expect(kp.asked).toEqual([]);
+      expect(kit.of('onPick')).toEqual([]);
+    });
+
+    it('a personal chat is never sent to the kit picker', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      setup(undefined, { kitTracker: kit.tracker, kitPicker: kp.picker });
+      await mgr.start({ prompt: 'private', todoId: 'personal/20261111-mine.md' });
+      await flush();
+      expect(kp.asked).toEqual([]);
+      expect(kit.of('onPick')).toEqual([]);
+    });
+  });
 });
 
 const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;
@@ -5273,5 +5435,364 @@ describe('the page note', () => {
     ]) {
       expect(splitPageNote(text)).toBe(text);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Start-up kits in shadow mode and the token ledger (plan 2026-11-15-startup-kits): call sites only
+// ---------------------------------------------------------------------------
+
+describe('start-up kits (shadow mode)', () => {
+  type Usage = (opts?: { detail?: 'summary' | 'full' }) => Promise<unknown>;
+  const SUMMARY = { totalTokens: 48_000, rawMaxTokens: 200_000, isAutoCompactEnabled: false };
+  const FULL = {
+    ...SUMMARY,
+    categories: [
+      { id: 'messages', name: 'Messages', tokens: 20_000, kind: 'used' },
+      { id: 'skills', name: 'Skills', tokens: 9_000, kind: 'used' },
+    ],
+  };
+  type Spied = FakeQuery & { getContextUsage?: Usage; toggleMcpServer?: (...a: unknown[]) => Promise<void> };
+
+  /** Records every context read; `full` answers FULL unless `full` says otherwise. */
+  function reads(o: { summary?: Usage; full?: Usage } = {}) {
+    const asked: string[] = [];
+    const toggled: unknown[][] = [];
+    const decorate = (q: FakeQuery) => {
+      const c = q as Spied;
+      c.getContextUsage = async (opts) => {
+        const detail = opts?.detail ?? 'summary';
+        asked.push(detail);
+        if (detail === 'full') return o.full ? o.full(opts) : FULL;
+        return o.summary ? o.summary(opts) : SUMMARY;
+      };
+      c.toggleMcpServer = async (...a: unknown[]) => {
+        toggled.push(a);
+      };
+    };
+    return { asked, toggled, decorate, fulls: () => asked.filter((d) => d === 'full').length };
+  }
+
+  /** Everything in the engine's options a test can compare (functions by name only). */
+  function plainOptions(o: Options | undefined): unknown {
+    return JSON.parse(JSON.stringify(o ?? {}, (_k, v: unknown) => (typeof v === 'function' ? 'fn' : v)));
+  }
+
+  it('leaves the engine options exactly as they were (decision 13)', async () => {
+    const without = setup(undefined, { decorate: reads().decorate });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const before = plainOptions(without.queries[0]?.options);
+    await mgr.closeAll();
+
+    const r = reads();
+    const kit = fakeKitTracker();
+    const withKits = setup(undefined, { decorate: r.decorate, kitTracker: kit.tracker });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const o = withKits.queries[0]?.options;
+    expect(plainOptions(o)).toEqual(before);
+    expect(o).not.toHaveProperty('enabledPlugins');
+    expect(o).not.toHaveProperty('skillOverrides');
+    expect(JSON.stringify(o?.settings ?? {})).not.toMatch(/enabledPlugins|skillOverrides/);
+    expect(r.toggled).toEqual([]);
+    // Nothing was switched off, but the tracker did hear about the chat.
+    expect(kit.of('onStart')).toHaveLength(1);
+  });
+
+  it('starts, re-keys at init, and ends the turn under the engine id', async () => {
+    const kit = fakeKitTracker();
+    setup(undefined, { kitTracker: kit.tracker });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const first = kit.of('onStart')[0]?.[0];
+    expect(first).toBe(s.id);
+    expect(kit.of('onStart')).toEqual([[s.id, { kind: 'tds', resumed: false }]]);
+    expect(kit.of('onRekey')).toEqual([[s.id, 'sdk-new-1']]);
+    expect(kit.of('onTurnEnd')).toEqual([['sdk-new-1', { percent: null }]]);
+    expect(kit.order()).toEqual(['onStart', 'onRekey', 'onTurnEnd']);
+    await mgr.setKind(s.id, 'personal');
+    expect(kit.of('onKind')).toEqual([['sdk-new-1', 'personal']]);
+    // No picker and no typed skill: the tracker keeps its own fallback.
+    expect(kit.of('onPick')).toEqual([]);
+  });
+
+  it("passes the reply's context percent at turn end when it is known", async () => {
+    const kit = fakeKitTracker();
+    setup(
+      ({ q, turn }) => {
+        q.init();
+        q.emit({
+          type: 'assistant',
+          message: { id: `m_${turn}`, model: 'claude-test', content: [], usage: { input_tokens: 50_000 } },
+          parent_tool_use_id: null,
+        });
+        q.emit({
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          duration_ms: 5,
+          result: 'ok',
+          errors: [],
+          modelUsage: { 'claude-test': { contextWindow: 200_000 } },
+        });
+      },
+      { kitTracker: kit.tracker },
+    );
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(kit.of('onTurnEnd')).toEqual([['sdk-new-1', { percent: 25 }]]);
+  });
+
+  it("reads a new chat's start-up in full once, after its first reply, sharing the panel's limit", async () => {
+    const r = reads();
+    const kit = fakeKitTracker();
+    setup(undefined, { decorate: r.decorate, kitTracker: kit.tracker });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(r.asked).toEqual(['summary', 'full']);
+    expect(kit.of('onStartup')).toEqual([['sdk-new-1', FULL]]);
+    expect(kit.order()).toEqual(['onStart', 'onRekey', 'onTurnEnd', 'onStartup']);
+    // The Context panel shares the limit: it answers from this read's items without asking again.
+    const detail = await (mgr.contextDetail as (id: string) => Promise<ChatContextDetail>)(s.id);
+    expect(detail.approximate).toBe(true);
+    expect(detail.items.map((i) => i.group)).toEqual(['messages', 'skills']);
+    await mgr.send(s.id, 'more');
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await mgr.send(s.id, 'and more');
+    await flush();
+    expect(r.fulls()).toBe(1);
+    expect(kit.of('onStartup')).toHaveLength(1);
+    expect(kit.of('onTurnEnd')).toHaveLength(3);
+  });
+
+  it('starts the tracker once when the engine stream ends and restarts, and never reads start-up twice', async () => {
+    const r = reads();
+    const kit = fakeKitTracker();
+    const fx = setup(
+      async ({ q, turn }) => {
+        q.init();
+        if (fx.queries.length === 1 && turn === 0) {
+          q.finish();
+          return;
+        }
+        q.result();
+      },
+      { decorate: r.decorate, kitTracker: kit.tracker },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.send(s.id, 'again');
+    await flush();
+    expect(fx.queries).toHaveLength(2);
+    expect(kit.of('onStart')).toHaveLength(1);
+    expect(kit.of('onStartup')).toEqual([]);
+    expect(r.fulls()).toBe(0);
+  });
+
+  it('never reads the start-up of a reopened chat', async () => {
+    const r = reads();
+    const kit = fakeKitTracker();
+    const fx = setup(undefined, { decorate: r.decorate, kitTracker: kit.tracker });
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier chat', lastModified: 1_700_000_000_000 });
+    const s = await mgr.start({ resume: 'old-1' });
+    await mgr.send(s.id, 'And ROAS?');
+    await flush();
+    expect(kit.of('onStart')).toEqual([['old-1', { kind: 'tds', resumed: true }]]);
+    expect(kit.of('onRekey')).toEqual([]);
+    expect(kit.of('onTurnEnd')).toHaveLength(1);
+    expect(r.fulls()).toBe(0);
+    expect(kit.of('onStartup')).toEqual([]);
+  });
+
+  it('skips the start-up read when the next reply starts first, and never holds up turn-end or the next send', async () => {
+    let answerSummary: (v: unknown) => void = () => {};
+    const r = reads({
+      summary: () =>
+        new Promise((res) => {
+          answerSummary = res;
+        }),
+    });
+    const kit = fakeKitTracker();
+    const fx = setup(
+      async ({ q, turn }) => {
+        q.init();
+        q.text(`msg_${turn}`, `Reply ${turn}`);
+        if (turn === 0) q.result();
+        else await new Promise<void>(() => {});
+      },
+      { decorate: r.decorate, kitTracker: kit.tracker },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    // Turn-end is out and counted while the turn-end read is still waiting.
+    expect(events(mgr, s.id).some((e) => e.type === 'turn-end')).toBe(true);
+    expect(kit.of('onTurnEnd')).toHaveLength(1);
+    await mgr.send(s.id, 'next');
+    await flush();
+    expect(fx.queries[0]?.received).toEqual(['hi', 'next']);
+    answerSummary(SUMMARY);
+    await flush();
+    expect(r.fulls()).toBe(0);
+    expect(kit.of('onStartup')).toEqual([]);
+  });
+
+  it('a slow start-up read never holds up the next send', async () => {
+    const r = reads({ full: () => new Promise(() => {}) });
+    const kit = fakeKitTracker();
+    const fx = setup(undefined, { decorate: r.decorate, kitTracker: kit.tracker });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(r.fulls()).toBe(1);
+    await mgr.send(s.id, 'next');
+    await flush();
+    expect(fx.queries[0]?.received).toEqual(['hi', 'next']);
+    expect(kit.of('onTurnEnd')).toHaveLength(2);
+    // It times out quietly: nothing reaches the tracker.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(kit.of('onStartup')).toEqual([]);
+  });
+
+  it('feeds live messages to the tracker, helpers marked, and never the replayed history', async () => {
+    const boundary = {
+      type: 'system',
+      subtype: 'compact_boundary',
+      uuid: 'b-1',
+      compact_metadata: { trigger: 'auto', pre_tokens: 150_000, post_tokens: 20_000 },
+      parent_tool_use_id: null,
+    };
+    const main = {
+      type: 'assistant',
+      message: { id: 'm1', content: [], usage: { cache_read_input_tokens: 30_000 } },
+      parent_tool_use_id: null,
+    };
+    const helper = {
+      type: 'assistant',
+      message: {
+        id: 'h1',
+        content: [{ type: 'tool_use', id: 't1', name: 'mcp__claude_ai_Gmail__search', input: {} }],
+        usage: { cache_read_input_tokens: 90_000 },
+      },
+      parent_tool_use_id: 'toolu_helper',
+    };
+    const kit = fakeKitTracker();
+    const fx = setup(
+      ({ q }) => {
+        q.init();
+        q.emit(helper);
+        q.emit(main);
+        q.emit(boundary);
+        q.result();
+      },
+      { kitTracker: kit.tracker },
+    );
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier chat', lastModified: 1_700_000_000_000 });
+    fx.history['old-1'] = [
+      { type: 'system', uuid: 'b-0', message: null, parent_tool_use_id: null },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: { role: 'assistant', id: 'm0', content: [], usage: { cache_read_input_tokens: 5_000 } },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    await flush();
+    expect(kit.calls).toEqual([]);
+    await mgr.send(s.id, 'carry on');
+    await flush();
+    const fed = kit.of('onMessage');
+    expect(fed.every(([key]) => key === 'old-1')).toBe(true);
+    const seen = fed.map(([, raw, isHelper]) => [(raw as { type: string }).type, isHelper]);
+    expect(seen).toEqual([
+      ['system', false],
+      ['assistant', true],
+      ['assistant', false],
+      ['system', false],
+      ['result', false],
+    ]);
+    expect(fed[1]?.[1]).toBe(helper);
+    expect(fed[3]?.[1]).toBe(boundary);
+  });
+
+  it('closes on close, never waiting for the hand-off, and hears nothing after', async () => {
+    const kit = fakeKitTracker({
+      // A hand-off that never finishes must not hold up the close.
+      onClose: (key) => {
+        kit.calls.push({ m: 'onClose', args: [key] });
+        void new Promise(() => {});
+      },
+    });
+    setup(
+      async ({ q, turn }) => {
+        q.init();
+        if (turn === 0) q.result();
+        else await new Promise<void>(() => {});
+      },
+      { kitTracker: kit.tracker },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.send(s.id, 'a long one');
+    await flush();
+    const closing = mgr.close(s.id);
+    expect(kit.of('onClose')).toEqual([['sdk-new-1']]);
+    await flush();
+    await vi.runAllTimersAsync();
+    await closing;
+    expect(kit.order().at(-1)).toBe('onClose');
+    expect(kit.of('onTurnEnd')).toHaveLength(1);
+  });
+
+  it('closes on idle close and closeAll, once each, and not for a chat that never started', async () => {
+    const kit = fakeKitTracker();
+    let n = 0;
+    const fx = setup(undefined, {
+      kitTracker: kit.tracker,
+      decorate: (q) => {
+        if (!q.options.resume) q.sid = `sdk-new-${++n}`;
+      },
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    await flush();
+    expect((await mgr.list()).live).toHaveLength(0);
+    expect(kit.of('onClose')).toEqual([['sdk-new-1']]);
+
+    fx.past.push({ sessionId: 'old-2', summary: 'Another', lastModified: 1_700_000_000_000 });
+    await mgr.start({ resume: 'old-2' });
+    await mgr.start({ prompt: 'second' });
+    await flush();
+    const all = mgr.closeAll();
+    expect(kit.of('onClose')).toEqual([['sdk-new-1'], ['sdk-new-2']]);
+    await flush();
+    await vi.runAllTimersAsync();
+    await all;
+    // The reopened chat that never sent anything never started: nothing to close.
+    expect(kit.of('onStart').map(([key]) => key)).not.toContain('old-2');
+    expect(kit.of('onClose')).toHaveLength(2);
+  });
+
+  it('a typed plugin skill picks by rule even without levels, from the kits read now', async () => {
+    const kit = fakeKitTracker();
+    const kits = vi.fn(async () => {
+      const { BUILT_IN_KITS } = await import('../../shared/kits-contract.ts');
+      return { ...BUILT_IN_KITS, core: { ...BUILT_IN_KITS.core, plugins: ['superpowers'] } };
+    });
+    setup(undefined, { kitTracker: kit.tracker, kits });
+    const s = await mgr.start({ prompt: '/superpowers:brainstorm ideas' });
+    await flush();
+    expect(kits).toHaveBeenCalledTimes(1);
+    expect(kit.of('onPick')).toEqual([['sdk-new-1', { kit: 'core', how: 'rule' }, null]]);
+    // Only the first message picks; later typed skills only count as used.
+    await mgr.send(s.id, '/vercel:deploy now');
+    await flush();
+    expect(kit.of('onPick')).toHaveLength(1);
+    expect(kit.of('onTypedSkill').map(([, name]) => name)).toEqual([
+      'superpowers:brainstorm',
+      'vercel:deploy',
+    ]);
   });
 });

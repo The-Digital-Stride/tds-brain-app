@@ -1018,6 +1018,9 @@
   font-size: 14px;
   font-weight: 500;
 }
+.settings h3.setting-label {
+  margin-top: 16px; /* spacing step: sub-blocks in a section */
+}
 .setting-help {
   margin-top: 2px;
   font-size: 12px;

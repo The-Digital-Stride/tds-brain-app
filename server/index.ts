@@ -10,6 +10,7 @@ import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-ag
 import { APP_HOST, DEFAULT_PORT } from '../shared/contract.ts';
 import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
 import type { LevelSources } from '../shared/levels-contract.ts';
+import { createAppUsage } from './brain/app-usage.ts';
 import { appStateFor, decideBrain } from './brain/decide.ts';
 import { createBrainReaders } from './brain/index.ts';
 import { checkBrain, findBrainCandidates } from './brain/locate.ts';
@@ -27,6 +28,7 @@ import {
   demoRefusalLine,
   scrubSecretEnv,
 } from './engine/demo-guard.ts';
+import { createKitTracker, loadKits, projectServers } from './engine/kits.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
 import { createTrashSession } from './engine/trash-session.ts';
@@ -53,10 +55,13 @@ import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createContextReadingStore } from './store/context-readings.ts';
+import { createKitShadowStore } from './store/kit-shadow.ts';
 import { createPageCopies, type PageCopyStore } from './store/page-copies.ts';
+import { createTokenSavingsStore } from './store/token-savings.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
+import { createSavings } from './usage/savings.ts';
 
 // The update's boot check (`bin/node server/index.ts --check`): reaching here means every import loaded.
 // Nothing below this line has run, so no config is read and nothing is created or started.
@@ -124,6 +129,9 @@ const engine: EngineFns = demoMode
     };
 
 const store = createAppStore(config.dataDir);
+// The token savings ledger (plan 2026-11-15-startup-kits, decisions 1-3): one count every tool feeds,
+// in the app's data folder. Shown in Settings in setup mode too (empty until a chat counts something).
+const savings = createSavings({ store: createTokenSavingsStore(config.dataDir, log) });
 
 /**
  * The real readers, thumbnailer, upload staging and session manager on a checked brain; in setup mode,
@@ -137,6 +145,7 @@ function buildBrainSide(path: string | null) {
       uploads: createSetupUploads(),
       sessions: createSetupSessions(),
       pageCopies: null,
+      kitTracker: null,
     };
   }
   // Checked once, and the same answer given to both: the list offers document pictures only where they can be made.
@@ -163,8 +172,28 @@ function buildBrainSide(path: string | null) {
     roots: [path],
     log,
   });
+  // Start-up kits in shadow mode (decisions 5-13): records which kit each chat would have needed and
+  // switches nothing off. The kits and the brain's own servers are read fresh, read only.
+  const appUsage = createAppUsage({
+    brainRoot: () => path,
+    dataDir: config.dataDir,
+    appVersion: config.appVersion,
+    log,
+  });
+  const kitTracker = createKitTracker({
+    savings,
+    store: createKitShadowStore(config.dataDir, log),
+    handoff: (id, record) => appUsage.send(id, record),
+    resolveKits: async () => {
+      const [kits, servers] = await Promise.all([loadKits(path), projectServers(path)]);
+      return { kits, keep: { projectServers: servers } };
+    },
+    log,
+  });
   const sessions = createSessionManager({
     ...levelOptions,
+    kitTracker,
+    kits: () => loadKits(path),
     brain,
     brainRoot: path,
     claudePath: config.claudePath,
@@ -180,10 +209,10 @@ function buildBrainSide(path: string | null) {
     // A branded copy's CDN scripts and Google Fonts, fetched once into the data folder (R8).
     assets: createAssetCache({ dataDir: config.dataDir }),
   });
-  return { brain, thumbs, uploads, sessions, skillLevels, pageCopies };
+  return { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker };
 }
 
-const { brain, thumbs, uploads, sessions, skillLevels, pageCopies } = buildBrainSide(brainPath);
+const { brain, thumbs, uploads, sessions, skillLevels, pageCopies, kitTracker } = buildBrainSide(brainPath);
 // The model and effort chosen in Settings reach new chats from the first one; never blocks start-up.
 void store
   .get()
@@ -252,6 +281,7 @@ const app = createAppServer({
   setup,
   log,
   clientPickTally: createClientPickTally(config.dataDir),
+  savings,
 });
 
 app.server.on('error', (err: NodeJS.ErrnoException) => {
@@ -281,6 +311,8 @@ app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
   sweepPageCopies();
   sweepTempFiles();
+  // Chats not yet handed to the brain (decision 10): in the background, never holding up start-up.
+  void kitTracker?.flushPending();
   updater.startTimer();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');

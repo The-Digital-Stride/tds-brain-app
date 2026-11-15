@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveHelper } from '../../shared/contract.ts';
 import {
+  dayWords,
   dueInWords,
   EFFORT_OPTION_WORDS,
   elapsedWords,
@@ -151,5 +152,15 @@ describe('keptLineText and tokenWords', () => {
   });
   it('rounds up to millions near a million, never "1000k"', () => {
     expect([999_950, 999_999, 967_000].map(tokenWords)).toEqual(['1M', '1M', '967k']);
+  });
+});
+
+describe('tokenWords above a thousand million, and dayWords', () => {
+  it('uses B for billions, never "1500M"', () => {
+    expect([1_500_000_000, 999_960_000, 12_340_000_000].map(tokenWords)).toEqual(['1.5B', '1B', '12.3B']);
+  });
+  it('writes a day for people', () => {
+    expect(dayWords('2026-11-03')).toBe('3 Nov 2026');
+    expect(dayWords('nonsense')).toBe('nonsense');
   });
 });

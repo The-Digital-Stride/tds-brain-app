@@ -12,12 +12,14 @@ import {
   MAX_ATTACHMENTS,
   ROUTES,
   SESSION_COOKIE,
+  sessionCookieName,
   TODO_SCRIPT,
   type TodoList,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
+import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import { LINK_SCRIPT_TAG } from '../../shared/page-links.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
@@ -1874,6 +1876,71 @@ describe('GET file changes of a chat (chat files)', () => {
     expect(bad.json.error.code).toBe('bad-request');
     expect(bad.asked).toEqual([]);
     expect((await call(ROUTES.sessionFileChanges('chat-1', 'client:acme.abc/1'), 'POST')).status).toBe(405);
+  });
+});
+
+describe('GET /api/usage/savings', () => {
+  const PORT = 45879;
+  const TOKEN = 'launch-token-savings';
+  const full = {
+    since: '2026-11-15',
+    today: { saved: 100, reused: 5, bySource: { summary: 100, cache: 5 } },
+    last7: { saved: 100, reused: 5, bySource: { summary: 100, cache: 5 } },
+    last30: { saved: 100, reused: 5, bySource: { summary: 100, cache: 5 } },
+    all: { saved: 100, reused: 5, bySource: { summary: 100, cache: 5 } },
+    kitsMode: 'shadow',
+    team: null,
+  };
+
+  async function call(method: string, ctx: Record<string, unknown>) {
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:${PORT}${USAGE_SAVINGS_PATH}`),
+      { log: () => {}, ...ctx } as unknown as RouteContext,
+    );
+    return { ...sent, json: JSON.parse(sent.body) };
+  }
+
+  it('answers the ledger summary, with team null', async () => {
+    const r = await call('GET', { savings: { summary: async () => full } });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual(full);
+    expect(r.json.team).toBeNull();
+  });
+
+  it('answers an empty summary when there is no ledger (older contexts)', async () => {
+    const r = await call('GET', {});
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({
+      since: null,
+      team: null,
+      kitsMode: 'shadow',
+      all: { saved: 0, reused: 0 },
+    });
+  });
+
+  it('is GET only', async () => {
+    expect((await call('POST', { savings: { summary: async () => full } })).status).toBe(405);
+  });
+
+  it('goes through the request gate: no session cookie is refused, a valid one is allowed', () => {
+    const ctx = { port: PORT, launchToken: TOKEN };
+    const base = { method: 'GET', path: USAGE_SAVINGS_PATH, headers: { host: `127.0.0.1:${PORT}` } };
+    expect(checkRequest(base, ctx)).toMatchObject({ action: 'reject', status: 401 });
+    const cookie = `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`;
+    expect(checkRequest({ ...base, headers: { ...base.headers, cookie } }, ctx)).toEqual({ action: 'allow' });
   });
 });
 

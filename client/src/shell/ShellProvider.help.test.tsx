@@ -78,13 +78,18 @@ describe('ShellProvider: opening Help', () => {
     expect(api.state).toMatchObject({ drawer: 'help', helpPage: 'skills' });
   });
 
-  it.each(['team', 'scout', 'unknown'])('does nothing for %s', (role) => {
+  it.each(['team', 'scout', 'unknown'])('opens for %s too', (role) => {
     setStore({ boot: { identity: { role } } });
     mount();
     press('h');
-    press('?', { shiftKey: true });
-    act(() => api.dispatch({ type: 'toggle-drawer', drawer: 'help' }));
-    act(() => api.dispatch({ type: 'open-help', page: 'home' }));
+    expect(api.state).toMatchObject({ drawer: 'help', helpPage: 'home' });
+    press('h');
     expect(api.state.drawer).toBeNull();
+    press('?', { shiftKey: true });
+    expect(api.state.drawer).toBe('help');
+    act(() => api.dispatch({ type: 'toggle-drawer', drawer: 'help' }));
+    expect(api.state.drawer).toBeNull();
+    act(() => api.dispatch({ type: 'open-help', page: 'home' }));
+    expect(api.state).toMatchObject({ drawer: 'help', helpPage: 'home' });
   });
 });

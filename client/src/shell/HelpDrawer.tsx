@@ -30,7 +30,7 @@ const rows = (topics: readonly HelpTopic[], onOpen: (id: string) => void) => (
 );
 
 /**
- * The Help drawer (owners only for now). The page for where you are, then one fold per area, with search above
+ * The Help drawer, for everyone. The page for where you are, then one fold per area, with search above
  * that replaces both while it has text. Opening a page from a link or row pushes the one before onto a small
  * history; Back pops it.
  */

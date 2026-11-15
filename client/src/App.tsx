@@ -65,7 +65,7 @@ const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
 function SheetContent() {
   const { view, activeChat, boot } = useStore();
   if (view === 'guide') {
-    // The Guide is owners only for now; anyone else lands on Home.
+    // Whoever helpVisible turns away (nobody, since 2026-11-15) lands on Home.
     if (!helpVisible(boot?.identity.role ?? 'unknown')) return <Home />;
     return (
       <>

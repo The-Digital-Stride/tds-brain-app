@@ -197,7 +197,7 @@ describe('Palette', () => {
     expect(options()[0]?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('lists Help under Go to for an owner, and not for the team', async () => {
+  it('lists Help and Cortex Guide under Go to for everyone', async () => {
     api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     await openPalette();
@@ -206,7 +206,8 @@ describe('Palette', () => {
     api.bootstrap.mockResolvedValue(boot);
     await renderHome();
     await openPalette();
-    expect(screen.queryByRole('option', { name: /^Help/ })).toBeNull();
+    expect(screen.getByRole('option', { name: /^Help/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^Cortex Guide/ })).toBeTruthy();
   });
 
   it('opens the Help drawer on a help page an owner picks, and the Guide from Go to', async () => {
@@ -356,7 +357,14 @@ describe('Palette', () => {
     await openPalette();
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     fireEvent.change(input(), { target: { value: 'sett' } });
-    expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toEqual(['Settings']);
+    expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toEqual([
+      'Settings',
+      'Settings',
+      'Letting Cortex change to-dos',
+      'Welcome to TDS Cortex',
+      'Picking the client',
+      'What Claude did',
+    ]);
     expect(selectedLabel()).toBe('Settings');
     fireEvent.change(input(), { target: { value: 'zzzz' } });
     expect(options()).toHaveLength(0);
@@ -406,10 +414,10 @@ describe('Palette', () => {
     expect(options().find((o) => o.textContent?.includes('Monthly'))?.textContent).toContain('Acme Heating');
   });
 
-  it('shows the T, C, S key hints', async () => {
+  it('shows the T, C, S, H key hints', async () => {
     await renderHome();
     await openPalette();
-    expect(document.querySelectorAll('.palette kbd')).toHaveLength(3);
+    expect(document.querySelectorAll('.palette kbd')).toHaveLength(4);
   });
 
   it('drops the key hints when single-key shortcuts are off', async () => {
@@ -420,6 +428,15 @@ describe('Palette', () => {
     expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toContain('To-dos');
   });
 });
+
+// Help pages that match "report" in the test library, listed after the other groups.
+const REPORT_HELP = [
+  'Welcome to TDS Cortex',
+  'Why TDS Cortex',
+  'A day with Cortex',
+  'What Claude did',
+  'Helpers',
+];
 
 describe('global search', () => {
   const docHit = (id: string, title: string) => ({
@@ -448,11 +465,13 @@ describe('global search', () => {
     await renderHome();
     await openPalette();
     expect(groupTitles()).toEqual(['Go to', 'To-dos', 'Open chats', 'Skills']);
-    expect(labelsOf().slice(0, 7)).toEqual([
+    expect(labelsOf().slice(0, 9)).toEqual([
       'Home',
       'To-dos',
       'Chats',
       'Skills',
+      'Help',
+      'Cortex Guide',
       'Settings',
       'Images',
       'Documents',
@@ -501,7 +520,7 @@ describe('global search', () => {
     await renderHome();
     await openPalette();
     fireEvent.change(input(), { target: { value: 'report' } });
-    expect(labelsOf()).toEqual(['Check the monthly reports', 'Monthly reports check']);
+    expect(labelsOf()).toEqual(['Check the monthly reports', 'Monthly reports check', ...REPORT_HELP]);
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     expect(selectedLabel()).toBe('Monthly reports check');
     await waitFor(() => expect(answer).toBeDefined(), { timeout: 2000 });
@@ -616,9 +635,9 @@ describe('global search', () => {
     });
     watch.observe(status, { childList: true, characterData: true, subtree: true });
     fireEvent.change(input(), { target: { value: 'report' } });
-    await waitFor(() => expect(said).toContain('3 results'), { timeout: 4000 });
+    await waitFor(() => expect(said).toContain('8 results'), { timeout: 4000 });
     watch.disconnect();
-    expect(said).toEqual(['2 results, still looking for more', '3 results']);
+    expect(said).toEqual(['7 results, still looking for more', '8 results']);
   });
 
   it('says it could not search files, rather than "Nothing matches", when the server search fails', async () => {
@@ -641,7 +660,7 @@ describe('global search', () => {
     const group = await screen.findByRole('group', { name: 'Documents' }, { timeout: 2000 });
     expect(within(group).getByText("Couldn't search")).toBeTruthy();
     expect(within(group).queryAllByRole('option')).toHaveLength(0);
-    expect(labelsOf()).toEqual(['Check the monthly reports', 'Monthly reports check']);
+    expect(labelsOf()).toEqual(['Check the monthly reports', 'Monthly reports check', ...REPORT_HELP]);
   });
 
   it('opens a file in its app: the folder, the item chosen and the viewer if it can be viewed', async () => {
@@ -832,7 +851,7 @@ describe('global search', () => {
           within(screen.getByRole('dialog'))
             .getAllByRole('status')
             .map((n) => n.textContent),
-        ).toContain('1 result'),
+        ).toContain('6 results'),
       { timeout: 3000 },
     );
   });
@@ -843,6 +862,13 @@ describe('global search', () => {
     await openPalette();
     fireEvent.change(input(), { target: { value: 'settings' } });
     await waitFor(() => expect(screen.queryByText('Searching…')).toBeNull());
-    expect(labelsOf()).toEqual(['Settings']);
+    expect(labelsOf()).toEqual([
+      'Settings',
+      'Settings',
+      'Welcome to TDS Cortex',
+      'Picking the client',
+      'What Claude did',
+      'Levels: Quick, Standard and Deep',
+    ]);
   });
 });

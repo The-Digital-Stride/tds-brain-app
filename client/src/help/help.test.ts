@@ -113,8 +113,7 @@ describe('help contexts', () => {
 });
 
 describe('who sees help', () => {
-  it('is hidden for every role but owner', () => {
-    for (const role of ['scout', 'team', 'unknown'] as Role[]) expect(helpVisible(role)).toBe(false);
-    expect(helpVisible('owner')).toBe(true);
+  it('is shown to every role', () => {
+    for (const role of ['owner', 'scout', 'team', 'unknown'] as Role[]) expect(helpVisible(role)).toBe(true);
   });
 });

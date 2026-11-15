@@ -38,10 +38,10 @@ describe('HelpLink', () => {
     expect(screen.getByRole('button').getAttribute('data-size')).toBe('28');
   });
 
-  it.each(['team', 'scout', 'unknown'])('is not shown for %s', (role) => {
+  it.each(['team', 'scout', 'unknown'])('is shown for %s', (role) => {
     as(role);
     render(<HelpLink page="todos" />);
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Help: To-dos' })).toBeTruthy();
   });
 
   it('is not shown for a page that does not exist', () => {

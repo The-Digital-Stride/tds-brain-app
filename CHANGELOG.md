@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.35.0 — 2026-11-15
+
+- **feat**: pinned to-dos, chats and files on Home, with a star on files
+
 ## v0.34.0 — 2026-11-15
 
 - **feat**: drag the pop-up viewer's left edge to make it wider

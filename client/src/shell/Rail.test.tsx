@@ -33,10 +33,10 @@ const todo = (id: string, by: string | null): TodoItem => ({
   version: 'v1',
 });
 
-function setStore(mine: TodoItem[], seen: Record<string, string> = {}) {
+function setStore(mine: TodoItem[], seen: Record<string, string> = {}, role = 'team') {
   store.current = {
     boot: {
-      identity: { slug: 'sam-example', name: 'Sam Example', role: 'team' },
+      identity: { slug: 'sam-example', name: 'Sam Example', role },
       prefs: { todoSeen: seen },
     },
     todos: { mine },
@@ -62,5 +62,22 @@ describe('Rail to-dos item', () => {
     const { container } = render(<Rail />);
     expect(screen.getByRole('button', { name: 'To-dos, 1 of yours' })).toBeTruthy();
     expect(container.querySelector('.rail-pip[data-new="true"]')).toBeNull();
+  });
+});
+
+describe('Rail Help item', () => {
+  it('is shown to an owner, above Settings', () => {
+    setStore([], {}, 'owner');
+    render(<Rail />);
+    const help = screen.getByRole('button', { name: 'Help' });
+    const settings = screen.getByRole('button', { name: 'Settings' });
+    expect(help.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(help.getAttribute('aria-keyshortcuts')).toBe('h');
+  });
+
+  it.each(['team', 'scout', 'unknown'])('is not shown to %s', (role) => {
+    setStore([], {}, role);
+    render(<Rail />);
+    expect(screen.queryByRole('button', { name: 'Help' })).toBeNull();
   });
 });

@@ -20,7 +20,7 @@ import type { SessionManager } from '../engine/session-manager.ts';
 import type { ClientPickTally } from '../store/client-pick-tally.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
 import type { SavingsService } from '../usage/savings.ts';
-import { handleApi, sendError, sendPageError } from './routes.ts';
+import { handleApi, type RouteContext, sendError, sendPageError } from './routes.ts';
 import {
   type AuthCodes,
   authExchange,
@@ -232,6 +232,8 @@ export interface ServerDeps {
   /** Single-use sign-in codes (A15). */
   authCodes: AuthCodes;
   appVersion: string;
+  /** Overrides how the client is guessed from a first message (demo mode: never calls out). Default: Jev. */
+  clientGuess?: RouteContext['clientGuess'];
   /** The app's own version history (Settings, owners and scouts). Default: none. */
   changelog?: () => Promise<VersionNotes[]>;
   /** In-app updates. Default: none (the update routes say this copy can't update itself). */
@@ -296,6 +298,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     setup: deps.setup,
     appVersion: deps.appVersion,
     changelog: deps.changelog ?? (async () => []),
+    clientGuess: deps.clientGuess,
     updater: deps.updater,
     underService: deps.underService,
     serverStartedAt,

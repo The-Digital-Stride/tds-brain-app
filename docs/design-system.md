@@ -179,6 +179,13 @@ or press.
 Focus everywhere: 2px blue-ink outline, offset 2 (offset −2 inside clipping scrollers: drawer rows,
 palette, seg).
 
+## Help drawer and HelpLink
+
+- **Help drawer** (`client/src/shell/HelpDrawer.tsx`, plan 2026-11-15-cortex-help-phase-1): a left drawer built from the Skills drawer's pieces and nothing new. A `.drawer-tools` search field ("Search help") sits on top; while it has text, `.line` rows (title, summary as `.line-meta`) replace everything below, or "No help pages match that search." Otherwise: the page for where you are (a 14/600 `--head` heading, then the article), a quiet small **Back** button with the chevron (as ChatFiles' "All files") above the heading once you have followed a link (the drawer keeps a small history), then one shut `Fold` per area directly in the drawer body (drawer fold style, hairline above the first as for the rest) with `.line` rows. A page written for some roles carries a `.badge`: "For owners", "For scouts" or "For owners and scouts". The page title is the h3, so article `##` is h4 and `###` is h5. A visually-hidden `role="status"` line announces the search count. Moving to another page scrolls to the top and focuses the page heading (`tabIndex` -1).
+- **Article type** (`styles/help.css`, `.help-article`): 13/1.5, headings 14 (h1 to h4) and 13 (h5) in `--head` 600, lists indented 20px, links blue-ink, pictures at most the column's width with a 1px `--line` edge and radius 10 and no shadow.
+- **Rail and keys**: a "Help" rail item (icon `help`: a circle with a question mark) directly above Settings, toggling the drawer like the others. `H` toggles it and `?` opens it, under the single-key rules; "Go to" lists Help with the hint H. Closing Help (its close button, `H`, Esc) reopens the drawer it replaced; opening another drawer forgets that. Help is shown only where `helpVisible(role)` says so (owners only for now).
+- **HelpLink** (`client/src/shell/HelpLink.tsx`): a bare 32px `.icon-btn` (`--ink-soft`) like the other header controls, with the `help` icon, `aria-label` "Help: {page title}" and `data-tip` "Help" (the short tooltip), opening Help on that page. It goes in a drawer's header actions, before the drawer's own button, and is not shown to anyone who cannot see Help.
+
 ## Row meta lines
 
 One sentence-like line, the same on Home, in drawers and in the palette: parts joined by ", " in the

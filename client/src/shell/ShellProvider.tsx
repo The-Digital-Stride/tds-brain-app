@@ -10,6 +10,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { helpForContext } from '../help/context.ts';
+import type { HelpContext } from '../help/contract.ts';
+import { helpLibrary } from '../help/library.ts';
+import { helpVisible } from '../help/visibility.ts';
+import { initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { keyAction } from '../state/keys.ts';
 import {
   dockModes,
@@ -22,9 +27,15 @@ import {
   saveShell,
   toggleRail,
 } from '../state/shell.ts';
-import { useStore } from '../store.tsx';
+import { type Store, useStore } from '../store.tsx';
 import { APPS } from './apps.ts';
-import { SHELL_STORAGE_KEY, type ShellAction, type ShellApi, type ShellState } from './contract.ts';
+import {
+  type DrawerName,
+  SHELL_STORAGE_KEY,
+  type ShellAction,
+  type ShellApi,
+  type ShellState,
+} from './contract.ts';
 
 type DockSide = 'left' | 'right';
 
@@ -90,6 +101,20 @@ function step(state: ShellState, s: Step): ShellState {
   return 'fit' in s ? fitToWidth(state, s.fit, s.rail) : giveWay(state, s.action, s.width, s.rail);
 }
 
+/** Where the person is, in the words Help uses: Home is the chat view with no active chat. */
+function helpContext(
+  { view, activeChat, chats }: Pick<Store, 'view' | 'activeChat' | 'chats'>,
+  drawer: DrawerName | null,
+): HelpContext {
+  const live = activeChat.kind === 'live';
+  const chat = live ? chats[activeChat.sessionId] : undefined;
+  return {
+    view: view === 'chat' && !live ? 'home' : (view as HelpContext['view']),
+    drawer,
+    waiting: pendingCard(chat ?? initialChatState) !== null,
+  };
+}
+
 function isTyping(el: Element | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return el.matches('input, textarea, select') || el.isContentEditable === true;
@@ -107,7 +132,14 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat } = useStore();
+  const { view, activeChat, chats, boot } = useStore();
+  const role = boot?.identity.role ?? 'unknown';
+  const helpOn = helpVisible(role);
+  const helpOnRef = useRef(helpOn);
+  helpOnRef.current = helpOn;
+  // Where the person is, read only when Help opens (see `dispatch`): the page Help starts on follows from it.
+  const whereRef = useRef({ view, activeChat, chats });
+  whereRef.current = { view, activeChat, chats };
   const liveOnSheet =
     (view === 'chat' && activeChat?.kind === 'live') ||
     APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined);
@@ -144,8 +176,29 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       const active = document.activeElement;
       viewerOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
     }
+    // Opening Help decides its first page now: the one asked for, else the one for where the person is.
+    if (
+      s.drawer !== 'help' &&
+      (action.type === 'open-help' ||
+        ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && action.drawer === 'help'))
+    ) {
+      if (!helpOnRef.current) return;
+      const page =
+        action.type === 'open-help' && action.page
+          ? action.page
+          : helpForContext(helpContext(whereRef.current, s.drawer), helpLibrary);
+      focusIntent.current = 'left';
+      rawDispatch({ action: { type: 'open-help', page }, width: widthRef.current, rail: now.railShowsNames });
+      return;
+    }
+    // Asking for a page while Help shows moves it there.
+    if (action.type === 'open-help' && !action.page) return;
     const opensDrawer =
-      (action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer;
+      ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer) ||
+      // Closing Help puts a drawer back, which takes focus like any drawer a person opened.
+      ((action.type === 'close-help' || (action.type === 'toggle-drawer' && action.drawer === 'help')) &&
+        s.drawer === 'help' &&
+        s.helpReturn !== null);
     const opensPanel =
       (action.type === 'toggle-panel' && !s.panelOpen) ||
       (action.type === 'set-panel' && action.open) ||
@@ -198,6 +251,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         typing: isTyping(document.activeElement),
         state: stateRef.current,
         panelFloating: layoutRef.current.panelModal,
+        helpVisible: helpOnRef.current,
       });
       if (!action) return;
       e.preventDefault();

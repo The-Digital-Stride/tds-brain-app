@@ -22,6 +22,7 @@ import {
 import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { dayWords, EFFORT_OPTION_WORDS, modelName, tokenWords } from '../format.ts';
+import { helpVisible } from '../help/visibility.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
@@ -110,6 +111,7 @@ function TokensSavedSection() {
 
 export function SettingsView() {
   const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel } = useStore();
+  const showHelp = helpVisible(boot?.identity.role ?? 'unknown');
   const [choices, setChoices] = useState<EngineChoices | null>(null);
   useEffect(() => {
     let live = true;
@@ -171,7 +173,13 @@ export function SettingsView() {
               </label>
               <p className="setting-help" id="set-keys-help">
                 When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail, <kbd>T</kbd>{' '}
-                for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills and <kbd>/</kbd> to search.
+                for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills
+                {showHelp ? (
+                  <>
+                    , <kbd>H</kbd> or <kbd>?</kbd> for Help
+                  </>
+                ) : null}{' '}
+                and <kbd>/</kbd> to search.
               </p>
             </div>
             <input

@@ -24,6 +24,8 @@ const SW_OFF = '// test sw-off\nself.registration.unregister();\n';
 let clientDir: string;
 let app: AppServer;
 let listenPort: number;
+/** Texts the stub client guess was asked about (demo mode passes its own guess this way). */
+const guessCalls: string[] = [];
 const setupCalls = { candidates: 0, save: [] as string[], restart: 0 };
 
 beforeAll(async () => {
@@ -58,6 +60,10 @@ beforeAll(async () => {
     engineHealth: () =>
       ({ ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' }) as never,
     appState: { kind: 'ready' },
+    clientGuess: async (text) => {
+      guessCalls.push(text);
+      return { kind: 'ask', options: [] };
+    },
     setup: {
       candidates: async () => {
         setupCalls.candidates += 1;
@@ -294,6 +300,19 @@ describe('GET /api/bootstrap over HTTP (decision 6a)', () => {
       expect(r.status).toBe(401);
       expect(r.headers['set-cookie']).toBeUndefined();
     }
+  });
+});
+
+describe('a client guess passed to the server (demo mode, help phase 1 decision 11)', () => {
+  it('answers the guess route instead of the default guesser', async () => {
+    const r = await send('/api/client-guess', {
+      method: 'POST',
+      headers: { cookie: GOOD_COOKIE, origin: `http://${HOST}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Notes from the Acme Heating call' }),
+    });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ kind: 'ask', options: [] });
+    expect(guessCalls).toEqual(['Notes from the Acme Heating call']);
   });
 });
 

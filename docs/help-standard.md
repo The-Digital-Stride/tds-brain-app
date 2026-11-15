@@ -18,6 +18,8 @@ to get a job done, then get back to work.
 - **UK English**: colour, organise, favourite, cancelled, licence (noun), centre, behaviour.
 - **Exact labels.** Quote buttons as they appear, in bold: **New chat**, **Mark as done**. Sentence case, as in the app.
 - **Reading level**: Flesch–Kincaid grade 9 or lower per page (checked).
+- **Only promise timing that's true.** Check every "when" and "how fast" against the code. A passed to-do
+  reaches a teammate when their Brain next syncs, not "straight away".
 - **No jargon list**: API, endpoint, SDK, frontmatter, repo, cache, session id, token (except "how full a chat is").
   If one is truly needed, explain it.
 - **Brain and Cortex**: "the Brain" is the agency's shared folder of knowledge; "Cortex" is the app. Write
@@ -33,7 +35,7 @@ to get a job done, then get back to work.
 ---
 id: todos
 title: To-dos
-area: todos                 # getting-started | home | chats | todos | skills | files | getting-around | settings | help
+area: todos                 # getting-started | home | chats | todos | team | skills | files | getting-around | settings | help
 order: 10                   # position within the area
 summary: See what you and the team need to do, and tick things off.   # ≤ 90 characters; used in search and lists
 benefit: Nothing slips through the cracks, and everyone can see who's doing what.

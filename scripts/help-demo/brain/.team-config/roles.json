@@ -1,0 +1,4 @@
+{ "members": [
+  { "email": "sam@example.test", "name": "Sam Taylor", "role": "owner", "slug": "sam-taylor" },
+  { "email": "alex@example.test", "name": "Alex Morgan", "role": "team", "slug": "alex-morgan" }
+] }

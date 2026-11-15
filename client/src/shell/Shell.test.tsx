@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatEvent, LibraryItem, LiveSession, StreamFrame } from '../../../shared/contract.ts';
 import type { AppSlot } from './contract.ts';
@@ -738,5 +738,25 @@ describe('the file viewer', () => {
     expect(desk.hasAttribute('inert')).toBe(false);
     expect(skip.hasAttribute('inert')).toBe(false);
     expect(document.activeElement).toBe(show);
+  });
+});
+
+describe('Help, for an owner', () => {
+  it('a drawer header has a Help link; closing Help puts the drawer back', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
+    await renderHome();
+    openWithClick(railButton('To-dos'));
+    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
+    fireEvent.click(screen.getByRole('button', { name: 'Help: To-dos' }));
+    expect(drawerDock().getAttribute('aria-label')).toBe('Help');
+    fireEvent.click(within(drawerDock()).getByRole('button', { name: 'Close help' }));
+    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
+    expect(drawerDock().hasAttribute('inert')).toBe(false);
+  });
+
+  it('a scout has no Help link', async () => {
+    await renderHome();
+    openWithClick(railButton('To-dos'));
+    expect(screen.queryByRole('button', { name: 'Help: To-dos' })).toBeNull();
   });
 });

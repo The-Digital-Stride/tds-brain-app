@@ -1,0 +1,74 @@
+[
+  {
+    "id": "home-overview",
+    "scene": "home-overview",
+    "crop": ".home-in",
+    "callouts": [
+      { "n": 1, "target": ".home-composer .composer-input" },
+      { "n": 2, "target": ".home-composer .client-select" }
+    ],
+    "alt": "Home in TDS Cortex, with the message box, the client picker and your pinned cards."
+  },
+  {
+    "id": "home-start",
+    "scene": "home-start",
+    "crop": ".home-composer .composer",
+    "callouts": [
+      { "n": 1, "target": ".home-composer .composer-input" },
+      { "n": 2, "target": ".home-composer .client-select" }
+    ],
+    "alt": "The message box on Home, with the client picker set to Auto."
+  },
+  {
+    "id": "chats-drawer",
+    "scene": "chats-drawer",
+    "crop": "#drawer",
+    "pad": 0,
+    "callouts": [{ "n": 1, "target": "#drawer .seg" }],
+    "alt": "The Chats drawer with two open chats and the Earlier switch."
+  },
+  {
+    "id": "chat-reply",
+    "scene": "chat-reply",
+    "crop": ".thread-col",
+    "callouts": [{ "n": 1, "target": ".thread-col .step-fold summary" }],
+    "alt": "A chat where Claude has replied, with the What Claude did fold."
+  },
+  {
+    "id": "approval-card",
+    "scene": "approval-card",
+    "crop": ".approval",
+    "pad": 4,
+    "alt": "Claude asking permission to change a file, with Allow and Don't allow buttons."
+  },
+  {
+    "id": "todos-drawer",
+    "scene": "todos-drawer",
+    "crop": "#drawer",
+    "pad": 0,
+    "callouts": [{ "n": 1, "target": "#drawer .todo-add-btn, #drawer .todo-add-label" }],
+    "alt": "The To-dos drawer with the Mine tab open."
+  },
+  {
+    "id": "skills-drawer",
+    "scene": "skills-drawer",
+    "crop": "#drawer",
+    "pad": 0,
+    "callouts": [{ "n": 1, "target": "#drawer .star-btn" }],
+    "alt": "The Skills drawer with a favourite skill at the top."
+  },
+  {
+    "id": "documents-grid",
+    "scene": "documents-grid",
+    "crop": ".lib-main",
+    "callouts": [{ "n": 1, "target": ".lib-tools .seg[aria-label=\"Layout\"]" }],
+    "alt": "Documents in a grid, filtered to one client."
+  },
+  {
+    "id": "images-grid",
+    "scene": "images-grid",
+    "crop": ".lib-main",
+    "callouts": [{ "n": 1, "target": ".img-tile .tick-hit" }],
+    "alt": "Images in a grid, with one picture selected."
+  }
+]

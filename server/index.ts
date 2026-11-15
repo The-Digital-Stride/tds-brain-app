@@ -3,11 +3,11 @@
  *
  * Logs are short status lines only: never prompts, replies, tokens or cookie values.
  */
-import { promises as fsp } from 'node:fs';
+import { existsSync, promises as fsp } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { getSessionMessages, listSessions, query } from '@anthropic-ai/claude-agent-sdk';
-import { APP_HOST } from '../shared/contract.ts';
+import { APP_HOST, DEFAULT_PORT } from '../shared/contract.ts';
 import type { BrainDecision, BrainRefusal } from '../shared/install-contract.ts';
 import type { LevelSources } from '../shared/levels-contract.ts';
 import { createAppUsage } from './brain/app-usage.ts';
@@ -18,7 +18,16 @@ import { createSkillLevels } from './brain/skill-levels.ts';
 import { ownLevel } from './brain/skills.ts';
 import { createThumbnailer, QUICK_LOOK_COMMAND, quickLookAvailable } from './brain/thumbs.ts';
 import { createChangelogReader } from './changelog.ts';
-import { resolveConfig } from './config.ts';
+import { APP_ROOT, resolveConfig } from './config.ts';
+import { createDemoEngine } from './engine/demo-engine.ts';
+import {
+  checkDemoBrain,
+  checkDemoEnv,
+  DEMO_MARKER,
+  demoClientGuess,
+  demoRefusalLine,
+  scrubSecretEnv,
+} from './engine/demo-guard.ts';
 import { createKitTracker, loadKits, projectServers } from './engine/kits.ts';
 import { resolvePermissionMode } from './engine/permission-mode.ts';
 import { createSessionManager, type EngineFns } from './engine/session-manager.ts';
@@ -64,7 +73,25 @@ function log(line: string): void {
   console.log(`[tds-brain] ${line}`);
 }
 
+// Demo mode (help screenshots) is checked before the config is read, because reading it writes runtime.json.
+// Flag unset: nothing here does anything.
+const demoEnv = checkDemoEnv({
+  env: process.env,
+  argv: process.argv.slice(2),
+  appRoot: APP_ROOT,
+  defaultPort: DEFAULT_PORT,
+});
+if (demoEnv.demo && !demoEnv.ok) {
+  console.error(demoRefusalLine(demoEnv.rule));
+  process.exit(1);
+}
+const demoMode = demoEnv.demo;
+// No secrets and no proxy settings in demo mode, so nothing can reach Jev or any other service.
+if (demoMode) scrubSecretEnv(process.env);
+
 const config = resolveConfig();
+// The pretend Claude never runs a program; this only stops the app saying Claude Code is missing.
+if (demoMode) config.claudePath = process.execPath;
 const appUrl = appUrlFor(config.port);
 const authCodes = createAuthCodes(config.launchToken);
 const openBrowser = (url: string) => {
@@ -79,14 +106,27 @@ const brainCheckContext = { home, appRoot: config.appRoot, dataDir: config.dataD
 const decision: BrainDecision = await decideBrain(config.brainCandidate, (p) =>
   checkBrain(p, brainCheckContext),
 );
+if (demoMode) {
+  const refusal = checkDemoBrain({
+    decision,
+    env: process.env,
+    hasMarker: (p) => existsSync(join(p, DEMO_MARKER)),
+  });
+  if (refusal) {
+    console.error(demoRefusalLine(refusal));
+    process.exit(1);
+  }
+}
 const brainPath = decision.kind === 'ready' ? decision.path : null;
 
-const engine: EngineFns = {
-  query: (params) => query(params),
-  listSessions: (opts) => listSessions(opts),
-  getSessionMessages: (id, opts) => getSessionMessages(id, opts),
-  trashSession: createTrashSession({ log }),
-};
+const engine: EngineFns = demoMode
+  ? createDemoEngine()
+  : {
+      query: (params) => query(params),
+      listSessions: (opts) => listSessions(opts),
+      getSessionMessages: (id, opts) => getSessionMessages(id, opts),
+      trashSession: createTrashSession({ log }),
+    };
 
 const store = createAppStore(config.dataDir);
 // The token savings ledger (plan 2026-11-15-startup-kits, decisions 1-3): one count every tool feeds,
@@ -226,7 +266,9 @@ const app = createAppServer({
   authCodes,
   appVersion: config.appVersion,
   changelog: createChangelogReader(config.appRoot),
-  updater,
+  clientGuess: demoMode ? demoClientGuess : undefined,
+  // Demo mode never updates itself: "Check for updates" would run git fetch, a network call.
+  updater: demoMode ? undefined : updater,
   underService: config.underService,
   brain,
   store,

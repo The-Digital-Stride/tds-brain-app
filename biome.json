@@ -9,7 +9,8 @@
       "client/src/**",
       "test/**",
       "*.ts",
-      "!test/fixtures"
+      "!test/fixtures",
+      "!scripts/help-demo/brain"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },

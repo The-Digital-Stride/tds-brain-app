@@ -18,6 +18,8 @@ import type {
 export const DEFAULT_SHELL: ShellState = {
   railWide: false,
   drawer: null,
+  helpReturn: null,
+  helpPage: null,
   panelOpen: false,
   panelTab: 'files',
   panelFile: null,
@@ -30,20 +32,39 @@ export const DEFAULT_SHELL: ShellState = {
 /** Below this width the rail is always icons only. */
 export const RAIL_NAMES_FROM = 900;
 
+// The drawers a saved state may restore. Help is never one: it opens on a person's action, on a page chosen then.
 const DRAWERS: readonly DrawerName[] = ['chats', 'todos', 'skills'];
 // A saved tab not listed here (the removed `steps`) loads as the default.
 const TABS: readonly PanelTab[] = ['files', 'details'];
+
+/** Opens `drawer`. Help over another drawer remembers it; any other drawer forgets the return. */
+function withDrawer(state: ShellState, drawer: DrawerName): ShellState {
+  if (drawer === 'help') {
+    return { ...state, drawer, helpReturn: state.drawer === 'help' ? state.helpReturn : state.drawer };
+  }
+  return { ...state, drawer, helpReturn: null };
+}
+
+/** Shuts Help and reopens the drawer it replaced. */
+function closeHelp(state: ShellState): ShellState {
+  return state.drawer === 'help' ? { ...state, drawer: state.helpReturn, helpReturn: null } : state;
+}
 
 export const shellReducer: ShellReducer = (state, action) => {
   switch (action.type) {
     case 'toggle-rail':
       return { ...state, railWide: !state.railWide };
     case 'toggle-drawer':
-      return { ...state, drawer: state.drawer === action.drawer ? null : action.drawer };
+      if (state.drawer !== action.drawer) return withDrawer(state, action.drawer);
+      return action.drawer === 'help' ? closeHelp(state) : { ...state, drawer: null };
     case 'open-drawer':
-      return state.drawer === action.drawer ? state : { ...state, drawer: action.drawer };
+      return state.drawer === action.drawer ? state : withDrawer(state, action.drawer);
+    case 'open-help':
+      return { ...withDrawer(state, 'help'), helpPage: action.page };
+    case 'close-help':
+      return closeHelp(state);
     case 'close-drawer':
-      return state.drawer === null ? state : { ...state, drawer: null };
+      return state.drawer === null ? state : { ...state, drawer: null, helpReturn: null };
     case 'toggle-panel':
       return { ...state, panelOpen: !state.panelOpen };
     case 'set-panel':
@@ -94,6 +115,8 @@ export const loadShell: LoadShell = (raw) => {
   return {
     railWide: bool('railWide', DEFAULT_SHELL.railWide),
     drawer,
+    helpReturn: null,
+    helpPage: null,
     panelOpen: bool('panelOpen', DEFAULT_SHELL.panelOpen),
     panelTab,
     panelFile: null,

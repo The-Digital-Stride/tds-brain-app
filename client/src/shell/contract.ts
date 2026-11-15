@@ -18,7 +18,7 @@ import type {
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
 
 /** The left drawers. Only one is open at a time. */
-export type DrawerName = 'chats' | 'todos' | 'skills';
+export type DrawerName = 'chats' | 'todos' | 'skills' | 'help';
 
 /**
  * Tabs in the right panel ("This chat"). `files`: plan 2026-11-13-chat-files. A Steps tab was
@@ -30,6 +30,13 @@ export interface ShellState {
   /** True: the rail shows names beside the icons. False: icons only. */
   railWide: boolean;
   drawer: DrawerName | null;
+  /**
+   * The drawer Help replaced when it opened, or null. Never saved. Closing Help with `close-help` (its close
+   * button, `H`, Esc) reopens it; opening any other drawer or `close-drawer` clears it.
+   */
+  helpReturn: DrawerName | null;
+  /** The help page id Help opened on (decided when it opened), or null. Never saved. */
+  helpPage: string | null;
   /** The person's choice. The panel only shows while a live chat is on the sheet. */
   panelOpen: boolean;
   panelTab: PanelTab;
@@ -85,6 +92,10 @@ export type ShellAction =
   | { type: 'toggle-drawer'; drawer: DrawerName }
   | { type: 'open-drawer'; drawer: DrawerName }
   | { type: 'close-drawer' }
+  /** Opens Help over whatever is open, on page `page` (null: the welcome page). Records `helpReturn`. */
+  | { type: 'open-help'; page: string | null }
+  /** Closes Help and reopens the drawer it replaced, if any. Does nothing when Help is not open. */
+  | { type: 'close-help' }
   | { type: 'toggle-panel' }
   | { type: 'set-panel'; open: boolean }
   | { type: 'set-panel-tab'; tab: PanelTab }
@@ -147,6 +158,8 @@ export interface KeyContext {
   state: ShellState;
   /** The right panel is showing and floats over the sheet, so Esc closes it. Missing means no. */
   panelFloating?: boolean;
+  /** Help is switched on for this person's role (`helpVisible`). Missing means no. */
+  helpVisible?: boolean;
 }
 
 /**
@@ -161,6 +174,7 @@ export interface KeyContext {
  * `preventDefault()` so the drawer behind it stays open.
  * - `[`, `t`, `c`, `s` (no modifier, not typing, palette shut, `singleKeys` on): rail, To-dos, Chats, Skills.
  * - `/` (not typing, palette shut, `singleKeys` on; Shift allowed, as some keyboards need it): open the global search.
+ * - `h` toggles Help and `?` opens it (Shift allowed), under the same rules, and only with `helpVisible`.
  */
 export type KeyAction = (e: KeyLike, ctx: KeyContext) => ShellAction | null;
 
@@ -194,7 +208,8 @@ export type IconName =
   | 'lock'
   | 'calendar'
   | 'person'
-  | 'bin';
+  | 'bin'
+  | 'help';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {
@@ -458,6 +473,8 @@ export interface SearchContext {
   skills: SkillInfo[];
   pins: string[];
   clients: ClientInfo[];
+  /** Help is switched on for this person's role: "Go to" lists Help. Missing means no. */
+  helpVisible?: boolean;
 }
 
 export interface SearchResults {

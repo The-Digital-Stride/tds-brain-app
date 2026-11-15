@@ -14,6 +14,7 @@ import './styles/palette.css';
 import './styles/search-select.css';
 import './styles/chat.css';
 import './styles/viewer.css';
+import './styles/help.css';
 
 const root = document.getElementById('root');
 if (root) {

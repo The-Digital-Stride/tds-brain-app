@@ -197,6 +197,18 @@ describe('Palette', () => {
     expect(options()[0]?.getAttribute('aria-selected')).toBe('true');
   });
 
+  it('lists Help under Go to for an owner, and not for the team', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
+    await renderHome();
+    await openPalette();
+    expect(screen.getByRole('option', { name: /^Help/ })).toBeTruthy();
+    cleanup();
+    api.bootstrap.mockResolvedValue(boot);
+    await renderHome();
+    await openPalette();
+    expect(screen.queryByRole('option', { name: /^Help/ })).toBeNull();
+  });
+
   it('opens with Cmd+K and Ctrl+K, and toggles shut', async () => {
     await renderHome();
     fireEvent.keyDown(document.body, { key: 'k', metaKey: true });

@@ -297,3 +297,24 @@ describe('chats, skills, clients, earlier chats', () => {
     expect(source('earlier').idle).toBeUndefined();
   });
 });
+
+describe('Go to: Help', () => {
+  const goLabels = (c: SearchContext) => labels(source('go').idle?.(c) ?? []);
+
+  it('is listed with the H hint when Help is on for the person', () => {
+    const on = ctx({ helpVisible: true });
+    expect(goLabels(on)).toContain('Help');
+    const hit = (source('go').idle?.(on) ?? []).find((h) => h.label === 'Help');
+    expect(hit?.hint).toBe('H');
+    const openDrawer = vi.fn();
+    hit?.run({ openDrawer } as unknown as SearchActions);
+    expect(openDrawer).toHaveBeenCalledWith('help');
+    expect(labels(hits('go', 'help', on))).toEqual(['Help']);
+  });
+
+  it('is left out by default and when Help is off', () => {
+    expect(goLabels(ctx())).not.toContain('Help');
+    expect(goLabels(ctx({ helpVisible: false }))).not.toContain('Help');
+    expect(hits('go', 'help')).toEqual([]);
+  });
+});

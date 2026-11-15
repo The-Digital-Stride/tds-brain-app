@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Attention } from '../../../shared/contract.ts';
+import { helpVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
 import { newToYou } from '../state/todo-new.ts';
@@ -17,6 +18,7 @@ export const DRAWER_LABELS: Record<DrawerName, string> = {
   chats: 'Chats',
   todos: 'To-dos',
   skills: 'Skills',
+  help: 'Help',
 };
 
 interface ItemProps {
@@ -183,6 +185,16 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
       <span className="rail-spacer" />
 
+      {helpVisible(role) ? (
+        <Item
+          icon="help"
+          label="Help"
+          wide={wide}
+          drawer={drawer('help')}
+          keys={shortcut('h')}
+          onClick={() => toggle('help')}
+        />
+      ) : null}
       <Item
         icon="settings"
         label="Settings"

@@ -1,0 +1,55 @@
+import { describe, expect, it } from 'vitest';
+import { helpForContext } from './context.ts';
+import type { HelpContext, HelpTopic } from './contract.ts';
+import { createHelpLibrary } from './library.ts';
+import { HELP_TOPIC_IDS } from './topics.ts';
+
+const topics: HelpTopic[] = HELP_TOPIC_IDS.map((id, i) => ({
+  id,
+  title: id,
+  area: 'home',
+  order: i,
+  summary: id,
+  benefit: id,
+  roles: 'all',
+  related: [],
+  since: '0.36.0',
+  reviewed: '2026-11-20',
+  body: '',
+}));
+const full = createHelpLibrary(topics);
+const ctx = (over: Partial<HelpContext>): HelpContext => ({
+  view: 'home',
+  drawer: null,
+  waiting: false,
+  ...over,
+});
+
+describe('helpForContext', () => {
+  const rows: [string, HelpContext, string][] = [
+    ['chats drawer', ctx({ drawer: 'chats' }), 'chats-drawer'],
+    ['todos drawer', ctx({ drawer: 'todos' }), 'todos'],
+    ['skills drawer', ctx({ drawer: 'skills' }), 'skills'],
+    ['drawer beats a waiting chat', ctx({ view: 'chat', waiting: true, drawer: 'todos' }), 'todos'],
+    [
+      'help drawer falls through to the view',
+      ctx({ drawer: 'help' as unknown as HelpContext['drawer'], view: 'app:images' }),
+      'images',
+    ],
+    ['waiting chat', ctx({ view: 'chat', waiting: true }), 'approvals-and-questions'],
+    ['waiting does not matter on Home', ctx({ view: 'home', waiting: true }), 'home'],
+    ['home', ctx({ view: 'home' }), 'home'],
+    ['chat', ctx({ view: 'chat' }), 'talking-to-claude'],
+    ['documents app', ctx({ view: 'app:documents' }), 'documents'],
+    ['images app', ctx({ view: 'app:images' }), 'images'],
+    ['other app', ctx({ view: 'app:other' }), 'welcome'],
+    ['settings', ctx({ view: 'settings' }), 'welcome'],
+    ['profile', ctx({ view: 'profile' }), 'welcome'],
+  ];
+  for (const [name, c, id] of rows) it(name, () => expect(helpForContext(c, full)).toBe(id));
+
+  it('falls back to welcome when the page is not in the library', () => {
+    const partial = createHelpLibrary(topics.filter((t) => t.id === 'welcome'));
+    expect(helpForContext(ctx({ drawer: 'todos' }), partial)).toBe('welcome');
+  });
+});

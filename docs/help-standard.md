@@ -33,7 +33,7 @@ to get a job done, then get back to work.
 ---
 id: todos
 title: To-dos
-area: todos                 # getting-started | home | chats | todos | skills | files | getting-around | settings | help
+area: todos                 # getting-started | home | chats | todos | team | skills | files | getting-around | settings | help
 order: 10                   # position within the area
 summary: See what you and the team need to do, and tick things off.   # ≤ 90 characters; used in search and lists
 benefit: Nothing slips through the cracks, and everyone can see who's doing what.

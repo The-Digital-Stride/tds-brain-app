@@ -11,6 +11,8 @@ import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import type { DrawerName } from './shell/contract.ts';
 import { Dock } from './shell/Dock.tsx';
 import { FileViewer } from './shell/FileViewer.tsx';
+import { HelpDrawer } from './shell/HelpDrawer.tsx';
+import { HelpLink } from './shell/HelpLink.tsx';
 import { Home } from './shell/Home.tsx';
 import { Inspector } from './shell/Inspector.tsx';
 import { Palette } from './shell/Palette.tsx';
@@ -53,6 +55,7 @@ const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
   chats: ChatsDrawer,
   todos: TodosDrawer,
   skills: SkillsDrawer,
+  help: HelpDrawer,
 };
 
 /** What the sheet shows for the current view. An unknown app shows Home. */
@@ -139,22 +142,28 @@ function Shell() {
             open={drawerOpen}
             label={DRAWER_LABELS[drawer]}
             overlay={modes.drawerOverlays}
-            onClose={() => dispatch({ type: 'close-drawer' })}
+            // Closing Help puts back the drawer it replaced.
+            onClose={() => dispatch({ type: state.drawer === 'help' ? 'close-help' : 'close-drawer' })}
             actions={
-              drawer === 'chats' ? (
-                <button
-                  type="button"
-                  className="btn"
-                  data-variant="primary"
-                  onClick={() => {
-                    newChat();
-                    // A floating drawer closes once a choice is made; a pushing one stays.
-                    if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
-                  }}
-                >
-                  New chat
-                </button>
-              ) : undefined
+              <>
+                {drawer === 'chats' ? <HelpLink page="chats-drawer" /> : null}
+                {drawer === 'todos' ? <HelpLink page="todos" /> : null}
+                {drawer === 'skills' ? <HelpLink page="skills" /> : null}
+                {drawer === 'chats' ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="primary"
+                    onClick={() => {
+                      newChat();
+                      // A floating drawer closes once a choice is made; a pushing one stays.
+                      if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
+                    }}
+                  >
+                    New chat
+                  </button>
+                ) : null}
+              </>
             }
           >
             <DrawerBody />

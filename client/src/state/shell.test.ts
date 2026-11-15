@@ -133,6 +133,8 @@ describe('saveShell', () => {
       viewer: { item: { id: 'x' } as LibraryItem, place: 'Acme' },
       singleKeys: false,
       viewerWidth: null,
+      helpReturn: null,
+      helpPage: null,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
@@ -346,6 +348,66 @@ describe('toggleRail: the rail toggle while the panel shows', () => {
     expect(toggleRail(noPanel, 1240, { panelShowing: false, railOverride: false })).toEqual({
       railWide: true,
       railOverride: false,
+    });
+  });
+});
+
+describe('Help drawer', () => {
+  const open = (drawer: 'chats' | 'todos' | 'skills' | null): ShellState => ({ ...base, drawer });
+
+  it('opening Help over another drawer records it; closing Help puts it back', () => {
+    const help = shellReducer(open('todos'), { type: 'toggle-drawer', drawer: 'help' });
+    expect(help).toMatchObject({ drawer: 'help', helpReturn: 'todos' });
+    expect(shellReducer(help, { type: 'close-help' })).toMatchObject({ drawer: 'todos', helpReturn: null });
+    // Toggling Help (the rail item, H) closes it the same way.
+    expect(shellReducer(help, { type: 'toggle-drawer', drawer: 'help' })).toMatchObject({
+      drawer: 'todos',
+      helpReturn: null,
+    });
+  });
+
+  it('opening Help with nothing open records nothing, and closing leaves nothing open', () => {
+    const help = shellReducer(open(null), { type: 'open-help', page: 'home' });
+    expect(help).toMatchObject({ drawer: 'help', helpReturn: null, helpPage: 'home' });
+    expect(shellReducer(help, { type: 'close-help' }).drawer).toBeNull();
+  });
+
+  it('open-help keeps the first drawer when asked again while Help shows', () => {
+    const help = shellReducer(open('chats'), { type: 'open-help', page: 'chats-drawer' });
+    expect(shellReducer(help, { type: 'open-help', page: 'home' })).toMatchObject({
+      drawer: 'help',
+      helpReturn: 'chats',
+      helpPage: 'home',
+    });
+    expect(shellReducer(help, { type: 'open-drawer', drawer: 'help' })).toBe(help);
+  });
+
+  it('opening another drawer, or close-drawer, clears the return', () => {
+    const help = shellReducer(open('todos'), { type: 'open-help', page: null });
+    expect(shellReducer(help, { type: 'open-drawer', drawer: 'skills' })).toMatchObject({
+      drawer: 'skills',
+      helpReturn: null,
+    });
+    expect(shellReducer(help, { type: 'toggle-drawer', drawer: 'chats' })).toMatchObject({
+      drawer: 'chats',
+      helpReturn: null,
+    });
+    expect(shellReducer(help, { type: 'close-drawer' })).toMatchObject({ drawer: null, helpReturn: null });
+  });
+
+  it('close-help does nothing when Help is not open', () => {
+    const s = open('skills');
+    expect(shellReducer(s, { type: 'close-help' })).toBe(s);
+  });
+
+  it('a saved Help drawer is never restored, and nothing about Help is saved', () => {
+    expect(loadShell(JSON.stringify({ drawer: 'help' })).drawer).toBeNull();
+    const saved = JSON.parse(saveShell({ ...base, drawer: 'help', helpReturn: 'todos', helpPage: 'home' }));
+    expect(saved).not.toHaveProperty('helpReturn');
+    expect(saved).not.toHaveProperty('helpPage');
+    expect(loadShell(saveShell({ ...base, drawer: 'help', helpReturn: 'todos' }))).toMatchObject({
+      helpReturn: null,
+      helpPage: null,
     });
   });
 });

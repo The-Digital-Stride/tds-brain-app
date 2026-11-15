@@ -638,7 +638,13 @@ describe('Skills drawer', () => {
     expect(screen.getByText('Beta')).toBeTruthy();
     expect(screen.queryByText(/Alpha/)).toBeNull();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), { target: { value: 'zzz' } });
-    expect(screen.getByText('No skills match that search.')).toBeTruthy();
+    // Shown, and announced through the hidden status line.
+    expect(screen.getAllByText('No skills match that search.')).toHaveLength(2);
+    expect(screen.getByRole('status').textContent).toBe('No skills match that search.');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), {
+      target: { value: 'second' },
+    });
+    expect(screen.getByRole('status').textContent).toBe('1 skill matches');
   });
 
   it("the star reflects and changes a skill's favourite, under Favourites, without starting the skill", () => {

@@ -168,3 +168,39 @@ describe('keyAction: "/" opens the global search', () => {
     expect(keyAction(key('/'), ctx({ singleKeys: false }))).toBeNull();
   });
 });
+
+describe('keyAction: Help', () => {
+  const help = (patch: Partial<ShellState> = {}, typing = false, helpVisible = true) => ({
+    typing,
+    state: state(patch),
+    helpVisible,
+  });
+
+  it('h toggles Help and ? opens it, only when Help is visible', () => {
+    expect(keyAction(key('h'), help())).toEqual({ type: 'toggle-drawer', drawer: 'help' });
+    expect(keyAction(key('?', { shiftKey: true }), help())).toEqual({ type: 'open-drawer', drawer: 'help' });
+    expect(keyAction(key('?'), help())).toEqual({ type: 'open-drawer', drawer: 'help' });
+    expect(keyAction(key('h'), help({}, false, false))).toBeNull();
+    expect(keyAction(key('?', { shiftKey: true }), help({}, false, false))).toBeNull();
+    expect(keyAction(key('h'), { typing: false, state: state() })).toBeNull();
+  });
+
+  it('does nothing while typing, with the palette open or with single keys off', () => {
+    for (const k of ['h', '?']) {
+      expect(keyAction(key(k), help({}, true))).toBeNull();
+      expect(keyAction(key(k), help({ paletteOpen: true }))).toBeNull();
+      expect(keyAction(key(k), help({ singleKeys: false }))).toBeNull();
+    }
+  });
+
+  it('h with a modifier is left alone', () => {
+    expect(keyAction(key('h', { metaKey: true }), help())).toBeNull();
+    expect(keyAction(key('h', { ctrlKey: true }), help())).toBeNull();
+    expect(keyAction(key('h', { shiftKey: true }), help())).toBeNull();
+  });
+
+  it('Esc closes Help and puts the drawer back', () => {
+    expect(keyAction(key('Escape'), help({ drawer: 'help' }))).toEqual({ type: 'close-help' });
+    expect(keyAction(key('Escape'), help({ drawer: 'todos' }))).toEqual({ type: 'close-drawer' });
+  });
+});

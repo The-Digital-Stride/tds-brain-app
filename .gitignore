@@ -7,3 +7,5 @@ spike/
 .playwright-mcp/
 # Old data folder left behind by `tds-brain install --migrate-from` (holds the launch token)
 *.moved/
+# The help screenshots made-up Brain and data (made by pnpm help:shots)
+.help-demo/

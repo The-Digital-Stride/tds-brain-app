@@ -103,6 +103,7 @@ beforeEach(() => {
   st.setSkillLevel.mockReset();
   st.updatePrefs.mockReset();
   boot.prefs = { directWrites: false, model: null, effort: null } as typeof boot.prefs;
+  boot.identity = { ...boot.identity, role: 'team' };
 });
 
 afterEach(() => {
@@ -115,6 +116,19 @@ afterEach(() => {
 
 const optionTexts = (el: HTMLElement) => Array.from((el as HTMLSelectElement).options).map((o) => o.text);
 const selectOf = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
+
+describe('Single-key shortcuts text', () => {
+  it('lists "H or ? for Help" for an owner only', () => {
+    standalone(false);
+    boot.identity = { ...boot.identity, role: 'owner' };
+    const { unmount } = render(<SettingsView />);
+    expect(document.getElementById('set-keys-help')?.textContent).toContain('H or ? for Help');
+    unmount();
+    boot.identity = { ...boot.identity, role: 'team' };
+    render(<SettingsView />);
+    expect(document.getElementById('set-keys-help')?.textContent).not.toContain('Help');
+  });
+});
 
 describe('Claude in chats', () => {
   it('shows both selects with their first options, before and after the choices load', async () => {

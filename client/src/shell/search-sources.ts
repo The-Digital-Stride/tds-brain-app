@@ -77,7 +77,7 @@ interface GoTo {
  * One entry per drawer: how "Go to" shows it and which source searches what is in it. A `Record`, so a
  * new `DrawerName` fails type-check until it says how it is searched.
  */
-const DRAWERS: Record<DrawerName, { go: Omit<GoTo, 'run'>; source: SearchSource }> = {
+const DRAWERS: Record<Exclude<DrawerName, 'help'>, { go: Omit<GoTo, 'run'>; source: SearchSource }> = {
   todos: {
     go: { id: 'go-todos', label: 'To-dos', hint: 'T', icon: 'todos' },
     source: {
@@ -192,9 +192,15 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
   };
 }
 
-/** "Go to": Home, each drawer, Settings, then every app on the rail. Derived, never hard-coded per app. */
-function goToEntries(): GoTo[] {
-  const drawer = (name: DrawerName): GoTo => ({
+/**
+ * Help is a drawer with nothing inside to search, so it has a "Go to" entry and no source. Shown only where Help is
+ * switched on for the person (`SearchContext.helpVisible`).
+ */
+const HELP_GO: Omit<GoTo, 'run'> = { id: 'go-help', label: 'Help', hint: 'H', icon: 'help' };
+
+/** "Go to": Home, each drawer, Help (where it is on), Settings, then every app on the rail. Derived, never hard-coded per app. */
+function goToEntries(ctx?: SearchContext): GoTo[] {
+  const drawer = (name: Exclude<DrawerName, 'help'>): GoTo => ({
     ...DRAWERS[name].go,
     run: (a) => a.openDrawer(name),
   });
@@ -203,6 +209,7 @@ function goToEntries(): GoTo[] {
     drawer('todos'),
     drawer('chats'),
     drawer('skills'),
+    ...(ctx?.helpVisible ? [{ ...HELP_GO, run: (a: SearchActions) => a.openDrawer('help') }] : []),
     {
       id: 'go-settings',
       label: 'Settings',
@@ -235,8 +242,8 @@ function goToHit(entry: GoTo): SearchHit {
 const goTo: SearchSource = {
   id: GO_TO_SOURCE,
   title: 'Go to',
-  search: (query) => ranked(query, goToEntries(), (e) => ({ title: e.label, fields: [] }), goToHit),
-  idle: () => goToEntries().map(goToHit),
+  search: (query, ctx) => ranked(query, goToEntries(ctx), (e) => ({ title: e.label, fields: [] }), goToHit),
+  idle: (ctx) => goToEntries(ctx).map(goToHit),
 };
 
 // ── The other built-ins ────────────────────────────────────────────────────────────────────────

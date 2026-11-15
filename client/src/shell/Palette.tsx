@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { openLibraryItem, warmLibrarySearch } from '../apps/shared/search.ts';
+import { helpVisible } from '../help/visibility.ts';
 import {
   asyncLooking,
   asyncPending,
@@ -75,6 +76,7 @@ function PaletteDialog() {
       skills: boot?.skills ?? [],
       pins: boot?.prefs.pins ?? [],
       clients: boot?.clients ?? [],
+      helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
     }),
     [boot, todos, sessions],
   );

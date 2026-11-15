@@ -146,6 +146,13 @@ export function SkillsDrawer() {
       </div>
       <div className="drawer-scroll">
         <div className="drawer-body" ref={body} tabIndex={-1}>
+          <p className="visually-hidden" role="status" aria-live="polite">
+            {shown
+              ? shown.length === 0
+                ? 'No skills match that search.'
+                : `${shown.length} ${shown.length === 1 ? 'skill matches' : 'skills match'}`
+              : ''}
+          </p>
           {shown ? (
             shown.length === 0 ? (
               <p className="dock-empty">No skills match that search.</p>

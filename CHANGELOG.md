@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.39.0 — 2026-11-15
+
+- **feat**: Help is for everyone who uses Cortex
+
 ## v0.38.0 — 2026-11-15
 
 - **feat**: Cortex Guide, help in search, Settings help links and every help page

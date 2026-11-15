@@ -189,6 +189,10 @@ export function Tooltips() {
     if (shown.el.closest('.rail')) {
       left = r.right + RAIL_GAP;
       top = r.top + r.height / 2 - h / 2;
+    } else if (shown.el.dataset.tipSide === 'left') {
+      // A tall edge handle (the viewer's resize strip): beside it, centred where its grip is.
+      left = r.left - GAP - w;
+      top = r.top + r.height / 2 - h / 2;
     } else {
       left = r.left + r.width / 2 - w / 2;
       top = r.bottom + GAP;

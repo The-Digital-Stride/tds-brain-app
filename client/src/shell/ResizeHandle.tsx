@@ -50,6 +50,7 @@ export function ResizeHandle({ layer }: { layer: LayerWidth }) {
       aria-valuenow={width}
       tabIndex={0}
       data-tip="Drag to resize. Double-click to reset."
+      data-tip-side="left"
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         start.current = { x: e.clientX, width };

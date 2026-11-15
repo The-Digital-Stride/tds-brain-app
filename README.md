@@ -11,7 +11,7 @@ here is published.**
   pipeline, changelog) lives in the brain at `os/tds-brain-app/`.
 - The terminal and the IDE keep working exactly as before.
 - How it fits together: open `docs/explainer.html` (the app) and `docs/shell-explainer.html` (the
-  screen layout). The look: `docs/design-system.md`. Each piece of work has a plan in `docs/plans/`.
+  screen layout). The look: `docs/design-system.md`. Each piece of work has a plan in `docs/plans/`. To change what Home shows, start with `docs/customising-home.md`.
 
 ## What it does
 

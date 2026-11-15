@@ -42,57 +42,45 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  /* A 20px grab strip centred on the edge (WCAG 2.5.8), with a 2px line in the middle. */
+  /* A 20px grab strip centred on the drawer's edge (WCAG 2.5.8 target size). */
   left: -10px;
   width: 20px;
   z-index: 1;
   cursor: col-resize;
   touch-action: none;
 }
-/* The grip: a small pill of dots centred on the edge, always visible, so the edge reads as draggable. */
+/*
+ * The grip: one short rounded bar in the gap beside the drawer, like a sheet's handle. Quiet at rest
+ * (a tint, no edge or shadow); hover and dragging deepen its fill only, as every quiet control does
+ * (design system: no borders, rings or coloured edges to show state).
+ */
 .viewer-resize::before {
   content: "";
   position: absolute;
-  z-index: 1;
   top: 50%;
-  left: 4px;
-  width: 12px;
-  height: 44px;
+  left: 3px;
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
   transform: translateY(-50%);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background-color: var(--glass-solid);
-  background-image: radial-gradient(circle, var(--grey-dot) 1.25px, transparent 1.75px);
-  background-size: 12px 7px;
-  background-position: center;
-  box-shadow: var(--lift-0);
-  transition: border-color var(--t) var(--ease);
+  background: var(--tint-3);
+  transition:
+    background-color var(--t) var(--ease),
+    height var(--t) var(--ease);
 }
 .viewer-resize:hover::before,
-.viewer-resize:focus-visible::before,
+.viewer-resize:focus-visible::before {
+  height: 56px;
+  background: var(--ink-soft);
+}
 body.viewer-resizing .viewer-resize::before {
-  border-color: var(--focus);
-  background-image: radial-gradient(circle, var(--focus) 1.25px, transparent 1.75px);
+  height: 56px;
+  background: var(--navy);
 }
 @media (prefers-reduced-motion: reduce) {
   .viewer-resize::before {
     transition: none;
   }
-}
-.viewer-resize::after {
-  content: "";
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 9px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
-}
-.viewer-resize:hover::after,
-.viewer-resize:focus-visible::after,
-body.viewer-resizing .viewer-resize::after {
-  background: var(--focus);
 }
 /* The app's own focus ring (base.css), drawn inside the strip so it isn't clipped. */
 .viewer-resize:focus-visible {

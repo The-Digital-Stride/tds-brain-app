@@ -281,13 +281,53 @@ Facts gathered so far (SDK 0.3.322):
   at the time); the app hands it events through the brain's own script, as with skill levels.
 - **Events (names and counts only):** chat start (kit, auto or overridden, level, start-up tokens by
   group); during (skills and connectors used, items turned back on mid-chat = kit miss, overrides);
-  end (peak fullness, summaries, kept switches and estimated saving, estimated cost, turns). Personal
+  end (peak fullness, summaries, kept switches, turns, and the measured tokens saved below). Personal
   chats: a count only.
 - **Shadow mode first:** for two weeks the app logs the kit it *would* pick and switches nothing off,
   giving a real hit rate before anyone is affected.
 - **Review skill** (`tdsapp-` prefix, brain change with Ian's yes): reads Observe data, reports kit
   misses, unused heavy items, cost per kit and suggested changes; Owners or scouts approve, and
   approved changes feed the automatic pick (through a brain script, as skill levels do).
+
+**Token savings ledger (asked 2026-11-15, ships with the kits release):**
+
+Ian's decisions, fixed:
+- **Purpose:** one central, measured number that justifies the app's tools.
+- **One ledger that every tool feeds.** A single server module (working name `server/usage/savings.ts`)
+  with one `record()` call. Context management, kits and any later tool report through it; no tool
+  keeps its own tally. An entry holds the day, the person, the source tool, what was measured and the
+  token count. Names and counts only, never chat content. Personal chats count, with no detail.
+- **Tokens only, measured only.** No cost and no estimates.
+- **Who sees what:** Owners and scouts see the team total and each person's figure. Team members see
+  only their own. Use the app's existing role check (`identity.role` is `owner` or `scout`, as in
+  `server/http/routes.ts:1146`).
+
+What counts at launch (every figure is read from the engine, not worked out):
+- **Summaries:** `pre_tokens − post_tokens` from each `compact_boundary`, counted once per summary.
+- **Kits:** the chat's start-up tokens against the full start-up, both read with `getContextUsage`.
+  The full start-up is measured once per person's setup. Nothing counts during shadow mode, because
+  nothing is switched off.
+- **Cache reuse:** `cache_read_input_tokens` on main replies (not helpers). Shown as its own line, not
+  added into "saved": Claude's cache does the reuse, and the app's kept switches and shared kits
+  protect it.
+- **Left out until they can be measured:** model switches avoided (only a "would have") and
+  skill-level model picks.
+
+How it stays central:
+- Each person's app runs on their own Mac, so the team figure travels through the brain's Observe
+  pipeline (the `app` event above). The app never writes brain files.
+- A person's own figure comes from their app's own data folder, so it works even while Observe is off.
+
+To settle in planning (the overseer decides unless it changes scope):
+- How the app reads the team figure for Owners and scouts. Observe lines are locked with the Observe
+  key, so this probably needs a brain script, as skill levels do.
+- What the team view shows while the Owner has Observe off: only the people synced so far, labelled
+  as such.
+- Where the figure sits in the app, for example a "Tokens saved" panel in Settings.
+- Counting starts at the kits release. Older chats aren't back-filled.
+
+Plain: the app keeps one running count of tokens its tools have provably saved. Owners and scouts
+see the whole team's count; everyone else sees their own.
 
 ## Contract
 

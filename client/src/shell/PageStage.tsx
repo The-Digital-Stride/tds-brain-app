@@ -1,13 +1,14 @@
-import { type KeyboardEvent, type RefObject, useEffect, useId, useRef, useState } from 'react';
-import { type ChatFile, ROUTES, type SessionState } from '../../../shared/contract.ts';
+import { type RefObject, useEffect, useId, useRef, useState } from 'react';
+import { attentionFor, type ChatFile, ROUTES, type SessionState } from '../../../shared/contract.ts';
 import {
   type ChatPage,
   type ChatPageVersion,
   PAGE_NOTE_MAX,
   type PageAskRequest,
 } from '../../../shared/pages-contract.ts';
-import { downloadBranded } from '../api.ts';
+import { api, downloadBranded } from '../api.ts';
 import { usePageLinks } from '../apps/shared/usePageLinks.ts';
+import { Composer } from '../components/Composer.tsx';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { useFrameGuard } from './useFrameGuard.ts';
@@ -96,7 +97,7 @@ export function PageStage({
   /** Opens the page's source file in Documents (the viewer closes itself first). */
   onOpenInDocuments?: (file: ChatFile) => void;
 }) {
-  const { chats, sessions, askPage, openChat } = useStore();
+  const { chats, sessions, askPage, openChat, run } = useStore();
   const snapshot = chats[chat];
   const page: ChatPage | null = (snapshot?.files.pages ?? []).find((p) => p.key === pageKey) ?? null;
   const live = sessions?.live.find((s) => s.id === chat);
@@ -141,7 +142,6 @@ export function PageStage({
   // The in-progress copy is rewritten as Claude works: any sign the page changed reloads its frame.
   const draftStamp = draft ? `${page?.order ?? 0}-${page?.toolUseIds.length ?? 0}` : '';
 
-  const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [asked, setAsked] = useState<PageAsked | null>(null);
   const [downloaded, setDownloaded] = useState<{ n: number; partial: boolean } | null>(null);
@@ -173,7 +173,6 @@ export function PageStage({
   const busySeen = useRef(false);
   if (busy) busySeen.current = true;
 
-  const noteId = useId();
   const statusId = useId();
 
   if (!page || !shown) {
@@ -196,7 +195,8 @@ export function PageStage({
     );
   }
 
-  const send = async (req: PageAskRequest) => {
+  /** True when the request went (the message box then clears itself). */
+  const send = async (req: PageAskRequest): Promise<boolean> => {
     setSending(true);
     setFailure(null);
     busySeen.current = busyRef.current;
@@ -204,26 +204,16 @@ export function PageStage({
     setSending(false);
     if (reason !== null) {
       setFailure(reason);
-      return;
+      return false;
     }
-    if (req.kind === 'change') setNote('');
     setDownloaded(null);
     setAsked({ mark, sawBusy: busyRef.current || busySeen.current, kind: req.kind });
     setAnnounce('');
-  };
-  const submit = () => {
-    const text = note.trim();
-    if (!canSend || !text) return;
-    void send({ kind: 'change', note: text });
+    return true;
   };
   const fileCopy = () => {
     if (!canSend) return;
     void send({ kind: 'brand' });
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    submit();
   };
 
   const download = async () => {
@@ -285,7 +275,9 @@ export function PageStage({
   const heading = (v: ChatPageVersion) =>
     v.n === 0 ? (working ? 'In progress' : 'Latest') : versionLabel(v, numbered.indexOf(v), numbered.length);
   const titleSuffix = draftWorking ? ' (in progress)' : versions.length > 1 ? ` (${heading(shown)})` : '';
-  const sendBlocked = !canSend || note.trim() === '';
+  // The message box is the chat's own (same ring colours, same red Stop), so the two never drift apart.
+  const running = sessionState !== null && BUSY.includes(sessionState);
+  const boxReason = canSend ? null : STATUS_WORDS[form] || 'Sending to Claude…';
 
   return (
     <>
@@ -404,35 +396,24 @@ export function PageStage({
           ) : null}
         </div>
         {form !== 'closed' ? (
-          <div className="page-ask-form">
-            <label htmlFor={noteId}>Suggest a change</label>
-            <div className="page-ask-row">
-              <textarea
-                id={noteId}
-                className="field"
-                rows={2}
-                maxLength={PAGE_NOTE_MAX}
-                value={note}
-                readOnly={!canSend}
-                aria-disabled={!canSend}
-                aria-describedby={statusId}
-                onChange={(e) => {
-                  if (canSend) setNote(e.target.value);
-                }}
-                onKeyDown={onKeyDown}
-              />
-              <button
-                type="button"
-                className="btn"
-                data-variant="primary"
-                aria-disabled={sendBlocked}
-                onClick={submit}
-              >
-                <Icon name="send" size={16} />
-                Send
-              </button>
-            </div>
-          </div>
+          <Composer
+            key={`page-${chat}-${pageKey}`}
+            initial=""
+            skill={null}
+            label="Suggest a change"
+            placeholder="Suggest a change to this page"
+            maxLength={PAGE_NOTE_MAX}
+            disabledReason={boxReason}
+            autoFocus={false}
+            focusSignal={0}
+            attention={sessionState ? attentionFor(sessionState) : null}
+            attachDisabled
+            onStop={running ? () => void run(() => api.interrupt(chat)) : undefined}
+            onSend={(text) => {
+              const note = text.trim();
+              return note ? send({ kind: 'change', note }) : Promise.resolve(false);
+            }}
+          />
         ) : null}
         {failure ? (
           <p className="notice" data-level="error" role="alert">

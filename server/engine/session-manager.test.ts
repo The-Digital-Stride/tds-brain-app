@@ -27,7 +27,7 @@ import type {
   TodoItem,
   TodoList,
 } from '../../shared/contract.ts';
-import type { Kit, KitId, KitTracker } from '../../shared/kits-contract.ts';
+import type { Kit, KitId, KitPick, KitTracker } from '../../shared/kits-contract.ts';
 import type {
   ChatLevelRecord,
   ChatLevelStore,
@@ -56,6 +56,7 @@ import {
   ISOLATION_REASON,
   PER_REPLY_REASON,
 } from './helpers.ts';
+import type { KitPicker } from './kit-picker.ts';
 import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
@@ -282,6 +283,23 @@ async function expectCode(p: Promise<unknown>, code: string): Promise<void> {
 }
 
 /** Records every call the session manager makes on the start-up kit tracker, in order. */
+/** Never answers: the default in tests, so no kit pick ever reaches the fake engine. */
+const SILENT_KIT_PICKER: KitPicker = { pick: () => new Promise<KitPick>(() => {}) };
+
+/** Answers with `answer` (a promise for a late one) and counts the texts it was asked about. */
+function fakeKitPicker(answer: KitPick | Promise<KitPick>) {
+  const asked: string[] = [];
+  return {
+    asked,
+    picker: {
+      pick: async (text: string) => {
+        asked.push(text);
+        return answer;
+      },
+    } as KitPicker,
+  };
+}
+
 function fakeKitTracker(over: Partial<KitTracker> = {}) {
   const calls: { m: keyof KitTracker; args: unknown[] }[] = [];
   const rec =
@@ -330,12 +348,14 @@ function setup(
     assets?: AssetCache;
     kitTracker?: KitTracker;
     kits?: () => Promise<Readonly<Record<KitId, Kit>>>;
+    kitPicker?: KitPicker;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
     kitTracker: opts.kitTracker,
     kits: opts.kits,
+    kitPicker: opts.kitPicker ?? SILENT_KIT_PICKER,
     contextReadings: opts.contextReadings,
     pageCopies: opts.pageCopies,
     assets: opts.assets,
@@ -2528,6 +2548,7 @@ describe('levels', () => {
       usage?: () => Promise<unknown>;
       lines?: string[];
       kitTracker?: KitTracker;
+      kitPicker?: KitPicker;
     } = {},
   ) {
     const log: string[] = [];
@@ -2609,6 +2630,7 @@ describe('levels', () => {
       },
       picker: o.noPicker ? undefined : picker,
       kitTracker: o.kitTracker,
+      kitPicker: o.kitPicker,
     });
     return { ...fx, log, picks, prewarmed, saved };
   }
@@ -4018,72 +4040,96 @@ describe('levels', () => {
     expect(lastLevel(s.id)).toMatchObject({ tier: 'deep', kept: { wanted: 'standard' } });
   });
 
-  describe('the start-up kit pick (plan 2026-11-15-startup-kits, decision 6)', () => {
-    it("takes the first message's pick once, as the tracker's own pick, never with the reason", async () => {
+  describe('the start-up kit pick (plan 2026-11-15-startup-kits, decision 6 as revised)', () => {
+    it("asks the kit picker once, on the first message only, never with the level pick's reason", async () => {
       const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
       let n = 0;
       setupLevels({
         kitTracker: kit.tracker,
-        picks: () => ready(n++ === 0 ? { ...QUICK, kit: 'core' } : { ...DEEP, kit: 'web' }),
+        kitPicker: kp.picker,
+        picks: () => ready(n++ === 0 ? QUICK : DEEP),
       });
       await auto();
       const s = await mgr.start({ prompt: 'Check my inbox for the Urban Cooling reply' });
       await flush();
-      // A longer message that raises the level runs the picker again: the kit stays.
       await mgr.send(s.id, 'Now audit their whole website, every page, and write up everything you find');
       await flush();
-      // Picked before the engine named the chat: under the app's own id, which the tracker then re-keys.
       const first = kit.of('onStart')[0]?.[0];
+      expect(kp.asked).toEqual(['Check my inbox for the Urban Cooling reply']);
       expect(kit.of('onPick')).toEqual([[first, { kit: 'core', how: 'auto' }, 'quick']]);
       expect(kit.of('onRekey')).toEqual([[first, 'sdk-new-1']]);
       expect(JSON.stringify(kit.calls)).not.toContain(QUICK.reason);
     });
 
-    it('a late pick still sets the kit, and a pick with no kit is the fallback', async () => {
-      const late = latePick();
+    it('a late kit answer still sets the kit, and a fallback answer is passed on as it is', async () => {
+      let arrive: (p: KitPick) => void = () => {};
+      const late = new Promise<KitPick>((r) => {
+        arrive = r;
+      });
       const kit = fakeKitTracker();
-      setupLevels({ kitTracker: kit.tracker, picks: () => late.attempt });
+      setupLevels({
+        kitTracker: kit.tracker,
+        kitPicker: fakeKitPicker(late).picker,
+        picks: () => ready(STANDARD),
+      });
       await auto();
       await mgr.start({ prompt: 'Write the newsletter' });
       await flush();
       expect(kit.of('onPick')).toEqual([]);
       expect(kit.of('onTurnEnd')).toHaveLength(1);
-      late.arrive(STANDARD);
+      arrive({ kit: 'full', how: 'fallback' });
       await flush();
       expect(kit.of('onPick')).toEqual([['sdk-new-1', { kit: 'full', how: 'fallback' }, 'standard']]);
     });
 
-    it('a chat that never runs the picker gets no pick (manual mode)', async () => {
+    it('a chat that never runs the level picker still gets a kit pick (manual mode)', async () => {
       const kit = fakeKitTracker();
-      const fx = setupLevels({ kitTracker: kit.tracker, picks: () => ready({ ...QUICK, kit: 'core' }) });
-      const s = await mgr.start({ prompt: 'Check my inbox for the Urban Cooling reply' });
+      const kp = fakeKitPicker({ kit: 'ads', how: 'auto' });
+      const fx = setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
+      const s = await mgr.start({ prompt: 'Check the Google Ads account' });
       await flush();
       await mgr.send(s.id, 'and the next one');
       await flush();
       expect(fx.picks).toEqual([]);
-      expect(kit.of('onPick')).toEqual([]);
+      expect(kp.asked).toHaveLength(1);
+      // Manual mode has no automatic tier to note.
+      expect(kit.of('onPick')).toEqual([[kit.of('onStart')[0]?.[0], { kit: 'ads', how: 'auto' }, null]]);
     });
 
-    it("a typed plugin skill picks by rule over the picker's answer", async () => {
+    it('a typed plugin skill picks by rule and never asks the kit picker', async () => {
       const kit = fakeKitTracker();
-      setupLevels({ kitTracker: kit.tracker, picks: () => ready({ ...QUICK, kit: 'core' }) });
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
       await auto();
       await mgr.start({ prompt: '/superpowers:brainstorm a new landing page' });
       await flush();
       const first = kit.of('onStart')[0]?.[0];
       expect(kit.of('onTypedSkill')).toEqual([[first, 'superpowers:brainstorm']]);
       expect(kit.of('onPick')).toEqual([[first, { kit: 'web', how: 'rule' }, 'quick']]);
+      expect(kp.asked).toEqual([]);
     });
 
-    it("a typed brain skill decides nothing: the picker's answer stands", async () => {
+    it("a typed brain skill decides nothing: the kit picker's answer stands", async () => {
       const kit = fakeKitTracker();
-      setupLevels({ kitTracker: kit.tracker, picks: () => ready({ ...STANDARD, kit: 'ads' }) });
+      const kp = fakeKitPicker({ kit: 'ads', how: 'auto' });
+      setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(STANDARD) });
       await auto();
       await mgr.start({ prompt: '/unlevelled for the April campaign report' });
       await flush();
       const first = kit.of('onStart')[0]?.[0];
       expect(kit.of('onTypedSkill')).toEqual([[first, 'unlevelled']]);
       expect(kit.of('onPick')).toEqual([[first, { kit: 'ads', how: 'auto' }, 'standard']]);
+    });
+
+    it('a personal chat is never sent to the kit picker', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      setup(undefined, { kitTracker: kit.tracker, kitPicker: kp.picker });
+      await mgr.start({ prompt: 'private', todoId: 'personal/20261111-mine.md' });
+      await flush();
+      expect(kp.asked).toEqual([]);
+      expect(kit.of('onPick')).toEqual([]);
     });
   });
 });

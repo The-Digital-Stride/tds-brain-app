@@ -68,8 +68,17 @@ function kitsJson(args: string[], who = SAM) {
   const r = kits([...args, '--json'], who);
   return { code: r.code, json: JSON.parse(r.out) as Record<string, any> };
 }
-function usage(command: string, input: unknown, extra: NodeJS.ProcessEnv = {}, who = SAM) {
-  const r = spawnSync(process.execPath, [USAGE, command], {
+/** A copy of the script with the shipped switch turned on, in the test's own temporary folder. */
+function syncedCopy(): string {
+  const src = readFileSync(USAGE, 'utf8');
+  if (!src.includes('const SYNC_APP_EVENTS = false;')) throw new Error('switch line not found');
+  const path = join(root, 'tdsapp-usage-sync-on.cjs');
+  writeFileSync(path, src.replace('const SYNC_APP_EVENTS = false;', 'const SYNC_APP_EVENTS = true;'));
+  return path;
+}
+
+function usage(command: string, input: unknown, extra: NodeJS.ProcessEnv = {}, who = SAM, script = USAGE) {
+  const r = spawnSync(process.execPath, [script, command], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
     env: env(who, { NODE_ENV: 'test', ...extra }),
     cwd: root,
@@ -148,6 +157,14 @@ describe('usage', () => {
         JSON.stringify({ on, publicKey: pub, keyId: 'k1' }),
       );
 
+    it('can never be turned on from the environment', () => {
+      writeObserve(true);
+      expect(usage('usage', event(), { TDSAPP_USAGE_TEST_SYNC: '1', NODE_ENV: 'test' }).json).toMatchObject({
+        synced: false,
+      });
+      expect(existsSync(syncedFile())).toBe(false);
+    });
+
     it('is not written when Observe is on but the shipped switch is off', () => {
       writeObserve(true);
       expect(usage('usage', event()).json).toMatchObject({ synced: false });
@@ -156,13 +173,13 @@ describe('usage', () => {
 
     it('is not written when the switch is on but Observe is off', () => {
       writeObserve(false);
-      expect(usage('usage', event(), { TDSAPP_USAGE_TEST_SYNC: '1' }).json).toMatchObject({ synced: false });
+      expect(usage('usage', event(), {}, SAM, syncedCopy()).json).toMatchObject({ synced: false });
       expect(existsSync(syncedFile())).toBe(false);
     });
 
     it('is written when both are on, starts {"v":1, and opens with the key', () => {
       writeObserve(true);
-      expect(usage('usage', event(), { TDSAPP_USAGE_TEST_SYNC: '1' }).json).toMatchObject({ synced: true });
+      expect(usage('usage', event(), {}, SAM, syncedCopy()).json).toMatchObject({ synced: true });
       const line = readFileSync(syncedFile(), 'utf8').trim();
       expect(line.startsWith('{"v":1,')).toBe(true);
       const { k, e, n, c } = JSON.parse(line);
@@ -174,7 +191,7 @@ describe('usage', () => {
           return createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: e }, format: 'jwk' });
         })(),
       });
-      const key = Buffer.from(hkdfSync('sha256', shared, Buffer.from(e + '.' + pub), 'observe-v1', 32));
+      const key = Buffer.from(hkdfSync('sha256', shared, Buffer.from(`${e}.${pub}`), 'observe-v1', 32));
       const ct = Buffer.from(c, 'base64url');
       const d = createDecipheriv('aes-256-gcm', key, Buffer.from(n, 'base64url'));
       d.setAuthTag(ct.subarray(ct.length - 16));
@@ -218,7 +235,7 @@ describe('usage', () => {
       '/path/to/My_Skill',
       'meeting-notes',
       5,
-      ...Array.from({ length: 60 }, (_, i) => 's' + i),
+      ...Array.from({ length: 60 }, (_, i) => `s${i}`),
     ];
     usage('usage', event({}, { used: { skills, connectors: ['claude.ai Gmail'] } }));
     const used = plainLines()[0].work.used;
@@ -343,7 +360,7 @@ describe('review', () => {
   const today = new Date().toISOString().slice(0, 10);
   const write = (...recs: unknown[]) => {
     mkdirSync(join(root, 'z-logs', 'app-usage'), { recursive: true });
-    writeFileSync(appFile(), recs.map((r) => JSON.stringify(r) + '\n').join(''));
+    writeFileSync(appFile(), recs.map((r) => `${JSON.stringify(r)}\n`).join(''));
   };
 
   it('keeps the highest seq per chat and reports hits, misses and savings', () => {

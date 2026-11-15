@@ -143,7 +143,7 @@ Script: session scratchpad `kspike/scripts/k1.mjs`; not committed.
    script) can change a kit's contents; ids and blurbs stay fixed in the contract. No file or a bad
    one: the built-in kits, silently.
    Plain: there are a handful of kits, and the agency can tune what's in them without an app update.
-6. **The pick rides on the level pick.** The Haiku picker's reply gains `kit`; its prompt lists only the
+6. **(Revised after the level-pick gate: the kit has its own one-shot query; see Review outcomes.) The pick rides on the level pick.** The Haiku picker's reply gains `kit`; its prompt lists only the
    contract's fixed ids and blurbs. A missing or unknown `kit` is `full` and never a failure, so the
    old reply shape still parses. The tier wording is pinned by a test, and tiers are compared before
    and after on a fixed sample, since level picks are live behaviour. Rules first: a typed `/name`
@@ -290,6 +290,23 @@ held kit `core` (auto), start-up 76k, would-save 4.0k–12.4k; closing with the 
 kept the record waiting (logged once) and the next app start kept it waiting; a later chat starting
 `/not-a-real-skill.pdf` recorded no skill; cache reuse counted 16.7k. Start-ups measured 76k and
 44.9k in two real chats: the connector timing the spike found.
+
+**Overseer sign-off round: two blockers, both fixed.**
+- *Sync back door.* `tdsapp-usage.cjs` let `NODE_ENV=test` + `TDSAPP_USAGE_TEST_SYNC=1` turn sealed
+  writes on. Removed: only the `SYNC_APP_EVENTS` constant can, and tests flip it in a temporary copy.
+  A test proves the environment can't.
+- *Level-pick gate.* 20 fixed agency messages, three runs each, Haiku 5.5, old prompt against new.
+  Adding the kit to the level pick's prompt **changed live behaviour**: about 2 in 60 replies became
+  unreadable (the reason grew to explain the kit and the JSON broke, which would also start the picker's
+  one-minute back-off), and tiers moved (a pricing comparison went Deep → Standard in 2 of 3 runs; an
+  "add a to-do" went Standard → Quick). A reordered variant was worse (about 9 unreadable in 60).
+  **Decision 6 revised:** the level pick's prompt and parser are back exactly as on `main` (a test pins
+  that the prompt has no kit wording), and the kit comes from its own one-shot query
+  (`server/engine/kit-picker.ts`, `{"kit": …}` only): 42 of 42 runs readable and consistent, an
+  injection attempt fell back to `full`. It runs for every new work chat's first message, so manual-mode
+  chats and set tiers now get a real kit too (the overseer's "most chats get no pick" concern); never
+  for personal chats; a typed plugin skill's rule still wins. Cost: one extra Haiku call per new work
+  chat (about a tenth of a penny), not "no extra cost" as first planned.
 
 **App to brain:** the app's hand-off ran the real script in a throwaway brain: one plain line in
 `z-logs/app-usage/`, salted chat hash, no raw id; `review` read it back.

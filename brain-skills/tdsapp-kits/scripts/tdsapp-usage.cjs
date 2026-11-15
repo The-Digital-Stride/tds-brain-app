@@ -13,7 +13,7 @@
 //                                   the Command Centre skips events it doesn't know.
 //
 // The locking and the cleaning rules are copied from .claude/hooks/log-team-usage.cjs. Plain Node,
-// no dependencies. Test hook: with NODE_ENV=test, TDSAPP_USAGE_TEST_SYNC=1 acts as the switch.
+// no dependencies. Tests flip SYNC_APP_EVENTS in a temporary copy; nothing in the environment can.
 
 'use strict';
 
@@ -39,7 +39,8 @@ const LINE_MAX = 4096;
 class Refusal extends Error {}
 
 function syncOn() {
-  return SYNC_APP_EVENTS === true || (process.env.NODE_ENV === 'test' && process.env.TDSAPP_USAGE_TEST_SYNC === '1');
+  // No environment override: only this constant turns sharing on.
+  return SYNC_APP_EVENTS === true;
 }
 
 // ---- cleaning (same rule as the tracker hook) ---------------------------------

@@ -58,8 +58,6 @@ import {
 } from '../../shared/contract.ts';
 import {
   BUILT_IN_KITS,
-  KIT_FALLBACK,
-  KIT_IDS,
   type Kit,
   type KitId,
   type KitPick,
@@ -112,6 +110,7 @@ import {
   withHelpersNudge,
   withoutHelpersNudge,
 } from './helpers.ts';
+import { createKitPicker, type KitPicker } from './kit-picker.ts';
 import { pluginOfSkill, rulePick } from './kits.ts';
 import { createLevelPicker, type LevelPicker, pickNeed } from './level-picker.ts';
 import {
@@ -253,6 +252,8 @@ export interface SessionManagerOptions {
   kitTracker?: KitTracker;
   /** The kits now, for a typed plugin skill's rule pick. Default: the built-in kits. */
   kits?: () => Promise<Readonly<Record<KitId, Kit>>>;
+  /** Picks a new work chat's kit from its first message (its own query, never the level pick's). */
+  kitPicker?: KitPicker;
 }
 
 /** A page wrapped in the TDS bar, ready to save or file. */
@@ -813,8 +814,6 @@ interface Session {
   modelHook: 'unknown' | 'seen' | 'missing';
   /** An automatic downward switch is being held: the tier running and the one wanted. */
   kept: { running: LevelTier; wanted: LevelTier } | null;
-  /** The newest answer the picker was asked for (`PickAttempt.settled`), so a message knows it asked. */
-  pickAttempt: Promise<LevelPick | null> | null;
   // Start-up kits (plan 2026-11-15-startup-kits): the tracker hears from a chat once its engine has
   // started and until it closes, never before or after.
   kitStarted: boolean;
@@ -928,6 +927,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   let levelMode: LevelMode = 'manual';
   const levels = opts.levels ?? null;
   const kitTracker = opts.kitTracker ?? null;
+  const kitPicker: KitPicker | null = kitTracker
+    ? (opts.kitPicker ?? createKitPicker({ query: opts.engine.query, claudePath: opts.claudePath, env, log }))
+    : null;
   const picker: LevelPicker | null = levels
     ? (opts.picker ?? createLevelPicker({ query: opts.engine.query, claudePath: opts.claudePath, env, log }))
     : null;
@@ -1190,7 +1192,6 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       switchHookFired: false,
       modelHook: 'unknown',
       kept: null,
-      pickAttempt: null,
       kitStarted: false,
       kitClosed: false,
       kitFirst: true,
@@ -1685,30 +1686,19 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   }
 
   /**
-   * Decision 6, for the chat's first message: a typed plugin skill's rule wins; else the picker's
-   * answer when it was asked (late included). Never the pick's reason. No answer: the tracker's fallback.
+   * Decision 6 (revised after the level-pick gate), for the chat's first message: a typed plugin
+   * skill's rule wins; else the kit picker's own one-shot answer for a work chat (late is fine: shadow
+   * data). The level pick is never involved, so its prompt and tiers are exactly as before. No answer:
+   * the tracker's fallback.
    */
-  function settleKit(
-    s: Session,
-    typed: string | null,
-    auto: Promise<LevelPick | null> | null,
-    tier: LevelTier | null,
-  ): void {
+  function settleKit(s: Session, typed: string | null, text: string, tier: LevelTier | null): void {
     if (!kitFor(s)) return;
     void (async () => {
       const rule = typed && pluginOfSkill(typed) !== null ? rulePick(typed, await kitsNow()) : null;
-      const p = rule ? null : await auto;
+      const pick: KitPick | null =
+        rule ?? (kitPicker && s.kind !== 'personal' ? await kitPicker.pick(text) : null);
       const tracker = kitFor(s);
-      if (!tracker) return;
-      if (rule) {
-        tracker.onPick(kitKey(s), rule, tier);
-      } else if (p) {
-        const kit: KitPick =
-          p.kit && (KIT_IDS as readonly string[]).includes(p.kit)
-            ? { kit: p.kit, how: 'auto' }
-            : { kit: KIT_FALLBACK, how: 'fallback' };
-        tracker.onPick(kitKey(s), kit, p.tier);
-      }
+      if (tracker && pick) tracker.onPick(kitKey(s), pick, tier);
     })().catch(() => log("Could not note a chat's start-up kit."));
   }
 
@@ -2190,7 +2180,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     if (kit) s.kitFirst = false;
     const message = withPageNote(withAttachmentNote(text, files), pageNote);
     if (!levels) {
-      if (kitFirst) settleKit(s, typed, null, null);
+      if (kitFirst) settleKit(s, typed, pickText(text, files), null);
       s.turnSent = true;
       s.input?.push(message);
       return;
@@ -2281,7 +2271,6 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     });
     if (need === 'none') return;
     const attempt = picker.pick(pickText(text, files));
-    s.pickAttempt = attempt.settled;
     const p = await attempt.now;
     if (p) {
       adoptPick(s, p);
@@ -2365,12 +2354,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       .then(async () => {
         await s.levelReady;
         const before = s.pick;
-        const asked = s.pickAttempt;
         const { resolved, unlevelled } = await levelFor(s, skill, { text, files });
         s.turnTier = resolved.level.tier;
         // The kit is the tracker's, set once: never through adoptPick's raise-only rule.
-        if (kitFirst)
-          settleKit(s, typedSkill(text), s.pickAttempt !== asked ? s.pickAttempt : null, s.turnTier);
+        if (kitFirst) settleKit(s, typedSkill(text), pickText(text, files), s.turnTier);
         // Decision 11: the message a helpers pick was made for, once, at Standard or above.
         // Never for a /skill: Claude Code would file the nudge inside the skill's arguments.
         nudge =

@@ -1,7 +1,6 @@
 import { tmpdir } from 'node:os';
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BUILT_IN_KITS, KIT_IDS, KIT_PICK_LINES } from '../../shared/kits-contract.ts';
 import { LEVEL_PICK, type LevelPick, QUICK_REPICK_MIN_CHARS } from '../../shared/levels-contract.ts';
 import {
   createLevelPicker,
@@ -136,62 +135,6 @@ describe('the pick prompt', () => {
     expect(PICK_SYSTEM_PROMPT).toContain('deep');
     expect(PICK_SYSTEM_PROMPT).toMatch(/never answer/i);
     expect(PICK_SYSTEM_PROMPT).toContain('helpers');
-  });
-});
-
-describe('the kit (start-up kits, decision 6)', () => {
-  it('reads a known kit, and an old reply without one still parses with no kit field', () => {
-    expect(parsePick('{"tier":"quick","helpers":false,"kit":"ads","reason":"x"}')).toEqual({
-      tier: 'quick',
-      helpers: false,
-      kit: 'ads',
-      reason: 'x',
-    });
-    const old = parsePick('{"tier":"quick","helpers":false,"reason":"x"}');
-    expect(old).toEqual({ tier: 'quick', helpers: false, reason: 'x' });
-    expect(old && 'kit' in old).toBe(false);
-  });
-
-  it('an unknown or badly typed kit is never a failure: the field is left unset (readers treat it as full)', () => {
-    for (const kit of ['everything', '', 'FULL', 5, null, ['core'], {}]) {
-      const p = parsePick(JSON.stringify({ tier: 'deep', helpers: true, kit, reason: 'x' }));
-      expect(p, String(kit)).toEqual({ tier: 'deep', helpers: true, reason: 'x' });
-    }
-  });
-
-  it('goes through the picker with the kit, and without one', async () => {
-    const { picker: p } = picker(() =>
-      result('{"tier":"deep","helpers":false,"kit":"web","reason":"Site work"}'),
-    );
-    expect((await p.pick('Fix the site').now)?.kit).toBe('web');
-    const { picker: q } = picker(() => result('{"tier":"deep","helpers":false,"reason":"Site work"}'));
-    expect((await q.pick('Fix the site').now)?.kit).toBeUndefined();
-  });
-
-  it('lists only the fixed kit ids and blurbs, and the reply shape names the kit', () => {
-    expect(PICK_SYSTEM_PROMPT).toContain(KIT_PICK_LINES);
-    expect(PICK_SYSTEM_PROMPT).toContain('"kit":"core|ads|web|full"');
-    for (const id of KIT_IDS) expect(PICK_SYSTEM_PROMPT).toContain(`- ${id}: ${BUILT_IN_KITS[id].blurb}.`);
-  });
-
-  it('pins the tier wording: the tier lines are exactly as before the kits change', () => {
-    expect(PICK_SYSTEM_PROMPT).toContain(
-      [
-        'Choose one tier:',
-        '- quick: Look-ups, short answers and simple edits.',
-        '- standard: Most writing, reports and everyday work.',
-        '- deep: Audits, strategy and anything that needs careful judgement.',
-        'If unsure between two tiers, choose the higher one. Anything that files, sends or changes accounts, websites or ads is at least standard. A request starting with /name runs the skill of that name.',
-      ].join('\n'),
-    );
-    expect(
-      PICK_SYSTEM_PROMPT.startsWith(
-        'You decide how much effort an assistant at a digital marketing agency should put into one request.\n',
-      ),
-    ).toBe(true);
-    expect(PICK_SYSTEM_PROMPT).toContain(
-      'helpers: true only when the job splits into two or more independent parts that could be done at the same time, such as several clients, channels or data sources. Most requests are false.',
-    );
   });
 });
 

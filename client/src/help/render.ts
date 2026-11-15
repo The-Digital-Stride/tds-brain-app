@@ -18,6 +18,7 @@ export function createRenderHelp(hasTopic: (id: string) => boolean): RenderHelp 
   // The render in progress: the links and pictures this render itself made (anything else is not trusted).
   let issued = { links: new Set<string>(), images: new Set<string>() };
   let mapImage: (src: string) => string | null = () => null;
+  let eager = false;
 
   const md = new Marked({
     renderer: {
@@ -37,7 +38,7 @@ export function createRenderHelp(hasTopic: (id: string) => boolean): RenderHelp 
         const url = mapImage(href);
         if (!url) return '';
         issued.images.add(url);
-        return `<img src="${esc(url)}" alt="${esc(text)}" loading="lazy">`;
+        return `<img src="${esc(url)}" alt="${esc(text)}"${eager ? '' : ' loading="lazy"'}>`;
       },
     },
   });
@@ -75,9 +76,10 @@ export function createRenderHelp(hasTopic: (id: string) => boolean): RenderHelp 
     return p;
   }
 
-  return (body, imageUrl) => {
+  return (body, imageUrl, options) => {
     issued = { links: new Set(), images: new Set() };
     mapImage = imageUrl;
+    eager = options?.eager === true;
     try {
       const html = md.parse(body, { async: false, gfm: true }) as string;
       const clean = instance().sanitize(html, {
@@ -111,6 +113,7 @@ export function createRenderHelp(hasTopic: (id: string) => boolean): RenderHelp 
       return unwrapMarked(clean);
     } finally {
       mapImage = () => null;
+      eager = false;
     }
   };
 }

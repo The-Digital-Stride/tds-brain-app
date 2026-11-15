@@ -17,6 +17,12 @@ function pick(ctx: HelpContext): string {
       return 'home';
     case 'chat':
       return 'talking-to-claude';
+    case 'settings':
+      return 'settings';
+    case 'profile':
+      return 'your-profile';
+    case 'guide':
+      return 'cortex-guide';
     case 'app:documents':
       return 'documents';
     case 'app:images':

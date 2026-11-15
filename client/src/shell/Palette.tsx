@@ -183,6 +183,11 @@ function PaletteDialog() {
       dispatch({ type: 'open-drawer', drawer });
     },
     goHome: () => newChat(),
+    openHelp: (id) => {
+      // The drawer takes focus itself.
+      skipRestore.current = true;
+      dispatch({ type: 'open-help', page: id });
+    },
   };
 
   const run = (option: Option) => {

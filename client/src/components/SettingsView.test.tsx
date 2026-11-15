@@ -17,6 +17,7 @@ const boot = {
   engine: { ok: true, claudePath: '/bin/claude', permissionMode: 'default' },
 };
 const setSetupOpen = vi.fn();
+const openView = vi.fn();
 const st = vi.hoisted(() => ({
   updatePrefs: vi.fn(),
   clearSettingsFocus: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../store.tsx', () => ({
   useStore: () => ({
     boot,
     setSetupOpen,
+    openView,
     updatePrefs: st.updatePrefs,
     skillLevels: st.skillLevels,
     setSkillLevel: st.setSkillLevel,
@@ -51,6 +53,10 @@ vi.mock('../shell/ShellProvider.tsx', () => ({
 const upd = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../state/update.ts', () => ({ useUpdate: () => upd.current }));
 
+// Every page exists, so what shows is decided by the role alone.
+vi.mock('../help/library.ts', () => ({
+  helpLibrary: { byId: (id: string) => ({ id, title: id }) },
+}));
 vi.mock('./VersionHistory.tsx', () => ({ VersionHistory: () => <p>History</p> }));
 
 const { SettingsView } = await import('./SettingsView.tsx');
@@ -528,5 +534,53 @@ describe('Tokens saved', () => {
     render(<SettingsView />);
     expect(await screen.findByText(/Couldn't load the token figures/)).toBeTruthy();
     expect(screen.queryByText(/Start-up kits/)).toBeNull();
+  });
+});
+
+describe('help links', () => {
+  const pages: [string, 28 | 32][] = [
+    ['tokens-saved', 32],
+    ['change-todos-setting', 28],
+    ['keyboard-shortcuts', 28],
+    ['picking-the-client', 28],
+    ['levels', 28],
+    ['version-history', 32],
+  ];
+
+  it('an owner gets a link to each page, row links 28px and heading links 32px', () => {
+    boot.identity = { ...boot.identity, role: 'owner' };
+    boot.prefs = { directWrites: false, model: null, effort: null, levelMode: 'auto' } as typeof boot.prefs;
+    setUpd();
+    render(<SettingsView />);
+    for (const [page, size] of pages) {
+      const b = screen.getByRole('button', { name: `Help: ${page}` });
+      expect(b.getAttribute('data-size')).toBe(size === 28 ? '28' : null);
+    }
+    expect(screen.getByRole('button', { name: 'Help: health' })).toBeTruthy();
+  });
+
+  it('an owner gets the skill levels link when the section shows', () => {
+    boot.identity = { ...boot.identity, role: 'owner' };
+    st.skillLevels = { levels: {}, canSet: true, writable: true };
+    setUpd();
+    render(<SettingsView />);
+    expect(screen.getByRole('button', { name: 'Help: skill-levels' })).toBeTruthy();
+  });
+
+  it('is left out for a team member', () => {
+    boot.prefs = { directWrites: false, model: null, effort: null, levelMode: 'auto' } as typeof boot.prefs;
+    st.skillLevels = { levels: {}, canSet: true, writable: true };
+    setUpd();
+    render(<SettingsView />);
+    expect(screen.queryByRole('button', { name: /^Help:/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Read the Cortex Guide' })).toBeNull();
+  });
+
+  it('an owner can read the Cortex Guide from About', () => {
+    boot.identity = { ...boot.identity, role: 'owner' };
+    setUpd();
+    render(<SettingsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Read the Cortex Guide' }));
+    expect(openView).toHaveBeenCalledWith('guide');
   });
 });

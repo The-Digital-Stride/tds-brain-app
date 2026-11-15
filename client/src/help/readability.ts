@@ -31,12 +31,65 @@ export function words(text: string): string[] {
   return text.match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g) ?? [];
 }
 
-/** Flesch-Kincaid grade level. 0 when there is nothing to read. */
-export function fkGrade(text: string): number {
+/** The terms of help/glossary.md: its `### Term` lines, in order. */
+export function glossaryTerms(markdown: string): string[] {
+  return [...markdown.matchAll(/^###[ \t]+(.+?)[ \t]*$/gm)].map((m) => m[1] as string);
+}
+
+/** A word, or a term, as one comparable key: lower case, no possessive, hyphens for spaces. */
+const termKey = (w: string) =>
+  w
+    .toLowerCase()
+    .replace(/['’]s$/, '')
+    .replace(/[\s-]+/g, '-');
+/** The key a word may stand for once its plural is taken off. */
+const singulars = (key: string) => {
+  const out = [key];
+  if (key.endsWith('s')) out.push(key.slice(0, -1));
+  if (key.endsWith('es')) out.push(key.slice(0, -2));
+  return out;
+};
+
+/** Syllables per word, where a word that is a glossary term (or a plural, or a hyphenated form) counts as one. */
+function syllablesFor(ws: readonly string[], terms: readonly string[]): number[] {
+  const single = new Set<string>();
+  const multi: string[][] = [];
+  for (const t of terms) {
+    const parts = t
+      .trim()
+      .split(/[\s-]+/)
+      .filter(Boolean);
+    if (parts.length === 0) continue;
+    single.add(termKey(t));
+    if (parts.length > 1) multi.push(parts.map(termKey));
+  }
+  const keys = ws.map(termKey);
+  const out = ws.map((w, i) =>
+    singulars(keys[i] as string).some((k) => single.has(k)) ? 1 : countSyllables(w),
+  );
+  // A two-word term written as two words: each of them counts one.
+  for (const parts of multi) {
+    for (let i = 0; i + parts.length <= ws.length; i++) {
+      if (parts.every((p, j) => singulars(keys[i + j] as string).includes(p))) {
+        for (let j = 0; j < parts.length; j++) out[i + j] = 1;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Flesch-Kincaid grade level. 0 when there is nothing to read. `terms` are glossary terms: a word that matches one
+ * (any case, plural, or hyphenated) counts as one syllable, because the glossary explains it.
+ */
+export function fkGrade(text: string, terms: readonly string[] = []): number {
   const w = words(text);
   const s = sentences(text);
   if (w.length === 0 || s.length === 0) return 0;
-  const syl = w.reduce((n, x) => n + countSyllables(x), 0);
+  const syl =
+    terms.length === 0
+      ? w.reduce((n, x) => n + countSyllables(x), 0)
+      : syllablesFor(w, terms).reduce((n, x) => n + x, 0);
   return 0.39 * (w.length / s.length) + 11.8 * (syl / w.length) - 15.59;
 }
 

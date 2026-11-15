@@ -76,7 +76,7 @@ export interface HeldTodo {
   sending?: boolean;
 }
 
-export type View = 'chat' | 'settings' | 'profile' | `app:${string}`;
+export type View = 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
 
 export interface NewChat {

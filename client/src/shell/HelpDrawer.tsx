@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { HELP_FALLBACK_ID, type HelpTopic } from '../help/contract.ts';
 import { HelpArticle } from '../help/HelpArticle.tsx';
-import { helpLibrary } from '../help/library.ts';
+import { helpLibrary, helpRoleWords } from '../help/library.ts';
+import { useStore } from '../store.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -20,17 +21,6 @@ function PageRow({ topic, onOpen }: { topic: HelpTopic; onOpen: (id: string) => 
   );
 }
 
-/** The badge words for a page written for some roles. */
-function roleWords(roles: HelpTopic['roles']): string | null {
-  if (roles === 'all') return null;
-  const owner = roles.includes('owner');
-  const scout = roles.includes('scout');
-  if (owner && scout) return 'For owners and scouts';
-  if (owner) return 'For owners';
-  if (scout) return 'For scouts';
-  return null;
-}
-
 const rows = (topics: readonly HelpTopic[], onOpen: (id: string) => void) => (
   <ul className="drawer-list">
     {topics.map((t) => (
@@ -45,13 +35,15 @@ const rows = (topics: readonly HelpTopic[], onOpen: (id: string) => void) => (
  * history; Back pops it.
  */
 export function HelpDrawer() {
-  const { state } = useShell();
+  const { state, dispatch } = useShell();
+  const { openView } = useStore();
   const start = helpLibrary.byId(state.helpPage ?? '')?.id ?? HELP_FALLBACK_ID;
   // The pages seen, last one showing. A new start (Help opened again, or a HelpLink pressed) begins afresh.
   const [trail, setTrail] = useState<string[]>([start]);
   const [query, setQuery] = useState('');
   const isOpen = state.drawer === 'help';
-  const was = useRef({ start, isOpen });
+  const opened = state.helpOpened;
+  const was = useRef({ start, isOpen, opened });
   const scroll = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
@@ -60,11 +52,11 @@ export function HelpDrawer() {
   // Help opened again (the body stays mounted while the drawer slides shut), or on another page: begin afresh.
   useEffect(() => {
     const prev = was.current;
-    was.current = { start, isOpen };
-    if (!isOpen || (prev.isOpen && prev.start === start)) return;
+    was.current = { start, isOpen, opened };
+    if (!isOpen || (prev.isOpen && prev.start === start && prev.opened === opened)) return;
     setTrail([start]);
     setQuery('');
-  }, [start, isOpen]);
+  }, [start, isOpen, opened]);
 
   const current = trail[trail.length - 1] ?? start;
   const topic = helpLibrary.byId(current) ?? helpLibrary.byId(HELP_FALLBACK_ID);
@@ -110,6 +102,19 @@ export function HelpDrawer() {
       </div>
       <div className="drawer-scroll" ref={scroll}>
         <div className="drawer-body">
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            onClick={() => {
+              // Not close-help: that would put the earlier drawer back over the sheet.
+              dispatch({ type: 'close-drawer' });
+              openView('guide');
+            }}
+          >
+            Open the Cortex Guide
+          </button>
           <p className="visually-hidden" role="status" aria-live="polite">
             {found
               ? found.length === 0
@@ -145,7 +150,9 @@ export function HelpDrawer() {
                     <h3 id={`${searchId}-title`} ref={heading} tabIndex={-1}>
                       {topic.title}
                     </h3>
-                    {roleWords(topic.roles) ? <span className="badge">{roleWords(topic.roles)}</span> : null}
+                    {helpRoleWords(topic.roles) ? (
+                      <span className="badge">{helpRoleWords(topic.roles)}</span>
+                    ) : null}
                   </div>
                   <HelpArticle topic={topic} onOpen={open} />
                 </section>

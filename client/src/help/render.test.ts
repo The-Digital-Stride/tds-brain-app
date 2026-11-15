@@ -23,6 +23,13 @@ describe('renderHelp', () => {
     expect(html).toContain('loading="lazy"');
     expect(html).not.toContain('b.webp');
   });
+  it('eager pictures carry no lazy loading (the print copy needs every picture)', () => {
+    const html = render('![Alt here](images/a.webp)', img, { eager: true });
+    expect(html).toContain('src="/assets/a-123.webp"');
+    expect(html).not.toContain('loading="lazy"');
+    // The next ordinary render is lazy again.
+    expect(render('![Alt here](images/a.webp)', img)).toContain('loading="lazy"');
+  });
   it('strips scripts, iframes and raw images from outside', () => {
     const html = render(
       '<script>alert(1)</script><iframe src="x"></iframe><img src="https://evil/x.png">Hi',

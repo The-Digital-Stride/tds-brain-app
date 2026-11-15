@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { Role } from '../../../shared/contract.ts';
 import {
   checkBoldLabels,
+  checkGlossary,
   checkGrade,
   checkHeadings,
   checkImages,
@@ -20,9 +21,10 @@ import {
   checkTopicIds,
 } from './checks.ts';
 import { helpForContext } from './context.ts';
-import type { HelpContext, HelpShot, HelpTopic } from './contract.ts';
+import { HELP_GLOSSARY_TERMS, type HelpContext, type HelpShot, type HelpTopic } from './contract.ts';
 import { parseHelpFile } from './frontmatter.ts';
 import { createHelpLibrary } from './library.ts';
+import { glossaryTerms } from './readability.ts';
 import { HELP_TOPIC_IDS } from './topics.ts';
 import { helpVisible } from './visibility.ts';
 
@@ -53,6 +55,10 @@ const appText = walk(SRC_DIR)
   .map((p) => readFileSync(p, 'utf8'))
   .join('\n');
 
+const glossaryPath = join(HELP_DIR, 'glossary.md');
+const glossaryText = existsSync(glossaryPath) ? readFileSync(glossaryPath, 'utf8') : '';
+const terms = glossaryTerms(glossaryText);
+
 const IMAGE_DIR = join(HELP_DIR, 'images');
 const imageFiles = new Map<string, { bytes: number }>();
 if (existsSync(IMAGE_DIR))
@@ -72,7 +78,10 @@ describe('help pages', () => {
   each('has the standard headings in order', checkHeadings);
   each('keeps every sentence short', checkSentences);
   each('is the right length', checkLength);
-  each('reads at grade 9 or lower', checkGrade);
+  each('reads at grade 9 or lower (glossary words count as one syllable)', (t) => checkGrade(t, terms));
+  it('the glossary has no more than 25 terms', () => expect(checkGlossary(glossaryText)).toEqual([]));
+  it('the glossary defines exactly the fixed terms (changing them needs a plan change)', () =>
+    expect(terms.map((t) => t.toLowerCase())).toEqual(HELP_GLOSSARY_TERMS.map((t) => t.toLowerCase())));
   each('uses UK spelling', checkSpelling);
   each('avoids banned jargon', checkJargon);
   each('only bolds labels that exist in the app', (t) => checkBoldLabels(t, appText));

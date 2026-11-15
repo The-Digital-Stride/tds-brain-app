@@ -79,6 +79,38 @@ export const HELP_HEADINGS = [
 ] as const;
 /** Pages that are free-form (decision: "Getting started" pages keep the reading rules but not the headings). */
 export const HELP_FREEFORM_AREAS: readonly HelpArea[] = ['getting-started'];
+/** Single pages that are free-form too: no fixed headings or word range, but still read, spelt and jargon-checked. */
+export const HELP_FREEFORM_PAGES: readonly string[] = ['glossary', 'fixing-problems'];
+/** Most terms help/glossary.md may define (each `### Term` line). Terms count as one syllable in the reading score. */
+export const HELP_GLOSSARY_MAX = 25;
+/** The glossary's fixed terms (plan 2026-11-15-cortex-help-phase-2). They score as one syllable, so the list is pinned. */
+export const HELP_GLOSSARY_TERMS: readonly string[] = [
+  'Brain',
+  'Cortex',
+  'client',
+  'chat',
+  'Claude',
+  'skill',
+  'helper',
+  'level',
+  'approval',
+  'to-do',
+  'drawer',
+  'rail',
+  'Home',
+  'pin',
+  'favourite',
+  'sync',
+  'owner',
+  'scout',
+  'team member',
+  'token',
+  'page',
+  'Dock',
+  'terminal',
+  'Settings',
+  'Help',
+];
 /** Where the Help drawer opens when nothing more specific fits. */
 export const HELP_FALLBACK_ID = 'welcome';
 
@@ -108,7 +140,7 @@ export interface HelpLibrary {
  * with no active chat. `drawer` is the drawer Help replaced (if any).
  */
 export interface HelpContext {
-  view: 'home' | 'chat' | 'settings' | 'profile' | `app:${string}`;
+  view: 'home' | 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`;
   drawer: DrawerName | null;
   /** The active chat is waiting on an approval or a question → `approvals-and-questions`. */
   waiting: boolean;
@@ -144,6 +176,11 @@ export interface HelpShot {
 }
 
 /** Turns a help page body into safe HTML. `imageUrl` maps "images/x.webp" to the bundled URL (or null). */
-export type RenderHelp = (body: string, imageUrl: (src: string) => string | null) => string;
+export type RenderHelp = (
+  body: string,
+  imageUrl: (src: string) => string | null,
+  /** `eager`: pictures load at once, not lazily (the Guide's print copy needs every one of them). */
+  options?: { eager?: boolean },
+) => string;
 /** The attribute renderHelp puts on a `help:<id>` link (`<a href="#help-<id>" data-help-id="<id>">`). */
 export const HELP_LINK_ATTR = 'data-help-id';

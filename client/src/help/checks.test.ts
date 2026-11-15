@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   checkBoldLabels,
+  checkGlossary,
   checkGrade,
   checkHeadings,
   checkImages,
@@ -60,6 +61,10 @@ describe('checkHeadings', () => {
   });
   it('skips free-form areas', () => {
     expect(checkHeadings(withBody('## Anything', { area: 'getting-started' }))).toEqual([]);
+    // The glossary and "Fixing problems" are free-form by page; getting-help is not.
+    expect(checkHeadings(withBody('## Anything', { id: 'glossary', area: 'help' }))).toEqual([]);
+    expect(checkHeadings(withBody('## Anything', { id: 'fixing-problems', area: 'help' }))).toEqual([]);
+    expect(checkHeadings(withBody('## Anything', { id: 'getting-help', area: 'help' }))).toHaveLength(1);
   });
 });
 
@@ -75,6 +80,8 @@ describe('checkLength', () => {
     expect(checkLength(withBody('## What it does\nShort.'))).toHaveLength(1);
     expect(checkLength(withBody(`${good.body}\n${'More words here. '.repeat(100)}`))).toHaveLength(1);
     expect(checkLength(withBody('Short.', { area: 'getting-started' }))).toEqual([]);
+    expect(checkLength(withBody('Short.', { id: 'glossary', area: 'help' }))).toEqual([]);
+    expect(checkLength(withBody('Short.', { id: 'getting-help', area: 'help' }))).toHaveLength(1);
   });
 });
 
@@ -159,5 +166,47 @@ describe('checkImages', () => {
   });
   it('passes trivially with no images', () => {
     expect(checkImages(withBody('No pictures here.'), new Map(), [])).toEqual([]);
+  });
+});
+
+describe('free-form pages are still checked for the rest', () => {
+  const dense =
+    'Notwithstanding administrative reorganisation, interdepartmental communication deteriorated.';
+  it('reading grade, spelling and jargon', () => {
+    const t = (body: string) => withBody(body, { id: 'glossary', area: 'help' });
+    expect(checkGrade(t(`${dense} ${dense} ${dense}`))).toHaveLength(1);
+    expect(checkSpelling(t('A color.'))).toHaveLength(1);
+    expect(checkJargon(t('The API.'))).toHaveLength(1);
+  });
+});
+
+describe('checkGrade with glossary terms', () => {
+  it('leaves glossary words out of the score, so a page of them passes', () => {
+    const line = 'The authorisation and the administration committee.\n';
+    const page = withBody(line.repeat(40));
+    expect(checkGrade(page)).toHaveLength(1);
+    expect(checkGrade(page, ['authorisation', 'administration', 'committee'])).toEqual([]);
+  });
+});
+
+describe('checkGlossary', () => {
+  const md = (n: number) => Array.from({ length: n }, (_, i) => `### Term${i}\nMeaning.`).join('\n\n');
+  it('passes 25 terms and fails 26', () => {
+    expect(checkGlossary(md(25))).toEqual([]);
+    expect(checkGlossary(md(26))).toHaveLength(1);
+    expect(checkGlossary(md(26))[0]).toContain('26');
+  });
+});
+
+describe('checkJargon: token', () => {
+  it('is allowed for how full a chat is, Tokens saved and the glossary', () => {
+    expect(checkJargon(withBody('See how full it is. A token is small.'))).toEqual([]);
+    expect(checkJargon(withBody('Open Tokens saved in Settings. A token is small.'))).toEqual([]);
+    expect(
+      checkJargon(withBody('### Token\nA small piece of text.', { id: 'glossary', area: 'help' })),
+    ).toEqual([]);
+  });
+  it('is still banned elsewhere', () => {
+    expect(checkJargon(withBody('A token is small.'))).toHaveLength(1);
   });
 });

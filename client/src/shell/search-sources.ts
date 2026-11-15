@@ -7,6 +7,7 @@
  */
 import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
+import { helpLibrary } from '../help/library.ts';
 import { matchRank } from '../state/search-match.ts';
 import { APPS } from './apps.ts';
 import type {
@@ -198,6 +199,9 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
  */
 const HELP_GO: Omit<GoTo, 'run'> = { id: 'go-help', label: 'Help', hint: 'H', icon: 'help' };
 
+/** The Cortex Guide sheet: shown with Help, to the same people. */
+const GUIDE_GO: Omit<GoTo, 'run'> = { id: 'go-guide', label: 'Cortex Guide', hint: null, icon: 'help' };
+
 /** "Go to": Home, each drawer, Help (where it is on), Settings, then every app on the rail. Derived, never hard-coded per app. */
 function goToEntries(ctx?: SearchContext): GoTo[] {
   const drawer = (name: Exclude<DrawerName, 'help'>): GoTo => ({
@@ -209,7 +213,12 @@ function goToEntries(ctx?: SearchContext): GoTo[] {
     drawer('todos'),
     drawer('chats'),
     drawer('skills'),
-    ...(ctx?.helpVisible ? [{ ...HELP_GO, run: (a: SearchActions) => a.openDrawer('help') }] : []),
+    ...(ctx?.helpVisible
+      ? [
+          { ...HELP_GO, run: (a: SearchActions) => a.openDrawer('help') },
+          { ...GUIDE_GO, run: (a: SearchActions) => a.openView('guide') },
+        ]
+      : []),
     {
       id: 'go-settings',
       label: 'Settings',
@@ -286,8 +295,27 @@ const earlierChats: SearchSource = {
     ),
 };
 
+/** Help pages (owners only, where `SearchContext.helpVisible`): the best five, each opening the Help drawer on its page. */
+const help: SearchSource = {
+  id: 'help',
+  title: 'Help',
+  search: (query, ctx) => {
+    if (!ctx.helpVisible) return { hits: [], total: 0 };
+    const hits = helpLibrary.search(query, 5).map(
+      (t): SearchHit => ({
+        id: t.id,
+        label: t.title,
+        hint: t.summary,
+        icon: 'help',
+        run: (a) => a.openHelp(t.id),
+      }),
+    );
+    return { hits, total: hits.length };
+  },
+};
+
 /**
- * Every source, in group order: Go to, To-dos, Open chats, Skills, Clients, Earlier chats, then the apps'
+ * Every source, in group order: Go to, To-dos, Open chats, Skills, Clients, Earlier chats, Help, then the apps'
  * (`AppSlot.search`). Async sources go last whatever their place, so a late answer never moves the highlight.
  * Built each time it is called, so it follows `APPS`.
  */
@@ -299,6 +327,7 @@ export function searchSources(): SearchSource[] {
     DRAWERS.skills.source,
     clients,
     earlierChats,
+    help,
     ...APPS.flatMap((a) => (a.search ? [a.search] : [])),
   ];
   return [...all.filter((s) => !s.searchAsync), ...all.filter((s) => s.searchAsync)];

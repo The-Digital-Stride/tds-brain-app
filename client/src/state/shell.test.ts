@@ -135,6 +135,7 @@ describe('saveShell', () => {
       viewerWidth: null,
       helpReturn: null,
       helpPage: null,
+      helpOpened: 0,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
@@ -370,6 +371,13 @@ describe('Help drawer', () => {
     const help = shellReducer(open(null), { type: 'open-help', page: 'home' });
     expect(help).toMatchObject({ drawer: 'help', helpReturn: null, helpPage: 'home' });
     expect(shellReducer(help, { type: 'close-help' }).drawer).toBeNull();
+  });
+
+  it('open-help counts each opening, so Help starts afresh even on the same page', () => {
+    const once = shellReducer(open(null), { type: 'open-help', page: 'home' });
+    const twice = shellReducer(once, { type: 'open-help', page: 'home' });
+    expect(twice.helpOpened).toBe(once.helpOpened + 1);
+    expect(loadShell(saveShell(twice)).helpOpened).toBe(0);
   });
 
   it('open-help keeps the first drawer when asked again while Help shows', () => {

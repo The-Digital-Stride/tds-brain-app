@@ -37,6 +37,8 @@ export interface ShellState {
   helpReturn: DrawerName | null;
   /** The help page id Help opened on (decided when it opened), or null. Never saved. */
   helpPage: string | null;
+  /** Goes up by one each time Help is opened on a page, so the drawer starts afresh even on the same page. Never saved. */
+  helpOpened: number;
   /** The person's choice. The panel only shows while a live chat is on the sheet. */
   panelOpen: boolean;
   panelTab: PanelTab;
@@ -425,7 +427,9 @@ export interface ChatsLists {
 
 /** What a hit may do when chosen. The palette closes itself after `run` unless the hit says otherwise. */
 export interface SearchActions {
-  openView: (view: 'chat' | 'settings' | 'profile' | `app:${string}`) => void;
+  openView: (view: 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`) => void;
+  /** Opens the Help drawer on a page (a help page id). */
+  openHelp: (id: string) => void;
   /** Shows Home (the sheet with no chat or app). */
   goHome: () => void;
   openDrawer: (drawer: DrawerName) => void;

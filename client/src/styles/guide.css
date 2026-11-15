@@ -1,0 +1,193 @@
+/*
+ * The Cortex Guide sheet, and the small help pieces beside it. Sizes follow docs/design-system.md.
+ */
+
+.guide {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  padding: 16px 24px 32px;
+}
+.guide-contents {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+}
+.guide-area {
+  margin: 0 0 2px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+.guide-contents .drawer-list {
+  gap: 2px;
+}
+.guide-contents .line {
+  font-size: 13px;
+}
+/* The page you're on: a wash, as rows on white do (design-system.md). */
+.guide-contents .line[aria-current="true"] {
+  background: var(--wash);
+}
+.guide-contents .line[aria-current="true"]:hover {
+  background: var(--wash-strong);
+}
+.guide-picker {
+  display: none;
+}
+.guide-page {
+  min-width: 0;
+  max-width: 640px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.guide-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.guide-page h2 {
+  font-size: 18px;
+  color: var(--navy);
+  overflow-wrap: anywhere;
+}
+.guide-page h2:focus {
+  outline: none;
+}
+.guide-page .help-article {
+  font-size: 14px;
+}
+.guide-related {
+  display: grid;
+  gap: 6px;
+}
+.guide-related h3 {
+  font-size: 14px;
+}
+.guide-related ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Narrow sheet: the contents become a picker above the page. */
+@container sheet (max-width: 900px) {
+  .guide {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .guide-contents {
+    display: none;
+  }
+  .guide-picker {
+    display: grid;
+    gap: 4px;
+  }
+  .guide-picker .field {
+    width: 100%;
+  }
+}
+
+/* The print copy: every page in order. Never seen on screen. */
+.guide-print {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  /* Only when the Guide is on the sheet, so no other view is touched. */
+  .desk:has(.guide) {
+    display: block;
+    height: auto;
+    overflow: visible;
+    padding: 0;
+  }
+  .desk:has(.guide) .sheet,
+  .desk:has(.guide) .sheet-scroll {
+    display: block;
+    height: auto;
+    overflow: visible;
+    box-shadow: none;
+    border-radius: 0;
+    margin: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .desk:has(.guide) .rail,
+  .desk:has(.guide) .dock-slot,
+  .desk:has(.guide) .dock,
+  .desk:has(.guide) .sheet-bar,
+  .desk:has(.guide) .sheet > :not(.sheet-scroll),
+  .guide-contents,
+  .guide-picker,
+  .guide-page {
+    display: none;
+  }
+  .guide {
+    display: block;
+    padding: 0;
+  }
+  .guide-print {
+    display: block;
+  }
+  .guide-print-page {
+    break-before: page;
+    page-break-before: always;
+    font-size: 12pt;
+    color: #000;
+  }
+  .guide-print-page:first-child {
+    break-before: auto;
+    page-break-before: auto;
+  }
+  .guide-print-page h2 {
+    font-size: 20pt;
+    margin-bottom: 8pt;
+  }
+  .guide-print .help-article {
+    font-size: 12pt;
+  }
+  .guide-print img {
+    max-width: 100%;
+    break-inside: avoid;
+  }
+  /* Links read as plain text, with a web address after an outside one. */
+  .guide-print a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .guide-print a[href^="http"]::after {
+    content: " (" attr(href) ")";
+  }
+}
+
+/* A heading or a row label with a HelpLink beside it. */
+.help-inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.settings .help-inline[data-heading="true"] {
+  margin-bottom: 4px;
+}
+.settings .help-inline[data-heading="true"] h2 {
+  margin: 0;
+}
+/* HelpLink in a row: a step smaller than the header size. */
+.icon-btn[data-size="28"] {
+  width: 28px;
+  height: 28px;
+}

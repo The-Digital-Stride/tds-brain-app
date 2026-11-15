@@ -20,6 +20,7 @@ export const DEFAULT_SHELL: ShellState = {
   drawer: null,
   helpReturn: null,
   helpPage: null,
+  helpOpened: 0,
   panelOpen: false,
   panelTab: 'files',
   panelFile: null,
@@ -60,7 +61,7 @@ export const shellReducer: ShellReducer = (state, action) => {
     case 'open-drawer':
       return state.drawer === action.drawer ? state : withDrawer(state, action.drawer);
     case 'open-help':
-      return { ...withDrawer(state, 'help'), helpPage: action.page };
+      return { ...withDrawer(state, 'help'), helpPage: action.page, helpOpened: state.helpOpened + 1 };
     case 'close-help':
       return closeHelp(state);
     case 'close-drawer':
@@ -117,6 +118,7 @@ export const loadShell: LoadShell = (raw) => {
     drawer,
     helpReturn: null,
     helpPage: null,
+    helpOpened: 0,
     panelOpen: bool('panelOpen', DEFAULT_SHELL.panelOpen),
     panelTab,
     panelFile: null,

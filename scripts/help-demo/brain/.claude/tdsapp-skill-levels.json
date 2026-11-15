@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "levels": {
+    "keyword-research": { "tier": "deep", "setBy": "sam-taylor", "at": "2026-11-05T09:00:00Z", "note": "Needs careful thinking." },
+    "meeting-notes": { "tier": "quick", "setBy": "sam-taylor", "at": "2026-11-05T09:02:00Z" },
+    "monthly-report": { "tier": "standard", "setBy": "sam-taylor", "at": "2026-11-05T09:04:00Z" }
+  }
+}

@@ -6,6 +6,7 @@ import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { PageStage } from './PageStage.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
+import { ViewerDrawer } from './ViewerDrawer.tsx';
 
 const APP_WORDS = { documents: 'Open in Documents', images: 'Open in Images' } as const;
 
@@ -60,7 +61,7 @@ export function FileViewer() {
     return (
       <div className="viewer-layer">
         <div className="viewer-veil" aria-hidden="true" onClick={close} />
-        <div className="viewer-drawer glass" role="dialog" aria-modal="true" aria-labelledby={headingId}>
+        <ViewerDrawer role="dialog" aria-modal="true" aria-labelledby={headingId}>
           <PageStage
             chat={request.chat}
             pageKey={request.key}
@@ -76,7 +77,7 @@ export function FileViewer() {
               if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
             }}
           />
-        </div>
+        </ViewerDrawer>
       </div>
     );
   }
@@ -95,7 +96,7 @@ export function FileViewer() {
     <div className="viewer-layer">
       {/* A pointer shortcut only: Esc and the close button do the same. */}
       <div className="viewer-veil" aria-hidden="true" onClick={close} />
-      <div className="viewer-drawer glass" role="dialog" aria-modal="true" aria-labelledby={headingId}>
+      <ViewerDrawer role="dialog" aria-modal="true" aria-labelledby={headingId}>
         <header className="viewer-head">
           <div className="viewer-name">
             <h2 id={headingId} ref={heading} tabIndex={-1}>
@@ -131,7 +132,7 @@ export function FileViewer() {
             <FileStage key={item.id} item={item} version={String(libraryVersion)} />
           )}
         </section>
-      </div>
+      </ViewerDrawer>
     </div>
   );
 }

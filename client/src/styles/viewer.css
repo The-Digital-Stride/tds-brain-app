@@ -36,6 +36,48 @@
   }
 }
 
+/* The handle on the drawer's left edge (`ResizeHandle.tsx`): an 8px strip to grab, a line on hover or
+   focus. The width is set inline and never animated, so dragging follows the pointer at once. */
+.viewer-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* A 20px grab strip centred on the edge (WCAG 2.5.8), with a 2px line in the middle. */
+  left: -10px;
+  width: 20px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.viewer-resize::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 9px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+.viewer-resize:hover::after,
+.viewer-resize:focus-visible::after,
+body.viewer-resizing .viewer-resize::after {
+  background: var(--focus);
+}
+/* The app's own focus ring (base.css), drawn inside the strip so it isn't clipped. */
+.viewer-resize:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+/* While dragging: no text selecting, and the page frame lets the pointer through to the handle. */
+body.viewer-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.viewer-resizing iframe {
+  pointer-events: none;
+}
+
 /* The header band: name and place, the actions, then close at the top right. On a narrow drawer
    the actions take a second line and close stays top right. */
 .viewer-head {

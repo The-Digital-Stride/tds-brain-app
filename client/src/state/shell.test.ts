@@ -132,6 +132,7 @@ describe('saveShell', () => {
       paletteOpen: true,
       viewer: { item: { id: 'x' } as LibraryItem, place: 'Acme' },
       singleKeys: false,
+      viewerWidth: null,
     };
     const saved = JSON.parse(saveShell(state)) as Record<string, unknown>;
     expect(saved).not.toHaveProperty('paletteOpen');
@@ -150,6 +151,23 @@ describe('saveShell', () => {
       paletteOpen: false,
       viewer: null,
     });
+  });
+});
+
+describe('viewerWidth', () => {
+  it('set-viewer-width stores it, and it is saved and loaded; null is not saved', () => {
+    const wide = shellReducer(base, { type: 'set-viewer-width', width: 1200 });
+    expect(wide.viewerWidth).toBe(1200);
+    expect(JSON.parse(saveShell(wide)).viewerWidth).toBe(1200);
+    expect(loadShell(saveShell(wide)).viewerWidth).toBe(1200);
+    expect(
+      JSON.parse(saveShell(shellReducer(wide, { type: 'set-viewer-width', width: null }))),
+    ).not.toHaveProperty('viewerWidth');
+  });
+  it('a saved width that is not a positive number loads as the default', () => {
+    for (const bad of ['wide', -5, 0, null, {}]) {
+      expect(loadShell(JSON.stringify({ viewerWidth: bad })).viewerWidth).toBeNull();
+    }
   });
 });
 

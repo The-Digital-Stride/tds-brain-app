@@ -154,10 +154,12 @@ export function createAppUsage(options: AppUsageOptions): AppUsage {
   function salt(): Promise<string> {
     saltPromise ??= (async () => {
       const file = options.dataDir ? join(options.dataDir, APP_USAGE_SALT_FILE) : null;
+      let invalid = false;
       if (file) {
         try {
           const text = (await fs.readFile(file, 'utf8')).trim();
           if (/^[0-9a-f]{32,}$/.test(text)) return text;
+          invalid = true;
         } catch {
           // missing: make one below
         }
@@ -166,7 +168,15 @@ export function createAppUsage(options: AppUsageOptions): AppUsage {
       if (file && options.dataDir) {
         try {
           await fs.mkdir(options.dataDir, { recursive: true });
-          await fs.writeFile(file, `${fresh}\n`, { mode: 0o600, flag: 'wx' });
+          if (invalid) {
+            // Replace a damaged file in one step, so every later run keeps this salt.
+            const tmp = `${file}.${process.pid}.tmp`;
+            await fs.writeFile(tmp, `${fresh}\n`, { mode: 0o600 });
+            await fs.rename(tmp, file);
+            log('The app usage salt file was invalid, so it was replaced.');
+          } else {
+            await fs.writeFile(file, `${fresh}\n`, { mode: 0o600, flag: 'wx' });
+          }
         } catch {
           // another run may have made it first: use theirs when it reads, else keep ours in memory
           try {

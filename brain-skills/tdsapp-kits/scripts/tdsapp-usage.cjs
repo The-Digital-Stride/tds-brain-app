@@ -264,22 +264,29 @@ function run(command, raw) {
 }
 
 // Read stdin without ever hanging: give up after 1.5 seconds of silence. A terminal counts as empty.
+const STDIN_MAX = 64 * 1024;
+
 function readStdin(done) {
   let raw = '';
   let finished = false;
+  let tooBig = false;
   let timer = null;
   const finish = () => {
     if (finished) return;
     finished = true;
     clearTimeout(timer);
     try { process.stdin.destroy(); } catch { /* already closed */ }
-    done(raw);
+    done(raw, tooBig);
   };
   const arm = () => { clearTimeout(timer); timer = setTimeout(finish, 1500); };
   try {
     if (process.stdin.isTTY) return done('');
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => { raw += chunk; arm(); });
+    process.stdin.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > STDIN_MAX) { tooBig = true; finish(); return; }
+      arm();
+    });
     process.stdin.on('end', finish);
     process.stdin.on('error', finish);
     arm();
@@ -288,4 +295,7 @@ function readStdin(done) {
   }
 }
 
-readStdin((raw) => run(process.argv[2] || '', raw));
+readStdin((raw, tooBig) => {
+  if (tooBig) return reply(2, { error: 'input too large' });
+  run(process.argv[2] || '', raw);
+});

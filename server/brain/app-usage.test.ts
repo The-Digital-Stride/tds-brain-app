@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -129,6 +138,20 @@ describe('app usage hand-off', () => {
       rmSync(other, { recursive: true, force: true });
     }
     expect(hashA).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('replaces an invalid salt file once, privately, and keeps the new salt', async () => {
+    const file = join(data, APP_USAGE_SALT_FILE);
+    writeFileSync(file, 'not a salt\n');
+    const first = make();
+    const hash = await first.usage.chatHash(RAW_ID);
+    const text = readFileSync(file, 'utf8').trim();
+    expect(text).toMatch(/^[0-9a-f]{64}$/);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(first.lines).toHaveLength(1);
+    expect(first.lines[0]).not.toContain(RAW_ID);
+    expect(await make().usage.chatHash(RAW_ID)).toBe(hash);
+    expect(readdirSync(data).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 
   it('a missing script resolves not-installed and logs one line per app run', async () => {

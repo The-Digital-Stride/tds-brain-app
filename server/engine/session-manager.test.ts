@@ -5507,6 +5507,30 @@ describe('start-up kits (shadow mode)', () => {
     expect(kit.of('onTurnEnd')).toHaveLength(3);
   });
 
+  it('starts the tracker once when the engine stream ends and restarts, and never reads start-up twice', async () => {
+    const r = reads();
+    const kit = fakeKitTracker();
+    const fx = setup(
+      async ({ q, turn }) => {
+        q.init();
+        if (fx.queries.length === 1 && turn === 0) {
+          q.finish();
+          return;
+        }
+        q.result();
+      },
+      { decorate: r.decorate, kitTracker: kit.tracker },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.send(s.id, 'again');
+    await flush();
+    expect(fx.queries).toHaveLength(2);
+    expect(kit.of('onStart')).toHaveLength(1);
+    expect(kit.of('onStartup')).toEqual([]);
+    expect(r.fulls()).toBe(0);
+  });
+
   it('never reads the start-up of a reopened chat', async () => {
     const r = reads();
     const kit = fakeKitTracker();

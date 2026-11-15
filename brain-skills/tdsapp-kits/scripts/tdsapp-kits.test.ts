@@ -125,6 +125,12 @@ const plainLines = () =>
 // ---- usage ----------------------------------------------------------------------
 
 describe('usage', () => {
+  it('refuses input over 64 KB without writing anything', () => {
+    const r = usage('usage', 'x'.repeat(70 * 1024));
+    expect(r).toMatchObject({ code: 2, json: { error: expect.any(String) } });
+    expect(existsSync(appFile())).toBe(false);
+  });
+
   it('writes a plain line and nothing synced by default', () => {
     const r = usage('usage', event());
     expect(r).toMatchObject({ code: 0, json: { ok: true, synced: false } });

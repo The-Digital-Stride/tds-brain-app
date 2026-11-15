@@ -388,6 +388,10 @@ interface State {
   /** From an earlier run of a resumed chat, kept until a new reading replaces them. */
   carried: { startup: NonNullable<KitShadowRecord['work']>['startup']; wouldSave: WouldSave | null };
   skills: Set<string>;
+  /** Typed `/name`s waiting for the session's init skill list to say they are real skills. */
+  typed: Set<string>;
+  /** The session's real skill names from its init message; null until one is seen. */
+  initSkills: Set<string> | null;
   connectors: Set<string>;
   /** `message.id` → highest `cache_read_input_tokens` seen. In memory only. */
   cacheIds: Map<string, number>;
@@ -493,6 +497,8 @@ export function createKitTracker(deps: KitTrackerDeps): KitTracker {
       reading: null,
       carried: { startup: null, wouldSave: null },
       skills: new Set(),
+      typed: new Set(),
+      initSkills: null,
       connectors: new Set(),
       cacheIds: new Map(),
       boundaries: new Set(),
@@ -585,6 +591,18 @@ export function createKitTracker(deps: KitTrackerDeps): KitTracker {
     );
   }
 
+  function onInit(s: State, raw: Rec): void {
+    if (!Array.isArray(raw.skills)) return;
+    const names = new Set<string>();
+    for (const x of raw.skills) {
+      const n = cleanSkill(x);
+      if (n) names.add(n);
+    }
+    s.initSkills = names;
+    if (s.kind === 'tds') for (const t of s.typed) if (names.has(t)) addCapped(s.skills, t, USE_MAX.skills);
+    s.typed.clear();
+  }
+
   function handOff(id: string): Promise<void> {
     return (async () => {
       const rec = await deps.store.get(id);
@@ -648,7 +666,11 @@ export function createKitTracker(deps: KitTrackerDeps): KitTracker {
     onTypedSkill: safe((key, name) => {
       const s = get(key);
       const skill = cleanSkill(name);
-      if (s && s.kind === 'tds' && skill) addCapped(s.skills, skill, USE_MAX.skills);
+      if (!s || s.kind !== 'tds' || !skill) return;
+      // Only a name the session lists as a real skill counts: `/compact` or a file name never does.
+      if (s.initSkills) {
+        if (s.initSkills.has(skill)) addCapped(s.skills, skill, USE_MAX.skills);
+      } else addCapped(s.typed, skill, USE_MAX.skills);
     }),
 
     onMessage: safe((key, raw, helper) => {
@@ -656,6 +678,7 @@ export function createKitTracker(deps: KitTrackerDeps): KitTracker {
       if (!s || !isRec(raw)) return;
       if (raw.type === 'assistant') onAssistant(s, raw, helper);
       else if (!helper && raw.type === 'system' && raw.subtype === 'compact_boundary') onBoundary(s, raw);
+      else if (!helper && raw.type === 'system' && raw.subtype === 'init') onInit(s, raw);
     }),
 
     onStartup: safe((key, res) => {

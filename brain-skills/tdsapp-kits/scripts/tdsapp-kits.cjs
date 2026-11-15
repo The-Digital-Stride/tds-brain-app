@@ -350,10 +350,10 @@ function review(args) {
     const k = perKit[id];
     if (k.chats === 0) continue;
     lines.push(`${id}: ${k.chats} chats, would have saved about ${k.wouldSave.sure} to ${k.wouldSave.approx} tokens at start-up.`);
-    if (k.unusedConnectors.length) lines.push(`  connectors never used in these chats: ${k.unusedConnectors.join(', ')}`);
-    if (k.unusedPlugins.length) lines.push(`  plugins never used in these chats: ${k.unusedPlugins.join(', ')}`);
+    if (k.unusedConnectors.length) lines.push(`  connectors in this kit but not used in these chats (it may not be connected at all): ${k.unusedConnectors.join(', ')}`);
+    if (k.unusedPlugins.length) lines.push(`  plugins in this kit but not used in these chats (it may not be installed): ${k.unusedPlugins.join(', ')}`);
   }
-  lines.push(`Summaries: ${result.summaries}. Compactions: ${result.compacted}. Cache read: ${result.cacheRead} tokens.`);
+  lines.push(`Chats summarised: ${result.summaries}. Tokens saved by summaries: ${result.compacted}. Separately, Claude re-read ${result.cacheRead} tokens from its cache (not counted as saved).`);
   return { text: lines.join('\n'), json: result };
 }
 

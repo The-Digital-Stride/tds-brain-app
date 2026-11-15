@@ -238,7 +238,9 @@ describe('health panel', () => {
   it('says everything is connected when it is', () => {
     standalone(false);
     render(<SettingsView />);
-    expect(screen.getByRole('status').textContent).toBe('Everything is connected and working.');
+    expect(
+      screen.getByText(/Everything is connected|need attention/, { selector: '[role=status]' }).textContent,
+    ).toBe('Everything is connected and working.');
     expect(screen.getByText('/brain')).toBeTruthy();
   });
 
@@ -247,9 +249,9 @@ describe('health panel', () => {
     live.streamUp = false;
     live.lastSync = null;
     render(<SettingsView />);
-    expect(screen.getByRole('status').textContent).toBe(
-      '2 things need attention: Connection and Brain sync.',
-    );
+    expect(
+      screen.getByText(/Everything is connected|need attention/, { selector: '[role=status]' }).textContent,
+    ).toBe('2 things need attention: Connection and Brain sync.');
     expect(screen.getByText(/^Lost the live connection/)).toBeTruthy();
     // The state is in words too, not only the dot's colour.
     expect(screen.getAllByText('Needs attention')).toHaveLength(2);
@@ -481,6 +483,8 @@ describe('Tokens saved', () => {
     await screen.findByText('Today');
     const text = sec.textContent ?? '';
     expect(text).toContain('Saved by summarising long chats');
+    expect(text).toContain('How much shorter chats became when Claude summarised them.');
+    expect(text).toContain('Tokens are the small pieces of text Claude reads and writes.');
     expect(text).toContain('1.2k tokens');
     expect(text).toContain('9.3k tokens');
     expect(text).toContain('150k tokens');
@@ -498,6 +502,12 @@ describe('Tokens saved', () => {
     expect(await screen.findByText(/Nothing counted yet/)).toBeTruthy();
     expect(screen.queryByText('Today')).toBeNull();
     expect(screen.getByText(/Start-up kits: watching/)).toBeTruthy();
+  });
+  it('says it is loading the token figures while it waits', async () => {
+    st.usageSavings.mockReturnValue(new Promise(() => {}));
+    render(<SettingsView />);
+    const el = await screen.findByText('Loading the token figures.');
+    expect(el.getAttribute('role')).toBe('status');
   });
   it('says so when the figures cannot be loaded', async () => {
     st.usageSavings.mockRejectedValue(new Error('x'));

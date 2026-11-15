@@ -54,7 +54,14 @@ function TokensSavedSection() {
   return (
     <section aria-labelledby="saved-h">
       <h2 id="saved-h">Tokens saved</h2>
-      {state.kind === 'loading' ? <p className="setting-help">Loading…</p> : null}
+      {state.kind === 'loading' ? (
+        <p className="setting-help" role="status">
+          Loading the token figures.
+        </p>
+      ) : null}
+      <p className="setting-help">
+        Tokens are the small pieces of text Claude reads and writes. Fewer tokens means faster, cheaper chats.
+      </p>
       {state.kind === 'failed' ? (
         <p className="setting-help" role="status">
           Couldn't load the token figures just now. Try again later.
@@ -69,6 +76,7 @@ function TokensSavedSection() {
           ) : (
             <>
               <h3 className="setting-label">Saved by summarising long chats</h3>
+              <p className="setting-help">How much shorter chats became when Claude summarised them.</p>
               <dl className="kv">
                 <dt>Today</dt>
                 <dd>{saved(data.today)}</dd>

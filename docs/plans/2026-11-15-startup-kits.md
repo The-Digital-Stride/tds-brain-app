@@ -258,4 +258,38 @@ sites with C landing a facade first; dedupe keys kept with the frame rules above
 
 ## Review outcomes
 
-(after the build)
+Reviewed 2026-11-15 after the build (dc2d85c, 2203a8b). Fixes in 000346b.
+
+**Correctness (Opus): no runtime faults; 2 test gaps confirmed and fixed.** The guard that stops a
+crashed-and-restarted chat counting as new (`kitStart`) and the two guards for a chat reopened while
+its close is still handing off (`onStart` queue hand-over, `onClose` state delete) had no test that
+failed without them. Tests added; each now fails with its guard removed.
+
+**Security (Opus): 3 confirmed, all fixed.**
+- A typed `/word` was stored as a skill used (seen live too: `/compact`). Typed names now count only
+  when the engine's `init` lists them as a real skill; nothing typed counts before `init`.
+- A damaged salt file gave a new salt every run (one chat counted twice). It is now replaced atomically.
+- `tdsapp-usage.cjs` read stdin without a limit. Capped at 64 KB (exit 2).
+- Checked and clean: the seal matches the brain tracker byte for byte; sealed writes impossible while
+  `SYNC_APP_EVENTS` is false; whitelist and caps; no shell in the spawn; route through `checkRequest`.
+
+**UI, accessibility and copy (Sonnet): 4 confirmed, all fixed.** The review's "Compactions" line now
+names tokens saved by summaries and says the cache figure isn't a saving; "never used" lists now say
+"may not be connected/installed"; the loading line says what is loading and is announced; one
+sentence explains tokens. The browser check added: spacing between the three sub-blocks.
+
+**Rule change by the lead:** `rulePick` returns null for a non-plugin skill (it fits every kit), so the
+picker decides instead of sending every typed brain skill to `full`.
+
+**Gates:** tsc clean; lint 0 errors (15 warnings, none new in owned files); 3,066 tests pass; build
+works; no file loses more than 40 lines against the merge base.
+
+**Browser (preview on 3878, own data folder, real brain):** the Tokens saved panel in its empty and
+filled states; `/compact` counted 55.6k once; reopening the chat added nothing; the shadow record
+held kit `core` (auto), start-up 76k, would-save 4.0k–12.4k; closing with the skill not yet copied
+kept the record waiting (logged once) and the next app start kept it waiting; a later chat starting
+`/not-a-real-skill.pdf` recorded no skill; cache reuse counted 16.7k. Start-ups measured 76k and
+44.9k in two real chats: the connector timing the spike found.
+
+**App to brain:** the app's hand-off ran the real script in a throwaway brain: one plain line in
+`z-logs/app-usage/`, salted chat hash, no raw id; `review` read it back.

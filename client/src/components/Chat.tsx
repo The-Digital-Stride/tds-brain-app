@@ -7,12 +7,13 @@ import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
-import { type ChatItem, initialChatState, pendingCard } from '../state/chat-reducer.ts';
+import { type ChatItem, COMPACTING_LINE, initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { closeConfirmText, isClearCommand, needsCloseConfirm } from '../state/close.ts';
 import { useStore } from '../store.tsx';
 import { AttentionBar } from './AttentionBar.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 import { Composer } from './Composer.tsx';
+import { ContextMeter } from './ContextMeter.tsx';
 import { LevelLine, LevelOffer } from './LevelLine.tsx';
 import { Transcript } from './Transcript.tsx';
 
@@ -191,6 +192,11 @@ export function ChatView() {
               )}
             </div>
           ) : null}
+          {chat.compacting ? (
+            <p className="engine-line compacting-line" role="status">
+              {COMPACTING_LINE}
+            </p>
+          ) : null}
           <AttentionBar
             key={`status-${sessionId}`}
             state={state}
@@ -217,6 +223,12 @@ export function ChatView() {
               return send(text, null, uploadIds);
             }}
           />
+          {/* Beside the level line, and in manual mode too, so it lives here and not inside LevelLine. */}
+          {chat.context ? (
+            <div className="composer-foot">
+              <ContextMeter reading={chat.context} />
+            </div>
+          ) : null}
           {levelShown && chat.level && sessionId ? (
             <LevelLine level={chat.level} onPick={(tier) => void setChatLevel?.(sessionId, tier)} />
           ) : null}

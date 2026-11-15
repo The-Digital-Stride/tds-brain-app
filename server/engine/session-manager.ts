@@ -18,6 +18,15 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
+  BRAIN_COMPACT_INSTRUCTIONS,
+  type ChatContextDetail,
+  CONTEXT_DETAIL_MIN_INTERVAL_MS,
+  CONTEXT_READ_TIMEOUT_MS,
+  CONTEXT_THRESHOLDS,
+  type ContextEvent,
+  type ContextItem,
+} from '../../shared/context-contract.ts';
+import {
   type ApiErrorCode,
   type AppPermissionMode,
   type AskQuestion,
@@ -52,6 +61,8 @@ import {
   FALLBACK_TIER,
   isLevelTier,
   LEVEL_PICK,
+  LEVEL_TIERS,
+  LEVEL_TIERS_ORDER,
   type LevelMode,
   type LevelPick,
   type LevelSessionApi,
@@ -61,6 +72,7 @@ import {
   type TurnLevel,
 } from '../../shared/levels-contract.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
+import type { ContextReadingStore } from '../store/context-readings.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   type ChatFilesTracker,
@@ -68,6 +80,7 @@ import {
   type ResolvePath,
   type TrackedAttachment,
 } from './chat-files.ts';
+import { contextItems, contextReading, percentOf, reanchorText, shouldKeepModel } from './context-policy.ts';
 import { modelLabel, resolveEngineDefaults } from './engine-defaults.ts';
 import { createEventMapper, type EventMapper, type RawMessage, toolLabel } from './event-map.ts';
 import { HelperNames, isHelperTurn, parseHelperReport } from './helper-reports.ts';
@@ -116,6 +129,11 @@ export interface EngineQuery extends AsyncIterable<unknown> {
   applyFlagSettings?(settings: { effortLevel: EffortLevel | null }): Promise<void>;
   /** The models Claude Code offers this account (`value`, `displayName`, `supportedEffortLevels`). */
   supportedModels?(): Promise<unknown[]>;
+  /**
+   * How full the chat is (plan 2026-11-14-context-management). `'summary'` makes no token-count calls
+   * (8–25 ms, spike S2); `'full'` counts every category. Optional: older engines and test fakes lack it.
+   */
+  getContextUsage?(opts?: { detail?: 'summary' | 'full' }): Promise<unknown>;
 }
 
 export interface PastInfo {
@@ -131,12 +149,20 @@ export interface HistoryMessage {
   uuid: string;
   message: unknown;
   parent_tool_use_id: string | null;
+  /** The summary Claude Code wrote at a compaction, stored as a `user` message (spike S3). */
+  isCompactSummary?: boolean;
+  /** A typed local command such as `/compact`, stored as `user` messages (spike S3). */
+  isCompletedLocalCommand?: boolean;
 }
 
 export interface EngineFns {
   query(params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }): EngineQuery;
   listSessions(opts: { dir: string }): Promise<PastInfo[]>;
-  getSessionMessages(sessionId: string, opts: { dir: string }): Promise<HistoryMessage[]>;
+  /** `includeSystemMessages`: also the compaction boundary (only messages since the last one come back). */
+  getSessionMessages(
+    sessionId: string,
+    opts: { dir: string; includeSystemMessages?: boolean },
+  ): Promise<HistoryMessage[]>;
   /**
    * Moves one earlier chat's history to the macOS Bin (never erases it). Optional so older engines and test
    * fakes still fit: without it, deleting is `internal`.
@@ -190,6 +216,8 @@ export interface SessionManagerOptions {
   picker?: LevelPicker;
   /** Which chats are personal. Without it the kinds are kept in memory only. */
   chatKinds?: ChatKindStore;
+  /** Each chat's newest context reading, by `sdkSessionId`. Optional: without it nothing is kept. */
+  contextReadings?: ContextReadingStore;
 }
 
 export class SessionError extends Error {
@@ -241,6 +269,13 @@ export interface SessionManager extends LevelSessionApi {
   setEngineChoice(choice: EngineChoice & { levelMode?: LevelMode }): Promise<void>;
   /** What Settings offers for Model and Effort (`GET /api/engine/choices`). */
   engineChoices(): Promise<EngineChoices>;
+  /**
+   * `GET ROUTES.chatContext(id)` (context management, decision 6): asks the engine for the full detail
+   * at most once per CONTEXT_DETAIL_MIN_INTERVAL_MS and never while a reply runs; otherwise answers
+   * from the newest reading with `approximate: true`. Throws `not-found` / `session-closed`.
+   * Optional so stand-ins (setup mode) still fit: without it the route answers `not-found`.
+   */
+  contextDetail?(id: string): Promise<ChatContextDetail>;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +300,15 @@ const RESUMED_TIER: LevelTier = 'standard';
 const KEPT_REASON = 'Kept from earlier in this chat';
 /** Claude Code's helper tools (`Task` is the older name of `Agent`). */
 const AGENT_TOOLS = 'Agent|Task';
+/** The full detail counts every category with the token-count API, so it gets longer than a summary read. */
+const CONTEXT_DETAIL_TIMEOUT_MS = 10_000;
+/** Turns kept for the "wanted lower N turns running" rule (decision 10). */
+const WANTED_TURNS_KEPT = 10;
+
+/** The tier whose model this is, or null (Same as Claude Code, or a model no tier uses). */
+function tierOfModel(model: string | null): LevelTier | null {
+  return LEVEL_TIERS_ORDER.find((t) => LEVEL_TIERS[t].model === model) ?? null;
+}
 /** A6 and A16: nothing that could bill an API key or a cloud account instead of the person's sign-in. */
 const SCRUBBED_ENV = [
   'ANTHROPIC_API_KEY',
@@ -607,6 +651,34 @@ interface Session {
   helperTypes: Map<string, string>;
   /** The helpers nudge has been sent (once per chat). */
   nudged: boolean;
+  // Context management (plan 2026-11-14-context-management).
+  /** The newest reading sent, or null before the first. */
+  context: ContextEvent | null;
+  /** Readings are numbered so a slow one never replaces a newer one. */
+  contextTicket: number;
+  contextShown: number;
+  /** The last main-thread response's prompt size (input + cache read + cache creation + output). */
+  lastUsage: { tokens: number; model: string | null } | null;
+  /** That model's window, from the turn's `result.modelUsage`. */
+  windowTokens: number | null;
+  /** The last full detail read (ms) and its rows, for the Inspector's rate limit. */
+  detailAt: number | null;
+  detailItems: ContextItem[] | null;
+  /** When each model (resolved id) and each tier last answered this chat, for decision 10. */
+  answeredByModel: Map<string, number>;
+  answeredByTier: Map<LevelTier, number>;
+  lastAnsweredAt: number | null;
+  /** Each automatic turn's wanted tier, oldest first (at most WANTED_TURNS_KEPT). */
+  wantedTiers: LevelTier[];
+  /** The switch `applyChoice` is making right now, for the PreModelSwitch hook. */
+  switchIntent: { explicit: boolean; fromTier: LevelTier | null; toTier: LevelTier | null } | null;
+  /** Our hook denied the switch in progress (so setModel's throw means "kept"). */
+  switchKept: boolean;
+  switchHookFired: boolean;
+  /** Whether this engine calls the PreModelSwitch hook: 'missing' turns on the app-side fallback. */
+  modelHook: 'unknown' | 'seen' | 'missing';
+  /** An automatic downward switch is being held: the tier running and the one wanted. */
+  kept: { running: LevelTier; wanted: LevelTier } | null;
 }
 
 type Rec = Record<string, unknown>;
@@ -791,6 +863,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.events = s.events.filter((e) => e.event.type !== 'files');
     } else if (event.type === 'level') {
       s.events = s.events.filter((e) => e.event.type !== 'level');
+    } else if (event.type === 'context') {
+      s.events = s.events.filter((e) => e.event.type !== 'context');
     }
     s.events.push(item);
     for (const l of s.listeners) {
@@ -891,7 +965,13 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       client: fields.client,
       todoId: fields.todoId,
       kind: fields.kind,
-      appendLine: [fields.client ? clientLine(fields.client) : null, FILES_LINE, levels ? HELPERS_LINE : null]
+      appendLine: [
+        fields.client ? clientLine(fields.client) : null,
+        FILES_LINE,
+        levels ? HELPERS_LINE : null,
+        // Decision 9: steers every summary, manual or automatic (spike S4 route c).
+        BRAIN_COMPACT_INSTRUCTIONS,
+      ]
         .filter(Boolean)
         .join('\n'),
       state: 'idle',
@@ -941,6 +1021,22 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       helperList: createHelperTracker(),
       helperTypes: new Map(),
       nudged: false,
+      context: null,
+      contextTicket: 0,
+      contextShown: 0,
+      lastUsage: null,
+      windowTokens: null,
+      detailAt: null,
+      detailItems: null,
+      answeredByModel: new Map(),
+      answeredByTier: new Map(),
+      lastAnsweredAt: null,
+      wantedTiers: [],
+      switchIntent: null,
+      switchKept: false,
+      switchHookFired: false,
+      modelHook: 'unknown',
+      kept: null,
     };
   }
 
@@ -1097,6 +1193,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       emit(s, event);
     s.files?.observe(raw);
     notifyHelpers(s.helperList.observe(raw));
+    observeContext(s, raw);
     // A helper call our hook allowed but another rule then stopped never runs: free its slot.
     if (raw.type === 'system' && raw.subtype === 'permission_denied' && typeof raw.tool_use_id === 'string') {
       dropHelper(s, raw.tool_use_id);
@@ -1114,9 +1211,263 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       armIdle(s);
       s.files?.endTurn();
       requestFiles(s);
+      // Decision 4: after turn-end, never before it, and never waited for.
+      if (s.query) void readContext(s, s.query, null);
     } else if (endsStepOrReply(raw)) {
       requestFiles(s);
     }
+  }
+
+  // -- context (plan 2026-11-14-context-management) ---------------------------
+
+  /** Notes what decisions 4 and 10 need from one engine message. Main chat only: helpers never count. */
+  function observeContext(s: Session, raw: RawMessage): void {
+    if (raw.parent_tool_use_id !== null && raw.parent_tool_use_id !== undefined) return;
+    if (raw.type === 'assistant' && isRec(raw.message)) {
+      const now = Date.now();
+      const model = typeof raw.message.model === 'string' && raw.message.model ? raw.message.model : null;
+      if (model) s.answeredByModel.set(model, now);
+      const tier = tierOfModel(s.appliedChoice.model);
+      if (tier) s.answeredByTier.set(tier, now);
+      s.lastAnsweredAt = now;
+      const u = isRec(raw.message.usage) ? raw.message.usage : null;
+      if (u) {
+        const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+        const tokens =
+          n(u.input_tokens) +
+          n(u.cache_read_input_tokens) +
+          n(u.cache_creation_input_tokens) +
+          n(u.output_tokens);
+        if (tokens > 0) s.lastUsage = { tokens, model };
+      }
+    } else if (raw.type === 'result' && isRec(raw.modelUsage)) {
+      const key = s.lastUsage?.model;
+      const entry = key && Object.hasOwn(raw.modelUsage, key) ? raw.modelUsage[key] : null;
+      const window = isRec(entry) ? entry.contextWindow : null;
+      if (typeof window === 'number' && Number.isFinite(window) && window > 0) s.windowTokens = window;
+    } else if (raw.type === 'system' && raw.subtype === 'compact_boundary') {
+      const meta = isRec(raw.compact_metadata) ? raw.compact_metadata : {};
+      log(meta.trigger === 'manual' ? 'Summarised a chat (manual).' : 'Summarised a chat (auto).');
+      const post = typeof meta.post_tokens === 'number' && meta.post_tokens >= 0 ? meta.post_tokens : null;
+      if (s.query) void readContext(s, s.query, { postTokens: post });
+    } else if (raw.type === 'system' && raw.subtype === 'status' && raw.compact_result === 'failed') {
+      log("A chat couldn't be summarised.");
+    }
+  }
+
+  /** Decision 4's fallback: the last main-thread usage against the model's window. */
+  function usageReading(s: Session, after: { postTokens: number | null } | null): ContextEvent | null {
+    const now = Date.now();
+    const prev = s.context;
+    if (after) {
+      if (after.postTokens === null || !prev) return null;
+      return {
+        ...prev,
+        usedTokens: after.postTokens,
+        percent: percentOf(after.postTokens, prev.limitTokens),
+        source: 'usage',
+        at: now,
+      };
+    }
+    const used = s.lastUsage?.tokens;
+    const window = s.windowTokens;
+    if (!used || !window) return null;
+    // The engine's own threshold still applies when it last measured the same window.
+    const same = prev && prev.windowTokens === window ? prev : null;
+    const limit = same ? same.limitTokens : window;
+    return {
+      type: 'context',
+      usedTokens: used,
+      limitTokens: limit,
+      windowTokens: window,
+      percent: percentOf(used, limit),
+      autoCompact: same?.autoCompact ?? false,
+      source: 'usage',
+      at: now,
+    };
+  }
+
+  /** Sends a reading, keeps it as the newest, and stores it for a reopened chat (decision 7). */
+  function showContext(s: Session, reading: ContextEvent, ticket: number): void {
+    if (s.closing || ticket < s.contextShown) return;
+    s.contextShown = ticket;
+    s.context = reading;
+    emit(s, reading);
+    const store = opts.contextReadings;
+    if (store && s.sdkSessionId) {
+      void store.set(s.sdkSessionId, reading).catch(() => log("Could not keep a chat's context reading."));
+    }
+  }
+
+  /** Decision 4: a `summary` read (free), else the usage fallback. Never throws, never blocks a turn. */
+  async function readContext(
+    s: Session,
+    q: EngineQuery,
+    after: { postTokens: number | null } | null,
+  ): Promise<void> {
+    const ticket = ++s.contextTicket;
+    let reading: ContextEvent | null = null;
+    if (typeof q.getContextUsage === 'function') {
+      try {
+        const res = await withTimeout(q.getContextUsage({ detail: 'summary' }), CONTEXT_READ_TIMEOUT_MS);
+        reading = contextReading(res, Date.now());
+      } catch {
+        reading = null;
+      }
+    }
+    reading ??= usageReading(s, after);
+    if (reading) showContext(s, reading, ticket);
+  }
+
+  /** Decision 7: a reopened chat's stored reading, shown until the next one. */
+  async function loadReading(s: Session, sdkSessionId: string): Promise<void> {
+    const stored = await opts.contextReadings?.get(sdkSessionId).catch(() => null);
+    if (!stored || s.context || s.closing) return;
+    const reading: ContextEvent = { ...stored, source: 'stored' };
+    s.context = reading;
+    emit(s, reading);
+  }
+
+  // -- decision 10: keeping the model -----------------------------------------
+
+  function lowerWantedTurns(s: Session, toTier: LevelTier): number {
+    let n = 0;
+    for (let i = s.wantedTiers.length - 1; i >= 0; i--) {
+      const t = s.wantedTiers[i];
+      if (!t || isHigherTier(t, toTier)) break;
+      n++;
+    }
+    return n;
+  }
+
+  /** The app-side rule, only for an engine that never called the hook. */
+  function fallbackKeeps(s: Session, fromTier: LevelTier, toTier: LevelTier): boolean {
+    const now = Date.now();
+    const within = (t: number | null | undefined) =>
+      typeof t === 'number' && now - t < CONTEXT_THRESHOLDS.fallbackWarmMs;
+    const keep = shouldKeepModel({
+      explicit: false,
+      fromTier,
+      toTier,
+      cacheWarm: within(s.lastAnsweredAt),
+      estimatedUsd: null,
+      usedTokens: s.context?.usedTokens ?? null,
+      lowerWantedTurns: lowerWantedTurns(s, toTier),
+      targetRecentlyUsed: within(s.answeredByTier.get(toTier)),
+    });
+    if (keep)
+      log(`Kept the model: the chat is about ${Math.round((s.context?.usedTokens ?? 0) / 1000)}k tokens.`);
+    return keep;
+  }
+
+  /**
+   * PreModelSwitch (decision 10), attached to every engine. It only ever denies an automatic downward
+   * switch the app itself is making; everything else is allowed (or left to Claude Code).
+   */
+  function modelSwitchHook(s: Session): HookCallback {
+    return async (raw) => {
+      s.modelHook = 'seen';
+      s.switchHookFired = true;
+      const input: unknown = raw;
+      const intent = s.switchIntent;
+      if (!isRec(input) || !intent) return { continue: true };
+      const allow = {
+        hookSpecificOutput: {
+          hookEventName: 'PreModelSwitch' as const,
+          permissionDecision: 'allow' as const,
+        },
+      };
+      const { fromTier, toTier } = intent;
+      if (!levels || levelMode !== 'auto' || intent.explicit || !fromTier || !toTier) return allow;
+      if (!isHigherTier(fromTier, toTier)) return allow;
+      const now = Date.now();
+      const ttlMs = input.cache_ttl === '5m' ? 5 * 60 * 1000 : 60 * 60 * 1000;
+      const recent = (t: number | undefined) => t !== undefined && now - t < ttlMs;
+      const toModel = typeof input.to_model === 'string' ? input.to_model : '';
+      const usd =
+        typeof input.estimated_cache_write_usd === 'number' &&
+        Number.isFinite(input.estimated_cache_write_usd)
+          ? input.estimated_cache_write_usd
+          : null;
+      const keep = shouldKeepModel({
+        explicit: false,
+        fromTier,
+        toTier,
+        // Nothing to re-read before the first reply (`context_tokens` is 0 then).
+        cacheWarm: input.prompt_cache_warm === true && input.context_tokens !== 0,
+        estimatedUsd: usd,
+        usedTokens: null,
+        lowerWantedTurns: lowerWantedTurns(s, toTier),
+        targetRecentlyUsed:
+          (toModel !== '' && recent(s.answeredByModel.get(toModel))) || recent(s.answeredByTier.get(toTier)),
+      });
+      // Numbers only (decision 14).
+      const cost = usd === null ? '' : ` about $${usd.toFixed(2)}`;
+      if (!keep) {
+        if (cost) log(`Switched a chat down a level: re-reading cost${cost}.`);
+        return allow;
+      }
+      s.switchKept = true;
+      log(`Kept the model: re-reading would cost${cost || ' too much'}.`);
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreModelSwitch' as const,
+          permissionDecision: 'deny' as const,
+          permissionDecisionReason: 'The app is staying on this model so the whole chat is not re-read.',
+        },
+      };
+    };
+  }
+
+  /** The level a held stretch actually runs at: the higher tier, saying which one is wanted. */
+  function keptLevel(s: Session, level: TurnLevel): TurnLevel {
+    const k = s.kept;
+    if (!k || !level.tier || !isHigherTier(k.running, level.tier)) return level;
+    return { ...level, tier: k.running, kept: { wanted: level.tier } };
+  }
+
+  // -- decision 8: re-anchoring after a compaction ---------------------------
+
+  async function todoFor(s: Session): Promise<{ title: string; path: string } | null> {
+    if (!s.todoId) return null;
+    try {
+      const list = await opts.brain.todos(await opts.brain.identity());
+      const t = [...list.mine, ...list.open].find((x) => x.key === s.todoId);
+      return t ? { title: t.title, path: t.path } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The newest file list sent, newest first (its paths are already from the brain root). */
+  function recentFiles(s: Session): string[] {
+    for (let i = s.events.length - 1; i >= 0; i--) {
+      const e = s.events[i]?.event;
+      if (e?.type === 'files') return e.files.map((f) => f.path);
+    }
+    return [];
+  }
+
+  function sessionStartHook(s: Session): HookCallback {
+    return async (raw) => {
+      const input: unknown = raw;
+      if (!isRec(input) || input.source !== 'compact' || input.agent_id || s.closing)
+        return { continue: true };
+      try {
+        const additionalContext = reanchorText({
+          todo: await todoFor(s),
+          files: recentFiles(s),
+          workingHelpers: s.helperList
+            .list()
+            .filter((h) => h.status === 'working')
+            .map((h) => (h.brief ? `${h.name}: ${h.brief}` : h.name)),
+        });
+        return { hookSpecificOutput: { hookEventName: 'SessionStart' as const, additionalContext } };
+      } catch {
+        log('Could not remind Claude what a summarised chat is about.');
+        return { continue: true };
+      }
+    };
   }
 
   async function pump(s: Session, q: EngineQuery): Promise<void> {
@@ -1183,21 +1534,60 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
   }
 
-  /** Moves one live engine to the new choice, changing only what differs from what it has (decision 3). */
-  async function applyChoice(s: Session, q: EngineQuery, next: EngineChoice): Promise<void> {
-    if (s.closing || s.query !== q) return;
+  /**
+   * Moves one live engine to the new choice, changing only what differs from what it has (decision 3).
+   * `explicit`: the person chose it (Settings, the chat's level, manual mode), so it always goes ahead.
+   * Answers 'kept' when an automatic downward model switch was held (context management, decision 10):
+   * then nothing changes, not even the effort, and `s.kept` says which tier runs and which is wanted.
+   */
+  async function applyChoice(
+    s: Session,
+    q: EngineQuery,
+    next: EngineChoice,
+    how: { explicit: boolean },
+  ): Promise<'applied' | 'kept'> {
+    if (s.closing || s.query !== q) return 'applied';
     const had = s.appliedChoice;
     if (next.model !== had.model && typeof q.setModel === 'function') {
+      const fromTier = tierOfModel(had.model);
+      const toTier = tierOfModel(next.model);
+      const automaticDown =
+        !how.explicit &&
+        levels !== null &&
+        levelMode === 'auto' &&
+        fromTier !== null &&
+        toTier !== null &&
+        isHigherTier(fromTier, toTier);
+      if (automaticDown && s.modelHook === 'missing' && fallbackKeeps(s, fromTier, toTier)) {
+        s.kept = { running: fromTier, wanted: toTier };
+        return 'kept';
+      }
+      s.switchIntent = { explicit: how.explicit, fromTier, toTier };
+      s.switchKept = false;
+      s.switchHookFired = false;
       try {
         await q.setModel(next.model ?? resolveDefaults().model ?? undefined);
         s.appliedChoice = { ...s.appliedChoice, model: next.model };
+        s.kept = null;
+        // Our hook never ran for a real tier change: this engine has none, so the fallback rule applies.
+        if (!s.switchHookFired && s.modelHook === 'unknown' && fromTier && toTier && fromTier !== toTier) {
+          s.modelHook = 'missing';
+        }
         // A re-applied effort belongs to the old model: let the new one use its own.
         if (s.effortPinned && next.effort === null && had.effort === null && q.applyFlagSettings) {
           await q.applyFlagSettings({ effortLevel: null });
           s.effortPinned = false;
         }
       } catch {
+        // Our own hook said no (a flag it set, never the error's text): held, not failed.
+        if (s.switchKept && fromTier && toTier) {
+          s.kept = { running: fromTier, wanted: toTier };
+          return 'kept';
+        }
         log('Could not change the model of an open chat.');
+      } finally {
+        s.switchIntent = null;
+        s.switchKept = false;
       }
     }
     if (next.effort !== had.effort && typeof q.applyFlagSettings === 'function') {
@@ -1217,6 +1607,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       }
     }
     await readSettings(s, q);
+    return 'applied';
   }
 
   function startEngine(s: Session): void {
@@ -1228,7 +1619,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       permissionMode: resolveMode(),
       includePartialMessages: true,
       settingSources: ['user', 'project', 'local'],
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: s.appendLine },
+      // Recorded once per chat (already the default; pinned here, decision 11).
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: s.appendLine, snapshot: true },
       env,
       canUseTool: canUseToolFor(s),
       // Swallow the engine's own stderr: it can echo prompts and must never reach the server log.
@@ -1243,11 +1635,19 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.reportedDefault = null;
     s.reportedModel = null;
     s.effortPinned = false;
+    s.modelHook = 'unknown';
+    s.kept = null;
     if (initial.model) options.model = initial.model;
     if (initial.effort) options.effort = initial.effort;
+    // Context management (decisions 8 and 10): on every engine, levels or not.
+    options.hooks = {
+      SessionStart: [{ hooks: [sessionStartHook(s)] }],
+      PreModelSwitch: [{ hooks: [modelSwitchHook(s)] }],
+    };
     if (levels) {
       options.agents = helperAgents();
       options.hooks = {
+        ...options.hooks,
         PreToolUse: [{ matcher: AGENT_TOOLS, hooks: [agentHook(s)] }],
         PostToolUse: [
           { matcher: 'Skill', hooks: [skillHook(s)] },
@@ -1524,10 +1924,24 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           s.pick !== before &&
           shouldNudge({ helpers: !!s.pick?.helpers, turnTier: s.turnTier, nudged: s.nudged });
         s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
-        if (q && s.query === q) await applyChoice(s, q, resolved.choice);
+        // Decision 10: what this turn wants, for "the lower level has been wanted N turns running".
+        const wanted = levelMode === 'auto' ? tierOfModel(resolved.choice.model) : null;
+        s.wantedTiers = wanted ? [...s.wantedTiers, wanted].slice(-WANTED_TURNS_KEPT) : [];
+        const explicit = levelMode !== 'auto' || resolved.level.source.kind === 'chat';
+        let level = resolved.level;
+        if (q && s.query === q) {
+          const outcome = await applyChoice(s, q, resolved.choice, { explicit });
+          if (outcome === 'kept' && s.kept) {
+            // Stay on the running (higher) tier for the whole reply, so a later skill never moves it down.
+            if (s.turnTier) s.turnTier = s.kept.running;
+            level = keptLevel(s, resolved.level);
+          } else {
+            s.kept = null;
+          }
+        }
         // Offered once the reply ends (levelAfterTurn), so never for a message stopped before it is sent.
         s.pendingOffer = skill && unlevelled && !s.offered.has(skill) ? skill : null;
-        setLevel(s, resolved.level);
+        setLevel(s, level);
       })
       .catch(() => {
         log('Could not set the level of a chat.');
@@ -1565,8 +1979,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       .then(async () => {
         if (s.closing) return;
         const { resolved } = await levelFor(s, null, null);
-        if (offer) offerTeamLevel(s, offer, resolved.level);
-        else setLevel(s, resolved.level);
+        // A held stretch: the next message will most likely stay on the running tier too.
+        const level = keptLevel(s, resolved.level);
+        if (offer) offerTeamLevel(s, offer, level);
+        else setLevel(s, level);
       })
       .catch(() => {
         log('Could not show the level of a chat.');
@@ -1602,8 +2018,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const q = s.query;
     if (!q || !isHigherTier(t.tier, s.turnTier)) return;
     s.turnTier = t.tier;
+    // This reply now wants the raised tier: it doesn't count towards "wanted lower N turns running".
+    if (s.wantedTiers.length > 0) s.wantedTiers[s.wantedTiers.length - 1] = t.tier;
     s.choiceChain = s.choiceChain
-      .then(() => applyChoice(s, q, tierChoice(t.tier)))
+      .then(() => applyChoice(s, q, tierChoice(t.tier), { explicit: false }))
+      .then(() => {})
       .catch(() => {
         log('Could not change the level of an open chat.');
       });
@@ -1839,10 +2258,51 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
   }
 
+  /**
+   * The divider for a summarised chat's history (decision 3), or null. Stored messages carry no
+   * subtype, so the boundary is the system message just before the summary (`isCompactSummary`); with
+   * no summary there is no divider. A typed `/compact` (`isCompletedLocalCommand`) makes it manual.
+   */
+  function compactionDivider(
+    messages: readonly HistoryMessage[],
+  ): { at: number; event: Extract<ChatEvent, { type: 'compaction' }> } | null {
+    const summary = messages.findIndex((m) => m.type === 'user' && m.isCompactSummary === true);
+    if (summary < 0) return null;
+    let at = summary;
+    for (let i = summary - 1; i >= 0; i--) {
+      if (messages[i]?.type === 'system') {
+        at = i;
+        break;
+      }
+    }
+    const manual = messages.some(
+      (m) =>
+        m.isCompletedLocalCommand === true &&
+        /<command-name>\s*\/?compact\s*<\/command-name>/.test(
+          historyText(isRec(m.message) ? m.message.content : ''),
+        ),
+    );
+    return {
+      at,
+      event: {
+        type: 'compaction',
+        phase: 'done',
+        id: `c:${messages[at]?.uuid ?? 'replayed'}`,
+        trigger: manual ? 'manual' : 'auto',
+        preTokens: null,
+        postTokens: null,
+        at: null,
+      },
+    };
+  }
+
   async function replayHistory(s: Session, sdkSessionId: string): Promise<void> {
     let messages: HistoryMessage[] = [];
     try {
-      messages = await opts.engine.getSessionMessages(sdkSessionId, { dir: opts.brainRoot });
+      messages = await opts.engine.getSessionMessages(sdkSessionId, {
+        dir: opts.brainRoot,
+        includeSystemMessages: true,
+      });
     } catch {
       emit(s, {
         type: 'notice',
@@ -1854,7 +2314,13 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     /** Steps replayed and still waiting for their stored result. */
     const started = new Set<string>();
     const helpers = new HelperNames();
-    for (const m of messages) {
+    const divider = compactionDivider(messages);
+    for (const [i, m] of messages.entries()) {
+      // Decision 3: Claude Code returns only what came after the last summary, so the chat opens on it.
+      if (divider && i === divider.at) emit(s, divider.event);
+      if (m.type === 'system') continue;
+      // Neither the summary nor a typed /compact is something the person said.
+      if (m.type === 'user' && (m.isCompactSummary === true || m.isCompletedLocalCommand === true)) continue;
       // Helpers' steps count too; the tracker ignores their text.
       s.files?.observe(m, { history: true });
       if (m.parent_tool_use_id) continue;
@@ -2025,6 +2491,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         if (resume) {
           if (levels) s.levelReady = loadLevel(s, resume);
           await replayHistory(s, resume);
+          await loadReading(s, resume);
           // The chat may have been closed while its history loaded: never start an engine for it then.
           if (s.closing)
             throw new SessionError('session-closed', 'That chat was closed while it was opening.');
@@ -2271,7 +2738,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         if (!q || s.closing) continue;
         const target = { ...choice };
         s.choiceChain = s.choiceChain
-          .then(() => applyChoice(s, q, target))
+          .then(() => applyChoice(s, q, target, { explicit: true }))
+          .then(() => {})
           .catch(() => {
             log('Could not change the model or effort of an open chat.');
           });
@@ -2293,6 +2761,35 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     prewarmPick(text) {
       if (!picker || levelMode !== 'auto' || typeof text !== 'string') return;
       picker.prewarm(text);
+    },
+
+    async contextDetail(id) {
+      const s = getLive(id);
+      let lastCompaction: ChatContextDetail['lastCompaction'] = null;
+      for (let i = s.events.length - 1; i >= 0 && !lastCompaction; i--) {
+        const e = s.events[i]?.event;
+        if (e?.type === 'compaction' && e.phase === 'done') lastCompaction = e;
+      }
+      const q = s.query;
+      const now = Date.now();
+      const due = s.detailAt === null || now - s.detailAt >= CONTEXT_DETAIL_MIN_INTERVAL_MS;
+      if (q && typeof q.getContextUsage === 'function' && due && !s.turnRunning && !s.closing) {
+        s.detailAt = now;
+        const ticket = ++s.contextTicket;
+        try {
+          const res = await withTimeout(q.getContextUsage({ detail: 'full' }), CONTEXT_DETAIL_TIMEOUT_MS);
+          const reading = contextReading(res, Date.now());
+          if (reading) {
+            showContext(s, reading, ticket);
+            s.detailItems = contextItems(res);
+            return { reading: s.context, items: s.detailItems, lastCompaction, approximate: false };
+          }
+        } catch {
+          // answered from the newest reading below
+        }
+        log("Could not read the detail of a chat's context.");
+      }
+      return { reading: s.context, items: s.detailItems ?? [], lastCompaction, approximate: true };
     },
 
     async engineChoices() {

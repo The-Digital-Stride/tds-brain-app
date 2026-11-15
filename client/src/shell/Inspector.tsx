@@ -1,8 +1,13 @@
+import { useEffect, useState } from 'react';
+import type { ChatContextDetail } from '../../../shared/context-contract.ts';
 import type { ChatKind } from '../../../shared/contract.ts';
+import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
+import { tokenWords } from '../format.ts';
 import { useStore } from '../store.tsx';
 import { ChatFiles } from './ChatFiles.tsx';
 import type { PanelTab } from './contract.ts';
+import { Fold } from './Fold.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { placeName, STATE_WORDS, whenWords } from './words.ts';
@@ -14,6 +19,80 @@ const TABS: { value: PanelTab; label: string }[] = [
   { value: 'files', label: 'Files' },
   { value: 'details', label: 'Details' },
 ];
+
+/** What fills this chat: used against the window, the heaviest items, and the last summary. */
+function ContextFold({ sessionId, readingAt }: { sessionId: string; readingAt: number | null }) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<ChatContextDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+  // Asked for when the fold opens, and again when a newer reading arrives while it is open.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: readingAt only re-triggers the read.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setFailed(false);
+    api
+      .chatContext(sessionId)
+      .then((d) => {
+        if (live) setDetail(d);
+      })
+      .catch(() => {
+        if (live) setFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, sessionId, readingAt]);
+
+  const reading = detail?.reading ?? null;
+  return (
+    <Fold title="Context" defaultOpen={false} open={open} onToggle={setOpen}>
+      {failed ? (
+        <p className="kv-note">Couldn't read this chat's context just now.</p>
+      ) : !detail ? (
+        open ? (
+          <p className="kv-note">Reading…</p>
+        ) : null
+      ) : !reading ? (
+        <p className="kv-note">No reading yet. It appears once Claude has replied.</p>
+      ) : (
+        <div className="context-detail">
+          <p>
+            {tokenWords(reading.usedTokens)} of {tokenWords(reading.windowTokens)} tokens used
+          </p>
+          <p className="kv-note">
+            {reading.autoCompact
+              ? `Claude summarises at about ${tokenWords(reading.limitTokens)} tokens`
+              : 'Auto-summarising is off'}
+          </p>
+          {detail.approximate ? <p className="kv-note">Approximate</p> : null}
+          {detail.items.length > 0 ? (
+            <ul className="context-items">
+              {detail.items.map((item) => (
+                <li key={`${item.group}-${item.name}`}>
+                  <span>{item.name}</span>
+                  <span className="context-tokens">{tokenWords(item.tokens)}</span>
+                  {item.deferred ? <span className="context-advice">Only loaded when used</span> : null}
+                  {item.advice && !item.deferred ? (
+                    <span className="context-advice">{item.advice}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {detail.lastCompaction ? (
+            <p className="kv-note">
+              Last summary:{' '}
+              {detail.lastCompaction.preTokens !== null && detail.lastCompaction.postTokens !== null
+                ? `${tokenWords(detail.lastCompaction.preTokens)} down to ${tokenWords(detail.lastCompaction.postTokens)} tokens`
+                : 'sizes not known'}
+            </p>
+          ) : null}
+        </div>
+      )}
+    </Fold>
+  );
+}
 
 /**
  * The body of the right panel, "This chat": the chat's files and details. The right `Dock`
@@ -105,6 +184,9 @@ export function Inspector() {
           ) : null}
         </dl>
       )}
+      {state.panelTab === 'details' ? (
+        <ContextFold sessionId={id} readingAt={chat?.context?.at ?? null} />
+      ) : null}
     </div>
   );
 }

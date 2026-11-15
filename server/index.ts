@@ -42,6 +42,7 @@ import { createAppStore } from './store/app-store.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
+import { createContextReadingStore } from './store/context-readings.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
 import { createUploadStaging } from './uploads/staging.ts';
@@ -121,6 +122,8 @@ function buildBrainSide(path: string | null) {
     uploads,
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
+    // Each chat's newest context reading (plan 2026-11-14-context-management), in the data folder.
+    contextReadings: createContextReadingStore(config.dataDir),
   });
   return { brain, thumbs, uploads, sessions, skillLevels };
 }

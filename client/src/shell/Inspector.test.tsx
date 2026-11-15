@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession } from '../../../shared/contract.ts';
+import { api } from '../api.ts';
 import type { ChatState } from '../state/chat-reducer.ts';
 
 const h = vi.hoisted(() => ({
@@ -56,6 +57,10 @@ const chatState = (items: ChatState['items']): ChatState => ({
   effort: null,
   level: null,
   unlevelledSkill: null,
+  compacting: false,
+  compactionFailed: false,
+  context: null,
+  lastCompaction: null,
   files: { files: [], attachments: [], links: [] },
   items,
 });
@@ -162,5 +167,70 @@ describe('the "This chat" panel', () => {
     h.activeChat = { kind: 'new', key: 1, draft: '', skill: null, todoId: null };
     const { container } = renderPanel();
     expect(container.textContent).toBe('');
+  });
+
+  describe('Context', () => {
+    const reading = {
+      type: 'context' as const,
+      usedTokens: 84_000,
+      limitTokens: 150_000,
+      windowTokens: 200_000,
+      percent: 56,
+      autoCompact: true,
+      source: 'engine' as const,
+      at: 1,
+    };
+    const open = () => {
+      renderPanel();
+      fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
+      fireEvent.click(screen.getByRole('button', { name: /Context/ }));
+    };
+
+    it('asks for the detail on open and shows items, the last summary and the approximate note', async () => {
+      const spy = vi.spyOn(api, 'chatContext').mockResolvedValue({
+        reading,
+        approximate: true,
+        items: [
+          { name: 'Messages', tokens: 9300, group: 'messages' },
+          { name: 'Gmail connector', tokens: 4000, group: 'connectors', advice: 'Turn it off if unused.' },
+          { name: 'Vercel tools', tokens: 194_000, group: 'tools', deferred: true },
+        ],
+        lastCompaction: {
+          type: 'compaction',
+          phase: 'done',
+          id: 'c:1',
+          trigger: 'auto',
+          preTokens: 150_000,
+          postTokens: 20_000,
+          at: 1,
+        },
+      });
+      open();
+      expect(await screen.findByText('9.3k')).toBeTruthy();
+      expect(spy).toHaveBeenCalledWith('s1');
+      expect(screen.getByText('84k of 200k tokens used')).toBeTruthy();
+      expect(screen.getByText('Claude summarises at about 150k tokens')).toBeTruthy();
+      expect(screen.getByText('Turn it off if unused.')).toBeTruthy();
+      expect(screen.getByText('Only loaded when used')).toBeTruthy();
+      expect(screen.getByText('Approximate')).toBeTruthy();
+      expect(screen.getByText('Last summary: 150k down to 20k tokens')).toBeTruthy();
+    });
+
+    it('says auto-summarising is off, and has a plain empty state', async () => {
+      const spy = vi
+        .spyOn(api, 'chatContext')
+        .mockResolvedValue({ reading: null, items: [], lastCompaction: null, approximate: false });
+      open();
+      expect(await screen.findByText(/No reading yet/)).toBeTruthy();
+      spy.mockResolvedValue({
+        reading: { ...reading, autoCompact: false },
+        items: [],
+        lastCompaction: null,
+        approximate: false,
+      });
+      cleanup();
+      open();
+      await waitFor(() => expect(screen.getByText('Auto-summarising is off')).toBeTruthy());
+    });
   });
 });

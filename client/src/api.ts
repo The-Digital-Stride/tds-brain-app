@@ -1,3 +1,4 @@
+import type { ChatContextDetail } from '../../shared/context-contract.ts';
 import type {
   ApiError,
   ApiErrorCode,
@@ -176,6 +177,7 @@ export const api = {
     request<{ level: TurnLevel }>('POST', ROUTES.chatLevel(sessionId), {
       tier,
     } satisfies ChatLevelRequest),
+  chatContext: (sessionId: string) => request<ChatContextDetail>('GET', ROUTES.chatContext(sessionId)),
   updateStatus: () => request<UpdateStatus>('GET', UPDATE_ROUTES.status),
   updateCheck: () => request<UpdateStatus>('POST', UPDATE_ROUTES.check),
   updateStart: () =>
@@ -211,5 +213,5 @@ export async function discardUpload(id: string, keepalive = false): Promise<void
 
 /** The URL for the one event stream a tab holds. */
 export function streamUrl(sessionId: string | null, after: number): string {
-  return ROUTES.stream(sessionId, after, true, true);
+  return ROUTES.stream(sessionId, after, true, true, true);
 }

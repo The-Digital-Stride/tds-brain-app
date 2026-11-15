@@ -385,3 +385,75 @@ describe('safety-check denials', () => {
     expect(m.map(denied(), { deniedByPerson: new Set(['toolu_secret_id']) })).toEqual([]);
   });
 });
+
+describe('compaction (context management, decision 1)', () => {
+  const status = (over: Record<string, unknown> = {}): RawMessage => ({
+    type: 'system',
+    subtype: 'status',
+    status: null,
+    uuid: 'u-status',
+    session_id: SID,
+    ...over,
+  });
+  const boundary = (over: Record<string, unknown> = {}): RawMessage => ({
+    type: 'system',
+    subtype: 'compact_boundary',
+    uuid: 'b-1',
+    session_id: SID,
+    compact_metadata: { trigger: 'auto', pre_tokens: 90_000, post_tokens: 12_000, duration_ms: 4000 },
+    ...over,
+  });
+
+  it('maps compacting → started, success → nothing, then the boundary → done with its id', () => {
+    const m = createEventMapper();
+    expect(m.map(status({ status: 'compacting' }))).toEqual([{ type: 'compaction', phase: 'started' }]);
+    // A repeat while still compacting is not news.
+    expect(m.map(status({ status: 'compacting' }))).toEqual([]);
+    expect(m.map(status({ status: null, compact_result: 'success' }))).toEqual([]);
+    const done = m.map(boundary());
+    expect(done).toHaveLength(1);
+    expect(done[0]).toMatchObject({
+      type: 'compaction',
+      phase: 'done',
+      id: 'c:b-1',
+      trigger: 'auto',
+      preTokens: 90_000,
+      postTokens: 12_000,
+    });
+    expect(typeof (done[0] as { at: unknown }).at).toBe('number');
+  });
+
+  it('a manual boundary without post tokens reports null', () => {
+    const m = createEventMapper();
+    expect(
+      m.map(boundary({ uuid: 'b-2', compact_metadata: { trigger: 'manual', pre_tokens: 5000 } }))[0],
+    ).toMatchObject({ id: 'c:b-2', trigger: 'manual', preTokens: 5000, postTokens: null });
+  });
+
+  it('maps a failed result → failed, and never ended after it', () => {
+    const m = createEventMapper();
+    m.map(status({ status: 'compacting' }));
+    expect(
+      m.map(status({ status: null, compact_result: 'failed', compact_error: 'too_few_groups' })),
+    ).toEqual([{ type: 'compaction', phase: 'failed' }]);
+    expect(m.map(status({ status: null }))).toEqual([]);
+  });
+
+  it('maps a status change while compacting with no result → ended, once', () => {
+    const m = createEventMapper();
+    m.map(status({ status: 'compacting' }));
+    expect(m.map(status({ status: 'requesting' }))).toEqual([{ type: 'compaction', phase: 'ended' }]);
+    expect(m.map(status({ status: null }))).toEqual([]);
+    // Not compacting: a plain status change is nothing.
+    expect(createEventMapper().map(status({ status: null }))).toEqual([]);
+  });
+
+  it('ignores status and boundaries from helpers', () => {
+    const m = createEventMapper();
+    expect(m.map(status({ status: 'compacting', parent_tool_use_id: 'toolu_h' }))).toEqual([]);
+    expect(m.map(boundary({ parent_tool_use_id: 'toolu_h' }))).toEqual([]);
+    expect(m.map(status({ status: null, compact_result: 'failed', parent_tool_use_id: 'toolu_h' }))).toEqual(
+      [],
+    );
+  });
+});

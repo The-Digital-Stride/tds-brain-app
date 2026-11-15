@@ -88,6 +88,19 @@ export interface LevelLineText {
   engine: string | null;
 }
 
+/** Decision 10: said once while a chat stays on a dearer level, in the tier names the line already uses. */
+export function keptLineText(level: TurnLevel): string | null {
+  if (!level.kept) return null;
+  return `Staying on ${level.tier ? LEVEL_TIERS[level.tier].label : 'this level'} for now: switching down would mean re-reading the whole chat.`;
+}
+
+/** Tokens for people: 9300 → "9.3k", 1200000 → "1.2M", under a thousand as they are. */
+export function tokenWords(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`;
+  if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
+  return String(n);
+}
+
 /**
  * The line for automatic mode, or null when the v0.19.0 engine line should stay (manual mode: the
  * person's own choice). A skill's own setting reads "Set by /name".

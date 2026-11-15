@@ -196,3 +196,65 @@ describe('chat level events (opt-in)', () => {
     expect(both.types()).toEqual(['state', 'level', 'files']);
   });
 });
+
+describe('context events (opt-in, plan 2026-11-14-context-management)', () => {
+  const item = (seq: number, event: SequencedEvent['event']): SequencedEvent => ({ seq, at: 'now', event });
+  const contextEvent: SequencedEvent['event'] = {
+    type: 'context',
+    usedTokens: 1,
+    limitTokens: 2,
+    windowTokens: 2,
+    percent: 50,
+    autoCompact: true,
+    source: 'engine',
+    at: 1,
+  };
+  const compactionEvent: SequencedEvent['event'] = { type: 'compaction', phase: 'started' };
+
+  function openChat(query: string) {
+    let push: (item: SequencedEvent) => void = () => {};
+    const sessions = {
+      subscribe: vi.fn((_id: string, _after: number, listener: (item: SequencedEvent) => void) => {
+        push = listener;
+        return {
+          replay: [
+            item(1, { type: 'state', state: 'idle' }),
+            item(2, contextEvent),
+            item(3, compactionEvent),
+          ],
+          unsubscribe: () => {},
+        };
+      }),
+    };
+    const req = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+    req.headers = {};
+    const res = fakeRes();
+    openStream(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877/api/stream?session=s1${query}`),
+      { sessions: sessions as unknown as SessionManager, hub: createAppEventHub(), serverStartedAt: 'now' },
+    );
+    const types = () =>
+      res.chunks
+        .filter((c) => c.includes('"kind":"chat"'))
+        .map(
+          (c) => (JSON.parse(c.slice(c.indexOf('data: ') + 6)) as { item: SequencedEvent }).item.event.type,
+        );
+    return { push: (i: SequencedEvent) => push(i), types };
+  }
+
+  it('leaves compaction and context events out of replay and live without context=1', () => {
+    const { push, types } = openChat('&after=0&files=1&levels=1');
+    push(item(4, compactionEvent));
+    push(item(5, contextEvent));
+    push(item(6, { type: 'state', state: 'idle' }));
+    expect(types()).toEqual(['state', 'state']);
+  });
+
+  it('sends them, replay and live, with context=1', () => {
+    const { push, types } = openChat('&after=0&context=1');
+    push(item(4, contextEvent));
+    expect(types()).toEqual(['state', 'context', 'compaction', 'context']);
+  });
+});

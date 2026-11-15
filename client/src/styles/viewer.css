@@ -50,8 +50,8 @@
   touch-action: none;
 }
 /*
- * The grip: one short rounded bar in the gap beside the drawer, like a sheet's handle. Quiet at rest
- * (a tint, no edge or shadow); hover and dragging deepen its fill only, as every quiet control does
+ * The grip: one short rounded bar in the gap beside the drawer, like a sheet's handle. A plain grey at
+ * rest (no edge or shadow); hover and dragging deepen its fill only, as every quiet control does
  * (design system: no borders, rings or coloured edges to show state).
  */
 .viewer-resize::before {
@@ -60,21 +60,17 @@
   top: 50%;
   left: 3px;
   width: 4px;
-  height: 40px;
+  height: 48px;
   border-radius: 2px;
   transform: translateY(-50%);
-  background: var(--tint-3);
-  transition:
-    background-color var(--t) var(--ease),
-    height var(--t) var(--ease);
+  background: var(--grey-dot);
+  transition: background-color var(--t) var(--ease);
 }
 .viewer-resize:hover::before,
 .viewer-resize:focus-visible::before {
-  height: 56px;
   background: var(--ink-soft);
 }
 body.viewer-resizing .viewer-resize::before {
-  height: 56px;
   background: var(--navy);
 }
 @media (prefers-reduced-motion: reduce) {

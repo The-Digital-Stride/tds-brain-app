@@ -235,7 +235,13 @@ from a chat should open "over the current chat … and when closed, go back to t
 For showing one file large without leaving where the person is. Any part of the app opens it with
 `dispatch({ type: 'open-viewer', viewer: { item, place?, openIn? } })`; the chat's Files panel uses it
 for its **Open** button (named "Open <title>"). It is a glass drawer from the right over a veil, up to
-1040px wide, leaving the rail and an edge of the page in view (full width under 640px). The header has
+1040px wide by default, leaving the rail and an edge of the page in view (full width under 640px). It
+can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 20px grab strip centred on its
+left edge (`ResizeHandle`, a focusable `separator` "Resize viewer"; arrows 32px, Shift 128px, Home/End;
+double-click resets) from 1040px up to the window less 94px, the width remembered in the shell state
+(`viewerWidth`). Its grip is one 4×48px bar, radius 2, in the gap beside the drawer: `--grey-dot` at
+rest, `--ink-soft` on hover or focus, `--navy` while dragging, changing by fill only (Ian, 2026-11-15:
+a dotted pill with an edge "doesn't fit with the clean design system"). No line runs down the edge. The header has
 the title (14 / 600, focused when it opens) with the place under it (12px, iron), then the actions as
 standard 32px buttons: "Open in Documents" or "Open in Images" when `openIn` is given (closes the viewer
 and opens the file in the app), and Download; the close icon button ("Close file") sits top right, and

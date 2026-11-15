@@ -6,7 +6,7 @@ order: 2
 summary: Browse the Brain's pictures by client, and ask Claude about them.
 benefit: Find logos and photos quickly, and reuse them with confidence.
 roles: all
-related: [documents, talking-to-claude, home]
+related: [documents, deleting-files, talking-to-claude, home]
 since: 0.36.0
 reviewed: 2026-11-15
 ---
@@ -37,6 +37,7 @@ Images shows the pictures in the Brain that you're allowed to see. You can brows
 - You only see what your role lets you see.
 - You can download any picture.
 - Very large libraries may not list every file.
+- To delete a picture, point at it and press its bin. It's kept for 30 days. See [Deleting files](help:deleting-files).
 - The buttons in steps 5 and 6 appear once you tick a picture. With one picture ticked, they say **Ask Claude about it** and **Copy file path**.
 
 ## Try this

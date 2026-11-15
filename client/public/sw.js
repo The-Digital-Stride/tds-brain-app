@@ -1,6 +1,6 @@
 // TDS Brain service worker. Its one job: when the server isn't running, show offline.html
 // instead of Chrome's "can't reach this page". It never caches anything else.
-const CACHE = 'tds-brain-offline-v3';
+const CACHE = 'tds-brain-offline-v4';
 const OFFLINE_URL = '/offline.html';
 const FILES = [OFFLINE_URL, '/offline.css', '/icons/brain.svg'];
 // The offline page's own style and mark: network first, cached copy when the server is down.

@@ -47,7 +47,7 @@ const boot = {
   skills: [],
   clients: [],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false },
+  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1 },
 };
 
 function chatEvent(seq: number, event: ChatEvent) {

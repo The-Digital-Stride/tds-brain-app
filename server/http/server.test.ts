@@ -258,17 +258,17 @@ describe('signed-out page (decision 6c)', () => {
     expect(r.status).toBe(401);
     expect(r.body).toBe(LAUNCHER_PAGE);
     expect(r.body).toContain('<meta http-equiv="refresh" content="5">');
-    expect(r.body).toContain('<h1>Sign in to TDS Brain</h1>');
-    expect(r.body).toContain('<title>Sign in to TDS Brain</title>');
+    expect(r.body).toContain('<h1>Sign in to TDS Cortex</h1>');
+    expect(r.body).toContain('<title>Sign in to TDS Cortex</title>');
     expect(r.body).toContain('<link rel="icon" href="/icons/brain.svg">');
     expectSecurityHeaders(r);
   });
 
   it('keeps its wording in one place', () => {
     expect(SIGNED_OUT_COPY).toEqual({
-      heading: 'Sign in to TDS Brain',
+      heading: 'Sign in to TDS Cortex',
       paragraphs: [
-        "Press Command and Space, type TDS Brain Sign-in, then press Return. This page checks every few seconds and opens TDS Brain once you're signed in.",
+        "Press Command and Space, type TDS Brain Sign-in, then press Return. This page checks every few seconds and opens TDS Cortex once you're signed in.",
         'If Chrome opens with the wrong profile, close that window, switch to the Chrome profile you use for work, then open TDS Brain Sign-in again.',
       ],
     });
@@ -278,7 +278,7 @@ describe('signed-out page (decision 6c)', () => {
   it('after a used or wrong code, reloads the home page, not the dead sign-in link', async () => {
     const r = await send('/auth?code=nope');
     expect(r.status).toBe(403);
-    expect(r.body).toContain('<h1>Sign in to TDS Brain</h1>');
+    expect(r.body).toContain('<h1>Sign in to TDS Cortex</h1>');
     expect(r.body).toContain('<meta http-equiv="refresh" content="5; url=/">');
   });
 });

@@ -11,7 +11,7 @@ since: 0.38.0
 reviewed: 2026-11-15
 ---
 
-Cortex knows who you are by a sign-in. Usually you don't see it. If you do, the page says "Sign in to TDS Brain". Here is what to do.
+Cortex knows who you are by a sign-in. Usually you don't see it. If you do, the page says "Sign in to TDS Cortex". Here is what to do.
 
 ## Signing in
 

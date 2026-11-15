@@ -19,7 +19,7 @@ import { scrubEnv } from '../engine/session-manager.ts';
 import { isDir } from './util.ts';
 
 /** The tool name the app records on to-dos it finishes or deletes. */
-export const APP_VIA = 'TDS Brain App';
+export const APP_VIA = 'TDS Cortex';
 
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {

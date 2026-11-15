@@ -19,14 +19,16 @@ import {
   checkSentences,
   checkSpelling,
   checkTopicIds,
+  KEYBOARD_ALLOW,
 } from './checks.ts';
 import { helpForContext } from './context.ts';
 import { HELP_GLOSSARY_TERMS, type HelpContext, type HelpShot, type HelpTopic } from './contract.ts';
 import { parseHelpFile } from './frontmatter.ts';
 import { createHelpLibrary } from './library.ts';
-import { glossaryTerms } from './readability.ts';
+import { glossaryTerms, words } from './readability.ts';
 import { HELP_TOPIC_IDS } from './topics.ts';
 import { helpVisible } from './visibility.ts';
+import { parseNote, WHATS_NEW_MAX_WORDS, type WhatsNewNote, whatsNewTopic } from './whats-new.ts';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const HELP_DIR = join(ROOT, 'help');
@@ -115,5 +117,70 @@ describe('help contexts', () => {
 describe('who sees help', () => {
   it('is shown to every role', () => {
     for (const role of ['owner', 'scout', 'team', 'unknown'] as Role[]) expect(helpVisible(role)).toBe(true);
+  });
+});
+
+describe("what's new notes", () => {
+  const NOTES_DIR = join(HELP_DIR, 'whats-new');
+  const noteFiles = existsSync(NOTES_DIR) ? readdirSync(NOTES_DIR).filter((f) => f.endsWith('.md')) : [];
+  const notes: WhatsNewNote[] = [];
+  const noteErrors: string[] = [];
+  for (const f of noteFiles) {
+    const r = parseNote(f, readFileSync(join(NOTES_DIR, f), 'utf8'));
+    if (r.ok) notes.push(r.note);
+    else noteErrors.push(...r.errors);
+  }
+  const asTopic = (n: WhatsNewNote): HelpTopic => ({
+    id: `whats-new-${n.version}`,
+    title: n.title,
+    area: 'help',
+    order: 1,
+    summary: n.title,
+    benefit: n.title,
+    roles: 'all',
+    related: [],
+    since: n.version,
+    reviewed: '2026-11-15',
+    body: n.body,
+  });
+  const each = (name: string, check: (t: HelpTopic, n: WhatsNewNote) => string[]) =>
+    it(name, () => expect(notes.flatMap((n) => check(asTopic(n), n))).toEqual([]));
+
+  it('has at least one note, and every file parses', () => {
+    expect(noteErrors).toEqual([]);
+    expect(notes.length).toBeGreaterThan(0);
+  });
+  each(`keeps the body to ${WHATS_NEW_MAX_WORDS} words`, (t) =>
+    words(t.body).length > WHATS_NEW_MAX_WORDS ? [`${t.id}: ${words(t.body).length} words.`] : [],
+  );
+  each('keeps every sentence short', (t) => checkSentences(t));
+  each('reads at grade 9 or lower', (t) => checkGrade(t, terms));
+  each('uses UK spelling', (t) => checkSpelling(t));
+  each('avoids banned jargon', (t) => checkJargon(t));
+  each("only bolds labels that exist in the app (Chrome's own menu item aside)", (t) =>
+    checkBoldLabels(t, appText),
+  );
+  each('links only to help pages that exist', (t, n) =>
+    n.pages.filter((p) => !ids.includes(p)).map((p) => `${t.id}: page "${p}" does not exist.`),
+  );
+
+  it("the What's new help topic passes the page checks", () => {
+    const topic = whatsNewTopic(
+      [...notes].reverse(),
+      (id) => topics.find((x) => x.id === id)?.title,
+      '2026-11-15',
+    );
+    expect(topic).not.toBeNull();
+    const t = topic as HelpTopic;
+    expect([
+      ...checkHeadings(t),
+      ...checkSentences(t),
+      ...checkLength(t),
+      ...checkGrade(t, terms),
+      ...checkSpelling(t),
+      ...checkJargon(t),
+      ...checkRelated(t, ids),
+      ...checkBoldLabels(t, appText),
+    ]).toEqual([]);
   });
 });

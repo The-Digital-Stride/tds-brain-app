@@ -34,9 +34,9 @@ export function kindOfName(name: string): UploadKind {
 export function checkFile(file: { name: string; size: number }, count: number): string | null {
   if (count >= MAX_ATTACHMENTS) return `You can attach up to ${MAX_ATTACHMENTS} files to a message.`;
   const ext = extensionOf(file.name);
-  if (!ext) return "TDS Brain can't pass on this type of file.";
+  if (!ext) return "TDS Cortex can't pass on this type of file.";
   if (!Object.hasOwn(UPLOAD_TYPES, ext)) {
-    return `TDS Brain can't pass on .${ext} files. Attach a document, spreadsheet, slide deck, text file or picture.`;
+    return `TDS Cortex can't pass on .${ext} files. Attach a document, spreadsheet, slide deck, text file or picture.`;
   }
   if (file.size === 0) return 'This file is empty.';
   if (file.size > MAX_UPLOAD_BYTES) {

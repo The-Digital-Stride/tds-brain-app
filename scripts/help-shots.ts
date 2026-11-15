@@ -26,9 +26,11 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { type Browser, chromium, type Page } from 'playwright-core';
 import sharp, { type OverlayOptions } from 'sharp';
 import type { HelpShot } from '../client/src/help/contract.ts';
+import { TOUR_VERSION } from '../client/src/tour/steps.ts';
 import { demoSafeEnv } from '../server/engine/demo-guard.ts';
 import { codeFromRunningServer, signInUrl } from '../server/launcher.ts';
 import { defaultDataDir, expandHomeFor, readSettings } from '../server/settings.ts';
+import { createAppStore } from '../server/store/app-store.ts';
 import { createTokenSavingsStore } from '../server/store/token-savings.ts';
 import { demoGitEnv, redact } from './help-shots-lib.ts';
 
@@ -652,6 +654,8 @@ async function takeShot(browser: Browser, shot: HelpShot, words: string[]): Prom
   const scene = SCENES[shot.scene];
   if (!scene) throw new Error(`Shot "${shot.id}" names a scene that does not exist: "${shot.scene}".`);
   freshDemo();
+  // The demo person has taken the tour and read every note, so neither covers a picture.
+  await createAppStore(inDemo(DATA)).update({ tourSeen: TOUR_VERSION, whatsNewSeen: '9999.0.0' });
   await SEEDERS[shot.scene]?.();
   const { token } = await startServer();
   const context = await browser.newContext({

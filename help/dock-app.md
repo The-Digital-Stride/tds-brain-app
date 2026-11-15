@@ -24,11 +24,11 @@ You can add Cortex to your Mac's Dock (the row of app icons). It then opens in i
 ## How to use it
 
 1. Open Settings from the rail.
-2. Under **About TDS Brain on this computer**, find **Dock app**.
-3. Press **Add TDS Brain to your Dock**.
+2. Under **About TDS Cortex on this computer**, find **Dock app**.
+3. Press **Add TDS Cortex to your Dock**.
 4. Choose to install when Chrome asks.
 
-If the button isn't there, open Chrome's menu or the address bar and choose **Install TDS Brain**.
+If the button isn't there, open Chrome's menu or the address bar and choose **Install TDS Cortex**.
 
 ## Good to know
 
@@ -36,6 +36,7 @@ If the button isn't there, open Chrome's menu or the address bar and choose **In
 - Settings tells you where things stand. It says **Installed**, **Added**, or "Not added" if you said no.
 - If you said no, you can add it later from Chrome's menu.
 - Adding it to the Dock doesn't make a second copy of your work.
+- Did your Dock app have the old name, TDS Brain? After an update, Chrome may ask to update its name. In the app window, open the ⋮ menu, choose **Review app update**, then accept.
 
 ## Try this
 

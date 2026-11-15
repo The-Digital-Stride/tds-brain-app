@@ -178,15 +178,15 @@ export const BRAIN_REFUSAL_TEXT: Record<BrainRefusal | 'env-override', string> =
   'not-absolute': "That isn't a full folder path. It should start with / or ~/.",
   'not-found': "There's no folder at that path. Check it's typed the way Finder shows it.",
   'outside-home': 'The brain folder needs to be inside your home folder.',
-  'is-app-folder': "That's the folder TDS Brain itself is installed in, not your brain.",
-  'is-data-folder': "That's where TDS Brain keeps its own data, not your brain.",
+  'is-app-folder': "That's the folder TDS Cortex itself is installed in, not your brain.",
+  'is-data-folder': "That's where TDS Cortex keeps its own data, not your brain.",
   'protected-folder':
-    "macOS doesn't let TDS Brain read that folder. Move your brain somewhere else in your home folder.",
+    "macOS doesn't let TDS Cortex read that folder. Move your brain somewhere else in your home folder.",
   'missing-roles': "That folder doesn't look like the Agency Brain. Choose the folder you copied it into.",
   'missing-whoami': "That folder doesn't look like the Agency Brain. Choose the folder you copied it into.",
   'not-a-repo': "That folder isn't a git copy of the brain. Use the folder you cloned the brain into.",
   'env-override':
-    "This Mac fixes the brain folder with a setting (TDS_BRAIN_PATH), so it can't be changed here. Ask whoever looks after TDS Brain.",
+    "This Mac fixes the brain folder with a setting (TDS_BRAIN_PATH), so it can't be changed here. Ask whoever looks after TDS Cortex.",
 };
 
 // ---------------------------------------------------------------------------

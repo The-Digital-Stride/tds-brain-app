@@ -61,7 +61,7 @@ const boot = {
   skills: [],
   clients: [],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false },
+  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1 },
 };
 
 const liveChat: LiveSession = {

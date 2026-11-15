@@ -23,6 +23,7 @@ import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { clientOptions } from './search-select.ts';
+import { WhatsNewCard } from './WhatsNewCard.tsx';
 import { placeName, STATE_WORDS, starterSkills, todoChatDraft, whenWords } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
@@ -173,6 +174,7 @@ export function Home() {
         <div className="home-in">
           <p className="home-greeting">{greeting(new Date(), boot.identity.name)}</p>
           <p className="home-sub">{summaryText}</p>
+          <WhatsNewCard />
 
           {activeChat.kind === 'new' ? (
             <div className="home-composer">

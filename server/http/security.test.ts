@@ -459,7 +459,7 @@ describe('security headers', () => {
   });
 });
 
-describe('/auth/ping (is the app on this port really TDS Brain?)', () => {
+describe('/auth/ping (is the app on this port really TDS Cortex?)', () => {
   it('lets the ping through without a cookie, but still checks Host', () => {
     expect(checkRequest(req({ path: AUTH_PING_PATH, headers: { cookie: undefined } }), ctx)).toEqual({
       action: 'ping',

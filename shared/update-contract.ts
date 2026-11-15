@@ -28,17 +28,17 @@ export type UpdatePhase =
 export type UpdateBlocked = 'not-service' | 'not-git' | 'not-on-main' | 'local-changes';
 
 export const UPDATE_BLOCKED_TEXT: Record<UpdateBlocked, string> = {
-  'not-service': "This copy of TDS Brain was started by hand, so it can't update itself.",
-  'not-git': "This copy of TDS Brain wasn't installed from GitHub, so it can't update itself.",
+  'not-service': "This copy of TDS Cortex was started by hand, so it can't update itself.",
+  'not-git': "This copy of TDS Cortex wasn't installed from GitHub, so it can't update itself.",
   'not-on-main':
-    "This copy of TDS Brain isn't on the main version, so it can't update itself. Tell whoever looks after TDS Brain.",
+    "This copy of TDS Cortex isn't on the main version, so it can't update itself. Tell whoever looks after TDS Cortex.",
   'local-changes':
-    "Files in this copy of TDS Brain were changed on this Mac, so it won't update itself. Tell whoever looks after TDS Brain.",
+    "Files in this copy of TDS Cortex were changed on this Mac, so it won't update itself. Tell whoever looks after TDS Cortex.",
 };
 
 /** Shown when the last check couldn't reach GitHub. Not a block: a known update stays available. */
 export const UPDATE_CHECK_FAILED_TEXT =
-  "Couldn't check for updates just now. TDS Brain will try again later.";
+  "Couldn't check for updates just now. TDS Cortex will try again later.";
 
 /** Shown (as `error`, with phase `failed`) at start-up when an update was interrupted. */
 export const UPDATE_UNFINISHED_TEXT = "The last update didn't finish. Choose Try again to finish it.";
@@ -48,12 +48,12 @@ export const UPDATE_FAILED_TEXT = {
   preflight:
     "The update couldn't start because something on this Mac wasn't ready, such as disk space. Nothing was changed.",
   download:
-    "The update couldn't be applied. Nothing was changed. Try again, or tell whoever looks after TDS Brain.",
-  install: "The update couldn't be installed. TDS Brain is still on the version you had.",
-  build: "The update couldn't be built. TDS Brain is still on the version you had.",
-  'boot-check': "The new version wouldn't start, so TDS Brain stayed on the version you had.",
+    "The update couldn't be applied. Nothing was changed. Try again, or tell whoever looks after TDS Cortex.",
+  install: "The update couldn't be installed. TDS Cortex is still on the version you had.",
+  build: "The update couldn't be built. TDS Cortex is still on the version you had.",
+  'boot-check': "The new version wouldn't start, so TDS Cortex stayed on the version you had.",
   'rollback-failed':
-    "The update didn't finish and TDS Brain couldn't go back to the version you had. Choose Try again, or tell whoever looks after TDS Brain.",
+    "The update didn't finish and TDS Cortex couldn't go back to the version you had. Choose Try again, or tell whoever looks after TDS Cortex.",
 } as const;
 export type UpdateFailedStep = keyof typeof UPDATE_FAILED_TEXT;
 

@@ -32,4 +32,4 @@ The rail shows a **Synced** stamp near the bottom. It tells you when your Brain 
 
 ## A note on names
 
-Some screens still say "TDS Brain" for the app. That is the old name for Cortex, and it will change. The sign-in helper keeps its name, TDS Brain Sign-in. See [Signing in](help:signing-in).
+TDS Brain is now TDS Cortex. That is the same app with a new name. You may still see the old name in a few places. The sign-in helper keeps its name, TDS Brain Sign-in. See [Signing in](help:signing-in).

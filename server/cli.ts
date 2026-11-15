@@ -37,8 +37,8 @@ const COMMANDS: readonly CliCommand[] = [
 export const USAGE = `Usage: tds-brain <command>
 
   install --brain <folder> [--migrate-from <data folder>]
-                        Set TDS Brain up to start at login, then sign you in
-  open                  Open TDS Brain in Chrome
+                        Set TDS Cortex up to start at login, then sign you in
+  open                  Open TDS Cortex in Chrome
   restart               Restart the app
   doctor                Check everything the app needs and say what to fix
   sign-out-everywhere   Sign out every browser, then restart

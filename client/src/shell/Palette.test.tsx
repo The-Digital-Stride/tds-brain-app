@@ -71,7 +71,13 @@ const boot = {
     { slug: 'northwind', name: 'Northwind' },
   ],
   usedOften: [],
-  prefs: { pins: ['meeting-notes'], lastClient: null, todoPanelOpen: false, directWrites: false },
+  prefs: {
+    pins: ['meeting-notes'],
+    lastClient: null,
+    todoPanelOpen: false,
+    directWrites: false,
+    tourSeen: 1,
+  },
 };
 
 function dayOffset(n: number): string {

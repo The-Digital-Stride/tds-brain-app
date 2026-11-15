@@ -283,26 +283,26 @@ describe('Dock app row', () => {
   it('says installed when running as the installed app', () => {
     standalone(true);
     render(<SettingsView />);
-    expect(screen.getByText('Installed. TDS Brain is in your Dock.')).toBeTruthy();
+    expect(screen.getByText('Installed. TDS Cortex is in your Dock.')).toBeTruthy();
   });
 
   it('walks manual, button, dismissed, then added', async () => {
     standalone(false);
     captureInstallPrompt();
     render(<SettingsView />);
-    expect(screen.getByText(/If TDS Brain isn't in your Dock yet/)).toBeTruthy();
+    expect(screen.getByText(/If TDS Cortex isn't in your Dock yet/)).toBeTruthy();
     const prompt = vi.fn().mockResolvedValue(undefined);
     await chromeEvent('beforeinstallprompt', {
       prompt,
       userChoice: Promise.resolve({ outcome: 'dismissed' }),
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add TDS Brain to your Dock' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add TDS Cortex to your Dock' }));
     });
     expect(prompt).toHaveBeenCalled();
     expect(screen.getByText("Not added. You can add it later from Chrome's menu.")).toBeTruthy();
     await chromeEvent('appinstalled');
-    expect(screen.getByText('Added. TDS Brain is in your Dock.')).toBeTruthy();
+    expect(screen.getByText('Added. TDS Cortex is in your Dock.')).toBeTruthy();
   });
 });
 

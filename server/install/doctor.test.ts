@@ -80,7 +80,7 @@ describe('runDoctor', () => {
     );
     expect(failed(r)).toEqual(['brain']);
     expect(r.results.find((x) => x.check === 'brain')?.message).toBe(
-      'No brain folder chosen yet; open TDS Brain to choose one.',
+      'No brain folder chosen yet; open TDS Cortex to choose one.',
     );
   });
 

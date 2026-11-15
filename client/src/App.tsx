@@ -26,6 +26,7 @@ import { TodosDrawer } from './shell/TodosDrawer.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
 import { StoreProvider, useStore } from './store.tsx';
+import { Tour, useTourOpen } from './tour/index.ts';
 
 /** Says what changed, for screen readers. Nothing visible. */
 function Announcer() {
@@ -126,6 +127,8 @@ function SheetContent() {
 }
 
 function Shell() {
+  // The tour's card is the only thing in reach while it shows.
+  const touring = useTourOpen();
   const { boot, newChat, view } = useStore();
   const { state, dispatch, modes } = useShell();
   // One source of truth for what shows and what floats: the shell provider's layout.
@@ -147,13 +150,13 @@ function Shell() {
 
   return (
     <>
-      <a className="skip-link" href="#main" inert={viewing}>
+      <a className="skip-link" href="#main" inert={viewing || touring}>
         Skip to the main content
       </a>
       <div
         className="desk"
         data-rail={railShowsNames ? 'wide' : 'icons'}
-        inert={state.paletteOpen || viewing}
+        inert={state.paletteOpen || viewing || touring}
       >
         <Rail inert={modal} />
         {/* A floating panel makes the drawer behind it unreachable too. */}
@@ -214,6 +217,7 @@ function Shell() {
       <FileViewer />
       <Tooltips />
       <Announcer />
+      <Tour />
     </>
   );
 }

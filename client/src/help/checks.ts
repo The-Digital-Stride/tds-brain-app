@@ -196,6 +196,9 @@ export const KEYBOARD_ALLOW = [
   'Delete',
 ];
 
+/** Bold text that is a label in Chrome's own menus, not in Cortex (it can't be found in the app's source). */
+export const BROWSER_ALLOW = ['Review app update'];
+
 const norm = (s: string) =>
   s
     .replace(/[‘’]/g, "'")
@@ -212,7 +215,7 @@ export function boldLabels(body: string): string[] {
 export function checkBoldLabels(
   topic: HelpTopic,
   appText: string,
-  allow: readonly string[] = KEYBOARD_ALLOW,
+  allow: readonly string[] = [...KEYBOARD_ALLOW, ...BROWSER_ALLOW],
 ): string[] {
   const hay = norm(appText);
   const out: string[] = [];

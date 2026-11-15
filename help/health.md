@@ -13,7 +13,7 @@ reviewed: 2026-11-15
 
 ## What it does
 
-The top of Settings has a heading, **How TDS Brain is running**. Under it is one sentence, then a line for each thing Cortex needs.
+The top of Settings has a heading, **How TDS Cortex is running**. Under it is one sentence, then a line for each thing Cortex needs.
 
 ## Why it helps
 

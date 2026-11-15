@@ -100,7 +100,7 @@ async function request<T>(
   } catch (err) {
     // An aborted request is the caller's own doing: let it through as it is.
     if (opts?.signal?.aborted) throw err;
-    throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
+    throw new ApiFailure('network', 'Could not reach TDS Cortex. Is it still running on this computer?', 0);
   }
   if (!res.ok) {
     let code: ApiErrorCode = res.status === 401 ? 'unauthorised' : 'internal';
@@ -251,7 +251,7 @@ export async function downloadBranded(path: string, title: string): Promise<{ pa
   try {
     res = await fetch(path, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'text/html' } });
   } catch {
-    throw new ApiFailure('network', 'Could not reach TDS Brain. Is it still running on this computer?', 0);
+    throw new ApiFailure('network', 'Could not reach TDS Cortex. Is it still running on this computer?', 0);
   }
   if (!res.ok) {
     throw new ApiFailure('internal', "Couldn't download the page. Please try again.", res.status);

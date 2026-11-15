@@ -16,6 +16,7 @@ import {
   TODO_KEY_MAX,
   TODO_NEW_DAYS,
   TODO_SEEN_MAX,
+  VERSION_PATTERN,
 } from '../../shared/contract.ts';
 import type { LevelMode } from '../../shared/levels-contract.ts';
 
@@ -129,6 +130,15 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
     favouriteChats: cleanFavouriteChats(o.favouriteChats) ?? [...(base.favouriteChats ?? [])],
     favouriteTodos: cleanFavouriteTodos(o.favouriteTodos) ?? [...(base.favouriteTodos ?? [])],
     favouriteFiles: cleanFavouriteFiles(o.favouriteFiles) ?? [...(base.favouriteFiles ?? [])],
+    tourSeen:
+      o.tourSeen === null ||
+      (Number.isInteger(o.tourSeen) && (o.tourSeen as number) >= 1 && (o.tourSeen as number) <= 1000)
+        ? (o.tourSeen as number | null)
+        : (base.tourSeen ?? null),
+    whatsNewSeen:
+      o.whatsNewSeen === null || (typeof o.whatsNewSeen === 'string' && VERSION_PATTERN.test(o.whatsNewSeen))
+        ? (o.whatsNewSeen as string | null)
+        : (base.whatsNewSeen ?? null),
   };
 }
 

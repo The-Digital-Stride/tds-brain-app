@@ -52,7 +52,7 @@ describe('SheetNotices: new version', () => {
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload });
     store.current = { ...base, boot: { appVersion: '0.7.0' } };
     render(<SheetNotices />);
-    expect(screen.getByTestId('update-status').textContent).toContain('A new version of TDS Brain is ready');
+    expect(screen.getByTestId('update-status').textContent).toContain('A new version of TDS Cortex is ready');
     expect(screen.getByTestId('update-status').getAttribute('role')).toBe('status');
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(reload).toHaveBeenCalledTimes(1);
@@ -78,7 +78,7 @@ describe('SheetNotices: update banner', () => {
     update.current = available;
     store.current = { ...base, boot: { appVersion: '0.6.0' } };
     render(<SheetNotices />);
-    expect(screen.getAllByText('TDS Brain 0.7.0 is available.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('TDS Cortex 0.7.0 is available.').length).toBeGreaterThan(0);
   });
 
   it('hides the lost-connection line while the update restarts the server', () => {
@@ -92,7 +92,7 @@ describe('SheetNotices: update banner', () => {
     update.current = available;
     store.current = { ...base, boot: { appVersion: '0.7.0' } };
     render(<SheetNotices />);
-    expect(screen.queryByText('TDS Brain 0.7.0 is available.')).toBeNull();
+    expect(screen.queryByText('TDS Cortex 0.7.0 is available.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
   });
 });

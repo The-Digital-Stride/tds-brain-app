@@ -1,6 +1,6 @@
 ---
 name: tdsapp-skill-levels
-description: Set, clear or bulk-import the team's level (Quick, Standard or Deep) for a skill, through one small script, so everyone's TDS Brain app uses the same level for it. A level says how hard Claude works when the app runs that skill. It never changes the skill's own file. USE WHEN asked to set, change, clear or list a skill's level, or someone says "make /google-ads-audit Deep", "what level is the ads audit?", "set a team level for this skill", "clear the level for that skill", "import the reviewed skill levels". The TDS Brain app also runs this script for its Skill levels settings.
+description: Set, clear or bulk-import the team's level (Quick, Standard or Deep) for a skill, through one small script, so everyone's TDS Cortex app uses the same level for it. A level says how hard Claude works when the app runs that skill. It never changes the skill's own file. USE WHEN asked to set, change, clear or list a skill's level, or someone says "make /google-ads-audit Deep", "what level is the ads audit?", "set a team level for this skill", "clear the level for that skill", "import the reviewed skill levels". TDS Cortex also runs this script for its Skill levels settings.
 version: 0.1
 last_updated: 2026-11-14
 roles: owner, scout
@@ -12,7 +12,7 @@ agency: true
 # tdsapp-skill-levels
 
 The team's skill levels live in one file, `.claude/tdsapp-skill-levels.json`. This skill's script is the
-only thing that writes it. The TDS Brain app reads the file and uses a skill's level when it runs that
+only thing that writes it. TDS Cortex reads the file and uses a skill's level when it runs that
 skill; the same skill run from the terminal behaves as it always has. No skill's own file is touched.
 
 It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to the

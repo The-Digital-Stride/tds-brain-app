@@ -24,12 +24,12 @@ Settings is one page with your choices and a check on how Cortex is running. It 
 ## How to use it
 
 1. Open Settings from the rail.
-2. At the top, read **How TDS Brain is running**. It says if everything works.
+2. At the top, read **How TDS Cortex is running**. It says if everything works.
 3. Under **Preferences**, switch **Let the app change to-dos** and **Single-key shortcuts** on or off.
 4. Under **Claude in chats**, choose how Claude picks a level for each chat.
 5. Under **Skill levels**, see the level the team set for each skill.
 6. Under **Tokens saved**, see how much shorter chats became.
-7. Under **About TDS Brain on this computer**, see who you are, the version and the Dock app.
+7. Under **About TDS Cortex on this computer**, see who you are, the version and the Dock app.
 
 ![The Preferences part of Settings.](images/settings-prefs.webp)
 
@@ -41,4 +41,4 @@ Settings is one page with your choices and a check on how Cortex is running. It 
 
 ## Try this
 
-Open Settings and read the line under **How TDS Brain is running**. It should say everything is working.
+Open Settings and read the line under **How TDS Cortex is running**. It should say everything is working.

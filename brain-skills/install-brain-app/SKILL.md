@@ -1,6 +1,6 @@
 ---
 name: install-brain-app
-description: Install the TDS Brain app on this Mac - the always-running local app that opens from the Dock and runs Claude Code in your brain. Fully guided for people who aren't technical - checks the Mac, installs anything missing (Node, Apple's command line tools, Chrome) through the Mac's own install windows, downloads the app, sets it to start at login, signs you in and puts it in your Dock. USE WHEN someone says "/install-brain-app", "install TDS Brain", "set up the brain app", "get the TDS Brain app", or is a new team member setting up the app for the first time.
+description: Install TDS Cortex on this Mac - the always-running local app that opens from the Dock and runs Claude Code in your brain. Fully guided for people who aren't technical - checks the Mac, installs anything missing (Node, Apple's command line tools, Chrome) through the Mac's own install windows, downloads the app, sets it to start at login, signs you in and puts it in your Dock. USE WHEN someone says "/install-brain-app", "install TDS Cortex", "install TDS Brain", "set up the brain app", "get TDS Cortex", "get the TDS Brain app", or is a new team member setting up the app for the first time.
 version: 1.0
 last_updated: 2026-11-12
 maturity: beta
@@ -8,7 +8,7 @@ members: false
 agency: true
 ---
 
-# Install the TDS Brain app
+# Install TDS Cortex
 
 The person running this is probably not technical. Guide every step: say what is about to happen
 and why, in one or two plain UK English sentences, before it happens. Never assume they know what
@@ -35,7 +35,7 @@ settings and pins in `data/`). It starts by itself at login and restarts if it s
 ## Before anything
 
 1. **Is it already running here?** `printenv TDS_BRAIN_SERVICE`. If it prints `1`, this chat is
-   inside the TDS Brain app, so it's already installed. Offer `/update-brain-app` or
+   inside TDS Cortex, so it's already installed. Offer `/update-brain-app` or
    `/doctor-brain-app` and stop.
 2. **Terminal, not Cowork.** If this is a Cowork or sandbox session, say it needs Claude Code in the
    Terminal app on their Mac, and stop.
@@ -57,7 +57,7 @@ settings and pins in `data/`). It starts by itself at login and restarts if it s
    - Both `code` and `service`: it's installed. Offer `/update-brain-app` or `/doctor-brain-app`
      and stop.
    - `code` without `service`: an earlier install stopped before the end (or the app was
-     uninstalled; its code is kept). Say "TDS Brain was downloaded here but never finished setting
+     uninstalled; its code is kept). Say "TDS Cortex was downloaded here but never finished setting
      up. I'll finish it." Carry on, and in Step 3 use the **finish** command instead of downloading
      again.
    - Neither: a fresh install. Carry on.
@@ -124,7 +124,7 @@ official installer from nodejs.org:
 
 Check: `test -d "/Applications/Google Chrome.app"`.
 
-If not: say "TDS Brain opens in Google Chrome. I'll open Chrome's download page." Run
+If not: say "TDS Cortex opens in Google Chrome. I'll open Chrome's download page." Run
 `open https://www.google.com/chrome/`. Tell them: click **Download Chrome**, open the downloaded
 file, drag **Google Chrome** onto **Applications**, then open Chrome once and close it.
 AskUserQuestion "Is Chrome installed?" ("Yes, it's done" / "Something went wrong"), then re-check.
@@ -145,7 +145,7 @@ GIT_TERMINAL_PROMPT=0 git ls-remote https://github.com/The-Digital-Stride/tds-br
 
 If that prints a line, carry on. If not, it's almost always the internet connection: ask them to
 check they're online (open any website), then try again. If it still fails, stop and say: "This
-Mac can't reach GitHub to download TDS Brain. Ask Ian to take a look."
+Mac can't reach GitHub to download TDS Cortex. Ask Ian to take a look."
 
 The app itself doesn't need pnpm installed: the commands below run it through `npx`, which comes
 with Node and needs no extra install or password.
@@ -155,9 +155,9 @@ with Node and needs no extra install or password.
 Use AskUserQuestion. Say, in plain words:
 - It downloads the app into `~/Library/Application Support/TDS Brain/app` and gets it ready (a few
   minutes).
-- It sets TDS Brain to start when they log in. macOS will show a **"Background Items Added"**
-  notice: that's TDS Brain, and they should leave it switched on, or the app won't start by itself.
-- It opens Chrome, signed in to TDS Brain. If they have more than one Chrome profile, use the one
+- It sets TDS Cortex to start when they log in. macOS will show a **"Background Items Added"**
+  notice: that's TDS Cortex, and they should leave it switched on, or the app won't start by itself.
+- It opens Chrome, signed in to TDS Cortex. If they have more than one Chrome profile, use the one
   they use every day.
 - It uses their brain folder (give the path).
 
@@ -198,7 +198,7 @@ APP="$HOME/Library/Application Support/TDS Brain/app"
 
 - It checks the brain folder first and changes nothing if it can't use it. Relay its message in
   plain words.
-- If another copy of TDS Brain is already running (port 3877), it stops and says so. Ask them to
+- If another copy of TDS Cortex is already running (port 3877), it stops and says so. Ask them to
   quit that copy, then run this step again.
 - On success it adds **TDS Brain Sign-in** to their Applications folder, starts the app, and opens
   Chrome signed in. Remind them about the "Background Items Added" notice: leave it on.
@@ -206,11 +206,11 @@ APP="$HOME/Library/Application Support/TDS Brain/app"
 ## Step 5: Put it in the Dock
 
 Tell them, one step at a time, and wait for "done" (AskUserQuestion) before the next:
-1. In the TDS Brain page Chrome just opened, click **Settings** (the sliders icon near the bottom of
-   the left-hand bar), then **Add TDS Brain to your Dock**, then **Install**. If that button isn't
+1. In the TDS Cortex page Chrome just opened, click **Settings** (the sliders icon near the bottom of
+   the left-hand bar), then **Add TDS Cortex to your Dock**, then **Install**. If that button isn't
    there, click the install icon at the right-hand end of Chrome's address bar (a screen with a
    down arrow) and choose **Install**.
-2. TDS Brain opens in its own window. To keep it in the Dock: right-click its Dock icon, choose
+2. TDS Cortex opens in its own window. To keep it in the Dock: right-click its Dock icon, choose
    **Options**, then **Keep in Dock**.
 3. If they're ever signed out, they open **TDS Brain Sign-in** from their Applications folder.
 

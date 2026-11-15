@@ -151,15 +151,15 @@ describe('scriptPayload: the Workbench route bodies', () => {
     const cases: [TodoAction, object][] = [
       [
         { kind: 'add', title: 'Call Ben', due: '2026-11-20', assignee: 'sam' },
-        { title: 'Call Ben', due: '2026-11-20', assignee: 'sam', via: 'TDS Brain App' },
+        { title: 'Call Ben', due: '2026-11-20', assignee: 'sam', via: 'TDS Cortex' },
       ],
       [
         { kind: 'add', title: 'Call Ben', due: null, assignee: 'sam' },
-        { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Brain App' },
+        { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Cortex' },
       ],
       [
         { kind: 'add', title: 'Call Ben', due: null, assignee: null },
-        { title: 'Call Ben', due: '', open: true, via: 'TDS Brain App' },
+        { title: 'Call Ben', due: '', open: true, via: 'TDS Cortex' },
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'T', details: 'D', expect: EXPECT },
@@ -171,11 +171,11 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: null, expect: EXPECT },
-        { file: 'a.md', assignee: '', via: 'TDS Brain App', expect: EXPECT },
+        { file: 'a.md', assignee: '', via: 'TDS Cortex', expect: EXPECT },
       ],
       [
         { kind: 'delete', id: 'a.md', expect: EXPECT },
-        { file: 'a.md', via: 'TDS Brain App', expect: EXPECT },
+        { file: 'a.md', via: 'TDS Cortex', expect: EXPECT },
       ],
       [
         { kind: 'edit', id: 'a.md', title: 'New' },
@@ -195,15 +195,15 @@ describe('scriptPayload: the Workbench route bodies', () => {
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: 'ben-mcadam' },
-        { file: 'a.md', assignee: 'ben-mcadam', via: 'TDS Brain App' },
+        { file: 'a.md', assignee: 'ben-mcadam', via: 'TDS Cortex' },
       ],
       [
         { kind: 'assignee', id: 'a.md', assignee: null },
-        { file: 'a.md', assignee: '', via: 'TDS Brain App' },
+        { file: 'a.md', assignee: '', via: 'TDS Cortex' },
       ],
       [
         { kind: 'delete', id: 'a.md' },
-        { file: 'a.md', via: 'TDS Brain App' },
+        { file: 'a.md', via: 'TDS Cortex' },
       ],
     ];
     for (const [action, payload] of cases)
@@ -285,11 +285,11 @@ describe('createTodoSkillRunner', () => {
     const starts = readLog(log).filter((c) => c.at === 'start');
     expect(starts.map((c) => c.argv[1])).toEqual(['add', 'edit', 'due', 'assignee', 'delete']);
     expect(starts.map((c) => JSON.parse(c.stdin))).toEqual([
-      { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Brain App' },
+      { title: 'Call Ben', due: '', assignee: 'sam', via: 'TDS Cortex' },
       { file: 'a.md', title: 'T', body: 'D' },
       { file: 'a.md', due: '2026-12-01' },
-      { file: 'a.md', assignee: '', via: 'TDS Brain App' },
-      { file: 'a.md', via: 'TDS Brain App' },
+      { file: 'a.md', assignee: '', via: 'TDS Cortex' },
+      { file: 'a.md', via: 'TDS Cortex' },
     ]);
   });
 
@@ -298,7 +298,7 @@ describe('createTodoSkillRunner', () => {
       scriptPayload({ kind: 'delete', id: 'a.md' }, { name: "Mary O'Neil", slug: 'mary-oneil' }),
     ).toEqual({
       file: 'a.md',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
       by: 'mary-oneil',
       by_name: "Mary O'Neil",
     });
@@ -504,13 +504,13 @@ describe('v0.4: scope, move and tick payloads', () => {
     });
     expect(scriptPayload({ kind: 'delete', id: 'a.md', scope: 'personal' }, by)).toEqual({
       file: 'a.md',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
       by: 'sam',
       by_name: 'Sam Example',
       scope: 'personal',
     });
     expect(scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'sam', scope: 'personal' })).toEqual(
-      { title: 'T', due: '', assignee: 'sam', via: 'TDS Brain App', scope: 'personal' },
+      { title: 'T', due: '', assignee: 'sam', via: 'TDS Cortex', scope: 'personal' },
     );
   });
 
@@ -524,11 +524,11 @@ describe('v0.4: scope, move and tick payloads', () => {
       expect: EXPECT,
       by: 'sam',
       by_name: 'Sam Example',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
     });
     expect(scriptPayload({ kind: 'tick', id: 'a.md', scope: 'personal', expect: EXPECT }, by)).toEqual({
       file: 'a.md',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
       by: 'sam',
       by_name: 'Sam Example',
       expect: EXPECT,

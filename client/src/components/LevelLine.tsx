@@ -5,7 +5,7 @@ import {
   type LevelTier,
   type TurnLevel,
 } from '../../../shared/levels-contract.ts';
-import { aliasName, levelLineText } from '../format.ts';
+import { aliasName, keptLineText, levelLineText } from '../format.ts';
 import { Icon } from '../shell/Icon.tsx';
 
 /**
@@ -22,6 +22,7 @@ export function LevelLine({
   onPick: (tier: LevelTier | null) => void;
 }) {
   const text = levelLineText(level);
+  const kept = keptLineText(level);
   const spec = level.tier ? LEVEL_TIERS[level.tier] : null;
   const [why, setWhy] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -73,6 +74,7 @@ export function LevelLine({
           </button>
         )}
       </p>
+      {kept ? <p className="level-why level-kept">{kept}</p> : null}
       <p className="level-why" id={whyId} hidden={!why}>
         {text.why}
         {spec ? ` It runs on ${aliasName(spec.model)} at ${spec.effort.toLowerCase()} effort.` : ''}

@@ -136,6 +136,12 @@ export interface TurnLevel {
   /** null when the source is 'manual' or 'skill-own' (no tier applies). */
   tier: LevelTier | null;
   source: LevelSource;
+  /**
+   * Set while an automatic downward switch is being held to avoid re-reading a long chat (plan
+   * 2026-11-14-context-management, decision 10): `tier` is the level actually running, `wanted` the
+   * lower one the chat would otherwise use. Absent otherwise; older pages ignore it.
+   */
+  kept?: { wanted: LevelTier };
 }
 
 /** `POST ROUTES.chatLevel(sessionId)`: the person picks a tier for the rest of this chat, or null to go back to automatic. */

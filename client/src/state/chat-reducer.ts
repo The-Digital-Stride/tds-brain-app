@@ -1,3 +1,4 @@
+import type { CompactionEvent, ContextEvent } from '../../../shared/context-contract.ts';
 import type {
   AskQuestion,
   AttachmentInfo,
@@ -86,7 +87,25 @@ export interface ReportItem {
   text: string;
 }
 
+/** The divider where earlier messages were summarised. `id` is the compaction's stable id. */
+export interface SummaryItem {
+  kind: 'summary';
+  id: string;
+  text: string;
+}
+
+export type CompactionDone = Extract<CompactionEvent, { phase: 'done' }>;
+
+export const SUMMARY_TEXT_LIVE =
+  'Earlier messages were summarised to make room. Claude keeps the key points but may have lost some detail.';
+export const SUMMARY_TEXT_REPLAYED =
+  "Earlier messages in this chat were summarised to make room, so they aren't shown here.";
+export const COMPACTING_LINE = 'Summarising the earlier conversation to make room…';
+export const COMPACTION_FAILED_TEXT =
+  "Claude couldn't summarise this chat. If replies start failing, start a new chat.";
+
 export type ChatItem =
+  | SummaryItem
   | UserItem
   | ReportItem
   | AssistantItem
@@ -113,6 +132,14 @@ export interface ChatState {
   level: TurnLevel | null;
   /** The skill the newest `level` event offered a team level for, until dismissed or set. */
   unlevelledSkill: string | null;
+  /** True from "summarising started" until it finishes, fails, ends, or the turn or state moves on. */
+  compacting: boolean;
+  /** A failure warning is already in the transcript; cleared by the next successful summary. */
+  compactionFailed: boolean;
+  /** The newest context reading. null before one arrives or on an older server. */
+  context: ContextEvent | null;
+  /** The last summary done in this chat, for the Inspector. */
+  lastCompaction: CompactionDone | null;
 }
 
 export const initialChatState: ChatState = {
@@ -127,6 +154,10 @@ export const initialChatState: ChatState = {
   files: { files: [], attachments: [], links: [] },
   level: null,
   unlevelledSkill: null,
+  compacting: false,
+  compactionFailed: false,
+  context: null,
+  lastCompaction: null,
 };
 
 export type ChatAction =
@@ -189,6 +220,40 @@ function cloneItems(items: ChatItem[]): ChatItem[] {
   return structuredClone(items);
 }
 
+function applyCompaction(state: ChatState, next: ChatState, event: CompactionEvent): ChatState {
+  switch (event.phase) {
+    case 'started':
+      next.compacting = true;
+      return next;
+    case 'ended':
+      next.compacting = false;
+      return next;
+    case 'failed':
+      next.compacting = false;
+      if (!state.compactionFailed) {
+        next.compactionFailed = true;
+        next.items = [
+          ...state.items,
+          { kind: 'notice', id: `notice-${next.lastSeq}`, level: 'warning', text: COMPACTION_FAILED_TEXT },
+        ];
+      }
+      return next;
+    case 'done': {
+      next.compacting = false;
+      next.compactionFailed = false;
+      next.lastCompaction = event;
+      if (state.items.some((i) => i.kind === 'summary' && i.id === event.id)) return next;
+      // A replayed divider (no time) with nothing above it opens a reopened chat.
+      const replayedFirst = event.at === null && state.items.length === 0;
+      next.items = [
+        ...state.items,
+        { kind: 'summary', id: event.id, text: replayedFirst ? SUMMARY_TEXT_REPLAYED : SUMMARY_TEXT_LIVE },
+      ];
+      return next;
+    }
+  }
+}
+
 function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: string): ChatState {
   const next: ChatState = { ...state, lastSeq: seqNo };
   switch (event.type) {
@@ -198,6 +263,7 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
         next.stateSince = Number.isNaN(t) ? state.stateSince : t;
       }
       next.sessionState = event.state;
+      next.compacting = false;
       next.stateDetail = event.detail ?? null;
       return next;
     case 'session-info':
@@ -281,7 +347,13 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
           : i,
       );
       return next;
+    case 'compaction':
+      return applyCompaction(state, next, event);
+    case 'context':
+      next.context = event;
+      return next;
     case 'turn-end':
+      next.compacting = false;
       next.items = [
         ...state.items,
         {

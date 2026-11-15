@@ -9,6 +9,12 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BRAIN_COMPACT_INSTRUCTIONS,
+  type ChatContextDetail,
+  type ContextEvent,
+  REANCHOR_CLOSING_LINE,
+} from '../../shared/context-contract.ts';
 import type {
   AppPermissionMode,
   BrainReaders,
@@ -36,6 +42,7 @@ import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
+import type { ContextReadingStore } from '../store/context-readings.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
@@ -291,12 +298,14 @@ function setup(
     chatLevels?: ChatLevelStore;
     picker?: LevelPicker;
     chatKinds?: ChatKindStore;
+    contextReadings?: ContextReadingStore;
     pageCopies?: PageCopyStore;
     assets?: AssetCache;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    contextReadings: opts.contextReadings,
     pageCopies: opts.pageCopies,
     assets: opts.assets,
     levels: opts.levels,
@@ -345,7 +354,12 @@ describe('a new chat', () => {
     expect(o.permissionMode).toBe('default');
     expect(o.includePartialMessages).toBe(true);
     expect(o.settingSources).toEqual(['user', 'project', 'local']);
-    expect(o.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code', append: FILES_LINE });
+    expect(o.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      snapshot: true,
+    });
     // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
     expect(FILES_LINE).toContain('save the finished file with Write or Edit, not Bash');
     expect(FILES_LINE).toContain('Never open it in a browser');
@@ -424,9 +438,9 @@ describe('a new chat', () => {
     expect(s.client).toBe('urban-cooling');
     const sp = queries[0]?.options.systemPrompt as { append?: string };
     expect(sp.append).toContain('clients/urban-cooling/');
-    // The client line first, then the files line (decision 7).
-    expect(sp.append?.split('\n')).toHaveLength(2);
-    expect(sp.append?.endsWith(`\n${FILES_LINE}`)).toBe(true);
+    // The client line first, then the files line (decision 7), then the summary line (context decision 9).
+    expect(sp.append?.split('\n')).toHaveLength(3);
+    expect(sp.append?.endsWith(`\n${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
     await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
   });
 
@@ -1205,7 +1219,8 @@ describe('reopening a past chat (A4)', () => {
     expect(fx.queries[0]?.options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: FILES_LINE,
+      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      snapshot: true,
     });
   });
 
@@ -2464,12 +2479,44 @@ describe('levels', () => {
       noPicker?: boolean;
       env?: NodeJS.ProcessEnv;
       uploads?: UploadStaging;
+      /** setModel asks the PreModelSwitch hook first, as Claude Code does, and throws on a deny. */
+      switchHook?: { usd: number; warm?: boolean };
+      usage?: () => Promise<unknown>;
+      lines?: string[];
     } = {},
   ) {
     const log: string[] = [];
     const decorate = (q: FakeQuery) => {
-      const c = q as Controls;
+      const c = q as Controls & { getContextUsage?: () => Promise<unknown> };
+      if (o.usage) c.getContextUsage = o.usage;
       c.setModel = async (m) => {
+        if (o.switchHook) {
+          const hook = q.options.hooks?.PreModelSwitch?.[0]?.hooks[0];
+          const out = (await hook?.(
+            {
+              hook_event_name: 'PreModelSwitch',
+              from_model: 'claude-from-test',
+              to_model: `claude-${m}-test`,
+              requested_model: m ?? null,
+              source: 'sdk',
+              // Nothing to re-read before the engine's first reply (as Claude Code reports it).
+              context_tokens: q.received.length > 0 ? 90_000 : 0,
+              prompt_cache_warm: q.received.length > 0 && (o.switchHook.warm ?? true),
+              cache_ttl: '1h',
+              estimated_cache_write_usd: o.switchHook.usd,
+              pricing: 'catalog',
+              session_id: 'sdk-new-1',
+              transcript_path: '/x',
+              cwd: BRAIN,
+            } as never,
+            undefined,
+            { signal: new AbortController().signal },
+          )) as { hookSpecificOutput?: { permissionDecision?: string } } | undefined;
+          if (out?.hookSpecificOutput?.permissionDecision === 'deny') {
+            log.push(`kept:${m}`);
+            throw new Error('Model switch blocked by a PreModelSwitch hook: kept');
+          }
+        }
         log.push(`model:${m}`);
         if (o.gateModel) await o.gateModel;
       };
@@ -2500,6 +2547,7 @@ describe('levels', () => {
     const saved: [string, ChatLevelRecord][] = [];
     const fx = setup(script, {
       decorate,
+      log: o.lines ? (l) => o.lines?.push(l) : undefined,
       env: o.env,
       uploads: o.uploads,
       brain: { skillAccess: skillsInBrain },
@@ -2577,11 +2625,11 @@ describe('levels', () => {
       q.result();
     };
 
-  it('without levels, a new chat has no hook and no level events (v0.19.0)', async () => {
+  it('without levels, a new chat has only the context hooks and no level events (v0.19.0)', async () => {
     const { queries } = setup();
     const s = await mgr.start({ prompt: 'hi' });
     await flush();
-    expect(queries[0]?.options.hooks).toBeUndefined();
+    expect(Object.keys(queries[0]?.options.hooks ?? {}).sort()).toEqual(['PreModelSwitch', 'SessionStart']);
     expect(levelEvents(s.id)).toEqual([]);
   });
 
@@ -3235,7 +3283,7 @@ describe('levels', () => {
     expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
     expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
     expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${HELPERS_LINE}`,
+      `${FILES_LINE}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
     expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBe('Agent|Task');
   });
@@ -3245,7 +3293,9 @@ describe('levels', () => {
     await mgr.start({ prompt: 'hi' });
     await flush();
     expect(queries[0]?.options.agents).toBeUndefined();
-    expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(FILES_LINE);
+    expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(
+      `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+    );
   });
 
   it('refuses a call that breaks a helper rule, with a reason, and allows the rest exactly as written', async () => {
@@ -3749,6 +3799,178 @@ describe('levels', () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(changes).toHaveLength(1);
   });
+
+  // -- context management, decision 10: kept switches ------------------------
+
+  /** Turn 1 runs the deep `audit` skill; later turns want Standard again. */
+  function bouncing(o: { usd: number; warm?: boolean; lines?: string[] }) {
+    const log: string[] = [];
+    const fx = setupLevels({
+      script: skillScript(log, 'audit'),
+      picks: () => ready(STANDARD),
+      switchHook: { usd: o.usd, warm: o.warm },
+      lines: o.lines,
+    });
+    return { ...fx, skillLog: log };
+  }
+
+  it('holds an automatic downward switch when re-reading is dear, and shows the level it stays on', async () => {
+    const lines: string[] = [];
+    const fx = bouncing({ usd: 0.4, lines });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    expect(fx.log).toEqual(['model:opus', 'effort:high']);
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(fx.log).toEqual(['model:opus', 'effort:high', 'kept:sonnet']);
+    expect(lastLevel(s.id)).toMatchObject({ tier: 'deep', kept: { wanted: 'standard' } });
+    expect(lines).toContain('Kept the model: re-reading would cost about $0.40.');
+    expect(lines).not.toContain('Could not change the model of an open chat.');
+    // The line after that reply keeps saying so, and the next kept turn sends no new level.
+    const liveLevels: ChatEvent[] = [];
+    const sub = mgr.subscribe(s.id, Number.MAX_SAFE_INTEGER, (e) => {
+      if (e.event.type === 'level') liveLevels.push(e.event);
+    });
+    await mgr.send(s.id, 'third');
+    await flush();
+    sub.unsubscribe();
+    expect(lastLevel(s.id)).toMatchObject({ tier: 'deep', kept: { wanted: 'standard' } });
+    expect(liveLevels).toEqual([]);
+  });
+
+  it('after a kept switch the reply stays on the higher tier, so a later skill never moves it down', async () => {
+    const fx = setupLevels({
+      script: async ({ q, turn, text }) => {
+        q.init();
+        if (text.includes('[skill]')) await ranSkill(q, 'audit');
+        if (text.includes('[report]')) await ranSkill(q, 'report');
+        q.text(`msg_${turn}`, 'Reply');
+        q.result();
+      },
+      // Quick wanted; the deep `audit` raised it; then the standard `report` runs in a kept reply.
+      picks: () => ready(QUICK),
+      switchHook: { usd: 0.4 },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    await mgr.send(s.id, 'second [report]');
+    await flush();
+    // Turn 2 is held on Deep; the Standard `report` then changes nothing.
+    expect(fx.log).toEqual(['model:haiku', 'model:opus', 'effort:high', 'kept:haiku']);
+    expect(lastLevel(s.id)?.tier).toBe('deep');
+  });
+
+  it('switches down when the re-read is cheap or the cache is cold, and logs numbers only', async () => {
+    for (const o of [{ usd: 0.02 }, { usd: 0.9, warm: false }]) {
+      const fx = bouncing(o);
+      await auto();
+      const s = await mgr.start({ prompt: 'first [skill]' });
+      await flush();
+      await mgr.send(s.id, 'second');
+      await flush();
+      expect(fx.log, JSON.stringify(o)).toEqual([
+        'model:opus',
+        'effort:high',
+        'model:sonnet',
+        'effort:medium',
+      ]);
+      expect(lastLevel(s.id)?.kept).toBeUndefined();
+    }
+  });
+
+  it('switches down once the lower level has been wanted three turns running', async () => {
+    const fx = bouncing({ usd: 0.4 });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    for (const t of ['two', 'three']) {
+      await mgr.send(s.id, t);
+      await flush();
+    }
+    expect(fx.log.filter((l) => l.startsWith('model:') || l.startsWith('kept:'))).toEqual([
+      'model:opus',
+      'kept:sonnet',
+      'kept:sonnet',
+    ]);
+    await mgr.send(s.id, 'four');
+    await flush();
+    expect(fx.log.at(-2)).toBe('model:sonnet');
+    expect(lastLevel(s.id)).toMatchObject({ tier: 'standard' });
+    expect(lastLevel(s.id)?.kept).toBeUndefined();
+  });
+
+  it('always switches back to a model that answered this chat within the cache TTL', async () => {
+    const fx = setupLevels({
+      script: async ({ q, turn, text }) => {
+        q.init();
+        if (text.includes('[skill]')) await ranSkill(q, 'audit');
+        q.emit({
+          type: 'assistant',
+          message: {
+            id: `m${turn}`,
+            model: turn === 0 ? 'claude-sonnet-test' : 'claude-opus-test',
+            content: [{ type: 'text', text: 'R' }],
+          },
+          parent_tool_use_id: null,
+        });
+        q.result();
+      },
+      picks: () => ready(STANDARD),
+      switchHook: { usd: 0.9 },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'first' });
+    await flush();
+    await mgr.send(s.id, 'second [skill]');
+    await flush();
+    await mgr.send(s.id, 'third');
+    await flush();
+    expect(fx.log.filter((l) => l.startsWith('model:') || l.startsWith('kept:'))).toEqual([
+      'model:opus',
+      'model:sonnet',
+    ]);
+  });
+
+  it('an explicit downward choice always switches, even with a warm, dear cache', async () => {
+    const fx = bouncing({ usd: 0.9 });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    await mgr.setChatLevel(s.id, 'quick');
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(fx.log).toEqual(['model:opus', 'effort:high', 'model:haiku', 'effort:medium']);
+    expect(lastLevel(s.id)).toMatchObject({ tier: 'quick', source: { kind: 'chat' } });
+  });
+
+  it('a denial by the hook shows no notice', async () => {
+    const fx = bouncing({ usd: 0.4 });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(fx.log).toContain('kept:sonnet');
+    expect(events(mgr, s.id).some((e) => e.type === 'notice')).toBe(false);
+  });
+
+  it('fallback: with no hook on the engine, a warm chat above the floor is kept without asking it', async () => {
+    const log: string[] = [];
+    const fx = setupLevels({
+      script: skillScript(log, 'audit'),
+      picks: () => ready(STANDARD),
+      usage: async () => ({ totalTokens: 80_000, rawMaxTokens: 200_000, isAutoCompactEnabled: false }),
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'first [skill]' });
+    await flush();
+    await mgr.send(s.id, 'second');
+    await flush();
+    expect(fx.log).toEqual(['model:opus', 'effort:high']);
+    expect(lastLevel(s.id)).toMatchObject({ tier: 'deep', kept: { wanted: 'standard' } });
+  });
 });
 
 const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;
@@ -4033,6 +4255,433 @@ describe('deleting an earlier chat', () => {
     finishList();
     await expectCode(deleting, 'already-open');
     expect(trashSession).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Context management (plan 2026-11-14-context-management)
+// ---------------------------------------------------------------------------
+
+describe('context management', () => {
+  type Usage = (opts?: { detail?: 'summary' | 'full' }) => Promise<unknown>;
+  const SUMMARY = {
+    totalTokens: 48_000,
+    rawMaxTokens: 200_000,
+    autoCompactThreshold: 167_000,
+    isAutoCompactEnabled: true,
+  };
+  const withUsage = (fn: Usage) => (q: FakeQuery) => {
+    (q as FakeQuery & { getContextUsage?: Usage }).getContextUsage = fn;
+  };
+  const contextOf = (id: string) => events(mgr, id).filter((e): e is ContextEvent => e.type === 'context');
+
+  function memoryReadings() {
+    const saved: [string, ContextEvent][] = [];
+    const rows = new Map<string, ContextEvent>();
+    const store: ContextReadingStore = {
+      get: async (id) => rows.get(id) ?? null,
+      set: async (id, r) => {
+        saved.push([id, r]);
+        rows.set(id, r);
+      },
+    };
+    return { store, saved, rows };
+  }
+
+  /** A main reply with usage, a helper's reply with far more, and a result naming the window. */
+  const usageScript: Script = ({ q, turn }) => {
+    q.init();
+    q.emit({
+      type: 'assistant',
+      message: {
+        id: `h_${turn}`,
+        model: 'claude-test',
+        content: [{ type: 'text', text: 'helper' }],
+        usage: { input_tokens: 500_000, output_tokens: 1 },
+      },
+      parent_tool_use_id: 'toolu_helper',
+    });
+    q.emit({
+      type: 'assistant',
+      message: {
+        id: `m_${turn}`,
+        model: 'claude-test',
+        content: [{ type: 'text', text: `Reply ${turn}` }],
+        usage: {
+          input_tokens: 10,
+          cache_read_input_tokens: 30_000,
+          cache_creation_input_tokens: 9_990,
+          output_tokens: 1_000,
+        },
+      },
+      parent_tool_use_id: null,
+    });
+    q.emit({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 5,
+      result: 'ok',
+      errors: [],
+      modelUsage: { 'claude-test': { contextWindow: 200_000 } },
+    });
+  };
+
+  it('reads the engine after each turn, off the turn-end path, and keeps it per chat', async () => {
+    const calls: unknown[] = [];
+    const readings = memoryReadings();
+    setup(undefined, {
+      contextReadings: readings.store,
+      decorate: withUsage(async (o) => {
+        calls.push(o);
+        return SUMMARY;
+      }),
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(calls).toEqual([{ detail: 'summary' }]);
+    const types = events(mgr, s.id).map((e) => e.type);
+    expect(types.indexOf('context')).toBeGreaterThan(types.indexOf('turn-end'));
+    expect(contextOf(s.id)).toEqual([
+      {
+        type: 'context',
+        usedTokens: 48_000,
+        limitTokens: 167_000,
+        windowTokens: 200_000,
+        percent: 29,
+        autoCompact: true,
+        source: 'engine',
+        at: expect.any(Number),
+      },
+    ]);
+    expect(readings.saved.map(([id]) => id)).toEqual(['sdk-new-1']);
+    // Only the newest reading stays in the replay log.
+    await mgr.send(s.id, 'again');
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(contextOf(s.id)).toHaveLength(1);
+  });
+
+  it('without getContextUsage, uses the last main-thread usage against the window; helpers never count', async () => {
+    setup(usageScript);
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(contextOf(s.id)).toEqual([
+      expect.objectContaining({
+        usedTokens: 41_000,
+        limitTokens: 200_000,
+        windowTokens: 200_000,
+        percent: 21,
+        source: 'usage',
+      }),
+    ]);
+  });
+
+  it('falls back to usage when the engine read fails, and sends nothing when there is no usage either', async () => {
+    setup(usageScript, {
+      decorate: withUsage(async () => {
+        throw new Error('nope');
+      }),
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(contextOf(s.id)[0]?.source).toBe('usage');
+
+    setup(undefined, { decorate: withUsage(async () => ({ junk: true })) });
+    const t = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(contextOf(t.id)).toEqual([]);
+  });
+
+  it('a slow read never delays turn-end, and gives up after the timeout', async () => {
+    setup(usageScript, { decorate: withUsage(() => new Promise(() => {})) });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    const types = events(mgr, s.id).map((e) => e.type);
+    expect(types).toContain('turn-end');
+    expect(types.at(-1)).toBe('state');
+    expect(contextOf(s.id)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(contextOf(s.id)[0]?.source).toBe('usage');
+  });
+
+  it('maps a compaction, logs it as numbers only, reads again after the boundary, and keeps the divider', async () => {
+    const lines: string[] = [];
+    let reads = 0;
+    setup(
+      ({ q, turn }) => {
+        q.init();
+        q.emit({ type: 'system', subtype: 'status', status: 'compacting', uuid: 's1' });
+        q.emit({ type: 'system', subtype: 'status', status: null, compact_result: 'success', uuid: 's2' });
+        q.emit({
+          type: 'system',
+          subtype: 'compact_boundary',
+          uuid: `b${turn}`,
+          compact_metadata: { trigger: 'auto', pre_tokens: 170_000, post_tokens: 20_000 },
+        });
+        q.text(`msg_${turn}`, 'Reply');
+        q.result();
+      },
+      {
+        log: (l) => lines.push(l),
+        decorate: withUsage(async () => {
+          reads++;
+          return SUMMARY;
+        }),
+      },
+    );
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    // Never read during a reply: the boundary arrives mid-turn, so only the turn-end read goes out.
+    expect(reads).toBe(1);
+    const comp = events(mgr, s.id).filter((e) => e.type === 'compaction');
+    expect(comp.map((e) => e.phase)).toEqual(['started', 'done']);
+    expect(comp[1]).toMatchObject({ id: 'c:b0', trigger: 'auto', preTokens: 170_000, postTokens: 20_000 });
+    expect(lines).toContain('Summarised a chat (auto).');
+    const live: { source: string; usedTokens: number }[] = [];
+    const sub = mgr.subscribe(s.id, Number.MAX_SAFE_INTEGER, (e) => {
+      if (e.event.type === 'context') live.push(e.event);
+    });
+    await mgr.send(s.id, 'more');
+    await flush();
+    sub.unsubscribe();
+    // Mid-reply, the meter moves to the summary's size first; the turn-end read follows.
+    expect(live.map((r) => [r.source, r.usedTokens])).toEqual([
+      ['usage', 20_000],
+      ['engine', SUMMARY.totalTokens],
+    ]);
+    expect(reads).toBe(2);
+    // Every divider stays in the replay log; the context reading is the newest only.
+    const done = events(mgr, s.id).filter((e) => e.type === 'compaction' && e.phase === 'done');
+    expect(done.map((e) => (e as { id: string }).id)).toEqual(['c:b0', 'c:b1']);
+    expect(contextOf(s.id)).toHaveLength(1);
+  });
+
+  it('wires the re-anchor and model-switch hooks in manual mode, pins the prompt and adds the summary line', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const o = queries[0]?.options;
+    expect(Object.keys(o?.hooks ?? {}).sort()).toEqual(['PreModelSwitch', 'SessionStart']);
+    expect(o?.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      snapshot: true,
+    });
+  });
+
+  it('a manual-mode switch goes ahead through the hook (it never keeps)', async () => {
+    const asked: unknown[] = [];
+    setup(undefined, {
+      decorate: (q) => {
+        (q as FakeQuery & { setModel: (m?: string) => Promise<void> }).setModel = async (m) => {
+          const hook = q.options.hooks?.PreModelSwitch?.[0]?.hooks[0];
+          asked.push(
+            await hook?.(
+              {
+                hook_event_name: 'PreModelSwitch',
+                from_model: 'claude-opus-test',
+                to_model: `claude-${m}-test`,
+                requested_model: m ?? null,
+                source: 'sdk',
+                context_tokens: 90_000,
+                prompt_cache_warm: true,
+                cache_ttl: '1h',
+                estimated_cache_write_usd: 0.9,
+                pricing: 'catalog',
+                session_id: 'sdk-new-1',
+                transcript_path: '/x',
+                cwd: BRAIN,
+              } as never,
+              undefined,
+              { signal: new AbortController().signal },
+            ),
+          );
+        };
+      },
+    });
+    await mgr.setEngineChoice({ model: 'opus', effort: null });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    await mgr.setEngineChoice({ model: 'haiku', effort: null });
+    expect(asked).toEqual([
+      {
+        hookSpecificOutput: { hookEventName: 'PreModelSwitch', permissionDecision: 'allow' },
+      },
+    ]);
+    expect(s.id).toBeTruthy();
+  });
+
+  it('after a compaction, re-anchors Claude on the to-do, the newest files and the closing line', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi', todoId: '20261111-mine.md' });
+    await flush();
+    const hook = queries[0]?.options.hooks?.SessionStart?.[0]?.hooks[0];
+    const call = (source: string) =>
+      hook?.(
+        {
+          hook_event_name: 'SessionStart',
+          source,
+          session_id: 'sdk-new-1',
+          transcript_path: '/x',
+          cwd: BRAIN,
+        } as never,
+        undefined,
+        { signal: new AbortController().signal },
+      );
+    const out = (await call('compact')) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart');
+    const text = out.hookSpecificOutput.additionalContext;
+    expect(text.split('\n')[0]).toContain('todo/20261111-mine.md');
+    expect(text.endsWith(REANCHOR_CLOSING_LINE)).toBe(true);
+    expect(await call('startup')).toEqual({ continue: true });
+  });
+
+  it('replays a summarised chat from its divider, hiding the summary and the typed /compact', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    fx.history['old-1'] = [
+      { type: 'system', uuid: 'b9', message: undefined, parent_tool_use_id: null },
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'This session is being continued… the summary' },
+        parent_tool_use_id: null,
+        isCompactSummary: true,
+      },
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: { role: 'user', content: '<command-name>/compact</command-name>' },
+        parent_tool_use_id: null,
+        isCompletedLocalCommand: true,
+      },
+      { type: 'user', uuid: 'u3', message: { role: 'user', content: 'And ROAS?' }, parent_tool_use_id: null },
+      { type: 'system', uuid: 'later', message: undefined, parent_tool_use_id: null },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: { content: [{ type: 'text', text: 'ROAS is 4.' }] },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(fx.engine.getSessionMessages).toHaveBeenCalledWith('old-1', {
+      dir: BRAIN,
+      includeSystemMessages: true,
+    });
+    const ev = events(mgr, s.id);
+    expect(ev.filter((e) => e.type === 'compaction')).toEqual([
+      {
+        type: 'compaction',
+        phase: 'done',
+        id: 'c:b9',
+        trigger: 'manual',
+        preTokens: null,
+        postTokens: null,
+        at: null,
+      },
+    ]);
+    expect(ev.filter((e) => e.type === 'user-message').map((e) => (e as { text: string }).text)).toEqual([
+      'And ROAS?',
+    ]);
+    expect(ev.map((e) => e.type).indexOf('compaction')).toBeLessThan(
+      ev.map((e) => e.type).indexOf('user-message'),
+    );
+  });
+
+  it('an unsummarised chat replays no divider, even with system messages in its history', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-2', summary: 'x', lastModified: 1 });
+    fx.history['old-2'] = [
+      { type: 'user', uuid: 'u1', message: { role: 'user', content: 'Hello' }, parent_tool_use_id: null },
+      { type: 'system', uuid: 'x', message: undefined, parent_tool_use_id: null },
+    ];
+    const s = await mgr.start({ resume: 'old-2' });
+    expect(events(mgr, s.id).filter((e) => e.type === 'compaction')).toEqual([]);
+  });
+
+  it('replays the stored reading of a reopened chat as stored', async () => {
+    const readings = memoryReadings();
+    readings.rows.set('old-1', {
+      type: 'context',
+      usedTokens: 90_000,
+      limitTokens: 167_000,
+      windowTokens: 200_000,
+      percent: 54,
+      autoCompact: true,
+      source: 'engine',
+      at: 5,
+    });
+    const fx = setup(undefined, { contextReadings: readings.store });
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1' });
+    expect(contextOf(s.id)).toEqual([
+      expect.objectContaining({ usedTokens: 90_000, source: 'stored', at: 5 }),
+    ]);
+  });
+
+  describe('the Inspector detail (decision 6)', () => {
+    const FULL = {
+      ...SUMMARY,
+      categories: [
+        { id: 'messages', name: 'Messages', tokens: 20_000, kind: 'used' },
+        { id: 'skills', name: 'Skills', tokens: 9_000, kind: 'used' },
+      ],
+      skills: { totalSkills: 1, includedSkills: 1, tokens: 9_000, skillFrontmatter: [] },
+    };
+
+    function detailChat(script?: Script) {
+      const calls: unknown[] = [];
+      setup(script, {
+        decorate: withUsage(async (o) => {
+          calls.push(o);
+          return o?.detail === 'full' ? FULL : SUMMARY;
+        }),
+      });
+      return calls;
+    }
+    const fullCalls = (calls: unknown[]) =>
+      calls.filter((c) => (c as { detail: string }).detail === 'full').length;
+    const detail = (id: string) => (mgr.contextDetail as (id: string) => Promise<ChatContextDetail>)(id);
+
+    it('asks for the full detail, then at most once per 30 seconds', async () => {
+      const calls = detailChat();
+      const s = await mgr.start({ prompt: 'hi' });
+      await flush();
+      const first = await detail(s.id);
+      expect(first.approximate).toBe(false);
+      expect(first.items.map((i) => i.group)).toEqual(['messages', 'skills']);
+      expect(first.reading?.usedTokens).toBe(48_000);
+      expect(first.lastCompaction).toBeNull();
+      const again = await detail(s.id);
+      expect(again.approximate).toBe(true);
+      expect(again.items).toEqual(first.items);
+      expect(fullCalls(calls)).toBe(1);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await detail(s.id)).approximate).toBe(false);
+      expect(fullCalls(calls)).toBe(2);
+    });
+
+    it('never asks while a reply runs, and answers from the newest reading', async () => {
+      const calls = detailChat(async ({ q }) => {
+        q.init();
+        await new Promise<void>(() => {});
+      });
+      const s = await mgr.start({ prompt: 'hi' });
+      await flush();
+      const d = await detail(s.id);
+      expect(d).toEqual({ reading: null, items: [], lastCompaction: null, approximate: true });
+      expect(fullCalls(calls)).toBe(0);
+    });
+
+    it('is not-found for an unknown chat', async () => {
+      detailChat();
+      await expectCode(detail('nope'), 'not-found');
+    });
   });
 });
 

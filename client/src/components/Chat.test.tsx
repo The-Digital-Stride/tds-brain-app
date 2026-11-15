@@ -78,6 +78,10 @@ const chatState = (sessionState: ChatState['sessionState'], stepLabel?: string):
   effort: null,
   level: null,
   unlevelledSkill: null,
+  compacting: false,
+  compactionFailed: false,
+  context: null,
+  lastCompaction: null,
   files: { files: [], attachments: [], links: [] },
   items: [
     { kind: 'user', id: 'u', text: 'hi' },
@@ -406,5 +410,61 @@ describe('the team-level offer', () => {
       expect(screen.queryByText(/Set a team level/)).toBeNull();
       unmount();
     }
+  });
+});
+
+describe('the context meter and summarising line', () => {
+  const reading = {
+    type: 'context',
+    usedTokens: 42_000,
+    limitTokens: 100_000,
+    windowTokens: 200_000,
+    percent: 42,
+    autoCompact: true,
+    source: 'engine',
+    at: 1,
+  };
+
+  it('stays hidden until the first reading', () => {
+    h.chat = chatState('idle');
+    render(sheet());
+    expect(screen.queryByRole('meter')).toBeNull();
+  });
+
+  it('shows in manual mode, where the level line is not drawn', () => {
+    h.chat = { ...chatState('idle'), level: { tier: null, source: { kind: 'manual' } }, context: reading };
+    render(sheet());
+    expect(document.querySelector('.level-row')).toBeNull();
+    expect(screen.getByRole('meter', { name: 'How full this chat is' })).toBeTruthy();
+  });
+
+  it('shows beside the level line in automatic mode', () => {
+    h.chat = {
+      ...chatState('idle'),
+      level: { tier: 'standard', source: { kind: 'auto', reason: 'x' } },
+      context: reading,
+    };
+    render(sheet());
+    expect(document.querySelector('.level-row')).not.toBeNull();
+    expect(screen.getByRole('meter')).toBeTruthy();
+  });
+
+  it('says so while Claude summarises', () => {
+    h.chat = { ...chatState('working'), compacting: true };
+    render(sheet());
+    expect(document.querySelector('.compacting-line')?.textContent).toBe(
+      'Summarising the earlier conversation to make room…',
+    );
+  });
+
+  it('says once that switching down is held back', () => {
+    h.chat = {
+      ...chatState('idle'),
+      level: { tier: 'deep', kept: { wanted: 'quick' }, source: { kind: 'auto', reason: 'x' } },
+    };
+    render(sheet());
+    expect(document.querySelector('.level-kept')?.textContent).toBe(
+      'Staying on Deep for now: it costs less than switching down and re-reading the whole chat.',
+    );
   });
 });

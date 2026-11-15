@@ -1099,6 +1099,7 @@ async function askPage(
 const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
 const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
+const SESSION_CONTEXT = /^\/api\/sessions\/([^/]+)\/context$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
 
 function prewarmPick(ctx: RouteContext, text: string): void {
@@ -1469,6 +1470,24 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       throw new HttpError(400, 'bad-request', 'That level was not understood.');
     }
     sendJson(res, 200, { level: await ctx.sessions.setChatLevel(id, tier) });
+    return;
+  }
+
+  // `GET ROUTES.chatContext` (plan 2026-11-14-context-management, decision 6). The manager rate-limits
+  // the engine's full read and never makes it during a reply.
+  const cx = SESSION_CONTEXT.exec(path);
+  if (cx?.[1]) {
+    if (method !== 'GET') throw methodNotAllowed();
+    let id: string;
+    try {
+      id = decodeURIComponent(cx[1]);
+    } catch {
+      throw new HttpError(400, 'bad-request', 'That chat was not understood.');
+    }
+    if (!ctx.sessions.contextDetail) {
+      throw new HttpError(404, 'not-found', 'That chat could not be found. It may have been closed.');
+    }
+    sendJson(res, 200, await ctx.sessions.contextDetail(id));
     return;
   }
 

@@ -1,4 +1,5 @@
 import { type ComponentType, Suspense, useRef } from 'react';
+import { meterBand } from '../../shared/context-contract.ts';
 import { useBlockStrayDrops } from './components/Attachments.tsx';
 import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
@@ -33,9 +34,14 @@ function Announcer() {
   let text = '';
   if (card?.kind === 'question') text = 'Claude has a question for you';
   else if (card?.kind === 'permission') text = 'Claude needs your approval';
+  else if (chat?.compacting) text = 'Claude is summarising the earlier conversation to make room';
   else if (state === 'working' || state === 'starting') text = 'Claude is working';
   else if (state === 'error') text = 'Something went wrong in this chat';
-  else if (last?.kind === 'turn-end' && last.ok && !last.interrupted) text = 'Claude has finished';
+  else if (last?.kind === 'turn-end' && last.ok && !last.interrupted)
+    text =
+      chat?.context?.autoCompact && meterBand(chat.context.percent) === 'full'
+        ? 'Claude has finished. This chat is nearly full, so Claude will summarise the earlier messages soon'
+        : 'Claude has finished';
   return (
     <div className="visually-hidden" aria-live="polite" role="status">
       {text}

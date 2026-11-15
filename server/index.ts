@@ -43,6 +43,7 @@ import { createAssetCache } from './store/asset-cache.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
+import { createContextReadingStore } from './store/context-readings.ts';
 import { createPageCopies, type PageCopyStore } from './store/page-copies.ts';
 import { createRunner } from './update/run.ts';
 import { createUpdater } from './update/updater.ts';
@@ -133,6 +134,8 @@ function buildBrainSide(path: string | null) {
     uploads,
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
+    // Each chat's newest context reading (plan 2026-11-14-context-management), in the data folder.
+    contextReadings: createContextReadingStore(config.dataDir),
     pageCopies,
     // A branded copy's CDN scripts and Google Fonts, fetched once into the data folder (R8).
     assets: createAssetCache({ dataDir: config.dataDir }),

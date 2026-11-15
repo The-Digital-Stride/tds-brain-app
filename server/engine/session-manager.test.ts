@@ -359,6 +359,9 @@ describe('a new chat', () => {
       'just for me, to look at here (`personal/`, saved on this computer only and never shared',
     );
     expect(FILES_LINE).not.toMatch(/scratchpad|not saved/);
+    // Made-up numbers don't make a page scratch work, and `personal/` is named as the app names it.
+    expect(FILES_LINE).toContain("Made-up or sample numbers don't make it scratch work");
+    expect(FILES_LINE).toContain('call it your personal files');
     expect(o.model).toBeUndefined();
     expect(o.resume).toBeUndefined();
     expect(queries[0]?.received).toEqual(['Hello there']);
@@ -430,6 +433,10 @@ describe('a new chat', () => {
     expect(s.client).toBe('urban-cooling');
     const sp = queries[0]?.options.systemPrompt as { append?: string };
     expect(sp.append).toContain('clients/urban-cooling/');
+    // In a client chat the client's folder is the first place offered, and even a quick chart is asked
+    // about: a test on 15 Nov 2026 saved an Urban Cooling chart in `personal/` without asking.
+    expect(sp.append).toContain('offer `clients/urban-cooling/reports/` first');
+    expect(sp.append).toContain('ask even for a quick chart or page');
     // The client line first, then the files line (decision 7).
     expect(sp.append?.split('\n')).toHaveLength(2);
     expect(sp.append?.endsWith(`\n${FILES_LINE}`)).toBe(true);

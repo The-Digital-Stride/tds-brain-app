@@ -60,7 +60,7 @@ vi.mock('../store.tsx', () => ({
 }));
 
 const { ChatView } = await import('./Chat.tsx');
-const { ShellProvider } = await import('../shell/ShellProvider.tsx');
+const { ShellProvider, useShell } = await import('../shell/ShellProvider.tsx');
 
 const sheet = () => (
   <ShellProvider>
@@ -406,5 +406,72 @@ describe('the team-level offer', () => {
       expect(screen.queryByText(/Set a team level/)).toBeNull();
       unmount();
     }
+  });
+});
+
+// Watches what the shell shows when a link is clicked.
+let shell: ReturnType<typeof useShell>['state'] | null = null;
+function Probe() {
+  shell = useShell().state;
+  return null;
+}
+
+describe('a file link in a reply', () => {
+  const withFiles = (pages: NonNullable<ChatState['files']['pages']>) => {
+    const base = chatState('idle');
+    h.chat = {
+      ...base,
+      files: {
+        files: [
+          {
+            key: 'chart',
+            path: 'personal/uc-chart.html',
+            item: null,
+            scope: { id: 'personal', name: 'My personal files', kind: 'personal' },
+            actions: ['created'],
+            toolUseIds: [],
+            edits: 0,
+            order: 1,
+          },
+        ],
+        attachments: [],
+        links: [],
+        pages,
+      },
+      items: [{ kind: 'assistant', id: 'a', text: 'Made it: `personal/uc-chart.html`.', done: true }],
+    } as ChatState;
+    render(
+      <ShellProvider>
+        <ChatView />
+        <Probe />
+      </ShellProvider>,
+    );
+    return document.querySelector('a[href^="#chat-file="]') as HTMLAnchorElement;
+  };
+
+  it("opens the page view (with Download with TDS branding) when the file is this chat's page", () => {
+    // A test on 15 Nov 2026: the link opened the plain file viewer, so the branding button was missing.
+    const link = withFiles([
+      {
+        key: 'pg1',
+        title: 'Chart',
+        url: null,
+        versions: [{ n: 1, remote: null, at: null, hasCopy: true }],
+        draft: false,
+        fileKey: 'chart',
+        live: false,
+        multiFile: false,
+        toolUseIds: [],
+        order: 1,
+      },
+    ]);
+    fireEvent.click(link);
+    expect(shell?.viewer).toEqual({ kind: 'page', chat: 's1', key: 'pg1' });
+  });
+
+  it('shows any other file in the Files panel as before', () => {
+    fireEvent.click(withFiles([]));
+    expect(shell?.viewer).toBeNull();
+    expect(shell?.panelFile).toEqual({ chat: 's1', key: 'chart' });
   });
 });

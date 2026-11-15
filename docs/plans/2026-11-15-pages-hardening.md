@@ -142,12 +142,20 @@ The lead writes the contract additions, the plan's review outcomes and the tds-d
 
 ## User test script (decision 9)
 
-1. In the preview, ask: "Make a one-page chart of last month's traffic for Urban Cooling." Expect the where-to-save
-   question with places from the brain's save rules. Pick "just show it here".
-2. When it opens, choose "Convert to TDS branding", then "File in client's folder" for Urban Cooling. Expect it filed
-   under `clients/urban-cooling/reports/` and listed in Documents.
+1. Start a chat with the client set to Urban Cooling and ask: "Make a one-page chart of last month's traffic for
+   Urban Cooling." Expect the where-to-save question, with Urban Cooling's documents
+   (`clients/urban-cooling/reports/`) first. Pick "Just for me" (`personal/`).
+2. When it opens (or from the file link in the reply, which opens the same page view), choose "Download with TDS
+   branding", then "File in client's folder". Expect it filed under `clients/urban-cooling/reports/` and listed in
+   Documents.
 3. Ask for a new deck template without saying where. Expect the question; pick `templates/`.
 4. Change the page with "Suggest a change"; expect no save question and the same page with a new version.
+
+First run, 15 Nov 2026: step 1 saved in `personal/` without asking, in a client chat (the quick-visual exception
+in `SAVE_LINE` let it), and the reply's file link opened the plain file viewer, which has no branding button.
+Fixed: in a client chat Claude offers the client's `reports/` folder first and asks even for a quick chart;
+made-up numbers no longer count as scratch work; `personal/` is called "your personal files"; a file link to
+the chat's page opens the page view.
 
 ## tds-doc change request (decision 10, for the user to raise)
 

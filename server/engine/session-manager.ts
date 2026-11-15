@@ -546,7 +546,7 @@ export function permissionSettings(
 }
 
 function clientLine(slug: string): string {
-  return `The user is working on the client in clients/${slug}/ for this chat. Read that folder's context before client-specific work, and keep to that client unless the user says otherwise.`;
+  return `The user is working on the client in clients/${slug}/ for this chat. Read that folder's context before client-specific work, and keep to that client unless the user says otherwise. When you ask where to save something new, offer \`clients/${slug}/reports/\` first, and in this chat ask even for a quick chart or page unless the user has said it is only for them.`;
 }
 
 /** Every chat is told how pages reach the person in the app (pages plan, revision 2, R3). */
@@ -562,7 +562,7 @@ export const PAGES_LINE =
  * so Claude asks (the app shows AskUserQuestion as a card) unless they, or a skill, already said.
  */
 export const SAVE_LINE =
-  "Before saving a new document, page, deck or template the user will keep, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), or just for me, to look at here (`personal/`, saved on this computer only and never shared, as the brain's save rules say for scratch work). The app shows the file wherever it is saved. Don't ask for a quick visual that is only to look at (save it in `personal/`), or when changing a page or file that already exists.";
+  "Before saving a new document, page, deck or template the user will keep, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), or just for me, to look at here (`personal/`, saved on this computer only and never shared, as the brain's save rules say for scratch work). The app shows the file wherever it is saved. Don't ask when the user has said it is only for them or only to look at, or in a chat with no client for a quick visual only to look at (save these in `personal/`), or when changing a page or file that already exists. Made-up or sample numbers don't make it scratch work. When you tell the user a file is in `personal/`, call it your personal files.";
 
 export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE}`;
 

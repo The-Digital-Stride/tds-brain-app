@@ -36,7 +36,7 @@ reviewed: 2026-11-15
 - Each group shows its best six matches.
 - Picking a client starts a new chat for that client.
 - Picking a skill starts a chat with that skill.
-- For now, owners also see **Help** here, and help pages in the results.
+- **Help** is here too, and help pages show in the results.
 - The slash key needs **Single-key shortcuts** switched on in Settings. **⌘K** works everywhere except an open file. Press Esc to close the file first.
 
 ## Try this

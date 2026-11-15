@@ -5,7 +5,7 @@ import { helpImageUrl, helpLibrary, helpRoleWords } from '../help/library.ts';
 import { renderHelp } from '../help/render.ts';
 
 /**
- * The Cortex Guide: the whole help as a book (owners only for now). Contents on the left, the page on the
+ * The Cortex Guide: the whole help as a book, for everyone. Contents on the left, the page on the
  * right; under 900px the contents become a picker above the page. Printing prints every page in order from a
  * hidden copy (`.guide-print`, see guide.css).
  */

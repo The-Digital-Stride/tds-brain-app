@@ -150,7 +150,7 @@ export interface HelpContext {
  * Modules and exports (builder A makes them; builder B imports them):
  *   library.ts     helpLibrary: HelpLibrary; helpImageUrl(src): string | null; parseHelpFile: ParseHelpFile
  *   context.ts     helpForContext: HelpForContext
- *   visibility.ts  helpVisible(role: Role): boolean        (Phase 1: owner only)
+ *   visibility.ts  helpVisible(role: Role): boolean        (everyone since 2026-11-15)
  *   render.ts      renderHelp: RenderHelp
  *   topics.ts      HELP_TOPIC_IDS: readonly string[]
  *   HelpArticle.tsx  HelpArticle({ topic, onOpen }: { topic: HelpTopic; onOpen: (id: string) => void })

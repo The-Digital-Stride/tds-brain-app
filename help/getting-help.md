@@ -35,7 +35,7 @@ The Help drawer opens on the help page for the screen you're on. It also lets yo
 
 ## Good to know
 
-- For now, only owners see Help. Everyone gets it at launch.
+- Help is there for everyone who uses Cortex.
 - Some screens have a small "?" button beside a heading. It opens Help on the right page.
 - Closing Help brings back the drawer it replaced.
 - Help is part of the app, so it doesn't need the Brain to load.

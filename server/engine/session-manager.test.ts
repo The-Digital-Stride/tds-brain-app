@@ -4205,6 +4205,16 @@ describe('pages', () => {
     release();
   });
 
+  it('lets go of a closed chat’s events but keeps its pages', async () => {
+    withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    await pageKey(s.id);
+    expect(mgr.eventCount?.(s.id)).toBeGreaterThan(0);
+    await mgr.close(s.id);
+    await flush();
+    expect(mgr.eventCount?.(s.id)).toBe(0);
+  });
+
   it('keeps a closed chat’s pages viewable, its last reply’s page as a version', async () => {
     withPages();
     const s = await mgr.start({ prompt: 'Make a budget page' });

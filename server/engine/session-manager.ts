@@ -273,6 +273,8 @@ export interface SessionManager extends LevelSessionApi {
    * for a chat it doesn't know. Optional so stand-ins (setup mode, tests) still fit.
    */
   pageCopy?(id: string, key: string, n: number): Promise<Buffer | null>;
+  /** How many events a chat still holds (live, or closed but kept for its pages); null when unknown. */
+  eventCount?(id: string): number | null;
   /**
    * Version `n` of a chat's page (`0` the in-progress copy) wrapped in the TDS bar (`brandedPage`),
    * with the file name to save it as (`brandedFileName`). What the page loads from the allowed
@@ -2364,6 +2366,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const ids = attachmentIds(attachments);
       const body = validText(text, 'message', ids.length > 0);
       await sendTurn(s, body, ids, null);
+    },
+
+    eventCount(id) {
+      const s = live.get(id) ?? closedPages.get(id);
+      return s ? s.events.length : null;
     },
 
     async pageCopy(id, key, n) {

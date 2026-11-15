@@ -310,6 +310,23 @@ describe('the page viewer', () => {
     expect(document.querySelector('iframe')).not.toBeNull();
   });
 
+  it('opens a link the page sends after a click in a new tab, and keeps the page', () => {
+    mount();
+    const frame = document.querySelector('iframe') as HTMLIFrameElement;
+    frame.focus();
+    Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: true } });
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    try {
+      const data = { type: 'tds-page-open-link', url: 'https://example.com/' };
+      window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }));
+      expect(open).toHaveBeenCalledWith('https://example.com/', '_blank', 'noopener,noreferrer');
+      expect(document.querySelector('iframe')).toBe(frame);
+    } finally {
+      open.mockRestore();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    }
+  });
+
   it('offers Open in Documents for a page with a source file, and says nothing of claude.ai without a link', () => {
     h.pages = [page({ url: null, fileKey: 'k1', versions: [v(1, { hasCopy: false })] })];
     h.files = [{ key: 'k1', item: { id: 'i' }, scope: { id: 'sc', name: 'S' } }];

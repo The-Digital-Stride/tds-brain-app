@@ -7,6 +7,7 @@ import {
   type PageAskRequest,
 } from '../../../shared/pages-contract.ts';
 import { downloadBranded } from '../api.ts';
+import { usePageLinks } from '../apps/shared/usePageLinks.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { useFrameGuard } from './useFrameGuard.ts';
@@ -161,6 +162,9 @@ export function PageStage({
   const [reloads, setReloads] = useState(0);
   const frameId = `${pageKey}-${shown?.n ?? 0}-${shown?.n === 0 ? draftStamp : ''}-${reloads}`;
   const { stopped: frameStopped, onLoad: onFrameLoad } = useFrameGuard(frameId);
+  // A plain link in the page opens in a new tab through the app instead of moving the frame.
+  const pageFrame = useRef<HTMLIFrameElement>(null);
+  usePageLinks(pageFrame);
   // The latest busy value, for reading after an await (the closure's own `busy` is then stale).
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -364,6 +368,7 @@ export function PageStage({
         ) : (
           <iframe
             key={frameId}
+            ref={pageFrame}
             className="page-frame"
             title={`Page: ${page.title}${titleSuffix}`}
             src={ROUTES.chatPage(chat, page.key, shown.n)}

@@ -33,6 +33,8 @@ export const PAGES_DIR = 'pages';
 export const PAGE_CHAT_MAX_BYTES = 200 * 1024 * 1024;
 /** A folder touched this recently is never swept: its chat's history may not be on disk yet. */
 const SWEEP_GRACE_MS = 60 * 60 * 1000;
+/** A page copy's temporary file while it is written: `.<copy name>.<12 hex>.tmp`. */
+const TEMP_FILE = /^\.[dv]-[A-Za-z0-9_-]{1,128}\.html\.[0-9a-f]{12}\.tmp$/;
 const SOURCE_MAX_CHARS = 1024;
 const TITLE_SCAN_BYTES = 64 * 1024;
 const TRASH_BIN = '/usr/bin/trash';
@@ -150,6 +152,12 @@ export interface PageCopyStore {
    * Does nothing when `known` is empty. Returns how many it moved.
    */
   sweep(known: ReadonlySet<string>): Promise<number>;
+  /**
+   * Removes this brain's leftover temporary files (a crash mid-save): regular files of exactly the
+   * temporary-name shape, three folders down, older than an hour; never through a link. Returns how
+   * many it removed. Never throws. (Optional so a stand-in store in a test need not have it.)
+   */
+  sweepTemps?(): Promise<number>;
 }
 
 const defaultTrash = (path: string): Promise<void> =>
@@ -219,6 +227,43 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
   const now = opts.now ?? Date.now;
   const tmpRoot = opts.tmpRoot ?? defaultTmpRoot();
   let brainDir: Promise<string> | null = null;
+  /**
+   * Bytes of kept and in-progress copies per chat folder, when known (absent = unknown). Changes to one
+   * chat's total run one at a time through `serial` (a chat can have two sessions calling at once), and
+   * a total is forgotten on rename, Bin, sweep or any error. `generation` stops a listing that began
+   * before a forget from storing its (possibly stale) count.
+   */
+  const totals = new Map<string, number>();
+  const generation = new Map<string, number>();
+  const chains = new Map<string, Promise<unknown>>();
+
+  function serial<T>(chat: string, job: () => Promise<T>): Promise<T> {
+    const run = (chains.get(chat) ?? Promise.resolve()).then(job, job);
+    const tail = run.then(
+      () => {},
+      () => {},
+    );
+    chains.set(chat, tail);
+    void tail.then(() => {
+      if (chains.get(chat) === tail) chains.delete(chat);
+    });
+    return run;
+  }
+
+  const forget = (chat: string): void => {
+    totals.delete(chat);
+    generation.set(chat, (generation.get(chat) ?? 0) + 1);
+  };
+
+  const grow = (chat: string, delta: number): void => {
+    const known = totals.get(chat);
+    if (known !== undefined) totals.set(chat, Math.max(0, known + delta));
+  };
+
+  const sizeOf = async (path: string): Promise<number> => {
+    const st = await fs.lstat(path).catch(() => null);
+    return st?.isFile() ? st.size : 0;
+  };
 
   /** This brain's folder of chats (worked out once: the brain's real path doesn't change under a running app). */
   function brainBase(): Promise<string> {
@@ -356,16 +401,29 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
     }
   }
 
-  /** Removes the page's in-progress copies other than `keepName`. */
-  async function dropDrafts(dir: string, keepName: string | null): Promise<void> {
+  /** Removes the page's in-progress copies other than `keepName`; the bytes freed. */
+  async function dropDrafts(dir: string, keepName: string | null): Promise<number> {
+    let freed = 0;
     for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
       if (name === keepName || !DRAFT_FILE.test(name)) continue;
-      await fs.unlink(join(dir, name)).catch(() => {});
+      const size = await sizeOf(join(dir, name));
+      if (
+        await fs.unlink(join(dir, name)).then(
+          () => true,
+          () => false,
+        )
+      )
+        freed += size;
     }
+    return freed;
   }
 
   /** Keeps the chat's copies under its room: oldest kept versions first, never a page's newest or an in-progress copy. */
   async function makeRoom(dir: string): Promise<Evicted> {
+    // The running total says there is room: no need to look at the folder (a listing only when unknown or over).
+    const known = totals.get(dir);
+    if (known !== undefined && known <= chatMax) return [];
+    const startedAt = generation.get(dir) ?? 0;
     const kept: { key: string; id: string; path: string; size: number; mtime: number }[] = [];
     let total = 0;
     const newest = new Map<string, { mtime: number; id: string }>();
@@ -396,6 +454,7 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
         // gone already, or not ours to remove
       }
     }
+    if ((generation.get(dir) ?? 0) === startedAt) totals.set(dir, total);
     return evicted;
   }
 
@@ -417,61 +476,84 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
     async draft(chat, key, id, source, mustBePage) {
       const dest = await fileFor(chat, key, id, 'draft');
       if (!dest || !sourceShapeOk(source)) return null;
-      try {
-        const data = await readSource(source);
-        if (!data) return null;
-        const page = pageOf(data);
-        const title = titleOf(data, source);
-        if (mustBePage && !page) return { title, page };
-        await writeCopy(dest, data, true);
-        await dropDrafts(dirname(dest), basename(dest));
-        return { title, page };
-      } catch {
-        log('Could not keep a copy of a page.');
-        return null;
-      }
+      const chatPath = dirname(dirname(dest));
+      return serial(chatPath, async () => {
+        try {
+          const data = await readSource(source);
+          if (!data) return null;
+          const page = pageOf(data);
+          const title = titleOf(data, source);
+          if (mustBePage && !page) return { title, page };
+          const replaced = await sizeOf(dest);
+          await writeCopy(dest, data, true);
+          const dropped = await dropDrafts(dirname(dest), basename(dest));
+          grow(chatPath, data.length - replaced - dropped);
+          return { title, page };
+        } catch {
+          forget(chatPath);
+          log('Could not keep a copy of a page.');
+          return null;
+        }
+      });
     },
 
     async keep(chat, key, id) {
       const kept = await fileFor(chat, key, id, 'kept');
       const draft = await fileFor(chat, key, id, 'draft');
       if (!kept || !draft) return null;
-      try {
-        if (await isFile(kept)) {
+      const chatPath = dirname(dirname(kept));
+      return serial(chatPath, async () => {
+        try {
+          if (await isFile(kept)) {
+            const size = await sizeOf(draft);
+            if (
+              await fs.unlink(draft).then(
+                () => true,
+                () => false,
+              )
+            )
+              grow(chatPath, -size);
+            return { evicted: [] };
+          }
+          if (!(await isFile(draft))) return null;
+          await fs.chmod(draft, 0o444);
+          await fs.link(draft, kept).catch(async (err: NodeJS.ErrnoException) => {
+            if (err.code === 'EEXIST') return;
+            if (await isFile(kept)) return;
+            await fs.rename(draft, kept);
+          });
           await fs.unlink(draft).catch(() => {});
-          return { evicted: [] };
+          // The same bytes, now under the kept name: the total is unchanged.
+          return { evicted: await makeRoom(chatPath) };
+        } catch {
+          forget(chatPath);
+          log('Could not keep a copy of a page.');
+          return null;
         }
-        if (!(await isFile(draft))) return null;
-        await fs.chmod(draft, 0o444);
-        await fs.link(draft, kept).catch(async (err: NodeJS.ErrnoException) => {
-          if (err.code === 'EEXIST') return;
-          if (await isFile(kept)) return;
-          await fs.rename(draft, kept);
-        });
-        await fs.unlink(draft).catch(() => {});
-        return { evicted: await makeRoom(dirname(dirname(kept))) };
-      } catch {
-        log('Could not keep a copy of a page.');
-        return null;
-      }
+      });
     },
 
     async copy(chat, key, id, source) {
       const dest = await fileFor(chat, key, id, 'kept');
       if (!dest || !sourceShapeOk(source)) return null;
-      try {
-        if (await isFile(dest)) {
-          const head = await readCopy(dest, TITLE_SCAN_BYTES);
-          return head ? { title: titleOf(head, source), evicted: [] } : null;
+      const chatPath = dirname(dirname(dest));
+      return serial(chatPath, async () => {
+        try {
+          if (await isFile(dest)) {
+            const head = await readCopy(dest, TITLE_SCAN_BYTES);
+            return head ? { title: titleOf(head, source), evicted: [] } : null;
+          }
+          const data = await readSource(source);
+          if (!data) return null;
+          await writeCopy(dest, data, false);
+          grow(chatPath, data.length);
+          return { title: titleOf(data, source), evicted: await makeRoom(chatPath) };
+        } catch {
+          forget(chatPath);
+          log('Could not keep a copy of a page.');
+          return null;
         }
-        const data = await readSource(source);
-        if (!data) return null;
-        await writeCopy(dest, data, false);
-        return { title: titleOf(data, source), evicted: await makeRoom(dirname(dirname(dest))) };
-      } catch {
-        log('Could not keep a copy of a page.');
-        return null;
-      }
+      });
     },
 
     async held(chat, key, id) {
@@ -510,6 +592,8 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
       const a = await chatDir(from);
       const b = await chatDir(to);
       if (!a || !b || a === b) return;
+      forget(a);
+      forget(b);
       try {
         const st = await fs.lstat(a).catch(() => null);
         if (!st?.isDirectory()) return;
@@ -525,12 +609,16 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
         }
       } catch {
         log("Could not move a chat's pages to its new id.");
+      } finally {
+        forget(a);
+        forget(b);
       }
     },
 
     async trashChat(chat) {
       const d = await chatDir(chat);
       if (!d) return;
+      forget(d);
       try {
         const st = await fs.lstat(d).catch(() => null);
         if (!st?.isDirectory()) return;
@@ -552,6 +640,7 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
         const d = join(base, name);
         const st = await fs.lstat(d).catch(() => null);
         if (!st?.isDirectory() || now() - st.mtimeMs < SWEEP_GRACE_MS) continue;
+        forget(d);
         try {
           await trash(d);
           moved++;
@@ -561,6 +650,41 @@ export function createPageCopies(opts: PageCopyStoreOptions): PageCopyStore {
         }
       }
       return moved;
+    },
+
+    async sweepTemps() {
+      let removed = 0;
+      try {
+        const base = await brainBase();
+        const dirs = async (parent: string, ok: (name: string) => boolean): Promise<string[]> => {
+          const found: string[] = [];
+          for (const name of await fs.readdir(parent).catch(() => [] as string[])) {
+            if (!ok(name)) continue;
+            const path = join(parent, name);
+            if ((await fs.lstat(path).catch(() => null))?.isDirectory()) found.push(path);
+          }
+          return found;
+        };
+        for (const chat of await dirs(base, isChatId)) {
+          for (const page of await dirs(chat, isPageKey)) {
+            for (const name of await fs.readdir(page).catch(() => [] as string[])) {
+              if (!TEMP_FILE.test(name)) continue;
+              const path = join(page, name);
+              try {
+                const st = await fs.lstat(path);
+                if (!st.isFile() || now() - st.mtimeMs < SWEEP_GRACE_MS) continue;
+                await fs.unlink(path);
+                removed++;
+              } catch {
+                // gone already, or not ours to remove
+              }
+            }
+          }
+        }
+      } catch {
+        log('Could not tidy leftover temporary files of pages.');
+      }
+      return removed;
     },
   };
 }

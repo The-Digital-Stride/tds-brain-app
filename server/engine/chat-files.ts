@@ -9,6 +9,7 @@
  * person could not open in Documents is never reported, and nothing outside the brain is either.
  */
 import { createHash } from 'node:crypto';
+import { promises as fsp } from 'node:fs';
 import { basename, resolve as resolvePath } from 'node:path';
 import {
   findPathMentions,
@@ -107,6 +108,8 @@ export interface ChatFilesOptions {
   now?: () => Date;
   /** Page copies (plan 2026-11-14-artifacts-in-app, decision 2 and revision 2). */
   pages?: PageCopyPort;
+  /** A file's modified time in ms, null when it can't be read (default: `fs.stat`). Tests set it. */
+  modified?: (filePath: string) => Promise<number | null>;
 }
 
 export interface ChatFilesTracker {
@@ -225,6 +228,9 @@ type Pending =
       /** Whose shell (the chat's, or a helper's), and its folder once the command has run. */
       shell: string;
       cwd: string | null;
+      /** Absolute `.html` / `.htm` words the command may have written, and when it started (ms). */
+      pagePaths: string[];
+      startedAt: number;
     }
   | { kind: 'web'; url: string }
   | { kind: 'page'; publish: ArtifactPublish; history: boolean };
@@ -637,6 +643,15 @@ async function pool<T>(items: T[], size: number, job: (item: T) => Promise<void>
 export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   const roots = opts.brainRoots.length > 0 ? opts.brainRoots : [''];
   const now = opts.now ?? (() => new Date());
+  const modified =
+    opts.modified ??
+    (async (p: string): Promise<number | null> => {
+      try {
+        return (await fsp.stat(p)).mtimeMs;
+      } catch {
+        return null;
+      }
+    });
   const tracked = new Map<string, Tracked>();
   /** The latest resolution of each tracked path. */
   const resolutions = new Map<string, Resolved>();
@@ -861,6 +876,16 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       };
       const reads = new Set<string>();
       const changes = new Set<string>();
+      const pagePaths = new Set<string>();
+      const rootAbs = roots.map((r) => r.trim().replace(/\/+$/, '')).find((r) => r.startsWith('/')) ?? null;
+      // A page word as an absolute path: as written, or from the shell's brain folder.
+      const absPage = (w: string, here: string | null): string | null => {
+        if (!/\.html?$/i.test(w) || !fileWord(w) || w.startsWith('~')) return null;
+        if (w.startsWith('/')) return w;
+        if (here === null || rootAbs === null) return null;
+        const joined = joinRel(here, w);
+        return joined === null ? null : `${rootAbs}/${joined}`;
+      };
       for (const seg of shellSegments(command)) {
         const use = shellUse(seg);
         const here = cwdIn(seg.groups);
@@ -874,6 +899,8 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         for (const w of use.changes) {
           const p = staged(w) ? null : shellPath(w, here);
           if (p) changes.add(p);
+          const a = history || staged(w) ? null : absPage(w, here);
+          if (a) pagePaths.add(a);
         }
         for (const w of use.reads) {
           const p = staged(w) ? null : shellPath(w, here);
@@ -890,8 +917,25 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       }
       const changed = [...changes].slice(0, CANDIDATES_MAX);
       const read = [...reads].slice(0, Math.max(0, CANDIDATES_MAX - changed.length));
-      if (filingsHere.length === 0 && read.length === 0 && changed.length === 0 && cwd === before) return;
-      setPending(id, { kind: 'bash', filings: filingsHere, reads: read, changes: changed, shell, cwd });
+      const pageList = [...pagePaths].slice(0, CANDIDATES_MAX);
+      if (
+        filingsHere.length === 0 &&
+        read.length === 0 &&
+        changed.length === 0 &&
+        pageList.length === 0 &&
+        cwd === before
+      )
+        return;
+      setPending(id, {
+        kind: 'bash',
+        filings: filingsHere,
+        reads: read,
+        changes: changed,
+        shell,
+        cwd,
+        pagePaths: pageList,
+        startedAt: Date.now(),
+      });
     } else if (name === 'WebFetch' && okLink(input.url)) {
       setPending(id, { kind: 'web', url: input.url });
     } else if (name === 'Artifact') {
@@ -1148,6 +1192,16 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     } else if (p.kind === 'bash') {
       // The shell keeps a folder only when the command worked.
       cwds.set(p.shell, p.cwd);
+      // Shell words are guesses: each page word goes through Write's own checks, but only when the
+      // command touched the file (its modified time is not before the command started).
+      for (const filePath of p.pagePaths) {
+        const { startedAt } = p;
+        queuePage(async () => {
+          const at = await modified(filePath);
+          if (at === null || at < startedAt) return;
+          await pageWritten(id, { filePath, writeIsPage: null, writeTitle: null, history: false });
+        });
+      }
       if (p.filings.length === 0 && p.reads.length === 0 && p.changes.length === 0) return;
       const order = ++counter;
       for (const f of p.filings) filings.push({ ...f, order });

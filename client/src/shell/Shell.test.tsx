@@ -627,8 +627,12 @@ describe('the panel holds the rail to icons', () => {
     vi.stubGlobal('innerWidth', 1500);
     localStorage.setItem('tds-brain-shell', JSON.stringify({ railWide: true }));
     await renderLiveChat();
-    press('c', document.body);
-    expect(drawerDock().hasAttribute('inert')).toBe(false);
+    // The shortcut only works once the shell has finished loading, which under load can be after the
+    // heading shows: press again until the drawer is open rather than assuming the first press lands.
+    await waitFor(() => {
+      if (drawerDock().hasAttribute('inert')) press('c', document.body);
+      expect(drawerDock().hasAttribute('inert')).toBe(false);
+    });
     expect(nav().getAttribute('data-wide')).toBe('true');
   });
 });

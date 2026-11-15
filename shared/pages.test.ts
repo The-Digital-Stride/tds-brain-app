@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { LINK_SCRIPT_TAG, PAGE_WRAPPER_LINK_SCRIPT, withLinkScript } from './page-links.ts';
 import {
   artifactPublish,
   artifactPublishResult,
@@ -337,7 +338,7 @@ describe('brandedPage', () => {
     const out = brandedPage(page, META);
     const m = /srcdoc="([^"]*)"/.exec(out);
     expect(m).not.toBeNull();
-    expect(unescapeAttr(m?.[1] ?? '')).toBe(page);
+    expect(unescapeAttr(m?.[1] ?? '')).toBe(withLinkScript(page));
     expect(out.match(/<\/iframe>/g)).toHaveLength(1);
     expect(out).not.toContain('</iframe><script>');
   });
@@ -359,9 +360,23 @@ describe('brandedPage', () => {
     expect(out).not.toContain('<script>x');
     expect(out).toContain('&lt;b&gt;&quot;T&quot;&amp;&lt;/b&gt; | The Digital Stride</title>');
   });
+  it('gives the page the link script after its doctype, and the wrapper its listener (hardening decision 1)', () => {
+    const out = brandedPage('<!DOCTYPE html><p><a href="https://example.com">x</a></p>', META);
+    const srcdoc = unescapeAttr(/srcdoc="([^"]*)"/.exec(out)?.[1] ?? '');
+    expect(srcdoc).toBe(`<!DOCTYPE html>${LINK_SCRIPT_TAG}<p><a href="https://example.com">x</a></p>`);
+    // The listener is the wrapper's only script, after the frame it listens to.
+    const listener = `<script>${PAGE_WRAPPER_LINK_SCRIPT}</script>`;
+    const outside = out.replace(/srcdoc="[^"]*"/, 'srcdoc=""');
+    expect(outside.split(listener)).toHaveLength(2);
+    expect(outside.indexOf(listener)).toBeGreaterThan(outside.indexOf('</iframe>'));
+    expect(outside.replace(listener, '')).not.toMatch(/<script\b/i);
+    expect(out).toContain(`<meta http-equiv="Content-Security-Policy" content="${CSP}">`);
+  });
   it('makes no outside request of its own', () => {
     const out = brandedPage('<img src="https://example.com/a.png">', META);
-    const outside = out.replace(/srcdoc="[^"]*"/, 'srcdoc=""');
+    const outside = out
+      .replace(/srcdoc="[^"]*"/, 'srcdoc=""')
+      .replace(`<script>${PAGE_WRAPPER_LINK_SCRIPT}</script>`, '');
     expect(outside).not.toMatch(/https?:\/\/|\/\/[a-z]/i);
     expect(outside).not.toMatch(/<link\b|@import|<script\b/i);
   });

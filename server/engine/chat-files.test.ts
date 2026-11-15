@@ -949,7 +949,13 @@ function fakePages() {
   };
 }
 
-function setupPages(over: { now?: () => Date; pages?: ReturnType<typeof fakePages> } = {}) {
+function setupPages(
+  over: {
+    now?: () => Date;
+    pages?: ReturnType<typeof fakePages>;
+    modified?: (p: string) => Promise<number | null>;
+  } = {},
+) {
   const brain = fakeBrain();
   const pages = over.pages ?? fakePages();
   const t = createChatFiles({
@@ -957,6 +963,7 @@ function setupPages(over: { now?: () => Date; pages?: ReturnType<typeof fakePage
     resolve: brain.resolve,
     pages: pages.port,
     ...(over.now ? { now: over.now } : {}),
+    ...(over.modified ? { modified: over.modified } : {}),
   });
   return { ...brain, pages, t };
 }
@@ -1342,5 +1349,68 @@ describe('createChatFiles: Artifact publishes (R2)', () => {
     t.observe(say('See https://example.com/a'));
     const s = await snap(t);
     expect('pages' in s).toBe(false);
+  });
+});
+
+describe('createChatFiles: pages made with Bash', () => {
+  const fresh = async () => Date.now() + 1000;
+  const bash = (x: ReturnType<typeof setupPages>, command: string, o: { ok?: boolean } = {}) =>
+    step(x.t, 'Bash', { command }, o);
+
+  it('shows an absolute .html written by cat > in a scratchpad, like a Write', async () => {
+    const x = setupPages({ modified: fresh });
+    const path = `${TMP}/hello.html`;
+    x.pages.files.set(path, page('Hello', 'hi'));
+    const id = bash(x, `cat > ${path} <<'EOF'\n<html></html>\nEOF`);
+    await x.t.settled();
+    const s = pagesOf(await snap(x.t));
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ title: 'Hello', draft: true, toolUseIds: [id] });
+    x.t.boundary();
+    expect(pagesOf(await snap(x.t))[0]?.versions).toHaveLength(1);
+  });
+
+  it('shows a page copied into the brain by cp, and one named by a relative path', async () => {
+    const x = setupPages({ modified: fresh });
+    const abs = `${ROOT}/personal/a.html`;
+    x.pages.files.set(abs, page('Copied'));
+    bash(x, `cp ${TMP}/src.html ${abs}`);
+    await x.t.settled();
+    expect(pagesOf(await snap(x.t)).map((p) => p.title)).toEqual(['Copied']);
+    const rel = `${ROOT}/personal/b.html`;
+    x.pages.files.set(rel, page('Relative'));
+    bash(x, 'cd personal && cp a.html b.html');
+    await x.t.settled();
+    expect(
+      pagesOf(await snap(x.t))
+        .map((p) => p.title)
+        .sort(),
+    ).toEqual(['Copied', 'Relative']);
+  });
+
+  it('ignores a non-page .html, a path the port refuses, a failed command and a file older than the command', async () => {
+    const x = setupPages({ modified: fresh });
+    x.pages.files.set(`${TMP}/frag.html`, '<p>just a fragment</p>');
+    bash(x, `cat > ${TMP}/frag.html`);
+    x.pages.files.set('/outside/x.html', page('Outside'));
+    bash(x, 'cat > /outside/x.html');
+    x.pages.files.set(`${TMP}/failed.html`, page('Failed'));
+    bash(x, `cat > ${TMP}/failed.html`, { ok: false });
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
+
+    const old = setupPages({ modified: async () => 1000 });
+    old.pages.files.set(`${TMP}/old.html`, page('Old'));
+    bash(old, `cat ${TMP}/old.html | wc -c > ${TMP}/old.html`);
+    await old.t.settled();
+    expect((await old.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('does not make pages from history, and leaves other shell changes as they were', async () => {
+    const x = setupPages({ modified: fresh });
+    x.pages.files.set(`${TMP}/h.html`, page('H'));
+    step(x.t, 'Bash', { command: `cat > ${TMP}/h.html` }, { history: true });
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
   });
 });

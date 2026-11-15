@@ -39,7 +39,7 @@ import {
 } from './setup-mode.ts';
 import { createSetupService } from './setup-service.ts';
 import { createAppStore } from './store/app-store.ts';
-import { createAssetCache } from './store/asset-cache.ts';
+import { createAssetCache, sweepAssetTemps } from './store/asset-cache.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
@@ -235,6 +235,7 @@ app.server.on('error', (err: NodeJS.ErrnoException) => {
 app.server.listen(config.port, APP_HOST, () => {
   uploads.start();
   sweepPageCopies();
+  sweepTempFiles();
   updater.startTimer();
   log(`TDS Brain ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
@@ -291,6 +292,21 @@ function sweepPageCopies(): void {
       if (moved > 0) log(`Moved the pages of ${moved} deleted chat${moved === 1 ? '' : 's'} to the Bin.`);
     })
     .catch(() => log('Could not tidy the pages of deleted chats.'));
+}
+
+/** Leftover temporary files of a crash mid-save (page copies and the library cache); fire and forget. */
+function sweepTempFiles(): void {
+  void pageCopies
+    ?.sweepTemps?.()
+    .then((n) => {
+      if (n > 0) log(`Removed ${n} leftover temporary page file${n === 1 ? '' : 's'}.`);
+    })
+    .catch(() => log('Could not tidy leftover temporary page files.'));
+  void sweepAssetTemps(config.dataDir)
+    .then((n) => {
+      if (n > 0) log(`Removed ${n} leftover temporary library file${n === 1 ? '' : 's'}.`);
+    })
+    .catch(() => log('Could not tidy leftover temporary library files.'));
 }
 
 let shuttingDown = false;

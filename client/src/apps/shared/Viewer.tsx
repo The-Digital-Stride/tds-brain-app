@@ -5,6 +5,7 @@ import { Markdown } from '../../markdown.tsx';
 import { useFrameGuard } from '../../shell/useFrameGuard.ts';
 import { useStore } from '../../store.tsx';
 import { useLoaded } from './data.ts';
+import { usePageLinks } from './usePageLinks.ts';
 
 /** A small stable number for a string, so a version string can drive `useLoaded`'s quiet refresh. */
 function versionNumber(v: string): number {
@@ -86,6 +87,9 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
   const [violatedId, setViolatedId] = useState<string | null>(null);
   const frameRef = useRef(frameId);
   frameRef.current = frameId;
+  // A plain link in the page opens in a new tab through the app instead of moving the frame.
+  const pageFrame = useRef<HTMLIFrameElement>(null);
+  usePageLinks(pageFrame);
   const stopped = guard.stopped || violatedId === frameId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the file's id and version clear the line.
   useEffect(() => {
@@ -133,6 +137,7 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
             ) : (
               <iframe
                 key={frameId}
+                ref={pageFrame}
                 className="lib-frame"
                 sandbox="allow-scripts allow-popups"
                 referrerPolicy="no-referrer"

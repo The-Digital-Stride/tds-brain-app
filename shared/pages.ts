@@ -2,6 +2,7 @@
  * Pure helpers for "pages in the app" (plan docs/plans/2026-11-14-artifacts-in-app.md; rules in
  * shared/pages-contract.ts). No node: imports: this file is shared with the browser.
  */
+import { PAGE_WRAPPER_LINK_SCRIPT, withLinkScript } from './page-links.ts';
 import {
   type ArtifactPublish,
   type BrandMeta,
@@ -271,6 +272,12 @@ function logoImage(sprite: string | null): string | null {
   return `<img class="bar-logo" alt="The Digital Stride" src="data:image/svg+xml,${encodeURIComponent(svg)}">`;
 }
 
+/**
+ * The branded copy: the TDS bar over the page in a sandboxed frame. Its links open in a new tab
+ * (hardening decision 1): the page gets the link script, and the wrapper's listener passes a link up
+ * when the copy is itself framed (in the app) or opens it when the file is opened on its own. The
+ * `csp` (`PAGE_WRAPPER_CSP`) allows inline scripts, and the page's frame inherits it.
+ */
 export function brandedPage(html: string, meta: BrandMeta): string {
   const brand = logoImage(meta.logoSprite) ?? '<span class="bar-wordmark">The Digital Stride</span>';
   const title = esc(meta.title);
@@ -302,7 +309,8 @@ ${brand}
 <div class="bar-title"><strong>${title}</strong><span>${line}</span></div>
 </div>
 </header>
-<iframe class="page" title="${title}" sandbox="allow-scripts allow-popups" srcdoc="${esc(html)}"></iframe>
+<iframe class="page" title="${title}" sandbox="allow-scripts allow-popups" srcdoc="${esc(withLinkScript(html))}"></iframe>
+<script>${PAGE_WRAPPER_LINK_SCRIPT}</script>
 </body>
 </html>
 `;

@@ -199,3 +199,20 @@ export interface PageRef {
  */
 export type PageAskRequest = { kind: 'change'; note: string } | { kind: 'brand' };
 export const PAGE_NOTE_MAX = 4000;
+
+// ---------------------------------------------------------------------------
+// Links in a page (hardening plan, decision 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sent with `postMessage` by the link script the server adds to every page it serves (never stored),
+ * when the person clicks a link to an `http(s)` address. The app opens it in a new tab only after its
+ * own checks (`usePageLinks`): the sender is its page frame, a real click, an `http(s)` address of at
+ * most PAGE_LINK_URL_MAX characters with no user name or password, not the app's own origin or a
+ * loopback address. Anything else is ignored.
+ */
+export interface PageOpenLinkMessage {
+  type: 'tds-page-open-link';
+  url: string;
+}
+export const PAGE_LINK_URL_MAX = 2048;

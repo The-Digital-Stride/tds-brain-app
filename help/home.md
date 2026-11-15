@@ -6,7 +6,7 @@ order: 1
 summary: Start a chat, pick a client and see what needs you today.
 benefit: Go from "I need to do this" to a working chat in one step.
 roles: all
-related: [talking-to-claude, chats-drawer, todos, skills]
+related: [talking-to-claude, chats-drawer, todos, skills, updates]
 since: 0.36.0
 reviewed: 2026-11-15
 ---
@@ -37,6 +37,7 @@ Under the box you will see your pinned to-dos, pinned chats and pinned files. If
 
 - Your chat opens as soon as you send, and you can follow it in the [Chats drawer](help:chats-drawer).
 - Pick a skill first, and Home starts the chat from that skill.
+- After an update, a What's new card may show above the message box. It says what changed and links to Help. Press **Close** to hide it. See [Updates and what's new](help:updates).
 
 ## Try this
 

@@ -11,7 +11,7 @@
     --bg:#FAF8F4; --card:#FFFFFF; --ink:#021B43; --muted:#4F5A74; --rule:#D3CFC5;
     --accent:#0B63C4; --accent-soft:#E3F0FF; --on-accent:#FFFFFF;
     --warn:#8A5200; --warn-soft:#FFF3DC; --ok:#17703D; --ok-soft:#E1F4E8;
-    --bar0:#8A94AA; --navy:#021B43;
+    --bar0:#8A94AA; --navy:#021B43; --stop:#C81E1E; --on-stop:#FFFFFF;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
@@ -20,14 +20,14 @@
       --bg:#06132B; --card:#0D1F40; --ink:#EAF0FB; --muted:#A3B3D0; --rule:#2A4068;
       --accent:#5AAEFF; --accent-soft:#12305C; --on-accent:#06132B;
       --warn:#FFC766; --warn-soft:#3A2C0C; --ok:#6FD39A; --ok-soft:#0F3321;
-      --bar0:#5C6C8C; color-scheme:dark;
+      --bar0:#5C6C8C; --stop:#FF8A80; --on-stop:#06132B; color-scheme:dark;
     }
   }
   :root[data-theme="dark"]{
     --bg:#06132B; --card:#0D1F40; --ink:#EAF0FB; --muted:#A3B3D0; --rule:#2A4068;
     --accent:#5AAEFF; --accent-soft:#12305C; --on-accent:#06132B;
     --warn:#FFC766; --warn-soft:#3A2C0C; --ok:#6FD39A; --ok-soft:#0F3321;
-    --bar0:#5C6C8C; color-scheme:dark;
+    --bar0:#5C6C8C; --stop:#FF8A80; --on-stop:#06132B; color-scheme:dark;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6}
@@ -164,6 +164,11 @@
   .anim:not(.g4) .bars i{transform:scaleY(.05)}
   .packnote{font-size:.72rem;color:var(--accent);font-weight:650}
   .vfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .askbox{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1.5px solid var(--ok);border-radius:10px;padding:5px 6px 5px 10px;font-size:.78rem;color:var(--muted);transition:border-color .3s}
+  .stopb{display:none;background:var(--stop);color:var(--on-stop);border-radius:8px;padding:3px 10px;font-weight:650;font-size:.8rem}
+  .anim.g5:not(.g6) .askbox{border-color:var(--stop)}
+  .anim.g5:not(.g6) .askbox .sendb{display:none}
+  .anim.g5:not(.g6) .askbox .stopb{display:inline-block}
   .done-note{font-size:.75rem;color:var(--ok);font-weight:650}
 
   /* parts + cards */
@@ -346,24 +351,24 @@
       <div class="pgrid">
         <ol class="steps vert">
           <li><button type="button" class="stepbtn" data-goto="1"><span><b>You ask for something visual</b><small>For example: "Make a one-page chart of last month's traffic for Urban Cooling."</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="2"><span><b>Claude asks: "Where should I save this?"</b><small>If it is not clear, Claude shows places to pick from, taken from the team's filing rules. You can keep it just for you, or pick a client's folder.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="2"><span><b>Claude asks: "Where should I save this?"</b><small>In a client's chat, Claude offers that client's reports folder first, and asks even for a quick chart. You can still keep it just for you. In a chat with no client, a quick picture only for looking at goes in your personal files without asking.</small></span></button></li>
           <li><button type="button" class="stepbtn" data-goto="3"><span><b>Claude writes one file</b><small>The page is a single file with everything it needs inside, like a lunchbox with the food already packed.</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="4"><span><b>The app spots it and opens it</b><small>When Claude finishes, the viewer opens next to the chat. The viewer is a sandbox: a sealed box, like a fish tank. You can see in, but the page cannot reach out to your files. To make the viewer wider, drag the small grip on its left edge. Double-click the grip to put it back.</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="5"><span><b>"Suggest a change" makes a new version</b><small>Type what to change, like "make the bars blue". The old page is kept. Each try is a version, like numbered pages in a notebook, so you can step back and forth.</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="6"><span><b>"Convert to TDS branding"</b><small>One click wraps the page in the TDS look: a navy bar with the logo, the title, the client and the date. Your page sits inside unchanged, and everything it needs is packed into the file. If something cannot be packed in, the app says so.</small></span></button></li>
-          <li><button type="button" class="stepbtn" data-goto="7"><span><b>File it, or download it</b><small>Two separate buttons. "Download" saves the file to your computer. "File in client's folder" asks Claude to put it with the client's reports. Downloading never files anything by accident.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="4"><span><b>The app spots it and opens it</b><small>When Claude finishes, the viewer opens next to the chat. Clicking the page's name in Claude's reply opens it there too. The viewer is a sandbox: a sealed box, like a fish tank. You can see in, but the page cannot reach out to your files. To make the viewer wider, drag the small grip on its left edge. Double-click the grip to put it back.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="5"><span><b>"Suggest a change" makes a new version</b><small>Type what to change, like "make the bars blue". The old page is kept. Each try is a version, like numbered pages in a notebook, so you can step back and forth. The box works just like the chat's: its edge turns red while Claude works, and Send becomes a red Stop button.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="6"><span><b>"Download with TDS branding"</b><small>One click saves a copy wrapped in the TDS look: a navy bar with the logo, the title, the client and the date. Your page sits inside unchanged, and everything it needs is packed into the file. If something cannot be packed in, the app says so.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="7"><span><b>File a copy in the client's folder too</b><small>After the download, the app offers "File in client's folder". That asks Claude to put the branded copy with the client's reports. Downloading never files anything by accident.</small></span></button></li>
         </ol>
         <div class="stage" aria-hidden="true">
           <div class="chat">
             <div class="msg me f f1">Make a one-page chart of last month's traffic for Urban Cooling.</div>
             <div class="msg ai f f2">Where should I save this?
-              <div class="opts"><span class="btn solid">Just for me</span><span class="btn">Urban Cooling's reports</span><span class="btn">Somewhere else</span></div></div>
+              <div class="opts"><span class="btn solid">Urban Cooling's reports</span><span class="btn">Just for me</span><span class="btn">Somewhere else</span></div></div>
             <div class="chip f f3">Writing traffic-chart.html</div>
             <div class="msg ai f f4">Done. The page is open on the right.</div>
             <div class="msg me f f5">Make the bars blue.</div>
           </div>
           <div class="viewp">
-            <div class="vhead"><span class="vname f f4">traffic-chart.html</span><span class="ver f f4">Version <span class="vc1">1 of 1</span><span class="vc2">2 of 2</span></span></div>
+            <div class="vhead"><span class="vname f f4">traffic-chart.html</span><span class="ver f f4">Version <span class="vc1">1</span><span class="vc2">2</span></span></div>
             <span class="safe f f4">Opens in a sealed box</span>
             <div class="frame f f4">
               <div class="brandbar"><span class="logo">TDS</span><span><b>Traffic last month</b><small>Urban Cooling · 15 November 2026 · Prepared by The Digital Stride</small></span></div>
@@ -372,22 +377,25 @@
               </div>
             </div>
             <div class="packnote f f6">Page, pictures and code packed into one file</div>
-            <div class="vfoot f f7"><span class="btn solid">Download</span><span class="btn">File in client's folder</span><span class="done-note">Filed with Urban Cooling's reports</span></div>
+            <div class="askbox f f4"><span>Suggest a change to this page</span><span class="btn solid sendb">Send</span><span class="stopb">Stop</span></div>
+            <div class="vfoot f f7"><span class="btn solid">Download with TDS branding</span><span class="btn">File in client's folder</span><span class="done-note">Filed with Urban Cooling's reports</span></div>
           </div>
         </div>
       </div>
-      <figcaption>The chat is on the left and the viewer on the right. The bars start grey, turn blue when you suggest a change, and the version counter ticks from 1 to 2. Then the TDS bar appears and the two buttons show up.</figcaption>
+      <figcaption>The chat is on the left and the viewer on the right. The bars start grey. When you suggest a change, the box's edge turns red while Claude works, then the bars turn blue and the version ticks from 1 to 2. Then the TDS bar appears and the two buttons show up.</figcaption>
     </figure>
 
     <h3 style="margin-top:1.8rem">Added recently <span class="tag">New</span></h3>
     <p class="sub">These fixes make pages more dependable. You use pages the same way as before.</p>
     <div class="nextgrid">
+      <div class="next"><h3>Templates in Documents</h3><p>The brain's templates, like the TDS deck, now have their own area in Documents. Type "Templates" in the area picker to find them.</p></div>
+      <div class="next"><h3>Names in replies open the page</h3><p>When Claude names a page or a template in its reply, the name is a link. Click it to open the page in the viewer, with its branding button.</p></div>
+      <div class="next"><h3>The change box matches the chat</h3><p>"Suggest a change" uses the chat's own message box. It goes red while Claude works, and you can press Stop.</p></div>
       <div class="next"><h3>Links open in a new tab</h3><p>Clicking a link inside a page opens the website in a new browser tab.</p></div>
-      <div class="next"><h3>Pages made by scripts still show</h3><p>Sometimes Claude saves a page by running a small program instead of the usual way. The app spots those pages too.</p></div>
+      <div class="next"><h3>Pages made by scripts still show</h3><p>Sometimes Claude makes a page by running a small program instead of the usual way. When Claude names that page in its reply, the app opens it like any other, with versions and the branding button.</p></div>
       <div class="next"><h3>Borrowed code kept fresh</h3><p>Pages often borrow ready-made code, like borrowing a cookbook. The app keeps a copy. A copy that doesn't say how old it is gets renewed after a week. If the internet is down, the old copy still works.</p></div>
       <div class="next"><h3>An honest "works offline" label</h3><p>A page that fetches extra code when you open it says it needs the internet. The "works offline" label only appears when it is true.</p></div>
       <div class="next"><h3>Leftover files swept away</h3><p>If the app stops half-way through saving, a scrap of file can be left behind. When the app starts, it clears away old scraps.</p></div>
-      <div class="next"><h3>More automatic checks</h3><p>New tests follow the whole journey, from asking to downloading, the way you do. One check that sometimes failed for no reason is fixed.</p></div>
     </div>
     <p class="today">One idea, not decided yet: pointing at part of a page and saying "change this".</p>
   </section>

@@ -238,7 +238,7 @@ for its **Open** button (named "Open <title>"). It is a glass drawer from the ri
 1040px wide by default, leaving the rail and an edge of the page in view (full width under 640px). It
 can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 20px grab strip centred on its
 left edge (`ResizeHandle`, a focusable `separator` "Resize viewer"; arrows 32px, Shift 128px, Home/End;
-double-click resets) from 1040px up to the window less 94px, the width remembered in the shell state
+double-click resets; `aria-valuetext` in pixels and a hidden key hint) from 1040px up to the window less 94px, shown only with at least 64px to grow; a click with no drag saves nothing; the width remembered in the shell state
 (`viewerWidth`). Its grip is one 4×48px bar, radius 2, in the gap beside the drawer: `--grey-dot` at
 rest, `--ink-soft` on hover or focus, `--navy` while dragging, changing by fill only (Ian, 2026-11-15:
 a dotted pill with an edge "doesn't fit with the clean design system"). No line runs down the edge. The header has

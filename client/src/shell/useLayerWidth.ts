@@ -65,12 +65,15 @@ export interface LayerWidth extends WidthLimits {
  * The viewer drawer's width: the one saved in the shell state, held inside the limits for the window as
  * it is now (the saved width is kept, so widening the window again gives it back).
  */
+/** Under this much room to grow, a handle could barely move, so none shows. */
+export const MIN_TRAVEL = 64;
+
 export function useLayerWidth(): LayerWidth {
   const { state, dispatch } = useShell();
   const { width: windowWidth } = useDesk();
   const [draft, setDraft] = useState<number | null>(null);
   const limits = viewerLimits(windowWidth);
-  const resizable = windowWidth > FULL_WIDTH_AT && limits.max > limits.min;
+  const resizable = windowWidth > FULL_WIDTH_AT && limits.max - limits.min >= MIN_TRAVEL;
   const wanted = draft ?? state.viewerWidth;
   const width = wanted === null ? limits.min : clampWidth(wanted, limits);
   const preview = useCallback((w: number) => setDraft(w), []);

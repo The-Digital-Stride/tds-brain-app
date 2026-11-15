@@ -106,4 +106,48 @@ describe('ViewerDrawer resize handle', () => {
     expect(screen.queryByRole('separator')).toBeNull();
     expect(drawer().style.width).toBe('');
   });
+
+  it('has no handle when there is under 64px to grow (it could barely move)', () => {
+    setWindow(1040 + 94 + 63);
+    const first = mount();
+    expect(screen.queryByRole('separator')).toBeNull();
+    first.unmount();
+    setWindow(1040 + 94 + 64);
+    mount();
+    expect(handle()).toBeTruthy();
+  });
+
+  it('a click on the grip with no drag saves nothing (a saved width clamped by the window is kept)', () => {
+    mount();
+    fireEvent.pointerDown(handle(), { clientX: 500, pointerId: 1, button: 0 });
+    fireEvent.pointerUp(handle(), { clientX: 500, pointerId: 1 });
+    expect(saved().viewerWidth).toBeUndefined();
+    cleanup();
+    localStorage.setItem(SHELL_STORAGE_KEY, JSON.stringify({ viewerWidth: 1400 }));
+    setWindow(1300);
+    mount();
+    fireEvent.pointerDown(handle(), { clientX: 500, pointerId: 1, button: 0 });
+    fireEvent.pointerUp(handle(), { clientX: 500, pointerId: 1 });
+    expect(saved().viewerWidth).toBe(1400);
+    expect(document.body.classList.contains('viewer-resizing')).toBe(false);
+  });
+
+  it('tells screen readers the width in words and the keys it takes', () => {
+    mount();
+    const h = handle();
+    expect(h.getAttribute('aria-valuetext')).toBe('1040 pixels wide');
+    expect(h.getAttribute('aria-keyshortcuts')).toBe('ArrowLeft ArrowRight Home End');
+    const hint = document.getElementById(h.getAttribute('aria-describedby') ?? '');
+    expect(hint?.textContent).toBe(
+      'Left and right arrow keys resize, Shift for bigger steps. Home is narrowest, End is widest. Double-click resets.',
+    );
+  });
+
+  it('takes the drag state off the page when the viewer closes mid-drag', () => {
+    const view = mount();
+    fireEvent.pointerDown(handle(), { clientX: 500, pointerId: 1, button: 0 });
+    expect(document.body.classList.contains('viewer-resizing')).toBe(true);
+    view.unmount();
+    expect(document.body.classList.contains('viewer-resizing')).toBe(false);
+  });
 });

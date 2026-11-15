@@ -19,6 +19,7 @@ import type { SkillLevelsService } from '../brain/skill-levels.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import type { ClientPickTally } from '../store/client-pick-tally.ts';
 import type { UploadStaging } from '../uploads/staging.ts';
+import type { SavingsService } from '../usage/savings.ts';
 import { handleApi, sendError, sendPageError } from './routes.ts';
 import {
   type AuthCodes,
@@ -254,6 +255,8 @@ export interface ServerDeps {
   setup: SetupService;
   /** Counts how each new chat's client was decided (app data folder). Absent: nothing is counted. */
   clientPickTally?: ClientPickTally;
+  /** The token savings ledger (`GET USAGE_SAVINGS_PATH`). Absent: the route answers the empty summary. */
+  savings?: Pick<SavingsService, 'summary'>;
   log?: (line: string) => void;
 }
 
@@ -300,6 +303,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     port: deps.port,
     log,
     clientPickTally: deps.clientPickTally,
+    savings: deps.savings,
   };
 
   const server = createServer((req, res) => {

@@ -22,7 +22,7 @@ Claude already knows our clients, our notes and our way of doing things. You don
 - File call notes. Drop in your notes, and Claude files them where the team can find them.
 - Write client reports. Ask for a draft for Acme Heating, then tweak it.
 - Draft pages and content. Get a first version in minutes, not hours.
-- Hand things over. Pass a to-do to a teammate, and they see it straight away.
+- Hand things over. Pass a to-do to a teammate, and they see it the next time their Brain syncs.
 - Share with the team. Anything Claude files in the Brain is there for everyone who needs it. Nobody has to set up access.
 
 ![Home in TDS Cortex, with the message box, the client picker and your pinned cards.](images/home-overview.webp)

@@ -19,7 +19,7 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 
 - You see your day in one place.
 - You can pick up a job nobody has taken yet.
-- Handing a job over is clear. Your teammate sees it straight away, and nobody has to set up access.
+- Handing a job over is clear. Your teammate sees it the next time their Brain syncs, and nobody has to set up access.
 
 ## How to use it
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -37,9 +37,14 @@ import type {
   SkillLevel,
   TurnLevel,
 } from '../../shared/levels-contract.ts';
+import { isRealPage, pageTitle } from '../../shared/pages.ts';
+import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
+import { PAGE_WRAPPER_CSP } from '../http/security.ts';
+import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { ContextReadingStore } from '../store/context-readings.ts';
-import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
+import type { PageCopyStore } from '../store/page-copies.ts';
+import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   AT_ONCE_REASON,
   appModelReason,
@@ -62,6 +67,8 @@ import {
   SessionError,
   type SessionManager,
   splitAttachmentNote,
+  splitPageNote,
+  withPageNote,
 } from './session-manager.ts';
 import { TrashMissingError } from './trash-session.ts';
 
@@ -292,11 +299,15 @@ function setup(
     picker?: LevelPicker;
     chatKinds?: ChatKindStore;
     contextReadings?: ContextReadingStore;
+    pageCopies?: PageCopyStore;
+    assets?: AssetCache;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
     contextReadings: opts.contextReadings,
+    pageCopies: opts.pageCopies,
+    assets: opts.assets,
     levels: opts.levels,
     chatLevels: opts.chatLevels,
     picker: opts.picker,
@@ -349,6 +360,13 @@ describe('a new chat', () => {
       append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
+    // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
+    expect(FILES_LINE).toContain('save the finished file with Write or Edit, not Bash');
+    expect(FILES_LINE).toContain('Never open it in a browser');
+    // A new document's home is asked, not guessed: people can't be expected to know the brain's folders.
+    expect(FILES_LINE).toContain(
+      'if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first',
+    );
     expect(o.model).toBeUndefined();
     expect(o.resume).toBeUndefined();
     expect(queries[0]?.received).toEqual(['Hello there']);
@@ -4652,5 +4670,573 @@ describe('context management', () => {
       detailChat();
       await expectCode(detail('nope'), 'not-found');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pages (plan 2026-11-14-artifacts-in-app, revision 2 and the overseer's rulings)
+// ---------------------------------------------------------------------------
+
+describe('pages', () => {
+  const SRC = '/private/tmp/claude-501/p/scratchpad/budget.html';
+  const HTML = '<!doctype html><title>Budget</title><p>v</p>';
+  const URL1 = 'https://claude.ai/artifact/BuDgEt00000000000000aa';
+  const OLD = '11111111-2222-4333-8444-555555555555';
+  const NEW = '22222222-2222-4333-8444-555555555555';
+  const temps: string[] = [];
+
+  afterEach(() => {
+    for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+  });
+
+  /** The app's copies in memory: `disk` is the source files now. */
+  function fakeCopies() {
+    const disk = new Map<string, string>([[SRC, HTML]]);
+    const drafts = new Map<string, { id: string; html: string }>();
+    const kept = new Map<string, string>();
+    const store: PageCopyStore = {
+      locate: async (p) => (p.startsWith('/private/tmp/') && /\.html?$/.test(p) ? p : null),
+      draft: vi.fn(async (chat: string, key: string, id: string, source: string, mustBePage: boolean) => {
+        const html = disk.get(source);
+        if (html === undefined) return null;
+        const page = isRealPage(html);
+        const title = pageTitle(html, source);
+        if (mustBePage && !page) return { title, page };
+        drafts.set(`${chat}/${key}`, { id, html });
+        return { title, page };
+      }),
+      keep: vi.fn(async (chat: string, key: string, id: string) => {
+        if (kept.has(`${chat}/${key}/${id}`)) return { evicted: [] };
+        const d = drafts.get(`${chat}/${key}`);
+        if (!d || d.id !== id) return null;
+        drafts.delete(`${chat}/${key}`);
+        kept.set(`${chat}/${key}/${id}`, d.html);
+        return { evicted: [] };
+      }),
+      copy: vi.fn(async (chat: string, key: string, id: string, source: string) => {
+        const html = disk.get(source);
+        if (html === undefined) return null;
+        kept.set(`${chat}/${key}/${id}`, html);
+        return { title: pageTitle(html, source), evicted: [] };
+      }),
+      held: async (chat, key, id) => {
+        const html = kept.get(`${chat}/${key}/${id}`);
+        return html === undefined ? null : { title: pageTitle(html, '') };
+      },
+      read: async (chat, key, id, which) => {
+        const html =
+          which === 'kept'
+            ? kept.get(`${chat}/${key}/${id}`)
+            : drafts.get(`${chat}/${key}`)?.id === id
+              ? drafts.get(`${chat}/${key}`)?.html
+              : undefined;
+        return html === undefined ? null : Buffer.from(html);
+      },
+      keptPath: async (chat, key, id) => `/data/pages/${chat}/${key}/v-${id}.html`,
+      isPage: async (p) => {
+        const html = disk.get(p);
+        return html === undefined ? null : isRealPage(html);
+      },
+      sourceOk: async (source) => disk.has(source),
+      rename: vi.fn(async (from: string, to: string) => {
+        for (const m of [kept, drafts] as Map<string, unknown>[]) {
+          for (const [k, v] of [...m]) {
+            if (!k.startsWith(`${from}/`)) continue;
+            m.delete(k);
+            m.set(`${to}/${k.slice(from.length + 1)}`, v);
+          }
+        }
+      }),
+      trashChat: vi.fn(async () => {}),
+      sweep: async () => 0,
+    };
+    return { store, disk, drafts, kept };
+  }
+
+  function result(q: FakeQuery, id: string, content: unknown = 'ok', parent: string | null = null) {
+    q.emit({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+      parent_tool_use_id: parent,
+      session_id: q.sid,
+    });
+  }
+
+  function writeStep(q: FakeQuery, id: string, parent: string | null = null) {
+    toolUse(q, id, 'Write', { file_path: SRC, content: HTML }, parent);
+    result(q, id, 'ok', parent);
+  }
+
+  /** Turn 0 writes the page; every later turn just replies. */
+  const writing: Script = ({ q, turn }) => {
+    q.init();
+    if (turn === 0) writeStep(q, 'w1');
+    q.text(`msg_${turn}`, `Reply ${turn}`);
+    q.result();
+  };
+
+  function withPages(script: Script = writing, over: Parameters<typeof setup>[1] = {}) {
+    const copies = fakeCopies();
+    const fx = setup(script, { ...over, pageCopies: copies.store });
+    return { ...fx, copies };
+  }
+
+  function stagingFor() {
+    const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-pages-')));
+    temps.push(dataDir);
+    return createUploadStaging({ dataDir, brainRoot: BRAIN, sweepMs: 0 });
+  }
+
+  const lastPage = (id: string) => filesOf(events(mgr, id)).at(-1)?.pages?.[0];
+
+  async function pageKey(id: string): Promise<string> {
+    await flush();
+    const key = lastPage(id)?.key;
+    if (!key) throw new Error('no page');
+    return key;
+  }
+
+  it('shows a written page while it is in progress, and keeps one version at the person’s next message', async () => {
+    const fx = withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    expect(lastPage(s.id)).toMatchObject({
+      title: 'Budget',
+      url: null,
+      draft: true,
+      versions: [],
+      fileKey: null,
+      toolUseIds: ['w1'],
+    });
+    // The in-progress copy is version 0; nothing is numbered until the person's next message.
+    expect((await mgr.pageCopy?.(s.id, key, 0))?.toString()).toBe(HTML);
+    expect(await mgr.pageCopy?.(s.id, key, 1)).toBeNull();
+    expect(fx.copies.store.keep).not.toHaveBeenCalled();
+    await mgr.send(s.id, 'Thanks');
+    await flush();
+    expect(fx.copies.store.keep).toHaveBeenCalledWith('sdk-new-1', key, 'w1');
+    expect(lastPage(s.id)).toMatchObject({ draft: false, versions: [{ n: 1, hasCopy: true }] });
+    expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe(HTML);
+    // "Latest" (0) now means the newest kept copy: a viewer still on it keeps showing the page.
+    expect((await mgr.pageCopy?.(s.id, key, 0))?.toString()).toBe(HTML);
+    expect(await mgr.pageCopy?.(s.id, 'nope', 1)).toBeNull();
+    expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
+  });
+
+  it('keeps a version when the person stops the reply', async () => {
+    let release: () => void = () => {};
+    withPages(async ({ q, turn }) => {
+      q.init();
+      if (turn === 0) writeStep(q, 'w1');
+      q.onInterrupt = () => q.result('error_during_execution');
+      await new Promise<void>((r) => {
+        release = r;
+      });
+    });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    expect(lastPage(s.id)?.draft).toBe(true);
+    await mgr.interrupt(s.id);
+    await flush();
+    expect(lastPage(s.id)).toMatchObject({ key, draft: false, versions: [{ n: 1, hasCopy: true }] });
+    release();
+  });
+
+  it('keeps a closed chat’s pages viewable, its last reply’s page as a version', async () => {
+    withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    await mgr.close(s.id);
+    await flush();
+    expect((await mgr.pageCopy?.(s.id, key, 1))?.toString()).toBe(HTML);
+    await expectCode(
+      Promise.resolve().then(() => mgr.pageCopy?.('nobody', key, 1)),
+      'not-found',
+    );
+  });
+
+  it('gives a reopened chat the same versions as it had live, with a helper writing mid-reply', async () => {
+    const fx = withPages(({ q, turn }) => {
+      q.init();
+      if (turn === 0) {
+        writeStep(q, 'w1');
+        toolUse(q, 'agent1', 'Agent', { prompt: 'polish it' });
+        writeStep(q, 'w2', 'agent1');
+        result(q, 'agent1');
+      }
+      if (turn === 1) writeStep(q, 'w3');
+      q.text(`msg_${turn}`, `Reply ${turn}`);
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    await flush();
+    await mgr.send(s.id, 'Now add totals');
+    await flush();
+    await mgr.send(s.id, 'Lovely');
+    await flush();
+    const live = lastPage(s.id);
+    expect(live?.versions.map((v) => [v.n, v.hasCopy])).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    expect(live?.toolUseIds).toEqual(['w1', 'w2', 'w3']);
+
+    const user = (uuid: string, text: string): HistoryMessage => ({
+      type: 'user',
+      uuid,
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+    });
+    const use = (id: string, name: string, input: Record<string, unknown>, parent: string | null = null) => ({
+      type: 'assistant',
+      uuid: `a-${id}`,
+      message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+      parent_tool_use_id: parent,
+    });
+    const done = (id: string, parent: string | null = null) => ({
+      type: 'user',
+      uuid: `r-${id}`,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+      parent_tool_use_id: parent,
+    });
+    const w = { file_path: SRC, content: HTML };
+    // The engine kept it under its own id; the copies followed it there.
+    await fx.copies.store.rename('sdk-new-1', OLD);
+    fx.past.push({ sessionId: OLD, summary: 'Earlier', lastModified: 1 });
+    fx.history[OLD] = [
+      user('h1', 'Make a budget page'),
+      use('w1', 'Write', w),
+      done('w1'),
+      use('agent1', 'Agent', { prompt: 'polish it' }),
+      use('w2', 'Write', w, 'agent1'),
+      done('w2', 'agent1'),
+      done('agent1'),
+      user('h2', 'Now add totals'),
+      use('w3', 'Write', w),
+      done('w3'),
+    ] as HistoryMessage[];
+    const again = await mgr.start({ resume: OLD });
+    await flush();
+    const replayed = lastPage(again.id);
+    expect(replayed?.key).toBe(live?.key);
+    expect(replayed?.versions.map((v) => [v.n, v.hasCopy])).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    expect(replayed?.toolUseIds).toEqual(live?.toolUseIds);
+    // Both copies were already kept: nothing is copied from the source again.
+    expect(fx.copies.store.copy).not.toHaveBeenCalled();
+  });
+
+  it('asks for a change: the transcript shows only the short line, Claude gets the path behind a marker', async () => {
+    const fx = withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    await mgr.askPage?.(s.id, key, { kind: 'change', note: '  Make the header blue  ' });
+    await flush();
+    const q = fx.queries[0] as FakeQuery;
+    const sent = q.received[1] ?? '';
+    expect(sent.startsWith('Change the page “Budget”: Make the header blue\n\n<tds-page-request>\n')).toBe(
+      true,
+    );
+    expect(sent).toContain(`\`${SRC}\``);
+    expect(sent.endsWith('\n</tds-page-request>')).toBe(true);
+    const shown = events(mgr, s.id).filter((e) => e.type === 'user-message');
+    expect(shown.at(-1)).toMatchObject({ text: 'Change the page “Budget”: Make the header blue' });
+    expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
+    expect(JSON.stringify(events(mgr, s.id))).not.toContain('tds-page-request');
+    // The ask is the person's next message: the page written before it is now version 1.
+    expect(lastPage(s.id)?.versions.map((v) => v.n)).toEqual([1]);
+
+    // Reopened later: the stored message is split the same way.
+    fx.past.push({ sessionId: 'old-ask', summary: 'Earlier', lastModified: 1 });
+    fx.history['old-ask'] = [
+      { type: 'user', uuid: 'h1', message: { role: 'user', content: sent }, parent_tool_use_id: null },
+    ];
+    const again = await mgr.start({ resume: 'old-ask' });
+    const replayed = events(mgr, again.id).filter((e) => e.type === 'user-message');
+    expect(replayed).toEqual([
+      { type: 'user-message', messageId: 'h:h1', text: 'Change the page “Budget”: Make the header blue' },
+    ]);
+    expect(JSON.stringify(events(mgr, again.id))).not.toContain(SRC);
+  });
+
+  it('splits the note off a stored /tds-doc ask too (Claude Code keeps it as the skill’s arguments)', async () => {
+    const fx = withPages();
+    const note = withPageNote('Convert the page “Budget” to TDS branding', `Read \`${SRC}\`.`);
+    fx.past.push({ sessionId: 'old-brand', summary: 'Earlier', lastModified: 1 });
+    fx.history['old-brand'] = [
+      {
+        type: 'user',
+        uuid: 'h1',
+        message: {
+          role: 'user',
+          content: `<command-message>tds-doc</command-message>\n<command-name>/tds-doc</command-name>\n<command-args>${note}</command-args>`,
+        },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: 'old-brand' });
+    expect(events(mgr, s.id).filter((e) => e.type === 'user-message')).toEqual([
+      { type: 'user-message', messageId: 'h:h1', text: '/tds-doc Convert the page “Budget” to TDS branding' },
+    ]);
+    expect(JSON.stringify(events(mgr, s.id))).not.toContain(SRC);
+  });
+
+  it('points Claude at the app’s copy when its own file has gone', async () => {
+    const fx = withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    fx.copies.disk.clear();
+    await mgr.askPage?.(s.id, key, { kind: 'change', note: 'Shorter' });
+    await flush();
+    const sent = fx.queries[0]?.received[1] ?? '';
+    // Sending the ask keeps the in-progress copy: Claude is pointed at where it is kept.
+    expect(sent).toContain(`\`/data/pages/sdk-new-1/${key}/v-w1.html\``);
+    expect(sent).toContain('stored copy');
+    // Read from the copy, saved back where the page was first saved so it stays the same page.
+    expect(sent).toContain(`save the result with the Write tool to \`${SRC}\``);
+    expect(sent).toContain(`Its source file is \`/data/pages/`);
+    expect(fx.copies.kept.has(`sdk-new-1/${key}/w1`)).toBe(true);
+  });
+
+  it('makes the TDS-branded copy of a version for download (R5, O1)', async () => {
+    withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page', client: 'urban-cooling' });
+    const key = await pageKey(s.id);
+    const draft = await mgr.brandedCopy?.(s.id, key, 0);
+    expect(draft?.name).toMatch(/^budget-tds-\d{4}-\d{2}-\d{2}\.html$/);
+    expect(draft?.html).toContain('<title>Budget | The Digital Stride</title>');
+    expect(draft?.html).toContain('Urban Cooling');
+    expect(draft?.html).toContain('sandbox="allow-scripts allow-popups"');
+    expect(draft?.html).toContain(`content="${PAGE_WRAPPER_CSP.replace(/'/g, "'")}"`);
+    expect(draft?.html).not.toContain('frame-ancestors');
+    expect(await mgr.brandedCopy?.(s.id, key, 1)).toBeNull();
+    expect(await mgr.brandedCopy?.(s.id, 'nope', 0)).toBeNull();
+    await expectCode(
+      Promise.resolve().then(() => mgr.brandedCopy?.('nobody', key, 0)),
+      'not-found',
+    );
+  });
+
+  it('makes the branded copy self-contained, and says when some of it still needs the internet (R8)', async () => {
+    const LIB = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+    const OTHER = 'https://cdn.plot.ly/plotly.min.js';
+    const asked: string[] = [];
+    const assets: AssetCache = {
+      get: async (url) => {
+        asked.push(url);
+        return url === LIB ? Buffer.from('window.Chart = "</script>";') : null;
+      },
+    };
+    const staging = stagingFor();
+    const fx = withPages(writing, { assets, uploads: staging });
+    fx.copies.disk.set(SRC, `<!doctype html><title>Budget</title><script src="${LIB}"></script><p>v</p>`);
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    const whole = await mgr.brandedCopy?.(s.id, key, 0);
+    expect(whole?.selfContained).toBe(true);
+    // Inlined before wrapping: inside the frame's srcdoc, attribute-escaped.
+    expect(whole?.html).toContain(
+      '&lt;script&gt;window.Chart = &quot;&lt;\\/script&gt;&quot;;&lt;/script&gt;',
+    );
+    expect(whole?.html).not.toContain(LIB);
+    expect(asked).toEqual([LIB]);
+    // The filed copy is the same self-contained file.
+    await mgr.askPage?.(s.id, key, { kind: 'brand' });
+    await flush();
+    const sent = fx.queries[0]?.received[1] ?? '';
+    const line = sent.split('\n').find((l) => l.startsWith('- budget-tds-'));
+    const stagedPath = line?.slice(line.indexOf(': ') + 2) ?? '';
+    expect(readFileSync(stagedPath, 'utf8')).toContain('window.Chart = ');
+    staging.close();
+
+    fx.copies.disk.set(SRC, `<!doctype html><title>Budget</title><script src="${OTHER}"></script>`);
+    const t = await mgr.start({ prompt: 'Make another' });
+    const other = await mgr.brandedCopy?.(t.id, await pageKey(t.id), 0);
+    expect(other?.selfContained).toBe(false);
+    expect(other?.html).toContain(OTHER);
+  });
+
+  it('files the branded copy by sending it as an attachment with the branding note (O1, O7)', async () => {
+    const staging = stagingFor();
+    const fx = withPages(writing, { uploads: staging });
+    const s = await mgr.start({ prompt: 'Make a budget page', client: 'urban-cooling' });
+    const key = await pageKey(s.id);
+    await mgr.askPage?.(s.id, key, { kind: 'brand' });
+    await flush();
+    const sent = fx.queries[0]?.received[1] ?? '';
+    expect(
+      sent.startsWith('Here’s the TDS-branded copy of “Budget”.') ||
+        sent.startsWith("Here's the TDS-branded copy of “Budget”."),
+    ).toBe(true);
+    expect(sent).toContain('<tds-attachments>');
+    expect(sent).toContain('clients/urban-cooling/reports/');
+    expect(sent.endsWith('\n</tds-page-request>')).toBe(true);
+    const line = sent.split('\n').find((l) => l.startsWith('- budget-tds-'));
+    const stagedPath = line?.slice(line.indexOf(': ') + 2) ?? '';
+    expect(stagedPath.startsWith(`${staging.root}/`)).toBe(true);
+    expect(readFileSync(stagedPath, 'utf8')).toContain('<title>Budget | The Digital Stride</title>');
+    // The transcript shows the short line and the attachment, like one the person added.
+    const shown = events(mgr, s.id)
+      .filter((e) => e.type === 'user-message')
+      .at(-1);
+    expect(shown).toMatchObject({ attachments: [expect.objectContaining({ kind: 'document' })] });
+    expect(JSON.stringify(shown)).not.toContain(staging.root as string);
+    expect(filesOf(events(mgr, s.id)).at(-1)?.attachments).toEqual([
+      expect.objectContaining({ name: expect.stringMatching(/^budget-tds-.*\.html$/), filedKey: null }),
+    ]);
+
+    // Reopened: the attachment is still found behind the page note.
+    fx.past.push({ sessionId: 'old-filed', summary: 'Earlier', lastModified: 1 });
+    fx.history['old-filed'] = [
+      { type: 'user', uuid: 'h1', message: { role: 'user', content: sent }, parent_tool_use_id: null },
+    ];
+    const again = await mgr.start({ resume: 'old-filed' });
+    await flush();
+    const replayed = events(mgr, again.id).filter((e) => e.type === 'user-message');
+    expect(replayed[0]).toMatchObject({ attachments: [expect.objectContaining({ kind: 'document' })] });
+    expect(filesOf(events(mgr, again.id)).at(-1)?.attachments).toHaveLength(1);
+    staging.close();
+  });
+
+  it('says to download a branded copy that is too large to file, and puts nothing in the chat', async () => {
+    const staging = stagingFor();
+    staging.save = async () => {
+      throw new UploadError('too-large', 'That file is too large to attach. Files can be up to 32 MB.');
+    };
+    const fx = withPages(writing, { uploads: staging });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    const err = await Promise.resolve()
+      .then(() => mgr.askPage?.(s.id, key, { kind: 'brand' }))
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe('bad-request');
+    expect((err as SessionError).message).toContain('Download with TDS branding');
+    expect(fx.queries[0]?.received).toHaveLength(1);
+    staging.close();
+  });
+
+  it('refuses to file a branded copy with attachments off, and puts nothing in the chat', async () => {
+    const fx = withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    await expectCode(mgr.askPage?.(s.id, key, { kind: 'brand' }) as Promise<void>, 'bad-request');
+    expect(fx.queries[0]?.received).toHaveLength(1);
+  });
+
+  it('refuses an ask while Claude is working, for an unknown page, and when it is not understood', async () => {
+    let release: () => void = () => {};
+    withPages(async ({ q, turn }) => {
+      q.init();
+      if (turn === 0) writeStep(q, 'w1');
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    const key = await pageKey(s.id);
+    await expectCode(mgr.askPage?.(s.id, key, { kind: 'change', note: 'x' }) as Promise<void>, 'busy');
+    release();
+    await flush();
+    await expectCode(
+      mgr.askPage?.(s.id, 'nope', { kind: 'change', note: 'x' }) as Promise<void>,
+      'not-found',
+    );
+    for (const bad of [
+      { kind: 'change', note: '   ' },
+      { kind: 'change', note: 'x'.repeat(PAGE_NOTE_MAX + 1) },
+      { kind: 'change' },
+      { kind: 'other' },
+      null,
+    ]) {
+      await expectCode(mgr.askPage?.(s.id, key, bad as never) as Promise<void>, 'bad-request');
+    }
+    await expectCode(mgr.askPage?.('nobody', key, { kind: 'brand' }) as Promise<void>, 'not-found');
+  });
+
+  it('lets a reopened, idle chat take an ask as the composer would', async () => {
+    const fx = withPages(replyScript);
+    fx.past.push({ sessionId: OLD, summary: 'Earlier', lastModified: 1 });
+    fx.history[OLD] = [
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'art1', name: 'Artifact', input: { file_path: SRC } }],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'r1',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'art1', content: `Published ${SRC} at ${URL1}` }],
+        },
+        parent_tool_use_id: null,
+      },
+    ];
+    const s = await mgr.start({ resume: OLD });
+    const key = await pageKey(s.id);
+    // Rebuilt from history: the newest version had no copy and its file is there, so it is copied now.
+    expect(fx.copies.store.copy).toHaveBeenCalledWith(OLD, key, 'art1', SRC);
+    expect(lastPage(s.id)).toMatchObject({ url: URL1, draft: false, versions: [{ n: 1, hasCopy: true }] });
+    expect(fx.queries).toHaveLength(0);
+    await mgr.askPage?.(s.id, key, { kind: 'change', note: 'Add a total' });
+    await flush();
+    expect(fx.queries).toHaveLength(1);
+    expect(fx.queries[0]?.received[0]).toContain('Add a total\n\n<tds-page-request>\n');
+  });
+
+  it('moves the pages folder when the chat gets a new id, and to the Bin with the chat', async () => {
+    const fx = withPages(({ q }) => {
+      q.init({ session_id: NEW });
+      q.result();
+    });
+    fx.past.push({ sessionId: OLD, summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: OLD, prompt: 'carry on' });
+    await flush();
+    expect(fx.copies.store.rename).toHaveBeenCalledWith(OLD, NEW);
+    await mgr.close(s.id);
+
+    fx.past.splice(0);
+    fx.past.push({ sessionId: NEW, summary: 'Later', lastModified: 2 });
+    fx.engine.trashSession = vi.fn(async () => {});
+    await mgr.deletePast(NEW);
+    expect(fx.copies.store.trashChat).toHaveBeenCalledWith(NEW);
+  });
+
+  it('leaves a chat’s pages alone when its history could not be moved to the Bin', async () => {
+    const fx = withPages();
+    fx.past.push({ sessionId: OLD, summary: 'Earlier', lastModified: 1 });
+    fx.engine.trashSession = vi.fn(async () => {
+      throw new Error('no');
+    });
+    await expectCode(mgr.deletePast(OLD), 'internal');
+    expect(fx.copies.store.trashChat).not.toHaveBeenCalled();
+  });
+});
+
+describe('the page note', () => {
+  it('splits only a whole note off the very end', () => {
+    expect(splitPageNote('Change it\n\n<tds-page-request>\nsecret /path\n</tds-page-request>')).toBe(
+      'Change it',
+    );
+    expect(splitPageNote(withPageNote('/tds-doc Convert', 'a\nb'))).toBe('/tds-doc Convert');
+    expect(withPageNote('hi', null)).toBe('hi');
+    for (const text of [
+      'plain text',
+      '<tds-page-request>\nx\n</tds-page-request> and more',
+      'x<tds-page-request>\ny\n</tds-page-request>',
+    ]) {
+      expect(splitPageNote(text)).toBe(text);
+    }
   });
 });

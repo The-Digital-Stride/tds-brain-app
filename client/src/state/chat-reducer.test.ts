@@ -239,6 +239,25 @@ describe('chatReducer', () => {
     expect(again.files).toEqual({ files: [], attachments: [], links: [] });
   });
 
+  it("keeps the snapshot's pages, and leaves them out when an older server sends none", () => {
+    const pg = {
+      key: 'k',
+      title: 'Page',
+      url: null,
+      versions: [],
+      draft: true,
+      fileKey: null,
+      live: false,
+      multiFile: false,
+      toolUseIds: ['t1'],
+      order: 1,
+    };
+    const s = apply([seq(1, { type: 'files', files: [], attachments: [], links: [], pages: [pg] })]);
+    expect(s.files.pages).toEqual([pg]);
+    const older = apply([seq(2, { type: 'files', files: [], attachments: [], links: [] })], s);
+    expect(older.files).not.toHaveProperty('pages');
+  });
+
   it('starts with an empty files snapshot', () => {
     expect(initialChatState.files).toEqual({ files: [], attachments: [], links: [] });
   });

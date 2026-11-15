@@ -8,7 +8,8 @@
  * Read-only: never touches the brain. Every path goes through `resolve` (the library), so a file the
  * person could not open in Documents is never reported, and nothing outside the brain is either.
  */
-import { basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { basename, resolve as resolvePath } from 'node:path';
 import {
   findPathMentions,
   findWebLinks,
@@ -32,6 +33,14 @@ import {
   CHAT_LINK_MAX_CHARS,
   CHAT_LINKS_MAX,
 } from '../../shared/contract.ts';
+import { artifactPublish, artifactPublishResult, isRealPage, pageTitle } from '../../shared/pages.ts';
+import {
+  type ArtifactPublish,
+  CHAT_PAGES_MAX,
+  type ChatPage,
+  PAGE_VERSIONS_MAX,
+} from '../../shared/pages-contract.ts';
+import { sourceShapeOk } from '../store/page-copies.ts';
 import { proposedChange } from './file-change.ts';
 
 export type ResolvePath = (
@@ -45,6 +54,48 @@ export interface TrackedAttachment {
   stagedPath: string;
 }
 
+/** Kept copies removed to make room, by page key and the tool use that names them. */
+export type EvictedCopies = { key: string; id: string }[];
+
+/**
+ * Where the chat's page copies live (`server/store/page-copies.ts`, bound to the chat). Without it
+ * pages are still listed (from what the history shows), with no copies.
+ */
+export interface PageCopyPort {
+  /** The real spelling of a written path when it may be a page source (shape, allowed roots), else null. Reads nothing. */
+  locate(filePath: string): Promise<string | null>;
+  /**
+   * Copies the file as page `key`'s in-progress copy for tool use `id` (replacing the earlier one).
+   * With `mustBePage`, a file that isn't a real page is left uncopied (`page: false`). Null when unreadable.
+   */
+  draft(
+    key: string,
+    id: string,
+    filePath: string,
+    mustBePage: boolean,
+  ): Promise<{ title: string; page: boolean } | null>;
+  /** In-progress copy `id` becomes the kept copy of a version; null when there is none. */
+  keep(key: string, id: string): Promise<{ evicted: EvictedCopies } | null>;
+  /** Copies the file straight to kept copy `id`; null when it could not be copied. */
+  copy(key: string, id: string, filePath: string): Promise<{ title: string; evicted: EvictedCopies } | null>;
+  /** The kept copy on disk ('' title when untitled), or null. */
+  held(key: string, id: string): Promise<{ title: string } | null>;
+  /** Whether the file as it is now is a real page; null when it can't be read. */
+  isPage(filePath: string): Promise<boolean | null>;
+}
+
+/** What the server knows of one page: never sent to the browser as is (paths and ids stay here). */
+export interface PageInfo {
+  title: string;
+  url: string | null;
+  /** The newest source, as Claude gave it. */
+  filePath: string;
+  /** Written since the last boundary (served as `n = 0`); `id` names its in-progress copy. */
+  draft: { id: string; hasCopy: boolean } | null;
+  /** Oldest first; `id` names each kept copy. */
+  versions: { n: number; id: string; hasCopy: boolean }[];
+}
+
 export interface ChatFilesOptions {
   /**
    * The brain root as configured and as its real path (they differ when it sits behind a symbolic
@@ -54,6 +105,8 @@ export interface ChatFilesOptions {
   resolve: ResolvePath;
   /** Stamps live edits for `changes`. */
   now?: () => Date;
+  /** Page copies (plan 2026-11-14-artifacts-in-app, decision 2 and revision 2). */
+  pages?: PageCopyPort;
 }
 
 export interface ChatFilesTracker {
@@ -71,6 +124,16 @@ export interface ChatFilesTracker {
    *   marked `filed` and the attachment's `filedKey` set (the last one wins).
    * - tool_use WebFetch: its `url`, when http(s), without credentials and at most
    *   CHAT_LINK_MAX_CHARS, is added to `links` on success.
+   * - tool_use Write / Edit / MultiEdit (any parent) of an absolute `.html` / `.htm` path: on success,
+   *   a page when `pages.locate` allows the path and it is a real page (`isRealPage`: of the file as
+   *   copied, live; of a Write's content, or the file as it is now, from history). Keyed by a hash of
+   *   the located path. A live write refreshes the page's in-progress copy (`pages.draft`).
+   * - tool_use Artifact (any parent): `artifactPublish(input)`; a page publish only when its
+   *   tool_result has no `is_error` and `artifactPublishResult(content)` is non-null. It touches the
+   *   page of the same file (else the page with that address, else a new page) like a write, and
+   *   gives it its claude.ai address and `remote` version.
+   *   Each touched page becomes one numbered version at the next `boundary`, named by the last tool
+   *   use that touched it.
    * - text blocks of an `assistant` message with no parent (never a helper's text):
    *   `findPathMentions` → `mentioned`; `findWebLinks` → links (same URL rules).
    * Marks the tracker dirty when anything changed. `history: true`: a stored message, so its kept
@@ -85,7 +148,7 @@ export interface ChatFilesTracker {
    */
   endTurn(): void;
   /**
-   * Null when not dirty. Otherwise clears the dirty flag FIRST (so an `observe` during the await makes
+   * Null when not dirty once the page work queued so far is done. Otherwise clears the dirty flag FIRST (so an `observe` during the await makes
    * the next call run again), resolves the paths touched since the last snapshot (all of them after
    * `endTurn` or on the first call), and returns the whole snapshot. A file that is only `mentioned`
    * and/or `filed` and resolves to `item: null` is left out; one that was read or edited stays, as
@@ -98,6 +161,16 @@ export interface ChatFilesTracker {
    * item and it has kept edits.
    */
   changes(key: string): ChatFileChanges | null;
+  /**
+   * A version boundary (O4): the person's next message, an interrupt, an error or a close (live), or
+   * a person's message and the end of the history (replay). Every page touched since the last one
+   * becomes one numbered version; live, its in-progress copy is kept (`pages.keep`).
+   */
+  boundary(opts?: { history?: boolean }): void;
+  /** Resolves once the page work queued so far is done (tests and the page routes). */
+  settled(): Promise<void>;
+  /** One page by its key, with its newest source path (server only), or null. */
+  page(key: string): PageInfo | null;
 }
 
 type Rec = Record<string, unknown>;
@@ -153,7 +226,73 @@ type Pending =
       shell: string;
       cwd: string | null;
     }
-  | { kind: 'web'; url: string };
+  | { kind: 'web'; url: string }
+  | { kind: 'page'; publish: ArtifactPublish; history: boolean };
+
+/** A Write / Edit / MultiEdit of a path that may be a page, waiting for its result. */
+interface PageWrite {
+  filePath: string;
+  /** A Write's content is a real page (null for an edit, whose result is only on disk). */
+  writeIsPage: boolean | null;
+  /** The title from a Write's content, when it has one. */
+  writeTitle: string | null;
+  history: boolean;
+}
+
+/** The latest touch of a page since the last boundary. */
+interface PageTouch {
+  id: string;
+  at: string | null;
+  filePath: string;
+  hasCopy: boolean;
+  title: string | null;
+}
+
+interface PageVersionRec {
+  n: number;
+  /** The tool use that last touched the page before the boundary: names the kept copy. */
+  id: string;
+  remote: number | null;
+  at: string | null;
+  filePath: string;
+  hasCopy: boolean;
+  /** The copy's title, once known ('' when the page has none). */
+  title: string | null;
+  /** Whether the disk has been asked about this version. */
+  checked: boolean;
+  /** Only a page's newest version gets one try at a copy from its source. */
+  tried: boolean;
+}
+
+interface PageRec {
+  key: string;
+  url: string | null;
+  filePath: string;
+  versions: PageVersionRec[];
+  nextN: number;
+  draft: PageTouch | null;
+  /** claude.ai's version number from a publish since the last boundary. */
+  remote: number | null;
+  live: boolean;
+  multiFile: boolean;
+  toolUseIds: string[];
+  order: number;
+}
+
+const PAGE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
+
+/** Without a copy store: paths are taken as written, and nothing is read or kept. */
+const NO_COPIES: PageCopyPort = {
+  locate: async (p) => (sourceShapeOk(p) ? resolvePath(p) : null),
+  draft: async () => null,
+  keep: async () => null,
+  copy: async () => null,
+  held: async () => null,
+  isPage: async () => null,
+};
+
+/** One address however it is written: no trailing slash. */
+const pageUrlKey = (url: string): string => url.replace(/\/+$/, '');
 
 interface Filing {
   att: Attachment;
@@ -515,6 +654,16 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   let keptBytes = 0;
   let dirty = false;
   let resolveAll = true;
+  const port = opts.pages ?? NO_COPIES;
+  /** By key. */
+  const pages = new Map<string, PageRec>();
+  /** By located path: a page's own file, and any other file published to its address. */
+  const pagesByPath = new Map<string, PageRec>();
+  const pageWrites = new Map<string, PageWrite>();
+  /** Page work runs one job at a time, in the order the messages came (boundaries included). */
+  let pageQueue: Promise<void> = Promise.resolve();
+  /** A page changed since the last snapshot listed them (kept apart from `dirty`: page work runs late). */
+  let pagesDirty = false;
 
   function normalise(raw: unknown): string | null {
     if (typeof raw !== 'string') return null;
@@ -652,6 +801,22 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
   }
 
   function toolUse(id: string, name: string, input: Rec, history: boolean, shell: string): void {
+    if (PAGE_WRITE_TOOLS.has(name) && sourceShapeOk(input.file_path)) {
+      const content = name === 'Write' && typeof input.content === 'string' ? input.content : null;
+      const writeIsPage = content === null ? null : isRealPage(content);
+      pageWrites.delete(id);
+      pageWrites.set(id, {
+        filePath: input.file_path,
+        writeIsPage,
+        writeTitle: content !== null && writeIsPage ? pageTitle(content, '') || null : null,
+        history,
+      });
+      while (pageWrites.size > PENDING_MAX) {
+        const first = pageWrites.keys().next().value;
+        if (first === undefined) break;
+        pageWrites.delete(first);
+      }
+    }
     if (FILE_TOOLS.has(name)) {
       const path = normalise(input.file_path ?? input.notebook_path);
       if (path) setPending(id, { kind: 'file', tool: name, path, input, history });
@@ -729,7 +894,229 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       setPending(id, { kind: 'bash', filings: filingsHere, reads: read, changes: changed, shell, cwd });
     } else if (name === 'WebFetch' && okLink(input.url)) {
       setPending(id, { kind: 'web', url: input.url });
+    } else if (name === 'Artifact') {
+      const publish = artifactPublish(input);
+      if (publish) setPending(id, { kind: 'page', publish, history });
     }
+  }
+
+  function pageKeyOf(located: string): string {
+    return createHash('sha256').update(`page:${located}`).digest('base64url').slice(0, 22);
+  }
+
+  function queuePage(job: () => Promise<void>): void {
+    pageQueue = pageQueue.then(job).catch(() => {});
+  }
+
+  async function drainPages(): Promise<void> {
+    for (;;) {
+      const at = pageQueue;
+      await at;
+      if (at === pageQueue) return;
+    }
+  }
+
+  function newPage(located: string, filePath: string): PageRec {
+    const page: PageRec = {
+      key: pageKeyOf(located),
+      url: null,
+      filePath,
+      versions: [],
+      nextN: 1,
+      draft: null,
+      remote: null,
+      live: false,
+      multiFile: false,
+      toolUseIds: [],
+      order: 0,
+    };
+    pages.set(page.key, page);
+    pagesByPath.set(located, page);
+    while (pages.size > CHAT_PAGES_MAX) {
+      let oldest: PageRec | null = null;
+      for (const p of pages.values()) if (p !== page && (!oldest || p.order < oldest.order)) oldest = p;
+      if (!oldest) break;
+      pages.delete(oldest.key);
+      for (const [path, p] of pagesByPath) if (p === oldest) pagesByPath.delete(path);
+    }
+    return page;
+  }
+
+  function dropEvicted(evicted: EvictedCopies): void {
+    for (const e of evicted) {
+      const p = pages.get(e.key);
+      for (const v of p?.versions ?? []) if (v.id === e.id) v.hasCopy = false;
+    }
+  }
+
+  /** Tool use `id` changed the page (or published it): the latest touch since the last boundary. */
+  function touchPage(
+    page: PageRec,
+    id: string,
+    filePath: string,
+    history: boolean,
+    copied: { title: string } | null,
+    title: string | null,
+  ): void {
+    page.filePath = filePath;
+    page.order = ++counter;
+    if (!page.toolUseIds.includes(id)) page.toolUseIds.push(id);
+    if (page.toolUseIds.length > CHAT_FILE_TOOL_IDS_MAX)
+      page.toolUseIds.splice(0, page.toolUseIds.length - CHAT_FILE_TOOL_IDS_MAX);
+    page.draft = {
+      id,
+      at: history ? null : now().toISOString(),
+      filePath,
+      hasCopy: copied !== null,
+      title: copied?.title || title,
+    };
+    pagesDirty = true;
+  }
+
+  async function pageWritten(id: string, w: PageWrite): Promise<void> {
+    const located = await port.locate(w.filePath);
+    if (!located) return;
+    const known = pagesByPath.get(located) ?? null;
+    const key = known?.key ?? pageKeyOf(located);
+    // Live: the file as it is now is exactly what this write left.
+    const copied = w.history ? null : await port.draft(key, id, w.filePath, known === null);
+    let isPage: boolean;
+    if (known) isPage = true;
+    else if (copied) isPage = copied.page;
+    else if (w.writeIsPage !== null) isPage = w.writeIsPage;
+    else if (!w.history) isPage = false;
+    else {
+      // An edit from history: the file as it is now or, when that no longer says so (the source is
+      // gone), a copy live kept under this tool use, so replay finds the page the live chat had.
+      isPage =
+        (await port.isPage(w.filePath)) === true || (await port.held(key, id).catch(() => null)) !== null;
+    }
+    if (!isPage) return;
+    const page = known ?? newPage(located, w.filePath);
+    touchPage(page, id, w.filePath, w.history, copied, w.writeTitle);
+  }
+
+  async function pagePublished(
+    id: string,
+    publish: ArtifactPublish,
+    history: boolean,
+    done: { url: string; remote: number | null },
+  ): Promise<void> {
+    const located = (await port.locate(publish.filePath)) ?? resolvePath(publish.filePath);
+    const at = pageUrlKey(done.url);
+    const byUrl = (url: string | null) =>
+      url ? [...pages.values()].find((p) => p.url !== null && p.url === pageUrlKey(url)) : undefined;
+    let page = pagesByPath.get(located) ?? byUrl(at) ?? byUrl(publish.updatesUrl);
+    if (!page) page = newPage(located, publish.filePath);
+    else if (!pagesByPath.has(located)) pagesByPath.set(located, page);
+    page.url = at;
+    page.remote = done.remote;
+    // claude.ai keeps a page's capabilities and files on a redeploy that leaves them out.
+    page.live ||= publish.live;
+    page.multiFile ||= publish.multiFile;
+    const copied = history ? null : await port.draft(page.key, id, publish.filePath, false);
+    touchPage(page, id, publish.filePath, history, copied, null);
+  }
+
+  async function closePages(history: boolean): Promise<void> {
+    for (const page of pages.values()) {
+      const d = page.draft;
+      if (!d) continue;
+      page.draft = null;
+      const v: PageVersionRec = {
+        n: page.nextN++,
+        id: d.id,
+        remote: page.remote,
+        at: d.at,
+        filePath: d.filePath,
+        hasCopy: false,
+        title: d.title,
+        checked: false,
+        tried: false,
+      };
+      page.remote = null;
+      if (!history && d.hasCopy) {
+        const kept = await port.keep(page.key, d.id).catch(() => null);
+        if (kept) {
+          v.hasCopy = v.checked = v.tried = true;
+          dropEvicted(kept.evicted);
+        }
+      }
+      page.versions.push(v);
+      if (page.versions.length > PAGE_VERSIONS_MAX)
+        page.versions.splice(0, page.versions.length - PAGE_VERSIONS_MAX);
+      pagesDirty = true;
+    }
+  }
+
+  /**
+   * Asks the disk about versions not yet looked up (a kept copy, or an in-progress copy left by a
+   * stop, which is exactly that version), and copies a page's newest version from its source when it
+   * has no copy and nothing has touched the page since (it would get later content otherwise).
+   */
+  async function settlePageCopies(): Promise<void> {
+    for (const page of pages.values()) {
+      for (const v of page.versions) {
+        if (v.checked) continue;
+        v.checked = true;
+        let got = await port.held(page.key, v.id).catch(() => null);
+        if (!got && (await port.keep(page.key, v.id).catch(() => null))) {
+          got = await port.held(page.key, v.id).catch(() => null);
+        }
+        if (got) {
+          v.hasCopy = true;
+          v.title = got.title || v.title;
+          v.tried = true;
+        }
+      }
+      const newest = page.versions.at(-1);
+      if (newest && !newest.hasCopy && !newest.tried && !page.draft) {
+        newest.tried = true;
+        const got = await port.copy(page.key, newest.id, newest.filePath).catch(() => null);
+        if (got) {
+          newest.hasCopy = true;
+          newest.title = got.title || newest.title;
+          dropEvicted(got.evicted);
+        }
+      }
+    }
+  }
+
+  async function settlePages(): Promise<void> {
+    queuePage(settlePageCopies);
+    await drainPages();
+  }
+
+  function pageTitleOf(page: PageRec): string {
+    if (page.draft?.title) return page.draft.title;
+    for (let i = page.versions.length - 1; i >= 0; i--) {
+      const t = page.versions[i]?.title;
+      if (t) return t;
+    }
+    return pageTitle('', page.filePath);
+  }
+
+  function listPages(found: Map<string, Resolved>): ChatPage[] {
+    return [...pages.values()]
+      .filter((p) => p.versions.length > 0 || p.draft !== null)
+      .sort((a, b) => b.order - a.order)
+      .slice(0, CHAT_PAGES_MAX)
+      .map((p) => {
+        const rel = normalise(p.filePath);
+        const r = rel ? found.get(rel) : null;
+        return {
+          key: p.key,
+          title: pageTitleOf(p),
+          url: p.url,
+          versions: p.versions.map((v) => ({ n: v.n, remote: v.remote, at: v.at, hasCopy: v.hasCopy })),
+          draft: p.draft !== null,
+          fileKey: r?.item ? r.key : null,
+          live: p.live,
+          multiFile: p.multiFile,
+          toolUseIds: [...p.toolUseIds],
+          order: p.order,
+        };
+      });
   }
 
   function setPending(id: string, p: Pending): void {
@@ -742,12 +1129,21 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     }
   }
 
-  function toolResult(id: string, failed: boolean): void {
+  function toolResult(id: string, failed: boolean, content: unknown): void {
+    const w = pageWrites.get(id);
+    if (w) {
+      pageWrites.delete(id);
+      if (!failed) queuePage(() => pageWritten(id, w));
+    }
     const p = pending.get(id);
     if (!p) return;
     pending.delete(id);
     if (failed) return;
-    if (p.kind === 'web') {
+    if (p.kind === 'page') {
+      const done = artifactPublishResult(content);
+      const { publish, history } = p;
+      if (done) queuePage(() => pagePublished(id, publish, history, done));
+    } else if (p.kind === 'web') {
       addLink(p.url);
     } else if (p.kind === 'bash') {
       // The shell keeps a folder only when the command worked.
@@ -808,14 +1204,22 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     touched.clear();
     const filed = filings.splice(0);
     const seen = sightings.splice(0);
+    const pageRels = [...pages.values()].flatMap((p) => {
+      const rel = normalise(p.filePath);
+      return rel ? [rel] : [];
+    });
     const wanted = [
       ...new Set([
         ...paths,
+        ...pageRels,
         ...filed.flatMap((f) => f.candidates),
         ...seen.flatMap((s) => (s.kind === 'shell' ? [...s.reads, ...s.changes] : s.tiers.flat())),
       ]),
     ];
     try {
+      await settlePages();
+      // Everything queued so far is in this listing.
+      pagesDirty = false;
       return await resolveAndList(paths, filed, seen, wanted);
     } catch (err) {
       // Put the work back, so the next snapshot tries these paths again instead of waiting for the turn end.
@@ -950,7 +1354,10 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       .sort((a, b) => b.order - a.order)
       .slice(0, CHAT_FILES_MAX);
     const shown = new Set(files.map((f) => f.key));
-    return {
+    const listed = listPages(found);
+    // A page's own address is shown as the page, not again as a web link.
+    const pageUrls = new Set(listed.flatMap((p) => (p.url ? [pageUrlKey(p.url)] : [])));
+    const snap: ChatFilesSnapshot = {
       files,
       attachments: attachments.map((a) => ({
         name: a.name,
@@ -959,9 +1366,13 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       })),
       links: [...links.keys()]
         .reverse()
+        .filter((url) => !pageUrls.has(pageUrlKey(url)))
         .slice(0, CHAT_LINKS_MAX)
         .map((url) => ({ url })),
     };
+    // Left out for a chat with none, so it looks exactly as before.
+    if (listed.length > 0) snap.pages = listed;
+    return snap;
   }
 
   return {
@@ -993,7 +1404,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         } else if (message.type === 'user' && Array.isArray(content)) {
           for (const b of content) {
             if (isRec(b) && b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-              toolResult(b.tool_use_id, b.is_error === true);
+              toolResult(b.tool_use_id, b.is_error === true, b.content);
             }
           }
         }
@@ -1025,7 +1436,11 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     },
 
     async snapshot() {
-      if (!dirty) return null;
+      if (!dirty) {
+        // Page work still queued (a write's copy, a boundary) may be what this snapshot is for.
+        await drainPages();
+        if (!dirty && !pagesDirty) return null;
+      }
       dirty = false;
       try {
         return await build();
@@ -1033,6 +1448,27 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         dirty = true;
         return null;
       }
+    },
+
+    boundary(o) {
+      const history = o?.history === true;
+      queuePage(() => closePages(history));
+    },
+
+    settled() {
+      return drainPages();
+    },
+
+    page(key) {
+      const p = typeof key === 'string' ? pages.get(key) : undefined;
+      if (!p || (p.versions.length === 0 && !p.draft)) return null;
+      return {
+        title: pageTitleOf(p),
+        url: p.url,
+        filePath: p.filePath,
+        draft: p.draft ? { id: p.draft.id, hasCopy: p.draft.hasCopy } : null,
+        versions: p.versions.map((v) => ({ n: v.n, id: v.id, hasCopy: v.hasCopy })),
+      };
     },
 
     changes(key) {

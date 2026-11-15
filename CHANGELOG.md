@@ -2,6 +2,19 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.31.0 — 2026-11-14
+
+- **feat**: open Claude's published pages in the app, suggest changes and convert to TDS branding
+- **feat**: pages are the HTML Claude writes; TDS-branded download and filing
+- **fix**: keep pages in the chat state; plain version names; no republish talk without a link
+- **fix**: show the TDS logo as a picture so a logo file can never run script in a client copy
+- **fix**: self-contained branded copies, sandboxed library pages, replay parity
+- **fix**: stop a page that leaves for another site instead of reloading it; keep deferred script order
+- **fix**: say to download a branded copy that is too large to file
+- **feat**: Claude asks where a new document goes when nobody has said
+- **feat**: open the page Claude made when its turn ends; never a browser window
+- **fix**: keep showing a closed chat's latest page, open late file lists, save changes back to the page
+
 ## v0.30.0 — 2026-11-14
 
 - **feat**: search logic and client codes for the client picker

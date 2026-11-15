@@ -7,9 +7,10 @@
  * `query`, `listSessions` and `getSessionMessages` are injected, so tests never start Claude Code.
  */
 import { randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { constants as fsConstants, promises as fsp, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { Readable } from 'node:stream';
 import type {
   HookCallback,
   Options,
@@ -71,12 +72,19 @@ import {
   type SkillLevel,
   type TurnLevel,
 } from '../../shared/levels-contract.ts';
+import { brandedFileName, brandedPage, brandingMessage, suggestionMessage } from '../../shared/pages.ts';
+import { PAGE_NOTE_MAX, type PageAskRequest, type PageRef } from '../../shared/pages-contract.ts';
+import { PAGE_WRAPPER_CSP } from '../http/security.ts';
+import { type AssetCache, inlinePageAssets } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import type { ContextReadingStore } from '../store/context-readings.ts';
+import type { PageCopyStore } from '../store/page-copies.ts';
 import { GONE_MESSAGE, type StagedFile, UploadError, type UploadStaging } from '../uploads/staging.ts';
 import {
   type ChatFilesTracker,
   createChatFiles,
+  type PageCopyPort,
+  type PageInfo,
   type ResolvePath,
   type TrackedAttachment,
 } from './chat-files.ts';
@@ -218,6 +226,24 @@ export interface SessionManagerOptions {
   chatKinds?: ChatKindStore;
   /** Each chat's newest context reading, by `sdkSessionId`. Optional: without it nothing is kept. */
   contextReadings?: ContextReadingStore;
+  /**
+   * The app's copies of the pages chats publish (plan 2026-11-14-artifacts-in-app, decision 2).
+   * Without it pages are listed with no copies, and asks name Claude's own file.
+   */
+  pageCopies?: PageCopyStore;
+  /**
+   * Where a branded copy's outside scripts, stylesheets and fonts come from, so the copy is
+   * self-contained (R8). Without it the branded copy keeps them as addresses.
+   */
+  assets?: AssetCache;
+}
+
+/** A page wrapped in the TDS bar, ready to save or file. */
+export interface BrandedCopy {
+  name: string;
+  html: string;
+  /** False when a script, stylesheet or font it uses still has to be fetched from the internet. */
+  selfContained: boolean;
 }
 
 export class SessionError extends Error {
@@ -276,6 +302,29 @@ export interface SessionManager extends LevelSessionApi {
    * Optional so stand-ins (setup mode) still fit: without it the route answers `not-found`.
    */
   contextDetail?(id: string): Promise<ChatContextDetail>;
+  /**
+   * The app's copy of version `n` of one of a chat's pages (`ChatPage.key`), or null when the chat
+   * has no such version or no copy of it. Also answers for a recently closed chat. Throws `not-found`
+   * for a chat it doesn't know. Optional so stand-ins (setup mode, tests) still fit.
+   */
+  pageCopy?(id: string, key: string, n: number): Promise<Buffer | null>;
+  /**
+   * Version `n` of a chat's page (`0` the in-progress copy) wrapped in the TDS bar (`brandedPage`),
+   * with the file name to save it as (`brandedFileName`). What the page loads from the allowed
+   * sources is written into it first (R8); `selfContained` is false when some of it still comes from
+   * the internet. Null when there is no copy of it. Throws `not-found` for a chat it doesn't know
+   * (closed chats answer for a while, as for `pageCopy`).
+   */
+  brandedCopy?(id: string, key: string, n: number): Promise<BrandedCopy | null>;
+  /**
+   * Asks Claude to change a page or to file its TDS-branded copy (`PageAskRequest`), sent like a typed
+   * message: the same role check and busy rule, an idle chat starting its engine. Only the message's
+   * short line reaches the transcript. `brand` stages the branded copy of the newest kept or
+   * in-progress copy as an attachment and sends it with `brandingMessage`. Throws SessionError:
+   * not-found (chat, page, or no copy to brand) | session-closed | busy | bad-request (attachments
+   * off or full) | not-allowed | engine-missing.
+   */
+  askPage?(id: string, key: string, req: PageAskRequest): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,8 +337,11 @@ const FALLBACK_MODELS: ModelChoice[] = [
 ];
 
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+/** Closed chats whose pages can still be shown. */
+const CLOSED_PAGES_MAX = 20;
 const DEFAULT_CLOSE_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_CHARS = 100_000;
+const BUSY_MESSAGE = 'Claude is still working on the last message. Wait, or stop it first.';
 const MAX_ANSWER_CHARS = 10_000;
 const TITLE_CHARS = 60;
 /** A chat id is a UUID, nothing else, so it can never point outside the history folder. */
@@ -447,6 +499,44 @@ export function notedAttachments(text: string): TrackedAttachment[] {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// The page note (plan 2026-11-14-artifacts-in-app, decision 6): what an ask from the page viewer
+// tells Claude beyond its short visible line. Engine only, split off again on replay.
+// ---------------------------------------------------------------------------
+
+const PAGE_OPEN = '<tds-page-request>';
+const PAGE_CLOSE = '</tds-page-request>';
+
+/** What the engine is sent: the message, a blank line, then the note between its markers. */
+export function withPageNote(message: string, note: string | null): string {
+  return note ? `${message}\n\n${PAGE_OPEN}\n${note}\n${PAGE_CLOSE}` : message;
+}
+
+/** A stored user turn without the page note at its very end (paths never leave this function). */
+export function splitPageNote(text: string): string {
+  if (!text.endsWith(`\n${PAGE_CLOSE}`)) return text;
+  const start = text.lastIndexOf(`${PAGE_OPEN}\n`);
+  if (start <= 0 || !/\s/.test(text[start - 1] ?? '')) return text;
+  return text.slice(0, start).trim();
+}
+
+/** Checks the body of `POST ROUTES.chatPageAsk`; throws `bad-request`. */
+export function parsePageAsk(body: unknown): PageAskRequest {
+  const bad = () => new SessionError('bad-request', 'That request was not understood.');
+  if (!isRec(body)) throw bad();
+  if (body.kind === 'brand') {
+    if (Object.keys(body).some((k) => k !== 'kind')) throw bad();
+    return { kind: 'brand' };
+  }
+  if (body.kind !== 'change' || Object.keys(body).some((k) => k !== 'kind' && k !== 'note')) throw bad();
+  if (typeof body.note !== 'string') throw bad();
+  const note = body.note.trim();
+  if (!note) throw new SessionError('bad-request', 'Say what you would like changed first.');
+  if (note.length > PAGE_NOTE_MAX)
+    throw new SessionError('bad-request', `Keep the change to ${PAGE_NOTE_MAX} characters or fewer.`);
+  return { kind: 'change', note };
+}
+
 /** A past chat's title source without the note, which may be cut short there. */
 function withoutNote(stored: string | undefined): string {
   if (!stored) return '';
@@ -501,9 +591,32 @@ function clientLine(slug: string): string {
   return `The user is working on the client in clients/${slug}/ for this chat. Read that folder's context before client-specific work, and keep to that client unless the user says otherwise.`;
 }
 
-/** Every chat's system prompt append asks for brain-relative paths, so the app can link them (decision 7). */
-export const FILES_LINE =
-  'When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example `clients/acme/reports/audit.md`, even in a list or table under a heading that already names the folder, so the app can open it.';
+/** Every chat is told how pages reach the person in the app (pages plan, revision 2, R3). */
+export const PAGES_LINE =
+  "When the user asks for something visual (a page, chart, dashboard, deck or mock-up), write it as one self-contained HTML file with the Write tool: the app shows that file to the user as a page and opens it for them when your reply ends, so don't look for an Artifact tool. Even when you build it from a template or a script, save the finished file with Write or Edit, not Bash, cp or a script: the app only sees files written that way. Never open it in a browser, a browser tool or a local server to show it to the user; if you need to check how it looks yourself, use a headless screenshot.";
+
+/**
+ * Every chat's system prompt append asks for brain-relative paths, so the app can link them (decision
+ * 7), and says how pages show (R3).
+ */
+/**
+ * Where a new document goes is the person's call: they can't be expected to know the brain's folders,
+ * so Claude asks (the app shows AskUserQuestion as a card) unless they, or a skill, already said.
+ */
+export const SAVE_LINE =
+  "Before saving a new document, page, deck or template the user will keep, if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first. Offer the two to four likeliest places from the brain's save rules, in plain words with the folder in brackets and the best fit first, for example the client's documents (`clients/<client>/reports/`), a template the team can reuse (`templates/`), just for you, not shared (`personal/`), or just show it here, not saved (your scratchpad). The app shows the file wherever it is saved. Don't ask for a quick visual that is only to look at (save it in your scratchpad), or when changing a page or file that already exists.";
+
+export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE}`;
+
+/** The TDS logo sprite the branded copy uses (R5), read from the brain; never larger than this. */
+export const LOGO_SPRITE_PATH = 'templates/tds-doc-system/logo-symbol.svg';
+const LOGO_SPRITE_MAX_BYTES = 256 * 1024;
+
+/** Today as YYYY-MM-DD on this Mac's clock. */
+function localDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 /** A push-based async iterable: the engine's streaming input. */
 function createInputQueue() {
@@ -611,6 +724,8 @@ interface Session {
   userCounter: number;
   /** The chat's files (plan 2026-11-13-chat-files); null when the brain cannot look paths up. */
   files: ChatFilesTracker | null;
+  /** Page copy jobs for this chat run one at a time, in order (a folder rename among them). */
+  pagesChain: Promise<void>;
   /** A snapshot is being worked out; a request meanwhile sets `filesAgain`. */
   filesBusy: boolean;
   filesAgain: boolean;
@@ -790,6 +905,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   /** Earlier chats whose files are being moved to the Bin right now. */
   const deleting = new Set<string>();
   const closedIds = new Set<string>();
+  /** Recently closed chats with files, so their page copies can still be shown. Oldest first. */
+  const closedPages = new Map<string, Session>();
   const changeListeners = new Set<() => void>();
   const itemForPath = opts.brain.libraryItemForPath;
   const resolveFile: ResolvePath | null = itemForPath ? (rel) => itemForPath.call(opts.brain, rel) : null;
@@ -958,7 +1075,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     sdkSessionId: string | null;
   }): Session {
     const now = new Date();
-    return {
+    const s: Session = {
       id: randomUUID(),
       sdkSessionId: fields.sdkSessionId,
       title: fields.title,
@@ -1000,7 +1117,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       closing: false,
       closed: null,
       userCounter: 0,
-      files: resolveFile ? createChatFiles({ brainRoots, resolve: resolveFile }) : null,
+      files: null,
+      pagesChain: Promise.resolve(),
       filesBusy: false,
       filesAgain: false,
       chatTier: null,
@@ -1038,6 +1156,151 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       modelHook: 'unknown',
       kept: null,
     };
+    // Pages need no library: with copies on, a chat lists its pages even where files can't be looked up.
+    if (resolveFile || opts.pageCopies) {
+      s.files = createChatFiles({
+        brainRoots,
+        resolve: resolveFile ?? (async () => null),
+        pages: pagePort(s),
+      });
+    }
+    return s;
+  }
+
+  // -- pages (plan 2026-11-14-artifacts-in-app) -------------------------------
+
+  /** Runs one copy-store job for the chat after the ones before it, under the chat id it has now. */
+  function onPagesChain<T>(
+    s: Session,
+    job: (store: PageCopyStore, sdk: string) => Promise<T>,
+  ): Promise<T | null> {
+    const store = opts.pageCopies;
+    const sdk = s.sdkSessionId;
+    if (!store || !sdk) return Promise.resolve(null);
+    const run = s.pagesChain.then(() => job(store, sdk));
+    s.pagesChain = run.then(
+      () => {},
+      () => {},
+    );
+    return run.catch(() => null);
+  }
+
+  function pagePort(s: Session): PageCopyPort | undefined {
+    const store = opts.pageCopies;
+    if (!store) return undefined;
+    return {
+      // Neither needs the chat's folder, so neither waits for the chat's id.
+      locate: (filePath) => store.locate(filePath).catch(() => null),
+      isPage: (filePath) => store.isPage(filePath).catch(() => null),
+      draft: (key, id, filePath, mustBePage) =>
+        onPagesChain(s, (st, sdk) => st.draft(sdk, key, id, filePath, mustBePage)),
+      keep: (key, id) => onPagesChain(s, (st, sdk) => st.keep(sdk, key, id)),
+      copy: (key, id, filePath) => onPagesChain(s, (st, sdk) => st.copy(sdk, key, id, filePath)),
+      held: (key, id) => onPagesChain(s, (st, sdk) => st.held(sdk, key, id)),
+    };
+  }
+
+  /** The chat's latest copy of a page: the in-progress one when it has a copy, else the newest kept one. */
+  function latestCopy(info: PageInfo): { id: string; which: 'kept' | 'draft' } | null {
+    if (info.draft?.hasCopy) return { id: info.draft.id, which: 'draft' };
+    const v = [...info.versions].reverse().find((x) => x.hasCopy);
+    return v ? { id: v.id, which: 'kept' } : null;
+  }
+
+  /**
+   * The copy `n` names, when the chat holds it. `0` is the latest: the in-progress one, or once that has
+   * been kept (a chat closing keeps it without telling a viewer still open on "Latest") the newest kept.
+   */
+  function copyFor(info: PageInfo, n: number): { id: string; which: 'kept' | 'draft' } | null {
+    if (n === 0) return latestCopy(info);
+    const v = info.versions.find((x) => x.n === n && x.hasCopy);
+    return v ? { id: v.id, which: 'kept' } : null;
+  }
+
+  /**
+   * The best file for Claude to work from: its own while it is still there, else the app's latest
+   * copy. An in-progress copy is named where it will be kept, since sending this message keeps it.
+   */
+  async function pageRef(s: Session, key: string, info: PageInfo): Promise<PageRef> {
+    const own: PageRef = { title: info.title, url: info.url, sourcePath: info.filePath, sourceIsCopy: false };
+    const store = opts.pageCopies;
+    if (!store) return own;
+    if (await store.sourceOk(info.filePath).catch(() => false)) return own;
+    const latest = latestCopy(info);
+    if (!latest) return own;
+    const path = await onPagesChain(s, (st, sdk) => st.keptPath(sdk, key, latest.id));
+    return path ? { ...own, sourcePath: path, sourceIsCopy: true, originalPath: info.filePath } : own;
+  }
+
+  /** The brain's TDS logo sprite, or null (the wrapper then uses a text wordmark). */
+  async function logoSprite(): Promise<string | null> {
+    let handle: fsp.FileHandle | null = null;
+    try {
+      handle = await fsp.open(
+        join(opts.brainRoot, LOGO_SPRITE_PATH),
+        fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+      );
+      const st = await handle.stat();
+      if (!st.isFile() || st.size > LOGO_SPRITE_MAX_BYTES) return null;
+      return (await handle.readFile('utf8')) || null;
+    } catch {
+      return null;
+    } finally {
+      await handle?.close().catch(() => {});
+    }
+  }
+
+  /** The chat's client as the brain names it, or null. */
+  async function clientName(slug: string | null): Promise<string | null> {
+    if (!slug) return null;
+    try {
+      return (await opts.brain.clients()).find((c) => c.slug === slug)?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** One copy of a page wrapped in the TDS bar, with the name to save it as. */
+  async function brand(
+    s: Session,
+    key: string,
+    info: PageInfo,
+    copy: { id: string; which: 'kept' | 'draft' },
+  ): Promise<BrandedCopy | null> {
+    const data = await onPagesChain(s, (st, sdk) => st.read(sdk, key, copy.id, copy.which));
+    if (!data) return null;
+    const date = localDate(new Date());
+    // The page itself is made self-contained before it is wrapped (R8); the wrapper is the app's own.
+    const [logo, client, page] = await Promise.all([
+      logoSprite(),
+      clientName(s.client),
+      inlinePageAssets(data.toString('utf8'), opts.assets ?? null).catch(() => ({
+        html: data.toString('utf8'),
+        selfContained: false,
+      })),
+    ]);
+    const html = brandedPage(page.html, {
+      title: info.title,
+      client,
+      date,
+      logoSprite: logo,
+      csp: PAGE_WRAPPER_CSP,
+    });
+    return { name: brandedFileName(info.title, date), html, selfContained: page.selfContained };
+  }
+
+  /** A chat that can still show its pages: live, or closed a short while ago. */
+  function pageSession(id: string): Session {
+    const s = live.get(id) ?? closedPages.get(id);
+    if (!s) throw new SessionError('not-found', 'That chat could not be found.');
+    return s;
+  }
+
+  /** The page's current state, once every page job queued so far has run. */
+  async function pageInfo(s: Session, key: unknown): Promise<PageInfo | null> {
+    if (typeof key !== 'string' || !s.files) return null;
+    await s.files.settled();
+    return s.files.page(key);
   }
 
   // -- permissions and questions --------------------------------------------
@@ -1169,6 +1432,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     if (raw.type === 'system' && raw.subtype === 'init') {
       const sid = typeof raw.session_id === 'string' ? raw.session_id : null;
       if (sid && sid !== s.sdkSessionId) {
+        const was = s.sdkSessionId;
+        // Queued behind any copy still going to the old folder, so that copy moves too.
+        if (was) void onPagesChain(s, (store) => store.rename(was, sid));
         s.sdkSessionId = sid;
         if (s.unsavedLevel) saveLevel(s, s.unsavedLevel);
         // A personal chat is saved under every id it gets (the old entry stays).
@@ -1199,6 +1465,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       dropHelper(s, raw.tool_use_id);
     }
     if (raw.type === 'result') {
+      // A stopped reply's pages become versions now (O4); otherwise the person's next message does it.
+      if (s.interruptRequested) s.files?.boundary();
       s.turnRunning = false;
       s.interruptRequested = false;
       // Helpers run in the foreground, so none outlives the reply: free every slot.
@@ -1481,6 +1749,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.query = null;
       s.input?.end();
       s.input = null;
+      // Nothing more can touch a page until the next message: what was written is a version (O4).
+      s.files?.boundary();
+      requestFiles(s);
       settleAll(s, 'Claude Code stopped.');
       if (s.helperList.stopAll()) notifyHelpers('now');
       if (!s.closing) {
@@ -1703,9 +1974,13 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     text: string,
     files: readonly StagedFile[] = [],
     skill: string | null = null,
+    pageNote: string | null = null,
   ): void {
     if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
     clearIdle(s);
+    // The person's next message closes what the last reply did to each page into one version (O4).
+    s.files?.boundary();
+    requestFiles(s);
     s.turnRunning = true;
     s.interruptRequested = false;
     s.turnSent = false;
@@ -1740,7 +2015,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.files?.addAttachments(files.map(({ name, kind, path }) => ({ name, kind, stagedPath: path })));
       requestFiles(s);
     }
-    const message = withAttachmentNote(text, files);
+    const message = withPageNote(withAttachmentNote(text, files), pageNote);
     if (!levels) {
       s.turnSent = true;
       s.input?.push(message);
@@ -2193,6 +2468,15 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.closing = true;
     live.delete(s.id);
     closedIds.add(s.id);
+    // Its pages stay viewable for a while (the viewer may still be open on one).
+    if (s.files) {
+      closedPages.set(s.id, s);
+      while (closedPages.size > CLOSED_PAGES_MAX) {
+        const first = closedPages.keys().next().value;
+        if (first === undefined) break;
+        closedPages.delete(first);
+      }
+    }
     clearIdle(s);
     closingSessions.add(s);
     notifyChanged();
@@ -2201,6 +2485,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         await closeEngine(s);
       } finally {
         closingSessions.delete(s);
+        s.files?.boundary();
+        // Kept a while only for its pages: let go of the transcript, which nothing reads once closed.
+        s.events = [];
       }
     })();
     return s.closed;
@@ -2344,8 +2631,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             });
         }
         if (cleaned) {
-          const { text, attachments } = splitAttachmentNote(cleaned);
-          if (attachments.length > 0) s.files?.addAttachments(notedAttachments(cleaned));
+          // The person's message: the boundary between versions, as live (O4).
+          s.files?.boundary({ history: true });
+          const withoutPage = splitPageNote(cleaned);
+          const { text, attachments } = splitAttachmentNote(withoutPage);
+          if (attachments.length > 0) s.files?.addAttachments(notedAttachments(withoutPage));
           emit(
             s,
             attachments.length > 0
@@ -2387,8 +2677,35 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     }
     // A step with no stored result was cut short (the chat was stopped or closed mid-step).
     for (const id of started) emit(s, { type: 'tool-end', toolUseId: id, ok: false });
+    // The end of the history closes the last reply's pages, as a close did live.
+    s.files?.boundary({ history: true });
     // Not awaited: walking cold scopes must not hold up reopening the chat (decision 4).
     requestFiles(s);
+  }
+
+  /**
+   * A message into a live chat, as the composer sends it: the busy rule, the role check for a typed
+   * `/name`, then the turn. `pageNote` rides behind the message for Claude only (an ask from a page).
+   */
+  async function sendTurn(s: Session, body: string, ids: string[], pageNote: string | null): Promise<void> {
+    if (s.turnRunning) throw new SessionError('busy', BUSY_MESSAGE);
+    if (!opts.claudePath) {
+      throw new SessionError(
+        'engine-missing',
+        'Claude Code is not installed on this computer, or the app cannot find it.',
+      );
+    }
+    peekFiles(ids);
+    const skill = await checkSkill(body);
+    if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
+    if (s.turnRunning) throw new SessionError('busy', BUSY_MESSAGE);
+    const claim = claimFiles(ids);
+    try {
+      beginTurn(s, body, claim.files, skill, pageNote);
+    } catch (err) {
+      claim.release();
+      throw err;
+    }
   }
 
   // -- the public face ------------------------------------------------------
@@ -2513,30 +2830,65 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const s = getLive(id);
       const ids = attachmentIds(attachments);
       const body = validText(text, 'message', ids.length > 0);
-      if (s.turnRunning)
+      await sendTurn(s, body, ids, null);
+    },
+
+    async pageCopy(id, key, n) {
+      const s = pageSession(id);
+      const info = await pageInfo(s, key);
+      const copy = info ? copyFor(info, n) : null;
+      if (!copy) return null;
+      return onPagesChain(s, (store, sdk) => store.read(sdk, key, copy.id, copy.which));
+    },
+
+    async brandedCopy(id, key, n) {
+      const s = pageSession(id);
+      const info = await pageInfo(s, key);
+      const copy = info ? copyFor(info, n) : null;
+      return info && copy ? brand(s, key, info, copy) : null;
+    },
+
+    async askPage(id, key, req) {
+      const s = getLive(id);
+      const info = await pageInfo(s, key);
+      if (!info) throw new SessionError('not-found', 'That page could not be found in this chat.');
+      const ask = parsePageAsk(req);
+      if (s.turnRunning) throw new SessionError('busy', BUSY_MESSAGE);
+      const ref = await pageRef(s, key, info);
+      if (ask.kind === 'change') {
+        const msg = suggestionMessage(ref, ask.note);
+        await sendTurn(s, validText(msg.visible, 'message'), [], msg.note);
+        return;
+      }
+      // The branded copy goes in as an attachment the person added, so the usual filing rules apply.
+      const uploads = opts.uploads;
+      if (!uploads?.root) {
         throw new SessionError(
-          'busy',
-          'Claude is still working on the last message. Wait, or stop it first.',
-        );
-      if (!opts.claudePath) {
-        throw new SessionError(
-          'engine-missing',
-          'Claude Code is not installed on this computer, or the app cannot find it.',
+          'bad-request',
+          "Attaching files is switched off on this computer, so the app can't hand Claude the branded copy.",
         );
       }
-      peekFiles(ids);
-      const skill = await checkSkill(body);
-      if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
-      if (s.turnRunning)
-        throw new SessionError(
-          'busy',
-          'Claude is still working on the last message. Wait, or stop it first.',
-        );
-      const claim = claimFiles(ids);
+      const latest = latestCopy(info);
+      const file = latest ? await brand(s, key, info, latest) : null;
+      if (!file) throw new SessionError('not-found', 'The app has no copy of this page to brand.');
+      const bytes = Buffer.from(file.html, 'utf8');
+      let staged: string;
       try {
-        beginTurn(s, body, claim.files, skill);
+        staged = (await uploads.save(Readable.from([bytes]), file.name, bytes.length)).id;
       } catch (err) {
-        claim.release();
+        if (err instanceof UploadError && err.code === 'too-large') {
+          throw new SessionError(
+            'bad-request',
+            "This branded copy is too large to file through Claude. Use “Download with TDS branding” and save it in the client's folder yourself.",
+          );
+        }
+        throw asSessionError(err);
+      }
+      const msg = brandingMessage(ref, s.client);
+      try {
+        await sendTurn(s, validText(msg.visible, 'message'), [staged], msg.note);
+      } catch (err) {
+        await uploads.discard(staged).catch(() => {});
         throw err;
       }
     },
@@ -2683,6 +3035,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           );
         }
         await chatKinds.set(sdkSessionId, 'tds').catch(() => {});
+        // Its pages go with it (to the Bin, never erased); a failure there never undoes the delete.
+        await opts.pageCopies?.trashChat(sdkSessionId).catch(() => {});
         log('Moved an earlier chat to the Bin.');
         notifyChanged();
       } finally {

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
+import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
 import { engineLine } from '../format.ts';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
+import { useOpenPageAfterTurn } from '../shell/useOpenPageAfterTurn.ts';
 import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
 import { type ChatItem, COMPACTING_LINE, initialChatState, pendingCard } from '../state/chat-reducer.ts';
@@ -22,6 +24,8 @@ const REASONS = {
   waiting: 'Claude is waiting for your answer above.',
   closed: 'This chat has ended. Start a new chat to carry on.',
 } as const;
+
+const NO_PAGES: ChatPage[] = [];
 
 /** True when a card other than `requestId` is still waiting on the person. */
 function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
@@ -57,7 +61,7 @@ export function ChatView() {
     setChatLevel,
     dismissLevelOffer,
   } = useStore();
-  const { dispatch: shellDispatch } = useShell();
+  const { dispatch: shellDispatch, state: shell } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
   // Files can be dropped anywhere on the chat column.
@@ -89,6 +93,20 @@ export function ChatView() {
       if (sessionId) shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
     },
     [sessionId, shellDispatch],
+  );
+  const openPage = useCallback(
+    (key: string) => {
+      if (sessionId) shellDispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key } });
+    },
+    [sessionId, shellDispatch],
+  );
+  // The page Claude made or changed opens here when its turn ends, so it is seen in the app.
+  useOpenPageAfterTurn(
+    sessionId,
+    chat.sessionState,
+    chat.files.pages ?? NO_PAGES,
+    shell.viewer !== null,
+    openPage,
   );
 
   const confirming = sessionId !== null && closeRequest === sessionId;
@@ -169,6 +187,8 @@ export function ChatView() {
           files={chat.files.files}
           brainRoot={boot?.brain.path}
           onFile={openFile}
+          pages={chat.files.pages ?? []}
+          onPage={openPage}
         />
       ) : (
         <div className="thread">

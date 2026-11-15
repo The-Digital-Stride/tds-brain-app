@@ -76,6 +76,87 @@ describe('api.deletePastChat', () => {
   });
 });
 
+describe('api.askPage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('posts JSON that passes the real request check', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}'));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.askPage('s 1', 'k/1', { kind: 'change', note: 'Make it blue' });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/sessions/s%201/pages/k%2F1/ask');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ kind: 'change', note: 'Make it blue' });
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    expect(sent['content-type']).toBe('application/json');
+    const decision = checkRequest(
+      {
+        method: 'POST',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+});
+
+describe('downloadBranded', () => {
+  it('fetches the branded copy with a GET that passes the real request check', async () => {
+    const fetchMock = vi.fn(async () => new Response('<html></html>'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }));
+    const a = { click: vi.fn(), remove: vi.fn(), href: '', download: '', rel: '' };
+    vi.stubGlobal('document', { createElement: () => a, body: { appendChild: vi.fn() } });
+    const { downloadBranded } = await import('./api.ts');
+    const path = '/api/sessions/s1/pages/pg1/1/branded';
+    await downloadBranded(path, 'My page');
+    expect(a.download).toBe('My page-tds.html');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(path);
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const decision = checkRequest(
+      {
+        method: 'GET',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+
+  it('reads the file name from Content-Disposition, plain or encoded', async () => {
+    const { dispositionName } = await import('./api.ts');
+    expect(dispositionName('attachment; filename="a b-tds.html"')).toBe('a b-tds.html');
+    expect(dispositionName("attachment; filename*=UTF-8''caf%C3%A9-tds.html")).toBe('café-tds.html');
+    expect(dispositionName(null)).toBeNull();
+  });
+});
+
 describe('streamUrl', () => {
   it('opens the stream with files, levels and context', () => {
     expect(streamUrl('s1', 4)).toBe('/api/stream?session=s1&after=4&files=1&levels=1&context=1');

@@ -320,12 +320,12 @@ describe('opening a document', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Hello' })).toBeTruthy();
   });
 
-  it('opens an HTML page in a frame whose sandbox is present and empty', async () => {
+  it('opens an HTML page in a frame that may run scripts but never gets the app origin', async () => {
     const { container } = render(all());
     await openFrom(/^Explainer/);
     const frame = container.querySelector('iframe') as HTMLIFrameElement;
     expect(frame.hasAttribute('sandbox')).toBe(true);
-    expect(frame.getAttribute('sandbox')).toBe('');
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-popups');
     expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
     expect(frame.getAttribute('title')).toBe('Explainer');
     expect(frame.getAttribute('src')).toBe(`/api/library/page/${encodeURIComponent(page.id)}`);
@@ -370,7 +370,7 @@ describe('opening a document', () => {
     await waitFor(() => expect(view.container.querySelector('iframe')).not.toBe(frame));
   });
 
-  it('a blocked link remounts the page frame and says so; other violations do nothing', async () => {
+  it('a blocked move to another site stops the page frame (no reload loop) and offers it back; other violations do nothing', async () => {
     const { container } = render(all());
     await openFrom(/^Explainer/);
     const frame = container.querySelector('iframe');
@@ -385,10 +385,21 @@ describe('opening a document', () => {
     expect(container.querySelector('iframe')).toBe(frame);
     expect(screen.queryByText('Links to other sites are switched off here.')).toBeNull();
     violate('frame-src https://example.com');
-    expect(container.querySelector('iframe')).not.toBe(frame);
+    // Stopped, not reloaded: a page that leaves as soon as it opens would otherwise reload for ever.
+    expect(container.querySelector('iframe')).toBeNull();
+    expect(screen.getByText('This page tried to open another site, so it was stopped.')).toBeTruthy();
     expect(screen.getByText('Links to other sites are switched off here.').getAttribute('role')).toBe(
       'status',
     );
+    violate('frame-src https://example.com');
+    expect(container.querySelector('iframe')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the page again' }));
+    const again = container.querySelector('iframe');
+    expect(again).not.toBeNull();
+    expect(again).not.toBe(frame);
+    expect(screen.queryByText('Links to other sites are switched off here.')).toBeNull();
+    violate('frame-src https://example.com');
+    expect(container.querySelector('iframe')).toBeNull();
   });
 
   it('an open note is not fetched again when other files change', async () => {

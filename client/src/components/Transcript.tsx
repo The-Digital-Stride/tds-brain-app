@@ -7,6 +7,7 @@ import {
   replyFolders,
 } from '../../../shared/chat-files.ts';
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
+import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { type ActivityEntry, currentStep, toBlocks } from '../state/blocks.ts';
@@ -23,6 +24,10 @@ interface FileLinks {
   byToolUse: ReadonlyMap<string, string>;
   onFile: (key: string) => void;
 }
+/** Marks a page's key where a file's key is expected: the reply link carries it back to `onFile`. */
+const PAGE_KEY_PREFIX = 'artifact-page:';
+// A claude.ai address in reply text, as far as the first character that can't be part of one.
+const CLAUDE_ADDRESS = /https:\/\/claude\.ai\/[^\s)\]>"'`<]+/g;
 const FileLinksContext = createContext<FileLinks | null>(null);
 
 /**
@@ -39,7 +44,11 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
     () => replyFolders(mentions.map((m) => normaliseBrainPath(m, brainRoot))),
     [mentions, brainRoot],
   );
-  const signature = links ? mentions.map((m) => links.link(m, folders) ?? '').join('|') : '';
+  // Addresses are part of the signature too: a page can arrive after the reply that names it.
+  const addresses = useMemo(() => text.match(CLAUDE_ADDRESS) ?? [], [text]);
+  const signature = links
+    ? [...mentions, ...addresses].map((m) => links.link(m, folders) ?? '').join('|')
+    : '';
   const latest = useRef(links);
   latest.current = links;
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable for a signature; reads the latest linker.
@@ -211,27 +220,45 @@ export function Transcript({
   sessionId,
   sessionState,
   files,
+  pages,
   brainRoot = '',
   onFile,
+  onPage,
 }: {
   items: ChatItem[];
   sessionId: string;
   sessionState: SessionState;
   /** The chat's files, for links in replies and steps. Without them nothing is linked. */
   files?: readonly ChatFile[];
+  /** The chat's pages (Artifact publishes): a known claude.ai address, or its step, opens one in the viewer. */
+  pages?: readonly ChatPage[];
   brainRoot?: string;
   onFile?: (key: string) => void;
+  /** Opens a page (its `key`) in the viewer. Without it, pages are not linked. */
+  onPage?: (key: string) => void;
 }) {
   const fileLinks = useMemo<FileLinks | null>(() => {
     if (!files || !onFile) return null;
     const index = indexChatFiles(files);
+    const known = onPage ? (pages ?? []) : [];
+    const byUrl = new Map(known.flatMap((p) => (p.url ? [[p.url.replace(/\/$/, ''), p.key] as const] : [])));
+    const byToolUse = new Map(index.byToolUse);
+    for (const p of known) for (const id of p.toolUseIds) byToolUse.set(id, `${PAGE_KEY_PREFIX}${p.key}`);
     return {
-      link: (raw, folders) => chatFileFor(index, raw, brainRoot ?? '', folders),
+      link: (raw, folders) => {
+        const page = byUrl.get(raw.replace(/\/$/, ''));
+        return page !== undefined
+          ? `${PAGE_KEY_PREFIX}${page}`
+          : chatFileFor(index, raw, brainRoot ?? '', folders);
+      },
       brainRoot: brainRoot ?? '',
-      byToolUse: index.byToolUse,
-      onFile,
+      byToolUse,
+      onFile: (key) => {
+        if (key.startsWith(PAGE_KEY_PREFIX)) onPage?.(key.slice(PAGE_KEY_PREFIX.length));
+        else onFile(key);
+      },
     };
-  }, [files, brainRoot, onFile]);
+  }, [files, pages, brainRoot, onFile, onPage]);
   const blocks = useMemo(() => toBlocks(items), [items]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';

@@ -77,14 +77,21 @@ import {
   type JevAsk,
 } from '../engine/client-guess.ts';
 import { jevFromBrain } from '../engine/jev.ts';
-import { SessionError, type SessionManager } from '../engine/session-manager.ts';
+import {
+  type BrandedCopy,
+  parsePageAsk,
+  SessionError,
+  type SessionManager,
+} from '../engine/session-manager.ts';
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
+import { isPageKey } from '../store/page-copies.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
 import {
   hasValidSession,
   isLibraryPagePath,
   MAX_BODY_BYTES,
   PAGE_CSP,
+  PAGE_PREVIEW_CSP,
   PDF_CSP,
   sessionSetCookie,
 } from './security.ts';
@@ -836,7 +843,8 @@ async function sendPage(req: IncomingMessage, res: ServerResponse, rawId: string
       sendPageError(res, 400, 'That page is too large to open in the app.');
       return;
     }
-    sendPageHtml(res, 200, read.data);
+    // R7: the file's own scripts run, locked down as a chat's page is; errors stay script-free.
+    sendPreviewHtml(res, 200, read.data);
   } catch {
     if (res.headersSent) res.end();
     else sendPageError(res, 500, 'Something went wrong in the app. Try again.');
@@ -899,6 +907,193 @@ async function libraryRoute(
   else if (m[1] === 'file') await sendDownload(res, m[2], ctx);
   else await sendText(res, m[2], ctx);
   return true;
+}
+
+// -- a chat's pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and 7) --------------------
+
+/** `ROUTES.chatPage` and `ROUTES.chatPageAsk`: the last segment is a version number, or `ask`. */
+const SESSION_PAGE = /^\/api\/sessions\/([^/]+)\/pages\/([^/]+)\/([^/]+)$/;
+/** `ROUTES.chatPageBranded`. */
+const SESSION_PAGE_BRANDED = /^\/api\/sessions\/([^/]+)\/pages\/([^/]+)\/([^/]+)\/branded$/;
+/** A version number; `0` is the copy Claude is still working on. */
+const PAGE_VERSION = /^(?:0|[1-9][0-9]{0,4})$/;
+const PAGE_NOT_FOUND = 'That page could not be found. It may have been closed with its chat.';
+const PAGE_NOT_KEPT = "This version isn't kept in the app. Open it on claude.ai.";
+const DRAFT_NOT_KEPT = "The app couldn't keep a copy of this page, so it can't be shown here.";
+
+/**
+ * claude.ai's page skeleton: it wraps a stored file that has no doctype at publish time, so the route
+ * does the same at serve time (the stored bytes are never changed).
+ */
+export const PAGE_SKELETON_HEAD =
+  '<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+  '<style>body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none}</style>\n' +
+  '</head>\n<body>\n';
+export const PAGE_SKELETON_FOOT = '\n</body>\n</html>\n';
+
+/** The page as served: as stored when it starts with a doctype (after a BOM or spaces), else inside the skeleton. */
+export function wrapPage(data: Buffer): Buffer {
+  const head = data
+    .subarray(0, 512)
+    .toString('utf8')
+    .replace(/^\uFEFF/, '')
+    .trimStart();
+  if (/^<!doctype\s/i.test(head)) return data;
+  return Buffer.concat([Buffer.from(PAGE_SKELETON_HEAD), data, Buffer.from(PAGE_SKELETON_FOOT)]);
+}
+
+/** HTML under the preview policy, which REPLACES the app's (two policies would both apply and block the frame). */
+function sendPreviewHtml(res: ServerResponse, status: number, body: string | Buffer): void {
+  const length = typeof body === 'string' ? Buffer.byteLength(body) : body.length;
+  res.setHeader('Content-Security-Policy', PAGE_PREVIEW_CSP);
+  res.writeHead(status, {
+    'Content-Security-Policy': PAGE_PREVIEW_CSP,
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+    'Content-Length': length,
+  });
+  res.end(body);
+}
+
+function sendPreviewError(res: ServerResponse, status: number, message: string): void {
+  sendPreviewHtml(
+    res,
+    status,
+    `<!doctype html>
+<html lang="en-GB">
+<head><meta charset="utf-8"><title>Cannot show this page</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:2rem;color:#444}</style></head>
+<body><p>${escapeHtml(message)}</p></body>
+</html>
+`,
+  );
+}
+
+/** `GET ROUTES.chatPage`: one stored version of a chat's page. Every answer is HTML under the preview policy. */
+async function sendChatPage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  raw: { id: string; key: string; n: string },
+  ctx: RouteContext,
+): Promise<void> {
+  try {
+    if ((req.method ?? 'GET').toUpperCase() !== 'GET') {
+      sendPreviewError(res, 405, 'That is not something this address does.');
+      return;
+    }
+    const id = decodeId(raw.id);
+    const key = decodeId(raw.key);
+    const pageCopy = ctx.sessions.pageCopy;
+    if (!id || !key || !isPageKey(key) || !PAGE_VERSION.test(raw.n) || !pageCopy) {
+      sendPreviewError(res, 404, PAGE_NOT_FOUND);
+      return;
+    }
+    let data: Buffer | null;
+    try {
+      data = await pageCopy.call(ctx.sessions, id, key, Number(raw.n));
+    } catch (err) {
+      if (err instanceof SessionError) {
+        sendPreviewError(res, 404, PAGE_NOT_FOUND);
+        return;
+      }
+      throw err;
+    }
+    if (!data) {
+      sendPreviewError(res, 404, raw.n === '0' ? DRAFT_NOT_KEPT : PAGE_NOT_KEPT);
+      return;
+    }
+    sendPreviewHtml(res, 200, wrapPage(data));
+  } catch {
+    ctx.log('A page could not be shown.');
+    if (res.headersSent) res.end();
+    else sendPreviewError(res, 500, 'Something went wrong in the app. Try again.');
+  }
+}
+
+/**
+ * Says whether the branded download works offline (R8): `yes`, or `partial` when a script, stylesheet
+ * or font it uses still comes from the internet. The viewer reads it to word its status line.
+ */
+export const PAGE_SELF_CONTAINED_HEADER = 'X-Page-Self-Contained';
+
+/**
+ * `GET ROUTES.chatPageBranded`: one stored copy wrapped in the TDS bar, as a download under the
+ * download policy (never shown or run in place). Errors are the same small page as `chatPage`'s.
+ */
+async function sendBrandedPage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  raw: { id: string; key: string; n: string },
+  ctx: RouteContext,
+): Promise<void> {
+  try {
+    if ((req.method ?? 'GET').toUpperCase() !== 'GET') {
+      sendPreviewError(res, 405, 'That is not something this address does.');
+      return;
+    }
+    const id = decodeId(raw.id);
+    const key = decodeId(raw.key);
+    const branded = ctx.sessions.brandedCopy;
+    if (!id || !key || !isPageKey(key) || !PAGE_VERSION.test(raw.n) || !branded) {
+      sendPreviewError(res, 404, PAGE_NOT_FOUND);
+      return;
+    }
+    let file: BrandedCopy | null;
+    try {
+      file = await branded.call(ctx.sessions, id, key, Number(raw.n));
+    } catch (err) {
+      if (err instanceof SessionError) {
+        sendPreviewError(res, 404, PAGE_NOT_FOUND);
+        return;
+      }
+      throw err;
+    }
+    if (!file) {
+      sendPreviewError(res, 404, raw.n === '0' ? DRAFT_NOT_KEPT : PAGE_NOT_KEPT);
+      return;
+    }
+    const body = Buffer.from(file.html, 'utf8');
+    res.setHeader('Content-Security-Policy', DOWNLOAD_CSP);
+    res.writeHead(200, {
+      'Content-Security-Policy': DOWNLOAD_CSP,
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': attachmentHeader(file.name),
+      [PAGE_SELF_CONTAINED_HEADER]: file.selfContained ? 'yes' : 'partial',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+      'Content-Length': body.length,
+    });
+    res.end(body);
+  } catch {
+    ctx.log('A branded page could not be made.');
+    if (res.headersSent) res.end();
+    else sendPreviewError(res, 500, 'Something went wrong in the app. Try again.');
+  }
+}
+
+/** `POST ROUTES.chatPageAsk`: PageAskRequest, checked here, sent into the chat by the session manager. */
+async function askPage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  raw: { id: string; key: string },
+  ctx: RouteContext,
+): Promise<void> {
+  if ((req.method ?? 'GET').toUpperCase() !== 'POST') throw methodNotAllowed();
+  let id: string;
+  let key: string;
+  try {
+    id = decodeURIComponent(raw.id);
+    key = decodeURIComponent(raw.key);
+  } catch {
+    throw new HttpError(400, 'bad-request', 'That page was not understood.');
+  }
+  const ask = parsePageAsk(await readJson(req));
+  const send = ctx.sessions.askPage;
+  if (!send || !isPageKey(key))
+    throw new HttpError(404, 'not-found', 'That page could not be found in this chat.');
+  await send.call(ctx.sessions, id, key, ask);
+  sendJson(res, 200, { ok: true });
 }
 
 const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
@@ -1244,6 +1439,19 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     const changes = ctx.sessions.fileChanges(id, key);
     if (!changes) throw new HttpError(404, 'not-found', 'Those changes could not be found.');
     sendJson(res, 200, changes);
+    return;
+  }
+
+  const br = SESSION_PAGE_BRANDED.exec(path);
+  if (br?.[1] && br[2] && br[3]) {
+    await sendBrandedPage(req, res, { id: br[1], key: br[2], n: br[3] }, ctx);
+    return;
+  }
+
+  const pg = SESSION_PAGE.exec(path);
+  if (pg?.[1] && pg[2] && pg[3]) {
+    if (pg[3] === 'ask') await askPage(req, res, { id: pg[1], key: pg[2] }, ctx);
+    else await sendChatPage(req, res, { id: pg[1], key: pg[2], n: pg[3] }, ctx);
     return;
   }
 

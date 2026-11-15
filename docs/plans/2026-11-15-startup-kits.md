@@ -307,6 +307,9 @@ kept the record waiting (logged once) and the next app start kept it waiting; a 
   chats and set tiers now get a real kit too (the overseer's "most chats get no pick" concern); never
   for personal chats; a typed plugin skill's rule still wins. Cost: one extra Haiku call per new work
   chat (about a tenth of a penny), not "no extra cost" as first planned.
+- *Correctness check of the rework.* One finding, fixed: a reopened chat still asked the kit picker
+  about the next message typed into it. A reopened chat already had its first message, so `kitStart`
+  now clears `kitFirst` when the chat resumes; a test fails without that line.
 
 **App to brain:** the app's hand-off ran the real script in a throwaway brain: one plain line in
 `z-logs/app-usage/`, salted chat hash, no raw id; `review` read it back.

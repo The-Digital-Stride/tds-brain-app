@@ -4122,6 +4122,20 @@ describe('levels', () => {
       expect(kit.of('onPick')).toEqual([[first, { kit: 'ads', how: 'auto' }, 'standard']]);
     });
 
+    it('a reopened chat is never sent to the kit picker', async () => {
+      const kit = fakeKitTracker();
+      const kp = fakeKitPicker({ kit: 'core', how: 'auto' });
+      const fx = setupLevels({ kitTracker: kit.tracker, kitPicker: kp.picker, picks: () => ready(QUICK) });
+      fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+      await auto();
+      const s = await mgr.start({ resume: 'old-1' });
+      await mgr.send(s.id, 'And ROAS?');
+      await flush();
+      expect(kit.of('onStart')).toEqual([['old-1', { kind: 'tds', resumed: true }]]);
+      expect(kp.asked).toEqual([]);
+      expect(kit.of('onPick')).toEqual([]);
+    });
+
     it('a personal chat is never sent to the kit picker', async () => {
       const kit = fakeKitTracker();
       const kp = fakeKitPicker({ kit: 'core', how: 'auto' });

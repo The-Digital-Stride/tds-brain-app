@@ -1674,6 +1674,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.kitStarted = true;
     const resumed = s.sdkSessionId !== null;
     s.kitStartup = !resumed;
+    // A reopened chat already had its first message: never pick its kit from a later one.
+    if (resumed) s.kitFirst = false;
     kitTracker.onStart(kitKey(s), { kind: s.kind, resumed });
   }
 

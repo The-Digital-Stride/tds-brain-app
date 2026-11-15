@@ -40,6 +40,7 @@ import {
   openBrowser as openLink,
   signInUrl,
 } from './launcher.ts';
+import { startPurgeTimer } from './purge-timer.ts';
 import { mergeSettings } from './settings.ts';
 import {
   createEngineHealth,
@@ -314,6 +315,12 @@ app.server.listen(config.port, APP_HOST, () => {
   // Chats not yet handed to the brain (decision 10): in the background, never holding up start-up.
   void kitTracker?.flushPending();
   updater.startTimer();
+  // Deleted library files held for 30 days are erased once now and then daily; never in setup mode.
+  startPurgeTimer({
+    purge: () => brain.purgeDeletedFiles?.() ?? Promise.resolve(0),
+    enabled: brainPath !== null,
+    log,
+  });
   log(`TDS Cortex ${config.appVersion} is running at ${appUrl}`);
   log(config.claudePath ? 'Claude Code found.' : 'Claude Code was not found on this computer.');
   logBrainDecision(decision);

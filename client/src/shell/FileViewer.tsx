@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { ROUTES } from '../../../shared/contract.ts';
+import { DeleteButton } from '../apps/shared/parts.tsx';
 import { openLibraryItem } from '../apps/shared/search.ts';
 import { FileStage } from '../apps/shared/Viewer.tsx';
 import { useStore } from '../store.tsx';
@@ -22,12 +23,14 @@ const APP_WORDS = { documents: 'Open in Documents', images: 'Open in Images' } a
 export function FileViewer() {
   const { state, dispatch, modes } = useShell();
   const { viewerOpener } = useDesk();
-  const { libraryVersion, openView } = useStore();
+  const { libraryVersion, openView, deleteFile } = useStore();
   const request = state.viewer;
   const heading = useRef<HTMLHeadingElement>(null);
   const headingId = useId();
   // Set when "Open in Documents" closes the viewer: focus goes to the app, not back to the opener.
   const leaving = useRef(false);
+  // After a delete: the file next to the deleted one in the list that opened this viewer.
+  const afterDelete = useRef<HTMLElement | null>(null);
   const shown = request !== null;
 
   // Each file asked for takes focus at its heading (a second file replacing the first, too). A newer
@@ -49,6 +52,13 @@ export function FileViewer() {
     viewerOpener.current = null;
     const toApp = leaving.current;
     leaving.current = false;
+    const next = afterDelete.current;
+    afterDelete.current = null;
+    // A deleted file's own row is gone: land on the next file shown, if there is one.
+    if (next?.isConnected && next.closest('[inert]') === null) {
+      next.focus({ preventScroll: true });
+      return;
+    }
     // Off to the app: the sheet holds focus until the app's own viewer takes it.
     // An opener that went inert meanwhile (its panel shut as the window narrowed) can't take focus.
     const reachable = opener?.isConnected === true && opener.closest('[inert]') === null;
@@ -83,6 +93,14 @@ export function FileViewer() {
     );
   }
   const { item, place, openIn } = request;
+  const remove = () => {
+    // The row that opened the viewer goes with the file; the next row's open button gets focus.
+    const row = viewerOpener.current?.closest('li') ?? null;
+    const sibling = row?.nextElementSibling ?? row?.previousElementSibling ?? null;
+    afterDelete.current = sibling?.querySelector<HTMLElement>('button, a') ?? null;
+    deleteFile(item);
+    close();
+  };
   const openInApp = () => {
     if (!openIn) return;
     leaving.current = true;
@@ -120,6 +138,7 @@ export function FileViewer() {
               Download
             </a>
             <FileStar item={item} />
+            <DeleteButton item={item} onDelete={remove} />
           </div>
           <button type="button" className="icon-btn viewer-close" aria-label="Close file" onClick={close}>
             <Icon name="close" />

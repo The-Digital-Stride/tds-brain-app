@@ -6,7 +6,7 @@ order: 1
 summary: Browse the Brain's documents by client, and preview them in the app.
 benefit: Find the right file fast, without digging through folders.
 roles: all
-related: [images, talking-to-claude, home]
+related: [images, deleting-files, talking-to-claude, home]
 since: 0.36.0
 reviewed: 2026-11-15
 ---
@@ -36,6 +36,7 @@ Documents shows the files in the Brain that you're allowed to see. You can brows
 - You only see what your role lets you see.
 - PDFs, text, Markdown and web pages open inside the app.
 - Very large libraries may not list every file.
+- To delete a file, point at it and press its bin. It's kept for 30 days. See [Deleting files](help:deleting-files).
 - Click a file, then press **Ask Claude about it** in the panel to talk about it with Claude. See [Talking to Claude](help:talking-to-claude).
 
 ## Try this

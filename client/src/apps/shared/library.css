@@ -195,6 +195,57 @@
     transition: none;
   }
 }
+/* Delete: the bin after Open on a row, on the bottom corner of a tile's picture. It shows with Open. */
+.lib-delete {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+/* A tile's picture is a positioned box of its own, so the bin sits on its corner and never on the name. */
+.lib-tile-pic {
+  position: relative;
+  margin-bottom: 6px;
+}
+.img-tile .lib-delete {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  background: rgba(255, 255, 255, 0.92);
+}
+/* A row without a bin keeps the bin's room, so the rows of a list line up. */
+.lib-delete-gap {
+  flex: none;
+  width: 28px;
+}
+.lib-list > [data-current="true"] .lib-delete,
+.lib-list > li:hover .lib-delete,
+.lib-list > li:focus-within .lib-delete,
+.lib-delete:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .lib-delete {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lib-delete {
+    transition: none;
+  }
+}
+/* The viewer's own bar: the bin at the right, above the file. */
+.lib-viewer-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+.lib-held {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 /* Rows: the tray's own (Home's hover and pressed states apply). */
 .lib .lib-row {
   position: relative;

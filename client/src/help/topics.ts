@@ -32,6 +32,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'sharing-with-your-team',
   'favourites',
   'viewing-a-file',
+  'deleting-files',
   'search-and-jump',
   'keyboard-shortcuts',
   'settings',

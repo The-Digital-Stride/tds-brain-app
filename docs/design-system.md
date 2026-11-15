@@ -246,6 +246,21 @@ and always where nothing hovers (`hover: none`), fading in (opacity only, so not
 file the app can't show keeps the same 56px empty, so the columns line up. It opens the viewer
 straight away and makes the item the chosen one.
 
+**Delete file** (the library bin; plan decision 7): a 28px `icon-btn` with the `bin` icon, only on files
+the server says can be deleted (`canDelete`). On a row it follows Open at the end; on a tile it sits on
+the bottom right corner of the picture (`.lib-tile-pic`, a positioned box around the `Thumb`), never on the
+name. It shows on hover or keyboard focus, on the chosen item, and always where nothing hovers (`hover:
+none`), fading in by opacity only. In a list where any file has a bin, a row without one keeps a 28px
+empty slot (`.lib-delete-gap`), as Open does. It is labelled "Delete file: <name>", the name the list
+shows (an image's file name, a document's title), with the tooltip "Delete file". While a delete is being
+sent it is `aria-disabled`, never `disabled`, and does nothing, so focus stays. Pressing it takes the file
+out of every list at once and shows a held line at the top of the page (`FileDeleteNotice`, an
+`.update-banner` "<name> deleted." with Undo) for 10 seconds; the clock stops while the pointer or focus
+is on that line. One visually hidden `role="status"` line stays on the page and says "<name> deleted.
+Undo is at the top of the page.", then the result ("<name> deleted. To get it back within 30 days, ask
+Claude."), so a screen reader announces both. The open file's viewer carries the same bin in
+`.lib-viewer-bar`, right aligned above the file, and the file viewer drawer has it among its actions.
+
 Opening a file ("Open" on the item or in the panel, or a file chosen in Search or jump to) swaps the sheet's list for the viewer and adds a quiet small
 "Back to ..." button to the sheet bar. When the panel floats, Open also closes it, and the viewer takes
 focus once the sheet is live again. The list stays mounted, hidden, so Back (or Escape inside the

@@ -1,0 +1,224 @@
+<title>Deleting Library Files</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one reading column; two wide diagrams that scroll sideways on a phone; summary first, detail after. */
+  :root{
+    --bg:#F6F4EF; --card:#FFFFFF; --ink:#021B43; --muted:#4A5568; --line:rgba(2,27,67,.14);
+    --blue:#1889FF; --blue-ink:#0B5CB5; --wash:#E7F1FE;
+    --stop:#B4232C; --stop-wash:#FDE8E9; --ok:#1E7A46; --ok-wash:#E3F4EA;
+    --warn:#8A5A00; --warn-wash:#FFF1D6;
+    --head:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0B1424; --card:#121E33; --ink:#E6ECF5; --muted:#A7B3C6; --line:rgba(230,236,245,.16);
+    --blue:#4BA3FF; --blue-ink:#8CC4FF; --wash:#13284A;
+    --stop:#FF7A82; --stop-wash:#3A1519; --ok:#5FD08F; --ok-wash:#123222;
+    --warn:#F2C062; --warn-wash:#3A2A0C; color-scheme:dark; } }
+  :root[data-theme="dark"]{
+    --bg:#0B1424; --card:#121E33; --ink:#E6ECF5; --muted:#A7B3C6; --line:rgba(230,236,245,.16);
+    --blue:#4BA3FF; --blue-ink:#8CC4FF; --wash:#13284A;
+    --stop:#FF7A82; --stop-wash:#3A1519; --ok:#5FD08F; --ok-wash:#123222;
+    --warn:#F2C062; --warn-wash:#3A2A0C; color-scheme:dark; }
+
+  body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--body);}
+  .wrap{max-width:880px;margin:0 auto;padding-block:32px 56px;
+    padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+    display:grid;gap:36px;}
+  h1,h2{font-family:var(--head);text-wrap:balance;margin:0;line-height:1.2}
+  h1{font-size:2rem;letter-spacing:-.01em}
+  h2{font-size:1.3rem}
+  p{margin:0;max-width:65ch}
+  section{display:grid;gap:14px;min-width:0}
+  .eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--blue-ink);font-weight:600}
+  .lede{font-size:1.1rem;color:var(--muted)}
+  code{font-family:var(--mono);font-size:.88em;background:var(--wash);padding:1px 5px;border-radius:4px;color:var(--ink)}
+  figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:10px}
+  .scroll{overflow-x:auto}
+  figcaption{font-size:.92rem;color:var(--muted)}
+  svg{display:block;max-width:100%;height:auto;color:var(--ink)}
+  svg text{font-family:var(--body);fill:currentColor}
+  .box{fill:var(--card);stroke:currentColor;stroke-opacity:.35;stroke-width:1.5}
+  .box.brain{fill:var(--wash);stroke:var(--blue)}
+  .box.stop{fill:var(--stop-wash);stroke:var(--stop)}
+  .arrow{stroke:currentColor;stroke-opacity:.6;stroke-width:1.6;fill:none}
+  .arrow.stop{stroke:var(--stop);stroke-opacity:1;stroke-dasharray:5 4}
+  .lbl{font-size:12px;fill:var(--muted)}
+  .stoptext{fill:var(--stop)}
+  .small{font-size:11.5px}
+  .t{font-size:14px;font-weight:600}
+  .playbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  button{font:600 .95rem var(--body);color:#fff;background:var(--blue-ink);border:0;border-radius:8px;padding:8px 16px;cursor:pointer}
+  button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+  .step{transition:none}
+  /* Animation: each step lights up in order. At rest everything is fully visible. */
+  .play .step{animation:light .6s ease both}
+  .play .s1{animation-delay:.1s}.play .s2{animation-delay:.9s}.play .s3{animation-delay:1.7s}
+  .play .s4{animation-delay:2.5s}.play .s5{animation-delay:3.3s}.play .s6{animation-delay:4.1s}
+  @keyframes light{from{opacity:.12}to{opacity:1}}
+  @media (prefers-reduced-motion: reduce){.play .step{animation:none}}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .rule{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:6px;min-width:0}
+  .pill{justify-self:start;font-size:.78rem;font-weight:700;padding:2px 10px;border-radius:999px}
+  .yes{background:var(--ok-wash);color:var(--ok)}
+  .no{background:var(--stop-wash);color:var(--stop)}
+  .some{background:var(--warn-wash);color:var(--warn)}
+  .rule h3{margin:0;font-size:1rem}
+  .rule p{font-size:.94rem;color:var(--muted)}
+  .logline{font-family:var(--mono);font-size:.85rem;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;white-space:pre}
+  .risks{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+  .risks li{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:12px 14px;display:grid;gap:4px}
+  .risks b{font-size:1rem}
+  .risks span{color:var(--muted);font-size:.94rem;max-width:65ch}
+  .learn{background:var(--wash);border-radius:10px;padding:12px 14px;font-size:.94rem}
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <div class="eyebrow">TDS Brain App · plan, 15 November 2026</div>
+    <h1>Deleting library files</h1>
+    <p class="lede">Soon you'll be able to delete an image or document from the library. The file isn't erased straight away. It waits in a safe folder for 30 days, and every delete is written in a list the whole team can see.</p>
+  </header>
+
+  <section>
+    <h2>What happens when you press the bin</h2>
+    <figure id="flow">
+      <div class="scroll">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Pressing the bin starts a 10 second Undo. Then the app asks the brain's own tool to delete the file. The tool checks it is allowed, moves the file to the holding folder and writes a line in the log. The next save shares both with the team. If a check fails, nothing moves.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" fill-opacity=".6"/></marker>
+          <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--stop)"/></marker>
+        </defs>
+
+        <!-- 1 You -->
+        <g class="step s1">
+          <rect class="box" x="10" y="40" width="150" height="86" rx="10"/>
+          <text class="t" x="85" y="72" text-anchor="middle">You press the bin</text>
+          <text class="lbl" x="85" y="94" text-anchor="middle">in the library or</text>
+          <text class="lbl" x="85" y="110" text-anchor="middle">the file viewer</text>
+        </g>
+        <!-- 2 Undo -->
+        <g class="step s2">
+          <line class="arrow" x1="160" y1="83" x2="200" y2="83" marker-end="url(#ah)"/>
+          <rect class="box" x="202" y="40" width="150" height="86" rx="10"/>
+          <text class="t" x="277" y="72" text-anchor="middle">10 seconds to Undo</text>
+          <text class="lbl" x="277" y="94" text-anchor="middle">the clock stops while</text>
+          <text class="lbl" x="277" y="110" text-anchor="middle">you point at Undo</text>
+        </g>
+        <!-- 3 Brain tool -->
+        <g class="step s3">
+          <line class="arrow" x1="352" y1="83" x2="392" y2="83" marker-end="url(#ah)"/>
+          <text class="lbl small" x="372" y="30" text-anchor="middle">asks</text>
+          <rect class="box brain" x="394" y="40" width="170" height="86" rx="10"/>
+          <text class="t" x="479" y="66" text-anchor="middle">Brain tool checks</text>
+          <text class="lbl" x="479" y="86" text-anchor="middle">tdsapp-files</text>
+          <text class="lbl" x="479" y="104" text-anchor="middle">allowed? private?</text>
+          <text class="lbl" x="479" y="119" text-anchor="middle">changed since?</text>
+        </g>
+        <!-- stop branch -->
+        <g class="step s4">
+          <line class="arrow stop" x1="479" y1="126" x2="479" y2="196" marker-end="url(#ahs)"/>
+          <text class="lbl small stoptext" x="487" y="166">a check fails</text>
+          <rect class="box stop" x="394" y="198" width="170" height="64" rx="10"/>
+          <text class="t stoptext" x="479" y="225" text-anchor="middle">Nothing moves</text>
+          <text class="lbl" x="479" y="246" text-anchor="middle">you see why, in plain words</text>
+        </g>
+        <!-- 5 Holding + log -->
+        <g class="step s5">
+          <line class="arrow" x1="564" y1="83" x2="604" y2="83" marker-end="url(#ah)"/>
+          <text class="lbl small" x="584" y="30" text-anchor="middle">all fine</text>
+          <rect class="box brain" x="606" y="20" width="170" height="62" rx="10"/>
+          <text class="t" x="691" y="46" text-anchor="middle">File is moved</text>
+          <text class="lbl" x="691" y="66" text-anchor="middle">to tdsapp-deleted/</text>
+          <rect class="box brain" x="606" y="92" width="170" height="62" rx="10"/>
+          <text class="t" x="691" y="118" text-anchor="middle">A line is written</text>
+          <text class="lbl" x="691" y="138" text-anchor="middle">in the action log</text>
+        </g>
+        <!-- 6 Team -->
+        <g class="step s6">
+          <line class="arrow" x1="776" y1="83" x2="816" y2="83" marker-end="url(#ah)"/>
+          <rect class="box" x="818" y="40" width="132" height="86" rx="10"/>
+          <text class="t" x="884" y="72" text-anchor="middle">Team sees it</text>
+          <text class="lbl" x="884" y="94" text-anchor="middle">after the</text>
+          <text class="lbl" x="884" y="110" text-anchor="middle">next save</text>
+        </g>
+        <text class="lbl small" x="10" y="290">Blue boxes happen in the brain folder. The app never moves brain files itself: it always asks the brain's tool.</text>
+      </svg>
+      </div>
+      <div class="playbar" id="playbar" hidden>
+        <button type="button" id="play">Play</button>
+        <span class="lbl" style="font-size:.9rem;color:var(--muted)">Lights up each step in order.</span>
+      </div>
+      <figcaption>The bin only shows on files you're allowed to delete. Even so, the brain's tool checks everything again, so a mistake in the app can't delete the wrong thing.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>The 30 days</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 900 150" role="img" aria-label="Day 0 the file is deleted. Any day up to day 30 you can ask Claude to put it back. On day 30 the app erases it for good. The app checks once a day.">
+        <line x1="40" y1="70" x2="860" y2="70" stroke="currentColor" stroke-opacity=".35" stroke-width="3"/>
+        <rect x="40" y="64" width="820" height="12" rx="6" fill="var(--blue)" fill-opacity=".18"/>
+        <circle cx="40" cy="70" r="9" fill="var(--blue)"/>
+        <text class="t" x="40" y="40" text-anchor="start">Day 0</text>
+        <text class="lbl" x="40" y="104" text-anchor="start">File deleted.</text>
+        <text class="lbl" x="40" y="120" text-anchor="start">Undo for 10 seconds.</text>
+        <text class="t" x="450" y="40" text-anchor="middle">Any day before 30</text>
+        <text class="lbl" x="450" y="104" text-anchor="middle">Ask Claude: “put back the logo</text>
+        <text class="lbl" x="450" y="120" text-anchor="middle">I deleted yesterday”</text>
+        <circle cx="860" cy="70" r="9" fill="var(--stop)"/>
+        <text class="t" x="860" y="40" text-anchor="end">Day 30</text>
+        <text class="lbl" x="860" y="104" text-anchor="end">Erased for good.</text>
+        <text class="lbl" x="860" y="120" text-anchor="end">The app checks once a day.</text>
+      </svg>
+      </div>
+      <figcaption>There's no "Recently deleted" screen yet. To get a file back after the Undo has gone, ask Claude in a chat. Git still keeps an old copy after day 30, so this isn't the kind of erasing a privacy request needs.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Who can delete what</h2>
+    <div class="grid">
+      <div class="rule"><span class="pill yes">Anyone on the team</span><h3>Client files</h3><p>Images and documents in a client's folder, such as <code>clients/acme/reports/</code>.</p></div>
+      <div class="rule"><span class="pill some">Owner only</span><h3>Templates</h3><p>Files in <code>templates/</code>. Nobody else sees the bin there.</p></div>
+      <div class="rule"><span class="pill no">Not from the app</span><h3>Your personal files</h3><p>Files in <code>personal/</code> stay as they are, for now.</p></div>
+      <div class="rule"><span class="pill no">Never</span><h3>This-Mac-only files</h3><p>Some files are kept on one Mac on purpose. Moving one into the shared holding folder would send it to everyone, so the tool refuses.</p></div>
+      <div class="rule"><span class="pill no">Never</span><h3>Files Claude relies on</h3><p><code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>README.md</code> and each client's <code>profile.md</code>.</p></div>
+      <div class="rule"><span class="pill no">Refused</span><h3>A file that just changed</h3><p>If someone changed it after you opened the library, the delete stops and asks you to look again.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The action log</h2>
+    <p>Each person has their own list on each Mac, so two people (or one person on two Macs) never write in the same file at the same time. Lines are only ever added, never changed. A line looks like this, shown here in plain words:</p>
+    <div class="logline">15 Nov 2026, 10:42  Ian Hancock  deleted   clients/acme/reports/old-audit.pdf   from TDS Brain App
+15 Nov 2026, 14:05  Ian Hancock  put back  clients/acme/reports/old-audit.pdf   from a chat
+15 Dec 2026, 09:00  Ben          erased    clients/acme/brand/old-logo.png      30-day clean-up</div>
+    <p class="learn"><b>Learn: audit log.</b> A running list, only ever added to, of who did what and when. Here it lets the team see who deleted a client's file, and find it again.</p>
+  </section>
+
+  <section>
+    <h2>The tricky bits, and how the plan handles them</h2>
+    <ul class="risks">
+      <li><b>A private file could leak</b><span>Files kept on one Mac would be shared if they were moved into the holding folder. The tool asks git first and refuses those files. If git can't answer, it refuses anyway.</span></li>
+      <li><b>Erasing can't be undone</b><span>The clean-up erases only when everything about the file checks out: its note reads properly, and both of its dates are over 30 days old. It skips the whole run while a save or merge is part-way through.</span></li>
+      <li><b>Two people at once</b><span>If two people delete the same file, the first one wins and the second is told it's already gone. If one person deletes a file while another edits it, the edit follows the file into the holding folder, and the tool flags it as "changed after deletion".</span></li>
+      <li><b>Big files</b><span>Deleted files keep syncing to everyone for up to 30 days, because the holding folder is shared.</span></li>
+    </ul>
+  </section>
+</div>
+
+<script>
+  (function(){
+    var bar=document.getElementById('playbar'), btn=document.getElementById('play'), fig=document.getElementById('flow');
+    if(!bar||!btn||!fig) return;
+    bar.hidden=false;
+    btn.addEventListener('click',function(){
+      fig.classList.remove('play'); void fig.offsetWidth; fig.classList.add('play');
+      btn.textContent='Replay';
+    });
+  })();
+</script>

@@ -55,6 +55,7 @@ import {
   VERSION_PATTERN,
   type VersionNotes,
 } from '../../shared/contract.ts';
+import { FILES_CHANGE_MESSAGES, FILES_CHANGE_STATUS, FilesChangeError } from '../../shared/files-contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import {
@@ -891,6 +892,45 @@ async function sendPage(req: IncomingMessage, res: ServerResponse, rawId: string
   }
 }
 
+/** `ROUTES.libraryItem`. Not one of the GET kinds above (`thumb`, `text`, ...): those have two segments. */
+const LIBRARY_ITEM_DELETE = /^\/api\/library\/items\/([^/]+)$/;
+
+/**
+ * `DELETE ROUTES.libraryItem` (plan 2026-11-15-delete-library-files, decision 6): the brain's script
+ * moves the file to the holding folder. The app's stars are cleared and the page told only after it did.
+ */
+async function deleteLibraryItem(req: IncomingMessage, rawId: string, ctx: RouteContext): Promise<void> {
+  const body = await readJson(req);
+  const expect =
+    typeof body === 'object' && body !== null ? (body as { expect?: unknown }).expect : undefined;
+  if (expect !== undefined && (typeof expect !== 'string' || expect === '' || expect.length > 200)) {
+    throw new HttpError(400, 'bad-request', FILES_CHANGE_MESSAGES['bad-request']);
+  }
+  const id = decodeId(rawId);
+  const remove = ctx.brain.deleteLibraryFile;
+  if (!id || !remove) throw new HttpError(404, 'not-found', FILES_CHANGE_MESSAGES['not-found']);
+  try {
+    await remove.call(ctx.brain, id, expect === undefined ? {} : { expect });
+  } catch (err) {
+    if (err instanceof FilesChangeError) {
+      // `exists` only comes from restore, which has no route; `changed` is the nearest API code.
+      const code = err.code === 'exists' ? 'changed' : err.code;
+      throw new HttpError(FILES_CHANGE_STATUS[err.code], code, err.message);
+    }
+    ctx.log('Deleting a library file failed unexpectedly.');
+    throw new HttpError(500, 'internal', FILES_CHANGE_MESSAGES.internal);
+  }
+  ctx.log('Deleted a library file.');
+  // The file is gone for everyone: drop its star, then tell the open pages. Neither may fail the delete.
+  try {
+    const starred = (await ctx.store.get()).favouriteFiles ?? [];
+    if (starred.includes(id)) await ctx.store.update({ favouriteFiles: starred.filter((s) => s !== id) });
+  } catch {
+    ctx.log('Could not clear the star of a deleted library file.');
+  }
+  ctx.hub.publish({ type: 'brain-changed', area: 'library' });
+}
+
 async function libraryRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -960,6 +1000,14 @@ async function libraryRoute(
     const listing = await safe(ctx.brain.library(scope), null);
     if (!listing) throw new HttpError(404, 'not-found', 'Those files could not be found.');
     sendJson(res, 200, listing);
+    return true;
+  }
+  const del = LIBRARY_ITEM_DELETE.exec(path);
+  if (del?.[1]) {
+    if (method !== 'DELETE') throw methodNotAllowed();
+    await deleteLibraryItem(req, del[1], ctx);
+    res.writeHead(204, { 'Cache-Control': 'no-store' });
+    res.end();
     return true;
   }
   const m = LIBRARY_ITEM.exec(path);

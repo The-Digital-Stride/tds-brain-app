@@ -11,14 +11,15 @@ import { docsStore, useDocs } from './store.ts';
 /** The right panel for the Documents app: the chosen document and the facts the file itself holds. */
 export function DocumentsPanel() {
   const { current: doc } = useDocs();
-  const { newChat } = useStore();
+  const { newChat, hiddenFileIds } = useStore();
   const { dispatch, modes } = useShell();
   // A floating panel would hide the file it opens, so it closes; a docked one stays.
   const open = (item: LibraryItem) => {
     docsStore.set({ viewing: item });
     if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
   };
-  if (!doc) return <p className="dock-empty">Choose a document to see its details.</p>;
+  if (!doc || hiddenFileIds.has(doc.id))
+    return <p className="dock-empty">Choose a document to see its details.</p>;
 
   return (
     <div className="lib-detail">

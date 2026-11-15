@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
@@ -304,4 +304,155 @@ export function LibraryNotice({
     );
   }
   return empty ? <p className="lib-empty">{empty}</p> : null;
+}
+
+/**
+ * The bin on a library tile, row or viewer: shown only when the server says this person may delete the file
+ * (`canDelete`). `name` is the name the person sees on the file (an image's file name, a document's title).
+ * While a delete is being sent it is `aria-disabled` and does nothing, so keyboard focus is not lost.
+ * `reserve` keeps its 28px place empty for a file without one, so the rows in a list line up.
+ */
+export function DeleteButton({
+  item,
+  name = item.title,
+  onDelete,
+  className,
+  reserve = false,
+}: {
+  item: LibraryItem;
+  name?: string;
+  onDelete: () => void;
+  className?: string;
+  reserve?: boolean;
+}) {
+  const { fileDeleteBusy } = useStore();
+  if (item.canDelete !== true) return reserve ? <span className="lib-delete-gap" aria-hidden="true" /> : null;
+  return (
+    <button
+      type="button"
+      className={className ? `icon-btn ${className}` : 'icon-btn'}
+      aria-label={`Delete file: ${name}`}
+      data-tip="Delete file"
+      aria-disabled={fileDeleteBusy ? 'true' : undefined}
+      onClick={() => {
+        if (!fileDeleteBusy) onDelete();
+      }}
+    >
+      <Icon name="bin" size={16} />
+    </button>
+  );
+}
+
+/**
+ * Files waiting out their Undo time: one line each, with an Undo button. Nothing has been sent yet. The clock
+ * stops while the pointer or focus is on a line, so Undo can be reached. A visually hidden status line is
+ * always on the page, so a screen reader announces the delete, and later the result, as the text changes.
+ */
+export function FileDeleteNotice() {
+  const { heldFiles, undoDeleteFile, pauseFileDelete, resumeFileDelete, fileNotice } = useStore();
+  const waiting = heldFiles.filter((f) => f.phase === 'waiting');
+  const spoken =
+    waiting.length > 0
+      ? waiting.map((f) => `${f.title} deleted. Undo is at the top of the page.`).join(' ')
+      : (fileNotice ?? '');
+  return (
+    <>
+      <p className="visually-hidden" role="status" data-testid="file-delete-status">
+        {spoken}
+      </p>
+      {waiting.length === 0 ? null : (
+        <div className="lib-held">
+          {waiting.map((f) => (
+            <HeldLine
+              key={f.id}
+              title={f.title}
+              onPause={() => pauseFileDelete(f.id)}
+              onResume={() => resumeFileDelete(f.id)}
+              onUndo={() => undoDeleteFile(f.id)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The file to land on after `id` goes: the next one shown (found by id, not by position), else the one before. */
+export function neighbourId(ids: string[], id: string): string | null {
+  const at = ids.indexOf(id);
+  if (at === -1) return null;
+  return ids[at + 1] ?? ids[at - 1] ?? null;
+}
+
+/**
+ * Moves focus once a file has left the list: onto the next file's open button, else onto `fallback`
+ * (the line above the list). Waits while a file is open in place of the list (`waiting`).
+ */
+export function useDeleteFocus(
+  root: RefObject<HTMLElement | null>,
+  fallback: RefObject<HTMLElement | null>,
+  waiting: boolean,
+): (nextId: string | null) => void {
+  const [want, setWant] = useState<{ id: string | null } | null>(null);
+  useLayoutEffect(() => {
+    if (!want || waiting) return;
+    const button = want.id
+      ? [...(root.current?.querySelectorAll<HTMLElement>('[data-open-id]') ?? [])].find(
+          (el) => el.dataset.openId === want.id,
+        )
+      : undefined;
+    button?.focus({ preventScroll: true });
+    if (!button || document.activeElement !== button) fallback.current?.focus({ preventScroll: true });
+    setWant(null);
+  }, [want, waiting, root, fallback]);
+  return (id) => setWant({ id });
+}
+
+/**
+ * One held file's line. The pointer and focus each hold the clock on their own: it resumes only when
+ * both have left, so a mouse passing over while focus sits on Undo can't restart it (re-review 2026-11-15).
+ */
+function HeldLine({
+  title,
+  onPause,
+  onResume,
+  onUndo,
+}: {
+  title: string;
+  onPause: () => void;
+  onResume: () => void;
+  onUndo: () => void;
+}) {
+  const on = useRef({ pointer: false, focus: false });
+  const set = (which: 'pointer' | 'focus', value: boolean) => {
+    const was = on.current.pointer || on.current.focus;
+    on.current = { ...on.current, [which]: value };
+    const now = on.current.pointer || on.current.focus;
+    if (now && !was) onPause();
+    if (!now && was) onResume();
+  };
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: only pauses the Undo clock; the button inside is the control
+    <div
+      className="update-banner"
+      onMouseEnter={() => set('pointer', true)}
+      onMouseLeave={() => set('pointer', false)}
+      onFocus={() => set('focus', true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) set('focus', false);
+      }}
+    >
+      <span>{title} deleted.</span>
+      <button
+        type="button"
+        className="btn"
+        data-variant="quiet"
+        data-size="small"
+        aria-label={`Undo deleting ${title}`}
+        onClick={onUndo}
+      >
+        Undo
+      </button>
+    </div>
+  );
 }

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -6,6 +7,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -13,16 +15,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { ClientInfo, LibraryItem } from '../../shared/contract.ts';
+import type { ClientInfo, LibraryItem, Role } from '../../shared/contract.ts';
 import { listClients } from './clients.ts';
 import { createBrainReaders } from './index.ts';
 import {
   createLibrary,
+  gitIgnored,
   idFor,
+  isProtectedFile,
   type LibraryOptions,
   looksLikeRaster,
   readChecked,
   svgSize,
+  versionOf,
 } from './library.ts';
 import { copyFixture, FIXTURE } from './test-helpers.ts';
 
@@ -855,5 +860,202 @@ describe('the Templates area', () => {
     put(root, 'templates/c.md');
     l.changed(null, 'templates');
     expect((await l.list('shared:templates'))?.items.map((i) => i.name)).toContain('c.md');
+  });
+});
+
+describe('version and canDelete (plan 2026-11-15-delete-library-files)', () => {
+  const noneIgnored = async () => new Set<string>();
+  const as = (role: Role) => async () => ({ role });
+  /** Of the files `deletable()` adds (the fixture has others), the ones with a bin. */
+  const MINE = new Set([
+    `${ACME}reports/r.md`,
+    `${ACME}logo.png`,
+    `${ACME}profile.md`,
+    `${ACME}README.md`,
+    `${ACME}data/semrush.csv`,
+    'templates/t.md',
+    'templates/CLAUDE.md',
+    'personal/p.md',
+  ]);
+  const ids = (items: LibraryItem[] | undefined) =>
+    items
+      ?.filter((i) => i.canDelete && MINE.has(i.path))
+      .map((i) => i.path)
+      .sort();
+
+  function deletable() {
+    const root = copyFixture();
+    put(root, `${ACME}reports/r.md`);
+    put(root, `${ACME}logo.png`);
+    put(root, `${ACME}profile.md`);
+    put(root, `${ACME}README.md`);
+    put(root, `${ACME}data/semrush.csv`);
+    put(root, 'templates/t.md');
+    put(root, 'templates/CLAUDE.md');
+    put(root, 'personal/p.md');
+    return root;
+  }
+
+  it('gives every item the same version versionOf gives its bytes and mtime', async () => {
+    const root = deletable();
+    const l = lib(root);
+    const listing = await l.list('client:acme-heating');
+    for (const item of listing?.items ?? []) {
+      const st = statSync(join(root, item.path));
+      expect(item.version).toBe(versionOf(st.size, st.mtimeMs));
+      const file = await l.file(item.id);
+      expect(file?.item.version).toBe(file?.version);
+      expect(file?.item.version).toBe(item.version);
+    }
+  });
+
+  it('lists the version in whole milliseconds even when the time stamp ends in .999999999 s', async () => {
+    const root = deletable();
+    const rel = `${ACME}reports/r.md`;
+    // Node's own utimes can't set nanoseconds, so python3 does (present on every Mac this runs on).
+    const ns = 1763200000999999999n;
+    try {
+      execFileSync('python3', [
+        '-c',
+        `import os,sys; os.utime(sys.argv[1], ns=(${ns}, ${ns}))`,
+        join(root, rel),
+      ]);
+    } catch {
+      return; // no python3: nothing to pin
+    }
+    const listing = await lib(root).list('client:acme-heating');
+    const item = listing?.items.find((i) => i.path === rel);
+    const bytes = statSync(join(root, rel)).size;
+    // The script's rule: bigint stat, whole milliseconds. A plain stat gives ...1000 (rounded up).
+    expect(item?.version).toBe(`${bytes}-${ns / 1_000_000n}`);
+  });
+
+  it('shows no bin without the capability or when deletion is not offered', async () => {
+    const root = deletable();
+    expect(ids((await lib(root).list('client:acme-heating'))?.items)).toEqual([]);
+    const none = lib(root, { deletion: async () => null, ignored: noneIgnored });
+    expect(ids((await none.list('client:acme-heating'))?.items)).toEqual([]);
+  });
+
+  it('lets any known role delete client files, but not protected names', async () => {
+    const root = deletable();
+    for (const role of ['owner', 'scout', 'team'] as const) {
+      const l = lib(root, { deletion: as(role), ignored: noneIgnored });
+      expect(ids((await l.list('client:acme-heating'))?.items)).toEqual([
+        `${ACME}data/semrush.csv`,
+        `${ACME}logo.png`,
+        `${ACME}reports/r.md`,
+      ]);
+    }
+  });
+
+  it('gives a single file the same canDelete as its listing (Home stars, chat files)', async () => {
+    const root = deletable();
+    // A fresh library each time, so file() and itemForPath() can't lean on an earlier list().
+    const fresh = () => lib(root, { deletion: as('team'), ignored: noneIgnored });
+    const listed = (await fresh().list('client:acme-heating'))?.items ?? [];
+    const report = listed.find((i) => i.path === `${ACME}reports/r.md`);
+    const profile = listed.find((i) => i.path === `${ACME}profile.md`);
+    expect(report?.canDelete).toBe(true);
+    expect((await fresh().file(report?.id ?? ''))?.item.canDelete).toBe(true);
+    expect((await fresh().file(profile?.id ?? ''))?.item.canDelete).not.toBe(true);
+    expect((await fresh().itemForPath(`${ACME}reports/r.md`))?.item?.canDelete).toBe(true);
+    expect((await fresh().itemForPath(`${ACME}profile.md`))?.item?.canDelete).not.toBe(true);
+    // Without deletion offered, a single file has no bin either.
+    expect((await lib(root).file(report?.id ?? ''))?.item.canDelete).not.toBe(true);
+    // A deletable file still reads: `canDelete` went on before check(), not on a copy readChecked won't trust.
+    const opened = await fresh().file(report?.id ?? '');
+    if (!opened) throw new Error('missing');
+    expect((await readChecked(opened, 1024))?.data.toString('utf8')).toBeTruthy();
+  });
+
+  it('works out what may be deleted once per listing, however many single files are asked for', async () => {
+    const root = deletable();
+    let asked = 0;
+    const l = lib(root, {
+      deletion: as('team'),
+      ignored: async () => {
+        asked += 1;
+        return new Set<string>();
+      },
+    });
+    const items = (await l.list('client:acme-heating'))?.items ?? [];
+    for (const item of items) await l.file(item.id);
+    expect(asked).toBe(1);
+  });
+
+  it('shows no client bins to someone who is not on the team', async () => {
+    const root = deletable();
+    const l = lib(root, { deletion: as('unknown'), ignored: noneIgnored });
+    expect(ids((await l.list('client:acme-heating'))?.items)).toEqual([]);
+  });
+
+  it('lets only the owner delete templates, and never personal files', async () => {
+    const root = deletable();
+    for (const role of ['scout', 'team', 'unknown'] as const) {
+      const l = lib(root, { deletion: as(role), ignored: noneIgnored });
+      expect(ids((await l.list('shared:templates'))?.items)).toEqual([]);
+    }
+    const owner = lib(root, { deletion: as('owner'), ignored: noneIgnored });
+    expect(ids((await owner.list('shared:templates'))?.items)).toEqual(['templates/t.md']);
+    expect(ids((await owner.list('personal'))?.items)).toEqual([]);
+  });
+
+  it('leaves out files git ignores, and everything when git cannot answer', async () => {
+    const root = deletable();
+    const asked: string[][] = [];
+    const l = lib(root, {
+      deletion: as('team'),
+      ignored: async (rels) => {
+        asked.push(rels);
+        return new Set([`${ACME}data/semrush.csv`]);
+      },
+    });
+    expect(ids((await l.list('client:acme-heating'))?.items)).toEqual([
+      `${ACME}logo.png`,
+      `${ACME}reports/r.md`,
+    ]);
+    await l.list('client:acme-heating');
+    // One batched question, kept for the same built listing; protected names are not even asked about.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).not.toContain(`${ACME}profile.md`);
+    const broken = lib(root, { deletion: as('team'), ignored: async () => null });
+    expect(ids((await broken.list('client:acme-heating'))?.items)).toEqual([]);
+    const throws = lib(root, {
+      deletion: as('team'),
+      ignored: async () => {
+        throw new Error('no git');
+      },
+    });
+    expect(ids((await throws.list('client:acme-heating'))?.items)).toEqual([]);
+  });
+
+  it('asks a real git repository which files it ignores', async () => {
+    const root = deletable();
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    writeFileSync(join(root, '.gitignore'), 'clients/*/data/\n');
+    const l = lib(root, { deletion: as('team') });
+    expect(ids((await l.list('client:acme-heating'))?.items)).toEqual([
+      `${ACME}logo.png`,
+      `${ACME}reports/r.md`,
+    ]);
+    expect(await gitIgnored(root, [`${ACME}data/semrush.csv`, `${ACME}logo.png`])).toEqual(
+      new Set([`${ACME}data/semrush.csv`]),
+    );
+    expect(await gitIgnored(root, [`${ACME}logo.png`])).toEqual(new Set());
+  });
+
+  it('gets no answer from git outside a repository', async () => {
+    const root = tempDir();
+    put(root, 'a.md');
+    expect(await gitIgnored(root, ['a.md'])).toBeNull();
+  });
+
+  it('recognises protected names', () => {
+    expect(isProtectedFile('clients/x/CLAUDE.md')).toBe(true);
+    expect(isProtectedFile('templates/sub/readme.MD')).toBe(true);
+    expect(isProtectedFile('clients/x/profile.md')).toBe(true);
+    expect(isProtectedFile('clients/x/notes/profile.md')).toBe(false);
+    expect(isProtectedFile('clients/x/logo.png')).toBe(false);
   });
 });

@@ -76,6 +76,77 @@ describe('api.deletePastChat', () => {
   });
 });
 
+describe('api.deleteLibraryFile', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  async function allowed(url: string, init: RequestInit) {
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    return checkRequest(
+      {
+        method: 'DELETE',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+  }
+
+  it('sends a JSON DELETE with { expect } that passes the real request check, and reads a 204', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.deleteLibraryFile('client:acme/logo 1.png', 'v1')).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/library/items/client%3Aacme%2Flogo%201.png');
+    expect(init.method).toBe('DELETE');
+    expect(JSON.parse(String(init.body))).toEqual({ expect: 'v1' });
+    expect(await allowed(url, init)).toEqual({ action: 'allow' });
+  });
+
+  it('sends {} when there is no version, and passes the request check when the page is closing (keepalive)', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.deleteLibraryFile('a', undefined, { keepalive: true });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe('{}');
+    expect(init.keepalive).toBe(true);
+    expect(await allowed(url, init)).toEqual({ action: 'allow' });
+  });
+
+  it('reads a refusal into an ApiFailure with its code and message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: { code: 'changed', message: 'Changed.' } }), { status: 409 }),
+      ),
+    );
+    await expect(api.deleteLibraryFile('a', 'v1')).rejects.toMatchObject({ code: 'changed', status: 409 });
+  });
+
+  it('also reads a flat { error, code } refusal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'No.', code: 'not-allowed' }), { status: 403 })),
+    );
+    await expect(api.deleteLibraryFile('a')).rejects.toMatchObject({
+      code: 'not-allowed',
+      message: 'No.',
+      status: 403,
+    });
+  });
+});
+
 describe('api.askPage', () => {
   afterEach(() => vi.unstubAllGlobals());
   it('posts JSON that passes the real request check', async () => {

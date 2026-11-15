@@ -62,9 +62,12 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
   const wantFiles = url.searchParams.get('files') === '1';
   // The same for `level` events (`levels=1`).
   const wantLevels = url.searchParams.get('levels') === '1';
+  // The same for `compaction` and `context` events (`context=1`, plan 2026-11-14-context-management).
+  const wantContext = url.searchParams.get('context') === '1';
   const shown = (item: SequencedEvent) =>
     (wantFiles || (item.event.type !== 'files' && item.event.type !== 'helper-report')) &&
-    (wantLevels || item.event.type !== 'level');
+    (wantLevels || item.event.type !== 'level') &&
+    (wantContext || (item.event.type !== 'compaction' && item.event.type !== 'context'));
   // A reconnecting EventSource sends the last id it saw; it wins over the original `after`.
   const after = Math.max(parseSeq(url.searchParams.get('after')), parseSeq(req.headers['last-event-id']));
 

@@ -10,6 +10,8 @@
  * source with Node's built-in type stripping.
  */
 
+import type { CompactionEvent, ContextEvent } from './context-contract.ts';
+import { chatContextPath } from './context-contract.ts';
 import type { AppState } from './install-contract.ts';
 import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
 import type { ChatPage } from './pages-contract.ts';
@@ -570,9 +572,9 @@ export type DocFormat = 'pdf' | 'doc' | 'sheet' | 'deck';
 export type LibraryView = 'image' | 'text' | 'page' | 'pdf';
 
 export interface LibraryScope {
-  /** `personal`, or `client:<slug>`. (`shared:<name>` is reserved for agency folders; none yet.) */
+  /** `personal`, `client:<slug>`, or `shared:<name>` for an agency folder (today only `shared:templates`). */
   id: string;
-  /** "My personal files", or the client's name. */
+  /** "My personal files", the client's name, or the agency folder's ("Templates"). */
   name: string;
   kind: 'personal' | 'client' | 'shared';
 }
@@ -590,8 +592,9 @@ export interface LibraryItem {
   /** Lower case, no dot: "png", "md". */
   ext: string;
   /**
-   * The card it is shown in. From the rules ("Reports", "Brand"); a file no rule matches takes its
-   * first folder's name, tidied up; a file loose in the scope's root goes in "Other".
+   * The card it is shown in. In a client's area, from the rules ("Reports", "Brand"); a file no rule
+   * matches takes its first folder's name, tidied up; a file loose in the scope's root goes in "Other",
+   * except in an agency folder, where loose files go in a first card named after it ("Templates").
    */
   group: string;
   /** The file's name. */
@@ -1049,6 +1052,13 @@ export type ChatEvent =
     }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
   /**
+   * Context management (plan 2026-11-14-context-management, decisions 1–7). Sent only on streams
+   * opened with `context=1` (see `ROUTES.stream`), for the same reason as `files`. The server keeps
+   * the newest `context` and every `compaction` `done` in its replay log.
+   */
+  | CompactionEvent
+  | ContextEvent
+  /**
    * Everything this chat has used or produced so far (plan 2026-11-13-chat-files). A whole snapshot
    * each time, never a delta: the newest one replaces any before it, and the server keeps only the
    * newest in its replay log. Sent only on streams opened with `files=1` (see `ROUTES.stream`):
@@ -1461,6 +1471,12 @@ export const ROUTES = {
    */
   chatLevel: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/level`,
   /**
+   * `GET`: ChatContextDetail (shared/context-contract.ts) for one open chat. 404 `not-found` for an
+   * unknown chat. `detail: 'full'` at most once per 30 s per chat and never during a reply; otherwise
+   * the newest reading with `approximate: true`.
+   */
+  chatContext: chatContextPath,
+  /**
    * `GET`: ChangelogResponse, read from the app's own CHANGELOG.md (never a brain file). Owners and
    * scouts only: 403 `not-allowed` for anyone else. An unreadable file gives `{versions: []}`.
    */
@@ -1574,11 +1590,12 @@ export const ROUTES = {
    * `files`: the page understands `files` chat events (plan 2026-11-13-chat-files). Without it the
    * server leaves them out of the stream, replay and live, so a tab from an older version (whose
    * reducer resets a chat on an unknown event) keeps working until it reloads. `levels`: the same
-   * for `level` events (plan 2026-11-14-skill-levels-and-helpers).
+   * for `level` events (plan 2026-11-14-skill-levels-and-helpers). `context`: the same for
+   * `compaction` and `context` events (plan 2026-11-14-context-management).
    */
-  stream: (sessionId?: string | null, after = 0, files = false, levels = false) =>
+  stream: (sessionId?: string | null, after = 0, files = false, levels = false, context = false) =>
     sessionId
-      ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}${files ? '&files=1' : ''}${levels ? '&levels=1' : ''}`
+      ? `/api/stream?session=${encodeURIComponent(sessionId)}&after=${after}${files ? '&files=1' : ''}${levels ? '&levels=1' : ''}${context ? '&context=1' : ''}`
       : '/api/stream',
 } as const;
 

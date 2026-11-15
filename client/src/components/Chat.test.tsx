@@ -60,7 +60,7 @@ vi.mock('../store.tsx', () => ({
 }));
 
 const { ChatView } = await import('./Chat.tsx');
-const { ShellProvider } = await import('../shell/ShellProvider.tsx');
+const { ShellProvider, useShell } = await import('../shell/ShellProvider.tsx');
 
 const sheet = () => (
   <ShellProvider>
@@ -78,6 +78,10 @@ const chatState = (sessionState: ChatState['sessionState'], stepLabel?: string):
   effort: null,
   level: null,
   unlevelledSkill: null,
+  compacting: false,
+  compactionFailed: false,
+  context: null,
+  lastCompaction: null,
   files: { files: [], attachments: [], links: [] },
   items: [
     { kind: 'user', id: 'u', text: 'hi' },
@@ -406,5 +410,128 @@ describe('the team-level offer', () => {
       expect(screen.queryByText(/Set a team level/)).toBeNull();
       unmount();
     }
+  });
+});
+
+// Watches what the shell shows when a link is clicked.
+let shell: ReturnType<typeof useShell>['state'] | null = null;
+function Probe() {
+  shell = useShell().state;
+  return null;
+}
+
+describe('a file link in a reply', () => {
+  const withFiles = (pages: NonNullable<ChatState['files']['pages']>) => {
+    const base = chatState('idle');
+    h.chat = {
+      ...base,
+      files: {
+        files: [
+          {
+            key: 'chart',
+            path: 'personal/uc-chart.html',
+            item: null,
+            scope: { id: 'personal', name: 'My personal files', kind: 'personal' },
+            actions: ['created'],
+            toolUseIds: [],
+            edits: 0,
+            order: 1,
+          },
+        ],
+        attachments: [],
+        links: [],
+        pages,
+      },
+      items: [{ kind: 'assistant', id: 'a', text: 'Made it: `personal/uc-chart.html`.', done: true }],
+    } as ChatState;
+    render(
+      <ShellProvider>
+        <ChatView />
+        <Probe />
+      </ShellProvider>,
+    );
+    return document.querySelector('a[href^="#chat-file="]') as HTMLAnchorElement;
+  };
+
+  it("opens the page view (with Download with TDS branding) when the file is this chat's page", () => {
+    // A test on 15 Nov 2026: the link opened the plain file viewer, so the branding button was missing.
+    const link = withFiles([
+      {
+        key: 'pg1',
+        title: 'Chart',
+        url: null,
+        versions: [{ n: 1, remote: null, at: null, hasCopy: true }],
+        draft: false,
+        fileKey: 'chart',
+        live: false,
+        multiFile: false,
+        toolUseIds: [],
+        order: 1,
+      },
+    ]);
+    fireEvent.click(link);
+    expect(shell?.viewer).toEqual({ kind: 'page', chat: 's1', key: 'pg1' });
+  });
+
+  it('shows any other file in the Files panel as before', () => {
+    fireEvent.click(withFiles([]));
+    expect(shell?.viewer).toBeNull();
+    expect(shell?.panelFile).toEqual({ chat: 's1', key: 'chart' });
+  });
+});
+
+describe('the context meter and summarising line', () => {
+  const reading = {
+    type: 'context',
+    usedTokens: 42_000,
+    limitTokens: 100_000,
+    windowTokens: 200_000,
+    percent: 42,
+    autoCompact: true,
+    source: 'engine',
+    at: 1,
+  };
+
+  it('stays hidden until the first reading', () => {
+    h.chat = chatState('idle');
+    render(sheet());
+    expect(screen.queryByRole('meter')).toBeNull();
+  });
+
+  it('shows in manual mode, where the level line is not drawn', () => {
+    h.chat = { ...chatState('idle'), level: { tier: null, source: { kind: 'manual' } }, context: reading };
+    render(sheet());
+    expect(document.querySelector('.level-row')).toBeNull();
+    expect(screen.getByRole('meter', { name: 'How full this chat is' })).toBeTruthy();
+  });
+
+  it('shows beside the level line in automatic mode', () => {
+    h.chat = {
+      ...chatState('idle'),
+      level: { tier: 'standard', source: { kind: 'auto', reason: 'x' } },
+      context: reading,
+    };
+    render(sheet());
+    expect(document.querySelector('.level-row')).not.toBeNull();
+    expect(screen.getByRole('meter')).toBeTruthy();
+  });
+
+  it('says so while Claude summarises', () => {
+    h.chat = { ...chatState('working'), compacting: true };
+    render(sheet());
+    expect(document.querySelector('.compacting-line')?.textContent).toBe(
+      'Summarising the earlier conversation to make room…',
+    );
+  });
+
+  it('says once that switching down is held back', () => {
+    h.chat = {
+      ...chatState('idle'),
+      level: { tier: 'deep', kept: { wanted: 'quick' }, source: { kind: 'auto', reason: 'x' } },
+    };
+    render(sheet());
+    expect(document.querySelector('.level-kept')?.textContent).toBe(
+      'Staying on Deep for now: it costs less than switching down and re-reading the whole chat.',
+    );
   });
 });

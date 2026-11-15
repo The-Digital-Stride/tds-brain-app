@@ -307,3 +307,85 @@ describe('level events', () => {
     expect(s.items).toHaveLength(1);
   });
 });
+
+describe('chatReducer: context management', () => {
+  const done = (id: string, at: number | null = 1000) =>
+    ({
+      type: 'compaction',
+      phase: 'done',
+      id,
+      trigger: 'auto',
+      preTokens: 150_000,
+      postTokens: 20_000,
+      at,
+    }) as const;
+  const reading = (percent: number): ChatEvent => ({
+    type: 'context',
+    usedTokens: percent * 1000,
+    limitTokens: 100_000,
+    windowTokens: 200_000,
+    percent,
+    autoCompact: true,
+    source: 'engine',
+    at: 1,
+  });
+
+  it('shows the state line when summarising starts, and clears it on every way out', () => {
+    const started = apply([seq(1, { type: 'compaction', phase: 'started' })]);
+    expect(started.compacting).toBe(true);
+    const clearing: ChatEvent[] = [
+      done('c:1'),
+      { type: 'compaction', phase: 'failed' },
+      { type: 'compaction', phase: 'ended' },
+      { type: 'turn-end', ok: true, interrupted: false, errorText: null, durationMs: 1 },
+      { type: 'state', state: 'idle' },
+    ];
+    for (const [i, event] of clearing.entries()) {
+      expect(apply([seq(2 + i, event)], started).compacting).toBe(false);
+    }
+  });
+
+  it('adds one divider per compaction id, however often it arrives', () => {
+    const s = apply([
+      seq(1, { type: 'user-message', messageId: 'u', text: 'Hi' }),
+      seq(2, done('c:1')),
+      seq(3, done('c:1')),
+    ]);
+    expect(s.items.filter((i) => i.kind === 'summary')).toHaveLength(1);
+    expect(s.items[1]).toMatchObject({
+      kind: 'summary',
+      id: 'c:1',
+      text: 'Earlier messages were summarised to make room. Claude keeps the key points but may have lost some detail.',
+    });
+    expect(s.lastCompaction).toMatchObject({ id: 'c:1', preTokens: 150_000, postTokens: 20_000 });
+  });
+
+  it('words the first replayed divider of a reopened chat differently', () => {
+    const s = apply([
+      seq(1, done('c:1', null)),
+      seq(2, { type: 'user-message', messageId: 'u', text: 'Hi' }),
+    ]);
+    expect(s.items[0]).toMatchObject({
+      kind: 'summary',
+      text: "Earlier messages in this chat were summarised to make room, so they aren't shown here.",
+    });
+  });
+
+  it('warns once when summarising fails, until a later one works', () => {
+    const failed = { type: 'compaction', phase: 'failed' } as const;
+    const s = apply([seq(1, failed), seq(2, failed)]);
+    const warnings = s.items.filter((i) => i.kind === 'notice');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      level: 'warning',
+      text: "Claude couldn't summarise this chat. If replies start failing, start a new chat.",
+    });
+    const again = apply([seq(3, done('c:2')), seq(4, failed)], s);
+    expect(again.items.filter((i) => i.kind === 'notice')).toHaveLength(2);
+  });
+
+  it('keeps the newest context reading', () => {
+    const s = apply([seq(1, reading(42)), seq(2, reading(61))]);
+    expect(s.context?.percent).toBe(61);
+  });
+});

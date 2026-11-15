@@ -328,6 +328,13 @@
   background: var(--danger-wash);
   color: var(--danger);
 }
+/* Where earlier messages were summarised: a quiet notice, not a warning. */
+.notice[data-kind="summary"] {
+  background: var(--tint-1);
+  border-style: dashed;
+  color: var(--iron);
+  text-align: center;
+}
 /* An answered card, kept in the thread as the record. */
 .record {
   font-size: 13px;
@@ -1503,4 +1510,63 @@
 }
 .levels-actions .field {
   width: 140px;
+}
+
+/* Context meter: how full the chat is, under the message box. Words carry the band, colour only backs them up. */
+.context-foot {
+  margin: -4px 0 0;
+  padding: 0 16px;
+}
+.context-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+}
+.context-meter-bar {
+  flex: 0 0 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--tint-2);
+  overflow: hidden;
+}
+.context-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--grey-dot);
+}
+.context-meter[data-band="warn"] .context-meter-fill {
+  background: var(--attn-asking-edge);
+}
+.context-meter[data-band="full"] {
+  color: var(--danger);
+}
+.context-meter[data-band="full"] .context-meter-fill {
+  background: var(--danger);
+}
+
+/* Inspector > Context */
+.context-items {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.context-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+}
+.context-items .context-tokens {
+  color: var(--iron);
+  font-variant-numeric: tabular-nums;
+}
+.context-items .context-advice {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--iron);
 }

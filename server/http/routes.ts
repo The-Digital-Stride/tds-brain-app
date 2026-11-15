@@ -59,6 +59,7 @@ import {
   SKILL_LEVEL_SETTERS,
   type SkillLevels,
 } from '../../shared/levels-contract.ts';
+import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import {
   UPDATE_CHECK_EVERY_MS,
   UpdateRefused,
@@ -844,7 +845,7 @@ async function sendPage(req: IncomingMessage, res: ServerResponse, rawId: string
       return;
     }
     // R7: the file's own scripts run, locked down as a chat's page is; errors stay script-free.
-    sendPreviewHtml(res, 200, read.data);
+    sendPreviewHtml(res, 200, withLinkScriptBytes(read.data));
   } catch {
     if (res.headersSent) res.end();
     else sendPageError(res, 500, 'Something went wrong in the app. Try again.');
@@ -942,6 +943,24 @@ export function wrapPage(data: Buffer): Buffer {
   return Buffer.concat([Buffer.from(PAGE_SKELETON_HEAD), data, Buffer.from(PAGE_SKELETON_FOOT)]);
 }
 
+/** How far into a page to look for a leading doctype (past any comments before it). */
+const DOCTYPE_SCAN_BYTES = 64 * 1024;
+const LINK_SCRIPT_BYTES = Buffer.from(LINK_SCRIPT_TAG);
+
+/**
+ * A page as served (hardening decision 1): its bytes with the link script added right after a
+ * leading doctype, else at the start. A new buffer every time; the stored bytes are never changed.
+ * Read as latin1, one character is one byte, so the offset is a byte offset and nothing is re-encoded.
+ */
+export function withLinkScriptBytes(data: Buffer): Buffer {
+  // A UTF-16 page (byte order mark FE FF / FF FE) is served as it is: bytes added in front of its mark
+  // would garble it, and its links fall back to the stop notice.
+  if (data.length >= 2 && ((data[0] === 0xfe && data[1] === 0xff) || (data[0] === 0xff && data[1] === 0xfe)))
+    return data;
+  const at = linkScriptOffset(data.subarray(0, DOCTYPE_SCAN_BYTES).toString('latin1'));
+  return Buffer.concat([data.subarray(0, at), LINK_SCRIPT_BYTES, data.subarray(at)]);
+}
+
 /** HTML under the preview policy, which REPLACES the app's (two policies would both apply and block the frame). */
 function sendPreviewHtml(res: ServerResponse, status: number, body: string | Buffer): void {
   const length = typeof body === 'string' ? Buffer.byteLength(body) : body.length;
@@ -1003,7 +1022,7 @@ async function sendChatPage(
       sendPreviewError(res, 404, raw.n === '0' ? DRAFT_NOT_KEPT : PAGE_NOT_KEPT);
       return;
     }
-    sendPreviewHtml(res, 200, wrapPage(data));
+    sendPreviewHtml(res, 200, withLinkScriptBytes(wrapPage(data)));
   } catch {
     ctx.log('A page could not be shown.');
     if (res.headersSent) res.end();
@@ -1099,6 +1118,7 @@ async function askPage(
 const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
 const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
 const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
+const SESSION_CONTEXT = /^\/api\/sessions\/([^/]+)\/context$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
 
 function prewarmPick(ctx: RouteContext, text: string): void {
@@ -1469,6 +1489,24 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       throw new HttpError(400, 'bad-request', 'That level was not understood.');
     }
     sendJson(res, 200, { level: await ctx.sessions.setChatLevel(id, tier) });
+    return;
+  }
+
+  // `GET ROUTES.chatContext` (plan 2026-11-14-context-management, decision 6). The manager rate-limits
+  // the engine's full read and never makes it during a reply.
+  const cx = SESSION_CONTEXT.exec(path);
+  if (cx?.[1]) {
+    if (method !== 'GET') throw methodNotAllowed();
+    let id: string;
+    try {
+      id = decodeURIComponent(cx[1]);
+    } catch {
+      throw new HttpError(400, 'bad-request', 'That chat was not understood.');
+    }
+    if (!ctx.sessions.contextDetail) {
+      throw new HttpError(404, 'not-found', 'That chat could not be found. It may have been closed.');
+    }
+    sendJson(res, 200, await ctx.sessions.contextDetail(id));
     return;
   }
 

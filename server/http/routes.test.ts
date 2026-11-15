@@ -18,6 +18,7 @@ import {
   type UploadResponse,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
+import { LINK_SCRIPT_TAG } from '../../shared/page-links.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { SkillLevelError } from '../brain/skill-levels.ts';
@@ -41,6 +42,7 @@ import {
   validatePrefsPatch,
 } from './routes.ts';
 import {
+  checkRequest,
   cookieValueFor,
   PAGE_CSP,
   PAGE_PREVIEW_CSP,
@@ -1089,11 +1091,48 @@ describe('library routes', () => {
     expect(sent.headers['cache-control']).toBe('no-store');
     expect(sent.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(sent.headers['x-content-type-options']).toBe('nosniff');
-    expect(
-      sent.body.equals(readFileSync(join(root, 'clients/acme-heating/landing-pages/boiler/page.html'))),
-    ).toBe(true);
+    // As stored, with only the link script added right after the doctype (hardening decision 1).
+    const file = join(root, 'clients/acme-heating/landing-pages/boiler/page.html');
+    const stored = readFileSync(file);
+    expect(sent.body.toString('utf8')).toBe(
+      `<!doctype html>${LINK_SCRIPT_TAG}${stored.toString('utf8').slice('<!doctype html>'.length)}`,
+    );
+    expect(sent.headers['content-length']).toBe(sent.body.length);
     const personal = await call(ctx, ROUTES.libraryPage(await idOf(ctx, 'explainer.html', 'personal')));
     expect(personal.status).toBe(200);
+    expect(personal.body.toString('utf8').startsWith(`<!doctype html>${LINK_SCRIPT_TAG}<title>`)).toBe(true);
+  });
+
+  it('adds the link script to a served page byte for byte, never to the stored file', async () => {
+    const { root, ctx } = setup();
+    const file = join(root, 'clients/acme-heating/landing-pages/boiler/page.html');
+    // A BOM, a comment and a byte that isn't valid UTF-8 all pass through untouched.
+    const stored = Buffer.concat([
+      Buffer.from('\uFEFF<!-- made --> <!DOCTYPE html>', 'utf8'),
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('<p>caf\u00e9</p>', 'utf8'),
+    ]);
+    writeFileSync(file, stored);
+    const id = await idOf(ctx, 'page.html');
+    const sent = await call(ctx, ROUTES.libraryPage(id));
+    const at = Buffer.byteLength('\uFEFF<!-- made --> <!DOCTYPE html>');
+    expect(
+      sent.body.equals(
+        Buffer.concat([stored.subarray(0, at), Buffer.from(LINK_SCRIPT_TAG), stored.subarray(at)]),
+      ),
+    ).toBe(true);
+    expect(readFileSync(file).equals(stored)).toBe(true);
+    // A page with no doctype starts with the script.
+    writeFileSync(file, '<h1>Bare</h1>');
+    const bare = await call(ctx, ROUTES.libraryPage(id));
+    expect(bare.body.toString('utf8')).toBe(`${LINK_SCRIPT_TAG}<h1>Bare</h1>`);
+    expect(readFileSync(file, 'utf8')).toBe('<h1>Bare</h1>');
+    // A UTF-16 page (either byte order) is served as stored: bytes in front of its mark would garble it.
+    for (const bom of [Buffer.from([0xfe, 0xff]), Buffer.from([0xff, 0xfe])]) {
+      const wide = Buffer.concat([bom, Buffer.from('<!DOCTYPE html><p>x</p>', 'utf16le')]);
+      writeFileSync(file, wide);
+      expect((await call(ctx, ROUTES.libraryPage(id))).body.equals(wide)).toBe(true);
+    }
   });
 
   it('answers page errors as a small HTML page under the same policy, never JSON', async () => {
@@ -2186,6 +2225,94 @@ describe('DELETE /api/sessions/past/:id', () => {
   });
 });
 
+describe('the chat context detail (plan 2026-11-14-context-management, decision 6)', () => {
+  const PORT = 3877;
+  const TOKEN = 'context-route-token';
+  const DETAIL = {
+    reading: null,
+    items: [{ name: 'Messages', tokens: 10, group: 'messages' }],
+    lastCompaction: null,
+    approximate: false,
+  };
+
+  /** Through the real gate first, as server.ts runs it, then the route. */
+  async function call(
+    method: string,
+    path: string,
+    sessions: Record<string, unknown>,
+    headers: Record<string, string | undefined> = {},
+  ) {
+    const sent = { status: 0, body: '', gate: '' };
+    const all = {
+      host: `127.0.0.1:${PORT}`,
+      cookie: `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`,
+      'sec-fetch-site': 'same-origin',
+      ...headers,
+    };
+    const gate = checkRequest({ method, path, headers: all }, { port: PORT, launchToken: TOKEN });
+    sent.gate = gate.action;
+    if (gate.action !== 'allow') {
+      if (gate.action === 'reject') sent.status = gate.status;
+      return { ...sent, json: null };
+    }
+    const req = Object.assign(Readable.from([]), { method, headers: all });
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:${PORT}${path}`),
+      { sessions, log: () => {} } as unknown as RouteContext,
+    );
+    return { ...sent, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('a plain GET from the page passes the gate and answers the session manager’s detail', async () => {
+    const asked: string[] = [];
+    const sent = await call('GET', ROUTES.chatContext('chat 1'), {
+      contextDetail: async (id: string) => {
+        asked.push(id);
+        return DETAIL;
+      },
+    });
+    expect(sent.gate).toBe('allow');
+    expect(sent.status).toBe(200);
+    expect(asked).toEqual(['chat 1']);
+    expect(sent.json).toEqual(DETAIL);
+  });
+
+  it('is refused by the gate without a session, and from another site', async () => {
+    const sessions = { contextDetail: async () => DETAIL };
+    expect((await call('GET', ROUTES.chatContext('c1'), sessions, { cookie: undefined })).status).toBe(401);
+    expect(
+      (await call('GET', ROUTES.chatContext('c1'), sessions, { 'sec-fetch-site': 'cross-site' })).status,
+    ).toBe(403);
+  });
+
+  it('is GET only, 404 for an unknown chat, and 404 where the manager has no detail (setup mode)', async () => {
+    const sessions = {
+      contextDetail: async () => {
+        throw new SessionError('not-found', 'That chat could not be found.');
+      },
+    };
+    const post = await call('POST', ROUTES.chatContext('c1'), sessions, {
+      'content-type': 'application/json',
+      origin: `http://127.0.0.1:${PORT}`,
+    });
+    expect(post.status).toBe(405);
+    expect((await call('GET', ROUTES.chatContext('gone'), sessions)).status).toBe(404);
+    expect((await call('GET', ROUTES.chatContext('c1'), createSetupSessions() as never)).status).toBe(404);
+    expect((await call('GET', '/api/sessions/%E0%A4%A/context', sessions)).status).toBe(400);
+  });
+});
+
 describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and 7)', () => {
   type Sent = { status: number; headers: Record<string, string | number>; cspSets: number; body: Buffer };
   const SID = 'live-chat-1';
@@ -2261,7 +2388,7 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
     expect(sent.headers['x-content-type-options']).toBe('nosniff');
     expect(sent.headers['cache-control']).toBe('no-store');
     const html = sent.body.toString('utf8');
-    expect(html.startsWith('<!doctype html>\n')).toBe(true);
+    expect(html.startsWith(`<!doctype html>${LINK_SCRIPT_TAG}\n<html>`)).toBe(true);
     expect(html).toContain('<meta charset="utf-8">');
     expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
     expect(html).toContain('body{margin:0;font:14px system-ui');
@@ -2271,10 +2398,26 @@ describe('a chat’s pages (plan 2026-11-14-artifacts-in-app, decisions 3, 6 and
     expect(sent.headers['content-length']).toBe(sent.body.length);
   });
 
-  it('leaves a page that starts with a doctype exactly as stored', async () => {
-    const sent = await call(ROUTES.chatPage(SID, KEY, 2));
+  it('leaves a page that starts with a doctype as stored, but for the link script after it', async () => {
+    const stored = Buffer.from('﻿  <!DOCTYPE html><html><body>Whole</body></html>');
+    const copy = Buffer.from(stored);
+    const sent = await call(ROUTES.chatPage(SID, KEY, 2), {
+      sessions: sessions({ pageCopy: async () => copy }).fake,
+    });
     expect(sent.status).toBe(200);
-    expect(sent.body.toString('utf8')).toBe('﻿  <!DOCTYPE html><html><body>Whole</body></html>');
+    expect(sent.body.toString('utf8')).toBe(
+      `﻿  <!DOCTYPE html>${LINK_SCRIPT_TAG}<html><body>Whole</body></html>`,
+    );
+    expect(sent.headers['content-length']).toBe(sent.body.length);
+    // The copy the store handed over is not changed.
+    expect(copy.equals(stored)).toBe(true);
+  });
+
+  it('keeps error pages free of the link script', async () => {
+    for (const path of [ROUTES.chatPage(SID, 'unknown', 1), ROUTES.chatPage(SID, KEY, 3)]) {
+      const sent = await call(path);
+      expect(sent.body.toString('utf8')).not.toContain('<script');
+    }
   });
 
   it('answers every miss as a small page under the same policy, never JSON', async () => {

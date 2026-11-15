@@ -3,6 +3,7 @@ import { ROUTES } from '../../../shared/contract.ts';
 import { openLibraryItem } from '../apps/shared/search.ts';
 import { FileStage } from '../apps/shared/Viewer.tsx';
 import { useStore } from '../store.tsx';
+import { FileStar } from './FileStar.tsx';
 import { Icon } from './Icon.tsx';
 import { PageStage } from './PageStage.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
@@ -118,6 +119,7 @@ export function FileViewer() {
             >
               Download
             </a>
+            <FileStar item={item} />
           </div>
           <button type="button" className="icon-btn viewer-close" aria-label="Close file" onClick={close}>
             <Icon name="close" />

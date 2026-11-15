@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { AppPrefs } from '../../../shared/contract.ts';
 
 /** The prefs lists a star saves to (plans 2026-11-14-chat-favourites and 2026-11-14-todo-favourites). */
-export type FavouriteField = 'favouriteChats' | 'favouriteTodos';
+export type FavouriteField = 'favouriteChats' | 'favouriteTodos' | 'favouriteFiles';
 
 export interface FavouriteList {
   /** Stars or unstars one id. The star moves at once; a failure puts the saved list back. */

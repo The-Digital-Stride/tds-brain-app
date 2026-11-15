@@ -48,6 +48,7 @@ describe('app store', () => {
       'directWrites',
       'effort',
       'favouriteChats',
+      'favouriteFiles',
       'favouriteTodos',
       'lastClient',
       'levelMode',
@@ -103,6 +104,24 @@ describe('app store', () => {
     expect((await store.update({ favouriteChats: [] })).favouriteTodos).toEqual(many.slice(5));
   });
 
+  it('keeps starred files: an old file reads as none; empty, long and repeated ids are dropped; the newest 100 stay', async () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'] }));
+    const store = createAppStore(dir);
+    expect((await store.get()).favouriteFiles).toEqual([]);
+    const long = 'x'.repeat(401);
+    expect(
+      (await store.update({ favouriteFiles: ['f1', '', 'f1', 3, long, 'f2'] as never })).favouriteFiles,
+    ).toEqual(['f1', 'f2']);
+    expect((await store.update({ favouriteFiles: 'nope' as never })).favouriteFiles).toEqual(['f1', 'f2']);
+    expect((await createAppStore(dir).get()).favouriteFiles).toEqual(['f1', 'f2']);
+    const many = Array.from({ length: 105 }, (_, i) => `f${i}`);
+    expect((await store.update({ favouriteFiles: many })).favouriteFiles).toEqual(many.slice(5));
+    // A chat star save leaves the file stars alone.
+    expect((await store.update({ favouriteChats: [] })).favouriteFiles).toEqual(many.slice(5));
+  });
+
   it('validates types: pins unique strings, max 100; booleans are booleans', async () => {
     const store = createAppStore(fresh());
     const many = Array.from({ length: 150 }, (_, i) => `s${i}`);
@@ -135,6 +154,7 @@ describe('app store', () => {
       levelMode: 'auto',
       favouriteChats: [],
       favouriteTodos: [],
+      favouriteFiles: [],
     });
   });
 

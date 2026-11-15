@@ -650,6 +650,11 @@ export interface LibraryFile {
 export const THUMB_WIDTHS = [96, 320, 1600] as const;
 export type ThumbWidth = (typeof THUMB_WIDTHS)[number];
 
+/** `POST /api/library/items`. */
+export interface LibraryItemsResponse {
+  files: { item: LibraryItem; scope: LibraryScope }[];
+}
+
 /** `GET /api/library/text/<id>`. */
 export interface LibraryText {
   /** The file's text with any YAML frontmatter block at the top removed. */
@@ -723,10 +728,20 @@ export interface AppPrefs {
    * never in a to-do file. This server always sends it; optional because an older server sends none, which reads as [].
    */
   favouriteTodos?: string[];
+  /**
+   * Starred files (plan 2026-11-15-home-pinned-cards): `LibraryItem.id`s in the order they were starred, at most
+   * FAVOURITE_FILES_MAX, each at most FILE_ID_MAX characters. Shown on Home as "Pinned files". An id is stable for a
+   * path, so a pin follows the file across re-listings. Kept only here, never in the brain. This server always
+   * sends it; optional because an older server sends none, which reads as [].
+   */
+  favouriteFiles?: string[];
 }
 
 export const FAVOURITE_CHATS_MAX = 200;
 export const FAVOURITE_TODOS_MAX = 200;
+export const FAVOURITE_FILES_MAX = 100;
+/** The longest library id the app accepts (the server's own limit on an id). */
+export const FILE_ID_MAX = 400;
 /** The longest `TodoItem.key` the app's prefs keep (favourites and "New to you" markers). */
 export const TODO_KEY_MAX = 300;
 /** Claude Code's session ids, which favourite chats are keyed by. */
@@ -751,6 +766,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   levelMode: 'auto',
   favouriteChats: [],
   favouriteTodos: [],
+  favouriteFiles: [],
 };
 
 /** Implemented in `server/store/app-store.ts` as `createAppStore(dataDir: string): AppStore`. */
@@ -1551,6 +1567,12 @@ export const ROUTES = {
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
   librarySearch: '/api/library/search',
+  /**
+   * `POST {ids: string[]}` (at most FAVOURITE_FILES_MAX ids) → LibraryItemsResponse. The listed files for these ids,
+   * in the order sent; an id that is unknown or no longer a listed file is left out. Read-only.
+   * 400 `bad-request` for a body that is not that.
+   */
+  libraryItems: '/api/library/items',
   /**
    * `GET`: LibraryListing. 404 `not-found` for a scope that is not listed.
    *

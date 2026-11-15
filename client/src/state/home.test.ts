@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TodoItem } from '../../../shared/contract.ts';
-import { greeting, needsYou, summary } from './home.ts';
+import { greeting, summary } from './home.ts';
 
 const todo = (id: string, due: string | null): TodoItem => ({
   id,
@@ -22,39 +22,6 @@ const todo = (id: string, due: string | null): TodoItem => ({
 });
 
 const TODAY = '2026-11-11';
-
-describe('needsYou', () => {
-  it('keeps overdue, today and tomorrow, soonest first, and leaves out later and undated', () => {
-    const mine = [
-      todo('later', '2026-11-13'),
-      todo('tomorrow', '2026-11-12'),
-      todo('none', null),
-      todo('today', '2026-11-11'),
-      todo('overdue', '2026-11-09'),
-    ];
-    const r = needsYou(mine, TODAY);
-    expect(r.rows.map((t) => t.id)).toEqual(['overdue', 'today', 'tomorrow']);
-    expect(r.count).toBe(3);
-    expect(r.more).toBe(2);
-  });
-
-  it('shows at most 4 rows but counts them all', () => {
-    const mine = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) => todo(id, `2026-11-0${i + 1}`));
-    const r = needsYou(mine, TODAY);
-    expect(r.rows).toHaveLength(4);
-    expect(r.count).toBe(6);
-    expect(r.more).toBe(2);
-  });
-
-  it('copes with nothing', () => {
-    expect(needsYou([], TODAY)).toEqual({ rows: [], count: 0, more: 0 });
-  });
-
-  it('crosses a month end for tomorrow', () => {
-    const r = needsYou([todo('x', '2026-12-01')], '2026-11-30');
-    expect(r.count).toBe(1);
-  });
-});
 
 describe('greeting', () => {
   const at = (h: number, m: number) => new Date(2026, 10, 11, h, m);

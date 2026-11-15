@@ -3,6 +3,7 @@ import {
   attentionFor,
   type ClientGuessResponse,
   type ClientPickReported,
+  type LibraryItemsResponse,
   type SkillInfo,
   type TodoItem,
 } from '../../../shared/contract.ts';
@@ -10,10 +11,10 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { sortChats } from '../state/chats.ts';
 import { todoChatClient } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
-import { greeting, needsYou, summary } from '../state/home.ts';
+import { greeting, summary } from '../state/home.ts';
+import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import { ClientAsk } from './ClientAsk.tsx';
@@ -22,7 +23,7 @@ import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { clientOptions } from './search-select.ts';
-import { placeName, STATE_WORDS, starterSkills, todoChatDraft } from './words.ts';
+import { placeName, STATE_WORDS, starterSkills, todoChatDraft, whenWords } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
 function metaParts(
@@ -57,6 +58,9 @@ export function Home() {
     newChat,
     openChat,
     markTodosSeen,
+    openPast,
+    openView,
+    libraryVersion,
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
@@ -87,12 +91,54 @@ export function Home() {
       .then(() => api.clientPickOutcome(outcome))
       .catch(() => {});
 
+  const fileFavs = boot?.prefs.favouriteFiles;
+  const fileKey = (fileFavs ?? []).join('\n');
+  // The pinned files, looked up by id. The newest reply wins, old rows stay while a new lookup runs, and rows
+  // are filtered by the current stars, so unpinning a file removes it at once.
+  const [pinnedFiles, setPinnedFiles] = useState<LibraryItemsResponse['files'] | null>(null);
+  const [filesFailed, setFilesFailed] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `fileKey` stands for the list; `libraryVersion` refreshes after a change on disk
+  useEffect(() => {
+    const ids = pinnedFileIds(fileKey === '' ? [] : fileKey.split('\n'));
+    if (ids.length === 0) {
+      setPinnedFiles([]);
+      setFilesFailed(false);
+      return;
+    }
+    let current = true;
+    api
+      .libraryItems(ids)
+      .then((r) => {
+        if (!current) return;
+        setPinnedFiles(r.files);
+        setFilesFailed(false);
+      })
+      .catch(() => {
+        if (current) setFilesFailed(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [fileKey, libraryVersion]);
+
   if (!boot) return null;
 
   const today = todayIso();
   const live = sessions?.live ?? [];
   const mine = todos?.mine ?? [];
-  const need = needsYou(mine, today);
+  const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []);
+  const pinnedChatRows = pinnedChats(live, sessions?.past ?? [], boot.prefs.favouriteChats ?? []);
+  const starredFiles = new Set(boot.prefs.favouriteFiles ?? []);
+  const pinnedFileRows = (pinnedFiles ?? []).filter((f) => starredFiles.has(f.item.id));
+  const openFile = (f: LibraryItemsResponse['files'][number]) =>
+    dispatch({
+      type: 'open-viewer',
+      viewer: {
+        item: f.item,
+        place: f.scope.name,
+        openIn: { app: f.item.kind === 'image' ? 'images' : 'documents', scope: f.scope.id },
+      },
+    });
   const openDrawer = (drawer: DrawerName) => dispatch({ type: 'open-drawer', drawer });
   const clientName = (slug: string | null) => (slug ? placeName(slug, clients) : null);
 
@@ -110,7 +156,6 @@ export function Home() {
   const { pinned, often } = starterSkills(boot);
   const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Favourite skills';
   const skillRows: SkillInfo[] = (pinned.length > 0 ? pinned : often).slice(0, 5);
-  const openChats = sortChats(live).slice(0, 4);
 
   const loaded = todos !== null && sessions !== null;
   const summaryText = loaded
@@ -268,10 +313,10 @@ export function Home() {
           )}
 
           <div className="tray">
-            <section className="card" aria-labelledby="home-needs">
+            <section className="card" aria-labelledby="home-todos">
               <div className="card-head">
-                <h2 id="home-needs">Needs you</h2>
-                {todos ? <span className="count">{need.count}</span> : null}
+                <h2 id="home-todos">Pinned to-dos</h2>
+                {todos ? <span className="count">{pinnedTodoRows.length}</span> : null}
                 <button
                   type="button"
                   className="btn"
@@ -284,34 +329,33 @@ export function Home() {
               </div>
               {!todos ? (
                 <p className="card-note">Loading</p>
-              ) : need.rows.length === 0 ? (
-                <p className="card-note">
-                  {`Nothing due today or tomorrow.${
-                    mine.length > 0 ? ` ${mine.length} other ${mine.length === 1 ? 'to-do' : 'to-dos'}.` : ''
-                  }`}
-                </p>
+              ) : pinnedTodoRows.length === 0 ? (
+                <p className="card-note">Star a to-do to keep it here.</p>
               ) : (
-                need.rows.map((t) => (
-                  <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
-                    <span className="line-text">
-                      <span className="line-title">{t.title}</span>
-                      <span className="line-meta">
-                        {metaParts(t, today, clientName).map((part, i) => (
-                          <span key={part.text}>
-                            {i > 0 ? ', ' : ''}
-                            <span className={part.late ? 'late' : undefined}>{part.text}</span>
-                          </span>
-                        ))}
+                <>
+                  {pinnedTodoRows.slice(0, PINNED_ROWS).map((t) => (
+                    <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
+                      <span className="line-text">
+                        <span className="line-title">{t.title}</span>
+                        <span className="line-meta">
+                          {metaParts(t, today, clientName).map((part, i) => (
+                            <span key={part.text}>
+                              {i > 0 ? ', ' : ''}
+                              <span className={part.late ? 'late' : undefined}>{part.text}</span>
+                            </span>
+                          ))}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                ))
+                    </button>
+                  ))}
+                  <MoreLink total={pinnedTodoRows.length} noun="to-dos" onClick={() => openDrawer('todos')} />
+                </>
               )}
             </section>
 
             <section className="card" aria-labelledby="home-chats">
               <div className="card-head">
-                <h2 id="home-chats">Open chats</h2>
+                <h2 id="home-chats">Pinned chats</h2>
                 <button
                   type="button"
                   className="btn"
@@ -324,22 +368,73 @@ export function Home() {
               </div>
               {!sessions ? (
                 <p className="card-note">Loading</p>
-              ) : openChats.length === 0 ? (
-                <p className="card-note">No open chats.</p>
+              ) : pinnedChatRows.length === 0 ? (
+                <p className="card-note">Star a chat to keep it here.</p>
               ) : (
-                openChats.map((s) => (
-                  <button key={s.id} type="button" className="line" onClick={() => openChat(s.id)}>
-                    <span
-                      className="dot"
-                      data-attention={attentionFor(s.state) ?? undefined}
-                      aria-hidden="true"
-                    />
-                    <span className="line-text">
-                      <span className="line-title">{s.title}</span>
-                      <span className="line-meta">{STATE_WORDS[s.state]}</span>
-                    </span>
-                  </button>
-                ))
+                <>
+                  {pinnedChatRows.slice(0, PINNED_ROWS).map((row) =>
+                    row.kind === 'live' ? (
+                      <button
+                        key={row.chat.sdkSessionId}
+                        type="button"
+                        className="line"
+                        onClick={() => openChat(row.chat.id)}
+                      >
+                        <span
+                          className="dot"
+                          data-attention={attentionFor(row.chat.state) ?? undefined}
+                          aria-hidden="true"
+                        />
+                        <span className="line-text">
+                          <span className="line-title">{row.chat.title}</span>
+                          <span className="line-meta">{STATE_WORDS[row.chat.state]}</span>
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        key={row.chat.sdkSessionId}
+                        type="button"
+                        className="line"
+                        onClick={() => void openPast(row.chat.sdkSessionId)}
+                      >
+                        <span className="line-text">
+                          <span className="line-title">{row.chat.title || 'New chat'}</span>
+                          <span className="line-meta">{whenWords(row.chat.lastModified)}</span>
+                        </span>
+                      </button>
+                    ),
+                  )}
+                  <MoreLink total={pinnedChatRows.length} noun="chats" onClick={() => openDrawer('chats')} />
+                </>
+              )}
+            </section>
+
+            <section className="card" aria-labelledby="home-files">
+              <div className="card-head">
+                <h2 id="home-files">Pinned files</h2>
+              </div>
+              {pinnedFiles === null && filesFailed ? (
+                <p className="card-note">Couldn't load your pinned files.</p>
+              ) : pinnedFiles === null ? (
+                <p className="card-note">Loading</p>
+              ) : pinnedFileRows.length === 0 ? (
+                <p className="card-note">Star a file to keep it here.</p>
+              ) : (
+                <>
+                  {pinnedFileRows.slice(0, PINNED_ROWS).map((f) => (
+                    <button key={f.item.id} type="button" className="line" onClick={() => openFile(f)}>
+                      <span className="line-text">
+                        <span className="line-title">{f.item.title}</span>
+                        <span className="line-meta">{f.scope.name}</span>
+                      </span>
+                    </button>
+                  ))}
+                  <MoreLink
+                    total={pinnedFileRows.length}
+                    noun="files"
+                    onClick={() => openView('app:documents')}
+                  />
+                </>
               )}
             </section>
 
@@ -372,5 +467,15 @@ export function Home() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** "and N more" under a pinned card that holds more than it shows; a quiet button that opens the full list. */
+function MoreLink({ total, noun, onClick }: { total: number; noun: string; onClick: () => void }) {
+  if (total <= PINNED_ROWS) return null;
+  return (
+    <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onClick}>
+      {`and ${total - PINNED_ROWS} more ${noun}`}
+    </button>
   );
 }

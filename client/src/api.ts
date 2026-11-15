@@ -14,6 +14,7 @@ import type {
   ClientPickReported,
   CompleteTodoRequest,
   EngineChoices,
+  LibraryItemsResponse,
   LibraryKind,
   LibraryListing,
   LibraryScope,
@@ -155,6 +156,7 @@ export const api = {
   deletePastChat: (id: string) => request<Record<string, never>>('DELETE', ROUTES.pastSession(id)),
   setChatKind: (id: string, kind: ChatKind) =>
     request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),
+  libraryItems: (ids: string[]) => request<LibraryItemsResponse>('POST', ROUTES.libraryItems, { ids }),
   libraryScopes: () => request<LibraryScope[]>('GET', ROUTES.libraryScopes),
   library: (scope: string) => request<LibraryListing>('GET', ROUTES.library(scope)),
   /** Global search over every library folder the person can see; `kind` is sent as `image` or `doc`. */

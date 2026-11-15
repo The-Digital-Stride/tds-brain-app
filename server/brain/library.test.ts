@@ -701,6 +701,13 @@ describe('itemForPath', () => {
     }
   });
 
+  it('keeps the id scheme fixed, because starred files are saved by id', () => {
+    // Changing how an id is made would silently drop every starred file. If this fails, migrate the saved ids.
+    expect(idFor('client:acme-heating', 'clients/acme-heating/reports/x.pdf')).toBe(
+      'client:acme-heating.0b5557aed2c2892ca3891e32',
+    );
+  });
+
   it('gives a key and no item for a missing file in a scope', async () => {
     const root = copyFixture();
     const library = lib(root);

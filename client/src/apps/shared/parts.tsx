@@ -1,5 +1,6 @@
 import { type ReactNode, useId, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
+import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { useStore } from '../../store.tsx';
@@ -249,6 +250,7 @@ export function DetailActions({
         <button type="button" className="btn" data-variant={onOpen ? undefined : 'primary'} onClick={onAsk}>
           Ask Claude about it
         </button>
+        <FileStar item={item} />
       </div>
       <div className="lib-actions-row">
         {/* The server sends it as an attachment, so the browser saves it and the app stays put. */}

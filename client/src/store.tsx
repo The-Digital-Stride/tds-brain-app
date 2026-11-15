@@ -24,6 +24,7 @@ import type {
 } from '../../shared/contract.ts';
 import {
   FAVOURITE_CHATS_MAX,
+  FAVOURITE_FILES_MAX,
   FAVOURITE_TODOS_MAX,
   STREAM_PING_EVENT,
   STREAM_STALL_MS,
@@ -188,6 +189,11 @@ export interface Store {
    * `toggleFavouriteChat`. A to-do that moves (TDS ⇄ personal) keeps its star under its new key.
    */
   toggleFavouriteTodo: (key: string) => Promise<void>;
+  /**
+   * Stars or unstars a library file by its `LibraryItem.id` (kept in prefs, never in the brain). The same rules as
+   * `toggleFavouriteChat`. Starred files are "Pinned files" on Home.
+   */
+  toggleFavouriteFile: (id: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
   notice: string | null;
   /** Counts up each time focus should return to the message box. */
@@ -510,15 +516,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     show: showFavourites,
     onError: favouriteError,
   });
+  const fileFavourites = useFavouriteList({
+    field: 'favouriteFiles',
+    max: FAVOURITE_FILES_MAX,
+    current: boot?.prefs.favouriteFiles,
+    save: api.updatePrefs,
+    show: showFavourites,
+    onError: favouriteError,
+  });
   const keepChatStars = chatFavourites.keep;
   const keepTodoStars = todoFavourites.keep;
+  const keepFileStars = fileFavourites.keep;
   /** A prefs reply for another setting, with each star list kept as shown while one of its saves is waiting. */
   const keepStars = useCallback(
-    (prefs: AppPrefs): AppPrefs => keepTodoStars(keepChatStars(prefs)),
-    [keepChatStars, keepTodoStars],
+    (prefs: AppPrefs): AppPrefs => keepFileStars(keepTodoStars(keepChatStars(prefs))),
+    [keepChatStars, keepTodoStars, keepFileStars],
   );
   const toggleFavouriteChat = chatFavourites.toggle;
   const toggleFavouriteTodo = todoFavourites.toggle;
+  const toggleFavouriteFile = fileFavourites.toggle;
   const renameFavouriteTodo = todoFavourites.rename;
 
   const deletePastChat = useCallback(
@@ -979,6 +995,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatKind,
       toggleFavouriteChat,
       toggleFavouriteTodo,
+      toggleFavouriteFile,
       notice,
       run,
     }),
@@ -1031,6 +1048,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatKind,
       toggleFavouriteChat,
       toggleFavouriteTodo,
+      toggleFavouriteFile,
       notice,
       run,
     ],

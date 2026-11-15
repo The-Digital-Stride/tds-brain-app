@@ -91,21 +91,13 @@
 /* The tray: recessed, holding raised cards. */
 .tray {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-top: 20px;
   padding: 6px;
   border-radius: 18px;
   background: var(--tray);
   box-shadow: var(--recess);
-}
-@container (max-width: 720px) {
-  .tray {
-    grid-template-columns: 1fr 1fr;
-  }
-  .tray > :first-child {
-    grid-column: 1 / -1;
-  }
 }
 @container (max-width: 460px) {
   .tray {

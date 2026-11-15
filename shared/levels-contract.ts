@@ -9,8 +9,9 @@
  * Contract section (AppPrefs.levelMode, SkillInfo.ownLevel, Bootstrap.skillLevels, ChatEvent 'level',
  * ROUTES.skillLevels).
  */
-import type { KitId } from './kits-contract.ts';
+
 import type { EffortLevel } from './contract.ts';
+import type { KitId } from './kits-contract.ts';
 
 // ---------------------------------------------------------------------------
 // Tiers

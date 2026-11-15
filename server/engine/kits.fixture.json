@@ -1,0 +1,1252 @@
+{
+  "totalTokens": 49001,
+  "categories": [
+    {
+      "id": "system_prompt",
+      "name": "System prompt",
+      "tokens": 142,
+      "color": "promptBorder",
+      "kind": "used"
+    },
+    { "id": "system_tools", "name": "System tools", "tokens": 2379, "color": "inactive", "kind": "used" },
+    {
+      "id": "mcp_tools",
+      "name": "MCP tools",
+      "tokens": 247,
+      "color": "cyan_FOR_SUBAGENTS_ONLY",
+      "kind": "used"
+    },
+    {
+      "id": "mcp_instructions",
+      "name": "MCP server instructions",
+      "tokens": 2988,
+      "color": "green_FOR_SUBAGENTS_ONLY",
+      "kind": "used"
+    },
+    {
+      "id": "mcp_tools_deferred",
+      "name": "MCP tools (deferred)",
+      "tokens": 522999,
+      "color": "inactive",
+      "isDeferred": true,
+      "kind": "deferred"
+    },
+    {
+      "id": "system_tools_deferred",
+      "name": "System tools (deferred)",
+      "tokens": 18875,
+      "color": "inactive",
+      "isDeferred": true,
+      "kind": "deferred"
+    },
+    { "id": "custom_agents", "name": "Custom agents", "tokens": 1928, "color": "permission", "kind": "used" },
+    { "id": "memory_files", "name": "Memory files", "tokens": 10805, "color": "claude", "kind": "used" },
+    { "id": "skills", "name": "Skills", "tokens": 9891, "color": "warning", "kind": "used" },
+    {
+      "id": "messages",
+      "name": "Messages",
+      "tokens": 20621,
+      "color": "purple_FOR_SUBAGENTS_ONLY",
+      "kind": "used"
+    },
+    {
+      "id": "autocompact_buffer",
+      "name": "Autocompact buffer",
+      "tokens": 33000,
+      "color": "inactive",
+      "kind": "buffer"
+    },
+    { "id": "free_space", "name": "Free space", "tokens": 917999, "color": "promptBorder", "kind": "free" }
+  ],
+  "messageBreakdown": {
+    "attachmentsByType": [
+      { "name": "prompt_snapshot", "tokens": 13804 },
+      { "name": "skill_listing", "tokens": 10968 },
+      { "name": "instructions", "tokens": 7533 },
+      { "name": "deferred_tools_delta", "tokens": 5477 },
+      { "name": "agent_listing_delta", "tokens": 2201 },
+      { "name": "hook_success", "tokens": 1560 },
+      { "name": "mcp_instructions_delta", "tokens": 1541 },
+      { "name": "hook_additional_context", "tokens": 1175 },
+      { "name": "session_context", "tokens": 103 },
+      { "name": "environment", "tokens": 80 },
+      { "name": "model", "tokens": 63 },
+      { "name": "remote_session_change", "tokens": 62 },
+      { "name": "total_tokens_reminder", "tokens": 23 },
+      { "name": "credential_org", "tokens": 21 },
+      { "name": "date", "tokens": 9 }
+    ]
+  },
+  "mcpInstructions": [
+    { "serverName": "claude.ai Claude Docs", "tokens": 644 },
+    { "serverName": "claude.ai Google Calendar", "tokens": 59 },
+    { "serverName": "claude.ai Google Docs", "tokens": 33 },
+    { "serverName": "claude.ai Google Sheets", "tokens": 34 },
+    { "serverName": "claude.ai Google Slides", "tokens": 18 },
+    { "serverName": "claude.ai SEMRush", "tokens": 773 },
+    { "serverName": "claude.ai Slack", "tokens": 80 },
+    { "serverName": "claude.ai Vercel", "tokens": 629 },
+    { "serverName": "context7", "tokens": 244 },
+    { "serverName": "savvy-progress", "tokens": 30 },
+    { "serverName": "skins", "tokens": 24 },
+    { "serverName": "slack", "tokens": 86 },
+    { "serverName": "stitch", "tokens": 97 },
+    { "serverName": "wispr-flow", "tokens": 237 }
+  ],
+  "skills": {
+    "tokens": 9891,
+    "skillFrontmatter": [
+      { "name": "agent-workforce", "source": "userSettings", "tokens": 196 },
+      { "name": "analytics", "source": "userSettings", "tokens": 4 },
+      { "name": "cms-migration", "source": "userSettings", "tokens": 5 },
+      { "name": "gm-calls", "source": "userSettings", "tokens": 3 },
+      { "name": "kill", "source": "userSettings", "tokens": 154 },
+      { "name": "payload", "source": "userSettings", "tokens": 79 },
+      {
+        "name": "superpowers:brainstorm",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 26
+      },
+      {
+        "name": "superpowers:execute-plan",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 25
+      },
+      {
+        "name": "superpowers:write-plan",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 8
+      },
+      {
+        "name": "episodic-memory:search-conversations",
+        "source": "plugin",
+        "pluginName": "episodic-memory",
+        "pluginId": "episodic-memory@superpowers-marketplace",
+        "tokens": 13
+      },
+      {
+        "name": "feature-dev:feature-dev",
+        "source": "plugin",
+        "pluginName": "feature-dev",
+        "pluginId": "feature-dev@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:bootstrap",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:deploy",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "vercel:env",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 4
+      },
+      {
+        "name": "vercel:status",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "superpowers:brainstorming",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 85
+      },
+      {
+        "name": "superpowers:condition-based-waiting",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 12
+      },
+      {
+        "name": "superpowers:defense-in-depth",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 10
+      },
+      {
+        "name": "superpowers:dispatching-parallel-agents",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 14
+      },
+      {
+        "name": "superpowers:executing-plans",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 80
+      },
+      {
+        "name": "superpowers:finishing-a-development-branch",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 82
+      },
+      {
+        "name": "superpowers:receiving-code-review",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 12
+      },
+      {
+        "name": "superpowers:requesting-code-review",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 12
+      },
+      {
+        "name": "superpowers:root-cause-tracing",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 11
+      },
+      {
+        "name": "superpowers:sharing-skills",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 9
+      },
+      {
+        "name": "superpowers:subagent-driven-development",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 82
+      },
+      {
+        "name": "superpowers:systematic-debugging",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 95
+      },
+      {
+        "name": "superpowers:test-driven-development",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 84
+      },
+      {
+        "name": "superpowers:testing-anti-patterns",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 12
+      },
+      {
+        "name": "superpowers:testing-skills-with-subagents",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 14
+      },
+      {
+        "name": "superpowers:using-git-worktrees",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 79
+      },
+      {
+        "name": "superpowers:using-superpowers",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 10
+      },
+      {
+        "name": "superpowers:verification-before-completion",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 15
+      },
+      {
+        "name": "superpowers:writing-plans",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 101
+      },
+      {
+        "name": "superpowers:writing-skills",
+        "source": "plugin",
+        "pluginName": "superpowers",
+        "pluginId": "superpowers@superpowers-dev",
+        "tokens": 87
+      },
+      {
+        "name": "document-skills:xlsx",
+        "source": "plugin",
+        "pluginName": "document-skills",
+        "pluginId": "document-skills@anthropic-agent-skills",
+        "tokens": 7
+      },
+      {
+        "name": "document-skills:docx",
+        "source": "plugin",
+        "pluginName": "document-skills",
+        "pluginId": "document-skills@anthropic-agent-skills",
+        "tokens": 7
+      },
+      {
+        "name": "document-skills:pptx",
+        "source": "plugin",
+        "pluginName": "document-skills",
+        "pluginId": "document-skills@anthropic-agent-skills",
+        "tokens": 7
+      },
+      {
+        "name": "document-skills:pdf",
+        "source": "plugin",
+        "pluginName": "document-skills",
+        "pluginId": "document-skills@anthropic-agent-skills",
+        "tokens": 7
+      },
+      {
+        "name": "episodic-memory:remembering-conversations",
+        "source": "plugin",
+        "pluginName": "episodic-memory",
+        "pluginId": "episodic-memory@superpowers-marketplace",
+        "tokens": 14
+      },
+      {
+        "name": "frontend-design:frontend-design",
+        "source": "plugin",
+        "pluginName": "frontend-design",
+        "pluginId": "frontend-design@claude-plugins-official",
+        "tokens": 80
+      },
+      {
+        "name": "vercel:access-protected-vercel-deployment",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 14
+      },
+      {
+        "name": "vercel:ai-gateway",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:ai-sdk",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "vercel:auth",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 4
+      },
+      {
+        "name": "vercel:build-agents",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:cdn-caching",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:chat-sdk",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:create-a-backend",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:custom-metrics",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:deployments-cicd",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:env-vars",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:eve",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 4
+      },
+      {
+        "name": "vercel:flags-sdk",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:knowledge-update",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:marketplace",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 152
+      },
+      {
+        "name": "vercel:microfrontends",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:next-cache-components",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 10
+      },
+      {
+        "name": "vercel:next-forge",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:next-upgrade",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:nextjs",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "vercel:queues",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "vercel:react-best-practices",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 10
+      },
+      {
+        "name": "vercel:routing-middleware",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 9
+      },
+      {
+        "name": "vercel:runtime-cache",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:shadcn",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 5
+      },
+      {
+        "name": "vercel:turbopack",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:vercel-agent",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:vercel-cli",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "vercel:vercel-connect",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:vercel-firewall",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:vercel-functions",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:vercel-sandbox",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:vercel-services",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 8
+      },
+      {
+        "name": "vercel:vercel-storage",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 79
+      },
+      {
+        "name": "vercel:verification",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 7
+      },
+      {
+        "name": "vercel:workflow",
+        "source": "plugin",
+        "pluginName": "vercel",
+        "pluginId": "vercel@claude-plugins-official",
+        "tokens": 6
+      },
+      {
+        "name": "andrej-karpathy-skills:karpathy-guidelines",
+        "source": "plugin",
+        "pluginName": "andrej-karpathy-skills",
+        "pluginId": "andrej-karpathy-skills@karpathy-skills",
+        "tokens": 15
+      },
+      {
+        "name": "skins:skin-designer",
+        "source": "plugin",
+        "pluginName": "skins",
+        "pluginId": "skins@hellosverre-mods",
+        "tokens": 7
+      },
+      {
+        "name": "marketing:brand-review",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 8
+      },
+      {
+        "name": "marketing:campaign-plan",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 8
+      },
+      {
+        "name": "marketing:competitive-brief",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 10
+      },
+      {
+        "name": "marketing:content-creation",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 9
+      },
+      {
+        "name": "marketing:draft-content",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 8
+      },
+      {
+        "name": "marketing:email-sequence",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 9
+      },
+      {
+        "name": "marketing:performance-report",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 10
+      },
+      {
+        "name": "marketing:seo-audit",
+        "source": "plugin",
+        "pluginName": "marketing",
+        "pluginId": "marketing@synced",
+        "tokens": 7
+      },
+      {
+        "name": "design:accessibility-review",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 97
+      },
+      {
+        "name": "design:design-critique",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 99
+      },
+      {
+        "name": "design:design-handoff",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 8
+      },
+      {
+        "name": "design:design-system",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 7
+      },
+      {
+        "name": "design:research-synthesis",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 9
+      },
+      {
+        "name": "design:user-research",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 7
+      },
+      {
+        "name": "design:ux-copy",
+        "source": "plugin",
+        "pluginName": "design",
+        "pluginId": "design@synced",
+        "tokens": 5
+      },
+      {
+        "name": "engineering:architecture",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 9
+      },
+      {
+        "name": "engineering:code-review",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 8
+      },
+      {
+        "name": "engineering:debug",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 6
+      },
+      {
+        "name": "engineering:deploy-checklist",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 10
+      },
+      {
+        "name": "engineering:documentation",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 9
+      },
+      {
+        "name": "engineering:incident-response",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 10
+      },
+      {
+        "name": "engineering:standup",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 7
+      },
+      {
+        "name": "engineering:system-design",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 9
+      },
+      {
+        "name": "engineering:tech-debt",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 8
+      },
+      {
+        "name": "engineering:testing-strategy",
+        "source": "plugin",
+        "pluginName": "engineering",
+        "pluginId": "engineering@synced",
+        "tokens": 10
+      },
+      {
+        "name": "productivity:memory-management",
+        "source": "plugin",
+        "pluginName": "productivity",
+        "pluginId": "productivity@synced",
+        "tokens": 11
+      },
+      {
+        "name": "productivity:start",
+        "source": "plugin",
+        "pluginName": "productivity",
+        "pluginId": "productivity@synced",
+        "tokens": 7
+      },
+      {
+        "name": "productivity:task-management",
+        "source": "plugin",
+        "pluginName": "productivity",
+        "pluginId": "productivity@synced",
+        "tokens": 10
+      },
+      {
+        "name": "productivity:update",
+        "source": "plugin",
+        "pluginName": "productivity",
+        "pluginId": "productivity@synced",
+        "tokens": 7
+      }
+    ]
+  },
+  "agents": [
+    { "agentType": "builder", "source": "userSettings", "tokens": 146 },
+    { "agentType": "datastory", "source": "projectSettings", "tokens": 97 },
+    {
+      "agentType": "episodic-memory:search-conversations",
+      "source": "plugin",
+      "pluginId": "episodic-memory@superpowers-marketplace",
+      "tokens": 86
+    },
+    { "agentType": "expert", "source": "userSettings", "tokens": 137 },
+    {
+      "agentType": "feature-dev:code-architect",
+      "source": "plugin",
+      "pluginId": "feature-dev@claude-plugins-official",
+      "tokens": 82
+    },
+    {
+      "agentType": "feature-dev:code-explorer",
+      "source": "plugin",
+      "pluginId": "feature-dev@claude-plugins-official",
+      "tokens": 76
+    },
+    {
+      "agentType": "feature-dev:code-reviewer",
+      "source": "plugin",
+      "pluginId": "feature-dev@claude-plugins-official",
+      "tokens": 83
+    },
+    { "agentType": "githuby", "source": "projectSettings", "tokens": 87 },
+    { "agentType": "image-finder", "source": "projectSettings", "tokens": 42 },
+    { "agentType": "newsletter-idea-extractor", "source": "projectSettings", "tokens": 61 },
+    { "agentType": "overseer", "source": "userSettings", "tokens": 122 },
+    { "agentType": "placement-content-reviewer", "source": "projectSettings", "tokens": 109 },
+    { "agentType": "reviewer", "source": "userSettings", "tokens": 67 },
+    {
+      "agentType": "superpowers:code-reviewer",
+      "source": "plugin",
+      "pluginId": "superpowers@superpowers-dev",
+      "tokens": 350
+    },
+    {
+      "agentType": "vercel:ai-architect",
+      "source": "plugin",
+      "pluginId": "vercel@claude-plugins-official",
+      "tokens": 104
+    },
+    {
+      "agentType": "vercel:deployment-expert",
+      "source": "plugin",
+      "pluginId": "vercel@claude-plugins-official",
+      "tokens": 109
+    },
+    {
+      "agentType": "vercel:performance-optimizer",
+      "source": "plugin",
+      "pluginId": "vercel@claude-plugins-official",
+      "tokens": 107
+    },
+    { "agentType": "youtube-idea-extractor", "source": "projectSettings", "tokens": 63 }
+  ],
+  "mcpTools": [
+    { "name": "mcp__8020mcp__community_get_comments", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__8020mcp__community_get_mastermind_chat", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__8020mcp__community_get_post", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__8020mcp__community_get_posts", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__8020mcp__portal_get_challenges", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__8020mcp__portal_get_course_audio", "serverName": "8020mcp", "isLoaded": false },
+    { "name": "mcp__claude_ai_Claude_Docs__batch", "serverName": "claude_ai_Claude_Docs", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Claude_Docs__create",
+      "serverName": "claude_ai_Claude_Docs",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Claude_Docs__delete",
+      "serverName": "claude_ai_Claude_Docs",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Claude_Docs__export",
+      "serverName": "claude_ai_Claude_Docs",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Claude_Docs__guide", "serverName": "claude_ai_Claude_Docs", "isLoaded": false },
+    { "name": "mcp__claude_ai_Claude_Docs__query", "serverName": "claude_ai_Claude_Docs", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Gmail__apply_sensitive_message_label",
+      "serverName": "claude_ai_Gmail",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Gmail__apply_sensitive_thread_label",
+      "serverName": "claude_ai_Gmail",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Gmail__create_draft", "serverName": "claude_ai_Gmail", "isLoaded": false },
+    { "name": "mcp__claude_ai_Gmail__create_label", "serverName": "claude_ai_Gmail", "isLoaded": false },
+    { "name": "mcp__claude_ai_Gmail__delete_draft", "serverName": "claude_ai_Gmail", "isLoaded": false },
+    { "name": "mcp__claude_ai_Gmail__delete_label", "serverName": "claude_ai_Gmail", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__create_event",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__delete_event",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__get_event",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__list_calendars",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__list_events",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Calendar__respond_to_event",
+      "serverName": "claude_ai_Google_Calendar",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Docs__read_doc",
+      "serverName": "claude_ai_Google_Docs",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Docs__update_doc",
+      "serverName": "claude_ai_Google_Docs",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__copy_file",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__create_file",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__download_file_content",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__get_file_metadata",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__get_file_permissions",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Drive__get_shared_drive_metadata",
+      "serverName": "claude_ai_Google_Drive",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__append_values",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__batch_clear_values",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__copy_sheet_to_another_spreadsheet",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__get_spreadsheet",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__get_values",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Sheets__insert_dimension",
+      "serverName": "claude_ai_Google_Sheets",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Slides__read_presentation",
+      "serverName": "claude_ai_Google_Slides",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Slides__read_slide_page",
+      "serverName": "claude_ai_Google_Slides",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Slides__read_slide_page_thumbnail",
+      "serverName": "claude_ai_Google_Slides",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Google_Slides__update_presentation",
+      "serverName": "claude_ai_Google_Slides",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__activate-sequence",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__agent_catalog",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__all_api_read",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__all_api_write",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__all_monday_api",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_monday_com__all_widgets_schema",
+      "serverName": "claude_ai_monday_com",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__ask_chatgpt",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__ask_gemini",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__extract_page_data",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__fast_search",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__get_amazon_pricing",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Scraping_Bee__get_amazon_product_details",
+      "serverName": "claude_ai_Scraping_Bee",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__audience_research",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__backlinks_research",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__competitors_research",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__domain_overview",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__execute_report",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_SEMRush__get_report_schema",
+      "serverName": "claude_ai_SEMRush",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Slack__slack_add_list_record",
+      "serverName": "claude_ai_Slack",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Slack__slack_add_reaction",
+      "serverName": "claude_ai_Slack",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Slack__slack_complete_file_upload",
+      "serverName": "claude_ai_Slack",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Slack__slack_create_canvas",
+      "serverName": "claude_ai_Slack",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Slack__slack_create_conversation",
+      "serverName": "claude_ai_Slack",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Slack__slack_create_list", "serverName": "claude_ai_Slack", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Vercel__accept_project_transfer_request",
+      "serverName": "claude_ai_Vercel",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Vercel__activate_kms_signing_key",
+      "serverName": "claude_ai_Vercel",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Vercel__add_project_domain",
+      "serverName": "claude_ai_Vercel",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Vercel__add_route", "serverName": "claude_ai_Vercel", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Vercel__add_toolbar_reaction",
+      "serverName": "claude_ai_Vercel",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Vercel__aggregate_events",
+      "serverName": "claude_ai_Vercel",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Xero__get_1099_report_summary",
+      "serverName": "claude_ai_Xero",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Xero__get_aged_payables", "serverName": "claude_ai_Xero", "isLoaded": false },
+    {
+      "name": "mcp__claude_ai_Xero__get_aged_receivables",
+      "serverName": "claude_ai_Xero",
+      "isLoaded": false
+    },
+    {
+      "name": "mcp__claude_ai_Xero__get_bank_account_transactions",
+      "serverName": "claude_ai_Xero",
+      "isLoaded": false
+    },
+    { "name": "mcp__claude_ai_Xero__get_bills", "serverName": "claude_ai_Xero", "isLoaded": false },
+    { "name": "mcp__claude_ai_Xero__get_cash_position", "serverName": "claude_ai_Xero", "isLoaded": false },
+    { "name": "mcp__context7__query-docs", "serverName": "context7", "isLoaded": false },
+    { "name": "mcp__context7__resolve-library-id", "serverName": "context7", "isLoaded": false },
+    { "name": "mcp__filesystem__create_directory", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__filesystem__directory_tree", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__filesystem__edit_file", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__filesystem__get_file_info", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__filesystem__list_allowed_directories", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__filesystem__list_directory", "serverName": "filesystem", "isLoaded": false },
+    { "name": "mcp__github__add_issue_comment", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__github__create_branch", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__github__create_issue", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__github__create_or_update_file", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__github__create_pull_request", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__github__create_pull_request_review", "serverName": "github", "isLoaded": false },
+    { "name": "mcp__playwright__browser_click", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__playwright__browser_close", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__playwright__browser_console_messages", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__playwright__browser_drag", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__playwright__browser_drop", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__playwright__browser_emulate_media", "serverName": "playwright", "isLoaded": false },
+    { "name": "mcp__savvy-progress__progress", "serverName": "savvy-progress", "isLoaded": false },
+    { "name": "mcp__savvy-progress__step", "serverName": "savvy-progress", "isLoaded": true },
+    { "name": "mcp__skins__design", "serverName": "skins", "isLoaded": false },
+    { "name": "mcp__slack__slack_delete_message", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__slack__slack_find_user", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__slack__slack_join_channel", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__slack__slack_list_channels", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__slack__slack_list_pins", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__slack__slack_pin_message", "serverName": "slack", "isLoaded": false },
+    { "name": "mcp__stitch__apply_design_system", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__stitch__create_design_system", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__stitch__create_design_system_from_design_md", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__stitch__create_project", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__stitch__delete_project", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__stitch__download_file", "serverName": "stitch", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_days", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_entries", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_projects", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_status", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_summary", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__timelens__timelens_timeline", "serverName": "timelens", "isLoaded": false },
+    { "name": "mcp__wispr-flow__get_calendar_event", "serverName": "wispr-flow", "isLoaded": false },
+    { "name": "mcp__wispr-flow__get_meeting", "serverName": "wispr-flow", "isLoaded": false },
+    { "name": "mcp__wispr-flow__get_meeting_by_calendar_id", "serverName": "wispr-flow", "isLoaded": false },
+    {
+      "name": "mcp__wispr-flow__get_meeting_participants_enriched",
+      "serverName": "wispr-flow",
+      "isLoaded": false
+    },
+    { "name": "mcp__wispr-flow__get_participant_contacts", "serverName": "wispr-flow", "isLoaded": false },
+    { "name": "mcp__wispr-flow__get_scratchpad_note", "serverName": "wispr-flow", "isLoaded": false }
+  ]
+}

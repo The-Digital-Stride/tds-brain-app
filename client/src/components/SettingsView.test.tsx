@@ -22,10 +22,11 @@ const st = vi.hoisted(() => ({
   clearSettingsFocus: vi.fn(),
   settingsFocus: false,
   engineChoices: vi.fn(),
+  usageSavings: vi.fn(),
   setSkillLevel: vi.fn(),
   skillLevels: null as unknown,
 }));
-vi.mock('../api.ts', () => ({ api: { engineChoices: st.engineChoices } }));
+vi.mock('../api.ts', () => ({ api: { engineChoices: st.engineChoices, usageSavings: st.usageSavings } }));
 const live = { streamUp: true, lastSync: new Date().toISOString() as string | null | undefined };
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
@@ -96,8 +97,19 @@ const choices = {
   claudeCode: { model: 'claude-opus-5-5' as string | null },
 };
 
+const totals = (summary: number, reused = 0) => ({
+  saved: summary,
+  reused,
+  bySource: { summary },
+});
+function emptySavings() {
+  const z = { saved: 0, reused: 0, bySource: {} };
+  return { since: null, today: z, last7: z, last30: z, all: z, kitsMode: 'shadow', team: null };
+}
+
 beforeEach(() => {
   st.engineChoices.mockResolvedValue(choices);
+  st.usageSavings.mockResolvedValue(emptySavings());
   st.settingsFocus = false;
   st.skillLevels = null;
   st.setSkillLevel.mockReset();
@@ -449,5 +461,48 @@ describe('Skill levels', () => {
   it('is absent on an older server', () => {
     render(<SettingsView />);
     expect(screen.queryByRole('heading', { name: 'Skill levels' })).toBeNull();
+  });
+});
+
+describe('Tokens saved', () => {
+  it('shows its own lines, the cache line apart, and the kits line, with no team text', async () => {
+    st.usageSavings.mockResolvedValue({
+      since: '2026-11-03',
+      today: totals(1200),
+      last7: totals(9300, 400_000),
+      last30: totals(150_000),
+      all: totals(2_500_000_000, 3_000_000),
+      kitsMode: 'shadow',
+      team: null,
+    });
+    render(<SettingsView />);
+    const h = await screen.findByRole('heading', { name: 'Tokens saved' });
+    const sec = h.closest('section') as HTMLElement;
+    await screen.findByText('Today');
+    const text = sec.textContent ?? '';
+    expect(text).toContain('Saved by summarising long chats');
+    expect(text).toContain('1.2k tokens');
+    expect(text).toContain('9.3k tokens');
+    expect(text).toContain('150k tokens');
+    expect(text).toContain('Since 3 Nov 2026');
+    expect(text).toContain('2.5B tokens');
+    expect(text).toContain("Reused from Claude's memory");
+    expect(text).toContain('3M tokens since 3 Nov 2026');
+    expect(text).toContain('not counted as saved');
+    expect(text).toContain('Start-up kits: watching, nothing switched off yet');
+    expect(text).toContain('learning which tools each chat needs');
+    expect(text.toLowerCase()).not.toContain('team');
+  });
+  it('says nothing is counted yet, and still shows the kits line', async () => {
+    render(<SettingsView />);
+    expect(await screen.findByText(/Nothing counted yet/)).toBeTruthy();
+    expect(screen.queryByText('Today')).toBeNull();
+    expect(screen.getByText(/Start-up kits: watching/)).toBeTruthy();
+  });
+  it('says so when the figures cannot be loaded', async () => {
+    st.usageSavings.mockRejectedValue(new Error('x'));
+    render(<SettingsView />);
+    expect(await screen.findByText(/Couldn't load the token figures/)).toBeTruthy();
+    expect(screen.queryByText(/Start-up kits/)).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 # Start-up kits (shadow mode) and the token savings ledger
 
-Date: 2026-11-15 · Size: XL (spike + three build parts, one release) · Branch: `startup-kits` · Explainer: (after pre-review)
+Date: 2026-11-15 · Size: XL (spike + three build parts, one release) · Branch: `startup-kits` · Explainer: https://claude.ai/artifact/9vCVzSQ3a3TaefRC5Rm9Xt
 
 Background and Ian's earlier decisions: `docs/plans/2026-11-14-context-management.md`, section
 "Next release: start-up kits". This plan builds that section, cut to what Ian chose on 2026-11-15.

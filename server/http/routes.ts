@@ -55,6 +55,7 @@ import {
   type VersionNotes,
 } from '../../shared/contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
+import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import {
   isLevelTier,
   type LevelTier,
@@ -90,6 +91,7 @@ import {
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { isPageKey } from '../store/page-copies.ts';
 import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
+import { emptySummary, type SavingsService } from '../usage/savings.ts';
 import {
   hasValidSession,
   isLibraryPagePath,
@@ -138,6 +140,11 @@ export interface RouteContext {
   clientPickTally?: ClientPickTally;
   /** Team skill levels: reads the brain's file and runs its skill script to change it. Absent: none (older tests). */
   skillLevels?: SkillLevelsService;
+  /**
+   * The token savings ledger (`GET USAGE_SAVINGS_PATH`). Absent (older tests, or no data folder):
+   * the route answers 200 with an empty summary, so the Settings panel shows its empty state.
+   */
+  savings?: Pick<SavingsService, 'summary'>;
 }
 
 export class HttpError extends Error {
@@ -1438,6 +1445,12 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     const guess = await safe(clientGuesser(ctx)(text, clients), fallback);
     ctx.clientPickTally?.record(guessOutcome(guess));
     sendJson(res, 200, guess);
+    return;
+  }
+
+  if (path === USAGE_SAVINGS_PATH) {
+    if (method !== 'GET') throw methodNotAllowed();
+    sendJson(res, 200, ctx.savings ? await ctx.savings.summary() : emptySummary());
     return;
   }
 

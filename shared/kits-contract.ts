@@ -162,7 +162,15 @@ export interface KitPick {
 // Start-up reading and would-save (decision 7)
 // ---------------------------------------------------------------------------
 
-export const STARTUP_GROUPS = ['system', 'skills', 'connectors', 'agents', 'memory', 'hooks', 'other'] as const;
+export const STARTUP_GROUPS = [
+  'system',
+  'skills',
+  'connectors',
+  'agents',
+  'memory',
+  'hooks',
+  'other',
+] as const;
 export type StartupGroup = (typeof STARTUP_GROUPS)[number];
 
 export interface StartupReading {

@@ -4,7 +4,10 @@
  * Rules first (`pickNeed`): a `/name` with a team level or its own level, or a chat the person set,
  * needs no pick. Otherwise one fresh one-shot query: Haiku at low effort, no tools, one turn, no
  * settings, no session file, run outside the brain, reading only the person's message (as data).
- * The reply must be strict JSON `{tier, helpers, reason}`; anything else is a failure.
+ * The reply must be strict JSON `{tier, helpers, reason}` plus a `kit` (start-up kits, plan
+ * 2026-11-15, decision 6); anything else is a failure. A missing or unknown `kit` is never a failure:
+ * the pick simply has no `kit` field, and readers treat that as `full` (KIT_FALLBACK). So the old
+ * reply shape still parses.
  *
  * A pick that takes longer than LEVEL_PICK.timeoutMs gives the caller "no pick yet", but the late
  * answer is still delivered through `settled` for the chat's next message, and never starts the
@@ -13,6 +16,7 @@
  */
 import { tmpdir } from 'node:os';
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { KIT_IDS, KIT_PICK_LINES, type KitId } from '../../shared/kits-contract.ts';
 import {
   isLevelTier,
   LEVEL_PICK,
@@ -76,7 +80,11 @@ export const PICK_SYSTEM_PROMPT = [
   '',
   'helpers: true only when the job splits into two or more independent parts that could be done at the same time, such as several clients, channels or data sources. Most requests are false.',
   '',
-  'Reply with JSON only, on one line, with no other text: {"tier":"quick|standard|deep","helpers":true|false,"reason":"why, in at most 10 plain words of UK English"}',
+  'kit: which set of tools and skills the chat should start with. Choose one:',
+  KIT_PICK_LINES,
+  'If unsure, choose full.',
+  '',
+  'Reply with JSON only, on one line, with no other text: {"tier":"quick|standard|deep","helpers":true|false,"kit":"core|ads|web|full","reason":"why, in at most 10 plain words of UK English"}',
 ].join('\n');
 
 /** The message as data, first LEVEL_PICK.maxChars only, with no way to close the wrapper early. */
@@ -88,7 +96,12 @@ export function pickPrompt(text: string): string {
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Strict: one JSON object with a known tier, a boolean `helpers` and a string `reason`. */
+const isKit = (v: unknown): v is KitId => (KIT_IDS as readonly unknown[]).includes(v);
+
+/**
+ * Strict: one JSON object with a known tier, a boolean `helpers` and a string `reason`. A known `kit`
+ * is kept; a missing or unknown one leaves `kit` unset (it means `full`) and never fails the pick.
+ */
 export function parsePick(raw: string): LevelPick | null {
   let v: unknown;
   // One fenced block around the object is still just the object; any other text is a failure.
@@ -101,7 +114,9 @@ export function parsePick(raw: string): LevelPick | null {
   if (!isRec(v) || !isLevelTier(v.tier) || typeof v.helpers !== 'boolean' || typeof v.reason !== 'string')
     return null;
   const flat = v.reason.replace(/\s+/g, ' ').trim();
-  return { tier: v.tier, helpers: v.helpers, reason: shortReason(flat) };
+  const pick: LevelPick = { tier: v.tier, helpers: v.helpers, reason: shortReason(flat) };
+  if (isKit(v.kit)) pick.kit = v.kit;
+  return pick;
 }
 
 /** At most REASON_MAX characters, cut at a word with an ellipsis. */

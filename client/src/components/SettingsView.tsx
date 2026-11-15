@@ -5,6 +5,7 @@ import {
   type EngineChoices,
   type ModelChoice,
 } from '../../../shared/contract.ts';
+import type { SavingsSummary } from '../../../shared/kits-contract.ts';
 import {
   isLevelTier,
   LEVEL_TIERS,
@@ -20,7 +21,7 @@ import {
 } from '../../../shared/update-contract.ts';
 import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
-import { EFFORT_OPTION_WORDS, modelName } from '../format.ts';
+import { dayWords, EFFORT_OPTION_WORDS, modelName, tokenWords } from '../format.ts';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
@@ -33,6 +34,71 @@ import { HealthPanel } from './HealthPanel.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
 
 const ROLE_WORDS = { owner: 'Owner', scout: 'Scout', team: 'Team', unknown: 'Not recognised' } as const;
+
+type SavingsState = { kind: 'loading' } | { kind: 'failed' } | { kind: 'ready'; data: SavingsSummary };
+
+function TokensSavedSection() {
+  const [state, setState] = useState<SavingsState>({ kind: 'loading' });
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => api.usageSavings())
+      .then((data) => live && setState({ kind: 'ready', data }))
+      .catch(() => live && setState({ kind: 'failed' }));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const data = state.kind === 'ready' ? state.data : null;
+  const saved = (t: SavingsSummary['all']) => `${tokenWords(t.bySource.summary ?? 0)} tokens`;
+  return (
+    <section aria-labelledby="saved-h">
+      <h2 id="saved-h">Tokens saved</h2>
+      {state.kind === 'loading' ? <p className="setting-help">Loading…</p> : null}
+      {state.kind === 'failed' ? (
+        <p className="setting-help" role="status">
+          Couldn't load the token figures just now. Try again later.
+        </p>
+      ) : null}
+      {data ? (
+        <>
+          {data.since === null ? (
+            <p className="setting-help">
+              Nothing counted yet. Savings will appear here once a long chat has been summarised.
+            </p>
+          ) : (
+            <>
+              <h3 className="setting-label">Saved by summarising long chats</h3>
+              <dl className="kv">
+                <dt>Today</dt>
+                <dd>{saved(data.today)}</dd>
+                <dt>Last 7 days</dt>
+                <dd>{saved(data.last7)}</dd>
+                <dt>Last 30 days</dt>
+                <dd>{saved(data.last30)}</dd>
+                <dt>Since {dayWords(data.since)}</dt>
+                <dd>{saved(data.all)}</dd>
+              </dl>
+              <h3 className="setting-label">Reused from Claude's memory</h3>
+              <p className="setting-help">
+                {tokenWords(data.all.reused)} tokens since {dayWords(data.since)}. Claude keeps what it has
+                already read, so repeating it costs far less. These are not counted as saved above.
+              </p>
+            </>
+          )}
+          {data.kitsMode === 'shadow' ? (
+            <>
+              <h3 className="setting-label">Start-up kits: watching, nothing switched off yet</h3>
+              <p className="setting-help">
+                The app is learning which tools each chat needs, so it can start chats lighter later.
+              </p>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
 
 export function SettingsView() {
   const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel } = useStore();
@@ -173,6 +239,8 @@ export function SettingsView() {
           save={(skill, tier) => void setSkillLevel(skill, tier)}
         />
       ) : null}
+
+      <TokensSavedSection />
 
       <section aria-labelledby="about-h">
         <h2 id="about-h">About TDS Brain on this computer</h2>

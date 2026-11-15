@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.32.0 — 2026-11-15
+
+- **feat**: compaction notice, context meter, brain-aware summaries and held model switches
+- **fix**: review fixes for the meter, Context panel and summaries
+
 ## v0.31.0 — 2026-11-14
 
 - **feat**: open Claude's published pages in the app, suggest changes and convert to TDS branding

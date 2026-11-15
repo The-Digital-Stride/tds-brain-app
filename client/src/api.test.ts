@@ -158,8 +158,8 @@ describe('downloadBranded', () => {
 });
 
 describe('streamUrl', () => {
-  it('opens the stream with files and levels', () => {
-    expect(streamUrl('s1', 4)).toBe('/api/stream?session=s1&after=4&files=1&levels=1');
+  it('opens the stream with files, levels and context', () => {
+    expect(streamUrl('s1', 4)).toBe('/api/stream?session=s1&after=4&files=1&levels=1&context=1');
   });
 });
 
@@ -179,5 +179,21 @@ describe('levels routes', () => {
     expect(JSON.parse(String(calls[1]?.[1].body))).toEqual({ skill: 'a', tier: null });
     expect(calls[2]?.[0]).toBe('/api/sessions/s%201/level');
     expect(JSON.parse(String(calls[2]?.[1].body))).toEqual({ tier: 'quick' });
+  });
+});
+
+describe('api.chatContext', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('gets the detail through the shared request helper', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ reading: null, items: [], lastCompaction: null, approximate: false })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await api.chatContext('s 1');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/sessions/s%201/context');
+    expect(init.method).toBe('GET');
+    expect(init.credentials).toBe('same-origin');
   });
 });

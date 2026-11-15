@@ -126,6 +126,8 @@ export function createEventMapper(): EventMapper {
   const toolLabels = new Map<string, string>();
   /** Background helpers' names, for their reports. */
   const helpers = new HelperNames();
+  /** The main chat is being summarised (between `status: 'compacting'` and its end). */
+  let compacting = false;
 
   function parentOf(msg: RawMessage): string | null {
     return str(msg.parent_tool_use_id);
@@ -144,8 +146,44 @@ export function createEventMapper(): EventMapper {
     return [{ type: 'notice', level: 'warning', text }];
   }
 
+  /**
+   * Context management, decision 1 (main chat only). Claude Code sends `status: 'compacting'`, then
+   * `status` with `compact_result`, then (on success only) `compact_boundary`.
+   */
+  function mapCompaction(msg: RawMessage): ChatEvent[] {
+    if (parentOf(msg) !== null) return [];
+    if (msg.subtype === 'compact_boundary') {
+      compacting = false;
+      const meta = isRec(msg.compact_metadata) ? msg.compact_metadata : {};
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+      return [
+        {
+          type: 'compaction',
+          phase: 'done',
+          id: `c:${str(msg.uuid) ?? `anon-${++anon}`}`,
+          trigger: meta.trigger === 'manual' ? 'manual' : 'auto',
+          preTokens: num(meta.pre_tokens),
+          postTokens: num(meta.post_tokens),
+          at: Date.now(),
+        },
+      ];
+    }
+    if (msg.status === 'compacting') {
+      if (compacting) return [];
+      compacting = true;
+      return [{ type: 'compaction', phase: 'started' }];
+    }
+    const was = compacting;
+    compacting = false;
+    if (msg.compact_result === 'failed') return [{ type: 'compaction', phase: 'failed' }];
+    // Success: the boundary follows and says `done`.
+    if (msg.compact_result === 'success') return [];
+    return was ? [{ type: 'compaction', phase: 'ended' }] : [];
+  }
+
   function mapSystem(msg: RawMessage, deniedByPerson: ReadonlySet<string> | undefined): ChatEvent[] {
     if (msg.subtype === 'permission_denied') return mapDenied(msg, deniedByPerson);
+    if (msg.subtype === 'status' || msg.subtype === 'compact_boundary') return mapCompaction(msg);
     if (msg.subtype !== 'init') return [];
     const sdkSessionId = str(msg.session_id);
     if (!sdkSessionId) return [];
@@ -292,6 +330,8 @@ export function createEventMapper(): EventMapper {
           if (parentOf(msg) === null) helpers.observe(msg);
           return mapUser(msg);
         case 'result':
+          // A stopped or failed reply can end mid-summary with no status to close it.
+          if (parentOf(msg) === null) compacting = false;
           return mapResult(msg, opts?.interrupted === true);
         default:
           return [];

@@ -195,6 +195,12 @@ function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
           {item.text}
         </div>
       );
+    case 'summary':
+      return (
+        <div className="notice" data-kind="summary">
+          {item.text}
+        </div>
+      );
     case 'turn-end':
       if (item.interrupted) return <p className="record">You stopped Claude.</p>;
       if (!item.ok)

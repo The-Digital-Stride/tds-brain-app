@@ -42,6 +42,7 @@ import {
   validatePrefsPatch,
 } from './routes.ts';
 import {
+  checkRequest,
   cookieValueFor,
   PAGE_CSP,
   PAGE_PREVIEW_CSP,
@@ -2221,6 +2222,94 @@ describe('DELETE /api/sessions/past/:id', () => {
   it('refuses a badly encoded id', async () => {
     const sent = await send('DELETE', '/api/sessions/past/%E0%A4%A', async () => {});
     expect(sent.status).toBe(400);
+  });
+});
+
+describe('the chat context detail (plan 2026-11-14-context-management, decision 6)', () => {
+  const PORT = 3877;
+  const TOKEN = 'context-route-token';
+  const DETAIL = {
+    reading: null,
+    items: [{ name: 'Messages', tokens: 10, group: 'messages' }],
+    lastCompaction: null,
+    approximate: false,
+  };
+
+  /** Through the real gate first, as server.ts runs it, then the route. */
+  async function call(
+    method: string,
+    path: string,
+    sessions: Record<string, unknown>,
+    headers: Record<string, string | undefined> = {},
+  ) {
+    const sent = { status: 0, body: '', gate: '' };
+    const all = {
+      host: `127.0.0.1:${PORT}`,
+      cookie: `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`,
+      'sec-fetch-site': 'same-origin',
+      ...headers,
+    };
+    const gate = checkRequest({ method, path, headers: all }, { port: PORT, launchToken: TOKEN });
+    sent.gate = gate.action;
+    if (gate.action !== 'allow') {
+      if (gate.action === 'reject') sent.status = gate.status;
+      return { ...sent, json: null };
+    }
+    const req = Object.assign(Readable.from([]), { method, headers: all });
+    const res = {
+      headersSent: false,
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:${PORT}${path}`),
+      { sessions, log: () => {} } as unknown as RouteContext,
+    );
+    return { ...sent, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('a plain GET from the page passes the gate and answers the session manager’s detail', async () => {
+    const asked: string[] = [];
+    const sent = await call('GET', ROUTES.chatContext('chat 1'), {
+      contextDetail: async (id: string) => {
+        asked.push(id);
+        return DETAIL;
+      },
+    });
+    expect(sent.gate).toBe('allow');
+    expect(sent.status).toBe(200);
+    expect(asked).toEqual(['chat 1']);
+    expect(sent.json).toEqual(DETAIL);
+  });
+
+  it('is refused by the gate without a session, and from another site', async () => {
+    const sessions = { contextDetail: async () => DETAIL };
+    expect((await call('GET', ROUTES.chatContext('c1'), sessions, { cookie: undefined })).status).toBe(401);
+    expect(
+      (await call('GET', ROUTES.chatContext('c1'), sessions, { 'sec-fetch-site': 'cross-site' })).status,
+    ).toBe(403);
+  });
+
+  it('is GET only, 404 for an unknown chat, and 404 where the manager has no detail (setup mode)', async () => {
+    const sessions = {
+      contextDetail: async () => {
+        throw new SessionError('not-found', 'That chat could not be found.');
+      },
+    };
+    const post = await call('POST', ROUTES.chatContext('c1'), sessions, {
+      'content-type': 'application/json',
+      origin: `http://127.0.0.1:${PORT}`,
+    });
+    expect(post.status).toBe(405);
+    expect((await call('GET', ROUTES.chatContext('gone'), sessions)).status).toBe(404);
+    expect((await call('GET', ROUTES.chatContext('c1'), createSetupSessions() as never)).status).toBe(404);
+    expect((await call('GET', '/api/sessions/%E0%A4%A/context', sessions)).status).toBe(400);
   });
 });
 

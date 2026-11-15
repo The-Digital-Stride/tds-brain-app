@@ -110,6 +110,22 @@ can't be shown here." with Download first. Escape goes back to the list. A file 
 "What changed", using the approval card's change view. Empty: "No files yet. Files Claude reads, makes or
 names in this chat appear here."
 
+## Context meter and summary divider
+
+**ContextMeter** (`components/ContextMeter.tsx`) sits in its own `.context-foot` row under the message
+box (not `.composer-foot`, which is the attach and send row), above the level or engine line, and shows in
+manual mode too. A 4px bar (64px wide) with words: "Chat 42% full". Bands come from `meterBand` (shared):
+neutral under 60%, amber (`--attn-asking-edge`) from 60%, red (`--danger`) from 85%, where the words become
+"Chat 90% full: Claude will summarise the earlier messages soon". Colour never carries it alone.
+`role="meter"` with `aria-valuenow/min/max`, the fixed name "How full this chat is" and the words as
+`aria-valuetext`. Hidden until the first reading. The page's announcer (`App.tsx`) speaks "summarising" and
+"nearly full", not the meter itself. The Inspector's Details tab has a **Context** `Fold` (shut) that opens
+with the meter's own words, then used against the summarising point, then the model's full size.
+
+**Summary divider** is a `.notice` with `data-kind="summary"` (quiet tint, dashed edge, centred), not a
+new component. It marks where earlier messages were summarised. While summarising, a status line
+(`.engine-line`) says so above the status bar.
+
 ## Height (shadows)
 
 One light, one formula, even steps (Ian, 2026-11-11: "the drop shadows should be consistent across all

@@ -365,3 +365,8 @@ Reviewed 2026-11-15 after the build (b4706a1) and main's v0.31.0 merge. Fixes ar
 - `/compact` showed the summarising line, then the divider. The meter went from 8% to 7%.
 
 Plain: the reviews found one layout clash, some unclear wording and three small logic slips. All are fixed and covered by tests.
+
+**Overseer sign-off (2026-11-15): approved, no blockers.** Watch after release:
+- Returning to a recently used model rests on one spike measurement. Log the next reply's cache-write tokens, so the real cost of a return can be checked against the estimate.
+- A `status` message that isn't about the summary, arriving mid-summary, would clear "Summarising…" early. This only affects what's shown.
+- Confirm `/compact` on a genuinely long chat. The browser check used a small one (8% to 7%).

@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.41.0 — 2026-11-15
+
+- **feat**: delete images and documents from the library, kept 30 days and logged
+
 ## v0.40.0 — 2026-11-15
 
 - **feat**: TDS Brain is now TDS Cortex, with a first-run tour and What's new

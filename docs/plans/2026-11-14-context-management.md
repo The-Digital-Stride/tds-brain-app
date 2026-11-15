@@ -337,4 +337,31 @@ are now stored by the app. Should items 6–12 and nice items 13–15 are folded
 
 ## Review outcomes
 
-(Filled at the end.)
+Reviewed 2026-11-15 after the build (b4706a1) and main's v0.31.0 merge. Fixes are in c771ff8 and 14c2411.
+
+**UI and accessibility (Sonnet): 3 confirmed, all fixed.**
+- The meter row's wrapper reused `composer-foot`, which already styles the attach/send row. It is now `context-foot`.
+- The compacting line had a second `role="status"`. The app's Announcer now says "Claude is summarising the earlier conversation to make room".
+- The meter's `aria-label` is "How full this chat is". Its value text is the same words people see.
+
+**UX expert: 8 findings, 7 confirmed (1 duplicate of the class clash), all fixed. The copy changed from the plan:**
+- Panel headline: "Chat N% full", then "X of Y tokens before Claude summarises" (or "... used. Auto-summarising is off."), then "Most this model can hold: Z tokens".
+- Approximate note: "From Claude's last reply. Open this again in a minute for the full list."
+- Items: free space and buffer rows are left out. The rest are largest first, capped at 12, with the "not loaded until used" rows after them.
+- Kept line (decision 10): "Staying on {Tier} for now: it costs less than switching down and re-reading the whole chat."
+- Red meter: "Chat N% full: Claude will summarise the earlier messages soon". The Announcer says the same when a reply finishes in the red band.
+- `tokenWords` rounds to millions first, so it never shows "1000k".
+
+**Correctness (Opus): 3 confirmed, all fixed. The fix round was re-checked with no new faults, and one more test was added.**
+- The Context panel cancelled its own request when the full read's reading came down the stream, so a fresh list always showed as approximate. It now asks once per opening, and asks again only for a newer reading.
+- Ruling on decision 4: a summary boundary that arrives during a reply no longer calls `getContextUsage`. It shows the usage estimate from `post_tokens`, and the turn-end read follows. "Never read during a reply" wins over "read after every boundary".
+- The event mapper forgets an unfinished summary when the reply ends (`result`), so a summary that is stopped part-way can't hide later ones.
+
+**Gates:** tsc clean. Lint has 11 warnings, all on main already. 2,800 tests pass. The build works. No file loses more than 40 lines against the merge base.
+
+**Browser (preview on port 3382):**
+- The meter sits under the message box, and the attach/send row is intact.
+- The Context panel shows the headline, the items in order, and the connector rows that load only when used.
+- `/compact` showed the summarising line, then the divider. The meter went from 8% to 7%.
+
+Plain: the reviews found one layout clash, some unclear wording and three small logic slips. All are fixed and covered by tests.

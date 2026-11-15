@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.37.0 — 2026-11-15
+
+- **feat**: help engine, owners-only Help drawer and scripted help screenshots
+
 ## v0.36.0 — 2026-11-15
 
 - **feat**: kit logic, savings ledger, Tokens saved panel and the tdsapp-kits brain skill

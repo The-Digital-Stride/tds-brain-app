@@ -166,3 +166,21 @@ The lead writes the contract additions, the plan's review outcomes and the tds-d
   files); "versioned" was undefined (now `isPinned`, exact `x.y.z` only). Should items taken: byte-total ruling for
   the tally, exact temp-name shapes for the sweep, an hour's memory of a failed refresh, scan only the page's own
   scripts, and the branded copy's links. Rulings: 7 days and one hour kept; the Opus builder moves to decision 1.
+- **Build.** Three builders in parallel (A: Opus, links; B: Sonnet, cache and copies; C: Sonnet, script
+  pages and tests). All gates passed first time together (2,776 tests).
+- **Security review (Opus).** No findings. 42 address forms tried against the link gate (IPv4 short,
+  hex, octal and decimal forms, IPv6-mapped, `localhost.`, credentials, `javascript:`/`data:`/`blob:`);
+  all refused. Addresses that still pass (`[64:ff9b::7f00:1]`, names resolving to loopback) can't
+  reach the app: the gate refuses any Host but `127.0.0.1:<port>` and the cookie is `SameSite=Strict`.
+  Script-made pages take Write's own path checks (`O_NOFOLLOW`, device and inode match).
+- **Correctness review (Opus).** Confirmed and fixed: the link script ran in the capture phase, so a
+  page that handles its own link clicks would also open a tab (now decided on the window in the
+  bubble phase, after the page's handlers; test first); a page Bash made vanished when its chat was
+  replayed after a restart (now rebuilt when the live run kept a copy under that tool use, `heldOnly`);
+  the "touched by this command" check had no slack for drives that keep times to the second (now
+  2 s, `MTIME_SLACK_MS`). Tests for both, failing first. From the security review, a UTF-16 page is
+  now served unchanged (bytes before its mark would garble it). The Shell test now waits for the
+  shell's open-chat button and presses once (no dropped first press found; passes under load).
+- **Browser check.** A page Claude saved with `cat >` showed and opened by itself; a plain link and a
+  `target="_blank"` link each opened one new tab with the page left in place; a `#` link scrolled
+  the page. The explainer ran under the viewer's policy in a sandboxed origin with no requests.

@@ -231,11 +231,15 @@ type Pending =
       /** Absolute `.html` / `.htm` words the command may have written, and when it started (ms). */
       pagePaths: string[];
       startedAt: number;
+      history: boolean;
     }
   | { kind: 'web'; url: string }
   | { kind: 'page'; publish: ArtifactPublish; history: boolean };
 
 /** A Write / Edit / MultiEdit of a path that may be a page, waiting for its result. */
+/** Some filesystems (HFS+, exFAT, SMB) store modified times to the second, so a real write can look older than the command. */
+const MTIME_SLACK_MS = 2000;
+
 interface PageWrite {
   filePath: string;
   /** A Write's content is a real page (null for an edit, whose result is only on disk). */
@@ -243,6 +247,8 @@ interface PageWrite {
   /** The title from a Write's content, when it has one. */
   writeTitle: string | null;
   history: boolean;
+  /** From history only: a shell word is a guess, so the page exists only when live kept a copy under this tool use. */
+  heldOnly?: boolean;
 }
 
 /** The latest touch of a page since the last boundary. */
@@ -899,7 +905,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         for (const w of use.changes) {
           const p = staged(w) ? null : shellPath(w, here);
           if (p) changes.add(p);
-          const a = history || staged(w) ? null : absPage(w, here);
+          const a = staged(w) ? null : absPage(w, here);
           if (a) pagePaths.add(a);
         }
         for (const w of use.reads) {
@@ -935,6 +941,7 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
         cwd,
         pagePaths: pageList,
         startedAt: Date.now(),
+        history,
       });
     } else if (name === 'WebFetch' && okLink(input.url)) {
       setPending(id, { kind: 'web', url: input.url });
@@ -1032,8 +1039,8 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
     else {
       // An edit from history: the file as it is now or, when that no longer says so (the source is
       // gone), a copy live kept under this tool use, so replay finds the page the live chat had.
-      isPage =
-        (await port.isPage(w.filePath)) === true || (await port.held(key, id).catch(() => null)) !== null;
+      const held = (await port.held(key, id).catch(() => null)) !== null;
+      isPage = held || (w.heldOnly !== true && (await port.isPage(w.filePath)) === true);
     }
     if (!isPage) return;
     const page = known ?? newPage(located, w.filePath);
@@ -1195,10 +1202,21 @@ export function createChatFiles(opts: ChatFilesOptions): ChatFilesTracker {
       // Shell words are guesses: each page word goes through Write's own checks, but only when the
       // command touched the file (its modified time is not before the command started).
       for (const filePath of p.pagePaths) {
-        const { startedAt } = p;
+        const { startedAt, history } = p;
         queuePage(async () => {
+          if (history) {
+            // Replay: no time check. A page comes back only if live kept a copy under this tool use.
+            await pageWritten(id, {
+              filePath,
+              writeIsPage: null,
+              writeTitle: null,
+              history: true,
+              heldOnly: true,
+            });
+            return;
+          }
           const at = await modified(filePath);
-          if (at === null || at < startedAt) return;
+          if (at === null || at < startedAt - MTIME_SLACK_MS) return;
           await pageWritten(id, { filePath, writeIsPage: null, writeTitle: null, history: false });
         });
       }

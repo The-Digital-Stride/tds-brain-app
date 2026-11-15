@@ -51,14 +51,15 @@ export function openableLink(data: unknown, appOrigin: string): URL | null {
  * on another site, it stops the frame moving and posts `{ type, url }` to the parent. Modified clicks
  * (Ctrl, Cmd, Shift) are taken too, so they still open a tab, through the app rather than as a
  * sandboxed pop-up. Left alone: `#` and empty links, other schemes (`javascript:`, `mailto:`), links
- * to the page's own site, clicks another handler already cancelled, other buttons, and a page shown on
- * its own (not framed). No comments or addresses inside: it is served inline.
+ * to the page's own site, other buttons, and a page shown on its own (not framed). It listens on the
+ * window in the bubble phase, after the page's own handlers: a click the page cancels is left to the
+ * page, and one it stops from bubbling falls back to the frame's stop notice (review: correctness). No comments or addresses inside: it is served inline.
  */
 export const PAGE_LINK_SCRIPT = `(function () {
   if (window.parent === window) return;
   var own = '';
   try { own = new URL(document.baseURI).origin; } catch (err) {}
-  document.addEventListener('click', function (e) {
+  window.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0) return;
     var path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
     var a = null;
@@ -74,7 +75,7 @@ export const PAGE_LINK_SCRIPT = `(function () {
     if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.origin === own) return;
     e.preventDefault();
     window.parent.postMessage({ type: '${OPEN_LINK}', url: u.href }, '*');
-  }, true);
+  });
 })();`;
 
 export const LINK_SCRIPT_TAG = `<script>${PAGE_LINK_SCRIPT}</script>`;

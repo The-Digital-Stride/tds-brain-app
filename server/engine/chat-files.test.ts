@@ -1406,6 +1406,47 @@ describe('createChatFiles: pages made with Bash', () => {
     expect((await old.t.snapshot())?.pages ?? []).toHaveLength(0);
   });
 
+  it('allows for coarse file times: 1.5 s before the command still shows, 5 s before does not', async () => {
+    const near = setupPages({ modified: async () => Date.now() - 1500 });
+    near.pages.files.set(`${TMP}/near.html`, page('Near'));
+    bash(near, `cat > ${TMP}/near.html`);
+    await near.t.settled();
+    expect(pagesOf(await snap(near.t)).map((p) => p.title)).toEqual(['Near']);
+
+    const far = setupPages({ modified: async () => Date.now() - 5000 });
+    far.pages.files.set(`${TMP}/far.html`, page('Far'));
+    bash(far, `cat > ${TMP}/far.html`);
+    await far.t.settled();
+    expect((await far.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('rebuilds a page a Bash command made live, with its versions, when the chat is replayed', async () => {
+    const pages = fakePages();
+    const path = `${TMP}/script.html`;
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) x.pages.files.set(path, page('Script'));
+      step(x.t, 'Bash', { command: `cat > ${path} <<'EOF'\n<html></html>\nEOF` }, { history });
+      x.t.boundary({ history });
+    };
+    n = 3000;
+    const live = setupPages({ pages, modified: fresh });
+    script(live, false);
+    await live.t.settled();
+    const liveSnap = pagesOf(await snap(live.t));
+    expect(liveSnap).toHaveLength(1);
+    expect(liveSnap[0]?.versions.map((v) => v.hasCopy)).toEqual([true]);
+    // The script's file is cleared before the chat is reopened after a restart.
+    pages.files.delete(path);
+    n = 3000;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    await replay.t.settled();
+    const got = pagesOf(await snap(replay.t));
+    expect(got.map((p) => p.key)).toEqual(liveSnap.map((p) => p.key));
+    expect(got[0]?.versions.map((v) => v.hasCopy)).toEqual([true]);
+  });
+
   it('does not make pages from history, and leaves other shell changes as they were', async () => {
     const x = setupPages({ modified: fresh });
     x.pages.files.set(`${TMP}/h.html`, page('H'));

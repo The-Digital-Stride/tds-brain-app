@@ -627,12 +627,13 @@ describe('the panel holds the rail to icons', () => {
     vi.stubGlobal('innerWidth', 1500);
     localStorage.setItem('tds-brain-shell', JSON.stringify({ railWide: true }));
     await renderLiveChat();
-    // The shortcut only works once the shell has finished loading, which under load can be after the
-    // heading shows: press again until the drawer is open rather than assuming the first press lands.
-    await waitFor(() => {
-      if (drawerDock().hasAttribute('inert')) press('c', document.body);
-      expect(drawerDock().hasAttribute('inert')).toBe(false);
-    });
+    // The shortcut acts on the shell's own state, which has no loading gate: it is ignored only while
+    // focus is in a text box, the palette is open, or single keys are off. What can still be settling
+    // is the chat list, so wait until the rail shows it before the one press.
+    await screen.findByRole('button', { name: 'Chats, 1 open' });
+    expect(document.activeElement === document.body).toBe(true);
+    press('c', document.body);
+    expect(drawerDock().hasAttribute('inert')).toBe(false);
     expect(nav().getAttribute('data-wide')).toBe('true');
   });
 });

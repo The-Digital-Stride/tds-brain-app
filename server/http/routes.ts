@@ -953,6 +953,10 @@ const LINK_SCRIPT_BYTES = Buffer.from(LINK_SCRIPT_TAG);
  * Read as latin1, one character is one byte, so the offset is a byte offset and nothing is re-encoded.
  */
 export function withLinkScriptBytes(data: Buffer): Buffer {
+  // A UTF-16 page (byte order mark FE FF / FF FE) is served as it is: bytes added in front of its mark
+  // would garble it, and its links fall back to the stop notice.
+  if (data.length >= 2 && ((data[0] === 0xfe && data[1] === 0xff) || (data[0] === 0xff && data[1] === 0xfe)))
+    return data;
   const at = linkScriptOffset(data.subarray(0, DOCTYPE_SCAN_BYTES).toString('latin1'));
   return Buffer.concat([data.subarray(0, at), LINK_SCRIPT_BYTES, data.subarray(at)]);
 }

@@ -1126,6 +1126,12 @@ describe('library routes', () => {
     const bare = await call(ctx, ROUTES.libraryPage(id));
     expect(bare.body.toString('utf8')).toBe(`${LINK_SCRIPT_TAG}<h1>Bare</h1>`);
     expect(readFileSync(file, 'utf8')).toBe('<h1>Bare</h1>');
+    // A UTF-16 page (either byte order) is served as stored: bytes in front of its mark would garble it.
+    for (const bom of [Buffer.from([0xfe, 0xff]), Buffer.from([0xff, 0xfe])]) {
+      const wide = Buffer.concat([bom, Buffer.from('<!DOCTYPE html><p>x</p>', 'utf16le')]);
+      writeFileSync(file, wide);
+      expect((await call(ctx, ROUTES.libraryPage(id))).body.equals(wide)).toBe(true);
+    }
   });
 
   it('answers page errors as a small HTML page under the same policy, never JSON', async () => {

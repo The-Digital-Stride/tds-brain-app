@@ -131,6 +131,19 @@ describe('the link script in a page', () => {
     expect(posted[1]?.data).toEqual({ type: 'tds-page-open-link', url: 'http://example.org/' });
   });
 
+  it("leaves a link to the page when the page's own click handler cancels or stops it", () => {
+    doc.body.innerHTML = '<a href="https://example.com/x">x</a>';
+    const a = doc.querySelector('a') as HTMLAnchorElement;
+    a.addEventListener('click', (ev) => ev.preventDefault());
+    a.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(posted).toEqual([]);
+    doc.body.innerHTML = '<a href="https://example.com/y">y</a>';
+    const b = doc.querySelector('a') as HTMLAnchorElement;
+    b.addEventListener('click', (ev) => ev.stopPropagation());
+    b.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(posted).toEqual([]);
+  });
+
   it('takes an image-map area and a modified click (opened by the app, not the frame)', () => {
     click('<map name="m"><area data-hit href="https://example.com/area"></map>');
     click('<a href="https://example.com/ctrl">x</a>', { ctrlKey: true });

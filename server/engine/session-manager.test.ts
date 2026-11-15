@@ -4438,8 +4438,19 @@ describe('context management', () => {
     expect(comp.map((e) => e.phase)).toEqual(['started', 'done']);
     expect(comp[1]).toMatchObject({ id: 'c:b0', trigger: 'auto', preTokens: 170_000, postTokens: 20_000 });
     expect(lines).toContain('Summarised a chat (auto).');
+    const live: { source: string; usedTokens: number }[] = [];
+    const sub = mgr.subscribe(s.id, Number.MAX_SAFE_INTEGER, (e) => {
+      if (e.event.type === 'context') live.push(e.event);
+    });
     await mgr.send(s.id, 'more');
     await flush();
+    sub.unsubscribe();
+    // Mid-reply, the meter moves to the summary's size first; the turn-end read follows.
+    expect(live.map((r) => [r.source, r.usedTokens])).toEqual([
+      ['usage', 20_000],
+      ['engine', SUMMARY.totalTokens],
+    ]);
+    expect(reads).toBe(2);
     // Every divider stays in the replay log; the context reading is the newest only.
     const done = events(mgr, s.id).filter((e) => e.type === 'compaction' && e.phase === 'done');
     expect(done.map((e) => (e as { id: string }).id)).toEqual(['c:b0', 'c:b1']);

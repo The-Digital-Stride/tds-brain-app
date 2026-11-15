@@ -48,6 +48,11 @@ export interface ShellState {
   viewer: ViewerRequest | null;
   /** Single-key shortcuts ([, T, C, S) on or off. Cmd/Ctrl+K and Esc always work. */
   singleKeys: boolean;
+  /**
+   * The width the person dragged the file viewer to, in px, or null for its default. Saved. It is
+   * held inside the limits for the window as it is (`useLayerWidth`), so a stale value is harmless.
+   */
+  viewerWidth: number | null;
 }
 
 /**
@@ -93,7 +98,9 @@ export type ShellAction =
   /** Shows a file in the viewer over the desk (replacing one already shown). */
   | { type: 'open-viewer'; viewer: ViewerRequest }
   | { type: 'close-viewer' }
-  | { type: 'set-single-keys'; on: boolean };
+  | { type: 'set-single-keys'; on: boolean }
+  /** The viewer's width in px, or null for its default. */
+  | { type: 'set-viewer-width'; width: number | null };
 
 /** `client/src/state/shell.ts` */
 export type ShellReducer = (state: ShellState, action: ShellAction) => ShellState;

@@ -2,7 +2,9 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { HELP_FALLBACK_ID, type HelpTopic } from '../help/contract.ts';
 import { HelpArticle } from '../help/HelpArticle.tsx';
 import { helpLibrary, helpRoleWords } from '../help/library.ts';
+import { WHATS_NEW_ID } from '../help/whats-new.ts';
 import { useStore } from '../store.tsx';
+import { startTour } from '../tour/index.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -115,6 +117,32 @@ export function HelpDrawer() {
           >
             Open the Cortex Guide
           </button>
+          <div className="help-extras">
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              onClick={() => {
+                // startTour only asks; the tour opens itself once the drawer has gone.
+                startTour();
+                dispatch({ type: 'close-drawer' });
+              }}
+            >
+              Take the tour
+            </button>
+            {helpLibrary.byId(WHATS_NEW_ID) ? (
+              <button
+                type="button"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
+                onClick={() => open(WHATS_NEW_ID)}
+              >
+                What's new
+              </button>
+            ) : null}
+          </div>
           <p className="visually-hidden" role="status" aria-live="polite">
             {found
               ? found.length === 0

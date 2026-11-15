@@ -1,4 +1,4 @@
-// tdsapp-usage: takes one `app` event from the TDS Brain app on stdin and files it in the brain's logs.
+// tdsapp-usage: takes one `app` event from TDS Cortex on stdin and files it in the brain's logs.
 //
 //   usage         one AppUsageEvent as JSON on stdin; exit 0 filed, exit 2 refused
 //   capabilities  prints { version, features, capabilities } as JSON

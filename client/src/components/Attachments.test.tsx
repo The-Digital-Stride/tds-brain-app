@@ -312,7 +312,7 @@ describe('refusal text', () => {
   it('puts the full reason under the chips, not inside the chip', () => {
     setup();
     pick(file('run.exe'));
-    const reason = screen.getByText(/run\.exe: TDS Brain can't pass on/);
+    const reason = screen.getByText(/run\.exe: TDS Cortex can't pass on/);
     expect(reason.className).toBe('attach-problem');
     expect(reason.closest('.file-chip')).toBeNull();
     expect(screen.getByText("Can't attach").closest('.file-chip')).not.toBeNull();

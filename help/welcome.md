@@ -29,6 +29,10 @@ Claude already knows our clients, our notes and our way of doing things. You don
 
 Home is where you start. The big box under the greeting is for your message (1). Inside it, at the bottom left, is the client picker (2). Your pinned cards sit underneath.
 
+## Take the tour
+
+The first time you open Cortex after this update, a short tour walks you round. It points at the message box, the rail and search. Press **Next** to move on, **Back** to go back, or **Skip tour** to leave. On the last step, press **Done**. You can take it again from Help with **Take the tour**.
+
 ## How to get help
 
 When you aren't typing, press the H key or the ? key to open Help. (This needs **Single-key shortcuts** switched on in Settings. It is on unless you turned it off.) You can also use the Help item on the left-hand rail. It opens on the page for the screen you're on.

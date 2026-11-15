@@ -37,6 +37,7 @@ In the message box, press Enter to send. Press Shift and Enter for a new line.
 - Single keys do nothing while you are typing in a box.
 - The **Single-key shortcuts** switch in Settings turns them on or off. It is on to begin with.
 - ⌘K and Esc work whether the switch is on or off.
+- While the first-run tour shows, single keys do nothing.
 - Each key press toggles its drawer, so pressing it again closes the drawer.
 
 ## Try this

@@ -2,6 +2,8 @@
  * Wording shared by the rail, drawers, Home, palette and panel, so a status or a date reads the same
  * everywhere. Contract: `Words` in client/src/shell/contract.ts.
  */
+
+import { BRAND } from '../../../shared/brand.ts';
 import {
   ATTENTION_LABEL,
   type ClientInfo,
@@ -173,6 +175,10 @@ export function handoverMeta(
   return h.source === 'history' ? `from ${first} (git history)` : `from ${first}, ${agoDays(at, now)}`;
 }
 
+/** To-dos stamped before the rename say this; they are shown under the app's current name. */
+const LEGACY_VIA = 'TDS Brain App';
+const viaName = (via: string) => (via === LEGACY_VIA ? BRAND : via);
+
 /** The editor's line: "Passed to you by Ben McAdam, 12 Nov (TDS Brain App)" or "From Ben McAdam (git history), 12 Nov". */
 export function handoverLine(todo: Pick<TodoItem, 'handover' | 'assignee'>, me: string): string | null {
   const h = todo.handover;
@@ -182,5 +188,5 @@ export function handoverLine(todo: Pick<TodoItem, 'handover' | 'assignee'>, me: 
   const date = Number.isNaN(at.getTime()) ? '' : `, ${at.getDate()} ${MONTHS[at.getMonth()]}`;
   const name = handoverName(h);
   if (h.source === 'history') return `From ${name} (git history)${date}`;
-  return `Passed to you by ${name}${date}${h.via ? ` (${h.via})` : ''}`;
+  return `Passed to you by ${name}${date}${h.via ? ` (${viaName(h.via)})` : ''}`;
 }

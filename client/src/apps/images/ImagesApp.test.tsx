@@ -241,9 +241,9 @@ describe('ImagesSheet', () => {
   });
 
   it('shows the failure and tries again', async () => {
-    api.library.mockRejectedValueOnce(new Error('Could not reach TDS Brain.'));
+    api.library.mockRejectedValueOnce(new Error('Could not reach TDS Cortex.'));
     render(<ImagesSheet />);
-    expect(await screen.findByText('Could not reach TDS Brain.')).toBeTruthy();
+    expect(await screen.findByText('Could not reach TDS Cortex.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await card('Brand')).toBeTruthy();
     expect(api.library).toHaveBeenCalledTimes(2);

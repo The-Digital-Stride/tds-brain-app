@@ -11,11 +11,11 @@ const PHASE_TEXT: Partial<Record<UpdatePhase, string>> = {
   downloading: 'Downloading the update…',
   installing: 'Installing the update…',
   building: 'Building the update…',
-  restarting: 'Restarting TDS Brain…',
+  restarting: 'Restarting TDS Cortex…',
 };
 
 const STALLED_TEXT =
-  "TDS Brain hasn't come back after a minute. Reload this page, and if it's still not back, tell whoever looks after TDS Brain.";
+  "TDS Cortex hasn't come back after a minute. Reload this page, and if it's still not back, tell whoever looks after TDS Cortex.";
 
 const MAX_NOTES = 8;
 
@@ -77,7 +77,7 @@ export function UpdateAction({
           }
         }}
       >
-        <span>Updating restarts TDS Brain and closes {chatsWords(openChats)}.</span>
+        <span>Updating restarts TDS Cortex and closes {chatsWords(openChats)}.</span>
         <button
           type="button"
           className="btn"
@@ -147,7 +147,7 @@ export function UpdateBanner() {
     text = failed
       ? (status.error ?? UPDATE_UNFINISHED_TEXT)
       : status.latest
-        ? `TDS Brain ${status.latest} is available.`
+        ? `TDS Cortex ${status.latest} is available.`
         : UPDATE_UNFINISHED_TEXT;
   }
   // Always on the page, so a screen reader announces the sentence when it arrives.

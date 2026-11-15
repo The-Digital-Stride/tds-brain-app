@@ -18,7 +18,7 @@ export function Loading() {
     <main className="gate" aria-busy="true">
       <div className="card gate-card">
         <div className="spinner" aria-hidden="true" />
-        <p role="status">Opening TDS Brain.</p>
+        <p role="status">Opening TDS Cortex.</p>
       </div>
     </main>
   );
@@ -27,19 +27,19 @@ export function Loading() {
 export function GateScreen({ gate, retry }: { gate: Exclude<Gate, 'ready' | 'loading'>; retry: () => void }) {
   if (gate === 'not-signed-in') {
     return (
-      <Panel title="Open TDS Brain from its launcher">
+      <Panel title="Open TDS Cortex from its launcher">
         <p>
-          This page needs to be opened from the TDS Brain launcher on your computer, so it knows it is you.
+          This page needs to be opened from the TDS Cortex launcher on your computer, so it knows it is you.
         </p>
-        <p className="lede">Close this tab and start TDS Brain again.</p>
+        <p className="lede">Close this tab and start TDS Cortex again.</p>
       </Panel>
     );
   }
   return (
-    <Panel title="Can't reach TDS Brain">
+    <Panel title="Can't reach TDS Cortex">
       <p role="status">
-        TDS Brain isn't answering on this computer. It may still be starting, or it may have been closed. This
-        page will keep trying quietly.
+        TDS Cortex isn't answering on this computer. It may still be starting, or it may have been closed.
+        This page will keep trying quietly.
       </p>
       <div>
         <button type="button" className="btn" onClick={retry}>
@@ -56,7 +56,7 @@ export function BootProblem({ boot, retry }: { boot: Bootstrap; retry: () => voi
   if (!boot.brain.ok) {
     return (
       <Panel title="There's a problem with your brain folder">
-        <p>TDS Brain needs your Agency Brain folder to work.</p>
+        <p>TDS Cortex needs your Agency Brain folder to work.</p>
         {boot.brain.problems.length > 0 ? (
           <ul className="problem-list">
             {boot.brain.problems.map((p) => (

@@ -9,6 +9,7 @@ import {
   LAUNCH_AGENT_LABEL,
   type LaunchAgentSpec,
   SIGNIN_APP_NAME,
+  SUPPORT_DIR_NAME,
   type UninstallOptions,
 } from '../../shared/install-contract.ts';
 import { signInUrl } from '../launcher.ts';
@@ -55,7 +56,7 @@ export interface InstallDeps {
 }
 
 export function installPaths(home: string) {
-  const logDir = join(home, 'Library', 'Logs', 'TDS Brain');
+  const logDir = join(home, 'Library', 'Logs', SUPPORT_DIR_NAME);
   return {
     plist: join(home, 'Library', 'LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`),
     signinApp: join(home, 'Applications', `${SIGNIN_APP_NAME}.app`),
@@ -143,7 +144,7 @@ export async function install(options: InstallOptions, d: InstallDeps): Promise<
     }
     return {
       ok: false,
-      message: `Nothing was installed. Another program is using port ${d.port}, probably a copy of TDS Brain started with "pnpm start" in a terminal. Quit it (Control-C in that terminal), then run the install again.`,
+      message: `Nothing was installed. Another program is using port ${d.port}, probably a copy of TDS Cortex started with "pnpm start" in a terminal. Quit it (Control-C in that terminal), then run the install again.`,
     };
   }
 
@@ -172,13 +173,13 @@ export async function install(options: InstallOptions, d: InstallDeps): Promise<
   if (!up) {
     return {
       ok: false,
-      message: `TDS Brain was installed but is not answering yet. Run "tds-brain doctor" to see what is wrong.`,
+      message: `TDS Cortex was installed but is not answering yet. Run "tds-brain doctor" to see what is wrong.`,
     };
   }
   const opened = await openApp(d);
   return {
     ok: true,
-    message: `TDS Brain is installed and running. ${opened.ok ? 'Signing you in now.' : opened.message}`,
+    message: `TDS Cortex is installed and running. ${opened.ok ? 'Signing you in now.' : opened.message}`,
   };
 }
 
@@ -187,23 +188,23 @@ export async function openApp(d: InstallDeps): Promise<Outcome> {
   if (!token) {
     return {
       ok: false,
-      message: 'TDS Brain has not been installed here yet. Run "tds-brain install --brain <folder>" first.',
+      message: 'TDS Cortex has not been installed here yet. Run "tds-brain install --brain <folder>" first.',
     };
   }
   const code = await d.codeFromRunningServer(d.port, token);
   if (!code) {
     return {
       ok: false,
-      message: 'TDS Brain is not running. Run "tds-brain restart", or "tds-brain doctor" to see why.',
+      message: 'TDS Cortex is not running. Run "tds-brain restart", or "tds-brain doctor" to see why.',
     };
   }
   d.openBrowser(signInUrl(d.port, code));
-  return { ok: true, message: 'Opening TDS Brain in Chrome.' };
+  return { ok: true, message: 'Opening TDS Cortex in Chrome.' };
 }
 
 export async function restartApp(d: InstallDeps): Promise<Outcome> {
   await d.launchctl.kickstart();
-  return { ok: true, message: 'TDS Brain is restarting.' };
+  return { ok: true, message: 'TDS Cortex is restarting.' };
 }
 
 /** A new launch token makes every browser's old sign-in stop working. Same atomic, 0600 write as the server's. */
@@ -218,7 +219,7 @@ export async function signOutEverywhere(d: InstallDeps): Promise<Outcome> {
   renameSync(tmp, file);
   chmodSync(file, 0o600);
   const stay =
-    'The sign-in code was changed, but people stay signed in until TDS Brain is restarted. Run "tds-brain restart" (or install again) to finish signing everyone out.';
+    'The sign-in code was changed, but people stay signed in until TDS Cortex is restarted. Run "tds-brain restart" (or install again) to finish signing everyone out.';
   if (!(await d.launchctl.isLoaded())) return { ok: false, message: stay };
   try {
     await d.launchctl.kickstart();
@@ -228,7 +229,7 @@ export async function signOutEverywhere(d: InstallDeps): Promise<Outcome> {
   return {
     ok: true,
     message:
-      'Everyone is signed out and TDS Brain is restarting. Run "tds-brain open" to sign yourself back in.',
+      'Everyone is signed out and TDS Cortex is restarting. Run "tds-brain open" to sign yourself back in.',
   };
 }
 
@@ -240,7 +241,7 @@ const contains = (parent: string, child: string): boolean => {
 /** Why `--all` must not remove this folder, or null when it is safe. */
 function unsafeToWipe(dataDir: string, d: InstallDeps): string | null {
   if (!existsSync(join(dataDir, 'runtime.json'))) {
-    return `${dataDir} does not look like TDS Brain data (it has no runtime.json).`;
+    return `${dataDir} does not look like TDS Cortex data (it has no runtime.json).`;
   }
   if (contains(dataDir, d.home)) return `${dataDir} is your home folder or holds it.`;
   if (contains(dataDir, d.appRoot)) return `${dataDir} is or holds the app folder, which is never removed.`;
@@ -264,7 +265,7 @@ export async function uninstall(options: UninstallOptions, d: InstallDeps): Prom
   return {
     ok: true,
     message:
-      `TDS Brain will no longer start at login${wipe ? ', and its data was removed' : ''}. ` +
-      'The app folder was left alone. To remove the Dock icon, open chrome://apps in Chrome, right-click TDS Brain and choose Uninstall.',
+      `TDS Cortex will no longer start at login${wipe ? ', and its data was removed' : ''}. ` +
+      'The app folder was left alone. To remove the Dock icon, open chrome://apps in Chrome, right-click TDS Cortex (or TDS Brain) and choose Uninstall.',
   };
 }

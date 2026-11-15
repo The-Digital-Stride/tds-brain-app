@@ -68,7 +68,7 @@ describe('restart polling', () => {
       .mockRejectedValueOnce(new Error('down')) // restarting
       .mockResolvedValue(bootAnswer(READY, '/new/brain'));
     await save({ ok: true, path: '/new/brain', restarting: true });
-    expect(screen.getByRole('status').textContent).toBe('Restarting TDS Brain…');
+    expect(screen.getByRole('status').textContent).toBe('Restarting TDS Cortex…');
     await advance(1000);
     await advance(1000);
     expect(reload).not.toHaveBeenCalled();
@@ -103,11 +103,11 @@ describe('restart polling', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('says to start TDS Brain again when it will not restart itself', async () => {
+  it('says to start TDS Cortex again when it will not restart itself', async () => {
     const reload = await show(SETUP);
     await save({ ok: true, path: '/new/brain', restarting: false });
     expect(screen.getByRole('status').textContent).toBe(
-      'Saved. Stop TDS Brain and start it again to use this folder.',
+      'Saved. Stop TDS Cortex and start it again to use this folder.',
     );
     await advance(5000);
     expect(mocks.bootstrap).not.toHaveBeenCalled();

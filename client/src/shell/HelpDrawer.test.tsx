@@ -5,6 +5,8 @@ import type { HelpTopic } from '../help/contract.ts';
 
 const store = vi.hoisted(() => ({ openView: vi.fn() }));
 vi.mock('../store.tsx', () => ({ useStore: () => store }));
+const tour = vi.hoisted(() => ({ startTour: vi.fn() }));
+vi.mock('../tour/index.ts', () => tour);
 const dispatch = vi.hoisted(() => vi.fn());
 const shell = vi.hoisted(() => ({ state: { drawer: 'help', helpPage: 'home' } as Record<string, unknown> }));
 vi.mock('./ShellProvider.tsx', () => ({
@@ -30,6 +32,7 @@ const topics = [
   topic('home', 'Home', { body: 'Start here. See [To-dos](help:todos).' }),
   topic('todos', 'To-dos', { area: 'todos', roles: ['owner', 'scout'] }),
   topic('owners', 'Owners', { area: 'settings', roles: ['owner'] }),
+  topic('whats-new', "What's new", { area: 'help', body: 'The newest notes.' }),
 ];
 vi.mock('../help/library.ts', async () => {
   const actual = await vi.importActual<typeof import('../help/library.ts')>('../help/library.ts');
@@ -50,6 +53,21 @@ describe('HelpDrawer', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'close-drawer' });
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'close-help' });
     expect(store.openView).toHaveBeenCalledWith('guide');
+  });
+
+  it('Take the tour starts the tour, then closes the drawer', () => {
+    render(<HelpDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Take the tour' }));
+    expect(tour.startTour).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'close-drawer' });
+  });
+
+  it("What's new opens the whats-new page in the drawer", () => {
+    render(<HelpDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: "What's new" }));
+    expect(screen.getByRole('heading', { name: "What's new" })).toBeTruthy();
+    expect(screen.getByText('The newest notes.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
   it('starts afresh when Help is opened again on the same page', () => {

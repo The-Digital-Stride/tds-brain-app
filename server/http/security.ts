@@ -227,7 +227,7 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
   const isApi = req.path === '/api' || req.path.startsWith('/api/');
 
   if (!isAllowedHost(header(req.headers, 'host'), ctx.port)) {
-    return reject(403, 'forbidden', `Open TDS Brain at http://${APP_HOST}:${ctx.port} from its launcher.`);
+    return reject(403, 'forbidden', `Open TDS Cortex at http://${APP_HOST}:${ctx.port} from its launcher.`);
   }
 
   const origin = header(req.headers, 'origin');
@@ -277,7 +277,7 @@ export function checkRequest(req: GateRequest, ctx: GateContext): GateDecision {
 
   if (!hasValidSession(header(req.headers, 'cookie'), ctx.launchToken, ctx.port)) {
     if (!isApi && (method === 'GET' || method === 'HEAD')) return { action: 'launcher' };
-    return reject(401, 'unauthorised', 'Open TDS Brain from its launcher to sign in to the app.');
+    return reject(401, 'unauthorised', 'Open TDS Cortex from its launcher to sign in to the app.');
   }
 
   if (CHANGING_METHODS.has(method)) {

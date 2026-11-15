@@ -84,7 +84,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
   if (decision.kind === 'ready') {
     add('brain', true, 'The brain folder is ready.', '');
   } else if (decision.tried === null || decision.reason === null) {
-    add('brain', false, '', 'No brain folder chosen yet; open TDS Brain to choose one.');
+    add('brain', false, '', 'No brain folder chosen yet; open TDS Cortex to choose one.');
   } else {
     const where = decision.source === 'env' ? `${decision.tried}, set by TDS_BRAIN_PATH` : decision.tried;
     add('brain', false, '', `${BRAIN_REFUSAL_TEXT[decision.reason]} (${where})`);
@@ -119,7 +119,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
     ours,
     'The app is running and answering.',
     d.launchToken === null
-      ? 'TDS Brain has not been installed here yet, so run "tds-brain install --brain <folder>".'
+      ? 'TDS Cortex has not been installed here yet, so run "tds-brain install --brain <folder>".'
       : 'The app is not answering, so run "tds-brain restart".',
   );
 

@@ -30,7 +30,7 @@ const READ_AND_WEB = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
 export const BUILT_IN_HELPERS: readonly string[] = ['general-purpose', 'Explore', 'Plan'];
 
 const BASE_PROMPT = [
-  'You are a helper in the TDS Brain app, working for the main chat on one part of a job.',
+  'You are a helper in the TDS Cortex app, working for the main chat on one part of a job.',
   'Work only on your brief. Never file, save or change anything in the brain: the main chat does any filing.',
   'When you are done, return a short report: what you found or did, with the brain path of every file you mention in backticks and the source of every fact or figure, plus anything you could not do and why.',
 ].join(' ');

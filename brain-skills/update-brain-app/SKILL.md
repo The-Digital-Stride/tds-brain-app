@@ -1,6 +1,6 @@
 ---
 name: update-brain-app
-description: Update the TDS Brain app on this Mac to the newest version - shows what's new, warns that restarting closes open chats, then downloads, builds and restarts the app and checks it. Also finishes an update that stopped halfway. USE WHEN someone says "/update-brain-app", "update TDS Brain", "update the brain app", "get the latest TDS Brain", or the app's Settings or a teammate says a new version is out.
+description: Update TDS Cortex on this Mac to the newest version - shows what's new, warns that restarting closes open chats, then downloads, builds and restarts the app and checks it. Also finishes an update that stopped halfway. USE WHEN someone says "/update-brain-app", "update TDS Cortex", "update TDS Brain", "update the brain app", "get the latest TDS Cortex", or the app's Settings or a teammate says a new version is out.
 version: 1.0
 last_updated: 2026-11-13
 maturity: beta
@@ -8,9 +8,9 @@ members: false
 agency: true
 ---
 
-# Update the TDS Brain app
+# Update TDS Cortex
 
-From this version on, TDS Brain offers updates itself: a line at the top of the app with "Update and restart". This skill remains for finishing a stuck update or updating from the terminal.
+From this version on, TDS Cortex offers updates itself: a line at the top of the app with "Update and restart". This skill remains for finishing a stuck update or updating from the terminal.
 
 The person may not be technical. Say what each step does in a plain UK English sentence before it
 runs, and summarise output rather than pasting it.
@@ -37,7 +37,7 @@ git -C "$APP" status --porcelain
 ```
 
 If this prints anything, someone has changed files in the installed copy. Don't discard or stash
-them. Say: "The installed TDS Brain has changes made on this Mac, so I've left it alone. Ask Ian to
+them. Say: "The installed TDS Cortex has changes made on this Mac, so I've left it alone. Ask Ian to
 look at it." Stop.
 
 ## Step 3: See what's new
@@ -70,14 +70,14 @@ git -C "$APP" fetch --quiet && git -C "$APP" log --oneline 'HEAD..@{upstream}'
 
 ## Step 4: Warn, and ask
 
-Restarting the app ends every chat that's open in TDS Brain. Check whether this chat is itself
+Restarting the app ends every chat that's open in TDS Cortex. Check whether this chat is itself
 running inside the app: `printenv TDS_BRAIN_SERVICE` prints `1` if so.
 
 Use AskUserQuestion:
-- In a terminal: "Updating restarts TDS Brain, which closes any chats open in it. Finish or note
+- In a terminal: "Updating restarts TDS Cortex, which closes any chats open in it. Finish or note
   anything you're in the middle of first."
-- Inside the app: say the same, and add: "This chat is running in TDS Brain, so it will end when
-  the app restarts. The update will be finished by then; reopen TDS Brain after a few seconds."
+- Inside the app: say the same, and add: "This chat is running in TDS Cortex, so it will end when
+  the app restarts. The update will be finished by then; reopen TDS Cortex after a few seconds."
 
 Options: "Update and restart now" and "Not now". On "Not now", stop.
 
@@ -108,9 +108,9 @@ APP="$HOME/Library/Application Support/TDS Brain/app"
 ```
 
 Inside the app, this is the last thing that happens in this chat. Before running it, tell them:
-"Restarting now. Reopen TDS Brain in a few seconds; it will be on the new version."
+"Restarting now. Reopen TDS Cortex in a few seconds; it will be on the new version."
 
 In a terminal, wait about five seconds, then run doctor (start the block with the `APP=` line):
-`"$APP/bin/tds-brain" doctor`. If it ends "Everything looks fine.", say TDS Brain is updated to the
+`"$APP/bin/tds-brain" doctor`. If it ends "Everything looks fine.", say TDS Cortex is updated to the
 new version and they may need to reload its window once (Command-R). If a line starts `FIX`, explain
 it and help, or suggest `/doctor-brain-app`.

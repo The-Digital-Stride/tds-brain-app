@@ -76,6 +76,7 @@ const boot = {
     lastClient: null,
     todoPanelOpen: false,
     directWrites: false,
+    tourSeen: 1,
     // Every to-do and chat these tests open from Home is pinned: Home lists only what is pinned.
     favouriteTodos: ['t-late.md', 't-today.md', 't-a.md', 'personal/t-p.md', 't-new.md'],
     favouriteChats: [SID1, SID2],

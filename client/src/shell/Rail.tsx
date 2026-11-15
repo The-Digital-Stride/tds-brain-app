@@ -117,7 +117,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
     <nav className="rail glass" aria-label="Main" data-wide={wide} inert={inert}>
       <div className="rail-brand">
         <Mark />
-        <span className="rail-label">TDS Brain</span>
+        <span className="rail-label">TDS Cortex</span>
         {/* The show/hide names toggle: an icon only, at the top right like every dock's close
             button. Icons only, it sits over the mark and shows on hover or keyboard focus. One
             element in both widths, so focus stays on it when it is pressed. */}

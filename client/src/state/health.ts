@@ -31,7 +31,7 @@ export interface HealthInput {
   now: number;
 }
 
-const ASK = 'restart your Mac or tell whoever looks after TDS Brain';
+const ASK = 'restart your Mac or tell whoever looks after TDS Cortex';
 
 export function healthChecks({ boot, streamUp, lists, lastSync, now }: HealthInput): HealthCheck[] {
   const checks: HealthCheck[] = [];
@@ -58,7 +58,7 @@ export function healthChecks({ boot, streamUp, lists, lastSync, now }: HealthInp
     state: boot.brain.ok ? 'ok' : 'problem',
     text: boot.brain.ok
       ? 'Found, with everything the app needs.'
-      : [...boot.brain.problems.map(sentence), 'Tell whoever looks after TDS Brain.'].join(' '),
+      : [...boot.brain.problems.map(sentence), 'Tell whoever looks after TDS Cortex.'].join(' '),
     detail: boot.brain.path,
   });
 
@@ -112,7 +112,7 @@ export function healthChecks({ boot, streamUp, lists, lastSync, now }: HealthInp
           id: 'service',
           label: 'Starts by itself',
           state: 'ok',
-          text: 'Yes. TDS Brain starts when you log in to your Mac and restarts if it stops.',
+          text: 'Yes. TDS Cortex starts when you log in to your Mac and restarts if it stops.',
         }
       : {
           id: 'service',
@@ -127,7 +127,7 @@ export function healthChecks({ boot, streamUp, lists, lastSync, now }: HealthInp
     id: 'signin',
     label: 'Sign-in',
     state: 'ok',
-    text: 'Signed in on this computer. Using TDS Brain renews it, so you stay signed in.',
+    text: 'Signed in on this computer. Using TDS Cortex renews it, so you stay signed in.',
   });
 
   return checks;

@@ -18,7 +18,7 @@ export function HealthPanel() {
   return (
     <section aria-labelledby="health-h" className="health">
       <div className="help-inline" data-heading="true">
-        <h2 id="health-h">How TDS Brain is running</h2>
+        <h2 id="health-h">How TDS Cortex is running</h2>
         <HelpLink page="health" />
       </div>
       <p className="health-summary" data-state={summary.state} role="status">

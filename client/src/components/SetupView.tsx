@@ -26,12 +26,12 @@ export interface SetupViewProps {
 
 function restartWarning(fromSettings: boolean, openChats: number): string {
   if (fromSettings && openChats === 1) {
-    return "TDS Brain will restart and close your open chat. Finish anything you're in the middle of first.";
+    return "TDS Cortex will restart and close your open chat. Finish anything you're in the middle of first.";
   }
   if (fromSettings && openChats > 1) {
-    return `TDS Brain will restart and close your ${openChats} open chats. Finish anything you're in the middle of first.`;
+    return `TDS Cortex will restart and close your ${openChats} open chats. Finish anything you're in the middle of first.`;
   }
-  return 'TDS Brain will restart to use this folder. This takes a few seconds.';
+  return 'TDS Cortex will restart to use this folder. This takes a few seconds.';
 }
 
 export function SetupView({
@@ -151,11 +151,11 @@ export function SetupView({
 
   const status =
     phase === 'restarting'
-      ? 'Restarting TDS Brain…'
+      ? 'Restarting TDS Cortex…'
       : phase === 'saved-manual'
-        ? 'Saved. Stop TDS Brain and start it again to use this folder.'
+        ? 'Saved. Stop TDS Cortex and start it again to use this folder.'
         : phase === 'timed-out'
-          ? "TDS Brain hasn't come back after a minute. Choose Check again, and if it's still not back, ask whoever looks after TDS Brain."
+          ? "TDS Cortex hasn't come back after a minute. Choose Check again, and if it's still not back, ask whoever looks after TDS Cortex."
           : looking
             ? 'Looking for brain folders…'
             : '';
@@ -172,14 +172,14 @@ export function SetupView({
           Choose your brain folder
         </h1>
         <p>
-          TDS Brain needs the folder where you keep your copy of the Agency Brain. It's how it reads your
+          TDS Cortex needs the folder where you keep your copy of the Agency Brain. It's how it reads your
           skills, to-dos and client notes.
         </p>
         {tried ? (
           <p className="lede">
             {triedReason
-              ? `TDS Brain looked in ${tried}. ${BRAIN_REFUSAL_TEXT[triedReason satisfies BrainRefusal]}`
-              : `TDS Brain looked in ${tried}, but there's no brain there yet.`}
+              ? `TDS Cortex looked in ${tried}. ${BRAIN_REFUSAL_TEXT[triedReason satisfies BrainRefusal]}`
+              : `TDS Cortex looked in ${tried}, but there's no brain there yet.`}
           </p>
         ) : null}
 
@@ -210,8 +210,8 @@ export function SetupView({
                 <>
                   <p className="lede">
                     {loadFailed
-                      ? "TDS Brain couldn't look for brain folders. Choose Check again, or paste the path below."
-                      : "You'll need the Agency Brain on this Mac first. If it isn't there yet, ask whoever looks after TDS Brain to help you set it up. Once it's there, choose Check again, or paste its path below."}
+                      ? "TDS Cortex couldn't look for brain folders. Choose Check again, or paste the path below."
+                      : "You'll need the Agency Brain on this Mac first. If it isn't there yet, ask whoever looks after TDS Cortex to help you set it up. Once it's there, choose Check again, or paste its path below."}
                   </p>
                   <div>
                     <button type="button" className="btn" onClick={() => lookup()}>

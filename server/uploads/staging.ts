@@ -381,8 +381,8 @@ export function createUploadStaging(opts: UploadStagingOptions): UploadStaging {
         throw new UploadError(
           'bad-type',
           ext && ext.length <= 12
-            ? `TDS Brain can't pass on .${ext} files. Attach a document, spreadsheet, slide deck, text file or picture.`
-            : "TDS Brain can't pass on that kind of file. Attach a document, spreadsheet, slide deck, text file or picture.",
+            ? `TDS Cortex can't pass on .${ext} files. Attach a document, spreadsheet, slide deck, text file or picture.`
+            : "TDS Cortex can't pass on that kind of file. Attach a document, spreadsheet, slide deck, text file or picture.",
         );
       }
       if (declaredBytes === null || !Number.isSafeInteger(declaredBytes) || declaredBytes < 0) {

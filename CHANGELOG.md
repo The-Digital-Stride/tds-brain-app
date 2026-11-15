@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.41.1 — 2026-11-15
+
+- **fix**: Home help says what the What's new card is and how to close it
+
 ## v0.41.0 — 2026-11-15
 
 - **feat**: delete images and documents from the library, kept 30 days and logged

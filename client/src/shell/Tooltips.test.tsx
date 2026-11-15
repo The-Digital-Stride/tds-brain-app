@@ -349,5 +349,16 @@ describe('Tooltips', () => {
       const home = document.querySelector('[data-tip="Home"]') as HTMLElement;
       expect(place(home, { left: 20, top: 100, width: 40, height: 40 })).toEqual({ left: 74, top: 110 });
     });
+
+    it('sits to the left of a full-height edge handle (data-tip-side="left"), centred on it', () => {
+      page();
+      // The viewer's resize strip runs the window's height: under or above it would be off by the top.
+      const strip = document.createElement('div');
+      strip.dataset.tip = 'Drag to resize. Double-click to reset.';
+      strip.dataset.tipSide = 'left';
+      document.body.append(strip);
+      expect(place(strip, { left: 400, top: 0, width: 20, height: 600 })).toEqual({ left: 314, top: 290 });
+      strip.remove();
+    });
   });
 });

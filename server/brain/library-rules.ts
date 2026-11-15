@@ -32,6 +32,20 @@ export const RULES: readonly GroupRule[] = [
 
 export const OTHER_GROUP = 'Other';
 
+/** The card for files loose in the shared Templates area's root: it comes first. */
+export const TEMPLATES_GROUP = 'Templates';
+
+/**
+ * True for the instruction files (`AGENTS.md`, `CLAUDE.md`, any depth, any case) that are hidden in
+ * the Templates area only. Other areas, personal included, list them as before.
+ */
+export function isHiddenInTemplates(relFromRoot: string): boolean {
+  const segs = relFromRoot.toLowerCase().split('/');
+  if (segs[0] !== 'templates') return false;
+  const last = segs[segs.length - 1];
+  return last === 'agents.md' || last === 'claude.md';
+}
+
 export interface FileClass {
   kind: LibraryKind;
   format: DocFormat | null;
@@ -102,18 +116,23 @@ export function isNeverListed(relFromRoot: string): boolean {
  */
 export function groupFor(relInScope: string, kind: LibraryScope['kind']): string {
   const lower = relInScope.toLowerCase();
-  if (kind !== 'personal') {
+  if (kind === 'client') {
     for (const r of RULES) if (lower.startsWith(r.prefix)) return r.group;
   }
   const slash = relInScope.indexOf('/');
-  if (slash <= 0) return OTHER_GROUP;
+  if (slash <= 0) return kind === 'shared' ? TEMPLATES_GROUP : OTHER_GROUP;
   return humanise(relInScope.slice(0, slash));
 }
 
 /** The cards in display order: rule cards in rule order, then the rest A to Z, then "Other". */
 export function orderGroups(groups: Iterable<string>, kind: LibraryScope['kind']): string[] {
   const present = new Set(groups);
-  const ruled = kind === 'personal' ? [] : RULES.map((r) => r.group).filter((g) => present.has(g));
+  const ruled =
+    kind === 'client'
+      ? RULES.map((r) => r.group).filter((g) => present.has(g))
+      : kind === 'shared' && present.has(TEMPLATES_GROUP)
+        ? [TEMPLATES_GROUP]
+        : [];
   const ruledSet = new Set(ruled);
   const rest = [...present]
     .filter((g) => g !== OTHER_GROUP && !ruledSet.has(g))

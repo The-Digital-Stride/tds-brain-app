@@ -3,6 +3,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -52,6 +53,12 @@ export interface ComposerProps {
   hint?: string;
   /** Given while Claude works on a reply: Send turns into a red Stop that calls it (Ian, 2026-11-14). */
   onStop?: () => void;
+  /** The box's name for screen readers. Defaults to "Message to Claude". */
+  label?: string;
+  /** What the empty box says. Defaults to "Ask Claude anything about your work". */
+  placeholder?: string;
+  /** The longest message the box takes. */
+  maxLength?: number;
 }
 
 export function Composer({
@@ -67,7 +74,13 @@ export function Composer({
   tools,
   hint,
   onStop,
+  label = 'Message to Claude',
+  placeholder = 'Ask Claude anything about your work',
+  maxLength,
 }: ComposerProps) {
+  // Two boxes can be on screen at once (a chat, and the page viewer over it), so the ids are made per box.
+  const reasonId = useId();
+  const hintId = useId();
   const [text, setText] = useState(initial);
   const [skill, setSkill] = useState(initialSkill);
   const [sending, setSending] = useState(false);
@@ -393,12 +406,11 @@ export function Composer({
         value={text}
         readOnly={blocked}
         aria-disabled={blocked}
-        aria-label="Message to Claude"
-        aria-describedby={disabledReason ? 'composer-reason' : 'composer-hint'}
+        maxLength={maxLength}
+        aria-label={label}
+        aria-describedby={disabledReason ? reasonId : hintId}
         // While blocked, the reason shows in the box too, so it doesn't look ready to type in.
-        placeholder={
-          disabledReason ?? (skill ? 'Add any detail, or just send' : 'Ask Claude anything about your work')
-        }
+        placeholder={disabledReason ?? (skill ? 'Add any detail, or just send' : placeholder)}
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => {
           if (
@@ -447,11 +459,11 @@ export function Composer({
         )}
         {tools}
         {disabledReason ? (
-          <p className="visually-hidden" id="composer-reason">
+          <p className="visually-hidden" id={reasonId}>
             {disabledReason}
           </p>
         ) : (
-          <p className="composer-hint" id="composer-hint" data-wait={uploading > 0 || errored > 0}>
+          <p className="composer-hint" id={hintId} data-wait={uploading > 0 || errored > 0}>
             {uploading > 0
               ? "Uploading files. Send will work when they're done."
               : errored === 1

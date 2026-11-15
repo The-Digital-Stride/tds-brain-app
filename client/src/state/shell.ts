@@ -24,6 +24,7 @@ export const DEFAULT_SHELL: ShellState = {
   paletteOpen: false,
   viewer: null,
   singleKeys: true,
+  viewerWidth: null,
 };
 
 /** Below this width the rail is always icons only. */
@@ -66,6 +67,8 @@ export const shellReducer: ShellReducer = (state, action) => {
       return state.viewer === null ? state : { ...state, viewer: null };
     case 'set-single-keys':
       return state.singleKeys === action.on ? state : { ...state, singleKeys: action.on };
+    case 'set-viewer-width':
+      return state.viewerWidth === action.width ? state : { ...state, viewerWidth: action.width };
     default:
       return state;
   }
@@ -97,6 +100,10 @@ export const loadShell: LoadShell = (raw) => {
     paletteOpen: false,
     viewer: null,
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
+    viewerWidth:
+      typeof parsed.viewerWidth === 'number' && Number.isFinite(parsed.viewerWidth) && parsed.viewerWidth > 0
+        ? Math.round(parsed.viewerWidth)
+        : null,
   };
 };
 
@@ -107,6 +114,8 @@ export const saveShell: SaveShell = (state) =>
     panelOpen: state.panelOpen,
     panelTab: state.panelTab,
     singleKeys: state.singleKeys,
+    // Only a chosen width is saved; the default is the absence of one.
+    ...(state.viewerWidth === null ? {} : { viewerWidth: state.viewerWidth }),
   });
 
 /** Push or float, so pushing never squeezes the sheet below 480px. */

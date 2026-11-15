@@ -6,8 +6,10 @@ import {
   findPathMentions,
   findWebLinks,
   indexChatFiles,
+  isScopedPath,
   normaliseBrainPath,
   replyFolders,
+  shortPathPlaces,
 } from './chat-files.ts';
 import type { ChatFile, ChatFileAction } from './contract.ts';
 
@@ -75,6 +77,12 @@ describe('findPathMentions', () => {
     expect(findPathMentions('Open /Users/me/brain/clients/acme/x.pdf!')).toEqual([
       '/Users/me/brain/clients/acme/x.pdf',
     ]);
+  });
+  it('finds bare templates/ paths, relative or from the brain root', () => {
+    expect(
+      findPathMentions('Made templates/tds-deck-template-16x9.html and /Users/me/brain/templates/a/b.md.'),
+    ).toEqual(['templates/tds-deck-template-16x9.html', '/Users/me/brain/templates/a/b.md']);
+    expect(findPathMentions('see mytemplates/x.md')).toEqual([]);
   });
   it('ignores bare words without an extension or a known start', () => {
     expect(findPathMentions('the clients/ folder and notes/x.md and myclients/x.md')).toEqual([]);
@@ -252,6 +260,39 @@ describe('replyFolders', () => {
       'clients/a/y.md',
     ];
     expect(replyFolders(mentions.map((m) => n(m)))).toEqual(['personal', 'clients/a']);
+  });
+});
+
+describe('templates/ paths', () => {
+  it('count as scoped, like clients/ and personal/', () => {
+    expect(isScopedPath('templates/deck.html')).toBe(true);
+    expect(isScopedPath('templates')).toBe(true);
+    expect(isScopedPath('templatesx/deck.html')).toBe(false);
+    expect(isScopedPath('context/templates/deck.html')).toBe(false);
+  });
+
+  it('are folders a reply names, and a scope of their own (never personal)', () => {
+    expect(replyFolders(['templates/decks/a.html', 'templates/b.md', 'templates'])).toEqual([
+      'templates/decks',
+      'templates',
+    ]);
+    expect(shortPathPlaces('a.html', ['templates/decks'])).toEqual([
+      'clients/a.html',
+      'templates/decks/a.html',
+    ]);
+    // Templates and personal are two places: a lone name is not guessed in either.
+    expect(shortPathPlaces('a.html', ['templates', 'personal'])).toEqual(['clients/a.html']);
+    expect(shortPathPlaces('a.html', ['templates', 'clients/acme'])).toEqual(['clients/a.html']);
+    // A path that names templates/ is never looked for elsewhere.
+    expect(shortPathPlaces('templates/a.html', ['personal'])).toEqual([]);
+  });
+
+  it('link exactly, and a lone name only in the templates folder the reply names', () => {
+    const idx = indexChatFiles([file('t1', 'templates/decks/deck.html', ['mentioned'])]);
+    expect(chatFileFor(idx, '`templates/decks/deck.html`', ROOT)).toBe('t1');
+    expect(chatFileFor(idx, '/Users/me/brain/templates/decks/deck.html', ROOT)).toBe('t1');
+    expect(chatFileFor(idx, 'deck.html', ROOT, ['templates/decks'])).toBe('t1');
+    expect(chatFileFor(idx, 'deck.html', ROOT)).toBeNull();
   });
 });
 

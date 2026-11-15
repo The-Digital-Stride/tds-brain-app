@@ -26,6 +26,7 @@ const ROOT = '/Users/me/brain';
 const REAL = '/private/var/brain';
 const ACME: LibraryScope = { id: 'client:acme', name: 'Acme', kind: 'client' };
 const PERSONAL: LibraryScope = { id: 'personal', name: 'My personal files', kind: 'personal' };
+const TEMPLATES: LibraryScope = { id: 'shared:templates', name: 'Templates', kind: 'shared' };
 
 function itemOf(rel: string): LibraryItem {
   const name = rel.split('/').pop() ?? rel;
@@ -47,13 +48,19 @@ function itemOf(rel: string): LibraryItem {
   };
 }
 
-/** A fake library: `clients/acme/…` and `personal/…` are scopes; `disk` holds the files there now. */
+/** A fake library: `clients/acme/…`, `personal/…` and `templates/…` are scopes; `disk` holds the files there now. */
 function fakeBrain() {
   const disk = new Set<string>();
   const calls: string[] = [];
   const resolve: ResolvePath = async (rel) => {
     calls.push(rel);
-    const scope = rel.startsWith('personal/') ? PERSONAL : rel.startsWith('clients/acme/') ? ACME : null;
+    const scope = rel.startsWith('personal/')
+      ? PERSONAL
+      : rel.startsWith('clients/acme/')
+        ? ACME
+        : rel.startsWith('templates/')
+          ? TEMPLATES
+          : null;
     if (!scope || rel.split('/').some((s) => s.startsWith('.'))) return null;
     if (!/\.[a-z]+$/.test(rel)) return null;
     return { key: `key:${rel}`, scope, item: disk.has(rel) ? itemOf(rel) : null };
@@ -382,6 +389,16 @@ describe('createChatFiles: replies', () => {
     step(t, 'WebFetch', { url: 'https://ok.example/page', prompt: 'x' });
     step(t, 'WebFetch', { url: 'file:///etc/passwd', prompt: 'x' });
     expect((await snap(t)).links).toEqual([{ url: 'https://ok.example/page' }]);
+  });
+
+  it('takes a templates/ path as written, without looking for it under clients/', async () => {
+    const { t, disk, calls } = setup();
+    disk.add('templates/decks/deck.md');
+    t.observe(say('Based on templates/decks/deck.md and `templates/notes.md`.'));
+    const s = await snap(t);
+    expect(byPath(s, 'templates/decks/deck.md')?.actions).toEqual(['mentioned']);
+    expect(byPath(s, 'templates/decks/deck.md')?.scope).toEqual(TEMPLATES);
+    expect(calls.some((c) => c.startsWith('clients/templates/'))).toBe(false);
   });
 
   it("takes no mentions or links from a helper agent's text", async () => {
@@ -949,7 +966,13 @@ function fakePages() {
   };
 }
 
-function setupPages(over: { now?: () => Date; pages?: ReturnType<typeof fakePages> } = {}) {
+function setupPages(
+  over: {
+    now?: () => Date;
+    pages?: ReturnType<typeof fakePages>;
+    modified?: (p: string) => Promise<number | null>;
+  } = {},
+) {
   const brain = fakeBrain();
   const pages = over.pages ?? fakePages();
   const t = createChatFiles({
@@ -957,6 +980,7 @@ function setupPages(over: { now?: () => Date; pages?: ReturnType<typeof fakePage
     resolve: brain.resolve,
     pages: pages.port,
     ...(over.now ? { now: over.now } : {}),
+    ...(over.modified ? { modified: over.modified } : {}),
   });
   return { ...brain, pages, t };
 }
@@ -1342,5 +1366,342 @@ describe('createChatFiles: Artifact publishes (R2)', () => {
     t.observe(say('See https://example.com/a'));
     const s = await snap(t);
     expect('pages' in s).toBe(false);
+  });
+});
+
+describe('createChatFiles: pages made with Bash', () => {
+  const fresh = async () => Date.now() + 1000;
+  const bash = (x: ReturnType<typeof setupPages>, command: string, o: { ok?: boolean } = {}) =>
+    step(x.t, 'Bash', { command }, o);
+
+  it('shows an absolute .html written by cat > in a scratchpad, like a Write', async () => {
+    const x = setupPages({ modified: fresh });
+    const path = `${TMP}/hello.html`;
+    x.pages.files.set(path, page('Hello', 'hi'));
+    const id = bash(x, `cat > ${path} <<'EOF'\n<html></html>\nEOF`);
+    await x.t.settled();
+    const s = pagesOf(await snap(x.t));
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ title: 'Hello', draft: true, toolUseIds: [id] });
+    x.t.boundary();
+    expect(pagesOf(await snap(x.t))[0]?.versions).toHaveLength(1);
+  });
+
+  it('shows a page copied into the brain by cp, and one named by a relative path', async () => {
+    const x = setupPages({ modified: fresh });
+    const abs = `${ROOT}/personal/a.html`;
+    x.pages.files.set(abs, page('Copied'));
+    bash(x, `cp ${TMP}/src.html ${abs}`);
+    await x.t.settled();
+    expect(pagesOf(await snap(x.t)).map((p) => p.title)).toEqual(['Copied']);
+    const rel = `${ROOT}/personal/b.html`;
+    x.pages.files.set(rel, page('Relative'));
+    bash(x, 'cd personal && cp a.html b.html');
+    await x.t.settled();
+    expect(
+      pagesOf(await snap(x.t))
+        .map((p) => p.title)
+        .sort(),
+    ).toEqual(['Copied', 'Relative']);
+  });
+
+  it('ignores a non-page .html, a path the port refuses, a failed command and a file older than the command', async () => {
+    const x = setupPages({ modified: fresh });
+    x.pages.files.set(`${TMP}/frag.html`, '<p>just a fragment</p>');
+    bash(x, `cat > ${TMP}/frag.html`);
+    x.pages.files.set('/outside/x.html', page('Outside'));
+    bash(x, 'cat > /outside/x.html');
+    x.pages.files.set(`${TMP}/failed.html`, page('Failed'));
+    bash(x, `cat > ${TMP}/failed.html`, { ok: false });
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
+
+    const old = setupPages({ modified: async () => 1000 });
+    old.pages.files.set(`${TMP}/old.html`, page('Old'));
+    bash(old, `cat ${TMP}/old.html | wc -c > ${TMP}/old.html`);
+    await old.t.settled();
+    expect((await old.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('allows for coarse file times: 1.5 s before the command still shows, 5 s before does not', async () => {
+    const near = setupPages({ modified: async () => Date.now() - 1500 });
+    near.pages.files.set(`${TMP}/near.html`, page('Near'));
+    bash(near, `cat > ${TMP}/near.html`);
+    await near.t.settled();
+    expect(pagesOf(await snap(near.t)).map((p) => p.title)).toEqual(['Near']);
+
+    const far = setupPages({ modified: async () => Date.now() - 5000 });
+    far.pages.files.set(`${TMP}/far.html`, page('Far'));
+    bash(far, `cat > ${TMP}/far.html`);
+    await far.t.settled();
+    expect((await far.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('rebuilds a page a Bash command made live, with its versions, when the chat is replayed', async () => {
+    const pages = fakePages();
+    const path = `${TMP}/script.html`;
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) x.pages.files.set(path, page('Script'));
+      step(x.t, 'Bash', { command: `cat > ${path} <<'EOF'\n<html></html>\nEOF` }, { history });
+      x.t.boundary({ history });
+    };
+    n = 3000;
+    const live = setupPages({ pages, modified: fresh });
+    script(live, false);
+    await live.t.settled();
+    const liveSnap = pagesOf(await snap(live.t));
+    expect(liveSnap).toHaveLength(1);
+    expect(liveSnap[0]?.versions.map((v) => v.hasCopy)).toEqual([true]);
+    // The script's file is cleared before the chat is reopened after a restart.
+    pages.files.delete(path);
+    n = 3000;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    await replay.t.settled();
+    const got = pagesOf(await snap(replay.t));
+    expect(got.map((p) => p.key)).toEqual(liveSnap.map((p) => p.key));
+    expect(got[0]?.versions.map((v) => v.hasCopy)).toEqual([true]);
+  });
+
+  it('does not make pages from history, and leaves other shell changes as they were', async () => {
+    const x = setupPages({ modified: fresh });
+    x.pages.files.set(`${TMP}/h.html`, page('H'));
+    step(x.t, 'Bash', { command: `cat > ${TMP}/h.html` }, { history: true });
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+});
+
+describe('createChatFiles: pages named in a reply (decision 13)', () => {
+  /** Claude's own reply (or a helper's, with `parent`), from the API message `id`. */
+  const reply = (text: string, id: string | null, parent: string | null = null) => ({
+    type: 'assistant',
+    message: { role: 'assistant', ...(id === null ? {} : { id }), content: [{ type: 'text', text }] },
+    parent_tool_use_id: parent,
+  });
+  /** File times by path, set by each test; a file with none can't be read. */
+  const timed = () => {
+    const times = new Map<string, number>();
+    return { times, modified: async (p: string) => times.get(p) ?? null };
+  };
+  const deck = `${ROOT}/templates/deck-16x9.html`;
+
+  it('shows a page a script made when the reply names its full path, then keeps it as a version', async () => {
+    const { times, modified } = timed();
+    const x = setupPages({ modified });
+    x.t.boundary();
+    x.pages.files.set(deck, page('Deck'));
+    times.set(deck, Date.now() + 1000);
+    step(x.t, 'Bash', { command: 'python3 make16.py' });
+    x.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg_01Deck'));
+    await x.t.settled();
+    const s = pagesOf(await snap(x.t));
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ title: 'Deck', draft: true, toolUseIds: ['msg_01Deck'] });
+    x.t.boundary();
+    const [p] = pagesOf(await snap(x.t));
+    expect(p?.versions.map((v) => [v.n, v.hasCopy])).toEqual([[1, true]]);
+    expect(x.t.page(p?.key as string)?.versions[0]?.id).toBe('msg_01Deck');
+
+    // The absolute path, bare, as Claude often writes it (the real root as well).
+    const y = setupPages({ modified });
+    y.t.boundary();
+    const other = `${ROOT}/personal/chart.html`;
+    y.pages.files.set(other, page('Chart'));
+    times.set(other, Date.now() + 1000);
+    y.t.observe(reply(`Done: ${REAL}/personal/chart.html`, 'msg_02'));
+    await y.t.settled();
+    expect(pagesOf(await snap(y.t)).map((q) => q.title)).toEqual(['Chart']);
+  });
+
+  it('takes only full .html paths from the brain root: no short names, other files or outside paths', async () => {
+    const { times, modified } = timed();
+    const x = setupPages({ modified });
+    x.t.boundary();
+    for (const p of [deck, `${ROOT}/templates/notes.md`, `${TMP}/scratch.html`]) {
+      x.pages.files.set(p, page('Any'));
+      times.set(p, Date.now() + 1000);
+    }
+    x.t.observe(
+      reply(
+        'It is `deck-16x9.html` in `templates/`. Notes in `templates/notes.md`, a draft at ' +
+          `\`${TMP}/scratch.html\`.`,
+        'msg_03',
+      ),
+    );
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('ignores a helper’s text, a reply with no usable message id, and a reply before any turn started', async () => {
+    const { times, modified } = timed();
+    const x = setupPages({ modified });
+    x.t.boundary();
+    x.pages.files.set(deck, page('Deck'));
+    times.set(deck, Date.now() + 1000);
+    x.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg_helper', 'toolu_helper'));
+    x.t.observe(reply('Saved to `templates/deck-16x9.html`.', null));
+    x.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg/../x'));
+    await x.t.settled();
+    expect((await x.t.snapshot())?.pages ?? []).toHaveLength(0);
+    // Live, with no boundary yet: no turn start to compare with.
+    const y = setupPages({ modified });
+    y.pages.files.set(deck, page('Deck'));
+    y.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg_04'));
+    await y.t.settled();
+    expect((await y.t.snapshot())?.pages ?? []).toHaveLength(0);
+  });
+
+  it('adds no version for an unchanged page named in a later turn, live or replayed', async () => {
+    const { times, modified } = timed();
+    const pages = fakePages();
+    const path = `${TMP}/old.html`;
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) times.set(path, Date.now() - 60_000);
+      write(x, path, page('Old'), { history });
+      x.t.boundary({ history });
+      x.t.observe(reply(`Your earlier page is still at \`${TMP}/old.html\`… and ${deck}`, 'msg_05'), {
+        history,
+      });
+      x.t.boundary({ history });
+    };
+    // A page outside the brain is never named this way; one inside it is.
+    const inBrain = `${ROOT}/personal/old.html`;
+    const brainScript = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) times.set(inBrain, Date.now() - 60_000);
+      write(x, inBrain, page('Old'), { history });
+      x.t.boundary({ history });
+      x.t.observe(reply('Still at `personal/old.html`.', 'msg_06'), { history });
+      x.t.boundary({ history });
+    };
+    for (const run of [script, brainScript]) {
+      n = 4000;
+      const live = setupPages({ pages, modified });
+      run(live, false);
+      await live.t.settled();
+      const liveSnap = shape(await snap(live.t));
+      expect(liveSnap).toHaveLength(1);
+      expect(liveSnap[0]?.versions).toEqual([[1, true]]);
+      n = 4000;
+      const replay = setupPages({ pages });
+      run(replay, true);
+      await replay.t.settled();
+      expect(shape(await snap(replay.t))).toEqual(liveSnap);
+    }
+    // Live never drafted it, and nothing was kept under the reply.
+    expect(pages.log.some((l) => l.startsWith('draft') && l.endsWith('/msg_06'))).toBe(false);
+    expect([...pages.kept.keys()].some((k) => k.endsWith('/msg_06'))).toBe(false);
+  });
+
+  it('adds no version on replay for a known page a shell word named but the command didn’t change', async () => {
+    const { times, modified } = timed();
+    const pages = fakePages();
+    const path = `${TMP}/known.html`;
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) times.set(path, Date.now() - 60_000);
+      write(x, path, page('Known'), { history });
+      x.t.boundary({ history });
+      step(x.t, 'Bash', { command: `cat ${TMP}/head.txt >> ${path}` }, { history, ok: true });
+      x.t.boundary({ history });
+    };
+    n = 5000;
+    const live = setupPages({ pages, modified });
+    script(live, false);
+    await live.t.settled();
+    const liveSnap = shape(await snap(live.t));
+    expect(liveSnap[0]?.versions).toEqual([[1, true]]);
+    n = 5000;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    await replay.t.settled();
+    expect(shape(await snap(replay.t))).toEqual(liveSnap);
+  });
+
+  it('gives exactly one version for a Write the reply then names, live and replayed', async () => {
+    const { times, modified } = timed();
+    const pages = fakePages();
+    const path = `${ROOT}/personal/plan.html`;
+    let writeId = '';
+    const script = (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) times.set(path, Date.now() - 10);
+      writeId = write(x, path, page('Plan'), { history });
+      x.t.observe(reply('Saved to `personal/plan.html` (see personal/plan.html).', 'msg_07'), { history });
+      x.t.boundary({ history });
+    };
+    n = 6000;
+    const live = setupPages({ pages, modified });
+    script(live, false);
+    await live.t.settled();
+    const liveSnap = shape(await snap(live.t));
+    expect(liveSnap).toHaveLength(1);
+    expect(liveSnap[0]?.versions).toEqual([[1, true]]);
+    expect(liveSnap[0]?.toolUseIds).toEqual([writeId]);
+    expect(pages.log.some((l) => l.endsWith('/msg_07'))).toBe(false);
+    n = 6000;
+    const replay = setupPages({ pages });
+    script(replay, true);
+    await replay.t.settled();
+    expect(shape(await snap(replay.t))).toEqual(liveSnap);
+  });
+
+  it('picks up a script change after a Write in the same turn, as one version, live and replayed', async () => {
+    const { times, modified } = timed();
+    const pages = fakePages();
+    const path = `${ROOT}/personal/report.html`;
+    const script = async (x: ReturnType<typeof setupPages>, history: boolean) => {
+      x.t.boundary({ history });
+      if (!history) times.set(path, Date.now() - 10);
+      write(x, path, page('Report', 'v1'), { history });
+      await x.t.settled();
+      if (!history) {
+        // A script then rewrites it, after the Write's copy was taken.
+        pages.files.set(path, page('Report', 'v2'));
+        times.set(path, Date.now() + 1000);
+      }
+      step(x.t, 'Bash', { command: 'python3 restyle.py' }, { history });
+      x.t.observe(reply('Updated `personal/report.html`.', 'msg_08'), { history });
+      x.t.boundary({ history });
+    };
+    n = 7000;
+    const live = setupPages({ pages, modified });
+    await script(live, false);
+    await live.t.settled();
+    const liveSnap = shape(await snap(live.t));
+    expect(liveSnap).toHaveLength(1);
+    expect(liveSnap[0]?.versions).toEqual([[1, true]]);
+    const key = liveSnap[0]?.key as string;
+    expect(live.t.page(key)?.versions[0]?.id).toBe('msg_08');
+    expect(pages.kept.get(`${key}/msg_08`)).toBe(page('Report', 'v2'));
+    n = 7000;
+    const replay = setupPages({ pages });
+    await script(replay, true);
+    await replay.t.settled();
+    expect(shape(await snap(replay.t))).toEqual(liveSnap);
+    expect(replay.t.page(key)?.versions[0]?.id).toBe('msg_08');
+  });
+
+  it('on replay, keeps a reply-named page copy a crash left in progress', async () => {
+    const pages = fakePages();
+    // Live drafted the page under the reply's id, then stopped before a boundary kept it.
+    const live = setupPages({ pages, modified: async () => Date.now() + 1000 });
+    live.t.boundary();
+    pages.files.set(deck, page('Deck'));
+    live.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg_09'));
+    await live.t.settled();
+    const key = pagesOf(await snap(live.t))[0]?.key as string;
+    expect(pages.drafts.get(key)?.id).toBe('msg_09');
+    pages.files.delete(deck);
+    const replay = setupPages({ pages });
+    replay.t.observe(reply('Saved to `templates/deck-16x9.html`.', 'msg_09'), { history: true });
+    replay.t.boundary({ history: true });
+    await replay.t.settled();
+    const [p] = pagesOf(await snap(replay.t));
+    expect(p?.versions.map((v) => v.hasCopy)).toEqual([true]);
+    expect(pages.kept.get(`${key}/msg_09`)).toBe(page('Deck'));
   });
 });

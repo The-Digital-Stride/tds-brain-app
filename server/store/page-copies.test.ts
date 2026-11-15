@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
+  promises as fsp,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -15,13 +16,17 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { PAGE_COPY_MAX_BYTES } from '../../shared/pages-contract.ts';
 import { brainFolder, createPageCopies, isCopyId, isPageKey } from './page-copies.ts';
 
 const CHAT = '11111111-2222-4333-8444-555555555555';
 const OTHER = '99999999-2222-4333-8444-555555555555';
 const PAGE = '<!doctype html><title>A page</title><p>Hi</p>';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const temp: string[] = [];
 afterAll(() => {
@@ -317,5 +322,178 @@ describe('page copies: following the chat', () => {
     expect(await store.sweep(new Set([CHAT]))).toBe(1);
     expect(trashed).toEqual([join(base, OTHER)]);
     expect(existsSync(elsewhere)).toBe(true);
+  });
+});
+
+describe('page copies: the per-chat byte total', () => {
+  /** How many times a chat's own folder was listed. */
+  function countListings(chatPath: string) {
+    vi.restoreAllMocks();
+    const real = fsp.readdir.bind(fsp);
+    let n = 0;
+    vi.spyOn(fsp, 'readdir').mockImplementation(((p: string, ...rest: unknown[]) => {
+      if (p === chatPath) n++;
+      return (real as (...a: unknown[]) => unknown)(p, ...rest);
+    }) as typeof fsp.readdir);
+    return () => n;
+  }
+  const body = (n: number) => 'x'.repeat(n);
+
+  it('lists the folder once, then not again while there is room', async () => {
+    const { store, tmpRoot, page, base } = setup({ chatMaxBytes: 10_000 });
+    const listings = countListings(join(base, CHAT));
+    await store.copy(CHAT, 'a', 'toolu_a1', page(tmpRoot, 'a1.html', body(100)));
+    expect(listings()).toBe(1);
+    await store.draft(CHAT, 'b', 'toolu_b1', page(tmpRoot, 'b1.html', body(100)), false);
+    await store.keep(CHAT, 'b', 'toolu_b1');
+    await store.copy(CHAT, 'c', 'toolu_c1', page(tmpRoot, 'c1.html', body(100)));
+    expect(listings()).toBe(1);
+  });
+
+  it('lists again when the total is over the limit, and when it is forgotten', async () => {
+    const { store, tmpRoot, page, base, kept } = setup({ chatMaxBytes: 250 });
+    const listings = countListings(join(base, CHAT));
+    const old = Date.now() / 1000 - 100;
+    await store.copy(CHAT, 'a', 'toolu_a1', page(tmpRoot, 'a1.html', body(100)));
+    utimesSync(kept(CHAT, 'a', 'toolu_a1'), old, old);
+    await store.copy(CHAT, 'a', 'toolu_a2', page(tmpRoot, 'a2.html', body(100)));
+    expect(listings()).toBe(1);
+    // 300 bytes: over, so it lists and evicts the older version; afterwards the total is known again.
+    const got = await store.copy(CHAT, 'b', 'toolu_b1', page(tmpRoot, 'b1.html', body(100)));
+    expect(got?.evicted).toEqual([{ key: 'a', id: 'toolu_a1' }]);
+    expect(listings()).toBe(2);
+    await store.copy(CHAT, 'b', 'toolu_b2', page(tmpRoot, 'b2.html', body(10)));
+    expect(listings()).toBe(2);
+    // A rename forgets the total: the next keep lists.
+    await store.rename(CHAT, OTHER);
+    const other = countListings(join(base, OTHER));
+    await store.copy(OTHER, 'c', 'toolu_c3', page(tmpRoot, 'c3.html', body(10)));
+    expect(other()).toBe(1);
+  });
+
+  it('matches a fresh listing after mixed drafts, keeps, copies and removals, with two callers at once', async () => {
+    // Disk after the mixed steps: a1 100 + b1 100 (kept) + c draft 60 + d1 80 = 340 bytes.
+    const { store, tmpRoot, page, kept } = setup({ chatMaxBytes: 340 });
+    const old = Date.now() / 1000 - 1000;
+    await store.copy(CHAT, 'a', 'toolu_a1', page(tmpRoot, 'a1.html', body(100)));
+    utimesSync(kept(CHAT, 'a', 'toolu_a1'), old, old);
+    // A draft replaced by a smaller one, and a second draft id for the same page dropped.
+    await store.draft(CHAT, 'b', 'toolu_b0', page(tmpRoot, 'b0.html', body(300)), false);
+    await store.draft(CHAT, 'b', 'toolu_b1', page(tmpRoot, 'b1.html', body(100)), false);
+    await store.draft(CHAT, 'c', 'toolu_c1', page(tmpRoot, 'c1.html', body(500)), false);
+    await store.draft(CHAT, 'c', 'toolu_c1', page(tmpRoot, 'c1.html', body(60)), false);
+    // Two callers (two sessions of one chat) at once.
+    const [k, c] = await Promise.all([
+      store.keep(CHAT, 'b', 'toolu_b1'),
+      store.copy(CHAT, 'd', 'toolu_d1', page(tmpRoot, 'd1.html', body(80))),
+    ]);
+    expect(k).toEqual({ evicted: [] });
+    expect(c?.evicted).toEqual([]);
+    // Keeping something already kept removes its draft (a removal).
+    await store.draft(CHAT, 'b', 'toolu_b1', page(tmpRoot, 'b1.html', body(100)), false);
+    await store.keep(CHAT, 'b', 'toolu_b1');
+    // 340 bytes exactly fills the limit: one more 10-byte copy must push out the oldest non-newest, a1 is a's
+    // newest so it stays; b's newer one is b2 below.
+    const e = await store.copy(CHAT, 'b', 'toolu_b2', page(tmpRoot, 'b2.html', body(10)));
+    expect(e?.evicted).toEqual([{ key: 'b', id: 'toolu_b1' }]);
+    expect(existsSync(kept(CHAT, 'a', 'toolu_a1'))).toBe(true);
+    // And a store that has never seen the chat (total unknown) evicts exactly the same on the same state.
+  });
+
+  it('stays correct when many callers write one chat at once', async () => {
+    const { store, tmpRoot, page, base } = setup({ chatMaxBytes: 1000 });
+    const listings = countListings(join(base, CHAT));
+    await store.copy(CHAT, 'seed', 'toolu_s', page(tmpRoot, 's.html', body(10)));
+    await Promise.all(
+      [...Array(8).keys()].map((i) =>
+        store.copy(CHAT, `k${i}`, `toolu_${i}`, page(tmpRoot, `p${i}.html`, body(100))),
+      ),
+    );
+    // 810 bytes: under 1000, and never listed again.
+    expect(listings()).toBe(1);
+    await store.copy(CHAT, 'z', 'toolu_z', page(tmpRoot, 'z.html', body(100)));
+    await store.copy(CHAT, 'y', 'toolu_y', page(tmpRoot, 'y.html', body(100)));
+    // 1010 bytes: only now over, so it lists and evicts back under the limit.
+    expect(listings()).toBe(2);
+  });
+
+  it('forgets the total on a move to the Bin', async () => {
+    const { store, tmpRoot, page, base } = setup({ chatMaxBytes: 10_000 });
+    await store.copy(CHAT, 'a', 'toolu_a', page(tmpRoot, 'a.html', body(100)));
+    await store.trashChat(CHAT);
+    const listings = countListings(join(base, CHAT));
+    await store.copy(CHAT, 'a', 'toolu_a', page(tmpRoot, 'a.html', body(100)));
+    expect(listings()).toBe(1);
+  });
+});
+
+describe('page copies: a file that grows while it is read', () => {
+  it('is not copied', async () => {
+    const { store, tmpRoot, page, base } = setup();
+    const src = page(tmpRoot, 'grow.html', PAGE);
+    const real = fsp.open.bind(fsp);
+    vi.spyOn(fsp, 'open').mockImplementation((async (p: string, ...rest: unknown[]) => {
+      const handle = await (real as (...a: unknown[]) => Promise<import('node:fs/promises').FileHandle>)(
+        p,
+        ...rest,
+      );
+      if (p === src) {
+        const read = handle.read.bind(handle);
+        let grown = false;
+        // After the size is taken, the file gains bytes before the read finishes.
+        (handle as unknown as { read: unknown }).read = async (...a: unknown[]) => {
+          if (!grown) {
+            grown = true;
+            writeFileSync(src, `${PAGE}<p>more</p>`);
+          }
+          return (read as (...x: unknown[]) => unknown)(...a);
+        };
+      }
+      return handle;
+    }) as typeof fsp.open);
+    expect(await store.draft(CHAT, 'k1', 'toolu_1', src, false)).toBeNull();
+    writeFileSync(src, PAGE);
+    expect(await store.copy(CHAT, 'k1', 'toolu_2', src)).toBeNull();
+    expect(existsSync(join(base, CHAT))).toBe(false);
+  });
+});
+
+describe('page copies: leftover temporary files', () => {
+  it('removes both temporary shapes older than an hour and leaves everything else', async () => {
+    const now = Date.now();
+    const { store, tmpRoot, page, base } = setup({ now: () => now });
+    await store.copy(CHAT, 'k1', 'toolu_1', page(tmpRoot, 'a.html'));
+    const folder = join(base, CHAT, 'k1');
+    const old = now / 1000 - 2 * 3600;
+    const put = (name: string, aged: boolean) => {
+      writeFileSync(join(folder, name), 'x');
+      if (aged) utimesSync(join(folder, name), old, old);
+    };
+    put('.v-toolu_1.html.0123456789ab.tmp', true);
+    put('.d-toolu_2.html.abcdefabcdef.tmp', true);
+    put('.v-toolu_3.html.0123456789ab.tmp', false);
+    put('.v-toolu_1.html.nothex.tmp', true);
+    put('notes.tmp', true);
+    writeFileSync(join(tmpRoot, 'target'), 'keep me');
+    symlinkSync(join(tmpRoot, 'target'), join(folder, '.v-toolu_4.html.0123456789ab.tmp'));
+    // Wrong depth: a temp-shaped file in the chat folder, and one in the brain folder, stay.
+    writeFileSync(join(base, CHAT, '.v-toolu_1.html.0123456789ab.tmp'), 'x');
+    utimesSync(join(base, CHAT, '.v-toolu_1.html.0123456789ab.tmp'), old, old);
+    expect(await store.sweepTemps?.()).toBe(2);
+    expect(readdirSync(folder).sort()).toEqual(
+      [
+        '.v-toolu_1.html.nothex.tmp',
+        '.v-toolu_3.html.0123456789ab.tmp',
+        '.v-toolu_4.html.0123456789ab.tmp',
+        'notes.tmp',
+        'v-toolu_1.html',
+      ].sort(),
+    );
+    expect(existsSync(join(base, CHAT, '.v-toolu_1.html.0123456789ab.tmp'))).toBe(true);
+    expect(existsSync(join(tmpRoot, 'target'))).toBe(true);
+  });
+
+  it('does nothing when there is no pages folder', async () => {
+    expect(await setup().store.sweepTemps?.()).toBe(0);
   });
 });

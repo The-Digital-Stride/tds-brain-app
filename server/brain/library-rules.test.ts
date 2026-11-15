@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { classify, groupFor, isNeverListed, orderGroups, RULES, tidyFileName } from './library-rules.ts';
+import {
+  classify,
+  groupFor,
+  isHiddenInTemplates,
+  isNeverListed,
+  orderGroups,
+  RULES,
+  tidyFileName,
+} from './library-rules.ts';
 
 describe('groupFor', () => {
   it('puts each rule folder in its card', () => {
@@ -182,5 +190,42 @@ describe('tidyFileName', () => {
     expect(tidyFileName('ga4-setup-pdf-notes.md')).toBe('GA4 setup PDF notes');
     expect(tidyFileName('seo.md')).toBe('SEO');
     expect(tidyFileName('crmish-notes.md')).toBe('Crmish notes');
+  });
+});
+
+describe('shared (Templates) rules', () => {
+  it('does not apply the client rules to a shared area', () => {
+    expect(groupFor('reports/x.pdf', 'shared')).toBe('Reports');
+    expect(groupFor('plans/x.docx', 'shared')).toBe('Plans');
+    expect(groupFor('context/brand/x.png', 'shared')).toBe('Context');
+    expect(groupFor('crm/x.csv', 'shared')).toBe('CRM');
+  });
+
+  it('puts a loose file in a "Templates" card that comes first, then folders A to Z', () => {
+    expect(groupFor('readme.md', 'shared')).toBe('Templates');
+    expect(orderGroups(['Reports', 'Emails', 'Templates', 'Plans'], 'shared')).toEqual([
+      'Templates',
+      'Emails',
+      'Plans',
+      'Reports',
+    ]);
+  });
+
+  it('leaves client ordering and personal grouping as they were', () => {
+    expect(orderGroups(['Zed', 'Plans', 'Reports', 'Other'], 'client')).toEqual([
+      'Reports',
+      'Plans',
+      'Zed',
+      'Other',
+    ]);
+    expect(orderGroups(['Reports', 'Plans'], 'personal')).toEqual(['Plans', 'Reports']);
+    expect(groupFor('x.md', 'personal')).toBe('Other');
+  });
+
+  it('hides AGENTS.md and CLAUDE.md at any depth and case, in templates only', () => {
+    expect(isHiddenInTemplates('templates/AGENTS.md')).toBe(true);
+    expect(isHiddenInTemplates('templates/emails/claude.MD')).toBe(true);
+    expect(isHiddenInTemplates('templates/emails/welcome.md')).toBe(false);
+    expect(isHiddenInTemplates('personal/CLAUDE.md')).toBe(false);
   });
 });

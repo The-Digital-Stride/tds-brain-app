@@ -1,16 +1,33 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   ASSET_CACHE_DIR,
   ASSET_FILE_MAX_BYTES,
+  ASSET_REFRESH_RETRY_MS,
+  ASSET_TEMP_GRACE_MS,
+  ASSET_UNPINNED_MAX_AGE_MS,
   type AssetCache,
   type AssetFetcher,
   allowedAsset,
   createAssetCache,
   inlinePageAssets,
+  isPinned,
+  sweepAssetTemps,
 } from './asset-cache.ts';
 
 const temp: string[] = [];
@@ -321,7 +338,7 @@ describe('inlinePageAssets', () => {
     const { cache, asked } = fakeCache({});
     const html =
       '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="icon" href="https://example.com/i.png">' +
-      '<script src="local.js"></script><script>var u = "https://unpkg.com/x.js"</script><img src="https://example.com/a.png">';
+      '<script src="local.js"></script><script>var u = "https://example.com/x.js"</script><img src="https://example.com/a.png">';
     const out = await inlinePageAssets(html, cache);
     expect(out).toEqual({ html, selfContained: true });
     expect(asked).toEqual([]);
@@ -418,5 +435,176 @@ describe('inlinePageAssets', () => {
       const out = await inlinePageAssets(html, cache);
       expect(typeof out.html).toBe('string');
     }
+  });
+});
+
+describe('isPinned', () => {
+  it('is true only for an exact version in the host’s own address shape', () => {
+    const pinned = [
+      'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js',
+      'https://cdn.jsdelivr.net/npm/lib@1.2.3',
+      'https://cdn.jsdelivr.net/npm/lib@1.2.3-beta.1/x.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/lib/1.2.3-rc.2/x.js',
+      'https://unpkg.com/react@18.2.0/umd/react.production.min.js',
+      'https://unpkg.com/@scope/pkg@1.0.0/x.js',
+      'https://code.jquery.com/jquery-3.7.1.min.js',
+      'https://code.jquery.com/jquery-3.7.1.js',
+      'https://code.jquery.com/jquery-3.7.1.slim.min.js',
+      'https://code.jquery.com/ui/1.13.2/jquery-ui.min.js',
+      'https://fonts.gstatic.com/s/inter/v13/x.woff2',
+    ];
+    for (const url of pinned) expect(isPinned(url), url).toBe(true);
+    const loose = [
+      'https://cdn.jsdelivr.net/npm/chart.js@4',
+      'https://cdn.jsdelivr.net/npm/chart.js@4.4/dist/x.js',
+      'https://cdn.jsdelivr.net/npm/chart.js@latest',
+      'https://cdn.jsdelivr.net/npm/chart.js@^4.4.1',
+      'https://cdn.jsdelivr.net/npm/chart.js',
+      'https://cdn.jsdelivr.net/npm/@scope/pkg@1',
+      'https://cdn.jsdelivr.net/gh/user/repo@1.2.3/x.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/lib/1.0/lib.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/lib/latest/lib.min.js',
+      'https://unpkg.com/react@18/umd/react.production.min.js',
+      'https://unpkg.com/react/umd/react.production.min.js',
+      'https://code.jquery.com/jquery-3.min.js',
+      'https://code.jquery.com/jquery-latest.js',
+      'https://code.jquery.com/ui/1.13/jquery-ui.min.js',
+      'https://fonts.googleapis.com/css2?family=Inter:wght@400',
+      'https://cdn.tailwindcss.com',
+      'https://cdn.tailwindcss.com/3.4.1',
+      'https://evil.example/npm/lib@1.2.3/x.js',
+      'not a url',
+    ];
+    for (const url of loose) expect(isPinned(url), url).toBe(false);
+  });
+});
+
+describe('createAssetCache: keeping files fresh', () => {
+  const LOOSE = 'https://cdn.jsdelivr.net/npm/lib@4/lib.js';
+  const PINNED = 'https://cdn.jsdelivr.net/npm/lib@4.1.0/lib.js';
+  const cachePath = (dir: string, url: string) =>
+    join(dir, ASSET_CACHE_DIR, `${createHash('sha256').update(url).digest('hex')}.bin`);
+  const age = (path: string, ms: number) => {
+    const t = (Date.now() - ms) / 1000;
+    utimesSync(path, t, t);
+  };
+
+  it('fetches an unpinned file again after 7 days and replaces the kept one', async () => {
+    const dir = dataDir();
+    let body = 'v1';
+    const net = fakeNet({ [LOOSE]: () => new Response(body) });
+    const cache = createAssetCache({ dataDir: dir, fetcher: net.fetcher });
+    expect((await cache.get(LOOSE, 'script'))?.toString()).toBe('v1');
+    body = 'v2';
+    // Fresh: answered from the folder.
+    expect((await cache.get(LOOSE, 'script'))?.toString()).toBe('v1');
+    expect(net.log).toHaveLength(1);
+    age(cachePath(dir, LOOSE), ASSET_UNPINNED_MAX_AGE_MS + 1000);
+    expect((await cache.get(LOOSE, 'script'))?.toString()).toBe('v2');
+    expect(net.log).toHaveLength(2);
+    expect(readFileSync(cachePath(dir, LOOSE), 'utf8')).toBe('v2');
+    // Now fresh again.
+    await cache.get(LOOSE, 'script');
+    expect(net.log).toHaveLength(2);
+    expect(readdirSync(join(dir, ASSET_CACHE_DIR))).toHaveLength(1);
+  });
+
+  it('never fetches a pinned file again', async () => {
+    const dir = dataDir();
+    const net = fakeNet({ [PINNED]: ok('p1') });
+    const cache = createAssetCache({ dataDir: dir, fetcher: net.fetcher });
+    await cache.get(PINNED, 'script');
+    age(cachePath(dir, PINNED), 400 * 24 * 3600 * 1000);
+    expect((await cache.get(PINNED, 'script'))?.toString()).toBe('p1');
+    expect(net.log).toHaveLength(1);
+  });
+
+  it('uses the kept copy when a refresh fails, and does not try that address again for an hour', async () => {
+    const dir = dataDir();
+    let clock = Date.now();
+    let online = true;
+    const net = fakeNet({
+      [LOOSE]: () => {
+        if (!online) throw new Error('offline');
+        return new Response('v1');
+      },
+    });
+    const cache = createAssetCache({ dataDir: dir, fetcher: net.fetcher, now: () => clock });
+    await cache.get(LOOSE, 'script');
+    age(cachePath(dir, LOOSE), ASSET_UNPINNED_MAX_AGE_MS + 1000);
+    clock = Date.now();
+    online = false;
+    expect((await cache.get(LOOSE, 'script'))?.toString()).toBe('v1');
+    expect(net.log).toHaveLength(2);
+    // Within the hour: no new try.
+    clock += ASSET_REFRESH_RETRY_MS - 1000;
+    expect((await cache.get(LOOSE, 'script'))?.toString()).toBe('v1');
+    expect(net.log).toHaveLength(2);
+    // After the hour, and back online: tried again and replaced.
+    clock += 2000;
+    online = true;
+    await cache.get(LOOSE, 'script');
+    expect(net.log).toHaveLength(3);
+    expect(readFileSync(cachePath(dir, LOOSE), 'utf8')).toBe('v1');
+  });
+});
+
+describe('sweepAssetTemps', () => {
+  const HASH = 'a'.repeat(64);
+  it('removes old temporary files, and leaves new ones, other files and links alone', async () => {
+    const dir = dataDir();
+    const folder = join(dir, ASSET_CACHE_DIR);
+    mkdirSync(folder);
+    const old = (Date.now() - ASSET_TEMP_GRACE_MS - 60_000) / 1000;
+    const put = (name: string, aged: boolean) => {
+      writeFileSync(join(folder, name), 'x');
+      if (aged) utimesSync(join(folder, name), old, old);
+    };
+    put(`${HASH}.bin.0123456789ab.tmp`, true);
+    put(`${'b'.repeat(64)}.bin.0123456789ab.tmp`, false);
+    put(`${HASH}.bin`, true);
+    put('notes.txt', true);
+    put(`${HASH}.bin.nothex.tmp`, true);
+    writeFileSync(join(dir, 'target'), 'keep me');
+    symlinkSync(join(dir, 'target'), join(folder, `${'c'.repeat(64)}.bin.0123456789ab.tmp`));
+    expect(await sweepAssetTemps(dir)).toBe(1);
+    expect(readdirSync(folder).sort()).toEqual(
+      [
+        `${HASH}.bin`,
+        `${HASH}.bin.nothex.tmp`,
+        `${'b'.repeat(64)}.bin.0123456789ab.tmp`,
+        `${'c'.repeat(64)}.bin.0123456789ab.tmp`,
+        'notes.txt',
+      ].sort(),
+    );
+    expect(existsSync(join(dir, 'target'))).toBe(true);
+    // No folder at all: nothing happens.
+    expect(await sweepAssetTemps(dataDir())).toBe(0);
+  });
+});
+
+describe('inlinePageAssets: a library named in the page’s own script', () => {
+  const LIB = 'https://cdnjs.cloudflare.com/ajax/libs/lib/1.0.0/lib.min.js';
+  const make = () =>
+    createAssetCache({ dataDir: dataDir(), fetcher: fakeNet({ [LIB]: ok('var lib=1;') }).fetcher });
+
+  it('marks the page partly self-contained when its own inline script names an allowed host', async () => {
+    const html = `<!doctype html><body><script>var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/x@1.0.0/x.js';document.head.append(s)</script></body>`;
+    expect((await inlinePageAssets(html, make())).selfContained).toBe(false);
+    expect((await inlinePageAssets(html, null)).selfContained).toBe(false);
+  });
+
+  it('ignores a library that was inlined (it may name hosts itself), and plain inline scripts', async () => {
+    const plain = `<!doctype html><body><script>console.log(1)</script></body>`;
+    expect((await inlinePageAssets(plain, make())).selfContained).toBe(true);
+    const cache = createAssetCache({
+      dataDir: dataDir(),
+      fetcher: fakeNet({ [LIB]: ok("var CDN='https://unpkg.com/';") }).fetcher,
+    });
+    const out = await inlinePageAssets(`<!doctype html><body><script src="${LIB}"></script></body>`, cache);
+    expect(out.html).toContain("var CDN='https://unpkg.com/';");
+    expect(out.selfContained).toBe(true);
   });
 });

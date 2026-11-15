@@ -2,6 +2,26 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.34.0 — 2026-11-15
+
+- **feat**: drag the pop-up viewer's left edge to make it wider
+- **feat**: show a grip on the viewer's edge so it reads as draggable
+- **fix**: a quiet grip bar in the design system's language instead of the dotted pill
+- **fix**: grip visible at rest (grey-dot), fill-only hover, recorded in the design system
+- **fix**: show the resize grip's tooltip beside it, not at the top of the window
+- **fix**: a click on the grip saves nothing, no grip without room to move, screen reader details
+
+## v0.33.0 — 2026-11-15
+
+- **feat**: contract for opening a page's links in a new tab
+- **feat**: open page links in a new tab, show pages saved by scripts, keep libraries fresh, sweep leftovers
+- **fix**: let a page's own link handlers win, rebuild script-made pages on replay, allow coarse file times
+- **fix**: say quick pages go to personal/, as the brain's save rules do, not an unnamed scratchpad
+- **fix**: clearer stop notice and save choice, explainer says what is built
+- **fix**: offer the client's folder first in a client chat, and open a page's file link as the page
+- **feat**: show the brain's templates in Documents, and pages Claude makes with a script
+- **fix**: the page viewer's message box is the chat's own, so its ring and red Stop match
+
 ## v0.32.0 — 2026-11-15
 
 - **feat**: compaction notice, context meter, brain-aware summaries and held model switches

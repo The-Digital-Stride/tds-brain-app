@@ -37,7 +37,7 @@ The **This chat** panel sits beside an open chat. It has two tabs: **Files** and
 - **State**: for example Working, Ready for you, Needs your answer or Ended.
 - **Approvals**: **Same as your terminal**. Cortex asks as often as your terminal does.
 
-Owners and scouts also see **Continue in the terminal**. See [Continuing in the terminal](help:continuing-in-the-terminal).
+The picture leaves out Started and Approvals. Owners and scouts also see **Continue in the terminal**. See [Continuing in the terminal](help:continuing-in-the-terminal).
 
 ## Good to know
 

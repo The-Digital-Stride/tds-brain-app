@@ -158,3 +158,20 @@ print preview on the demo server, owner and team.
 - **Shot order**: F writes every scene now, but runs only those that don't need E's markup. `guide-sheet`,
   `help-drawer`, `settings-prefs`, `settings-todos-switch`, `skill-levels` and `tokens-saved` run after E lands,
   using these agreed selectors: `.guide` (root), `.guide-contents` (contents), `.guide-page` (the page).
+
+## Review outcomes (2026-11-15)
+
+- **Overseer pre-review**: no blockers; 10 "should" items adopted (see Pre-review changes).
+- **Correctness (Opus)**: 2 confirmed and fixed: print also printed the on-screen page; a ⌘K help result didn't
+  reset the drawer when Help was already on that page (new `helpOpened` counter, never saved). Tests added for
+  both, for the Palette's Help result and Guide, and to pin the glossary to `HELP_GLOSSARY_TERMS`.
+- **Copy truth (4 Sonnet passes, all 39 pages)**: about 20 claims corrected, each checked in code first
+  (approvals "as often as your terminal", helper click, Files tab needs Open, favourites vs Home, "Use this folder
+  and restart", update rollback, the to-dos switch, Auto client guessing, pass-on Undo, ⌘K in the viewer).
+- **UX (Opus)**: current-row wash, focus on the Guide heading on open, area names as list labels (not headings),
+  lint warning cleared, dead rule removed, print margins.
+- **Browser (demo app)**: owner and team checks pass; print gives 48 pages, each on its own sheet, with pictures.
+- **Overseer sign-off**: signed off after two copy fixes (picture leaves out rows; the tokens "Try this").
+- **For Phase 3**: pin the Approvals mode and start time in demo mode when the shots are retaken for the rename;
+  add a test for a non-owner on view `guide` before Help opens to everyone; Phase 1 pages and keyboard-shortcuts
+  say "owners" for Help keys, which changes at launch.

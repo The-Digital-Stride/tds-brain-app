@@ -38,4 +38,4 @@ Tokens are the small pieces of text Claude reads and writes. When a chat gets lo
 
 ## Try this
 
-Have one long chat. A day later, open **Tokens saved** and see the total for **Today** or **Last 7 days**.
+Have one long chat. A day later, open **Tokens saved** and look at **Last 7 days**.

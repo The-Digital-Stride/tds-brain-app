@@ -109,7 +109,7 @@ describe('the runner', () => {
     expect(JSON.parse(call?.stdin ?? '{}')).toEqual({
       path: 'clients/acme/logo.png; rm -rf /',
       expect: '12-34',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
       by: 'sam',
       by_name: 'Sam Lee',
     });
@@ -118,7 +118,7 @@ describe('the runner', () => {
   it('leaves out expect and by when not given', async () => {
     const t = setup();
     await createFilesSkillRunner(t.root, { env: t.env }).delete({ path: 'clients/a/b.md' });
-    expect(JSON.parse(t.calls()[0]?.stdin ?? '{}')).toEqual({ path: 'clients/a/b.md', via: 'TDS Brain App' });
+    expect(JSON.parse(t.calls()[0]?.stdin ?? '{}')).toEqual({ path: 'clients/a/b.md', via: 'TDS Cortex' });
   });
 
   it.each(['bad-request', 'not-found', 'not-allowed', 'changed', 'exists'] as FilesErrorCode[])(
@@ -166,7 +166,7 @@ describe('the runner', () => {
     const runner = createFilesSkillRunner(t.root, { env: t.env });
     expect(await runner.purge()).toBe(3);
     expect(t.calls()[0]?.argv).toEqual(['purge']);
-    expect(JSON.parse(t.calls()[0]?.stdin ?? '{}')).toEqual({ via: 'TDS Brain App' });
+    expect(JSON.parse(t.calls()[0]?.stdin ?? '{}')).toEqual({ via: 'TDS Cortex' });
   });
 
   it('runs changes one at a time', async () => {
@@ -247,7 +247,7 @@ describe('the brain’s deleteLibraryFile and purgeDeletedFiles', () => {
       expect: item?.version,
       by: 'sam-lee',
       by_name: 'Sam Lee',
-      via: 'TDS Brain App',
+      via: 'TDS Cortex',
     });
   });
 

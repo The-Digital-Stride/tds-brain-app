@@ -1,6 +1,6 @@
 ---
 name: tdsapp-files
-description: Delete an image or document from the library the way the TDS Brain app does, put a deleted file back, or see what's been deleted - through one small script that moves the file into tdsapp-deleted/, keeps it for 30 days, then erases it, and writes every delete, put-back and erase to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", or asks to bin a client file or a template. Only client files (anyone on the team) and templates (the owner only). Not for to-dos (use tdsapp-todo) or personal files. The TDS Brain app also runs this script for its bin buttons and its daily clear-out.
+description: Delete an image or document from the library the way TDS Cortex does, put a deleted file back, or see what's been deleted - through one small script that moves the file into tdsapp-deleted/, keeps it for 30 days, then erases it, and writes every delete, put-back and erase to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", or asks to bin a client file or a template. Only client files (anyone on the team) and templates (the owner only). Not for to-dos (use tdsapp-todo) or personal files. TDS Cortex also runs this script for its bin buttons and its daily clear-out.
 version: 0.1
 last_updated: 2026-11-15
 roles: owner, scout
@@ -12,7 +12,7 @@ agency: true
 # tdsapp-files
 
 One script that deletes library files, puts them back and erases them for good after 30 days. The
-TDS Brain app runs it for the bin button on library files, so a delete made here or in the app comes
+TDS Cortex runs it for the bin button on library files, so a delete made here or in the app comes
 out the same, and nothing else moves or erases these files.
 
 It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to
@@ -50,7 +50,7 @@ echo '{"path":"clients/acme/brand/old-logo.png"}' \
 | `purge` | optional `via` | Erases every holding folder more than 30 days old and logs each file erased. |
 | `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.1","features":["files-delete-v1"]}` |
 
-`via` names the tool (such as `TDS Brain App`); it's `tdsapp-files skill` when not sent. `expect` is
+`via` names the tool (such as `TDS Cortex`); it's `tdsapp-files skill` when not sent. `expect` is
 the library's version of the file (`<bytes>-<modified time in ms>`): if the file has changed since,
 nothing is deleted.
 

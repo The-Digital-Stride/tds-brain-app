@@ -572,9 +572,9 @@ export type DocFormat = 'pdf' | 'doc' | 'sheet' | 'deck';
 export type LibraryView = 'image' | 'text' | 'page' | 'pdf';
 
 export interface LibraryScope {
-  /** `personal`, or `client:<slug>`. (`shared:<name>` is reserved for agency folders; none yet.) */
+  /** `personal`, `client:<slug>`, or `shared:<name>` for an agency folder (today only `shared:templates`). */
   id: string;
-  /** "My personal files", or the client's name. */
+  /** "My personal files", the client's name, or the agency folder's ("Templates"). */
   name: string;
   kind: 'personal' | 'client' | 'shared';
 }
@@ -592,8 +592,9 @@ export interface LibraryItem {
   /** Lower case, no dot: "png", "md". */
   ext: string;
   /**
-   * The card it is shown in. From the rules ("Reports", "Brand"); a file no rule matches takes its
-   * first folder's name, tidied up; a file loose in the scope's root goes in "Other".
+   * The card it is shown in. In a client's area, from the rules ("Reports", "Brand"); a file no rule
+   * matches takes its first folder's name, tidied up; a file loose in the scope's root goes in "Other",
+   * except in an agency folder, where loose files go in a first card named after it ("Templates").
    */
   group: string;
   /** The file's name. */

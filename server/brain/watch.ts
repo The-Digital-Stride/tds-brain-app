@@ -28,6 +28,7 @@ const TARGETS: Target[] = [
   { area: 'usage', rel: ['z-logs', 'team-usage'], recursive: false },
   { area: 'library', rel: ['clients'], recursive: true, library: 'clients' },
   { area: 'library', rel: ['personal'], recursive: true, library: 'personal' },
+  { area: 'library', rel: ['templates'], recursive: true, library: 'templates' },
 ];
 
 export interface WatchHooks {

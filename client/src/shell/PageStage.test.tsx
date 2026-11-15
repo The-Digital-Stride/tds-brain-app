@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
   files: [] as unknown[],
   askPage: vi.fn(),
   openChat: vi.fn(),
+  run: vi.fn(async (action: () => Promise<unknown>) => {
+    await action();
+    return true;
+  }),
 }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
@@ -22,11 +26,13 @@ vi.mock('../store.tsx', () => ({
     sessions: { live: [{ id: 's1', state: h.sessionState }], past: [] },
     askPage: h.askPage,
     openChat: h.openChat,
+    run: h.run,
     libraryVersion: 0,
     openView: () => {},
   }),
 }));
 
+const { api } = await import('../api.ts');
 const { PageStage, pageFormState, versionLabel, writeMark } = await import('./PageStage.tsx');
 const { FileViewer } = await import('./FileViewer.tsx');
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
@@ -44,6 +50,8 @@ const page = (over: Partial<ChatPage> = {}): ChatPage => ({
   order: 1,
   ...over,
 });
+// The status line above the box (the box repeats the reason for screen readers).
+const LINE = { selector: '.page-ask-line' };
 const v = (n: number, over: Record<string, unknown> = {}) => ({
   n,
   remote: null,
@@ -305,9 +313,28 @@ describe('the page viewer', () => {
     expect(document.querySelector('iframe')).toBe(frame);
     fireEvent.load(frame);
     expect(document.querySelector('iframe')).toBeNull();
-    expect(screen.getByText('This page tried to open another site, so it was stopped.')).toBeTruthy();
+    expect(
+      screen.getByText('This page tried to move the viewer to another site, so it was stopped.'),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Show the page again' }));
     expect(document.querySelector('iframe')).not.toBeNull();
+  });
+
+  it('opens a link the page sends after a click in a new tab, and keeps the page', () => {
+    mount();
+    const frame = document.querySelector('iframe') as HTMLIFrameElement;
+    frame.focus();
+    Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: true } });
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    try {
+      const data = { type: 'tds-page-open-link', url: 'https://example.com/' };
+      window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }));
+      expect(open).toHaveBeenCalledWith('https://example.com/', '_blank', 'noopener,noreferrer');
+      expect(document.querySelector('iframe')).toBe(frame);
+    } finally {
+      open.mockRestore();
+      Reflect.deleteProperty(navigator, 'userActivation');
+    }
   });
 
   it('offers Open in Documents for a page with a source file, and says nothing of claude.ai without a link', () => {
@@ -368,7 +395,7 @@ describe('suggesting a change', () => {
     );
     await waitFor(() => expect(box.value).toBe(''));
     // Sent: it now waits for Claude to start.
-    expect(screen.getByText('Claude is working on this chat.')).toBeTruthy();
+    expect(screen.getByText('Claude is working on this chat.', LINE)).toBeTruthy();
   });
 
   it('shows why a send failed and keeps the note', async () => {
@@ -381,22 +408,47 @@ describe('suggesting a change', () => {
     expect(box.value).toBe('Hello');
   });
 
-  it('disables the form while Claude works', () => {
+  it('while Claude works: the box is locked, its ring is the working colour and Send is a red Stop', async () => {
+    const interrupt = vi.spyOn(api, 'interrupt').mockResolvedValue({ ok: true });
     h.sessionState = 'working';
     mount();
-    expect(screen.getByText('Claude is working on this chat.')).toBeTruthy();
+    expect(screen.getByText('Claude is working on this chat.', LINE)).toBeTruthy();
     const box = screen.getByLabelText('Suggest a change') as HTMLTextAreaElement;
     expect(box.readOnly).toBe(true);
     expect(box.getAttribute('aria-disabled')).toBe('true');
     expect(box.getAttribute('aria-describedby')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    // The chat's own message box, so it looks and acts the same.
+    expect(box.closest('.composer')?.getAttribute('data-attention')).toBe('working');
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    expect(stop.getAttribute('data-variant')).toBe('stop');
+    fireEvent.click(stop);
+    await waitFor(() => expect(interrupt).toHaveBeenCalledWith('s1'));
     expect(h.askPage).not.toHaveBeenCalled();
+    interrupt.mockRestore();
+  });
+
+  it('has the ready ring and Send when the chat is idle, and asks for an answer with the asking ring', () => {
+    mount();
+    const box = screen.getByLabelText('Suggest a change') as HTMLTextAreaElement;
+    expect(box.closest('.composer')?.getAttribute('data-attention')).toBe('ready');
+    expect(box.maxLength).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+    cleanup();
+    h.sessionState = 'waiting';
+    mount();
+    expect(
+      (screen.getByLabelText('Suggest a change') as HTMLTextAreaElement)
+        .closest('.composer')
+        ?.getAttribute('data-attention'),
+    ).toBe('asking');
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
   });
 
   it('points to the chat when Claude needs an answer, and Go to chat closes the viewer', () => {
     h.sessionState = 'waiting';
     mount();
-    expect(screen.getByText('Claude needs your answer in the chat.')).toBeTruthy();
+    expect(screen.getByText('Claude needs your answer in the chat.', LINE)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Go to chat' }));
     expect(h.openChat).toHaveBeenCalledWith('s1');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -406,7 +458,7 @@ describe('suggesting a change', () => {
     const view = mount();
     fireEvent.change(screen.getByLabelText('Suggest a change'), { target: { value: 'Tweak' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(screen.getByText('Claude is working on this chat.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Claude is working on this chat.', LINE)).toBeTruthy());
     h.sessionState = 'working';
     rerenderWith(view);
     h.sessionState = 'idle';

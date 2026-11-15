@@ -2,284 +2,504 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TDS Brain App explainer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>How TDS Brain Works</title>
 <style>
+  /* Layout: one calm column. Each section has one figure that plays once when it scrolls into view and rests in its finished state. */
   :root{
-    --bg:#FAF8F4; --card:#FFFFFF; --ink:#021B43; --muted:#55607A; --rule:#D9D5CC;
-    --accent:#0F74E0; --accent-soft:#E3F0FF; --warn:#9A5B00; --warn-soft:#FFF3DC;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    --bg:#FAF8F4; --card:#FFFFFF; --ink:#021B43; --muted:#4F5A74; --rule:#D3CFC5;
+    --accent:#0B63C4; --accent-soft:#E3F0FF; --on-accent:#FFFFFF;
+    --warn:#8A5200; --warn-soft:#FFF3DC; --ok:#17703D; --ok-soft:#E1F4E8;
+    --bar0:#8A94AA; --navy:#021B43;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#06132B; --card:#0D1F40; --ink:#EAF0FB; --muted:#9FB0CE; --rule:#24385F;
-      --accent:#5AAEFF; --accent-soft:#12305C; --warn:#FFC766; --warn-soft:#3A2C0C;
+      --bg:#06132B; --card:#0D1F40; --ink:#EAF0FB; --muted:#A3B3D0; --rule:#2A4068;
+      --accent:#5AAEFF; --accent-soft:#12305C; --on-accent:#06132B;
+      --warn:#FFC766; --warn-soft:#3A2C0C; --ok:#6FD39A; --ok-soft:#0F3321;
+      --bar0:#5C6C8C; color-scheme:dark;
     }
   }
+  :root[data-theme="dark"]{
+    --bg:#06132B; --card:#0D1F40; --ink:#EAF0FB; --muted:#A3B3D0; --rule:#2A4068;
+    --accent:#5AAEFF; --accent-soft:#12305C; --on-accent:#06132B;
+    --warn:#FFC766; --warn-soft:#3A2C0C; --ok:#6FD39A; --ok-soft:#0F3321;
+    --bar0:#5C6C8C; color-scheme:dark;
+  }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55}
-  main{max-width:1040px;margin:0 auto;padding:40px 16px 72px}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6}
+  main{max-width:1080px;margin:0 auto;padding-block:40px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
   .eyebrow{font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
-  h1{font-size:clamp(1.8rem,4.2vw,2.7rem);line-height:1.08;letter-spacing:-.03em;font-weight:600;margin:.4rem 0 .8rem;text-wrap:balance}
-  h2{font-size:1.35rem;letter-spacing:-.02em;font-weight:600;margin:3rem 0 .4rem}
-  p{margin:.5rem 0}
-  .lede{font-size:1.125rem;max-width:62ch;color:var(--muted)}
+  h1{font-size:clamp(1.9rem,5vw,2.8rem);line-height:1.1;letter-spacing:-.03em;font-weight:650;margin:.4rem 0 .8rem;text-wrap:balance}
+  h2{font-size:1.5rem;letter-spacing:-.02em;font-weight:650;margin:0 0 .3rem;text-wrap:balance}
+  h3{font-size:1.05rem;margin:0 0 .2rem}
+  section{margin-top:3.5rem}
+  p{margin:.5rem 0;max-width:68ch}
+  .lede{font-size:1.15rem;color:var(--muted)}
   .lede strong{color:var(--ink)}
-  code{font-family:var(--mono);font-size:.84em;background:var(--accent-soft);padding:.08em .35em;border-radius:4px}
-  figure{margin:1.2rem 0 0;background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:18px}
-  figcaption{font-size:.9rem;color:var(--muted);margin-top:12px;max-width:80ch}
-  .scroll{overflow-x:auto}
-  svg{display:block;width:100%;min-width:720px;height:auto;color:var(--ink);font-family:var(--sans)}
-  .d-box{fill:var(--bg);stroke:currentColor;stroke-width:1.25}
-  .d-inner{fill:var(--card);stroke:currentColor;stroke-width:1;opacity:.95}
-  .d-app{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
-  .d-own{fill:none;stroke:var(--accent);stroke-width:1.25;stroke-dasharray:4 3}
-  .d-line{stroke:currentColor;stroke-width:1.4;fill:none}
-  .d-acc{stroke:var(--accent);stroke-width:2;fill:none}
-  .d-split{stroke:currentColor;stroke-width:1.5;stroke-dasharray:7 6;fill:none}
-  .mk{fill:currentColor}.mk-acc{fill:var(--accent)}
-  .t{fill:currentColor;font-size:13px}
-  .t-b{fill:currentColor;font-size:15px;font-weight:650}
-  .t-m{fill:var(--muted);font-size:12px}
-  .t-acc{fill:var(--accent);font-size:12px;font-weight:600}
-  .t-cap{fill:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em}
+  .sub{color:var(--muted);max-width:68ch}
+  .tag{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent);vertical-align:middle}
 
-  .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
-  .rule{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px 16px}
-  .rule b{display:block;margin-bottom:2px}
+  /* figures */
+  figure{margin:1.2rem 0 0;background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:18px}
+  figcaption{font-size:.92rem;color:var(--muted);margin-top:14px;max-width:80ch}
+  .figbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .figbar span{font-size:.85rem;color:var(--muted)}
+  .replay{font:inherit;font-size:.88rem;font-weight:650;color:var(--accent);background:transparent;border:1.5px solid var(--accent);border-radius:8px;padding:6px 14px;cursor:pointer;min-height:36px}
+  .replay:hover{background:var(--accent-soft)}
+  .nojs-hide{display:none}
+  .js .nojs-hide{display:inline-block}
+
+  /* figure 1: where the app sits */
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:center}
+  .dia{display:block;width:100%;max-width:460px;height:auto;margin:0 auto;color:var(--ink);font-family:var(--sans)}
+  .b{fill:var(--bg);stroke:currentColor;stroke-width:1.25}
+  .bi{fill:var(--card);stroke:currentColor;stroke-width:1}
+  .ba{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+  .l{stroke:currentColor;stroke-width:1.5;fill:none}
+  .la{stroke:var(--accent);stroke-width:2;fill:none}
+  .mk{fill:currentColor}.mka{fill:var(--accent)}
+  .t{fill:currentColor;font-size:12px}
+  .tb{fill:currentColor;font-size:14px;font-weight:650}
+  .tm{fill:var(--muted);font-size:11px}
+  .ta{fill:var(--accent);font-size:11.5px;font-weight:650}
+  .dot{fill:var(--accent);opacity:0}
+  .run .dot{animation:go 2.2s ease-in-out var(--dl,0s) 3 both}
+  @keyframes go{0%{opacity:0;transform:translateY(0)}12%{opacity:1}88%{opacity:1}100%{opacity:0;transform:translateY(var(--d))}}
+  .rules{display:grid;gap:10px}
+  .rule{background:var(--bg);border:1px solid var(--rule);border-radius:12px;padding:12px 14px}
+  .rule b{display:block}
   .rule span{color:var(--muted);font-size:.93rem}
 
-  /* app sketch */
+  /* mock app */
   .win{border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--bg)}
   .bar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--rule)}
-  .bar span.addr{margin-left:10px;font-family:var(--mono)}
-  .shell{display:grid;grid-template-columns:200px minmax(0,1fr) 250px;min-height:430px}
+  .wd{width:9px;height:9px;border-radius:50%;background:var(--rule)}
+  .addr{margin-left:10px;font-family:var(--mono)}
+  .shell{display:grid;grid-template-columns:210px minmax(0,1fr) 230px}
   .side,.todo{padding:14px 12px;font-size:.875rem}
-  .side{border-right:1px solid var(--rule)} .todo{border-left:1px solid var(--rule)}
-  .brand{font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
-  .grp{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px;display:flex;align-items:center;gap:6px}
-  .nav div,.pin div{padding:5px 8px;border-radius:7px}
-  .nav .on{background:var(--accent-soft);color:var(--accent);font-weight:600}
-  .pin div::before{content:"★ ";color:var(--accent)}
-  .often div::before{content:"↻ ";color:var(--muted)}
-  .often div{padding:5px 8px;color:var(--muted)}
+  .side{border-right:1px solid var(--rule)}.todo{border-left:1px solid var(--rule)}
+  .brand{font-weight:700;margin-bottom:8px}
+  .search{border:1px solid var(--rule);border-radius:8px;padding:5px 9px;color:var(--muted);font-size:.8rem;background:var(--card);display:flex;justify-content:space-between;gap:6px}
+  .grp{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
+  .nav div,.list div{padding:4px 8px;border-radius:7px}
+  .nav .on{background:var(--accent-soft);color:var(--accent);font-weight:650}
+  .star::before{content:"\2605  ";color:var(--accent)}
+  .list .mute{color:var(--muted)}
   .chat{padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:.9rem;min-width:0}
-  .ctx{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .pill{border:1px solid var(--rule);border-radius:999px;padding:2px 10px;font-size:.78rem;background:var(--card)}
-  .me{align-self:flex-end;background:var(--accent);color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;max-width:85%}
-  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .me{color:#06132B}}
-  .ai{background:var(--card);border:1px solid var(--rule);border-radius:12px 12px 12px 2px;padding:10px 12px;max-width:92%}
+  .pill{border:1px solid var(--rule);border-radius:999px;padding:2px 10px;font-size:.78rem;background:var(--card);display:inline-block;margin:0 6px 4px 0}
+  .msg{border-radius:12px;padding:8px 12px;max-width:90%}
+  .me{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-radius:12px 12px 2px 12px}
+  .ai{background:var(--card);border:1px solid var(--rule);border-radius:12px 12px 12px 2px}
   .opts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  .btn{border:1px solid var(--accent);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:.82rem;font-weight:600;background:transparent}
-  .btn.solid{background:var(--accent);color:#fff}
-  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.solid{color:#06132B}}
-  .approve{border:1px solid var(--warn);background:var(--warn-soft);border-radius:10px;padding:10px 12px}
-  .approve b{color:var(--warn)}
-  .box{margin-top:auto;border:1px solid var(--rule);border-radius:10px;padding:9px 12px;color:var(--muted);background:var(--card)}
-  .todo label{display:flex;gap:8px;align-items:flex-start;padding:5px 0}
-  .todo input{margin-top:4px;accent-color:var(--accent)}
-  .slot{margin-top:14px;border:1.5px dashed var(--rule);border-radius:10px;padding:12px;color:var(--muted);text-align:center;font-size:.82rem}
-  .n{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:.68rem;font-weight:700;flex:none;letter-spacing:0}
-  @media (max-width:760px){.shell{grid-template-columns:1fr}.side,.todo{border:0;border-bottom:1px solid var(--rule)}.todo{border-top:1px solid var(--rule);border-bottom:0}}
+  .btn{display:inline-block;border:1px solid var(--accent);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:.8rem;font-weight:650;background:transparent}
+  .btn.solid{background:var(--accent);color:var(--on-accent)}
+  .approve{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:8px 12px;font-size:.85rem;max-width:92%}
+  .approve .btn{border-color:var(--warn);color:var(--warn)}
+  .approve .btn.solid{background:var(--warn);color:var(--warn-soft)}
+  .box{border:1px solid var(--rule);border-radius:10px;padding:8px 12px;color:var(--muted);background:var(--card);margin-top:auto}
+  .todo .item{display:flex;gap:8px;align-items:flex-start;padding:3px 0}
+  .ck{flex:none;width:15px;height:15px;margin-top:3px;border:1.5px solid var(--muted);border-radius:4px;position:relative;transition:background .4s}
+  .item.fin .ck{background:var(--accent);border-color:var(--accent)}
+  .item.fin .ck::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--on-accent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .item.fin .tx{text-decoration:line-through;color:var(--muted)}
 
-  .tablewrap{overflow-x:auto;margin-top:14px}
-  table{border-collapse:collapse;width:100%;font-size:.92rem;background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow:hidden;min-width:640px}
-  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
-  th{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
-  tr:last-child td{border-bottom:0}
-  td.yes{color:var(--warn);font-weight:600}
+  /* generic animation states: gN means "step N reached". The markup starts with every step reached (the finished state). */
+  .f{transition:opacity .5s ease,transform .5s ease}
+  .anim:not(.g1) .f1,.anim:not(.g2) .f2,.anim:not(.g3) .f3,.anim:not(.g4) .f4,.anim:not(.g5) .f5,.anim:not(.g6) .f6,.anim:not(.g7) .f7{opacity:0;transform:translateY(8px)}
+  .anim:not(.g4) .item.fin .ck{background:transparent;border-color:var(--muted)}
+  .anim:not(.g4) .item.fin .ck::after{display:none}
+  .anim:not(.g4) .item.fin .tx{text-decoration:none;color:var(--ink)}
 
-  .steps{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;counter-reset:s}
-  .steps li{counter-increment:s;background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px;position:relative;font-size:.93rem}
-  .steps li::before{content:counter(s);display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:.8rem;margin-bottom:8px}
-  .steps li:not(:last-child)::after{content:"→";position:absolute;right:-11px;top:14px;color:var(--muted);font-weight:700;background:var(--bg);line-height:1}
+  /* steps */
+  .steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  .steps>li{counter-increment:s;position:relative}
+  .steps .stepbtn,.steps .stepbody{display:flex;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule);border-radius:12px;padding:12px 14px 12px 54px;transition:background .3s,border-color .3s}
+  .steps .stepbtn{cursor:pointer}
+  .steps .stepbtn:hover{border-color:var(--accent)}
+  .steps li::before{content:counter(s);position:absolute;left:14px;top:12px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:700;display:grid;place-items:center;font-size:.9rem;transition:background .3s,color .3s}
   .steps b{display:block}
-  .steps span{color:var(--muted)}
-  @media (max-width:760px){.steps{grid-template-columns:1fr}.steps li::after{display:none}}
+  .steps small{display:block;color:var(--muted);font-size:.9rem;line-height:1.5}
+  .steps li.on .stepbtn,.steps li.on .stepbody{border-color:var(--accent);background:var(--accent-soft)}
+  .steps li.on::before{background:var(--accent);color:var(--on-accent)}
+  .steps li.done::before{content:"\2713";background:var(--ok-soft);color:var(--ok)}
+  .vert{display:grid;gap:8px}
+  .pgrid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:20px;align-items:start}
+  .pgrid .stage{position:sticky;top:12px}
+  .row4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}
+  .row4>li .stepbody{flex-direction:column;gap:2px;padding:52px 14px 14px;height:100%}
+  .row4>li::before{left:14px;top:14px}
+  .row4>li:not(:last-child)::after{content:"";position:absolute;right:-16px;top:26px;width:9px;height:9px;border:solid var(--muted);border-width:2px 2px 0 0;transform:rotate(45deg)}
 
-  .risks{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
-  .risk{border-left:3px solid var(--warn);background:var(--card);border-radius:0 12px 12px 0;padding:12px 14px;border-top:1px solid var(--rule);border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-  .risk b{display:block}
-  .risk span{color:var(--muted);font-size:.93rem}
-  .learn{border:1px solid var(--rule);border-radius:12px;padding:12px 16px;margin-top:10px;background:var(--card);font-size:.93rem}
-  .learn b{color:var(--accent)}
-  footer{margin-top:3rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--rule);padding-top:12px}
+  /* pages stage */
+  .stage{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,6fr);border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--bg);font-size:.85rem}
+  .stage .chat{border-right:1px solid var(--rule);padding:12px;gap:8px;font-size:.82rem}
+  .stage .msg{max-width:100%}
+  .chip{background:var(--accent-soft);color:var(--accent);border:1px dashed var(--accent);border-radius:8px;padding:5px 10px;font-weight:600;align-self:flex-start;font-size:.8rem}
+  .viewp{padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .vhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .vname{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+  .ver{font-weight:700;font-size:.8rem;background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:2px 10px;white-space:nowrap}
+  .ver span{display:inline-block}
+  .anim:not(.g5) .vc2,.anim.g5 .vc1{display:none}
+  .anim.g5 .vc2{animation:tick .7s ease}
+  @keyframes tick{0%{transform:translateY(-60%);opacity:0}100%{transform:none;opacity:1}}
+  .safe{font-size:.7rem;color:var(--ok);background:var(--ok-soft);border-radius:999px;padding:2px 9px;font-weight:650;align-self:flex-start}
+  .frame{border:1.5px solid var(--rule);border-radius:10px;background:var(--card);overflow:hidden;transition:border-color .4s}
+  .anim.g6 .frame{border:1.5px dashed var(--accent)}
+  .brandbar{background:var(--navy);color:#FFFFFF;padding:8px 10px;display:flex;gap:10px;align-items:center}
+  .anim:not(.g6) .brandbar{display:none}
+  .logo{flex:none;width:28px;height:28px;border-radius:6px;background:#FFFFFF;color:#021B43;font-weight:800;font-size:.7rem;display:grid;place-items:center}
+  .brandbar b{display:block;font-size:.85rem;line-height:1.2}
+  .brandbar small{display:block;font-size:.7rem;color:#C8D5EE;line-height:1.3}
+  .pg{padding:12px}
+  .pg h4{margin:0 0 8px;font-size:.9rem}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:84px;border-bottom:2px solid var(--rule)}
+  .bars i{flex:1;background:var(--bar0);border-radius:3px 3px 0 0;transform-origin:bottom;transition:transform .8s ease,background .6s}
+  .anim.g5 .bars i{background:var(--accent)}
+  .anim:not(.g4) .bars i{transform:scaleY(.05)}
+  .packnote{font-size:.72rem;color:var(--accent);font-weight:650}
+  .vfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .done-note{font-size:.75rem;color:var(--ok);font-weight:650}
+
+  /* parts + cards */
+  .parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:16px}
+  .part,.risk,.next{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px 16px;min-width:0}
+  .part p,.risk p,.next p{margin:.2rem 0 0;color:var(--muted);font-size:.93rem}
+  .part .chg{display:inline-block;margin-top:8px;font-size:.75rem;font-weight:650;color:var(--ok);background:var(--ok-soft);border-radius:999px;padding:1px 9px}
+  .part .chg.ask{color:var(--warn);background:var(--warn-soft)}
+  .risk{border-left:4px solid var(--warn)}
+  .next{border-top:4px solid var(--accent)}
+  .nextgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:14px}
+  .today{font-size:.88rem;color:var(--muted);margin-top:10px}
+  dl{margin:14px 0 0;display:grid;gap:10px}
+  dt{font-weight:700}dd{margin:0;color:var(--muted);max-width:68ch}
+  footer{margin-top:3rem;color:var(--muted);font-size:.85rem;border-top:1px solid var(--rule);padding-top:14px}
+
+  @media (max-width:900px){
+    .two,.pgrid{grid-template-columns:minmax(0,1fr)}
+    .pgrid .stage{position:static;order:-1}
+    .row4{grid-template-columns:minmax(0,1fr);gap:22px}
+    .row4>li:not(:last-child)::after{right:auto;left:22px;top:auto;bottom:-17px;transform:rotate(135deg)}
+    .shell{grid-template-columns:minmax(0,1fr)}
+    .side{border-right:0;border-bottom:1px solid var(--rule)}
+    .todo{border-left:0;border-top:1px solid var(--rule)}
+  }
+  @media (max-width:560px){
+    figure{padding:12px}
+    .stage{grid-template-columns:minmax(0,1fr)}
+    .stage .chat{border-right:0;border-bottom:1px solid var(--rule)}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
 </style>
 </head>
 <body>
 <main>
-  <div class="eyebrow">Visual explainer · local draft · 11 Nov 2026</div>
-  <h1>TDS Brain App: a face for the brain, not a part of it</h1>
-  <p class="lede">The app is one more way in, beside the terminal and the IDE. <strong>It stores none of the brain and the brain knows nothing about it.</strong> Use it, or carry on in the terminal as now. Both drive the same engine against the same folder.</p>
+  <div class="eyebrow">Visual explainer · updated 15 November 2026</div>
+  <h1>TDS Brain App: a friendly face for the brain</h1>
+  <p class="lede">The brain is our shared folder of know-how. The app is one more way to use it, next to the terminal and the code editor. <strong>The app keeps none of the brain inside it, and the brain knows nothing about the app.</strong> Use the app, or carry on in the terminal. Both talk to the same helper, Claude, about the same folder.</p>
+  <p class="sub">Each picture plays once when you scroll to it. Press <b>Play again</b> to watch it again. If nothing moves for you, that is fine, because every picture also shows its finished state.</p>
 
-  <h2>1. Where the app sits</h2>
-  <figure>
-    <div class="scroll">
-    <svg viewBox="0 0 960 710" role="img" aria-label="Three faces (TDS Brain App, terminal, IDE) sit above a detachment line. All three drive the same Claude Code engine, which loads the brain folder. The app also reads lists straight from the folder. The brain syncs to the team's shared copy on its own.">
-      <defs>
-        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0L10 5L0 10z"/></marker>
-        <marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk-acc" d="M0 0L10 5L0 10z"/></marker>
-      </defs>
+  <!-- 1 WHERE THE APP SITS -->
+  <section aria-labelledby="h1s">
+    <h2 id="h1s">1. Where the app sits</h2>
+    <p class="sub">Think of a restaurant. The app is the new menu and waiter. The kitchen (Claude and the brain) was already there and works just the same.</p>
+    <figure class="anim g1" data-steps="1" data-gap="8500">
+      <div class="figbar"><span>Dots show messages moving around.</span><button type="button" class="replay nojs-hide">Play again</button></div>
+      <div class="two">
+        <svg class="dia" viewBox="0 0 380 560" role="img" aria-label="Diagram. At the top are three ways in: the TDS Brain App, the terminal and the code editor. They all send requests down to Claude Code, the helper. Claude Code reads and saves files in the brain, which holds skills, house rules and content. The brain is shared with the team through a sync app. The TDS Brain App also reads lists straight from the brain folder.">
+          <defs>
+            <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0L8 4L0 8z"/></marker>
+            <marker id="aa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mka" d="M0 0L8 4L0 8z"/></marker>
+          </defs>
+          <rect class="ba" x="10" y="20" width="140" height="66" rx="10"/>
+          <text class="tb" x="80" y="48" text-anchor="middle">TDS Brain App</text>
+          <text class="tm" x="80" y="67" text-anchor="middle">chats · to-dos · pages</text>
+          <rect class="b" x="160" y="20" width="100" height="66" rx="10"/>
+          <text class="tb" x="210" y="50" text-anchor="middle">Terminal</text>
+          <text class="tm" x="210" y="69" text-anchor="middle">works as before</text>
+          <rect class="b" x="270" y="20" width="100" height="66" rx="10"/>
+          <text class="tb" x="320" y="50" text-anchor="middle">Code editor</text>
+          <text class="tm" x="320" y="69" text-anchor="middle">works as before</text>
 
-      <text class="t-cap" x="200" y="40">FACES: USE ANY OF THEM, ANY TIME</text>
+          <line class="la" x1="90" y1="92" x2="90" y2="156" marker-start="url(#aa)" marker-end="url(#aa)"/>
+          <text class="ta" x="98" y="128">questions and answers</text>
+          <line class="l" x1="210" y1="92" x2="210" y2="156" marker-end="url(#ah)"/>
+          <line class="l" x1="320" y1="92" x2="320" y2="156" marker-end="url(#ah)"/>
+          <text class="tm" x="265" y="140" text-anchor="middle">typed requests</text>
+          <line class="la" x1="26" y1="92" x2="26" y2="288" marker-end="url(#aa)"/>
+          <text class="ta" transform="rotate(-90 14 190)" x="14" y="190" text-anchor="middle">reads lists straight from the folder</text>
 
-      <rect class="d-own" x="16" y="66" width="120" height="70" rx="8"/>
-      <text class="t-acc" x="76" y="92" text-anchor="middle">App's own notes</text>
-      <text class="t-m" x="76" y="109" text-anchor="middle">pins · layout</text>
-      <text class="t-m" x="76" y="124" text-anchor="middle">never synced</text>
-      <line class="d-acc" x1="200" y1="101" x2="141" y2="101" marker-end="url(#ahA)"/>
-      <text class="t-acc" x="169" y="93" text-anchor="middle">saves</text>
+          <rect class="b" x="44" y="160" width="326" height="62" rx="10"/>
+          <text class="tb" x="207" y="186" text-anchor="middle">Claude Code, the helper</text>
+          <text class="tm" x="207" y="205" text-anchor="middle">each person's own copy and sign-in</text>
 
-      <rect class="d-app" x="200" y="56" width="250" height="90" rx="10"/>
-      <text class="t-b" x="325" y="88" text-anchor="middle">TDS Brain App</text>
-      <text class="t" x="325" y="108" text-anchor="middle">Chrome page + small local server</text>
-      <text class="t-m" x="325" y="127" text-anchor="middle">menu · pinned skills · to-dos · chat</text>
+          <line class="l" x1="207" y1="226" x2="207" y2="286" marker-start="url(#ah)" marker-end="url(#ah)"/>
+          <text class="tm" x="216" y="260">reads and saves files</text>
 
-      <rect class="d-box" x="490" y="56" width="200" height="90" rx="10"/>
-      <text class="t-b" x="590" y="96" text-anchor="middle">Terminal</text>
-      <text class="t-m" x="590" y="116" text-anchor="middle">exactly as today</text>
+          <rect class="b" x="10" y="290" width="360" height="142" rx="10"/>
+          <text class="tb" x="24" y="314">The brain</text>
+          <text class="tm" x="94" y="314">a folder on each laptop</text>
+          <rect class="bi" x="22" y="328" width="100" height="90" rx="8"/>
+          <text class="tb" x="72" y="362" text-anchor="middle">Skills</text>
+          <text class="tm" x="72" y="381" text-anchor="middle">the jobs Claude</text>
+          <text class="tm" x="72" y="396" text-anchor="middle">knows how to do</text>
+          <rect class="bi" x="140" y="328" width="100" height="90" rx="8"/>
+          <text class="tb" x="190" y="362" text-anchor="middle">House rules</text>
+          <text class="tm" x="190" y="381" text-anchor="middle">what Claude</text>
+          <text class="tm" x="190" y="396" text-anchor="middle">must follow</text>
+          <rect class="bi" x="258" y="328" width="100" height="90" rx="8"/>
+          <text class="tb" x="308" y="362" text-anchor="middle">Content</text>
+          <text class="tm" x="308" y="381" text-anchor="middle">clients, to-dos,</text>
+          <text class="tm" x="308" y="396" text-anchor="middle">projects</text>
 
-      <rect class="d-box" x="730" y="56" width="200" height="90" rx="10"/>
-      <text class="t-b" x="830" y="96" text-anchor="middle">IDE (Cursor)</text>
-      <text class="t-m" x="830" y="116" text-anchor="middle">exactly as today</text>
+          <line class="l" x1="190" y1="436" x2="190" y2="490" marker-start="url(#ah)" marker-end="url(#ah)"/>
+          <text class="tm" x="199" y="468">sync app shares changes</text>
+          <rect class="b" x="90" y="494" width="200" height="46" rx="10"/>
+          <text class="tb" x="190" y="522" text-anchor="middle">The team's shared copy</text>
 
-      <line class="d-split" x1="16" y1="200" x2="944" y2="200"/>
-      <text class="t-cap" x="16" y="190">DETACHMENT LINE</text>
-      <text class="t-m" x="16" y="220">nothing of the brain</text>
-      <text class="t-m" x="16" y="235">is kept above it</text>
-
-      <line class="d-acc" x1="250" y1="146" x2="250" y2="414" marker-end="url(#ahA)"/>
-      <text class="t-acc" x="240" y="300" text-anchor="end">reads lists directly</text>
-      <text class="t-m" x="240" y="317" text-anchor="end">skills, to-dos, clients, roles</text>
-      <text class="t-m" x="240" y="334" text-anchor="end">one write, off by default: ticking a to-do</text>
-
-      <line class="d-acc" x1="400" y1="152" x2="400" y2="264" marker-start="url(#ahA)" marker-end="url(#ahA)"/>
-      <text class="t-acc" x="410" y="222">prompts down</text>
-      <text class="t-m" x="410" y="239">replies, questions,</text>
-      <text class="t-m" x="410" y="255">approvals back up</text>
-
-      <line class="d-line" x1="590" y1="146" x2="590" y2="264" marker-end="url(#ah)"/>
-      <text class="t-m" x="600" y="230">typed prompts</text>
-      <line class="d-line" x1="830" y1="146" x2="830" y2="264" marker-end="url(#ah)"/>
-      <text class="t-m" x="840" y="230">typed prompts</text>
-
-      <rect class="d-box" x="340" y="270" width="590" height="80" rx="10"/>
-      <text class="t-b" x="635" y="302" text-anchor="middle">Claude Code: the engine</text>
-      <text class="t-m" x="635" y="323" text-anchor="middle">each person's own install and Claude sign-in · runs skills, obeys the house rules, uses connectors</text>
-
-      <line class="d-line" x1="635" y1="356" x2="635" y2="414" marker-start="url(#ah)" marker-end="url(#ah)"/>
-      <text class="t-m" x="646" y="381">loads skills and rules,</text>
-      <text class="t-m" x="646" y="397">reads and writes files</text>
-
-      <rect class="d-box" x="200" y="420" width="730" height="150" rx="10"/>
-      <text class="t-b" x="216" y="446">The brain</text>
-      <text class="t-m" x="296" y="446">the folder on each laptop (~/agencybrain)</text>
-      <rect class="d-inner" x="216" y="460" width="220" height="92" rx="8"/>
-      <text class="t-b" x="326" y="500" text-anchor="middle">Skills</text>
-      <text class="t-m" x="326" y="521" text-anchor="middle">181 folders, with their scripts</text>
-      <rect class="d-inner" x="455" y="460" width="220" height="92" rx="8"/>
-      <text class="t-b" x="565" y="500" text-anchor="middle">House rules</text>
-      <text class="t-m" x="565" y="521" text-anchor="middle">AGENTS.md, hooks, roles</text>
-      <rect class="d-inner" x="694" y="460" width="220" height="92" rx="8"/>
-      <text class="t-b" x="804" y="500" text-anchor="middle">Content</text>
-      <text class="t-m" x="804" y="521" text-anchor="middle">clients, to-dos, projects</text>
-
-      <line class="d-line" x1="565" y1="576" x2="565" y2="634" marker-start="url(#ah)" marker-end="url(#ah)"/>
-      <text class="t-m" x="576" y="601">Agency Brain sync app:</text>
-      <text class="t-m" x="576" y="617">pulls and pushes changes by itself</text>
-      <rect class="d-box" x="415" y="640" width="300" height="52" rx="10"/>
-      <text class="t-b" x="565" y="671" text-anchor="middle">The team's shared copy</text>
-    </svg>
-    </div>
-    <figcaption>Blue is everything new. The app has two connections only: it sends prompts to the engine each person already has, and it reads lists straight from the folder. Remove everything above the dashed line and the terminal, the IDE, the brain and the sync all carry on unchanged.</figcaption>
-  </figure>
-
-  <div class="rules">
-    <div class="rule"><b>It keeps nothing of the brain's</b><span>No copied skills, no client data. Its own notes (pins, layout) live in the app's folder, outside the brain, and never sync.</span></div>
-    <div class="rule"><b>It asks the engine, never replaces it</b><span>Every chat is the real Claude Code started in the brain folder, so role gates, logging and rules apply exactly as in the terminal.</span></div>
-    <div class="rule"><b>Claude Code only</b><span>An internal tool built for one engine. That keeps the brain's hooks, role gates and connectors working exactly as they do in the terminal.</span></div>
-    <div class="rule"><b>Switch faces whenever you like</b><span>Start a job in the app, pick it up in the terminal. Sessions belong to Claude Code, not to the app.</span></div>
-  </div>
-
-  <h2>2. What the face looks like</h2>
-  <p>A sketch of the shell, not a design. Each numbered part is a small app in its own right, plugged into the shell. The table underneath says where each one gets its information.</p>
-  <figure>
-    <div class="win">
-      <div class="bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="addr">127.0.0.1:3877 · TDS Brain</span></div>
-      <div class="shell">
-        <div class="side">
-          <div class="brand">TDS Brain</div>
-          <div class="grp"><span class="n">1</span>Menu</div>
-          <div class="nav"><div class="on">New chat</div><div>Skills</div><div>To-dos</div><div>History</div><div>Settings</div></div>
-          <div class="grp"><span class="n">2</span>Pinned skills</div>
-          <div class="pin"><div>Good morning</div><div>Meeting notes</div><div>Search-term audit</div></div>
-          <div class="grp"><span class="n">3</span>Used often</div>
-          <div class="often"><div>Log my time</div><div>Write a post</div></div>
-        </div>
-        <div class="chat">
-          <div class="ctx"><span class="n">4</span><span class="pill">Client: Urban Cooling</span><span class="pill">Skill: Meeting notes</span></div>
-          <div class="me">File the notes from this morning's call</div>
-          <div class="ai">I found one recording from today. Is this a new call, or another recording of one already filed?
-            <div class="opts"><span class="btn solid">New call</span><span class="btn">Already filed</span><span class="btn">Show me both</span></div>
-          </div>
-          <div class="approve"><b>Claude wants to save a file</b><br>clients/urban-cooling/call-notes/2026-11-11-catch-up.md
-            <div class="opts"><span class="btn solid">Allow</span><span class="btn">Don't allow</span><span class="btn">Allow for this chat</span></div>
-          </div>
-          <div class="box">Ask Claude anything about your work</div>
-        </div>
-        <div class="todo">
-          <div class="grp" style="margin-top:0"><span class="n">5</span>My to-dos</div>
-          <label><input type="checkbox">Review this week's search terms</label>
-          <label><input type="checkbox" checked>File Tuesday's call notes</label>
-          <label><input type="checkbox">Draft the monthly report</label>
-          <div class="grp">Open to anyone</div>
-          <label><input type="checkbox">Update the onboarding note</label>
-          <div class="slot"><span class="n" style="margin-right:6px">6</span>Your next panel plugs in here</div>
+          <circle class="dot" cx="90" cy="92" r="5" style="--d:64px"/>
+          <circle class="dot" cx="90" cy="156" r="5" style="--d:-64px;--dl:1.1s"/>
+          <circle class="dot" cx="210" cy="92" r="5" style="--d:64px;--dl:.4s"/>
+          <circle class="dot" cx="320" cy="92" r="5" style="--d:64px;--dl:.7s"/>
+          <circle class="dot" cx="26" cy="92" r="5" style="--d:194px;--dl:.2s"/>
+          <circle class="dot" cx="207" cy="228" r="5" style="--d:56px;--dl:1.4s"/>
+          <circle class="dot" cx="207" cy="284" r="5" style="--d:-56px;--dl:2s"/>
+          <circle class="dot" cx="190" cy="438" r="5" style="--d:50px;--dl:2.4s"/>
+        </svg>
+        <div class="rules">
+          <div class="rule"><b>It keeps nothing of the brain</b><span>No copied skills and no client data. Its own notes, like your pins, live in the app's own folder and are never shared.</span></div>
+          <div class="rule"><b>It asks Claude, it does not replace Claude</b><span>Every chat is the real Claude Code, started in the brain folder. The house rules apply just as in the terminal.</span></div>
+          <div class="rule"><b>Switch whenever you like</b><span>Start a job in the app and carry on in the terminal. The chat belongs to Claude Code, not to the app.</span></div>
+          <div class="rule"><b>The app can vanish and nothing breaks</b><span>Take away the blue box and the terminal, the editor, the brain and the sync all carry on as before.</span></div>
         </div>
       </div>
+      <figcaption>Blue shows what is new. The app has just two links: it sends your requests to Claude, and it reads lists (skills, to-dos, clients) straight from the brain folder.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 2 WHAT IT LOOKS LIKE -->
+  <section aria-labelledby="h2s">
+    <h2 id="h2s">2. What the app looks like</h2>
+    <p class="sub">A sketch, not the real thing. Watch a chat unfold: you ask, Claude asks back, you give permission, and a to-do gets ticked.</p>
+    <figure class="anim g1 g2 g3 g4" data-steps="4" data-gap="1700">
+      <div class="figbar"><span>Left to right: menu, chat, to-dos.</span><button type="button" class="replay nojs-hide">Play again</button></div>
+      <div class="win" aria-hidden="true">
+        <div class="bar"><i class="wd"></i><i class="wd"></i><i class="wd"></i><span class="addr">TDS Brain</span></div>
+        <div class="shell">
+          <div class="side">
+            <div class="brand">TDS Brain</div>
+            <div class="search"><span>Search or jump to</span><span>&#8984;K</span></div>
+            <div class="grp">Menu</div>
+            <div class="nav"><div class="on">New chat</div><div>Skills</div><div>To-dos</div><div>Documents</div><div>Settings</div></div>
+            <div class="grp">Chats</div>
+            <div class="list"><div class="star">Urban Cooling report</div><div class="star">Weekly planning</div><div class="mute">Earlier: call notes</div></div>
+            <div class="grp">Pinned skills</div>
+            <div class="list"><div>Good morning</div><div>Meeting notes</div></div>
+          </div>
+          <div class="chat">
+            <div><span class="pill">Client: Urban Cooling</span><span class="pill">Skill: Meeting notes</span></div>
+            <div class="msg me f f1">File the notes from this morning's call.</div>
+            <div class="msg ai f f2">I found one recording from today. Is it a new call, or one already filed?
+              <div class="opts"><span class="btn solid">New call</span><span class="btn">Already filed</span><span class="btn">Show me both</span></div></div>
+            <div class="approve f f3"><b>Claude wants to save a file</b><br>Urban Cooling, call notes, catch-up
+              <div class="opts"><span class="btn solid">Allow</span><span class="btn">Don't allow</span></div></div>
+            <div class="msg ai f f4">Done. The notes are filed and your to-do is ticked.</div>
+            <div class="box">Ask Claude anything about your work</div>
+          </div>
+          <div class="todo">
+            <div class="grp" style="margin-top:0">My to-dos</div>
+            <div class="item"><i class="ck"></i><span class="tx">Review this week's search terms</span></div>
+            <div class="item fin"><i class="ck"></i><span class="tx">File this morning's call notes</span></div>
+            <div class="item"><i class="ck"></i><span class="tx">Draft the monthly report</span></div>
+            <div class="grp">Open to anyone</div>
+            <div class="item"><i class="ck"></i><span class="tx">Update the onboarding note</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Questions arrive as buttons. Permission requests arrive as plain cards that say what Claude wants to do. The blue star marks a favourite chat, which stays at the top of its list.</figcaption>
+    </figure>
+
+    <div class="parts">
+      <div class="part"><h3>Menu and search</h3><p>Where you go: new chat, skills, to-dos, documents, settings. You only see the parts your role may use. "Search or jump to" (or <b>Cmd+K</b>) finds to-dos, chats, skills, documents and pictures.</p><span class="chg">Changes the brain: no</span></div>
+      <div class="part"><h3>Chats</h3><p>Several chats can be open at once. Earlier chats wait in a drawer. Star the ones you love, filter work and personal, and delete old ones.</p><span class="chg">Changes the brain: no</span></div>
+      <div class="part"><h3>Chat with a client</h3><p>Pick a client and a skill, add files, and answer Claude's questions with buttons. Files and pages Claude makes are listed beside the chat and in Documents.</p><span class="chg ask">Changes the brain: only what you allow</span></div>
+      <div class="part"><h3>To-dos (the Workbench)</h3><p>Add, edit, pass to a teammate, set a due date, tick off. Every change goes through the brain's own to-do tool, never straight from the app.</p><span class="chg ask">Changes the brain: yes, through its own tool</span></div>
+      <div class="part"><h3>Pinned and often used</h3><p>Pin the skills you use most. The app also shows the ones you use often, from the usage log the brain already keeps.</p><span class="chg">Changes the brain: no</span></div>
+      <div class="part"><h3>Levels and helpers</h3><p>The app picks a lighter or heavier setting to suit the job, like a pocket calculator for sums and a computer for a spreadsheet. Big jobs can be split between helpers.</p><span class="chg">Changes the brain: no</span></div>
+      <div class="part"><h3>Pages</h3><p>Ask for something to look at and the app shows it in a viewer. See the next section.</p><span class="chg">Changes the brain: no, unless you file one</span></div>
     </div>
-    <figcaption>Questions arrive as buttons and permission requests as plain cards. Both come from the engine as data, so the app draws them however suits the task.</figcaption>
-  </figure>
+  </section>
 
-  <div class="tablewrap">
-  <table>
-    <thead><tr><th></th><th>Part</th><th>Gets its information from</th><th>Changes the brain?</th></tr></thead>
-    <tbody>
-      <tr><td><span class="n">1</span></td><td><b>Sidebar menu</b></td><td>The app itself. Sections appear only for the parts that person's role may use (<code>.team-config/roles.json</code>).</td><td>No</td></tr>
-      <tr><td><span class="n">2</span></td><td><b>Pinned skills</b></td><td>The skill folders as they are on disk right now (<code>.claude/skills/*/SKILL.md</code>). Which ones you pinned is the app's own note.</td><td>No</td></tr>
-      <tr><td><span class="n">3</span></td><td><b>Used often</b></td><td>Your own usage log, which the brain already writes (<code>z-logs/team-usage/&lt;you&gt;.jsonl</code>).</td><td>No</td></tr>
-      <tr><td><span class="n">4</span></td><td><b>Chat, with client and skill set</b></td><td>The engine. Clients come from <code>clients/</code> and <code>.claude/accounts.json</code>.</td><td class="yes">Only what you approve</td></tr>
-      <tr><td><span class="n">5</span></td><td><b>Brain to-do list</b></td><td>The files in <code>todo/</code>: yours first, then unassigned ones.</td><td class="yes">Only when switched on in Settings: a tick then edits that file and syncs to the team</td></tr>
-      <tr><td><span class="n">6</span></td><td><b>The next panel</b></td><td>Any brain folder, or a skill run in the background. A panel is a screen plus a source, nothing more.</td><td>Depends on the panel</td></tr>
-    </tbody>
-  </table>
-  </div>
+  <!-- 3 PAGES -->
+  <section aria-labelledby="h3s">
+    <h2 id="h3s">3. Pages: ask for something to look at</h2>
+    <p class="sub">A <b>page</b> is anything visual Claude makes for you: a chart, a one-pager, a checklist. It is one web page saved as a single file. Press a step to jump to it, or press <b>Play again</b>.</p>
+    <figure class="anim g1 g2 g3 g4 g5 g6 g7" data-steps="7" data-gap="2300">
+      <div class="figbar"><span>Seven steps, from asking to saving.</span><button type="button" class="replay nojs-hide">Play again</button></div>
+      <div class="pgrid">
+        <ol class="steps vert">
+          <li><button type="button" class="stepbtn" data-goto="1"><span><b>You ask for something visual</b><small>For example: "Make a one-page chart of last month's traffic for Urban Cooling."</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="2"><span><b>Claude asks: "Where should I save this?"</b><small>If it is not clear, Claude shows places to pick from, taken from the team's filing rules. You can keep it just for you, or pick a client's folder.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="3"><span><b>Claude writes one file</b><small>The page is a single file with everything it needs inside, like a lunchbox with the food already packed.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="4"><span><b>The app spots it and opens it</b><small>When Claude finishes, the viewer opens next to the chat. The viewer is a sandbox: a sealed box, like a fish tank. You can see in, but the page cannot reach out to your files. To make the viewer wider, drag the small grip on its left edge. Double-click the grip to put it back.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="5"><span><b>"Suggest a change" makes a new version</b><small>Type what to change, like "make the bars blue". The old page is kept. Each try is a version, like numbered pages in a notebook, so you can step back and forth.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="6"><span><b>"Convert to TDS branding"</b><small>One click wraps the page in the TDS look: a navy bar with the logo, the title, the client and the date. Your page sits inside unchanged, and everything it needs is packed into the file. If something cannot be packed in, the app says so.</small></span></button></li>
+          <li><button type="button" class="stepbtn" data-goto="7"><span><b>File it, or download it</b><small>Two separate buttons. "Download" saves the file to your computer. "File in client's folder" asks Claude to put it with the client's reports. Downloading never files anything by accident.</small></span></button></li>
+        </ol>
+        <div class="stage" aria-hidden="true">
+          <div class="chat">
+            <div class="msg me f f1">Make a one-page chart of last month's traffic for Urban Cooling.</div>
+            <div class="msg ai f f2">Where should I save this?
+              <div class="opts"><span class="btn solid">Just for me</span><span class="btn">Urban Cooling's reports</span><span class="btn">Somewhere else</span></div></div>
+            <div class="chip f f3">Writing traffic-chart.html</div>
+            <div class="msg ai f f4">Done. The page is open on the right.</div>
+            <div class="msg me f f5">Make the bars blue.</div>
+          </div>
+          <div class="viewp">
+            <div class="vhead"><span class="vname f f4">traffic-chart.html</span><span class="ver f f4">Version <span class="vc1">1 of 1</span><span class="vc2">2 of 2</span></span></div>
+            <span class="safe f f4">Opens in a sealed box</span>
+            <div class="frame f f4">
+              <div class="brandbar"><span class="logo">TDS</span><span><b>Traffic last month</b><small>Urban Cooling · 15 November 2026 · Prepared by The Digital Stride</small></span></div>
+              <div class="pg"><h4>Visits last month</h4>
+                <div class="bars"><i style="height:45%"></i><i style="height:60%"></i><i style="height:52%"></i><i style="height:78%"></i><i style="height:92%"></i></div>
+              </div>
+            </div>
+            <div class="packnote f f6">Page, pictures and code packed into one file</div>
+            <div class="vfoot f f7"><span class="btn solid">Download</span><span class="btn">File in client's folder</span><span class="done-note">Filed with Urban Cooling's reports</span></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>The chat is on the left and the viewer on the right. The bars start grey, turn blue when you suggest a change, and the version counter ticks from 1 to 2. Then the TDS bar appears and the two buttons show up.</figcaption>
+    </figure>
 
-  <h2>3. What happens when the brain is updated</h2>
-  <p>Nobody installs anything. The app notices the folder has changed and re-reads it.</p>
-  <ol class="steps">
-    <li><b>A skill changes</b><span>A scout edits one, or a vendor update lands.</span></li>
-    <li><b>Sync delivers it</b><span>The Agency Brain app brings it to every laptop, as it does today.</span></li>
-    <li><b>The app re-reads</b><span>It watches the folder, so the skills list and to-dos refresh by themselves.</span></li>
-    <li><b>Next chat uses it</b><span>The engine loads the new skill and rules. No app release.</span></li>
-  </ol>
-  <p style="color:var(--muted);font-size:.93rem;margin-top:12px">If a skill is renamed or removed, any screen tuned for it simply goes unused and that skill falls back to plain chat. Nothing breaks.</p>
+    <h3 style="margin-top:1.8rem">Added recently <span class="tag">New</span></h3>
+    <p class="sub">These fixes make pages more dependable. You use pages the same way as before.</p>
+    <div class="nextgrid">
+      <div class="next"><h3>Links open in a new tab</h3><p>Clicking a link inside a page opens the website in a new browser tab.</p></div>
+      <div class="next"><h3>Pages made by scripts still show</h3><p>Sometimes Claude saves a page by running a small program instead of the usual way. The app spots those pages too.</p></div>
+      <div class="next"><h3>Borrowed code kept fresh</h3><p>Pages often borrow ready-made code, like borrowing a cookbook. The app keeps a copy. A copy that doesn't say how old it is gets renewed after a week. If the internet is down, the old copy still works.</p></div>
+      <div class="next"><h3>An honest "works offline" label</h3><p>A page that fetches extra code when you open it says it needs the internet. The "works offline" label only appears when it is true.</p></div>
+      <div class="next"><h3>Leftover files swept away</h3><p>If the app stops half-way through saving, a scrap of file can be left behind. When the app starts, it clears away old scraps.</p></div>
+      <div class="next"><h3>More automatic checks</h3><p>New tests follow the whole journey, from asking to downloading, the way you do. One check that sometimes failed for no reason is fixed.</p></div>
+    </div>
+    <p class="today">One idea, not decided yet: pointing at part of a page and saying "change this".</p>
+  </section>
 
-  <h2>4. The steps that need care</h2>
-  <div class="risks">
-    <div class="risk"><b>Approvals</b><span>Today's Workbench buttons start Claude with permission checks switched off. The app should ask instead, in plain words, as in the sketch.</span></div>
-    <div class="risk"><b>Only this laptop may talk to it</b><span>The app's local server can start Claude with file access, so no other web page may reach it. Needs a security review before the team uses it.</span></div>
-    <div class="risk"><b>Direct writes sync to everyone</b><span>Ticking a to-do edits a shared file, which reaches the team in about 90 seconds. Panels that write must follow the brain's own file rules.</span></div>
-    <div class="risk"><b>Anthropic's usage rules</b><span>Nobody signs in again: the app uses the Claude Code sign-in each person already has. The open point is permission, not technology. Anthropic's rules for apps built on Claude Code are unclear for a staff tool, so get their confirmation before rollout.</span></div>
-  </div>
+  <!-- 4 UPDATES -->
+  <section aria-labelledby="h4s">
+    <h2 id="h4s">4. What happens when the brain is updated</h2>
+    <p class="sub">Nobody installs anything. The app notices the folder changed and reads it again.</p>
+    <figure class="anim g1 g2 g3 g4" data-steps="4" data-gap="1700">
+      <div class="figbar"><span>From a changed skill to your next chat.</span><button type="button" class="replay nojs-hide">Play again</button></div>
+      <ol class="steps row4">
+        <li><div class="stepbody"><b>A skill changes</b><small>A teammate edits one, or an update arrives.</small></div></li>
+        <li><div class="stepbody"><b>Sync delivers it</b><small>The Agency Brain sync app brings it to every laptop, as it does today.</small></div></li>
+        <li><div class="stepbody"><b>The app re-reads</b><small>It watches the folder, so skills and to-dos refresh by themselves.</small></div></li>
+        <li><div class="stepbody"><b>Your next chat uses it</b><small>Claude loads the new skill and rules. No new app needed.</small></div></li>
+      </ol>
+      <figcaption>If a skill is renamed or removed, nothing breaks. Any screen made for it simply goes unused and that skill falls back to a plain chat.</figcaption>
+    </figure>
+    <figure class="anim g1 g2 g3 g4" data-steps="4" data-gap="1700">
+      <div class="figbar"><span>When the app itself has a newer version.</span><button type="button" class="replay nojs-hide">Play again</button></div>
+      <ol class="steps row4">
+        <li><div class="stepbody"><b>A newer app is ready</b><small>Each installed app checks for one.</small></div></li>
+        <li><div class="stepbody"><b>The app tells you</b><small>A message appears inside the app.</small></div></li>
+        <li><div class="stepbody"><b>You press one button</b><small>No terminal command to type.</small></div></li>
+        <li><div class="stepbody"><b>It updates and restarts</b><small>You carry on with the new version.</small></div></li>
+      </ol>
+      <figcaption>This is about the app itself. The brain's skills update the way shown above.</figcaption>
+    </figure>
+  </section>
 
-  <h2>Terms</h2>
-  <div class="learn"><b>Agent SDK.</b> Anthropic's official toolkit for driving Claude Code from your own program. It hands over each reply, question and permission request as data, which is why the app can show buttons and cards instead of terminal text.</div>
-  <div class="learn"><b>Engine.</b> Used here for Claude Code itself: the program that reads the brain's skills and rules and does the work, whichever face you used to ask.</div>
+  <!-- 5 CARE -->
+  <section aria-labelledby="h5s">
+    <h2 id="h5s">5. The steps that need care</h2>
+    <div class="parts">
+      <div class="risk"><h3>Permission cards</h3><p>The app should ask in plain words before Claude saves a file or does something risky, with Allow and Don't allow buttons, rather than switching the safety checks off.</p></div>
+      <div class="risk"><h3>Only this laptop may talk to it</h3><p>The app can start Claude with access to files, so no other web page may reach it. This needs a security check before the whole team uses it.</p></div>
+      <div class="risk"><h3>Changes reach everyone</h3><p>Ticking a to-do edits a shared file, and the team gets it in about 90 seconds. The app never writes brain files itself. It uses the brain's own tools, which follow the brain's rules.</p></div>
+      <div class="risk"><h3>Pages are kept in a sealed box</h3><p>A page can run its own code, so the viewer locks it in a sandbox. It can show things but cannot touch your files or the app.</p></div>
+      <div class="risk"><h3>Anthropic's rules</h3><p>Nobody signs in again, because the app uses the Claude Code sign-in each person already has. The open question is permission: Anthropic's rules for apps built on Claude Code are unclear for staff tools, so we want their answer before rollout.</p></div>
+    </div>
+  </section>
 
-  <footer>Local file only. Nothing here is in the brain folder or published anywhere. Based on the feasibility study of 11 November 2026.</footer>
+  <section aria-labelledby="h6s">
+    <h2 id="h6s">Words used here</h2>
+    <dl>
+      <dt>The brain</dt><dd>Our shared folder of skills, house rules and client notes. It sits on each laptop and is kept in step by the sync app.</dd>
+      <dt>Claude Code (the helper)</dt><dd>The program that reads the brain and does the work, whichever way you asked: app, terminal or editor.</dd>
+      <dt>Sandbox</dt><dd>A sealed box for running something you did not write yourself. Like a fish tank, you can watch, but nothing gets out.</dd>
+      <dt>Version</dt><dd>One saved try of a page. Like numbered pages in a notebook, you can flip back to an earlier one.</dd>
+      <dt>Self-contained</dt><dd>One file with everything inside, so it works when you send it to someone or open it with no internet.</dd>
+    </dl>
+  </section>
+
+  <footer>This page is one file with nothing loaded from the internet. It works in the app, in a browser and from a folder. It does not save anything on your computer.</footer>
 </main>
+<script>
+(function () {
+  document.documentElement.className += ' js';
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var figs = document.querySelectorAll('.anim');
+
+  function setup(fig) {
+    var n = parseInt(fig.getAttribute('data-steps'), 10) || 1;
+    var gap = parseInt(fig.getAttribute('data-gap'), 10) || 1500;
+    var items = fig.querySelectorAll('.steps > li');
+    var btn = fig.querySelector('.replay');
+    var timer = null;
+    var played = false;
+
+    function show(k, running) {
+      var c = fig.className.replace(/\bg\d+\b/g, '').replace(/\brun\b/g, '').replace(/\s+/g, ' ').trim();
+      for (var i = 1; i <= k; i++) c += ' g' + i;
+      if (running) c += ' run';
+      fig.className = c;
+      for (var j = 0; j < items.length; j++) {
+        items[j].classList.toggle('on', j === k - 1 && running);
+        items[j].classList.toggle('done', j < k - 1 && running);
+      }
+    }
+    function rest() { show(n, false); }
+    function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+    function play() {
+      stop();
+      played = true;
+      show(0, false);
+      void fig.offsetWidth;
+      var k = 0;
+      (function tick() {
+        k++;
+        show(k, true);
+        timer = setTimeout(k < n ? tick : function () { timer = null; rest(); }, gap);
+      })();
+    }
+    if (btn) btn.addEventListener('click', play);
+    var jumps = fig.querySelectorAll('[data-goto]');
+    for (var i = 0; i < jumps.length; i++) {
+      jumps[i].addEventListener('click', function () {
+        stop(); played = true;
+        show(parseInt(this.getAttribute('data-goto'), 10), true);
+      });
+    }
+    if (!reduce && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (e.isIntersecting && !played) { io.disconnect(); play(); }
+        });
+      }, { threshold: 0.35 });
+      io.observe(fig);
+    }
+  }
+  for (var f = 0; f < figs.length; f++) setup(figs[f]);
+})();
+</script>
 </body>
 </html>

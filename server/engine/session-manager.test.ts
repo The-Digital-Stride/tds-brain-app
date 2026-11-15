@@ -367,6 +367,15 @@ describe('a new chat', () => {
     expect(FILES_LINE).toContain(
       'if neither the user nor a skill you are running has said where it goes, ask with AskUserQuestion first',
     );
+    // "Just for me" follows the brain's save rules (`personal/`, on this computer, never shared),
+    // never an unnamed "scratchpad" or a promise that nothing is saved.
+    expect(FILES_LINE).toContain(
+      'just for me, to look at here (`personal/`, saved on this computer only and never shared',
+    );
+    expect(FILES_LINE).not.toMatch(/scratchpad|not saved/);
+    // Made-up numbers don't make a page scratch work, and `personal/` is named as the app names it.
+    expect(FILES_LINE).toContain("Made-up or sample numbers don't make it scratch work");
+    expect(FILES_LINE).toContain('call it your personal files');
     expect(o.model).toBeUndefined();
     expect(o.resume).toBeUndefined();
     expect(queries[0]?.received).toEqual(['Hello there']);
@@ -438,6 +447,10 @@ describe('a new chat', () => {
     expect(s.client).toBe('urban-cooling');
     const sp = queries[0]?.options.systemPrompt as { append?: string };
     expect(sp.append).toContain('clients/urban-cooling/');
+    // In a client chat the client's folder is the first place offered, and even a quick chart is asked
+    // about: a test on 15 Nov 2026 saved an Urban Cooling chart in `personal/` without asking.
+    expect(sp.append).toContain('offer `clients/urban-cooling/reports/` first');
+    expect(sp.append).toContain('ask even for a quick chart or page');
     // The client line first, then the files line (decision 7), then the summary line (context decision 9).
     expect(sp.append?.split('\n')).toHaveLength(3);
     expect(sp.append?.endsWith(`\n${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
@@ -4852,6 +4865,16 @@ describe('pages', () => {
     await flush();
     expect(lastPage(s.id)).toMatchObject({ key, draft: false, versions: [{ n: 1, hasCopy: true }] });
     release();
+  });
+
+  it('lets go of a closed chat’s events but keeps its pages', async () => {
+    withPages();
+    const s = await mgr.start({ prompt: 'Make a budget page' });
+    await pageKey(s.id);
+    expect(mgr.eventCount?.(s.id)).toBeGreaterThan(0);
+    await mgr.close(s.id);
+    await flush();
+    expect(mgr.eventCount?.(s.id)).toBe(0);
   });
 
   it('keeps a closed chat’s pages viewable, its last reply’s page as a version', async () => {

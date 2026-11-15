@@ -88,11 +88,18 @@ export function ChatView() {
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
 
+  const chatPages = chat.files.pages ?? NO_PAGES;
+  // A link to a file that is this chat's page opens the page view, which has "Download with TDS
+  // branding" and "Suggest a change"; any other file is shown in the Files panel.
   const openFile = useCallback(
     (key: string) => {
-      if (sessionId) shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
+      if (!sessionId) return;
+      const page = chatPages.find((p) => p.fileKey === key);
+      if (page)
+        shellDispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key: page.key } });
+      else shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
     },
-    [sessionId, shellDispatch],
+    [sessionId, shellDispatch, chatPages],
   );
   const openPage = useCallback(
     (key: string) => {

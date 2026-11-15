@@ -28,6 +28,12 @@ export const ASSET_TIMEOUT_MS = 10_000;
 /** Files one page may ask for, and how long one page may spend asking, so a page can't stall a download. */
 export const ASSET_PAGE_MAX_FILES = 100;
 export const ASSET_PAGE_TIMEOUT_MS = 60_000;
+/** An unpinned file (see `isPinned`) older than this is fetched again; a pinned one never is. */
+export const ASSET_UNPINNED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** After a failed refresh, that address isn't asked for again this long (the kept copy is used). */
+export const ASSET_REFRESH_RETRY_MS = 60 * 60 * 1000;
+/** A leftover temporary file younger than this is left alone by `sweepAssetTemps`. */
+export const ASSET_TEMP_GRACE_MS = 60 * 60 * 1000;
 const MAX_REDIRECTS = 5;
 
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
@@ -49,6 +55,8 @@ export interface AssetCacheOptions {
   fetcher?: AssetFetcher;
   timeoutMs?: number;
   fileMaxBytes?: number;
+  /** Tests only. */
+  now?: () => number;
 }
 
 /** Hosts per kind of file; `paths` limits a host to addresses under these path prefixes. */
@@ -80,6 +88,39 @@ export function allowedAsset(raw: string, kind: AssetKind): URL | null {
   return url;
 }
 
+const VERSION = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?`;
+const PKG = '(?:@[^/@]+/)?[^/@]+';
+const PINNED_PATHS: Record<string, RegExp> = {
+  'cdn.jsdelivr.net': new RegExp(`^/npm/${PKG}@${VERSION}(?:/|$)`),
+  'cdnjs.cloudflare.com': new RegExp(`^/ajax/libs/[^/]+/${VERSION}/`),
+  'unpkg.com': new RegExp(`^/${PKG}@${VERSION}(?:/|$)`),
+  'code.jquery.com': new RegExp(`^/(?:jquery-${VERSION}(?:\\.(?:min|slim))*\\.js$|ui/${VERSION}/)`),
+};
+
+/**
+ * True when the address names an exact `x.y.z` version in its host's own address shape (a pre-release
+ * such as `1.2.3-beta.1` counts), so what it serves never changes: `fonts.gstatic.com` files too.
+ * `@4`, `@4.4`, `@latest`, ranges, `fonts.googleapis.com`, `cdn.tailwindcss.com` and anything unknown
+ * are not. Judged on the address asked for (a redirect is stored under it).
+ */
+export function isPinned(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.hostname === 'fonts.gstatic.com') return true;
+  let path: string;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    return false;
+  }
+  return PINNED_PATHS[url.hostname]?.test(path) ?? false;
+}
+
+const ASSET_TEMP_FILE = /^[0-9a-f]{64}\.bin\.[0-9a-f]{12}\.tmp$/;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export function createAssetCache(opts: AssetCacheOptions): AssetCache {
@@ -87,11 +128,14 @@ export function createAssetCache(opts: AssetCacheOptions): AssetCache {
   const fetcher: AssetFetcher = opts.fetcher ?? ((url, init) => fetch(url, init));
   const timeoutMs = opts.timeoutMs ?? ASSET_TIMEOUT_MS;
   const maxBytes = opts.fileMaxBytes ?? ASSET_FILE_MAX_BYTES;
+  const now = opts.now ?? Date.now;
   const inFlight = new Map<string, Promise<Buffer | null>>();
+  /** Address -> when a refresh may be tried again, after one failed. */
+  const refreshFailed = new Map<string, number>();
 
   const fileFor = (href: string) => join(dir, `${createHash('sha256').update(href).digest('hex')}.bin`);
 
-  async function readCached(path: string): Promise<Buffer | null> {
+  async function readCached(path: string): Promise<{ data: Buffer; mtimeMs: number } | null> {
     let handle: fs.FileHandle | null = null;
     try {
       handle = await fs.open(path, constants.O_RDONLY | NOFOLLOW | NONBLOCK);
@@ -104,7 +148,7 @@ export function createAssetCache(opts: AssetCacheOptions): AssetCache {
         if (bytesRead === 0) break;
         got += bytesRead;
       }
-      return got === buf.length ? buf : null;
+      return got === buf.length ? { data: buf, mtimeMs: st.mtimeMs } : null;
     } catch {
       return null;
     } finally {
@@ -204,9 +248,16 @@ export function createAssetCache(opts: AssetCacheOptions): AssetCache {
   async function load(url: URL, kind: AssetKind): Promise<Buffer | null> {
     const path = fileFor(url.href);
     const cached = await readCached(path);
-    if (cached) return cached;
+    const stale = cached && !isPinned(url.href) && now() - cached.mtimeMs >= ASSET_UNPINNED_MAX_AGE_MS;
+    if (cached && !stale) return cached.data;
+    if (cached && (refreshFailed.get(url.href) ?? 0) > now()) return cached.data;
     const data = await download(url, kind);
-    if (!data) return null;
+    if (!data) {
+      if (!cached) return null;
+      refreshFailed.set(url.href, now() + ASSET_REFRESH_RETRY_MS);
+      return cached.data;
+    }
+    refreshFailed.delete(url.href);
     await writeCached(path, data).catch(() => {});
     return data;
   }
@@ -223,6 +274,29 @@ export function createAssetCache(opts: AssetCacheOptions): AssetCache {
       return job;
     },
   };
+}
+
+/**
+ * Removes leftover `<hash>.bin.<12 hex>.tmp` files (a crash mid-write) from the cache folder: regular
+ * files only (never through a link), older than `ASSET_TEMP_GRACE_MS`, in that folder only. Returns how
+ * many it removed. Never throws.
+ */
+export async function sweepAssetTemps(dataDir: string, now: () => number = Date.now): Promise<number> {
+  const dir = join(resolve(dataDir), ASSET_CACHE_DIR);
+  let removed = 0;
+  for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
+    if (!ASSET_TEMP_FILE.test(name)) continue;
+    const path = join(dir, name);
+    try {
+      const st = await fs.lstat(path);
+      if (!st.isFile() || now() - st.mtimeMs < ASSET_TEMP_GRACE_MS) continue;
+      await fs.unlink(path);
+      removed++;
+    } catch {
+      // gone already, or not ours to remove
+    }
+  }
+  return removed;
 }
 
 // -- inlining ------------------------------------------------------------------------------------
@@ -378,6 +452,14 @@ function integrityOk(value: string | null, data: Buffer): boolean {
     );
 }
 
+const LIBRARY_HOSTS = [...new Set(Object.values(HOSTS).flatMap((rules) => rules.map((r) => r.host)))];
+
+/** A script's text names one of the allowed library hosts. */
+function namesLibraryHost(text: string): boolean {
+  const lower = text.toLowerCase();
+  return LIBRARY_HOSTS.some((h) => lower.includes(h));
+}
+
 export interface InlineOptions {
   pageMaxBytes?: number;
   pageMaxFiles?: number;
@@ -465,8 +547,11 @@ export async function inlinePageAssets(
   let deferLeft = false;
   let bodyClose = -1;
 
-  async function onScript(tag: Tag, start: number, closeEnd: number): Promise<void> {
+  async function onScript(tag: Tag, start: number, closeEnd: number, body: string): Promise<void> {
     const src = attrOf(tag, 'src');
+    // The page's own script names a library host: it may add that library at run time, which a copy
+    // can't carry, so the copy still needs the internet.
+    if (src === null && namesLibraryHost(body)) selfContained = false;
     if (src === null || !REMOTE.test(src)) return;
     const type = (attrOf(tag, 'type') ?? '').trim();
     const classic = type === '' || JS_TYPE.test(type);
@@ -540,7 +625,7 @@ export async function inlinePageAssets(
       const closeStart = close ? close.index : html.length;
       const closeGt = close ? html.indexOf('>', close.index) : -1;
       const closeEnd = closeGt < 0 ? -1 : closeGt + 1;
-      if (tag.name === 'script') await onScript(tag, lt, closeEnd);
+      if (tag.name === 'script') await onScript(tag, lt, closeEnd, html.slice(tag.end, closeStart));
       else if (tag.name === 'style' && closeEnd > 0) {
         const css = html.slice(tag.end, closeStart);
         const next = await inlineStyle(css);

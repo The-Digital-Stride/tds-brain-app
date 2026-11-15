@@ -228,24 +228,3 @@
   margin: 0;
   font-size: 13px;
 }
-.page-ask-form label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.page-ask-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.page-ask-row .field {
-  flex: 1;
-  height: auto;
-  min-height: 56px;
-  padding: 6px 10px;
-  resize: vertical;
-}
-.page-ask-row .field:disabled {
-  opacity: 0.6;
-}

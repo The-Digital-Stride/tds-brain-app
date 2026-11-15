@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type {
+  LibraryItem,
+  LibraryScope,
+  LiveSession,
+  SkillInfo,
+  TodoItem,
+} from '../../../shared/contract.ts';
 import { openPicker, pickOption } from '../test/pick.ts';
 
 const api = vi.hoisted(() => ({
@@ -16,6 +22,7 @@ const api = vi.hoisted(() => ({
   clientPickOutcome: vi.fn(async () => ({})),
   close: vi.fn(),
   updatePrefs: vi.fn(),
+  libraryItems: vi.fn(),
 }));
 vi.mock('../api.ts', () => ({
   api,
@@ -48,6 +55,9 @@ const skill = (name: string, title: string): SkillInfo => ({
   restrictedTo: null,
 });
 
+const SID1 = '11111111-1111-4111-8111-111111111111';
+const SID2 = '22222222-2222-4222-8222-222222222222';
+
 const boot = {
   appVersion: '0',
   appState: { kind: 'ready' as const },
@@ -61,7 +71,16 @@ const boot = {
     { slug: 'northwind', name: 'Northwind' },
   ],
   usedOften: [],
-  prefs: { pins: ['meeting-notes'], lastClient: null, todoPanelOpen: false, directWrites: false },
+  prefs: {
+    pins: ['meeting-notes'],
+    lastClient: null,
+    todoPanelOpen: false,
+    directWrites: false,
+    // Every to-do and chat these tests open from Home is pinned: Home lists only what is pinned.
+    favouriteTodos: ['t-late.md', 't-today.md', 't-a.md', 'personal/t-p.md', 't-new.md'],
+    favouriteChats: [SID1, SID2],
+    favouriteFiles: [],
+  },
 };
 
 function dayOffset(n: number): string {
@@ -95,7 +114,7 @@ const chat = (
   todoId: string | null = null,
 ): LiveSession => ({
   id,
-  sdkSessionId: null,
+  sdkSessionId: id === 's1' ? SID1 : id === 's2' ? SID2 : null,
   title,
   client: null,
   todoId,
@@ -137,6 +156,7 @@ beforeEach(() => {
   });
   api.startSession.mockResolvedValue({ session: chat('new1', 'New chat', 'working') });
   api.updatePrefs.mockResolvedValue(boot.prefs);
+  api.libraryItems.mockResolvedValue({ files: [] });
 });
 afterEach(() => {
   clientChoice.set('');
@@ -148,24 +168,23 @@ afterEach(() => {
 });
 
 describe('Home', () => {
-  it('shows the greeting, the summary and the three cards from boot data', async () => {
+  it('shows the greeting, the summary and the pinned cards from boot data', async () => {
     await renderHome();
     expect(screen.getByText(/^Good (morning|afternoon|evening), Sam$/)).toBeTruthy();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     await screen.findByText('One to-do is overdue, one is due today and one chat is waiting for you.');
 
-    const needs = card('Needs you');
+    const needs = card('Pinned to-dos');
     expect(needs.getByText('2')).toBeTruthy();
     expect(needs.getByText('Write the call tracking case')).toBeTruthy();
     expect(needs.getByText('overdue by 2 days').className).toBe('late');
     expect(needs.getByText('Acme Heating').className).toBe('');
     expect(needs.getByText('due today').className).toBe('');
+    // Home lists what is pinned, not what is due: a to-do that is not starred stays off it.
     expect(needs.queryByText('Plan the quarter')).toBeNull();
-    expect(needs.queryByRole('button', { name: /more to-do/ })).toBeNull();
-    expect(document.querySelector('.card-more')).toBeNull();
     expect(needs.queryByRole('checkbox')).toBeNull();
 
-    const chats = card('Open chats');
+    const chats = card('Pinned chats');
     expect(chats.getByText('Monthly reports check')).toBeTruthy();
     expect(chats.getByText('Needs your answer')).toBeTruthy();
     expect(chats.getByText('Working')).toBeTruthy();
@@ -182,13 +201,14 @@ describe('Home', () => {
       othersCount: 0,
     });
     api.sessions.mockResolvedValue({ live: [], past: [] });
-    api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, pins: [] } });
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      prefs: { ...boot.prefs, pins: [], favouriteTodos: [], favouriteChats: [] },
+    });
     await renderHome();
-    await screen.findByText('Nothing due today or tomorrow. 1 other to-do.');
-    expect(screen.getByText('Nothing due today or tomorrow. 1 other to-do.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /See all/ })).toBeNull();
-    expect(document.querySelector('.card-more')).toBeNull();
-    expect(screen.getByText('No open chats.')).toBeTruthy();
+    expect(await screen.findByText('Star a to-do to keep it here.')).toBeTruthy();
+    expect(screen.getByText('Star a chat to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Star a file to keep it here.')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Favourite skills' })).toBeTruthy();
     expect(screen.getByText('Star a skill to keep it here.')).toBeTruthy();
     expect(screen.getByText('Nothing is waiting for you.')).toBeTruthy();
@@ -209,8 +229,8 @@ describe('Home', () => {
     api.todos.mockReturnValue(new Promise(() => {}));
     api.sessions.mockReturnValue(new Promise(() => {}));
     await renderHome();
-    expect(card('Needs you').getByText('Loading')).toBeTruthy();
-    expect(card('Open chats').getByText('Loading')).toBeTruthy();
+    expect(card('Pinned to-dos').getByText('Loading')).toBeTruthy();
+    expect(card('Pinned chats').getByText('Loading')).toBeTruthy();
   });
 
   const typeAndSend = (box: HTMLElement, value: string) => {
@@ -416,7 +436,9 @@ describe('Home', () => {
       const box = await renderHome();
       typeAndSend(box, 'Old message');
       await waitFor(() => expect(api.clientGuess).toHaveBeenCalled());
-      fireEvent.click(await card('Needs you').findByRole('button', { name: /Check the monthly reports/ }));
+      fireEvent.click(
+        await card('Pinned to-dos').findByRole('button', { name: /Check the monthly reports/ }),
+      );
       await waitFor(() =>
         expect(
           (screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value,
@@ -470,9 +492,9 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Needs you').findByRole('button', { name: /Acme thing/ }));
+    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Acme thing/ }));
     await waitFor(() => expect(select().value).toBe('Acme Heating'));
-    fireEvent.click(card('Needs you').getByRole('button', { name: /My own thing/ }));
+    fireEvent.click(card('Pinned to-dos').getByRole('button', { name: /My own thing/ }));
     await waitFor(() => expect(select().value).toBe('No client'));
     // Sending a chat whose client arrived with it counts as preset, not chosen by hand.
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -491,7 +513,7 @@ describe('Home', () => {
 
   it('starts a chat from a to-do row and keeps the to-do link', async () => {
     const box = (await renderHome()) as HTMLTextAreaElement;
-    fireEvent.click(await card('Needs you').findByRole('button', { name: /Check the monthly reports/ }));
+    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Check the monthly reports/ }));
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
         'Help me with this to-do: todo/t-today.md (Check the monthly reports)',
@@ -518,21 +540,68 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Needs you').findByRole('button', { name: /Fresh from Ben/ }));
+    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Fresh from Ben/ }));
     await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ todoSeen: { 't-new.md': at } }));
   });
 
   it('opens the live chat for a to-do that already has one', async () => {
     await renderHome();
-    fireEvent.click(await card('Needs you').findByRole('button', { name: /Write the call tracking case/ }));
+    fireEvent.click(
+      await card('Pinned to-dos').findByRole('button', { name: /Write the call tracking case/ }),
+    );
     await screen.findByRole('heading', { level: 1, name: 'Call tracking case' });
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
-  it('opens a chat from the Open chats card', async () => {
+  it('opens a chat from the Pinned chats card', async () => {
     await renderHome();
-    fireEvent.click(await card('Open chats').findByRole('button', { name: /Monthly reports check/ }));
+    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /Monthly reports check/ }));
     await screen.findByRole('heading', { level: 1, name: 'Monthly reports check' });
+  });
+
+  it('lists pinned files, newest first, and opens one in the viewer', async () => {
+    const file = (id: string, title: string) => ({
+      item: { id, title, name: `${title}.md`, kind: 'document' } as unknown as LibraryItem,
+      scope: { id: 'client:acme', name: 'Acme Heating' } as unknown as LibraryScope,
+    });
+    api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteFiles: ['f1', 'f2'] } });
+    api.libraryItems.mockResolvedValue({ files: [file('f2', 'Newer plan'), file('f1', 'Older plan')] });
+    await renderHome();
+    const files = card('Pinned files');
+    const rows = await files.findAllByRole('button');
+    expect(api.libraryItems).toHaveBeenCalledWith(['f2', 'f1']);
+    expect(rows.map((r) => r.textContent)).toEqual(['Newer planAcme Heating', 'Older planAcme Heating']);
+    fireEvent.click(rows[0] as HTMLElement);
+    expect(await screen.findByRole('heading', { level: 2, name: 'Newer plan' })).toBeTruthy();
+  });
+
+  it('shows five pinned to-dos and says how many more there are', async () => {
+    const mine = Array.from({ length: 7 }, (_, i) => todo(`m${i}.md`, `To-do ${i}`, null));
+    api.todos.mockResolvedValue({ ...todoList, mine });
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
+    });
+    await renderHome();
+    const card1 = card('Pinned to-dos');
+    await card1.findByText('To-do 4');
+    expect(card1.queryByText('To-do 5')).toBeNull();
+    expect(card1.getByRole('button', { name: 'and 2 more to-dos' })).toBeTruthy();
+  });
+
+  it('lists a pinned chat that is not open, and opens it from earlier chats', async () => {
+    const sid = '33333333-3333-4333-8333-333333333333';
+    api.sessions.mockResolvedValue({
+      live: [],
+      past: [
+        { sdkSessionId: sid, title: 'Last week plan', lastModified: '2026-11-04T10:00:00.000Z', kind: 'tds' },
+      ],
+    });
+    api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteChats: [sid] } });
+    api.startSession.mockResolvedValue({ session: chat('r1', 'Last week plan', 'working') });
+    await renderHome();
+    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /Last week plan/ }));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledWith({ resume: sid }));
   });
 
   it('starts a pinned skill', async () => {

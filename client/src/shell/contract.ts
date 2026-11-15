@@ -386,18 +386,8 @@ export type NewToYou = (mine: TodoItem[], me: string, seen: Record<string, strin
 
 // ── Home ───────────────────────────────────────────────────────────────────────────────────────
 
-export interface NeedsYou {
-  /** Mine, overdue or due today or tomorrow, soonest first, at most 4. */
-  rows: TodoItem[];
-  /** How many of mine are overdue or due today or tomorrow (may exceed `rows.length`). */
-  count: number;
-  /** The rest of mine: `mine.length - rows.length`. */
-  more: number;
-}
-
 /** `client/src/state/home.ts` */
 export interface HomeLogic {
-  needsYou: (mine: TodoItem[], today: string) => NeedsYou;
   /** "Good morning, Sam" (before 12), "Good afternoon, Sam" (before 18), else "Good evening, Sam". */
   greeting: (now: Date, fullName: string) => string;
   /**

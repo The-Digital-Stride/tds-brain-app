@@ -29,6 +29,7 @@ const { StoreProvider, useStore } = await import('./store.tsx');
 
 let toggle: ((id: string) => Promise<void>) | null = null;
 let pin: ((name: string) => Promise<void>) | null = null;
+let toggleFile: ((id: string) => Promise<void>) | null = null;
 let toggleTodo: ((key: string) => Promise<void>) | null = null;
 let changeTodos: ReturnType<typeof useStore>['changeTodos'] | null = null;
 function Probe() {
@@ -36,6 +37,7 @@ function Probe() {
   toggle = store.toggleFavouriteChat;
   pin = store.togglePin;
   toggleTodo = store.toggleFavouriteTodo;
+  toggleFile = store.toggleFavouriteFile;
   changeTodos = store.changeTodos;
   return (
     <>
@@ -43,6 +45,7 @@ function Probe() {
         favs {store.boot ? (store.boot.prefs.favouriteChats ?? []).join(' ') || 'none' : 'loading'}
         {store.actionError ? `, error ${store.actionError}` : ''}
       </p>
+      <p>file favs {store.boot ? (store.boot.prefs.favouriteFiles ?? []).join(' ') || 'none' : 'loading'}</p>
       <p>todo favs {store.boot ? (store.boot.prefs.favouriteTodos ?? []).join(' ') || 'none' : 'loading'}</p>
     </>
   );
@@ -284,5 +287,19 @@ describe('toggleFavouriteTodo', () => {
       await changeTodos?.([{ kind: 'move', id: 'y', scope: 'tds', to: 'personal', expect: 'v1' }]);
     });
     expect(api.updatePrefs.mock.calls.length).toBe(before);
+  });
+});
+
+describe('toggleFavouriteFile', () => {
+  it('stars at once, saves the list under favouriteFiles, and puts it back when the save fails', async () => {
+    api.updatePrefs.mockResolvedValueOnce({ ...DEFAULT_PREFS, favouriteFiles: ['f1'] });
+    await start();
+    await act(async () => toggleFile?.('f1'));
+    expect(screen.getByText('file favs f1')).toBeTruthy();
+    expect(api.updatePrefs).toHaveBeenCalledWith({ favouriteFiles: ['f1'] });
+    api.updatePrefs.mockRejectedValueOnce(new Error('Could not save.'));
+    await act(async () => toggleFile?.('f2'));
+    expect(screen.getByText('file favs f1')).toBeTruthy();
+    expect(screen.getByText(/, error/)).toBeTruthy();
   });
 });

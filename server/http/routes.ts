@@ -22,10 +22,13 @@ import {
   type EffortLevel,
   type EngineHealth,
   FAVOURITE_CHATS_MAX,
+  FAVOURITE_FILES_MAX,
   FAVOURITE_TODOS_MAX,
+  FILE_ID_MAX,
   type Identity,
   LIBRARY_SEARCH_QUERY,
   type LibraryFile,
+  type LibraryItemsResponse,
   type LibrarySearchResponse,
   type LibraryText,
   MAX_ATTACHMENTS,
@@ -68,7 +71,7 @@ import {
 } from '../../shared/update-contract.ts';
 import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
-import { openChecked, PAGE_MAX_BYTES, readChecked, TEXT_MAX_BYTES } from '../brain/library.ts';
+import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
 import {
@@ -348,6 +351,17 @@ export async function validatePrefsPatch(
           throw bad('The favourite to-dos were not understood.');
         }
         patch.favouriteTodos = [...new Set(value as string[])];
+        break;
+      }
+      case 'favouriteFiles': {
+        if (
+          !Array.isArray(value) ||
+          value.length > FAVOURITE_FILES_MAX ||
+          !value.every((v) => typeof v === 'string' && v !== '' && v.length <= FILE_ID_MAX)
+        ) {
+          throw bad('The starred files were not understood.');
+        }
+        patch.favouriteFiles = [...new Set(value as string[])];
         break;
       }
       case 'levelMode': {
@@ -890,6 +904,28 @@ async function libraryRoute(
       200,
       search ? await safe(search.call(ctx.brain, q, kind === 'doc' ? 'document' : 'image'), empty) : empty,
     );
+    return true;
+  }
+  if (path === '/api/library/items') {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const ids = (body as { ids?: unknown } | null)?.ids;
+    if (
+      !Array.isArray(ids) ||
+      ids.length > FAVOURITE_FILES_MAX ||
+      !ids.every((v) => typeof v === 'string' && v !== '' && v.length <= FILE_ID_MAX)
+    ) {
+      throw new HttpError(400, 'bad-request', 'Those files were not understood.');
+    }
+    const scopes = await safe(ctx.brain.libraryScopes(), []);
+    const files: LibraryItemsResponse['files'] = [];
+    for (const id of [...new Set(ids as string[])]) {
+      const scope = scopes.find((s) => s.id === scopeOfId(id));
+      const file = scope ? await safe(ctx.brain.libraryFile(id), null) : null;
+      // The item and its scope only: never the file's real location on this machine.
+      if (scope && file) files.push({ item: file.item, scope });
+    }
+    sendJson(res, 200, { files } satisfies LibraryItemsResponse);
     return true;
   }
   if (path === '/api/library') {

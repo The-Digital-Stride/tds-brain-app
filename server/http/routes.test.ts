@@ -928,8 +928,11 @@ describe('library routes', () => {
     return { root, ctx };
   }
 
-  async function call(ctx: RouteContext, path: string, method = 'GET'): Promise<Sent> {
-    const req = Object.assign(Readable.from([]), { method, headers: {} });
+  async function call(ctx: RouteContext, path: string, method = 'GET', body?: unknown): Promise<Sent> {
+    const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]), {
+      method,
+      headers: {},
+    });
     const sent: Sent = { status: 0, headers: {}, body: Buffer.alloc(0) };
     const res = {
       headersSent: false,
@@ -996,6 +999,38 @@ describe('library routes', () => {
       expect(json(sent).error.code).toBe('bad-request');
     }
     expect((await call(ctx, `${ROUTES.librarySearch}?q=logo&kind=image`, 'POST')).status).toBe(405);
+  });
+
+  it('answers the listed files for some ids, in the order sent, leaving out unknown ones', async () => {
+    const { ctx } = setup();
+    const a = await idOf(ctx, 'logo.png');
+    const listing = json(await call(ctx, ROUTES.library('client:acme-heating'))) as LibraryListing;
+    const other = listing.items.find((i) => i.id !== a)?.id as string;
+    const gone = 'client:acme-heating.000000000000000000000000';
+    const sent = await call(ctx, ROUTES.libraryItems, 'POST', { ids: [other, gone, a, other, 'nope'] });
+    expect(sent.status).toBe(200);
+    const files = json(sent).files as { item: { id: string }; scope: { id: string } }[];
+    expect(files.map((f) => f.item.id)).toEqual([other, a]);
+    expect(files[0]?.scope.id).toBe('client:acme-heating');
+    // Never where the file is on this machine.
+    expect(JSON.stringify(json(sent))).not.toMatch(/absPath|version/);
+  });
+
+  it('refuses a files lookup that is not a list of ids, or too many, or not a POST', async () => {
+    const { ctx } = setup();
+    const many = Array.from({ length: 101 }, (_, i) => `client:acme-heating.${String(i).padStart(24, '0')}`);
+    for (const body of [
+      {},
+      { ids: 'x' },
+      { ids: [3] },
+      { ids: [''] },
+      { ids: ['x'.repeat(401)] },
+      { ids: many },
+    ]) {
+      const sent = await call(ctx, ROUTES.libraryItems, 'POST', body);
+      expect(sent.status, JSON.stringify(body).slice(0, 40)).toBe(400);
+    }
+    expect((await call(ctx, ROUTES.libraryItems)).status).toBe(405);
   });
 
   it('lists the scopes, and a scope', async () => {
@@ -1697,6 +1732,20 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
       const sent = await call('/api/prefs', 'PUT', { favouriteChats });
       expect(sent.status).toBe(400);
       expect(sent.json.error.message).toBe('The favourite chats were not understood.');
+    }
+  });
+
+  it('saves starred files as a list of ids, once each, and refuses a bad list', async () => {
+    const sent = await call('/api/prefs', 'PUT', {
+      favouriteFiles: ['client:a.0123', 'p.9', 'client:a.0123'],
+    });
+    expect(sent.status).toBe(200);
+    expect(sent.json.favouriteFiles).toEqual(['client:a.0123', 'p.9']);
+    const files = Array.from({ length: 101 }, (_, i) => `f${i}`);
+    for (const favouriteFiles of ['nope', [''], [3], ['x'.repeat(401)], files]) {
+      const bad = await call('/api/prefs', 'PUT', { favouriteFiles });
+      expect(bad.status).toBe(400);
+      expect(bad.json.error.message).toBe('The starred files were not understood.');
     }
   });
 

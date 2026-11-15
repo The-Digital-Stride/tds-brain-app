@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.34.0 — 2026-11-15
+
+- **feat**: drag the pop-up viewer's left edge to make it wider
+- **feat**: show a grip on the viewer's edge so it reads as draggable
+- **fix**: a quiet grip bar in the design system's language instead of the dotted pill
+- **fix**: grip visible at rest (grey-dot), fill-only hover, recorded in the design system
+- **fix**: show the resize grip's tooltip beside it, not at the top of the window
+- **fix**: a click on the grip saves nothing, no grip without room to move, screen reader details
+
 ## v0.33.0 — 2026-11-15
 
 - **feat**: contract for opening a page's links in a new tab

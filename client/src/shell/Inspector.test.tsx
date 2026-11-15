@@ -208,12 +208,73 @@ describe('the "This chat" panel', () => {
       open();
       expect(await screen.findByText('9.3k')).toBeTruthy();
       expect(spy).toHaveBeenCalledWith('s1');
-      expect(screen.getByText('84k of 200k tokens used')).toBeTruthy();
-      expect(screen.getByText('Claude summarises at about 150k tokens')).toBeTruthy();
+      expect(screen.getByText('84k of 150k tokens before Claude summarises')).toBeTruthy();
+      expect(screen.getByText('Most this model can hold: 200k tokens')).toBeTruthy();
       expect(screen.getByText('Turn it off if unused.')).toBeTruthy();
-      expect(screen.getByText('Only loaded when used')).toBeTruthy();
-      expect(screen.getByText('Approximate')).toBeTruthy();
+      expect(screen.getByText('Vercel tools')).toBeTruthy();
+      expect(
+        screen.getByText("From Claude's last reply. Open this again in a minute for the full list."),
+      ).toBeTruthy();
       expect(screen.getByText('Last summary: 150k down to 20k tokens')).toBeTruthy();
+    });
+
+    it.each([
+      ['before', true],
+      ['after', false],
+    ])(
+      'asks once when the full read sends its own reading %s the answer, and keeps it exact',
+      async (_when, early) => {
+        const fresh = { ...reading, at: 5 };
+        let answer: (v: Awaited<ReturnType<typeof api.chatContext>>) => void = () => {};
+        const spy = vi.spyOn(api, 'chatContext').mockImplementation(
+          () =>
+            new Promise((r) => {
+              answer = r;
+            }),
+        );
+        const tree = (
+          <ShellProvider>
+            <Inspector />
+          </ShellProvider>
+        );
+        const { rerender } = render(tree);
+        fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
+        fireEvent.click(screen.getByRole('button', { name: /Context/ }));
+        // The server's full read also sends the reading down the stream.
+        const arrive = () => {
+          h.chat = { ...(h.chat as ChatState), context: fresh };
+          // A new element, so React renders again (the same one is skipped).
+          rerender(
+            <ShellProvider>
+              <Inspector />
+            </ShellProvider>,
+          );
+        };
+        if (early) arrive();
+        answer({
+          reading: fresh,
+          items: [{ name: 'Messages', tokens: 9300, group: 'messages' }],
+          lastCompaction: null,
+          approximate: false,
+        });
+        expect(await screen.findByText('9.3k')).toBeTruthy();
+        if (!early) arrive();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText(/Open this again in a minute/)).toBeNull();
+      },
+    );
+
+    it('asks again when the fold is closed and opened', async () => {
+      const spy = vi
+        .spyOn(api, 'chatContext')
+        .mockResolvedValue({ reading, items: [], lastCompaction: null, approximate: false });
+      h.chat = { ...(h.chat as ChatState), context: reading };
+      open();
+      await screen.findByText('Chat 56% full');
+      fireEvent.click(screen.getByRole('button', { name: /Context/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Context/ }));
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     });
 
     it('says auto-summarising is off, and has a plain empty state', async () => {
@@ -230,7 +291,9 @@ describe('the "This chat" panel', () => {
       });
       cleanup();
       open();
-      await waitFor(() => expect(screen.getByText('Auto-summarising is off')).toBeTruthy());
+      await waitFor(() =>
+        expect(screen.getByText('84k of 200k tokens used. Auto-summarising is off.')).toBeTruthy(),
+      );
     });
   });
 });

@@ -1517,7 +1517,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       const meta = isRec(raw.compact_metadata) ? raw.compact_metadata : {};
       log(meta.trigger === 'manual' ? 'Summarised a chat (manual).' : 'Summarised a chat (auto).');
       const post = typeof meta.post_tokens === 'number' && meta.post_tokens >= 0 ? meta.post_tokens : null;
-      if (s.query) void readContext(s, s.query, { postTokens: post });
+      if (s.turnRunning) {
+        // Never ask the engine during a reply: estimate from the summary's size; the turn-end read follows.
+        const reading = usageReading(s, { postTokens: post });
+        if (reading) showContext(s, reading, ++s.contextTicket);
+      } else if (s.query) void readContext(s, s.query, { postTokens: post });
     } else if (raw.type === 'system' && raw.subtype === 'status' && raw.compact_result === 'failed') {
       log("A chat couldn't be summarised.");
     }

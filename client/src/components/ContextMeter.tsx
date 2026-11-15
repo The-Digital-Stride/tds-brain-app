@@ -4,7 +4,7 @@ import { type ContextEvent, meterBand } from '../../../shared/context-contract.t
 export function meterText(reading: ContextEvent): string {
   const percent = Math.max(0, reading.percent);
   if (meterBand(percent) === 'full' && reading.autoCompact)
-    return 'Nearly full: Claude will summarise the earlier messages soon';
+    return `Chat ${percent}% full: Claude will summarise the earlier messages soon`;
   return `Chat ${percent}% full`;
 }
 
@@ -16,16 +16,13 @@ export function ContextMeter({ reading }: { reading: ContextEvent | null }) {
   if (!reading) return null;
   const percent = Math.max(0, reading.percent);
   const band = meterBand(percent);
-  const name = reading.autoCompact
-    ? `Chat ${percent}% full before Claude summarises it`
-    : `Chat ${percent}% full`;
   return (
     // biome-ignore lint/a11y/useSemanticElements: a native meter can't carry the band colours or the words beside it.
     <div
       className="context-meter"
       data-band={band}
       role="meter"
-      aria-label={name}
+      aria-label="How full this chat is"
       aria-valuenow={Math.min(percent, 100)}
       aria-valuemin={0}
       aria-valuemax={100}

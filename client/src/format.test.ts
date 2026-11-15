@@ -143,10 +143,13 @@ describe('keptLineText and tokenWords', () => {
   it('says once that the chat stays on its level', () => {
     expect(
       keptLineText({ tier: 'deep', kept: { wanted: 'quick' }, source: { kind: 'auto', reason: 'x' } }),
-    ).toBe('Staying on Deep for now: switching down would mean re-reading the whole chat.');
+    ).toBe('Staying on Deep for now: it costs less than switching down and re-reading the whole chat.');
     expect(keptLineText({ tier: 'deep', source: { kind: 'auto', reason: 'x' } })).toBeNull();
   });
   it('shortens token counts', () => {
     expect([950, 9300, 150_000, 1_200_000].map(tokenWords)).toEqual(['950', '9.3k', '150k', '1.2M']);
+  });
+  it('rounds up to millions near a million, never "1000k"', () => {
+    expect([999_950, 999_999, 967_000].map(tokenWords)).toEqual(['1M', '1M', '967k']);
   });
 });

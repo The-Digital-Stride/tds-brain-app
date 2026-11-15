@@ -212,11 +212,7 @@ export function ChatView() {
               )}
             </div>
           ) : null}
-          {chat.compacting ? (
-            <p className="engine-line compacting-line" role="status">
-              {COMPACTING_LINE}
-            </p>
-          ) : null}
+          {chat.compacting ? <p className="engine-line compacting-line">{COMPACTING_LINE}</p> : null}
           <AttentionBar
             key={`status-${sessionId}`}
             state={state}
@@ -245,7 +241,7 @@ export function ChatView() {
           />
           {/* Beside the level line, and in manual mode too, so it lives here and not inside LevelLine. */}
           {chat.context ? (
-            <div className="composer-foot">
+            <div className="context-foot">
               <ContextMeter reading={chat.context} />
             </div>
           ) : null}

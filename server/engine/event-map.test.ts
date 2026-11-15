@@ -455,6 +455,20 @@ describe('compaction (context management, decision 1)', () => {
     expect(createEventMapper().map(status({ status: null }))).toEqual([]);
   });
 
+  it('forgets an unfinished summary when the reply ends, so the next one still shows', () => {
+    const m = createEventMapper();
+    m.map(status({ status: 'compacting' }));
+    m.map({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: '',
+      duration_ms: 5,
+      session_id: SID,
+    });
+    expect(m.map(status({ status: 'compacting' }))).toEqual([{ type: 'compaction', phase: 'started' }]);
+  });
+
   it('ignores status and boundaries from helpers', () => {
     const m = createEventMapper();
     expect(m.map(status({ status: 'compacting', parent_tool_use_id: 'toolu_h' }))).toEqual([]);

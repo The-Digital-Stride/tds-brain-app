@@ -155,14 +155,20 @@ describe('contextItems (decisions 6 and 12)', () => {
     },
   };
 
-  it('groups by id and kind, largest first, at most 12, with no zero rows', () => {
+  it('lists what fills the chat first (largest first, at most 12, no zero rows), then what loads only when used', () => {
     const items = contextItems(full);
-    expect(items.length).toBeLessThanOrEqual(12);
+    const used = items.filter((i) => !i.deferred);
+    const later = items.filter((i) => i.deferred);
+    expect(used.length).toBeLessThanOrEqual(12);
     expect(items.every((i) => i.tokens > 0)).toBe(true);
-    for (let i = 1; i < items.length; i++)
-      expect(items[i - 1]?.tokens ?? 0).toBeGreaterThanOrEqual(items[i]?.tokens ?? 0);
-    expect(items.find((i) => i.group === 'free')?.tokens).toBe(907_000);
-    expect(items.find((i) => i.group === 'buffer')?.tokens).toBe(33_000);
+    // Every row in the window comes before every row that loads only when used.
+    expect(items.slice(0, used.length).every((i) => !i.deferred)).toBe(true);
+    expect(later.length).toBeGreaterThan(0);
+    for (const list of [used, later])
+      for (let i = 1; i < list.length; i++)
+        expect(list[i - 1]?.tokens ?? 0).toBeGreaterThanOrEqual(list[i]?.tokens ?? 0);
+    // Free space and the summarising reserve aren't things filling the chat: the reading covers them.
+    expect(items.some((i) => i.group === 'free' || i.group === 'buffer')).toBe(false);
     expect(items.find((i) => i.group === 'system' && i.name === 'System prompt')?.tokens).toBe(14_000);
   });
 

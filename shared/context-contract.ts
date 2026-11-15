@@ -72,7 +72,11 @@ export interface ContextItem {
 export interface ChatContextDetail {
   /** null before the first reading. */
   reading: ContextEvent | null;
-  /** Largest first, zero rows left out, at most 12. Empty when `approximate` and no full read is cached. */
+  /**
+   * What fills the chat, largest first and at most 12, then the rows only loaded when used
+   * (`deferred`), largest first. No zero rows, no free space or reserve rows. Empty when
+   * `approximate` and no full read is cached.
+   */
   items: ContextItem[];
   /** The last compaction in this chat, or null. */
   lastCompaction: Extract<CompactionEvent, { phase: 'done' }> | null;

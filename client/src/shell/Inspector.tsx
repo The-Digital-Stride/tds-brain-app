@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatContextDetail } from '../../../shared/context-contract.ts';
 import type { ChatKind } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
@@ -25,23 +25,35 @@ function ContextFold({ sessionId, readingAt }: { sessionId: string; readingAt: n
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<ChatContextDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  const openNow = useRef(open);
+  openNow.current = open;
+  const asking = useRef(false);
+  // The reading the panel shows. The server's full read also sends it down the stream, so seeing it
+  // there again is not news; asking again would only fetch the rough version within 30 s.
+  const shownAt = useRef<number | null>(null);
   // Asked for when the fold opens, and again when a newer reading arrives while it is open.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: readingAt only re-triggers the read.
   useEffect(() => {
-    if (!open) return;
-    let live = true;
+    if (!open) {
+      shownAt.current = null;
+      return;
+    }
+    // An answer on its way is at least as new as a reading that arrives meanwhile.
+    if (asking.current || (readingAt !== null && readingAt === shownAt.current)) return;
+    asking.current = true;
     setFailed(false);
     api
       .chatContext(sessionId)
       .then((d) => {
-        if (live) setDetail(d);
+        if (!openNow.current) return;
+        shownAt.current = d.reading?.at ?? null;
+        setDetail(d);
       })
       .catch(() => {
-        if (live) setFailed(true);
+        if (openNow.current) setFailed(true);
+      })
+      .finally(() => {
+        asking.current = false;
       });
-    return () => {
-      live = false;
-    };
   }, [open, sessionId, readingAt]);
 
   const reading = detail?.reading ?? null;
@@ -57,22 +69,24 @@ function ContextFold({ sessionId, readingAt }: { sessionId: string; readingAt: n
         <p className="kv-note">No reading yet. It appears once Claude has replied.</p>
       ) : (
         <div className="context-detail">
-          <p>
-            {tokenWords(reading.usedTokens)} of {tokenWords(reading.windowTokens)} tokens used
-          </p>
+          <p>Chat {Math.max(0, reading.percent)}% full</p>
           <p className="kv-note">
             {reading.autoCompact
-              ? `Claude summarises at about ${tokenWords(reading.limitTokens)} tokens`
-              : 'Auto-summarising is off'}
+              ? `${tokenWords(reading.usedTokens)} of ${tokenWords(reading.limitTokens)} tokens before Claude summarises`
+              : `${tokenWords(reading.usedTokens)} of ${tokenWords(reading.windowTokens)} tokens used. Auto-summarising is off.`}
           </p>
-          {detail.approximate ? <p className="kv-note">Approximate</p> : null}
+          <p className="kv-note">Most this model can hold: {tokenWords(reading.windowTokens)} tokens</p>
+          {detail.approximate ? (
+            <p className="kv-note">
+              From Claude's last reply. Open this again in a minute for the full list.
+            </p>
+          ) : null}
           {detail.items.length > 0 ? (
             <ul className="context-items">
               {detail.items.map((item) => (
-                <li key={`${item.group}-${item.name}`}>
+                <li className="context-item" key={`${item.group}-${item.name}`}>
                   <span>{item.name}</span>
                   <span className="context-tokens">{tokenWords(item.tokens)}</span>
-                  {item.deferred ? <span className="context-advice">Only loaded when used</span> : null}
                   {item.advice && !item.deferred ? (
                     <span className="context-advice">{item.advice}</span>
                   ) : null}
@@ -185,7 +199,7 @@ export function Inspector() {
         </dl>
       )}
       {state.panelTab === 'details' ? (
-        <ContextFold sessionId={id} readingAt={chat?.context?.at ?? null} />
+        <ContextFold key={id} sessionId={id} readingAt={chat?.context?.at ?? null} />
       ) : null}
     </div>
   );

@@ -330,6 +330,8 @@ export function createEventMapper(): EventMapper {
           if (parentOf(msg) === null) helpers.observe(msg);
           return mapUser(msg);
         case 'result':
+          // A stopped or failed reply can end mid-summary with no status to close it.
+          if (parentOf(msg) === null) compacting = false;
           return mapResult(msg, opts?.interrupted === true);
         default:
           return [];

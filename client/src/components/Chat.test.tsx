@@ -435,7 +435,7 @@ describe('the context meter and summarising line', () => {
     h.chat = { ...chatState('idle'), level: { tier: null, source: { kind: 'manual' } }, context: reading };
     render(sheet());
     expect(document.querySelector('.level-row')).toBeNull();
-    expect(screen.getByRole('meter', { name: 'Chat 42% full before Claude summarises it' })).toBeTruthy();
+    expect(screen.getByRole('meter', { name: 'How full this chat is' })).toBeTruthy();
   });
 
   it('shows beside the level line in automatic mode', () => {
@@ -464,7 +464,7 @@ describe('the context meter and summarising line', () => {
     };
     render(sheet());
     expect(document.querySelector('.level-kept')?.textContent).toBe(
-      'Staying on Deep for now: switching down would mean re-reading the whole chat.',
+      'Staying on Deep for now: it costs less than switching down and re-reading the whole chat.',
     );
   });
 });

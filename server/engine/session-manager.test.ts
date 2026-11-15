@@ -4432,7 +4432,8 @@ describe('context management', () => {
     );
     const s = await mgr.start({ prompt: 'hi' });
     await flush();
-    expect(reads).toBe(2);
+    // Never read during a reply: the boundary arrives mid-turn, so only the turn-end read goes out.
+    expect(reads).toBe(1);
     const comp = events(mgr, s.id).filter((e) => e.type === 'compaction');
     expect(comp.map((e) => e.phase)).toEqual(['started', 'done']);
     expect(comp[1]).toMatchObject({ id: 'c:b0', trigger: 'auto', preTokens: 170_000, postTokens: 20_000 });

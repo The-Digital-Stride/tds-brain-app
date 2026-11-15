@@ -234,17 +234,14 @@ export function contextItems(res: unknown): ContextItem[] {
         items.push(skillRow(count(isRec(res.skills) ? res.skills.tokens : 0) || tokens));
         break;
       case 'free_space':
-        items.push({ name: 'Free space', tokens, group: 'free' });
-        break;
       case 'autocompact_buffer':
       case 'compact_buffer':
-        items.push({ name: 'Kept free for summarising', tokens, group: 'buffer' });
+        // Room, not something filling the chat: the reading already says how much is left.
         break;
       default:
         // An id this app doesn't know yet: classify on `kind`; the name is only shown.
-        if (c.kind === 'free') items.push({ name, tokens, group: 'free' });
-        else if (c.kind === 'buffer') items.push({ name, tokens, group: 'buffer' });
-        else if (c.kind === 'deferred') items.push({ name, tokens, group: 'tools', deferred: true });
+        if (c.kind === 'free' || c.kind === 'buffer') break;
+        if (c.kind === 'deferred') items.push({ name, tokens, group: 'tools', deferred: true });
         else items.push({ name, tokens, group: 'system' });
     }
   }
@@ -303,10 +300,17 @@ export function contextItems(res: unknown): ContextItem[] {
     }
   }
 
-  return items
-    .filter((i) => i.tokens > 0)
-    .sort((a, b) => b.tokens - a.tokens)
-    .slice(0, ITEMS_MAX);
+  // What fills the chat first (the heaviest ITEMS_MAX), then what loads only when used, so held-back
+  // connector schemas never push the rows that carry advice out of the list.
+  const largestFirst = (a: ContextItem, b: ContextItem) => b.tokens - a.tokens;
+  const shown = items.filter((i) => i.tokens > 0);
+  return [
+    ...shown
+      .filter((i) => !i.deferred)
+      .sort(largestFirst)
+      .slice(0, ITEMS_MAX),
+    ...shown.filter((i) => i.deferred).sort(largestFirst),
+  ];
 }
 
 function skillRow(tokens: number): ContextItem {

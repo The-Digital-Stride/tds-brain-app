@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countSyllables, fkGrade, prose, sentences, words } from './readability.ts';
+import { countSyllables, fkGrade, glossaryTerms, prose, sentences, words } from './readability.ts';
 
 describe('countSyllables', () => {
   const pinned: Record<string, number> = {
@@ -82,5 +82,32 @@ describe('fkGrade', () => {
   });
   it('is 0 for empty text', () => {
     expect(fkGrade('')).toBe(0);
+  });
+});
+
+describe('glossary terms in the reading score', () => {
+  const text = 'Every approval needs a favourite helper. Each team member sees the to-dos.';
+  const plain = fkGrade(text);
+
+  it('glossaryTerms reads the ### lines only', () => {
+    const md =
+      '# Glossary\n\nIntro.\n\n### Brain\nThe shared folder.\n\n#### Not a term\n\n### Team member\nSomeone.';
+    expect(glossaryTerms(md)).toEqual(['Brain', 'Team member']);
+  });
+  it('a matching word counts as one syllable (case, plural, hyphen)', () => {
+    expect(fkGrade(text, ['approval', 'favourite', 'helper', 'team member', 'to-do'])).toBeLessThan(plain);
+    expect(fkGrade('Approvals.', ['Approval'])).toBeCloseTo(fkGrade('Cat.'), 5);
+    expect(fkGrade('APPROVAL.', ['approval'])).toBeCloseTo(fkGrade('Cat.'), 5);
+    expect(fkGrade('To-dos.', ['to-do'])).toBeCloseTo(fkGrade('Cat.'), 5);
+    expect(fkGrade('Team-members.', ['team member'])).toBeLessThan(fkGrade('Team-members.'));
+  });
+  it('a two-word term counts each of its words as one syllable', () => {
+    expect(fkGrade('A team member.', ['team member'])).toBeCloseTo(fkGrade('A cat cat.'), 5);
+  });
+  it('other words are untouched', () => {
+    expect(fkGrade('Unfamiliar vocabulary.', ['approval'])).toBe(fkGrade('Unfamiliar vocabulary.'));
+  });
+  it('no terms means the old score', () => {
+    expect(fkGrade(text, [])).toBe(plain);
   });
 });

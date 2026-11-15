@@ -5,6 +5,9 @@ import type { AppSlot, SearchActions, SearchContext, SearchHit, SearchSource } f
 const apps = vi.hoisted(() => [] as AppSlot[]);
 vi.mock('./apps.ts', () => ({ APPS: apps }));
 
+const searchFn = vi.hoisted(() => vi.fn());
+vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
+
 const { SEARCH_GROUP_MAX, searchSources } = await import('./search-sources.ts');
 
 const skill = (name: string, title: string, description = ''): SkillInfo => ({
@@ -103,7 +106,7 @@ beforeEach(() => {
 });
 
 describe('searchSources order', () => {
-  it('is Go to, To-dos, Open chats, Skills, Clients, Earlier chats, then apps', () => {
+  it('is Go to, To-dos, Open chats, Skills, Clients, Earlier chats, Help, then apps', () => {
     apps.push(
       fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
     );
@@ -114,6 +117,7 @@ describe('searchSources order', () => {
       'skills',
       'clients',
       'earlier',
+      'help',
       'notes',
     ]);
   });
@@ -316,5 +320,62 @@ describe('Go to: Help', () => {
     expect(goLabels(ctx())).not.toContain('Help');
     expect(goLabels(ctx({ helpVisible: false }))).not.toContain('Help');
     expect(hits('go', 'help')).toEqual([]);
+  });
+});
+
+describe('Go to: Cortex Guide', () => {
+  const goLabels = (c: SearchContext) => labels(source('go').idle?.(c) ?? []);
+
+  it('is listed after Help for owners and opens the guide view', () => {
+    const on = ctx({ helpVisible: true });
+    const names = goLabels(on);
+    expect(names.indexOf('Cortex Guide')).toBe(names.indexOf('Help') + 1);
+    const openView = vi.fn();
+    (source('go').idle?.(on) ?? [])
+      .find((h) => h.label === 'Cortex Guide')
+      ?.run({
+        openView,
+      } as unknown as SearchActions);
+    expect(openView).toHaveBeenCalledWith('guide');
+    expect(labels(hits('go', 'guide', on))).toEqual(['Cortex Guide']);
+  });
+
+  it('is left out for everyone else', () => {
+    expect(goLabels(ctx())).not.toContain('Cortex Guide');
+    expect(goLabels(ctx({ helpVisible: false }))).not.toContain('Cortex Guide');
+    expect(hits('go', 'guide')).toEqual([]);
+  });
+});
+
+describe('Help source', () => {
+  const page = (id: string, title: string, summary: string) => ({ id, title, summary });
+  beforeEach(() => searchFn.mockReset());
+
+  it('is owner-only: nothing for anyone else, and the library is not asked', () => {
+    searchFn.mockReturnValue([page('home', 'Home', 'Where you start')]);
+    expect(hits('help', 'home', ctx())).toEqual([]);
+    expect(hits('help', 'home', ctx({ helpVisible: false }))).toEqual([]);
+    expect(searchFn).not.toHaveBeenCalled();
+  });
+
+  it('shows up to five pages, in the library order, as title and summary', () => {
+    searchFn.mockReturnValue([page('a', 'Alpha', 'First one'), page('b', 'Beta', 'Second one')]);
+    const found = source('help').search?.('al', ctx({ helpVisible: true }));
+    expect(searchFn).toHaveBeenCalledWith('al', 5);
+    expect(labels(found?.hits ?? [])).toEqual(['Alpha', 'Beta']);
+    expect(found?.hits.map((h) => h.hint)).toEqual(['First one', 'Second one']);
+    expect(found?.hits[0]?.icon).toBe('help');
+    expect(found?.total).toBe(2);
+  });
+
+  it('opens the Help drawer on the page', () => {
+    searchFn.mockReturnValue([page('levels', 'Levels', 'Quick, Standard, Deep')]);
+    const openHelp = vi.fn();
+    hits('help', 'lev', ctx({ helpVisible: true }))[0]?.run({ openHelp } as unknown as SearchActions);
+    expect(openHelp).toHaveBeenCalledWith('levels');
+  });
+
+  it('has no idle list', () => {
+    expect(source('help').idle).toBeUndefined();
   });
 });

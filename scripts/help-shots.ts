@@ -29,6 +29,7 @@ import type { HelpShot } from '../client/src/help/contract.ts';
 import { demoSafeEnv } from '../server/engine/demo-guard.ts';
 import { codeFromRunningServer, signInUrl } from '../server/launcher.ts';
 import { defaultDataDir, expandHomeFor, readSettings } from '../server/settings.ts';
+import { createTokenSavingsStore } from '../server/store/token-savings.ts';
 import { demoGitEnv, redact } from './help-shots-lib.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -36,6 +37,8 @@ const DEMO = join(ROOT, '.help-demo');
 const BRAIN = join(DEMO, 'brain');
 const DATA = join(DEMO, 'data');
 const SEED = join(ROOT, 'scripts', 'help-demo', 'brain');
+/** Files the attach scene picks: made up, kept with the demo seed and never from the person's disk. */
+const SEED_FILES = join(ROOT, 'scripts', 'help-demo', 'files');
 const IMAGES = join(ROOT, 'help', 'images');
 const SHOTS = join(ROOT, 'help', 'shots.json');
 /** Not the installed app's port (3877) and not the dev preview's (3878). */
@@ -49,6 +52,17 @@ const VIEWPORTS: Record<string, { width: number; height: number }> = {
   'skills-drawer': { width: 1000, height: 560 },
   'documents-grid': { width: 920, height: 700 },
   'images-grid': { width: 920, height: 600 },
+  'delete-chat': { width: 1000, height: 420 },
+  'todo-add': { width: 1000, height: 640 },
+  'todo-edit': { width: 1000, height: 700 },
+  'file-viewer': { width: 1000, height: 460 },
+  palette: { width: 1000, height: 560 },
+  'settings-prefs': { width: 1000, height: 1100 },
+  'tokens-saved': { width: 1000, height: 1300 },
+  'skill-levels': { width: 1000, height: 1300 },
+  'help-drawer': { width: 1000, height: 760 },
+  'guide-sheet': { width: 1000, height: 780 },
+  'settings-todos-switch': { width: 1000, height: 1100 },
 };
 const NAVY = '#021b43';
 const SEED_DATE = new Date('2026-11-12T10:00:00Z');
@@ -110,6 +124,19 @@ function freshDemo(): void {
   git('add', '-A');
   git('commit', '-q', '-m', 'Demo Brain');
 }
+
+/**
+ * Scene-specific starting data, written before the demo app starts. The token ledger goes through the app's own
+ * store module (never a hand-written file), into the demo data folder only.
+ */
+const SEEDERS: Record<string, () => Promise<void>> = {
+  async 'tokens-saved'() {
+    const store = createTokenSavingsStore(inDemo(DATA));
+    const day = '2026-10-20';
+    await store.add({ day, source: 'summary', measure: 'compacted', tokens: 184_000, dedupeKey: 'demo-a' });
+    await store.add({ day, source: 'cache', measure: 'reused', tokens: 1_250_000, dedupeKey: 'demo-b' });
+  },
+};
 
 async function startServer(): Promise<{ token: string }> {
   const out: string[] = [];
@@ -179,7 +206,7 @@ async function startChat(page: Page, client: string, text: string, waitFor: stri
   await page.locator(waitFor).first().waitFor();
 }
 
-async function openDrawer(page: Page, name: 'Chats' | 'To-dos' | 'Skills'): Promise<void> {
+async function openDrawer(page: Page, name: 'Chats' | 'To-dos' | 'Skills' | 'Help'): Promise<void> {
   const rail = page.locator(`button.rail-item[data-dock-label="${name}"]`);
   await rail.click();
   await page.locator(`#drawer[aria-label="${name}"]:not([inert])`).waitFor();
@@ -211,6 +238,21 @@ async function thumbsLoaded(page: Page): Promise<void> {
     },
   );
   await sleep(500);
+}
+
+/** Opens the right panel ("This chat") if it is shut. */
+async function openThisChat(page: Page): Promise<void> {
+  const toggle = page.locator('button.icon-btn[aria-label="Files and details"]');
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+  await page.locator('.inspector').waitFor();
+}
+
+/** The Settings switch that lets the app change to-dos (the demo Brain has a stand-in to-do skill). */
+async function enableTodoChanges(page: Page): Promise<void> {
+  await page.locator('button.rail-item[aria-label="Settings"]').click();
+  await page.locator('#set-direct').click();
+  await page.locator('#set-direct[aria-checked="true"]').waitFor();
+  await goHome(page);
 }
 
 type Scene = (page: Page) => Promise<void>;
@@ -297,6 +339,163 @@ const SCENES: Record<string, Scene> = {
     await page.locator('.img-tile img').first().waitFor();
     await thumbsLoaded(page);
     await page.locator('.img-tile .tick').first().check();
+  },
+
+  // -- Phase 2 scenes --------------------------------------------------------------------------------------------
+
+  async 'attach-files'(page) {
+    await goHome(page);
+    await chooseClient(page, 'Acme Heating');
+    await page
+      .locator('.home-composer input[type="file"]')
+      .setInputFiles([join(SEED_FILES, 'visit-notes.txt'), join(SEED_FILES, 'page-figures.csv')]);
+    await page.locator('.home-composer .file-chip[data-status="ready"]').nth(1).waitFor();
+    await sleep(300);
+  },
+
+  async 'level-line'(page) {
+    await startChat(page, 'Acme Heating', 'Summarise the call notes for me', '.msg-assistant');
+    await page.locator('.level-line').waitFor();
+    // One idea per picture: the meter above is left out.
+    await page.locator('.context-foot').evaluate((el) => ((el as HTMLElement).style.visibility = 'hidden'));
+  },
+
+  async 'context-meter'(page) {
+    await startChat(page, 'Acme Heating', 'Summarise the call notes for me', '.msg-assistant');
+    await page.locator('.context-meter').waitFor();
+    await page.locator('.level-line').evaluate((el) => ((el as HTMLElement).style.visibility = 'hidden'));
+  },
+
+  async 'chat-details'(page) {
+    await startChat(page, 'Acme Heating', 'Summarise the call notes for me', '.msg-assistant');
+    await openThisChat(page);
+    await page.getByRole('radio', { name: 'Details' }).click();
+    await page.locator('.inspector dl.kv').waitFor();
+    // Left out of the picture: when the chat started, how Approvals reads the real ~/.claude settings, and the
+    // terminal line (it holds this run's chat id).
+    await page.evaluate(() => {
+      for (const dt of document.querySelectorAll('.inspector dl.kv dt')) {
+        const label = dt.textContent ?? '';
+        if (/^(Started|Approvals|Continue in the terminal)$/.test(label)) {
+          dt.nextElementSibling?.remove();
+          dt.remove();
+        }
+      }
+    });
+  },
+
+  async 'chat-files'(page) {
+    await startChat(page, 'Acme Heating', 'approve the change to the call notes', '.approval');
+    await page.getByRole('button', { name: 'Allow', exact: true }).first().click();
+    await page.locator('.msg-assistant').first().waitFor();
+    await openThisChat(page);
+    await page.getByRole('radio', { name: 'Files' }).click();
+    await page.locator('.inspector .files-row').first().waitFor();
+    await sleep(600);
+  },
+
+  async 'delete-chat'(page) {
+    await openDrawer(page, 'Chats');
+    await page.getByRole('radio', { name: 'Earlier' }).click();
+    await page.locator('#drawer button[aria-label^="Delete chat:"]').first().click();
+    await page.locator('#drawer .line-confirm').waitFor();
+  },
+
+  async 'todo-add'(page) {
+    await enableTodoChanges(page);
+    await openDrawer(page, 'To-dos');
+    await page.locator('#drawer .todo-add-btn, #drawer .todo-add-label').first().click();
+    const form = page.locator('#drawer form[aria-label="Add a to-do"]');
+    await form
+      .getByRole('textbox', { name: 'What needs doing?' })
+      .fill('Call the office manager about the quote');
+    await form.getByRole('button', { name: 'Add a due date' }).click();
+    await form.getByLabel('Due date (optional)').fill('2026-11-24');
+    await form.getByRole('button', { name: "Choose who it's for" }).click();
+    await form.getByLabel('Assigned to').selectOption({ label: 'Alex Morgan' });
+    await sleep(300);
+  },
+
+  async 'todo-edit'(page) {
+    await enableTodoChanges(page);
+    await openDrawer(page, 'To-dos');
+    await page.locator('#drawer button[aria-label^="Edit "]').first().click();
+    await page.locator('#drawer form[aria-label^="Edit "]').waitFor();
+    await sleep(300);
+  },
+
+  async 'settings-todos-switch'(page) {
+    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await page.locator('#set-direct').waitFor();
+  },
+
+  async 'file-viewer'(page) {
+    // A page Claude changed in a chat, opened large from the Files tab.
+    await startChat(page, 'Acme Heating', 'approve the change to the call notes', '.approval');
+    await page.getByRole('button', { name: 'Allow', exact: true }).first().click();
+    await page.locator('.msg-assistant').first().waitFor();
+    await openThisChat(page);
+    await page.getByRole('radio', { name: 'Files' }).click();
+    await page.locator('.inspector .files-row').first().click();
+    await page.locator('.inspector .files-actions button[aria-label^="Open "]').click();
+    await page.locator('.viewer-drawer .viewer-body').waitFor();
+    await sleep(600);
+  },
+
+  async palette(page) {
+    await page.keyboard.press('Control+k');
+    const input = page.locator('.palette-input');
+    await input.waitFor();
+    await input.fill('october');
+    await page.locator('.palette-list .opt').first().waitFor();
+    await sleep(600);
+  },
+
+  async 'settings-prefs'(page) {
+    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await page.locator('section[aria-labelledby="prefs-h"]').waitFor();
+  },
+
+  async 'tokens-saved'(page) {
+    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await page.locator('section[aria-labelledby="saved-h"] dl.kv').waitFor();
+    await page.locator('section[aria-labelledby="saved-h"]').scrollIntoViewIfNeeded();
+    // Today and the last 7 and 30 days follow the real date: only the total since the first day stays in.
+    await page.evaluate(() => {
+      for (const dt of document.querySelectorAll('section[aria-labelledby="saved-h"] dl.kv dt')) {
+        if (/^(Today|Last \d+ days)$/.test(dt.textContent ?? '')) {
+          dt.nextElementSibling?.remove();
+          dt.remove();
+        }
+      }
+    });
+  },
+
+  async profile(page) {
+    await page.locator('button[aria-label$=": your profile"]').click();
+    await page.locator('section[aria-labelledby="profile-h"]').waitFor();
+  },
+
+  async 'skill-levels'(page) {
+    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await page.locator('section[aria-labelledby="levels-h"] .levels-row').first().waitFor();
+    await page.locator('section[aria-labelledby="levels-h"]').scrollIntoViewIfNeeded();
+  },
+
+  // Opened from the To-dos drawer's own Help button, so it shows the page for the screen you are on.
+  async 'help-drawer'(page) {
+    await openDrawer(page, 'To-dos');
+    await page.locator('#drawer button[aria-label^="Help: "]').first().click();
+    await page.locator('#drawer[aria-label="Help"]:not([inert]) .help-page').waitFor();
+    await thumbsLoaded(page);
+  },
+
+  async 'guide-sheet'(page) {
+    await openDrawer(page, 'Help');
+    await page.getByRole('button', { name: 'Open the Cortex Guide' }).click();
+    await page.locator('.guide .guide-contents').waitFor();
+    await page.locator('.guide .guide-page').waitFor();
+    await thumbsLoaded(page);
   },
 };
 
@@ -453,6 +652,7 @@ async function takeShot(browser: Browser, shot: HelpShot, words: string[]): Prom
   const scene = SCENES[shot.scene];
   if (!scene) throw new Error(`Shot "${shot.id}" names a scene that does not exist: "${shot.scene}".`);
   freshDemo();
+  await SEEDERS[shot.scene]?.();
   const { token } = await startServer();
   const context = await browser.newContext({
     viewport: VIEWPORTS[shot.id] ?? VIEWPORT,
@@ -474,6 +674,7 @@ async function takeShot(browser: Browser, shot: HelpShot, words: string[]): Prom
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.mouse.move(0, 0);
 
+    await page.locator(shot.crop).first().scrollIntoViewIfNeeded();
     const pad = shot.pad ?? 16;
     const crop = await boxOf(page, shot.crop);
     const vp = page.viewportSize() ?? VIEWPORT;

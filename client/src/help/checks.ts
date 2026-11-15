@@ -2,6 +2,8 @@
 import {
   HELP_CALLOUTS_MAX,
   HELP_FREEFORM_AREAS,
+  HELP_FREEFORM_PAGES,
+  HELP_GLOSSARY_MAX,
   HELP_GRADE_MAX,
   HELP_HEADINGS,
   HELP_IMAGE_MAX_BYTES,
@@ -11,7 +13,7 @@ import {
   type HelpShot,
   type HelpTopic,
 } from './contract.ts';
-import { fkGrade, prose, sentences, words } from './readability.ts';
+import { fkGrade, glossaryTerms, prose, sentences, words } from './readability.ts';
 
 const stripCode = (md: string) =>
   md.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '').replace(/`[^`]*`/g, '');
@@ -24,8 +26,12 @@ export function checkTopicIds(fileIds: readonly string[], topicIds: readonly str
   return out;
 }
 
+/** Free-form: no fixed headings and no word range (reading, spelling and jargon are still checked). */
+export const isFreeform = (topic: HelpTopic): boolean =>
+  HELP_FREEFORM_AREAS.includes(topic.area) || HELP_FREEFORM_PAGES.includes(topic.id);
+
 export function checkHeadings(topic: HelpTopic): string[] {
-  if (HELP_FREEFORM_AREAS.includes(topic.area)) return [];
+  if (isFreeform(topic)) return [];
   const found = [...stripCode(topic.body).matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => m[1] as string);
   const ok = found.length >= 3 && found.length <= 5 && found.every((h, i) => h === HELP_HEADINGS[i]);
   if (ok) return [];
@@ -47,7 +53,7 @@ export function checkSentences(topic: HelpTopic): string[] {
 }
 
 export function checkLength(topic: HelpTopic): string[] {
-  if (HELP_FREEFORM_AREAS.includes(topic.area)) return [];
+  if (isFreeform(topic)) return [];
   const n = words(prose(topic.body)).length;
   if (n < HELP_PAGE_MIN_WORDS || n > HELP_PAGE_MAX_WORDS)
     return [
@@ -56,9 +62,16 @@ export function checkLength(topic: HelpTopic): string[] {
   return [];
 }
 
-export function checkGrade(topic: HelpTopic): string[] {
-  const g = fkGrade(prose(topic.body));
+/** `terms` are the glossary's: they count as one syllable each. */
+export function checkGrade(topic: HelpTopic, terms: readonly string[] = []): string[] {
+  const g = fkGrade(prose(topic.body), terms);
   return g > HELP_GRADE_MAX ? [`${topic.id}: reading grade ${g.toFixed(1)} is above ${HELP_GRADE_MAX}.`] : [];
+}
+
+/** The glossary may define at most HELP_GLOSSARY_MAX terms, so leaving them out of the score stays honest. */
+export function checkGlossary(markdown: string): string[] {
+  const n = glossaryTerms(markdown).length;
+  return n > HELP_GLOSSARY_MAX ? [`glossary.md defines ${n} terms; the limit is ${HELP_GLOSSARY_MAX}.`] : [];
 }
 
 /** US spellings (UK is the rule for text people read). "license" is left out: it is right as a verb. */
@@ -154,8 +167,12 @@ export function checkJargon(topic: HelpTopic): string[] {
   for (const term of BANNED_JARGON) {
     const re = new RegExp(`(?<![A-Za-z-])${term.replace(/ /g, '\\s+')}(?![A-Za-z-])`, 'i');
     if (!re.test(text)) continue;
-    // "token" is allowed only for how full a chat is.
-    if (/^tokens?$/.test(term) && /how full/i.test(text)) continue;
+    // "token" is allowed only for how full a chat is, for the Settings heading "Tokens saved", and in the glossary.
+    if (
+      /^tokens?$/.test(term) &&
+      (/how full/i.test(text) || /tokens saved/i.test(text) || topic.id === 'glossary')
+    )
+      continue;
     out.push(`${topic.id}: "${term}" is on the banned list.`);
   }
   return out;

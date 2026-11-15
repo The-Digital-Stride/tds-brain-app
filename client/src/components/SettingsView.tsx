@@ -23,6 +23,7 @@ import { api } from '../api.ts';
 import { approvalsSentence } from '../approvals.ts';
 import { dayWords, EFFORT_OPTION_WORDS, modelName, tokenWords } from '../format.ts';
 import { helpVisible } from '../help/visibility.ts';
+import { HelpLink } from '../shell/HelpLink.tsx';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
@@ -54,7 +55,10 @@ function TokensSavedSection() {
   const saved = (t: SavingsSummary['all']) => `${tokenWords(t.bySource.summary ?? 0)} tokens`;
   return (
     <section aria-labelledby="saved-h">
-      <h2 id="saved-h">Tokens saved</h2>
+      <div className="help-inline" data-heading="true">
+        <h2 id="saved-h">Tokens saved</h2>
+        <HelpLink page="tokens-saved" />
+      </div>
       {state.kind === 'loading' ? (
         <p className="setting-help" role="status">
           Loading the token figures.
@@ -110,7 +114,8 @@ function TokensSavedSection() {
 }
 
 export function SettingsView() {
-  const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel } = useStore();
+  const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel, openView } =
+    useStore();
   const showHelp = helpVisible(boot?.identity.role ?? 'unknown');
   const [choices, setChoices] = useState<EngineChoices | null>(null);
   useEffect(() => {
@@ -147,9 +152,12 @@ export function SettingsView() {
         <div className="setting-rows">
           <div className="setting">
             <div>
-              <label className="setting-label" htmlFor="set-direct">
-                Let the app change to-dos
-              </label>
+              <div className="help-inline">
+                <label className="setting-label" htmlFor="set-direct">
+                  Let the app change to-dos
+                </label>
+                <HelpLink page="change-todos-setting" size={28} />
+              </div>
               <p className="setting-help" id="set-direct-help">
                 Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is
                 made in the shared brain, so the whole team sees it. Off by default.
@@ -168,9 +176,12 @@ export function SettingsView() {
           </div>
           <div className="setting">
             <div>
-              <label className="setting-label" htmlFor="set-keys">
-                Single-key shortcuts
-              </label>
+              <div className="help-inline">
+                <label className="setting-label" htmlFor="set-keys">
+                  Single-key shortcuts
+                </label>
+                <HelpLink page="keyboard-shortcuts" size={28} />
+              </div>
               <p className="setting-help" id="set-keys-help">
                 When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail, <kbd>T</kbd>{' '}
                 for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills
@@ -195,7 +206,10 @@ export function SettingsView() {
           </div>
           <div className="setting">
             <div>
-              <p className="setting-label">Working out the client</p>
+              <div className="help-inline">
+                <p className="setting-label">Working out the client</p>
+                <HelpLink page="picking-the-client" size={28} />
+              </div>
               <p className="setting-help">
                 With Client set to Auto, the first message of a new chat and your client list go to Jev, a
                 TypeSafe service, to work out the client. Choose a client, or No client, and nothing is sent.
@@ -215,9 +229,12 @@ export function SettingsView() {
           <div className="setting-rows">
             <div className="setting level-mode">
               <div>
-                <p className="setting-label" id="level-mode-label">
-                  Level
-                </p>
+                <div className="help-inline">
+                  <p className="setting-label" id="level-mode-label">
+                    Level
+                  </p>
+                  <HelpLink page="levels" size={28} />
+                </div>
                 <p className="setting-help" id="level-mode-help">
                   {prefs.levelMode === 'auto'
                     ? 'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.'
@@ -287,6 +304,22 @@ export function SettingsView() {
             {dock.state === 'manual' &&
               "If TDS Brain isn't in your Dock yet, choose Install TDS Brain from Chrome's menu or the address bar."}
           </dd>
+          {showHelp ? (
+            <>
+              <dt>Help</dt>
+              <dd>
+                <button
+                  type="button"
+                  className="btn"
+                  data-variant="quiet"
+                  data-size="small"
+                  onClick={() => openView('guide')}
+                >
+                  Read the Cortex Guide
+                </button>
+              </dd>
+            </>
+          ) : null}
           <dt>App version</dt>
           <dd>
             {appVersion}{' '}
@@ -309,7 +342,10 @@ export function SettingsView() {
 
       {identity.role === 'owner' || identity.role === 'scout' ? (
         <section aria-labelledby="changes-h">
-          <h2 id="changes-h">What's changed</h2>
+          <div className="help-inline" data-heading="true">
+            <h2 id="changes-h">What's changed</h2>
+            <HelpLink page="version-history" />
+          </div>
           <p className="setting-help">
             Every version of the app, newest first. Select a version to see what changed.
           </p>
@@ -365,7 +401,10 @@ function SkillLevelsSection({
   const missing = skills.filter((s) => !(s.name in levels.levels) && !ownSet.has(s.name)).length;
   return (
     <section aria-labelledby="levels-h">
-      <h2 id="levels-h">Skill levels</h2>
+      <div className="help-inline" data-heading="true">
+        <h2 id="levels-h">Skill levels</h2>
+        <HelpLink page="skill-levels" />
+      </div>
       <p className="setting-help">
         How hard Claude works when a chat runs a skill. A skill's own setting always wins.
       </p>

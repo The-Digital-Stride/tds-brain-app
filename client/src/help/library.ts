@@ -84,3 +84,14 @@ export function helpImageUrl(src: string): string | null {
   const m = /^images\/([A-Za-z0-9._-]+\.webp)$/.exec(src);
   return (m && imageByName.get(m[1] as string)) || null;
 }
+
+/** The badge words for a page written for some roles, or null when it is for everyone. */
+export function helpRoleWords(roles: HelpTopic['roles']): string | null {
+  if (roles === 'all') return null;
+  const owner = roles.includes('owner');
+  const scout = roles.includes('scout');
+  if (owner && scout) return 'For owners and scouts';
+  if (owner) return 'For owners';
+  if (scout) return 'For scouts';
+  return null;
+}

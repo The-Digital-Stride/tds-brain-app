@@ -1,7 +1,7 @@
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatEvent, Identity } from '../../shared/contract.ts';
-import { createDemoEngine, DEMO_PICK } from './demo-engine.ts';
+import { createDemoEngine, DEMO_CONTEXT, DEMO_PICK } from './demo-engine.ts';
 import { parsePick } from './level-picker.ts';
 import { createSessionManager, type SessionManager } from './session-manager.ts';
 
@@ -74,6 +74,18 @@ describe('createDemoEngine through the session manager', () => {
       text: expect.stringContaining('**'),
     });
     expect(ev.find((e) => e.type === 'turn-end')).toMatchObject({ ok: true });
+  });
+
+  it('gives a fixed "how full" reading after a reply', async () => {
+    mgr = makeManager();
+    const s = await mgr.start({ prompt: 'summarise the notes' });
+    await flush();
+    expect(events(mgr, s.id).find((e) => e.type === 'context')).toMatchObject({
+      usedTokens: DEMO_CONTEXT.totalTokens,
+      limitTokens: DEMO_CONTEXT.autoCompactThreshold,
+      windowTokens: DEMO_CONTEXT.rawMaxTokens,
+      percent: 30,
+    });
   });
 
   it('"approve" shows the Edit first, then asks, then finishes once answered', async () => {

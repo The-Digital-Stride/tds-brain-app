@@ -3,9 +3,12 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HelpTopic } from '../help/contract.ts';
 
+const store = vi.hoisted(() => ({ openView: vi.fn() }));
+vi.mock('../store.tsx', () => ({ useStore: () => store }));
+const dispatch = vi.hoisted(() => vi.fn());
 const shell = vi.hoisted(() => ({ state: { drawer: 'help', helpPage: 'home' } as Record<string, unknown> }));
 vi.mock('./ShellProvider.tsx', () => ({
-  useShell: () => ({ state: shell.state, dispatch: vi.fn(), modes: { drawerOverlays: false } }),
+  useShell: () => ({ state: shell.state, dispatch, modes: { drawerOverlays: false } }),
 }));
 
 const topic = (id: string, title: string, over: Partial<HelpTopic> = {}): HelpTopic => ({
@@ -41,6 +44,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('HelpDrawer', () => {
+  it('opens the Cortex Guide by closing the drawer (not Help) and showing the guide view', () => {
+    render(<HelpDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open the Cortex Guide' }));
+    expect(dispatch).toHaveBeenCalledWith({ type: 'close-drawer' });
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'close-help' });
+    expect(store.openView).toHaveBeenCalledWith('guide');
+  });
+
+  it('starts afresh when Help is opened again on the same page', () => {
+    shell.state = { drawer: 'help', helpPage: 'home', helpOpened: 1 };
+    const { rerender } = render(<HelpDrawer />);
+    fireEvent.click(screen.getByRole('link', { name: 'To-dos' }));
+    expect(screen.getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    shell.state = { drawer: 'help', helpPage: 'home', helpOpened: 2 };
+    rerender(<HelpDrawer />);
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+  });
+
   it('shows the page for where you are, with its title and words', () => {
     render(<HelpDrawer />);
     expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy();

@@ -30,6 +30,14 @@ describe('HelpLink', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'open-help', page: 'todos' });
   });
 
+  it('is 32px by default and 28px in a row', () => {
+    as('owner');
+    const { rerender } = render(<HelpLink page="todos" />);
+    expect(screen.getByRole('button').getAttribute('data-size')).toBeNull();
+    rerender(<HelpLink page="todos" size={28} />);
+    expect(screen.getByRole('button').getAttribute('data-size')).toBe('28');
+  });
+
   it.each(['team', 'scout', 'unknown'])('is not shown for %s', (role) => {
     as(role);
     render(<HelpLink page="todos" />);

@@ -1,3 +1,4 @@
+import { HelpLink } from '../shell/HelpLink.tsx';
 import { useLastSync } from '../shell/useLastSync.ts';
 import { healthChecks, healthSummary, STATE_WORDS } from '../state/health.ts';
 import { useStore } from '../store.tsx';
@@ -16,7 +17,10 @@ export function HealthPanel() {
   const summary = healthSummary(checks);
   return (
     <section aria-labelledby="health-h" className="health">
-      <h2 id="health-h">How TDS Brain is running</h2>
+      <div className="help-inline" data-heading="true">
+        <h2 id="health-h">How TDS Brain is running</h2>
+        <HelpLink page="health" />
+      </div>
       <p className="health-summary" data-state={summary.state} role="status">
         <span className="health-dot" data-state={summary.state} aria-hidden="true" />
         {summary.text}

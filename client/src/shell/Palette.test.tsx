@@ -209,6 +209,21 @@ describe('Palette', () => {
     expect(screen.queryByRole('option', { name: /^Help/ })).toBeNull();
   });
 
+  it('opens the Help drawer on a help page an owner picks, and the Guide from Go to', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
+    await renderHome();
+    await openPalette();
+    fireEvent.change(input(), { target: { value: 'glossary' } });
+    fireEvent.click(await screen.findByRole('option', { name: /^Glossary/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const drawer = document.getElementById('drawer') as HTMLElement;
+    await waitFor(() => expect(within(drawer).getByRole('heading', { name: 'Glossary' })).toBeTruthy());
+    await openPalette();
+    fireEvent.change(input(), { target: { value: 'cortex guide' } });
+    fireEvent.click(await screen.findByRole('option', { name: /^Cortex Guide/ }));
+    expect(await screen.findByRole('button', { name: 'Print the guide' })).toBeTruthy();
+  });
+
   it('opens with Cmd+K and Ctrl+K, and toggles shut', async () => {
     await renderHome();
     fireEvent.keyDown(document.body, { key: 'k', metaKey: true });

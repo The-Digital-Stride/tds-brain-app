@@ -1,4 +1,4 @@
-import { type ComponentType, Suspense, useRef } from 'react';
+import { type ComponentType, lazy, Suspense, useRef } from 'react';
 import { meterBand } from '../../shared/context-contract.ts';
 import { useBlockStrayDrops } from './components/Attachments.tsx';
 import { ChatView } from './components/Chat.tsx';
@@ -6,6 +6,7 @@ import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
 import { ProfileView } from './components/ProfileView.tsx';
 import { SettingsView } from './components/SettingsView.tsx';
 import { SetupView } from './components/SetupView.tsx';
+import { helpVisible } from './help/visibility.ts';
 import { APPS } from './shell/apps.ts';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import type { DrawerName } from './shell/contract.ts';
@@ -51,6 +52,8 @@ function Announcer() {
   );
 }
 
+const GuideView = lazy(() => import('./shell/GuideView.tsx').then((m) => ({ default: m.GuideView })));
+
 const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
   chats: ChatsDrawer,
   todos: TodosDrawer,
@@ -60,7 +63,25 @@ const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
 
 /** What the sheet shows for the current view. An unknown app shows Home. */
 function SheetContent() {
-  const { view, activeChat } = useStore();
+  const { view, activeChat, boot } = useStore();
+  if (view === 'guide') {
+    // The Guide is owners only for now; anyone else lands on Home.
+    if (!helpVisible(boot?.identity.role ?? 'unknown')) return <Home />;
+    return (
+      <>
+        <SheetBar title="Cortex Guide">
+          <button type="button" className="btn" onClick={() => window.print()}>
+            Print the guide
+          </button>
+        </SheetBar>
+        <div className="sheet-scroll">
+          <Suspense fallback={null}>
+            <GuideView />
+          </Suspense>
+        </div>
+      </>
+    );
+  }
   if (view === 'settings') {
     return (
       <>

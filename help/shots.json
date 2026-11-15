@@ -4,8 +4,14 @@
     "scene": "home-overview",
     "crop": ".home-in",
     "callouts": [
-      { "n": 1, "target": ".home-composer .composer-input" },
-      { "n": 2, "target": ".home-composer .client-select" }
+      {
+        "n": 1,
+        "target": ".home-composer .composer-input"
+      },
+      {
+        "n": 2,
+        "target": ".home-composer .client-select"
+      }
     ],
     "alt": "Home in TDS Cortex, with the message box, the client picker and your pinned cards."
   },
@@ -14,8 +20,14 @@
     "scene": "home-start",
     "crop": ".home-composer .composer",
     "callouts": [
-      { "n": 1, "target": ".home-composer .composer-input" },
-      { "n": 2, "target": ".home-composer .client-select" }
+      {
+        "n": 1,
+        "target": ".home-composer .composer-input"
+      },
+      {
+        "n": 2,
+        "target": ".home-composer .client-select"
+      }
     ],
     "alt": "The message box on Home, with the client picker set to Auto."
   },
@@ -24,14 +36,24 @@
     "scene": "chats-drawer",
     "crop": "#drawer",
     "pad": 0,
-    "callouts": [{ "n": 1, "target": "#drawer .seg" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": "#drawer .seg"
+      }
+    ],
     "alt": "The Chats drawer with two open chats and the Earlier switch."
   },
   {
     "id": "chat-reply",
     "scene": "chat-reply",
     "crop": ".thread-col",
-    "callouts": [{ "n": 1, "target": ".thread-col .step-fold summary" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": ".thread-col .step-fold summary"
+      }
+    ],
     "alt": "A chat where Claude has replied, with the What Claude did fold."
   },
   {
@@ -46,7 +68,12 @@
     "scene": "todos-drawer",
     "crop": "#drawer",
     "pad": 0,
-    "callouts": [{ "n": 1, "target": "#drawer .todo-add-btn, #drawer .todo-add-label" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": "#drawer .todo-add-btn, #drawer .todo-add-label"
+      }
+    ],
     "alt": "The To-dos drawer with the Mine tab open."
   },
   {
@@ -54,21 +81,150 @@
     "scene": "skills-drawer",
     "crop": "#drawer",
     "pad": 0,
-    "callouts": [{ "n": 1, "target": "#drawer .star-btn" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": "#drawer .star-btn"
+      }
+    ],
     "alt": "The Skills drawer with a favourite skill at the top."
   },
   {
     "id": "documents-grid",
     "scene": "documents-grid",
     "crop": ".lib-main",
-    "callouts": [{ "n": 1, "target": ".lib-tools .seg[aria-label=\"Layout\"]" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": ".lib-tools .seg[aria-label=\"Layout\"]"
+      }
+    ],
     "alt": "Documents in a grid, filtered to one client."
   },
   {
     "id": "images-grid",
     "scene": "images-grid",
     "crop": ".lib-main",
-    "callouts": [{ "n": 1, "target": ".img-tile .tick-hit" }],
+    "callouts": [
+      {
+        "n": 1,
+        "target": ".img-tile .tick-hit"
+      }
+    ],
     "alt": "Images in a grid, with one picture selected."
+  },
+  {
+    "id": "attach-files",
+    "scene": "attach-files",
+    "crop": ".home-composer .composer",
+    "alt": "The message box with two files attached, ready to send."
+  },
+  {
+    "id": "level-line",
+    "scene": "level-line",
+    "crop": ".level-line",
+    "pad": 6,
+    "alt": "The level line in a chat, showing the level picked for this chat."
+  },
+  {
+    "id": "context-meter",
+    "scene": "context-meter",
+    "crop": ".context-foot",
+    "pad": 6,
+    "alt": "The meter that shows how full a chat is."
+  },
+  {
+    "id": "chat-details",
+    "scene": "chat-details",
+    "crop": ".inspector",
+    "pad": 0,
+    "alt": "The This chat panel on its Details tab."
+  },
+  {
+    "id": "chat-files",
+    "scene": "chat-files",
+    "crop": ".inspector",
+    "pad": 0,
+    "alt": "The Files tab, listing what a chat made, changed and looked at."
+  },
+  {
+    "id": "delete-chat",
+    "scene": "delete-chat",
+    "crop": "#drawer",
+    "pad": 0,
+    "alt": "An earlier chat about to be deleted, with the question that asks first."
+  },
+  {
+    "id": "todo-add",
+    "scene": "todo-add",
+    "crop": "#drawer form[aria-label=\"Add a to-do\"]",
+    "pad": 10,
+    "alt": "The form for adding a to-do, with a due date and who it's for."
+  },
+  {
+    "id": "todo-edit",
+    "scene": "todo-edit",
+    "crop": "#drawer form[aria-label^=\"Edit \"]",
+    "pad": 10,
+    "alt": "Editing a to-do, with the Assigned to field."
+  },
+  {
+    "id": "settings-todos-switch",
+    "scene": "settings-todos-switch",
+    "crop": ".setting:has(#set-direct)",
+    "alt": "The Let the app change to-dos switch in Settings.",
+    "pad": 2
+  },
+  {
+    "id": "file-viewer",
+    "scene": "file-viewer",
+    "crop": ".viewer-drawer",
+    "pad": 0,
+    "alt": "A document open in the viewer, with its download and open buttons."
+  },
+  {
+    "id": "palette",
+    "scene": "palette",
+    "crop": ".palette",
+    "alt": "Search or jump to, showing results for a search.",
+    "pad": 0
+  },
+  {
+    "id": "settings-prefs",
+    "scene": "settings-prefs",
+    "crop": "section[aria-labelledby=\"prefs-h\"]",
+    "alt": "The Preferences part of Settings."
+  },
+  {
+    "id": "tokens-saved",
+    "scene": "tokens-saved",
+    "crop": "section[aria-labelledby=\"saved-h\"]",
+    "alt": "Tokens saved in Settings."
+  },
+  {
+    "id": "profile",
+    "scene": "profile",
+    "crop": "section[aria-labelledby=\"profile-h\"]",
+    "alt": "Your profile, with your details from the Brain."
+  },
+  {
+    "id": "skill-levels",
+    "scene": "skill-levels",
+    "crop": "section[aria-labelledby=\"levels-h\"]",
+    "alt": "The Skill levels list in Settings."
+  },
+  {
+    "id": "help-drawer",
+    "scene": "help-drawer",
+    "crop": "#drawer",
+    "pad": 0,
+    "alt": "The Help drawer, open on the page for the screen you're on."
+  },
+  {
+    "id": "guide-sheet",
+    "scene": "guide-sheet",
+    "crop": ".sheet-scroll",
+    "pad": 0,
+    "alt": "The Cortex Guide, with the contents on the left and a page on the right."
   }
 ]

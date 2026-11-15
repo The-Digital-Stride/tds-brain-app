@@ -43,8 +43,10 @@ describe('helpForContext', () => {
     ['documents app', ctx({ view: 'app:documents' }), 'documents'],
     ['images app', ctx({ view: 'app:images' }), 'images'],
     ['other app', ctx({ view: 'app:other' }), 'welcome'],
-    ['settings', ctx({ view: 'settings' }), 'welcome'],
-    ['profile', ctx({ view: 'profile' }), 'welcome'],
+    ['settings', ctx({ view: 'settings' }), 'settings'],
+    ['profile', ctx({ view: 'profile' }), 'your-profile'],
+    ['guide', ctx({ view: 'guide' }), 'cortex-guide'],
+    ['a drawer beats settings', ctx({ view: 'settings', drawer: 'todos' }), 'todos'],
   ];
   for (const [name, c, id] of rows) it(name, () => expect(helpForContext(c, full)).toBe(id));
 

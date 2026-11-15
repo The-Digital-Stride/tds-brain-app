@@ -20,7 +20,7 @@ to get a job done, then get back to work.
 - **Reading level**: Flesch–Kincaid grade 9 or lower per page (checked).
 - **Only promise timing that's true.** Check every "when" and "how fast" against the code. A passed to-do
   reaches a teammate when their Brain next syncs, not "straight away".
-- **No jargon list**: API, endpoint, SDK, frontmatter, repo, cache, session id, token (except "how full a chat is").
+- **No jargon list**: API, endpoint, SDK, frontmatter, repo, cache, session id, token (except for "how full a chat is", "Tokens saved" and the glossary).
   If one is truly needed, explain it.
 - **Brain and Cortex**: "the Brain" is the agency's shared folder of knowledge; "Cortex" is the app. Write
   "TDS Cortex" once per page, then "Cortex". Never "Brain app" or "Cortex brain".

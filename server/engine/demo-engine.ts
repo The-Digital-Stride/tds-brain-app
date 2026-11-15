@@ -13,6 +13,14 @@ import type { EngineFns, EngineQuery, HistoryMessage, PastInfo } from './session
 /** The level picker's fixed answer: the same on every Mac, so pictures match. */
 export const DEMO_PICK = { tier: 'standard', helpers: false, reason: 'A short, everyday request.' } as const;
 
+/** The chat's fixed "how full" reading (the engine's own call): 30% of the summarise point, the same every run. */
+export const DEMO_CONTEXT = {
+  totalTokens: 48_000,
+  rawMaxTokens: 200_000,
+  autoCompactThreshold: 160_000,
+  isAutoCompactEnabled: true,
+} as const;
+
 export const DEMO_EDIT_FILE = 'clients/acme-heating/notes/2026-11-01-call-follow-up.md';
 
 const PAST: PastInfo[] = [
@@ -241,6 +249,11 @@ class DemoQuery implements EngineQuery {
       // a closed chat ends quietly
     }
     this.finish();
+  }
+
+  /** Only the summary reading: never any item detail. */
+  async getContextUsage(): Promise<typeof DEMO_CONTEXT> {
+    return DEMO_CONTEXT;
   }
 
   async interrupt(): Promise<undefined> {

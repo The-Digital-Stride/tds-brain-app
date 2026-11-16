@@ -39,6 +39,9 @@ Only owners and scouts can use it. Ask one if you need it.
 - **Recent decisions** covers the last 14 days.
 - Use **Refresh** if you think the screen is behind.
 - **Rate calls** lets you score the Daily standup's advice.
+- Each job shows when it last ran. If a teammate ran it, their name shows too, once the Brain has synced. Teammates on an older Cortex don't share their runs.
+- While a job's chat is still going, the card says **Running** and its button becomes **Open chat**.
+- Drag a report table by its grip to move it, or use the arrow keys on it. **Full width** and **Reset layout** change the layout, which stays on this Mac.
 
 ## Try this
 

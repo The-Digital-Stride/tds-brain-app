@@ -26,6 +26,29 @@ export const ADS_SKILL = {
 export const ADS_CAPABILITY = 'ads-v1';
 
 /**
+ * The bridge can record task runs to the brain (`task-run`) and returns `lastRun` on the board
+ * (plan 2026-11-16-ad-manager-shared-run-times). Without it the app keeps runs in this browser only.
+ */
+export const ADS_TASK_RUNS_CAPABILITY = 'task-runs-v1';
+
+/** A task run as the brain's run log has it: when, and who (roster slug and display name). */
+export interface AdsTaskRun {
+  at: string;
+  by: string;
+  byName: string;
+}
+
+/** `POST /api/ads/do/task-run` body: the account and the task (a cadence card id, or `standup:daily`). */
+export interface AdsTaskRunRequest {
+  account: string;
+  task: string;
+}
+export interface AdsTaskRunReply {
+  ok: true;
+  run: AdsTaskRun;
+}
+
+/**
  * Read actions run unqueued; identical reads in flight (same action and arguments) share one run.
  * Change actions run one at a time per Mac (`createQueue`). The app itself resolves `file` (no script run).
  */
@@ -46,7 +69,9 @@ export type AdsChangeAction =
   | 'decided'
   | 'sign-monthly'
   | 'standup-setup'
-  | 'standup-feedback';
+  | 'standup-feedback'
+  /** Records a task run in the brain. Runs unqueued (a one-line append), never behind an apply. */
+  | 'task-run';
 export type AdsAction = AdsReadAction | AdsChangeAction;
 
 /**
@@ -71,6 +96,7 @@ export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   decided: 30_000,
   'standup-setup': 30_000,
   'standup-feedback': 30_000,
+  'task-run': 15_000,
   'sign-monthly': 120_000,
   'dry-run': 180_000,
   apply: 180_000,
@@ -340,6 +366,8 @@ export interface AdsStandupState {
   prompt: string;
   /** Standup action enum → short label (ACTION_LABELS); unknown ones read as the Workbench's actionLabel() does. */
   actionLabels: Record<string, string>;
+  /** The latest Daily standup run by anyone (brain run log). Absent from older skills. */
+  lastRun?: AdsTaskRun | null;
 }
 
 /** Standup account triage for the selected account (the Workbench shows only that one since 27 Oct 2026). */
@@ -389,6 +417,8 @@ export interface AdsBoard {
     description: string;
     badge: string | null;
     prompt: string;
+    /** The latest run of this task on this account by anyone (brain run log). Absent from older skills. */
+    lastRun?: AdsTaskRun | null;
   }[];
   standup: AdsStandupState;
   triage: AdsTriage;
@@ -447,6 +477,7 @@ export interface AdsRequests {
     score: 1 | 2 | 3 | 4 | 5;
     note?: string;
   };
+  'task-run': AdsTaskRunRequest;
 }
 
 /** App routes. All go through checkRequest; changes are POST JSON with body AdsRequests[action]. */

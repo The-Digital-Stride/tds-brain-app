@@ -4,6 +4,7 @@
  * it knows runs started from this app on this machine, not ones started in a terminal or by a teammate.
  */
 import { useSyncExternalStore } from 'react';
+import type { AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import type { LiveSession } from '../../../../shared/contract.ts';
 
 export const TASK_RUNS_KEY = 'tds.adManager.taskRuns.v1';
@@ -87,6 +88,32 @@ export function runStatus(run: TaskRun | undefined, live: LiveSession[] | undefi
   if (s === 'starting' || s === 'working') return 'running';
   if (s === 'waiting') return 'waiting';
   return null;
+}
+
+/** The run a card shows: when, and the teammate's first name when it was someone else (null for me). */
+export interface ShownRun {
+  at: string;
+  by: string | null;
+}
+
+/**
+ * The newer of this browser's run and the brain's shared `lastRun` (plan 2026-11-16-ad-manager-shared-run-times).
+ * While my own run's chat is live, my run wins: it is the one Running and Open chat are about.
+ */
+export function shownRun(
+  local: TaskRun | undefined,
+  shared: AdsTaskRun | null | undefined,
+  me: string | null,
+  live: boolean,
+): ShownRun | null {
+  const mine = local ? { at: local.at, by: null } : null;
+  if (live && mine) return mine;
+  const theirs = shared
+    ? { at: shared.at, by: shared.by === me ? null : shared.byName.trim().split(/\s+/)[0] || shared.by }
+    : null;
+  if (!theirs) return mine;
+  if (!mine) return theirs;
+  return Date.parse(theirs.at) > Date.parse(mine.at) ? theirs : mine;
 }
 
 const two = (n: number) => String(n).padStart(2, '0');

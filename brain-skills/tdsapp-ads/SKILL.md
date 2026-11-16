@@ -61,6 +61,7 @@ echo '{"client":"acme"}' | node .claude/skills/tdsapp-ads/scripts/tdsapp-ads.cjs
 | `sign-monthly` | `client`, `month` (YYYY-MM), optional `note` | Signs off the month's report in your name and builds the final PDF. |
 | `standup-setup` | `account` | Writes a starter standup config from the account's enabled campaigns. Never overwrites one. |
 | `standup-feedback` | `account`, `date`, `campaign`, `action_category`, `score` (1-5), optional `note` | Saves your rating of one standup call for the next run. |
+| `task-run` | `account`, `task` (a card id from `cadence-tasks.json`, or `standup:daily`) | Records that you ran a task, in the shared run log. Replies `{run: {at, by, byName}}`. |
 
 It prints one line of JSON: `{"ok":true,…}` or `{"ok":false,"code":…,"error":…}`. Exit 0 means it
 worked, exit 2 means it refused, exit 1 means something went wrong. The codes are `bad-request`,
@@ -70,6 +71,21 @@ isn't installed) and `internal`.
 
 A dry run or apply that ran but didn't succeed replies `ok: true` with `failed: true`, a plain
 `message` and the last 6,000 characters of `output`.
+
+### Run log and `lastRun`
+
+`task-run` appends one line to `tdsapp-ads/runs/<account>/<your-slug>.<machine-id>.jsonl` in the brain:
+`{"v":1,"ts":…,"account":…,"task":…,"by":<slug>,"by_name":<name>}`. The person is always the roster
+person on this Mac, never from stdin. The first run also writes a short `tdsapp-ads/README.md` and a
+`.gitattributes` (`runs/**/*.jsonl merge=union`) so two people's files merge cleanly. A file over 64 KB
+is rewritten with only its newest line per task.
+
+`board` reads every `.jsonl` in that account's folder and puts `lastRun` (`{at, by, byName}` or `null`)
+on each card and on `standup` (task `standup:daily`). It never writes. It skips links, bad lines, other
+accounts, times more than 10 minutes ahead and lines whose `by` is not the file name's person.
+
+This is a convenience record, not an audit trail: anyone who can write the brain could add or edit a
+log file, so don't treat a `lastRun` as proof of who did what.
 
 ### From a chat
 

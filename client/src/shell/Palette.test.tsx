@@ -312,7 +312,7 @@ describe('Palette', () => {
     await waitFor(() =>
       expect(
         within(drawer)
-          .getByRole('radio', { name: /^Open to anyone/ })
+          .getByRole('radio', { name: /^Open,/ })
           .getAttribute('aria-checked'),
       ).toBe('true'),
     );

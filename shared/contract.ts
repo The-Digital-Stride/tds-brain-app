@@ -239,6 +239,126 @@ export const TODO_SKILLS: readonly { skill: string; script: string }[] = [
 /** `expect` / TodoItem.version: lower-case hex SHA-256. */
 export const TODO_VERSION_PATTERN = /^[0-9a-f]{64}$/;
 
+// ---------------------------------------------------------------------------
+// "Asked of others" and to-do history (plan 2026-11-16-asked-of-others). Read only: nothing here
+// writes a brain file or runs any git command that changes the brain.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a fact about a to-do came from.
+ * - 'stamp': lines the app or the to-do skill wrote in the file (`assigned_*`, `completed_*`, `created_by`).
+ *   Names the person who did it.
+ * - 'history': the brain's git record. Names the Mac that synced the change, which is usually but not
+ *   always the person who made it (a change made on someone else's Workbench is synced from theirs).
+ */
+export type TodoFactSource = 'stamp' | 'history';
+
+/** Who did something to a to-do, and when. */
+export interface TodoActor {
+  /** Team slug, or null when it can't be matched to `.team-config/roles.json`. */
+  slug: string | null;
+  /** The roster's name for `slug`, else the name as the stamp or git wrote it; null when neither has one. */
+  name: string | null;
+  /** ISO 8601 (a stamp keeps its UK offset; history is the commit's author date). */
+  at: string;
+  source: TodoFactSource;
+}
+
+/**
+ * A TDS to-do this person passed on to someone else (or added for them), still waiting or finished.
+ * Never a personal to-do. Never one now assigned to this person or open to anyone.
+ */
+export interface AskedTodo {
+  /**
+   * `asked:todo/<id>` (waiting) or `asked:todo/done/<id>` (done). Never equal to a TodoItem.key, so the
+   * panel, prev/next and React keys can hold both kinds.
+   */
+  key: string;
+  /** The file name, e.g. "20261113-send-the-quote.md". */
+  id: string;
+  /** 'waiting': still in `todo/`. 'done': in `todo/done/`. */
+  state: 'waiting' | 'done';
+  /** Brain-relative path: `todo/<id>` or `todo/done/<id>`. */
+  path: string;
+  title: string;
+  /** Team slug of who has it (waiting) or had it when it was ticked (done). */
+  assignee: string;
+  /** The roster's name for `assignee`, else the slug. */
+  assigneeName: string;
+  /** YYYY-MM-DD from frontmatter `due`, else null. */
+  due: string | null;
+  /** Everything below the frontmatter, trimmed. Shown read only. */
+  details: string;
+  /** When this person passed it on (or added it for them). */
+  asked: TodoActor;
+  /** Who ticked it off and when; null while waiting. */
+  done: TodoActor | null;
+  /** The file's fingerprint, as TodoItem.version. */
+  version: string;
+}
+
+/** Finished to-dos older than this many days (by `done.at`) are left out of AskedTodoList.done. */
+export const ASKED_DONE_DAYS = 60;
+
+/** `GET ROUTES.askedTodos`. */
+export interface AskedTodoList {
+  /** Still in `todo/`, oldest ask first. */
+  waiting: AskedTodo[];
+  /** Ticked within ASKED_DONE_DAYS, most recently finished first. */
+  done: AskedTodo[];
+  /**
+   * False when the brain's git record couldn't be read (not a git folder, git missing, too slow): only
+   * to-dos with a stamp are listed, so the list may be short. The drawer says so in one line.
+   */
+  historyRead: boolean;
+}
+
+/**
+ * One change in a to-do's life, worked out from one git commit (plus the stamps that commit added).
+ * - created: the file first appears. `to` = the assignee it was created with ('open' for anyone).
+ * - passed-on: `assignee:` changed. `from`/`to` = slugs, 'open' for anyone.
+ * - retitled: `title:` changed. `from`/`to` = the old and new titles.
+ * - due: `due:` set, changed or cleared. `from`/`to` = YYYY-MM-DD or null.
+ * - details: lines below the frontmatter changed (no from/to: the wording isn't repeated).
+ * - done: moved to `todo/done/`.
+ * - deleted: moved to `todo/deleted/`.
+ * - changed: anything else (other frontmatter lines).
+ * One commit can give several events; they share `actor`.
+ */
+export type TodoEventKind =
+  | 'created'
+  | 'passed-on'
+  | 'retitled'
+  | 'due'
+  | 'details'
+  | 'done'
+  | 'deleted'
+  | 'changed';
+
+export interface TodoEvent {
+  kind: TodoEventKind;
+  actor: TodoActor;
+  from?: string | null;
+  to?: string | null;
+}
+
+/** At most this many commits are read for one to-do's history. */
+export const TODO_HISTORY_MAX = 40;
+
+/** `GET ROUTES.todoHistory?key=<TodoItem.key | AskedTodo.key>`. */
+export interface TodoHistoryResponse {
+  /**
+   * - 'ok': `events` holds the record (it can be empty for a to-do added since the last sync).
+   * - 'personal': a personal to-do; it is never synced, so there is no record.
+   * - 'unavailable': not a git folder, git missing or too slow.
+   */
+  status: 'ok' | 'personal' | 'unavailable';
+  /** Newest first. */
+  events: TodoEvent[];
+  /** True when the record goes back further than TODO_HISTORY_MAX commits. */
+  more: boolean;
+}
+
 export const TODO_TITLE_MAX = 200;
 export const TODO_DETAILS_MAX = 8000;
 export const TODO_ASSIGNEE_MAX = 40;
@@ -516,6 +636,17 @@ export interface BrainReaders {
    * `scope: "personal"`. Same refusals as `changeTodo`; `not-allowed` unless `canUsePersonal`.
    */
   completePersonalTodo(id: string, expect: string, by: Identity): Promise<void>;
+  /**
+   * TDS to-dos this person passed on that someone else has or has finished (plan
+   * 2026-11-16-asked-of-others). Reads `todo/`, `todo/done/` and the brain's git record; writes nothing.
+   */
+  askedTodos(identity: Identity): Promise<AskedTodoList>;
+  /**
+   * The record of one to-do, by TodoItem.key or AskedTodo.key. Throws TodoChangeError `bad-request` for
+   * a key of the wrong shape and `not-found` when no such file exists. Never throws for git trouble:
+   * that is `status: 'unavailable'`.
+   */
+  todoHistory(key: string, identity: Identity): Promise<TodoHistoryResponse>;
   /** Folders in `clients/`, skipping names that start with `_` or `.`. */
   clients(): Promise<ClientInfo[]>;
   /**
@@ -1453,6 +1584,8 @@ export interface ApiError {
  *   GET  /api/todos                             → TodoList
  *   POST /api/todos/complete   CompleteTodoRequest → TodoList
  *   POST /api/todos/change     ChangeTodoRequest   → TodoList
+ *   GET  /api/todos/asked                       → AskedTodoList
+ *   GET  /api/todos/history?key=<key>           → TodoHistoryResponse
  *   PUT  /api/prefs            Partial<AppPrefs>   → AppPrefs
  *   GET  /api/sessions                          → SessionList
  *   POST /api/sessions         StartSessionRequest → StartSessionResponse
@@ -1504,6 +1637,10 @@ export const ROUTES = {
    * 404 `not-found`; 500 `internal` when the script fails.
    */
   changeTodo: '/api/todos/change',
+  /** `GET` → AskedTodoList. `no-store`. */
+  askedTodos: '/api/todos/asked',
+  /** `GET ?key=` → TodoHistoryResponse. `no-store`. 400 `bad-request` for a bad key, 404 `not-found`. */
+  todoHistory: '/api/todos/history',
   prefs: '/api/prefs',
   /** `GET`: EngineChoices. `no-store`, every role. */
   engineChoices: '/api/engine/choices',

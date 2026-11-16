@@ -32,8 +32,27 @@ export function gitEnv(): Record<string, string> {
   return { ...env, GIT_OPTIONAL_LOCKS: '0' };
 }
 
-export const defaultGitRunner: GitRunner = (args, cwd) =>
+/** Limits for one git run. Both default to the handover lookup's (GIT_TIMEOUT_MS, 64 KB). */
+export interface GitRunOptions {
+  /** Most bytes of stdout kept; past this git is stopped and the output so far is returned, marked cut. */
+  maxOutput?: number;
+  timeoutMs?: number;
+}
+
+/** What one git run printed, and whether it was cut at `maxOutput`. */
+export interface GitOutput {
+  stdout: string;
+  cut: boolean;
+}
+
+/** Runs git like GitRunner, with its own limits, and says when the output was cut. Tests inject one. */
+export type GitLogRunner = (args: readonly string[], cwd: string, opts?: GitRunOptions) => Promise<GitOutput>;
+
+/** The safe runner: no shell, the scrubbed environment, a timeout and an output cap. */
+export const runGit: GitLogRunner = (args, cwd, opts = {}) =>
   new Promise((resolve, reject) => {
+    const maxOutput = opts.maxOutput ?? GIT_MAX_OUTPUT;
+    const timeoutMs = opts.timeoutMs ?? GIT_TIMEOUT_MS;
     let child: ChildProcess;
     try {
       child = nodeSpawn('git', [...args], {
@@ -58,21 +77,25 @@ export const defaultGitRunner: GitRunner = (args, cwd) =>
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       end(() => reject(new Error('git timed out')));
-    }, GIT_TIMEOUT_MS);
+    }, timeoutMs);
     child.stdout?.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > GIT_MAX_OUTPUT) {
+      if (size > maxOutput) {
         child.kill('SIGKILL');
-        end(() => resolve(Buffer.concat(chunks).toString('utf8')));
+        end(() => resolve({ stdout: Buffer.concat(chunks).toString('utf8'), cut: true }));
       } else chunks.push(c);
     });
     child.on('error', (err) => end(() => reject(err)));
     child.on('close', (code) =>
       end(() =>
-        code === 0 ? resolve(Buffer.concat(chunks).toString('utf8')) : reject(new Error('git failed')),
+        code === 0
+          ? resolve({ stdout: Buffer.concat(chunks).toString('utf8'), cut: false })
+          : reject(new Error('git failed')),
       ),
     );
   });
+
+export const defaultGitRunner: GitRunner = async (args, cwd) => (await runGit(args, cwd)).stdout;
 
 export interface TodoHistory {
   /** The author of the last commit that touched the file's `assignee:` line, or null (cached, nulls too). */

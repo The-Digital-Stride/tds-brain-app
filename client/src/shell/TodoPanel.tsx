@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import {
+  type AskedTodo,
   type TeamMember,
   TODO_DETAILS_MAX,
   TODO_TITLE_MAX,
@@ -36,15 +37,18 @@ import {
   PASS_ON_NOTE,
   PERSONAL_WARNING,
 } from './TodoForms.tsx';
-import { handoverLine, todoChatDraft, todoPlaces } from './words.ts';
+import { TodoHistory } from './TodoHistory.tsx';
+import { askedStatusLine, handoverLine, todoChatDraft, todoPlaces } from './words.ts';
 
 const LONG_NOTE = 'These details are too long to edit here. Change them in a chat instead.';
 const UNFAITHFUL_NOTE =
   "These details have formatting that can't be edited safely here. Change them in a chat instead.";
 
 export interface TodoPanelProps {
-  /** The to-do shown, or null while adding. */
+  /** The to-do shown, or null while adding (or when `asked` is shown). */
   todo: TodoItem | null;
+  /** A to-do you passed on, shown read only (then `todo` is null). */
+  asked?: AskedTodo | null;
   mode: TodoPanelMode;
   /** The drawer's status line, said here while the panel is open (it may cover the drawer). */
   message: string;
@@ -86,6 +90,7 @@ function isTypingTarget(el: Element | null): boolean {
  */
 export default function TodoPanel(props: TodoPanelProps) {
   const { todo, mode, message, isError } = props;
+  const asked = props.asked ?? null;
   const { state, dispatch, modes } = useShell();
   const panel = state.todoPanel;
   const overlays = modes.drawerOverlays;
@@ -116,7 +121,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   }, [ask]);
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
-  const key = todo?.key ?? '';
+  const key = todo?.key ?? asked?.key ?? '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: restart when the to-do or mode changes only.
   useEffect(() => {
     if (mode === 'edit') titleInput.current?.focus();
@@ -145,7 +150,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   }, [mode, canEditThis, todo, state.singleKeys, state.paletteOpen, state.viewer, props.onEdit]);
 
   const order = panel?.order ?? [];
-  const at = todo ? order.indexOf(todo.key) : -1;
+  const at = key ? order.indexOf(key) : -1;
   const hasPrev = at > 0;
   const hasNext = at >= 0 && at < order.length - 1;
   const step = (dir: -1 | 1) => {
@@ -153,7 +158,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   };
   const close = () => dispatch({ type: 'close-todo' });
 
-  const title = mode === 'add' ? 'Add a to-do' : (todo?.title ?? '');
+  const title = mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? '');
   const keys = state.singleKeys;
 
   return (
@@ -260,6 +265,8 @@ export default function TodoPanel(props: TodoPanelProps) {
               onDirty={setAddDirty}
             />
           </div>
+        ) : asked ? (
+          <AskedReadView asked={asked} team={props.team} />
         ) : todo === null ? null : mode === 'edit' ? (
           <EditView
             {...props}
@@ -422,6 +429,7 @@ function ReadView({
               {note}
             </p>
           ) : null}
+          {todo.scope !== 'personal' ? <TodoHistory key={todo.key} todoKey={todo.key} team={p.team} /> : null}
         </div>
         <Facts todo={todo} me={p.me} team={p.team} canUsePersonal={p.canUsePersonal} />
       </div>
@@ -455,6 +463,56 @@ function ReadView({
             </button>
           </div>
         ) : null}
+      </footer>
+    </>
+  );
+}
+
+/** A to-do you passed on: read only. No Edit, tick, pass on, delete or chat: it is someone else's now. */
+function AskedReadView({ asked, team }: { asked: AskedTodo; team: TeamMember[] }) {
+  const due = asked.due ? dueInWords(asked.due) : '';
+  const first =
+    asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
+  const note =
+    asked.state === 'done'
+      ? `${first ? `${first} ticked this off` : 'This to-do was ticked off'}, so it can't be changed here.`
+      : `This is ${first || asked.assigneeName}'s to-do now, so you can read it but not change it.`;
+  return (
+    <>
+      <div className="todo-body">
+        <div className="todo-main-col">
+          {asked.details ? (
+            <TodoDetailsEditor markdown={asked.details} editable={false} label="Details" />
+          ) : (
+            <p className="todo-empty">No details yet.</p>
+          )}
+          <TodoHistory key={asked.key} todoKey={asked.key} team={team} />
+        </div>
+        <dl className="todo-facts">
+          <div>
+            <dt>Status</dt>
+            <dd>{askedStatusLine(asked)}</dd>
+          </div>
+          <div>
+            <dt>Due</dt>
+            <dd>
+              {due ? (
+                <span
+                  className={
+                    asked.state === 'waiting' && asked.due && isOverdue(asked.due) ? 'late' : undefined
+                  }
+                >
+                  {due}
+                </span>
+              ) : (
+                'No date'
+              )}
+            </dd>
+          </div>
+        </dl>
+      </div>
+      <footer className="todo-foot">
+        <p className="todo-note todo-foot-note">{note}</p>
       </footer>
     </>
   );

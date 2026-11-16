@@ -406,7 +406,7 @@ describe('revealTodo (from the global search)', () => {
     expect(clear).toHaveBeenCalledTimes(1);
     expect(
       within(tabs())
-        .getByRole('radio', { name: /^Open to anyone/ })
+        .getByRole('radio', { name: /^Open,/ })
         .getAttribute('aria-checked'),
     ).toBe('true');
     // "No date" is a closed group when nothing asked for it.
@@ -755,7 +755,7 @@ describe('Favourites', () => {
     render(<TodosDrawer />);
     fireEvent.click(star('Late thing'));
     expect(fns.toggleFavouriteTodo).toHaveBeenLastCalledWith('late.md');
-    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Open,/ }));
     fireEvent.click(star('Open thing'));
     expect(fns.toggleFavouriteTodo).toHaveBeenLastCalledWith('o1.md');
   });
@@ -765,7 +765,7 @@ describe('Favourites', () => {
     starred(['o1.md']);
     render(<TodosDrawer />);
     expect(screen.queryByRole('heading', { name: /^Favourites/ })).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Open,/ }));
     expect(within(section(/^Favourites/)).getByText('Open thing', { exact: false })).toBeTruthy();
   });
 
@@ -841,7 +841,7 @@ describe('Favourites', () => {
     const overdue = () => screen.getByRole('button', { name: /^Overdue/ });
     fireEvent.click(overdue());
     expect(overdue().getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(screen.getByRole('radio', { name: /^Open to anyone/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Open,/ }));
     fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
     expect(overdue().getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(overdue());

@@ -6,7 +6,7 @@ order: 1
 summary: See what you and the team need to do, and tick things off.
 benefit: Nothing slips through the cracks, and everyone can see who's doing what.
 roles: all
-related: [home, talking-to-claude, skills]
+related: [home, talking-to-claude, skills, asked-of-others]
 since: 0.36.0
 reviewed: 2026-11-15
 ---
@@ -25,7 +25,7 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 
 1. Open the To-dos drawer from the rail.
 2. To make changes, first switch on **Let the app change to-dos** in Settings. Until then you can only read the list.
-3. **Mine** shows what is yours. **Open to anyone** shows jobs nobody has taken.
+3. **Mine** shows what is yours. **Open** shows jobs nobody has taken. **Asked** shows what you passed on to others (see Asked of others).
 4. Press a to-do's title to read it in a wide panel. Press **Mark as done** when it's finished.
 5. To add one, press the **+** button (1), type it and press Enter.
 6. To hand a to-do over, open it, press **Edit** and change who it's assigned to.
@@ -37,7 +37,8 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 - TDS Cortex can't change to-dos until that switch is on. It's off by default, because to-dos are shared by the whole team.
 - Passing a personal to-do on makes it a TDS to-do, so your teammate can see it.
 - Marking something done records who did it and when.
+- Open a to-do's **History** (at the bottom of the panel) to see how it changed.
 
 ## Try this
 
-Open **Open to anyone** and pick one job you can take today.
+Press **Open** and pick one job you can take today.

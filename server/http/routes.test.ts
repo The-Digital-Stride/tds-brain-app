@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
+  type AskedTodoList,
   type LibraryListing,
   type LibrarySearchResponse,
   MAX_ATTACHMENTS,
@@ -14,6 +15,7 @@ import {
   SESSION_COOKIE,
   sessionCookieName,
   TODO_SCRIPT,
+  type TodoHistoryResponse,
   type TodoList,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
@@ -32,6 +34,7 @@ import { createBrainReaders } from '../brain/index.ts';
 import { SkillLevelError } from '../brain/skill-levels.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
 import { createThumbnailer } from '../brain/thumbs.ts';
+import type { GitLogRunner } from '../brain/todo-history.ts';
 import { SessionError } from '../engine/session-manager.ts';
 import {
   createEngineHealth,
@@ -604,6 +607,121 @@ describe('GET /api/todos', () => {
       } as unknown as RouteContext,
     );
     expect((JSON.parse(body) as TodoList).changes).toBe('restricted');
+  });
+});
+
+describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of-others)', () => {
+  const whoami = { name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true };
+  const ID = '20261101-asked-thing.md';
+
+  function makeBrain(log: GitLogRunner) {
+    const root = copyFixture();
+    writeFileSync(
+      join(root, 'todo', ID),
+      '---\nassignee: alex-sample\nassigned_to: alex-sample\nassigned_by: sam-example\nassigned_at: 2026-11-10T09:00:00+00:00\n---\n',
+    );
+    return createBrainReaders(root, { run: async () => ({ stdout: JSON.stringify(whoami) }), todoLog: log });
+  }
+
+  async function get(brain: RouteContext['brain'], path: string, method = 'GET') {
+    const req = Object.assign(Readable.from([]), { method, headers: {} });
+    const sent = { status: 0, body: '', headers: {} as Record<string, unknown> };
+    const res = {
+      headersSent: false,
+      writeHead: (status: number, headers: Record<string, unknown>) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: (t: string) => {
+        sent.body = t;
+      },
+    };
+    const logs: string[] = [];
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:3877${path}`),
+      {
+        brain,
+        store: { get: async () => ({ directWrites: false }) },
+        log: (l: string) => logs.push(l),
+      } as unknown as RouteContext,
+    );
+    return {
+      status: sent.status,
+      headers: sent.headers,
+      json: sent.body ? JSON.parse(sent.body) : null,
+      logs,
+    };
+  }
+
+  const gitOk: GitLogRunner = async (args) =>
+    args[0] === 'rev-parse' ? { stdout: `${'e'.repeat(40)}\n`, cut: false } : { stdout: '', cut: false };
+
+  it('lists what this person asked of others, no-store, even with the Settings switch off', async () => {
+    const { status, headers, json } = await get(makeBrain(gitOk), ROUTES.askedTodos);
+    expect(status).toBe(200);
+    expect(headers['Cache-Control']).toBe('no-store');
+    const list = json as AskedTodoList;
+    expect(list.historyRead).toBe(true);
+    expect(list.waiting.map((t) => [t.key, t.assignee, t.asked.slug])).toEqual([
+      [`asked:todo/${ID}`, 'alex-sample', 'sam-example'],
+    ]);
+  });
+
+  it('answers the history of a to-do, no-store', async () => {
+    const res = await get(
+      makeBrain(gitOk),
+      `${ROUTES.todoHistory}?key=${encodeURIComponent(`asked:todo/${ID}`)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+    expect(res.json as TodoHistoryResponse).toEqual({ status: 'ok', events: [], more: false });
+  });
+
+  it('400 for a missing or bad key, 404 for no such file, with no git run', async () => {
+    const calls: string[] = [];
+    const brain = makeBrain(async (args) => {
+      calls.push(args[0] ?? '');
+      return gitOk(args, '');
+    });
+    for (const q of ['', '?key=', '?key=..%2Fsecret.md', '?key=todo%2Fx.md', `?key=${'a'.repeat(400)}.md`]) {
+      const res = await get(brain, `${ROUTES.todoHistory}${q}`);
+      expect(res.status, q).toBe(400);
+      expect(res.json.error.code).toBe('bad-request');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    }
+    const missing = await get(brain, `${ROUTES.todoHistory}?key=20261101-missing.md`);
+    expect(missing.status).toBe(404);
+    expect(missing.json.error.code).toBe('not-found');
+    expect(calls).toEqual([]);
+  });
+
+  it('git trouble is an ordinary answer, not an error', async () => {
+    const brain = makeBrain(async () => Promise.reject(new Error('not a git folder')));
+    const history = await get(brain, `${ROUTES.todoHistory}?key=${ID}`);
+    expect(history.status).toBe(200);
+    expect(history.json).toEqual({ status: 'unavailable', events: [], more: false });
+    const asked = await get(brain, ROUTES.askedTodos);
+    expect(asked.status).toBe(200);
+    expect((asked.json as AskedTodoList).historyRead).toBe(false);
+    expect((asked.json as AskedTodoList).waiting).toHaveLength(1);
+  });
+
+  it('only GET', async () => {
+    const brain = makeBrain(gitOk);
+    expect((await get(brain, ROUTES.askedTodos, 'POST')).status).toBe(405);
+    expect((await get(brain, `${ROUTES.todoHistory}?key=${ID}`, 'DELETE')).status).toBe(405);
+  });
+
+  it('setup mode answers empty, never an error', async () => {
+    const setup = createSetupBrain();
+    expect((await get(setup, ROUTES.askedTodos)).json).toEqual({ waiting: [], done: [], historyRead: false });
+    expect((await get(setup, `${ROUTES.todoHistory}?key=${ID}`)).json).toEqual({
+      status: 'unavailable',
+      events: [],
+      more: false,
+    });
   });
 });
 

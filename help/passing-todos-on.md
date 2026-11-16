@@ -6,7 +6,7 @@ order: 3
 summary: Hand a to-do to a teammate, or leave it open for anyone to pick up.
 benefit: Work reaches the right person, and nobody has to chase it by message.
 roles: all
-related: [todos, adding-todos, sharing-with-your-team, personal-todos]
+related: [todos, adding-todos, sharing-with-your-team, personal-todos, asked-of-others]
 since: 0.38.0
 reviewed: 2026-11-16
 ---
@@ -35,6 +35,7 @@ You can give a to-do to a teammate, or make it **Open to anyone** so the first f
 - Your teammate sees the change the next time their Brain syncs. That is not always straight away.
 - A teammate who gets the to-do sees a line such as "Passed to you by" your name, with the date.
 - Passing a personal to-do on makes it a TDS to-do, so your teammate can see it.
+- To follow a to-do after you've passed it on, open the **Asked** tab. See Asked of others.
 - To take an open job yourself, open it and choose **Me** in **Assigned to**.
 
 ## Try this

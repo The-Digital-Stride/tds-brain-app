@@ -1,13 +1,21 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TodoChangeAccess, TodoItem, TodoList } from '../../../shared/contract.ts';
+import type {
+  AskedTodo,
+  AskedTodoList,
+  TodoChangeAccess,
+  TodoItem,
+  TodoList,
+} from '../../../shared/contract.ts';
 import type { HeldTodo } from '../store.tsx';
 import type { ShellApi } from './contract.ts';
 
 // The real shell (its reducer, its guard for unsaved changes, its keys) with the real drawer and panel. Only the
 // store, the editor and the converter are stand-ins: the editor and converter need a real browser.
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+const apiMock = vi.hoisted(() => ({ askedTodos: vi.fn(), todoHistory: vi.fn() }));
+vi.mock('../api.ts', () => ({ api: apiMock }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
 vi.mock('./TodoDetailsEditor.tsx', async () => ({
   default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
@@ -91,14 +99,26 @@ function setStore(
 const three = () => [todo('a.md', 'First'), todo('b.md', 'Second'), todo('c.md', 'Third')];
 
 function mount() {
-  render(
+  const view = render(
     <ShellProvider>
       <Probe />
       <TodosDrawer />
     </ShellProvider>,
   );
   act(() => api.dispatch({ type: 'open-drawer', drawer: 'todos' }));
+  return view;
 }
+/** The to-dos reloading: the store hands the drawer a new `todos` object. */
+const reload = (view: ReturnType<typeof mount>) => {
+  const s = store.current as { todos: TodoList };
+  store.current = { ...s, todos: { ...s.todos } };
+  view.rerender(
+    <ShellProvider>
+      <Probe />
+      <TodosDrawer />
+    </ShellProvider>,
+  );
+};
 /** The row title buttons, in the order the drawer shows them. */
 const rowKeys = () =>
   [...document.querySelectorAll<HTMLElement>('[data-panel-for]')].map((b) =>
@@ -637,5 +657,178 @@ describe('the panel itself', () => {
     expect(save.hasAttribute('disabled')).toBe(false);
     fireEvent.click(save);
     expect(changeTodos).not.toHaveBeenCalled();
+  });
+});
+
+const asked = (id: string, title: string, over: Partial<AskedTodo> = {}): AskedTodo => ({
+  key: `asked:todo/${id}`,
+  id,
+  state: 'waiting',
+  path: `todo/${id}`,
+  title,
+  assignee: 'ben-mcadam',
+  assigneeName: 'Ben McAdam',
+  due: null,
+  details: 'Their notes',
+  asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-13T12:00:00+00:00', source: 'stamp' },
+  done: null,
+  version: 'v1',
+  ...over,
+});
+
+describe('asked of others', () => {
+  const list = (): AskedTodoList => ({
+    waiting: [asked('x.md', 'Send the quote'), asked('y.md', 'Book the venue', { due: '2999-01-01' })],
+    done: [
+      asked('z.md', 'Old job', {
+        key: 'asked:todo/done/z.md',
+        state: 'done',
+        done: { slug: 'ben-mcadam', name: 'Ben McAdam', at: '2026-11-14T12:00:00+00:00', source: 'history' },
+      }),
+    ],
+    historyRead: true,
+  });
+  const openAsked = async () => {
+    apiMock.askedTodos.mockResolvedValue(list());
+    mount();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
+    return screen.getByRole('button', { name: 'Send the quote' });
+  };
+
+  beforeEach(() => {
+    apiMock.askedTodos.mockReset();
+    apiMock.todoHistory.mockReset();
+  });
+
+  it('labels the tabs with counts and opens an asked row read only, with no actions', async () => {
+    fireEvent.click(await openAsked());
+    const panel = await dialog();
+    expect(api.state.todoPanel).toMatchObject({ key: 'asked:todo/x.md', mode: 'read' });
+    expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('Send the quote');
+    expect(within(panel).getByLabelText('Details').textContent).toContain('Their notes');
+    expect(within(panel).getByText(/^With Ben McAdam since \d+ Nov$/)).toBeTruthy();
+    for (const name of ['Edit', 'Delete', 'Mark as done', 'Start a chat', 'Save']) {
+      expect(within(panel).queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: /^Tick/ })).toBeNull();
+  });
+
+  it('the E key does nothing for an asked to-do', async () => {
+    fireEvent.click(await openAsked());
+    await dialog();
+    press('e');
+    expect(api.state.todoPanel?.mode).toBe('read');
+  });
+
+  it('previous and next walk the asked order (waiting, then done)', async () => {
+    fireEvent.click(await openAsked());
+    await dialog();
+    expect(api.state.todoPanel?.order).toEqual([
+      'asked:todo/x.md',
+      'asked:todo/y.md',
+      'asked:todo/done/z.md',
+    ]);
+    press('n');
+    expect(heading()).toBe('Book the venue');
+    press('n');
+    expect(heading()).toBe('Old job');
+    expect(screen.getByText(/^Done by Ben McAdam, \d+ Nov \(git history\)$/)).toBeTruthy();
+    press('p');
+    expect(heading()).toBe('Book the venue');
+  });
+
+  it('loads History only when its fold is opened, for any to-do', async () => {
+    apiMock.todoHistory.mockResolvedValue({ status: 'ok', events: [], more: false });
+    mount();
+    await open('First');
+    expect(apiMock.todoHistory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    await waitFor(() => expect(apiMock.todoHistory).toHaveBeenCalledWith('a.md'));
+  });
+
+  it('says in the footer why a waiting or done asked to-do cannot be changed', async () => {
+    fireEvent.click(await openAsked());
+    const panel = await dialog();
+    expect(
+      within(panel).getByText("This is Ben's to-do now, so you can read it but not change it."),
+    ).toBeTruthy();
+    press('n');
+    press('n');
+    expect(heading()).toBe('Old job');
+    expect(
+      within(screen.getByRole('dialog')).getByText("Ben ticked this off, so it can't be changed here."),
+    ).toBeTruthy();
+  });
+
+  it('opens the closed Done fold when next moves the panel into it, so closing returns to the row', async () => {
+    fireEvent.click(await openAsked());
+    await dialog();
+    const fold = () => screen.getByRole('button', { name: /Done in the last 60 days/ });
+    expect(fold().getAttribute('aria-expanded')).toBe('false');
+    press('n');
+    press('n');
+    expect(fold().getAttribute('aria-expanded')).toBe('true');
+    press('Escape');
+    await waitFor(() => expect(document.activeElement).toBe(titleButton('Old job')));
+  });
+
+  it('asks for the asked list again when the to-dos reload, and ignores an older answer landing late', async () => {
+    let late: (l: AskedTodoList) => void = () => {};
+    apiMock.askedTodos.mockResolvedValueOnce(list());
+    const view = mount();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
+    expect(apiMock.askedTodos).toHaveBeenCalledTimes(1);
+    apiMock.askedTodos.mockReturnValueOnce(new Promise<AskedTodoList>((r) => (late = r)));
+    reload(view);
+    await waitFor(() => expect(apiMock.askedTodos).toHaveBeenCalledTimes(2));
+    apiMock.askedTodos.mockResolvedValueOnce({ ...list(), waiting: [asked('n.md', 'Newer job')] });
+    reload(view);
+    await screen.findByRole('button', { name: 'Newer job' });
+    await act(async () => late(list()));
+    expect(screen.getByRole('button', { name: 'Newer job' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send the quote' })).toBeNull();
+  });
+
+  it('keeps the rows shown, with a retry line, when a reload fails', async () => {
+    apiMock.askedTodos.mockResolvedValueOnce(list());
+    const view = mount();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Asked, 2' }));
+    apiMock.askedTodos.mockRejectedValueOnce(new Error('x'));
+    reload(view);
+    const line = await screen.findByText(/Couldn't refresh this list/);
+    expect(line.getAttribute('role')).toBe('status');
+    expect(screen.getByRole('button', { name: 'Send the quote' })).toBeTruthy();
+  });
+
+  it('Try again shows the loading state again while it asks', async () => {
+    apiMock.askedTodos.mockRejectedValueOnce(new Error('x'));
+    mount();
+    fireEvent.click(await screen.findByRole('radio', { name: /^Asked/ }));
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    apiMock.askedTodos.mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(retry);
+    await screen.findByText("Loading what you've asked of others.");
+  });
+
+  it('closes History and fetches afresh for the next to-do', async () => {
+    apiMock.todoHistory.mockResolvedValue({ status: 'ok', events: [], more: false });
+    fireEvent.click(await openAsked());
+    await dialog();
+    const history = () => within(screen.getByRole('dialog')).getByRole('button', { name: 'History' });
+    fireEvent.click(history());
+    await waitFor(() => expect(apiMock.todoHistory).toHaveBeenCalledWith('asked:todo/x.md'));
+    expect(history().getAttribute('aria-expanded')).toBe('true');
+    press('n');
+    expect(history().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(history());
+    await waitFor(() => expect(apiMock.todoHistory).toHaveBeenCalledWith('asked:todo/y.md'));
+    expect(apiMock.todoHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('has no History for a personal to-do', async () => {
+    setStore('on', [todo('p.md', 'Mine only', { scope: 'personal', key: 'personal/p.md' })]);
+    mount();
+    const panel = await open('Mine only');
+    expect(within(panel).queryByRole('button', { name: 'History' })).toBeNull();
   });
 });

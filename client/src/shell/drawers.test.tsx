@@ -262,7 +262,7 @@ describe('To-dos drawer', () => {
     });
     render(<TodosDrawer />);
     expect(screen.getByText('1 more belongs to other people.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'Open to anyone, 1' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Open, 1' }));
     expect(screen.getByText('Anyone can do this')).toBeTruthy();
   });
 });

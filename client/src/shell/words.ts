@@ -5,11 +5,15 @@
 
 import { BRAND } from '../../../shared/brand.ts';
 import {
+  type AskedTodo,
   ATTENTION_LABEL,
   type ClientInfo,
   type LiveSession,
   type SkillInfo,
   SYNC_STALE_MS,
+  type TeamMember,
+  type TodoActor,
+  type TodoEvent,
   type TodoItem,
 } from '../../../shared/contract.ts';
 import { slugWords } from '../../../shared/words.ts';
@@ -189,4 +193,86 @@ export function handoverLine(todo: Pick<TodoItem, 'handover' | 'assignee'>, me: 
   const name = handoverName(h);
   if (h.source === 'history') return `From ${name} (git history)${date}`;
   return `Passed to you by ${name}${date}${h.via ? ` (${viaName(h.via)})` : ''}`;
+}
+
+/** "13 Nov" for an ISO date or timestamp; '' when it can't be read. */
+export function shortDay(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? '' : `${at.getDate()} ${MONTHS[at.getMonth()]}`;
+}
+
+/** "13 Nov, 14:05" (the viewer's own clock); '' when it can't be read. */
+export function shortDayTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getDate()} ${MONTHS[at.getMonth()]}, ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** The asked-of-others row's second line: "With Ben McAdam · since 13 Nov", "Done by Ben McAdam · 14 Nov". */
+export function askedMeta(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done'>): string {
+  if (t.state === 'done') {
+    const day = t.done ? shortDay(t.done.at) : '';
+    const first = t.done?.name?.split(/\s+/)[0];
+    const who = first ? `Done by ${first}` : 'Done';
+    return day ? `${who}, ${day}` : who;
+  }
+  const day = shortDay(t.asked.at);
+  const first = t.assigneeName.split(/\s+/)[0] || t.assigneeName;
+  return day ? `With ${first} since ${day}` : `With ${first}`;
+}
+
+/** The panel's status line for an asked-of-others to-do. Names from git history say "(git history)". */
+export function askedStatusLine(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'asked' | 'done'>): string {
+  if (t.state === 'done') {
+    const day = t.done ? shortDay(t.done.at) : '';
+    const who = t.done?.name ? `Done by ${t.done.name}` : 'Done';
+    const tag = day && t.done?.source === 'history' ? ' (git history)' : '';
+    return day ? `${who}, ${day}${tag}` : who;
+  }
+  const day = shortDay(t.asked.at);
+  const tag = day && t.asked.source === 'history' ? ' (git history)' : '';
+  return day ? `With ${t.assigneeName} since ${day}${tag}` : `With ${t.assigneeName}`;
+}
+
+/** A name for a slug in a history line: the roster's, else the slug as words; 'open' means anyone. */
+function historyWho(
+  slug: string | null | undefined,
+  team: readonly Pick<TeamMember, 'slug' | 'name'>[],
+): string {
+  if (!slug) return 'no one';
+  if (slug === 'open') return 'anyone';
+  return team.find((m) => m.slug === slug)?.name ?? slugWords(slug);
+}
+
+/** Who did it, for a history line: the actor's name, else "Someone". */
+export function actorName(actor: TodoActor): string {
+  return actor.name?.trim() || 'Someone';
+}
+
+/**
+ * What a history event says after the actor's name: "passed it from Ian Hancock to Ben McAdam". The
+ * actor is named by the caller (it may carry a mark for the sync record).
+ */
+export function eventWords(e: TodoEvent, team: readonly Pick<TeamMember, 'slug' | 'name'>[]): string {
+  switch (e.kind) {
+    case 'created':
+      return e.to === 'open' || !e.to ? 'added it, open to anyone' : `added it for ${historyWho(e.to, team)}`;
+    case 'passed-on':
+      return `passed it from ${historyWho(e.from, team)} to ${historyWho(e.to, team)}`;
+    case 'retitled':
+      return e.from ? `renamed it from \u2018${e.from}\u2019` : 'renamed it';
+    case 'due': {
+      const day = e.to ? shortDay(e.to) : '';
+      return day ? `set the due date to ${day}` : 'cleared the due date';
+    }
+    case 'details':
+      return 'changed the details';
+    case 'done':
+      return 'ticked it off';
+    case 'deleted':
+      return 'deleted it';
+    default:
+      return 'changed it';
+  }
 }

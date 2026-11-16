@@ -3,6 +3,7 @@ import type {
   ApiError,
   ApiErrorCode,
   AppPrefs,
+  AskedTodoList,
   Bootstrap,
   ChangelogResponse,
   ChangeTodoRequest,
@@ -30,6 +31,7 @@ import type {
   StartSessionResponse,
   SyncStatus,
   TodoAction,
+  TodoHistoryResponse,
   TodoList,
   UploadInfo,
   UploadResponse,
@@ -131,6 +133,10 @@ async function request<T>(
 export const api = {
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
+  /** To-dos passed on to others (its own request: it never blocks or fails `todos`). */
+  askedTodos: () => request<AskedTodoList>('GET', ROUTES.askedTodos),
+  todoHistory: (key: string) =>
+    request<TodoHistoryResponse>('GET', `${ROUTES.todoHistory}?key=${encodeURIComponent(key)}`),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),
   changelog: () => request<ChangelogResponse>('GET', ROUTES.changelog),
   /** `personal` ticks a personal to-do through the brain script: it carries `scope` and `expect`. */

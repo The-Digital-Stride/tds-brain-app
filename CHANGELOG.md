@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.49.0 — 2026-11-16
+
+- **feat**: tool chats open in a drawer on the right, so Ad Manager's board stays in view while Claude works
+- **fix**: chat drawer review fixes: Esc under a floating drawer, typed text kept on Open full screen, sized by the sheet
+- **fix**: chat drawer header matches the viewer's, and the attached-files note clears
+
 ## v0.48.0 — 2026-11-16
 
 - **feat**: Ad Manager run times shared with the team through the brain

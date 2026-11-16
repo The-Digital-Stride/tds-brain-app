@@ -87,6 +87,10 @@ accounts, times more than 10 minutes ahead and lines whose `by` is not the file 
 This is a convenience record, not an audit trail: anyone who can write the brain could add or edit a
 log file, so don't treat a `lastRun` as proof of who did what.
 
+Past 64 KB the writer rewrites its own file to the newest line per task (a log past 4 MB is left as it is).
+Two runs at the same instant on one Mac can, rarely, lose one line during that rewrite; that person's own
+app still shows their run.
+
 ### From a chat
 
 - **"What's waiting for me?"**: run `approvals` and list the proposals where `flags.canDecide` is

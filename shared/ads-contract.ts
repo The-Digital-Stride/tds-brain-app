@@ -43,8 +43,8 @@ export interface AdsTaskRunRequest {
   account: string;
   task: string;
 }
+/** What the route sends (the bridge's `ok` is taken off by the server, as for every ads reply). */
 export interface AdsTaskRunReply {
-  ok: true;
   run: AdsTaskRun;
 }
 

@@ -60,6 +60,9 @@ const SLUG_MAX = 80;
 const RUN_SLUG = /^[a-z0-9-]{1,80}$/;
 const RUN_NAME_MAX = 80;
 const RUN_COMPACT_BYTES = 64 * 1024;
+const RUN_COMPACT_MAX = 4 * 1024 * 1024;
+/** A run log's file name: <roster slug>.<6-hex machine id>, then anything (a sync's copy), then .jsonl. */
+const RUN_FILE = /^([a-z0-9-]{1,80})\.[0-9a-f]{6}[^/]*\.jsonl$/;
 const RUN_READ_FILES = 200;
 const RUN_READ_BYTES = 1024 * 1024;
 const RUN_FUTURE_MS = 10 * 60 * 1000;
@@ -468,7 +471,9 @@ function writeOnce(file, content) {
 // Keeps only the newest valid line per task, when the file has grown past the limit.
 function compactRunLog(file) {
   const st = lstatOrNull(file);
-  if (!st || !st.isFile() || st.size <= RUN_COMPACT_BYTES) return;
+  // A log padded past RUN_COMPACT_MAX is left alone: reading it whole would be slow (or fail), and the board
+  // skips files over RUN_READ_BYTES anyway.
+  if (!st || !st.isFile() || st.size <= RUN_COMPACT_BYTES || st.size > RUN_COMPACT_MAX) return;
   const newest = new Map();
   for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
     let line;
@@ -484,9 +489,25 @@ function compactRunLog(file) {
     if (!have || t >= have.t) newest.set(line.task, { t, raw });
   }
   const keep = [...newest.values()].sort((a, b) => a.t - b.t).map((e) => e.raw);
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, keep.join('\n') + '\n', { flag: 'w' });
-  fs.renameSync(temp, file);
+  // A random name, created only if nothing is there ('wx' is O_EXCL): a link planted in the brain is never
+  // followed out of it (tdsapp-files does the same).
+  const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  let fd;
+  try {
+    fd = fs.openSync(temp, 'wx', 0o644);
+    fs.writeSync(fd, `${keep.join('\n')}\n`);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temp, file);
+  } catch (err) {
+    if (fd !== undefined) fs.closeSync(fd);
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+      // nothing was made
+    }
+    throw err;
+  }
 }
 
 function taskRun(input, ctx) {
@@ -540,13 +561,14 @@ function readRuns(ctx, key) {
   }
   let names;
   try {
-    names = fs.readdirSync(dir).filter((n) => n.endsWith('.jsonl')).sort().slice(0, RUN_READ_FILES);
+    // Only names shaped like a run log count, before the cap, so junk files can't crowd out real logs.
+    names = fs.readdirSync(dir).filter((n) => RUN_FILE.test(n)).sort().slice(0, RUN_READ_FILES);
   } catch {
     return out;
   }
   const limit = Date.now() + RUN_FUTURE_MS;
   for (const name of names) {
-    const slug = name.split('.')[0];
+    const slug = RUN_FILE.exec(name)?.[1] ?? '';
     const file = path.join(dir, name);
     let text;
     try {

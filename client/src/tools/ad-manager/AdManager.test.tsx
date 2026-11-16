@@ -583,6 +583,35 @@ describe('board', () => {
     await waitFor(() => expect(within(task).getByText(/by Pete$/)).toBeTruthy());
   });
 
+  it('my own run from the brain shows without a name', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return {
+        ...b,
+        cards: b.cards.map((c) => ({
+          ...c,
+          lastRun: { at: new Date().toISOString(), by: 'sam', byName: 'Sam' },
+        })),
+      };
+    });
+    await ready();
+    const task = (await screen.findByText('Spend check')).closest('li') as HTMLElement;
+    await waitFor(() => expect(within(task).getByText(/Last run/)).toBeTruthy());
+    expect(within(task).queryByText(/by Sam/)).toBeNull();
+  });
+
+  it('the standup Run records standup:daily in the brain', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return { ...b, cards: b.cards.map((c) => ({ ...c, lastRun: null })) };
+    });
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: /^Run: Daily standup/ }));
+    await waitFor(() =>
+      expect(api.adsTaskRun).toHaveBeenCalledWith({ account: 'acme', task: 'standup:daily' }),
+    );
+  });
+
   it('records a run in the brain only when the skill shares runs', async () => {
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));

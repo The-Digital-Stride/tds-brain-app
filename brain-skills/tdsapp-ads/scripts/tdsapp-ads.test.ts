@@ -1098,6 +1098,39 @@ describe('task-run and lastRun', () => {
     expect(old < new Date().toISOString()).toBe(true);
   });
 
+  it('compaction never follows a link planted beside the log, and leaves no temp file', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const name = logs()[0] as string;
+    const file = join(runsDir(), name);
+    const outside = join(home, 'precious.txt');
+    writeFileSync(outside, 'keep me');
+    for (let i = 0; i < 50; i++) symlinkSync(outside, `${file}.${i}.tmp`);
+    writeFileSync(file, readFileSync(file, 'utf8') + logLine({ by: 'rita-reviewer' }).repeat(800));
+    expect(bridge('task-run', { account: 'acme', task: 'w-search' }).exit).toBe(0);
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+    expect(lstatSync(file).isFile()).toBe(true);
+    expect(lstatSync(file).size).toBeLessThan(64 * 1024);
+    expect(logs().filter((n) => n.endsWith('.tmp') && !/\.\d+\.tmp$/.test(n))).toEqual([]);
+  });
+
+  it('a log padded past 4 MB is left alone, and recording still works', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const file = join(runsDir(), logs()[0] as string);
+    writeFileSync(file, readFileSync(file, 'utf8') + 'x'.repeat(4 * 1024 * 1024 + 10) + '\n');
+    const before = lstatSync(file).size;
+    expect(bridge('task-run', { account: 'acme', task: 'w-search' }).exit).toBe(0);
+    expect(lstatSync(file).size).toBeGreaterThan(before);
+  });
+
+  it('only files named like a run log count, so junk files never crowd out real ones', () => {
+    mkdirSync(runsDir(), { recursive: true });
+    for (let i = 0; i < 210; i++)
+      writeFileSync(join(runsDir(), `aaa-${i}.jsonl`), logLine({ by: `aaa-${i}` }));
+    writeFileSync(join(runsDir(), 'Bad Name.aaaaaa.jsonl'), logLine({ by: 'Bad Name' }));
+    writeFileSync(join(runsDir(), 'zed-real.cccccc.jsonl'), logLine({ by: 'zed-real', by_name: 'Zed Real' }));
+    expect(lastOf('w-search')).toMatchObject({ by: 'zed-real', byName: 'Zed Real' });
+  });
+
   it('board returns the newest run across two people, with byName', () => {
     mkdirSync(runsDir(), { recursive: true });
     writeFileSync(join(runsDir(), 'tess-team.aaaaaa.jsonl'), logLine({ ts: '2026-11-10T10:00:00.000Z' }));

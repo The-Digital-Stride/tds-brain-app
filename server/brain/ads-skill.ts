@@ -42,6 +42,9 @@ import {
   withDefaults,
 } from './skill-runner.ts';
 
+/** Longer than any real apply takes (they run in seconds to a few minutes). */
+const APPLY_MAX_AGE_MS = 60 * 60 * 1000;
+
 export class AdsError extends Error {
   readonly code: AdsErrorCode;
   /** What the run printed (already trimmed and with secrets hidden by the bridge). Sent only for unknown-outcome. */
@@ -220,6 +223,10 @@ export function createAdsService(root: string, options: AdsServiceOptions = {}):
     return next;
   }
   const same = (e: AdsInflightEntry, client: string, id: string) => e.client === client && e.id === id;
+  /** Running, as far as "I've checked" is concerned: the pid is alive and the apply is young enough to still be it.
+   *  After a restart the saved pid can belong to another process; past this age the person can clear it. */
+  const stillRunning = (e: AdsInflightEntry) =>
+    e.pid !== null && isAlive(e.pid) && Date.now() - Date.parse(e.startedAt) < APPLY_MAX_AGE_MS;
 
   async function appliedNow(client: string, id: string): Promise<boolean> {
     try {
@@ -374,7 +381,7 @@ export function createAdsService(root: string, options: AdsServiceOptions = {}):
       // write again once it ends without stamping applied_at (security review, finding 1).
       let running = false;
       await editEntries((entries) => {
-        running = entries.some((e) => same(e, client, id) && e.pid !== null && isAlive(e.pid));
+        running = entries.some((e) => same(e, client, id) && stillRunning(e));
         return running ? entries : entries.filter((e) => !same(e, client, id));
       });
       if (running) throw new AdsError('unknown-outcome', 'that apply is still running');

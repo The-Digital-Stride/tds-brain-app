@@ -74,12 +74,15 @@ const arg = (n) => { const a = argv.find((x) => x.startsWith('--' + n + '=')); r
 console.log('proxy: token line that must not show');
 console.log('STUB ' + (argv.includes('--confirmed') ? 'live' : 'dry run') + ' for ' + arg('id'));
 if (mode === 'leak') console.log('Command failed: curl -sS -H x-proxy-secret: s3cret-value https://proxy.test');
+if (mode === 'leak') console.log('{"x-proxy-secret":"s3cret-value"}');
 if (mode === 'mismatch-stamped' && argv.includes('--confirmed')) {
   P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'failed', applied_at: new Date().toISOString(), outcome: 'stub read-back disagreed' });
 }
 if (mode === 'ok' && argv.includes('--confirmed')) {
   P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'applied', applied_at: new Date().toISOString(), outcome: 'stub applied' });
 }
+if (mode === 'live-crash' && argv.includes('--confirmed')) { console.error('live write failed (exit 1)'); process.exit(4); }
+if (mode === 'dry-fail') { console.error('dry run failed (exit 1); see proposals/dry-runs/x.md'); process.exit(4); }
 process.exit(mode === 'refuse' ? 2 : mode === 'mismatch' || mode === 'mismatch-stamped' ? 3 : mode === 'crash' ? 1 : 0);
 `;
 
@@ -816,6 +819,21 @@ describe('dry run and apply (decision 12)', () => {
     refused(bridge('apply', { client: 'acme', id: b, confirmed: true }), 'unknown-outcome');
     // A crashed dry run changed nothing in Google Ads: just a failure.
     expect(bridge('dry-run', { client: 'acme', id: b }).reply).toMatchObject({ ok: true, failed: true });
+  });
+
+  it('exit 4 after the live write started is an unknown outcome; before it, a plain failure', () => {
+    const a = mkProposal('pause-generic');
+    P.approve({ clientDir: abs('clients/acme'), id: a, by: 'rita-reviewer' });
+    // apply.cjs turns any live gads-write failure (even a crash after the write, before the stamp) into 4.
+    put('apply-mode', 'live-crash');
+    const r = bridge('apply', { client: 'acme', id: a, confirmed: true });
+    refused(r, 'unknown-outcome');
+    expect(r.reply.output).toContain('live write failed');
+    // The dry run inside apply failed: nothing was sent, so the plain message stands.
+    put('apply-mode', 'dry-fail');
+    const d = bridge('apply', { client: 'acme', id: a, confirmed: true });
+    expect(d.reply).toMatchObject({ ok: true, failed: true });
+    expect(d.reply.message).toContain('nothing was changed');
   });
 
   it('refuses a proposal without an operations file, and apply before the client has agreed', () => {

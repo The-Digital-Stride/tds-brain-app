@@ -222,6 +222,18 @@ describe('changes (decision 12)', () => {
     expect(await svc.inflight()).toEqual([]);
   });
 
+  it('lets "I\'ve checked" clear an entry older than any apply could run, even if its pid was reused', async () => {
+    const { dataDir, root } = brain();
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    writeFileSync(
+      join(dataDir, ADS_INFLIGHT_FILE),
+      JSON.stringify([{ client: 'acme', id: APPLY.id, pid: 6666, startedAt: old }]),
+    );
+    const svc = createAdsService(root, opts(dataDir, { isAlive: (pid) => pid === 6666 }));
+    await svc.clearInflight('acme', APPLY.id);
+    expect(await svc.inflight()).toEqual([]);
+  });
+
   it('dry-run and sign-monthly limits end only the wait (internal), never the process', async () => {
     const { root, dataDir } = brain({ 'dry-run': { delayMs: 800 }, 'sign-monthly': { delayMs: 800 } });
     const svc = createAdsService(root, opts(dataDir, { timeouts: { 'dry-run': 100, 'sign-monthly': 100 } }));
@@ -264,6 +276,21 @@ describe('changes (decision 12)', () => {
     expect(await codeOf(svc.change('apply', APPLY))).toBe('unknown-outcome');
     expect(runs(root).filter((r) => r.action === 'apply')).toHaveLength(3);
     expect(await svc.inflight()).toHaveLength(1);
+  });
+
+  it('an unknown outcome from the bridge keeps what the run printed, on the error', async () => {
+    const out = 'gads-write: read-back MISMATCH';
+    const { root, dataDir } = brain({
+      apply: {
+        exit: 2,
+        reply: { ok: false, action: 'apply', code: 'unknown-outcome', error: 'x', output: out },
+      },
+    });
+    const svc = createAdsService(root, opts(dataDir));
+    const err = await svc.change('apply', APPLY).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AdsError);
+    expect((err as AdsError).code).toBe('unknown-outcome');
+    expect((err as AdsError).output).toBe(out);
   });
 
   it('a refused apply (nothing ran) clears its entry', async () => {

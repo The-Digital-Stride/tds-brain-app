@@ -61,13 +61,42 @@ export function ageDays(date: string, now = Date.now()): number | null {
   return Number.isNaN(t) ? null : Math.floor((now - t) / 86_400_000);
 }
 
-/** A cell as the Workbench shows it (column types: text, money, int, num1, x, pct, qs). */
-export function fmt(v: string | number | null | undefined, type: ColType, currency: string): string {
+type Cell = string | number | null | undefined;
+const isNum = (v: Cell): v is number | string =>
+  v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
+
+/** Money decimals for a whole column: pence while its largest figure is under 100, else whole pounds. */
+export function moneyDigits(values: Cell[]): 0 | 2 {
+  let max = 0;
+  for (const v of values) if (isNum(v)) max = Math.max(max, Math.abs(Number(v)));
+  return max < 100 ? 2 : 0;
+}
+
+/** A currency amount in the account's own currency; a bad code falls back to a plain number with the code. */
+function money(n: number, currency: string, digits: number): string {
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(n);
+  } catch {
+    const num = n.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return currency ? `${currency} ${num}` : num;
+  }
+}
+
+/**
+ * A cell as the Workbench shows it (column types: text, money, int, num1, x, pct, qs).
+ * `digits` is the column's money decimals (see `moneyDigits`); a single value defaults to whole units.
+ */
+export function fmt(v: Cell, type: ColType, currency: string, digits: 0 | 2 = 0): string {
   if (v === null || v === undefined || v === '') return '—';
-  const sym = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
+  if (type !== 'text' && !isNum(v)) return String(v);
   switch (type) {
     case 'money':
-      return sym + Number(v).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+      return money(Number(v), currency, digits);
     case 'int':
       return Number(v).toLocaleString('en-GB');
     case 'num1':
@@ -76,9 +105,31 @@ export function fmt(v: string | number | null | undefined, type: ColType, curren
       return `${Number(v).toFixed(1)}%`;
     case 'x':
       return `${Number(v).toFixed(2)}x`;
+    case 'qs': {
+      const n = Number(v);
+      return Number.isInteger(n) ? String(n) : n.toFixed(1);
+    }
     default:
       return String(v);
   }
+}
+
+/** A true zero ("0.0", "£0") reads quieter. A ROAS of 0.00x is a result, so it keeps its colour. */
+export function isQuietZero(v: Cell, type: ColType): boolean {
+  return type !== 'text' && type !== 'x' && isNum(v) && Number(v) === 0;
+}
+
+/**
+ * A value worth a second look: ROAS under 1.00x (once the column has any return) and Quality Score 4 or below.
+ * `spent` is whether the row spent anything, when the table has a Spend column: a row that spent nothing has
+ * a 0.00x ROAS with no return to judge, so it is never low.
+ */
+export function isLow(v: Cell, type: ColType, column: Cell[], spent?: boolean): boolean {
+  if (!isNum(v)) return false;
+  const n = Number(v);
+  if (type === 'x') return spent !== false && n < 1 && column.some((c) => isNum(c) && Number(c) > 0);
+  if (type === 'qs') return n <= 4;
+  return false;
 }
 
 /** Sorts rows by column `idx`, as the board does: numbers by value, text A to Z, empty last. */

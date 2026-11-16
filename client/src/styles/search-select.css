@@ -78,6 +78,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: an option's icon is never the chevron. */
 .ss-opt svg {
   flex: none;
   color: var(--navy);

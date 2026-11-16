@@ -66,7 +66,7 @@ function kits(args: string[], who = SAM) {
 }
 function kitsJson(args: string[], who = SAM) {
   const r = kits([...args, '--json'], who);
-  return { code: r.code, json: JSON.parse(r.out) as Record<string, any> };
+  return { code: r.code, json: JSON.parse(r.out) };
 }
 /** A copy of the script with the shipped switch turned on, in the test's own temporary folder. */
 function syncedCopy(): string {

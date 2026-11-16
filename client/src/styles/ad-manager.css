@@ -109,6 +109,9 @@
   vertical-align: top;
   border-top: 1px solid var(--line);
 }
+.am-table tr[data-current] td {
+  background: var(--tint-1);
+}
 .am-table tbody tr:first-child td {
   border-top: 0;
 }
@@ -118,9 +121,6 @@
 }
 .am-table .am-wide {
   min-width: 220px;
-}
-.am-table tr[data-current] td {
-  background: var(--tint-1);
 }
 .am-sort {
   all: unset;

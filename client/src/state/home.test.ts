@@ -1,28 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TodoItem } from '../../../shared/contract.ts';
 import { greeting, summary } from './home.ts';
-
-const todo = (id: string, due: string | null): TodoItem => ({
-  id,
-  scope: 'tds',
-  key: id,
-  path: `todo/${id}`,
-  handover: null,
-  createdBy: null,
-  title: id,
-  created: null,
-  source: null,
-  details: '',
-  version: 'v1',
-  attachments: [],
-  assignee: 'sam-example',
-  due,
-  surfaceDate: null,
-  project: null,
-  client: null,
-});
-
-const TODAY = '2026-11-11';
 
 describe('greeting', () => {
   const at = (h: number, m: number) => new Date(2026, 10, 11, h, m);

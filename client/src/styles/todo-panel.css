@@ -547,6 +547,8 @@ fieldset.todo-link {
  * The editor's own base rules, copied from `@tiptap/core`'s style.ts. The editor is told not to inject them
  * (`injectCSS: false`) because an injected <style> tag is blocked by the app's content security policy.
  */
+/* biome-ignore-start lint/style/noDescendingSpecificity: copied verbatim from @tiptap/core, so it keeps its order and !important. */
+/* biome-ignore-start lint/complexity/noImportantStyles: copied verbatim from @tiptap/core, so it keeps its order and !important. */
 .todo-prose {
   position: relative;
   word-wrap: break-word;
@@ -607,6 +609,8 @@ fieldset.todo-link {
     animation: none;
   }
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: end of the TipTap block. */
+/* biome-ignore-end lint/style/noDescendingSpecificity: end of the TipTap block. */
 
 /* History: a quiet list under the details, newest first. */
 .todo-history {
@@ -641,6 +645,7 @@ fieldset.todo-link {
   display: grid;
   gap: 4px;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: the chosen-files list is outside the editor. */
 .todo-picker-chosen li {
   display: flex;
   align-items: center;

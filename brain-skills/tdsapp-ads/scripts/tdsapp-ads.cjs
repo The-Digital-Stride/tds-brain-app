@@ -482,7 +482,8 @@ function compactRunLog(file) {
     } catch {
       continue;
     }
-    if (!line || typeof line !== 'object' || !isStr(line.task) || !isStr(line.ts)) continue;
+    // Only real tasks are kept, so a log padded with made-up task names still shrinks.
+    if (!line || typeof line !== 'object' || !validTask(line.task) || !isStr(line.ts)) continue;
     const t = Date.parse(line.ts);
     if (Number.isNaN(t)) continue;
     const have = newest.get(line.task);

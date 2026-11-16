@@ -1113,6 +1113,21 @@ describe('task-run and lastRun', () => {
     expect(logs().filter((n) => n.endsWith('.tmp') && !/\.\d+\.tmp$/.test(n))).toEqual([]);
   });
 
+  it('compaction drops lines for tasks that are not on the list', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const file = join(runsDir(), logs()[0] as string);
+    const junk = Array.from({ length: 800 }, (_, i) =>
+      logLine({ by: 'rita-reviewer', task: `junk-${i}` }),
+    ).join('');
+    writeFileSync(file, readFileSync(file, 'utf8') + junk);
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const tasks = readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l).task);
+    expect(tasks).toEqual(['w-search']);
+  });
+
   it('a log padded past 4 MB is left alone, and recording still works', () => {
     bridge('task-run', { account: 'acme', task: 'w-search' });
     const file = join(runsDir(), logs()[0] as string);

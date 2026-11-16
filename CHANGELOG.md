@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.42.0 — 2026-11-16
+
+- **feat**: open to-dos in a wide panel with a rich-text editor
+
 ## v0.41.1 — 2026-11-15
 
 - **fix**: Home help says what the What's new card is and how to close it

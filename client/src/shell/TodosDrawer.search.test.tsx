@@ -6,9 +6,15 @@ import { pickOption } from '../test/pick.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
-vi.mock('./ShellProvider.tsx', () => ({
-  useShell: () => ({ state: {}, dispatch: vi.fn(), modes: { drawerOverlays: false, panelOverlays: false } }),
+vi.mock('./ShellProvider.tsx', async () => ({
+  useShell: (await import('./todo-test-kit.tsx')).useFakeShell,
 }));
+vi.mock('./TodoDetailsEditor.tsx', async () => ({
+  default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
+}));
+vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
+
+const { fakeShell } = await import('./todo-test-kit.tsx');
 
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
 
@@ -95,18 +101,30 @@ function setStore(mine: TodoItem[], over: Partial<TodoList> = {}, seen: Record<s
   };
 }
 
+/** Opens the panel's add form (the panel loads the first time, hence the wait). */
+const openAdd = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+  await screen.findByRole('form', { name: 'Add a to-do' });
+};
+/** Opens a to-do in the panel, already editing. */
+const openEdit = async (title = 'Renew contract') => {
+  fireEvent.click(screen.getByRole('button', { name: `Edit "${title}"` }));
+  await screen.findByRole('form', { name: /^Edit/ });
+};
+
 beforeEach(() => {
   for (const f of Object.values(fns)) f.mockReset();
   fns.changeTodos.mockResolvedValue({ done: 1 });
   setStore([todo('a.md', 'Renew contract')]);
 });
 afterEach(cleanup);
+beforeEach(() => fakeShell.reset());
 
 describe('quick add', () => {
   it('opens a one-line add from the + button and Enter adds it to me with no date', async () => {
     render(<TodosDrawer />);
     expect(screen.getByRole('button', { name: 'Add a to-do' }).getAttribute('data-variant')).toBe('primary');
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     expect(screen.queryByLabelText('Due date (optional)')).toBeNull();
     fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: ' Ring Bob ' } });
     fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
@@ -119,12 +137,13 @@ describe('quick add', () => {
 
   it('shows the lock only when personal is available, and sends scope personal when on', async () => {
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     expect(screen.queryByRole('button', { name: 'Keep it personal' })).toBeNull();
     cleanup();
+    fakeShell.reset();
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: 'Private' } });
     fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
@@ -135,20 +154,20 @@ describe('quick add', () => {
     );
   });
 
-  it('starts personal while the Personal filter is showing', () => {
+  it('starts personal while the Personal filter is showing', async () => {
     setStore([personal('p.md', 'Private note')], { canUsePersonal: true });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     expect(screen.getByRole('button', { name: 'Keep it personal' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
   });
 
-  it('choosing someone else turns personal off and disables it with the reason', () => {
+  it('choosing someone else turns personal off and disables it with the reason', async () => {
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     fireEvent.click(screen.getByRole('button', { name: "Choose who it's for" }));
     fireEvent.change(screen.getByLabelText('Assigned to'), { target: { value: 'ben-mcadam' } });
@@ -164,9 +183,9 @@ describe('quick add', () => {
     expect(screen.getByRole('button', { name: 'For: Ben McAdam' }).getAttribute('data-on')).toBe('true');
   });
 
-  it('names the date in its toggle and uses only aria-expanded', () => {
+  it('names the date in its toggle and uses only aria-expanded', async () => {
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'Add a due date' }));
     fireEvent.change(screen.getByLabelText('Due date (optional)'), { target: { value: '2030-11-14' } });
     const toggle = screen.getByRole('button', { name: 'Due date: 14 Nov' });
@@ -175,26 +194,26 @@ describe('quick add', () => {
     expect(toggle.getAttribute('data-on')).toBe('true');
   });
 
-  it('describes the Add button with the personal warning while it shows', () => {
+  it('describes the Add button with the personal warning while it shows', async () => {
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     const warning = screen.getByText(/Personal to-dos stay on this Mac/);
     expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBe(warning.id);
   });
 
-  it('More options moves focus to the first field it reveals', () => {
+  it('More options moves focus to the first field it reveals', async () => {
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     expect(document.activeElement).toBe(screen.getByLabelText('Due date (optional)'));
   });
 
-  it('More options shows the date and assignee fields', () => {
+  it('More options shows the date and assignee fields', async () => {
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     expect(screen.getByLabelText('Due date (optional)')).toBeTruthy();
     expect(screen.getByLabelText('Assigned to')).toBeTruthy();
@@ -271,6 +290,7 @@ describe('filters', () => {
     render(<TodosDrawer />);
     expect(screen.queryByRole('radiogroup', { name: 'Which kind of to-do' })).toBeNull();
     cleanup();
+    fakeShell.reset();
     setStore([...items, personal('p.md', 'Secret plan')], { canUsePersonal: true });
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Personal' }));
@@ -377,7 +397,7 @@ describe('revealTodo (from the global search)', () => {
 
   beforeEach(() => clear.mockReset());
 
-  it('takes the request once, switches to the other tab, focuses the row and opens its group', () => {
+  it('takes the request once, switches to the other tab, opens its group and the to-do in the panel', () => {
     setStore([todo('a.md', 'Renew contract')]);
     const target = todo('o2.md', 'Pick me up', { assignee: null, due: null });
     (store.current.todos as TodoList).open = [todo('o1.md', 'Open thing'), target];
@@ -391,8 +411,7 @@ describe('revealTodo (from the global search)', () => {
     ).toBe('true');
     // "No date" is a closed group when nothing asked for it.
     expect(screen.getByRole('button', { name: /No date/ }).getAttribute('aria-expanded')).toBe('true');
-    const rowButton = chatButton('Pick me up') as HTMLElement;
-    expect(document.activeElement).toBe(rowButton);
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'o2.md', mode: 'read' });
   });
 
   it('stays on Mine for one of mine, opening a group that was closed', () => {
@@ -403,7 +422,7 @@ describe('revealTodo (from the global search)', () => {
     render(<TodosDrawer />);
     expect(screen.getByRole('button', { name: /^Overdue/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: /^No date/ }).getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'n.md', mode: 'read' });
   });
 
   it('clears the filters first, so the to-do is not hidden by them', () => {
@@ -416,7 +435,7 @@ describe('revealTodo (from the global search)', () => {
     ask(b);
     rerender(<TodosDrawer />);
     expect((screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement).value).toBe('All clients');
-    expect(document.activeElement).toBe(chatButton('Ring Bob'));
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'b.md', mode: 'read' });
   });
 
   it('opens a group the person closed by hand when the same to-do is revealed again', () => {
@@ -433,7 +452,7 @@ describe('revealTodo (from the global search)', () => {
     ask(target, 2);
     rerender(<TodosDrawer />);
     expect(noDate().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(chatButton('Undated thing') as HTMLElement);
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'n.md', mode: 'read' });
   });
 
   it('does the same for "New to you", so the row is never left in a hidden group', () => {
@@ -448,7 +467,7 @@ describe('revealTodo (from the global search)', () => {
     ask(fresh, 2);
     rerender(<TodosDrawer />);
     expect(group().getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(chatButton('Handed over') as HTMLElement);
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'n.md', mode: 'read' });
   });
 
   it('does nothing visible for a to-do that has gone, but still takes the request', () => {
@@ -512,7 +531,7 @@ describe('New to you', () => {
     expect(fns.markTodosSeen.mock.calls[0]?.[0]).toHaveLength(2);
   });
 
-  it('keeps an undated new to-do in view when its editor opens and the seen marker is saved', () => {
+  it('keeps an undated new to-do in view when its editor opens and the seen marker is saved', async () => {
     const undated = todo('u.md', 'Undated from Ben', { due: null, handover: handover() });
     setStore([undated]);
     // A real update: saving the marker changes what the next render reads.
@@ -521,7 +540,7 @@ describe('New to you', () => {
       for (const t of list) boot.prefs.todoSeen = { ...boot.prefs.todoSeen, [t.key]: t.handover?.at ?? '' };
     });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Undated from Ben"' }));
+    await openEdit('Undated from Ben');
     expect(fns.markTodosSeen).toHaveBeenCalled();
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
     expect(screen.getByRole('heading', { name: /New to you/ })).toBeTruthy();
@@ -535,10 +554,10 @@ describe('New to you', () => {
     expect(document.activeElement?.className).toContain('drawer-scroll');
   });
 
-  it('marks a row seen when its editor is opened', () => {
+  it('marks a row seen when its editor is opened', async () => {
     setStore([passed]);
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Fresh from Ben"' }));
+    await openEdit('Fresh from Ben');
     expect(fns.markTodosSeen).toHaveBeenCalledWith([passed]);
     expect(
       screen.getByText(`Passed to you by Ben McAdam, ${new Date(recent).getDate()}`, { exact: false }),
@@ -555,10 +574,10 @@ describe('New to you', () => {
 describe('personal to-dos', () => {
   const mineP = personal('p.md', 'Secret plan', { version: 'vp' });
 
-  it('sends personal ticks with scope and version, and deletes with scope', () => {
+  it('sends personal ticks with scope and version, and deletes with scope', async () => {
     setStore([mineP], { canUsePersonal: true });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Secret plan"' }));
+    await openEdit('Secret plan');
     fireEvent.click(screen.getByRole('button', { name: 'Mark as done' }));
     expect(fns.holdTodo).toHaveBeenCalledWith({
       todoId: 'personal/p.md',
@@ -578,7 +597,7 @@ describe('personal to-dos', () => {
       moved: { from: 'a.md', to: 'personal/a.md' },
     });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    await openEdit('Renew contract');
     fireEvent.click(
       within(screen.getByRole('radiogroup', { name: 'Where this to-do is kept' })).getByRole('radio', {
         name: 'Personal',
@@ -609,7 +628,7 @@ describe('personal to-dos', () => {
       moved: { from: 'personal/p.md', to: 'p.md' },
     });
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Secret plan"' }));
+    await openEdit('Secret plan');
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Secret plan 2' } });
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2030-02-02' } });
     fireEvent.change(screen.getByLabelText('Assigned to'), { target: { value: 'ben-mcadam' } });
@@ -637,10 +656,10 @@ describe('personal to-dos', () => {
     expect(screen.getByText('Secret plan', { exact: false })).toBeTruthy();
   });
 
-  it('hides the switch without canUsePersonal and for to-dos that are not yours', () => {
+  it('hides the switch without canUsePersonal and for to-dos that are not yours', async () => {
     setStore([todo('a.md', 'Renew contract')]);
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit "Renew contract"' }));
+    await openEdit('Renew contract');
     expect(screen.queryByRole('radiogroup', { name: 'Where this to-do is kept' })).toBeNull();
   });
 });

@@ -143,6 +143,10 @@ function Shell() {
   const modal = drawerModal || panelModal;
   // The file viewer floats over the whole desk, which is out of reach while it shows.
   const viewing = state.viewer !== null;
+  // The to-do panel (mounted by the To-dos drawer into the slot below): the sheet is out of reach under it. When
+  // the drawer floats the panel covers it and the rail as well, so they are out of reach too.
+  const todoOpen = state.todoPanel !== null;
+  const todoModal = todoOpen && modes.drawerOverlays;
   const DrawerBody = DRAWER_BODIES[drawer];
   // An app with a panel of its own fills the right dock while it is on the sheet.
   const app = APPS.find((a) => view === `app:${a.id}`);
@@ -158,9 +162,9 @@ function Shell() {
         data-rail={railShowsNames ? 'wide' : 'icons'}
         inert={state.paletteOpen || viewing || touring}
       >
-        <Rail inert={modal} />
+        <Rail inert={modal || todoModal} />
         {/* A floating panel makes the drawer behind it unreachable too. */}
-        <div className="dock-slot" inert={panelModal}>
+        <div className="dock-slot" inert={panelModal || todoModal}>
           <Dock
             side="left"
             open={drawerOpen}
@@ -193,25 +197,30 @@ function Shell() {
             <DrawerBody />
           </Dock>
         </div>
-        <main className="sheet" id="main" tabIndex={-1} inert={modal}>
+        <main className="sheet" id="main" tabIndex={-1} inert={modal || todoOpen}>
           <SheetNotices />
           <SheetContent />
         </main>
-        <Dock
-          side="right"
-          open={panelShowing}
-          label={app && AppPanel ? (app.panelLabel ?? app.title) : 'This chat'}
-          overlay={modes.panelOverlays}
-          onClose={() => dispatch({ type: 'set-panel', open: false })}
-        >
-          {AppPanel ? (
-            <Suspense fallback={null}>
-              <AppPanel />
-            </Suspense>
-          ) : (
-            <Inspector />
-          )}
-        </Dock>
+        {/* Out of reach while the to-do panel is open: on wide screens it sits under the panel and its veil. */}
+        <div className="dock-slot" inert={todoOpen}>
+          <Dock
+            side="right"
+            open={panelShowing}
+            label={app && AppPanel ? (app.panelLabel ?? app.title) : 'This chat'}
+            overlay={modes.panelOverlays}
+            onClose={() => dispatch({ type: 'set-panel', open: false })}
+          >
+            {AppPanel ? (
+              <Suspense fallback={null}>
+                <AppPanel />
+              </Suspense>
+            ) : (
+              <Inspector />
+            )}
+          </Dock>
+        </div>
+        {/* The To-dos drawer puts its panel here: beside the dock, because the dock clips what is inside it. */}
+        <div id="todo-panel-slot" className="dock-slot" />
       </div>
       <Palette />
       <FileViewer />

@@ -26,6 +26,11 @@ const api = vi.hoisted(() => ({
   library: vi.fn(),
   libraryText: vi.fn(),
 }));
+// The editor and the converter need a real browser; the panel's own behaviour is tested in TodoPanel.test.tsx.
+vi.mock('./TodoDetailsEditor.tsx', async () => ({
+  default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
+}));
+vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
 vi.mock('../api.ts', () => ({
   api,
   streamUrl: () => '/api/stream',
@@ -278,11 +283,10 @@ describe('Palette', () => {
     const drawer = document.getElementById('drawer') as HTMLElement;
     await waitFor(() => expect(drawer.hasAttribute('inert')).toBe(false));
     expect(within(drawer).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
-    const row = within(drawer).getByRole('button', {
-      name: 'Start a chat on this: Check the monthly reports',
-    });
-    await waitFor(() => expect(document.activeElement).toBe(row));
-    fireEvent.click(row as HTMLElement);
+    // The to-do opens in the panel, ready to read; its chat button starts the chat.
+    const panel = await screen.findByRole('dialog', { name: 'Check the monthly reports' });
+    expect(within(drawer).getByRole('button', { name: 'Check the monthly reports' })).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Start a chat' }));
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
         'Help me with this to-do: todo/t-today.md (Check the monthly reports)',
@@ -312,8 +316,10 @@ describe('Palette', () => {
           .getAttribute('aria-checked'),
       ).toBe('true'),
     );
-    const row = within(drawer).getByRole('button', { name: 'Start a chat on this: Pick up the audit' });
-    await waitFor(() => expect(document.activeElement).toBe(row));
+    await screen.findByRole('dialog', { name: 'Pick up the audit' });
+    expect(
+      within(drawer).getByRole('button', { name: 'Start a chat on this: Pick up the audit' }),
+    ).toBeTruthy();
   });
 
   it('reveals a personal to-do by its key, then starts its chat with the personal path', async () => {
@@ -332,12 +338,9 @@ describe('Palette', () => {
     await openPalette();
     fireEvent.click(screen.getByRole('option', { name: /Private errand/ }));
     const drawer = document.getElementById('drawer') as HTMLElement;
-    const row = await waitFor(() => {
-      const r = within(drawer).getByRole('button', { name: 'Start a chat on this: Private errand' });
-      expect(document.activeElement).toBe(r);
-      return r as HTMLElement;
-    });
-    fireEvent.click(row);
+    expect(drawer).toBeTruthy();
+    const panel = await screen.findByRole('dialog', { name: 'Private errand' });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Start a chat' }));
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
         'Help me with this to-do: personal/todo/p1.md (Private errand)',

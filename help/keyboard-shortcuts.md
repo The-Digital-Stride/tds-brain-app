@@ -8,7 +8,7 @@ benefit: Move around Cortex quickly without reaching for the mouse.
 roles: all
 related: [search-and-jump, settings, getting-help]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-16
 ---
 
 ## What it does
@@ -28,13 +28,15 @@ Cortex has a few keys that open drawers and search. Most are single keys, so the
 3. Press **[** to show or hide the names on the rail.
 4. Press the slash key (/) to open search.
 5. Press **H** or **?** to open Help.
-6. Press Esc to close the search box, then a drawer, one step at a time.
+6. With a to-do open in its panel, press **P** for the previous to-do and **N** for the next.
+7. While you read a to-do in its panel, press **E** to edit it. While you edit, press ⌘ and Enter (Ctrl and Enter on Windows) to save.
+8. Press Esc to close the search box, then the to-do panel, then a drawer, one step at a time. If the to-do panel has unsaved changes, it asks first.
 
 In the message box, press Enter to send. Press Shift and Enter for a new line.
 
 ## Good to know
 
-- Single keys do nothing while you are typing in a box.
+- Single keys do nothing while you are typing in a box. **P**, **N** and **E** are single keys too, so they follow the switch. ⌘ Enter and Esc work whether it is on or off.
 - The **Single-key shortcuts** switch in Settings turns them on or off. It is on to begin with.
 - ⌘K and Esc work whether the switch is on or off.
 - While the first-run tour shows, single keys do nothing.

@@ -157,16 +157,16 @@
   {
     "id": "todo-add",
     "scene": "todo-add",
-    "crop": "#drawer form[aria-label=\"Add a to-do\"]",
+    "crop": ".todo-panel",
     "pad": 10,
-    "alt": "The form for adding a to-do, with a due date and who it's for."
+    "alt": "The panel for adding a to-do, with a due date and who it's for."
   },
   {
     "id": "todo-edit",
     "scene": "todo-edit",
-    "crop": "#drawer form[aria-label^=\"Edit \"]",
+    "crop": ".todo-panel",
     "pad": 10,
-    "alt": "Editing a to-do, with the Assigned to field."
+    "alt": "A to-do open for editing in the panel beside the drawer, with the Assigned to field."
   },
   {
     "id": "settings-todos-switch",

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type { ShellAction } from './contract.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 const shell = vi.hoisted(() => ({
@@ -9,10 +10,29 @@ const shell = vi.hoisted(() => ({
   modes: { drawerOverlays: false, panelOverlays: false },
 }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
-vi.mock('./ShellProvider.tsx', () => ({
-  useShell: () => ({ state: {}, dispatch: shell.dispatch, modes: shell.modes }),
+vi.mock('./ShellProvider.tsx', async () => {
+  const { useFakeShell } = await import('./todo-test-kit.tsx');
+  return {
+    // The real reducer keeps the open to-do; every action is also noted in `shell.dispatch`.
+    useShell: () => {
+      const fake = useFakeShell();
+      return {
+        ...fake,
+        modes: shell.modes,
+        dispatch: (a: ShellAction) => {
+          shell.dispatch(a);
+          fake.dispatch(a);
+        },
+      };
+    },
+  };
+});
+vi.mock('./TodoDetailsEditor.tsx', async () => ({
+  default: (await import('./todo-test-kit.tsx')).FakeDetailsEditor,
 }));
+vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
 
+const { fakeShell } = await import('./todo-test-kit.tsx');
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
 const { ChatsDrawer } = await import('./ChatsDrawer.tsx');
 const { SkillsDrawer } = await import('./SkillsDrawer.tsx');
@@ -94,6 +114,7 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
 }
 
 beforeEach(() => {
+  fakeShell.reset();
   for (const f of Object.values(fns)) f.mockReset();
   shell.dispatch.mockReset();
   shell.modes.drawerOverlays = false;
@@ -109,35 +130,35 @@ describe('To-dos drawer', () => {
     expect(screen.getByText('Renew contract')).toBeTruthy();
   });
 
-  it('with only the switch on, a to-do is opened and marked as done on purpose, held for undo', () => {
+  it('with only the switch on, a to-do is opened and marked as done on purpose, held for undo', async () => {
     setStore({}, true);
     shell.modes.drawerOverlays = true;
     render(<TodosDrawer />);
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
-    const done = screen.getByRole('button', { name: 'Mark as done' });
-    // Focus goes to the title, not the button, so two presses of Enter can't finish it.
-    expect(document.activeElement?.textContent).toBe('Renew contract');
-    expect(screen.getByRole('group', { name: 'Renew contract' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    const panel = await screen.findByRole('dialog', { name: 'Renew contract' });
+    const done = within(panel).getByRole('button', { name: 'Mark as done' });
+    // Focus goes to the heading, not the button, so two presses of Enter can't finish it.
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('Renew contract'));
+    expect(within(panel).queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: 'Edit' })).toBeNull();
     fireEvent.click(done);
     expect(fns.holdTodo).toHaveBeenCalledWith(
       expect.objectContaining({ todoId: 't1.md', kind: 'tick', label: 'Marked as done' }),
     );
     expect(fns.completeTodo).not.toHaveBeenCalled();
-    expect(shell.dispatch).not.toHaveBeenCalled();
+    expect(fakeShell.state.todoPanel).toBeNull();
+    expect(shell.dispatch).not.toHaveBeenCalledWith({ type: 'close-drawer' });
   });
 
-  it('closes the opened to-do with Escape or Cancel without finishing it', () => {
+  it('closes the opened to-do with its close button without finishing it', async () => {
     setStore({}, true);
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Mark as done' }), { key: 'Escape' });
-    expect(screen.queryByRole('button', { name: 'Mark as done' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('button', { name: 'Mark as done' })).toBeNull();
+    await screen.findByRole('dialog', { name: 'Renew contract' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(fns.holdTodo).not.toHaveBeenCalled();
   });
 

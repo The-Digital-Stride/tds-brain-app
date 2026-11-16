@@ -8,7 +8,7 @@ benefit: Work reaches the right person, and nobody has to chase it by message.
 roles: all
 related: [todos, adding-todos, sharing-with-your-team, personal-todos]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-16
 ---
 
 ## What it does
@@ -24,11 +24,11 @@ You can give a to-do to a teammate, or make it **Open to anyone** so the first f
 ## How to use it
 
 1. Switch on **Let the app change to-dos** in Settings, if it is off.
-2. Open the to-do from the To-dos drawer.
+2. Press the to-do's title in the To-dos drawer, then press **Edit** in the panel.
 3. Pick a name in the **Assigned to** box. Pick **Open to anyone** to leave it for the team.
 4. Press **Save**. The to-do leaves your list for a few seconds, with **Undo** showing. Then it is sent.
 
-![Editing a to-do, with the Assigned to field.](images/todo-edit.webp)
+![A to-do open for editing in the panel beside the drawer, with the Assigned to field.](images/todo-edit.webp)
 
 ## Good to know
 

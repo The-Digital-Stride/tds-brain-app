@@ -26,9 +26,9 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 1. Open the To-dos drawer from the rail.
 2. To make changes, first switch on **Let the app change to-dos** in Settings. Until then you can only read the list.
 3. **Mine** shows what is yours. **Open to anyone** shows jobs nobody has taken.
-4. Open a to-do and press **Mark as done** when it's finished.
+4. Press a to-do's title to read it in a wide panel. Press **Mark as done** when it's finished.
 5. To add one, press the **+** button (1), type it and press Enter.
-6. To hand a to-do over, open it and change who it's assigned to.
+6. To hand a to-do over, open it, press **Edit** and change who it's assigned to.
 
 ![The To-dos drawer with the Mine tab open.](images/todos-drawer.webp)
 

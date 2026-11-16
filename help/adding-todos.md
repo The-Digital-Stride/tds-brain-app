@@ -8,36 +8,38 @@ benefit: A job is written down the moment you think of it, so it can't be forgot
 roles: all
 related: [todos, passing-todos-on, personal-todos, change-todos-setting]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-16
 ---
 
 ## What it does
 
-You can add a to-do, give it a due date, change it later or delete it. You can also start a chat with Claude about any to-do.
+You can add a to-do, give it a due date, change it later or delete it. A wide panel opens beside the To-dos drawer for the details. You can also start a chat with Claude about any to-do.
 
 ## Why it helps
 
 - Writing it down takes seconds, so you stay in your flow.
-- A due date and a name make clear what is wanted and by whom.
+- Long details are easy to read, with proper headings, lists and tick boxes.
 - Claude can help you plan or finish the job, with the to-do already in front of it.
 
 ## How to use it
 
 1. First switch on **Let the app change to-dos** in Settings. Until then you can read to-dos but not change them.
-2. Open the To-dos drawer and press **Add a to-do**.
-3. Type what needs doing and press **Add**. It goes to you, with no date.
-4. To set a date or a person first, press **More options**.
-5. To change a to-do later, open it from the list, edit it and press **Save**.
-6. To ask Claude for help, press **Start a chat** on the to-do. Cortex opens a new chat with a message about the to-do already typed. Press **Send** when you're ready. Press **Open chat** later to come back to it.
+2. Open the To-dos drawer and press **Add a to-do**. The panel opens.
+3. Type what needs doing and press **Add**. It goes to you, with no date. For a date or a person first, press **More options**.
+4. After you add one for yourself, the panel stays on it so you can write its details at once.
+5. To read a to-do, press its title. To change it, press **Edit**, then **Save**. In the details box you can add headings, bullet and numbered lists, tick lists, bold text and links.
+6. To tick off a step in a tick list, press its box while you read. It saves straight away.
+7. Use the up and down buttons at the top of the panel to change to-do. **P** and **N** do the same when single-key shortcuts are on.
+8. To ask Claude for help, press **Start a chat**. Press **Open chat** later to come back to it.
 
-![The form for adding a to-do, with a due date and who it's for.](images/todo-add.webp)
+![The panel for adding a to-do, with a due date and who it's for.](images/todo-add.webp)
 
 ## Good to know
 
-- Press Esc to cancel a new to-do without saving it.
+- Esc closes the panel, even while you type. With unsaved changes, Cortex asks first. It also asks before a chat, another page or another to-do.
 - If a teammate changes a to-do while you edit it, Cortex tells you. You choose whether to keep your version or theirs.
 - **Delete** and **Mark as done** wait a few seconds, so you can undo them.
-- Very long details can't be edited in the form. Change those in a chat instead.
+- Very long details can't be edited here. Nor can parts the box can't show safely, such as tables, code and quotes. Change those in a chat.
 
 ## Try this
 

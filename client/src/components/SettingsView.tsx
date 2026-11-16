@@ -184,7 +184,8 @@ export function SettingsView() {
               </div>
               <p className="setting-help" id="set-keys-help">
                 When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail, <kbd>T</kbd>{' '}
-                for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills
+                for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills, <kbd>P</kbd> and <kbd>N</kbd> for
+                the previous and next to-do in its panel
                 {showHelp ? (
                   <>
                     , <kbd>H</kbd> or <kbd>?</kbd> for Help

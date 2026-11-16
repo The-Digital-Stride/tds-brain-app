@@ -73,6 +73,14 @@ const PATHS: Record<IconName, ReactNode> = {
   paperclip: (
     <path d="M16 9.5l-5.8 5.8a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3l-6 6a1.1 1.1 0 0 1-1.6-1.6L12 6.6" />
   ),
+  up: <path d="M5 12l5-5 5 5" />,
+  // A capital H: a heading.
+  heading: <path d="M5 4v12M15 4v12M5 10h10" />,
+  // A plain line of text: body text.
+  body: <path d="M3.5 6h13M3.5 10h13M3.5 14h8" />,
+  bullets: <path d="M4.5 6h.01M4.5 10h.01M4.5 14h.01M8 6h9M8 10h9M8 14h9" strokeWidth={2} />,
+  numbers: <path d="M3.5 4.8l1.2-.8v4.2M3.2 11.8h2.2l-2.2 2.8h2.3M8.5 6h8.5M8.5 13h8.5" />,
+  bold: <path d="M6 4h4.5a2.8 2.8 0 0 1 0 5.6H6zM6 9.6h5.2a2.8 2.8 0 0 1 0 5.6H6z" />,
   // A circle with a question mark: Help.
   help: (
     <>

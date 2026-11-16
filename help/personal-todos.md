@@ -27,7 +27,7 @@ A personal to-do is private. It stays on your Mac, and your teammates never see 
 2. Open the To-dos drawer and press **Add a to-do**.
 3. Press **Keep it personal** (the padlock) before you press **Add**.
 4. To see only these, pick **Personal** at the top of the list. Pick **All** to see everything again.
-5. To change an old to-do, open it and use **Where it's kept**. Pick **TDS** or **Personal**, then press **Save**.
+5. To change an old to-do, open it, press **Edit** and use **Where it's kept**. Pick **TDS** or **Personal**, then press **Save**.
 
 ## Good to know
 

@@ -1,17 +1,13 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import {
   type TeamMember,
-  TODO_DETAILS_MAX,
   TODO_TITLE_MAX,
   type TodoAction,
   type TodoItem,
   type TodoScope,
 } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
-import type { ChangeTodosResult } from '../store.tsx';
 import { Icon } from './Icon.tsx';
-import { Seg } from './Seg.tsx';
-import { handoverLine } from './words.ts';
 
 /** Said when a to-do is set to Personal in the editor (plan decision 9). */
 export const PERSONAL_WARNING =
@@ -31,7 +27,7 @@ function people(me: string, team: TeamMember[]): TeamMember[] {
   return [{ slug: me, name: 'Me' }, ...team.filter((m) => m.slug !== me)];
 }
 
-function Assignee({
+export function Assignee({
   id,
   value,
   onChange,
@@ -75,6 +71,7 @@ export function AddTodoForm({
   startPersonal,
   onAdd,
   onCancel,
+  onDirty,
 }: {
   me: string;
   team: TeamMember[];
@@ -87,6 +84,8 @@ export function AddTodoForm({
   startPersonal: boolean;
   onAdd: (action: TodoAction) => void;
   onCancel: () => void;
+  /** Told when there is something typed that Cancel would lose (a title), so the panel can ask first. */
+  onDirty?: (dirty: boolean) => void;
 }) {
   const uid = useId();
   const [title, setTitle] = useState('');
@@ -99,6 +98,8 @@ export function AddTodoForm({
   const titleRef = useRef<HTMLInputElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
+  const hasTitle = title.trim() !== '';
+  useEffect(() => onDirty?.(hasTitle), [hasTitle, onDirty]);
   // "More options" removes itself: put the keyboard on the first field it reveals.
   useEffect(() => {
     if (full) dueRef.current?.focus();
@@ -126,6 +127,8 @@ export function AddTodoForm({
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      // preventDefault too: the shell's own Esc (close the drawer) skips a handled key, so one Esc closes one thing.
+      e.preventDefault();
       e.stopPropagation();
       onCancel();
     }
@@ -317,263 +320,4 @@ export function conflictNote(
   if (theirs.details !== draft.details) parts.push('with different details');
   const theirsText = parts.length > 0 ? ` Their version: ${parts.join(', ')}.` : '';
   return `Someone else changed this to-do while you were editing.${theirsText} Press Save to replace it with yours, or Cancel to keep theirs.`;
-}
-
-/** The inline editor that replaces a to-do's row. */
-export function TodoEditor({
-  todo,
-  draft,
-  onDraft,
-  me,
-  team,
-  busy,
-  canUsePersonal,
-  onSave,
-  onDone,
-  onDelete,
-  onCancel,
-}: {
-  todo: TodoItem;
-  draft: EditDraft;
-  onDraft: (d: EditDraft) => void;
-  me: string;
-  team: TeamMember[];
-  busy: boolean;
-  /** TodoList.canUsePersonal: shows the TDS / Personal switch on to-dos that are yours. */
-  canUsePersonal: boolean;
-  onSave: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
-  onDone: () => void;
-  onDelete: () => void;
-  onCancel: () => void;
-}) {
-  const uid = useId();
-  const detailsEditable = todo.details.length <= TODO_DETAILS_MAX;
-  const { title, details, due, assignee } = draft;
-  const setTitle = (v: string) => onDraft({ ...draft, title: v });
-  const setDetails = (v: string) => onDraft({ ...draft, details: v });
-  const setDue = (v: string) => onDraft({ ...draft, due: v });
-  // Giving a personal to-do to someone else makes it a TDS one: they can't see a personal file.
-  const setAssignee = (v: string) =>
-    onDraft({
-      ...draft,
-      assignee: v,
-      ...(draft.scope === 'personal' && v !== me ? { scope: 'tds' as const } : {}),
-    });
-  const setScope = (v: TodoScope) => onDraft({ ...draft, scope: v });
-  const passing = todo.scope === 'personal' && draft.scope === 'tds' && draft.assignee !== me;
-  const switchable = canUsePersonal && todo.assignee === me && draft.assignee === me;
-  const handover = handoverLine(todo, me);
-  const warnPersonal = switchable && draft.scope === 'personal' && todo.scope !== 'personal';
-  const titleRef = useRef<HTMLInputElement>(null);
-  const conflictRef = useRef<HTMLParagraphElement>(null);
-  const hasConflict = draft.theirs !== undefined;
-  // Bring the conflict note into view without moving focus off Save.
-  useEffect(() => {
-    if (hasConflict) conflictRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [hasConflict]);
-  // Focus the title on opening.
-  useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
-
-  const actions = buildEditActions(todo, draft, detailsEditable);
-  const dirty = actions.length > 0;
-  const canSave = !busy && title.trim() !== '';
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!canSave) return;
-    if (actions.length === 0) {
-      onCancel();
-      return;
-    }
-    void onSave(actions);
-  };
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    onCancel();
-  };
-
-  return (
-    <form
-      className="todo-form"
-      onSubmit={submit}
-      onKeyDown={onKeyDown}
-      aria-label={`Edit "${todo.title}"`}
-      aria-describedby={draft.theirs ? `${uid}-conflict` : undefined}
-    >
-      {handover ? <p className="todo-note todo-handover">{handover}</p> : null}
-      <div className="todo-field">
-        <label htmlFor={`${uid}-title`}>Title</label>
-        <input
-          id={`${uid}-title`}
-          ref={titleRef}
-          className="field"
-          value={title}
-          maxLength={TODO_TITLE_MAX}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
-      <div className="todo-field">
-        <label htmlFor={`${uid}-details`}>Details</label>
-        {detailsEditable ? (
-          <textarea
-            id={`${uid}-details`}
-            className="field"
-            rows={5}
-            value={details}
-            maxLength={TODO_DETAILS_MAX}
-            onChange={(e) => setDetails(e.target.value)}
-          />
-        ) : (
-          <>
-            <textarea
-              id={`${uid}-details`}
-              className="field"
-              rows={5}
-              value={todo.details}
-              readOnly
-              aria-describedby={`${uid}-long`}
-            />
-            <p className="todo-note" id={`${uid}-long`}>
-              These details are too long to edit here. Change them in a chat instead.
-            </p>
-          </>
-        )}
-      </div>
-      <div className="todo-field">
-        <label htmlFor={`${uid}-due`}>Due date</label>
-        <div className="todo-inline">
-          <input
-            id={`${uid}-due`}
-            type="date"
-            className="field"
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            disabled={due === ''}
-            onClick={() => setDue('')}
-          >
-            Clear date
-          </button>
-        </div>
-      </div>
-      <div className="todo-field">
-        <label htmlFor={`${uid}-who`}>Assigned to</label>
-        <Assignee id={`${uid}-who`} value={assignee} onChange={setAssignee} me={me} team={team} allowOpen />
-        {passing ? <p className="todo-note">{PASS_ON_NOTE}</p> : null}
-      </div>
-      {switchable ? (
-        <div className="todo-field">
-          <span className="todo-label">Where it's kept</span>
-          <Seg<TodoScope>
-            label="Where this to-do is kept"
-            value={draft.scope}
-            onChange={setScope}
-            options={[
-              { value: 'tds', label: 'TDS' },
-              { value: 'personal', label: 'Personal' },
-            ]}
-          />
-          {warnPersonal ? (
-            <p className="todo-note" id={`${uid}-personal`}>
-              {PERSONAL_WARNING}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      {draft.theirs ? (
-        <p className="todo-note" id={`${uid}-conflict`} ref={conflictRef}>
-          {conflictNote(draft.theirs, draft, team, me)}
-        </p>
-      ) : null}
-      <div className="todo-actions">
-        <button
-          type="submit"
-          className="btn"
-          data-variant="primary"
-          disabled={!canSave}
-          aria-describedby={warnPersonal ? `${uid}-personal` : undefined}
-        >
-          Save
-        </button>
-        <button type="button" className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-      {/* Finishing a to-do, on a row of its own. Both are held for a few seconds with an Undo on the
-          row, so they ask nothing here. Mark as done waits for unsaved edits, so none are lost. */}
-      <div className="todo-actions todo-finish">
-        <button
-          type="button"
-          className="btn"
-          disabled={busy || dirty}
-          aria-describedby={dirty ? `${uid}-dirty` : undefined}
-          onClick={onDone}
-        >
-          Mark as done
-        </button>
-        <button
-          type="button"
-          className="btn todo-delete"
-          data-variant="danger"
-          disabled={busy}
-          onClick={onDelete}
-        >
-          Delete
-        </button>
-        {dirty ? (
-          <p className="todo-note" id={`${uid}-dirty`}>
-            Save or cancel your changes before marking it as done.
-          </p>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
-/**
- * For someone who may tick to-dos off but not edit them (the `todo` skill isn't theirs yet): the
- * to-do opened, with only "Mark as done". Ticking needs this one deliberate step; the list has no tick box.
- */
-export function TodoDonePanel({
-  todo,
-  onDone,
-  onCancel,
-}: {
-  todo: TodoItem;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  // Focus lands on the title, not on Mark as done, so finishing always takes a deliberate second step.
-  const titleRef = useRef<HTMLLegendElement>(null);
-  useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    onCancel();
-  };
-  return (
-    <fieldset className="todo-form todo-done" onKeyDown={onKeyDown}>
-      <legend className="todo-done-title" ref={titleRef} tabIndex={-1}>
-        {todo.title}
-      </legend>
-      {todo.details ? <p className="todo-note todo-done-details">{todo.details}</p> : null}
-      <div className="todo-actions">
-        <button type="button" className="btn" data-variant="primary" onClick={onDone}>
-          Mark as done
-        </button>
-        <button type="button" className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </fieldset>
-  );
 }

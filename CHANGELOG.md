@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.48.0 — 2026-11-16
+
+- **feat**: Ad Manager run times shared with the team through the brain
+- **fix**: run log compaction never follows a planted link, and junk files can't hide real runs
+- **fix**: run log compaction keeps only tasks on the list
+
 ## v0.47.1 — 2026-11-16
 
 - **fix**: keep a bare web address bare when its paragraph is edited

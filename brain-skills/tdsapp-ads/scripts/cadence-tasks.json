@@ -1,0 +1,196 @@
+{
+  "_source": "Copied verbatim from the brain Workbench (plan 2026-11-16-workbench-ad-manager, decision 9). Cards, base, standupPrompt, setupPrompts and actionLabels: tools/members/command-centre/public/ads-command-board.html (TYPES, COLS, BASE, TASKS, CONTRACT_PATH, P_DISCOVER, P_SHEET, P_PROXY, STANDUP_PROMPT, ACTION_LABELS). revisePrompt: tools/members/command-centre/server.cjs (POST /api/approvals/decide), with its ${...} parts written as {{id}}, {{client}}, {{name}} and {{note}} (the note with double quotes turned into single ones). Each card prompt is BASE plus its own text, as the board builds it. {{account}} is the account name and {{key}} the account key. Never edit by hand: copy again from the source and update SOURCES.md.",
+  "types": {
+    "report": {
+      "label": "Report",
+      "note": "pulls useful info together"
+    },
+    "insight": {
+      "label": "Insight",
+      "note": "finds what to do about it"
+    },
+    "action": {
+      "label": "Action",
+      "note": "makes the change (with your sign-off)"
+    },
+    "standup": {
+      "label": "Standup",
+      "note": "multi-agent debate → today’s call"
+    }
+  },
+  "cadences": [
+    "daily",
+    "weekly",
+    "fortnightly",
+    "monthly",
+    "quarterly"
+  ],
+  "cadenceLabels": {
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "fortnightly": "Fortnightly",
+    "monthly": "Monthly",
+    "quarterly": "Quarterly"
+  },
+  "base": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it.",
+  "cards": [
+    {
+      "id": "d-spend",
+      "cadence": "daily",
+      "kind": "report",
+      "title": "Spend & anomaly check",
+      "description": "Yesterday's spend vs the 30-day baseline, per campaign.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Using summary.csv (per-campaign daily rows), compare yesterday — the latest date in the file — against the trailing 30-day average for spend, conversions and CPA per campaign. Flag anything more than 25% off baseline. If summary.csv doesn't cover enough days for a real baseline, pull a fresh daily campaign series via the proxy first. Write a 5-line plain-English summary of what moved and whether any of it needs a human eye."
+    },
+    {
+      "id": "d-policy",
+      "cadence": "daily",
+      "kind": "report",
+      "title": "Disapproved ads & policy",
+      "description": "New disapprovals or limited-by-policy items.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Approval/policy status isn't in the cached export — pull it fresh via the proxy: query ad_group_ad for ad_group_ad.policy_summary.approval_status and review_status, plus campaign.serving_status. List any disapproved or policy-limited ads with the reason and the fix. If nothing is flagged, say so in one line."
+    },
+    {
+      "id": "d-tracking",
+      "cadence": "daily",
+      "kind": "report",
+      "title": "Conversion tracking health",
+      "description": "Confirm conversions are still recording.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. From summary.csv (per-campaign daily conversions), confirm conversions are still recording across the main campaigns over the last 24-48h. If a campaign that normally converts shows zero, treat it as a tracking-break alarm and flag it loudly before anything else, then hand off to the tracking-specialist skill for a deeper look."
+    },
+    {
+      "id": "w-search",
+      "cadence": "weekly",
+      "kind": "insight",
+      "title": "Search-term review",
+      "description": "Split last week into add / exclude / review.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Use the search-term-classifier skill on search80.csv. Split the last week of queries into add (high-intent, not yet a keyword), exclude (irrelevant or wasteful) and review. Rank by wasted spend and return the shortlist that actually matters."
+    },
+    {
+      "id": "w-pacing",
+      "cadence": "weekly",
+      "kind": "report",
+      "title": "Budget pacing vs target",
+      "description": "On track to hit the monthly budget?",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Run the budget-auditor skill for this account — or, from campaigns.csv (campaign_budget.amount) and summary.csv (daily spend, for month-to-date), project each campaign to month-end. Flag anything pacing more than 10% over or under and say what to nudge."
+    },
+    {
+      "id": "w-newkw",
+      "cadence": "weekly",
+      "kind": "insight",
+      "title": "New keyword candidates",
+      "description": "High-intent queries worth promoting.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. From search80.csv, surface high-intent queries that are converting but aren't yet keywords — cross-check keyword80.csv so you don't re-suggest existing ones. Propose the ad group each should join and a starting match type."
+    },
+    {
+      "id": "w-negatives",
+      "cadence": "weekly",
+      "kind": "action",
+      "title": "Apply agreed negatives",
+      "description": "Push the reviewed negatives live.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Take the exclude list from the search-term review and prepare the negative-keyword additions (term, match type, target campaign or shared list); cross-check the existing negative-keywords-*.csv so you don't duplicate. This is an account change — show the full list for sign-off, then apply with the google-ads-creation skill once approved."
+    },
+    {
+      "id": "f-assets",
+      "cadence": "fortnightly",
+      "kind": "insight",
+      "title": "Asset & RSA fatigue",
+      "description": "Find tired creative losing impression share.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. From assets-campaign-performance.csv and assets.csv, identify sitelinks, callouts, images and RSA assets with a poor primary_status or losing impression share. Recommend which to swap and draft on-brand replacements (use the ad-copy-maker skill for new headlines/descriptions). If the export looks stale, re-pull via gads-context first."
+    },
+    {
+      "id": "f-bidstrat",
+      "cadence": "fortnightly",
+      "kind": "insight",
+      "title": "Bid-strategy sanity check",
+      "description": "Is automated bidding stuck or mis-targeted?",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Run the bidding-auditor skill for this account — or review campaigns.csv (bidding_strategy_type, target_roas/target_cpa) and bidding-strategies.csv against the actual CPA/ROAS from summary.csv. Flag any target that no longer matches reality or a strategy stuck in learning, and recommend an adjustment."
+    },
+    {
+      "id": "f-products",
+      "cadence": "fortnightly",
+      "kind": "action",
+      "title": "Pause zero-sale products",
+      "description": "Stop spend on products that never sell.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. From productID.csv (and shopping-products.csv for feed status), list products that have spent but never converted in the window. Prepare the feed exclusions. Account change — show the list for sign-off first. Lead-gen accounts have no products — if productID.csv is absent, say so and skip."
+    },
+    {
+      "id": "m-audit",
+      "cadence": "monthly",
+      "kind": "report",
+      "title": "Full account audit",
+      "description": "Structure, waste and quality, end to end.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Run the google-ads-audit skill that matches this account's type (google-ads-audit-leadgen, -ecommerce or -charity — check account_type in .claude/accounts.json). Produce the full review plus a one-page summary of the three things most worth doing next."
+    },
+    {
+      "id": "m-rsa",
+      "cadence": "monthly",
+      "kind": "action",
+      "title": "RSA refresh / new copy",
+      "description": "Rotate in fresh ad copy where it is needed.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. For ad groups with tired or thin RSAs (see ads.csv for current headlines/descriptions and their metrics), use the ad-copy-maker skill to draft new headlines and descriptions in the brand voice, ready to load. Account change — present them for approval before publishing."
+    },
+    {
+      "id": "m-report",
+      "cadence": "monthly",
+      "kind": "report",
+      "title": "Client report build",
+      "description": "The monthly story for the client.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Build the monthly client report: what happened (headline numbers from summary.csv), what it means, and what we're doing next month. Plain English, no jargon, with the one decision you want from them. Reuse the most recent google-ads-audit output if one exists."
+    },
+    {
+      "id": "q-structure",
+      "cadence": "quarterly",
+      "kind": "insight",
+      "title": "Account structure review",
+      "description": "Does the structure still fit the goals?",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Run the account-auditor skill for a structured view, then step back: does the campaign and ad-group structure (campaigns.csv, adgroups.csv) still match what this business sells and where the margin is? Recommend any consolidation or splits worth testing next quarter."
+    },
+    {
+      "id": "q-competitor",
+      "cadence": "quarterly",
+      "kind": "insight",
+      "title": "Competitor & auction insights",
+      "description": "Who is gaining share and where.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Run the competitive-analyst skill (impression-share based). True auction-insights competitor names aren't fully API-available, so combine search_impression_share from campaigns.csv with the competitor-scraper skill for live competitor ads. Note where this account is losing share and whether it's a budget, bid or relevance problem."
+    },
+    {
+      "id": "q-cro",
+      "cadence": "quarterly",
+      "kind": "insight",
+      "title": "Landing-page / CRO review",
+      "description": "Where the traffic lands and where it leaks.",
+      "prompt": "You are managing the Google Ads account {{account}}. The board's quick-view CSVs for this account are in clients/{{key}}/context/google-ads/board/ — summary.csv (per-campaign DAILY rows, ~last 45 days), search80.csv (search terms), keyword80.csv, productID.csv (shopping products) and quality.csv. The fuller Google Ads export (assets, budgets, settings, negatives, etc.) is in clients/{{key}}/context/google-ads/data/ but may be older. The brain root is your working directory. Always check what's actually present before relying on a file; if what you need is missing or stale, pull it fresh via the gads-proxy (.claude/skills/gads-proxy/scripts/query.cjs) or the gads-context skill. Treat conversion/CPA figures cautiously — if they look wildly off versus spend, suspect a tracking/attribution artefact and flag it rather than trusting it. Take the top landing pages for the highest-spend campaigns (final_urls in ads.csv), then run the lp-auditor skill (it can scrape the pages). Note friction, slow loads and weak ad-to-page match, and propose the two changes most likely to lift conversion rate."
+    }
+  ],
+  "standupPrompt": "You are running the Daily Standup for the Google Ads account {{account}} (the folder clients/{{key}}/). Follow .claude/skills/standup/SKILL.md exactly for account \"{{key}}\": run the config-drift guard first, then the deterministic analysts, narrate the ones that speak up, run the full bull/bear debate, the strategist synthesis, the constraint check and the account-director final call, then render the brief (render_brief.py then render_html.py --client {{key}}). The finished brief.html — headline, per-campaign verdicts, the debate transcript and the anomalies — is your result; it lands at clients/{{key}}/standup/<today>/brief.html. It is READ-ONLY: never change the account. The brain root is your working directory.",
+  "contractPath": ".claude/skills/workbench/assets/ads-data-contract.md",
+  "setupPrompts": {
+    "discover": "Look at how my Google Ads data is collected and get my Ads Command Board fully lit up. First, an important thing to know: the board reads TOLERANTLY. It accepts the clean 8020-script headers, raw proxy or API output (snake_case columns like metrics.cost_micros, cost in micros), and common filename variants, and it maps them all itself. So you do NOT need to rename columns, convert micros, or reshape anything by hand — landing the data is enough. Read the data contract at .claude/skills/workbench/assets/ads-data-contract.md for the list of datasets and where they live, then investigate what I already have: Google Sheets from the 8020 script, a Google Ads proxy (gads-proxy.yaml or GADS_PROXY_URL), a google-ads.yaml, or existing CSVs in my client data folders. Tell me in plain English what you found per account. Then set up the simplest reliable path that lands each dataset in the account's data folder in whatever shape it naturally comes out, run it once now so I can see the board light up. Then, BEFORE scheduling anything, check whether this account is already being fed on a schedule (an existing chore, launchd job, scheduled task, or daily refresh writing into this data folder) — if it is, leave it alone or update that one, do NOT stand up a second feed on top of it. Only add a new daily refresh if nothing is feeding it yet. Never fabricate data — if a dataset genuinely isn't available (for example no Shopping data on a lead-gen account), skip it and say so. Finish with a table of dataset, status, and source.",
+    "sheet": "My Google Ads data lives in Google Sheets written by the 8020 script. Read the data contract at .claude/skills/workbench/assets/ads-data-contract.md for the list of datasets, then find my sheet URL(s) — check my brain's configs first and ask me if you can't find them. For each account, download every tab into that account's data folder as a CSV. The 8020 tabs already line up with what the board reads, and the board maps headers tolerantly, so keep the tab names as the filenames and don't fuss over tweaking columns — it reads them as they are. Run it once now so I can see the board light up. Before scheduling a daily refresh, check whether this account is already being fed on a schedule — if it is, update that one rather than adding a second. If a tab doesn't exist in my sheet, skip it and list it at the end.",
+    "proxy": "I have the Google Ads proxy set up in my brain. Use the gads-proxy skill's query.cjs runner to fetch each dataset (read the data contract at .claude/skills/workbench/assets/ads-data-contract.md for the list) and write it STRAIGHT into the account's data folder. You do NOT need to rename columns or convert anything: the board reads the proxy's raw output directly, mapping the API's snake_case headers and converting cost out of micros itself. Use the contract's filenames where it's easy, but the board also recognises common variants. Run it once now so I can see the board light up. Before scheduling a daily refresh, check whether this account is already being fed on a schedule — if it is, update that one rather than adding a second. If a dataset genuinely isn't available (for example no Shopping data on a lead-gen account), skip it and say so at the end."
+  },
+  "actionLabels": {
+    "NONE": "Hold",
+    "INVESTIGATE_ANOMALY": "Investigate anomaly",
+    "AUDIT_SEARCH_TERMS": "Audit search terms",
+    "ADD_NEGATIVES": "Add negatives",
+    "REWRITE_RSAS": "Rewrite RSAs",
+    "REFRESH_ASSETS": "Refresh assets",
+    "REVIEW_KEYWORD_BIDS": "Review bids",
+    "SHIFT_BUDGET_UP": "Raise budget",
+    "SHIFT_BUDGET_DOWN": "Cut budget",
+    "AUDIT_LANDING_PAGE": "Audit landing page",
+    "PAUSE_CAMPAIGN": "Pause campaign",
+    "RESTRUCTURE_AD_GROUPS": "Restructure ad groups",
+    "REVIEW_FEED": "Review feed",
+    "ADJUST_BIDDING_STRATEGY": "Adjust bidding",
+    "DAYPARTING_ADJUSTMENT": "Dayparting",
+    "GEO_ADJUSTMENT": "Geo bids",
+    "DEVICE_ADJUSTMENT": "Device bids",
+    "REVIEW_AUDIENCES": "Review audiences",
+    "REVIEW_CONVERSION_TRACKING": "Check tracking",
+    "OTHER": "Other"
+  },
+  "revisePrompt": "Revise ads-manager proposal {{id}} for client {{client}}. {{name}} reviewed it on the Workbench and asked for this change:\n\n\"{{note}}\"\n\nFollow the ads-manager skill, section \"Revising a proposal after Request changes\". Never approve, apply or post anything: the revised proposal goes back to {{name}} on the Workbench Ads tab."
+}

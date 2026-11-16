@@ -5,6 +5,7 @@
  * Layers, back to front: desk, rail, docks (left drawer, right panel), sheet, overlays.
  */
 import type { ComponentType, ReactNode } from 'react';
+import type { AdsSummary } from '../../../shared/ads-contract.ts';
 import type {
   ClientInfo,
   LibraryItem,
@@ -18,7 +19,7 @@ import type {
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
 
 /** The left drawers. Only one is open at a time. */
-export type DrawerName = 'chats' | 'todos' | 'skills' | 'help';
+export type DrawerName = 'chats' | 'todos' | 'skills' | 'help' | 'section';
 
 /**
  * Tabs in the right panel ("This chat"). `files`: plan 2026-11-13-chat-files. A Steps tab was
@@ -35,6 +36,11 @@ export interface ShellState {
    * button, `H`, Esc) reopens it; opening any other drawer or `close-drawer` clears it.
    */
   helpReturn: DrawerName | null;
+  /**
+   * Which section the `'section'` drawer shows (a `SectionSlot.id`), or null. Never saved: a section drawer isn't
+   * restored on reload, since visibility loads after the shell. Plan 2026-11-16-workbench-ad-manager, decision 2.
+   */
+  section: string | null;
   /** The help page id Help opened on (decided when it opened), or null. Never saved. */
   helpPage: string | null;
   /** Goes up by one each time Help is opened on a page, so the drawer starts afresh even on the same page. Never saved. */
@@ -118,6 +124,10 @@ export type ShellAction =
   | { type: 'toggle-drawer'; drawer: DrawerName }
   | { type: 'open-drawer'; drawer: DrawerName }
   | { type: 'close-drawer' }
+  /** Opens the section drawer on `section`. */
+  | { type: 'open-section'; section: string }
+  /** Opens it, or closes it when that same section is already open. */
+  | { type: 'toggle-section'; section: string }
   /** Opens Help over whatever is open, on page `page` (null: the welcome page). Records `helpReturn`. */
   | { type: 'open-help'; page: string | null }
   /** Closes Help and reopens the drawer it replaced, if any. Does nothing when Help is not open. */
@@ -201,6 +211,8 @@ export interface KeyContext {
   panelFloating?: boolean;
   /** Help is switched on for this person's role (`helpVisible`). Missing means no. */
   helpVisible?: boolean;
+  /** Single key to section id, for the sections visible to this person now (`W` for Workbench). Missing means none. */
+  sectionKeys?: Record<string, string>;
 }
 
 /**
@@ -259,7 +271,11 @@ export type IconName =
   | 'body'
   | 'bullets'
   | 'numbers'
-  | 'bold';
+  | 'bold'
+  /** A toolbox: the Workbench section. */
+  | 'workbench'
+  /** A rising line: Ad Manager. */
+  | 'chart';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {
@@ -476,6 +492,8 @@ export interface ChatsLists {
 /** What a hit may do when chosen. The palette closes itself after `run` unless the hit says otherwise. */
 export interface SearchActions {
   openView: (view: 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`) => void;
+  /** Opens a section's tool on the sheet (store `openTool`), closing the open drawer. `arg` is handed to the tool. */
+  openTool: (sectionId: string, toolId: string, arg?: string) => void;
   /** Opens the Help drawer on a page (a help page id). */
   openHelp: (id: string) => void;
   /** Shows Home (the sheet with no chat or app). */
@@ -527,6 +545,8 @@ export interface SearchContext {
   clients: ClientInfo[];
   /** Help is switched on for this person's role: "Go to" lists Help. Missing means no. */
   helpVisible?: boolean;
+  /** The ads summary (store `ads`), for tools that search it; null or missing until it has loaded. */
+  ads?: AdsSummary | null;
 }
 
 export interface SearchResults {

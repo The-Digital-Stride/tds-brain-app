@@ -19,6 +19,7 @@ export const DEFAULT_SHELL: ShellState = {
   railWide: false,
   drawer: null,
   helpReturn: null,
+  section: null,
   helpPage: null,
   helpOpened: 0,
   panelOpen: false,
@@ -34,7 +35,7 @@ export const DEFAULT_SHELL: ShellState = {
 /** Below this width the rail is always icons only. */
 export const RAIL_NAMES_FROM = 900;
 
-// The drawers a saved state may restore. Help is never one: it opens on a person's action, on a page chosen then.
+// The drawers a saved state may restore. Help and a section are never one: it opens on a person's action, on a page chosen then.
 const DRAWERS: readonly DrawerName[] = ['chats', 'todos', 'skills'];
 // A saved tab not listed here (the removed `steps`) loads as the default.
 const TABS: readonly PanelTab[] = ['files', 'details'];
@@ -126,6 +127,12 @@ const coreReducer: ShellReducer = (state, action) => {
       return action.drawer === 'help' ? closeHelp(state) : { ...state, drawer: null };
     case 'open-drawer':
       return state.drawer === action.drawer ? state : withDrawer(state, action.drawer);
+    case 'open-section':
+      return { ...withDrawer(state, 'section'), section: action.section };
+    case 'toggle-section':
+      return state.drawer === 'section' && state.section === action.section
+        ? { ...state, drawer: null }
+        : { ...withDrawer(state, 'section'), section: action.section };
     case 'open-help':
       return { ...withDrawer(state, 'help'), helpPage: action.page, helpOpened: state.helpOpened + 1 };
     case 'close-help':
@@ -183,6 +190,7 @@ export const loadShell: LoadShell = (raw) => {
     railWide: bool('railWide', DEFAULT_SHELL.railWide),
     drawer,
     helpReturn: null,
+    section: null,
     helpPage: null,
     helpOpened: 0,
     panelOpen: bool('panelOpen', DEFAULT_SHELL.panelOpen),

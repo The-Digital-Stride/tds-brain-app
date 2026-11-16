@@ -17,7 +17,10 @@
  */
 
 /** Folder and script, relative to the brain root. */
-export const ADS_SKILL = { skill: 'tdsapp-ads', script: '.claude/skills/tdsapp-ads/scripts/tdsapp-ads.cjs' } as const;
+export const ADS_SKILL = {
+  skill: 'tdsapp-ads',
+  script: '.claude/skills/tdsapp-ads/scripts/tdsapp-ads.cjs',
+} as const;
 
 /** The capability the app needs before it shows Ad Manager. */
 export const ADS_CAPABILITY = 'ads-v1';
@@ -26,7 +29,14 @@ export const ADS_CAPABILITY = 'ads-v1';
  * Read actions run unqueued; identical reads in flight (same action and arguments) share one run.
  * Change actions run one at a time per Mac (`createQueue`). The app itself resolves `file` (no script run).
  */
-export type AdsReadAction = 'capabilities' | 'accounts' | 'approvals' | 'proposal' | 'board' | 'standup-brief' | 'file';
+export type AdsReadAction =
+  | 'capabilities'
+  | 'accounts'
+  | 'approvals'
+  | 'proposal'
+  | 'board'
+  | 'standup-brief'
+  | 'file';
 export type AdsChangeAction =
   | 'decide'
   | 'dry-run'
@@ -54,7 +64,8 @@ export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   board: 15_000,
   'standup-brief': 15_000,
   file: 15_000,
-  decide: 30_000,
+  /** An approve that needs the client's yes also drafts the client email (the Workbench's 60 s), so 30 + 60. */
+  decide: 90_000,
   'client-draft': 60_000,
   'client-approved': 30_000,
   decided: 30_000,
@@ -109,6 +120,21 @@ export type AdsErrorCode =
   | 'unknown-outcome'
   | 'unavailable'
   | 'internal';
+
+/**
+ * HTTP status per code. The body is `{ error: { code: AdsErrorCode, message: ADS_ERROR_MESSAGES[code] } }` (the code
+ * field carries the ads code, so `ApiFailure.code` reads it as it is).
+ */
+export const ADS_ERROR_STATUS: Record<AdsErrorCode, number> = {
+  'bad-request': 400,
+  'not-found': 404,
+  'not-allowed': 403,
+  changed: 409,
+  'no-access': 403,
+  'unknown-outcome': 504,
+  unavailable: 503,
+  internal: 500,
+};
 
 /** The app's words. UK English. */
 export const ADS_ERROR_MESSAGES: Record<AdsErrorCode, string> = {
@@ -170,6 +196,11 @@ export interface ProposalFlags {
   canClientDraft: boolean;
   canRecordClientApproval: boolean;
   canRecordDecision: boolean;
+  /**
+   * Set by the app (never the bridge): an apply of this proposal is in ADS_INFLIGHT_FILE, so its outcome is unknown.
+   * The panel shows the unknown-outcome line and "I've checked the account" (POST ADS_ROUTES.clearInflight).
+   */
+  inflight?: boolean;
 }
 
 export interface ProposalSummary {
@@ -192,8 +223,45 @@ export interface ClientApprovals {
   mine: boolean;
   open: ProposalSummary[]; // tier, then id
   recent: ProposalSummary[]; // last ADS_RECENT_DAYS, newest first
-  pack: unknown; // latest weekly pack, as the Workbench's latestPack(); builder B types it from the source
-  monthly: unknown; // as latestMonthly() / monthly.cjs monthStatus(), plus canSign; builder B types it
+  pack: AdsPack | null;
+  monthly: AdsMonthly | null;
+}
+
+/** The latest weekly pack (approvals-board.cjs latestPack()). */
+export interface AdsPack {
+  date: string;
+  act: number;
+  watch: number;
+  provisional: boolean;
+  /** Brain-relative path of the weekly check report (may not exist; open it through ADS_ROUTES.file). */
+  report: string;
+  /** common.cjs finding(): `{ section, severity, title, detail, ...extra }`. */
+  verification: { section?: number; severity?: string; title: string; detail: string }[];
+}
+
+/** The latest monthly close (monthly.cjs monthStatus()), plus `canSign`. Paths are brain-relative or null. */
+export interface AdsMonthly {
+  month: string;
+  monthName: string;
+  partial: boolean | null;
+  dataTo: string | null;
+  generatedAt: string | null;
+  signed: boolean;
+  stale: boolean;
+  reason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  note: string | null;
+  files: {
+    close: string | null;
+    body: string | null;
+    draftPdf: string | null;
+    pdf: string | null;
+    email: string | null;
+    review: string | null;
+  };
+  /** The Workbench's Sign off rule: the person may decide for this client, not signed, not partial, a body exists. */
+  canSign: boolean;
 }
 
 export interface AdsApprovals {
@@ -204,18 +272,128 @@ export interface AdsApprovals {
   clients: ClientApprovals[];
 }
 
+/** ads-board-data.cjs dataHealth(): one entry per data file. */
+export interface AdsHealthFile {
+  file: string;
+  group: 'daily' | 'search' | 'products' | 'deep' | string;
+  /** What the file powers (the Workbench shows it as the row's title). */
+  powers: string;
+  status: 'ok' | 'stale' | 'missing' | 'wrong-shape' | 'na' | string;
+  /** Latest date in a dated file, YYYY-MM-DD. */
+  latest: string | null;
+  /** Column labels the file lacks (status 'wrong-shape'). */
+  missingCols: string[];
+  /** Pulled fine but the account had no activity since `latest`. */
+  quiet?: boolean;
+}
+
+/** The daily fetch's record (`clients/<key>/data/_fetch-status.json`); `problem` = errors or over 36 hours old. */
+export interface AdsFetchStatus {
+  lastRun: string;
+  errors: number;
+  total: number;
+  ageHours: number;
+  problem: boolean;
+}
+
+export interface AdsHealth {
+  /** Brain-relative folder the board reads. */
+  dir: string;
+  files: AdsHealthFile[];
+  ok: number;
+  na: number;
+  applicable: number;
+  total: number;
+  freshThrough: string | null;
+  fetch: AdsFetchStatus | null;
+}
+
+export type AdsColumnType = 'text' | 'money' | 'int' | 'num1' | 'x' | 'pct' | 'qs';
+
+/** One deep-dive table (ads-board-data.cjs topTens): rows are cells in `cols` order; sort by `defaultSort` first. */
+export interface AdsTable {
+  id: 'campaigns' | 'searchterms' | 'waste' | 'keywords' | 'products' | 'quality' | string;
+  title: string;
+  subtitle: string;
+  tone?: 'warn';
+  cols: { key: string; label: string; type: AdsColumnType }[];
+  rows: (string | number | null)[][];
+  defaultSort: number;
+}
+
+/** standup-board.cjs standupSummary(). */
+export interface AdsStandupVerdict {
+  date: string;
+  headline: string | null;
+  flagged: number;
+  anomalies: number;
+  topCampaign: string | null;
+  topAction: string | null;
+}
+
+export interface AdsStandupState {
+  hasStandup: boolean;
+  verdict: AdsStandupVerdict | null;
+  /** What Set up would put in the starter config, biggest first. */
+  enabledCampaigns: string[];
+  /** STANDUP_PROMPT with {{account}} and {{key}} filled in: the Run button's prompt, verbatim. */
+  prompt: string;
+  /** Standup action enum → short label (ACTION_LABELS); unknown ones read as the Workbench's actionLabel() does. */
+  actionLabels: Record<string, string>;
+}
+
+/** Standup account triage for the selected account (the Workbench shows only that one since 27 Oct 2026). */
+export interface AdsTriage {
+  key: string;
+  name: string;
+  hasStandup: boolean;
+  verdict: AdsStandupVerdict | null;
+}
+
+/** The three Copy prompt buttons of the "Get your account data flowing" card, verbatim. */
+export interface AdsSetupPrompts {
+  discover: string;
+  sheet: string;
+  proxy: string;
+  /** The data contract path the prompts name. */
+  contractPath: string;
+}
+
+/** `standup-brief` reply: the latest brief's per-campaign calls (standupRecommendations()), or none. */
+export interface AdsStandupBrief {
+  ymd: string | null;
+  date: string | null;
+  headline: string | null;
+  recommendations: { campaign: string; action_category: string; reason: string; priority: number | null }[];
+}
+
 /**
- * One account's board: the Workbench's buildBoardData(key) and dataHealth(key) output, unchanged,
- * plus the 16 cadence cards (scripts/cadence-tasks.json, verbatim) with their badges, and the
- * standup state. Builder B replaces `unknown` with exact types read from the source.
+ * One account's board: the Workbench's buildBoardData(key) output (dataHealth, topTens, badges), plus the 16 cadence
+ * cards (scripts/cadence-tasks.json, verbatim, {{account}} and {{key}} filled in) with their badges, and the standup.
  */
 export interface AdsBoard {
   key: string;
-  health: unknown;
-  tables: unknown;
-  cards: { id: string; cadence: 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly'; kind: 'report' | 'insight' | 'action'; title: string; description: string; badge: string | null; prompt: string }[];
-  standup: unknown;
-  triage: unknown;
+  /** accounts.json name, else the key. */
+  name: string;
+  currency: string;
+  health: AdsHealth;
+  /** The deep-dive tables, in the Workbench's order (only those with data). */
+  tables: AdsTable[];
+  /** Share of search-term spend with no conversions, percent to one decimal. */
+  wastePct: number;
+  cards: {
+    id: string;
+    cadence: 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly';
+    kind: 'report' | 'insight' | 'action';
+    title: string;
+    description: string;
+    badge: string | null;
+    prompt: string;
+  }[];
+  standup: AdsStandupState;
+  triage: AdsTriage;
+  /** Shown when the account has no data files yet (health.ok === 0). */
+  setupPrompts: AdsSetupPrompts;
 }
 
 /** Reply to any change action: the proposal's new state (so the screen needs no re-fetch) and output. */
@@ -230,6 +408,13 @@ export interface AdsChangeReply {
    * (cadence-tasks.json `revisePrompt`) and returns its id, so the panel offers "Open chat".
    */
   chatId?: string;
+  /**
+   * `decide` with `request-changes` only: the Workbench's revise prompt (cadence-tasks.json `revisePrompt`) filled in
+   * for this proposal and person. The client starts the background chat with it (decision 26).
+   */
+  revisePrompt?: string;
+  /** The script ran but did not succeed (dry run or apply refused or failed, a draft that failed); `message` says how. */
+  failed?: boolean;
 }
 
 // ── Requests (stdin) ───────────────────────────────────────────────────────────────────────────
@@ -250,8 +435,18 @@ export interface AdsRequests {
   decided: { client: string; id: string; note: string };
   'sign-monthly': { client: string; month: string; note?: string };
   'standup-setup': { account: string };
-  /** One campaign per call, as standup-board.cjs writes it. Builder B confirms field names against the source. */
-  'standup-feedback': { account: string; date: string; campaign: string; action_category: string; score: 1 | 2 | 3 | 4 | 5; note?: string };
+  /**
+   * One campaign per call; the bridge writes it with standup-board.cjs writeStandupFeedback() (`score` is its
+   * `rating`). `date` is the brief's YYYYMMDD (`ymd`) or YYYY-MM-DD; `note` at most ADS_NOTE_MAX.
+   */
+  'standup-feedback': {
+    account: string;
+    date: string;
+    campaign: string;
+    action_category: string;
+    score: 1 | 2 | 3 | 4 | 5;
+    note?: string;
+  };
 }
 
 /** App routes. All go through checkRequest; changes are POST JSON with body AdsRequests[action]. */

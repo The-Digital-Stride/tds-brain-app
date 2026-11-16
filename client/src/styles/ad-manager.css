@@ -1,0 +1,278 @@
+/*
+ * Ad Manager (plan 2026-11-16-workbench-ad-manager). Cards sit in the design system's tray; everything else
+ * (buttons, badges, chips, key/value lists, folds) is the shared look. Only what is particular to this screen is here.
+ */
+.am {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px 24px;
+}
+.am .tray {
+  margin-top: 8px;
+}
+.am-tray[data-cols="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.am-tray[data-cols="2"] {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.am-tray[data-cols="5"] {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.am-h {
+  margin: 20px 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.am-account {
+  width: 240px;
+  max-width: 100%;
+}
+.am-line {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--tint-1);
+  font-size: 13px;
+}
+.am-line > p {
+  margin: 0 0 6px;
+}
+.am-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.am-dim {
+  color: var(--iron);
+  font-size: 12px;
+  font-weight: 400;
+}
+.am-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--iron);
+}
+.am-block {
+  display: block;
+}
+.am-nowrap {
+  white-space: nowrap;
+}
+.am-camp {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.am-pad {
+  padding: 4px 8px 8px;
+}
+.am-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.am-grow {
+  flex: 1 1 180px;
+}
+
+/* Tables: scroll sideways inside their card rather than widening the sheet. */
+.am-scroll {
+  overflow-x: auto;
+  padding: 0 8px 4px;
+}
+.am-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.am-table th {
+  padding: 6px 10px 6px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+  text-align: left;
+  border-bottom: 1.5px solid var(--navy);
+  white-space: nowrap;
+}
+.am-table td {
+  padding: 8px 10px 8px 0;
+  vertical-align: top;
+  border-top: 1px solid var(--line);
+}
+.am-table tbody tr:first-child td {
+  border-top: 0;
+}
+.am-table [data-num] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.am-table .am-wide {
+  min-width: 220px;
+}
+.am-table tr[data-current] td {
+  background: var(--tint-1);
+}
+.am-sort {
+  all: unset;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 6px;
+}
+.am-sort:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Status card, data health and the set-up options. */
+.am-status .am-sign {
+  margin-top: 6px;
+}
+.am-status .am-open {
+  display: inline-block;
+}
+.am-health {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px 16px;
+  font-size: 12px;
+}
+.am-health li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.am-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey-dot);
+}
+.am-dot[data-status="ok"] {
+  background: var(--ok, #1a7f4b);
+}
+.am-dot[data-status="stale"],
+.am-dot[data-status="wrong-shape"] {
+  background: var(--amber-text);
+}
+.am-dot[data-status="missing"] {
+  background: var(--danger);
+}
+.am-opts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.am-opts p {
+  margin: 0 0 4px;
+}
+
+/* Cadence cards. */
+.am-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.am-task {
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.am-task:first-child {
+  border-top: 0;
+}
+.am-task .am-sub .badge {
+  margin-left: 6px;
+}
+.am-task .btn {
+  margin-top: 6px;
+}
+.am-verdict[data-stale] {
+  color: var(--amber-text);
+}
+
+/* The panel. */
+.am-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 8px 16px;
+}
+.am-title {
+  margin: 0;
+  font-size: 14px;
+}
+.am-kvrow {
+  display: contents;
+}
+.am-kvrow dd[data-warn] {
+  color: var(--danger);
+}
+.am-body,
+.am-output {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tray);
+  font-size: 12.5px;
+}
+.am-act {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.am-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iron);
+}
+.am-field .field {
+  height: auto;
+  min-height: 32px;
+  font-weight: 400;
+  color: inherit;
+}
+.am-confirm {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--tint-1);
+}
+.am-last {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.am-last p {
+  margin: 0 0 6px;
+}
+.am-rate {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.am-score .field {
+  width: 120px;
+}

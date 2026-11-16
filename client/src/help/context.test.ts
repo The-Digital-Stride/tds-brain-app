@@ -55,3 +55,20 @@ describe('helpForContext', () => {
     expect(helpForContext(ctx({ drawer: 'todos' }), partial)).toBe('welcome');
   });
 });
+
+describe('helpForContext: sections and tools', () => {
+  const lib = (ids: string[]) =>
+    ({ byId: (id: string) => (ids.includes(id) ? ({ id } as never) : undefined) }) as never;
+  const ctx = (over: object) => ({ view: 'home', drawer: null, waiting: false, ...over }) as never;
+
+  it('the section drawer opens the Workbench page', () => {
+    expect(helpForContext(ctx({ drawer: 'section' }), lib(['workbench', 'welcome']))).toBe('workbench');
+  });
+
+  it("a tool opens its own page, else its section's, else the fallback", () => {
+    const view = 'tool:workbench/ad-manager';
+    expect(helpForContext(ctx({ view }), lib(['ad-manager', 'workbench', 'welcome']))).toBe('ad-manager');
+    expect(helpForContext(ctx({ view }), lib(['workbench', 'welcome']))).toBe('workbench');
+    expect(helpForContext(ctx({ view }), lib(['welcome']))).toBe('welcome');
+  });
+});

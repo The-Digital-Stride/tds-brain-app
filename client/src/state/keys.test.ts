@@ -246,3 +246,33 @@ describe('keyAction: the to-do panel', () => {
     expect(keyAction(key('n'), ctx({ ...open, todoPanel: { ...panel, key: null, mode: 'add' } }))).toBeNull();
   });
 });
+
+describe('keyAction: section shortcuts', () => {
+  const sectionKeys = { w: 'workbench' };
+  const withKeys = (patch: Partial<ShellState> = {}, typing = false) => ({
+    typing,
+    state: state(patch),
+    sectionKeys,
+  });
+
+  it('W toggles the Workbench section', () => {
+    expect(keyAction(key('w'), withKeys())).toEqual({ type: 'toggle-section', section: 'workbench' });
+  });
+
+  it('does nothing when no visible section has that key', () => {
+    expect(keyAction(key('w'), ctx())).toBeNull();
+    expect(keyAction(key('w'), { typing: false, state: state(), sectionKeys: {} })).toBeNull();
+  });
+
+  it('is a single key: not while typing, with a modifier, or with single keys off', () => {
+    expect(keyAction(key('w'), withKeys({}, true))).toBeNull();
+    expect(keyAction(key('w', { metaKey: true }), withKeys())).toBeNull();
+    expect(keyAction(key('w'), withKeys({ singleKeys: false }))).toBeNull();
+  });
+
+  it('Esc closes an open section drawer like any other', () => {
+    expect(keyAction(key('Escape'), withKeys({ drawer: 'section', section: 'workbench' }))).toEqual({
+      type: 'close-drawer',
+    });
+  });
+});

@@ -24,7 +24,7 @@ Cortex has a few keys that open drawers and search. Most are single keys, so the
 ## How to use it
 
 1. Press **⌘K** (**Ctrl K** on Windows) to open **Search or jump to**. This works even while you type, but not while a file is open in the viewer.
-2. When you aren't typing, press **T** for To-dos, **C** for Chats and **S** for Skills.
+2. When you aren't typing, press **T** for To-dos, **C** for Chats and **S** for Skills. If you have the Workbench, **W** opens it.
 3. Press **[** to show or hide the names on the rail.
 4. Press the slash key (/) to open search.
 5. Press **H** or **?** to open Help.

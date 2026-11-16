@@ -48,6 +48,8 @@ function PaletteDialog() {
     startSkill,
     revealTodo,
     requestComposerFocus,
+    openTool,
+    ads,
   } = useStore();
   const [query, setQuery] = useState('');
   // The highlighted option by id, not position: results arriving or changing never move it.
@@ -77,8 +79,9 @@ function PaletteDialog() {
       pins: boot?.prefs.pins ?? [],
       clients: boot?.clients ?? [],
       helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
+      ads,
     }),
-    [boot, todos, sessions],
+    [boot, todos, sessions, ads],
   );
   const slots = useAsyncSearch(sources, q);
   const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
@@ -176,6 +179,11 @@ function PaletteDialog() {
       restoreTo.current = document.getElementById('main');
       openLibraryItem(appId, scope, item);
       openView(`app:${appId}`);
+    },
+    openTool: (sectionId, toolId, arg) => {
+      // The sheet takes focus as the palette shuts, as for a library item.
+      restoreTo.current = document.getElementById('main');
+      openTool(sectionId, toolId, arg);
     },
     openDrawer: (drawer) => {
       // The dock takes focus itself.

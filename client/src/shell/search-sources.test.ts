@@ -4,6 +4,8 @@ import type { AppSlot, SearchActions, SearchContext, SearchHit, SearchSource } f
 
 const apps = vi.hoisted(() => [] as AppSlot[]);
 vi.mock('./apps.ts', () => ({ APPS: apps }));
+const sections = vi.hoisted(() => [] as { tools: { search: SearchSource | null }[] }[]);
+vi.mock('./sections.ts', () => ({ SECTIONS: sections }));
 
 const searchFn = vi.hoisted(() => vi.fn());
 vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
@@ -106,6 +108,19 @@ const fakeApp = (id: string, title: string, search: SearchSource | null): AppSlo
 
 beforeEach(() => {
   apps.length = 0;
+  sections.length = 0;
+});
+
+describe('section tools in the sources', () => {
+  it("adds each tool's search source after the apps', and skips a tool with none", () => {
+    const own: SearchSource = { id: 'ads', title: 'Ad Manager', search: () => ({ hits: [], total: 0 }) };
+    sections.push({ tools: [{ search: own }, { search: null }] });
+    apps.push(
+      fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
+    );
+    const ids = searchSources().map((x) => x.id);
+    expect(ids.slice(-2)).toEqual(['notes', 'ads']);
+  });
 });
 
 describe('searchSources order', () => {

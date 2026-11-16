@@ -1,5 +1,6 @@
 import type { BrainReaders, Identity } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
+import { type AdsService, type AdsServiceOptions, createAdsService } from './ads-skill.ts';
 import { listClients } from './clients.ts';
 import {
   createFilesSkillRunner,
@@ -42,13 +43,20 @@ export interface BrainDeps {
   filesSkill?: FilesSkillOptions;
   /** Answers `LibraryOptions.ignored`. Tests inject a fake; the default asks git in the brain. */
   libraryIgnored?: LibraryOptions['ignored'];
+  /** How the brain's `tdsapp-ads` bridge is run (Ad Manager). Its in-flight file goes in `dataDir`. */
+  adsSkill?: Omit<AdsServiceOptions, 'dataDir'>;
 }
 
 /** How long a read of who is using the app and what the files skill offers them is reused. */
 const DELETE_ACCESS_MS = 10_000;
 
-/** The real brain always has the library search. */
-export type SearchableBrain = BrainReaders & Required<Pick<BrainReaders, 'librarySearch'>>;
+/**
+ * The real brain always has the library search. `ads` is Ad Manager's bridge (plan 2026-11-16-workbench-ad-manager):
+ * the real brain always has it; setup mode's stand-in and older test fakes don't. It sits beside the BrainReaders
+ * contract so they need nothing new.
+ */
+export type SearchableBrain = BrainReaders &
+  Required<Pick<BrainReaders, 'librarySearch'>> & { ads?: AdsService };
 
 export function createBrainReaders(
   root: string,
@@ -86,9 +94,12 @@ export function createBrainReaders(
   const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   const todoHistory = createTodoHistory(deps.todoGit);
   const askedTodos = createAskedTodos(deps.todoLog);
+  // One bridge per brain, so ads changes run one at a time; the in-flight file lives in the app's data folder.
+  const ads = createAdsService(root, { ...deps.adsSkill, dataDir: deps.dataDir ?? null });
   const todoTimeline = createTodoTimeline(deps.todoLog);
   return {
     root,
+    ads,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),
@@ -156,6 +167,7 @@ export function createBrainReaders(
       watchBrain(root, onChange, {
         onLibraryChange: (rel, folder) => library.changed(rel, folder),
         onLibraryLive: (folder, on) => library.setLive(folder, on),
+        onAdsChange: () => ads.changed(),
       }),
   };
 }

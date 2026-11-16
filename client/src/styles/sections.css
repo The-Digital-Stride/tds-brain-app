@@ -1,0 +1,18 @@
+/* Section drawers (Workbench): tool rows are the shared .line rows with a leading icon. */
+.section-row > .icon {
+  flex: none;
+  color: var(--iron);
+}
+/* The open tool: tinted, bold title (aria-current="page"; base.css marks "true"). */
+.section-row[aria-current="page"] {
+  background: var(--tint-1);
+}
+.section-row[aria-current="page"] .line-title {
+  font-weight: 600;
+}
+.section-row[aria-current="page"] > .icon {
+  color: var(--navy);
+}
+.section-row .count {
+  flex: none;
+}

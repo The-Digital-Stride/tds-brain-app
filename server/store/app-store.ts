@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
+import { ADS_ACCOUNT_KEY } from '../../shared/ads-contract.ts';
 import {
+  ADS_FOLDS_MAX,
+  ADS_PREF_KEY_MAX,
   type AppPrefs,
   type AppStore,
   DEFAULT_PREFS,
@@ -12,6 +15,8 @@ import {
   FILE_ID_MAX,
   MODEL_PREF_MAX,
   MODEL_PREF_PATTERN,
+  SECTION_ID_PATTERN,
+  SECTIONS_MAX,
   SESSION_UUID_PATTERN,
   TODO_KEY_MAX,
   TODO_NEW_DAYS,
@@ -96,6 +101,36 @@ function pruneSeen(seen: Record<string, string>, now: Date): Record<string, stri
   return out;
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The last tool open in each Workbench section: valid section and tool ids only, at most SECTIONS_MAX. */
+export function cleanLastTool(v: unknown): Record<string, string> | undefined {
+  if (!isRecord(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, t] of Object.entries(v)) {
+    if (Object.keys(out).length >= SECTIONS_MAX) break;
+    if (SECTION_ID_PATTERN.test(k) && typeof t === 'string' && SECTION_ID_PATTERN.test(t)) out[k] = t;
+  }
+  return out;
+}
+
+/** Ad Manager's last account: null, or an account key of at most ADS_PREF_KEY_MAX characters. */
+export function isAdsAccountPref(v: unknown): v is string | null {
+  return v === null || (typeof v === 'string' && v.length <= ADS_PREF_KEY_MAX && ADS_ACCOUNT_KEY.test(v));
+}
+
+/** Ad Manager's folds the person changed: short keys to booleans, at most ADS_FOLDS_MAX. */
+export function cleanAdsFolds(v: unknown): Record<string, boolean> | undefined {
+  if (!isRecord(v)) return undefined;
+  const out: Record<string, boolean> = {};
+  for (const [k, open] of Object.entries(v)) {
+    if (Object.keys(out).length >= ADS_FOLDS_MAX) break;
+    if (k !== '' && k.length <= ADS_PREF_KEY_MAX && typeof open === 'boolean') out[k] = open;
+  }
+  return out;
+}
+
 function isLevelMode(v: unknown): v is LevelMode {
   return v === 'auto' || v === 'manual';
 }
@@ -105,7 +140,15 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
   const o =
     input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
   const lastClient = o.lastClient;
+  // Workbench and Ad Manager (plan 2026-11-16-workbench-ad-manager, decision 21). Optional: a file without them
+  // (older app) reads as it always did, and they're only written once set.
+  const lastTool = cleanLastTool(o.lastTool) ?? base.lastTool;
+  const adsAccount = isAdsAccountPref(o.adsAccount) ? o.adsAccount : base.adsAccount;
+  const adsFolds = cleanAdsFolds(o.adsFolds) ?? base.adsFolds;
   return {
+    ...(lastTool === undefined ? {} : { lastTool: { ...lastTool } }),
+    ...(adsAccount === undefined ? {} : { adsAccount }),
+    ...(adsFolds === undefined ? {} : { adsFolds: { ...adsFolds } }),
     pins: cleanPins(o.pins) ?? [...base.pins],
     lastClient:
       lastClient === null ||

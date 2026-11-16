@@ -1,3 +1,15 @@
+import {
+  ADS_ERROR_MESSAGES,
+  ADS_ROUTES,
+  type AdsAccount,
+  type AdsApprovals,
+  type AdsBoard,
+  type AdsCapabilities,
+  type AdsChangeAction,
+  type AdsChangeReply,
+  type AdsRequests,
+  type ProposalFull,
+} from '../../shared/ads-contract.ts';
 import type { ChatContextDetail } from '../../shared/context-contract.ts';
 import type {
   ApiError,
@@ -15,6 +27,7 @@ import type {
   ClientPickReported,
   CompleteTodoRequest,
   EngineChoices,
+  LibraryItem,
   LibraryItemsResponse,
   LibraryKind,
   LibraryListing,
@@ -132,7 +145,34 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+const adsQuery = (params: Record<string, string>) => `?${new URLSearchParams(params).toString()}`;
+
 export const api = {
+  // Ad Manager (plan 2026-11-16-workbench-ad-manager). Apply is never retried; a network failure on it is an
+  // unknown outcome, not a plain "could not reach", because the request may have got through.
+  adsCapabilities: () => request<AdsCapabilities>('GET', ADS_ROUTES.capabilities),
+  adsAccounts: () => request<AdsAccount[]>('GET', ADS_ROUTES.accounts),
+  adsApprovals: (client?: string) =>
+    request<AdsApprovals>('GET', `${ADS_ROUTES.approvals}${client ? adsQuery({ client }) : ''}`),
+  adsProposal: (client: string, id: string) =>
+    request<ProposalFull>('GET', `${ADS_ROUTES.proposal}${adsQuery({ client, id })}`),
+  adsBoard: (account: string) => request<AdsBoard>('GET', `${ADS_ROUTES.board}${adsQuery({ account })}`),
+  adsStandupBrief: (account: string) =>
+    request<unknown>('GET', `${ADS_ROUTES.standupBrief}${adsQuery({ account })}`),
+  /** The file as a library item, for the file viewer (`{ kind: 'file', item }`). */
+  adsFile: (path: string) => request<LibraryItem>('GET', `${ADS_ROUTES.file}${adsQuery({ p: path })}`),
+  adsChange: async <A extends AdsChangeAction>(action: A, body: AdsRequests[A]): Promise<AdsChangeReply> => {
+    try {
+      return await request<AdsChangeReply>('POST', ADS_ROUTES.change(action), body);
+    } catch (err) {
+      if (action === 'apply' && err instanceof ApiFailure && err.code === 'network') {
+        throw new ApiFailure('internal', ADS_ERROR_MESSAGES['unknown-outcome'], 0);
+      }
+      throw err;
+    }
+  },
+  adsClearInflight: (client: string, id: string) =>
+    request<OkResponse>('POST', ADS_ROUTES.clearInflight, { client, id }),
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
   /** To-dos passed on to others (its own request: it never blocks or fails `todos`). */

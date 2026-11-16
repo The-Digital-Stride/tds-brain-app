@@ -1,7 +1,8 @@
 /**
  * The generic part of running a brain skill's script: spawn node on it without a shell, pipe one JSON
  * object in, read one JSON line out, with a timeout and an output cap, plus the capabilities probe
- * cached by script real path and mtime. Shared by `todo-skill.ts` and `files-skill.ts`.
+ * cached by script real path and mtime. Shared by `todo-skill.ts`, `files-skill.ts` and `ads-skill.ts`
+ * (which alone uses `runScriptDetached`).
  */
 import { type ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -112,6 +113,67 @@ export function runScript(
     child.stdin?.on('error', () => {});
     child.stdin?.end(input);
   });
+}
+
+/** A script started by `runScriptDetached`: its pid (null if it never started) and its exit. */
+export interface DetachedRun {
+  pid: number | null;
+  /** Resolves when the process exits, however long that takes. Never rejects. */
+  exited: Promise<Outcome>;
+}
+
+/**
+ * Like `runScript`, but the script is NEVER killed: no time limit, and output past the cap is dropped rather than
+ * ending the run. It is started detached (its own process group), so it also outlives the app. For scripts that
+ * may be half way through a live write (tdsapp-ads apply, plan 2026-11-16-workbench-ad-manager, decision 12): the
+ * caller decides how long to wait for `exited`, and stopping the wait never stops the script.
+ * `opts.timeoutMs` is ignored. `runScript` is unchanged for every other caller.
+ */
+export function runScriptDetached(
+  script: string,
+  realRoot: string,
+  command: string,
+  input: string,
+  opts: Required<ScriptOptions>,
+): DetachedRun {
+  const env: Record<string, string> = { ...scrubEnv(opts.env), BRAIN_ROOT: realRoot };
+  for (const key of DROPPED_ENV) delete env[key];
+  let child: ChildProcess;
+  try {
+    child = opts.spawn(process.execPath, [script, command], {
+      cwd: realRoot,
+      env,
+      shell: false,
+      detached: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+  } catch {
+    return { pid: null, exited: Promise.resolve({ code: null, stdout: '', failed: true }) };
+  }
+  const exited = new Promise<Outcome>((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let failed = false;
+    let settled = false;
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      resolve({ code, stdout: Buffer.concat(chunks).toString('utf8'), failed });
+    };
+    child.stdout?.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > opts.maxOutputBytes) failed = true;
+      else chunks.push(chunk);
+    });
+    child.on('error', () => {
+      failed = true;
+      finish(null);
+    });
+    child.on('close', (code) => finish(code));
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(input);
+  });
+  return { pid: child.pid ?? null, exited };
 }
 
 export function parseReply(stdout: string): Record<string, unknown> | null {

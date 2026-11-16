@@ -8,6 +8,7 @@ import { useStore } from '../../store.tsx';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, loadBoard, useAd } from './store.ts';
+import { lastRunText, runKey, runStatus, taskRuns, useTaskRuns } from './task-runs.ts';
 import {
   type HealthFile,
   readHealth,
@@ -26,6 +27,88 @@ const CADENCES = [
   ['quarterly', 'Quarterly'],
 ] as const;
 const KIND_WORDS = { report: 'Report', insight: 'Insight', action: 'Action' } as const;
+/** The Daily standup's id in the run record (task card ids are words, so this can't clash). */
+const STANDUP_TASK = 'standup:daily';
+
+/** A task's run on this account: its live status and when it last ran (from this app), or null. */
+function useTaskRun(client: string, task: string) {
+  const runs = useTaskRuns();
+  const { sessions } = useStore();
+  const run = runs[runKey(client, task)];
+  return { run, status: runStatus(run, sessions?.live) };
+}
+
+/** "Running · started Today, 21:46", "Needs your answer · …", "Last run 3 Nov, 14:00" or "Not run from Cortex yet". */
+function RunLine({ client, task }: { client: string; task: string }) {
+  const { run, status } = useTaskRun(client, task);
+  return (
+    <p className="am-run">
+      <span role="status" className="am-run-state">
+        {status ? (
+          <>
+            <span
+              className="dot"
+              data-attention={status === 'running' ? 'working' : 'asking'}
+              aria-hidden="true"
+            />
+            {status === 'running' ? 'Running' : 'Needs your answer'}
+          </>
+        ) : null}
+      </span>
+      {status ? <span aria-hidden="true"> · </span> : null}
+      {run ? (
+        <time dateTime={run.at}>
+          {status ? 'started' : 'Last run'} {lastRunText(run.at)}
+        </time>
+      ) : (
+        'Not run from Cortex yet'
+      )}
+    </p>
+  );
+}
+
+/** Run, or "Open chat" while the last run's chat is still going (so a task isn't started twice by accident). */
+function RunButton({
+  client,
+  task,
+  title,
+  primary,
+  starting,
+  disabled,
+  onRun,
+}: {
+  client: string;
+  task: string;
+  title: string;
+  primary?: boolean;
+  starting: boolean;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  const { openChat } = useStore();
+  const { run, status } = useTaskRun(client, task);
+  if (status && run?.chat) {
+    const chat = run.chat;
+    return (
+      <button type="button" className="btn" data-size="small" onClick={() => openChat(chat)}>
+        Open chat<span className="visually-hidden">: {title}</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="btn"
+      data-variant={primary ? 'primary' : undefined}
+      data-size="small"
+      aria-disabled={disabled || undefined}
+      onClick={onRun}
+    >
+      {starting ? 'Starting…' : 'Run'}
+      <span className="visually-hidden">: {title}</span>
+    </button>
+  );
+}
 
 function fileNote(f: HealthFile): string {
   if (f.status === 'ok') return f.latest ? `through ${f.latest}` : 'ok';
@@ -174,7 +257,9 @@ export function Cadence({
     setStarting(id);
     const chat = await startChat(prompt, board.key, { open: true });
     setStarting(null);
-    if (chat) onStarted(`Started a chat: ${title}, ${name}.`);
+    if (!chat) return;
+    taskRuns.record(board.key, id, chat);
+    onStarted(`Started a chat: ${title}, ${name}.`);
   };
   return (
     <div className="tray am-tray" data-cols="cadence">
@@ -199,16 +284,15 @@ export function Cadence({
                   </p>
                   <p className="am-camp">{c.title}</p>
                   <p className="am-sub">{c.description}</p>
-                  <button
-                    type="button"
-                    className="btn"
-                    data-size="small"
-                    aria-label={`Run: ${c.title}`}
-                    aria-disabled={starting !== null || undefined}
-                    onClick={() => void run(c.id, c.title, c.prompt)}
-                  >
-                    {starting === c.id ? 'Starting…' : 'Run'}
-                  </button>
+                  <RunLine client={board.key} task={c.id} />
+                  <RunButton
+                    client={board.key}
+                    task={c.id}
+                    title={c.title}
+                    starting={starting === c.id}
+                    disabled={starting !== null}
+                    onRun={() => void run(c.id, c.title, c.prompt)}
+                  />
                 </li>
               ))}
             </ul>
@@ -269,7 +353,9 @@ export function Standup({
     setStarting(true);
     const chat = await startChat(s.prompt, board.key, { open: true });
     setStarting(false);
-    if (chat) onStarted(`Started a chat: Daily standup, ${name}.`);
+    if (!chat) return;
+    taskRuns.record(board.key, STANDUP_TASK, chat);
+    onStarted(`Started a chat: Daily standup, ${name}.`);
   };
   const triage = v
     ? v.flagged > 0
@@ -298,6 +384,7 @@ export function Standup({
             {v.flagged > 0 && v.topCampaign ? <span className="am-block">{v.topCampaign}</span> : null}
           </p>
         ) : null}
+        {s.hasStandup && s.prompt ? <RunLine client={board.key} task={STANDUP_TASK} /> : null}
         {ask ? (
           <Confirm
             label="Set up the Daily standup"
@@ -326,17 +413,15 @@ export function Standup({
             ) : (
               <>
                 {s.prompt ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    data-variant="primary"
-                    data-size="small"
-                    aria-disabled={starting || undefined}
-                    onClick={() => void run()}
-                  >
-                    {starting ? 'Starting…' : 'Run'}
-                    <span className="visually-hidden">: Daily standup</span>
-                  </button>
+                  <RunButton
+                    client={board.key}
+                    task={STANDUP_TASK}
+                    title="Daily standup"
+                    primary
+                    starting={starting}
+                    disabled={starting}
+                    onRun={() => void run()}
+                  />
                 ) : null}
                 {v && canAct ? (
                   <button
@@ -478,7 +563,7 @@ export function DeepDive({ board, currency }: { board: AdsBoard; currency: strin
       <h2 className="am-h">
         Ads account deep dive <span className="am-dim">{tables.length} tables, press a column to sort</span>
       </h2>
-      <div className="tray am-tray" data-cols="2">
+      <div className="tray am-tray" data-cols="tables">
         {tables.map((t) => (
           <DeepTable key={t.id} t={t} currency={currency} />
         ))}

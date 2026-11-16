@@ -28,6 +28,7 @@ const store = vi.hoisted(() => ({
   startChat: vi.fn(async () => 'chat-1' as string | null),
   reloadAds: vi.fn(async () => {}),
   openChat: vi.fn(),
+  sessions: null as unknown,
 }));
 const shell = vi.hoisted(() => ({ dispatch: vi.fn(), state: { panelOpen: true, singleKeys: true } }));
 const api = vi.hoisted(() => ({
@@ -186,6 +187,7 @@ async function ready() {
 beforeEach(() => {
   adStore.reset();
   store.toolArg = null;
+  store.sessions = null;
   store.ads = {
     visible: true,
     me: { slug: 'sam', name: 'Sam', role: 'owner' },
@@ -523,6 +525,43 @@ describe('board', () => {
     await waitFor(() =>
       expect(store.startChat).toHaveBeenCalledWith('PROMPT {{kept}} as is', 'acme', { open: true }),
     );
+  });
+
+  it('a run shows when it ran, then Running and Open chat while its chat works', async () => {
+    store.sessions = { live: [], past: [] };
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
+    await waitFor(() => expect(store.startChat).toHaveBeenCalled());
+    const task = () => screen.getByText('Spend check').closest('li') as HTMLElement;
+    await waitFor(() => expect(within(task()).getByText(/^Last run Today, \d\d:\d\d$/)).toBeTruthy());
+
+    cleanup();
+    store.sessions = { live: [{ id: 'chat-1', state: 'working' }], past: [] };
+    await ready();
+    const open = await screen.findByRole('button', { name: 'Open chat: Spend check' });
+    expect(within(task()).getByRole('status').textContent).toBe('Running');
+    expect(within(task()).getByText(/^started Today/)).toBeTruthy();
+    expect(within(task()).queryByRole('button', { name: /^Run/ })).toBeNull();
+    fireEvent.click(open);
+    expect(store.openChat).toHaveBeenCalledWith('chat-1');
+
+    cleanup();
+    store.sessions = { live: [{ id: 'chat-1', state: 'waiting' }], past: [] };
+    await ready();
+    await screen.findByRole('button', { name: 'Open chat: Spend check' });
+    expect(within(task()).getByRole('status').textContent).toBe('Needs your answer');
+
+    cleanup();
+    store.sessions = { live: [{ id: 'chat-1', state: 'idle' }], past: [] };
+    await ready();
+    await screen.findByRole('button', { name: 'Run: Spend check' });
+    expect(within(task()).getByRole('status').textContent).toBe('');
+  });
+
+  it('a task never run from Cortex says so', async () => {
+    await ready();
+    await screen.findByRole('button', { name: /^Run: Daily standup/ });
+    expect(screen.getAllByText('Not run from Cortex yet').length).toBeGreaterThan(0);
   });
 
   it('the standup Run uses the standup prompt', async () => {

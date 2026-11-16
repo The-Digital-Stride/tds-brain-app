@@ -18,11 +18,23 @@
 .am-tray[data-cols="2"] {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
-/* The cadence cards (what I run on an account): always two columns so each task has room, one when narrow. */
+/* The cadence cards (what I run on an account): four across, two on a mid-width sheet, one when narrow. */
 .am-tray[data-cols="cadence"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* The deep-dive report tables: two across so their columns have room, one when narrow. */
+.am-tray[data-cols="tables"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-@container (max-width: 660px) {
+@container (max-width: 860px) {
+  .am-tray[data-cols="cadence"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .am-tray[data-cols="tables"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 460px) {
   .am-tray[data-cols="cadence"] {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -235,6 +247,26 @@
 }
 .am-task .btn {
   margin-top: 6px;
+}
+/* When a task last ran (from this app), and a status dot with words while its chat is running. */
+.am-run {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--iron);
+  font-variant-numeric: tabular-nums;
+}
+.am-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--navy);
+  font-weight: 600;
+}
+.am-run-state:empty {
+  display: none;
+}
+.card > .am-run {
+  padding: 0 8px;
 }
 .am-verdict[data-stale] {
   color: var(--amber-text);

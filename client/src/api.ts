@@ -8,6 +8,8 @@ import {
   type AdsChangeAction,
   type AdsChangeReply,
   type AdsRequests,
+  type AdsTaskRunReply,
+  type AdsTaskRunRequest,
   type ProposalFull,
 } from '../../shared/ads-contract.ts';
 import type { ChatContextDetail } from '../../shared/context-contract.ts';
@@ -177,6 +179,9 @@ export const api = {
       throw err;
     }
   },
+  /** Records a task run in the brain (only when the skill lists ADS_TASK_RUNS_CAPABILITY). */
+  adsTaskRun: (body: AdsTaskRunRequest) =>
+    request<AdsTaskRunReply>('POST', ADS_ROUTES.change('task-run'), body),
   adsClearInflight: (client: string, id: string) =>
     request<OkResponse>('POST', ADS_ROUTES.clearInflight, { client, id }),
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),

@@ -9,11 +9,14 @@ import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -31,6 +34,7 @@ import {
   ADS_PROPOSAL_ID,
   ADS_RECENT_DAYS,
   ADS_SKILL,
+  ADS_TASK_RUNS_CAPABILITY,
 } from '../../../shared/ads-contract.ts';
 
 const SKILL_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -343,7 +347,7 @@ describe('capabilities', () => {
     expect(r.reply).toMatchObject({
       ok: true,
       action: 'capabilities',
-      features: [ADS_CAPABILITY],
+      features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
       adsManager: true,
       adsAccess: false,
       me: { slug: 'rita-reviewer', name: 'Rita Reviewer', role: 'team' },
@@ -375,7 +379,12 @@ describe('capabilities', () => {
     expect(r.reply).toMatchObject({ ok: true, adsManager: false });
     rmSync(abs('.claude/skills/ads-manager'), { recursive: true, force: true });
     const r2 = bridge('capabilities');
-    expect(r2.reply).toMatchObject({ ok: true, features: [ADS_CAPABILITY], adsManager: false, me: null });
+    expect(r2.reply).toMatchObject({
+      ok: true,
+      features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
+      adsManager: false,
+      me: null,
+    });
     refused(bridge('approvals'), 'unavailable');
   });
 });
@@ -945,5 +954,256 @@ describe('copies from the Workbench (decision 9)', () => {
       const sha = createHash('sha256').update(readFileSync(file)).digest('hex');
       expect(sha, `${s.path} changed: copy it again and update SOURCES.md`).toBe(s.sha);
     }
+  });
+});
+
+describe('task-run and lastRun', () => {
+  const runsDir = () => abs('tdsapp-ads/runs/acme');
+  const logs = () => (existsSync(runsDir()) ? readdirSync(runsDir()) : []);
+  const logLine = (o: Record<string, unknown>) =>
+    JSON.stringify({
+      v: 1,
+      ts: new Date().toISOString(),
+      account: 'acme',
+      task: 'w-search',
+      by: 'tess-team',
+      by_name: 'Tess Team',
+      ...o,
+    }) + '\n';
+  const cards = () =>
+    bridge('board', { account: 'acme' }).reply.board as {
+      cards: { id: string; lastRun: unknown }[];
+      standup: { lastRun: unknown };
+    };
+  const lastOf = (id: string) => cards().cards.find((c) => c.id === id)?.lastRun;
+  // A byte-level listing of a tree, to prove a read changed nothing.
+  const snapshot = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const f = join(dir, e.name);
+      if (e.name === '.git') return [];
+      return e.isDirectory() ? [f, ...snapshot(f)] : [`${f}:${readFileSync(f, 'utf8')}`];
+    });
+
+  it('appends the right line, and writes the README and .gitattributes once', () => {
+    const r = bridge('task-run', { account: 'acme', task: 'w-search' });
+    expect(r.exit, JSON.stringify(r.reply)).toBe(0);
+    const run = r.reply.run as { at: string; by: string; byName: string };
+    expect(run).toMatchObject({ by: 'rita-reviewer', byName: 'Rita Reviewer' });
+    const id = readFileSync(join(home, '.config', 'tdsapp', 'machine-id'), 'utf8').trim();
+    expect(logs()).toEqual([`rita-reviewer.${id}.jsonl`]);
+    const lines = readFileSync(join(runsDir(), logs()[0] as string), 'utf8')
+      .trim()
+      .split('\n');
+    expect(JSON.parse(lines[0] as string)).toEqual({
+      v: 1,
+      ts: run.at,
+      account: 'acme',
+      task: 'w-search',
+      by: 'rita-reviewer',
+      by_name: 'Rita Reviewer',
+    });
+    writeFileSync(abs('tdsapp-ads/README.md'), 'edited');
+    bridge('task-run', { account: 'acme', task: 'standup:daily' });
+    expect(readFileSync(abs('tdsapp-ads/README.md'), 'utf8')).toBe('edited');
+    expect(readFileSync(abs('tdsapp-ads/.gitattributes'), 'utf8')).toBe('runs/**/*.jsonl merge=union\n');
+    expect(
+      readFileSync(join(runsDir(), logs()[0] as string), 'utf8')
+        .trim()
+        .split('\n'),
+    ).toHaveLength(2);
+  });
+
+  it('refuses an unknown task, a bad account, an off-roster user and a bad slug', () => {
+    refused(bridge('task-run', { account: 'acme', task: 'nope' }), 'bad-request');
+    refused(bridge('task-run', { account: 'acme' }), 'bad-request');
+    refused(bridge('task-run', { account: '../x', task: 'w-search' }), 'bad-request');
+    refused(bridge('task-run', { account: 'nobody', task: 'w-search' }), 'not-found');
+    actAs('Stranger Danger', 'stranger@example.test');
+    refused(bridge('task-run', { account: 'acme', task: 'w-search' }), 'not-allowed');
+    actAs('Rita Reviewer', 'rita@example.test');
+    // A roster slug too long to be a file name part.
+    const long = 'a'.repeat(100);
+    writeFileSync(
+      abs('.team-config/roles.json'),
+      JSON.stringify({ members: [{ name: long, email: 'rita@example.test', role: 'team' }] }),
+    );
+    refused(bridge('task-run', { account: 'acme', task: 'w-search' }), 'not-allowed');
+    expect(existsSync(abs('tdsapp-ads/runs'))).toBe(false);
+  });
+
+  it('refuses a symlinked tdsapp-ads, runs or log file when writing', () => {
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'ads-else-')));
+    try {
+      symlinkSync(elsewhere, abs('tdsapp-ads'));
+      refused(bridge('task-run', { account: 'acme', task: 'w-search' }), 'not-allowed');
+      rmSync(abs('tdsapp-ads'));
+      mkdirSync(abs('tdsapp-ads'));
+      symlinkSync(elsewhere, abs('tdsapp-ads/runs'));
+      refused(bridge('task-run', { account: 'acme', task: 'w-search' }), 'not-allowed');
+      rmSync(abs('tdsapp-ads/runs'));
+      mkdirSync(runsDir(), { recursive: true });
+      bridge('task-run', { account: 'acme', task: 'w-search' });
+      const file = join(runsDir(), logs()[0] as string);
+      rmSync(file);
+      writeFileSync(join(elsewhere, 'target'), '');
+      symlinkSync(join(elsewhere, 'target'), file);
+      refused(bridge('task-run', { account: 'acme', task: 'w-search' }), 'not-allowed');
+      expect(readFileSync(join(elsewhere, 'target'), 'utf8')).toBe('');
+      expect(readdirSync(elsewhere)).toEqual(['target']);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it('skips a symlinked folder or log file when reading', () => {
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'ads-else-')));
+    try {
+      writeFileSync(join(elsewhere, 'tess-team.aaaaaa.jsonl'), logLine({}));
+      mkdirSync(abs('tdsapp-ads/runs'), { recursive: true });
+      symlinkSync(elsewhere, runsDir());
+      expect(lastOf('w-search')).toBeNull();
+      rmSync(runsDir());
+      mkdirSync(runsDir());
+      symlinkSync(join(elsewhere, 'tess-team.aaaaaa.jsonl'), join(runsDir(), 'tess-team.aaaaaa.jsonl'));
+      expect(lastOf('w-search')).toBeNull();
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it('compacts to the newest line per task, and a quarterly run survives 3,000 later lines', () => {
+    const quarterly = JSON.parse(
+      readFileSync(join(SKILL_DIR, 'scripts', 'cadence-tasks.json'), 'utf8'),
+    ).cards.find((c: { cadence: string }) => c.cadence === 'quarterly').id as string;
+    bridge('task-run', { account: 'acme', task: quarterly });
+    const file = join(runsDir(), logs()[0] as string);
+    const old = new Date(Date.now() - 60_000).toISOString();
+    const filler = Array.from({ length: 3000 }, (_, i) =>
+      logLine({
+        task: 'w-search',
+        by: 'rita-reviewer',
+        by_name: 'Rita Reviewer',
+        ts: new Date(Date.now() - 50_000 + i).toISOString(),
+      }),
+    ).join('');
+    writeFileSync(file, readFileSync(file, 'utf8') + filler);
+    expect(lstatSync(file).size).toBeGreaterThan(64 * 1024);
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const kept = readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(kept.map((l) => l.task).sort()).toEqual([quarterly, 'w-search'].sort());
+    expect(lastOf(quarterly)).toMatchObject({ by: 'rita-reviewer' });
+    expect(old < new Date().toISOString()).toBe(true);
+  });
+
+  it('compaction never follows a link planted beside the log, and leaves no temp file', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const name = logs()[0] as string;
+    const file = join(runsDir(), name);
+    const outside = join(home, 'precious.txt');
+    writeFileSync(outside, 'keep me');
+    for (let i = 0; i < 50; i++) symlinkSync(outside, `${file}.${i}.tmp`);
+    writeFileSync(file, readFileSync(file, 'utf8') + logLine({ by: 'rita-reviewer' }).repeat(800));
+    expect(bridge('task-run', { account: 'acme', task: 'w-search' }).exit).toBe(0);
+    expect(readFileSync(outside, 'utf8')).toBe('keep me');
+    expect(lstatSync(file).isFile()).toBe(true);
+    expect(lstatSync(file).size).toBeLessThan(64 * 1024);
+    expect(logs().filter((n) => n.endsWith('.tmp') && !/\.\d+\.tmp$/.test(n))).toEqual([]);
+  });
+
+  it('compaction drops lines for tasks that are not on the list', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const file = join(runsDir(), logs()[0] as string);
+    const junk = Array.from({ length: 800 }, (_, i) =>
+      logLine({ by: 'rita-reviewer', task: `junk-${i}` }),
+    ).join('');
+    writeFileSync(file, readFileSync(file, 'utf8') + junk);
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const tasks = readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l).task);
+    expect(tasks).toEqual(['w-search']);
+  });
+
+  it('a log padded past 4 MB is left alone, and recording still works', () => {
+    bridge('task-run', { account: 'acme', task: 'w-search' });
+    const file = join(runsDir(), logs()[0] as string);
+    writeFileSync(file, readFileSync(file, 'utf8') + 'x'.repeat(4 * 1024 * 1024 + 10) + '\n');
+    const before = lstatSync(file).size;
+    expect(bridge('task-run', { account: 'acme', task: 'w-search' }).exit).toBe(0);
+    expect(lstatSync(file).size).toBeGreaterThan(before);
+  });
+
+  it('only files named like a run log count, so junk files never crowd out real ones', () => {
+    mkdirSync(runsDir(), { recursive: true });
+    for (let i = 0; i < 210; i++)
+      writeFileSync(join(runsDir(), `aaa-${i}.jsonl`), logLine({ by: `aaa-${i}` }));
+    writeFileSync(join(runsDir(), 'Bad Name.aaaaaa.jsonl'), logLine({ by: 'Bad Name' }));
+    writeFileSync(join(runsDir(), 'zed-real.cccccc.jsonl'), logLine({ by: 'zed-real', by_name: 'Zed Real' }));
+    expect(lastOf('w-search')).toMatchObject({ by: 'zed-real', byName: 'Zed Real' });
+  });
+
+  it('board returns the newest run across two people, with byName', () => {
+    mkdirSync(runsDir(), { recursive: true });
+    writeFileSync(join(runsDir(), 'tess-team.aaaaaa.jsonl'), logLine({ ts: '2026-11-10T10:00:00.000Z' }));
+    writeFileSync(
+      join(runsDir(), 'sam-scout.bbbbbb__from-remote.jsonl'),
+      logLine({ ts: '2026-11-12T09:30:00.000Z', by: 'sam-scout', by_name: 'Sam Scout' }) +
+        logLine({
+          ts: '2026-11-11T09:30:00.000Z',
+          by: 'sam-scout',
+          by_name: 'Sam Scout',
+          task: 'standup:daily',
+        }),
+    );
+    expect(lastOf('w-search')).toEqual({
+      at: '2026-11-12T09:30:00.000Z',
+      by: 'sam-scout',
+      byName: 'Sam Scout',
+    });
+    expect(cards().standup.lastRun).toEqual({
+      at: '2026-11-11T09:30:00.000Z',
+      by: 'sam-scout',
+      byName: 'Sam Scout',
+    });
+    expect(lastOf('m-rsa')).toBeNull();
+  });
+
+  it('board skips bad JSON, wrong account, far-future ts and a by/filename mismatch', () => {
+    mkdirSync(runsDir(), { recursive: true });
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    writeFileSync(
+      join(runsDir(), 'tess-team.aaaaaa.jsonl'),
+      [
+        '{not json\n',
+        logLine({ account: 'beta' }),
+        logLine({ ts: future }),
+        logLine({ ts: 'nonsense' }),
+        logLine({ v: 2 }),
+        logLine({ by: 'sam-scout' }),
+      ].join(''),
+    );
+    expect(lastOf('w-search')).toBeNull();
+    writeFileSync(
+      join(runsDir(), 'tess-team.aaaaaa.jsonl'),
+      logLine({ ts: '2026-11-09T08:00:00.000Z', by_name: 'T\nes' + 'x'.repeat(200) }),
+    );
+    const got = lastOf('w-search') as { by: string; byName: string };
+    expect(got.by).toBe('tess-team');
+    expect(got.byName.length).toBeLessThanOrEqual(80);
+    expect(got.byName).not.toContain('\n');
+  });
+
+  it('board on a brain with no tdsapp-ads leaves the tree byte-identical and every lastRun null', () => {
+    const before = snapshot(root);
+    const b = cards();
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(abs('tdsapp-ads'))).toBe(false);
+    expect(existsSync(join(home, '.config'))).toBe(false);
+    expect(b.cards.every((c) => c.lastRun === null)).toBe(true);
+    expect(b.standup.lastRun).toBeNull();
   });
 });

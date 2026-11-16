@@ -96,6 +96,8 @@ export interface AdsService {
 
 /** Spawned detached and never stopped (decision 12). */
 const DETACHED: ReadonlySet<AdsChangeAction> = new Set(['apply', 'dry-run', 'sign-monthly']);
+/** Changes that run at once, outside the queue: `task-run` is a one-line append whose time must not wait behind an apply. */
+const UNQUEUED: ReadonlySet<AdsChangeAction> = new Set(['task-run']);
 
 const CODES: ReadonlySet<string> = new Set<AdsErrorCode>([
   'bad-request',
@@ -270,6 +272,7 @@ export function createAdsService(root: string, options: AdsServiceOptions = {}):
   }
 
   function change(action: AdsChangeAction, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (UNQUEUED.has(action)) return runRead(action, input);
     return new Promise((resolve, reject) => {
       void queue(async () => {
         try {

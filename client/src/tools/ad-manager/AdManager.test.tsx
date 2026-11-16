@@ -40,6 +40,7 @@ const api = vi.hoisted(() => ({
   adsClearInflight: vi.fn(),
   adsStandupBrief: vi.fn(),
   adsFile: vi.fn(),
+  adsTaskRun: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock('../../api.ts', () => ({
   api,
@@ -564,6 +565,68 @@ describe('board', () => {
     const card = run.closest('section') as HTMLElement;
     expect(within(card).queryByText(/^Last run/)).toBeNull();
     expect(within(card).getByRole('status').textContent).toBe('');
+  });
+
+  it("shows a teammate's run from the brain with their first name", async () => {
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return {
+        ...b,
+        cards: b.cards.map((c) => ({
+          ...c,
+          lastRun: { at: new Date().toISOString(), by: 'pete-smith', byName: 'Pete Smith' },
+        })),
+      };
+    });
+    await ready();
+    const task = (await screen.findByText('Spend check')).closest('li') as HTMLElement;
+    await waitFor(() => expect(within(task).getByText(/by Pete$/)).toBeTruthy());
+  });
+
+  it('my own run from the brain shows without a name', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return {
+        ...b,
+        cards: b.cards.map((c) => ({
+          ...c,
+          lastRun: { at: new Date().toISOString(), by: 'sam', byName: 'Sam' },
+        })),
+      };
+    });
+    await ready();
+    const task = (await screen.findByText('Spend check')).closest('li') as HTMLElement;
+    await waitFor(() => expect(within(task).getByText(/Last run/)).toBeTruthy());
+    expect(within(task).queryByText(/by Sam/)).toBeNull();
+  });
+
+  it('the standup Run records standup:daily in the brain', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return { ...b, cards: b.cards.map((c) => ({ ...c, lastRun: null })) };
+    });
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: /^Run: Daily standup/ }));
+    await waitFor(() =>
+      expect(api.adsTaskRun).toHaveBeenCalledWith({ account: 'acme', task: 'standup:daily' }),
+    );
+  });
+
+  it('records a run in the brain only when the skill shares runs', async () => {
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
+    await waitFor(() => expect(store.startChat).toHaveBeenCalled());
+    // This board has no lastRun field: an older skill, so the run stays in this browser.
+    expect(api.adsTaskRun).not.toHaveBeenCalled();
+
+    cleanup();
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return { ...b, cards: b.cards.map((c) => ({ ...c, lastRun: null })) };
+    });
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
+    await waitFor(() => expect(api.adsTaskRun).toHaveBeenCalledWith({ account: 'acme', task: 'd-spend' }));
   });
 
   it('the standup Run uses the standup prompt', async () => {

@@ -34,7 +34,7 @@ const COOKIE = `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`;
 const ID = '20261116-01-pause-generic';
 
 const CAPS: AdsCapabilities = {
-  features: ['ads-v1'],
+  features: ['ads-v1', 'task-runs-v1'],
   version: '0.1',
   adsAccess: true,
   adsManager: true,
@@ -216,6 +216,7 @@ const CHANGES: [AdsChangeAction, Record<string, unknown>][] = [
     'standup-feedback',
     { account: 'acme', date: '20261115', campaign: 'G', action_category: 'NONE', score: 3 },
   ],
+  ['task-run', { account: 'acme', task: 'weekly-check' }],
 ];
 
 describe('the security gate', () => {
@@ -363,6 +364,44 @@ describe('changes', () => {
     const r = await post(ADS_ROUTES.change('dry-run'), { client: 'acme', id: ID });
     const p = r.json.proposal as { flags: Record<string, boolean> };
     expect(p.flags).toMatchObject({ canApply: false, inflight: true });
+  });
+});
+
+describe('recording a task run (plan 2026-11-16-ad-manager-shared-run-times)', () => {
+  it('passes on only the account and task, never an actor', async () => {
+    const r = await post(ADS_ROUTES.change('task-run'), {
+      account: 'acme',
+      task: 'standup:daily',
+      by: 'olive-owner',
+      at: '2020-01-01T00:00:00Z',
+    });
+    expect(r.status).toBe(200);
+    expect(seen.changes).toEqual([['task-run', { account: 'acme', task: 'standup:daily' }]]);
+  });
+  it('is unavailable from a skill that does not record runs', async () => {
+    state.caps = { ...CAPS, features: ['ads-v1'] };
+    const r = await post(ADS_ROUTES.change('task-run'), { account: 'acme', task: 'weekly-check' });
+    expect(r.json.error?.code).toBe('unavailable');
+    expect(seen.changes).toEqual([]);
+  });
+  it('refuses a bad account or task before the bridge runs', async () => {
+    for (const body of [
+      { account: '../x', task: 'weekly-check' },
+      { account: 'acme', task: 'Weekly Check' },
+      { account: 'acme', task: 'x'.repeat(65) },
+      { account: 'acme' },
+      { task: 'weekly-check' },
+    ]) {
+      expect((await post(ADS_ROUTES.change('task-run'), body)).status).toBe(400);
+    }
+    expect(seen.changes).toEqual([]);
+  });
+  it("is refused when the bridge's person isn't the app's person", async () => {
+    state.identity = { ...rita, slug: 'sam-scout', name: 'Sam Scout' };
+    expect(
+      (await post(ADS_ROUTES.change('task-run'), { account: 'acme', task: 'weekly-check' })).status,
+    ).toBe(403);
+    expect(seen.changes).toEqual([]);
   });
 });
 

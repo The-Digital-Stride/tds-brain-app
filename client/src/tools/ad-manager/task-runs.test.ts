@@ -6,6 +6,7 @@ import {
   recordRun,
   runKey,
   runStatus,
+  shownRun,
   TASK_RUNS_KEY,
   type TaskRuns,
   writeRuns,
@@ -104,5 +105,38 @@ describe('lastRunText', () => {
     expect(lastRunText(new Date(2026, 10, 15, 9, 5).toISOString(), now)).toBe('Yesterday, 09:05');
     expect(lastRunText(new Date(2026, 10, 3, 14, 0).toISOString(), now)).toBe('3 Nov, 14:00');
     expect(lastRunText(new Date(2025, 11, 30, 8, 0).toISOString(), now)).toBe('30 Dec 2025, 08:00');
+  });
+});
+
+describe('shownRun', () => {
+  const mine = { at: '2026-11-16T10:00:00.000Z', chat: 's1' };
+  const pete = { at: '2026-11-16T12:00:00.000Z', by: 'pete-smith', byName: 'Pete Smith' };
+  it('shows a newer teammate run with their first name', () => {
+    expect(shownRun(mine, pete, 'ian-hancock', false)).toEqual({ at: pete.at, by: 'Pete' });
+  });
+  it('shows my own newer run without a name', () => {
+    expect(shownRun({ ...mine, at: '2026-11-16T13:00:00.000Z' }, pete, 'ian-hancock', false)).toEqual({
+      at: '2026-11-16T13:00:00.000Z',
+      by: null,
+    });
+  });
+  it('never names me, even from the shared log', () => {
+    expect(
+      shownRun(undefined, { ...pete, by: 'ian-hancock', byName: 'Ian Hancock' }, 'ian-hancock', false),
+    ).toEqual({
+      at: pete.at,
+      by: null,
+    });
+  });
+  it('keeps my live run while its chat is going, even if a teammate ran it since', () => {
+    expect(shownRun(mine, pete, 'ian-hancock', true)).toEqual({ at: mine.at, by: null });
+  });
+  it('is nothing when nobody has run it, and falls back to the slug for a blank name', () => {
+    expect(shownRun(undefined, null, 'ian-hancock', false)).toBeNull();
+    expect(shownRun(undefined, undefined, null, false)).toBeNull();
+    expect(shownRun(undefined, { ...pete, byName: '  ' }, null, false)).toEqual({
+      at: pete.at,
+      by: 'pete-smith',
+    });
   });
 });

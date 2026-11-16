@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AdsBoard } from '../../../../shared/ads-contract.ts';
+import type { AdsBoard, AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
@@ -7,7 +7,7 @@ import { useStore } from '../../store.tsx';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, loadBoard, useAd } from './store.ts';
-import { lastRunText, runKey, runStatus, taskRuns, useTaskRuns } from './task-runs.ts';
+import { lastRunText, runKey, runStatus, shownRun, taskRuns, useTaskRuns } from './task-runs.ts';
 import { type HealthFile, readHealth, readSetupPrompts, readStandup } from './types.ts';
 import { actionLabel, adsErrorText, ageDays } from './words.ts';
 
@@ -22,6 +22,15 @@ const KIND_WORDS = { report: 'Report', insight: 'Insight', action: 'Action' } as
 /** The Daily standup's id in the run record (task card ids are words, so this can't clash). */
 const STANDUP_TASK = 'standup:daily';
 
+/**
+ * Records a run in the brain so the team sees it, when the skill shares runs (its board carries `lastRun`).
+ * Not waited on, and a failure says nothing: the run still shows here from this browser's record.
+ */
+function shareRun(board: AdsBoard, task: string) {
+  if (!board.cards.some((c) => 'lastRun' in c)) return;
+  void api.adsTaskRun({ account: board.key, task }).catch(() => {});
+}
+
 /** A task's run on this account: its live status and when it last ran (from this app), or null. */
 function useTaskRun(client: string, task: string) {
   const runs = useTaskRuns();
@@ -35,8 +44,21 @@ function useTaskRun(client: string, task: string) {
  * "Needs your answer · …", "Last run 3 Nov, 14:00"); nothing until it has run. The status is spoken from a
  * hidden region that is always in the page (one added already holding text is often not announced).
  */
-function RunLine({ client, task, title }: { client: string; task: string; title: string }) {
-  const { run, status } = useTaskRun(client, task);
+function RunLine({
+  client,
+  task,
+  title,
+  shared,
+}: {
+  client: string;
+  task: string;
+  title: string;
+  /** The brain's latest run by anyone (`lastRun`), when the skill shares runs. */
+  shared?: AdsTaskRun | null;
+}) {
+  const { ads } = useStore();
+  const { run: local, status } = useTaskRun(client, task);
+  const run = shownRun(local, shared, ads?.me?.slug ?? null, status !== null);
   const words = status === 'running' ? 'Running' : status === 'waiting' ? 'Needs your answer' : null;
   return (
     <>
@@ -55,6 +77,7 @@ function RunLine({ client, task, title }: { client: string; task: string; title:
           <time dateTime={run.at}>
             {words ? 'started' : 'Last run'} {lastRunText(run.at)}
           </time>
+          {run.by ? ` by ${run.by}` : null}
         </p>
       ) : null}
     </>
@@ -253,6 +276,7 @@ export function Cadence({
     setStarting(null);
     if (!chat) return;
     taskRuns.record(board.key, id, chat);
+    shareRun(board, id);
     onStarted(`Started a chat: ${title}, ${name}.`);
   };
   return (
@@ -278,7 +302,7 @@ export function Cadence({
                   </p>
                   <p className="am-camp">{c.title}</p>
                   <p className="am-sub">{c.description}</p>
-                  <RunLine client={board.key} task={c.id} title={c.title} />
+                  <RunLine client={board.key} task={c.id} title={c.title} shared={c.lastRun} />
                   <RunButton
                     client={board.key}
                     task={c.id}
@@ -349,6 +373,7 @@ export function Standup({
     setStarting(false);
     if (!chat) return;
     taskRuns.record(board.key, STANDUP_TASK, chat);
+    shareRun(board, STANDUP_TASK);
     onStarted(`Started a chat: Daily standup, ${name}.`);
   };
   const triage = v
@@ -379,7 +404,7 @@ export function Standup({
           </p>
         ) : null}
         {s.hasStandup && s.prompt ? (
-          <RunLine client={board.key} task={STANDUP_TASK} title="Daily standup" />
+          <RunLine client={board.key} task={STANDUP_TASK} title="Daily standup" shared={s.lastRun} />
         ) : null}
         {ask ? (
           <Confirm

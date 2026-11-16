@@ -132,6 +132,17 @@ describe('reads', () => {
     await apply;
   });
 
+  it("a task run is recorded at once, never held behind a slow apply's queue", async () => {
+    const { root, dataDir } = brain({ apply: { delayMs: 1500 } });
+    const svc = createAdsService(root, opts(dataDir));
+    const apply = svc.change('apply', APPLY);
+    await sleep(100);
+    const t0 = Date.now();
+    await svc.change('task-run', { account: 'acme', task: 'weekly-check' });
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await apply;
+  });
+
   it('identical reads in flight share one run; different ones do not', async () => {
     const { root, dataDir } = brain({ board: { delayMs: 300 } });
     const svc = createAdsService(root, opts(dataDir));

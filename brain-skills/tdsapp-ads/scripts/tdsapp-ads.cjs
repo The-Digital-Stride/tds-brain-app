@@ -34,13 +34,16 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.1';
+const SCRIPT_VERSION = '0.2';
 
 // Mirrors shared/ads-contract.ts (a test checks they match).
 const ADS_CAPABILITY = 'ads-v1';
+const ADS_TASK_RUNS_CAPABILITY = 'task-runs-v1';
 const ADS_ACCOUNT_KEY = /^[A-Za-z0-9_-]{1,80}$/;
 const ADS_PROPOSAL_ID = /^\d{8}-\d{2}-[a-z0-9-]+$/;
 const ADS_CLIENT_SLUG = /^[a-z0-9-]+$/;
@@ -54,6 +57,16 @@ const WHO_MAX = 200;
 const CAMPAIGN_MAX = 300;
 const CATEGORY_MAX = 80;
 const SLUG_MAX = 80;
+const RUN_SLUG = /^[a-z0-9-]{1,80}$/;
+const RUN_NAME_MAX = 80;
+const RUN_COMPACT_BYTES = 64 * 1024;
+const RUN_COMPACT_MAX = 4 * 1024 * 1024;
+/** A run log's file name: <roster slug>.<6-hex machine id>, then anything (a sync's copy), then .jsonl. */
+const RUN_FILE = /^([a-z0-9-]{1,80})\.[0-9a-f]{6}[^/]*\.jsonl$/;
+const RUN_READ_FILES = 200;
+const RUN_READ_BYTES = 1024 * 1024;
+const RUN_FUTURE_MS = 10 * 60 * 1000;
+const RUNS_DIR = 'tdsapp-ads';
 const ERRORS = new Set([
   'bad-request',
   'not-found',
@@ -283,7 +296,7 @@ function capabilities(_input, ctx) {
   const L = brainLibs(ctx.root);
   return {
     version: SCRIPT_VERSION,
-    features: [ADS_CAPABILITY],
+    features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
     adsAccess: hasAdsAccess(ctx),
     adsManager: Boolean(L),
     me: L ? whoAmI(L, ctx) : null,
@@ -368,6 +381,225 @@ function accounts(_input, ctx) {
   return { accounts: out.filter((a) => ADS_ACCOUNT_KEY.test(a.key)) };
 }
 
+// ---- run log -----------------------------------------------------------------------------------
+// tdsapp-ads/runs/<account>/<member-slug>.<machine-id>.jsonl: one line per task run, written by task-run only.
+// A convenience record for "last run by Pete", not an audit trail: anyone who can write the brain can edit it.
+
+const errCode = (err) => (err && typeof err === 'object' ? err.code : undefined);
+
+function lstatOrNull(abs) {
+  try {
+    return fs.lstatSync(abs);
+  } catch (err) {
+    if (errCode(err) === 'ENOENT' || errCode(err) === 'ENOTDIR') return null;
+    throw err;
+  }
+}
+
+// Makes each missing folder of `segs` under `base`, one at a time; a link or a file along the way is refused.
+function plainFolder(base, segs, code) {
+  let cur = base;
+  for (const seg of segs) {
+    cur = path.join(cur, seg);
+    let st = lstatOrNull(cur);
+    if (!st) {
+      try {
+        fs.mkdirSync(cur);
+      } catch (err) {
+        if (errCode(err) !== 'EEXIST') throw err;
+      }
+      st = fs.lstatSync(cur);
+    }
+    if (st.isSymbolicLink() || !st.isDirectory()) throw refuse(code, `${seg} isn't a plain folder`);
+  }
+  return cur;
+}
+
+// This Mac's id: 6 hex characters in ~/.config/tdsapp/machine-id (same file and format as tdsapp-files).
+function machineId(ctx) {
+  const dir = path.join(ctx.home, '.config', 'tdsapp');
+  const file = path.join(dir, 'machine-id');
+  const read = () => {
+    try {
+      const id = fs.readFileSync(file, 'utf8').trim();
+      return /^[0-9a-f]{6}$/.test(id) ? id : null;
+    } catch {
+      return null;
+    }
+  };
+  const found = read();
+  if (found) return found;
+  fs.mkdirSync(dir, { recursive: true });
+  const id = crypto.randomBytes(3).toString('hex');
+  try {
+    fs.writeFileSync(file, id + '\n', { flag: 'wx' });
+    return id;
+  } catch (err) {
+    if (errCode(err) !== 'EEXIST') throw err;
+  }
+  const again = read();
+  if (again) return again;
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, id + '\n');
+  fs.renameSync(temp, file);
+  return id;
+}
+
+const RUNS_README = `# Ad Manager run log
+
+The TDS Brain app's record of when each Ad Manager task was last run, so everyone sees the same "last run" times.
+
+- It is not a source: nothing here is evidence, and nothing should be edited by hand.
+- One file per person, per Mac, per account: runs/<account>/<person>.<mac>.jsonl.
+- Anyone who can write this brain could edit it; it is a convenience record, not an audit trail.
+`;
+
+function validTask(task) {
+  if (!isStr(task)) return false;
+  return task === 'standup:daily' || cadenceTasks().cards.some((c) => c.id === task);
+}
+
+function writeOnce(file, content) {
+  if (lstatOrNull(file)) return;
+  try {
+    fs.writeFileSync(file, content, { flag: 'wx' });
+  } catch (err) {
+    if (errCode(err) !== 'EEXIST') throw err;
+  }
+}
+
+// Keeps only the newest valid line per task, when the file has grown past the limit.
+function compactRunLog(file) {
+  const st = lstatOrNull(file);
+  // A log padded past RUN_COMPACT_MAX is left alone: reading it whole would be slow (or fail), and the board
+  // skips files over RUN_READ_BYTES anyway.
+  if (!st || !st.isFile() || st.size <= RUN_COMPACT_BYTES || st.size > RUN_COMPACT_MAX) return;
+  const newest = new Map();
+  for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
+    let line;
+    try {
+      line = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    // Only real tasks are kept, so a log padded with made-up task names still shrinks.
+    if (!line || typeof line !== 'object' || !validTask(line.task) || !isStr(line.ts)) continue;
+    const t = Date.parse(line.ts);
+    if (Number.isNaN(t)) continue;
+    const have = newest.get(line.task);
+    if (!have || t >= have.t) newest.set(line.task, { t, raw });
+  }
+  const keep = [...newest.values()].sort((a, b) => a.t - b.t).map((e) => e.raw);
+  // A random name, created only if nothing is there ('wx' is O_EXCL): a link planted in the brain is never
+  // followed out of it (tdsapp-files does the same).
+  const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  let fd;
+  try {
+    fd = fs.openSync(temp, 'wx', 0o644);
+    fs.writeSync(fd, `${keep.join('\n')}\n`);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temp, file);
+  } catch (err) {
+    if (fd !== undefined) fs.closeSync(fd);
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+      // nothing was made
+    }
+    throw err;
+  }
+}
+
+function taskRun(input, ctx) {
+  const key = accountKey(input);
+  const task = input.task;
+  if (!validTask(task)) throw refuse('bad-request', 'bad task');
+  const L = needLibs(ctx);
+  const me = requireMe(L, ctx);
+  if (!RUN_SLUG.test(me.slug)) throw refuse('not-allowed', 'your roster slug cannot be used in a file name');
+  accountDir(ctx, key);
+  const base = plainFolder(ctx.root, [RUNS_DIR], 'not-allowed');
+  const dir = plainFolder(base, ['runs', key], 'not-allowed');
+  writeOnce(path.join(base, 'README.md'), RUNS_README);
+  writeOnce(path.join(base, '.gitattributes'), 'runs/**/*.jsonl merge=union\n');
+  const file = path.join(dir, `${me.slug}.${machineId(ctx)}.jsonl`);
+  const st = lstatOrNull(file);
+  if (st && (st.isSymbolicLink() || !st.isFile())) throw refuse('not-allowed', 'the run log is not a plain file');
+  const at = new Date().toISOString();
+  const line = { v: 1, ts: at, account: key, task, by: me.slug, by_name: me.name };
+  let fd;
+  try {
+    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0);
+    fd = fs.openSync(file, flags, 0o644);
+    fs.writeSync(fd, JSON.stringify(line) + '\n');
+  } catch (err) {
+    throw refuse(errCode(err) === 'ELOOP' ? 'not-allowed' : 'internal', 'could not write the run log');
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  try {
+    compactRunLog(file);
+  } catch {
+    // The line is written; compaction can wait for the next run.
+  }
+  return { ok: true, run: { at, by: me.slug, byName: flat(me.name).slice(0, RUN_NAME_MAX) || me.slug } };
+}
+
+// The newest run per task for one account, from every log file there. Never writes anything.
+function readRuns(ctx, key) {
+  const out = new Map();
+  let dir = ctx.root;
+  for (const seg of [RUNS_DIR, 'runs', key]) {
+    dir = path.join(dir, seg);
+    let st;
+    try {
+      st = lstatOrNull(dir);
+    } catch {
+      return out;
+    }
+    if (!st || st.isSymbolicLink() || !st.isDirectory()) return out;
+  }
+  let names;
+  try {
+    // Only names shaped like a run log count, before the cap, so junk files can't crowd out real logs.
+    names = fs.readdirSync(dir).filter((n) => RUN_FILE.test(n)).sort().slice(0, RUN_READ_FILES);
+  } catch {
+    return out;
+  }
+  const limit = Date.now() + RUN_FUTURE_MS;
+  for (const name of names) {
+    const slug = RUN_FILE.exec(name)?.[1] ?? '';
+    const file = path.join(dir, name);
+    let text;
+    try {
+      const st = lstatOrNull(file);
+      if (!st || st.isSymbolicLink() || !st.isFile() || st.size > RUN_READ_BYTES) continue;
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const raw of text.split('\n')) {
+      if (!raw) continue;
+      let l;
+      try {
+        l = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (!l || typeof l !== 'object' || l.v !== 1 || l.account !== key || !isStr(l.task) || !isStr(l.ts)) continue;
+      if (l.by !== slug) continue;
+      const t = Date.parse(l.ts);
+      if (Number.isNaN(t) || t > limit) continue;
+      const have = out.get(l.task);
+      if (have && have.t >= t) continue;
+      const byName = isStr(l.by_name) ? flat(l.by_name).slice(0, RUN_NAME_MAX) : '';
+      out.set(l.task, { t, run: { at: new Date(t).toISOString(), by: slug, byName: byName || slug } });
+    }
+  }
+  return out;
+}
+
 function board(input, ctx) {
   const key = accountKey(input);
   accountDir(ctx, key);
@@ -375,6 +607,8 @@ function board(input, ctx) {
   const tasks = cadenceTasks();
   const vars = { account: data.name, key };
   const badges = data.badges || {};
+  const runs = readRuns(ctx, key);
+  const lastRun = (id) => (runs.has(id) ? runs.get(id).run : null);
   return {
     board: {
       key,
@@ -391,6 +625,7 @@ function board(input, ctx) {
         description: t.description,
         badge: badges[t.id] || null,
         prompt: fill(t.prompt, vars),
+        lastRun: lastRun(t.id),
       })),
       standup: {
         hasStandup: Boolean(data.hasStandup),
@@ -398,6 +633,7 @@ function board(input, ctx) {
         enabledCampaigns: data.enabledCampaigns || [],
         prompt: fill(tasks.standupPrompt, vars),
         actionLabels: tasks.actionLabels,
+        lastRun: lastRun('standup:daily'),
       },
       triage: { key, name: data.name, hasStandup: Boolean(data.hasStandup), verdict: data.standup || null },
       setupPrompts: { ...tasks.setupPrompts, contractPath: tasks.contractPath },
@@ -671,6 +907,7 @@ const ACTIONS = {
   'sign-monthly': signMonthly,
   'standup-setup': standupSetup,
   'standup-feedback': standupFeedback,
+  'task-run': taskRun,
 };
 
 // Runs one action. Returns the exit code and the reply; never throws.
@@ -685,7 +922,7 @@ function run(action, input, ctx) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return fail('bad-request', 'stdin must be one JSON object');
   }
-  const context = Object.assign({ root: defaultRoot() }, ctx);
+  const context = Object.assign({ root: defaultRoot(), home: os.homedir() }, ctx);
   try {
     return { exit: 0, reply: { ok: true, action, ...ACTIONS[action](input, context) } };
   } catch (err) {
@@ -733,6 +970,7 @@ if (require.main === module) main();
 module.exports = {
   SCRIPT_VERSION,
   ADS_CAPABILITY,
+  ADS_TASK_RUNS_CAPABILITY,
   ADS_ACCOUNT_KEY,
   ADS_PROPOSAL_ID,
   ADS_CLIENT_SLUG,

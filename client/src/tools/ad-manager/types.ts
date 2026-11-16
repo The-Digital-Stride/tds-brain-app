@@ -8,6 +8,7 @@ import type {
   AdsStandupBrief,
   AdsStandupVerdict,
   AdsTable,
+  AdsTaskRun,
   ClientApprovals,
 } from '../../../../shared/ads-contract.ts';
 
@@ -29,6 +30,8 @@ export interface StandupState {
   verdict: AdsStandupVerdict | null;
   prompt: string | null;
   labels: Record<string, string>;
+  /** The brain's latest standup run by anyone; undefined from a skill that doesn't share runs. */
+  lastRun?: AdsTaskRun | null;
 }
 export function readStandup(b: AdsBoard): StandupState {
   const s = b.standup;
@@ -37,5 +40,6 @@ export function readStandup(b: AdsBoard): StandupState {
     verdict: s?.verdict ?? null,
     prompt: s?.prompt || null,
     labels: s?.actionLabels ?? {},
+    lastRun: s?.lastRun,
   };
 }

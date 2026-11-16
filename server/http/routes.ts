@@ -15,6 +15,7 @@ import {
   ADS_PROPOSAL_ID,
   ADS_ROUTES,
   ADS_SKILL,
+  ADS_TASK_RUNS_CAPABILITY,
   type AdsCapabilities,
   type AdsChangeAction,
   type AdsErrorCode,
@@ -1480,6 +1481,7 @@ const ADS_CHANGE_FIELDS: { [A in AdsChangeAction]: readonly (keyof AdsRequests[A
   'sign-monthly': ['client', 'month', 'note'],
   'standup-setup': ['account'],
   'standup-feedback': ['account', 'date', 'campaign', 'action_category', 'score', 'note'],
+  'task-run': ['account', 'task'],
 };
 const isAdsChange = (a: string): a is AdsChangeAction => Object.hasOwn(ADS_CHANGE_FIELDS, a);
 
@@ -1571,11 +1573,15 @@ async function adsRead(url: URL, ctx: RouteContext, ads: AdsService, path: strin
 }
 
 /** The bridge's person must be the app's person before anything changes (decision 10). */
-async function adsChanger(ads: AdsService, identity: Identity): Promise<void> {
+async function adsChanger(ads: AdsService, identity: Identity): Promise<AdsCapabilities> {
   const caps = await ads.capabilities();
   if (!caps) throw new AdsError('unavailable');
   if (!caps.me || caps.me.slug !== identity.slug) throw new AdsError('not-allowed');
+  return caps;
 }
+
+/** A task id: a cadence card id (lower-case words) or `standup:daily`. The bridge checks it against its list. */
+const ADS_TASK_ID = /^[a-z0-9][a-z0-9:-]{0,63}$/;
 
 async function adsChange(
   req: IncomingMessage,
@@ -1585,7 +1591,14 @@ async function adsChange(
 ): Promise<unknown> {
   const body = await readJson(req);
   if (!isRec(body)) throw new AdsError('bad-request');
-  await adsChanger(ads, identity);
+  const caps = await adsChanger(ads, identity);
+  if (action === 'task-run') {
+    // An older skill can't record runs (the app then keeps them in the browser only).
+    if (!caps.features.includes(ADS_TASK_RUNS_CAPABILITY)) throw new AdsError('unavailable');
+    const { account, task } = body;
+    if (typeof account !== 'string' || !ADS_ACCOUNT_KEY.test(account)) throw new AdsError('bad-request');
+    if (typeof task !== 'string' || !ADS_TASK_ID.test(task)) throw new AdsError('bad-request');
+  }
   const input: Record<string, unknown> = {};
   for (const key of ADS_CHANGE_FIELDS[action] as readonly string[]) {
     if (body[key] !== undefined) input[key] = body[key];

@@ -331,7 +331,25 @@ function readsSame(want: JSONContent | null, got: JSONContent | null): boolean {
  */
 function writeFresh(node: JSONContent): string {
   const want = canon(node);
+  // A web address linked to itself (as the reader links a bare one) is tried bare first, so editing a
+  // paragraph doesn't turn `https://x` into `[https://x](https://x)`. Kept only if it reads back the same
+  // in the editor AND the brain's own reader shows it as it shows the written-out link: Tiptap's older
+  // marked links `www.` straight after punctuation ("Site:www.x"), the brain's doesn't (review finding).
   const first = serialiseNode(node);
+  const bare = withoutSelfLinks(node);
+  if (want && bare !== node) {
+    const shown = meaning(first);
+    for (const mode of ['brain', 'urls'] as const) {
+      escaping = mode;
+      let text: string;
+      try {
+        text = serialiseNode(bare);
+      } finally {
+        escaping = 'brain';
+      }
+      if (readsSame(want, parseBlock(text)) && meaning(text) === shown) return text;
+    }
+  }
   if (!want || readsSame(want, parseBlock(first))) return first;
   for (const mode of ['urls', 'all'] as const) {
     escaping = mode;
@@ -344,6 +362,39 @@ function writeFresh(node: JSONContent): string {
     if (readsSame(want, parseBlock(text))) return text;
   }
   return first;
+}
+
+/**
+ * The node with the link taken off any text whose words are its own address (`https://x` → https://x,
+ * `www.x` → http://www.x, `a@b` → mailto:a@b), which is what a bare address reads back as. The same
+ * node when there is none.
+ */
+function withoutSelfLinks(node: JSONContent): JSONContent {
+  let changed = false;
+  const strip = (n: JSONContent): JSONContent => {
+    let out = n;
+    if (n.type === 'text' && n.marks?.length) {
+      const text = n.text ?? '';
+      const marks = n.marks.filter((m) => {
+        if (m.type !== 'link') return true;
+        const href = String(m.attrs?.href ?? '');
+        const self = href === text || href === `http://${text}` || href === `mailto:${text}`;
+        if (self && /^(?:https?:\/\/|www\.|[^\s@]+@[^\s@]+$)/i.test(text)) {
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+      if (marks.length !== n.marks.length) out = marks.length ? { ...n, marks } : { type: n.type, text };
+    }
+    if (n.content) {
+      const content = n.content.map(strip);
+      if (content.some((c, i) => c !== n.content?.[i])) out = { ...out, content };
+    }
+    return out;
+  };
+  const out = strip(node);
+  return changed ? out : node;
 }
 
 /** Rendered HTML with list looseness and layout whitespace evened out. */

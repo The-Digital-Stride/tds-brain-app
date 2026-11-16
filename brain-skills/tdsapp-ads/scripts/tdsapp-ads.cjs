@@ -257,7 +257,24 @@ function fullProposal(L, me, ctx, slug, id) {
   return { ...summary(L, me, mineFor(me, management), slug, p, warnings), body: String(p.body || '') };
 }
 
-const tail = (out) => String(out || '').replace(/^proxy:.*\n/gm, '').slice(-ADS_OUTPUT_TAIL);
+// Output shown in the app: the Workbench drops `proxy:` lines. Also hide the gateway secret, which a failed curl
+// fallback in gads-access.cjs can print as part of its command line (security review, finding 3).
+const tail = (out, secrets = []) => {
+  let t = String(out || '').replace(/^proxy:.*\n/gm, '').replace(/(x-proxy-secret:\s*)\S+/gi, '$1[hidden]');
+  for (const v of secrets) if (typeof v === 'string' && v.length >= 4) t = t.split(v).join('[hidden]');
+  return t.slice(-ADS_OUTPUT_TAIL);
+};
+function proxySecrets(root) {
+  try {
+    const gads = require(path.join(root, '.claude', 'skills', 'gads-proxy', 'scripts', 'lib', 'gads-access.cjs'));
+    const proxy = gads.loadProxyConfig();
+    return proxy && proxy.secret ? [String(proxy.secret)] : [];
+  } catch {
+    return [];
+  }
+}
+// Free text written into proposal frontmatter: one line, no control characters, so it can't end the header.
+const flat = (s) => String(s).replace(/[\r\n\u2028\u2029]+/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim();
 const fill = (s, vars) => Object.keys(vars).reduce((t, k) => t.split(`{{${k}}}`).join(vars[k]), s);
 
 // ---- reads -------------------------------------------------------------------------------------
@@ -487,7 +504,7 @@ function runApply(c, confirmed) {
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  return { code: r.status, signal: r.signal, output: tail(`${r.stdout || ''}${r.stderr || ''}`) };
+  return { code: r.status, signal: r.signal, output: tail(`${r.stdout || ''}${r.stderr || ''}`, proxySecrets(c.root)) };
 }
 
 function dryRun(input, ctx) {
@@ -550,8 +567,9 @@ function clientDraft(input, ctx) {
 }
 
 function clientApproved(input, ctx) {
-  const who = text(input, 'who', WHO_MAX, { required: true });
-  const note = text(input, 'note', ADS_NOTE_MAX);
+  const who = flat(text(input, 'who', WHO_MAX, { required: true }));
+  const note = flat(text(input, 'note', ADS_NOTE_MAX));
+  if (!who) throw refuse('bad-request', 'who is required');
   const c = proposalChange(input, ctx, 'canRecordClientApproval');
   const r = viaLibrary(() =>
     ported(ctx, 'approvals-board.cjs').recordClientApproval({ client: c.slug, id: c.id, by: c.me.slug, who, note }),

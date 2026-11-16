@@ -207,6 +207,21 @@ describe('changes (decision 12)', () => {
     expect(await svc.inflight()).toEqual([]);
   });
 
+  it("refuses \"I've checked the account\" while that apply's process is still running", async () => {
+    const { dataDir, root } = brain();
+    writeFileSync(
+      join(dataDir, ADS_INFLIGHT_FILE),
+      JSON.stringify([{ client: 'acme', id: APPLY.id, pid: 5555, startedAt: new Date().toISOString() }]),
+    );
+    let alive = true;
+    const svc = createAdsService(root, opts(dataDir, { isAlive: (pid) => alive && pid === 5555 }));
+    expect(await codeOf(svc.clearInflight('acme', APPLY.id))).toBe('unknown-outcome');
+    expect(await svc.inflight()).toHaveLength(1);
+    alive = false;
+    await svc.clearInflight('acme', APPLY.id);
+    expect(await svc.inflight()).toEqual([]);
+  });
+
   it('dry-run and sign-monthly limits end only the wait (internal), never the process', async () => {
     const { root, dataDir } = brain({ 'dry-run': { delayMs: 800 }, 'sign-monthly': { delayMs: 800 } });
     const svc = createAdsService(root, opts(dataDir, { timeouts: { 'dry-run': 100, 'sign-monthly': 100 } }));

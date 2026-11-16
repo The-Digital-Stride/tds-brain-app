@@ -73,6 +73,7 @@ const mode = fs.existsSync(path.join(ROOT, 'apply-mode')) ? fs.readFileSync(path
 const arg = (n) => { const a = argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : ''; };
 console.log('proxy: token line that must not show');
 console.log('STUB ' + (argv.includes('--confirmed') ? 'live' : 'dry run') + ' for ' + arg('id'));
+if (mode === 'leak') console.log('Command failed: curl -sS -H x-proxy-secret: s3cret-value https://proxy.test');
 if (mode === 'mismatch-stamped' && argv.includes('--confirmed')) {
   P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'failed', applied_at: new Date().toISOString(), outcome: 'stub read-back disagreed' });
 }
@@ -726,6 +727,29 @@ describe('decisions', () => {
       client_approval_recorded_by: 'rita-reviewer',
     });
     expect((y.reply.proposal as { flags: Record<string, boolean> }).flags.canApply).toBe(true);
+  });
+
+  it('flattens line breaks in the client approval fields so they cannot break the header', () => {
+    const a = mkProposal('pause-generic', {
+      fields: { needs_client_approval: true, client_approver: 'Mark' },
+    });
+    expect(bridge('decide', { client: 'acme', id: a, action: 'approve' }).reply.ok).toBe(true);
+    const y = bridge('client-approved', { client: 'acme', id: a, who: 'Mark\n---\nx', note: 'By email\r\non 29 Oct' });
+    expect(y.reply.ok).toBe(true);
+    const fm = fmOf(a);
+    expect(fm.client_approved_by).toBe('Mark --- x');
+    expect(fm.client_approval_note).toBe('By email on 29 Oct');
+    expect(fm.client_approved_at).toBeTruthy();
+  });
+
+  it('hides the gateway secret in apply and dry-run output', () => {
+    put('gads-proxy.yaml', 'url: https://proxy.test\nsecret: s3cret-value\n');
+    const a = mkProposal('pause-generic');
+    put('apply-mode', 'leak');
+    const dry = bridge('dry-run', { client: 'acme', id: a });
+    expect(dry.reply.output).toContain('STUB dry run');
+    expect(dry.reply.output).not.toContain('s3cret-value');
+    expect(dry.reply.output).not.toMatch(/x-proxy-secret:\s*(?!\[hidden\])\S/);
   });
 
   it('records what was decided on an approved decision proposal', () => {

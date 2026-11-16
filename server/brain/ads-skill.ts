@@ -359,7 +359,14 @@ export function createAdsService(root: string, options: AdsServiceOptions = {}):
     change,
     inflight,
     clearInflight: async (client, id) => {
-      await editEntries((entries) => entries.filter((e) => !same(e, client, id)));
+      // Never while that apply is still running: clearing then would let a second press queue behind it and
+      // write again once it ends without stamping applied_at (security review, finding 1).
+      let running = false;
+      await editEntries((entries) => {
+        running = entries.some((e) => same(e, client, id) && e.pid !== null && isAlive(e.pid));
+        return running ? entries : entries.filter((e) => !same(e, client, id));
+      });
+      if (running) throw new AdsError('unknown-outcome', 'that apply is still running');
     },
     onChange: (listener) => {
       listeners.add(listener);

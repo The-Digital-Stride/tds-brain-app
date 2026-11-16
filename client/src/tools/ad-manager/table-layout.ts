@@ -48,6 +48,16 @@ export function moveTable(shown: string[], id: string, to: number): string[] {
   return [...rest.slice(0, at), id, ...rest.slice(at)];
 }
 
+/**
+ * The saved order with this account's tables put in their new order, keeping every other saved table
+ * (one this account doesn't have) in its place, so arranging a smaller account never reshuffles a bigger one.
+ */
+export function mergeOrder(saved: string[], shown: string[]): string[] {
+  const base = [...saved, ...shown.filter((id) => !saved.includes(id))];
+  let next = 0;
+  return base.map((id) => (shown.includes(id) ? (shown[next++] as string) : id));
+}
+
 function cleanIds(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const out: string[] = [];

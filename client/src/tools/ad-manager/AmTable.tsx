@@ -36,6 +36,7 @@ export function AmTable({ t, currency }: { t: Table; currency: string }) {
       max: nums.length ? Math.max(...nums.map(Math.abs)) : 0,
     };
   });
+  const spendIdx = columns.findIndex((c) => c.isSpend);
   return (
     <>
       <div className="am-scroll">
@@ -66,12 +67,14 @@ export function AmTable({ t, currency }: { t: Table; currency: string }) {
               // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id of their own
               <tr key={n}>
                 {r.map((v, i) => {
+                  const spent = spendIdx >= 0 ? Number(r[spendIdx]) > 0 : undefined;
                   const col = t.cols[i];
                   const type = col?.type ?? 'text';
                   const meta = columns[i];
                   const text = fmt(v, type, currency, meta?.digits ?? 0);
-                  const low = meta ? isLow(v, type, meta.values) : false;
-                  const zero = isQuietZero(v, type);
+                  const low = meta ? isLow(v, type, meta.values, spent) : false;
+                  // A 0.00x ROAS on a row that spent nothing says nothing, so it reads as quiet as other zeros.
+                  const zero = isQuietZero(v, type) || (type === 'x' && spent === false && Number(v) === 0);
                   const share =
                     meta?.isSpend && typeof v === 'number' && meta.max > 0
                       ? (Math.abs(v) / meta.max) * 100

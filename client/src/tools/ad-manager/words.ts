@@ -119,11 +119,15 @@ export function isQuietZero(v: Cell, type: ColType): boolean {
   return type !== 'text' && type !== 'x' && isNum(v) && Number(v) === 0;
 }
 
-/** A value worth a second look: ROAS under 1.00x (once the column has any return) and Quality Score 4 or below. */
-export function isLow(v: Cell, type: ColType, column: Cell[]): boolean {
+/**
+ * A value worth a second look: ROAS under 1.00x (once the column has any return) and Quality Score 4 or below.
+ * `spent` is whether the row spent anything, when the table has a Spend column: a row that spent nothing has
+ * a 0.00x ROAS with no return to judge, so it is never low.
+ */
+export function isLow(v: Cell, type: ColType, column: Cell[], spent?: boolean): boolean {
   if (!isNum(v)) return false;
   const n = Number(v);
-  if (type === 'x') return n < 1 && column.some((c) => isNum(c) && Number(c) > 0);
+  if (type === 'x') return spent !== false && n < 1 && column.some((c) => isNum(c) && Number(c) > 0);
   if (type === 'qs') return n <= 4;
   return false;
 }

@@ -30,32 +30,34 @@ function useTaskRun(client: string, task: string) {
   return { run, status: runStatus(run, sessions?.live) };
 }
 
-/** "Running · started Today, 21:46", "Needs your answer · …", "Last run 3 Nov, 14:00" or "Not run from Cortex yet". */
-function RunLine({ client, task }: { client: string; task: string }) {
+/**
+ * When a task last ran, with a status dot and words while its chat is live ("Running · started Today, 21:46",
+ * "Needs your answer · …", "Last run 3 Nov, 14:00"); nothing until it has run. The status is spoken from a
+ * hidden region that is always in the page (one added already holding text is often not announced).
+ */
+function RunLine({ client, task, title }: { client: string; task: string; title: string }) {
   const { run, status } = useTaskRun(client, task);
+  const words = status === 'running' ? 'Running' : status === 'waiting' ? 'Needs your answer' : null;
   return (
-    <p className="am-run">
-      <span role="status" className="am-run-state">
-        {status ? (
-          <>
-            <span
-              className="dot"
-              data-attention={status === 'running' ? 'working' : 'asking'}
-              aria-hidden="true"
-            />
-            {status === 'running' ? 'Running' : 'Needs your answer'}
-          </>
-        ) : null}
+    <>
+      <span role="status" className="visually-hidden">
+        {words ? `${title}: ${words}` : ''}
       </span>
-      {status ? <span aria-hidden="true"> · </span> : null}
       {run ? (
-        <time dateTime={run.at}>
-          {status ? 'started' : 'Last run'} {lastRunText(run.at)}
-        </time>
-      ) : (
-        'Not run from Cortex yet'
-      )}
-    </p>
+        <p className="am-run">
+          {words ? (
+            <span className="am-run-state" aria-hidden="true">
+              <span className="dot" data-attention={status === 'running' ? 'working' : 'asking'} />
+              {words}
+            </span>
+          ) : null}
+          {words ? <span aria-hidden="true"> · </span> : null}
+          <time dateTime={run.at}>
+            {words ? 'started' : 'Last run'} {lastRunText(run.at)}
+          </time>
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -276,7 +278,7 @@ export function Cadence({
                   </p>
                   <p className="am-camp">{c.title}</p>
                   <p className="am-sub">{c.description}</p>
-                  <RunLine client={board.key} task={c.id} />
+                  <RunLine client={board.key} task={c.id} title={c.title} />
                   <RunButton
                     client={board.key}
                     task={c.id}
@@ -376,7 +378,9 @@ export function Standup({
             {v.flagged > 0 && v.topCampaign ? <span className="am-block">{v.topCampaign}</span> : null}
           </p>
         ) : null}
-        {s.hasStandup && s.prompt ? <RunLine client={board.key} task={STANDUP_TASK} /> : null}
+        {s.hasStandup && s.prompt ? (
+          <RunLine client={board.key} task={STANDUP_TASK} title="Daily standup" />
+        ) : null}
         {ask ? (
           <Confirm
             label="Set up the Daily standup"

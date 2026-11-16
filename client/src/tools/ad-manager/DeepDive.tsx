@@ -2,7 +2,7 @@ import { type DragEvent, useEffect, useRef, useState } from 'react';
 import type { AdsBoard } from '../../../../shared/ads-contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { AmTable } from './AmTable.tsx';
-import { arrange, moveTable, readLayout, type TableLayout, writeLayout } from './table-layout.ts';
+import { arrange, mergeOrder, moveTable, readLayout, type TableLayout, writeLayout } from './table-layout.ts';
 import { readTables, type Table } from './types.ts';
 
 const KEY_HINT = 'Use the arrow keys to move it one place, Home or End to move it to the start or end.';
@@ -144,8 +144,9 @@ export function DeepDive({ board, currency }: { board: AdsBoard; currency: strin
     const next = moveTable(ids, id, to);
     const at = next.indexOf(id);
     focusId.current = id;
-    if (at !== ids.indexOf(id)) save({ order: next, wide: layout.wide });
-    setAnnounce(`Moved to ${at + 1} of ${ids.length}`);
+    if (at !== ids.indexOf(id)) save({ order: mergeOrder(layout.order, next), wide: layout.wide });
+    const title = shown.find((t) => t.id === id)?.title ?? 'Table';
+    setAnnounce(`${title} moved to ${at + 1} of ${ids.length}`);
   };
   const keyMove = (id: string, key: string): boolean => {
     const at = ids.indexOf(id);
@@ -257,12 +258,12 @@ export function DeepDive({ board, currency }: { board: AdsBoard; currency: strin
   return (
     <>
       <div className="am-hrow">
-        <h2 className="am-h">
-          Ads account deep dive{' '}
+        <div className="am-h">
+          <h2 className="am-h-text">Ads account deep dive</h2>{' '}
           <span className="am-dim">
             {tables.length} tables, press a column to sort, drag the grip to move
           </span>
-        </h2>
+        </div>
         {isDefault ? null : (
           <button
             type="button"

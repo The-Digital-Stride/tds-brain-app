@@ -20,6 +20,7 @@ describe('fmt by column', () => {
     expect(fmt(10, 'money', 'EUR')).toBe('€10');
     expect(fmt(10, 'money', 'CAD')).toBe('CA$10');
     expect(fmt(10, 'money', 'nonsense!')).toBe('nonsense! 10');
+    expect(fmt('n/a', 'money', 'GBP')).toBe('n/a');
   });
   it('picks money decimals per column', () => {
     expect(moneyDigits([3.5, 99.9, null])).toBe(2);
@@ -39,6 +40,9 @@ describe('fmt by column', () => {
     expect(isLow(1, 'x', [1, 2])).toBe(false);
     expect(isLow(0, 'x', [0, 0])).toBe(false);
     expect(isLow(0, 'x', [0, 3])).toBe(true);
+    // A row that spent nothing has no return to judge: its 0.00x is not low.
+    expect(isLow(0, 'x', [0, 3], false)).toBe(false);
+    expect(isLow(0.5, 'x', [0.5, 3], true)).toBe(true);
     expect(isLow(4, 'qs', [4])).toBe(true);
     expect(isLow(5, 'qs', [5])).toBe(false);
     expect(isLow(null, 'qs', [null])).toBe(false);

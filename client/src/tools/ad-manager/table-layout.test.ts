@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrange, moveTable, readLayout, TABLE_LAYOUT_KEY, writeLayout } from './table-layout.ts';
+import { arrange, mergeOrder, moveTable, readLayout, TABLE_LAYOUT_KEY, writeLayout } from './table-layout.ts';
 
 const t = (...ids: string[]) => ids.map((id) => ({ id }));
 const ids = (list: { id: string }[]) => list.map((x) => x.id);
@@ -41,6 +41,20 @@ describe('moveTable', () => {
   });
   it('changes nothing for an unknown table', () => {
     expect(moveTable(shown, 'zz', 0)).toEqual(shown);
+  });
+});
+
+describe('mergeOrder', () => {
+  it('keeps the saved place of tables this account does not show', () => {
+    // Saved on an account with products; reordered on one without.
+    expect(mergeOrder(['products', 'a', 'b', 'c'], ['c', 'a', 'b'])).toEqual(['products', 'c', 'a', 'b']);
+    expect(mergeOrder(['a', 'products', 'b'], ['b', 'a'])).toEqual(['b', 'products', 'a']);
+  });
+  it('is the shown order when nothing was saved', () => {
+    expect(mergeOrder([], ['c', 'a', 'b'])).toEqual(['c', 'a', 'b']);
+  });
+  it('adds shown tables the saved order has never seen', () => {
+    expect(mergeOrder(['products', 'a'], ['b', 'a'])).toEqual(['products', 'b', 'a']);
   });
 });
 

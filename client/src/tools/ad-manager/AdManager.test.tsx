@@ -539,7 +539,7 @@ describe('board', () => {
     store.sessions = { live: [{ id: 'chat-1', state: 'working' }], past: [] };
     await ready();
     const open = await screen.findByRole('button', { name: 'Open chat: Spend check' });
-    expect(within(task()).getByRole('status').textContent).toBe('Running');
+    expect(within(task()).getByRole('status').textContent).toBe('Spend check: Running');
     expect(within(task()).getByText(/^started Today/)).toBeTruthy();
     expect(within(task()).queryByRole('button', { name: /^Run/ })).toBeNull();
     fireEvent.click(open);
@@ -549,7 +549,7 @@ describe('board', () => {
     store.sessions = { live: [{ id: 'chat-1', state: 'waiting' }], past: [] };
     await ready();
     await screen.findByRole('button', { name: 'Open chat: Spend check' });
-    expect(within(task()).getByRole('status').textContent).toBe('Needs your answer');
+    expect(within(task()).getByRole('status').textContent).toBe('Spend check: Needs your answer');
 
     cleanup();
     store.sessions = { live: [{ id: 'chat-1', state: 'idle' }], past: [] };
@@ -558,10 +558,12 @@ describe('board', () => {
     expect(within(task()).getByRole('status').textContent).toBe('');
   });
 
-  it('a task never run from Cortex says so', async () => {
+  it('a task with no run shows no run line, but keeps its (empty) status region', async () => {
     await ready();
-    await screen.findByRole('button', { name: /^Run: Daily standup/ });
-    expect(screen.getAllByText('Not run from Cortex yet').length).toBeGreaterThan(0);
+    const run = await screen.findByRole('button', { name: /^Run: Daily standup/ });
+    const card = run.closest('section') as HTMLElement;
+    expect(within(card).queryByText(/^Last run/)).toBeNull();
+    expect(within(card).getByRole('status').textContent).toBe('');
   });
 
   it('the standup Run uses the standup prompt', async () => {
@@ -601,6 +603,41 @@ describe('deep dive tables', () => {
   });
   afterEach(() => localStorage.clear());
 
+  it('flags a low ROAS only on a row that spent, and draws a Spend bar to scale', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => ({
+      ...board(k),
+      tables: [
+        {
+          id: 'kw',
+          title: 'Keywords',
+          subtitle: '',
+          cols: [
+            { key: 'kw', label: 'Keyword', type: 'text' as const },
+            { key: 'cost', label: 'Spend', type: 'money' as const },
+            { key: 'roas', label: 'ROAS', type: 'x' as const },
+          ],
+          rows: [
+            ['good', 200, 4],
+            ['poor', 100, 0.5],
+            ['idle', 0, 0],
+          ],
+          defaultSort: 1,
+        },
+      ],
+    }));
+    await ready();
+    const t = await screen.findByRole('region', { name: 'Keywords' });
+    const cell = (row: string, text: string) =>
+      within(within(t).getByText(row).closest('tr') as HTMLElement).getByText(text);
+    expect(cell('poor', '0.50x').getAttribute('data-low')).toBe('true');
+    expect(within(t).getByText(', low')).toBeTruthy();
+    expect(cell('idle', '0.00x').getAttribute('data-low')).toBeNull();
+    expect(cell('idle', '0.00x').getAttribute('data-zero')).toBe('true');
+    expect(cell('good', '4.00x').getAttribute('data-low')).toBeNull();
+    const bars = Array.from(t.querySelectorAll<HTMLElement>('.am-bar')).map((b) => b.style.width);
+    expect(bars).toEqual(['100%', '50%']);
+  });
+
   it('shows five rows, then Show all and Show fewer', async () => {
     await ready();
     const alpha = screen.getByRole('region', { name: 'Alpha' });
@@ -624,7 +661,7 @@ describe('deep dive tables', () => {
     grip.focus();
     fireEvent.keyDown(grip, { key: 'ArrowRight' });
     expect(handles()).toEqual(['Move Beta, 1 of 3', 'Move Alpha, 2 of 3', 'Move Gamma, 3 of 3']);
-    expect(screen.getByText('Moved to 2 of 3').getAttribute('role')).toBe('status');
+    expect(screen.getByText('Alpha moved to 2 of 3').getAttribute('role')).toBe('status');
     expect(saved()).toEqual({ order: ['b', 'a', 'c'], wide: [] });
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Alpha, 2 of 3' })),

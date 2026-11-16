@@ -73,10 +73,13 @@ const mode = fs.existsSync(path.join(ROOT, 'apply-mode')) ? fs.readFileSync(path
 const arg = (n) => { const a = argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : ''; };
 console.log('proxy: token line that must not show');
 console.log('STUB ' + (argv.includes('--confirmed') ? 'live' : 'dry run') + ' for ' + arg('id'));
+if (mode === 'mismatch-stamped' && argv.includes('--confirmed')) {
+  P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'failed', applied_at: new Date().toISOString(), outcome: 'stub read-back disagreed' });
+}
 if (mode === 'ok' && argv.includes('--confirmed')) {
   P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'applied', applied_at: new Date().toISOString(), outcome: 'stub applied' });
 }
-process.exit(mode === 'refuse' ? 2 : mode === 'mismatch' ? 3 : mode === 'crash' ? 1 : 0);
+process.exit(mode === 'refuse' ? 2 : mode === 'mismatch' || mode === 'mismatch-stamped' ? 3 : mode === 'crash' ? 1 : 0);
 `;
 
 const STUB_CLIENT_DRAFT = `'use strict';
@@ -766,14 +769,24 @@ describe('dry run and apply (decision 12)', () => {
     put('apply-mode', 'refuse');
     const r = bridge('apply', { client: 'acme', id: a, confirmed: true });
     expect(r.reply).toMatchObject({ ok: true, failed: true });
+    // Exit 3 (written, read-back disagreed) while the proposal still reads approved and unapplied, as
+    // apply.cjs leaves a gads-write change: it could be applied again, so the outcome is unknown and the
+    // app keeps Apply locked until someone has checked the account.
     put('apply-mode', 'mismatch');
+    refused(bridge('apply', { client: 'acme', id: a, confirmed: true }), 'unknown-outcome');
+    // Exit 3 once the proposal is stamped failed (as apply.cjs does for RSA and PMax text): it can't be
+    // applied again, so the plain read-back message stands.
+    put('apply-mode', 'mismatch-stamped');
     const m = bridge('apply', { client: 'acme', id: a, confirmed: true });
     expect(m.reply).toMatchObject({ ok: true, failed: true });
     expect(m.reply.message).toContain('read-back');
+    // `a` is now stamped failed, so the crash case needs a fresh approved proposal.
+    const b = mkProposal('pause-brand');
+    P.approve({ clientDir: abs('clients/acme'), id: b, by: 'rita-reviewer' });
     put('apply-mode', 'crash');
-    refused(bridge('apply', { client: 'acme', id: a, confirmed: true }), 'unknown-outcome');
+    refused(bridge('apply', { client: 'acme', id: b, confirmed: true }), 'unknown-outcome');
     // A crashed dry run changed nothing in Google Ads: just a failure.
-    expect(bridge('dry-run', { client: 'acme', id: a }).reply).toMatchObject({ ok: true, failed: true });
+    expect(bridge('dry-run', { client: 'acme', id: b }).reply).toMatchObject({ ok: true, failed: true });
   });
 
   it('refuses a proposal without an operations file, and apply before the client has agreed', () => {

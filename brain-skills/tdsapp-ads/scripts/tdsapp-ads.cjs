@@ -521,8 +521,17 @@ function apply(input, ctx) {
     err.output = r.output;
     throw err;
   }
+  const proposal = after(c, ctx);
+  // Exit 3 means something was written. apply.cjs stamps RSA and PMax runs as failed (no re-apply), but stops
+  // before stamping a gads-write run, which then still passes checkApproved. Reported as unknown, so the app
+  // keeps Apply locked until someone has checked the account: a second press must never write twice.
+  if (r.code === 3 && proposal.fm.status === 'approved' && !proposal.fm.applied_at) {
+    const err = refuse('unknown-outcome', 'written but the read-back disagreed, and the proposal could be applied again');
+    err.output = r.output;
+    throw err;
+  }
   return {
-    proposal: after(c, ctx),
+    proposal,
     output: r.output,
     message: words[r.code],
     ...(r.code === 0 ? {} : { failed: true }),

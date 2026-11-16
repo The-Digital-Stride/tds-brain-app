@@ -39,6 +39,7 @@ const list = (title: string): TodoList => ({
       source: null,
       details: '',
       version: 'v1',
+      attachments: [],
     },
   ],
   open: [],
@@ -46,6 +47,8 @@ const list = (title: string): TodoList => ({
   team: [],
   changes: 'on',
   canAddOpen: false,
+  canAttach: false,
+  canUpload: false,
   canUsePersonal: false,
 });
 

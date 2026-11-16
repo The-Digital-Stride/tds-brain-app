@@ -31,6 +31,8 @@ describe('createSetupBrain', () => {
       changes: 'no-skill',
       canAddOpen: false,
       canUsePersonal: false,
+      canAttach: false,
+      canUpload: false,
     });
     expect(await brain.profile(someone)).toEqual({ title: null, departments: [], owns: null });
     expect(await brain.askedTodos(someone)).toEqual({ waiting: [], done: [], historyRead: false });
@@ -57,6 +59,18 @@ describe('createSetupBrain', () => {
     await expect(
       createSetupBrain().changeTodo({ kind: 'delete', id: '20261111-x.md' }, someone),
     ).rejects.toThrow(TodoChangeError);
+    await expect(
+      createSetupBrain().uploadTodoFile(
+        {
+          stagedPath: '/tmp/x.png',
+          name: 'x.png',
+          id: '20261111-x.md',
+          scope: 'tds',
+          expect: 'a'.repeat(64),
+        },
+        someone,
+      ),
+    ).rejects.toMatchObject({ code: 'not-allowed' });
   });
 
   it('watches nothing, and the stop function is harmless', () => {

@@ -6,7 +6,7 @@ order: 4
 summary: See the to-dos you passed on, who has them, and when they were finished.
 benefit: You don't lose track of a job once it's someone else's.
 roles: all
-related: [todos, passing-todos-on, personal-todos]
+related: [todos, files-on-todos, passing-todos-on, personal-todos]
 since: 0.43.0
 reviewed: 2026-11-16
 ---
@@ -26,7 +26,8 @@ The **Asked** tab in the To-dos drawer lists the to-dos you passed on to a teamm
 1. Open the To-dos drawer and press **Asked**. The number is how many are still waiting.
 2. **Waiting** shows what hasn't been done yet, longest-waiting first. **Done in the last 60 days** starts closed.
 3. Press a to-do's title to read it in the panel. It is read only: it belongs to someone else now.
-4. Open **History** at the bottom of the panel to see how it got here. It shows who added it, who it was passed to, and when it changed. Personal to-dos have none.
+4. Any files linked to it are listed under its details, in **Files**. You can open them, but not change them.
+5. Open **History** at the bottom of the panel to see how it got here. It shows who added it, who it was passed to, and when it changed. Personal to-dos have none.
 
 ## Good to know
 

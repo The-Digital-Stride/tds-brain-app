@@ -23,6 +23,7 @@ const todo = (id: string, over: Partial<TodoItem> = {}): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   ...over,
 });
 const ids = (items: TodoItem[]) => items.map((t) => t.id);

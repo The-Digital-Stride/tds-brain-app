@@ -22,6 +22,7 @@ import type {
   TodoItem,
   TodoList,
   TodoScope,
+  TodoUploadRequest,
 } from '../../shared/contract.ts';
 import {
   FAVOURITE_CHATS_MAX,
@@ -52,6 +53,11 @@ export interface ChangeTodosResult {
   /** Set when a `move` step went through: the to-do's key before and after (a name clash renames it). */
   moved?: { from: string; to: string };
 }
+
+/** What `uploadTodoFile` gives back: where the file went, or why it didn't. */
+export type UploadTodoFileResult =
+  | { ok: true; path: string; personal: boolean; todos: TodoList }
+  | { ok: false; error: { code: string; message: string }; todos?: TodoList };
 
 /**
  * A library file being deleted: held for TODO_UNDO_MS (Undo works), then sent. It leaves every list, the
@@ -181,6 +187,11 @@ export interface Store {
    * list the server returned. `done` is how many went through; `error` carries the server's message.
    */
   changeTodos: (actions: TodoAction[]) => Promise<ChangeTodosResult>;
+  /**
+   * Files one staged upload into the library and links it to a to-do (release 3). `todos` becomes the
+   * fresh list. After a 'changed' refusal the list is loaded again, so the caller can read the new version.
+   */
+  uploadTodoFile: (req: TodoUploadRequest) => Promise<UploadTodoFileResult>;
   /** To-do changes waiting out their undo time, oldest first. */
   heldTodos: HeldTodo[];
   /**
@@ -906,6 +917,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [renameFavouriteTodo],
   );
 
+  const uploadTodoFile = useCallback(async (req: TodoUploadRequest): Promise<UploadTodoFileResult> => {
+    try {
+      const res = await api.uploadTodoFile(req);
+      setTodos(res.list);
+      return { ok: true, path: res.path, personal: res.personal, todos: res.list };
+    } catch (err) {
+      const error =
+        err instanceof ApiFailure
+          ? { code: err.code, message: err.message }
+          : { code: 'internal', message: messageOf(err) };
+      let fresh: TodoList | undefined;
+      if (error.code === 'changed') {
+        try {
+          fresh = await api.todos();
+          setTodos(fresh);
+        } catch {
+          // The next change will try again.
+        }
+      }
+      return { ok: false, error, ...(fresh ? { todos: fresh } : {}) };
+    }
+  }, []);
+
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
   // A held change is 'waiting' (Undo works) until its time is up, then 'queued' behind any change still
   // being sent. It leaves this map only when its request starts, so closing the page sends it either way.
@@ -1162,6 +1196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       changeTodos,
+      uploadTodoFile,
       heldTodos,
       holdTodo,
       undoHeld,
@@ -1226,6 +1261,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       completeTodo,
       changeTodos,
+      uploadTodoFile,
       heldTodos,
       holdTodo,
       undoHeld,

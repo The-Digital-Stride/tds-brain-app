@@ -1,30 +1,42 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import {
+  type ClientInfo,
   type Identity,
   type TeamMember,
   TODO_ASSIGNEE_MAX,
+  TODO_ATTACHMENTS_MAX,
   TODO_DETAILS_MAX,
   TODO_PERSONAL_DIR,
   TODO_SKILL,
   TODO_TITLE_MAX,
+  TODO_UPLOAD_TYPES,
   TODO_VERSION_PATTERN,
   type TodoAction,
+  type TodoAttachment,
+  TodoChangeError,
+  type TodoChangeErrorCode,
   type TodoHandover,
   type TodoItem,
   type TodoList,
   type TodoScope,
   type TodoSkillAccess,
 } from '../../shared/contract.ts';
+import { FilesChangeError, PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
+import { parseTodoFiles, resolveTodoFilePath, splitTodoFiles } from '../../shared/todo-files.ts';
 import { stampDone } from './done-record.ts';
+import { FILES_ADD_CAPABILITY, FILES_SKILL, type FilesSkillRunner, findFilesSkill } from './files-skill.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
+import { idFor } from './library.ts';
+import { classify, extOf, isHiddenInTemplates, isNeverListed } from './library-rules.ts';
 import { skillAccess } from './skills.ts';
 import type { GitAuthor, TodoHistory } from './todo-history.ts';
 import {
   APP_VIA,
   findTodoSkill,
+  TODO_ATTACH_CAPABILITY,
   type TodoRunAction,
   type TodoSkillRunner,
   type TodoTickAction,
@@ -93,12 +105,83 @@ function stampHandover(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Files on to-dos (plan 2026-11-16-todo-attachments, decisions 1 and 7). Read only: the brain's
+// `tdsapp-todo` skill is the only writer of the `## Files` section.
+// ---------------------------------------------------------------------------
+
+/** The library scope id a brain path would be listed under (as library.ts names them), or null. */
+function libraryScopeOf(path: string): string | null {
+  const segs = path.split('/');
+  if (segs[0] === 'personal') return 'personal';
+  if (segs[0] === 'templates') return 'shared:templates';
+  if (segs[0] === 'clients' && segs.length >= 3 && segs[1]) return `client:${segs[1]}`;
+  return null;
+}
+
+/**
+ * Whether a clean brain path names a file the library would list: a type it lists, in no place it
+ * never lists, and a regular file whose real path is exactly that path inside the real brain (no link
+ * anywhere along it, so a client folder that is a link is refused as the library refuses it).
+ * `realRoot` is the brain's real path.
+ */
+async function isListableFile(root: string, realRoot: string, path: string): Promise<boolean> {
+  if (libraryScopeOf(path) === null || isNeverListed(path) || isHiddenInTemplates(path)) return false;
+  if (!classify(extOf(path))) return false;
+  const parts = path.split('/');
+  try {
+    if (!(await fs.lstat(join(root, ...parts))).isFile()) return false;
+    return (await fs.realpath(join(root, ...parts))) === join(realRoot, ...parts);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reads a to-do body's `## Files` section as TodoAttachments for `me` (a team slug, '' for nobody).
+ * `libraryId` is the library's own id (`<scope id>.<hash of the path>`, `idFor`), worked out without
+ * walking the library: only files that are there and listable get one, and a `personal/` file only
+ * when its holder is `me` (overseer S3). One reader per listing: the brain's real path is read once.
+ */
+export function createAttachmentReader(
+  root: string,
+  me: string,
+): (body: string) => Promise<TodoAttachment[]> {
+  let realRoot: Promise<string | null> | null = null;
+  const real = () => {
+    realRoot ??= fs.realpath(root).catch(() => null);
+    return realRoot;
+  };
+  return async (body) => {
+    const links = parseTodoFiles(body);
+    if (links.length === 0) return [];
+    return Promise.all(
+      links.map(async (link): Promise<TodoAttachment> => {
+        const personal = link.path.startsWith('personal/');
+        const scope = libraryScopeOf(link.path);
+        const mayOpen = scope !== null && (!personal || (me !== '' && link.holder === me));
+        const base = mayOpen ? await real() : null;
+        const listed = base !== null && (await isListableFile(root, base, link.path));
+        return {
+          path: link.path,
+          name: link.name,
+          kind: classify(extOf(link.path))?.kind ?? null,
+          libraryId: listed && scope !== null ? idFor(scope, link.path) : null,
+          personal,
+          holder: link.holder,
+        };
+      }),
+    );
+  };
+}
+
 /** One folder's to-dos. Personal files need an `assignee:` equal to `me`; TDS files are all listed. */
 async function readFolder(
   root: string,
   scope: TodoScope,
   me: string,
   team: TeamMember[],
+  attachments: ((body: string) => Promise<TodoAttachment[]>) | null = null,
 ): Promise<TodoItem[]> {
   const rel = scope === 'personal' ? TODO_PERSONAL_DIR : 'todo';
   const dir = join(root, rel);
@@ -138,15 +221,17 @@ async function readFolder(
       source: asString(data.source).trim() || null,
       details: body.trim(),
       version,
+      attachments: attachments ? await attachments(body) : [],
     });
   }
   return items;
 }
 
 async function readAll(root: string, me: string, team: TeamMember[]): Promise<TodoItem[]> {
+  const attachments = createAttachmentReader(root, me);
   const [tds, personal] = await Promise.all([
-    readFolder(root, 'tds', me, team),
-    readFolder(root, 'personal', me, team),
+    readFolder(root, 'tds', me, team, attachments),
+    readFolder(root, 'personal', me, team, attachments),
   ]);
   return [...tds, ...personal];
 }
@@ -210,6 +295,25 @@ export interface TodoListDeps {
   history?: TodoHistory;
   /** The script's `capabilities` features (decision 4). Without it, personal to-dos can't be changed. */
   capabilities?: () => Promise<readonly string[]>;
+  /** The `tdsapp-files` script's `capabilities` features (release 3). Without it, nothing can be uploaded. */
+  filesCapabilities?: () => Promise<readonly string[]>;
+}
+
+/** Whether this person may save uploads through `tdsapp-files`: its script is there, `roles:` allow them and it lists `add`. */
+async function canUseFilesAdd(
+  root: string,
+  identity: Identity,
+  capabilities: (() => Promise<readonly string[]>) | undefined,
+): Promise<boolean> {
+  if (!capabilities) return false;
+  try {
+    const found = await findFilesSkill(root);
+    if (!found || found.script === null) return false;
+    if ((await skillAccess(root, identity, FILES_SKILL)) !== 'allowed') return false;
+    return (await capabilities()).includes(FILES_ADD_CAPABILITY);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -292,14 +396,16 @@ export async function listTodos(
   // Personal to-dos are never open and never counted among other people's.
   const open = items.filter((t) => t.scope === 'tds' && t.assignee === null).sort(bySoonest);
   const tdsOthers = items.filter((t) => t.scope === 'tds' && t.assignee !== null && !isMine(t)).length;
-  let canUsePersonal = false;
+  let features: readonly string[] = [];
   if (access.changes === 'on' && deps.capabilities) {
     try {
-      canUsePersonal = (await deps.capabilities()).includes('scope');
+      features = await deps.capabilities();
     } catch {
-      canUsePersonal = false;
+      features = [];
     }
   }
+  const canAttach = features.includes(TODO_ATTACH_CAPABILITY);
+  const canUpload = canAttach && (await canUseFilesAdd(root, identity, deps.filesCapabilities));
   return {
     mine,
     open,
@@ -307,7 +413,9 @@ export async function listTodos(
     team,
     changes: access.changes,
     canAddOpen: access.canAddOpen,
-    canUsePersonal,
+    canUsePersonal: features.includes('scope'),
+    canAttach,
+    canUpload,
   };
 }
 
@@ -334,6 +442,12 @@ const okExpect = (v: unknown) => typeof v === 'string' && TODO_VERSION_PATTERN.t
 const okId = (v: unknown) => typeof v === 'string' && v.length <= 255 && CHANGE_ID.test(v);
 
 const okScope = (v: unknown) => v === 'tds' || v === 'personal';
+const okDetails = (v: unknown) => v === undefined || (typeof v === 'string' && v.length <= TODO_DETAILS_MAX);
+/** Longest brain path an attach or detach may name. */
+const PATH_MAX = 1024;
+/** A brain path exactly as the shared rules resolve it: no `../`, under clients/, templates/ or personal/. */
+const okFilePath = (v: unknown) =>
+  typeof v === 'string' && v.length <= PATH_MAX && resolveTodoFilePath(v) === v;
 
 /** The contract's route checks on the values (the route has already checked the shape). */
 function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boolean {
@@ -341,13 +455,22 @@ function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boole
   if ('scope' in a && a.scope !== undefined && !okScope(a.scope)) return false;
   switch (a.kind) {
     case 'add':
-      return okTitle(a.title) && okDue(a.due) && (a.assignee === null ? canAddOpen : okAssignee(a.assignee));
+      return (
+        okTitle(a.title) &&
+        okDue(a.due) &&
+        (a.assignee === null ? canAddOpen : okAssignee(a.assignee)) &&
+        okDetails(a.details)
+      );
     case 'edit':
       return (
         okId(a.id) &&
         okTitle(a.title) &&
-        (a.details === undefined || (typeof a.details === 'string' && a.details.length <= TODO_DETAILS_MAX))
+        okDetails(a.details) &&
+        (a.detailsOnly === undefined || a.detailsOnly === true)
       );
+    case 'attach':
+    case 'detach':
+      return okId(a.id) && okFilePath(a.path);
     case 'due':
       return okId(a.id) && okDue(a.due);
     case 'assignee':
@@ -390,8 +513,15 @@ export async function changeTodo(
     capabilities: () => runner.capabilities(),
   });
   if (list.changes !== 'on') throw todoChangeError('not-allowed');
-  if (typeof action !== 'object' || action === null || !validAction(action, list.canAddOpen))
-    throw todoChangeError('bad-request');
+  if (typeof action !== 'object' || action === null) throw todoChangeError('bad-request');
+  if ((action.kind === 'attach' || action.kind === 'detach') && !list.canAttach)
+    throw todoChangeError('not-allowed');
+  if (!validAction(action, list.canAddOpen)) throw todoChangeError('bad-request');
+  // With canAttach the editor sends the details alone and the script keeps the section (overseer B1).
+  if (action.kind === 'edit' && list.canAttach && action.details !== undefined) {
+    if (splitTodoFiles(action.details).files !== '')
+      throw new TodoChangeError('bad-request', FILES_HEADING_REFUSED);
+  }
   const personal = action.kind === 'move' || action.scope === 'personal';
   if (personal && !list.canUsePersonal) throw todoChangeError('not-allowed');
   if (personal) {
@@ -405,11 +535,229 @@ export async function changeTodo(
     const listed = [...list.mine, ...list.open].find((t) => t.id === action.id && t.scope === scope);
     if (!listed) throw todoChangeError('not-found');
     if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
+    if (action.kind === 'attach') await checkAttach(root, listed, action.path);
+    // A browser that saw canAttach sends details without the Files section and says so. If this check
+    // now says otherwise (a capabilities probe failed), the whole body would be replaced and the links
+    // lost: refuse as changed so the browser reloads instead (correctness review, release 3). An edit
+    // without the flag is the whole body, as on main.
+    if (
+      action.kind === 'edit' &&
+      action.detailsOnly === true &&
+      !list.canAttach &&
+      action.details !== undefined
+    ) {
+      throw todoChangeError('changed');
+    }
   }
-  const result = await runner.run(action as TodoRunAction, { name: identity.name, slug: identity.slug });
+  // An older script would ignore `body` on add; the server only sends it when canAttach (decision 6).
+  let run: TodoRunAction = action;
+  if (action.kind === 'add' && action.details !== undefined && !list.canAttach) {
+    const { details: _ignored, ...rest } = action;
+    run = rest;
+  }
+  const result = await runner.run(
+    run,
+    { name: identity.name, slug: identity.slug },
+    { keepFiles: action.kind === 'edit' && list.canAttach },
+  );
   if (action.kind !== 'move') return {};
   const file = result.file !== null && okId(result.file) ? result.file : action.id;
   return { moved: { from: keyOf(action.scope, action.id), to: keyOf(action.to, file) } };
+}
+
+/** The app's own words for the release 3 refusals (UK English). */
+export const TODO_FILES_MESSAGES = {
+  headingInDetails:
+    'The details can\'t have their own "Files" heading, because the files are listed under it. Rename that heading and try again.',
+  notListable: "That file isn't in the library, so it can't be linked. It may have been moved or deleted.",
+  full: `A to-do can have up to ${TODO_ATTACHMENTS_MAX} files. Remove one before adding another.`,
+  uploadNotAllowed: "Adding new files to to-dos isn't available to you in the app yet.",
+  badType:
+    "That kind of file can't be added to a to-do. Add a picture, PDF, Word document, spreadsheet, slide deck or text file.",
+  saveFailed: "That file couldn't be saved to the library. Try again.",
+  saveRefused: "That file couldn't be saved there in the library.",
+} as const;
+
+const FILES_HEADING_REFUSED = TODO_FILES_MESSAGES.headingInDetails;
+
+/** Said when `add` worked and `attach` didn't: the file is in the library at `path`, just not linked. */
+export function savedNotLinkedMessage(path: string): string {
+  return `The file was saved to the library at ${path}, but it couldn't be linked to this to-do. Add it from the library instead.`;
+}
+
+/** Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it. */
+async function checkAttach(root: string, listed: TodoItem, path: string): Promise<void> {
+  const linked = listed.attachments.some((a) => a.path === path);
+  if (!linked && listed.attachments.length >= TODO_ATTACHMENTS_MAX)
+    throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.full);
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(root);
+  } catch {
+    throw todoChangeError('internal');
+  }
+  if (!(await isListableFile(root, realRoot, path)))
+    throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.notListable);
+}
+
+// ---------------------------------------------------------------------------
+// Uploads (plan 2026-11-16-todo-attachments, decision 3): the server chooses where, the brain's
+// `tdsapp-files` skill writes the file, then the to-do skill links it.
+// ---------------------------------------------------------------------------
+
+const PROTECTED = new Set<string>([...PROTECTED_NAMES, ...PROTECTED_CLIENT_FILES]);
+
+/**
+ * A staged file's name made safe to write in a `## Files` line and to save in the library: no
+ * control or format characters, none of `% # ? \ / : < > " * | \``, square brackets become round ones,
+ * spaces collapsed, no leading dots or dashes. The extension is kept; a name left empty becomes
+ * `file.<ext>`, and a name the files skill protects (README.md, profile.md...) gets " (file)".
+ */
+export function cleanUploadName(raw: string): string {
+  const ext = extOf(raw);
+  let name = raw
+    .normalize('NFC')
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
+    .replace(/\[/g, '(')
+    .replace(/\]/g, ')')
+    .replace(/[%#?\\/:<>"*|`]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s-]+|[.\s]+$/g, '');
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot).trim() : '';
+  if (ext === '' || base === '' || name.slice(dot + 1).toLowerCase() !== ext) {
+    return `file${ext ? `.${raw.slice(raw.length - ext.length)}` : ''}`;
+  }
+  name = `${base}${name.slice(dot)}`;
+  // NFKC: the Mac's disk treats look-alikes (the long s, U+017F) as the plain letter (security review).
+  if (PROTECTED.has(name.normalize('NFKC').toLowerCase())) name = `${base} (file)${name.slice(dot)}`;
+  return name;
+}
+
+/**
+ * Where an upload for this to-do goes (decision 3, overseer answer 2): a TDS to-do whose trimmed
+ * `client:` is exactly a brain client's slug files under `clients/<slug>/images/` or `.../files/`
+ * (by the library's kind); anything else, and every personal to-do, under `personal/images/` or
+ * `personal/files/`. Null for a type not in TODO_UPLOAD_TYPES.
+ */
+export function uploadDestination(
+  todo: Pick<TodoItem, 'scope' | 'client'>,
+  clients: readonly Pick<ClientInfo, 'slug'>[],
+  name: string,
+): { path: string; personal: boolean } | null {
+  const ext = extOf(name);
+  const kind = classify(ext)?.kind;
+  if (!TODO_UPLOAD_TYPES.includes(ext) || !kind) return null;
+  const folder = kind === 'image' ? 'images' : 'files';
+  const file = cleanUploadName(name);
+  const client = todo.scope === 'tds' ? (todo.client ?? '').trim() : '';
+  const slug = client !== '' ? clients.find((c) => c.slug === client)?.slug : undefined;
+  if (slug !== undefined && !isNeverListed(`clients/${slug}/${folder}/${file}`))
+    return { path: `clients/${slug}/${folder}/${file}`, personal: false };
+  return { path: `personal/${folder}/${file}`, personal: true };
+}
+
+/** What an upload is: the staged file (its real path, outside the brain) and the to-do it goes on. */
+export interface TodoUploadInput {
+  stagedPath: string;
+  name: string;
+  id: string;
+  scope: TodoScope;
+  expect: string;
+}
+
+export interface TodoUploadDeps {
+  history?: TodoHistory;
+  /** The brain's clients (BrainReaders.clients). */
+  clients: () => Promise<ClientInfo[]>;
+  files: Pick<FilesSkillRunner, 'add' | 'capabilities'>;
+  /** Called with the saved path once the file is in the library, so its listing can refresh. */
+  onSaved?: (path: string) => void;
+}
+
+/** The files skill's refusal of an add, in the app's words. */
+function saveError(err: unknown): TodoChangeError {
+  const code: TodoChangeErrorCode =
+    err instanceof FilesChangeError && (err.code === 'bad-request' || err.code === 'not-allowed')
+      ? err.code
+      : 'internal';
+  return new TodoChangeError(
+    code,
+    code === 'not-allowed' ? TODO_FILES_MESSAGES.saveRefused : TODO_FILES_MESSAGES.saveFailed,
+  );
+}
+
+/**
+ * Files a staged upload into the library through `tdsapp-files add`, then links it with the to-do
+ * script's `attach` (with `expect`). Every refusal the server can make comes before anything runs:
+ * `not-allowed` unless canUpload (and canUsePersonal for a personal to-do), `bad-request` for bad
+ * values or a type not in TODO_UPLOAD_TYPES or a full to-do, `not-found` and `changed` as changeTodo.
+ * When `attach` fails after `add` worked, the error keeps attach's code and says where the file is.
+ */
+export async function uploadTodoFile(
+  root: string,
+  req: TodoUploadInput,
+  identity: Identity,
+  runner: TodoSkillRunner,
+  deps: TodoUploadDeps,
+): Promise<{ path: string; personal: boolean }> {
+  const list = await listTodos(root, identity, {
+    history: deps.history,
+    capabilities: () => runner.capabilities(),
+    filesCapabilities: () => deps.files.capabilities(),
+  });
+  if (list.changes !== 'on' || !list.canUpload)
+    throw new TodoChangeError('not-allowed', TODO_FILES_MESSAGES.uploadNotAllowed);
+  if (
+    typeof req !== 'object' ||
+    req === null ||
+    !okId(req.id) ||
+    !okScope(req.scope) ||
+    !okExpect(req.expect) ||
+    typeof req.stagedPath !== 'string' ||
+    !isAbsolute(req.stagedPath) ||
+    typeof req.name !== 'string'
+  )
+    throw todoChangeError('bad-request');
+  if (req.scope === 'personal' && !list.canUsePersonal) throw todoChangeError('not-allowed');
+  if (!TODO_UPLOAD_TYPES.includes(extOf(req.name)))
+    throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.badType);
+  const listed = [...list.mine, ...list.open].find((t) => t.id === req.id && t.scope === req.scope);
+  if (!listed) throw todoChangeError('not-found');
+  if (listed.version !== req.expect) throw todoChangeError('changed');
+  if (listed.attachments.length >= TODO_ATTACHMENTS_MAX)
+    throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.full);
+  let clients: ClientInfo[];
+  try {
+    clients = await deps.clients();
+  } catch {
+    clients = [];
+  }
+  const dest = uploadDestination(listed, clients, req.name);
+  if (!dest) throw new TodoChangeError('bad-request', TODO_FILES_MESSAGES.badType);
+  const by = { name: identity.name, slug: identity.slug };
+  let saved: string;
+  try {
+    saved = await deps.files.add({ source: req.stagedPath, path: dest.path, by });
+  } catch (err) {
+    throw saveError(err);
+  }
+  // The script may pick a free name, never another folder: anything else is not trusted or linked.
+  const folder = dest.path.slice(0, dest.path.lastIndexOf('/') + 1);
+  if (
+    resolveTodoFilePath(saved) !== saved ||
+    !saved.startsWith(folder) ||
+    saved.slice(folder.length).includes('/')
+  )
+    throw todoChangeError('internal');
+  deps.onSaved?.(saved);
+  try {
+    await runner.run({ kind: 'attach', id: req.id, path: saved, expect: req.expect, scope: req.scope }, by);
+  } catch (err) {
+    const code = err instanceof TodoChangeError ? err.code : 'internal';
+    throw new TodoChangeError(code, savedNotLinkedMessage(saved));
+  }
+  return { path: saved, personal: saved.startsWith('personal/') };
 }
 
 /** What the app writes as the place a to-do was ticked. */

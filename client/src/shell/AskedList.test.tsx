@@ -17,6 +17,7 @@ const asked = (id: string, title: string, over: Partial<AskedTodo> = {}): AskedT
   asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-13T12:00:00+00:00', source: 'stamp' },
   done: null,
   version: 'v1',
+  attachments: [],
   ...over,
 });
 const done = (name: string | null): AskedTodo =>

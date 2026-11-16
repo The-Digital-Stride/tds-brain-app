@@ -17,7 +17,7 @@ import { createAskedTodos } from './todo-asked.ts';
 import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
 import { createTodoTimeline } from './todo-timeline.ts';
-import { changeTodo, completeTodo, listTodos } from './todos.ts';
+import { changeTodo, completeTodo, listTodos, uploadTodoFile } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { watchBrain } from './watch.ts';
 
@@ -95,7 +95,11 @@ export function createBrainReaders(
     skills: (identity) => listSkills(root, identity),
     skillAccess: (identity, name) => skillAccess(root, identity, name),
     todos: (identity) =>
-      listTodos(root, identity, { history: todoHistory, capabilities: () => todoSkill.capabilities() }),
+      listTodos(root, identity, {
+        history: todoHistory,
+        capabilities: () => todoSkill.capabilities(),
+        filesCapabilities: () => filesSkill.capabilities(),
+      }),
     completeTodo: (id, by) => completeTodo(root, id, by, now()),
     changeTodo: (action, identity) => changeTodo(root, action, identity, todoSkill, { history: todoHistory }),
     completePersonalTodo: async (id, expect, by) => {
@@ -103,6 +107,13 @@ export function createBrainReaders(
         history: todoHistory,
       });
     },
+    uploadTodoFile: (req, identity) =>
+      uploadTodoFile(root, req, identity, todoSkill, {
+        history: todoHistory,
+        clients: () => listClients(root),
+        files: filesSkill,
+        onSaved: (path) => library.changed(path),
+      }),
     askedTodos: (identity) => askedTodos.list(root, identity, now()),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),

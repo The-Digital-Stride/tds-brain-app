@@ -1,0 +1,162 @@
+{
+  "_about": "Shared cases for the to-do `## Files` section (plan 2026-11-16-todo-attachments, overseer S4). Run by shared/todo-files.test.ts and brain-skills/tdsapp-todo/scripts/tdsapp-todo.test.ts. Invented content only.",
+  "parse": [
+    {
+      "name": "no section",
+      "body": "Ring the client.\n\n- [x](../clients/acme/files/x.pdf)",
+      "files": []
+    },
+    {
+      "name": "one client file from todo/",
+      "body": "Ring the client.\n\n## Files\n\n- [quote.pdf](../clients/acme/files/quote.pdf)",
+      "files": [
+        {
+          "path": "clients/acme/files/quote.pdf",
+          "name": "quote.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "still resolves from todo/done/ (two ../)",
+      "body": "## Files\n\n- [logo.png](../../clients/acme/images/logo.png)",
+      "files": [
+        {
+          "path": "clients/acme/images/logo.png",
+          "name": "logo.png",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "angle brackets for a space; personal holder kept",
+      "body": "## Files\n\n- [My notes.pdf](<../../personal/files/My notes.pdf>) (only on sam-example's Mac)",
+      "files": [
+        {
+          "path": "personal/files/My notes.pdf",
+          "name": "My notes.pdf",
+          "holder": "sam-example"
+        }
+      ]
+    },
+    {
+      "name": "personal file with no holder written",
+      "body": "## Files\n\n- [a.png](../personal/images/a.png)",
+      "files": [
+        {
+          "path": "personal/images/a.png",
+          "name": "a.png",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "holder ignored on a client file",
+      "body": "## Files\n\n- [a.png](../clients/acme/images/a.png) (only on sam-example's Mac)",
+      "files": [
+        {
+          "path": "clients/acme/images/a.png",
+          "name": "a.png",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "section ends at the next level-2 heading; history after it is not read",
+      "body": "Details.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Handover history\n\n- [b.pdf](../clients/acme/files/b.pdf)",
+      "files": [
+        {
+          "path": "clients/acme/files/a.pdf",
+          "name": "a.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "a level-3 heading does not end it",
+      "body": "## Files\n\n### Drafts\n- [a.pdf](../clients/acme/files/a.pdf)",
+      "files": [
+        {
+          "path": "clients/acme/files/a.pdf",
+          "name": "a.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "unsafe or foreign targets are skipped",
+      "body": "## Files\n\n- [web](https://example.com/a.pdf)\n- [up](../clients/../todo/x.md)\n- [abs](/clients/acme/a.pdf)\n- [enc](../clients/acme/%2e%2e/a.pdf)\n- [bs](..\\clients\\acme\\a.pdf)\n- [other](../projects/x/a.pdf)\n- [dot](../clients/./acme/a.pdf)\n- [ok](../templates/brief.docx)",
+      "files": [
+        {
+          "path": "templates/brief.docx",
+          "name": "ok",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "duplicates kept once; * bullet and CRLF read",
+      "body": "## Files\r\n\r\n* [a.pdf](../clients/acme/files/a.pdf)\r\n- [again](../../clients/acme/files/a.pdf)\r\n",
+      "files": [
+        {
+          "path": "clients/acme/files/a.pdf",
+          "name": "a.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "heading must be exactly Files at level 2",
+      "body": "# Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n### Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n\n## Files to send\n\n- [c.pdf](../clients/acme/files/c.pdf)",
+      "files": []
+    },
+    {
+      "name": "a Files heading inside a code fence is not the section; one after it is",
+      "body": "```\n## Files\n- [a.pdf](../clients/acme/files/a.pdf)\n```\n\n## Files\n\n- [b.pdf](../clients/acme/files/b.pdf)\n\n~~~\n## Handover history\n~~~\n- [c.pdf](../clients/acme/files/c.pdf)",
+      "files": [
+        {
+          "path": "clients/acme/files/b.pdf",
+          "name": "b.pdf",
+          "holder": null
+        },
+        {
+          "path": "clients/acme/files/c.pdf",
+          "name": "c.pdf",
+          "holder": null
+        }
+      ]
+    }
+  ],
+  "split": [
+    {
+      "name": "no section",
+      "body": "Ring the client.\n",
+      "details": "Ring the client.",
+      "files": ""
+    },
+    {
+      "name": "section at the end",
+      "body": "Ring the client.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n",
+      "details": "Ring the client.",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)"
+    },
+    {
+      "name": "section before handover history",
+      "body": "Ring the client.\n\n## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)\n\n## Handover history\n\n- 13 Nov 2026, 14:05 UK: Sam passed it on.",
+      "details": "Ring the client.\n\n## Handover history\n\n- 13 Nov 2026, 14:05 UK: Sam passed it on.",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)"
+    },
+    {
+      "name": "only a section",
+      "body": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)",
+      "details": "",
+      "files": "## Files\n\n- [a.pdf](../clients/acme/files/a.pdf)"
+    },
+    {
+      "name": "a fenced Files heading stays in the details",
+      "body": "Notes.\n\n```\n## Files\n```",
+      "details": "Notes.\n\n```\n## Files\n```",
+      "files": ""
+    }
+  ]
+}

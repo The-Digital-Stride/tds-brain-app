@@ -598,3 +598,54 @@ describe('capabilities probe', () => {
     expect(await createTodoSkillRunner(root).capabilities()).toEqual([]);
   });
 });
+
+describe('release 3: attach, detach, add body and edit keep_files payloads', () => {
+  const EXPECT = 'b'.repeat(64);
+  const by = { name: 'Sam Example', slug: 'sam-example' };
+
+  it('sends file and path, with who, the app, expect and a personal scope', () => {
+    expect(scriptPayload({ kind: 'attach', id: 'a.md', path: 'templates/x.md' }, by)).toEqual({
+      file: 'a.md',
+      path: 'templates/x.md',
+      via: 'TDS Cortex',
+      by: 'sam-example',
+      by_name: 'Sam Example',
+    });
+    expect(
+      scriptPayload({
+        kind: 'detach',
+        id: 'a.md',
+        path: 'personal/files/x.pdf',
+        expect: EXPECT,
+        scope: 'personal',
+      }),
+    ).toEqual({
+      file: 'a.md',
+      path: 'personal/files/x.pdf',
+      via: 'TDS Cortex',
+      expect: EXPECT,
+      scope: 'personal',
+    });
+  });
+
+  it('adds keep_files to edit only when asked, and body to add only when there are details', () => {
+    expect(
+      scriptPayload({ kind: 'edit', id: 'a.md', title: 'T', details: 'D' }, undefined, { keepFiles: true }),
+    ).toEqual({ file: 'a.md', title: 'T', body: 'D', keep_files: true });
+    expect(scriptPayload({ kind: 'edit', id: 'a.md', title: 'T' })).toEqual({ file: 'a.md', title: 'T' });
+    expect(scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'jo', details: 'D' })).toMatchObject(
+      {
+        body: 'D',
+      },
+    );
+    expect(
+      scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'jo', details: '' }),
+    ).not.toHaveProperty('body');
+    expect(scriptPayload({ kind: 'add', title: 'T', due: null, assignee: null, details: 'D' })).toMatchObject(
+      {
+        open: true,
+        body: 'D',
+      },
+    );
+  });
+});

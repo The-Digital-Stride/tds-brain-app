@@ -50,6 +50,7 @@ describe('todoChatDraft', () => {
       source: null,
       details: '',
       version: 'v1',
+      attachments: [],
       assignee: null,
       due: null,
       surfaceDate: null,

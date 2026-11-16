@@ -31,6 +31,14 @@ export const FILES_SCRIPT = '.claude/skills/tdsapp-files/scripts/tdsapp-files.cj
 
 /** A purge may touch many entries; a delete is one move. */
 export const PURGE_TIMEOUT_MS = 60_000;
+/** An add copies up to 32 MB into the brain. */
+export const ADD_TIMEOUT_MS = 60_000;
+
+/**
+ * The script's `capabilities` feature for `add` (tdsapp-files v0.2, plan 2026-11-16-todo-attachments,
+ * decision 3). The app offers uploads on to-dos only when it is listed.
+ */
+export const FILES_ADD_CAPABILITY = 'files-add-v1';
 
 export type FilesSkillOptions = ScriptOptions;
 
@@ -45,7 +53,7 @@ export async function findFilesScript(root: string): Promise<string | null> {
 }
 
 /** The command line is fixed here: nothing from a request ever becomes part of it. */
-const COMMAND = { delete: 'delete', purge: 'purge' } as const;
+const COMMAND = { delete: 'delete', purge: 'purge', add: 'add' } as const;
 
 /** What a person's delete says, with the tool name and who it is for. `path` is relative to the brain root. */
 export interface FilesDeleteRequest {
@@ -54,7 +62,22 @@ export interface FilesDeleteRequest {
   by?: { slug: string; name: string };
 }
 
+/**
+ * What an upload asks the script to save: `source` is the staged file's real path (outside the brain),
+ * `path` the brain-relative destination the server chose. The script may pick a free name (" (2)").
+ */
+export interface FilesAddRequest {
+  source: string;
+  path: string;
+  by?: { slug: string; name: string };
+}
+
 export interface FilesSkillRunner {
+  /**
+   * Copies a file into the brain (v0.2 `add`). Resolves to the path the script saved it at, as it
+   * replied; rejects with FilesChangeError (`internal` for a reply without a path).
+   */
+  add(request: FilesAddRequest): Promise<string>;
   /** Deletes one file. Resolves when the script says it worked; otherwise rejects with FilesChangeError. */
   delete(request: FilesDeleteRequest): Promise<void>;
   /** Erases what has been held for 30 days. Resolves to the number erased; rejects with FilesChangeError. */
@@ -125,6 +148,19 @@ export function createFilesSkillRunner(root: string, options: FilesSkillOptions 
         };
         await run(COMMAND.delete, input, opts.timeoutMs);
       }),
+    add: (request) =>
+      queue(async () => {
+        // `by` is never read by the script (who comes from git); `by_name` is display text only.
+        const input = {
+          source: request.source,
+          path: request.path,
+          via: APP_VIA,
+          ...(request.by ? { by_name: request.by.name } : {}),
+        };
+        const reply = await run(COMMAND.add, input, options.timeoutMs ?? ADD_TIMEOUT_MS);
+        if (typeof reply.path !== 'string' || reply.path === '') throw new FilesChangeError('internal');
+        return reply.path;
+      }),
     purge: () =>
       queue(async () => {
         const input: FilesPurgeInput = { via: APP_VIA };
@@ -138,4 +174,9 @@ export function createFilesSkillRunner(root: string, options: FilesSkillOptions 
 /** True when the script is there and reports the delete feature. The caller checks the skill's `roles:`. */
 export async function hasDeleteCapability(runner: Pick<FilesSkillRunner, 'capabilities'>): Promise<boolean> {
   return (await runner.capabilities()).includes(FILES_CAPABILITY);
+}
+
+/** True when the script is there and reports `add`. The caller checks the skill's `roles:`. */
+export async function hasAddCapability(runner: Pick<FilesSkillRunner, 'capabilities'>): Promise<boolean> {
+  return (await runner.capabilities()).includes(FILES_ADD_CAPABILITY);
 }

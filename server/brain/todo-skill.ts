@@ -67,7 +67,21 @@ const COMMAND: Record<TodoRunAction['kind'], string> = {
   delete: 'delete',
   move: 'move',
   tick: 'tick',
+  attach: 'attach',
+  detach: 'detach',
 };
+
+/** The script's `capabilities` feature for `attach` / `detach`, `add` with a body and `edit` with `keep_files` (v0.5). */
+export const TODO_ATTACH_CAPABILITY = 'attach';
+
+/** How a change is sent beyond the action itself. */
+export interface TodoRunOptions {
+  /**
+   * `edit` only: the body is the details alone and the script carries the on-disk `## Files` section
+   * across (release 3, overseer B1). The server sets it whenever TodoList.canAttach.
+   */
+  keepFiles?: boolean;
+}
 
 /** Who a change is for, as the app knows them (the same identity its tick records use). */
 export interface TodoActor {
@@ -79,30 +93,53 @@ export interface TodoActor {
  * The Workbench route's request body for an action, with the Workbench's field names. `scope` is sent
  * only for 'personal' (and always for `move`), so every v0.3 payload stays byte-identical.
  */
-export function scriptPayload(action: TodoRunAction, by?: TodoActor): Record<string, string | boolean> {
+export function scriptPayload(
+  action: TodoRunAction,
+  by?: TodoActor,
+  options: TodoRunOptions = {},
+): Record<string, string | boolean> {
   const expect: Record<string, string> =
     'expect' in action && action.expect !== undefined ? { expect: action.expect } : {};
   const scope: Record<string, string> =
     'scope' in action && action.scope === 'personal' ? { scope: 'personal' } : {};
   const actor: Record<string, string> = by ? { by: by.slug, by_name: by.name } : {};
   switch (action.kind) {
-    case 'add':
+    case 'add': {
       // `via` names this app as the tool; an open to-do sends `open` and no assignee. An older script
-      // ignores both and the server only offers open adds when the newer skill is there.
+      // ignores both and the server only offers open adds when the newer skill is there. `body` (v0.5)
+      // is only here when the server kept `details`, which it does only when canAttach.
+      const body: Record<string, string> =
+        action.details !== undefined && action.details !== '' ? { body: action.details } : {};
       return action.assignee === null
-        ? { title: action.title, due: action.due ?? '', open: true, via: APP_VIA, ...actor, ...scope }
+        ? {
+            title: action.title,
+            due: action.due ?? '',
+            open: true,
+            via: APP_VIA,
+            ...body,
+            ...actor,
+            ...scope,
+          }
         : {
             title: action.title,
             due: action.due ?? '',
             assignee: action.assignee,
             via: APP_VIA,
+            ...body,
             ...actor,
             ...scope,
           };
-    case 'edit':
+    }
+    case 'edit': {
+      const keep: Record<string, boolean> = options.keepFiles ? { keep_files: true } : {};
       return action.details === undefined
-        ? { file: action.id, title: action.title, ...expect, ...scope }
-        : { file: action.id, title: action.title, body: action.details, ...expect, ...scope };
+        ? { file: action.id, title: action.title, ...keep, ...expect, ...scope }
+        : { file: action.id, title: action.title, body: action.details, ...keep, ...expect, ...scope };
+    }
+    case 'attach':
+    case 'detach':
+      // `by` is the holder written on a personal file's line ("only on <slug>'s Mac").
+      return { file: action.id, path: action.path, via: APP_VIA, ...actor, ...expect, ...scope };
     case 'due':
       return { file: action.id, due: action.due ?? '', ...expect, ...scope };
     case 'assignee':
@@ -162,7 +199,7 @@ export interface TodoRunResult {
 
 export interface TodoSkillRunner {
   /** Runs one change. Resolves when the script says it worked; otherwise rejects with TodoChangeError. */
-  run(action: TodoRunAction, by?: TodoActor): Promise<TodoRunResult>;
+  run(action: TodoRunAction, by?: TodoActor, options?: TodoRunOptions): Promise<TodoRunResult>;
   /**
    * The script's `capabilities` features (v0.4), cached per script real path and mtime. A script
    * that doesn't know the command (v0.3) or fails gives none.
@@ -189,7 +226,11 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
   const opts = withDefaults(options, TODO_SCRIPT_TIMEOUT_MS, TODO_SCRIPT_MAX_OUTPUT_BYTES);
   const queue = createQueue();
 
-  const runOnce = async (action: TodoRunAction, by?: TodoActor): Promise<TodoRunResult> => {
+  const runOnce = async (
+    action: TodoRunAction,
+    by?: TodoActor,
+    options?: TodoRunOptions,
+  ): Promise<TodoRunResult> => {
     const script = await findTodoScript(root);
     if (!script) throw todoChangeError('internal');
     let realRoot: string;
@@ -202,7 +243,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
       script,
       realRoot,
       COMMAND[action.kind],
-      JSON.stringify(scriptPayload(action, by)),
+      JSON.stringify(scriptPayload(action, by, options)),
       opts,
     );
     const code = judge(outcome);
@@ -220,7 +261,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
   );
 
   return {
-    run: (action, by) => queue(() => runOnce(action, by)),
+    run: (action, by, options) => queue(() => runOnce(action, by, options)),
     capabilities: probe,
   };
 }

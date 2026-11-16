@@ -111,6 +111,7 @@ describe('asked of others', () => {
         version: createHash('sha256')
           .update(readFileSync(join(root, 'todo', '20261110-quote.md')))
           .digest('hex'),
+        attachments: [],
       },
     ]);
   });

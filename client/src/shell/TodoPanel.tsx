@@ -18,6 +18,7 @@ import {
   type TodoItem,
   type TodoScope,
 } from '../../../shared/contract.ts';
+import { splitTodoFiles, todoFileExtras } from '../../../shared/todo-files.ts';
 import { dueInWords, isOverdue } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatClient } from '../state/client-choice.ts';
@@ -28,11 +29,13 @@ import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import TodoDetailsEditor from './TodoDetailsEditor.tsx';
+import { TodoFiles } from './TodoFiles.tsx';
 import {
   AddTodoForm,
   Assignee,
   buildEditActions,
   conflictNote,
+  detailsText,
   type EditDraft,
   PASS_ON_NOTE,
   PERSONAL_WARNING,
@@ -64,6 +67,12 @@ export interface TodoPanelProps {
   team: TeamMember[];
   canUsePersonal: boolean;
   canAddOpen: boolean;
+  /** TodoList.canAttach: details are shown and edited without the Files section, which has its own block. */
+  canAttach: boolean;
+  /** TodoList.canUpload: "Add a file" offers Upload. */
+  canUpload: boolean;
+  /** Says a line in the panel's status region (the drawer's status line, shown while the panel is open). */
+  onStatus: (text: string, isError?: boolean) => void;
   /** Add form: start personal (the Personal filter is showing). */
   startPersonal: boolean;
   onEdit: (todo: TodoItem) => void;
@@ -103,10 +112,13 @@ export default function TodoPanel(props: TodoPanelProps) {
   const [addDirty, setAddDirty] = useState(false);
 
   const draft = props.draft;
-  const tooLong = todo !== null && todo.details.length > TODO_DETAILS_MAX;
-  const faithful = useMemo(() => todo !== null && !tooLong && isFaithful(todo.details), [todo, tooLong]);
+  // With canAttach the panel works on the details part only: the Files section is its own block.
+  const body = todo !== null ? detailsText(todo, props.canAttach) : '';
+  const tooLong = todo !== null && body.length > TODO_DETAILS_MAX;
+  const faithful = useMemo(() => todo !== null && !tooLong && isFaithful(body), [todo, tooLong, body]);
   const detailsEditable = faithful;
-  const actions = todo !== null && mode === 'edit' ? buildEditActions(todo, draft, detailsEditable) : [];
+  const actions =
+    todo !== null && mode === 'edit' ? buildEditActions(todo, draft, detailsEditable, props.canAttach) : [];
   const dirty = mode === 'add' ? addDirty : mode === 'edit' && actions.length > 0;
   const overLimit = mode === 'edit' && detailsEditable && draft.details.length > TODO_DETAILS_MAX;
 
@@ -259,6 +271,7 @@ export default function TodoPanel(props: TodoPanelProps) {
               busy={props.busy}
               canAddOpen={props.canAddOpen}
               canUsePersonal={props.canUsePersonal}
+              canAttach={props.canAttach}
               startPersonal={props.startPersonal}
               onAdd={props.onAdd}
               onCancel={props.onCancelAdd}
@@ -266,7 +279,7 @@ export default function TodoPanel(props: TodoPanelProps) {
             />
           </div>
         ) : asked ? (
-          <AskedReadView asked={asked} team={props.team} />
+          <AskedReadView asked={asked} team={props.team} me={props.me} onStatus={props.onStatus} />
         ) : todo === null ? null : mode === 'edit' ? (
           <EditView
             {...props}
@@ -400,22 +413,27 @@ function ReadView({
 }) {
   const chat = useChat(todo);
   const uid = useId();
+  // The Files block shows whenever files can be added, and read only to anyone who can't edit here (a
+  // teammate on the team role, or with changes switched off), so linked files can still be opened. Only a
+  // person who edits without the attach capability sees the whole body, section included (overseer).
+  const filesBlock = p.canAttach || (!p.canEdit && splitTodoFiles(todo.details).files !== '');
+  const shown = detailsText(todo, filesBlock);
   const canTickDetails = p.canEdit && faithful && !tooLong;
   const note = tooLong ? LONG_NOTE : faithful ? null : UNFAITHFUL_NOTE;
   const onToggleTask = canTickDetails
     ? (index: number, checked: boolean) => {
         if (p.busy) return;
-        const next = setTask(todo.details, index, checked);
-        if (next !== todo.details && next.length <= TODO_DETAILS_MAX) void p.onTick(todo, next);
+        const next = setTask(shown, index, checked);
+        if (next !== shown && next.length <= TODO_DETAILS_MAX) void p.onTick(todo, next);
       }
     : undefined;
   return (
     <>
       <div className="todo-body">
         <div className="todo-main-col" aria-busy={p.busy}>
-          {todo.details ? (
+          {shown ? (
             <TodoDetailsEditor
-              markdown={todo.details}
+              markdown={shown}
               editable={false}
               onToggleTask={onToggleTask}
               label="Details"
@@ -428,6 +446,20 @@ function ReadView({
             <p className="todo-note" id={`${uid}-note`}>
               {note}
             </p>
+          ) : null}
+          {filesBlock ? (
+            <TodoFiles
+              key={`files:${todo.key}`}
+              attachments={todo.attachments}
+              todo={p.canEdit && p.canAttach ? todo : null}
+              canAttach={p.canEdit && p.canAttach}
+              extras={todoFileExtras(todo.details)}
+              canUpload={p.canUpload}
+              me={p.me}
+              team={p.team}
+              busy={p.busy}
+              onStatus={p.onStatus}
+            />
           ) : null}
           {todo.scope !== 'personal' ? <TodoHistory key={todo.key} todoKey={todo.key} team={p.team} /> : null}
         </div>
@@ -469,7 +501,19 @@ function ReadView({
 }
 
 /** A to-do you passed on: read only. No Edit, tick, pass on, delete or chat: it is someone else's now. */
-function AskedReadView({ asked, team }: { asked: AskedTodo; team: TeamMember[] }) {
+function AskedReadView({
+  asked,
+  team,
+  me,
+  onStatus,
+}: {
+  asked: AskedTodo;
+  team: TeamMember[];
+  me: string;
+  onStatus: (text: string, isError?: boolean) => void;
+}) {
+  // The Files section is shown as a list below the details, so it is left out of the text.
+  const details = splitTodoFiles(asked.details).details;
   const due = asked.due ? dueInWords(asked.due) : '';
   const first =
     asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
@@ -481,11 +525,22 @@ function AskedReadView({ asked, team }: { asked: AskedTodo; team: TeamMember[] }
     <>
       <div className="todo-body">
         <div className="todo-main-col">
-          {asked.details ? (
-            <TodoDetailsEditor markdown={asked.details} editable={false} label="Details" />
+          {details ? (
+            <TodoDetailsEditor markdown={details} editable={false} label="Details" />
           ) : (
             <p className="todo-empty">No details yet.</p>
           )}
+          <TodoFiles
+            attachments={asked.attachments}
+            todo={null}
+            canAttach={false}
+            extras={todoFileExtras(asked.details)}
+            canUpload={false}
+            me={me}
+            team={team}
+            busy={false}
+            onStatus={onStatus}
+          />
           <TodoHistory key={asked.key} todoKey={asked.key} team={team} />
         </div>
         <dl className="todo-facts">
@@ -613,7 +668,7 @@ function EditView({
             ) : (
               <>
                 <TodoDetailsEditor
-                  markdown={todo.details}
+                  markdown={detailsText(todo, p.canAttach)}
                   editable={false}
                   label="Details"
                   describedBy={`${uid}-long`}

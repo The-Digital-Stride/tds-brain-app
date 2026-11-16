@@ -17,6 +17,7 @@ import {
   TODO_SCRIPT,
   type TodoHistoryResponse,
   type TodoList,
+  type TodoUploadResponse,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
 } from '../../shared/contract.ts';
@@ -3018,5 +3019,256 @@ describe('DELETE ROUTES.libraryItem (plan 2026-11-15-delete-library-files)', () 
       }),
     );
     expect(bad.status).toBe(404);
+  });
+});
+
+describe('POST ROUTES.todoUpload (plan 2026-11-16-todo-attachments, decision 3)', () => {
+  const PORT = 3877;
+  const TOKEN = 'todo-upload-token';
+  const MINE = '20261101-renew-contract.md';
+  const SCRIPT = `
+const fs = require('node:fs');
+let input = '';
+process.stdin.on('data', (c) => { input += c; });
+process.stdin.on('end', () => {
+  const cmd = process.argv[2];
+  const which = process.argv[1].includes('tdsapp-files') ? 'files' : 'todo';
+  if (cmd === 'capabilities') {
+    const features = which === 'files' ? ['files-delete-v1', 'files-add-v1'] : JSON.parse(process.env.FAKE_TODO_CAPS);
+    process.stdout.write(JSON.stringify({ ok: true, version: '0.5', features }));
+    return;
+  }
+  fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ which, cmd, body: JSON.parse(input) }) + '\\n');
+  const r = JSON.parse(process.env.FAKE_REPLIES || '{}')[which + ':' + cmd] || {};
+  process.stdout.write(r.out || '{"ok":true}');
+  process.exitCode = r.exit || 0;
+});
+`;
+
+  function setup(opts: { caps?: string[]; replies?: Record<string, { out?: string; exit?: number }> } = {}) {
+    const root = copyFixture();
+    for (const skill of ['tdsapp-todo', 'tdsapp-files']) {
+      mkdirSync(join(root, '.claude', 'skills', skill, 'scripts'), { recursive: true });
+      writeFileSync(join(root, '.claude', 'skills', skill, 'SKILL.md'), '---\nroles: owner, scout\n---\n');
+      writeFileSync(join(root, '.claude', 'skills', skill, 'scripts', `${skill}.cjs`), SCRIPT);
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'tba-todo-upload-'));
+    tempDirs.push(dir);
+    const log = join(dir, 'calls.jsonl');
+    const env = {
+      PATH: process.env.PATH,
+      FAKE_LOG: log,
+      FAKE_TODO_CAPS: JSON.stringify(opts.caps ?? ['handover', 'scope', 'attach']),
+      FAKE_REPLIES: JSON.stringify(
+        opts.replies ?? {
+          'files:add': { out: JSON.stringify({ ok: true, path: 'clients/acme-heating/images/logo.png' }) },
+        },
+      ),
+    };
+    const whoami = { name: 'Sam Example', slug: 'sam-example', role: 'scout', knownMember: true };
+    const brain = createBrainReaders(root, {
+      run: async () => ({ stdout: JSON.stringify(whoami) }),
+      todoSkill: { env },
+      filesSkill: { env },
+    });
+    const uploads = createUploadStaging({ dataDir: join(dir, 'data'), brainRoot: root, sweepMs: 0 });
+    stagings.push(uploads);
+    const logs: string[] = [];
+    const ctx = (directWrites = true) =>
+      ({
+        brain,
+        uploads,
+        store: { get: async () => ({ directWrites }) },
+        log: (l: string) => logs.push(l),
+      }) as unknown as RouteContext;
+    const calls = () =>
+      existsSync(log)
+        ? readFileSync(log, 'utf8')
+            .trim()
+            .split('\n')
+            .map((l) => JSON.parse(l) as { which: string; cmd: string; body: Record<string, unknown> })
+        : [];
+    const version = () =>
+      createHash('sha256')
+        .update(readFileSync(join(root, 'todo', MINE)))
+        .digest('hex');
+    const stage = (name = 'logo.png') => uploads.save(Readable.from([Buffer.from('bytes')]), name, 5);
+    return { root, brain, uploads, ctx, calls, version, stage, logs };
+  }
+
+  /** Through the real gate first, as server.ts runs it, then the route. */
+  async function call(
+    ctx: RouteContext,
+    body: unknown,
+    opts: { method?: string; contentType?: string } = {},
+  ): Promise<{ gate: string; status: number; json: unknown }> {
+    const method = opts.method ?? 'POST';
+    const headers: Record<string, string | undefined> = {
+      host: `127.0.0.1:${PORT}`,
+      cookie: `${SESSION_COOKIE}=${cookieValueFor(TOKEN)}`,
+      'sec-fetch-site': 'same-origin',
+      origin: `http://127.0.0.1:${PORT}`,
+      'content-type': opts.contentType ?? 'application/json',
+    };
+    const gate = checkRequest(
+      { method, path: ROUTES.todoUpload, headers },
+      { port: PORT, launchToken: TOKEN },
+    );
+    if (gate.action !== 'allow')
+      return { gate: gate.action, status: gate.action === 'reject' ? gate.status : 0, json: null };
+    const raw =
+      body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))];
+    const req = Object.assign(Readable.from(raw), { method, headers });
+    const sent = { status: 0, body: '' };
+    const res = {
+      headersSent: false,
+      setHeader: () => {},
+      writeHead: (status: number) => {
+        sent.status = status;
+      },
+      end: (text: string) => {
+        sent.body = text;
+      },
+    };
+    await handleApi(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      new URL(`http://127.0.0.1:${PORT}${ROUTES.todoUpload}`),
+      ctx,
+    );
+    return { gate: 'allow', status: sent.status, json: sent.body ? JSON.parse(sent.body) : null };
+  }
+
+  it('saves, attaches and answers with the fresh list, the path and personal; the upload is used up', async () => {
+    const s = setup();
+    const info = await s.stage();
+    const expectV = s.version();
+    const out = await call(s.ctx(), { upload: info.id, id: MINE, expect: expectV });
+    expect(out.status).toBe(200);
+    const body = out.json as TodoUploadResponse;
+    expect(body.path).toBe('clients/acme-heating/images/logo.png');
+    expect(body.personal).toBe(false);
+    expect(body.list.canUpload).toBe(true);
+    expect(body.list.mine.some((t) => t.id === MINE)).toBe(true);
+    const calls = s.calls();
+    expect(calls.map((c) => `${c.which}:${c.cmd}`)).toEqual(['files:add', 'todo:attach']);
+    expect(calls[0]?.body).toMatchObject({ path: 'clients/acme-heating/images/logo.png', via: 'TDS Cortex' });
+    expect(String(calls[0]?.body.source)).toMatch(/logo\.png$/);
+    expect(calls[1]?.body).toMatchObject({
+      file: MINE,
+      path: 'clients/acme-heating/images/logo.png',
+      expect: expectV,
+    });
+    expect(() => s.uploads.peek([info.id])).toThrow();
+    expect(s.logs).toEqual(['Added a file to a to-do.']);
+  });
+
+  it('answers 409 with the saved-but-not-linked message when attach fails after add', async () => {
+    const s = setup({
+      replies: {
+        'files:add': { out: JSON.stringify({ ok: true, path: 'clients/acme-heating/images/logo (2).png' }) },
+        'todo:attach': { exit: 2, out: '{"ok":false,"status":409,"error":"changed"}' },
+      },
+    });
+    const info = await s.stage();
+    const out = await call(s.ctx(), { upload: info.id, id: MINE, expect: s.version() });
+    expect(out.status).toBe(409);
+    expect((out.json as { error: { message: string } }).error.message).toContain(
+      'saved to the library at clients/acme-heating/images/logo (2).png',
+    );
+    expect(() => s.uploads.peek([info.id])).toThrow();
+  });
+
+  it('refuses with 403 unless canUpload, still using the upload up, and running nothing', async () => {
+    const s = setup({ caps: ['handover', 'scope'] });
+    const info = await s.stage();
+    const out = await call(s.ctx(), { upload: info.id, id: MINE, expect: s.version() });
+    expect(out.status).toBe(403);
+    expect(s.calls()).toEqual([]);
+    expect(() => s.uploads.peek([info.id])).toThrow();
+  });
+
+  it('refuses with 403 while the Settings switch is off, leaving the upload', async () => {
+    const s = setup();
+    const info = await s.stage();
+    const out = await call(s.ctx(false), { upload: info.id, id: MINE, expect: s.version() });
+    expect(out.status).toBe(403);
+    expect(s.uploads.peek([info.id])).toHaveLength(1);
+  });
+
+  it('refuses with 400 a bad shape, an unknown or used upload, and a type to-dos never take', async () => {
+    const s = setup();
+    const info = await s.stage();
+    for (const body of [
+      null,
+      { upload: info.id, id: MINE },
+      { upload: info.id, id: MINE, expect: s.version(), extra: 1 },
+      { upload: info.id, id: MINE, expect: s.version(), scope: 'shared' },
+      { upload: 7, id: MINE, expect: s.version() },
+    ]) {
+      expect((await call(s.ctx(), body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(s.uploads.peek([info.id])).toHaveLength(1);
+    expect((await call(s.ctx(), { upload: 'not-an-id', id: MINE, expect: s.version() })).status).toBe(400);
+    const page = await s.stage('page.html');
+    expect((await call(s.ctx(), { upload: page.id, id: MINE, expect: s.version() })).status).toBe(400);
+    expect(() => s.uploads.peek([page.id])).toThrow();
+    expect((await call(s.ctx(), { upload: info.id, id: MINE, expect: s.version() })).status).toBe(200);
+    expect((await call(s.ctx(), { upload: info.id, id: MINE, expect: s.version() })).status).toBe(400);
+  });
+
+  it('refuses a staged kind that is not the library kind for its extension', async () => {
+    const s = setup();
+    const uploads = {
+      claim: () => ({
+        files: [{ id: 'x', name: 'logo.png', size: 1, kind: 'document', path: '/tmp/logo.png' }],
+        release() {},
+      }),
+    };
+    const ctx = { ...s.ctx(), uploads } as unknown as RouteContext;
+    expect((await call(ctx, { upload: 'x', id: MINE, expect: s.version() })).status).toBe(400);
+    expect(s.calls()).toEqual([]);
+  });
+
+  it('maps not-found and changed as changeTodo does', async () => {
+    const s = setup();
+    const a = await s.stage();
+    expect((await call(s.ctx(), { upload: a.id, id: 'nope.md', expect: s.version() })).status).toBe(404);
+    const b = await s.stage();
+    expect((await call(s.ctx(), { upload: b.id, id: MINE, expect: 'a'.repeat(64) })).status).toBe(409);
+    expect(s.calls()).toEqual([]);
+  });
+
+  it('goes through the request gate: JSON only, signed in, POST only', async () => {
+    const s = setup();
+    expect((await call(s.ctx(), '{}', { contentType: 'text/plain' })).status).toBe(415);
+    expect((await call(s.ctx(), undefined, { method: 'GET' })).status).toBe(405);
+    const ctx = { port: PORT, launchToken: TOKEN };
+    const anon = { method: 'POST', path: ROUTES.todoUpload, headers: { host: `127.0.0.1:${PORT}` } };
+    expect(checkRequest(anon, ctx)).toMatchObject({ action: 'reject', status: 401 });
+  });
+});
+
+describe('parseTodoAction: release 3 shapes', () => {
+  it('passes add details, attach and detach through', () => {
+    const good = [
+      { kind: 'add', title: 'T', due: null, assignee: 'sam-example', details: 'More' },
+      { kind: 'attach', id: 'a.md', path: 'clients/acme/images/logo.png' },
+      { kind: 'attach', id: 'a.md', path: 'personal/files/x.pdf', scope: 'personal', expect: 'a'.repeat(64) },
+      { kind: 'detach', id: 'a.md', path: 'templates/x.md', expect: 'a'.repeat(64) },
+    ];
+    for (const body of good) expect(parseTodoAction(body), JSON.stringify(body)).toEqual(body);
+  });
+
+  it('refuses attach and detach without a text path, or with extra fields', () => {
+    for (const body of [
+      { kind: 'attach', id: 'a.md' },
+      { kind: 'attach', id: 'a.md', path: null },
+      { kind: 'detach', id: 'a.md', path: ['x'] },
+      { kind: 'attach', id: 'a.md', path: 'templates/x.md', title: 'x' },
+      { kind: 'add', title: 'T', due: null, assignee: 'sam-example', details: null },
+    ]) {
+      expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow();
+    }
   });
 });

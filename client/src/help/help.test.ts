@@ -19,7 +19,6 @@ import {
   checkSentences,
   checkSpelling,
   checkTopicIds,
-  KEYBOARD_ALLOW,
 } from './checks.ts';
 import { helpForContext } from './context.ts';
 import { HELP_GLOSSARY_TERMS, type HelpContext, type HelpShot, type HelpTopic } from './contract.ts';

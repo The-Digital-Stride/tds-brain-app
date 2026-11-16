@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store.tsx';
 import { Proposals, StatusCard } from './Approvals.tsx';
-import { Cadence, DataHealth, DeepDive, Standup } from './Board.tsx';
+import { Cadence, DataHealth, Standup } from './Board.tsx';
+import { DeepDive } from './DeepDive.tsx';
 import { identityLine } from './ProposalPanel.tsx';
 import { adStore, findProposal, loadApprovals, loadBoard, selectAccount, useAd } from './store.ts';
 import { isWaiting } from './words.ts';

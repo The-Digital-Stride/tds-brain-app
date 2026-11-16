@@ -18,13 +18,50 @@
 .am-tray[data-cols="2"] {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
-.am-tray[data-cols="5"] {
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+/* The cadence cards (what I run on an account): four across, two on a mid-width sheet, one when narrow. */
+.am-tray[data-cols="cadence"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* The deep-dive report tables: two across so their columns have room, one when narrow. */
+.am-tray[data-cols="tables"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container (max-width: 860px) {
+  .am-tray[data-cols="cadence"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* One column from 940px down; the full-width toggle has nothing to do there. */
+@container (max-width: 940px) {
+  .am-tray[data-cols="tables"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .am-wide-btn {
+    display: none;
+  }
+}
+@container (max-width: 460px) {
+  .am-tray[data-cols="cadence"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .am-h {
-  margin: 20px 4px 0;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
+}
+.am-h-text {
+  display: inline;
+  margin: 0;
+  font: inherit;
+}
+.am-hrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 20px 4px 0;
 }
 .am-account {
   width: 240px;
@@ -99,9 +136,13 @@
   white-space: nowrap;
 }
 .am-table td {
+  position: relative;
   padding: 8px 10px 8px 0;
   vertical-align: top;
   border-top: 1px solid var(--line);
+}
+.am-table tr[data-current] td {
+  background: var(--tint-1);
 }
 .am-table tbody tr:first-child td {
   border-top: 0;
@@ -112,9 +153,6 @@
 }
 .am-table .am-wide {
   min-width: 220px;
-}
-.am-table tr[data-current] td {
-  background: var(--tint-1);
 }
 .am-sort {
   all: unset;
@@ -230,6 +268,23 @@
 .am-task .btn {
   margin-top: 6px;
 }
+/* When a task last ran (from this app), and a status dot with words while its chat is running. */
+.am-run {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--iron);
+  font-variant-numeric: tabular-nums;
+}
+.am-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--navy);
+  font-weight: 600;
+}
+.card > .am-run {
+  padding: 0 8px;
+}
 .am-verdict[data-stale] {
   color: var(--amber-text);
 }
@@ -305,4 +360,97 @@
 }
 .am-score .field {
   width: 120px;
+}
+
+/* Deep-dive cards: grip, title and meta line, badge, full-width toggle. ------------------------------ */
+.am-th {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 4px 8px 2px;
+}
+.am-th-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.am-th h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 28px;
+}
+.am-th-badge {
+  margin-top: 4px;
+}
+.am-th .icon-btn {
+  flex: none;
+}
+.am-deep[data-wide="true"],
+.am-drop[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+.am-deep[data-dragging="true"] {
+  display: none;
+}
+/* Where the card in the air would land. */
+.am-drop {
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: var(--tint-1);
+  border: 1.5px dashed var(--line-strong);
+}
+/* The grip and the full-width toggle show on the card under the pointer or the keyboard (always on touch);
+   a full-width card keeps its toggle lit. */
+@media (hover: hover) {
+  .am-deep .am-grip,
+  .am-deep .am-wide-btn[aria-pressed="false"] {
+    opacity: 0;
+  }
+  .am-deep:is(:hover, :focus-within) .am-grip,
+  .am-deep:is(:hover, :focus-within) .am-wide-btn {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .am-deep .am-grip,
+  .am-deep .am-wide-btn {
+    transition: opacity 0.12s;
+  }
+}
+.am-grip {
+  cursor: grab;
+}
+.am-deep[draggable="true"] {
+  cursor: grabbing;
+}
+
+/* The report table: figures, flags, the Spend bar, "Show all", a first column that stays put. */
+.am-val {
+  position: relative;
+}
+.am-val[data-zero="true"] {
+  color: var(--iron);
+}
+/* Low ROAS and Quality Score: red and bold, and the words ", low" for those who can't see colour. */
+.am-val[data-low="true"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+.am-bar {
+  position: absolute;
+  top: 3px;
+  right: 10px;
+  bottom: 3px;
+  max-width: calc(100% - 10px);
+  border-radius: 4px;
+  background: var(--wash);
+}
+.am-more {
+  padding: 4px 8px 4px;
+}
+.am-deep .am-table th:first-child,
+.am-deep .am-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
 }

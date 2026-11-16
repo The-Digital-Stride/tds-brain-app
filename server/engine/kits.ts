@@ -666,7 +666,7 @@ export function createKitTracker(deps: KitTrackerDeps): KitTracker {
     onTypedSkill: safe((key, name) => {
       const s = get(key);
       const skill = cleanSkill(name);
-      if (!s || s.kind !== 'tds' || !skill) return;
+      if (s?.kind !== 'tds' || !skill) return;
       // Only a name the session lists as a real skill counts: `/compact` or a file name never does.
       if (s.initSkills) {
         if (s.initSkills.has(skill)) addCapped(s.skills, skill, USE_MAX.skills);

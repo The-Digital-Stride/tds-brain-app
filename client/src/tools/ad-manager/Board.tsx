@@ -2,21 +2,14 @@ import { useState } from 'react';
 import type { AdsBoard } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
-import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, loadBoard, useAd } from './store.ts';
-import {
-  type HealthFile,
-  readHealth,
-  readSetupPrompts,
-  readStandup,
-  readTables,
-  type Table,
-} from './types.ts';
-import { actionLabel, adsErrorText, ageDays, fmt, sortRows } from './words.ts';
+import { lastRunText, runKey, runStatus, taskRuns, useTaskRuns } from './task-runs.ts';
+import { type HealthFile, readHealth, readSetupPrompts, readStandup } from './types.ts';
+import { actionLabel, adsErrorText, ageDays } from './words.ts';
 
 const CADENCES = [
   ['daily', 'Daily'],
@@ -26,6 +19,90 @@ const CADENCES = [
   ['quarterly', 'Quarterly'],
 ] as const;
 const KIND_WORDS = { report: 'Report', insight: 'Insight', action: 'Action' } as const;
+/** The Daily standup's id in the run record (task card ids are words, so this can't clash). */
+const STANDUP_TASK = 'standup:daily';
+
+/** A task's run on this account: its live status and when it last ran (from this app), or null. */
+function useTaskRun(client: string, task: string) {
+  const runs = useTaskRuns();
+  const { sessions } = useStore();
+  const run = runs[runKey(client, task)];
+  return { run, status: runStatus(run, sessions?.live) };
+}
+
+/**
+ * When a task last ran, with a status dot and words while its chat is live ("Running · started Today, 21:46",
+ * "Needs your answer · …", "Last run 3 Nov, 14:00"); nothing until it has run. The status is spoken from a
+ * hidden region that is always in the page (one added already holding text is often not announced).
+ */
+function RunLine({ client, task, title }: { client: string; task: string; title: string }) {
+  const { run, status } = useTaskRun(client, task);
+  const words = status === 'running' ? 'Running' : status === 'waiting' ? 'Needs your answer' : null;
+  return (
+    <>
+      <span role="status" className="visually-hidden">
+        {words ? `${title}: ${words}` : ''}
+      </span>
+      {run ? (
+        <p className="am-run">
+          {words ? (
+            <span className="am-run-state" aria-hidden="true">
+              <span className="dot" data-attention={status === 'running' ? 'working' : 'asking'} />
+              {words}
+            </span>
+          ) : null}
+          {words ? <span aria-hidden="true"> · </span> : null}
+          <time dateTime={run.at}>
+            {words ? 'started' : 'Last run'} {lastRunText(run.at)}
+          </time>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** Run, or "Open chat" while the last run's chat is still going (so a task isn't started twice by accident). */
+function RunButton({
+  client,
+  task,
+  title,
+  primary,
+  starting,
+  disabled,
+  onRun,
+}: {
+  client: string;
+  task: string;
+  title: string;
+  primary?: boolean;
+  starting: boolean;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  const { openChat } = useStore();
+  const { run, status } = useTaskRun(client, task);
+  if (status && run?.chat) {
+    const chat = run.chat;
+    return (
+      <button type="button" className="btn" data-size="small" onClick={() => openChat(chat)}>
+        Open chat<span className="visually-hidden">: {title}</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="btn"
+      data-variant={primary ? 'primary' : undefined}
+      data-size="small"
+      aria-disabled={disabled || undefined}
+      onClick={onRun}
+    >
+      {starting ? 'Starting…' : 'Run'}
+      <span className="visually-hidden">: {title}</span>
+    </button>
+  );
+}
 
 function fileNote(f: HealthFile): string {
   if (f.status === 'ok') return f.latest ? `through ${f.latest}` : 'ok';
@@ -174,10 +251,12 @@ export function Cadence({
     setStarting(id);
     const chat = await startChat(prompt, board.key, { open: true });
     setStarting(null);
-    if (chat) onStarted(`Started a chat: ${title}, ${name}.`);
+    if (!chat) return;
+    taskRuns.record(board.key, id, chat);
+    onStarted(`Started a chat: ${title}, ${name}.`);
   };
   return (
-    <div className="tray am-tray" data-cols="5">
+    <div className="tray am-tray" data-cols="cadence">
       {CADENCES.map(([key, label]) => {
         const cards = board.cards.filter((c) => c.cadence === key);
         return (
@@ -199,16 +278,15 @@ export function Cadence({
                   </p>
                   <p className="am-camp">{c.title}</p>
                   <p className="am-sub">{c.description}</p>
-                  <button
-                    type="button"
-                    className="btn"
-                    data-size="small"
-                    aria-label={`Run: ${c.title}`}
-                    aria-disabled={starting !== null || undefined}
-                    onClick={() => void run(c.id, c.title, c.prompt)}
-                  >
-                    {starting === c.id ? 'Starting…' : 'Run'}
-                  </button>
+                  <RunLine client={board.key} task={c.id} title={c.title} />
+                  <RunButton
+                    client={board.key}
+                    task={c.id}
+                    title={c.title}
+                    starting={starting === c.id}
+                    disabled={starting !== null}
+                    onRun={() => void run(c.id, c.title, c.prompt)}
+                  />
                 </li>
               ))}
             </ul>
@@ -269,7 +347,9 @@ export function Standup({
     setStarting(true);
     const chat = await startChat(s.prompt, board.key, { open: true });
     setStarting(false);
-    if (chat) onStarted(`Started a chat: Daily standup, ${name}.`);
+    if (!chat) return;
+    taskRuns.record(board.key, STANDUP_TASK, chat);
+    onStarted(`Started a chat: Daily standup, ${name}.`);
   };
   const triage = v
     ? v.flagged > 0
@@ -297,6 +377,9 @@ export function Standup({
             {stale ? ', stale: run it again' : ''}
             {v.flagged > 0 && v.topCampaign ? <span className="am-block">{v.topCampaign}</span> : null}
           </p>
+        ) : null}
+        {s.hasStandup && s.prompt ? (
+          <RunLine client={board.key} task={STANDUP_TASK} title="Daily standup" />
         ) : null}
         {ask ? (
           <Confirm
@@ -326,17 +409,15 @@ export function Standup({
             ) : (
               <>
                 {s.prompt ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    data-variant="primary"
-                    data-size="small"
-                    aria-disabled={starting || undefined}
-                    onClick={() => void run()}
-                  >
-                    {starting ? 'Starting…' : 'Run'}
-                    <span className="visually-hidden">: Daily standup</span>
-                  </button>
+                  <RunButton
+                    client={board.key}
+                    task={STANDUP_TASK}
+                    title="Daily standup"
+                    primary
+                    starting={starting}
+                    disabled={starting}
+                    onRun={() => void run()}
+                  />
                 ) : null}
                 {v && canAct ? (
                   <button
@@ -389,100 +470,5 @@ export function Standup({
         </div>
       </section>
     </div>
-  );
-}
-
-function DeepTable({ t, currency }: { t: Table; currency: string }) {
-  const [sort, setSort] = useState<{ idx: number; dir: 'asc' | 'desc' }>({
-    idx: t.defaultSort ?? 0,
-    dir: 'desc',
-  });
-  const rows = sortRows(t.rows, sort.idx, sort.dir);
-  const choose = (idx: number) =>
-    setSort((s) =>
-      s.idx === idx
-        ? { idx, dir: s.dir === 'asc' ? 'desc' : 'asc' }
-        : { idx, dir: t.cols[idx]?.type === 'text' ? 'asc' : 'desc' },
-    );
-  return (
-    <section className="card" aria-labelledby={`am-t-${t.id}`}>
-      <div className="card-head">
-        <h3 id={`am-t-${t.id}`}>{t.title}</h3>
-        {t.tone === 'warn' ? (
-          <span className="badge" data-tone="waiting">
-            Worth a look
-          </span>
-        ) : null}
-      </div>
-      {t.subtitle ? <p className="card-note">{t.subtitle}</p> : null}
-      <div className="am-scroll">
-        <table className="am-table">
-          <thead>
-            <tr>
-              {t.cols.map((c, i) => (
-                <th
-                  key={c.label}
-                  scope="col"
-                  data-num={c.type === 'text' ? undefined : 'true'}
-                  aria-sort={sort.idx === i ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-                >
-                  <button type="button" className="am-sort" onClick={() => choose(i)}>
-                    {c.label}
-                    {sort.idx === i ? (
-                      <span className="am-sort-icon" data-dir={sort.dir === 'asc' ? 'up' : 'down'}>
-                        <Icon name="chevron" size={14} />
-                      </span>
-                    ) : null}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, n) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id of their own
-              <tr key={n}>
-                {r.map((v, i) => (
-                  <td key={`${t.cols[i]?.label}`} data-num={t.cols[i]?.type === 'text' ? undefined : 'true'}>
-                    {fmt(v, t.cols[i]?.type ?? 'text', currency)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/** "Ads account deep dive": up to six sortable tables. */
-export function DeepDive({ board, currency }: { board: AdsBoard; currency: string }) {
-  const tables = readTables(board);
-  if (tables.length === 0)
-    return (
-      <div className="tray am-tray" data-cols="1">
-        <section className="card" aria-labelledby="am-deep">
-          <div className="card-head">
-            <h2 id="am-deep">Ads account deep dive</h2>
-          </div>
-          <p className="card-note">
-            No account data yet. Once the data files arrive, the top campaigns, search terms, wasted spend,
-            keywords, products and Quality Score tables appear here.
-          </p>
-        </section>
-      </div>
-    );
-  return (
-    <>
-      <h2 className="am-h">
-        Ads account deep dive <span className="am-dim">{tables.length} tables, press a column to sort</span>
-      </h2>
-      <div className="tray am-tray" data-cols="2">
-        {tables.map((t) => (
-          <DeepTable key={t.id} t={t} currency={currency} />
-        ))}
-      </div>
-    </>
   );
 }

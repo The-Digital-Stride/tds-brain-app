@@ -1077,7 +1077,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const entries = heldEntries.current;
     const entry = entries.get(todoId);
     // Only while the time is still running: once a change is on its way, Undo can't stop it.
-    if (!entry || entry.state !== 'waiting') return;
+    if (entry?.state !== 'waiting') return;
     if (entry.timer) clearTimeout(entry.timer);
     entries.delete(todoId);
     setHeldTodos((list) => list.filter((h) => h.todoId !== todoId));

@@ -139,7 +139,6 @@ export function ChatsDrawer() {
   // `next` is the row after it in the list as shown (or before it, at the end), recorded when Delete is pressed.
   const refocus = useRef<{ id: string; next: string | null; afterReload?: boolean } | null>(null);
   const seen = useRef(sessions);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after the question closes or the list reloads.
   useEffect(() => {
     const want = refocus.current;
     if (!want || confirmId) return;
@@ -170,7 +169,6 @@ export function ChatsDrawer() {
     void toggleFavouriteChat(id);
   };
 
-  const { dispatch, modes } = useShell();
   const [tab, setTab] = useState<ChatsTab>('open');
   const [kind, setKind] = useState<ChatKindFilter>('all');
   if (!sessions) return <p className="dock-empty">Loading your chats.</p>;

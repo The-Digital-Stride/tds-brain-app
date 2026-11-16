@@ -293,6 +293,60 @@ describe('editing one block changes only that block', () => {
     expect(toMarkdown(retextBlock(doc, 1, 'uno'))).toBe('Intro.\n\n- uno\n- two\n\nOutro.');
   });
 
+  it('keeps a bare web address bare when its paragraph is edited', () => {
+    for (const url of ['https://example.com/page', 'http://example.com/a_b?x=1', 'www.example.com/page']) {
+      const md = `See ${url} for more.`;
+      const doc = asEditorJson(toDoc(md));
+      const p = top(doc)[0] as JSONContent;
+      const last = p.content?.[p.content.length - 1] as JSONContent;
+      last.text = `${last.text?.slice(0, -1)}!`;
+      expect(toMarkdown(doc)).toBe(`See ${url} for more!`);
+    }
+  });
+
+  it('keeps the link written out when a bare address would swallow the words after it', () => {
+    const doc: JSONContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            textNode('https://example.com/a', [{ type: 'link', attrs: { href: 'https://example.com/a' } }]),
+            textNode('bc next'),
+          ],
+        },
+      ],
+    };
+    const out = toMarkdown(asEditorJson(doc));
+    expect(out).toBe('[https://example.com/a](https://example.com/a)bc next');
+  });
+
+  it('writes a www. link out when the brain would not link it bare (straight after punctuation)', () => {
+    const doc = asEditorJson(toDoc('Site: www.example.com today.'));
+    const p = top(doc)[0] as JSONContent;
+    const firstText = p.content?.[0] as JSONContent;
+    firstText.text = 'Site:';
+    expect(toMarkdown(doc)).toBe('Site:[www.example.com](http://www.example.com) today.');
+  });
+
+  it('keeps a bare email address bare when its paragraph is edited', () => {
+    const doc = asEditorJson(toDoc('Email sam@example.com today.'));
+    const p = top(doc)[0] as JSONContent;
+    const last = p.content?.[p.content.length - 1] as JSONContent;
+    last.text = `${last.text?.slice(0, -1)}!`;
+    expect(toMarkdown(doc)).toBe('Email sam@example.com today!');
+  });
+
+  it('still writes a link whose words differ from its address, or an address in angle brackets', () => {
+    const doc = asEditorJson(toDoc('A [page](https://example.com/page) and <https://example.com/b>.'));
+    const p = top(doc)[0] as JSONContent;
+    const last = p.content?.[p.content.length - 1] as JSONContent;
+    last.text = `${last.text?.slice(0, -1)}!`;
+    expect(toMarkdown(doc)).toMatch(
+      /^A \[page\]\(https:\/\/example\.com\/page\) and .*https:\/\/example\.com\/b.*!$/,
+    );
+  });
+
   it('adding bold to a word changes only that block', () => {
     const md = '# H\n\nPlain words here.\n\nLast.';
     const doc = asEditorJson(toDoc(md));

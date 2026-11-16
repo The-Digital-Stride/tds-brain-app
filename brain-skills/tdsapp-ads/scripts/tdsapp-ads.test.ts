@@ -82,6 +82,7 @@ if (mode === 'ok' && argv.includes('--confirmed')) {
   P.stamp({ clientDir: path.join(ROOT, 'clients', arg('client')), id: arg('id') }, { status: 'applied', applied_at: new Date().toISOString(), outcome: 'stub applied' });
 }
 if (mode === 'live-crash' && argv.includes('--confirmed')) { console.error('live write failed (exit 1)'); process.exit(4); }
+if (mode === 'odd-4' && argv.includes('--confirmed')) { console.error('something new went wrong'); process.exit(4); }
 if (mode === 'dry-fail') { console.error('dry run failed (exit 1); see proposals/dry-runs/x.md'); process.exit(4); }
 process.exit(mode === 'refuse' ? 2 : mode === 'mismatch' || mode === 'mismatch-stamped' ? 3 : mode === 'crash' ? 1 : 0);
 `;
@@ -830,6 +831,9 @@ describe('dry run and apply (decision 12)', () => {
     refused(r, 'unknown-outcome');
     expect(r.reply.output).toContain('live write failed');
     // The dry run inside apply failed: nothing was sent, so the plain message stands.
+    // Fails closed: a 4 whose wording it doesn't recognise also keeps Apply locked.
+    put('apply-mode', 'odd-4');
+    refused(bridge('apply', { client: 'acme', id: a, confirmed: true }), 'unknown-outcome');
     put('apply-mode', 'dry-fail');
     const d = bridge('apply', { client: 'acme', id: a, confirmed: true });
     expect(d.reply).toMatchObject({ ok: true, failed: true });

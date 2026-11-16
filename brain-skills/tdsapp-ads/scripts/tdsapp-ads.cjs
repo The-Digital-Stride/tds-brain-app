@@ -544,8 +544,9 @@ function apply(input, ctx) {
   // keeps Apply locked until someone has checked the account: a second press must never write twice.
   const stillApplicable = proposal.fm.status === 'approved' && !proposal.fm.applied_at;
   // Exit 4 is "nothing changed" only if the live write never started: apply.cjs also maps a live gads-write that
-  // crashed after writing (before its stamp) to 4. Once the output shows the live step, the outcome is unknown.
-  if (r.code === 4 && stillApplicable && /\blive write\b|gads-write --confirmed/i.test(r.output)) {
+  // crashed after writing (before its stamp) to 4. Fails closed: unless the output says the dry run failed (so the
+  // live step never ran), a 4 on a proposal that could be applied again is an unknown outcome.
+  if (r.code === 4 && stillApplicable && !/dry run failed/i.test(r.output)) {
     const err = refuse('unknown-outcome', 'the live write failed part-way, and the proposal could be applied again');
     err.output = r.output;
     throw err;

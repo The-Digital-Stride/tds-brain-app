@@ -2,22 +2,14 @@ import { useState } from 'react';
 import type { AdsBoard } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
-import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, loadBoard, useAd } from './store.ts';
 import { lastRunText, runKey, runStatus, taskRuns, useTaskRuns } from './task-runs.ts';
-import {
-  type HealthFile,
-  readHealth,
-  readSetupPrompts,
-  readStandup,
-  readTables,
-  type Table,
-} from './types.ts';
-import { actionLabel, adsErrorText, ageDays, fmt, sortRows } from './words.ts';
+import { type HealthFile, readHealth, readSetupPrompts, readStandup } from './types.ts';
+import { actionLabel, adsErrorText, ageDays } from './words.ts';
 
 const CADENCES = [
   ['daily', 'Daily'],
@@ -474,100 +466,5 @@ export function Standup({
         </div>
       </section>
     </div>
-  );
-}
-
-function DeepTable({ t, currency }: { t: Table; currency: string }) {
-  const [sort, setSort] = useState<{ idx: number; dir: 'asc' | 'desc' }>({
-    idx: t.defaultSort ?? 0,
-    dir: 'desc',
-  });
-  const rows = sortRows(t.rows, sort.idx, sort.dir);
-  const choose = (idx: number) =>
-    setSort((s) =>
-      s.idx === idx
-        ? { idx, dir: s.dir === 'asc' ? 'desc' : 'asc' }
-        : { idx, dir: t.cols[idx]?.type === 'text' ? 'asc' : 'desc' },
-    );
-  return (
-    <section className="card" aria-labelledby={`am-t-${t.id}`}>
-      <div className="card-head">
-        <h3 id={`am-t-${t.id}`}>{t.title}</h3>
-        {t.tone === 'warn' ? (
-          <span className="badge" data-tone="waiting">
-            Worth a look
-          </span>
-        ) : null}
-      </div>
-      {t.subtitle ? <p className="card-note">{t.subtitle}</p> : null}
-      <div className="am-scroll">
-        <table className="am-table">
-          <thead>
-            <tr>
-              {t.cols.map((c, i) => (
-                <th
-                  key={c.label}
-                  scope="col"
-                  data-num={c.type === 'text' ? undefined : 'true'}
-                  aria-sort={sort.idx === i ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-                >
-                  <button type="button" className="am-sort" onClick={() => choose(i)}>
-                    {c.label}
-                    {sort.idx === i ? (
-                      <span className="am-sort-icon" data-dir={sort.dir === 'asc' ? 'up' : 'down'}>
-                        <Icon name="chevron" size={14} />
-                      </span>
-                    ) : null}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, n) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id of their own
-              <tr key={n}>
-                {r.map((v, i) => (
-                  <td key={`${t.cols[i]?.label}`} data-num={t.cols[i]?.type === 'text' ? undefined : 'true'}>
-                    {fmt(v, t.cols[i]?.type ?? 'text', currency)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/** "Ads account deep dive": up to six sortable tables. */
-export function DeepDive({ board, currency }: { board: AdsBoard; currency: string }) {
-  const tables = readTables(board);
-  if (tables.length === 0)
-    return (
-      <div className="tray am-tray" data-cols="1">
-        <section className="card" aria-labelledby="am-deep">
-          <div className="card-head">
-            <h2 id="am-deep">Ads account deep dive</h2>
-          </div>
-          <p className="card-note">
-            No account data yet. Once the data files arrive, the top campaigns, search terms, wasted spend,
-            keywords, products and Quality Score tables appear here.
-          </p>
-        </section>
-      </div>
-    );
-  return (
-    <>
-      <h2 className="am-h">
-        Ads account deep dive <span className="am-dim">{tables.length} tables, press a column to sort</span>
-      </h2>
-      <div className="tray am-tray" data-cols="tables">
-        {tables.map((t) => (
-          <DeepTable key={t.id} t={t} currency={currency} />
-        ))}
-      </div>
-    </>
   );
 }

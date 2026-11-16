@@ -572,3 +572,96 @@ describe('board', () => {
     );
   });
 });
+
+describe('deep dive tables', () => {
+  const KEY = 'tds.adManager.tableLayout.v1';
+  const table = (id: string, title: string, n: number) => ({
+    id,
+    title,
+    subtitle: `${title} subtitle`,
+    cols: [
+      { key: 'name', label: 'Name', type: 'text' as const },
+      { key: 'spend', label: 'Spend', type: 'money' as const },
+    ],
+    rows: Array.from({ length: n }, (_, i) => [`${title} row ${i + 1}`, 10 + i]),
+    defaultSort: 1,
+  });
+  const withTables = () =>
+    api.adsBoard.mockImplementation(async (k: string) => ({
+      ...board(k),
+      tables: [table('a', 'Alpha', 8), table('b', 'Beta', 3), table('c', 'Gamma', 3)],
+    }));
+  const handles = () =>
+    screen.getAllByRole('button', { name: /^Move / }).map((b) => b.getAttribute('aria-label'));
+  const saved = () => JSON.parse(localStorage.getItem(KEY) ?? '{}');
+
+  beforeEach(() => {
+    localStorage.clear();
+    withTables();
+  });
+  afterEach(() => localStorage.clear());
+
+  it('shows five rows, then Show all and Show fewer', async () => {
+    await ready();
+    const alpha = screen.getByRole('region', { name: 'Alpha' });
+    expect(within(alpha).getAllByRole('row')).toHaveLength(6);
+    const more = within(alpha).getByRole('button', { name: 'Show all 8' });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(more);
+    expect(within(alpha).getAllByRole('row')).toHaveLength(9);
+    expect(within(alpha).getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(
+      within(screen.getByRole('region', { name: 'Beta' })).queryByRole('button', { name: /Show/ }),
+    ).toBeNull();
+  });
+
+  it('moves a table with the keyboard, announces it and saves the order', async () => {
+    await ready();
+    expect(handles()).toEqual(['Move Alpha, 1 of 3', 'Move Beta, 2 of 3', 'Move Gamma, 3 of 3']);
+    const grip = screen.getByRole('button', { name: 'Move Alpha, 1 of 3' });
+    grip.focus();
+    fireEvent.keyDown(grip, { key: 'ArrowRight' });
+    expect(handles()).toEqual(['Move Beta, 1 of 3', 'Move Alpha, 2 of 3', 'Move Gamma, 3 of 3']);
+    expect(screen.getByText('Moved to 2 of 3').getAttribute('role')).toBe('status');
+    expect(saved()).toEqual({ order: ['b', 'a', 'c'], wide: [] });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Alpha, 2 of 3' })),
+    );
+    fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
+    expect(saved().order).toEqual(['b', 'c', 'a']);
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Home' });
+    expect(saved().order).toEqual(['a', 'b', 'c']);
+  });
+
+  it('starts in the saved order', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ order: ['c', 'a'], wide: [] }));
+    await ready();
+    expect(handles()).toEqual(['Move Gamma, 1 of 3', 'Move Alpha, 2 of 3', 'Move Beta, 3 of 3']);
+  });
+
+  it('toggles full width and saves it', async () => {
+    await ready();
+    const wide = screen.getByRole('button', { name: 'Full width: Beta' });
+    expect(wide.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(wide);
+    expect(wide.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('region', { name: 'Beta' }).getAttribute('data-wide')).toBe('true');
+    expect(saved().wide).toEqual(['b']);
+    fireEvent.click(wide);
+    expect(saved().wide).toEqual([]);
+  });
+
+  it('offers Reset layout only once the layout differs, and puts it back', async () => {
+    await ready();
+    expect(screen.queryByRole('button', { name: 'Reset layout' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Full width: Beta' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Gamma, 3 of 3' }), { key: 'Home' });
+    expect(handles()[0]).toBe('Move Gamma, 1 of 3');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset layout' }));
+    expect(handles()).toEqual(['Move Alpha, 1 of 3', 'Move Beta, 2 of 3', 'Move Gamma, 3 of 3']);
+    expect(saved()).toEqual({ order: [], wide: [] });
+    expect(screen.queryByRole('button', { name: 'Reset layout' })).toBeNull();
+  });
+});

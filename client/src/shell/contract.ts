@@ -272,6 +272,10 @@ export type IconName =
   | 'bullets'
   | 'numbers'
   | 'bold'
+  /** Six dots: the handle that drags something to a new place. */
+  | 'grip'
+  /** Arrows apart: make something span the full width. */
+  | 'wide'
   /** A toolbox: the Workbench section. */
   | 'workbench'
   /** A rising line: Ad Manager. */

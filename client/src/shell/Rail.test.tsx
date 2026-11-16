@@ -82,3 +82,17 @@ describe('Rail Help item', () => {
     expect(screen.getByRole('button', { name: 'Help' })).toBeTruthy();
   });
 });
+
+describe('Rail Workbench item', () => {
+  it('is the current item while one of its tools is open', () => {
+    setStore([]);
+    store.current.ads = { visible: true, me: null, sameIdentity: true, waiting: 0, clients: [] };
+    store.current.view = 'tool:workbench/ad-manager';
+    render(<Rail />);
+    expect(screen.getByRole('button', { name: /Workbench/ }).getAttribute('aria-current')).toBe('page');
+    cleanup();
+    store.current.view = 'chat';
+    render(<Rail />);
+    expect(screen.getByRole('button', { name: /Workbench/ }).getAttribute('aria-current')).toBeNull();
+  });
+});

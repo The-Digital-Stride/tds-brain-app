@@ -52,4 +52,6 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'glossary',
   'signing-in',
   'personal-todos',
+  'workbench',
+  'ad-manager',
 ];

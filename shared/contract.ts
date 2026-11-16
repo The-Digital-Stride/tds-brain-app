@@ -990,7 +990,26 @@ export interface AppPrefs {
    * "major.minor.patch", or null (none). Optional because an older server sends none, which reads as null.
    */
   whatsNewSeen?: string | null;
+  /**
+   * Sections (plan 2026-11-16-workbench-ad-manager, decision 5): section id → the tool last opened in it. Ids match
+   * SECTION_ID_PATTERN; at most SECTIONS_MAX entries. Optional because an older server sends none, which reads as {}.
+   */
+  lastTool?: Record<string, string>;
+  /** Ad Manager's last account key (decision 21), at most ADS_PREF_KEY_MAX characters, or null. Older servers send none. */
+  adsAccount?: string | null;
+  /**
+   * Ad Manager folds the person changed (decision 21): `<client>:<open|recent>` → open. At most ADS_FOLDS_MAX entries;
+   * keys at most ADS_PREF_KEY_MAX characters. Older servers send none, which reads as {} (the defaults: open shown,
+   * recent shut).
+   */
+  adsFolds?: Record<string, boolean>;
 }
+
+/** Section and tool ids in prefs: lowercase letters, digits and hyphens. */
+export const SECTION_ID_PATTERN = /^[a-z0-9-]{1,40}$/;
+export const SECTIONS_MAX = 20;
+export const ADS_PREF_KEY_MAX = 120;
+export const ADS_FOLDS_MAX = 400;
 
 /** "major.minor.patch", as app versions and What's new notes are named. */
 export const VERSION_PATTERN = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
@@ -1474,7 +1493,13 @@ export type AppEvent =
   | { type: 'hello'; serverStartedAt: string }
   | { type: 'brain-changed'; area: BrainArea }
   /** A chat was created, closed or changed state. Re-fetch `GET /api/sessions`. */
-  | { type: 'sessions-changed' };
+  | { type: 'sessions-changed' }
+  /**
+   * Ads files changed (plan 2026-11-16-workbench-ad-manager, decision 19): proposals, monthly reports, board CSVs,
+   * fetch status or standup under `clients/`. Re-fetch the ads summary and whatever Ad Manager shows. A separate type,
+   * not a BrainArea, because an older tab treats an unknown area as a full bootstrap reload.
+   */
+  | { type: 'ads-changed' };
 
 /**
  * A tab holds ONE Server-Sent Events connection (browsers allow about six per site, across tabs).

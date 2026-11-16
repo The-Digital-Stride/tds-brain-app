@@ -9,6 +9,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
 import './styles/drawers.css';
+import './styles/sections.css';
 import './styles/home.css';
 import './styles/palette.css';
 import './styles/search-select.css';

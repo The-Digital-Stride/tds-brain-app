@@ -1,0 +1,255 @@
+<title>Cortex Workbench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one calm reading column, three figures that each show one idea, Cortex's navy and blue. */
+:root {
+  --bg: #f6f8fc;
+  --sheet: #ffffff;
+  --ink: #021b43;
+  --soft: #4b5872;
+  --line: #d7deea;
+  --tint: #e8eef9;
+  --blue: #1f5fd6;
+  --amber: #b45309;
+  --amber-bg: #fff4e0;
+  --green: #11795a;
+  --head: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1426; --sheet: #121e36; --ink: #e6ecf7; --soft: #a7b3c9; --line: #2a3a5a;
+    --tint: #1b2a48; --blue: #7aa7ff; --amber: #f5b454; --amber-bg: #2d2412; --green: #5fd3a8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1426; --sheet: #121e36; --ink: #e6ecf7; --soft: #a7b3c9; --line: #2a3a5a;
+  --tint: #1b2a48; --blue: #7aa7ff; --amber: #f5b454; --amber-bg: #2d2412; --green: #5fd3a8;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--body); }
+main {
+  max-width: 760px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+  display: flex; flex-direction: column; gap: 40px;
+}
+h1, h2 { font-family: var(--head); text-wrap: balance; margin: 0; }
+h1 { font-size: 32px; line-height: 1.15; }
+h2 { font-size: 22px; line-height: 1.25; }
+p { margin: 0; max-width: 65ch; }
+.lead { font-size: 18px; color: var(--soft); }
+section { display: flex; flex-direction: column; gap: 14px; }
+figure { margin: 0; background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+figure svg { width: 100%; height: auto; display: block; color: var(--ink); }
+.wide { overflow-x: auto; }
+.wide svg { min-width: 560px; }
+figcaption { font-size: 14px; color: var(--soft); }
+.bar { display: flex; gap: 8px; align-items: center; }
+button.play { font: 600 13px var(--body); color: var(--ink); background: var(--tint); border: 0; border-radius: 9px; padding: 6px 12px; cursor: pointer; }
+button.play:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.box { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.box h3 { font: 600 15px var(--head); margin: 0 0 6px; }
+.box ul { margin: 0; padding-left: 18px; font-size: 15px; }
+.box li + li { margin-top: 4px; }
+.note { background: var(--amber-bg); border-radius: 14px; padding: 14px 16px; font-size: 15px; }
+.steps { margin: 0; padding-left: 22px; }
+.steps li + li { margin-top: 6px; }
+code { font-size: 0.9em; background: var(--tint); border-radius: 5px; padding: 1px 5px; }
+
+/* SVG parts, coloured by tokens so both themes read. */
+.s-box { fill: var(--sheet); stroke: var(--line); stroke-width: 1.5; }
+.s-tint { fill: var(--tint); stroke: none; }
+.s-hot { fill: var(--tint); stroke: var(--blue); stroke-width: 2; }
+.s-warn { fill: var(--amber-bg); stroke: var(--amber); stroke-width: 1.5; }
+.s-ok { fill: var(--sheet); stroke: var(--green); stroke-width: 2; }
+.s-t { fill: currentColor; font: 13px var(--body); }
+.s-tb { fill: currentColor; font: 600 13px var(--body); }
+.s-ts { fill: var(--soft); font: 11.5px var(--body); }
+.s-blue { fill: var(--blue); }
+.s-line { stroke: currentColor; stroke-width: 1.5; fill: none; }
+.s-bl { stroke: var(--blue); stroke-width: 2; fill: none; }
+.s-dash { stroke: var(--soft); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+
+/* Animation: each figure plays once on load; Replay restarts it. Every step ends visible. */
+.go .a1 { animation: pop .5s ease-out both; }
+.go .a2 { animation: pop .5s ease-out .6s both; }
+.go .a3 { animation: pop .5s ease-out 1.2s both; }
+.go .a4 { animation: pop .5s ease-out 1.8s both; }
+.go .a5 { animation: pop .5s ease-out 2.4s both; }
+.go .a6 { animation: pop .5s ease-out 3s both; }
+.go .slide { animation: slide .6s ease-out .6s both; }
+@keyframes pop { from { opacity: .15; } to { opacity: 1; } }
+@keyframes slide { from { transform: translateX(-24px); opacity: .15; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .go * { animation: none !important; } }
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <h1>Cortex Workbench</h1>
+    <p class="lead">Cortex is getting a new menu item called Workbench. It holds tools. The first tool is the Ad Manager, the same Ads tab the brain's Workbench page has today, rebuilt inside Cortex.</p>
+  </header>
+
+  <section aria-labelledby="h-menu">
+    <h2 id="h-menu">1. How you get to a tool</h2>
+    <p>Workbench works like Help. Click it on the left and a drawer slides out with a list of tools, each with an icon and a name. Click a tool and it fills the big main area, and the drawer tucks itself away.</p>
+    <figure class="go" id="f1">
+      <div class="wide">
+      <svg viewBox="0 0 640 250" role="img" aria-label="Clicking Workbench on the left bar opens a drawer listing tools; clicking Ad Manager opens it on the main area.">
+        <defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <!-- rail -->
+        <rect class="s-box" x="10" y="10" width="110" height="230" rx="12"/>
+        <text class="s-ts" x="24" y="34">Left bar</text>
+        <text class="s-t" x="24" y="62">Home</text>
+        <text class="s-t" x="24" y="88">Chats</text>
+        <text class="s-t" x="24" y="114">To-dos</text>
+        <text class="s-t" x="24" y="140">Skills</text>
+        <g class="a1"><rect class="s-hot" x="16" y="152" width="98" height="28" rx="8"/><text class="s-tb" x="24" y="171">Workbench</text><circle class="s-blue" cx="102" cy="166" r="8"/><text x="102" y="170" text-anchor="middle" style="fill:var(--sheet);font:600 11px var(--body)">3</text></g>
+        <text class="s-t" x="24" y="206">Images</text>
+        <text class="s-t" x="24" y="230">Documents</text>
+        <!-- drawer -->
+        <g class="slide">
+          <rect class="s-box" x="140" y="10" width="190" height="230" rx="12"/>
+          <text class="s-tb" x="156" y="36">Workbench</text>
+          <g class="a3"><rect class="s-hot" x="150" y="52" width="170" height="52" rx="8"/></g>
+          <rect class="s-tint" x="160" y="62" width="20" height="20" rx="5"/>
+          <polyline class="s-bl" points="163,78 168,70 172,74 178,65"/>
+          <text class="s-tb" x="190" y="74">Ad Manager</text>
+          <text class="s-ts" x="190" y="92">Proposals, board, reports</text>
+          <rect class="s-tint" x="160" y="120" width="20" height="20" rx="5"/>
+          <text class="s-ts" x="190" y="135">Later: more tools here</text>
+          <text class="s-ts" x="156" y="226">Same pattern for Processes</text>
+        </g>
+        <!-- arrow to sheet -->
+        <g class="a4"><line class="s-line" x1="322" y1="78" x2="358" y2="78" marker-end="url(#ar1)"/><text class="s-ts" x="326" y="70">opens</text></g>
+        <!-- sheet -->
+        <g class="a4">
+          <rect class="s-box" x="362" y="10" width="268" height="230" rx="12"/>
+          <text class="s-tb" x="378" y="36">Ad Manager</text>
+          <rect class="s-tint" x="520" y="22" width="96" height="22" rx="6"/><text class="s-ts" x="530" y="37">Account ▾</text>
+          <rect class="s-tint" x="378" y="56" width="236" height="50" rx="8"/>
+          <text class="s-t" x="390" y="78">Waiting for a decision</text>
+          <text class="s-ts" x="390" y="96">3 proposals</text>
+          <rect class="s-tint" x="378" y="116" width="236" height="110" rx="8"/>
+          <text class="s-t" x="390" y="138">The ads board</text>
+          <rect class="s-box" x="390" y="150" width="40" height="64" rx="5"/>
+          <rect class="s-box" x="436" y="150" width="40" height="64" rx="5"/>
+          <rect class="s-box" x="482" y="150" width="40" height="64" rx="5"/>
+          <rect class="s-box" x="528" y="150" width="40" height="64" rx="5"/>
+          <rect class="s-box" x="574" y="150" width="30" height="64" rx="5"/>
+        </g>
+      </svg>
+      </div>
+      <figcaption>The blue dot on Workbench counts proposals waiting for you. The tool opens on the main area, where the Ad Manager has room for its tables.</figcaption>
+      <div class="bar"><button class="play" type="button" data-fig="f1">Replay</button></div>
+    </figure>
+  </section>
+
+  <section aria-labelledby="h-path">
+    <h2 id="h-path">2. What happens when you press a button</h2>
+    <p>Cortex never changes brain files by itself. When you press Approve or Apply now, Cortex asks a small helper skill called <code>tdsapp-ads</code>. The helper asks the brain's own ads code, the same code the Workbench page uses. So both always follow the same rules, and Cortex works even when the Workbench page isn't running.</p>
+    <figure class="go" id="f2">
+      <div class="wide">
+      <svg viewBox="0 0 680 280" role="img" aria-label="A button press goes from the Ad Manager screen to the Cortex server, to the tdsapp-ads helper, to the brain's ads-manager code, which changes the proposal file or Google Ads. The Workbench page reads the same files.">
+        <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g class="a1"><rect class="s-hot" x="10" y="40" width="130" height="64" rx="10"/><text class="s-tb" x="75" y="68" text-anchor="middle">Ad Manager</text><text class="s-ts" x="75" y="86" text-anchor="middle">what you see</text></g>
+        <g class="a2"><line class="s-line" x1="140" y1="72" x2="182" y2="72" marker-end="url(#ar2)"/><text class="s-ts" x="161" y="62" text-anchor="middle">press</text>
+          <rect class="s-box" x="186" y="40" width="130" height="64" rx="10"/><text class="s-tb" x="251" y="68" text-anchor="middle">Cortex</text><text class="s-ts" x="251" y="86" text-anchor="middle">checks the request</text></g>
+        <g class="a3"><line class="s-line" x1="316" y1="72" x2="358" y2="72" marker-end="url(#ar2)"/><text class="s-ts" x="337" y="62" text-anchor="middle">asks</text>
+          <rect class="s-box" x="362" y="40" width="140" height="64" rx="10"/><text class="s-tb" x="432" y="68" text-anchor="middle">tdsapp-ads</text><text class="s-ts" x="432" y="86" text-anchor="middle">helper: who are you?</text></g>
+        <g class="a4"><line class="s-line" x1="502" y1="72" x2="540" y2="72" marker-end="url(#ar2)"/><text class="s-ts" x="521" y="62" text-anchor="middle">runs</text>
+          <rect class="s-box" x="544" y="40" width="126" height="64" rx="10"/><text class="s-tb" x="607" y="68" text-anchor="middle">ads-manager</text><text class="s-ts" x="607" y="86" text-anchor="middle">brain's own rules</text></g>
+        <g class="a5">
+          <line class="s-line" x1="580" y1="104" x2="520" y2="176" marker-end="url(#ar2)"/><text class="s-ts" x="520" y="140" text-anchor="end">writes</text>
+          <line class="s-line" x1="640" y1="104" x2="640" y2="176" marker-end="url(#ar2)"/><text class="s-ts" x="646" y="146">live change</text>
+          <rect class="s-tint" x="390" y="180" width="190" height="56" rx="10"/><text class="s-tb" x="485" y="204" text-anchor="middle">Brain files</text><text class="s-ts" x="485" y="222" text-anchor="middle">proposals, reports</text>
+          <rect class="s-warn" x="592" y="180" width="80" height="56" rx="10"/><text class="s-tb" x="632" y="204" text-anchor="middle">Google</text><text class="s-tb" x="632" y="220" text-anchor="middle">Ads</text>
+        </g>
+        <g class="a6">
+          <rect class="s-box" x="10" y="180" width="200" height="56" rx="10"/><text class="s-tb" x="110" y="204" text-anchor="middle">Workbench page</text><text class="s-ts" x="110" y="222" text-anchor="middle">still works, side by side</text>
+          <line class="s-dash" x1="210" y1="208" x2="386" y2="208" marker-end="url(#ar2)"/><text class="s-ts" x="298" y="200" text-anchor="middle">reads the same files</text>
+        </g>
+        <text class="s-ts" x="10" y="268">Cortex itself never writes to the brain. Only the brain's own code does.</text>
+      </svg>
+      </div>
+      <figcaption>The helper also checks that the person at this Mac is allowed: the client's reviewer, its owner or an owner. Hiding a button is never the only lock.</figcaption>
+      <div class="bar"><button class="play" type="button" data-fig="f2">Replay</button></div>
+    </figure>
+  </section>
+
+  <section aria-labelledby="h-apply">
+    <h2 id="h-apply">3. Apply now can never happen twice by accident</h2>
+    <p>Apply now changes a real ad account, so it gets extra care. Cortex writes down that an apply has started before it begins, and never stops one halfway. If it takes too long, or Cortex restarts, it says it doesn't know the result and keeps the button off until you've checked the account.</p>
+    <figure class="go" id="f3">
+      <div class="wide">
+      <svg viewBox="0 0 680 210" role="img" aria-label="Apply now: Cortex notes the apply has started, runs it without stopping it, then either shows Done or says it doesn't know the result and waits for you to check the account before the button comes back.">
+        <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g class="a1"><rect class="s-hot" x="10" y="70" width="110" height="56" rx="10"/><text class="s-tb" x="65" y="96" text-anchor="middle">You press</text><text class="s-ts" x="65" y="113" text-anchor="middle">Apply now</text></g>
+        <g class="a2"><line class="s-line" x1="120" y1="98" x2="156" y2="98" marker-end="url(#ar3)"/>
+          <rect class="s-box" x="160" y="70" width="140" height="56" rx="10"/><text class="s-tb" x="230" y="96" text-anchor="middle">Note it down</text><text class="s-ts" x="230" y="113" text-anchor="middle">"apply started"</text></g>
+        <g class="a3"><line class="s-line" x1="300" y1="98" x2="336" y2="98" marker-end="url(#ar3)"/>
+          <rect class="s-box" x="340" y="70" width="140" height="56" rx="10"/><text class="s-tb" x="410" y="96" text-anchor="middle">Runs to the end</text><text class="s-ts" x="410" y="113" text-anchor="middle">never stopped halfway</text></g>
+        <g class="a4"><line class="s-line" x1="480" y1="88" x2="532" y2="48" marker-end="url(#ar3)"/><text class="s-ts" x="498" y="58" text-anchor="end">finished</text>
+          <rect class="s-ok" x="536" y="18" width="134" height="52" rx="10"/><text class="s-tb" x="603" y="42" text-anchor="middle">Done</text><text class="s-ts" x="603" y="58" text-anchor="middle">note removed</text></g>
+        <g class="a5"><line class="s-line" x1="480" y1="108" x2="532" y2="148" marker-end="url(#ar3)"/><text class="s-ts" x="498" y="146" text-anchor="end">too slow, or restart</text>
+          <rect class="s-warn" x="536" y="126" width="134" height="62" rx="10"/><text class="s-tb" x="603" y="148" text-anchor="middle">"We don't know"</text><text class="s-ts" x="603" y="165" text-anchor="middle">Apply stays off until</text><text class="s-ts" x="603" y="179" text-anchor="middle">you check the account</text></g>
+      </svg>
+      </div>
+      <figcaption>Nothing presses Apply again for you, ever. Two Macs pressing Apply at the very same moment is the one risk left, and the Workbench page has it today too.</figcaption>
+      <div class="bar"><button class="play" type="button" data-fig="f3">Replay</button></div>
+    </figure>
+  </section>
+
+  <section aria-labelledby="h-same">
+    <h2 id="h-same">What stays the same, and what's different</h2>
+    <div class="cols">
+      <div class="box">
+        <h3>The same as the Ads tab</h3>
+        <ul>
+          <li>The Account picker, with "(3 waiting)" beside accounts that need you.</li>
+          <li>Proposals waiting for a decision, and recent decisions.</li>
+          <li>Approve, Request changes, Reject, Dry run, Apply now, client emails and Sign off the report.</li>
+          <li>The board: data health, the 16 Run cards, the daily standup and the deep-dive tables.</li>
+          <li>Who may decide: the client's reviewer, its owner or an owner.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Different, to fit Cortex</h3>
+        <ul>
+          <li>Run starts a Cortex chat instead of a Terminal window.</li>
+          <li>A proposal's details open in the right-hand panel.</li>
+          <li>"Are you sure?" questions appear in the page, not as pop-ups.</li>
+          <li>Reports and PDFs open in Cortex's file viewer.</li>
+          <li>Recent decisions says "last 14 days", which is what it really shows.</li>
+          <li>Home gets an "Ads approvals" card.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-next">
+    <h2 id="h-next">How it gets to the team</h2>
+    <ol class="steps">
+      <li>Build it in a separate copy of Cortex, with checks and reviews.</li>
+      <li>Ian says yes to copying the <code>tdsapp-ads</code> helper into the brain. Until then nobody sees anything new.</li>
+      <li>Ian and Pete try it: a dry run on a real account, then one harmless Apply now they pick.</li>
+      <li>Only owners and scouts see it at first. Pete releases the helper to everyone when he's happy.</li>
+    </ol>
+    <p class="note">Only Macs that can reach Google Ads see the Ad Manager, just like the Ads tab today. The Workbench page keeps working the whole time.</p>
+  </section>
+</main>
+
+<script>
+document.querySelectorAll('button.play').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var f = document.getElementById(b.getAttribute('data-fig'));
+    if (!f) return;
+    f.classList.remove('go');
+    void f.offsetWidth;
+    f.classList.add('go');
+  });
+});
+</script>

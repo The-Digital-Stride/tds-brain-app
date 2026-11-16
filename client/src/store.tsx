@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { AdsSummary } from '../../shared/ads-contract.ts';
 import type {
   AppPrefs,
   Bootstrap,
@@ -35,12 +36,14 @@ import { FILES_CHANGE_MESSAGES, filesDeletedNotice } from '../../shared/files-co
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
+import { toolView } from './shell/sections.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
 import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
 import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
+import { loadAdsSummary } from './tools/ad-manager/summary.ts';
 
 export interface ChangeTodosResult {
   done: number;
@@ -109,7 +112,7 @@ export interface HeldTodo {
   sending?: boolean;
 }
 
-export type View = 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`;
+export type View = 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}` | `tool:${string}/${string}`;
 export type Gate = 'loading' | 'ready' | 'not-signed-in' | 'unreachable';
 
 export interface NewChat {
@@ -165,6 +168,19 @@ export interface Store {
   startSkill: (skill: SkillInfo) => void;
   openChat: (sessionId: string) => void;
   openPast: (sdkSessionId: string) => Promise<void>;
+  /** Opens a section's tool on the sheet and records it as the section's last tool. `arg` is read once via `toolArg`. */
+  openTool: (sectionId: string, toolId: string, arg?: string) => void;
+  toolArg: string | null;
+  clearToolArg: () => void;
+  /**
+   * Starts a NEW chat with `prompt` for `client`, directly (as `openPast` does), never through `send`, which posts
+   * into the active chat. `open: false` leaves the person where they are. Resolves to the session id, or null with
+   * `actionError` set.
+   */
+  startChat: (prompt: string, client: string | null, opts: { open: boolean }) => Promise<string | null>;
+  /** The ads summary: loaded after boot and on `ads-changed`; null until then or when the server has none. */
+  ads: AdsSummary | null;
+  reloadAds: () => Promise<void>;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
   /** Asks Claude, in `sessionId`, to change a page or brand it. Returns null when sent, else the plain reason it wasn't. */
@@ -314,6 +330,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [todosState, setTodosState] = useState<ListState>('loading');
   const [chatsState, setChatsState] = useState<ListState>('loading');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [ads, setAds] = useState<AdsSummary | null>(null);
+  const [toolArg, setToolArg] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
   const [settingsFocus, setSettingsFocus] = useState(false);
@@ -401,6 +419,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadAll();
   }, [loadAll]);
 
+  // The ads summary: once the app knows who this is, and again on `ads-changed`. A failed reload keeps what we had,
+  // and a server with no ads routes leaves it null.
+  const appSlug = boot?.identity.slug ?? null;
+  const reloadAds = useCallback(async () => {
+    if (!appSlug) return;
+    try {
+      setAds(await loadAdsSummary(appSlug));
+    } catch {
+      // Keep the last summary.
+    }
+  }, [appSlug]);
+  const reloadAdsRef = useRef(reloadAds);
+  reloadAdsRef.current = reloadAds;
+  useEffect(() => {
+    void reloadAds();
+  }, [reloadAds]);
+
   // Remember the open chat for this tab, so a reload returns to it.
   useEffect(() => {
     if (!restored.current) return;
@@ -470,6 +505,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           else void loadBootstrap();
         } else if (ev.type === 'sessions-changed') {
           void loadSessions();
+        } else if (ev.type === 'ads-changed') {
+          void reloadAdsRef.current();
         }
       };
       const fail = () => {
@@ -689,6 +726,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions, openChat],
   );
 
+  const startChat = useCallback(
+    async (prompt: string, client: string | null, opts: { open: boolean }) => {
+      try {
+        const { session } = await api.startSession({ prompt, client });
+        void loadSessions();
+        if (opts.open) openChat(session.id);
+        return session.id;
+      } catch (err) {
+        setActionError(messageOf(err));
+        return null;
+      }
+    },
+    [loadSessions, openChat],
+  );
+
   const send = useCallback(
     async (text: string, client: string | null, attachments: string[] = []) => {
       const body = text.trim();
@@ -760,6 +812,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [loadTodos, keepStars],
   );
+
+  // Opening a tool remembers it for its section. A failed save is quiet: it only costs the memory.
+  const openTool = useCallback(
+    (sectionId: string, toolId: string, arg?: string) => {
+      setToolArg(arg ?? null);
+      setView(toolView(sectionId, toolId));
+      const last = boot?.prefs.lastTool ?? {};
+      if (last[sectionId] === toolId) return;
+      void api
+        .updatePrefs({ lastTool: { ...last, [sectionId]: toolId } })
+        .then((prefs) => setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b)))
+        .catch(() => {});
+    },
+    [boot, keepStars],
+  );
+  const clearToolArg = useCallback(() => setToolArg(null), []);
 
   const setSkillLevel = useCallback(async (skill: string, tier: LevelTier | null) => {
     try {
@@ -1185,6 +1253,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startSkill,
       openChat,
       openPast,
+      openTool,
+      toolArg,
+      clearToolArg,
+      startChat,
+      ads,
+      reloadAds,
       send,
       askPage,
       updatePrefs,
@@ -1250,6 +1324,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startSkill,
       openChat,
       openPast,
+      openTool,
+      toolArg,
+      clearToolArg,
+      startChat,
+      ads,
+      reloadAds,
       send,
       askPage,
       updatePrefs,

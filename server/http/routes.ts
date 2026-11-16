@@ -7,6 +7,22 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
 import {
+  ADS_ACCOUNT_KEY,
+  ADS_CLIENT_SLUG,
+  ADS_ERROR_MESSAGES,
+  ADS_ERROR_STATUS,
+  ADS_FILE_PATTERN,
+  ADS_PROPOSAL_ID,
+  ADS_ROUTES,
+  ADS_SKILL,
+  type AdsCapabilities,
+  type AdsChangeAction,
+  type AdsErrorCode,
+  type AdsRequests,
+} from '../../shared/ads-contract.ts';
+import {
+  ADS_FOLDS_MAX,
+  ADS_PREF_KEY_MAX,
   type ApiError,
   type ApiErrorCode,
   type AppPrefs,
@@ -39,6 +55,8 @@ import {
   type PermissionReply,
   type QuestionReply,
   ROUTES,
+  SECTION_ID_PATTERN,
+  SECTIONS_MAX,
   SESSION_UUID_PATTERN,
   type StartSessionRequest,
   type SyncStatus,
@@ -77,6 +95,7 @@ import {
   type Updater,
   type UpdateStatus,
 } from '../../shared/update-contract.ts';
+import { AdsError, type AdsInflightEntry, type AdsService } from '../brain/ads-skill.ts';
 import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
@@ -119,7 +138,8 @@ import {
 import { type AppEventHub, openStream } from './stream.ts';
 
 export interface RouteContext {
-  brain: BrainReaders;
+  /** `ads`: Ad Manager's bridge (the real brain always has one; older test fakes don't). Read per request. */
+  brain: BrainReaders & { ads?: AdsService };
   store: AppStore;
   sessions: SessionManager;
   hub: AppEventHub;
@@ -415,6 +435,43 @@ export async function validatePrefsPatch(
           throw bad("That What's new setting was not understood.");
         }
         patch.whatsNewSeen = value as string | null;
+        break;
+      }
+      // Workbench and Ad Manager (plan 2026-11-16-workbench-ad-manager, decision 21).
+      case 'lastTool': {
+        const entries = isRec(value) ? Object.entries(value) : null;
+        if (
+          entries === null ||
+          entries.length > SECTIONS_MAX ||
+          !entries.every(
+            ([k, v]) => SECTION_ID_PATTERN.test(k) && typeof v === 'string' && SECTION_ID_PATTERN.test(v),
+          )
+        ) {
+          throw bad('The last tool in each section was not understood.');
+        }
+        patch.lastTool = Object.fromEntries(entries as [string, string][]);
+        break;
+      }
+      case 'adsAccount': {
+        if (
+          value !== null &&
+          !(typeof value === 'string' && value.length <= ADS_PREF_KEY_MAX && ADS_ACCOUNT_KEY.test(value))
+        ) {
+          throw bad('That ads account was not understood.');
+        }
+        patch.adsAccount = value as string | null;
+        break;
+      }
+      case 'adsFolds': {
+        const entries = isRec(value) ? Object.entries(value) : null;
+        if (
+          entries === null ||
+          entries.length > ADS_FOLDS_MAX ||
+          !entries.every(([k, v]) => k !== '' && k.length <= ADS_PREF_KEY_MAX && typeof v === 'boolean')
+        ) {
+          throw bad('The open and shut lists in Ad Manager were not understood.');
+        }
+        patch.adsFolds = Object.fromEntries(entries as [string, boolean][]);
         break;
       }
       default:
@@ -1407,9 +1464,217 @@ async function updateRoute(
   }
 }
 
+// ── Ad Manager (plan 2026-11-16-workbench-ad-manager, decisions 10-12 and 18) ─────────────────────
+
+const ADS_PREFIX = '/api/ads/';
+const ADS_CHANGE_PREFIX = '/api/ads/do/';
+
+/** The fields each change takes; anything else in the body (an actor, say) is never passed on (decision 10). */
+const ADS_CHANGE_FIELDS: { [A in AdsChangeAction]: readonly (keyof AdsRequests[A] & string)[] } = {
+  decide: ['client', 'id', 'action', 'note'],
+  'dry-run': ['client', 'id'],
+  apply: ['client', 'id', 'confirmed'],
+  'client-draft': ['client', 'id', 'again'],
+  'client-approved': ['client', 'id', 'who', 'note'],
+  decided: ['client', 'id', 'note'],
+  'sign-monthly': ['client', 'month', 'note'],
+  'standup-setup': ['account'],
+  'standup-feedback': ['account', 'date', 'campaign', 'action_category', 'score', 'note'],
+};
+const isAdsChange = (a: string): a is AdsChangeAction => Object.hasOwn(ADS_CHANGE_FIELDS, a);
+
+const NO_ADS: AdsCapabilities = { features: [], version: '', adsAccess: false, adsManager: false, me: null };
+
+/** Ads errors carry the ads code itself in `error.code` (ADS_ERROR_STATUS), with the app's own words. */
+function sendAdsError(res: ServerResponse, code: AdsErrorCode, output?: string): void {
+  // The run's output only for an unknown outcome: the person needs it to check the account (decision 12).
+  const extra = code === 'unknown-outcome' && output ? { output } : {};
+  sendJson(res, ADS_ERROR_STATUS[code], { error: { code, message: ADS_ERROR_MESSAGES[code], ...extra } });
+}
+
+/** The bridge, when this person may use it: the skill allowed for them (restricted: not-allowed) and present. */
+async function adsFor(ctx: RouteContext, identity: Identity): Promise<AdsService> {
+  const access = await ctx.brain.skillAccess(identity, ADS_SKILL.skill);
+  if (access === 'restricted') throw new AdsError('not-allowed');
+  const ads = ctx.brain.ads;
+  if (access !== 'allowed' || !ads) throw new AdsError('unavailable');
+  return ads;
+}
+
+function adsParam(url: URL, name: string, pattern: RegExp): string {
+  const v = url.searchParams.get(name);
+  if (v === null || v.length > 120 || !pattern.test(v)) throw new AdsError('bad-request');
+  return v;
+}
+
+/** Apply stays off, and the panel says so, while an apply of this proposal has no known outcome (decision 12). */
+function markInflight<T>(p: T, client: string, held: AdsInflightEntry[]): T {
+  if (!isRec(p) || typeof p.id !== 'string' || !isRec(p.flags)) return p;
+  if (!held.some((e) => e.client === client && e.id === p.id)) return p;
+  return { ...p, flags: { ...p.flags, canApply: false, inflight: true } };
+}
+function markApprovals(reply: Record<string, unknown>, held: AdsInflightEntry[]): Record<string, unknown> {
+  if (held.length === 0 || !Array.isArray(reply.clients)) return reply;
+  return {
+    ...reply,
+    clients: reply.clients.map((c: unknown) => {
+      if (!isRec(c) || typeof c.slug !== 'string') return c;
+      const slug = c.slug;
+      const mark = (list: unknown) =>
+        Array.isArray(list) ? list.map((p) => markInflight(p, slug, held)) : list;
+      return { ...c, open: mark(c.open), recent: mark(c.recent) };
+    }),
+  };
+}
+
+async function adsRead(url: URL, ctx: RouteContext, ads: AdsService, path: string): Promise<unknown> {
+  switch (path) {
+    case ADS_ROUTES.accounts: {
+      // Search reads this on every keystroke: a Mac that can't reach Google Ads (Ad Manager hidden) gets nothing.
+      const caps = await ads.capabilities();
+      if (!caps?.adsAccess) throw new AdsError('no-access');
+      return (await ads.read('accounts', {})).accounts;
+    }
+    case ADS_ROUTES.approvals: {
+      const input = url.searchParams.has('client')
+        ? { client: adsParam(url, 'client', ADS_CLIENT_SLUG) }
+        : {};
+      return markApprovals(await ads.read('approvals', input), await ads.inflight());
+    }
+    case ADS_ROUTES.proposal: {
+      const client = adsParam(url, 'client', ADS_CLIENT_SLUG);
+      const id = adsParam(url, 'id', ADS_PROPOSAL_ID);
+      const reply = await ads.read('proposal', { client, id });
+      return markInflight(reply.proposal, client, await ads.inflight());
+    }
+    case ADS_ROUTES.board:
+      return (await ads.read('board', { account: adsParam(url, 'account', ADS_ACCOUNT_KEY) })).board;
+    case ADS_ROUTES.standupBrief:
+      return (await ads.read('standup-brief', { account: adsParam(url, 'account', ADS_ACCOUNT_KEY) })).brief;
+    case ADS_ROUTES.file: {
+      // Decision 18: only reports and proposals, never `..` or `.`, and only what the library lists.
+      const p = url.searchParams.get('p') ?? '';
+      if (
+        p.length > 1000 ||
+        !ADS_FILE_PATTERN.test(p) ||
+        p.split('/').some((seg) => seg === '..' || seg === '.')
+      ) {
+        throw new AdsError('bad-request');
+      }
+      const found = ctx.brain.libraryItemForPath ? await ctx.brain.libraryItemForPath(p) : null;
+      if (!found?.item) throw new AdsError('not-found');
+      return found.item;
+    }
+    default:
+      throw new HttpError(404, 'not-found', 'There is nothing at that address.');
+  }
+}
+
+/** The bridge's person must be the app's person before anything changes (decision 10). */
+async function adsChanger(ads: AdsService, identity: Identity): Promise<void> {
+  const caps = await ads.capabilities();
+  if (!caps) throw new AdsError('unavailable');
+  if (!caps.me || caps.me.slug !== identity.slug) throw new AdsError('not-allowed');
+}
+
+async function adsChange(
+  req: IncomingMessage,
+  ads: AdsService,
+  identity: Identity,
+  action: AdsChangeAction,
+): Promise<unknown> {
+  const body = await readJson(req);
+  if (!isRec(body)) throw new AdsError('bad-request');
+  await adsChanger(ads, identity);
+  const input: Record<string, unknown> = {};
+  for (const key of ADS_CHANGE_FIELDS[action] as readonly string[]) {
+    if (body[key] !== undefined) input[key] = body[key];
+  }
+  const reply = await ads.change(action, input);
+  if (isRec(reply.proposal) && typeof input.client === 'string') {
+    return { ...reply, proposal: markInflight(reply.proposal, input.client, await ads.inflight()) };
+  }
+  return reply;
+}
+
+/** Handles `/api/ads/*`. Returns false for any other path. */
+async function routeAds(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  ctx: RouteContext,
+): Promise<boolean> {
+  const path = url.pathname;
+  if (!path.startsWith(ADS_PREFIX)) return false;
+  const method = (req.method ?? 'GET').toUpperCase();
+  try {
+    const identity = await ctx.brain.identity();
+    if (path === ADS_ROUTES.capabilities) {
+      if (method !== 'GET') throw methodNotAllowed();
+      let caps: AdsCapabilities | null = null;
+      try {
+        caps = await (await adsFor(ctx, identity)).capabilities();
+      } catch (err) {
+        if (!(err instanceof AdsError)) throw err;
+      }
+      sendJson(res, 200, caps ?? NO_ADS);
+      return true;
+    }
+    if (path.startsWith(ADS_CHANGE_PREFIX)) {
+      const action = path.slice(ADS_CHANGE_PREFIX.length);
+      if (!isAdsChange(action)) throw new HttpError(404, 'not-found', 'There is nothing at that address.');
+      if (method !== 'POST') throw methodNotAllowed();
+      const ads = await adsFor(ctx, identity);
+      sendJson(res, 200, await adsChange(req, ads, identity, action));
+      return true;
+    }
+    if (path === ADS_ROUTES.clearInflight) {
+      if (method !== 'POST') throw methodNotAllowed();
+      const ads = await adsFor(ctx, identity);
+      const body = await readJson(req);
+      if (
+        !isRec(body) ||
+        typeof body.client !== 'string' ||
+        !ADS_CLIENT_SLUG.test(body.client) ||
+        typeof body.id !== 'string' ||
+        !ADS_PROPOSAL_ID.test(body.id)
+      ) {
+        throw new AdsError('bad-request');
+      }
+      await adsChanger(ads, identity);
+      await ads.clearInflight(body.client, body.id);
+      sendJson(res, 200, { ok: true });
+      return true;
+    }
+    if (
+      ![
+        ADS_ROUTES.accounts,
+        ADS_ROUTES.approvals,
+        ADS_ROUTES.proposal,
+        ADS_ROUTES.board,
+        ADS_ROUTES.standupBrief,
+        ADS_ROUTES.file,
+      ].includes(path as never)
+    ) {
+      throw new HttpError(404, 'not-found', 'There is nothing at that address.');
+    }
+    if (method !== 'GET') throw methodNotAllowed();
+    const ads = await adsFor(ctx, identity);
+    sendJson(res, 200, await adsRead(url, ctx, ads, path));
+    return true;
+  } catch (err) {
+    if (!(err instanceof AdsError)) throw err;
+    if (err.code === 'internal' || err.code === 'unknown-outcome') ctx.log(`Ad Manager: ${err.code}.`);
+    sendAdsError(res, err.code, err.output);
+    return true;
+  }
+}
+
 async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: RouteContext): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
   const path = url.pathname;
+
+  if (await routeAds(req, res, url, ctx)) return;
 
   if (path === '/api/bootstrap') {
     if (method !== 'GET') throw methodNotAllowed();

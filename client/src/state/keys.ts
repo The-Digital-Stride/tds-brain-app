@@ -6,7 +6,10 @@ import type { DrawerName, KeyAction } from '../shell/contract.ts';
 
 const LETTER_DRAWERS: Record<string, DrawerName> = { t: 'todos', c: 'chats', s: 'skills' };
 
-export const keyAction: KeyAction = (e, { typing, state, panelFloating = false, helpVisible = false }) => {
+export const keyAction: KeyAction = (
+  e,
+  { typing, state, panelFloating = false, helpVisible = false, sectionKeys },
+) => {
   const key = e.key.toLowerCase();
 
   // The file viewer sits over everything and the desk behind it is inert: only Esc, to close it.
@@ -50,6 +53,8 @@ export const keyAction: KeyAction = (e, { typing, state, panelFloating = false, 
     return { type: 'todo-step', dir: key === 'p' ? -1 : 1 };
   }
   if (key === 'h') return helpVisible ? { type: 'toggle-drawer', drawer: 'help' } : null;
+  const section = sectionKeys?.[key];
+  if (section) return { type: 'toggle-section', section };
   const drawer = LETTER_DRAWERS[key];
   return drawer ? { type: 'toggle-drawer', drawer } : null;
 };

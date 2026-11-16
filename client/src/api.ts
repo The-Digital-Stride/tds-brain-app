@@ -1,3 +1,15 @@
+import {
+  ADS_ERROR_MESSAGES,
+  ADS_ROUTES,
+  type AdsAccount,
+  type AdsApprovals,
+  type AdsBoard,
+  type AdsCapabilities,
+  type AdsChangeAction,
+  type AdsChangeReply,
+  type AdsRequests,
+  type ProposalFull,
+} from '../../shared/ads-contract.ts';
 import type { ChatContextDetail } from '../../shared/context-contract.ts';
 import type {
   ApiError,
@@ -15,6 +27,7 @@ import type {
   ClientPickReported,
   CompleteTodoRequest,
   EngineChoices,
+  LibraryItem,
   LibraryItemsResponse,
   LibraryKind,
   LibraryListing,
@@ -60,11 +73,14 @@ import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../..
 export class ApiFailure extends Error {
   readonly code: ApiErrorCode | 'network';
   readonly status: number;
-  constructor(code: ApiErrorCode | 'network', message: string, status: number) {
+  /** The run's output, sent only with an ads `unknown-outcome` so the person can check the account. */
+  readonly output?: string;
+  constructor(code: ApiErrorCode | 'network', message: string, status: number, output?: string) {
     super(message);
     this.name = 'ApiFailure';
     this.code = code;
     this.status = status;
+    if (output) this.output = output;
   }
   /** A 401 means the page was not opened from the launcher. */
   get notSignedIn(): boolean {
@@ -109,12 +125,15 @@ async function request<T>(
   if (!res.ok) {
     let code: ApiErrorCode = res.status === 401 ? 'unauthorised' : 'internal';
     let message = 'Something went wrong. Please try again.';
+    let output: string | undefined;
     try {
       const data = (await res.json()) as Partial<ApiError> | { error?: unknown; code?: unknown };
       if (data.error && typeof data.error === 'object') {
         const nested = data.error as ApiError['error'];
         code = nested.code;
         message = nested.message;
+        const out = (nested as { output?: unknown }).output;
+        if (typeof out === 'string' && out) output = out;
       } else if (typeof data.error === 'string') {
         // A flat `{ error, code }` body (the library delete's contract wording) reads the same way.
         message = data.error;
@@ -125,14 +144,41 @@ async function request<T>(
     } catch {
       // The reply was not JSON; keep the plain defaults.
     }
-    throw new ApiFailure(code, message, res.status);
+    throw new ApiFailure(code, message, res.status, output);
   }
   // A 204 (the library delete) has no body to read.
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
+const adsQuery = (params: Record<string, string>) => `?${new URLSearchParams(params).toString()}`;
+
 export const api = {
+  // Ad Manager (plan 2026-11-16-workbench-ad-manager). Apply is never retried; a network failure on it is an
+  // unknown outcome, not a plain "could not reach", because the request may have got through.
+  adsCapabilities: () => request<AdsCapabilities>('GET', ADS_ROUTES.capabilities),
+  adsAccounts: () => request<AdsAccount[]>('GET', ADS_ROUTES.accounts),
+  adsApprovals: (client?: string) =>
+    request<AdsApprovals>('GET', `${ADS_ROUTES.approvals}${client ? adsQuery({ client }) : ''}`),
+  adsProposal: (client: string, id: string) =>
+    request<ProposalFull>('GET', `${ADS_ROUTES.proposal}${adsQuery({ client, id })}`),
+  adsBoard: (account: string) => request<AdsBoard>('GET', `${ADS_ROUTES.board}${adsQuery({ account })}`),
+  adsStandupBrief: (account: string) =>
+    request<unknown>('GET', `${ADS_ROUTES.standupBrief}${adsQuery({ account })}`),
+  /** The file as a library item, for the file viewer (`{ kind: 'file', item }`). */
+  adsFile: (path: string) => request<LibraryItem>('GET', `${ADS_ROUTES.file}${adsQuery({ p: path })}`),
+  adsChange: async <A extends AdsChangeAction>(action: A, body: AdsRequests[A]): Promise<AdsChangeReply> => {
+    try {
+      return await request<AdsChangeReply>('POST', ADS_ROUTES.change(action), body);
+    } catch (err) {
+      if (action === 'apply' && err instanceof ApiFailure && err.code === 'network') {
+        throw new ApiFailure('internal', ADS_ERROR_MESSAGES['unknown-outcome'], 0);
+      }
+      throw err;
+    }
+  },
+  adsClearInflight: (client: string, id: string) =>
+    request<OkResponse>('POST', ADS_ROUTES.clearInflight, { client, id }),
   bootstrap: () => request<Bootstrap>('GET', ROUTES.bootstrap),
   todos: () => request<TodoList>('GET', ROUTES.todos),
   /** To-dos passed on to others (its own request: it never blocks or fails `todos`). */

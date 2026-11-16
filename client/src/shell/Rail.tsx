@@ -11,6 +11,7 @@ import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
 import { SyncStamp } from './SyncStamp.tsx';
+import { sectionBadge, toolFor, visibleSections } from './sections.ts';
 import { chatsRailLabel, initials, ROLE_WORDS, todosRailLabel } from './words.ts';
 
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
@@ -19,6 +20,8 @@ export const DRAWER_LABELS: Record<DrawerName, string> = {
   todos: 'To-dos',
   skills: 'Skills',
   help: 'Help',
+  // The dock shows the section's own title (see App.tsx); this is only the fallback.
+  section: 'Workbench',
 };
 
 interface ItemProps {
@@ -30,7 +33,7 @@ interface ItemProps {
   onClick: () => void;
   current?: boolean;
   /** For drawer buttons: whether its drawer is open. */
-  drawer?: { name: DrawerName; open: boolean };
+  drawer?: { name: DrawerName; open: boolean; label?: string };
   pip?: Attention | null;
   /** Something new to the person: a plain blue dot, whatever the chats are doing. */
   fresh?: boolean;
@@ -62,7 +65,7 @@ function Item({
       aria-current={current ? 'page' : undefined}
       aria-expanded={drawer ? drawer.open : undefined}
       aria-controls={drawer ? DOCK_IDS.left : undefined}
-      data-dock-label={drawer ? DRAWER_LABELS[drawer.name] : undefined}
+      data-dock-label={drawer ? (drawer.label ?? DRAWER_LABELS[drawer.name]) : undefined}
       data-open={drawer?.open || undefined}
       aria-keyshortcuts={keys}
       onClick={(e) => {
@@ -94,7 +97,7 @@ function Mark() {
 
 /** Layer 1: one slim strip that gets you everywhere. */
 export function Rail({ inert = false }: { inert?: boolean }) {
-  const { boot, todos, sessions, view, activeChat, newChat, openView } = useStore();
+  const { boot, todos, sessions, view, activeChat, newChat, openView, ads } = useStore();
   const { state, dispatch } = useShell();
   const { railShowsNames: wide, width } = useDesk();
   if (!boot) return null;
@@ -104,6 +107,8 @@ export function Rail({ inert = false }: { inert?: boolean }) {
   const fresh = todos
     ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date()).length
     : 0;
+  const snap = { ads };
+  const sections = visibleSections(snap);
   const app = APPS.find((a) => view === `app:${a.id}`);
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);
   const drawer = (name: DrawerName) => ({ name, open: state.drawer === name });
@@ -166,6 +171,28 @@ export function Rail({ inert = false }: { inert?: boolean }) {
         keys={shortcut('s')}
         onClick={() => toggle('skills')}
       />
+
+      {sections.map((sec) => {
+        const n = sectionBadge(sec, snap);
+        return (
+          <Item
+            key={sec.id}
+            icon={sec.icon}
+            label={sec.title}
+            name={n > 0 ? sec.railName?.(n) : undefined}
+            wide={wide}
+            drawer={{
+              name: 'section',
+              open: state.drawer === 'section' && state.section === sec.id,
+              label: sec.title,
+            }}
+            count={n}
+            current={toolFor(view)?.section.id === sec.id}
+            keys={sec.key ? shortcut(sec.key) : undefined}
+            onClick={() => dispatch({ type: 'toggle-section', section: sec.id })}
+          />
+        );
+      })}
 
       {APPS.length > 0 ? (
         <div className="rail-group">

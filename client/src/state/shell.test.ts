@@ -135,6 +135,7 @@ describe('saveShell', () => {
       singleKeys: false,
       viewerWidth: null,
       helpReturn: null,
+      section: null,
       helpPage: null,
       helpOpened: 0,
     };
@@ -476,5 +477,40 @@ describe('the to-do panel in the shell', () => {
   it('is never saved', () => {
     expect(JSON.parse(saveShell(open()))).not.toHaveProperty('todoPanel');
     expect(loadShell(JSON.stringify({ todoPanel: { key: 'a.md' } })).todoPanel).toBeNull();
+  });
+});
+
+describe('section drawer', () => {
+  it('open-section opens the one fixed drawer and records which section', () => {
+    const s = shellReducer(base, { type: 'open-section', section: 'workbench' });
+    expect(s.drawer).toBe('section');
+    expect(s.section).toBe('workbench');
+  });
+
+  it('toggle-section opens, closes on the same section, and switches to another', () => {
+    const open = shellReducer(base, { type: 'toggle-section', section: 'workbench' });
+    expect(open.drawer).toBe('section');
+    expect(shellReducer(open, { type: 'toggle-section', section: 'workbench' }).drawer).toBeNull();
+    const other = shellReducer(open, { type: 'toggle-section', section: 'processes' });
+    expect(other.drawer).toBe('section');
+    expect(other.section).toBe('processes');
+  });
+
+  it('opens over another drawer and is replaced by one, like any drawer', () => {
+    const chats = shellReducer(base, { type: 'open-drawer', drawer: 'chats' });
+    expect(shellReducer(chats, { type: 'open-section', section: 'workbench' }).drawer).toBe('section');
+    const sect = shellReducer(base, { type: 'open-section', section: 'workbench' });
+    expect(shellReducer(sect, { type: 'toggle-drawer', drawer: 'todos' }).drawer).toBe('todos');
+    expect(shellReducer(sect, { type: 'close-drawer' }).drawer).toBeNull();
+  });
+
+  it('is never saved and never restored on reload', () => {
+    const open = shellReducer(base, { type: 'open-section', section: 'workbench' });
+    expect(JSON.parse(saveShell(open)).section).toBeUndefined();
+    const back = loadShell(
+      JSON.stringify({ ...JSON.parse(saveShell(open)), drawer: 'section', section: 'workbench' }),
+    );
+    expect(back.drawer).toBeNull();
+    expect(back.section).toBeNull();
   });
 });

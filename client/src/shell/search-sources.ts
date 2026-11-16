@@ -3,7 +3,7 @@
  * and 5). Contract: `SearchSource` and friends in `client/src/shell/contract.ts`.
  *
  * Built-ins first (Go to, To-dos, Open chats, Skills, Clients, Earlier chats), then each app's own
- * (`AppSlot.search`), with async sources last so a late answer never moves the highlight.
+ * (`AppSlot.search`) and each section tool's own (`ToolSlot.search`, which checks its own visibility from `ctx.ads`), with async sources last so a late answer never moves the highlight.
  */
 import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
@@ -19,6 +19,7 @@ import type {
   SearchResults,
   SearchSource,
 } from './contract.ts';
+import { SECTIONS } from './sections.ts';
 import { placeName, todoPlaces, whenWords } from './words.ts';
 
 /** Hits shown per group; the heading says "6 of N" when there are more. */
@@ -78,7 +79,10 @@ interface GoTo {
  * One entry per drawer: how "Go to" shows it and which source searches what is in it. A `Record`, so a
  * new `DrawerName` fails type-check until it says how it is searched.
  */
-const DRAWERS: Record<Exclude<DrawerName, 'help'>, { go: Omit<GoTo, 'run'>; source: SearchSource }> = {
+const DRAWERS: Record<
+  Exclude<DrawerName, 'help' | 'section'>,
+  { go: Omit<GoTo, 'run'>; source: SearchSource }
+> = {
   todos: {
     go: { id: 'go-todos', label: 'To-dos', hint: 'T', icon: 'todos' },
     source: {
@@ -204,7 +208,7 @@ const GUIDE_GO: Omit<GoTo, 'run'> = { id: 'go-guide', label: 'Cortex Guide', hin
 
 /** "Go to": Home, each drawer, Help (where it is on), Settings, then every app on the rail. Derived, never hard-coded per app. */
 function goToEntries(ctx?: SearchContext): GoTo[] {
-  const drawer = (name: Exclude<DrawerName, 'help'>): GoTo => ({
+  const drawer = (name: Exclude<DrawerName, 'help' | 'section'>): GoTo => ({
     ...DRAWERS[name].go,
     run: (a) => a.openDrawer(name),
   });
@@ -329,6 +333,7 @@ export function searchSources(): SearchSource[] {
     earlierChats,
     help,
     ...APPS.flatMap((a) => (a.search ? [a.search] : [])),
+    ...SECTIONS.flatMap((s) => s.tools.flatMap((t) => (t.search ? [t.search] : []))),
   ];
   return [...all.filter((s) => !s.searchAsync), ...all.filter((s) => s.searchAsync)];
 }

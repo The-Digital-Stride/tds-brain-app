@@ -140,7 +140,7 @@ export interface HelpLibrary {
  * with no active chat. `drawer` is the drawer Help replaced (if any).
  */
 export interface HelpContext {
-  view: 'home' | 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`;
+  view: 'home' | 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}` | `tool:${string}/${string}`;
   drawer: DrawerName | null;
   /** The active chat is waiting on an approval or a question → `approvals-and-questions`. */
   waiting: boolean;

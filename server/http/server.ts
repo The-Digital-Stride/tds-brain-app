@@ -15,6 +15,7 @@ import {
 } from '../../shared/contract.ts';
 import type { AppState, SetupService } from '../../shared/install-contract.ts';
 import type { Updater } from '../../shared/update-contract.ts';
+import type { AdsService } from '../brain/ads-skill.ts';
 import type { SkillLevelsService } from '../brain/skill-levels.ts';
 import type { SessionManager } from '../engine/session-manager.ts';
 import type { ClientPickTally } from '../store/client-pick-tally.ts';
@@ -240,7 +241,8 @@ export interface ServerDeps {
   updater?: Updater;
   /** True when running as the login service (`TDS_BRAIN_SERVICE=1`). */
   underService: boolean;
-  brain: BrainReaders;
+  /** `ads`: Ad Manager's bridge (plan 2026-11-16-workbench-ad-manager). Absent in setup mode and older fakes. */
+  brain: BrainReaders & { ads?: AdsService };
   store: AppStore;
   sessions: SessionManager;
   /** Team skill levels (plan 2026-11-14-skill-levels-and-helpers). Absent in setup mode. */
@@ -275,6 +277,8 @@ export function createAppServer(deps: ServerDeps): AppServer {
   const serverStartedAt = new Date().toISOString();
 
   const stopWatch = deps.brain.watch((area) => hub.publish({ type: 'brain-changed', area }));
+  // Ads files changed (the watcher, debounced) or an apply's outcome list did: the page reloads Ad Manager.
+  const stopAds = deps.brain.ads?.onChange(() => hub.publish({ type: 'ads-changed' })) ?? (() => {});
   // Chats change state many times a turn; tell the page at most every 150 ms.
   let pendingChange: ReturnType<typeof setTimeout> | null = null;
   const stopSessions = deps.sessions.onChange(() => {
@@ -407,6 +411,7 @@ export function createAppServer(deps: ServerDeps): AppServer {
     hub,
     stop() {
       stopWatch();
+      stopAds();
       stopSessions();
       if (pendingChange) clearTimeout(pendingChange);
     },

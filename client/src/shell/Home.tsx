@@ -62,6 +62,8 @@ export function Home() {
     openPast,
     openView,
     libraryVersion,
+    ads,
+    openTool,
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
@@ -323,6 +325,38 @@ export function Home() {
           )}
 
           <div className="tray">
+            {ads?.visible && ads.waiting > 0 ? (
+              <section className="card" aria-labelledby="home-ads">
+                <div className="card-head">
+                  <h2 id="home-ads">Ads approvals</h2>
+                  <span className="count">{ads.waiting}</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="quiet"
+                    data-size="small"
+                    onClick={() => openTool('workbench', 'ad-manager')}
+                  >
+                    Open Ad Manager
+                  </button>
+                </div>
+                {ads.clients
+                  .filter((c) => c.waiting > 0)
+                  .map((c) => (
+                    <button
+                      key={c.slug}
+                      type="button"
+                      className="line"
+                      onClick={() => openTool('workbench', 'ad-manager', c.slug)}
+                    >
+                      <span className="line-text">
+                        <span className="line-title">{c.name}</span>
+                        <span className="line-meta">{c.waiting} waiting for a decision</span>
+                      </span>
+                    </button>
+                  ))}
+              </section>
+            ) : null}
             <section className="card" aria-labelledby="home-todos">
               <div className="card-head">
                 <h2 id="home-todos">Pinned to-dos</h2>

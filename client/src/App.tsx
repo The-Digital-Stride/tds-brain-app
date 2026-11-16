@@ -18,10 +18,12 @@ import { Home } from './shell/Home.tsx';
 import { Inspector } from './shell/Inspector.tsx';
 import { Palette } from './shell/Palette.tsx';
 import { DRAWER_LABELS, Rail } from './shell/Rail.tsx';
+import { SectionDrawer } from './shell/SectionDrawer.tsx';
 import { SheetBar } from './shell/SheetBar.tsx';
 import { SheetNotices } from './shell/SheetNotices.tsx';
 import { ShellProvider, useDesk, useShell } from './shell/ShellProvider.tsx';
 import { SkillsDrawer } from './shell/SkillsDrawer.tsx';
+import { SECTIONS, visibleToolFor } from './shell/sections.ts';
 import { TodosDrawer } from './shell/TodosDrawer.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
@@ -60,11 +62,12 @@ const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
   todos: TodosDrawer,
   skills: SkillsDrawer,
   help: HelpDrawer,
+  section: SectionDrawer,
 };
 
 /** What the sheet shows for the current view. An unknown app shows Home. */
 function SheetContent() {
-  const { view, activeChat, boot } = useStore();
+  const { view, activeChat, boot, ads } = useStore();
   if (view === 'guide') {
     // Whoever helpVisible turns away (nobody, since 2026-11-15) lands on Home.
     if (!helpVisible(boot?.identity.role ?? 'unknown')) return <Home />;
@@ -123,19 +126,44 @@ function SheetContent() {
       </>
     );
   }
+  if (view.startsWith('tool:')) {
+    // An unknown tool, or one this person can't see (yet), shows Home.
+    const hit = visibleToolFor(view, { ads });
+    if (!hit) return <Home />;
+    const { tool } = hit;
+    return (
+      <>
+        <SheetBar title={tool.title} panel={tool.Panel ? (tool.panelLabel ?? tool.title) : undefined}>
+          {tool.BarActions ? (
+            <Suspense fallback={null}>
+              <tool.BarActions />
+            </Suspense>
+          ) : null}
+        </SheetBar>
+        <div className="sheet-scroll">
+          <Suspense fallback={null}>
+            <tool.Sheet />
+          </Suspense>
+        </div>
+      </>
+    );
+  }
   return activeChat.kind === 'live' ? <ChatView /> : <Home />;
 }
 
 function Shell() {
   // The tour's card is the only thing in reach while it shows.
   const touring = useTourOpen();
-  const { boot, newChat, view } = useStore();
+  const { boot, newChat, view, ads } = useStore();
   const { state, dispatch, modes } = useShell();
   // One source of truth for what shows and what floats: the shell provider's layout.
   const { railShowsNames, drawerModal, panelShowing, panelModal } = useDesk();
   // Keep the last drawer's body in place while the dock slides shut.
   const lastDrawer = useRef<DrawerName>('chats');
   if (state.drawer) lastDrawer.current = state.drawer;
+  // The section drawer is headed with the section's own title, kept while the dock slides shut.
+  const lastSection = useRef<string | null>(null);
+  if (state.section) lastSection.current = state.section;
   if (!boot) return null;
 
   const drawer = state.drawer ?? lastDrawer.current;
@@ -148,9 +176,13 @@ function Shell() {
   const todoOpen = state.todoPanel !== null;
   const todoModal = todoOpen && modes.drawerOverlays;
   const DrawerBody = DRAWER_BODIES[drawer];
+
   // An app with a panel of its own fills the right dock while it is on the sheet.
   const app = APPS.find((a) => view === `app:${a.id}`);
-  const AppPanel = app?.Panel;
+  // A tool with a panel of its own does the same, once it is visible.
+  const tool = visibleToolFor(view, { ads })?.tool;
+  const sheetApp = app ?? tool;
+  const AppPanel = sheetApp?.Panel;
 
   return (
     <>
@@ -168,7 +200,12 @@ function Shell() {
           <Dock
             side="left"
             open={drawerOpen}
-            label={DRAWER_LABELS[drawer]}
+            label={
+              drawer === 'section'
+                ? (SECTIONS.find((x) => x.id === (state.section ?? lastSection.current))?.title ??
+                  DRAWER_LABELS.section)
+                : DRAWER_LABELS[drawer]
+            }
             overlay={modes.drawerOverlays}
             // Closing Help puts back the drawer it replaced.
             onClose={() => dispatch({ type: state.drawer === 'help' ? 'close-help' : 'close-drawer' })}
@@ -177,6 +214,7 @@ function Shell() {
                 {drawer === 'chats' ? <HelpLink page="chats-drawer" /> : null}
                 {drawer === 'todos' ? <HelpLink page="todos" /> : null}
                 {drawer === 'skills' ? <HelpLink page="skills" /> : null}
+                {drawer === 'section' ? <HelpLink page="workbench" /> : null}
                 {drawer === 'chats' ? (
                   <button
                     type="button"
@@ -206,7 +244,7 @@ function Shell() {
           <Dock
             side="right"
             open={panelShowing}
-            label={app && AppPanel ? (app.panelLabel ?? app.title) : 'This chat'}
+            label={sheetApp && AppPanel ? (sheetApp.panelLabel ?? sheetApp.title) : 'This chat'}
             overlay={modes.panelOverlays}
             onClose={() => dispatch({ type: 'set-panel', open: false })}
           >

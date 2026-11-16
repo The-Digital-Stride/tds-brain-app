@@ -37,6 +37,7 @@ import {
   type ShellApi,
   type ShellState,
 } from './contract.ts';
+import { sectionKeys, visibleToolFor } from './sections.ts';
 
 type DockSide = 'left' | 'right';
 
@@ -142,17 +143,21 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat, chats, boot } = useStore();
+  const { view, activeChat, chats, boot, ads } = useStore();
   const role = boot?.identity.role ?? 'unknown';
   const helpOn = helpVisible(role);
   const helpOnRef = useRef(helpOn);
   helpOnRef.current = helpOn;
   // Where the person is, read only when Help opens (see `dispatch`): the page Help starts on follows from it.
+  // The sections visible now and their single keys (`W`), read by the key listener.
+  const sectionKeysRef = useRef<Record<string, string>>({});
+  sectionKeysRef.current = sectionKeys({ ads });
   const whereRef = useRef({ view, activeChat, chats });
   whereRef.current = { view, activeChat, chats };
   const liveOnSheet =
     (view === 'chat' && activeChat?.kind === 'live') ||
-    APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined);
+    APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||
+    visibleToolFor(view, { ads })?.tool.Panel !== undefined;
   const [railOverride, setRailOverride] = useState(false);
   const layout = useMemo(
     () => layoutOf(state, width, { liveOnSheet, railOverride }),
@@ -240,6 +245,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     if (action.type === 'open-help' && !action.page) return;
     const opensDrawer =
       ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer) ||
+      ((action.type === 'toggle-section' || action.type === 'open-section') &&
+        (s.drawer !== 'section' || s.section !== action.section)) ||
       // Closing Help puts a drawer back, which takes focus like any drawer a person opened.
       ((action.type === 'close-help' || (action.type === 'toggle-drawer' && action.drawer === 'help')) &&
         s.drawer === 'help' &&
@@ -253,13 +260,14 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
   }, []);
 
-  // Opening an app (from the rail, the palette or a search result) closes the open drawer, so the
-  // app has the room. Only on the move into an app: a drawer opened while the app shows stays open.
+  // Opening an app or a tool (from the rail, a drawer, the palette or a search result) closes the open drawer, so it
+  // has the room. Only on the move into an app: a drawer opened while the app shows stays open.
   const lastView = useRef(view);
   useEffect(() => {
     const was = lastView.current;
     lastView.current = view;
-    if (view === was || !view.startsWith('app:') || !stateRef.current.drawer) return;
+    if (view === was || !(view.startsWith('app:') || view.startsWith('tool:')) || !stateRef.current.drawer)
+      return;
     // Focus still in the drawer (the palette hands it back there; Safari doesn't focus a clicked
     // button) would otherwise be sent to the drawer's rail button as it closes: send it to the app.
     const active = document.activeElement;
@@ -277,7 +285,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     // Moving into an app with the drawer open: the effect above closes the drawer, which closes the panel too
     // (and asks first). Asking again here would replace that question, so Discard would leave the drawer open.
     if (view === was || stateRef.current.todoPanel === null) return;
-    if (view?.startsWith('app:') && stateRef.current.drawer) return;
+    if ((view?.startsWith('app:') || view?.startsWith('tool:')) && stateRef.current.drawer) return;
     dispatch({ type: 'close-todo' });
   }, [view, dispatch]);
 
@@ -310,6 +318,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         state: stateRef.current,
         panelFloating: layoutRef.current.panelModal,
         helpVisible: helpOnRef.current,
+        sectionKeys: sectionKeysRef.current,
       });
       if (!action) return;
       e.preventDefault();

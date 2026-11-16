@@ -31,6 +31,24 @@ const TARGETS: Target[] = [
   { area: 'library', rel: ['templates'], recursive: true, library: 'templates' },
 ];
 
+/**
+ * Files Ad Manager shows (plan 2026-11-16-workbench-ad-manager, decision 19): proposals (and their evidence),
+ * monthly reports, the board's CSVs, the daily fetch status and the standup. Checked before the library's own
+ * never-listed filter, so a file the library hides still counts.
+ */
+const ADS_PATHS = [
+  /^clients\/[^/]+\/proposals\//,
+  /^clients\/[^/]+\/reports\/monthly\//,
+  /^clients\/[^/]+\/context\/google-ads\/board\//,
+  /^clients\/[^/]+\/data\/_fetch-status\.json$/,
+  /^clients\/[^/]+\/standup\//,
+];
+
+/** Whether a changed path (from the brain's root, forward slashes) is one Ad Manager shows. */
+export function isAdsPath(rel: string): boolean {
+  return ADS_PATHS.some((re) => re.test(rel));
+}
+
 export interface WatchHooks {
   /**
    * Called at once (before the debounce) for each change in a library folder: the changed path from
@@ -39,6 +57,11 @@ export interface WatchHooks {
   onLibraryChange?(rel: string | null, folder: WatchFolder): void;
   /** Whether a live watcher is running for a library folder. */
   onLibraryLive?(folder: WatchFolder, live: boolean): void;
+  /**
+   * Ads files changed (debounced like the areas): see `isAdsPath`. Also called when the platform did not say which
+   * file changed under clients/. Separate from `onChange` because it is not a BrainArea (decision 19).
+   */
+  onAdsChange?(): void;
 }
 
 export function watchBrain(
@@ -71,6 +94,19 @@ export function watchBrain(
       }, DEBOUNCE_MS),
     );
   };
+  let adsTimer: NodeJS.Timeout | null = null;
+  const fireAds = () => {
+    if (!hooks.onAdsChange) return;
+    if (adsTimer) clearTimeout(adsTimer);
+    adsTimer = setTimeout(() => {
+      adsTimer = null;
+      try {
+        hooks.onAdsChange?.();
+      } catch {
+        // a listener must not take the watcher down
+      }
+    }, DEBOUNCE_MS);
+  };
   for (const t of TARGETS) {
     try {
       const folder = t.library;
@@ -79,6 +115,7 @@ export function watchBrain(
         if (folder) {
           const name = file ? String(file).split(sep).join('/') : '';
           const rel = name ? `${t.rel.join('/')}/${name}` : null;
+          if (folder === 'clients' && (rel === null || isAdsPath(rel))) fireAds();
           // Never-listed places (dot names, crm/data, ...) cannot change what the library shows.
           if (rel && isNeverListed(rel)) return;
           try {
@@ -104,6 +141,7 @@ export function watchBrain(
     }
     watchers.length = 0;
     for (const f of [...liveFolders]) setLive(f, false);
+    if (adsTimer) clearTimeout(adsTimer);
     for (const tm of timers.values()) clearTimeout(tm);
     timers.clear();
   };

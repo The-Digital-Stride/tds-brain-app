@@ -88,6 +88,15 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M7.9 8.1a2.2 2.2 0 1 1 3.3 1.9c-.8.5-1.2 1-1.2 1.8M10 14h.01" />
     </>
   ),
+  // A toolbox: a lid with a handle over a body split by a catch.
+  workbench: (
+    <>
+      <rect x="3" y="7" width="14" height="9.5" rx="1.5" />
+      <path d="M7.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7M3 11.5h14M10 10.5v2" />
+    </>
+  ),
+  // A rising line over an axis: Ad Manager.
+  chart: <path d="M3.5 4v12.5h13M6.5 13l3-3.5 2.5 2L16 6.5M13 6.5h3V9.5" />,
   stop: <rect x="5" y="5" width="10" height="10" rx="1.5" />,
   // A paper plane: Send's, paired with Stop's square.
   send: <path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8" />,

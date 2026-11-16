@@ -460,3 +460,10 @@
 .helpers .line-title {
   font-size: 13px;
 }
+
+/* The Asked tab's lead line and notes sit level with the rows. */
+.asked-intro,
+.asked-partial,
+.asked-retry {
+  margin: 0 0 8px;
+}

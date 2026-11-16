@@ -11,6 +11,7 @@ import {
   type ApiErrorCode,
   type AppPrefs,
   type AppStore,
+  type AskedTodoList,
   type Bootstrap,
   type BrainHealth,
   type BrainReaders,
@@ -48,6 +49,7 @@ import {
   TODO_SEEN_MAX,
   type TodoAction,
   TodoChangeError,
+  type TodoHistoryResponse,
   type TodoList,
   type TodoScope,
   UPLOAD_NAME_HEADER,
@@ -625,6 +627,8 @@ async function todos(ctx: RouteContext): Promise<TodoList> {
   const prefs = await safe(ctx.store.get(), null);
   return prefs?.directWrites === true ? list : { ...list, changes: 'switched-off', canUsePersonal: false };
 }
+
+const TODO_HISTORY_BAD_KEY = "That to-do wasn't understood.";
 
 const TODO_SWITCHED_OFF =
   "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings.";
@@ -1372,6 +1376,36 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (path === '/api/todos') {
     if (method !== 'GET') throw methodNotAllowed();
     sendJson(res, 200, await todos(ctx));
+    return;
+  }
+
+  if (path === ROUTES.askedTodos) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const body: AskedTodoList = await safe(ctx.brain.askedTodos(identity), {
+      waiting: [],
+      done: [],
+      historyRead: false,
+    });
+    sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.todoHistory) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (key === null || key === '' || key.length > TODO_KEY_MAX) {
+      throw new HttpError(400, 'bad-request', TODO_HISTORY_BAD_KEY);
+    }
+    let body: TodoHistoryResponse;
+    try {
+      body = await ctx.brain.todoHistory(key, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
+    } catch (err) {
+      if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
+      ctx.log('Reading a to-do history failed unexpectedly.');
+      throw new HttpError(500, 'internal', "That to-do's history couldn't be read. Try again.");
+    }
+    sendJson(res, 200, body);
     return;
   }
 

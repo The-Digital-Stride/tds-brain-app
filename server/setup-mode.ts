@@ -49,6 +49,8 @@ export function createSetupBrain(): SearchableBrain {
     completePersonalTodo: async () => {
       throw new TodoChangeError('not-allowed', NO_BRAIN);
     },
+    askedTodos: async () => ({ waiting: [], done: [], historyRead: false }),
+    todoHistory: async () => ({ status: 'unavailable', events: [], more: false }),
     clients: async () => [],
     usedOften: async () => [],
     libraryScopes: async () => [],

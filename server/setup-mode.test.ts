@@ -33,6 +33,12 @@ describe('createSetupBrain', () => {
       canUsePersonal: false,
     });
     expect(await brain.profile(someone)).toEqual({ title: null, departments: [], owns: null });
+    expect(await brain.askedTodos(someone)).toEqual({ waiting: [], done: [], historyRead: false });
+    expect(await brain.todoHistory('20261111-x.md', someone)).toEqual({
+      status: 'unavailable',
+      events: [],
+      more: false,
+    });
     expect(await brain.skillAccess(someone, 'anything')).toBe('unknown-skill');
     expect(await brain.sync()).toEqual({ lastSync: null });
   });

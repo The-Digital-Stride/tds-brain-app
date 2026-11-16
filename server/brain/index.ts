@@ -13,8 +13,10 @@ import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from '
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
-import { createTodoHistory, type GitRunner } from './todo-history.ts';
+import { createAskedTodos } from './todo-asked.ts';
+import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
+import { createTodoTimeline } from './todo-timeline.ts';
 import { changeTodo, completeTodo, listTodos } from './todos.ts';
 import { readUsage } from './usage.ts';
 import { watchBrain } from './watch.ts';
@@ -34,6 +36,8 @@ export interface BrainDeps {
   todoSkill?: TodoSkillOptions;
   /** Runs git for the to-do handover fallback. Tests inject a fake. */
   todoGit?: GitRunner;
+  /** Runs the read-only git logs behind "Asked of others" and to-do history. Tests inject a fake. */
+  todoLog?: GitLogRunner;
   /** How the brain's `tdsapp-files` skill script is run. Tests pass an environment or a spawner. */
   filesSkill?: FilesSkillOptions;
   /** Answers `LibraryOptions.ignored`. Tests inject a fake; the default asks git in the brain. */
@@ -81,6 +85,8 @@ export function createBrainReaders(
   // One runner per brain, so to-do changes run one at a time.
   const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   const todoHistory = createTodoHistory(deps.todoGit);
+  const askedTodos = createAskedTodos(deps.todoLog);
+  const todoTimeline = createTodoTimeline(deps.todoLog);
   return {
     root,
     health: () => checkHealth(root),
@@ -97,6 +103,8 @@ export function createBrainReaders(
         history: todoHistory,
       });
     },
+    askedTodos: (identity) => askedTodos.list(root, identity, now()),
+    todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {
       const listed = new Set((await listSkills(root, identity)).map((s) => s.name));

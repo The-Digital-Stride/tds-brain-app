@@ -515,3 +515,21 @@ fieldset.todo-link {
     animation: none;
   }
 }
+
+/* History: a quiet list under the details, newest first. */
+.todo-history {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.todo-history-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.todo-history-when {
+  color: var(--iron);
+  font-variant-numeric: tabular-nums;
+}

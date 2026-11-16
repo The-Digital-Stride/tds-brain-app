@@ -1,6 +1,14 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ATTENTION_LABEL, attentionFor, type TodoAction, type TodoItem } from '../../../shared/contract.ts';
+import {
+  type AskedTodo,
+  type AskedTodoList,
+  ATTENTION_LABEL,
+  attentionFor,
+  type TodoAction,
+  type TodoItem,
+} from '../../../shared/contract.ts';
+import { api } from '../api.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatClient } from '../state/client-choice.ts';
@@ -9,6 +17,7 @@ import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
+import { AskedList, type AskedState, askedOrder } from './AskedList.tsx';
 import type { TodoFilter, TodoPanelState } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
@@ -23,7 +32,7 @@ import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
 
-type Tab = 'mine' | 'open';
+type Tab = 'mine' | 'open' | 'asked';
 
 /** What a row needs to open the panel: set by the drawer for every to-do (reading needs no permission). */
 interface RowControls {
@@ -271,9 +280,10 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
 }
 
 /** What `PanelHost` adds to the panel's own props: where it is open and what the drawer holds for it. */
-type HostProps = Omit<TodoPanelProps, 'todo' | 'mode' | 'dirtyAsk' | 'order'> & {
+type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'mode' | 'dirtyAsk' | 'order'> & {
   panel: TodoPanelState;
   todo: TodoItem | null;
+  asked: AskedTodo | null;
   order: string[];
 };
 
@@ -282,7 +292,7 @@ type HostProps = Omit<TodoPanelProps, 'todo' | 'mode' | 'dirtyAsk' | 'order'> & 
  * keeps the shell's list of what previous and next walk through. The controller (drafts, saves, holds) stays
  * in the drawer, which is why the panel is rendered from here and not from App.
  */
-function PanelHost({ panel, todo, order, ...rest }: HostProps) {
+function PanelHost({ panel, todo, asked, order, ...rest }: HostProps) {
   const { dispatch } = useShell();
   const orderKey = order.join('\n');
   // biome-ignore lint/correctness/useExhaustiveDependencies: `orderKey` stands for `order`.
@@ -294,13 +304,13 @@ function PanelHost({ panel, todo, order, ...rest }: HostProps) {
   const seen = useRef<string | null>(null);
   useEffect(() => {
     if (panel.key === null) return;
-    if (todo) seen.current = panel.key;
+    if (todo || asked) seen.current = panel.key;
     else if (seen.current === panel.key) dispatch({ type: 'close-todo', force: true });
-  }, [panel.key, todo, dispatch]);
-  if (panel.mode !== 'add' && !todo) return null;
+  }, [panel.key, todo, asked, dispatch]);
+  if (panel.mode !== 'add' && !todo && !asked) return null;
   const node = (
     <Suspense fallback={null}>
-      <TodoPanel todo={todo} mode={panel.mode} {...rest} />
+      <TodoPanel todo={todo} asked={asked} mode={panel.mode} {...rest} />
     </Suspense>
   );
   const slot = typeof document === 'undefined' ? null : document.getElementById('todo-panel-slot');
@@ -349,6 +359,35 @@ export function TodosDrawer() {
   });
   const { state: shell, dispatch: shellDispatch } = useShell();
   const panel = shell.todoPanel ?? null;
+  // The asked-of-others list is its own request: it never blocks or fails the main list. It loads with the
+  // drawer and again whenever the to-dos reload (`todos` is a new object each time). A failed reload keeps
+  // what was shown.
+  const [asked, setAsked] = useState<AskedTodoList | null>(null);
+  const [askedState, setAskedState] = useState<AskedState>('loading');
+  const askedRun = useRef(0);
+  const loadAsked = useCallback(async () => {
+    const run = ++askedRun.current;
+    setAskedState('loading');
+    try {
+      const list = await api.askedTodos();
+      if (run !== askedRun.current) return;
+      setAsked(list);
+      setAskedState('loaded');
+    } catch {
+      if (run === askedRun.current) setAskedState('failed');
+    }
+  }, []);
+  const haveTodos = todos !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `todos` changing is the trigger to reload.
+  useEffect(() => {
+    if (haveTodos) void loadAsked();
+  }, [todos, haveTodos, loadAsked]);
+  useEffect(
+    () => () => {
+      askedRun.current = -1;
+    },
+    [],
+  );
   const adding = panel?.mode === 'add';
   const [filter, setFilter] = useState<TodoFilter>(EMPTY_FILTER);
   const [draft, setDraft] = useState<EditDraft>({
@@ -438,7 +477,7 @@ export function TodosDrawer() {
   }, [openKey, focusUndo]);
 
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
-  const items = tab === 'mine' ? todos.mine : todos.open;
+  const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';
   // Ticking off is the app's own switch; editing needs the `todo` skill as well.
@@ -583,13 +622,18 @@ export function TodosDrawer() {
   };
 
   // The order previous and next walk through: what the drawer shows now, held rows left out.
-  const order = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
-    .map((t) => t.key)
-    .filter((k) => !heldById.has(k));
+  const order =
+    tab === 'asked'
+      ? askedOrder(asked)
+      : [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+          .map((t) => t.key)
+          .filter((k) => !heldById.has(k));
 
   const panelTodo = panel?.key
     ? ([...todos.mine, ...todos.open].find((t) => t.key === panel.key) ?? null)
     : null;
+  const panelAsked =
+    panel?.key && asked ? ([...asked.waiting, ...asked.done].find((t) => t.key === panel.key) ?? null) : null;
 
   const rows: RowControls = {
     canEdit: canChange,
@@ -780,7 +824,8 @@ export function TodosDrawer() {
           onChange={setTab}
           options={[
             { value: 'mine', label: `Mine, ${todos.mine.length}` },
-            { value: 'open', label: `Open to anyone, ${todos.open.length}` },
+            { value: 'open', label: `Open, ${todos.open.length}` },
+            { value: 'asked', label: asked ? `Asked, ${asked.waiting.length}` : 'Asked' },
           ]}
         />
       </div>
@@ -847,7 +892,19 @@ export function TodosDrawer() {
       </p>
       <div className="drawer-scroll" ref={scrollRef} tabIndex={-1}>
         <div className="drawer-body">
-          {shown.length === 0 ? (
+          {tab === 'asked' ? (
+            <AskedList
+              list={asked}
+              state={askedState}
+              onRetry={() => void loadAsked()}
+              openKey={panel?.key ?? null}
+              onOpen={(t) => {
+                if (panel?.dirty) return shellDispatch({ type: 'close-todo' });
+                setMessage('');
+                shellDispatch({ type: 'open-todo', key: t.key, mode: 'read' });
+              }}
+            />
+          ) : shown.length === 0 ? (
             filtering ? (
               <div className="dock-empty todo-nomatch">
                 <p>No to-dos match.</p>
@@ -922,7 +979,7 @@ export function TodosDrawer() {
               ))}
             </>
           )}
-          {todos.othersCount > 0 ? (
+          {tab !== 'asked' && todos.othersCount > 0 ? (
             <p className="dock-empty">
               {todos.othersCount} more {todos.othersCount === 1 ? 'belongs' : 'belong'} to other people.
             </p>
@@ -933,6 +990,7 @@ export function TodosDrawer() {
         <PanelHost
           panel={panel}
           todo={panelTodo}
+          asked={panelAsked}
           order={order}
           message={message}
           isError={isError}

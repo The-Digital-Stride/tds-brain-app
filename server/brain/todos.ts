@@ -19,7 +19,7 @@ import {
 } from '../../shared/contract.ts';
 import { stampDone } from './done-record.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
-import { readMembers } from './identity.ts';
+import { type Member, readMembers } from './identity.ts';
 import { skillAccess } from './skills.ts';
 import type { GitAuthor, TodoHistory } from './todo-history.ts';
 import {
@@ -33,10 +33,23 @@ import {
 import { humanise, readBytes } from './util.ts';
 
 const SKIP = new Set(['AGENTS.md', 'README.md', 'CLAUDE.md']);
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
+/** A to-do file name the app reads or ticks itself: no spaces, no path, `.md`. */
+export const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function surfaceDate(id: string): string | null {
+/** `due` as YYYY-MM-DD, else null. */
+export function dueOf(data: Record<string, string | string[]>): string | null {
+  const due = asString(data.due).trim();
+  return DATE.test(due) ? due : null;
+}
+
+/** The frontmatter `title`, else the first `# heading`, else the file name made readable. */
+export function todoTitle(data: Record<string, string | string[]>, body: string, id: string): string {
+  const heading = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
+  return asString(data.title).trim() || heading || humanise(id);
+}
+
+export function surfaceDate(id: string): string | null {
   const m = /^(\d{4})(\d{2})(\d{2})-/.exec(id);
   if (!m) return null;
   const iso = `${m[1]}-${m[2]}-${m[3]}`;
@@ -53,7 +66,8 @@ async function isRealDir(path: string): Promise<boolean> {
   }
 }
 
-const lower = (v: string | string[] | undefined) => asString(v).trim().toLowerCase();
+/** A frontmatter value as trimmed lower case ('' when missing). */
+export const lower = (v: string | string[] | undefined) => asString(v).trim().toLowerCase();
 
 /**
  * The handover recorded in the file's `assigned_*` lines. Only trusted when `assigned_to` is the
@@ -107,8 +121,6 @@ async function readFolder(
     const { data, body } = parseFrontmatter(text);
     const assignee = lower(data.assignee) || null;
     if (scope === 'personal' && assignee !== me) continue;
-    const heading = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
-    const due = asString(data.due).trim();
     items.push({
       id: e.name,
       scope,
@@ -116,9 +128,9 @@ async function readFolder(
       path: `${rel}/${e.name}`,
       handover: scope === 'personal' ? null : stampHandover(data, assignee, team),
       createdBy: lower(data.created_by) || null,
-      title: asString(data.title).trim() || heading || humanise(e.name),
+      title: todoTitle(data, body, e.name),
       assignee,
-      due: DATE.test(due) ? due : null,
+      due: dueOf(data),
       surfaceDate: surfaceDate(e.name),
       project: asString(data.project).trim() || null,
       client: asString(data.client).trim() || null,
@@ -162,7 +174,7 @@ export function workbenchSlug(name: string): string {
 }
 
 /** Everyone in `.team-config/roles.json` with a name, in file order, once per slug. */
-async function readTeam(root: string): Promise<TeamMember[]> {
+export async function readTeam(root: string): Promise<TeamMember[]> {
   const team: TeamMember[] = [];
   const seen = new Set<string>();
   for (const m of await readMembers(root)) {
@@ -200,6 +212,31 @@ export interface TodoListDeps {
   capabilities?: () => Promise<readonly string[]>;
 }
 
+/**
+ * The team slug for a git author: the roles.json member with that email first, else the slug of the
+ * author's name when it is on the roster, else null.
+ */
+export function authorSlug(
+  members: Member[],
+  team: TeamMember[],
+  author: { name: string; email: string },
+): string | null {
+  const email = author.email.toLowerCase();
+  const byEmail = email
+    ? members.find((m) => typeof m.email === 'string' && m.email.toLowerCase() === email)
+    : undefined;
+  if (byEmail && typeof byEmail.name === 'string') return workbenchSlug(byEmail.name) || null;
+  const slug = workbenchSlug(author.name);
+  return team.some((m) => m.slug === slug) ? slug : null;
+}
+
+/** Whether a matched author is this person: by slug, or by email when the author isn't on the roster. */
+export function isSelf(by: string | null, email: string, identity: Identity): boolean {
+  return by !== null
+    ? by === identity.slug
+    : identity.email !== null && email.toLowerCase() === identity.email.toLowerCase();
+}
+
 /** The handover from git for a TDS to-do in `mine`: who last changed `assignee:`, unless that is the person. */
 async function historyHandover(
   root: string,
@@ -209,19 +246,8 @@ async function historyHandover(
   author: GitAuthor | null,
 ): Promise<TodoHandover | null> {
   if (!author || !SAFE_ID.test(item.id)) return null;
-  const members = await readMembers(root);
-  const email = author.email.toLowerCase();
-  const byEmail = email
-    ? members.find((m) => typeof m.email === 'string' && m.email.toLowerCase() === email)
-    : undefined;
-  let by: string | null = null;
-  if (byEmail && typeof byEmail.name === 'string') by = workbenchSlug(byEmail.name) || null;
-  else {
-    const slug = workbenchSlug(author.name);
-    by = team.some((m) => m.slug === slug) ? slug : null;
-  }
-  if (by !== null ? by === identity.slug : identity.email !== null && email === identity.email.toLowerCase())
-    return null;
+  const by = authorSlug(await readMembers(root), team, author);
+  if (isSelf(by, author.email, identity)) return null;
   return {
     by,
     byName: (by ? team.find((m) => m.slug === by)?.name : null) ?? (author.name || null),

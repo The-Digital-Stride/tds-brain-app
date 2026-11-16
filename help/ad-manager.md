@@ -7,7 +7,7 @@ summary: Decide on ad changes Claude has proposed, and see how each Google Ads a
 benefit: Ad changes get a clear yes or no from you, and nothing goes live by accident.
 roles: [owner, scout]
 related: [workbench, talking-to-claude, documents]
-since: 0.45.0
+since: 0.46.0
 reviewed: 2026-11-16
 ---
 

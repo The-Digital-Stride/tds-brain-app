@@ -269,6 +269,7 @@
   align-items: center;
   gap: 6px;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: the quick add (TodoPanel) is never inside the to-do filters (TodosDrawer). */
 .todo-inline .field {
   flex: 1;
   min-width: 0;
@@ -282,10 +283,6 @@
 .todo-finish {
   padding-top: 10px;
   border-top: 1px solid var(--line);
-}
-.todo-finish .todo-note {
-  flex-basis: 100%;
-  margin: 0;
 }
 .todo-delete {
   margin-left: auto;
@@ -317,6 +314,7 @@
 .todo-held:hover {
   transform: none;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: a held to-do row is never a skill row. */
 .todo-held .line-meta {
   color: var(--iron);
 }
@@ -364,6 +362,10 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--iron);
+}
+.todo-finish .todo-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 .todo-field .todo-note {
   padding: 0;

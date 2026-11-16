@@ -18,8 +18,14 @@
 .am-tray[data-cols="2"] {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
-.am-tray[data-cols="5"] {
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+/* The cadence cards (what I run on an account): always two columns so each task has room, one when narrow. */
+.am-tray[data-cols="cadence"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container (max-width: 660px) {
+  .am-tray[data-cols="cadence"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .am-h {
   margin: 20px 4px 0;
@@ -103,6 +109,9 @@
   vertical-align: top;
   border-top: 1px solid var(--line);
 }
+.am-table tr[data-current] td {
+  background: var(--tint-1);
+}
 .am-table tbody tr:first-child td {
   border-top: 0;
 }
@@ -112,9 +121,6 @@
 }
 .am-table .am-wide {
   min-width: 220px;
-}
-.am-table tr[data-current] td {
-  background: var(--tint-1);
 }
 .am-sort {
   all: unset;

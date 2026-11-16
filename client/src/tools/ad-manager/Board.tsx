@@ -177,7 +177,7 @@ export function Cadence({
     if (chat) onStarted(`Started a chat: ${title}, ${name}.`);
   };
   return (
-    <div className="tray am-tray" data-cols="5">
+    <div className="tray am-tray" data-cols="cadence">
       {CADENCES.map(([key, label]) => {
         const cards = board.cards.filter((c) => c.cadence === key);
         return (

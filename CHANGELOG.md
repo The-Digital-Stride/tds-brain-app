@@ -2,7 +2,7 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
-## v0.45.0 — 2026-11-16
+## v0.46.0 — 2026-11-16
 
 - **feat**: Workbench section and Ad Manager tool
 - **fix**: keep Apply locked after a disagreeing read-back on a re-appliable proposal

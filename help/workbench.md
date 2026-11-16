@@ -7,7 +7,7 @@ summary: A home on the rail for the agency's working tools, starting with Ad Man
 benefit: Your working tools sit in one place, one press away from wherever you are.
 roles: all
 related: [home, search-and-jump, keyboard-shortcuts]
-since: 0.45.0
+since: 0.46.0
 reviewed: 2026-11-16
 ---
 

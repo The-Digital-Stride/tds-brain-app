@@ -154,7 +154,7 @@ beforeEach(() => {
 
 interface Reply {
   status: number;
-  json: Record<string, unknown> & { error?: { code: string; message: string } };
+  json: Record<string, unknown> & { error?: { code: string; message: string; output?: string } };
 }
 function send(
   path: string,
@@ -329,6 +329,29 @@ describe('changes', () => {
     expect(r.status).toBe(504);
     expect(r.json.error).toEqual({ code: 'unknown-outcome', message: ADS_ERROR_MESSAGES['unknown-outcome'] });
     expect(seen.changes).toHaveLength(1);
+  });
+
+  it('an unknown outcome passes on what the run printed, so the person can see what the read-back found', async () => {
+    state.changeError = new AdsError('unknown-outcome', 'read-back disagreed', 'gads-write: read-back MISMATCH');
+    const r = await post(ADS_ROUTES.change('apply'), { client: 'acme', id: ID, confirmed: true });
+    expect(r.status).toBe(504);
+    expect(r.json.error).toEqual({
+      code: 'unknown-outcome',
+      message: ADS_ERROR_MESSAGES['unknown-outcome'],
+      output: 'gads-write: read-back MISMATCH',
+    });
+    // Other refusals never carry output.
+    state.changeError = new AdsError('changed', 'x', 'secret-ish output');
+    const c = await post(ADS_ROUTES.change('apply'), { client: 'acme', id: ID, confirmed: true });
+    expect(c.json.error?.output).toBeUndefined();
+  });
+
+  it('the accounts list is refused on a Mac without Google Ads access, so search offers nothing', async () => {
+    state.caps = { ...CAPS, adsAccess: false };
+    const r = await get(ADS_ROUTES.accounts);
+    expect(r.status).toBe(403);
+    expect(r.json.error?.code).toBe('no-access');
+    expect(seen.reads.filter(([a]) => a === 'accounts')).toHaveLength(0);
   });
 
   it('the reply marks a proposal still in flight', async () => {

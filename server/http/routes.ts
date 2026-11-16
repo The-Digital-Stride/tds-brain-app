@@ -1486,8 +1486,10 @@ const isAdsChange = (a: string): a is AdsChangeAction => Object.hasOwn(ADS_CHANG
 const NO_ADS: AdsCapabilities = { features: [], version: '', adsAccess: false, adsManager: false, me: null };
 
 /** Ads errors carry the ads code itself in `error.code` (ADS_ERROR_STATUS), with the app's own words. */
-function sendAdsError(res: ServerResponse, code: AdsErrorCode): void {
-  sendJson(res, ADS_ERROR_STATUS[code], { error: { code, message: ADS_ERROR_MESSAGES[code] } });
+function sendAdsError(res: ServerResponse, code: AdsErrorCode, output?: string): void {
+  // The run's output only for an unknown outcome: the person needs it to check the account (decision 12).
+  const extra = code === 'unknown-outcome' && output ? { output } : {};
+  sendJson(res, ADS_ERROR_STATUS[code], { error: { code, message: ADS_ERROR_MESSAGES[code], ...extra } });
 }
 
 /** The bridge, when this person may use it: the skill allowed for them (restricted: not-allowed) and present. */
@@ -1527,8 +1529,12 @@ function markApprovals(reply: Record<string, unknown>, held: AdsInflightEntry[])
 
 async function adsRead(url: URL, ctx: RouteContext, ads: AdsService, path: string): Promise<unknown> {
   switch (path) {
-    case ADS_ROUTES.accounts:
+    case ADS_ROUTES.accounts: {
+      // Search reads this on every keystroke: a Mac that can't reach Google Ads (Ad Manager hidden) gets nothing.
+      const caps = await ads.capabilities();
+      if (!caps?.adsAccess) throw new AdsError('no-access');
       return (await ads.read('accounts', {})).accounts;
+    }
     case ADS_ROUTES.approvals: {
       const input = url.searchParams.has('client')
         ? { client: adsParam(url, 'client', ADS_CLIENT_SLUG) }
@@ -1659,7 +1665,7 @@ async function routeAds(
   } catch (err) {
     if (!(err instanceof AdsError)) throw err;
     if (err.code === 'internal' || err.code === 'unknown-outcome') ctx.log(`Ad Manager: ${err.code}.`);
-    sendAdsError(res, err.code);
+    sendAdsError(res, err.code, err.output);
     return true;
   }
 }

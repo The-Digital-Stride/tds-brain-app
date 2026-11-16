@@ -44,10 +44,13 @@ import {
 
 export class AdsError extends Error {
   readonly code: AdsErrorCode;
-  constructor(code: AdsErrorCode, message?: string) {
+  /** What the run printed (already trimmed and with secrets hidden by the bridge). Sent only for unknown-outcome. */
+  readonly output?: string;
+  constructor(code: AdsErrorCode, message?: string, output?: string) {
     super(message ?? code);
     this.name = 'AdsError';
     this.code = code;
+    if (output !== undefined) this.output = output;
   }
 }
 
@@ -112,7 +115,11 @@ function judge(outcome: Outcome): Record<string, unknown> {
     return rest;
   }
   if (outcome.code === 2 && reply.ok === false && typeof reply.code === 'string' && CODES.has(reply.code)) {
-    throw new AdsError(reply.code as AdsErrorCode, typeof reply.error === 'string' ? reply.error : undefined);
+    throw new AdsError(
+      reply.code as AdsErrorCode,
+      typeof reply.error === 'string' ? reply.error : undefined,
+      typeof reply.output === 'string' ? reply.output : undefined,
+    );
   }
   throw new AdsError('internal', 'the bridge failed');
 }
@@ -306,7 +313,11 @@ export function createAdsService(root: string, options: AdsServiceOptions = {}):
               err instanceof AdsError && err.code !== 'internal' && err.code !== 'unknown-outcome';
             if (isApply && known) await editEntries((entries) => entries.filter((e) => !same(e, client, id)));
             if (isApply && !known)
-              throw new AdsError('unknown-outcome', 'the apply ended without a clear outcome');
+              throw new AdsError(
+                'unknown-outcome',
+                'the apply ended without a clear outcome',
+                err instanceof AdsError ? err.output : undefined,
+              );
             throw err;
           }
           if (isApply) await editEntries((entries) => entries.filter((e) => !same(e, client, id)));

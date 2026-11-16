@@ -2,6 +2,16 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.45.0 — 2026-11-16
+
+- **feat**: Workbench section and Ad Manager tool
+- **fix**: keep Apply locked after a disagreeing read-back on a re-appliable proposal
+- **fix**: security review of Ad Manager
+- **fix**: correctness review of Ad Manager (server)
+- **fix**: UX, accessibility and correctness review of Ad Manager (client)
+- **fix**: recheck of Ad Manager fixes
+- **fix**: exit-4 guard fails closed; what's-new note for the Workbench
+
 ## v0.44.0 — 2026-11-16
 
 - **feat**: files on to-dos (link from the library or upload)

@@ -67,6 +67,14 @@ export function Home() {
   const clients = boot?.clients ?? [];
   // The client picker's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
   const [picked, setPicked] = useState<{ key: number; value: string } | null>(null);
+  // Pinned cards opened with "Show N more". Not saved: Home starts compact each visit.
+  const [expanded, setExpanded] = useState<Record<PinnedCard, boolean>>({
+    todos: false,
+    chats: false,
+    files: false,
+  });
+  const toggleCard = (c: PinnedCard) => setExpanded((e) => ({ ...e, [c]: !e[c] }));
+  const rowsShown = (c: PinnedCard) => (expanded[c] ? undefined : PINNED_ROWS);
   const [ask, setAsk] = useState<{
     options: string[];
     choose: (slug: string | null) => void;
@@ -335,7 +343,7 @@ export function Home() {
                 <p className="card-note">Star a to-do to keep it here.</p>
               ) : (
                 <>
-                  {pinnedTodoRows.slice(0, PINNED_ROWS).map((t) => (
+                  {pinnedTodoRows.slice(0, rowsShown('todos')).map((t) => (
                     <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
                       <span className="line-text">
                         <span className="line-title">{t.title}</span>
@@ -350,7 +358,12 @@ export function Home() {
                       </span>
                     </button>
                   ))}
-                  <MoreLink total={pinnedTodoRows.length} noun="to-dos" onClick={() => openDrawer('todos')} />
+                  <MoreLink
+                    total={pinnedTodoRows.length}
+                    noun={['to-do', 'to-dos']}
+                    expanded={expanded.todos}
+                    onToggle={() => toggleCard('todos')}
+                  />
                 </>
               )}
             </section>
@@ -374,7 +387,7 @@ export function Home() {
                 <p className="card-note">Star a chat to keep it here.</p>
               ) : (
                 <>
-                  {pinnedChatRows.slice(0, PINNED_ROWS).map((row) =>
+                  {pinnedChatRows.slice(0, rowsShown('chats')).map((row) =>
                     row.kind === 'live' ? (
                       <button
                         key={row.chat.sdkSessionId}
@@ -406,7 +419,12 @@ export function Home() {
                       </button>
                     ),
                   )}
-                  <MoreLink total={pinnedChatRows.length} noun="chats" onClick={() => openDrawer('chats')} />
+                  <MoreLink
+                    total={pinnedChatRows.length}
+                    noun={['chat', 'chats']}
+                    expanded={expanded.chats}
+                    onToggle={() => toggleCard('chats')}
+                  />
                 </>
               )}
             </section>
@@ -414,6 +432,15 @@ export function Home() {
             <section className="card" aria-labelledby="home-files">
               <div className="card-head">
                 <h2 id="home-files">Pinned files</h2>
+                <button
+                  type="button"
+                  className="btn"
+                  data-variant="quiet"
+                  data-size="small"
+                  onClick={() => openView('app:documents')}
+                >
+                  All files
+                </button>
               </div>
               {pinnedFiles === null && filesFailed ? (
                 <p className="card-note">Couldn't load your pinned files.</p>
@@ -423,7 +450,7 @@ export function Home() {
                 <p className="card-note">Star a file to keep it here.</p>
               ) : (
                 <>
-                  {pinnedFileRows.slice(0, PINNED_ROWS).map((f) => (
+                  {pinnedFileRows.slice(0, rowsShown('files')).map((f) => (
                     <button key={f.item.id} type="button" className="line" onClick={() => openFile(f)}>
                       <span className="line-text">
                         <span className="line-title">{f.item.title}</span>
@@ -433,8 +460,9 @@ export function Home() {
                   ))}
                   <MoreLink
                     total={pinnedFileRows.length}
-                    noun="files"
-                    onClick={() => openView('app:documents')}
+                    noun={['file', 'files']}
+                    expanded={expanded.files}
+                    onToggle={() => toggleCard('files')}
                   />
                 </>
               )}
@@ -472,12 +500,47 @@ export function Home() {
   );
 }
 
-/** "and N more" under a pinned card that holds more than it shows; a quiet button that opens the full list. */
-function MoreLink({ total, noun, onClick }: { total: number; noun: string; onClick: () => void }) {
-  if (total <= PINNED_ROWS) return null;
+type PinnedCard = 'todos' | 'chats' | 'files';
+
+/**
+ * "Show N more" under a pinned card that holds more than it shows: expands the card in place, then reads
+ * "Show fewer". (It used to open the drawer, which did nothing visible when that drawer was already open.)
+ * The rows it reveals come before it, so Shift+Tab reaches them.
+ */
+function MoreLink({
+  total,
+  noun,
+  expanded,
+  onToggle,
+}: {
+  total: number;
+  noun: [one: string, many: string];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const hidden = total - PINNED_ROWS;
+  if (hidden <= 0) return null;
   return (
-    <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onClick}>
-      {`and ${total - PINNED_ROWS} more ${noun}`}
+    <button
+      type="button"
+      className="btn"
+      data-variant="quiet"
+      data-size="small"
+      aria-expanded={expanded}
+      onClick={(e) => {
+        const button = e.currentTarget;
+        onToggle();
+        // Folding a long card back removes rows above the button: keep it in view.
+        if (expanded) requestAnimationFrame(() => button.scrollIntoView?.({ block: 'nearest' }));
+      }}
+    >
+      {expanded ? (
+        <>
+          Show fewer<span className="visually-hidden"> {noun[1]}</span>
+        </>
+      ) : (
+        `Show ${hidden} more ${hidden === 1 ? noun[0] : noun[1]}`
+      )}
     </button>
   );
 }

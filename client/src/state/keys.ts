@@ -20,6 +20,8 @@ export const keyAction: KeyAction = (e, { typing, state, panelFloating = false, 
   // Esc: one thing per press.
   if (e.key === 'Escape') {
     if (state.paletteOpen) return { type: 'set-palette', open: false };
+    // The to-do panel is the topmost layer: it closes first (the shell asks first when it holds unsaved changes).
+    if (state.todoPanel) return { type: 'close-todo' };
     if (panelFloating) return { type: 'set-panel', open: false };
     // Closing Help puts back the drawer it replaced; closing any other drawer just closes it.
     if (state.drawer) return state.drawer === 'help' ? { type: 'close-help' } : { type: 'close-drawer' };
@@ -43,6 +45,10 @@ export const keyAction: KeyAction = (e, { typing, state, panelFloating = false, 
   if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
   if (typing || state.paletteOpen || !state.singleKeys) return null;
   if (key === '[') return { type: 'toggle-rail' };
+  // With the to-do panel open, P and N walk through the to-dos (the rail's own key stays `[`).
+  if (state.todoPanel?.key != null && (key === 'p' || key === 'n')) {
+    return { type: 'todo-step', dir: key === 'p' ? -1 : 1 };
+  }
   if (key === 'h') return helpVisible ? { type: 'toggle-drawer', drawer: 'help' } : null;
   const drawer = LETTER_DRAWERS[key];
   return drawer ? { type: 'toggle-drawer', drawer } : null;

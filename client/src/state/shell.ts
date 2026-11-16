@@ -26,6 +26,7 @@ export const DEFAULT_SHELL: ShellState = {
   panelFile: null,
   paletteOpen: false,
   viewer: null,
+  todoPanel: null,
   singleKeys: true,
   viewerWidth: null,
 };
@@ -51,8 +52,73 @@ function closeHelp(state: ShellState): ShellState {
   return state.drawer === 'help' ? { ...state, drawer: state.helpReturn, helpReturn: null } : state;
 }
 
-export const shellReducer: ShellReducer = (state, action) => {
+/** The to-do panel belongs to the To-dos drawer: with any other drawer (or none), it is shut. */
+function withPanelRule(state: ShellState): ShellState {
+  return state.todoPanel !== null && state.drawer !== 'todos' ? { ...state, todoPanel: null } : state;
+}
+
+function sameOrder(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((k, i) => k === b[i]);
+}
+
+/** The panel's own actions. A to-do panel that isn't open ignores all but `open-todo`. */
+function todoPanelReducer(state: ShellState, action: ShellAction): ShellState {
+  const panel = state.todoPanel;
   switch (action.type) {
+    case 'open-todo':
+      return {
+        ...state,
+        todoPanel: {
+          key: action.key,
+          mode: action.mode,
+          dirty: false,
+          ask: null,
+          order: panel?.order ?? [],
+        },
+      };
+    case 'set-todo-mode':
+      return panel === null || panel.mode === action.mode
+        ? state
+        : { ...state, todoPanel: { ...panel, mode: action.mode } };
+    case 'set-todo-dirty':
+      return panel === null || panel.dirty === action.dirty
+        ? state
+        : { ...state, todoPanel: { ...panel, dirty: action.dirty, ...(action.dirty ? {} : { ask: null }) } };
+    case 'set-todo-order':
+      return panel === null || sameOrder(panel.order, action.order)
+        ? state
+        : { ...state, todoPanel: { ...panel, order: action.order } };
+    case 'todo-step': {
+      if (panel === null || panel.key === null) return state;
+      const at = panel.order.indexOf(panel.key);
+      const next = panel.order[at + action.dir];
+      if (at < 0 || next === undefined) return state;
+      return { ...state, todoPanel: { ...panel, key: next, mode: 'read', dirty: false, ask: null } };
+    }
+    case 'close-todo':
+      return panel === null ? state : { ...state, todoPanel: null };
+    case 'ask-todo':
+      return panel === null ? state : { ...state, todoPanel: { ...panel, ask: action.after } };
+    case 'keep-todo':
+      return panel === null || panel.ask === null ? state : { ...state, todoPanel: { ...panel, ask: null } };
+    default:
+      return state;
+  }
+}
+
+export const shellReducer: ShellReducer = (state, action) => withPanelRule(coreReducer(state, action));
+
+const coreReducer: ShellReducer = (state, action) => {
+  switch (action.type) {
+    case 'open-todo':
+    case 'set-todo-mode':
+    case 'set-todo-dirty':
+    case 'set-todo-order':
+    case 'todo-step':
+    case 'close-todo':
+    case 'ask-todo':
+    case 'keep-todo':
+      return todoPanelReducer(state, action);
     case 'toggle-rail':
       return { ...state, railWide: !state.railWide };
     case 'toggle-drawer':
@@ -124,6 +190,7 @@ export const loadShell: LoadShell = (raw) => {
     panelFile: null,
     paletteOpen: false,
     viewer: null,
+    todoPanel: null,
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
     viewerWidth:
       typeof parsed.viewerWidth === 'number' && Number.isFinite(parsed.viewerWidth) && parsed.viewerWidth > 0

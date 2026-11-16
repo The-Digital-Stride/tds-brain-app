@@ -204,3 +204,45 @@ describe('keyAction: Help', () => {
     expect(keyAction(key('Escape'), help({ drawer: 'todos' }))).toEqual({ type: 'close-drawer' });
   });
 });
+
+describe('keyAction: the to-do panel', () => {
+  const panel = { key: 'a.md', mode: 'read' as const, dirty: false, ask: null, order: ['a.md', 'b.md'] };
+  const open = { drawer: 'todos' as const, todoPanel: panel };
+
+  it('Esc closes the panel before the drawer, even over a floating dock', () => {
+    expect(keyAction(key('Escape'), ctx(open))).toEqual({ type: 'close-todo' });
+    expect(keyAction(key('Escape'), ctx(open, true))).toEqual({ type: 'close-todo' });
+    expect(
+      keyAction(key('Escape'), {
+        typing: false,
+        state: state({ ...open, panelOpen: true }),
+        panelFloating: true,
+      }),
+    ).toEqual({ type: 'close-todo' });
+    // With no panel it still closes the drawer.
+    expect(keyAction(key('Escape'), ctx({ drawer: 'todos' }))).toEqual({ type: 'close-drawer' });
+  });
+
+  it('the palette still goes first', () => {
+    expect(keyAction(key('Escape'), ctx({ ...open, paletteOpen: true }))).toEqual({
+      type: 'set-palette',
+      open: false,
+    });
+  });
+
+  it('P and N walk through the to-dos, leaving [ to the rail', () => {
+    expect(keyAction(key('p'), ctx(open))).toEqual({ type: 'todo-step', dir: -1 });
+    expect(keyAction(key('n'), ctx(open))).toEqual({ type: 'todo-step', dir: 1 });
+    expect(keyAction(key('['), ctx(open))).toEqual({ type: 'toggle-rail' });
+  });
+
+  it('P and N do nothing without the panel, while typing, with a modifier or with single keys off', () => {
+    expect(keyAction(key('p'), ctx({ drawer: 'todos' }))).toBeNull();
+    expect(keyAction(key('n'), ctx({ drawer: 'todos' }))).toBeNull();
+    expect(keyAction(key('n'), ctx(open, true))).toBeNull();
+    expect(keyAction(key('n', { metaKey: true }), ctx(open))).toBeNull();
+    expect(keyAction(key('n'), ctx({ ...open, singleKeys: false }))).toBeNull();
+    // Adding a new to-do: nothing to step through.
+    expect(keyAction(key('n'), ctx({ ...open, todoPanel: { ...panel, key: null, mode: 'add' } }))).toBeNull();
+  });
+});

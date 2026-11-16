@@ -130,6 +130,7 @@ describe('saveShell', () => {
       panelTab: 'details',
       panelFile: { chat: 'c', key: 'k' },
       paletteOpen: true,
+      todoPanel: null,
       viewer: { item: { id: 'x' } as LibraryItem, place: 'Acme' },
       singleKeys: false,
       viewerWidth: null,
@@ -417,5 +418,63 @@ describe('Help drawer', () => {
       helpReturn: null,
       helpPage: null,
     });
+  });
+});
+
+describe('the to-do panel in the shell', () => {
+  const todos: ShellState = { ...DEFAULT_SHELL, drawer: 'todos' };
+  const open = (s: ShellState = todos) => shellReducer(s, { type: 'open-todo', key: 'a.md', mode: 'read' });
+  const ordered = (s: ShellState) =>
+    shellReducer(s, { type: 'set-todo-order', order: ['a.md', 'b.md', 'c.md'] });
+
+  it('opens on a to-do, reading, and closes', () => {
+    const s = open();
+    expect(s.todoPanel).toEqual({ key: 'a.md', mode: 'read', dirty: false, ask: null, order: [] });
+    expect(shellReducer(s, { type: 'close-todo' }).todoPanel).toBeNull();
+    expect(shellReducer(todos, { type: 'close-todo' })).toBe(todos);
+  });
+
+  it('opens on the add form with a null key', () => {
+    expect(shellReducer(todos, { type: 'open-todo', key: null, mode: 'add' }).todoPanel).toMatchObject({
+      key: null,
+      mode: 'add',
+    });
+  });
+
+  it('keeps its order when another to-do replaces the open one', () => {
+    const s = shellReducer(ordered(open()), { type: 'open-todo', key: 'b.md', mode: 'edit' });
+    expect(s.todoPanel).toMatchObject({ key: 'b.md', mode: 'edit', order: ['a.md', 'b.md', 'c.md'] });
+  });
+
+  it('steps through the order, back to reading, and stops at the ends', () => {
+    let s = ordered(shellReducer(open(), { type: 'set-todo-mode', mode: 'edit' }));
+    s = shellReducer(s, { type: 'todo-step', dir: 1 });
+    expect(s.todoPanel).toMatchObject({ key: 'b.md', mode: 'read' });
+    s = shellReducer(shellReducer(s, { type: 'todo-step', dir: 1 }), { type: 'todo-step', dir: 1 });
+    expect(s.todoPanel?.key).toBe('c.md');
+    s = shellReducer(shellReducer(s, { type: 'todo-step', dir: -1 }), { type: 'todo-step', dir: -1 });
+    expect(shellReducer(s, { type: 'todo-step', dir: -1 })).toBe(s);
+    expect(s.todoPanel?.key).toBe('a.md');
+  });
+
+  it('holds a question and drops it with the dirty flag', () => {
+    let s = shellReducer(open(), { type: 'set-todo-dirty', dirty: true });
+    s = shellReducer(s, { type: 'ask-todo', after: { type: 'close-todo' } });
+    expect(s.todoPanel?.ask).toEqual({ type: 'close-todo' });
+    expect(shellReducer(s, { type: 'keep-todo' }).todoPanel?.ask).toBeNull();
+    expect(shellReducer(s, { type: 'set-todo-dirty', dirty: false }).todoPanel?.ask).toBeNull();
+  });
+
+  it('shuts whenever the To-dos drawer is closed or replaced', () => {
+    const s = open();
+    expect(shellReducer(s, { type: 'toggle-drawer', drawer: 'chats' }).todoPanel).toBeNull();
+    expect(shellReducer(s, { type: 'close-drawer' }).todoPanel).toBeNull();
+    expect(shellReducer(s, { type: 'open-help', page: null }).todoPanel).toBeNull();
+    expect(shellReducer(s, { type: 'toggle-rail' }).todoPanel).not.toBeNull();
+  });
+
+  it('is never saved', () => {
+    expect(JSON.parse(saveShell(open()))).not.toHaveProperty('todoPanel');
+    expect(loadShell(JSON.stringify({ todoPanel: { key: 'a.md' } })).todoPanel).toBeNull();
   });
 });

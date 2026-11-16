@@ -55,6 +55,11 @@ export interface ShellState {
    * desk is `inert`, Esc closes it, and focus goes back to whatever opened it.
    */
   viewer: ViewerRequest | null;
+  /**
+   * The to-do open in the to-do panel (`TodoPanel`, plan 2026-11-16-todo-panel), or null. Never saved. It
+   * belongs to the To-dos drawer: it closes whenever that drawer does or another replaces it.
+   */
+  todoPanel: TodoPanelState | null;
   /** Single-key shortcuts ([, T, C, S) on or off. Cmd/Ctrl+K and Esc always work. */
   singleKeys: boolean;
   /**
@@ -89,6 +94,25 @@ export interface PageViewerRequest {
 }
 
 export type ViewerRequest = LibraryViewerRequest | PageViewerRequest;
+
+/** What the to-do panel is doing: reading a to-do, editing it, or adding a new one. */
+export type TodoPanelMode = 'read' | 'edit' | 'add';
+
+export interface TodoPanelState {
+  /** The to-do's `key`, or null while adding a new one. */
+  key: string | null;
+  mode: TodoPanelMode;
+  /** Unsaved changes in edit or add mode. Set by the panel; while true, anything that would close or change the panel asks first. */
+  dirty: boolean;
+  /**
+   * An action that was held back because the panel had unsaved changes (a drawer swap, the next to-do, a close).
+   * The panel asks "Discard your changes?"; Discard runs it, Keep editing drops it.
+   */
+  ask: ShellAction | null;
+  /** The keys of the to-dos the drawer shows now, in order, held ones left out: what previous and next walk through. */
+  order: string[];
+}
+
 export type ShellAction =
   | { type: 'toggle-rail' }
   | { type: 'toggle-drawer'; drawer: DrawerName }
@@ -111,6 +135,21 @@ export type ShellAction =
   /** Shows a file in the viewer over the desk (replacing one already shown). */
   | { type: 'open-viewer'; viewer: ViewerRequest }
   | { type: 'close-viewer' }
+  /** Opens the to-do panel on a to-do (read or edit) or, with a null key, on the add form. Replaces one already open (`force`: even over unsaved changes, for a to-do that was just saved or added). */
+  | { type: 'open-todo'; key: string | null; mode: TodoPanelMode; force?: true }
+  | { type: 'set-todo-mode'; mode: TodoPanelMode }
+  | { type: 'set-todo-dirty'; dirty: boolean }
+  | { type: 'set-todo-order'; order: string[] }
+  /** Previous (-1) or next (1) to-do in `todoPanel.order`. */
+  | { type: 'todo-step'; dir: -1 | 1 }
+  /** Shuts the panel. `force`: a held change or finished add, which asks nothing even with unsaved changes. */
+  | { type: 'close-todo'; force?: true }
+  /** Held back by unsaved changes: the panel shows its question. Only the shell provider sends it. */
+  | { type: 'ask-todo'; after: ShellAction }
+  /** "Keep editing": drops the held-back action. */
+  | { type: 'keep-todo' }
+  /** "Discard": runs the held-back action with the changes dropped. Handled by the shell provider. */
+  | { type: 'discard-todo' }
   | { type: 'set-single-keys'; on: boolean }
   /** The viewer's width in px, or null for its default. */
   | { type: 'set-viewer-width'; width: number | null };
@@ -174,6 +213,9 @@ export interface KeyContext {
  * The one global `keydown` listener (in `ShellProvider`) ignores any event whose `defaultPrevented`
  * is true. Anything that handles Esc itself (the chat's close confirm, a card) calls
  * `preventDefault()` so the drawer behind it stays open.
+ * - While the to-do panel is open: Esc closes it first (it asks when there are unsaved changes), and `p` / `n`
+ *   move to the previous / next to-do. Anything that would close or change the panel while it holds unsaved changes
+ *   is held back and asks (`ShellProvider`).
  * - `[`, `t`, `c`, `s` (no modifier, not typing, palette shut, `singleKeys` on): rail, To-dos, Chats, Skills.
  * - `/` (not typing, palette shut, `singleKeys` on; Shift allowed, as some keyboards need it): open the global search.
  * - `h` toggles Help and `?` opens it (Shift allowed), under the same rules, and only with `helpVisible`.
@@ -211,7 +253,13 @@ export type IconName =
   | 'calendar'
   | 'person'
   | 'bin'
-  | 'help';
+  | 'help'
+  | 'up'
+  | 'heading'
+  | 'body'
+  | 'bullets'
+  | 'numbers'
+  | 'bold';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {

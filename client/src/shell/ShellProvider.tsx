@@ -25,6 +25,7 @@ import {
   loadShell,
   RAIL_NAMES_FROM,
   saveShell,
+  shellReducer,
   toggleRail,
 } from '../state/shell.ts';
 import { type Store, useStore } from '../store.tsx';
@@ -93,6 +94,15 @@ function initialState(): ShellState {
   };
 }
 
+/** The to-do panel's own housekeeping: never held back by unsaved changes. */
+const TODO_BOOKKEEPING: ReadonlySet<string> = new Set([
+  'set-todo-dirty',
+  'set-todo-mode',
+  'set-todo-order',
+  'ask-todo',
+  'keep-todo',
+]);
+
 /** A shell action with the width it happened at, or a resize to fit the docks to. */
 type Step = { action: ShellAction; width: number; rail: boolean } | { fit: number; rail: boolean };
 
@@ -158,9 +168,44 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     if (!layout.panelShowing) setRailOverride(false);
   }, [layout.panelShowing]);
 
-  const dispatch = useCallback((action: ShellAction) => {
+  // Set while "Discard" runs the action the to-do panel held back, so it is not held back again.
+  const discarding = useRef(false);
+
+  const dispatch = useCallback(function dispatch(action: ShellAction) {
     const s = stateRef.current;
     const now = layoutRef.current;
+    // "Discard": drop the unsaved changes, then do what was asked.
+    if (action.type === 'discard-todo') {
+      const then = s.todoPanel?.ask ?? null;
+      rawDispatch({
+        action: { type: 'set-todo-dirty', dirty: false },
+        width: widthRef.current,
+        rail: now.railShowsNames,
+      });
+      if (then) {
+        discarding.current = true;
+        try {
+          dispatch(then);
+        } finally {
+          discarding.current = false;
+        }
+      }
+      return;
+    }
+    // The to-do panel holds unsaved changes: whatever would close it or move it to another to-do (a drawer
+    // swap, Esc, the next to-do) is held back and the panel asks first, so nothing typed is lost at a key press.
+    const forced = (action.type === 'close-todo' || action.type === 'open-todo') && action.force === true;
+    if (s.todoPanel?.dirty && !discarding.current && !forced && !TODO_BOOKKEEPING.has(action.type)) {
+      const next = shellReducer(s, action).todoPanel;
+      if (next === null || next.key !== s.todoPanel.key || next.mode !== s.todoPanel.mode) {
+        rawDispatch({
+          action: { type: 'ask-todo', after: action },
+          width: widthRef.current,
+          rail: now.railShowsNames,
+        });
+        return;
+      }
+    }
     if (action.type === 'toggle-rail') {
       // While the panel shows, the toggle works against its hold (see toggleRail).
       const next = toggleRail(s, widthRef.current, {
@@ -221,6 +266,19 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     if (!active || active === document.body || document.getElementById('drawer')?.contains(active))
       document.getElementById('main')?.focus({ preventScroll: true });
     dispatch({ type: 'close-drawer' });
+  }, [view, dispatch]);
+
+  // A new page (the rail, a link in a drawer, Home, a search result) closes the to-do panel, which would
+  // otherwise stay over it with the sheet out of reach. With unsaved changes the panel asks first.
+  const todoView = useRef(view);
+  useEffect(() => {
+    const was = todoView.current;
+    todoView.current = view;
+    // Moving into an app with the drawer open: the effect above closes the drawer, which closes the panel too
+    // (and asks first). Asking again here would replace that question, so Discard would leave the drawer open.
+    if (view === was || stateRef.current.todoPanel === null) return;
+    if (view?.startsWith('app:') && stateRef.current.drawer) return;
+    dispatch({ type: 'close-todo' });
   }, [view, dispatch]);
 
   useEffect(() => {

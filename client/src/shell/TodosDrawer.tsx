@@ -1,11 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import {
-  ATTENTION_LABEL,
-  attentionFor,
-  type TeamMember,
-  type TodoAction,
-  type TodoItem,
-} from '../../../shared/contract.ts';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ATTENTION_LABEL, attentionFor, type TodoAction, type TodoItem } from '../../../shared/contract.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatClient } from '../state/client-choice.ts';
@@ -14,37 +9,32 @@ import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
-import type { TodoFilter } from './contract.ts';
+import type { TodoFilter, TodoPanelState } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
-import { AddTodoForm, type EditDraft, TodoDonePanel, TodoEditor } from './TodoForms.tsx';
+import { buildEditActions, type EditDraft } from './TodoForms.tsx';
+import type { TodoPanelProps } from './TodoPanel.tsx';
 import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
+
+// The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
+const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
 
 type Tab = 'mine' | 'open';
 
-/** What the rows need to edit: set by the drawer only when changes are on. */
-interface Editing {
-  /** The open editor's to-do, by `key`. */
-  id: string | null;
-  /** The open editor's fields. They live here so a row that moves group keeps what was typed. */
-  draft: EditDraft;
-  setDraft: (d: EditDraft) => void;
-  /** False for someone who may only tick to-dos off: opening one shows just "Mark as done". */
+/** What a row needs to open the panel: set by the drawer for every to-do (reading needs no permission). */
+interface RowControls {
+  /** May edit (changes are on): the row's button says Edit; otherwise Options (read, and tick it off). */
   canEdit: boolean;
-  /** TodoList.canUsePersonal: shows the TDS / Personal switch in the editor. */
-  canUsePersonal: boolean;
+  /** The keys of the open panel, to mark its row. */
+  openKey: string | null;
   busy: boolean;
-  me: string;
-  team: TeamMember[];
-  open: (todo: TodoItem) => void;
-  close: () => void;
-  save: (todo: TodoItem, actions: TodoAction[]) => Promise<ChangeTodosResult>;
-  remove: (todo: TodoItem) => Promise<void>;
-  done: (todo: TodoItem) => void;
+  open: (todo: TodoItem, mode: 'read' | 'edit') => void;
+  /** Whether the person may do anything but read (change or tick off): shows the Edit / Options button. */
+  actionable: boolean;
 }
 
 /**
@@ -118,7 +108,7 @@ function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUn
 
 function TodoRow({
   todo,
-  editing,
+  controls,
   fresh,
   showScope,
   onOpened,
@@ -126,7 +116,7 @@ function TodoRow({
   onStar,
 }: {
   todo: TodoItem;
-  editing: Editing | null;
+  controls: RowControls;
   /** In "New to you": a dot, and opening it marks it seen. */
   fresh: boolean;
   /** The scope filter is All: a personal row says so. */
@@ -138,7 +128,7 @@ function TodoRow({
   onStar: (todo: TodoItem, button: HTMLElement) => void;
 }) {
   const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
-  const { dispatch, modes } = useShell();
+  const { state: shellState, dispatch, modes } = useShell();
   // The chat button is named by its action and title; "New to you" and the details line describe it, so a keyboard or
   // screen-reader user who lands on it hears them too.
   const newId = useId();
@@ -160,43 +150,24 @@ function TodoRow({
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
   const choose = () => {
+    // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
+    if (shellState.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
     onOpened(todo);
     if (chat) openChat(chat.id);
     else {
       const client = todoChatClient(todo, boot?.clients ?? []);
       newChat({ draft: todoChatDraft(todo), todoId: todo.key, ...(client !== undefined ? { client } : {}) });
     }
+    // The panel (if one is open) makes way for the chat.
+    if (shellState.todoPanel) dispatch({ type: 'close-todo', force: true });
     if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
   };
-
-  if (editing && editing.id === todo.key) {
-    return (
-      <li className="todo todo-editing">
-        {editing.canEdit ? (
-          <TodoEditor
-            draft={editing.draft}
-            onDraft={editing.setDraft}
-            todo={todo}
-            me={editing.me}
-            team={editing.team}
-            busy={editing.busy}
-            canUsePersonal={editing.canUsePersonal}
-            onSave={(actions) => editing.save(todo, actions)}
-            onDone={() => editing.done(todo)}
-            onDelete={() => void editing.remove(todo)}
-            onCancel={editing.close}
-          />
-        ) : (
-          <TodoDonePanel todo={todo} onDone={() => editing.done(todo)} onCancel={editing.close} />
-        )}
-      </li>
-    );
-  }
 
   return (
     <li
       className="todo"
-      data-editable={editing ? 'true' : undefined}
+      data-editable={controls.actionable ? 'true' : undefined}
+      data-panel-open={controls.openKey === todo.key ? 'true' : undefined}
       data-attention={attention ?? undefined}
       aria-current={current ? 'true' : undefined}
     >
@@ -205,14 +176,25 @@ function TodoRow({
       <div className="todo-main">
         {fresh ? <span className="dot todo-new" data-new="true" aria-hidden="true" /> : null}
         <span className="line-text">
-          <span className="line-title">
-            {fresh ? (
-              <span className="visually-hidden" id={newId}>
-                New to you.{' '}
-              </span>
-            ) : null}
+          {fresh ? (
+            <span className="visually-hidden" id={newId}>
+              New to you.
+            </span>
+          ) : null}
+          {/* The title opens the to-do in the panel, for everyone: reading needs no permission. */}
+          <button
+            type="button"
+            className="line-title todo-open"
+            data-panel-for={todo.key}
+            aria-haspopup="dialog"
+            aria-describedby={fresh ? newId : undefined}
+            onClick={() => {
+              onOpened(todo);
+              controls.open(todo, 'read');
+            }}
+          >
             {todo.title}
-          </span>
+          </button>
         </span>
       </div>
       <div className="todo-foot">
@@ -236,20 +218,20 @@ function TodoRow({
           on={favourite}
           onPress={(_, button) => onStar(todo, button)}
         />
-        {editing ? (
+        {controls.actionable ? (
           <button
             type="button"
             className="icon-btn todo-edit"
             data-edit-for={todo.key}
-            aria-label={editing.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
-            data-tip={editing.canEdit ? 'Edit' : 'Options'}
-            disabled={editing.busy}
+            aria-label={controls.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
+            data-tip={controls.canEdit ? 'Edit' : 'Options'}
+            disabled={controls.busy}
             onClick={() => {
               onOpened(todo);
-              editing.open(todo);
+              controls.open(todo, controls.canEdit ? 'edit' : 'read');
             }}
           >
-            <Icon name={editing.canEdit ? 'edit' : 'more'} size={16} />
+            <Icon name={controls.canEdit ? 'edit' : 'more'} size={16} />
           </button>
         ) : null}
         <button
@@ -288,6 +270,43 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
   );
 }
 
+/** What `PanelHost` adds to the panel's own props: where it is open and what the drawer holds for it. */
+type HostProps = Omit<TodoPanelProps, 'todo' | 'mode' | 'dirtyAsk' | 'order'> & {
+  panel: TodoPanelState;
+  todo: TodoItem | null;
+  order: string[];
+};
+
+/**
+ * Mounts the to-do panel beside the dock (`#todo-panel-slot` in App.tsx: the dock clips what is inside it) and
+ * keeps the shell's list of what previous and next walk through. The controller (drafts, saves, holds) stays
+ * in the drawer, which is why the panel is rendered from here and not from App.
+ */
+function PanelHost({ panel, todo, order, ...rest }: HostProps) {
+  const { dispatch } = useShell();
+  const orderKey = order.join('\n');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `orderKey` stands for `order`.
+  useEffect(() => {
+    dispatch({ type: 'set-todo-order', order });
+  }, [orderKey, dispatch]);
+  // A to-do that has gone since it was opened (passed on, done by someone else) closes the panel; one that
+  // has not shown up in the list yet (just added) is waited for.
+  const seen = useRef<string | null>(null);
+  useEffect(() => {
+    if (panel.key === null) return;
+    if (todo) seen.current = panel.key;
+    else if (seen.current === panel.key) dispatch({ type: 'close-todo', force: true });
+  }, [panel.key, todo, dispatch]);
+  if (panel.mode !== 'add' && !todo) return null;
+  const node = (
+    <Suspense fallback={null}>
+      <TodoPanel todo={todo} mode={panel.mode} {...rest} />
+    </Suspense>
+  );
+  const slot = typeof document === 'undefined' ? null : document.getElementById('todo-panel-slot');
+  return slot ? createPortal(node, slot) : node;
+}
+
 export function TodosDrawer() {
   const {
     todos,
@@ -310,10 +329,9 @@ export function TodosDrawer() {
   // To-dos opened this visit: they stay in "New to you" (without the dot) until the tab changes, so a row
   // doesn't jump away under the person's hands.
   const [visitSeen, setVisitSeen] = useState<ReadonlySet<string>>(new Set());
-  // A to-do the global search sent us to: its group is held open, and its row takes focus once it shows.
+  // A to-do the global search sent us to: its group is held open and it opens in the panel.
   // `n` counts requests, so asking again remounts the groups (a group closed by hand opens again).
   const [revealed, setRevealed] = useState<{ key: string; n: number } | null>(null);
-  const [focusRow, setFocusRow] = useState<string | null>(null);
   const setTab = (t: Tab) => {
     setVisitSeen(new Set());
     setRevealed(null);
@@ -329,8 +347,9 @@ export function TodosDrawer() {
     scope: '',
     open: {},
   });
-  const [adding, setAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const { state: shell, dispatch: shellDispatch } = useShell();
+  const panel = shell.todoPanel ?? null;
+  const adding = panel?.mode === 'add';
   const [filter, setFilter] = useState<TodoFilter>(EMPTY_FILTER);
   const [draft, setDraft] = useState<EditDraft>({
     title: '',
@@ -357,7 +376,8 @@ export function TodosDrawer() {
   const rememberStar = useStarFocus(scrollRef, favs);
 
   // The global search chose a to-do (`revealTodo`): show its tab with no filters, hold its group open and
-  // focus its row. The request is taken at once, so it happens once. It waits for the list to load.
+  // open it in the panel. The request is taken at once, so it happens once. It waits for the list to load.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `setMessage` only sets state.
   useEffect(() => {
     if (!reveal || !todos) return;
     const key = reveal.todo.key;
@@ -368,30 +388,21 @@ export function TodosDrawer() {
     setVisitSeen(new Set());
     setTabState(inMine ? 'mine' : 'open');
     setFilter(EMPTY_FILTER);
-    setAdding(false);
-    setEditingId(null);
     setRevealed({ key, n: reveal.n });
-    setFocusRow(key);
-  }, [reveal, todos, clearReveal]);
+    // The to-do opens in the panel, read first; closing it puts the keyboard back on the row.
+    setMessage('');
+    shellDispatch({ type: 'open-todo', key, mode: 'read' });
+  }, [reveal, todos, clearReveal, shellDispatch]);
 
-  // The row exists only after the render that opened its group, hence a second step.
-  useEffect(() => {
-    if (focusRow === null) return;
-    const row = document.querySelector<HTMLElement>(`[data-todo-open="${CSS.escape(focusRow)}"]`);
-    if (row) {
-      row.focus();
-      row.scrollIntoView?.({ block: 'nearest' });
-    } else scrollRef.current?.focus();
-    setFocusRow(null);
-  }, [focusRow]);
-
-  // After the editor closes, put the keyboard back on the row's edit button (or the Add button).
+  // After the panel closes, put the keyboard back on the row's title button (or the Add button).
   useEffect(() => {
     if (refocus === null) return;
     if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
     else {
       const id = CSS.escape(refocus);
-      const row = document.querySelector<HTMLElement>(`[data-edit-for="${id}"]`);
+      const row =
+        document.querySelector<HTMLElement>(`[data-panel-for="${id}"]`) ??
+        document.querySelector<HTMLElement>(`[data-edit-for="${id}"]`);
       // The row may have left the list (passed on) or sit in a closed group: fall back to Add, then the list.
       (row ?? addButton.current ?? scrollRef.current)?.focus();
     }
@@ -415,6 +426,16 @@ export function TodosDrawer() {
     if (document.activeElement === null || document.activeElement === document.body)
       (addButton.current ?? scrollRef.current)?.focus();
   }, [heldCount, sendingCount, heldTodos, undoMessageFor]);
+
+  // The panel closed (a key press, the veil, Esc, a finished to-do): put the keyboard back on the row's button,
+  // unless a held to-do's Undo took it.
+  const openKey = panel === null ? undefined : (panel.key ?? '');
+  const wasOpen = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = openKey;
+    if (was !== undefined && openKey === undefined && focusUndo !== was) setRefocus(was);
+  }, [openKey, focusUndo]);
 
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
   const items = tab === 'mine' ? todos.mine : todos.open;
@@ -509,15 +530,31 @@ export function TodosDrawer() {
     setRefocus(held.todoId);
   };
 
-  const toggleAdd = () => {
-    if (adding) {
-      setAdding(false);
-      setMessage('');
-      return;
-    }
-    setEditingId(null);
+  const fieldsOf = (t: TodoItem) => ({
+    title: t.title,
+    details: t.details,
+    due: t.due ?? '',
+    assignee: t.assignee ?? '',
+    scope: t.scope,
+  });
+  /** A draft for editing `t`: the version it has now, and what it says now as the base to tell edits from. */
+  const draftOf = (t: TodoItem): EditDraft => ({ ...fieldsOf(t), version: t.version, base: fieldsOf(t) });
+
+  /** Opens the panel on a to-do, reading or editing. */
+  const openPanel = (t: TodoItem, mode: 'read' | 'edit') => {
+    // Unsaved changes in the panel: it asks first (and the press is dropped, so the draft is never swapped under it).
+    if (panel?.dirty) return shellDispatch({ type: 'close-todo' });
     setMessage('');
-    setAdding(true);
+    setDraft(draftOf(t));
+    shellDispatch({ type: 'open-todo', key: t.key, mode });
+  };
+  /** Closes the panel without asking: a held change or a finished add has nothing left to lose. */
+  const closePanelNow = () => shellDispatch({ type: 'close-todo', force: true });
+
+  const toggleAdd = () => {
+    setMessage('');
+    if (adding) shellDispatch({ type: 'close-todo' });
+    else shellDispatch({ type: 'open-todo', key: null, mode: 'add' });
   };
 
   const run = async (actions: TodoAction[]) => {
@@ -530,150 +567,157 @@ export function TodosDrawer() {
   };
 
   const add = async (action: TodoAction) => {
+    const before = new Set([...todos.mine, ...todos.open].map((t) => t.key));
     const result = await run([action]);
     if (result.error) return setMessage(result.error.message, true);
-    setAdding(false);
     setMessage('Added.');
+    // After adding one for yourself, the panel stays on it in edit mode so its details can be written at once.
+    const added = result.todos?.mine.find((t) => !before.has(t.key));
+    if (added) {
+      setDraft(draftOf(added));
+      shellDispatch({ type: 'open-todo', key: added.key, mode: 'edit', force: true });
+      return;
+    }
+    closePanelNow();
     setRefocus('');
   };
 
-  const editing: Editing | null =
-    canChange || canTick
-      ? {
-          id: editingId,
-          canEdit: canChange,
-          canUsePersonal: todos.canUsePersonal,
-          draft,
-          setDraft,
-          busy,
-          me,
-          team: todos.team,
-          open: (t) => {
-            setAdding(false);
-            setMessage('');
-            const fields = {
-              title: t.title,
-              details: t.details,
-              due: t.due ?? '',
-              assignee: t.assignee ?? '',
-              scope: t.scope,
-            };
-            setDraft({ ...fields, version: t.version, base: fields });
-            setEditingId(t.key);
+  // The order previous and next walk through: what the drawer shows now, held rows left out.
+  const order = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+    .map((t) => t.key)
+    .filter((k) => !heldById.has(k));
+
+  const panelTodo = panel?.key
+    ? ([...todos.mine, ...todos.open].find((t) => t.key === panel.key) ?? null)
+    : null;
+
+  const rows: RowControls = {
+    canEdit: canChange,
+    openKey: panel?.key ?? null,
+    busy,
+    open: openPanel,
+    actionable: canChange || canTick,
+  };
+
+  /** Saves what the panel's editor changed: title, details, date and where it is kept now; a pass-on is held. */
+  const save = async (todo: TodoItem, actions: TodoAction[]): Promise<ChangeTodosResult> => {
+    // Title, details, date and where it is kept are saved now (they can simply be edited again).
+    // Passing the to-do on is held with an Undo, because it leaves this list and can't be edited
+    // back from here.
+    let passed = actions.find((a) => a.kind === 'assignee');
+    const now = actions.filter((a) => a.kind !== 'assignee');
+    const result: ChangeTodosResult = now.length > 0 ? await run(now) : { done: 0 };
+    // A `move` may have given it a new key (and a new name, after a clash).
+    const key = result.moved && result.moved.from === todo.key ? result.moved.to : todo.key;
+    const all = result.todos ? [...result.todos.mine, ...result.todos.open] : [];
+    if (result.error) {
+      // Keep the editor and the draft untouched, but adopt the version now in the brain (a teammate's
+      // change, or our own earlier steps), so pressing Save again is a deliberate overwrite.
+      const fresh = all.find((t) => t.key === key);
+      if (key !== todo.key) shellDispatch({ type: 'open-todo', key, mode: 'edit', force: true });
+      if (result.error.code === 'changed') {
+        if (fresh) setDraft((d) => rebase(d, fresh, true));
+        setMessage(`${result.error.message} Your changes are still here.`, true);
+        return result;
+      }
+      if (fresh) setDraft((d) => rebase(d, fresh, false));
+      if (result.done > 0) {
+        setMessage(
+          'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
+          true,
+        );
+      } else setMessage(result.error.message, true);
+      return result;
+    }
+    let finalKey = key;
+    if (passed && now.length > 0) {
+      // The pass-on is held and sent later: it checks against the version after this save's own steps.
+      const latest = all.find((t) => t.key === key);
+      if (!latest) {
+        setMessage('This to-do is no longer in your list, so it was not passed on.', true);
+        return {
+          done: result.done,
+          error: {
+            code: 'not-found',
+            message: 'This to-do is no longer in your list, so it was not passed on.',
           },
-          close: () => {
-            const id = editingId;
-            setEditingId(null);
-            setMessage('');
-            setRefocus(id);
-          },
-          save: async (todo, actions) => {
-            // Title, details, date and where it is kept are saved now (they can simply be edited again).
-            // Passing the to-do on is held with an Undo, because it leaves this list and can't be edited
-            // back from here.
-            let passed = actions.find((a) => a.kind === 'assignee');
-            const now = actions.filter((a) => a.kind !== 'assignee');
-            const result: ChangeTodosResult = now.length > 0 ? await run(now) : { done: 0 };
-            // A `move` may have given it a new key (and a new name, after a clash).
-            const key = result.moved && result.moved.from === todo.key ? result.moved.to : todo.key;
-            const all = result.todos ? [...result.todos.mine, ...result.todos.open] : [];
-            if (result.error) {
-              // Keep the editor and the draft untouched, but adopt the version now in the brain (a teammate's
-              // change, or our own earlier steps), so pressing Save again is a deliberate overwrite.
-              const fresh = all.find((t) => t.key === key);
-              if (key !== todo.key) setEditingId(key);
-              if (result.error.code === 'changed') {
-                if (fresh) setDraft((d) => rebase(d, fresh, true));
-                setMessage(`${result.error.message} Your changes are still here.`, true);
-                return result;
-              }
-              if (fresh) setDraft((d) => rebase(d, fresh, false));
-              if (result.done > 0) {
-                setMessage(
-                  'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
-                  true,
-                );
-              } else setMessage(result.error.message, true);
-              return result;
-            }
-            let finalKey = key;
-            if (passed && now.length > 0) {
-              // The pass-on is held and sent later: it checks against the version after this save's own steps.
-              const latest = all.find((t) => t.key === key);
-              if (!latest) {
-                setMessage('This to-do is no longer in your list, so it was not passed on.', true);
-                return {
-                  done: result.done,
-                  error: {
-                    code: 'not-found',
-                    message: 'This to-do is no longer in your list, so it was not passed on.',
-                  },
-                };
-              }
-              finalKey = latest.key;
-              passed = { ...passed, id: latest.id, expect: latest.version };
-            }
-            setEditingId(null);
-            if (passed?.kind === 'assignee') {
-              const who = todos.team.find((m) => m.slug === passed.assignee)?.name;
-              const label =
-                passed.assignee === null
-                  ? 'Made open to anyone'
-                  : passed.assignee === me
-                    ? 'Assigned to you'
-                    : `Passed to ${who ?? passed.assignee}`;
-              const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
-              hold({
-                todoId: finalKey,
-                title,
-                kind: 'assignee',
-                label,
-                action: passed,
-              });
-            } else {
-              setMessage('Saved.');
-              setRefocus(finalKey);
-            }
-            return { done: result.done + (passed ? 1 : 0) };
-          },
-          done: (todo) => {
-            setEditingId(null);
-            hold({
-              todoId: todo.key,
-              title: todo.title,
-              kind: 'tick',
-              label: 'Marked as done',
-              action: null,
-              // A personal to-do is ticked through the brain script, which needs its scope and version.
-              ...(todo.scope === 'personal'
-                ? {
-                    tick: {
-                      id: todo.id,
-                      scope: todo.scope,
-                      expect: todo.version,
-                    },
-                  }
-                : {}),
-            });
-          },
-          remove: async (todo) => {
-            setEditingId(null);
-            hold({
-              todoId: todo.key,
-              title: todo.title,
-              kind: 'delete',
-              label: 'Deleted',
-              // The version as shown when Delete was pressed.
-              action: {
-                kind: 'delete',
+        };
+      }
+      finalKey = latest.key;
+      passed = { ...passed, id: latest.id, expect: latest.version };
+    }
+    if (passed?.kind === 'assignee') {
+      closePanelNow();
+      const who = todos.team.find((m) => m.slug === passed.assignee)?.name;
+      const label =
+        passed.assignee === null
+          ? 'Made open to anyone'
+          : passed.assignee === me
+            ? 'Assigned to you'
+            : `Passed to ${who ?? passed.assignee}`;
+      const title = actions.find((a) => a.kind === 'edit')?.title ?? todo.title;
+      hold({
+        todoId: finalKey,
+        title,
+        kind: 'assignee',
+        label,
+        action: passed,
+      });
+    } else {
+      // Saved: back to reading it, on the key it has now.
+      shellDispatch({ type: 'open-todo', key: finalKey, mode: 'read', force: true });
+      setMessage('Saved.');
+    }
+    return { done: result.done + (passed ? 1 : 0) };
+  };
+
+  /** A tick box pressed while reading: one details change, through the same conflict check as Save. */
+  const tick = async (todo: TodoItem, markdown: string) => {
+    const actions = buildEditActions(todo, { ...draftOf(todo), details: markdown }, true);
+    if (actions.length === 0) return;
+    const result = await run(actions);
+    if (result.error) return setMessage(result.error.message, true);
+    setMessage('');
+  };
+
+  const finishPanel = {
+    done: (todo: TodoItem) => {
+      closePanelNow();
+      hold({
+        todoId: todo.key,
+        title: todo.title,
+        kind: 'tick',
+        label: 'Marked as done',
+        action: null,
+        // A personal to-do is ticked through the brain script, which needs its scope and version.
+        ...(todo.scope === 'personal'
+          ? {
+              tick: {
                 id: todo.id,
+                scope: todo.scope,
                 expect: todo.version,
-                ...(todo.scope === 'personal' ? { scope: 'personal' as const } : {}),
               },
-            });
-          },
-        }
-      : null;
+            }
+          : {}),
+      });
+    },
+    remove: (todo: TodoItem) => {
+      closePanelNow();
+      hold({
+        todoId: todo.key,
+        title: todo.title,
+        kind: 'delete',
+        label: 'Deleted',
+        // The version as shown when Delete was pressed.
+        action: {
+          kind: 'delete',
+          id: todo.id,
+          expect: todo.version,
+          ...(todo.scope === 'personal' ? { scope: 'personal' as const } : {}),
+        },
+      });
+    },
+  };
 
   const row = (t: TodoItem, isFresh: boolean) => {
     const held = heldById.get(t.key);
@@ -683,8 +727,8 @@ export function TodosDrawer() {
       <TodoRow
         key={t.key}
         todo={t}
-        // A personal to-do can't be changed when the gate is off (the server would refuse): chat only.
-        editing={t.scope === 'personal' && !todos.canUsePersonal ? null : editing}
+        // A personal to-do can't be changed when the gate is off (the server would refuse): read and chat only.
+        controls={t.scope === 'personal' && !todos.canUsePersonal ? { ...rows, actionable: false } : rows}
         fresh={isFresh && !visitSeen.has(t.key)}
         showScope={showScope}
         onOpened={opened}
@@ -787,24 +831,6 @@ export function TodosDrawer() {
           {addToggle}
         </div>
       ) : null}
-      {canChange && adding ? (
-        <div className="drawer-tools todo-add">
-          <AddTodoForm
-            me={me}
-            team={todos.team}
-            busy={busy}
-            canAddOpen={todos.canAddOpen}
-            canUsePersonal={todos.canUsePersonal}
-            startPersonal={tab === 'mine' && active.scope === 'personal'}
-            onAdd={(a) => void add(a)}
-            onCancel={() => {
-              setAdding(false);
-              setMessage('');
-              setRefocus('');
-            }}
-          />
-        </div>
-      ) : null}
       {todos.changes === 'switched-off' ? (
         <p className="todo-note todo-off">
           Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
@@ -815,8 +841,9 @@ export function TodosDrawer() {
         </p>
       ) : null}
       <ResultsAnnouncer filtering={filtering} count={shown.length} />
+      {/* With the panel open the status is said there (it may cover this drawer). */}
       <p className="todo-status" role="status" data-tone={isError ? 'error' : undefined}>
-        {message}
+        {panel === null ? message : ''}
       </p>
       <div className="drawer-scroll" ref={scrollRef} tabIndex={-1}>
         <div className="drawer-body">
@@ -902,6 +929,44 @@ export function TodosDrawer() {
           ) : null}
         </div>
       </div>
+      {panel !== null ? (
+        <PanelHost
+          panel={panel}
+          todo={panelTodo}
+          order={order}
+          message={message}
+          isError={isError}
+          draft={draft}
+          setDraft={setDraft}
+          busy={busy}
+          canEdit={canChange}
+          canTick={canTick}
+          me={me}
+          team={todos.team}
+          canUsePersonal={todos.canUsePersonal}
+          canAddOpen={todos.canAddOpen}
+          startPersonal={tab === 'mine' && active.scope === 'personal'}
+          onEdit={(t) => {
+            setMessage('');
+            setDraft(draftOf(t));
+            shellDispatch({ type: 'set-todo-mode', mode: 'edit' });
+          }}
+          onCancelEdit={() => {
+            setMessage('');
+            shellDispatch({ type: 'set-todo-mode', mode: 'read' });
+          }}
+          onSave={save}
+          onTick={tick}
+          onDone={finishPanel.done}
+          onDelete={finishPanel.remove}
+          onAdd={(a) => void add(a)}
+          onCancelAdd={() => {
+            // A typed title asks first (the shell holds the close); the focus goes back when the panel shuts.
+            setMessage('');
+            shellDispatch({ type: 'close-todo' });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

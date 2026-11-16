@@ -407,7 +407,8 @@ const SCENES: Record<string, Scene> = {
     await enableTodoChanges(page);
     await openDrawer(page, 'To-dos');
     await page.locator('#drawer .todo-add-btn, #drawer .todo-add-label').first().click();
-    const form = page.locator('#drawer form[aria-label="Add a to-do"]');
+    // The add form opens in the to-do panel, beside the drawer.
+    const form = page.locator('.todo-panel form[aria-label="Add a to-do"]');
     await form
       .getByRole('textbox', { name: 'What needs doing?' })
       .fill('Call the office manager about the quote');
@@ -422,7 +423,8 @@ const SCENES: Record<string, Scene> = {
     await enableTodoChanges(page);
     await openDrawer(page, 'To-dos');
     await page.locator('#drawer button[aria-label^="Edit "]').first().click();
-    await page.locator('#drawer form[aria-label^="Edit "]').waitFor();
+    // Editing happens in the to-do panel, beside the drawer.
+    await page.locator('.todo-panel form[aria-label^="Edit "]').waitFor();
     await sleep(300);
   },
 

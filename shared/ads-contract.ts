@@ -7,11 +7,13 @@
  * `{ ok: true, ...reply }` or `{ ok: false, code: AdsErrorCode, error: string }` (error text is for
  * developers; the app shows its own words from ADS_ERROR_MESSAGES).
  *
- * Every rule (who may decide, what may be applied, file formats) lives in the brain's
- * `.claude/skills/ads-manager/scripts/lib/proposals.cjs`, `monthly.cjs`, `apply.cjs` and
- * `client-draft.cjs`. The bridge loads them at run time and never copies their logic.
- * Who acts always comes from this Mac's git identity matched against the roster; no stdin field
- * names the actor. A test checks the script's constants match this file.
+ * File formats and approval rules live in the brain's `.claude/skills/ads-manager/scripts/lib/proposals.cjs`,
+ * `monthly.cjs`, `apply.cjs` and `client-draft.cjs`; the bridge loads them at run time and never copies
+ * their logic. The brain library does NOT check who acts for `decided` (P.stamp), `dry-run`, `apply`
+ * (falls back to $USER) or `client-draft`, so the bridge itself requires, for EVERY change action, that
+ * `P.gitUser()` is on the roster (`not-allowed` otherwise), and additionally `P.mayDecide(me, fm)` for
+ * `decided`, `dry-run`, `apply` and `client-draft` (decision 10). The actor is passed to the library as
+ * `by: P.gitUser().slug`; no stdin field names the actor. A test checks the script's constants match this file.
  */
 
 /** Folder and script, relative to the brain root. */
@@ -20,8 +22,11 @@ export const ADS_SKILL = { skill: 'tdsapp-ads', script: '.claude/skills/tdsapp-a
 /** The capability the app needs before it shows Ad Manager. */
 export const ADS_CAPABILITY = 'ads-v1';
 
-/** Read actions run in their own queue (several at once); change actions run one at a time per Mac. */
-export type AdsReadAction = 'capabilities' | 'accounts' | 'approvals' | 'proposal' | 'board' | 'standup-brief';
+/**
+ * Read actions run unqueued; identical reads in flight (same action and arguments) share one run.
+ * Change actions run one at a time per Mac (`createQueue`). The app itself resolves `file` (no script run).
+ */
+export type AdsReadAction = 'capabilities' | 'accounts' | 'approvals' | 'proposal' | 'board' | 'standup-brief' | 'file';
 export type AdsChangeAction =
   | 'decide'
   | 'dry-run'
@@ -34,7 +39,13 @@ export type AdsChangeAction =
   | 'standup-feedback';
 export type AdsAction = AdsReadAction | AdsChangeAction;
 
-/** Time limits in ms. `apply` is never retried by anyone; a time-out is reported as `unknown-outcome`. */
+/**
+ * Time limits in ms. For `apply`, `dry-run` and `sign-monthly` the limit only ends the WAIT: the script is
+ * spawned detached and is NEVER killed (apply.cjs runs its executor with spawnSync, so killing the bridge
+ * would orphan a live write). On the limit the app replies `unknown-outcome` (apply) or `internal`, keeps the
+ * change queue held until the process exits, and records it in the in-flight file (ADS_INFLIGHT_FILE).
+ * Nothing retries `apply`, anywhere.
+ */
 export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   capabilities: 15_000,
   accounts: 15_000,
@@ -42,6 +53,7 @@ export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   proposal: 15_000,
   board: 15_000,
   'standup-brief': 15_000,
+  file: 15_000,
   decide: 30_000,
   'client-draft': 60_000,
   'client-approved': 30_000,
@@ -65,11 +77,27 @@ export const ADS_RECENT_DAYS = 14;
 /** Note and reason text cap, characters. */
 export const ADS_NOTE_MAX = 1000;
 
+/**
+ * In the app's own data folder (never the brain): `{ client, id, pid, startedAt }[]` for applies running or whose
+ * outcome is unknown (timed out, or the app restarted mid-run). While a proposal is listed, its `canApply` is false
+ * and the panel shows the unknown-outcome line with "I've checked the account" (POST ADS_ROUTES.clearInflight),
+ * which removes the entry. An entry whose pid has exited and whose proposal now shows `applied_at` clears itself.
+ */
+export const ADS_INFLIGHT_FILE = 'ads-inflight.json';
+
+/** An ads account key: the client folder name, which may hold capitals and underscores (ads-board-data.cjs). */
+export const ADS_ACCOUNT_KEY = /^[A-Za-z0-9_-]{1,80}$/;
+
 export const ADS_PROPOSAL_ID = /^\d{8}-\d{2}-[a-z0-9-]+$/;
 export const ADS_CLIENT_SLUG = /^[a-z0-9-]+$/;
 export const ADS_MONTH = /^\d{4}-\d{2}$/;
 
-/** Files the app may open from Ad Manager (read directly by the app; decision 18). No `..`, inside the brain's real path. */
+/**
+ * Files Ad Manager may open (decision 18). The server checks the pattern, refuses `..`, then resolves the path with
+ * the existing `libraryItemForPath` and returns that `LibraryItem` (404 when it isn't in the library); the client opens
+ * it with the existing `{ kind: 'file', item }` viewer request, without delete. PDF, HTML (sandboxed as library pages
+ * are) and markdown show; JSON and CSV offer Download only. No raw brain-file route exists.
+ */
 export const ADS_FILE_PATTERN = /^clients\/[a-z0-9-]+\/(reports|proposals)\/.+\.(pdf|html|md|json|csv|txt)$/;
 
 export type AdsErrorCode =
@@ -98,21 +126,25 @@ export const ADS_ERROR_MESSAGES: Record<AdsErrorCode, string> = {
 // ── Replies ────────────────────────────────────────────────────────────────────────────────────
 
 export interface AdsCapabilities {
-  capabilities: string[]; // includes ADS_CAPABILITY
+  /** Named `features` (not `capabilities`) so `createCapabilityProbe` can cache it; includes ADS_CAPABILITY. */
+  features: string[];
   version: string;
   /** gads-proxy config or google-ads.yaml present (the Workbench's hasAdsAccess()). */
   adsAccess: boolean;
   /** ads-manager skill and the libraries the bridge needs are present. */
   adsManager: boolean;
-  /** The person at this Mac, from git identity and the roster, or null when not on the roster. */
+  /**
+   * The person at this Mac, from `P.gitUser()` and the roster, or null when not on the roster. NOT cached with
+   * `features`. If its slug differs from the app's own identity (tools/whoami.cjs), Ad Manager hides every action and
+   * says: "Ad Manager acts as <name> on this Mac, not you, so its buttons are off. Ask Ian to check the Mac's Git name."
+   */
   me: { slug: string; name: string; role: string } | null;
 }
 
 export interface AdsAccount {
-  key: string; // account key, as in .claude/accounts.json
+  /** Account key = client folder name (ADS_ACCOUNT_KEY). Also the client for chats and approvals. */
+  key: string;
   name: string;
-  /** Client folder slug, for chats and approvals. null when the account has no client folder. */
-  client: string | null;
   currency: string;
   /** Proposals waiting for this person's decision on this account's client. */
   waiting: number;
@@ -133,6 +165,7 @@ export type ProposalFrontmatter = Record<string, string | number | boolean | str
 export interface ProposalFlags {
   canDecide: boolean; // approve, request changes, reject
   canDryRun: boolean;
+  /** False while the proposal is in ADS_INFLIGHT_FILE (the app clears it; the bridge doesn't know). */
   canApply: boolean;
   canClientDraft: boolean;
   canRecordClientApproval: boolean;
@@ -192,6 +225,11 @@ export interface AdsChangeReply {
   output?: string;
   /** Plain-English line for the status area, e.g. "Approved. Draft client email written." */
   message: string;
+  /**
+   * `request-changes` only: the app starts the revising chat in the background with the Workbench's revise prompt
+   * (cadence-tasks.json `revisePrompt`) and returns its id, so the panel offers "Open chat".
+   */
+  chatId?: string;
 }
 
 // ── Requests (stdin) ───────────────────────────────────────────────────────────────────────────
@@ -202,6 +240,7 @@ export interface AdsRequests {
   approvals: { client?: string };
   proposal: { client: string; id: string };
   board: { account: string };
+  file: { path: string };
   'standup-brief': { account: string };
   decide: { client: string; id: string; action: 'approve' | 'request-changes' | 'reject'; note?: string };
   'dry-run': { client: string; id: string };
@@ -211,18 +250,36 @@ export interface AdsRequests {
   decided: { client: string; id: string; note: string };
   'sign-monthly': { client: string; month: string; note?: string };
   'standup-setup': { account: string };
-  'standup-feedback': { account: string; date: string; ratings: { campaign: string; score: 1 | 2 | 3 | 4 | 5; note?: string }[] };
+  /** One campaign per call, as standup-board.cjs writes it. Builder B confirms field names against the source. */
+  'standup-feedback': { account: string; date: string; campaign: string; action_category: string; score: 1 | 2 | 3 | 4 | 5; note?: string };
 }
 
+/** App routes. All go through checkRequest; changes are POST JSON with body AdsRequests[action]. */
+export const ADS_ROUTES = {
+  capabilities: '/api/ads/capabilities',
+  accounts: '/api/ads/accounts',
+  approvals: '/api/ads/approvals', // ?client=
+  proposal: '/api/ads/proposal', // ?client=&id=
+  board: '/api/ads/board', // ?account=
+  standupBrief: '/api/ads/standup-brief', // ?account=
+  /** `GET ?p=` → LibraryItem (see ADS_FILE_PATTERN). */
+  file: '/api/ads/file',
+  /** `POST /api/ads/do/<AdsChangeAction>`. */
+  change: (action: AdsChangeAction) => `/api/ads/do/${action}`,
+  /** `POST { client, id }`: the person checked the account after an unknown outcome. */
+  clearInflight: '/api/ads/inflight/clear',
+} as const;
+
 /**
- * App routes (all through checkRequest; changes are POST JSON):
- *   GET  /api/ads/capabilities
- *   GET  /api/ads/accounts
- *   GET  /api/ads/approvals[?client=]
- *   GET  /api/ads/proposal?client=&id=
- *   GET  /api/ads/board?account=
- *   GET  /api/ads/standup-brief?account=
- *   POST /api/ads/<AdsChangeAction>   body: AdsRequests[action]
- *   GET  /api/brain-file?p=<path matching ADS_FILE_PATTERN>
- * Server-sent event on the existing app stream when watched ads folders change: { type: 'ads-changed' }.
+ * The ads summary the store loads at boot (when Ad Manager may be visible) and on `ads-changed`: what the rail
+ * count, the drawer row, Home's card and the visibility check read. `GET ADS_ROUTES.capabilities` plus
+ * `GET ADS_ROUTES.approvals` reduced to this.
  */
+export interface AdsSummary {
+  visible: boolean; // features has ADS_CAPABILITY && adsAccess && adsManager && skillAccess allowed
+  me: AdsCapabilities['me'];
+  /** Same person as the app's identity (see AdsCapabilities.me). */
+  sameIdentity: boolean;
+  waiting: number;
+  clients: { slug: string; name: string; waiting: number }[];
+}

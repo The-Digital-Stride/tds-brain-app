@@ -1493,7 +1493,13 @@ export type AppEvent =
   | { type: 'hello'; serverStartedAt: string }
   | { type: 'brain-changed'; area: BrainArea }
   /** A chat was created, closed or changed state. Re-fetch `GET /api/sessions`. */
-  | { type: 'sessions-changed' };
+  | { type: 'sessions-changed' }
+  /**
+   * Ads files changed (plan 2026-11-16-workbench-ad-manager, decision 19): proposals, monthly reports, board CSVs,
+   * fetch status or standup under `clients/`. Re-fetch the ads summary and whatever Ad Manager shows. A separate type,
+   * not a BrainArea, because an older tab treats an unknown area as a full bootstrap reload.
+   */
+  | { type: 'ads-changed' };
 
 /**
  * A tab holds ONE Server-Sent Events connection (browsers allow about six per site, across tabs).

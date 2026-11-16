@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { clampWidth, KEY_STEP, KEY_STEP_BIG, stepWidth, VIEWER_PAD, viewerLimits } from './useLayerWidth.ts';
+import {
+  CHAT_DRAWER_PAD,
+  chatDrawerLimits,
+  clampWidth,
+  KEY_STEP,
+  KEY_STEP_BIG,
+  stepWidth,
+  VIEWER_PAD,
+  viewerLimits,
+} from './useLayerWidth.ts';
 
 describe('viewerLimits', () => {
   it('the narrowest is the default width: 1040px, or what fits beside the rail', () => {
@@ -12,6 +21,14 @@ describe('viewerLimits', () => {
   it('never has a widest below the narrowest', () => {
     const l = viewerLimits(700);
     expect(l.max).toBe(l.min);
+  });
+});
+
+describe('chatDrawerLimits', () => {
+  it('is bounded by the sheet it sits in, not the window, down to 380px', () => {
+    expect(chatDrawerLimits(700)).toEqual({ min: 380, max: 700 - 2 * CHAT_DRAWER_PAD });
+    // A sheet narrower than 380px plus the gaps: the drawer takes what room there is and cannot move.
+    expect(chatDrawerLimits(300)).toEqual({ min: 276, max: 276 });
   });
 });
 

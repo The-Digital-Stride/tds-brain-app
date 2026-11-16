@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   skillLevels: null as unknown,
   hideChatDrawer: vi.fn(),
   expandChatDrawer: vi.fn(),
+  chatDrawer: null as string | null,
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
@@ -60,6 +61,7 @@ vi.mock('../store.tsx', () => ({
     dismissLevelOffer: h.dismissLevelOffer,
     hideChatDrawer: h.hideChatDrawer,
     expandChatDrawer: h.expandChatDrawer,
+    chatDrawer: h.chatDrawer,
   }),
 }));
 
@@ -112,6 +114,7 @@ afterEach(() => {
   h.skillLevels = null;
   h.setChatLevel.mockClear();
   h.hideChatDrawer.mockClear();
+  h.chatDrawer = null;
   h.expandChatDrawer.mockClear();
   h.setSkillLevel.mockClear();
   h.dismissLevelOffer.mockClear();
@@ -211,6 +214,12 @@ const perm = (
 
 const withItems = (items: ChatItem[]): ChatState => ({ ...chatState('waiting'), items });
 
+const probed: { shell: ReturnType<typeof useShell> | null } = { shell: null };
+function ShellProbe() {
+  probed.shell = useShell();
+  return null;
+}
+
 describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
   const drawer = () => (
     <ShellProvider>
@@ -226,6 +235,57 @@ describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
     expect(screen.queryByRole('button', { name: 'Close chat' })).toBeNull();
     expect(screen.getByRole('region', { name: 'T' })).toBeTruthy();
   });
+  it('Esc hides it, but never while a message is half-typed in it', () => {
+    h.chat = chatState('idle');
+    h.chatDrawer = 's1';
+    render(drawer());
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    box.focus();
+    fireEvent.change(box, { target: { value: 'half a thought' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(h.hideChatDrawer).not.toHaveBeenCalled();
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(h.hideChatDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('under a floating left drawer, Esc closes that drawer and leaves the chat', async () => {
+    h.chat = chatState('idle');
+    h.chatDrawer = 's1';
+    const width = window.innerWidth;
+    window.innerWidth = 700;
+    try {
+      render(
+        <ShellProvider>
+          <ShellProbe />
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      act(() => probed.shell?.dispatch({ type: 'open-drawer', drawer: 'chats' }));
+      await waitFor(() => expect(probed.shell?.state.drawer).toBe('chats'));
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(h.hideChatDrawer).not.toHaveBeenCalled();
+      await waitFor(() => expect(probed.shell?.state.drawer).toBeNull());
+    } finally {
+      window.innerWidth = width;
+    }
+  });
+
+  it('Open full screen carries what was typed to the chat screen', () => {
+    h.chat = chatState('idle');
+    const { unmount } = render(drawer());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'carry me over' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
+    unmount();
+    render(sheet());
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('carry me over');
+    // Handed over once: the next chat screen starts empty.
+    cleanup();
+    render(sheet());
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('Hide chat and Open full screen ask the store', () => {
     h.chat = chatState('working');
     render(drawer());

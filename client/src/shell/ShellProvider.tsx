@@ -133,7 +133,11 @@ function isTyping(el: Element | null): boolean {
 
 /** Focus is in the chat drawer's message box and something is typed there. */
 function draftInChatDrawer(el: Element | null): boolean {
-  return el instanceof HTMLTextAreaElement && el.closest('.chat-drawer') !== null && el.value.trim() !== '';
+  return (
+    el instanceof HTMLTextAreaElement &&
+    el.closest('[data-placement="drawer"]') !== null &&
+    el.value.trim() !== ''
+  );
 }
 
 export function ShellProvider({ children }: { children: ReactNode }) {
@@ -333,7 +337,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         panelFloating: layoutRef.current.panelModal,
         helpVisible: helpOnRef.current,
         sectionKeys: sectionKeysRef.current,
-        chatDrawer: chatDrawerRef.current.open,
+        // Under a floating left drawer the sheet (and the chat drawer in it) is out of reach: Esc is the drawer's.
+        chatDrawer: chatDrawerRef.current.open && !layoutRef.current.drawerModal,
         chatDraft: draftInChatDrawer(document.activeElement),
       });
       if (!action) return;

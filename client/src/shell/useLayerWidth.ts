@@ -35,9 +35,17 @@ function layerLimits(windowWidth: number, narrowest: number): WidthLimits {
   return { min, max: Math.max(min, room) };
 }
 
-/** The chat drawer goes down to 380px; its default is 520px. */
-export function chatDrawerLimits(windowWidth: number): WidthLimits {
-  return layerLimits(windowWidth, CHAT_DRAWER_MIN);
+/** The gap the chat drawer leaves round itself inside the sheet (`.chat-drawer` in viewer.css). */
+export const CHAT_DRAWER_PAD = 12;
+
+/**
+ * The chat drawer sits inside the sheet, so its room is the sheet's width less its gaps: down to 380px (or the
+ * room, if less); its default is 520px.
+ */
+export function chatDrawerLimits(sheetWidth: number): WidthLimits {
+  const room = sheetWidth - 2 * CHAT_DRAWER_PAD;
+  const min = Math.min(CHAT_DRAWER_MIN, room);
+  return { min, max: Math.max(min, room) };
 }
 
 export function clampWidth(width: number, { min, max }: WidthLimits): number {
@@ -84,12 +92,13 @@ export interface LayerWidth extends WidthLimits {
 /** Under this much room to grow, a handle could barely move, so none shows. */
 export const MIN_TRAVEL = 64;
 
-export function useLayerWidth(layer: Layer = 'viewer'): LayerWidth {
+/** `sheetWidth`: the sheet's width now, which bounds the chat drawer (the viewer is bounded by the window). */
+export function useLayerWidth(layer: Layer = 'viewer', sheetWidth?: number): LayerWidth {
   const { state, dispatch } = useShell();
   const { width: windowWidth } = useDesk();
   const [draft, setDraft] = useState<number | null>(null);
   const chat = layer === 'chat';
-  const limits = chat ? chatDrawerLimits(windowWidth) : viewerLimits(windowWidth);
+  const limits = chat ? chatDrawerLimits(sheetWidth ?? windowWidth) : viewerLimits(windowWidth);
   const resizable = windowWidth > FULL_WIDTH_AT && limits.max - limits.min >= MIN_TRAVEL;
   const wanted = draft ?? (chat ? state.chatDrawerWidth : state.viewerWidth);
   const fallback = chat ? clampWidth(CHAT_DRAWER_DEFAULT, limits) : limits.min;

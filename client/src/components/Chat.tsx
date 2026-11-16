@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
@@ -27,6 +27,13 @@ const REASONS = {
 
 const NO_PAGES: ChatPage[] = [];
 
+/**
+ * A message typed in the chat drawer, handed to the chat screen's message box when Open full screen moves the
+ * chat there (the drawer's box goes as it closes). Read as the new box mounts, then cleared.
+ */
+let handoff: { session: string; text: string } | null = null;
+const FILES_FIRST = 'Send or remove the attached files first.';
+
 /** True when a card other than `requestId` is still waiting on the person. */
 function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
   return items.some(
@@ -44,6 +51,8 @@ function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
 export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawer' } = {}) {
   const inDrawer = placement === 'drawer';
   const headingId = useId();
+  // Open full screen is held while files are attached in the drawer: they can't move with the message.
+  const [held, setHeld] = useState(false);
   const {
     boot,
     activeChat,
@@ -93,6 +102,24 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
 
+  const draftFor = (id: string | null) => (id !== null && handoff?.session === id ? handoff.text : '');
+  // The chat screen's box has read the handed-over text by now.
+  useEffect(() => {
+    if (!inDrawer && handoff?.session === sessionId) handoff = null;
+  }, [inDrawer, sessionId]);
+  // Moves the drawer's chat to the chat screen with what was typed, or says why not (attached files).
+  const toFullScreen = useCallback((): boolean => {
+    const box = column.current?.querySelector<HTMLTextAreaElement>('.composer-input');
+    if (column.current?.querySelector('.composer .chip-row .chip')) {
+      setHeld(true);
+      box?.focus();
+      return false;
+    }
+    handoff = sessionId && box?.value.trim() ? { session: sessionId, text: box.value } : null;
+    expandChatDrawer();
+    return true;
+  }, [sessionId, expandChatDrawer]);
+
   const chatPages = chat.files.pages ?? NO_PAGES;
   // A link to a file that is this chat's page opens the page view, which has "Download with TDS
   // branding" and "Suggest a change"; any other file is shown in the Files panel.
@@ -104,11 +131,11 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
         shellDispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key: page.key } });
       else {
         // A file shows in the chat's own panel, which is on the chat screen (over a tool it would be the tool's).
-        if (inDrawer) expandChatDrawer();
+        if (inDrawer && !toFullScreen()) return;
         shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
       }
     },
-    [sessionId, shellDispatch, chatPages, inDrawer, expandChatDrawer],
+    [sessionId, shellDispatch, chatPages, inDrawer, toFullScreen],
   );
   const openPage = useCallback(
     (key: string) => {
@@ -161,7 +188,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
         className="icon-btn"
         aria-label="Open full screen"
         data-tip="Open full screen"
-        onClick={expandChatDrawer}
+        onClick={toFullScreen}
       >
         <Icon name="wide" />
       </button>
@@ -174,6 +201,9 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
       >
         <Icon name="close" />
       </button>
+      <p className="chat-drawer-note" role="status">
+        {held ? FILES_FIRST : ''}
+      </p>
     </header>
   );
 
@@ -181,6 +211,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     <div
       className="chat chat-live"
       ref={column}
+      data-placement={placement}
       {...(inDrawer ? { role: 'region', 'aria-labelledby': headingId } : {})}
     >
       {inDrawer ? (
@@ -273,7 +304,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
           />
           <Composer
             key={`chat-${sessionId}`}
-            initial=""
+            initial={inDrawer ? '' : draftFor(sessionId)}
             skill={null}
             disabledReason={reason}
             autoFocus={false}

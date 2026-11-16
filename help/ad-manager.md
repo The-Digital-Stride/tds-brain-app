@@ -37,10 +37,10 @@ Only owners and scouts can use it. Ask one if you need it.
 - Cortex asks you to confirm approving, rejecting, applying and signing off a report.
 - If Cortex can't tell whether an apply reached Google Ads, it says so and stops. Check the account, then press **I've checked the account**.
 - **Recent decisions** covers the last 14 days.
-- Use **Refresh** if you think the screen is behind.
+- **Refresh** catches the screen up.
 - **Rate calls** lets you score the Daily standup's advice.
 - Each job shows when it last ran, and who ran it, once the Brain has synced. Teammates on an older Cortex don't share runs.
-- While a job's chat runs, the card says **Running**. **Hide chat** tucks the chat away; **Open full screen** moves it to Chats.
+- While a job's chat runs, the card says **Running**. **Hide chat** or Esc tucks it away; it keeps working. **Open full screen** moves it to Chats.
 - Drag a report table by its grip, or use the arrow keys on it. Your layout stays on this Mac.
 
 ## Try this

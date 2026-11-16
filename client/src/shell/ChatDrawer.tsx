@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChatView } from '../components/Chat.tsx';
 import { useStore } from '../store.tsx';
 import { ResizeHandle } from './ResizeHandle.tsx';
@@ -16,8 +16,21 @@ export function ChatDrawer() {
   return <ChatDrawerBody key={chatDrawer} />;
 }
 
+/** The sheet's width, kept up to date as the docks and the window change it. */
+function useSheetWidth(): number | undefined {
+  const [width, setWidth] = useState<number | undefined>(() => document.getElementById('main')?.clientWidth);
+  useEffect(() => {
+    const sheet = document.getElementById('main');
+    if (!sheet || typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(() => setWidth(sheet.clientWidth));
+    watch.observe(sheet);
+    return () => watch.disconnect();
+  }, []);
+  return width || undefined;
+}
+
 function ChatDrawerBody() {
-  const layer = useLayerWidth('chat');
+  const layer = useLayerWidth('chat', useSheetWidth());
   // What had focus as the drawer opened (Run, Open chat): focus goes back there when it is hidden.
   const opener = useRef<Element | null>(typeof document === 'undefined' ? null : document.activeElement);
   useEffect(() => {

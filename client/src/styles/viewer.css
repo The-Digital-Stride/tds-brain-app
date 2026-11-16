@@ -288,13 +288,15 @@ body.viewer-resizing iframe {
 /* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
    usable beside it. It sits inside the sheet, so a pushing panel stays in view and the sheet's inert rules apply. */
 .chat-drawer {
+  /* The viewer's gap (set on .viewer-layer, which this isn't inside), so both drawers sit alike. */
+  --viewer-pad: 12px;
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  right: 8px;
+  top: var(--viewer-pad);
+  bottom: var(--viewer-pad);
+  right: var(--viewer-pad);
   z-index: 5;
-  width: min(520px, calc(100% - 16px));
-  max-width: calc(100% - 16px);
+  width: min(520px, calc(100% - 2 * var(--viewer-pad)));
+  max-width: calc(100% - 2 * var(--viewer-pad));
   display: flex;
   flex-direction: column;
   border-radius: 16px;
@@ -308,6 +310,7 @@ body.viewer-resizing iframe {
 }
 .chat-drawer-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding: 10px 10px 8px 16px;
@@ -328,6 +331,16 @@ body.viewer-resizing iframe {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* "Send or remove the attached files first": its own line under the header, empty (and no height) otherwise. */
+.chat-drawer-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--iron);
+}
+.chat-drawer-note:empty {
+  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-drawer {

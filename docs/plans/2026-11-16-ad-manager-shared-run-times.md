@@ -120,12 +120,21 @@ export const ADS_TASK_RUNS_CAPABILITY = 'task-runs-v1';
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build
-- [ ] No unintended large deletions
-- [ ] Domain gates: security (brain write path, identity, input caps), UX (run line wording)
-- [ ] Browser check: Ad Manager task cards with a practice brain holding two people's run logs
+- [x] Type-check · [x] Tests · [x] Lint · [x] Build
+- [x] No unintended large deletions
+- [x] Domain gates: security (brain write path, identity, input caps); run-line wording kept from v0.47.0's UX review
+- [x] Browser check: Ad Manager task cards with a practice brain holding two people's run logs
 - [ ] Brain copy of `tdsapp-ads` after merge (Ian said yes)
 
 ## Review outcomes
 
-(filled at the end)
+- **Security gate (Opus):** 1 blocking, 1 should, 2 nice; all confirmed.
+  - Fixed: the compaction temp file followed a planted link (now a random name opened with `wx`); compaction skips logs past 4 MB; `board` filters run-log names before its 200-file cap.
+  - Accepted: a planted file at `runs/` only stops recording (fails safe).
+- **Correctness (Opus):** nothing blocking, 2 consider, 2 missing tests.
+  - Fixed: `AdsTaskRunReply` without `ok`; tests for my own shared run (no name) and standup `standup:daily`.
+  - Accepted and documented in SKILL.md: two runs overlapping a compaction on one Mac can drop one line.
+- **Browser:** practice brain.
+  - Pete's log shows "by Pete".
+  - The real route wrote the person's own log, README and .gitattributes; an injected `by` was ignored; an unknown task was refused.
+  - Your own newer run shows with no name.

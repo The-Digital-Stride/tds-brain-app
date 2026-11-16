@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.47.0 — 2026-11-16
+
+- **feat**: Ad Manager task cards show when each task last ran, and Running while its chat works
+- **feat**: Ad Manager report tables as one shared table, reorderable and full-width, laid out as you leave them
+- **fix**: review fixes for the Ad Manager tables and run times
+
 ## v0.46.1 — 2026-11-16
 
 - **fix**: Ad Manager cadence cards in two columns so each task has room

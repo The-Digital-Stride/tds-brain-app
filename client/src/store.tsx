@@ -143,6 +143,9 @@ function chatsReducer(chats: Chats, action: ChatsAction): Chats {
   return next === current && action.sessionId in chats ? chats : { ...chats, [action.sessionId]: next };
 }
 
+/** Where a chat opens: the chat screen (the default) or the right-hand drawer over a tool. */
+export type ChatPlace = 'sheet' | 'drawer';
+
 export interface Store {
   gate: Gate;
   boot: Bootstrap | null;
@@ -166,7 +169,17 @@ export interface Store {
     client?: string | null;
   }) => void;
   startSkill: (skill: SkillInfo) => void;
-  openChat: (sessionId: string) => void;
+  /** Shows a live chat: on the chat screen, or with `in: 'drawer'` in the right-hand drawer over the tool on the sheet. */
+  openChat: (sessionId: string, opts?: { in?: ChatPlace }) => void;
+  /**
+   * The chat shown in the right-hand drawer, or null: set only while that chat is the active one and a tool is on
+   * the sheet (plan 2026-11-16-run-chat-drawer).
+   */
+  chatDrawer: string | null;
+  /** Hides the drawer; the chat keeps running and stays in Chats. */
+  hideChatDrawer: () => void;
+  /** Moves the drawer's chat to the chat screen. */
+  expandChatDrawer: () => void;
   openPast: (sdkSessionId: string) => Promise<void>;
   /** Opens a section's tool on the sheet and records it as the section's last tool. `arg` is read once via `toolArg`. */
   openTool: (sectionId: string, toolId: string, arg?: string) => void;
@@ -177,7 +190,11 @@ export interface Store {
    * into the active chat. `open: false` leaves the person where they are. Resolves to the session id, or null with
    * `actionError` set.
    */
-  startChat: (prompt: string, client: string | null, opts: { open: boolean }) => Promise<string | null>;
+  startChat: (
+    prompt: string,
+    client: string | null,
+    opts: { open: boolean; in?: ChatPlace },
+  ) => Promise<string | null>;
   /** The ads summary: loaded after boot and on `ads-changed`; null until then or when the server has none. */
   ads: AdsSummary | null;
   reloadAds: () => Promise<void>;
@@ -346,6 +363,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearReveal = useCallback(() => setReveal(null), []);
   const restored = useRef(false);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
+  const [drawerChat, setDrawerChat] = useState<string | null>(null);
+  const drawerRef = useRef(drawerChat);
+  drawerRef.current = drawerChat;
   const [notice, setNotice] = useState<string | null>(null);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [libraryVersion, setLibraryVersion] = useState(0);
@@ -581,7 +601,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const cur = activeRef.current;
       if (cur.kind === 'live' && cur.sessionId === id) {
         setActiveChat(freshNewChat());
-        requestFocus();
+        // From the drawer (/clear) there is no Home box to focus: the drawer hands focus back as it goes.
+        if (drawerRef.current !== id) requestFocus();
       }
       setNotice("Chat closed. It's under Earlier in Chats if you want it back.");
       // The shared notice timer is replaced below, and it was the one that would clear the file notice.
@@ -697,12 +718,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [newChat],
   );
 
-  const openChat = useCallback((sessionId: string) => {
-    setActiveChat({ kind: 'live', sessionId });
+  const openChat = useCallback(
+    (sessionId: string, opts?: { in?: ChatPlace }) => {
+      setActiveChat({ kind: 'live', sessionId });
+      setActionError(null);
+      setCloseRequest(null);
+      if (opts?.in === 'drawer') {
+        // The tool stays on the sheet; the drawer's message box takes focus.
+        setDrawerChat(sessionId);
+        requestFocus();
+        return;
+      }
+      setDrawerChat(null);
+      setView('chat');
+    },
+    [requestFocus],
+  );
+  const hideChatDrawer = useCallback(() => setDrawerChat(null), []);
+  const expandChatDrawer = useCallback(() => {
+    setDrawerChat(null);
     setView('chat');
-    setActionError(null);
-    setCloseRequest(null);
   }, []);
+  // The drawer goes with its chat and with the tool: any other active chat or any non-tool view clears it.
+  useEffect(() => {
+    if (drawerChat === null) return;
+    if (!view.startsWith('tool:') || activeChat.kind !== 'live' || activeChat.sessionId !== drawerChat)
+      setDrawerChat(null);
+  }, [drawerChat, view, activeChat]);
+  const chatDrawer =
+    drawerChat !== null &&
+    view.startsWith('tool:') &&
+    activeChat.kind === 'live' &&
+    activeChat.sessionId === drawerChat
+      ? drawerChat
+      : null;
 
   const openPast = useCallback(
     async (sdkSessionId: string) => {
@@ -727,11 +776,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const startChat = useCallback(
-    async (prompt: string, client: string | null, opts: { open: boolean }) => {
+    async (prompt: string, client: string | null, opts: { open: boolean; in?: ChatPlace }) => {
       try {
         const { session } = await api.startSession({ prompt, client });
         void loadSessions();
-        if (opts.open) openChat(session.id);
+        if (opts.open) openChat(session.id, { in: opts.in ?? 'sheet' });
         return session.id;
       } catch (err) {
         setActionError(messageOf(err));
@@ -1252,6 +1301,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       newChat,
       startSkill,
       openChat,
+      chatDrawer,
+      hideChatDrawer,
+      expandChatDrawer,
       openPast,
       openTool,
       toolArg,
@@ -1323,6 +1375,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       newChat,
       startSkill,
       openChat,
+      chatDrawer,
+      hideChatDrawer,
+      expandChatDrawer,
       openPast,
       openTool,
       toolArg,

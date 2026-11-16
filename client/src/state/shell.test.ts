@@ -121,6 +121,16 @@ describe('loadShell', () => {
   });
 });
 
+describe('chat drawer width', () => {
+  it('is saved only once chosen, and a bad saved value loads as the default', () => {
+    expect(JSON.parse(saveShell(DEFAULT_SHELL))).not.toHaveProperty('chatDrawerWidth');
+    const chosen = { ...DEFAULT_SHELL, chatDrawerWidth: 600 };
+    expect(loadShell(saveShell(chosen)).chatDrawerWidth).toBe(600);
+    expect(loadShell(JSON.stringify({ chatDrawerWidth: 'wide' })).chatDrawerWidth).toBeNull();
+    expect(loadShell(JSON.stringify({ chatDrawerWidth: -4 })).chatDrawerWidth).toBeNull();
+  });
+});
+
 describe('saveShell', () => {
   it('saves everything except paletteOpen, and loads back the same', () => {
     const state: ShellState = {
@@ -134,6 +144,7 @@ describe('saveShell', () => {
       viewer: { item: { id: 'x' } as LibraryItem, place: 'Acme' },
       singleKeys: false,
       viewerWidth: null,
+      chatDrawerWidth: null,
       helpReturn: null,
       section: null,
       helpPage: null,

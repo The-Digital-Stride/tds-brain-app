@@ -79,9 +79,16 @@ export interface StoreToolAdditions {
   /**
    * Starts a NEW chat with `prompt` as its first message, for `client`, calling `api.startSession` directly (as
    * `openPast` does), never `send` (which posts into the active chat). `open: true` shows it; `open: false` leaves
-   * the person where they are. Resolves to the new session id, or null with `actionError` set.
+   * the person where they are; `in: 'drawer'` shows it in the right-hand drawer over the tool instead of the chat
+   * screen. Resolves to the new session id, or null with `actionError` set.
    */
-  startChat: (prompt: string, client: string | null, opts: { open: boolean }) => Promise<string | null>;
+  startChat: (
+    prompt: string,
+    client: string | null,
+    opts: { open: boolean; in?: 'sheet' | 'drawer' },
+  ) => Promise<string | null>;
+  /** Shows a live chat on the chat screen, or with `in: 'drawer'` in the right-hand drawer over the tool. */
+  openChat: (sessionId: string, opts?: { in?: 'sheet' | 'drawer' }) => void;
   /** Loaded at boot and on the `ads-changed` event; null until then or when unavailable. */
   ads: AdsSummary | null;
   /** Re-fetches `ads` (Refresh, and after a change action). */

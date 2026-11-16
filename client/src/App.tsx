@@ -8,6 +8,7 @@ import { SettingsView } from './components/SettingsView.tsx';
 import { SetupView } from './components/SetupView.tsx';
 import { helpVisible } from './help/visibility.ts';
 import { APPS } from './shell/apps.ts';
+import { ChatDrawer } from './shell/ChatDrawer.tsx';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
 import type { DrawerName } from './shell/contract.ts';
 import { Dock } from './shell/Dock.tsx';
@@ -238,6 +239,7 @@ function Shell() {
         <main className="sheet" id="main" tabIndex={-1} inert={modal || todoOpen}>
           <SheetNotices />
           <SheetContent />
+          <ChatDrawer />
         </main>
         {/* Out of reach while the to-do panel is open: on wide screens it sits under the panel and its veil. */}
         <div className="dock-slot" inert={todoOpen}>

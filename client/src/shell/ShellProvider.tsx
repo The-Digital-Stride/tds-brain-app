@@ -131,6 +131,15 @@ function isTyping(el: Element | null): boolean {
   return el.matches('input, textarea, select') || el.isContentEditable === true;
 }
 
+/** Focus is in the chat drawer's message box and something is typed there. */
+function draftInChatDrawer(el: Element | null): boolean {
+  return (
+    el instanceof HTMLTextAreaElement &&
+    el.closest('[data-placement="drawer"]') !== null &&
+    el.value.trim() !== ''
+  );
+}
+
 export function ShellProvider({ children }: { children: ReactNode }) {
   const [state, rawDispatch] = useReducer(step, undefined, initialState);
   const [width, setWidth] = useState(windowWidth);
@@ -143,7 +152,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat, chats, boot, ads } = useStore();
+  const { view, activeChat, chats, boot, ads, chatDrawer, hideChatDrawer } = useStore();
+  // Read by the key listener and dispatch, which are made once.
+  // A store without the drawer (an older test double) reads as closed.
+  const chatDrawerRef = useRef({ open: chatDrawer != null, hide: hideChatDrawer });
+  chatDrawerRef.current = { open: chatDrawer != null, hide: hideChatDrawer };
   const role = boot?.identity.role ?? 'unknown';
   const helpOn = helpVisible(role);
   const helpOnRef = useRef(helpOn);
@@ -179,6 +192,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const dispatch = useCallback(function dispatch(action: ShellAction) {
     const s = stateRef.current;
     const now = layoutRef.current;
+    // The chat drawer is the store's (it goes with the active chat), so hiding it is handed over there.
+    if (action.type === 'close-chat-drawer') {
+      chatDrawerRef.current.hide?.();
+      return;
+    }
     // "Discard": drop the unsaved changes, then do what was asked.
     if (action.type === 'discard-todo') {
       const then = s.todoPanel?.ask ?? null;
@@ -319,6 +337,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         panelFloating: layoutRef.current.panelModal,
         helpVisible: helpOnRef.current,
         sectionKeys: sectionKeysRef.current,
+        // Under a floating left drawer the sheet (and the chat drawer in it) is out of reach: Esc is the drawer's.
+        chatDrawer: chatDrawerRef.current.open && !layoutRef.current.drawerModal,
+        chatDraft: draftInChatDrawer(document.activeElement),
       });
       if (!action) return;
       e.preventDefault();

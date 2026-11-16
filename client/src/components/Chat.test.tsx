@@ -14,12 +14,24 @@ const h = vi.hoisted(() => ({
   setSkillLevel: vi.fn().mockResolvedValue(true),
   dismissLevelOffer: vi.fn(),
   skillLevels: null as unknown,
+  hideChatDrawer: vi.fn(),
+  expandChatDrawer: vi.fn(),
+  chatDrawer: null as string | null,
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
   answerQuestion: vi.fn().mockResolvedValue({ ok: true }),
 }));
-vi.mock('../api.ts', () => ({ api }));
+const uploads = vi.hoisted(() => ({
+  uploadFile: vi.fn(async (_file: File, name: string) => ({
+    id: 'up-1',
+    name,
+    size: 4,
+    kind: 'document' as const,
+  })),
+  discardUpload: vi.fn(async () => undefined),
+}));
+vi.mock('../api.ts', () => ({ api, ...uploads }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
     boot: {
@@ -56,6 +68,9 @@ vi.mock('../store.tsx', () => ({
     setChatLevel: h.setChatLevel,
     setSkillLevel: h.setSkillLevel,
     dismissLevelOffer: h.dismissLevelOffer,
+    hideChatDrawer: h.hideChatDrawer,
+    expandChatDrawer: h.expandChatDrawer,
+    chatDrawer: h.chatDrawer,
   }),
 }));
 
@@ -107,6 +122,9 @@ afterEach(() => {
   localStorage.clear();
   h.skillLevels = null;
   h.setChatLevel.mockClear();
+  h.hideChatDrawer.mockClear();
+  h.chatDrawer = null;
+  h.expandChatDrawer.mockClear();
   h.setSkillLevel.mockClear();
   h.dismissLevelOffer.mockClear();
 });
@@ -204,6 +222,106 @@ const perm = (
 });
 
 const withItems = (items: ChatItem[]): ChatState => ({ ...chatState('waiting'), items });
+
+const probed: { shell: ReturnType<typeof useShell> | null } = { shell: null };
+function ShellProbe() {
+  probed.shell = useShell();
+  return null;
+}
+
+describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
+  const drawer = () => (
+    <ShellProvider>
+      <ChatView placement="drawer" />
+    </ShellProvider>
+  );
+  it('has a small header of its own: no page heading, no search, no end-chat button', () => {
+    h.chat = chatState('idle');
+    render(drawer());
+    expect(screen.getByRole('heading', { level: 2, name: 'T' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Search or jump to/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close chat' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'T' })).toBeTruthy();
+  });
+  it('Esc hides it, but never while a message is half-typed in it', () => {
+    h.chat = chatState('idle');
+    h.chatDrawer = 's1';
+    render(drawer());
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    box.focus();
+    fireEvent.change(box, { target: { value: 'half a thought' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(h.hideChatDrawer).not.toHaveBeenCalled();
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(h.hideChatDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('under a floating left drawer, Esc closes that drawer and leaves the chat', async () => {
+    h.chat = chatState('idle');
+    h.chatDrawer = 's1';
+    const width = window.innerWidth;
+    window.innerWidth = 700;
+    try {
+      render(
+        <ShellProvider>
+          <ShellProbe />
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      act(() => probed.shell?.dispatch({ type: 'open-drawer', drawer: 'chats' }));
+      await waitFor(() => expect(probed.shell?.state.drawer).toBe('chats'));
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(h.hideChatDrawer).not.toHaveBeenCalled();
+      await waitFor(() => expect(probed.shell?.state.drawer).toBeNull());
+    } finally {
+      window.innerWidth = width;
+    }
+  });
+
+  it('Open full screen carries what was typed to the chat screen', () => {
+    h.chat = chatState('idle');
+    const { unmount } = render(drawer());
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'carry me over' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
+    unmount();
+    render(sheet());
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('carry me over');
+    // Handed over once: the next chat screen starts empty.
+    cleanup();
+    render(sheet());
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('Open full screen waits while files are attached, and says so until they are removed', async () => {
+    h.chat = chatState('idle');
+    render(drawer());
+    fireEvent.change(screen.getByLabelText('Choose files to attach'), {
+      target: { files: [new File(['abcd'], 'brief.txt')] },
+    });
+    await screen.findByRole('button', { name: /Remove brief\.txt/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).not.toHaveBeenCalled();
+    expect(screen.getByText('Send or remove the attached files first.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Remove brief\.txt/ }));
+    await waitFor(() => expect(screen.queryByText('Send or remove the attached files first.')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('Hide chat and Open full screen ask the store', () => {
+    h.chat = chatState('working');
+    render(drawer());
+    fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
+    expect(h.hideChatDrawer).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
+    // The message box is still there, so the person can carry on in the drawer.
+    expect(screen.getByRole('textbox')).toBeTruthy();
+  });
+});
 
 describe('the card waiting on you', () => {
   beforeEach(() => {

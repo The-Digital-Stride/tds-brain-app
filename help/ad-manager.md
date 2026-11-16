@@ -30,18 +30,18 @@ Only owners and scouts can use it. Ask one if you need it.
 3. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel on the right.
 4. Choose **Approve**, **Request changes** or **Reject**. Rejecting and requesting changes both need a note.
 5. For an approved change, try **Dry run** first. It checks everything and changes nothing. Then press **Apply now** to make it live.
-6. Press **Run** on any card on the board to start a chat for that job.
+6. Press **Run** on a card to start a chat for that job. It opens on the right, and the board stays in view.
 
 ## Good to know
 
 - Cortex asks you to confirm approving, rejecting, applying and signing off a report.
 - If Cortex can't tell whether an apply reached Google Ads, it says so and stops. Check the account, then press **I've checked the account**.
 - **Recent decisions** covers the last 14 days.
-- Use **Refresh** if you think the screen is behind.
+- **Refresh** catches the screen up.
 - **Rate calls** lets you score the Daily standup's advice.
-- Each job shows when it last ran. If a teammate ran it, their name shows too, once the Brain has synced. Teammates on an older Cortex don't share their runs.
-- While a job's chat is still going, the card says **Running** and its button becomes **Open chat**.
-- Drag a report table by its grip to move it, or use the arrow keys on it. **Full width** and **Reset layout** change the layout, which stays on this Mac.
+- Each job shows when it last ran, and who ran it, once the Brain has synced. Teammates on an older Cortex don't share runs.
+- While a job's chat runs, the card says **Running**. **Hide chat** or Esc tucks it away; it keeps working. **Open full screen** moves it to Chats.
+- Drag a report table by its grip, or use the arrow keys on it. Your layout stays on this Mac.
 
 ## Try this
 

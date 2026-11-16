@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
@@ -27,6 +27,15 @@ const REASONS = {
 
 const NO_PAGES: ChatPage[] = [];
 
+/**
+ * A message typed in the chat drawer, handed to the chat screen's message box when Open full screen moves the
+ * chat there (the drawer's box goes as it closes). Read as the new box mounts, then cleared.
+ */
+let handoff: { session: string; text: string } | null = null;
+const FILES_FIRST = 'Send or remove the attached files first.';
+/** A file attached in the message box (Composer's chips). */
+const ATTACHED = '.composer .chip-row .chip';
+
 /** True when a card other than `requestId` is still waiting on the person. */
 function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
   return items.some(
@@ -38,9 +47,14 @@ function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
 /**
  * The chat sheet: a live chat only (Home handles a new one). The bar on top, the thread in the
  * middle, and below it the floater: the card waiting on the person, the status line and the
- * message box.
+ * message box. `placement: 'drawer'` is the same chat in the right-hand drawer over a tool: a small
+ * header of its own (the page keeps its one heading and search) with Open full screen and Hide chat.
  */
-export function ChatView() {
+export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawer' } = {}) {
+  const inDrawer = placement === 'drawer';
+  const headingId = useId();
+  // Open full screen is held while files are attached in the drawer: they can't move with the message.
+  const [held, setHeld] = useState(false);
   const {
     boot,
     activeChat,
@@ -60,6 +74,8 @@ export function ChatView() {
     setSkillLevel,
     setChatLevel,
     dismissLevelOffer,
+    hideChatDrawer,
+    expandChatDrawer,
   } = useStore();
   const { dispatch: shellDispatch, state: shell } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -88,6 +104,34 @@ export function ChatView() {
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
 
+  const draftFor = (id: string | null) => (id !== null && handoff?.session === id ? handoff.text : '');
+  // The chat screen's box has read the handed-over text by now.
+  useEffect(() => {
+    if (!inDrawer && handoff?.session === sessionId) handoff = null;
+  }, [inDrawer, sessionId]);
+  // The "attached files" note goes once the files have been sent or removed.
+  useEffect(() => {
+    const col = column.current;
+    if (!held || !col) return;
+    const watch = new MutationObserver(() => {
+      if (!col.querySelector(ATTACHED)) setHeld(false);
+    });
+    watch.observe(col, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [held]);
+  // Moves the drawer's chat to the chat screen with what was typed, or says why not (attached files).
+  const toFullScreen = useCallback((): boolean => {
+    const box = column.current?.querySelector<HTMLTextAreaElement>('.composer-input');
+    if (column.current?.querySelector(ATTACHED)) {
+      setHeld(true);
+      box?.focus();
+      return false;
+    }
+    handoff = sessionId && box?.value.trim() ? { session: sessionId, text: box.value } : null;
+    expandChatDrawer();
+    return true;
+  }, [sessionId, expandChatDrawer]);
+
   const chatPages = chat.files.pages ?? NO_PAGES;
   // A link to a file that is this chat's page opens the page view, which has "Download with TDS
   // branding" and "Suggest a change"; any other file is shown in the Files panel.
@@ -97,9 +141,13 @@ export function ChatView() {
       const page = chatPages.find((p) => p.fileKey === key);
       if (page)
         shellDispatch({ type: 'open-viewer', viewer: { kind: 'page', chat: sessionId, key: page.key } });
-      else shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
+      else {
+        // A file shows in the chat's own panel, which is on the chat screen (over a tool it would be the tool's).
+        if (inDrawer && !toFullScreen()) return;
+        shellDispatch({ type: 'show-chat-file', chat: sessionId, key });
+      }
     },
-    [sessionId, shellDispatch, chatPages],
+    [sessionId, shellDispatch, chatPages, inDrawer, toFullScreen],
   );
   const openPage = useCallback(
     (key: string) => {
@@ -141,50 +189,89 @@ export function ChatView() {
     if (!anotherCardWaits(latestItems.current, requestId)) requestComposerFocus();
   };
 
-  return (
-    <div className="chat chat-live" ref={column}>
-      <SheetBar crumb="Chats" title={title} panel="Files and details">
-        {/* With no client the chip is left out; the panel's Details says so. */}
+  const drawerHead = (
+    <header className="chat-drawer-head">
+      <div className="chat-drawer-name">
+        <h2 id={headingId}>{title}</h2>
         {clientName ? <span className="chip">{clientName}</span> : null}
-        {confirming ? (
-          <fieldset
-            className="close-confirm"
-            aria-label="Close this chat"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                // Handled here, so the shell's Esc doesn't also close a drawer.
-                e.preventDefault();
-                cancelClose();
-              }
-            }}
-          >
-            <span>{closeConfirmText(state, helpersWorking)}</span>
+      </div>
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Open full screen"
+        data-tip="Open full screen"
+        onClick={toFullScreen}
+      >
+        <Icon name="wide" />
+      </button>
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Hide chat"
+        data-tip="Hide chat"
+        onClick={hideChatDrawer}
+      >
+        <Icon name="close" />
+      </button>
+      <p className="chat-drawer-note" role="status">
+        {held ? FILES_FIRST : ''}
+      </p>
+    </header>
+  );
+
+  return (
+    <div
+      className="chat chat-live"
+      ref={column}
+      data-placement={placement}
+      {...(inDrawer ? { role: 'region', 'aria-labelledby': headingId } : {})}
+    >
+      {inDrawer ? (
+        drawerHead
+      ) : (
+        <SheetBar crumb="Chats" title={title} panel="Files and details">
+          {/* With no client the chip is left out; the panel's Details says so. */}
+          {clientName ? <span className="chip">{clientName}</span> : null}
+          {confirming ? (
+            <fieldset
+              className="close-confirm"
+              aria-label="Close this chat"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  // Handled here, so the shell's Esc doesn't also close a drawer.
+                  e.preventDefault();
+                  cancelClose();
+                }
+              }}
+            >
+              <span>{closeConfirmText(state, helpersWorking)}</span>
+              <button
+                type="button"
+                className="btn"
+                data-variant="danger"
+                data-size="small"
+                onClick={() => void closeChat(sessionId)}
+              >
+                Close chat
+              </button>
+              {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
+              <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
+                Keep open
+              </button>
+            </fieldset>
+          ) : (
             <button
               type="button"
-              className="btn"
-              data-variant="danger"
-              data-size="small"
-              onClick={() => void closeChat(sessionId)}
+              className="icon-btn"
+              aria-label="Close chat"
+              ref={closeButton}
+              onClick={() => requestClose(sessionId)}
             >
-              Close chat
+              <Icon name="close" />
             </button>
-            {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
-            <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
-              Keep open
-            </button>
-          </fieldset>
-        ) : (
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Close chat"
-            ref={closeButton}
-            onClick={() => requestClose(sessionId)}
-          >
-            <Icon name="close" />
-          </button>
-        )}
-      </SheetBar>
+          )}
+        </SheetBar>
+      )}
 
       {chat.items.length > 0 ? (
         <Transcript
@@ -229,7 +316,7 @@ export function ChatView() {
           />
           <Composer
             key={`chat-${sessionId}`}
-            initial=""
+            initial={inDrawer ? '' : draftFor(sessionId)}
             skill={null}
             disabledReason={reason}
             autoFocus={false}

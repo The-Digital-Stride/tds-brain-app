@@ -355,7 +355,7 @@ describe('panel', () => {
     await screen.findByRole('button', { name: 'Open chat' });
     expect(store.startChat).toHaveBeenCalledWith('REVISE p1', 'acme', { open: false });
     fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
-    expect(store.openChat).toHaveBeenCalledWith('chat-1');
+    expect(store.openChat).toHaveBeenCalledWith('chat-1', { in: 'drawer' });
   });
 
   it('gives focus back to the button that opened the question', async () => {
@@ -524,7 +524,10 @@ describe('board', () => {
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
     await waitFor(() =>
-      expect(store.startChat).toHaveBeenCalledWith('PROMPT {{kept}} as is', 'acme', { open: true }),
+      expect(store.startChat).toHaveBeenCalledWith('PROMPT {{kept}} as is', 'acme', {
+        open: true,
+        in: 'drawer',
+      }),
     );
   });
 
@@ -544,7 +547,7 @@ describe('board', () => {
     expect(within(task()).getByText(/^started Today/)).toBeTruthy();
     expect(within(task()).queryByRole('button', { name: /^Run/ })).toBeNull();
     fireEvent.click(open);
-    expect(store.openChat).toHaveBeenCalledWith('chat-1');
+    expect(store.openChat).toHaveBeenCalledWith('chat-1', { in: 'drawer' });
 
     cleanup();
     store.sessions = { live: [{ id: 'chat-1', state: 'waiting' }], past: [] };
@@ -633,7 +636,7 @@ describe('board', () => {
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: /^Run: Daily standup/ }));
     await waitFor(() =>
-      expect(store.startChat).toHaveBeenCalledWith('STANDUP PROMPT', 'acme', { open: true }),
+      expect(store.startChat).toHaveBeenCalledWith('STANDUP PROMPT', 'acme', { open: true, in: 'drawer' }),
     );
   });
 });

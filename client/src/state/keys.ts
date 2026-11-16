@@ -8,7 +8,15 @@ const LETTER_DRAWERS: Record<string, DrawerName> = { t: 'todos', c: 'chats', s: 
 
 export const keyAction: KeyAction = (
   e,
-  { typing, state, panelFloating = false, helpVisible = false, sectionKeys },
+  {
+    typing,
+    state,
+    panelFloating = false,
+    helpVisible = false,
+    sectionKeys,
+    chatDrawer = false,
+    chatDraft = false,
+  },
 ) => {
   const key = e.key.toLowerCase();
 
@@ -26,6 +34,8 @@ export const keyAction: KeyAction = (
     // The to-do panel is the topmost layer: it closes first (the shell asks first when it holds unsaved changes).
     if (state.todoPanel) return { type: 'close-todo' };
     if (panelFloating) return { type: 'set-panel', open: false };
+    // The chat drawer over a tool; a message being typed in it is never thrown away by Esc.
+    if (chatDrawer) return chatDraft ? null : { type: 'close-chat-drawer' };
     // Closing Help puts back the drawer it replaced; closing any other drawer just closes it.
     if (state.drawer) return state.drawer === 'help' ? { type: 'close-help' } : { type: 'close-drawer' };
     return null;

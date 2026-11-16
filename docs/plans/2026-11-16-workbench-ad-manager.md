@@ -1,6 +1,6 @@
 # Workbench section and Ad Manager
 
-Date: 2026-11-16 · Size: XL (one release, three parts) · Branch: `workbench-ad-manager` · Explainer: (link after overseer review)
+Date: 2026-11-16 · Size: XL (one release, three parts) · Branch: `workbench-ad-manager` · Explainer: https://claude.ai/artifact/8xfXHZeKSD2JuLi8a32tUk (`docs/workbench-explainer.html`)
 
 Brain to-do: `todo/20261116-cortex-ad-manager-rebuild.md` (due 2026-11-19; "Test with Pete" before launch).
 

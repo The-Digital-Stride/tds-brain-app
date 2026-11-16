@@ -148,11 +148,11 @@ export function RateCalls() {
         </button>
         {back}
       </div>
-      {result ? (
-        <p className="am-line" role="status">
-          {result}
-        </p>
-      ) : null}
+      {/* One status region, always mounted, so the result is announced when it arrives. */}
+      <p className="visually-hidden" role="status">
+        {result ?? ''}
+      </p>
+      {result ? <p className="am-line">{result}</p> : null}
     </div>
   );
 }

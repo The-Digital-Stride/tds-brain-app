@@ -118,13 +118,33 @@
 }
 .am-sort {
   all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 6px;
+  margin: 0 -6px;
   cursor: pointer;
   font: inherit;
   border-radius: 6px;
+  transition: background-color 120ms var(--ease);
+}
+.am-sort:hover {
+  background: var(--tint-2);
+}
+.am-sort:active {
+  background: var(--tint-3);
 }
 .am-sort:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+.am-sort-icon {
+  display: inline-flex;
+}
+.am-sort-icon[data-dir="up"] .icon {
+  transform: rotate(180deg);
 }
 
 /* Status card, data health and the set-up options. */
@@ -145,8 +165,18 @@
 }
 .am-health li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
+}
+.am-meta {
+  color: var(--iron);
+  font-size: 11px;
+  font-weight: 400;
+}
+.am-health .am-meta {
+  flex-basis: 100%;
+  padding-left: 16px;
 }
 .am-dot {
   flex: none;

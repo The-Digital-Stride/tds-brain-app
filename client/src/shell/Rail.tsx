@@ -11,7 +11,7 @@ import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
 import { SyncStamp } from './SyncStamp.tsx';
-import { sectionBadge, visibleSections } from './sections.ts';
+import { sectionBadge, toolFor, visibleSections } from './sections.ts';
 import { chatsRailLabel, initials, ROLE_WORDS, todosRailLabel } from './words.ts';
 
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
@@ -187,6 +187,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
               label: sec.title,
             }}
             count={n}
+            current={toolFor(view)?.section.id === sec.id}
             keys={sec.key ? shortcut(sec.key) : undefined}
             onClick={() => dispatch({ type: 'toggle-section', section: sec.id })}
           />

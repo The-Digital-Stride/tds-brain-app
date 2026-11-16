@@ -45,10 +45,12 @@ vi.mock('../../api.ts', () => ({
   ApiFailure: class ApiFailure extends Error {
     code: string;
     status: number;
-    constructor(code: string, message: string, status: number) {
+    output?: string;
+    constructor(code: string, message: string, status: number, output?: string) {
       super(message);
       this.code = code;
       this.status = status;
+      this.output = output;
     }
   },
 }));
@@ -178,7 +180,7 @@ function mount() {
 }
 async function ready() {
   mount();
-  await screen.findByText(/Waiting for a decision \(/);
+  await screen.findByText(/Waiting for a decision/);
 }
 
 beforeEach(() => {
@@ -231,8 +233,8 @@ describe('account', () => {
 describe('folds', () => {
   it('opens Waiting and shuts Recent by default, and saves a change per client', async () => {
     await ready();
-    const waiting = screen.getByRole('button', { name: /Waiting for a decision \(2\)/ });
-    const recent = screen.getByRole('button', { name: /Recent decisions \(0, last 14 days\)/ });
+    const waiting = screen.getByRole('button', { name: /Waiting for a decision.*2/ });
+    const recent = screen.getByRole('button', { name: /Recent decisions, last 14 days.*0/ });
     expect(waiting.getAttribute('aria-expanded')).toBe('true');
     expect(recent.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(recent);
@@ -309,7 +311,7 @@ describe('panel', () => {
     );
     await screen.findByRole('heading', { name: 'Add negatives' });
     expect(api.adsChange).toHaveBeenCalledWith('decide', { client: 'acme', id: p1.id, action: 'approve' });
-    expect(screen.getByText('Approved.', { exact: false })).toBeTruthy();
+    expect(screen.getAllByText('Approved.', { exact: false }).length).toBeGreaterThan(0);
     expect(store.reloadAds).toHaveBeenCalled();
   });
 
@@ -351,6 +353,68 @@ describe('panel', () => {
     expect(store.startChat).toHaveBeenCalledWith('REVISE p1', 'acme', { open: false });
     fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
     expect(store.openChat).toHaveBeenCalledWith('chat-1');
+  });
+
+  it('gives focus back to the button that opened the question', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const group = screen.getByRole('group', { name: 'Approve this proposal' });
+    expect(
+      within(group).getByRole('button', { name: 'Approve' }).getAttribute('aria-describedby'),
+    ).toBeTruthy();
+    fireEvent.keyDown(group, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Approve' })));
+  });
+
+  it("says plainly when the revising chat couldn't start", async () => {
+    store.startChat.mockResolvedValueOnce(null);
+    api.adsChange.mockResolvedValue({
+      message: 'Changes requested. A chat is revising the proposal.',
+      proposal: full(p1, 'changes-requested'),
+      revisePrompt: 'REVISE p1',
+    });
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    fireEvent.change(screen.getByLabelText(/Reason or note/), { target: { value: 'Lower it' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
+    await screen.findAllByText(/revision chat couldn't start/);
+    expect(screen.queryByText(/A chat is revising/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+  });
+
+  it('offers Show output when an apply has an unknown outcome and the server sent its output', async () => {
+    const { ApiFailure } = await import('../../api.ts');
+    api.adsChange.mockRejectedValue(
+      new ApiFailure(
+        'unknown-outcome' as never,
+        ADS_ERROR_MESSAGES['unknown-outcome'],
+        504,
+        'RAW RUN OUTPUT',
+      ),
+    );
+    api.adsApprovals.mockResolvedValue(
+      approvals([
+        proposal(
+          '20261110-01-raise-budget',
+          'Raise the budget',
+          { canDecide: false, canApply: true },
+          'approved',
+        ),
+      ]),
+    );
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Details: Raise the budget' }));
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply now' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Apply this change to the live account' })).getByRole(
+        'button',
+        { name: 'Apply now' },
+      ),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Show output' }));
+    expect(screen.getByText('RAW RUN OUTPUT')).toBeTruthy();
   });
 
   it('keeps Apply busy and unretried from press to reply', async () => {
@@ -446,7 +510,7 @@ describe('panel', () => {
     };
     await ready();
     await screen.findByRole('heading', { name: 'Raise the budget' });
-    expect(screen.getAllByText(/Ad Manager acts as Pete on this Mac, not you/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Cortex and the Brain disagree about who you are/).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
   });

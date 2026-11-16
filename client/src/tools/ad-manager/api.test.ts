@@ -33,6 +33,35 @@ describe('loadAdsSummary', () => {
   });
 });
 
+describe('loadAdsSummary failures', () => {
+  it('throws on a 500, so the store keeps what it had', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
+    await expect(loadAdsSummary('sam')).rejects.toBeTruthy();
+  });
+
+  it('is null when the bridge is unavailable', async () => {
+    const body = JSON.stringify({ error: { code: 'unavailable', message: 'x' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 503 })));
+    expect(await loadAdsSummary('sam')).toBeNull();
+  });
+
+  it('throws on a network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('failed')));
+    await expect(loadAdsSummary('sam')).rejects.toBeTruthy();
+  });
+});
+
+describe('unknown-outcome output', () => {
+  it('is carried on the failure', async () => {
+    const body = JSON.stringify({ error: { code: 'unknown-outcome', message: 'm', output: 'RUN OUT' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 504 })));
+    await expect(api.adsChange('apply', { client: 'acme', id: 'x', confirmed: true })).rejects.toMatchObject({
+      code: 'unknown-outcome',
+      output: 'RUN OUT',
+    });
+  });
+});
+
 describe('slot', () => {
   it('shows when the summary says visible, with the waiting count as its badge', () => {
     const ads = { visible: true, me: null, sameIdentity: true, waiting: 3, clients: [] };

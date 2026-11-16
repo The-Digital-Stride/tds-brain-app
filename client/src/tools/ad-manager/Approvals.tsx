@@ -6,10 +6,11 @@ import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
+import { useRestoreFocus } from './focus.ts';
 import { OpenFile } from './OpenFile.tsx';
 import { adStore, useAd } from './store.ts';
 import { readMonthly, readPack } from './types.ts';
-import { decisionWords } from './words.ts';
+import { decisionWords, statusWords } from './words.ts';
 
 function useFolds(client: string) {
   const { boot, updatePrefs } = useStore();
@@ -27,6 +28,7 @@ function SignOff({ client }: { client: ClientApprovals }) {
   const run = useAdsRunner();
   const [ask, setAsk] = useState(false);
   const [note, setNote] = useState('');
+  useRestoreFocus(ask ? 'sign' : null);
   const m = readMonthly(client);
   if (!m || !client.mine || m.signed || m.partial || !m.files.body || m.canSign === false) return null;
   if (ads && ads.sameIdentity === false) return null;
@@ -66,6 +68,7 @@ function SignOff({ client }: { client: ClientApprovals }) {
         className="btn"
         data-variant="primary"
         data-size="small"
+        data-am-opener="sign"
         aria-disabled={busy !== null || undefined}
         onClick={() => busy === null && setAsk(true)}
       >
@@ -148,7 +151,7 @@ export function StatusCard({ client }: { client: ClientApprovals }) {
 }
 
 const Tier = ({ n }: { n: number }) => (
-  <span className="badge" data-tier={n}>
+  <span className="badge" data-tier={n} title={`Tier ${n}`} role="img" aria-label={`Tier ${n}`}>
     T{n}
   </span>
 );
@@ -162,7 +165,7 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
       <table className="am-table">
         <thead>
           <tr>
-            {['ID', 'Tier', 'Type', 'Proposal', '§', 'Campaigns', 'Expires', 'Status', ''].map((h) => (
+            {['ID', 'Tier', 'Type', 'Proposal', 'Section', 'Campaigns', 'Expires', 'Status', ''].map((h) => (
               <th key={h || 'details'} scope="col">
                 {h || <span className="visually-hidden">Details</span>}
               </th>
@@ -198,7 +201,7 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
                 <td className="am-nowrap">{String(p.fm.expires ?? '')}</td>
                 <td>
                   <span className="badge" data-tone={p.fm.status === 'approved' ? undefined : 'waiting'}>
-                    {p.fm.status}
+                    {statusWords(p.fm.status)}
                   </span>
                 </td>
                 <td>
@@ -274,7 +277,8 @@ export function Proposals({ client }: { client: ClientApprovals }) {
       <section className="card" aria-label="Waiting for a decision">
         <Fold
           key={`${client.slug}-open`}
-          title={`Waiting for a decision (${client.open.length})`}
+          title="Waiting for a decision"
+          count={client.open.length}
           defaultOpen={folds.isOpen('open', true)}
           onToggle={(o) => folds.save('open', o)}
         >
@@ -284,7 +288,8 @@ export function Proposals({ client }: { client: ClientApprovals }) {
       <section className="card" aria-label="Recent decisions">
         <Fold
           key={`${client.slug}-recent`}
-          title={`Recent decisions (${client.recent.length}, last 14 days)`}
+          title="Recent decisions, last 14 days"
+          count={client.recent.length}
           defaultOpen={folds.isOpen('recent', false)}
           onToggle={(o) => folds.save('recent', o)}
         >

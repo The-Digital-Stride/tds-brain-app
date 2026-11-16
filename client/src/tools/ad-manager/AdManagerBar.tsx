@@ -35,7 +35,7 @@ export function AdManagerBar() {
       <button
         type="button"
         className="btn"
-        data-size="small"
+        data-variant="quiet"
         aria-disabled={loading || undefined}
         onClick={() => {
           if (loading) return;

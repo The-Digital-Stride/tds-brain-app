@@ -3,9 +3,10 @@
   flex: none;
   color: var(--iron);
 }
-/* The open tool: tinted, bold title (aria-current="page"; base.css marks "true"). */
+/* The open tool: white and lifted like every drawer's current row (aria-current="page"; base.css marks "true"). */
 .section-row[aria-current="page"] {
-  background: var(--tint-1);
+  background: #fff;
+  box-shadow: var(--lift-1);
 }
 .section-row[aria-current="page"] .line-title {
   font-weight: 600;

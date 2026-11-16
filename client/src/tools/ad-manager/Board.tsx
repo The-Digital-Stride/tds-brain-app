@@ -2,9 +2,11 @@ import { useState } from 'react';
 import type { AdsBoard } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
+import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { Confirm } from './Confirm.tsx';
+import { useRestoreFocus } from './focus.ts';
 import { adStore, loadBoard, useAd } from './store.ts';
 import {
   type HealthFile,
@@ -141,10 +143,11 @@ export function DataHealth({ board }: { board: AdsBoard }) {
         </p>
         <ul className="am-health">
           {h.files.map((f) => (
-            <li key={f.file} title={f.powers}>
+            <li key={f.file}>
               <span className="am-dot" data-status={f.status} aria-hidden="true" />
               <span className="am-file">{f.file}</span>
               <span className="am-dim">{fileNote(f)}</span>
+              {f.powers ? <span className="am-meta">{f.powers}</span> : null}
             </li>
           ))}
         </ul>
@@ -233,7 +236,9 @@ export function Standup({
   const { busy } = useAd();
   const [ask, setAsk] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useRestoreFocus(ask ? 'setup' : null);
   const s = readStandup(board);
   const v = s.verdict;
   const age = v ? ageDays(v.date) : null;
@@ -245,6 +250,8 @@ export function Standup({
     : '';
 
   const setup = async () => {
+    if (creating) return;
+    setCreating(true);
     setError(null);
     try {
       await api.adsChange('standup-setup', { account: board.key });
@@ -253,6 +260,8 @@ export function Standup({
     } catch (err) {
       setAsk(false);
       setError(adsErrorText(err));
+    } finally {
+      setCreating(false);
     }
   };
   const run = async () => {
@@ -295,7 +304,7 @@ export function Standup({
             text={`Create a starter standup config from ${name}'s enabled campaigns? Each starts on a weekly cadence, and an existing config is never overwritten.`}
             action="Create config"
             variant="primary"
-            busy={busy !== null}
+            busy={busy !== null || creating}
             onCancel={() => setAsk(false)}
             onConfirm={() => void setup()}
           />
@@ -308,6 +317,7 @@ export function Standup({
                   className="btn"
                   data-variant="primary"
                   data-size="small"
+                  data-am-opener="setup"
                   onClick={() => setAsk(true)}
                 >
                   Set up
@@ -419,7 +429,9 @@ function DeepTable({ t, currency }: { t: Table; currency: string }) {
                   <button type="button" className="am-sort" onClick={() => choose(i)}>
                     {c.label}
                     {sort.idx === i ? (
-                      <span aria-hidden="true"> {sort.dir === 'asc' ? '▲' : '▼'}</span>
+                      <span className="am-sort-icon" data-dir={sort.dir === 'asc' ? 'up' : 'down'}>
+                        <Icon name="chevron" size={14} />
+                      </span>
                     ) : null}
                   </button>
                 </th>

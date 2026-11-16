@@ -332,7 +332,11 @@ describe('changes', () => {
   });
 
   it('an unknown outcome passes on what the run printed, so the person can see what the read-back found', async () => {
-    state.changeError = new AdsError('unknown-outcome', 'read-back disagreed', 'gads-write: read-back MISMATCH');
+    state.changeError = new AdsError(
+      'unknown-outcome',
+      'read-back disagreed',
+      'gads-write: read-back MISMATCH',
+    );
     const r = await post(ADS_ROUTES.change('apply'), { client: 'acme', id: ID, confirmed: true });
     expect(r.status).toBe(504);
     expect(r.json.error).toEqual({

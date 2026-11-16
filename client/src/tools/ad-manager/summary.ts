@@ -4,7 +4,7 @@
  * `appIdentity` is the app's own identity slug (boot.identity.slug), for `AdsSummary.sameIdentity`.
  */
 import { ADS_CAPABILITY, type AdsSummary } from '../../../../shared/ads-contract.ts';
-import { api } from '../../api.ts';
+import { ApiFailure, api } from '../../api.ts';
 
 export async function loadAdsSummary(appIdentity: string): Promise<AdsSummary | null> {
   try {
@@ -22,7 +22,15 @@ export async function loadAdsSummary(appIdentity: string): Promise<AdsSummary | 
         waiting: c.open.filter((p) => p.fm.status !== 'approved').length,
       }));
     return { visible: true, me: approvals.me ?? caps.me, sameIdentity, waiting: approvals.waiting, clients };
-  } catch {
-    return null;
+  } catch (err) {
+    // Only "this server has no ads" (404, or the bridge unavailable / not allowed for this person) hides Ad Manager.
+    // Anything else (a 500, a time-out, a network blip) rethrows so the store keeps the last summary.
+    if (
+      err instanceof ApiFailure &&
+      (err.status === 404 || (err.code as string) === 'unavailable' || (err.code as string) === 'not-allowed')
+    ) {
+      return null;
+    }
+    throw err;
   }
 }

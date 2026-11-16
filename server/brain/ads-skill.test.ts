@@ -207,7 +207,7 @@ describe('changes (decision 12)', () => {
     expect(await svc.inflight()).toEqual([]);
   });
 
-  it("refuses \"I've checked the account\" while that apply's process is still running", async () => {
+  it('refuses "I\'ve checked the account" while that apply\'s process is still running', async () => {
     const { dataDir, root } = brain();
     writeFileSync(
       join(dataDir, ADS_INFLIGHT_FILE),

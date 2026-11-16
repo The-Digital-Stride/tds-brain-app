@@ -73,11 +73,14 @@ import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../..
 export class ApiFailure extends Error {
   readonly code: ApiErrorCode | 'network';
   readonly status: number;
-  constructor(code: ApiErrorCode | 'network', message: string, status: number) {
+  /** The run's output, sent only with an ads `unknown-outcome` so the person can check the account. */
+  readonly output?: string;
+  constructor(code: ApiErrorCode | 'network', message: string, status: number, output?: string) {
     super(message);
     this.name = 'ApiFailure';
     this.code = code;
     this.status = status;
+    if (output) this.output = output;
   }
   /** A 401 means the page was not opened from the launcher. */
   get notSignedIn(): boolean {
@@ -122,12 +125,15 @@ async function request<T>(
   if (!res.ok) {
     let code: ApiErrorCode = res.status === 401 ? 'unauthorised' : 'internal';
     let message = 'Something went wrong. Please try again.';
+    let output: string | undefined;
     try {
       const data = (await res.json()) as Partial<ApiError> | { error?: unknown; code?: unknown };
       if (data.error && typeof data.error === 'object') {
         const nested = data.error as ApiError['error'];
         code = nested.code;
         message = nested.message;
+        const out = (nested as { output?: unknown }).output;
+        if (typeof out === 'string' && out) output = out;
       } else if (typeof data.error === 'string') {
         // A flat `{ error, code }` body (the library delete's contract wording) reads the same way.
         message = data.error;
@@ -138,7 +144,7 @@ async function request<T>(
     } catch {
       // The reply was not JSON; keep the plain defaults.
     }
-    throw new ApiFailure(code, message, res.status);
+    throw new ApiFailure(code, message, res.status, output);
   }
   // A 204 (the library delete) has no body to read.
   if (res.status === 204) return undefined as T;

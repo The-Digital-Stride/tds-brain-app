@@ -734,7 +734,12 @@ describe('decisions', () => {
       fields: { needs_client_approval: true, client_approver: 'Mark' },
     });
     expect(bridge('decide', { client: 'acme', id: a, action: 'approve' }).reply.ok).toBe(true);
-    const y = bridge('client-approved', { client: 'acme', id: a, who: 'Mark\n---\nx', note: 'By email\r\non 29 Oct' });
+    const y = bridge('client-approved', {
+      client: 'acme',
+      id: a,
+      who: 'Mark\n---\nx',
+      note: 'By email\r\non 29 Oct',
+    });
     expect(y.reply.ok).toBe(true);
     const fm = fmOf(a);
     expect(fm.client_approved_by).toBe('Mark --- x');

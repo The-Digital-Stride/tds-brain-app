@@ -46,7 +46,10 @@ export function useAdsRunner() {
             client: o.client,
             id: o.id,
             ok: reply.failed !== true,
-            text: reply.message,
+            text:
+              o.revise && !chatId && reply.revisePrompt
+                ? "Changes requested. The revision chat couldn't start, so ask for the changes in a chat yourself."
+                : reply.message,
             output: reply.output,
             chatId,
           },
@@ -64,6 +67,7 @@ export function useAdsRunner() {
             id: o.id,
             ok: false,
             text: unknown ? ADS_ERROR_MESSAGES['unknown-outcome'] : adsErrorText(err),
+            ...(err instanceof ApiFailure && err.output ? { output: err.output } : {}),
           },
           ...(unknown ? { unknownApply: [...adStore.get().unknownApply.filter((k) => k !== key), key] } : {}),
         });

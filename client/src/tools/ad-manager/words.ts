@@ -11,6 +11,14 @@ export const OPEN_STATUSES = new Set(['proposed', 'changes-requested', 'approved
 export const isWaiting = (p: ProposalSummary) =>
   p.fm.status === 'proposed' || p.fm.status === 'changes-requested';
 
+/** A status in plain words, sentence case: "changes-requested" reads "Changes requested". */
+export const statusWords = (status: unknown): string => {
+  const t = String(status ?? '')
+    .replace(/[-_]/g, ' ')
+    .trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+};
+
 export const dayOf = (d: unknown): string => (d ? String(d).slice(0, 10) : '');
 
 const ACTION_LABELS: Record<string, string> = {
@@ -126,7 +134,7 @@ export function decisionWords(fm: ProposalSummary['fm']): {
           : ''),
     );
   } else if (fm.status === 'void') decision = 'expired unanswered';
-  return { decision, note, when, by };
+  return { decision: statusWords(decision), note, when, by };
 }
 
 /** The key/value rows of a proposal's details, empty ones dropped (cc.js apprRows). */

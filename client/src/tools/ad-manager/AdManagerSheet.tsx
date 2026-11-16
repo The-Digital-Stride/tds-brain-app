@@ -60,21 +60,17 @@ export function AdManagerSheet() {
 
   return (
     <div className="am">
-      {mismatch ? (
-        <p className="am-line" role="status">
-          {identityLine(ads?.me?.name)}
-        </p>
-      ) : null}
+      {/* One status region, always mounted, so a started chat is announced when it happens. */}
+      <p className="visually-hidden" role="status">
+        {started ?? ''}
+      </p>
+      {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
       {s.loadError ? (
         <p className="am-line" role="alert">
           {s.loadError}
         </p>
       ) : null}
-      {started ? (
-        <p className="am-line" role="status">
-          {started}
-        </p>
-      ) : null}
+      {started ? <p className="am-line">{started}</p> : null}
       {!s.accounts && !s.loadError ? <p className="card-note">Loading</p> : null}
       {s.accounts && s.accounts.length === 0 ? <p className="card-note">No accounts found.</p> : null}
 

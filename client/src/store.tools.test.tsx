@@ -13,9 +13,23 @@ const api = vi.hoisted(() => ({
   startSession: vi.fn(),
   sendMessage: vi.fn(),
   updatePrefs: vi.fn(),
+  adsCapabilities: vi.fn(),
+  adsApprovals: vi.fn(),
 }));
 const summary = vi.hoisted(() => ({ loadAdsSummary: vi.fn() }));
-vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
+vi.mock('./api.ts', () => ({
+  api,
+  streamUrl: () => '/api/stream',
+  ApiFailure: class extends Error {
+    code: string;
+    status: number;
+    constructor(code: string, message: string, status: number) {
+      super(message);
+      this.code = code;
+      this.status = status;
+    }
+  },
+}));
 vi.mock('./tools/ad-manager/summary.ts', () => summary);
 
 class FakeEventSource {
@@ -181,7 +195,13 @@ describe('ads summary', () => {
   it('keeps what it had when a reload fails', async () => {
     await mount();
     await waitFor(() => expect(store.ads?.waiting).toBe(2));
-    summary.loadAdsSummary.mockRejectedValue(new Error('down'));
+    // The real loadAdsSummary, with the server answering 500: it rethrows, and the store keeps its summary.
+    const real = await vi.importActual<typeof import('./tools/ad-manager/summary.ts')>(
+      './tools/ad-manager/summary.ts',
+    );
+    const { ApiFailure } = await import('./api.ts');
+    api.adsCapabilities.mockRejectedValue(new ApiFailure('internal', 'boom', 500));
+    summary.loadAdsSummary.mockImplementation((slug: string) => real.loadAdsSummary(slug));
     await act(async () => {
       await store.reloadAds();
     });

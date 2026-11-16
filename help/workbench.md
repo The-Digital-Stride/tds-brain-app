@@ -19,7 +19,7 @@ reviewed: 2026-11-16
 
 - The tools you use for client work are in one place.
 - A number on the button tells you how many things are waiting for you.
-- Cortex remembers which tool you used last.
+- Every tool opens from the same place, so you don't have to hunt for it.
 
 ## How to use it
 
@@ -30,7 +30,7 @@ reviewed: 2026-11-16
 ## Good to know
 
 - You only see **Workbench** if a tool in it is open to you. Ad Manager needs a Mac that can reach Google Ads, and a role that has been given the skill.
-- The list is not remembered when you reload the page. The tool you were using is.
+- The list closes when you reload the page.
 - You can also type a tool's name into **Search or jump to** to open it.
 
 ## Try this

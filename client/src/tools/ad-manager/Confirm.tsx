@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 
 /** The inline "are you sure" step (design system: `fieldset.close-confirm`): Cancel has focus, Esc cancels. */
 export function Confirm({
@@ -19,33 +19,44 @@ export function Confirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const textId = useId();
   return (
     <fieldset
       className="close-confirm am-confirm"
       aria-label={label}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
-          // Handled here, so the shell's Esc doesn't also close the panel.
+          // Handled here, so the shell's Esc doesn't also close the panel. While busy it does nothing.
           e.preventDefault();
-          onCancel();
+          if (!busy) onCancel();
         }
       }}
     >
-      <span>{text}</span>
+      <span id={textId}>{text}</span>
       <button
         type="button"
         className="btn"
         data-variant={variant}
         data-size="small"
         aria-disabled={busy || undefined}
+        aria-describedby={textId}
         onClick={() => {
           if (!busy) onConfirm();
         }}
       >
         {action}
       </button>
-      {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
-      <button type="button" className="btn" data-size="small" autoFocus onClick={onCancel}>
+      <button
+        type="button"
+        className="btn"
+        data-size="small"
+        // biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared.
+        autoFocus
+        aria-disabled={busy || undefined}
+        onClick={() => {
+          if (!busy) onCancel();
+        }}
+      >
         Cancel
       </button>
     </fieldset>

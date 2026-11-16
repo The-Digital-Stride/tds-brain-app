@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ADS_ERROR_MESSAGES,
   ADS_NOTE_MAX,
@@ -10,15 +10,16 @@ import { Fold } from '../../shell/Fold.tsx';
 import { useStore } from '../../store.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
+import { useRestoreFocus } from './focus.ts';
 import { RateCalls } from './RateCalls.tsx';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
-import { adsErrorText, proposalFacts } from './words.ts';
+import { adsErrorText, proposalFacts, statusWords } from './words.ts';
 
 type Ask = 'approve' | 'reject' | 'apply' | null;
 
 /** The line shown instead of every button when Ad Manager would act in someone else's name. */
-export const identityLine = (name: string | null | undefined) =>
-  `Ad Manager acts as ${name ?? 'someone else'} on this Mac, not you, so its buttons are off. Ask Ian to check the Mac's Git name.`;
+export const identityLine = (_name?: string | null) =>
+  `Cortex and the Brain disagree about who you are on this Mac, so changes are switched off. Ask whoever set up this Mac to check the name it signs work with.`;
 
 function LastResult() {
   const { last } = useAd();
@@ -26,7 +27,7 @@ function LastResult() {
   const [showOutput, setShowOutput] = useState(false);
   if (!last) return null;
   return (
-    <div className="am-last" role="status">
+    <div className="am-last">
       <p>
         <strong>Last result: </strong>
         <code>{last.id}</code> {last.text}
@@ -81,6 +82,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   const whoBox = useRef<HTMLInputElement>(null);
   const decidedBox = useRef<HTMLInputElement>(null);
   const key = proposalKey(client.slug, p.id);
+  useRestoreFocus(ask, () => document.querySelector<HTMLElement>('.am-title'));
   const f = p.flags;
   const isBusy = busy !== null;
   const inflight = f.inflight === true || unknownApply.includes(key);
@@ -197,7 +199,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   return (
     <div className="am-act">
       {inflight ? (
-        <div className="am-line" role="status">
+        <div className="am-line">
           <p>{ADS_ERROR_MESSAGES['unknown-outcome']}</p>
           <button type="button" className="btn" data-size="small" onClick={() => void clearInflight()}>
             I've checked the account
@@ -262,6 +264,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
               data-variant="primary"
               data-size="small"
               {...guard}
+              data-am-opener="approve"
               onClick={press(() => setAsk('approve'))}
             >
               Approve
@@ -291,6 +294,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
               className="btn"
               data-size="small"
               {...guard}
+              data-am-opener="reject"
               onClick={press(() => {
                 if (need(note, noteBox, 'Say why first. A note is needed to reject.')) setAsk('reject');
               })}
@@ -351,6 +355,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
             data-variant="primary"
             data-size="small"
             {...guard}
+            data-am-opener="apply"
             onClick={press(() => setAsk('apply'))}
           >
             {applying ? 'Applying…' : 'Apply now'}
@@ -377,7 +382,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         ) : null}
       </div>
       {busy ? (
-        <p className="am-line" role="status">
+        <p className="am-line">
           {applying ? 'Applying to Google Ads. This can take a few minutes. Please wait.' : 'Working…'}
         </p>
       ) : null}
@@ -394,18 +399,41 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
 
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
-  const { approvals, selected, full, panelMode } = useAd();
+  const { approvals, selected, full, panelMode, last, busy } = useAd();
   const found = findProposal(approvals, selected);
+  const key = found ? proposalKey(found.client.slug, found.proposal.id) : '';
+  // After a decision the next proposal replaces this one and the button that was pressed is gone: the heading
+  // takes focus, so it doesn't drop to the page.
+  const seen = useRef(key);
+  useEffect(() => {
+    if (seen.current === key) return;
+    seen.current = key;
+    const a = document.activeElement;
+    if (!a || a === document.body) document.querySelector<HTMLElement>('.am-title')?.focus();
+  }, [key]);
   if (panelMode === 'rate') return <RateCalls />;
+  // One status region for the whole panel, always mounted, so each result is announced once.
+  const spoken = busy
+    ? busy.startsWith('apply:')
+      ? 'Applying to Google Ads. This can take a few minutes.'
+      : 'Working'
+    : last
+      ? `${last.id}: ${last.text}`
+      : '';
+  const region = (
+    <p className="visually-hidden" role="status">
+      {spoken}
+    </p>
+  );
   if (!found)
     return (
       <div className="am-panel">
+        {region}
         <p className="dock-empty">Choose a proposal to see its details.</p>
         <LastResult />
       </div>
     );
   const { client, proposal: p } = found;
-  const key = proposalKey(client.slug, p.id);
   const text = full[key];
   const facts = proposalFacts(text ?? p);
   const loadText = (open: boolean) => {
@@ -419,10 +447,13 @@ export function ProposalPanel() {
   };
   return (
     <div className="am-panel">
-      <h3 className="am-title">{p.fm.title}</h3>
+      {region}
+      <h3 className="am-title" tabIndex={-1}>
+        {p.fm.title}
+      </h3>
       <p className="am-sub">
-        <code>{p.id}</code> · <span className="badge">T{p.fm.tier}</span>{' '}
-        <span className="badge">{p.fm.status}</span>
+        <code>{p.id}</code> · <span className="badge">Tier {p.fm.tier}</span>{' '}
+        <span className="badge">{statusWords(p.fm.status)}</span>
       </p>
       <dl className="kv">
         {facts.map(([k, v]) => (

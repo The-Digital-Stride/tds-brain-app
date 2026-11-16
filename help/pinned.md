@@ -27,13 +27,13 @@ Under the message box, Home shows cards for the things you have pinned. A pin is
 2. Go to Home.
 3. Look at the cards **Pinned to-dos**, **Pinned chats** and **Pinned files**.
 4. Click a row to open it. A to-do opens its chat. A file opens in the viewer.
-5. Press **All to-dos** or **All chats** to see the full lists.
+5. Press **All to-dos**, **All chats** or **All files** to see the full lists.
 
 ![Home in TDS Cortex, with the message box, the client picker and your pinned cards.](images/home-overview.webp)
 
 ## Good to know
 
-- Each card shows five rows. If you have more, a link at the bottom (such as "and 2 more to-dos") opens the full list.
+- Each card shows five rows. If you have more, a button at the bottom says how many (such as "Show 2 more to-dos"). Press it to show them all in the card. Press **Show fewer** to fold it back.
 - Take the star off and the item leaves Home at once.
 - Pins are yours alone. They are kept in Cortex on your computer, so teammates don't see them.
 - With nothing starred, each card says "Star a to-do to keep it here" and so on.

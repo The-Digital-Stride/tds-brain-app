@@ -569,14 +569,15 @@ describe('Home', () => {
     api.libraryItems.mockResolvedValue({ files: [file('f2', 'Newer plan'), file('f1', 'Older plan')] });
     await renderHome();
     const files = card('Pinned files');
-    const rows = await files.findAllByRole('button');
+    await files.findByText('Newer plan');
+    const rows = files.getAllByRole('button').filter((b) => b.classList.contains('line'));
     expect(api.libraryItems).toHaveBeenCalledWith(['f2', 'f1']);
     expect(rows.map((r) => r.textContent)).toEqual(['Newer planAcme Heating', 'Older planAcme Heating']);
     fireEvent.click(rows[0] as HTMLElement);
     expect(await screen.findByRole('heading', { level: 2, name: 'Newer plan' })).toBeTruthy();
   });
 
-  it('shows five pinned to-dos and says how many more there are', async () => {
+  it('shows five pinned to-dos, and "Show N more" expands the card in place and back', async () => {
     const mine = Array.from({ length: 7 }, (_, i) => todo(`m${i}.md`, `To-do ${i}`, null));
     api.todos.mockResolvedValue({ ...todoList, mine });
     api.bootstrap.mockResolvedValue({
@@ -587,7 +588,30 @@ describe('Home', () => {
     const card1 = card('Pinned to-dos');
     await card1.findByText('To-do 4');
     expect(card1.queryByText('To-do 5')).toBeNull();
-    expect(card1.getByRole('button', { name: 'and 2 more to-dos' })).toBeTruthy();
+    const more = card1.getByRole('button', { name: 'Show 2 more to-dos' });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(more);
+    expect(card1.getByText('To-do 5')).toBeTruthy();
+    expect(card1.getByText('To-do 6')).toBeTruthy();
+    expect(more.textContent).toBe('Show fewer to-dos'); // "to-dos" is visually hidden
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    // It no longer opens the drawer (which did nothing visible when the drawer was already open).
+    expect(screen.queryByRole('heading', { name: 'To-dos' })).toBeNull();
+    fireEvent.click(more);
+    expect(card1.queryByText('To-do 5')).toBeNull();
+    expect(more.textContent).toBe('Show 2 more to-dos');
+  });
+
+  it('says "1 more to-do", not "1 more to-dos"', async () => {
+    const mine = Array.from({ length: 6 }, (_, i) => todo(`m${i}.md`, `To-do ${i}`, null));
+    api.todos.mockResolvedValue({ ...todoList, mine });
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
+    });
+    await renderHome();
+    const card1 = card('Pinned to-dos');
+    expect(await card1.findByRole('button', { name: 'Show 1 more to-do' })).toBeTruthy();
   });
 
   it('lists a pinned chat that is not open, and opens it from earlier chats', async () => {

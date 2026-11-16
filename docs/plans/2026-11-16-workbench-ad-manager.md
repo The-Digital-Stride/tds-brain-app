@@ -132,7 +132,27 @@ The lead writes both contract files, the `AppPrefs` additions and the `ads-chang
 
 ## Review outcomes
 
-(Filled at step 10.)
+2026-11-16. Every finding was checked in code before it was fixed. Gates on the final commit: typecheck, lint (0 errors), 4064 tests, build, deletion scan.
+
+- **Lead, after the build:** apply.cjs exit 3 leaves a gads-write proposal approved and unapplied, so it could be applied again. That is now `unknown-outcome`.
+- **Security expert (3 confirmed, 0 dropped):**
+  - "I've checked the account" could clear the lock while the apply still ran, which meant a double write. Now refused while the pid is alive and the apply is under 1 hour old.
+  - Newlines in client-approval fields broke the frontmatter. Now flattened.
+  - The gateway secret could show in curl error output. Now hidden.
+- **Correctness reviewer (4 confirmed, 0 dropped):**
+  - A transient error hid Ad Manager. Now the store keeps the last summary.
+  - Search showed accounts on Macs without Google Ads access.
+  - Unknown-outcome output was dropped; it now shows.
+  - "A chat is revising" showed when no chat started.
+- **UX and accessibility expert (10 confirmed, 0 dropped):**
+  - Fixed: focus after confirms, persistent status regions, the Confirm pattern, plain status words, sort headers, current rail item, quiet Refresh, visible file notes, identity wording, and a help claim that wasn't true.
+  - Two calls against this plan: the drawer's current row uses the app standard (#fff + lift-1), not the tint in decision 4; fold counts use Fold's `count` badge, not "(n)" in decision 14.
+- **Correctness recheck of the fixes (2 confirmed + 2 test gaps, 0 dropped):**
+  - apply.cjs:149 maps any live gads-write failure, including a crash after the write, to exit 4 ("nothing changed"). The bridge now fails closed: a 4 on a still-applicable proposal is `unknown-outcome` unless the output says the dry run failed.
+  - A reused pid could lock "I've checked" forever; fixed by the 1-hour age limit.
+  - The two test gaps were pinned.
+- **Brain follow-up (outside Cortex):** apply.cjs should pass a live gads-write exit through as 1 rather than 4. The Workbench has the same gap.
+- **Not done here:** copying `tdsapp-ads` into the brain, and the dry run with Pete on a real account. The file viewer with a PDF and the real brain read-only were not checked in the browser.
 
 ## Appendix: the Workbench Ads tab today (source of truth for parity)
 

@@ -29,6 +29,7 @@ const todo = (key: string, h: TodoHandover | null): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
 });
 
 describe('newToYou', () => {

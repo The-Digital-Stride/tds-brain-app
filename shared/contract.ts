@@ -163,7 +163,43 @@ export interface TodoItem {
    * (BCR-01). Changes when anyone changes the file, including this person.
    */
   version: string;
+  /**
+   * Release 3 (plan 2026-11-16-todo-attachments): the files linked in the body's `## Files` section, in
+   * written order. [] when there is none. `details` still holds the whole body, section included; the
+   * client splits it with `splitTodoFiles` (shared/todo-files.ts) and, when TodoList.canAttach, edits and
+   * sends only the details part (see `edit` below).
+   */
+  attachments: TodoAttachment[];
 }
+
+/**
+ * One file linked to a to-do (release 3). Parsed from a `- [name](path)` line in the body's `## Files`
+ * section; the path is written relative to the to-do's own folder and resolved to a brain path.
+ */
+export interface TodoAttachment {
+  /** Brain-relative, forward slashes, e.g. "clients/acme/images/logo.png". */
+  path: string;
+  /** The link text as written (usually the file name). */
+  name: string;
+  /** From the extension, by the library's rules; null for a type the library doesn't list. */
+  kind: LibraryKind | null;
+  /**
+   * The library item id when this person's library lists the file (opens in the file viewer), else null:
+   * missing on this Mac, someone else's personal file, or a place the library doesn't list.
+   */
+  libraryId: string | null;
+  /** Under `personal/`: only the Mac that saved it has it (personal files never sync). */
+  personal: boolean;
+  /**
+   * For a `personal/` file: the team slug written as "(only on <slug>'s Mac)", else null. `libraryId` is
+   * set for a personal file only when `holder` is this person (overseer S3), so a teammate never opens
+   * their own file of the same name.
+   */
+  holder: string | null;
+}
+
+/** Most files one to-do's `## Files` section may hold; `attach` beyond it is refused `bad-request`. */
+export const TODO_ATTACHMENTS_MAX = 20;
 
 /** One person a to-do can be passed to: a member of `.team-config/roles.json`. */
 export interface TeamMember {
@@ -212,6 +248,16 @@ export interface TodoList {
    * already on disk are listed in `mine` whatever this says.
    */
   canUsePersonal: boolean;
+  /**
+   * Release 3: whether files can be linked to and unlinked from to-dos (`attach` / `detach`), and `add`
+   * takes `details`: `changes` is 'on' and the to-do script's `capabilities` lists "attach" (v0.5+).
+   */
+  canAttach: boolean;
+  /**
+   * Release 3: whether a new file can be uploaded to a to-do (ROUTES.todoUpload): `canAttach`, and the
+   * `tdsapp-files` skill is here, allowed for this person, and its `capabilities` list "files-add-v1".
+   */
+  canUpload: boolean;
   /**
    * Only in the reply to a `move` change: the to-do's `key` before and after (a name clash at the
    * destination changes the id). Lets a multi-step save address the next step to the new place.
@@ -295,6 +341,8 @@ export interface AskedTodo {
   done: TodoActor | null;
   /** The file's fingerprint, as TodoItem.version. */
   version: string;
+  /** As TodoItem.attachments (release 3). Shown read only. */
+  attachments: TodoAttachment[];
 }
 
 /** Finished to-dos older than this many days (by `done.at`) are left out of AskedTodoList.done. */
@@ -388,13 +436,50 @@ export const TODO_SCRIPT_MAX_OUTPUT_BYTES = 65_536;
  * `expect` matches TODO_VERSION_PATTERN; `add` with `assignee: null` only when canAddOpen.
  */
 export type TodoAction =
-  | { kind: 'add'; title: string; due: string | null; assignee: string | null; scope?: TodoScope }
-  | { kind: 'edit'; id: string; title: string; details?: string; expect?: string; scope?: TodoScope }
+  /**
+   * Release 3: `details` (optional, at most TODO_DETAILS_MAX) becomes the new file's body, so a to-do
+   * added for someone else can carry details. Only sent when TodoList.canAttach (the script is v0.5+);
+   * an older script would ignore it.
+   */
+  | {
+      kind: 'add';
+      title: string;
+      due: string | null;
+      assignee: string | null;
+      scope?: TodoScope;
+      details?: string;
+    }
+  /**
+   * Release 3: when TodoList.canAttach, `details` is the body WITHOUT its `## Files` section (the client
+   * sends `splitTodoFiles(...).details`), TODO_DETAILS_MAX counts only that, and the server always runs the
+   * script with `keep_files: true`, so the skill carries the on-disk section across (overseer B1). A
+   * `details` holding a `## Files` heading is then `bad-request`. Without canAttach, unchanged.
+   * `detailsOnly: true` says the browser sent the details without the section (it saw canAttach); if the
+   * server can no longer keep the section, that edit is refused as `changed` instead of dropping it.
+   */
+  | {
+      kind: 'edit';
+      id: string;
+      title: string;
+      details?: string;
+      detailsOnly?: true;
+      expect?: string;
+      scope?: TodoScope;
+    }
   | { kind: 'due'; id: string; due: string | null; expect?: string; scope?: TodoScope }
   | { kind: 'assignee'; id: string; assignee: string | null; expect?: string; scope?: TodoScope }
   | { kind: 'delete'; id: string; expect?: string; scope?: TodoScope }
   /** v0.4: moves the file between `todo/` (tds) and `personal/todo/` (personal), bytes unchanged. */
-  | { kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string };
+  | { kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string }
+  /**
+   * Release 3: links a library file (brain-relative `path`) in the body's `## Files` section, or unlinks
+   * it. Only when TodoList.canAttach. `attach` checks the file is a real file the library lists (not a
+   * link), under `clients/<client>/`, `templates/` or `personal/`; a path already linked is a no-op;
+   * more than TODO_ATTACHMENTS_MAX is `bad-request`. `detach` of a path not linked is a no-op. Neither
+   * touches the file itself.
+   */
+  | { kind: 'attach'; id: string; path: string; expect?: string; scope?: TodoScope }
+  | { kind: 'detach'; id: string; path: string; expect?: string; scope?: TodoScope };
 /*
  * v0.4 rules for `scope` (plan 2026-11-13-todo-handover-search-scope, decisions 2 and 4):
  * - Absent means 'tds', so every v0.3 action shape is unchanged. The server matches the listed to-do
@@ -641,6 +726,16 @@ export interface BrainReaders {
    * 2026-11-16-asked-of-others). Reads `todo/`, `todo/done/` and the brain's git record; writes nothing.
    */
   askedTodos(identity: Identity): Promise<AskedTodoList>;
+  /**
+   * Release 3: files a staged upload (its real path, from the upload staging) into the library through
+   * `tdsapp-files add`, then `attach`es it to the to-do. Same refusals as changeTodo, plus `not-allowed`
+   * unless canUpload and `bad-request` for a type not in TODO_UPLOAD_TYPES. Returns the saved path.
+   * If `attach` fails after `add` worked, the file stays in the library and the error says so.
+   */
+  uploadTodoFile(
+    req: { stagedPath: string; name: string; id: string; scope: TodoScope; expect: string },
+    identity: Identity,
+  ): Promise<{ path: string; personal: boolean }>;
   /**
    * The record of one to-do, by TodoItem.key or AskedTodo.key. Throws TodoChangeError `bad-request` for
    * a key of the wrong shape and `not-found` when no such file exists. Never throws for git trouble:
@@ -1472,6 +1567,50 @@ export interface UploadResponse {
   upload: UploadInfo;
 }
 
+/**
+ * Release 3: the extensions a to-do upload may have — the library's image and document types, minus
+ * the ones that can carry script (svg, html, htm). Lower case, no dot.
+ */
+export const TODO_UPLOAD_TYPES: readonly string[] = [
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'pdf',
+  'md',
+  'txt',
+  'docx',
+  'csv',
+  'xlsx',
+  'pptx',
+];
+
+/**
+ * `POST ROUTES.todoUpload`. Where the file goes is the server's choice, never the browser's
+ * (plan decision 3): a TDS to-do whose `client` matches a brain client → `clients/<slug>/images/` or
+ * `clients/<slug>/files/` (by kind); anything else (no client, an unknown client, a personal to-do) →
+ * `personal/images/` or `personal/files/`. A name already taken gets " (2)", " (3)"… before the extension.
+ */
+export interface TodoUploadRequest {
+  /** UploadInfo.id from ROUTES.uploads. */
+  upload: string;
+  /** The to-do: TodoItem.id + scope, as changeTodo. */
+  id: string;
+  scope?: TodoScope;
+  /** TodoItem.version; required. */
+  expect: string;
+}
+
+export interface TodoUploadResponse {
+  /** The fresh list, as changeTodo returns. */
+  list: TodoList;
+  /** Where the file was saved, brain-relative. */
+  path: string;
+  /** True when it went to `personal/` (only this Mac has it). */
+  personal: boolean;
+}
+
 /** A file shown on a sent message. */
 export type AttachmentInfo = Omit<UploadInfo, 'id'>;
 
@@ -1586,6 +1725,7 @@ export interface ApiError {
  *   POST /api/todos/change     ChangeTodoRequest   → TodoList
  *   GET  /api/todos/asked                       → AskedTodoList
  *   GET  /api/todos/history?key=<key>           → TodoHistoryResponse
+ *   POST /api/todos/upload     TodoUploadRequest   → TodoUploadResponse
  *   PUT  /api/prefs            Partial<AppPrefs>   → AppPrefs
  *   GET  /api/sessions                          → SessionList
  *   POST /api/sessions         StartSessionRequest → StartSessionResponse
@@ -1641,6 +1781,14 @@ export const ROUTES = {
   askedTodos: '/api/todos/asked',
   /** `GET ?key=` → TodoHistoryResponse. `no-store`. 400 `bad-request` for a bad key, 404 `not-found`. */
   todoHistory: '/api/todos/history',
+  /**
+   * `POST` TodoUploadRequest → TodoUploadResponse (release 3). Files a staged upload (from ROUTES.uploads)
+   * into the library through the `tdsapp-files` skill's `add`, then links it to the to-do through the
+   * to-do skill's `attach`. 403 `not-allowed` unless TodoList.canUpload; 400 `bad-request` for a type
+   * not in TODO_UPLOAD_TYPES or an unknown/sent upload id; 404/409 as changeTodo. The staged upload is
+   * used up either way.
+   */
+  todoUpload: '/api/todos/upload',
   prefs: '/api/prefs',
   /** `GET`: EngineChoices. `no-store`, every role. */
   engineChoices: '/api/engine/choices',

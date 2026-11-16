@@ -29,6 +29,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'adding-todos',
   'passing-todos-on',
   'asked-of-others',
+  'files-on-todos',
   'change-todos-setting',
   'sharing-with-your-team',
   'favourites',

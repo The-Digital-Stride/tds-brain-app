@@ -14,6 +14,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -24,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { versionOf as libraryVersionOf } from '../../../server/brain/library.ts';
 import { classify, isNeverListed as libraryNeverListed } from '../../../server/brain/library-rules.ts';
 import { memberSlug as appMemberSlug } from '../../../server/brain/util.ts';
+import { MAX_UPLOAD_BYTES, TODO_UPLOAD_TYPES } from '../../../shared/contract.ts';
 import {
   ACTION_LOG_DIR,
   FILES_CAPABILITY,
@@ -55,6 +57,10 @@ interface FilesModule {
   PROTECTED_NAMES: string[];
   PROTECTED_CLIENT_FILES: string[];
   FILES_CAPABILITY: string;
+  ADD_CAPABILITY: string;
+  ADD_MAX_BYTES: number;
+  ADD_IMAGE_EXTENSIONS: string[];
+  ADD_DOCUMENT_EXTENSIONS: string[];
   IMAGE_EXTENSIONS: string[];
   DOCUMENT_EXTENSIONS: string[];
   LIBRARY_EXTENSIONS: string[];
@@ -829,9 +835,10 @@ describe('command line', () => {
     expect(r.json).toEqual({
       ok: true,
       action: 'capabilities',
-      version: files.SCRIPT_VERSION,
-      features: [FILES_CAPABILITY],
+      version: '0.2',
+      features: [FILES_CAPABILITY, 'files-add-v1'],
     });
+    expect(files.SCRIPT_VERSION).toBe('0.2');
   });
 
   it('deletes with exit 0 and refuses with exit 2', () => {
@@ -888,10 +895,347 @@ describe('constants', () => {
     }
   });
 
+  it('add only the to-do upload types, images to images/ and documents to files/', () => {
+    expect(files.ADD_CAPABILITY).toBe('files-add-v1');
+    expect(files.ADD_MAX_BYTES).toBe(MAX_UPLOAD_BYTES);
+    expect([...files.ADD_IMAGE_EXTENSIONS, ...files.ADD_DOCUMENT_EXTENSIONS].sort()).toEqual(
+      [...TODO_UPLOAD_TYPES].sort(),
+    );
+    for (const ext of files.ADD_IMAGE_EXTENSIONS) expect(classify(ext)?.kind, ext).toBe('image');
+    for (const ext of files.ADD_DOCUMENT_EXTENSIONS) expect(classify(ext)?.kind, ext).toBe('document');
+  });
+
   it('make member slugs by the brain rule', () => {
     for (const name of ['Sam Example', 'Ben McAdam', "Seán O'Neil", 'Anne-Marie  Smith', 'x_y.z', '']) {
       expect(files.memberSlug(name), name).toBe(appMemberSlug(name));
     }
     expect(files.memberSlug('Anne-Marie  Smith')).toBe('anne-marie--smith');
+  });
+});
+
+// ---- add (v0.2, docs/plans/2026-11-16-todo-attachments.md, decision 3) ---------------------------
+
+describe('add', () => {
+  // A file outside the brain, as the app's upload staging holds it.
+  function source(name: string, text = 'file bytes') {
+    const p = join(outside, name);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, text);
+    return p;
+  }
+  function add(path: string, src: string, extra: Record<string, unknown> = {}) {
+    return call('add', { source: src, path, ...extra });
+  }
+  const tempsIn = (rel: string) =>
+    existsSync(abs(rel)) ? readdirSync(abs(rel)).filter((n) => n.includes('.tmp')) : [];
+  // personal/ as the brain keeps it: everything but its two rules files is git-ignored.
+  function personalBrain() {
+    mkdirSync(abs('personal'));
+    writeFileSync(abs('personal/CLAUDE.md'), 'rules');
+    writeFileSync(join(root, '.gitignore'), 'personal/*\n!personal/CLAUDE.md\n!personal/AGENTS.md\n');
+  }
+
+  beforeEach(() => {
+    mkdirSync(abs('clients/acme'), { recursive: true });
+    put('clients/acme/profile.md', 'profile');
+  });
+
+  it("copies a client document into the client's files/ folder, making it, and logs it", () => {
+    const src = source('quote.pdf', 'quote bytes');
+    const r = add('clients/acme/files/quote.pdf', src, { via: 'TDS Brain App', by: 'olive-owner' });
+    expect(r).toEqual({ exit: 0, reply: { ok: true, action: 'add', path: 'clients/acme/files/quote.pdf' } });
+    expect(readFileSync(abs('clients/acme/files/quote.pdf'), 'utf8')).toBe('quote bytes');
+    expect(readFileSync(src, 'utf8')).toBe('quote bytes');
+    expect(readdirSync(abs('clients/acme/files'))).toEqual(['quote.pdf']);
+    expect(logLines()).toEqual([
+      {
+        v: 1,
+        ts: T0.toISOString(),
+        action: 'add',
+        by: 'sam-example',
+        by_name: 'Sam Example',
+        via: 'TDS Brain App',
+        scope: 'client',
+        path: 'clients/acme/files/quote.pdf',
+        bytes: 11,
+        holding: '',
+      },
+    ]);
+    // Nothing else in the holding folder: no README, no holding entry.
+    expect(holdings()).toEqual([]);
+  });
+
+  it("puts an image in the client's images/ folder", () => {
+    const r = add('clients/acme/images/logo.png', source('logo.png'), {});
+    expect(r.reply).toEqual({ ok: true, action: 'add', path: 'clients/acme/images/logo.png' });
+    expect(has('clients/acme/images/logo.png')).toBe(true);
+    expect(logLines()[0]?.via).toBe('tdsapp-files skill');
+  });
+
+  it('never overwrites: a name already taken gets (2), (3) …', () => {
+    put('clients/acme/files/quote.pdf', 'first');
+    put('clients/acme/files/quote (2).pdf', 'second');
+    const r = add('clients/acme/files/quote.pdf', source('quote.pdf', 'third'));
+    expect(r.reply.path).toBe('clients/acme/files/quote (3).pdf');
+    expect(readFileSync(abs('clients/acme/files/quote.pdf'), 'utf8')).toBe('first');
+    expect(readFileSync(abs('clients/acme/files/quote (2).pdf'), 'utf8')).toBe('second');
+    expect(readFileSync(abs('clients/acme/files/quote (3).pdf'), 'utf8')).toBe('third');
+    const again = add('clients/acme/files/quote.pdf', source('quote.pdf', 'fourth'));
+    expect(again.reply.path).toBe('clients/acme/files/quote (4).pdf');
+    expect(logLines().map((l) => l.path)).toEqual([
+      'clients/acme/files/quote (3).pdf',
+      'clients/acme/files/quote (4).pdf',
+    ]);
+    expect(tempsIn('clients/acme/files')).toEqual([]);
+  });
+
+  it('counts a name taken in another letter case as taken', () => {
+    put('clients/acme/files/Quote.PDF', 'first');
+    const r = add('clients/acme/files/quote.pdf', source('quote.pdf', 'second'));
+    expect(r.exit).toBe(0);
+    expect(readFileSync(abs('clients/acme/files/Quote.PDF'), 'utf8')).toBe('first');
+    expect(readFileSync(abs(r.reply.path as string), 'utf8')).toBe('second');
+  });
+
+  it('copies into personal/files/ and personal/images/ when git ignores them, and logs nothing', () => {
+    personalBrain();
+    const a = add('personal/files/My notes.pdf', source('My notes.pdf', 'mine'));
+    expect(a).toEqual({ exit: 0, reply: { ok: true, action: 'add', path: 'personal/files/My notes.pdf' } });
+    const b = add('personal/images/a.png', source('a.png'));
+    expect(b.reply.path).toBe('personal/images/a.png');
+    expect(readFileSync(abs('personal/files/My notes.pdf'), 'utf8')).toBe('mine');
+    expect(existsSync(abs(HOLDING_DIR))).toBe(false);
+    const c = add('personal/files/My notes.pdf', source('My notes.pdf', 'again'));
+    expect(c.reply.path).toBe('personal/files/My notes (2).pdf');
+  });
+
+  it('refuses a personal destination git does not ignore, writing and making nothing', () => {
+    mkdirSync(abs('personal'));
+    const r = add('personal/files/a.pdf', source('a.pdf'));
+    expectRefused(r, 'not-allowed');
+    expect(r.reply.error).toContain('would sync');
+    expect(existsSync(abs('personal/files'))).toBe(false);
+    // Ignored in general but one name let back in: still refused.
+    writeFileSync(join(root, '.gitignore'), 'personal/*\n!personal/files/\n');
+    expectRefused(add('personal/files/a.pdf', source('a.pdf')), 'not-allowed');
+    expect(existsSync(abs('personal/files/a.pdf'))).toBe(false);
+  });
+
+  it('refuses a protected name written with a look-alike letter (the long s)', () => {
+    const r = add('clients/acme/files/AGENT\u017f.md', source('AGENT\u017f.md'));
+    expectRefused(r, 'not-allowed');
+    expect(existsSync(abs('clients/acme/files'))).toBe(false);
+    expect(logLines()).toEqual([]);
+  });
+
+  it('refuses a client destination git ignores', () => {
+    writeFileSync(join(root, '.gitignore'), '/clients/acme/images/\n*.secret.pdf\n');
+    const r = add('clients/acme/images/a.png', source('a.png'));
+    expectRefused(r, 'not-allowed');
+    expect(r.reply.error).toContain('git ignores it');
+    expect(existsSync(abs('clients/acme/images'))).toBe(false);
+    expectRefused(add('clients/acme/files/x.secret.pdf', source('x.secret.pdf')), 'not-allowed');
+    expect(logLines()).toEqual([]);
+  });
+
+  it('checks the final name too, when a taken name becomes (2)', () => {
+    writeFileSync(join(root, '.gitignore'), '*(2).pdf\n');
+    put('clients/acme/files/a.pdf', 'first');
+    const r = add('clients/acme/files/a.pdf', source('a.pdf'));
+    expectRefused(r, 'not-allowed');
+    expect(readdirSync(abs('clients/acme/files'))).toEqual(['a.pdf']);
+  });
+
+  it('refuses inside a separate git project, outside a git repository, and when git cannot check', () => {
+    mkdirSync(abs('clients/inner/.git'), { recursive: true });
+    const r = add('clients/inner/files/a.pdf', source('a.pdf'));
+    expectRefused(r, 'not-allowed');
+    expect(r.reply.error).toContain('separate git project');
+    personalBrain();
+    rmSync(join(root, '.git'), { recursive: true, force: true });
+    writeFileSync(join(home, '.gitconfig'), '[user]\n\temail = sam@example.test\n');
+    for (const path of ['clients/acme/files/a.pdf', 'personal/files/a.pdf']) {
+      const nr = add(path, source('a.pdf'));
+      expectRefused(nr, 'not-allowed');
+      expect(nr.reply.error, path).toContain("isn't a git repository");
+      expect(has(path)).toBe(false);
+    }
+  });
+
+  it('refuses when git cannot answer the ignore check (command line)', () => {
+    personalBrain();
+    const bin = join(home, 'bin');
+    mkdirSync(bin);
+    const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    writeFileSync(
+      join(bin, 'git'),
+      `#!/bin/sh\nfor a in "$@"; do [ "$a" = check-ignore ] && exit 128; done\nexec "${realGit}" "$@"\n`,
+    );
+    chmodSync(join(bin, 'git'), 0o755);
+    for (const path of ['clients/acme/files/a.pdf', 'personal/files/a.pdf']) {
+      const r = cli('add', JSON.stringify({ source: source('a.pdf'), path }), {
+        PATH: `${bin}:${process.env.PATH}`,
+      });
+      expect(r.code, path).toBe(2);
+      expect(r.json.code).toBe('not-allowed');
+      expect(r.json.error).toContain("git couldn't check");
+      expect(has(path)).toBe(false);
+    }
+  });
+
+  it('only takes the four destination shapes', () => {
+    const src = source('a.pdf');
+    for (const path of [
+      'clients/acme/a.pdf',
+      'clients/acme/files/sub/a.pdf',
+      'clients/acme/Files/a.pdf',
+      'clients/acme/docs/a.pdf',
+      'clients/files/a.pdf',
+      'personal/a.pdf',
+      'personal/files/sub/a.pdf',
+      'personal/Files/a.pdf',
+      'personal/todo/a.pdf',
+      'templates/files/a.pdf',
+      'templates/a.pdf',
+      'todo/a.pdf',
+      'projects/x/files/a.pdf',
+      'tdsapp-deleted/files/a.pdf',
+      'clients/_archive/files/a.pdf',
+      'clients/.hidden/files/a.pdf',
+      'clients/acme/files/.a.pdf',
+      '../clients/acme/files/a.pdf',
+      '/clients/acme/files/a.pdf',
+      'clients/acme/files/../files/a.pdf',
+      'clients/acme//files/a.pdf',
+      'clients\\acme\\files\\a.pdf',
+    ]) {
+      const r = add(path, src);
+      expect(r.reply.ok, path).toBe(false);
+      expect(['not-allowed', 'bad-request'], path).toContain(r.reply.code);
+    }
+    for (const path of ['', 5, null]) expectRefused(call('add', { source: src, path }), 'bad-request');
+    expect(readdirSync(abs('clients/acme')).sort()).toEqual(['profile.md']);
+    expect(logLines()).toEqual([]);
+  });
+
+  it('refuses protected names', () => {
+    for (const name of ['README.md', 'claude.MD', 'AGENTS.md']) {
+      const r = add(`clients/acme/files/${name}`, source(name));
+      expectRefused(r, 'not-allowed');
+      expect(r.reply.error, name).toContain('protected');
+    }
+    expect(existsSync(abs('clients/acme/files'))).toBe(false);
+  });
+
+  it('takes images in images/ and documents in files/, only of the upload types, matching the source', () => {
+    const cases: [string, string, boolean][] = [
+      ['clients/acme/images/a.png', 'a.png', true],
+      ['clients/acme/images/a.JPG', 'a.jpg', true],
+      ['clients/acme/images/a.jpeg', 'a.jpeg', true],
+      ['clients/acme/images/a.webp', 'a.webp', true],
+      ['clients/acme/images/a.gif', 'a.gif', true],
+      ['clients/acme/files/a.pdf', 'A.PDF', true],
+      ['clients/acme/files/a.md', 'a.md', true],
+      ['clients/acme/files/a.txt', 'a.txt', true],
+      ['clients/acme/files/a.docx', 'a.docx', true],
+      ['clients/acme/files/a.csv', 'a.csv', true],
+      ['clients/acme/files/a.xlsx', 'a.xlsx', true],
+      ['clients/acme/files/a.pptx', 'a.pptx', true],
+      ['clients/acme/images/b.pdf', 'b.pdf', false],
+      ['clients/acme/files/b.png', 'b.png', false],
+      ['clients/acme/images/b.svg', 'b.svg', false],
+      ['clients/acme/images/b.avif', 'b.avif', false],
+      ['clients/acme/files/b.html', 'b.html', false],
+      ['clients/acme/files/b.htm', 'b.htm', false],
+      ['clients/acme/files/b.zip', 'b.zip', false],
+      ['clients/acme/files/b', 'b', false],
+      ['clients/acme/files/c.pdf', 'c.txt', false],
+      ['clients/acme/files/c.pdf', 'c', false],
+      ['clients/acme/images/c.png', 'c.jpg', false],
+    ];
+    for (const [path, name, ok] of cases) {
+      const r = add(path, source(`${path.replace(/\//g, '_')}/${name}`));
+      expect(r.reply.ok, `${path} from ${name}: ${JSON.stringify(r.reply)}`).toBe(ok);
+      if (!ok) expect(has(path), path).toBe(false);
+    }
+  });
+
+  it('refuses a client folder that is missing or a link, and a files/ folder that is a link', () => {
+    const r = add('clients/newco/files/a.pdf', source('a.pdf'));
+    expectRefused(r, 'not-found');
+    expect(existsSync(abs('clients/newco'))).toBe(false);
+    mkdirSync(join(outside, 'elsewhere'));
+    symlinkSync(join(outside, 'elsewhere'), abs('clients/linked'));
+    expectRefused(add('clients/linked/files/a.pdf', source('a.pdf')), 'not-allowed');
+    expect(readdirSync(join(outside, 'elsewhere'))).toEqual([]);
+    symlinkSync(join(outside, 'elsewhere'), abs('clients/acme/files'));
+    expectRefused(add('clients/acme/files/a.pdf', source('a.pdf')), 'not-allowed');
+    put('clients/acme/images', 'a file, not a folder');
+    expectRefused(add('clients/acme/images/a.png', source('a.png')), 'not-allowed');
+    put('clients/plain.pdf');
+    expectRefused(add('clients/ACME/files/b.pdf', source('b.pdf')), 'not-allowed');
+    expect(readdirSync(join(outside, 'elsewhere'))).toEqual([]);
+    expect(logLines()).toEqual([]);
+  });
+
+  it('refuses a personal folder that is missing or a link, never making personal/', () => {
+    writeFileSync(join(root, '.gitignore'), 'personal/*\n');
+    expectRefused(add('personal/files/a.pdf', source('a.pdf')), 'not-found');
+    expect(existsSync(abs('personal'))).toBe(false);
+    mkdirSync(join(outside, 'mine'));
+    symlinkSync(join(outside, 'mine'), abs('personal'));
+    expectRefused(add('personal/files/a.pdf', source('a.pdf')), 'not-allowed');
+    expect(readdirSync(join(outside, 'mine'))).toEqual([]);
+  });
+
+  it('refuses a source that is not a regular file outside the brain, or is over 32 MB', () => {
+    put('clients/acme/files/inside.pdf', 'inside');
+    const refused: [unknown, string][] = [
+      ['relative/a.pdf', 'bad-request'],
+      [join(outside, 'missing.pdf'), 'not-found'],
+      [abs('clients/acme/files/inside.pdf'), 'not-allowed'],
+      ['', 'bad-request'],
+      [5, 'bad-request'],
+      [undefined, 'bad-request'],
+    ];
+    mkdirSync(join(outside, 'folder.pdf'));
+    refused.push([join(outside, 'folder.pdf'), 'not-allowed']);
+    const real = source('real.pdf');
+    symlinkSync(real, join(outside, 'link.pdf'));
+    refused.push([join(outside, 'link.pdf'), 'not-allowed']);
+    symlinkSync(abs('clients/acme/files'), join(outside, 'into-brain'));
+    refused.push([join(outside, 'into-brain', 'inside.pdf'), 'not-allowed']);
+    const big = join(outside, 'big.pdf');
+    writeFileSync(big, '');
+    truncateSync(big, 32 * 1024 * 1024 + 1);
+    refused.push([big, 'bad-request']);
+    for (const [src, code] of refused) {
+      const r = call('add', { source: src, path: 'clients/acme/files/new.pdf' });
+      expectRefused(r, code);
+    }
+    expect(has('clients/acme/files/new.pdf')).toBe(false);
+    expect(logLines()).toEqual([]);
+  });
+
+  it('takes the person from git: anyone on the team for a client, anyone for personal', () => {
+    setEmail('tess@example.test');
+    expect(add('clients/acme/files/a.pdf', source('a.pdf')).exit).toBe(0);
+    expect(logLines()[0]?.by).toBe('tess-team');
+    setEmail('stranger@example.test');
+    const r = add('clients/acme/files/b.pdf', source('b.pdf'), { by_name: 'Olive Owner' });
+    expectRefused(r, 'not-allowed');
+    personalBrain();
+    expect(add('personal/files/b.pdf', source('b.pdf')).exit).toBe(0);
+  });
+
+  it('works from the command line', () => {
+    const r = cli(
+      'add',
+      JSON.stringify({ source: source('a.pdf'), path: 'clients/acme/files/a.pdf', via: 'TDS Brain App' }),
+    );
+    expect(r).toEqual({ code: 0, json: { ok: true, action: 'add', path: 'clients/acme/files/a.pdf' } });
+    const again = cli('add', JSON.stringify({ source: source('a.pdf'), path: 'clients/acme/images/a.pdf' }));
+    expect(again.code).toBe(2);
+    expect(again.json.code).toBe('not-allowed');
   });
 });

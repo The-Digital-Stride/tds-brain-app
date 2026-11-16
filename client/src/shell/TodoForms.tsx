@@ -1,13 +1,16 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import {
   type TeamMember,
+  TODO_DETAILS_MAX,
   TODO_TITLE_MAX,
   type TodoAction,
   type TodoItem,
   type TodoScope,
 } from '../../../shared/contract.ts';
+import { splitTodoFiles } from '../../../shared/todo-files.ts';
 import { dueInWords } from '../format.ts';
 import { Icon } from './Icon.tsx';
+import TodoDetailsEditor from './TodoDetailsEditor.tsx';
 
 /** Said when a to-do is set to Personal in the editor (plan decision 9). */
 export const PERSONAL_WARNING =
@@ -20,6 +23,14 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function shortDate(iso: string): string {
   const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${Number(m[2])} ${MONTHS[Number(m[1]) - 1] ?? ''}`.trim() : iso;
+}
+
+/**
+ * The details the panel shows and the editor edits. With `canAttach` that is the body without its
+ * `## Files` section (the section is shown as a Files block and kept by the skill); otherwise the whole body.
+ */
+export function detailsText(todo: { details: string }, canAttach: boolean): string {
+  return canAttach ? splitTodoFiles(todo.details).details : todo.details;
 }
 
 /** Who a to-do can go to: you first, then the team (not you). */
@@ -68,6 +79,7 @@ export function AddTodoForm({
   busy,
   canAddOpen,
   canUsePersonal,
+  canAttach = false,
   startPersonal,
   onAdd,
   onCancel,
@@ -80,6 +92,8 @@ export function AddTodoForm({
   canAddOpen: boolean;
   /** TodoList.canUsePersonal: shows the personal (lock) toggle. */
   canUsePersonal: boolean;
+  /** TodoList.canAttach: shows a details field and sends it with the new to-do. */
+  canAttach?: boolean;
   /** Start as personal (the Personal filter is showing). Ignored unless canUsePersonal. */
   startPersonal: boolean;
   onAdd: (action: TodoAction) => void;
@@ -95,11 +109,14 @@ export function AddTodoForm({
   const [dateOpen, setDateOpen] = useState(false);
   const [whoOpen, setWhoOpen] = useState(false);
   const [full, setFull] = useState(false);
+  const [details, setDetails] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
   const hasTitle = title.trim() !== '';
-  useEffect(() => onDirty?.(hasTitle), [hasTitle, onDirty]);
+  const hasDetails = canAttach && details.trim() !== '';
+  const overLimit = canAttach && details.length > TODO_DETAILS_MAX;
+  useEffect(() => onDirty?.(hasTitle || hasDetails), [hasTitle, hasDetails, onDirty]);
   // "More options" removes itself: put the keyboard on the first field it reveals.
   useEffect(() => {
     if (full) dueRef.current?.focus();
@@ -116,17 +133,19 @@ export function AddTodoForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const t = title.trim();
-    if (!t || busy) return;
+    if (!t || busy || overLimit) return;
     onAdd({
       kind: 'add',
       title: t,
       due: due || null,
       assignee: assignee === '' ? null : assignee,
       ...(personal ? { scope: 'personal' as const } : {}),
+      ...(hasDetails ? { details: details.trim() } : {}),
     });
   };
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    // The details editor takes its own Esc (the panel then closes through the shell).
+    if (e.key === 'Escape' && !e.defaultPrevented) {
       // preventDefault too: the shell's own Esc (close the drawer) skips a handled key, so one Esc closes one thing.
       e.preventDefault();
       e.stopPropagation();
@@ -223,12 +242,30 @@ export function AddTodoForm({
           />
         </div>
       ) : null}
+      {canAttach ? (
+        <div className="todo-field">
+          <span className="todo-label">Details (optional)</span>
+          <TodoDetailsEditor
+            markdown={details}
+            editable
+            onChange={setDetails}
+            label="Details"
+            describedBy={overLimit ? `${uid}-over` : undefined}
+          />
+          {overLimit ? (
+            <p className="todo-note" id={`${uid}-over`} role="alert">
+              These details are longer than {TODO_DETAILS_MAX.toLocaleString('en-GB')} characters, so they
+              can't be saved. Shorten them.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="todo-actions">
         <button
           type="submit"
           className="btn"
           data-variant="primary"
-          disabled={busy || title.trim() === ''}
+          disabled={busy || title.trim() === '' || overLimit}
           aria-describedby={personal ? `${uid}-personal` : undefined}
         >
           Add
@@ -257,18 +294,26 @@ export function AddTodoForm({
  * to-dos send `scope: 'personal'` on every step; TDS steps keep the old shape. After a `move` the later
  * steps address the to-do where it now lives.
  */
-export function buildEditActions(todo: TodoItem, draft: EditDraft, detailsEditable: boolean): TodoAction[] {
+export function buildEditActions(
+  todo: TodoItem,
+  draft: EditDraft,
+  detailsEditable: boolean,
+  canAttach = false,
+): TodoAction[] {
   const actions: TodoAction[] = [];
   const at = (scope: TodoScope) => (scope === 'personal' ? { scope } : {});
   const title = draft.title.trim();
   const titleChanged = title !== todo.title;
-  const detailsChanged = detailsEditable && draft.details !== todo.details;
+  // With canAttach the draft holds only the details part: that is what is compared and what is sent, so
+  // saving never touches the `## Files` section.
+  const detailsChanged = detailsEditable && draft.details !== detailsText(todo, canAttach);
   if (titleChanged || detailsChanged) {
     actions.push({
       kind: 'edit',
       id: todo.id,
       title,
       ...(detailsChanged ? { details: draft.details } : {}),
+      ...(detailsChanged && canAttach ? { detailsOnly: true as const } : {}),
       ...at(todo.scope),
     });
   }

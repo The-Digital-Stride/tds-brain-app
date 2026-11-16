@@ -102,6 +102,7 @@ const todo = (id: string, title: string, due: string | null, client: string | nu
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   assignee: 'sam-example',
   due,
   surfaceDate: null,

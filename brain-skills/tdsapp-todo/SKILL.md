@@ -1,8 +1,8 @@
 ---
 name: tdsapp-todo
-description: Change a loose to-do in todo/ the way the Workbench does, with its known weak spots fixed - add one (for someone or open to anyone, or a private one in personal/todo/), edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, tick it off, or move it between TDS and personal - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off", "make that personal", "add a personal to-do". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
-version: 0.4
-last_updated: 2026-11-13
+description: Change a loose to-do in todo/ the way the Workbench does, with its known weak spots fixed - add one (for someone or open to anyone, or a private one in personal/todo/), edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, tick it off, move it between TDS and personal, or link a library file to it (or unlink one) - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off", "make that personal", "add a personal to-do", "attach the quote to that to-do", "link the logo to the to-do", "take that file off the to-do". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
+version: 0.5
+last_updated: 2026-11-16
 roles: owner, scout
 maturity: draft
 members: false
@@ -31,23 +31,25 @@ echo '{"title":"Renew the Acme contract","due":"2026-12-01"}' \
 
 | Command | Fields | What it does |
 |---|---|---|
-| `add` | `title`; optional `due`, `assignee`, `open`, `via`, `by`, `scope` | Writes `todo/YYYYMMDD-<slug>.md` dated today, with a name not already used in `todo/`, `personal/todo/` or the `done/` and `deleted/` folders of either. No assignee means the person in `git config user.name`; `open: true` leaves it open to anyone instead. `via` names the tool, written as `source: added from <via>` (`added with the todo skill` when not sent). Records `created_by` (`by`, else the git user). A to-do for someone else is stamped as passed on (see below). `scope: "personal"` writes it to `personal/todo/` instead, always for the person adding it. |
-| `edit` | `file`, `title`; optional `body`, `expect` | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. When the title really changes, the old one goes under `## Title history` (see below). |
+| `add` | `title`; optional `due`, `assignee`, `open`, `via`, `by`, `scope`, `body` | Writes `todo/YYYYMMDD-<slug>.md` dated today, with a name not already used in `todo/`, `personal/todo/` or the `done/` and `deleted/` folders of either. No assignee means the person in `git config user.name`; `open: true` leaves it open to anyone instead. `via` names the tool, written as `source: added from <via>` (`added with the todo skill` when not sent). Records `created_by` (`by`, else the git user). A to-do for someone else is stamped as passed on (see below). `scope: "personal"` writes it to `personal/todo/` instead, always for the person adding it. `body` becomes its details, for anyone it's for. |
+| `edit` | `file`, `title`; optional `body`, `expect`, `keep_files` | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. When the title really changes, the old one goes under `## Title history` (see below). With `keep_files: true`, `body` is the details without the `## Files` section, and the section already in the file is kept (see below). |
 | `due` | `file`, `due`; optional `expect` | Sets the due date (`YYYY-MM-DD`, a real date), or clears it when empty or null. |
 | `assignee` | `file`, `assignee`; optional `expect`, `by`, `by_name`, `via` | Passes it on (a team member's name slug such as `ben-mcadam`), or makes it open to anyone when empty or null. Records who passed it on (see below). If the assignee is already that, nothing is written. Not for personal to-dos: move it to TDS first. |
 | `delete` | `file`; optional `via`, `by`, `by_name`, `expect` | Moves it to `todo/deleted/`, adding `status: deleted`, `deleted` (date), `deleted_at` (UK time), `deleted_by` (`by`, else the person in `git config user.name`) and `deleted_via` (`via`, such as `TDS Brain App`; `todo skill` when not sent), and a "Deleted by … at …" line at the end. An earlier deleted to-do of the same name is kept: the new one gets a number added. |
 | `tick` | `file`; optional `via`, `by`, `by_name`, `expect` | Moves it to `todo/done/`, adding `status: done`, `completed`, `completed_at`, `completed_by` and `completed_via` and a "Ticked off by … at …" line, the same record the app writes when you tick a to-do there. |
 | `move` | `file`, `to` (`"personal"` or `"tds"`); optional `scope`, `expect`, `by`, `by_name`, `via` | Moves your own to-do between `todo/` and `personal/todo/` without changing a byte. Only the person it's assigned to can move it. If the name is taken there, a number is added; the reply's `file` is the new name. |
+| `attach` | `file`, `path`; optional `scope`, `expect`, `by` | Links a file from the library to the to-do, in its `## Files` section (see below). `path` is from the brain folder, such as `clients/acme/files/quote.pdf`. If it's already linked, nothing is written. |
+| `detach` | `file`, `path`; optional `scope`, `expect` | Takes that file's link out of the `## Files` section, and the section too once it's empty. The file itself stays where it is. If it isn't linked, nothing is written. |
 | `roster` | none | Lists the team from `.team-config/roles.json`. |
 | `list` | none | Lists this person's to-dos and the open ones. Each has a `version`. |
-| `capabilities` | none | Says what this script can do: `{"version":"0.4","features":["handover","scope"]}`. `scope` is there only when personal to-dos are safe to use in this brain (see below). |
+| `capabilities` | none | Says what this script can do: `{"version":"0.5","features":["handover","attach","scope"]}`. `scope` is there only when personal to-dos are safe to use in this brain (see below). |
 
 `file` is the file name inside `todo/`, such as `20261201-renew-acme-contract.md`.
 
 `scope` picks the folder: leave it out (or send `"tds"`) for `todo/`, send `"personal"` for
 `personal/todo/`. It works on `edit`, `due`, `tick`, `delete` and `move`; ticked and deleted personal
-to-dos go to `personal/todo/done/` and `personal/todo/deleted/`. `assignee` refuses a personal
-to-do: move it to TDS first.
+to-dos go to `personal/todo/done/` and `personal/todo/deleted/`; `attach` and `detach` work there
+too. `assignee` refuses a personal to-do: move it to TDS first.
 
 ### Personal to-dos
 
@@ -67,6 +69,29 @@ the end, such as `- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam 
 Who did it is `by` and `by_name`, else the person in `git config user.name`. Adding a to-do for
 someone else records the same frontmatter, without `assigned_from`.
 
+### Files on a to-do
+
+`attach` links a file in a `## Files` section of the to-do's details, one line per file:
+
+```markdown
+## Files
+
+- [quote.pdf](../clients/acme/files/quote.pdf)
+- [Q3 report.pdf](<../clients/acme/files/Q3 report.pdf>)
+- [My notes.pdf](<../personal/files/My notes.pdf>) (only on sam-example's Mac)
+```
+
+- The path is written from the to-do's own folder: `../` from `todo/`, `../../` from
+  `personal/todo/`. Readers drop every leading `../`, so a link still works once the to-do is ticked
+  into `done/`. A path with a space, a round bracket or `<` goes in `<…>`.
+- A file in `personal/` never syncs, so its line says whose Mac has it (`by`, else the person in
+  `git config user.name`). Teammates see the line but can't open the file.
+- A new section goes after the details and before `## Title history`, `## Handover history` or the
+  done or deleted note, whichever comes first; with none of those it goes at the end.
+- Only `attach` and `detach` change the section. When you change the details with `edit`, send
+  `keep_files: true` with the details alone, and the section is kept where it belongs.
+- The Workbench, Claude and older apps see the section as ordinary links.
+
 `expect` is the `version` that `list` gave for that to-do (a fingerprint of the file). Send it when
 you've shown someone a to-do and are about to change it: if the file has changed since, nothing is
 written and you get status 409, `changed since read`. Read it again and check with the person
@@ -82,6 +107,11 @@ changed, or why it didn't.
 It says no, with a clear message, rather than quietly changing what you sent:
 
 - a title over 200 characters, details over 8,000 characters, or an assignee over 40 characters;
+- details with a `## Files` heading on `add`, or on `edit` with `keep_files` (use `attach`);
+- for `attach`: a path that isn't a real file under `clients/<client>/`, `templates/` or
+  `personal/`; a link, or a path through a link; a type the library doesn't list (images, and pdf,
+  md, txt, docx, html, htm, csv, xlsx, pptx); a place the library never lists, such as
+  `personal/todo/` or a folder starting with a dot; a name with `>` in it; and a 21st file;
 - an assignee who isn't on the team in `.team-config/roles.json` (either way of turning their name
   into a slug is accepted; if that file is missing or names nobody, any name is accepted);
 - a due date that doesn't exist, such as `2026-02-31`;
@@ -120,6 +150,12 @@ and `list` give exactly what 0.3 gave. `add` now also writes `created_by`, and `
 handover; other tools that read to-dos skip these new lines. An older script answers `capabilities`
 with `unknown command`, which is how a caller can tell.
 
+Everything added in 0.5 is optional too. Without `keep_files`, `edit` replaces the whole body as
+before (a `## Files` section included), and `add` without `body` writes what 0.4 wrote. An older
+script answers `attach` and `detach` with `unknown command` and ignores `body` on `add`, so a caller
+checks `capabilities` for `attach` first. Files linked by a newer script stay readable everywhere:
+they're plain markdown links.
+
 The `todo` skill stays for one release as a stand-in: its script just runs this one, so an older
 copy of the app still works. Use `tdsapp-todo`.
 
@@ -127,4 +163,5 @@ copy of the app still works. Use `tdsapp-todo`.
 
 When you edit a to-do yourself rather than through the script, the rules in `todo/AGENTS.md` still
 apply: keep the file name, update the `#` heading with the title, keep the old title under
-`## Title history`, and name new files by the date they should surface.
+`## Title history`, and name new files by the date they should surface. Link files with `attach`
+rather than by hand, so the path is checked and written the way every reader expects.

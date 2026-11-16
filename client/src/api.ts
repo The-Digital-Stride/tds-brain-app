@@ -33,6 +33,8 @@ import type {
   TodoAction,
   TodoHistoryResponse,
   TodoList,
+  TodoUploadRequest,
+  TodoUploadResponse,
   UploadInfo,
   UploadResponse,
 } from '../../shared/contract.ts';
@@ -150,6 +152,8 @@ export const api = {
     ),
   changeTodo: (action: TodoAction, opts?: SendOptions) =>
     request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
+  /** Files a staged upload into the library and links it to the to-do (release 3). */
+  uploadTodoFile: (req: TodoUploadRequest) => request<TodoUploadResponse>('POST', ROUTES.todoUpload, req),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
   engineChoices: () => request<EngineChoices>('GET', ROUTES.engineChoices),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),

@@ -8,7 +8,14 @@ import {
   FilesChangeError,
   type FilesErrorCode,
 } from '../../shared/files-contract.ts';
-import { createFilesSkillRunner, FILES_SCRIPT, findFilesScript, findFilesSkill } from './files-skill.ts';
+import {
+  createFilesSkillRunner,
+  FILES_ADD_CAPABILITY,
+  FILES_SCRIPT,
+  findFilesScript,
+  findFilesSkill,
+  hasAddCapability,
+} from './files-skill.ts';
 import { createBrainReaders } from './index.ts';
 import { idFor } from './library.ts';
 import { copyFixture } from './test-helpers.ts';
@@ -321,5 +328,60 @@ describe('the brain’s deleteLibraryFile and purgeDeletedFiles', () => {
     expect(await ok.brain.purgeDeletedFiles?.()).toBe(2);
     const bad = brainWith('team', { replies: { purge: { exit: 1, out: 'boom' } } });
     expect(await bad.brain.purgeDeletedFiles?.()).toBe(0);
+  });
+});
+
+describe('add (release 3, files-add-v1)', () => {
+  it('sends source, path, the app and the display name, and resolves to the path the script replied', async () => {
+    const t = setup({
+      add: { exit: 0, out: JSON.stringify({ ok: true, action: 'add', path: 'personal/files/a (2).pdf' }) },
+    });
+    const runner = createFilesSkillRunner(t.root, { env: t.env });
+    const saved = await runner.add({
+      source: '/staging/x/a.pdf',
+      path: 'personal/files/a.pdf',
+      by: { slug: 'sam', name: 'Sam Lee' },
+    });
+    expect(saved).toBe('personal/files/a (2).pdf');
+    const [call] = t.calls();
+    expect(call?.argv).toEqual(['add']);
+    expect(JSON.parse(call?.stdin ?? '{}')).toEqual({
+      source: '/staging/x/a.pdf',
+      path: 'personal/files/a.pdf',
+      via: 'TDS Cortex',
+      by_name: 'Sam Lee',
+    });
+  });
+
+  it('is internal when the reply has no path, and maps refusals', async () => {
+    const t = setup({ add: { exit: 0, out: '{"ok":true}' } });
+    const runner = createFilesSkillRunner(t.root, { env: t.env });
+    expect((await codeOf(runner.add({ source: '/s/a.pdf', path: 'personal/files/a.pdf' })))?.code).toBe(
+      'internal',
+    );
+    const r = setup({ add: { exit: 2, out: '{"ok":false,"code":"bad-request","error":"x"}' } });
+    expect(
+      (
+        await codeOf(
+          createFilesSkillRunner(r.root, { env: r.env }).add({ source: '/s/a.pdf', path: 'p/a.pdf' }),
+        )
+      )?.code,
+    ).toBe('bad-request');
+  });
+
+  it('reports the add feature only when the script lists it', async () => {
+    const t = setup();
+    expect(await hasAddCapability(createFilesSkillRunner(t.root, { env: t.env }))).toBe(false);
+    const caps = {
+      exit: 0,
+      out: JSON.stringify({
+        ok: true,
+        action: 'capabilities',
+        version: '2',
+        features: [FILES_ADD_CAPABILITY],
+      }),
+    };
+    const u = setup({ capabilities: caps });
+    expect(await hasAddCapability(createFilesSkillRunner(u.root, { env: u.env }))).toBe(true);
   });
 });

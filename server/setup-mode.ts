@@ -39,6 +39,8 @@ export function createSetupBrain(): SearchableBrain {
       changes: 'no-skill',
       canAddOpen: false,
       canUsePersonal: false,
+      canAttach: false,
+      canUpload: false,
     }),
     completeTodo: async () => {
       throw new Error(NO_BRAIN);
@@ -47,6 +49,9 @@ export function createSetupBrain(): SearchableBrain {
       throw new TodoChangeError('not-allowed', NO_BRAIN);
     },
     completePersonalTodo: async () => {
+      throw new TodoChangeError('not-allowed', NO_BRAIN);
+    },
+    uploadTodoFile: async () => {
       throw new TodoChangeError('not-allowed', NO_BRAIN);
     },
     askedTodos: async () => ({ waiting: [], done: [], historyRead: false }),

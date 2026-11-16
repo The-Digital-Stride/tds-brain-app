@@ -36,6 +36,7 @@ const todo = (id: string): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   assignee: 'sam',
   due: null,
   surfaceDate: null,

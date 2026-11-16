@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-todo.cjs (v0.4) — change one loose to-do in todo/ (or personal/todo/), the way the
+// tdsapp-todo.cjs (v0.5) — change one loose to-do in todo/ (or personal/todo/), the way the
 // Workbench does, with fixes.
 //
 // A dependency-free port of the Workbench's to-do routes (tools/members/command-centre/server.cjs:
@@ -7,7 +7,8 @@
 // lib/todo-parser.cjs). File names, frontmatter lines, success bodies and error texts are the
 // Workbench's. The plan behind v0.3 is the app repo's docs/plans/2026-11-13-todo-skill-fixes.md; the
 // weak spots it fixes are in the brain's os/tds-brain-app/change-requests.md (BCR-xx below). v0.4
-// follows docs/plans/2026-11-13-todo-handover-search-scope.md (decision 2).
+// follows docs/plans/2026-11-13-todo-handover-search-scope.md (decision 2); v0.5 follows
+// docs/plans/2026-11-16-todo-attachments.md (decisions 1, 2 and 8).
 //
 // Differences from the Workbench:
 //   - delete keeps the to-do in todo/deleted/, stamped with who, when and from where (BCR-05).
@@ -53,10 +54,29 @@
 //   - move: {file, scope?, to, expect?, by?, by_name?, via?} copies the bytes (and mode) unchanged to
 //     the other folder (a clash gets -<n>), then removes the original. Only the assignee may move it, either way.
 //
+// v0.5 differences (every new field optional; earlier calls give the same results):
+//   - capabilities: features add "attach"; version "0.5".
+//   - attach {file, path, expect?, scope?, by?} links a library file in the body's "## Files"
+//     section: `- [<name>](<path from the to-do's folder>)`, in <…> when the path holds a space,
+//     bracket, < or >, plus ` (only on <slug>'s Mac)` for a personal/ file (`by`, else the git user).
+//     `path` is brain-relative and must be a real file (no link anywhere on the way) of a type the
+//     library lists, under clients/<client>/, templates/ or personal/, and not a place the library
+//     never lists. A file already linked is a no-op (nothing written); more than 20 → 400. A new
+//     section goes after the details, before the first "## Title history", "## Handover history",
+//     "## Done <date>" or "## Deleted <date>" heading (outside code fences), else at the end.
+//   - detach {file, path, expect?, scope?} removes every line linking that file and drops the
+//     section once nothing is left in it. A file not linked is a no-op.
+//   - edit `keep_files: true`: `body` is the details only (the 8,000 limit counts just that); a body
+//     with a "## Files" heading → 400; the section on disk is put back by the same placement rule.
+//   - add takes an optional `body` (at most 8,000, no "## Files" heading) as the new to-do's details.
+//   The section's read rules mirror the app's shared/todo-files.ts; the app's tests and this
+//   script's run the same fixtures (shared/todo-files.fixtures.json).
+//
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
 //
-//   <command>  add | edit | due | assignee | delete | tick | move | roster | list | capabilities
+//   <command>  add | edit | due | assignee | delete | tick | move | attach | detach | roster | list |
+//              capabilities
 //   stdin      one JSON object: the Workbench route's request body, same field names (file, title,
 //              body, due, assignee), plus the optional fields above. roster and list need none ({}).
 //   stdout     one JSON line.
@@ -83,7 +103,7 @@ const BRAIN_ROOT = process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..',
 const TODO_DIR = path.join(BRAIN_ROOT, 'todo');
 // v0.4: personal to-dos, kept out of git by the brain's own ignore rules.
 const PERSONAL_DIR = path.join(BRAIN_ROOT, 'personal', 'todo');
-const SCRIPT_VERSION = '0.4';
+const SCRIPT_VERSION = '0.5';
 
 // WORKBENCH_AS=<name-slug> previews another person's list (server.cjs VIEW_AS).
 const VIEW_AS = /^[a-z0-9-]+$/.test(process.env.WORKBENCH_AS || '') ? process.env.WORKBENCH_AS : null;
@@ -94,6 +114,9 @@ const ASSIGNEE_MAX = 40;
 const VIA_MAX = 60;
 const FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$/;
 const RULES_FILES = new Set(['claude.md', 'readme.md', 'agents.md']);
+// v0.5: most files one to-do's "## Files" section may hold (the app's TODO_ATTACHMENTS_MAX).
+const FILES_MAX = 20;
+const FILE_PATH_MAX = 1024;
 
 // The response being built: mirrors Express's res.status(n).json(body).
 class Reply {
@@ -687,6 +710,248 @@ function retitleBody(lines, oldTitle, newTitle) {
   return out;
 }
 
+// ---- the "## Files" section (v0.5) ---------------------------------------------------------
+//
+// Read rules, line for line from the app's shared/todo-files.ts (both test suites run
+// shared/todo-files.fixtures.json, so they can't drift). This script is the section's only writer.
+
+// The section starts at a level-2 heading that says exactly "Files" (any case)...
+const FILES_HEADING = /^##[ \t]+files[ \t]*$/i;
+// ... and ends at the next level-1 or level-2 heading.
+const FILES_NEXT_HEADING = /^#{1,2}[ \t]/;
+// `- [name](path)` or `- [name](<path>)`, optionally followed by ` (only on <slug>'s Mac)`.
+const FILE_ITEM = /^[ \t]*[-*][ \t]+\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^\s()<>]+))\)(?:[ \t]+\(only on ([a-z0-9]+(?:-[a-z0-9]+)*)'s Mac\))?[ \t]*$/;
+const FILE_ROOTS = ['clients/', 'templates/', 'personal/'];
+// Where a new section goes: before the first of the sections this script writes after the details.
+const FILES_ANCHOR = /^##[ \t]+(?:title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
+
+// A link target as a brain path, or null: every leading `../` dropped, then it must start with
+// clients/, templates/ or personal/ and have no empty, `.` or `..` segment, backslash, colon or `%`.
+function resolveFilePath(target) {
+  let rest = String(target).trim();
+  while (rest.startsWith('../')) rest = rest.slice(3);
+  if (!FILE_ROOTS.some(r => rest.startsWith(r))) return null;
+  if (/[\\:%\0]/.test(rest)) return null;
+  if (rest.split('/').some(p => p === '' || p === '.' || p === '..')) return null;
+  return rest;
+}
+
+// The [start, end) line range of the first "## Files" section, or null.
+function filesRange(lines) {
+  // Headings inside ``` or ~~~ code fences don't count, the same as shared/todo-files.ts.
+  const outside = linesOutsideFences(lines);
+  const at = outside.findIndex(i => FILES_HEADING.test(lines[i]));
+  if (at === -1) return null;
+  const start = outside[at];
+  for (let k = at + 1; k < outside.length; k++) {
+    if (FILES_NEXT_HEADING.test(lines[outside[k]])) return [start, outside[k]];
+  }
+  return [start, lines.length];
+}
+
+// One section line as a link, or null when it isn't a well-formed item with a brain path.
+function fileLinkOf(line) {
+  const m = FILE_ITEM.exec(line);
+  if (!m) return null;
+  const path = resolveFilePath(m[2] !== undefined ? m[2] : m[3]);
+  if (path === null) return null;
+  return { path, name: m[1].trim(), holder: path.startsWith('personal/') ? (m[4] || null) : null };
+}
+
+// The files linked in the body's first section, in written order, each path once.
+function parseFiles(body) {
+  const lines = String(body == null ? '' : body).split(/\r?\n/);
+  const range = filesRange(lines);
+  if (!range) return [];
+  const out = [];
+  const seen = new Set();
+  for (let i = range[0] + 1; i < range[1]; i++) {
+    const link = fileLinkOf(lines[i]);
+    if (!link || seen.has(link.path)) continue;
+    seen.add(link.path);
+    out.push(link);
+  }
+  return out;
+}
+
+// The body without its first section (`details`, trimmed) and that section's source (`files`).
+function splitFiles(body) {
+  const text = String(body == null ? '' : body);
+  const lines = text.split(/\r?\n/);
+  const range = filesRange(lines);
+  if (!range) return { details: text.trim(), files: '' };
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const before = lines.slice(0, range[0]).join(eol).trimEnd();
+  const after = lines.slice(range[1]).join(eol).trimStart();
+  const files = lines.slice(range[0], range[1]).join(eol).trimEnd();
+  const details = [before, after].filter(s => s !== '').join(eol + eol);
+  return { details: details.trim(), files };
+}
+
+// Details sent by a caller may not hold the section: only attach and detach change it.
+function refuseFilesHeading(text) {
+  if (text.split('\n').some(l => FILES_HEADING.test(l))) {
+    throw new Refusal(400, 'details can\'t hold a "## Files" section: files are linked with attach');
+  }
+}
+
+// `lines` (a body, no frontmatter) with a section added: after the details, before the first
+// history, done or deleted heading outside a code fence (else at the end), one blank line either
+// side. `afterHead`: a frontmatter block comes first, so a section at the top still gets its blank line.
+function placeSection(lines, section, afterHead) {
+  let at = lines.length;
+  for (const i of linesOutsideFences(lines)) {
+    if (FILES_ANCHOR.test(lines[i])) { at = i; break; }
+  }
+  const before = lines.slice(0, at);
+  while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
+  const lead = before.length > 0 || afterHead ? [''] : [];
+  return [...before, ...lead, ...section, '', ...lines.slice(at)];
+}
+
+// `lines` with the section [start, end) taken out, blank lines either side collapsed to one.
+function dropSection(lines, start, end, afterHead) {
+  const before = lines.slice(0, start);
+  while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
+  const after = lines.slice(end);
+  while (after.length > 0 && after[0].trim() === '') after.shift();
+  if (before.length === 0 && after.length === 0) return [''];
+  if (after.length === 0) return [...before, ''];
+  if (before.length === 0) return afterHead ? ['', ...after] : after;
+  return [...before, '', ...after];
+}
+
+// The to-do's text as frontmatter lines (or none) and body lines (plain \n).
+function todoParts(todo, file) {
+  const lines = todo.text.split('\n');
+  if (!/^---\n/.test(todo.text)) return { head: [], body: lines };
+  const close = closingLine(lines);
+  if (close === -1) throw new Refusal(500, 'unterminated frontmatter in ' + file);
+  return { head: lines.slice(0, close + 1), body: lines.slice(close + 1) };
+}
+
+// The library's rules (the app's server/brain/library-rules.ts), as tdsapp-files has them.
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
+const DOCUMENT_EXTENSIONS = ['pdf', 'md', 'txt', 'docx', 'html', 'htm', 'csv', 'xlsx', 'pptx'];
+const LIBRARY_EXTENSIONS = [...IMAGE_EXTENSIONS, ...DOCUMENT_EXTENSIONS];
+
+function isNeverListed(relFromRoot) {
+  if (relFromRoot === '' || relFromRoot.includes('\\') || relFromRoot.includes('\0')) return true;
+  const segs = relFromRoot.toLowerCase().split('/');
+  for (const s of segs) {
+    if (s === '' || s.startsWith('.') || s === 'node_modules') return true;
+  }
+  if (segs[0] === 'personal' && segs[1] === 'todo') return true;
+  if (segs[0] === 'clients') {
+    if (segs[1] && segs[1].startsWith('_')) return true;
+    const [a, b, c] = segs.slice(2);
+    if (a === 'config') return true;
+    if (a === 'crm' && b === 'data') return true;
+    if (a === 'context' && b === 'google-ads' && c === 'data') return true;
+  }
+  return false;
+}
+
+function extOf(name) {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
+// The brain path a request names: under clients/<client>/, templates/ or personal/, written exactly
+// as a link would resolve (so no `..`, `.`, empty part, backslash, colon, `%` or outer spaces).
+function filePathOf(body) {
+  const rel = body.path;
+  if (typeof rel !== 'string' || rel === '') throw new Refusal(400, 'path is required');
+  if (rel.length > FILE_PATH_MAX) throw new Refusal(400, `path is too long (over ${FILE_PATH_MAX} characters)`);
+  if (resolveFilePath(rel) !== rel || (rel.startsWith('clients/') && rel.split('/').length < 3)) {
+    throw new Refusal(400, 'path must be a file under clients/<client>/, templates/ or personal/');
+  }
+  return rel;
+}
+
+// The section line linking `rel` from a to-do in `dir`, after checking `rel` is a real library file.
+function fileLineFor(rel, dir, holder) {
+  if (isNeverListed(rel)) throw new Refusal(400, 'that path is never listed in the library');
+  const name = rel.slice(rel.lastIndexOf('/') + 1);
+  if (!LIBRARY_EXTENSIONS.includes(extOf(name))) {
+    throw new Refusal(400, 'only the image and document types the library lists can be linked');
+  }
+  const abs = path.join(BRAIN_ROOT, ...rel.split('/'));
+  let stat;
+  try {
+    stat = fs.lstatSync(abs);
+  } catch {
+    throw new Refusal(400, 'no file at ' + rel);
+  }
+  if (stat.isSymbolicLink()) throw new Refusal(400, rel + ' is a link');
+  if (!stat.isFile()) throw new Refusal(400, rel + " isn't a file");
+  // No link anywhere on the way, and the letters' case as on the disk.
+  const real = path.relative(fs.realpathSync.native(BRAIN_ROOT), fs.realpathSync.native(abs)).split(path.sep).join('/');
+  if (real !== rel) throw new Refusal(400, rel + " goes through a link or doesn't match the folder names on disk");
+  const target = (dir === PERSONAL_DIR ? '../../' : '../') + rel;
+  const shown = name.replace(/\[/g, '(').replace(/\]/g, ')');
+  let line = `- [${shown}](${/[\s()<>]/.test(target) ? `<${target}>` : target})`;
+  if (rel.startsWith('personal/') && holder) line += ` (only on ${holder}'s Mac)`;
+  // What the app will read back must be this very file.
+  const link = /[\p{Cc}]/u.test(rel) ? null : fileLinkOf(line);
+  if (!link || link.path !== rel) throw new Refusal(400, rel + " can't be written as a link");
+  return line;
+}
+
+// attach: { file, path, scope?, expect?, by? } → the file linked in the "## Files" section.
+function attach(body, res) {
+  const file = fileOf(body);
+  const rel = filePathOf(body);
+  const dir = dirOf(body);
+  const todo = openTodo(dir, file, expectOf(body), true);
+  const line = fileLineFor(rel, dir, rel.startsWith('personal/') ? adderOf(body) : '');
+  const { head, body: lines } = todoParts(todo, file);
+  const range = filesRange(lines);
+  const links = range ? parseFiles(lines.join('\n')) : [];
+  if (links.some(l => l.path === rel)) return res.json({ ok: true, file, path: rel, changed: false });
+  if (links.length >= FILES_MAX) throw new Refusal(400, `a to-do can have at most ${FILES_MAX} files`);
+  let out;
+  if (!range) {
+    out = placeSection(lines, ['## Files', '', line], head.length > 0);
+  } else {
+    // After the section's last line that isn't blank (or a blank line after a bare heading).
+    out = lines.slice();
+    let last = range[1] - 1;
+    while (last > range[0] && out[last].trim() === '') last--;
+    const added = last === range[0] ? ['', line] : [line];
+    out.splice(last + 1, 0, ...added);
+    const next = last + 1 + added.length;
+    if (next < out.length && FILES_NEXT_HEADING.test(out[next])) out.splice(next, 0, '');
+  }
+  replaceTodo(todo, [...head, ...out].join('\n'));
+  res.json({ ok: true, file, path: rel, changed: true });
+}
+
+// detach: { file, path, scope?, expect? } → every line linking that file removed; the section goes
+// once nothing is left in it. The file itself is never touched, and needn't be there.
+function detach(body, res) {
+  const file = fileOf(body);
+  const rel = filePathOf(body);
+  const todo = openTodo(dirOf(body), file, expectOf(body), true);
+  const { head, body: lines } = todoParts(todo, file);
+  const range = filesRange(lines);
+  const hits = new Set();
+  if (range) {
+    for (let i = range[0] + 1; i < range[1]; i++) {
+      const link = fileLinkOf(lines[i]);
+      if (link && link.path === rel) hits.add(i);
+    }
+  }
+  if (hits.size === 0) return res.json({ ok: true, file, path: rel, changed: false });
+  let out = lines.filter((_, i) => !hits.has(i));
+  const end = range[1] - hits.size;
+  if (out.slice(range[0] + 1, end).every(l => l.trim() === '')) {
+    out = dropSection(out, range[0], end, head.length > 0);
+  }
+  replaceTodo(todo, [...head, ...out].join('\n'));
+  res.json({ ok: true, file, path: rel, changed: true });
+}
+
 // ---- server.cjs routes ------------------------------------------------------
 
 // GET /api/misc-todos
@@ -725,9 +990,15 @@ const NAME_FOLDERS = [TODO_DIR, PERSONAL_DIR].flatMap(dir => ['', 'done', 'delet
 // POST /api/todos/add: writes todo/YYYYMMDD-<slug>.md with the standard frontmatter.
 // Assignee defaults to this machine's git user (slugified); `open: true` leaves it open.
 // v0.4: `scope: "personal"` writes personal/todo/ instead, always for the adder.
+// v0.5: a string `body` becomes the new to-do's details.
 function add(body, res) {
   const title = titleOf(body);
   const due = dueOf(body);
+  const details = typeof body.body === 'string' ? body.body.replace(/\r\n/g, '\n').trim() : '';
+  if (details.length > DETAILS_MAX) {
+    throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
+  }
+  refuseFilesHeading(details);
   const scope = scopeValue(body.scope, 'scope');
   const open = body.open === true;
   const adder = adderOf(body);
@@ -765,7 +1036,7 @@ function add(body, res) {
     fm.push(...handoverRecord({ to: assignee, by: adder, via: via || 'todo skill', at: new Date() }));
   }
   fm.push('---', '');
-  const text = fm.join('\n');
+  const text = fm.join('\n') + (details ? `\n${details}\n` : '');
 
   const stem = `${today.replace(/-/g, '')}-${slug}`;
   for (let n = 1; ; n++) {
@@ -846,6 +1117,8 @@ function assignee(body, res) {
 // frontmatter block if none). A string `body` replaces everything below the frontmatter.
 // A real title change also follows todo/AGENTS.md (see retitleBody). The reply's `body` is the
 // details as written, title history included.
+// v0.5: with `keep_files: true`, `body` is the details only: the "## Files" section on disk is put
+// back (see placeSection), and a body holding that heading is refused.
 function edit(body, res) {
   const file = fileOf(body);
   const title = titleOf(body);
@@ -855,6 +1128,8 @@ function edit(body, res) {
   if (hasBody && newBody.length > DETAILS_MAX) {
     throw new Refusal(400, `details are too long (over ${DETAILS_MAX} characters)`);
   }
+  const keepFiles = hasBody && body.keep_files === true;
+  if (keepFiles) refuseFilesHeading(newBody);
   const todo = openTodo(dirOf(body), file, expectOf(body), true);
   const titleLine = 'title: ' + yamlText(title);
   let headLines = null; // the frontmatter lines, when the file has a block
@@ -887,7 +1162,9 @@ function edit(body, res) {
     const heading = firstHeading(oldBody);
     oldTitle = heading ? heading.text : '';
   }
-  const bodyLines = retitleBody(hasBody ? newBodyLines : oldBody, oldTitle, title);
+  let bodyLines = retitleBody(hasBody ? newBodyLines : oldBody, oldTitle, title);
+  const kept = keepFiles ? splitFiles(oldBody.join('\n')).files : '';
+  if (kept) bodyLines = placeSection(bodyLines, kept.split('\n'), headLines !== null);
   replaceTodo(todo, headLines ? [...headLines, ...bodyLines].join('\n') : prefix + bodyLines.join('\n'));
   res.json({ ok: true, file, title, body: hasBody ? bodyLines.join('\n').trim() : undefined });
 }
@@ -1140,16 +1417,16 @@ function move(body, res) {
 }
 
 // capabilities: {} → what this script can do, so a caller can tell v0.4 from v0.3 (which answers
-// "unknown command") and whether personal to-dos are safe to use in this brain.
+// "unknown command"), v0.5 ("attach") from v0.4, and whether personal to-dos are safe to use here.
 function capabilities(body, res) {
-  const features = ['handover'];
+  const features = ['handover', 'attach'];
   if (!personalProblem()) features.push('scope');
   res.json({ version: SCRIPT_VERSION, features });
 }
 
 // ---- command line -----------------------------------------------------------
 
-const COMMANDS = { add, edit, due, assignee, delete: remove, tick, move, roster, list, capabilities };
+const COMMANDS = { add, edit, due, assignee, delete: remove, tick, move, attach, detach, roster, list, capabilities };
 
 function finish(code, body) {
   const out = code === 200 ? body : Object.assign({}, body, { status: code });
@@ -1179,14 +1456,20 @@ function run(command, raw) {
   return finish(res.code, res.body);
 }
 
-// Read stdin to the end first, so a caller writing a body never meets a closed pipe.
-const chunks = [];
-let started = false;
-function start() {
-  if (started) return;
-  started = true;
-  run(process.argv[2] || '', Buffer.concat(chunks).toString('utf8'));
+// The "## Files" read rules, for the app repo's tests (they set globalThis.TDSAPP_TODO_LIBRARY
+// before requiring this file, so no command runs). Run directly or through the `todo` shim, as before.
+module.exports = { parseFiles, splitFiles, resolveFilePath, isNeverListed, LIBRARY_EXTENSIONS };
+
+if (!globalThis.TDSAPP_TODO_LIBRARY) {
+  // Read stdin to the end first, so a caller writing a body never meets a closed pipe.
+  const chunks = [];
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    run(process.argv[2] || '', Buffer.concat(chunks).toString('utf8'));
+  };
+  process.stdin.on('data', (c) => chunks.push(c));
+  process.stdin.on('end', start);
+  process.stdin.on('error', start);
 }
-process.stdin.on('data', (c) => chunks.push(c));
-process.stdin.on('end', start);
-process.stdin.on('error', start);

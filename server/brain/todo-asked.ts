@@ -17,7 +17,17 @@ import {
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
 import { type GitLogRunner, runGit } from './todo-history.ts';
-import { authorSlug, dueOf, isSelf, lower, readTeam, SAFE_ID, surfaceDate, todoTitle } from './todos.ts';
+import {
+  authorSlug,
+  createAttachmentReader,
+  dueOf,
+  isSelf,
+  lower,
+  readTeam,
+  SAFE_ID,
+  surfaceDate,
+  todoTitle,
+} from './todos.ts';
 import { readBytes } from './util.ts';
 
 export const ASKED_LOG_MAX_OUTPUT = 2 * 1024 * 1024;
@@ -280,6 +290,7 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
       const cutoff = now.getTime() - ASKED_DONE_DAYS * DAY_MS;
       const waiting: AskedTodo[] = [];
       const done: AskedTodo[] = [];
+      const attachments = createAttachmentReader(root, identity.slug);
       for (const file of files) {
         const assignee = lower(file.data.assignee);
         if (!assignee || assignee === 'open' || assignee === identity.slug) continue;
@@ -306,6 +317,7 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
           asked,
           done: finished,
           version: file.version,
+          attachments: await attachments(file.body),
         };
         (file.state === 'done' ? done : waiting).push(item);
       }

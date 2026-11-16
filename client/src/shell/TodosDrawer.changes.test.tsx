@@ -35,6 +35,7 @@ const todo = (over: Partial<TodoItem> = {}): TodoItem => ({
   source: null,
   details: 'Some notes',
   version: 'v1',
+  attachments: [],
   ...over,
 });
 let canAddOpen = false;
@@ -49,6 +50,8 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
   ],
   changes,
   canAddOpen,
+  canAttach: false,
+  canUpload: false,
   canUsePersonal,
 });
 

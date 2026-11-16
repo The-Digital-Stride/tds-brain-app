@@ -239,6 +239,7 @@ function todo(id: string, scope: 'tds' | 'personal' = 'tds'): TodoItem {
     source: null,
     details: '',
     version: '0'.repeat(64),
+    attachments: [],
   };
 }
 
@@ -258,6 +259,8 @@ function fakeBrain(
       changes: 'no-skill',
       canAddOpen: false,
       canUsePersonal: false,
+      canAttach: false,
+      canUpload: false,
     }),
     ...over,
   };

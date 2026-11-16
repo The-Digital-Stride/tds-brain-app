@@ -14,6 +14,7 @@ const item = (id: string, scope: 'tds' | 'personal' = 'tds'): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   assignee: null,
   due: null,
   surfaceDate: null,

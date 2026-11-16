@@ -58,6 +58,7 @@ describe('todos', () => {
       version: createHash('sha256')
         .update(readFileSync(join(fixtureRoot, 'todo', '20261101-renew-contract.md')))
         .digest('hex'),
+      attachments: [],
     });
     expect(byId['20261105-send-report.md']?.title).toBe('Send the monthly report');
     expect(byId['20261010-undated-thing.md']?.title).toBe('Undated thing');
@@ -150,6 +151,8 @@ describe('todos', () => {
       changes: 'no-skill',
       canAddOpen: false,
       canUsePersonal: false,
+      canAttach: false,
+      canUpload: false,
     });
   });
 });

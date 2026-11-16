@@ -47,11 +47,14 @@ import {
   type ThumbWidth,
   TODO_KEY_MAX,
   TODO_SEEN_MAX,
+  TODO_UPLOAD_TYPES,
   type TodoAction,
   TodoChangeError,
   type TodoHistoryResponse,
   type TodoList,
   type TodoScope,
+  type TodoUploadRequest,
+  type TodoUploadResponse,
   UPLOAD_NAME_HEADER,
   type UploadResponse,
   VERSION_PATTERN,
@@ -77,8 +80,10 @@ import {
 import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
+import { classify } from '../brain/library-rules.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
+import { TODO_FILES_MESSAGES } from '../brain/todos.ts';
 import {
   CLIENT_GUESS_MAX_CHARS,
   type ClientAlias,
@@ -94,7 +99,13 @@ import {
 } from '../engine/session-manager.ts';
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { isPageKey } from '../store/page-copies.ts';
-import { UploadError, type UploadErrorCode, type UploadStaging } from '../uploads/staging.ts';
+import {
+  extensionOf,
+  type StagedFile,
+  UploadError,
+  type UploadErrorCode,
+  type UploadStaging,
+} from '../uploads/staging.ts';
 import { emptySummary, type SavingsService } from '../usage/savings.ts';
 import {
   hasValidSession,
@@ -272,6 +283,8 @@ const EMPTY_TODOS: TodoList = {
   changes: 'no-skill',
   canAddOpen: false,
   canUsePersonal: false,
+  canAttach: false,
+  canUpload: false,
 };
 const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
@@ -625,7 +638,9 @@ async function todos(ctx: RouteContext): Promise<TodoList> {
   const list = await safe(ctx.brain.todos(identity), EMPTY_TODOS);
   if (list.changes !== 'on') return list;
   const prefs = await safe(ctx.store.get(), null);
-  return prefs?.directWrites === true ? list : { ...list, changes: 'switched-off', canUsePersonal: false };
+  return prefs?.directWrites === true
+    ? list
+    : { ...list, changes: 'switched-off', canUsePersonal: false, canAttach: false, canUpload: false };
 }
 
 const TODO_HISTORY_BAD_KEY = "That to-do wasn't understood.";
@@ -635,7 +650,13 @@ const TODO_SWITCHED_OFF =
 
 /** Each action's fields besides `kind`: required text, text or null, or optional text. */
 const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-null' | 'optional-text'>> = {
-  add: { title: 'text', due: 'text-or-null', assignee: 'text-or-null', scope: 'optional-text' },
+  add: {
+    title: 'text',
+    due: 'text-or-null',
+    assignee: 'text-or-null',
+    scope: 'optional-text',
+    details: 'optional-text',
+  },
   edit: {
     id: 'text',
     title: 'text',
@@ -647,6 +668,8 @@ const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-n
   assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
   delete: { id: 'text', expect: 'optional-text', scope: 'optional-text' },
   move: { id: 'text', scope: 'text', to: 'text', expect: 'optional-text' },
+  attach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
+  detach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
 };
 
 const isTodoScope = (v: unknown): v is TodoScope => v === 'tds' || v === 'personal';
@@ -671,6 +694,71 @@ export function parseTodoAction(body: unknown): TodoAction {
     action[key] = v;
   }
   return action as unknown as TodoAction;
+}
+
+/**
+ * `POST ROUTES.todoUpload`: exactly a TodoUploadRequest, no other fields. `upload`, `id` and `expect`
+ * are text, `scope` 'tds' or 'personal' when present. The values are checked by `uploadTodoFile`.
+ */
+export function parseTodoUploadRequest(body: unknown): TodoUploadRequest {
+  const bad = () => new HttpError(400, 'bad-request', TODO_CHANGE_MESSAGES['bad-request']);
+  if (!isRec(body)) throw bad();
+  for (const key of Object.keys(body)) {
+    if (key !== 'upload' && key !== 'id' && key !== 'scope' && key !== 'expect') throw bad();
+  }
+  const { upload, id, scope, expect } = body;
+  if (typeof upload !== 'string' || upload === '' || upload.length > 64) throw bad();
+  if (typeof id !== 'string' || typeof expect !== 'string') throw bad();
+  if (scope !== undefined && !isTodoScope(scope)) throw bad();
+  return scope === undefined ? { upload, id, expect } : { upload, id, scope, expect };
+}
+
+/**
+ * Files a staged upload on a to-do (release 3). The staged file is used up first, whatever happens
+ * next, so the same upload can never be filed twice; the brain readers do the rest.
+ */
+async function uploadTodoFileRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RouteContext,
+): Promise<void> {
+  const body = await readJson(req);
+  const prefs = await ctx.store.get();
+  if (!prefs.directWrites) throw new HttpError(403, 'not-allowed', TODO_SWITCHED_OFF);
+  const request = parseTodoUploadRequest(body);
+  let file: StagedFile | undefined;
+  try {
+    file = ctx.uploads.claim([request.upload]).files[0];
+  } catch (err) {
+    if (err instanceof UploadError) throw new HttpError(400, 'bad-request', err.message);
+    throw err;
+  }
+  if (!file) throw new HttpError(400, 'bad-request', TODO_CHANGE_MESSAGES['bad-request']);
+  // The staged kind must be the library's kind for that extension (an image is never filed as a document).
+  const ext = extensionOf(file.name);
+  if (!TODO_UPLOAD_TYPES.includes(ext) || classify(ext)?.kind !== file.kind) {
+    throw new HttpError(400, 'bad-request', TODO_FILES_MESSAGES.badType);
+  }
+  let saved: { path: string; personal: boolean };
+  try {
+    saved = await ctx.brain.uploadTodoFile(
+      {
+        stagedPath: file.path,
+        name: file.name,
+        id: request.id,
+        scope: request.scope ?? 'tds',
+        expect: request.expect,
+      },
+      await safe(ctx.brain.identity(), UNKNOWN_IDENTITY),
+    );
+  } catch (err) {
+    if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
+    ctx.log('Adding a file to a to-do failed unexpectedly.');
+    throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
+  }
+  ctx.log(saved.personal ? 'Added a personal file to a to-do.' : 'Added a file to a to-do.');
+  const out: TodoUploadResponse = { list: await todos(ctx), path: saved.path, personal: saved.personal };
+  sendJson(res, 200, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,6 +1558,12 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     ctx.log(`Changed a to-do (${action.kind}).`);
     const list = await todos(ctx);
     sendJson(res, 200, moved ? { ...list, moved } : list);
+    return;
+  }
+
+  if (path === ROUTES.todoUpload) {
+    if (method !== 'POST') throw methodNotAllowed();
+    await uploadTodoFileRoute(req, res, ctx);
     return;
   }
 

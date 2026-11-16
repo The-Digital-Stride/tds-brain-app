@@ -46,6 +46,7 @@ const item = (id: string, over: Partial<TodoItem> = {}): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   ...over,
 });
 

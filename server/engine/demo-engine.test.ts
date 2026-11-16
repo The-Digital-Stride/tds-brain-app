@@ -41,6 +41,8 @@ function makeManager(): SessionManager {
         changes: 'no-skill',
         canAddOpen: false,
         canUsePersonal: false,
+        canAttach: false,
+        canUpload: false,
       }),
     },
     brainRoot: BRAIN,

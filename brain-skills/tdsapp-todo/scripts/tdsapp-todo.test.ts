@@ -24,11 +24,13 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stampDone } from '../../../server/brain/done-record.ts';
 import { parseFrontmatter as appParse } from '../../../server/brain/frontmatter.ts';
+import { classify, isNeverListed as libraryNeverListed } from '../../../server/brain/library-rules.ts';
+import { parseTodoFiles, splitTodoFiles } from '../../../shared/todo-files.ts';
 
 const SCRIPT = fileURLToPath(new URL('./tdsapp-todo.cjs', import.meta.url));
 const SHIM = fileURLToPath(new URL('../../todo/scripts/todo.cjs', import.meta.url));
@@ -1382,10 +1384,10 @@ describe('the skill files', () => {
   const skill = (rel: string) =>
     appParse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')).data;
 
-  it('tdsapp-todo is v0.4, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
+  it('tdsapp-todo is v0.5, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
     expect(skill('../SKILL.md')).toMatchObject({
       name: 'tdsapp-todo',
-      version: '0.4',
+      version: '0.5',
       roles: 'owner, scout',
       maturity: 'draft',
       members: 'false',
@@ -1408,15 +1410,15 @@ describe('v0.4: capabilities', () => {
   it('offers handover and scope in a brain that is not a git repository', () => {
     expect(run('capabilities')).toEqual({
       code: 0,
-      json: { version: '0.4', features: ['handover', 'scope'] },
+      json: { version: '0.5', features: ['handover', 'attach', 'scope'] },
     });
   });
 
   it('offers scope in a git brain only when git ignores personal/todo/', () => {
     gitInit(false);
-    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
     writeFileSync(join(root, '.gitignore'), 'personal/\n');
-    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover', 'scope'] });
+    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach', 'scope'] });
   });
 
   it('does not offer scope when personal/todo is a symbolic link', () => {
@@ -1424,7 +1426,7 @@ describe('v0.4: capabilities', () => {
     mkdirSync(elsewhere);
     mkdirSync(join(root, 'personal'));
     symlinkSync(elsewhere, join(root, 'personal', 'todo'));
-    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
   });
 });
 
@@ -1908,7 +1910,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
     const r = spawnSync('git', args, { cwd: root, env: gitEnv('Sam Example'), encoding: 'utf8' });
     expect(r.status, r.stderr).toBe(0);
   };
-  const noScope = () => expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover'] });
+  const noScope = () =>
+    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
   const refused = (r: RunResult) => {
     expect(r.code).toBe(2);
     expect(r.json.status).toBe(400);
@@ -1967,7 +1970,7 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
       join(root, '.gitignore'),
       'personal/*\n!personal/todo/\npersonal/todo/*\n!personal/todo/*share*.md\n',
     );
-    expect(run('capabilities').json).toEqual({ version: '0.4', features: ['handover', 'scope'] });
+    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach', 'scope'] });
     putPersonal('share-a.md', SAMPLE);
     put('share-b.md', SAMPLE);
     refused(run('due', { file: 'share-a.md', due: '2026-12-01', scope: 'personal' }));
@@ -1989,8 +1992,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
     // Pointed at another repository, git would say personal/todo/ isn't ignored; the brain is no repo.
     const env = { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: root };
     expect(run('capabilities', {}, { env }).json).toEqual({
-      version: '0.4',
-      features: ['handover', 'scope'],
+      version: '0.5',
+      features: ['handover', 'attach', 'scope'],
     });
   });
 
@@ -2082,5 +2085,584 @@ describe('v0.4: v0.3 calls give the same results as v0.3', () => {
       expect(replies[1], `${command} ${JSON.stringify(input)}`).toEqual(replies[0]);
     }
     expect(snapshot(brains[1] as string)).toEqual(snapshot(brains[0] as string));
+  });
+});
+
+// ---- v0.5 (docs/plans/2026-11-16-todo-attachments.md, decisions 1, 2 and 8) ----------------------
+
+// The script's own `## Files` reader, loaded in this process without running a command.
+(globalThis as Record<string, unknown>).TDSAPP_TODO_LIBRARY = true;
+const todoLib = require('./tdsapp-todo.cjs') as {
+  parseFiles(body: string): { path: string; name: string; holder: string | null }[];
+  splitFiles(body: string): { details: string; files: string };
+  isNeverListed(rel: string): boolean;
+  LIBRARY_EXTENSIONS: string[];
+};
+const FIXTURES = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../../../shared/todo-files.fixtures.json', import.meta.url)), 'utf8'),
+) as {
+  parse: { name: string; body: string; files: { path: string; name: string; holder: string | null }[] }[];
+  split: { name: string; body: string; details: string; files: string }[];
+};
+
+// A file in the throwaway brain, its folders made.
+function brainFile(rel: string, text = 'x') {
+  mkdirSync(dirname(join(root, rel)), { recursive: true });
+  writeFileSync(join(root, rel), text);
+}
+const Q = 'clients/acme/files/quote.pdf';
+const LOGO = 'clients/acme/images/logo.png';
+const Q_LINE = '- [quote.pdf](../clients/acme/files/quote.pdf)';
+const LOGO_LINE = '- [logo.png](../clients/acme/images/logo.png)';
+const linked = (text: string) => parseTodoFiles(text).map((f) => f.path);
+
+describe('v0.5: attach', () => {
+  beforeEach(() => {
+    brainFile(Q);
+    brainFile(LOGO);
+    brainFile('templates/brief.docx');
+  });
+
+  it('adds a ## Files section at the end, the path relative to todo/', () => {
+    put('a.md', SAMPLE);
+    expect(run('attach', { file: 'a.md', path: Q })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', path: Q, changed: true },
+    });
+    expect(read('a.md')).toBe(`${SAMPLE}\n## Files\n\n${Q_LINE}\n`);
+    expect(parseTodoFiles(read('a.md'))).toEqual([{ path: Q, name: 'quote.pdf', holder: null }]);
+    expect(temps()).toEqual([]);
+  });
+
+  it('adds to the section in order, and a file already linked is a no-op that writes nothing', () => {
+    put('a.md', SAMPLE);
+    run('attach', { file: 'a.md', path: Q });
+    run('attach', { file: 'a.md', path: LOGO });
+    run('attach', { file: 'a.md', path: 'templates/brief.docx' });
+    expect(read('a.md')).toBe(
+      `${SAMPLE}\n## Files\n\n${Q_LINE}\n${LOGO_LINE}\n- [brief.docx](../templates/brief.docx)\n`,
+    );
+    const before = readFileSync(todoPath('a.md'));
+    const past = new Date('2026-01-01T00:00:00Z');
+    utimesSync(todoPath('a.md'), past, past);
+    expect(run('attach', { file: 'a.md', path: LOGO })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', path: LOGO, changed: false },
+    });
+    expect(readFileSync(todoPath('a.md'))).toEqual(before);
+    expect(statSync(todoPath('a.md')).mtimeMs).toBe(past.getTime());
+  });
+
+  it('counts a hand-written link to the same file as linked', () => {
+    const text = `${SAMPLE}\n## Files\n\n* [The quote](<../../clients/acme/files/quote.pdf>)\n`;
+    put('a.md', text);
+    expect(run('attach', { file: 'a.md', path: Q }).json.changed).toBe(false);
+    expect(read('a.md')).toBe(text);
+  });
+
+  it.each([
+    ['## Title history', '- 2026-11-01: was "S"'],
+    [
+      '## Handover history',
+      '- 13 Nov 2026, 14:05 UK: Sam Example passed it from sam-example to ben-mcadam (TDS Brain App).',
+    ],
+    ['## Done 2026-11-14', 'Ticked off by Sam Example at 10:00 UK time (TDS Brain App).'],
+    ['## Deleted 2026-11-14', 'Deleted by Sam Example at 10:00 UK time (todo skill).'],
+  ])('places a new section before %s', (heading, entry) => {
+    put('a.md', `---\ntitle: T\n---\n\nDetails here.\n\n${heading}\n\n${entry}\n`);
+    run('attach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(
+      `---\ntitle: T\n---\n\nDetails here.\n\n## Files\n\n${Q_LINE}\n\n${heading}\n\n${entry}\n`,
+    );
+  });
+
+  it('places it before the first of several, and skips headings inside a code fence', () => {
+    const tail = '## Handover history\n\n- one\n\n## Title history\n\n- two\n';
+    put('a.md', `---\ntitle: T\n---\n\nDetails.\n\n\`\`\`\n## Title history\n\`\`\`\n\n${tail}`);
+    run('attach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(
+      `---\ntitle: T\n---\n\nDetails.\n\n\`\`\`\n## Title history\n\`\`\`\n\n## Files\n\n${Q_LINE}\n\n${tail}`,
+    );
+  });
+
+  it('places it straight after the frontmatter when there are no details, and works without frontmatter', () => {
+    put('a.md', '---\ntitle: T\n---\n');
+    run('attach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\n## Files\n\n${Q_LINE}\n`);
+    put('b.md', '---\ntitle: T\n---\n\n## Title history\n\n- 2026-11-01: was "S"\n');
+    run('attach', { file: 'b.md', path: Q });
+    expect(read('b.md')).toBe(
+      `---\ntitle: T\n---\n\n## Files\n\n${Q_LINE}\n\n## Title history\n\n- 2026-11-01: was "S"\n`,
+    );
+    put('c.md', 'Just text');
+    run('attach', { file: 'c.md', path: Q });
+    expect(read('c.md')).toBe(`Just text\n\n## Files\n\n${Q_LINE}\n`);
+  });
+
+  it('adds to an existing section wherever it is, keeping what else it holds', () => {
+    put('a.md', `---\ntitle: T\n---\n\n## Files\n\nSome words.\n\n${Q_LINE}\n\n## Notes\n\nMore.\n`);
+    run('attach', { file: 'a.md', path: LOGO });
+    expect(read('a.md')).toBe(
+      `---\ntitle: T\n---\n\n## Files\n\nSome words.\n\n${Q_LINE}\n${LOGO_LINE}\n\n## Notes\n\nMore.\n`,
+    );
+    put('b.md', 'Details.\n\n## files\n');
+    run('attach', { file: 'b.md', path: LOGO });
+    expect(read('b.md')).toBe(`Details.\n\n## files\n\n${LOGO_LINE}\n`);
+  });
+
+  it('wraps a path holding a space, a bracket, < or > ... in <…>, and keeps the link text readable', () => {
+    const cases: [string, string][] = [
+      ['clients/acme/files/Q3 report.pdf', '- [Q3 report.pdf](<../clients/acme/files/Q3 report.pdf>)'],
+      ['clients/acme/files/plan(v2).pdf', '- [plan(v2).pdf](<../clients/acme/files/plan(v2).pdf>)'],
+      ['clients/acme/files/a<b.pdf', '- [a<b.pdf](<../clients/acme/files/a<b.pdf>)'],
+      ['clients/acme/files/v[2].pdf', '- [v(2).pdf](../clients/acme/files/v[2].pdf)'],
+      [
+        'clients/acme/files/Report [final].pdf',
+        '- [Report (final).pdf](<../clients/acme/files/Report [final].pdf>)',
+      ],
+    ];
+    put('a.md', SAMPLE);
+    for (const [rel] of cases) {
+      brainFile(rel);
+      expect(run('attach', { file: 'a.md', path: rel }).code, rel).toBe(0);
+    }
+    expect(read('a.md')).toBe(`${SAMPLE}\n## Files\n\n${cases.map((c) => c[1]).join('\n')}\n`);
+    expect(linked(read('a.md'))).toEqual(cases.map((c) => c[0]));
+  });
+
+  it('refuses a name with > in it, which no link can hold', () => {
+    brainFile('clients/acme/files/a>b.pdf');
+    put('a.md', SAMPLE);
+    expect(run('attach', { file: 'a.md', path: 'clients/acme/files/a>b.pdf' })).toMatchObject({
+      code: 2,
+      json: { status: 400 },
+    });
+    expect(read('a.md')).toBe(SAMPLE);
+  });
+
+  it("writes a personal file with whose Mac has it, relative to the to-do's folder", () => {
+    brainFile('personal/files/My notes.pdf');
+    brainFile('personal/images/b.png');
+    brainFile('personal/c.txt');
+    put('a.md', SAMPLE);
+    run('attach', { file: 'a.md', path: 'personal/files/My notes.pdf' });
+    run('attach', { file: 'a.md', path: 'personal/images/b.png', by: 'Ben McAdam' });
+    run('attach', { file: 'a.md', path: 'personal/c.txt' }, { userName: null });
+    expect(read('a.md')).toBe(
+      `${SAMPLE}\n## Files\n\n` +
+        "- [My notes.pdf](<../personal/files/My notes.pdf>) (only on sam-example's Mac)\n" +
+        "- [b.png](../personal/images/b.png) (only on ben-mcadam's Mac)\n" +
+        '- [c.txt](../personal/c.txt)\n',
+    );
+    expect(parseTodoFiles(read('a.md'))).toEqual([
+      { path: 'personal/files/My notes.pdf', name: 'My notes.pdf', holder: 'sam-example' },
+      { path: 'personal/images/b.png', name: 'b.png', holder: 'ben-mcadam' },
+      { path: 'personal/c.txt', name: 'c.txt', holder: null },
+    ]);
+  });
+
+  it('writes the path relative to personal/todo/ for a personal to-do', () => {
+    brainFile('personal/files/n.pdf');
+    putPersonal('p.md', SAMPLE);
+    expect(run('attach', { file: 'p.md', path: Q, scope: 'personal' }).code).toBe(0);
+    expect(run('attach', { file: 'p.md', path: 'personal/files/n.pdf', scope: 'personal' }).code).toBe(0);
+    expect(readPersonal('p.md')).toBe(
+      `${SAMPLE}\n## Files\n\n- [quote.pdf](../../clients/acme/files/quote.pdf)\n` +
+        "- [n.pdf](../../personal/files/n.pdf) (only on sam-example's Mac)\n",
+    );
+    expect(linked(readPersonal('p.md'))).toEqual([Q, 'personal/files/n.pdf']);
+  });
+
+  it('refuses a personal to-do when personal to-dos are not safe here', () => {
+    gitInit(false);
+    putPersonal('p.md', SAMPLE);
+    expect(run('attach', { file: 'p.md', path: Q, scope: 'personal' })).toMatchObject({
+      code: 2,
+      json: { status: 400 },
+    });
+    expect(readPersonal('p.md')).toBe(SAMPLE);
+  });
+
+  it('refuses anything but a real library file under clients/<client>/, templates/ or personal/', () => {
+    put('a.md', SAMPLE);
+    put('other.md', SAMPLE);
+    for (const rel of [
+      'projects/x/a.pdf',
+      'clients/acme.pdf',
+      'clients/_archive/a.pdf',
+      'clients/acme/.hidden/a.pdf',
+      'clients/acme/config/a.pdf',
+      'clients/acme/crm/data/a.csv',
+      'personal/todo/x.md',
+      'clients/acme/files/a.zip',
+      'clients/acme/files/noext',
+      'clients/acme/files/a%20b.pdf',
+      'clients/acme/files/a:b.pdf',
+      'elsewhere/a.pdf',
+    ]) {
+      brainFile(rel);
+    }
+    mkdirSync(join(root, 'clients', 'acme', 'files', 'folder.pdf'));
+    symlinkSync(join(root, Q), join(root, 'clients', 'acme', 'files', 'link.pdf'));
+    symlinkSync(join(root, 'elsewhere'), join(root, 'clients', 'acme', 'linked'));
+    symlinkSync(join(root, 'clients', 'acme'), join(root, 'clients', 'alias'));
+    const paths: unknown[] = [
+      'clients/acme/files/missing.pdf',
+      'todo/other.md',
+      'projects/x/a.pdf',
+      'clients/acme.pdf',
+      'clients/_archive/a.pdf',
+      'clients/acme/.hidden/a.pdf',
+      'clients/acme/config/a.pdf',
+      'clients/acme/crm/data/a.csv',
+      'personal/todo/x.md',
+      'clients/acme/files/a.zip',
+      'clients/acme/files/noext',
+      'clients/acme/files/a%20b.pdf',
+      'clients/acme/files/a:b.pdf',
+      'clients/acme/files/folder.pdf',
+      'clients/acme/files/link.pdf',
+      'clients/acme/linked/a.pdf',
+      'clients/alias/files/quote.pdf',
+      'clients/ACME/files/quote.pdf',
+      '../clients/acme/files/quote.pdf',
+      '/clients/acme/files/quote.pdf',
+      `${root}/clients/acme/files/quote.pdf`,
+      'clients/acme/./files/quote.pdf',
+      'clients/acme/files//quote.pdf',
+      'clients/acme/files/../files/quote.pdf',
+      'clients\\acme\\files\\quote.pdf',
+      ' clients/acme/files/quote.pdf',
+      '',
+      5,
+      null,
+      undefined,
+    ];
+    for (const path of paths) {
+      expect(run('attach', { file: 'a.md', path }), String(path)).toMatchObject({
+        code: 2,
+        json: { status: 400 },
+      });
+    }
+    expect(read('a.md')).toBe(SAMPLE);
+  });
+
+  it(`refuses more than 20 files, and still answers a file already linked`, () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `- [f${i}.pdf](../clients/acme/files/f${i}.pdf)`);
+    const text = `${SAMPLE}\n## Files\n\n${lines.join('\n')}\n`;
+    put('a.md', text);
+    brainFile('clients/acme/files/f0.pdf');
+    expect(run('attach', { file: 'a.md', path: Q })).toEqual({
+      code: 2,
+      json: { error: 'a to-do can have at most 20 files', status: 400 },
+    });
+    expect(run('attach', { file: 'a.md', path: 'clients/acme/files/f0.pdf' }).json.changed).toBe(false);
+    expect(read('a.md')).toBe(text);
+    put('b.md', `${SAMPLE}\n## Files\n\n${lines.slice(1).join('\n')}\n`);
+    expect(run('attach', { file: 'b.md', path: Q }).code).toBe(0);
+    expect(linked(read('b.md'))).toHaveLength(20);
+  });
+
+  it('checks expect, gives 404 for a missing to-do and refuses the rules files', () => {
+    put('a.md', SAMPLE);
+    expect(run('attach', { file: 'a.md', path: Q, expect: sha('other') })).toEqual({
+      code: 2,
+      json: { error: 'changed since read', status: 409 },
+    });
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(run('attach', { file: 'a.md', path: Q, expect: versionOf('a.md') }).code).toBe(0);
+    expect(run('attach', { file: 'gone.md', path: Q })).toEqual({
+      code: 2,
+      json: { error: 'todo not found: gone.md', status: 404 },
+    });
+    expect(run('attach', { file: 'CLAUDE.md', path: Q }).json.status).toBe(400);
+  });
+
+  it('refuses a to-do that is a symbolic link', () => {
+    put('real.md', SAMPLE);
+    symlinkSync(todoPath('real.md'), todoPath('a.md'));
+    expect(run('attach', { file: 'a.md', path: Q }).json.status).toBe(500);
+    expect(read('real.md')).toBe(SAMPLE);
+  });
+
+  it('keeps Windows line endings and a byte order mark', () => {
+    put('a.md', `﻿${SAMPLE.replace(/\n/g, '\r\n')}`);
+    run('attach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(`﻿${`${SAMPLE}\n## Files\n\n${Q_LINE}\n`.replace(/\n/g, '\r\n')}`);
+    run('detach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(`﻿${SAMPLE.replace(/\n/g, '\r\n')}`);
+  });
+
+  it('leaves the frontmatter reading the same in the Workbench, the Reminders sync and the app', () => {
+    for (const [file, text] of [
+      ['lf.md', SAMPLE],
+      ['crlf.md', SAMPLE.replace(/\n/g, '\r\n')],
+      ['bare.md', '---\nassignee: sam-example\ntitle: Old title\n---\n'],
+    ] as const) {
+      put(file, text);
+      run('attach', { file, path: Q });
+      expectReadersAgree(todoPath(file), { title: 'Old title', due: null, assignee: 'sam-example' });
+      run('detach', { file, path: Q });
+      expectReadersAgree(todoPath(file), { title: 'Old title', due: null, assignee: 'sam-example' });
+    }
+  });
+});
+
+describe('v0.5: detach', () => {
+  beforeEach(() => {
+    brainFile(Q);
+    brainFile(LOGO);
+  });
+
+  it.each([
+    ['details', SAMPLE],
+    ['only frontmatter', '---\ntitle: T\n---\n'],
+    ['no frontmatter', 'Just text\n'],
+    ['history after it', `---\ntitle: T\n---\n\nDetails.\n\n## Title history\n\n- 2026-11-01: was "S"\n`],
+    ['CRLF', SAMPLE.replace(/\n/g, '\r\n')],
+  ])('drops the emptied section, giving back the bytes from before (%s)', (_, text) => {
+    put('a.md', text);
+    run('attach', { file: 'a.md', path: Q });
+    run('attach', { file: 'a.md', path: LOGO });
+    expect(run('detach', { file: 'a.md', path: Q })).toEqual({
+      code: 0,
+      json: { ok: true, file: 'a.md', path: Q, changed: true },
+    });
+    expect(linked(read('a.md'))).toEqual([LOGO]);
+    run('detach', { file: 'a.md', path: LOGO });
+    expect(read('a.md')).toBe(text);
+    expect(temps()).toEqual([]);
+  });
+
+  it('removes every line that leads to that file, hand-written ones too, and nothing else', () => {
+    put(
+      'a.md',
+      `Details.\n\n## Files\n\n${Q_LINE}\n${LOGO_LINE}\n* [Again](<../../clients/acme/files/quote.pdf>)\n`,
+    );
+    run('detach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe(`Details.\n\n## Files\n\n${LOGO_LINE}\n`);
+  });
+
+  it('keeps a section that still holds other text', () => {
+    put('a.md', `Details.\n\n## Files\n\nKeep these together.\n${Q_LINE}\n`);
+    run('detach', { file: 'a.md', path: Q });
+    expect(read('a.md')).toBe('Details.\n\n## Files\n\nKeep these together.\n');
+  });
+
+  it('is a no-op for a file not linked or a to-do with no section, and does not need the file', () => {
+    put('a.md', SAMPLE);
+    expect(run('detach', { file: 'a.md', path: Q }).json).toEqual({
+      ok: true,
+      file: 'a.md',
+      path: Q,
+      changed: false,
+    });
+    put('b.md', `${SAMPLE}\n## Files\n\n${LOGO_LINE}\n`);
+    expect(run('detach', { file: 'b.md', path: Q }).json.changed).toBe(false);
+    expect(read('a.md')).toBe(SAMPLE);
+    expect(read('b.md')).toBe(`${SAMPLE}\n## Files\n\n${LOGO_LINE}\n`);
+    rmSync(join(root, LOGO));
+    expect(run('detach', { file: 'b.md', path: LOGO }).json.changed).toBe(true);
+    expect(read('b.md')).toBe(SAMPLE);
+  });
+
+  it('refuses a path that is not a brain path, checks expect and gives 404', () => {
+    put('a.md', `${SAMPLE}\n## Files\n\n${Q_LINE}\n`);
+    for (const path of ['', '../clients/acme/files/quote.pdf', 'projects/a.pdf', 'clients//a.pdf', 5, null]) {
+      expect(run('detach', { file: 'a.md', path }).json.status, String(path)).toBe(400);
+    }
+    expect(run('detach', { file: 'a.md', path: Q, expect: sha('x') }).json.status).toBe(409);
+    expect(run('detach', { file: 'gone.md', path: Q }).json.status).toBe(404);
+    expect(linked(read('a.md'))).toEqual([Q]);
+  });
+});
+
+describe('v0.5: edit with keep_files', () => {
+  const HANDOVER =
+    '## Handover history\n\n- 13 Nov 2026, 14:05 UK: Sam Example passed it on (TDS Brain App).';
+  const ON_DISK = `---\ntitle: T\n---\n\nOld details.\n\n## Files\n\n${Q_LINE}\n\n${HANDOVER}\n`;
+
+  it('puts the section on disk back before the history, whatever details are sent', () => {
+    put('a.md', ON_DISK);
+    const r = run('edit', {
+      file: 'a.md',
+      title: 'T',
+      body: `New details.\n\n${HANDOVER}`,
+      keep_files: true,
+    });
+    const want = `New details.\n\n## Files\n\n${Q_LINE}\n\n${HANDOVER}`;
+    expect(r).toEqual({ code: 0, json: { ok: true, file: 'a.md', title: 'T', body: want } });
+    expect(read('a.md')).toBe(`---\ntitle: T\n---\n\n${want}\n`);
+  });
+
+  it('keeps it before a new title history too', () => {
+    put('a.md', ON_DISK);
+    run('edit', { file: 'a.md', title: 'U', body: `New details.\n\n${HANDOVER}`, keep_files: true });
+    expect(read('a.md')).toBe(
+      `---\ntitle: U\n---\n\nNew details.\n\n## Files\n\n${Q_LINE}\n\n${HANDOVER}\n${history('T')}`,
+    );
+  });
+
+  it('carries a section at the end, with empty details, and without frontmatter', () => {
+    put('a.md', `${SAMPLE}\n## Files\n\n${Q_LINE}\n`);
+    run('edit', { file: 'a.md', title: 'Old title', body: '# Old title\n\nChanged.', keep_files: true });
+    expect(read('a.md')).toBe(`${SAMPLE.replace('Some details.', 'Changed.')}\n## Files\n\n${Q_LINE}\n`);
+    run('edit', { file: 'a.md', title: 'Old title', body: '', keep_files: true });
+    expect(read('a.md')).toBe(
+      `---\nassignee: sam-example\ntitle: Old title\ncreated: 2026-11-01\n---\n\n## Files\n\n${Q_LINE}\n`,
+    );
+    put('b.md', `Old.\n\n## Files\n\n${Q_LINE}\n`);
+    run('edit', { file: 'b.md', title: 'T', body: 'New.', keep_files: true });
+    expect(read('b.md')).toBe(`---\ntitle: T\n---\n\nNew.\n\n## Files\n\n${Q_LINE}\n`);
+  });
+
+  it('refuses details holding a ## Files heading, writing nothing', () => {
+    put('a.md', ON_DISK);
+    for (const body of ['## Files', 'x\n\n##   files  \n\n- y', 'x\r\n## FILES\r\n']) {
+      expect(run('edit', { file: 'a.md', title: 'T', body, keep_files: true }), body).toEqual({
+        code: 2,
+        json: {
+          error: 'details can\'t hold a "## Files" section: files are linked with attach',
+          status: 400,
+        },
+      });
+    }
+    expect(read('a.md')).toBe(ON_DISK);
+    for (const body of ['### Files', '# Files', '## Files to send']) {
+      expect(run('edit', { file: 'a.md', title: 'T', body, keep_files: true }).code, body).toBe(0);
+      expect(linked(read('a.md'))).toEqual([Q]);
+    }
+  });
+
+  it('counts only the details sent against the 8,000 limit', () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `- [f${i}.pdf](../clients/acme/files/f${i}.pdf)`);
+    put('a.md', `---\ntitle: T\n---\n\nOld.\n\n## Files\n\n${lines.join('\n')}\n`);
+    expect(run('edit', { file: 'a.md', title: 'T', body: 'x'.repeat(8000), keep_files: true }).code).toBe(0);
+    expect(linked(read('a.md'))).toHaveLength(20);
+    expect(
+      run('edit', { file: 'a.md', title: 'T', body: 'x'.repeat(8001), keep_files: true }).json.status,
+    ).toBe(400);
+  });
+
+  it('leaves the section alone when no body is sent, and changes nothing when there is none on disk', () => {
+    put('a.md', ON_DISK);
+    run('edit', { file: 'a.md', title: 'T', keep_files: true });
+    expect(read('a.md')).toBe(ON_DISK);
+    put('b.md', SAMPLE);
+    run('edit', { file: 'b.md', title: 'Old title', body: 'New.', keep_files: true });
+    expect(read('b.md')).toBe(SAMPLE.replace('# Old title\n\nSome details.', 'New.'));
+  });
+
+  it('keeps Windows line endings', () => {
+    put('a.md', ON_DISK.replace(/\n/g, '\r\n'));
+    run('edit', { file: 'a.md', title: 'T', body: `New details.\r\n\r\n${HANDOVER}`, keep_files: true });
+    expect(read('a.md')).toBe(
+      `---\ntitle: T\n---\n\nNew details.\n\n## Files\n\n${Q_LINE}\n\n${HANDOVER}\n`.replace(/\n/g, '\r\n'),
+    );
+  });
+
+  it('without keep_files, still replaces the whole body, a ## Files heading included', () => {
+    put('a.md', ON_DISK);
+    run('edit', { file: 'a.md', title: 'T', body: 'New details.' });
+    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nNew details.\n');
+    run('edit', { file: 'a.md', title: 'T', body: `Two.\n\n## Files\n\n${LOGO_LINE}` });
+    expect(linked(read('a.md'))).toEqual([LOGO]);
+    run('edit', { file: 'a.md', title: 'T', body: 'Three.', keep_files: false });
+    expect(read('a.md')).toBe('---\ntitle: T\n---\n\nThree.\n');
+  });
+});
+
+describe('v0.5: add with body', () => {
+  it('writes the details below the frontmatter, for anyone', () => {
+    const mine = run('add', { title: 'Renew', body: '  Ring them first.\r\n\r\nThen send it.  ' });
+    expect(read(mine.json.file as string)).toBe(
+      `---\nassignee: sam-example\ntitle: Renew\ncreated: ${today()}\ncreated_by: sam-example\nsource: added with the todo skill\n---\n\nRing them first.\n\nThen send it.\n`,
+    );
+    const theirs = run('add', { title: 'For Ben', assignee: 'ben-mcadam', body: 'Details for Ben.' });
+    const text = read(theirs.json.file as string);
+    expect(text).toMatch(/\nassigned_to: ben-mcadam\n[\s\S]*\n---\n\nDetails for Ben\.\n$/);
+    expectReadersAgree(todoPath(theirs.json.file as string), {
+      title: 'For Ben',
+      due: null,
+      assignee: 'ben-mcadam',
+    });
+    const open = run('add', { title: 'Open one', open: true, body: 'Anyone.' });
+    expect(read(open.json.file as string)).toMatch(/\n---\n\nAnyone\.\n$/);
+    const personal = run('add', { title: 'Private', scope: 'personal', body: 'Only me.' });
+    expect(readPersonal(personal.json.file as string)).toMatch(/\n---\n\nOnly me\.\n$/);
+  });
+
+  it('writes no details for an empty body, and ignores a body that is not text', () => {
+    for (const body of ['', '  \n ', 5, null]) {
+      const r = run('add', { title: `Plain ${String(body).trim()}`, body });
+      expect(read(r.json.file as string), String(body)).toMatch(
+        /\nsource: added with the todo skill\n---\n$/,
+      );
+    }
+  });
+
+  it('refuses details over 8,000 characters or holding a ## Files heading, writing nothing', () => {
+    expect(run('add', { title: 'Long', body: 'x'.repeat(8001) })).toEqual({
+      code: 2,
+      json: { error: 'details are too long (over 8000 characters)', status: 400 },
+    });
+    expect(run('add', { title: 'Files', body: `Hi.\n\n## Files\n\n${Q_LINE}` }).json.status).toBe(400);
+    expect(readdirSync(join(root, 'todo'))).toEqual([]);
+    expect(run('add', { title: 'Exactly', body: 'x'.repeat(8000) }).code).toBe(0);
+  });
+});
+
+describe('v0.5: the ## Files rules match the app (shared/todo-files.fixtures.json)', () => {
+  it.each(FIXTURES.parse.map((c) => [c.name, c] as const))('parse: %s', (_, c) => {
+    expect(todoLib.parseFiles(c.body)).toEqual(c.files);
+    expect(parseTodoFiles(c.body)).toEqual(c.files);
+  });
+
+  it.each(FIXTURES.split.map((c) => [c.name, c] as const))('split: %s', (_, c) => {
+    expect(todoLib.splitFiles(c.body)).toEqual({ details: c.details, files: c.files });
+    expect(splitTodoFiles(c.body)).toEqual({ details: c.details, files: c.files });
+  });
+
+  it.each(FIXTURES.parse.map((c) => [c.name, c] as const))(
+    'attach and detach agree with the app: %s',
+    (_, c) => {
+      put('a.md', c.body);
+      for (const f of c.files) {
+        brainFile(f.path);
+        expect(run('attach', { file: 'a.md', path: f.path }).json.changed, f.path).toBe(false);
+      }
+      expect(read('a.md')).toBe(c.body);
+      for (const f of c.files)
+        expect(run('detach', { file: 'a.md', path: f.path }).json.changed, f.path).toBe(true);
+      expect(parseTodoFiles(read('a.md'))).toEqual([]);
+      brainFile('clients/acme/files/new.pdf');
+      expect(run('attach', { file: 'a.md', path: 'clients/acme/files/new.pdf' }).json.changed).toBe(true);
+      expect(linked(read('a.md'))).toEqual(['clients/acme/files/new.pdf']);
+    },
+  );
+});
+
+describe('v0.5: attach uses the library rules', () => {
+  it('lists the same types and never-listed places as the library', () => {
+    for (const ext of todoLib.LIBRARY_EXTENSIONS) expect(classify(ext), ext).not.toBeNull();
+    for (const ext of ['json', 'zip', 'heic', 'doc', 'xls', 'mov', 'js', 'sh', 'png', 'svg', 'pptx']) {
+      expect(todoLib.LIBRARY_EXTENSIONS.includes(ext), ext).toBe(classify(ext) !== null);
+    }
+    for (const rel of [
+      'clients/acme/files/a.pdf',
+      'clients/_old/a.pdf',
+      'clients/acme/Config/a.pdf',
+      'clients/acme/crm/data/a.csv',
+      'clients/acme/context/google-ads/data/a.csv',
+      'clients/acme/.git/a.md',
+      'clients/acme/node_modules/a.md',
+      'personal/todo/a.md',
+      'personal/TODO/done/a.md',
+      'personal/files/a.pdf',
+      'templates/a.docx',
+      'templates//a.docx',
+    ]) {
+      expect(todoLib.isNeverListed(rel), rel).toBe(libraryNeverListed(rel));
+    }
   });
 });

@@ -53,6 +53,7 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   assignee: 'sam',
   due: null,
   surfaceDate: null,
@@ -67,6 +68,8 @@ const list = (mine: TodoItem[], open: TodoItem[] = []): TodoList => ({
   team: [],
   changes: 'on',
   canAddOpen: false,
+  canAttach: false,
+  canUpload: false,
   canUsePersonal: true,
 });
 

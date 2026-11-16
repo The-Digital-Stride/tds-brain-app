@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// tdsapp-files.cjs (v0.1): delete library files into a holding folder, put them back, erase them
+// tdsapp-files.cjs (v0.2): delete library files into a holding folder, put them back, erase them
 // after 30 days, and keep a team action log. The plan is the app repo's
 // docs/plans/2026-11-15-delete-library-files.md (decisions 1-5 and 9); the shapes are in its
-// shared/files-contract.ts (a test checks the constants here match).
+// shared/files-contract.ts (a test checks the constants here match). v0.2 adds `add`, which copies
+// an uploaded file into the library (docs/plans/2026-11-16-todo-attachments.md, decision 3).
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-files/scripts/tdsapp-files.cjs <action>
 //
-//   <action>  delete | restore | purge | list-deleted | capabilities
+//   <action>  delete | restore | purge | list-deleted | add | capabilities
 //   stdin     one JSON object (at most 64 KB): delete {path, expect?, via?, by_name?},
-//             restore {holding, via?, by_name?}, purge {via?}, list-deleted {}, capabilities {}.
+//             restore {holding, via?, by_name?}, purge {via?}, list-deleted {}, capabilities {},
+//             add {source, path, via?, by_name?}.
 //   stdout    one JSON line: {ok: true, action, ...} or {ok: false, code, error}.
 //   exit 0    ok; exit 2 refused (bad-request, not-found, not-allowed, changed, exists);
 //             exit 1 internal.
@@ -27,6 +29,19 @@
 //   - The brain must be a git repository, and git must say the file isn't ignored: a Mac-only file
 //     moved into the synced holding folder would otherwise be published.
 //   - `expect` (optional) must equal the library's version, `<bytes>-<whole mtime ms>`.
+//
+// add (v0.2) copies `source` (an absolute path to a regular file, not a link, whose real path is
+// outside the brain, at most 32 MB) to `path`, which must be exactly clients/<client>/files/<name>,
+// clients/<client>/images/<name>, personal/files/<name> or personal/images/<name>. The client folder
+// (or personal/) must already be a real folder; files/ or images/ is made if missing. Images go in
+// images/ (png, jpg, jpeg, webp, gif), documents in files/ (pdf, md, txt, docx, csv, xlsx, pptx),
+// and the source's extension must be the same. Delete's guards apply (protected names, never-listed
+// places, no link on the way, no separate git project). A client file must NOT be git-ignored (it
+// has to reach the team); a personal file MUST be (it must never sync); either is refused when the
+// brain isn't a git repository or git can't check. Nothing is overwritten: a taken name becomes
+// "name (2).ext", "name (3).ext"… The copy is written to a hidden temp file in the same folder and
+// hard-linked into place (an exclusive write where links aren't supported). Client adds are logged
+// (`holding: ''`); personal adds never are, since the log syncs.
 //
 // Files:
 //   tdsapp-deleted/<YYYYMMDD-HHMMSS>-<6 hex>/<original path>   the deleted file (UTC stamp)
@@ -47,7 +62,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.1';
+const SCRIPT_VERSION = '0.2';
 
 // Mirrors shared/files-contract.ts (a test checks they match).
 const PURGE_AFTER_DAYS = 30;
@@ -57,6 +72,13 @@ const HOLDING_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
 const PROTECTED_NAMES = ['claude.md', 'agents.md', 'readme.md'];
 const PROTECTED_CLIENT_FILES = ['profile.md'];
 const FILES_CAPABILITY = 'files-delete-v1';
+// v0.2: `add`, for uploads (the app's TODO_UPLOAD_TYPES and MAX_UPLOAD_BYTES; a test checks).
+const ADD_CAPABILITY = 'files-add-v1';
+const ADD_MAX_BYTES = 32 * 1024 * 1024;
+const ADD_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+const ADD_DOCUMENT_EXTENSIONS = ['pdf', 'md', 'txt', 'docx', 'csv', 'xlsx', 'pptx'];
+const ADD_FOLDERS = { images: ADD_IMAGE_EXTENSIONS, files: ADD_DOCUMENT_EXTENSIONS };
+const ADD_NAME_TRIES = 1000;
 
 // Mirrors CLASSES in the app's server/brain/library-rules.ts (a test checks they match).
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
@@ -229,6 +251,21 @@ function isBrainRepo(ctx) {
 // Refuses unless the brain is a git repository and git says none of these paths is ignored.
 // check-ignore treats a tracked file as not ignored. Names go in and out NUL-separated.
 function requireNotIgnored(ctx, rels) {
+  const ignored = ignoredOf(ctx, rels);
+  if (ignored.length > 0) throw refuse('not-allowed', `${ignored[0]} is kept on this Mac only (git ignores it)`);
+}
+
+// v0.2: refuses unless the brain is a git repository and git ignores every one of these paths, so
+// nothing written there ever syncs.
+function requireIgnored(ctx, rels) {
+  const ignored = new Set(ignoredOf(ctx, rels));
+  const missed = rels.find(rel => !ignored.has(rel));
+  if (missed !== undefined) throw refuse('not-allowed', `${missed} would sync to the team: git doesn't ignore it`);
+}
+
+// Which of these paths git ignores, after the checks both rules share. Refuses when the brain isn't a
+// git repository, a path is inside a separate git project, or git can't answer.
+function ignoredOf(ctx, rels) {
   if (!isBrainRepo(ctx)) throw refuse('not-allowed', "the brain isn't a git repository, so it can't be checked");
   // A file inside a separate git project (a `.git` folder or pointer file in any folder between the
   // brain and the file) is refused: until the brain's next sync check-ignore calls it not ignored,
@@ -249,8 +286,7 @@ function requireNotIgnored(ctx, rels) {
   if (!out || (out.status !== 0 && out.status !== 1)) {
     throw refuse('not-allowed', "git couldn't check whether that file is kept on this Mac only");
   }
-  const ignored = (out.stdout || '').split('\0').filter(Boolean);
-  if (ignored.length > 0) throw refuse('not-allowed', `${ignored[0]} is kept on this Mac only (git ignores it)`);
+  return (out.stdout || '').split('\0').filter(Boolean);
 }
 
 function readMembers(root) {
@@ -703,13 +739,153 @@ function listDeleted(input, ctx) {
   return { ok: true, action: 'list-deleted', items };
 }
 
+// ---- add (v0.2) --------------------------------------------------------------------------------
+
+// The destination's scope ('client' or 'personal') and parts, or a refusal. Exactly
+// clients/<client>/(files|images)/<name> or personal/(files|images)/<name>, of the right type.
+function addTargetOf(rel) {
+  const segs = pathSegments(rel);
+  let scope = null;
+  if (segs.length === 4 && segs[0] === 'clients' && Object.hasOwn(ADD_FOLDERS, segs[2])) scope = 'client';
+  else if (segs.length === 3 && segs[0] === 'personal' && Object.hasOwn(ADD_FOLDERS, segs[1])) scope = 'personal';
+  if (!scope) {
+    throw refuse('not-allowed', 'a file can only be added to clients/<client>/files/, clients/<client>/images/, personal/files/ or personal/images/');
+  }
+  if (isNeverListed(rel)) throw refuse('not-allowed', 'that path is never listed in the library');
+  const name = segs[segs.length - 1];
+  if (/[\p{Cc}]/u.test(name)) throw refuse('bad-request', 'the file name has a control character in it');
+  // NFKC first: the Mac's disk treats look-alikes such as the long s (U+017F) as the plain letter, so
+  // "AGENTſ.md" would land as AGENTS.md (security review, release 3).
+  if (PROTECTED_NAMES.includes(name.normalize('NFKC').toLowerCase())) throw refuse('not-allowed', `${name} is protected`);
+  const folder = segs[segs.length - 2];
+  const ext = extOf(name);
+  if (!ADD_FOLDERS[folder].includes(ext)) {
+    throw refuse('not-allowed', folder === 'images'
+      ? `only ${ADD_IMAGE_EXTENSIONS.join(', ')} files go in images/`
+      : `only ${ADD_DOCUMENT_EXTENSIONS.join(', ')} files go in files/`);
+  }
+  // The folder that must already be there (the client's, or personal/), and the one made if missing.
+  const home = scope === 'client' ? segs.slice(0, 2) : segs.slice(0, 1);
+  return { scope, name, ext, home, folder: segs.slice(0, -1) };
+}
+
+// The source's bytes: an absolute path to a regular file (not a link) whose real path is outside the
+// brain, at most ADD_MAX_BYTES. Read through one descriptor, so what is checked is what is copied.
+function readSource(ctx, source, ext) {
+  if (typeof source !== 'string' || source === '' || source.includes('\0') || !path.isAbsolute(source)) {
+    throw refuse('bad-request', 'source must be an absolute path');
+  }
+  if (extOf(path.basename(source)) !== ext) {
+    throw refuse('bad-request', `source must be a .${ext} file, like the name it's added under`);
+  }
+  const st = lstatOrNull(source);
+  if (!st) throw refuse('not-found', "source isn't there");
+  if (st.isSymbolicLink() || !st.isFile()) throw refuse('not-allowed', "source isn't a regular file");
+  const real = fs.realpathSync.native(source);
+  const brain = fs.realpathSync.native(ctx.root);
+  if (real === brain || real.startsWith(brain + path.sep)) throw refuse('not-allowed', 'source is already in the brain');
+  let fd;
+  try {
+    fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const fst = fs.fstatSync(fd);
+    if (!fst.isFile()) throw refuse('not-allowed', "source isn't a regular file");
+    if (fst.size > ADD_MAX_BYTES) throw refuse('bad-request', `source is over ${ADD_MAX_BYTES / 1024 / 1024} MB`);
+    return fs.readFileSync(fd);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+// The folder `segs` under the brain, there already as a real folder: no link or file on the way,
+// and the letters' case as on the disk. Never made here.
+function existingFolder(ctx, segs) {
+  const rel = segs.join('/');
+  for (let i = 1; i <= segs.length; i++) {
+    const st = lstatOrNull(path.join(ctx.root, ...segs.slice(0, i)));
+    if (!st) throw refuse('not-found', `${rel} isn't there`);
+    if (st.isSymbolicLink() || !st.isDirectory()) {
+      throw refuse('not-allowed', `${segs.slice(0, i).join('/')} isn't a plain folder`);
+    }
+  }
+  requireRealPath(ctx.root, path.join(ctx.root, ...segs), rel);
+}
+
+// "name (n).ext" for the nth try (the first is the name itself).
+function nameFor(name, n) {
+  if (n === 1) return name;
+  const dot = name.lastIndexOf('.');
+  return `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
+}
+
+function addFile(input, ctx) {
+  const rel = input.path;
+  const target = addTargetOf(rel);
+  const via = displayText(input.via, VIA_MAX) || DEFAULT_VIA;
+  const who = whoFor(ctx, input);
+  if (target.scope === 'client' && !ROLE_CAN.client.has(who.role)) {
+    throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can add client files');
+  }
+  const data = readSource(ctx, input.source, target.ext);
+  existingFolder(ctx, target.home);
+  // Checked before anything is made: a client file must reach the team, a personal one never may.
+  const gitRule = target.scope === 'client' ? requireNotIgnored : requireIgnored;
+  gitRule(ctx, [rel]);
+  const dir = plainFolder(path.join(ctx.root, ...target.home), target.folder.slice(target.home.length), 'not-allowed');
+  requireRealPath(ctx.root, dir, target.folder.join('/'));
+  // Before any change, so a log that can't be written stops the add instead of leaving it unrecorded.
+  const logFile = target.scope === 'client' ? logFileFor(ctx, who) : null;
+
+  const tmp = path.join(dir, `.tdsapp-files-${process.pid}-${crypto.randomBytes(6).toString('hex')}.tmp~`);
+  let finalRel = null;
+  try {
+    const fd = fs.openSync(tmp, 'wx', 0o644);
+    try {
+      fs.writeFileSync(fd, data);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    for (let n = 1; n <= ADD_NAME_TRIES && finalRel === null; n++) {
+      const name = nameFor(target.name, n);
+      const candidate = [...target.folder, name].join('/');
+      if (n > 1) {
+        if (candidate.length > PATH_MAX) break;
+        gitRule(ctx, [candidate]);
+      }
+      const dest = path.join(dir, name);
+      // Never over anything: a hard link fails when the name is taken (in any letter case the disk
+      // treats as the same). Where links aren't supported, an exclusive write does the same.
+      try {
+        fs.linkSync(tmp, dest);
+        finalRel = candidate;
+      } catch (err) {
+        if (errCode(err) === 'EEXIST') continue;
+        try {
+          fs.writeFileSync(dest, data, { flag: 'wx', mode: 0o644 });
+          finalRel = candidate;
+        } catch (err2) {
+          if (errCode(err2) !== 'EEXIST') throw err2;
+        }
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(tmp); } catch { /* never made */ }
+  }
+  if (finalRel === null) throw refuse('exists', `no free name for ${rel}`);
+  const reply = { ok: true, action: 'add', path: finalRel };
+  if (logFile && !appendLog(logFile, logLine(ctx.now, 'add', who, via, 'client', finalRel, data.length, ''))) {
+    reply.logged = false;
+  }
+  return reply;
+}
+
 function capabilities() {
-  return { ok: true, action: 'capabilities', version: SCRIPT_VERSION, features: [FILES_CAPABILITY] };
+  return { ok: true, action: 'capabilities', version: SCRIPT_VERSION, features: [FILES_CAPABILITY, ADD_CAPABILITY] };
 }
 
 // ---- command line ------------------------------------------------------------------------------
 
-const ACTIONS = { delete: deleteFile, restore, purge, 'list-deleted': listDeleted, capabilities };
+const ACTIONS = { delete: deleteFile, restore, purge, 'list-deleted': listDeleted, add: addFile, capabilities };
 
 function defaultCtx() {
   return {
@@ -780,6 +956,7 @@ module.exports = {
   purge,
   listDeleted,
   capabilities,
+  addFile,
   isNeverListed,
   extOf,
   versionOf,
@@ -793,6 +970,10 @@ module.exports = {
   PROTECTED_NAMES,
   PROTECTED_CLIENT_FILES,
   FILES_CAPABILITY,
+  ADD_CAPABILITY,
+  ADD_MAX_BYTES,
+  ADD_IMAGE_EXTENSIONS,
+  ADD_DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
   LIBRARY_EXTENSIONS,

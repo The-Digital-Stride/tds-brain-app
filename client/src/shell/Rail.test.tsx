@@ -31,6 +31,7 @@ const todo = (id: string, by: string | null): TodoItem => ({
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
 });
 
 function setStore(mine: TodoItem[], seen: Record<string, string> = {}, role = 'team') {

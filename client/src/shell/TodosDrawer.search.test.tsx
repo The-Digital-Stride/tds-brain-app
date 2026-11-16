@@ -45,6 +45,7 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
   source: null,
   details: '',
   version: 'v1',
+  attachments: [],
   ...over,
 });
 const personal = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem =>
@@ -92,6 +93,8 @@ function setStore(mine: TodoItem[], over: Partial<TodoList> = {}, seen: Record<s
       ],
       changes: 'on',
       canAddOpen: false,
+      canAttach: false,
+      canUpload: false,
       canUsePersonal: false,
       ...over,
     },

@@ -25,7 +25,7 @@ import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
-import { buildEditActions, type EditDraft } from './TodoForms.tsx';
+import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
 
@@ -50,10 +50,10 @@ interface RowControls {
  * Moves a draft onto the version now in the brain: fields the person didn't touch take the fresh value,
  * fields they edited stay as typed. Functional, so text typed while a save was in flight survives.
  */
-function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean): EditDraft {
+function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean, canAttach: boolean): EditDraft {
   const now = {
     title: fresh.title,
-    details: fresh.details,
+    details: detailsText(fresh, canAttach),
     due: fresh.due ?? '',
     assignee: fresh.assignee ?? '',
     scope: fresh.scope,
@@ -571,7 +571,7 @@ export function TodosDrawer() {
 
   const fieldsOf = (t: TodoItem) => ({
     title: t.title,
-    details: t.details,
+    details: detailsText(t, todos.canAttach),
     due: t.due ?? '',
     assignee: t.assignee ?? '',
     scope: t.scope,
@@ -610,11 +610,18 @@ export function TodosDrawer() {
     const result = await run([action]);
     if (result.error) return setMessage(result.error.message, true);
     setMessage('Added.');
-    // After adding one for yourself, the panel stays on it in edit mode so its details can be written at once.
+    // After adding one for yourself, the panel stays on it. With files available it opens in read view (the
+    // details were written in the Add panel, and files are added from there); otherwise in edit mode so the
+    // details can be written at once.
     const added = result.todos?.mine.find((t) => !before.has(t.key));
     if (added) {
       setDraft(draftOf(added));
-      shellDispatch({ type: 'open-todo', key: added.key, mode: 'edit', force: true });
+      shellDispatch({
+        type: 'open-todo',
+        key: added.key,
+        mode: result.todos?.canAttach ? 'read' : 'edit',
+        force: true,
+      });
       return;
     }
     closePanelNow();
@@ -660,11 +667,11 @@ export function TodosDrawer() {
       const fresh = all.find((t) => t.key === key);
       if (key !== todo.key) shellDispatch({ type: 'open-todo', key, mode: 'edit', force: true });
       if (result.error.code === 'changed') {
-        if (fresh) setDraft((d) => rebase(d, fresh, true));
+        if (fresh) setDraft((d) => rebase(d, fresh, true, todos.canAttach));
         setMessage(`${result.error.message} Your changes are still here.`, true);
         return result;
       }
-      if (fresh) setDraft((d) => rebase(d, fresh, false));
+      if (fresh) setDraft((d) => rebase(d, fresh, false, todos.canAttach));
       if (result.done > 0) {
         setMessage(
           'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
@@ -717,7 +724,7 @@ export function TodosDrawer() {
 
   /** A tick box pressed while reading: one details change, through the same conflict check as Save. */
   const tick = async (todo: TodoItem, markdown: string) => {
-    const actions = buildEditActions(todo, { ...draftOf(todo), details: markdown }, true);
+    const actions = buildEditActions(todo, { ...draftOf(todo), details: markdown }, true, todos.canAttach);
     if (actions.length === 0) return;
     const result = await run(actions);
     if (result.error) return setMessage(result.error.message, true);
@@ -1003,6 +1010,9 @@ export function TodosDrawer() {
           team={todos.team}
           canUsePersonal={todos.canUsePersonal}
           canAddOpen={todos.canAddOpen}
+          canAttach={todos.canAttach}
+          canUpload={todos.canUpload}
+          onStatus={setMessage}
           startPersonal={tab === 'mine' && active.scope === 'personal'}
           onEdit={(t) => {
             setMessage('');

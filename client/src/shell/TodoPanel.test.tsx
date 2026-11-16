@@ -48,6 +48,7 @@ const todo = (id: string, title: string, over: Partial<TodoItem> = {}): TodoItem
   source: null,
   details: 'Some notes',
   version: 'v1',
+  attachments: [],
   ...over,
 });
 
@@ -90,6 +91,8 @@ function setStore(
       ],
       changes,
       canAddOpen: false,
+      canAttach: false,
+      canUpload: false,
       canUsePersonal: false,
     } satisfies TodoList,
     sessions: { live: [], past: [] },
@@ -673,6 +676,7 @@ const asked = (id: string, title: string, over: Partial<AskedTodo> = {}): AskedT
   asked: { slug: 'sam-example', name: 'Sam Example', at: '2026-11-13T12:00:00+00:00', source: 'stamp' },
   done: null,
   version: 'v1',
+  attachments: [],
   ...over,
 });
 

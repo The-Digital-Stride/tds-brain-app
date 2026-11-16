@@ -107,7 +107,12 @@ function RunButton({
   if (status && run?.chat) {
     const chat = run.chat;
     return (
-      <button type="button" className="btn" data-size="small" onClick={() => openChat(chat)}>
+      <button
+        type="button"
+        className="btn"
+        data-size="small"
+        onClick={() => openChat(chat, { in: 'drawer' })}
+      >
         Open chat<span className="visually-hidden">: {title}</span>
       </button>
     );
@@ -272,7 +277,7 @@ export function Cadence({
   const run = async (id: string, title: string, prompt: string) => {
     if (starting) return;
     setStarting(id);
-    const chat = await startChat(prompt, board.key, { open: true });
+    const chat = await startChat(prompt, board.key, { open: true, in: 'drawer' });
     setStarting(null);
     if (!chat) return;
     taskRuns.record(board.key, id, chat);
@@ -369,7 +374,7 @@ export function Standup({
   const run = async () => {
     if (starting || !s.prompt) return;
     setStarting(true);
-    const chat = await startChat(s.prompt, board.key, { open: true });
+    const chat = await startChat(s.prompt, board.key, { open: true, in: 'drawer' });
     setStarting(false);
     if (!chat) return;
     taskRuns.record(board.key, STANDUP_TASK, chat);

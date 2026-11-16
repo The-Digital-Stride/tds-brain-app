@@ -7,6 +7,12 @@ export const VIEWER_PAD = 12;
 const RAIL_ROOM = 70;
 /** The viewer's default width (viewer.css: `min(1040px, ...)`), and so its narrowest. */
 const DEFAULT_WIDTH = 1040;
+/** The chat drawer's default and narrowest widths (plan 2026-11-16-run-chat-drawer). */
+export const CHAT_DRAWER_DEFAULT = 520;
+export const CHAT_DRAWER_MIN = 380;
+
+/** Which right-hand layer a width is for: the file viewer or the chat drawer. Each has its own saved width. */
+export type Layer = 'viewer' | 'chat';
 /** At or under this window width the drawer fills the window (viewer.css) and cannot be resized. */
 export const FULL_WIDTH_AT = 640;
 export const KEY_STEP = 32;
@@ -19,9 +25,19 @@ export interface WidthLimits {
 
 /** The narrowest the drawer goes is its default width; the widest leaves the rail and the pad in view. */
 export function viewerLimits(windowWidth: number): WidthLimits {
+  return layerLimits(windowWidth, DEFAULT_WIDTH);
+}
+
+/** A layer's limits: `narrowest` (or the room, if less) up to the room beside the rail. */
+function layerLimits(windowWidth: number, narrowest: number): WidthLimits {
   const room = windowWidth - 2 * VIEWER_PAD - RAIL_ROOM;
-  const min = Math.min(DEFAULT_WIDTH, room);
+  const min = Math.min(narrowest, room);
   return { min, max: Math.max(min, room) };
+}
+
+/** The chat drawer goes down to 380px; its default is 520px. */
+export function chatDrawerLimits(windowWidth: number): WidthLimits {
+  return layerLimits(windowWidth, CHAT_DRAWER_MIN);
 }
 
 export function clampWidth(width: number, { min, max }: WidthLimits): number {
@@ -68,21 +84,23 @@ export interface LayerWidth extends WidthLimits {
 /** Under this much room to grow, a handle could barely move, so none shows. */
 export const MIN_TRAVEL = 64;
 
-export function useLayerWidth(): LayerWidth {
+export function useLayerWidth(layer: Layer = 'viewer'): LayerWidth {
   const { state, dispatch } = useShell();
   const { width: windowWidth } = useDesk();
   const [draft, setDraft] = useState<number | null>(null);
-  const limits = viewerLimits(windowWidth);
+  const chat = layer === 'chat';
+  const limits = chat ? chatDrawerLimits(windowWidth) : viewerLimits(windowWidth);
   const resizable = windowWidth > FULL_WIDTH_AT && limits.max - limits.min >= MIN_TRAVEL;
-  const wanted = draft ?? state.viewerWidth;
-  const width = wanted === null ? limits.min : clampWidth(wanted, limits);
+  const wanted = draft ?? (chat ? state.chatDrawerWidth : state.viewerWidth);
+  const fallback = chat ? clampWidth(CHAT_DRAWER_DEFAULT, limits) : limits.min;
+  const width = wanted === null ? fallback : clampWidth(wanted, limits);
   const preview = useCallback((w: number) => setDraft(w), []);
   const commit = useCallback(
     (w: number | null) => {
       setDraft(null);
-      dispatch({ type: 'set-viewer-width', width: w });
+      dispatch({ type: chat ? 'set-chat-drawer-width' : 'set-viewer-width', width: w });
     },
-    [dispatch],
+    [dispatch, chat],
   );
   return {
     ...limits,

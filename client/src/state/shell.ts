@@ -30,6 +30,7 @@ export const DEFAULT_SHELL: ShellState = {
   todoPanel: null,
   singleKeys: true,
   viewerWidth: null,
+  chatDrawerWidth: null,
 };
 
 /** Below this width the rail is always icons only. */
@@ -164,6 +165,8 @@ const coreReducer: ShellReducer = (state, action) => {
       return state.singleKeys === action.on ? state : { ...state, singleKeys: action.on };
     case 'set-viewer-width':
       return state.viewerWidth === action.width ? state : { ...state, viewerWidth: action.width };
+    case 'set-chat-drawer-width':
+      return state.chatDrawerWidth === action.width ? state : { ...state, chatDrawerWidth: action.width };
     default:
       return state;
   }
@@ -200,10 +203,8 @@ export const loadShell: LoadShell = (raw) => {
     viewer: null,
     todoPanel: null,
     singleKeys: bool('singleKeys', DEFAULT_SHELL.singleKeys),
-    viewerWidth:
-      typeof parsed.viewerWidth === 'number' && Number.isFinite(parsed.viewerWidth) && parsed.viewerWidth > 0
-        ? Math.round(parsed.viewerWidth)
-        : null,
+    viewerWidth: savedWidth(parsed.viewerWidth),
+    chatDrawerWidth: savedWidth(parsed.chatDrawerWidth),
   };
 };
 
@@ -216,7 +217,13 @@ export const saveShell: SaveShell = (state) =>
     singleKeys: state.singleKeys,
     // Only a chosen width is saved; the default is the absence of one.
     ...(state.viewerWidth === null ? {} : { viewerWidth: state.viewerWidth }),
+    ...(state.chatDrawerWidth === null ? {} : { chatDrawerWidth: state.chatDrawerWidth }),
   });
+
+/** A saved width in px, or null for anything that isn't one (a hand-edited or older save). */
+function savedWidth(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+}
 
 /** Push or float, so pushing never squeezes the sheet below 480px. */
 export const dockModes: DockModesOf = (width, state) => ({

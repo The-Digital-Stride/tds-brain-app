@@ -128,6 +128,66 @@ describe('startChat', () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("with in: 'drawer' keeps the tool on the sheet and shows the chat in the drawer", async () => {
+    await mount();
+    await act(async () => {
+      store.openTool('workbench', 'ad-manager');
+    });
+    const tool = store.view;
+    await act(async () => {
+      await store.startChat('Run the weekly check', 'acme', { open: true, in: 'drawer' });
+    });
+    expect(store.view).toBe(tool);
+    expect(store.activeChat).toEqual({ kind: 'live', sessionId: 's9' });
+    expect(store.chatDrawer).toBe('s9');
+  });
+
+  it('the drawer goes on Hide, Open full screen, leaving the tool, a new chat or another chat', async () => {
+    await mount();
+    const openInDrawer = async () => {
+      await act(async () => {
+        store.openTool('workbench', 'ad-manager');
+      });
+      await act(async () => {
+        store.openChat('s9', { in: 'drawer' });
+      });
+      expect(store.chatDrawer).toBe('s9');
+    };
+    await openInDrawer();
+    await act(async () => store.hideChatDrawer());
+    expect(store.chatDrawer).toBeNull();
+    expect(store.activeChat).toEqual({ kind: 'live', sessionId: 's9' });
+
+    await openInDrawer();
+    await act(async () => store.expandChatDrawer());
+    expect(store.chatDrawer).toBeNull();
+    expect(store.view).toBe('chat');
+
+    await openInDrawer();
+    await act(async () => store.openView('settings'));
+    expect(store.chatDrawer).toBeNull();
+    // Back on the tool, the old drawer does not come back by itself.
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    expect(store.chatDrawer).toBeNull();
+
+    await openInDrawer();
+    await act(async () => store.newChat());
+    expect(store.chatDrawer).toBeNull();
+
+    await openInDrawer();
+    await act(async () => store.openChat('s2'));
+    expect(store.chatDrawer).toBeNull();
+    expect(store.view).toBe('chat');
+  });
+
+  it('a chat opened without in: drawer still goes to the chat screen', async () => {
+    await mount();
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    await act(async () => store.openChat('s9'));
+    expect(store.view).toBe('chat');
+    expect(store.chatDrawer).toBeNull();
+  });
+
   it('resolves null and sets actionError when the server refuses', async () => {
     await mount();
     api.startSession.mockRejectedValue(new Error('No room'));

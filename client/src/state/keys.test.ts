@@ -74,6 +74,22 @@ describe('keyAction: Esc does one thing per press', () => {
     });
   });
 
+  it('hides the chat drawer before closing a left drawer, but never while its message box holds text', () => {
+    const drawer = { typing: false, state: state({ drawer: 'todos' }), chatDrawer: true };
+    expect(keyAction(key('Escape'), drawer)).toEqual({ type: 'close-chat-drawer' });
+    expect(keyAction(key('Escape'), { ...drawer, typing: true })).toEqual({ type: 'close-chat-drawer' });
+    expect(keyAction(key('Escape'), { ...drawer, typing: true, chatDraft: true })).toBeNull();
+    // Layers above it go first.
+    expect(keyAction(key('Escape'), { ...drawer, panelFloating: true })).toEqual({
+      type: 'set-panel',
+      open: false,
+    });
+    expect(keyAction(key('Escape'), { ...drawer, state: state({ paletteOpen: true }) })).toEqual({
+      type: 'set-palette',
+      open: false,
+    });
+  });
+
   it('then closes the drawer, even while typing in it', () => {
     expect(keyAction(key('Escape'), ctx({ drawer: 'todos' }))).toEqual({ type: 'close-drawer' });
     expect(keyAction(key('Escape'), ctx({ drawer: 'skills' }, true))).toEqual({ type: 'close-drawer' });

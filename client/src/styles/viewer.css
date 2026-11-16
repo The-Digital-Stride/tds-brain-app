@@ -284,3 +284,53 @@ body.viewer-resizing iframe {
   margin: 0;
   font-size: 13px;
 }
+
+/* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
+   usable beside it. It sits inside the sheet, so a pushing panel stays in view and the sheet's inert rules apply. */
+.chat-drawer {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 8px;
+  z-index: 5;
+  width: min(520px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  box-shadow: var(--lift-3);
+  animation: viewer-in var(--t) var(--ease);
+}
+.chat-drawer > .chat {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.chat-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 10px 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.chat-drawer-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-drawer-name h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--navy);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-drawer {
+    animation: none;
+  }
+}

@@ -8,7 +8,7 @@ const DRAGGING = 'viewer-resizing';
  * The strip on the viewer's left edge that makes it wider or narrower. A vertical separator that
  * takes the pointer (drag, double-click for the default) and the keyboard (arrows, Home, End).
  */
-export function ResizeHandle({ layer }: { layer: LayerWidth }) {
+export function ResizeHandle({ layer, label = 'Resize viewer' }: { layer: LayerWidth; label?: string }) {
   const { min, max, width, preview, commit } = layer;
   const start = useRef<{ x: number; width: number; moved: boolean } | null>(null);
   const hintId = useId();
@@ -49,7 +49,7 @@ export function ResizeHandle({ layer }: { layer: LayerWidth }) {
         className="viewer-resize"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize viewer"
+        aria-label={label}
         aria-valuemin={min}
         aria-valuemax={max}
         aria-valuenow={width}

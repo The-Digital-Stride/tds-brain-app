@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   setSkillLevel: vi.fn().mockResolvedValue(true),
   dismissLevelOffer: vi.fn(),
   skillLevels: null as unknown,
+  hideChatDrawer: vi.fn(),
+  expandChatDrawer: vi.fn(),
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
@@ -56,6 +58,8 @@ vi.mock('../store.tsx', () => ({
     setChatLevel: h.setChatLevel,
     setSkillLevel: h.setSkillLevel,
     dismissLevelOffer: h.dismissLevelOffer,
+    hideChatDrawer: h.hideChatDrawer,
+    expandChatDrawer: h.expandChatDrawer,
   }),
 }));
 
@@ -107,6 +111,8 @@ afterEach(() => {
   localStorage.clear();
   h.skillLevels = null;
   h.setChatLevel.mockClear();
+  h.hideChatDrawer.mockClear();
+  h.expandChatDrawer.mockClear();
   h.setSkillLevel.mockClear();
   h.dismissLevelOffer.mockClear();
 });
@@ -204,6 +210,33 @@ const perm = (
 });
 
 const withItems = (items: ChatItem[]): ChatState => ({ ...chatState('waiting'), items });
+
+describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
+  const drawer = () => (
+    <ShellProvider>
+      <ChatView placement="drawer" />
+    </ShellProvider>
+  );
+  it('has a small header of its own: no page heading, no search, no end-chat button', () => {
+    h.chat = chatState('idle');
+    render(drawer());
+    expect(screen.getByRole('heading', { level: 2, name: 'T' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Search or jump to/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close chat' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'T' })).toBeTruthy();
+  });
+  it('Hide chat and Open full screen ask the store', () => {
+    h.chat = chatState('working');
+    render(drawer());
+    fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
+    expect(h.hideChatDrawer).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
+    // The message box is still there, so the person can carry on in the drawer.
+    expect(screen.getByRole('textbox')).toBeTruthy();
+  });
+});
 
 describe('the card waiting on you', () => {
   beforeEach(() => {

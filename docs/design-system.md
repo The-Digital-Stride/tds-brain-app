@@ -310,6 +310,24 @@ key there); close still works.
 
 Both are on the rail in every build.
 
+## Chat drawer (tool chats)
+
+A tool that starts or reopens a chat shows it in the chat drawer, not on the chat screen, so the tool stays in view.
+Plan: `docs/plans/2026-11-16-run-chat-drawer.md`.
+
+- Call `startChat(prompt, client, { open: true, in: 'drawer' })` or `openChat(id, { in: 'drawer' })`.
+  Without `in`, a chat opens on the chat screen as before.
+- The drawer (`client/src/shell/ChatDrawer.tsx`) is a glass layer inside the sheet, on the right. It is non-modal:
+  there's no veil, and the tool behind it stays usable. It has its own saved width (`chatDrawerWidth`; default
+  520px, narrowest 380px) and a `ResizeHandle` labelled "Resize chat".
+- It holds `ChatView placement="drawer"`, which has an `h2` header (title, client chip), **Open full screen**
+  (`wide` icon) and **Hide chat** (`close` icon). The page keeps its one `h1` and search. Ending a chat happens on
+  the chat screen only.
+- The drawer chat is the active chat, so it is fully live. The store clears the drawer when the active chat
+  changes or the sheet leaves a tool. Esc hides it, after the palette, viewer, to-do panel and a floating panel,
+  but never while its message box holds text.
+- A floating right panel closes before a tool opens its chat in the drawer; a pushing one stays beside it.
+
 ## Old tokens being retired
 
 `--s1`…`--s5`, `--radius`, `--radius-sm`, `--card`, `--rule`, `--rule-strong`, `--accent`, `--accent-ink`,

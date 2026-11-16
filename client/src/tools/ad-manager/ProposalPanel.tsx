@@ -7,6 +7,7 @@ import {
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
@@ -24,6 +25,7 @@ export const identityLine = (_name?: string | null) =>
 function LastResult() {
   const { last } = useAd();
   const { openChat } = useStore();
+  const { dispatch, modes } = useShell();
   const [showOutput, setShowOutput] = useState(false);
   if (!last) return null;
   return (
@@ -49,7 +51,11 @@ function LastResult() {
             type="button"
             className="btn"
             data-size="small"
-            onClick={() => openChat(last.chatId as string)}
+            onClick={() => {
+              // A floating panel would sit over the chat drawer, so it closes first (a pushing one stays beside it).
+              if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+              openChat(last.chatId as string, { in: 'drawer' });
+            }}
           >
             Open chat
           </button>

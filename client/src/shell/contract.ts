@@ -73,6 +73,8 @@ export interface ShellState {
    * held inside the limits for the window as it is (`useLayerWidth`), so a stale value is harmless.
    */
   viewerWidth: number | null;
+  /** The width the person dragged the chat drawer to, in px, or null for its default. Saved, like `viewerWidth`. */
+  chatDrawerWidth: number | null;
 }
 
 /**
@@ -162,7 +164,11 @@ export type ShellAction =
   | { type: 'discard-todo' }
   | { type: 'set-single-keys'; on: boolean }
   /** The viewer's width in px, or null for its default. */
-  | { type: 'set-viewer-width'; width: number | null };
+  | { type: 'set-viewer-width'; width: number | null }
+  /** The chat drawer's width in px, or null for its default. */
+  | { type: 'set-chat-drawer-width'; width: number | null }
+  /** Hides the chat drawer. Held in the store (`hideChatDrawer`): `ShellProvider` hands it over, the reducer ignores it. */
+  | { type: 'close-chat-drawer' };
 
 /** `client/src/state/shell.ts` */
 export type ShellReducer = (state: ShellState, action: ShellAction) => ShellState;
@@ -213,13 +219,18 @@ export interface KeyContext {
   helpVisible?: boolean;
   /** Single key to section id, for the sections visible to this person now (`W` for Workbench). Missing means none. */
   sectionKeys?: Record<string, string>;
+  /** The chat drawer is open over the tool (plan 2026-11-16-run-chat-drawer). Missing means no. */
+  chatDrawer?: boolean;
+  /** Focus is in the chat drawer's message box and it holds text: Esc then does nothing, so no typing is lost. */
+  chatDraft?: boolean;
 }
 
 /**
  * `client/src/state/keys.ts`. The shell action a key press means, or null to leave it alone.
  * - Cmd+K or Ctrl+K: toggle the palette, even while typing.
  * - While the file viewer shows: Esc closes it, and no other key does anything to the desk behind it.
- * - Esc: shut the palette; else close a floating panel; else close the open drawer; else null.
+ * - Esc: shut the palette; else close a floating panel; else hide the chat drawer (nothing at all while its
+ *   message box holds text); else close the open drawer; else null.
  *   One thing per press. A pushing panel never closes on Esc.
  *
  * The one global `keydown` listener (in `ShellProvider`) ignores any event whose `defaultPrevented`

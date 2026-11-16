@@ -22,7 +22,16 @@ const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
   answerQuestion: vi.fn().mockResolvedValue({ ok: true }),
 }));
-vi.mock('../api.ts', () => ({ api }));
+const uploads = vi.hoisted(() => ({
+  uploadFile: vi.fn(async (_file: File, name: string) => ({
+    id: 'up-1',
+    name,
+    size: 4,
+    kind: 'document' as const,
+  })),
+  discardUpload: vi.fn(async () => undefined),
+}));
+vi.mock('../api.ts', () => ({ api, ...uploads }));
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
     boot: {
@@ -284,6 +293,22 @@ describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
     cleanup();
     render(sheet());
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('Open full screen waits while files are attached, and says so until they are removed', async () => {
+    h.chat = chatState('idle');
+    render(drawer());
+    fireEvent.change(screen.getByLabelText('Choose files to attach'), {
+      target: { files: [new File(['abcd'], 'brief.txt')] },
+    });
+    await screen.findByRole('button', { name: /Remove brief\.txt/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).not.toHaveBeenCalled();
+    expect(screen.getByText('Send or remove the attached files first.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Remove brief\.txt/ }));
+    await waitFor(() => expect(screen.queryByText('Send or remove the attached files first.')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
   });
 
   it('Hide chat and Open full screen ask the store', () => {

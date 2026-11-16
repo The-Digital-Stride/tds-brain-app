@@ -117,9 +117,20 @@ splitting it would cost more in briefing than it saves.
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build · [ ] No unintended large deletions
-- [ ] UX/UI gate; browser check of Run → drawer on the Ad Manager board (preview, practice brain)
+- [x] Type-check · [x] Tests · [x] Lint · [x] Build · [x] No unintended large deletions
+- [x] UX/UI gate; browser check of Run → drawer on the Ad Manager board (preview, practice brain, chat start faked)
 
 ## Review outcomes
 
-(filled at the end)
+- **Overseer (Fable):** the pre-review gave 2 blocking and 7 should; all were applied. Sign-off: no blockers.
+  - Two CSS fixes, made: no line under the header, and the viewer's heading font.
+  - The attached-files hold is now tested, and its note clears.
+- **Correctness (Opus):** 2 should, 1 consider; all fixed.
+  - Esc under a floating left drawer.
+  - The draft was lost on Open full screen; it's now handed over, and attached files hold the move.
+  - Width limits now come from the sheet.
+- **UI (Sonnet):** 5 nice. Taken: the 12px gap and the help lines. Dropped: an open announcement (focus already moves into the labelled region).
+- **Browser:**
+  - The drawer opens at 520px beside the board, with one `h1` and focus in the message box.
+  - Esc hides it and focus returns to Run; Open full screen moves focus to the chat screen's message box.
+  - Not checked in the browser: the Esc-with-text rule (the fake chat's box was read-only). A test covers it.

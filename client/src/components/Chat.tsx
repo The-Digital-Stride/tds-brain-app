@@ -33,6 +33,8 @@ const NO_PAGES: ChatPage[] = [];
  */
 let handoff: { session: string; text: string } | null = null;
 const FILES_FIRST = 'Send or remove the attached files first.';
+/** A file attached in the message box (Composer's chips). */
+const ATTACHED = '.composer .chip-row .chip';
 
 /** True when a card other than `requestId` is still waiting on the person. */
 function anotherCardWaits(items: ChatItem[], requestId: string): boolean {
@@ -107,10 +109,20 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
   useEffect(() => {
     if (!inDrawer && handoff?.session === sessionId) handoff = null;
   }, [inDrawer, sessionId]);
+  // The "attached files" note goes once the files have been sent or removed.
+  useEffect(() => {
+    const col = column.current;
+    if (!held || !col) return;
+    const watch = new MutationObserver(() => {
+      if (!col.querySelector(ATTACHED)) setHeld(false);
+    });
+    watch.observe(col, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [held]);
   // Moves the drawer's chat to the chat screen with what was typed, or says why not (attached files).
   const toFullScreen = useCallback((): boolean => {
     const box = column.current?.querySelector<HTMLTextAreaElement>('.composer-input');
-    if (column.current?.querySelector('.composer .chip-row .chip')) {
+    if (column.current?.querySelector(ATTACHED)) {
       setHeld(true);
       box?.focus();
       return false;

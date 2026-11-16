@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.46.1 — 2026-11-16
+
+- **fix**: Ad Manager cadence cards in two columns so each task has room
+- **fix**: Ad Manager cadence cards go to one column at the same width as the other trays
+- **refactor**: clear every lint warning
+
 ## v0.46.0 — 2026-11-16
 
 - **feat**: Workbench section and Ad Manager tool

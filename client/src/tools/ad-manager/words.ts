@@ -203,6 +203,8 @@ export function proposalFacts(p: ProposalSummary): [string, string][] {
   }
   const evidence = Array.isArray(fm.evidence) ? (fm.evidence as unknown[]).join(', ') : s(fm.evidence);
   const rows: [string, string][] = [
+    ['Type', s(fm.type)],
+    ['Section', s(fm.framework_section)],
     ['Expected effect', s(fm.expected_effect)],
     ['Risk and rollback', s(fm.risk_notes)],
     [

@@ -540,6 +540,17 @@ describe('accounts', () => {
     expect(byKey.beta).toMatchObject({ name: 'Beta Co', waiting: 0, supervised: true });
     expect(byKey.Gamma_Co).toMatchObject({ name: 'Gamma_Co', waiting: 0, supervised: false });
   });
+
+  it('leaves approved proposals out of the waiting count, as the rail does (they wait for Apply)', () => {
+    mkProposal('pause-generic');
+    const approved = mkProposal('raise-brand');
+    const file = abs(`clients/acme/proposals/${approved}.md`);
+    writeFileSync(file, readFileSync(file, 'utf8').replace(/^status: proposed$/m, 'status: approved'));
+    expect(fmOf(approved).status).toBe('approved');
+    const r = bridge('accounts');
+    const acme = (r.reply.accounts as Record<string, unknown>[]).find((a) => a.key === 'acme');
+    expect(acme).toMatchObject({ waiting: 1 });
+  });
 });
 
 describe('board', () => {

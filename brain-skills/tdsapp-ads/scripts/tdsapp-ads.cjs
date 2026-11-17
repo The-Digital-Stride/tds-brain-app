@@ -362,7 +362,7 @@ function accounts(_input, ctx) {
       key: a.key,
       name: a.name,
       currency: a.currency,
-      waiting: c && c.mine ? c.open.length : 0,
+      waiting: c && c.mine ? c.open.filter((r) => r.fm.status !== 'approved').length : 0,
       supervised: Boolean(c),
     });
   }
@@ -374,7 +374,7 @@ function accounts(_input, ctx) {
       key: c.slug,
       name: c.name,
       currency: (entry && entry.currency) || 'USD',
-      waiting: c.mine ? c.open.length : 0,
+      waiting: c.mine ? c.open.filter((r) => r.fm.status !== 'approved').length : 0,
       supervised: true,
     });
   }

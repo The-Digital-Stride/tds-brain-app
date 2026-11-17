@@ -46,7 +46,7 @@
   }
 }
 .am-h {
-  margin: 0;
+  margin: 20px 4px 0;
   font-size: 14px;
   font-weight: 600;
 }
@@ -141,6 +141,10 @@
   vertical-align: top;
   border-top: 1px solid var(--line);
 }
+/* A small button in a row sits on the row's text line, not 4px below it. */
+.am-table td > .btn[data-size="small"] {
+  margin-block: -4px;
+}
 .am-table tr[data-current] td {
   background: var(--tint-1);
 }
@@ -189,6 +193,23 @@
 .am-status .am-sign {
   margin-top: 6px;
 }
+/* Proposal ids and file paths: the app's monospace, a touch smaller than the text around them. */
+.am code,
+.am-panel code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+/* Key/value lists and notes in a card line up with the card's heading. */
+.am .card > .kv,
+.am-inset {
+  padding-inline: 8px;
+}
+/* A narrow sheet drops the proposals' ID, Type and Section (all in the panel) so Status and Details stay in view. */
+@container (max-width: 760px) {
+  .am-table [data-minor] {
+    display: none;
+  }
+}
 .am-status .am-open {
   display: inline-block;
 }
@@ -205,11 +226,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  align-content: start;
   gap: 0 8px;
 }
 .am-meta {
   color: var(--iron);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 .am-health .am-meta {
@@ -224,7 +246,7 @@
   background: var(--grey-dot);
 }
 .am-dot[data-status="ok"] {
-  background: var(--ok, #1a7f4b);
+  background: var(--ok);
 }
 .am-dot[data-status="stale"],
 .am-dot[data-status="wrong-shape"] {
@@ -262,8 +284,12 @@
 .am-task:first-child {
   border-top: 0;
 }
-.am-task .am-sub .badge {
-  margin-left: 6px;
+/* The kind chip and any count badge: a wrapped badge lines up under the chip, not indented. */
+.am-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
 }
 .am-task .btn {
   margin-top: 6px;

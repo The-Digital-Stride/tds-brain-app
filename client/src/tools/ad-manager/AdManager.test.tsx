@@ -187,6 +187,7 @@ async function ready() {
 
 beforeEach(() => {
   adStore.reset();
+  shell.state.panelOpen = true;
   store.toolArg = null;
   store.sessions = null;
   store.ads = {
@@ -214,6 +215,12 @@ describe('account', () => {
   it('opens on the first account with something waiting, and says how many wait', async () => {
     await ready();
     expect(pickerText('Account')).toBe('Acme Heating (2 waiting)');
+  });
+
+  it("counts only proposals waiting for a decision, from the rail's summary, not the bridge's older count", async () => {
+    store.ads = { ...(store.ads as object), clients: [{ slug: 'acme', name: 'Acme Heating', waiting: 1 }] };
+    await ready();
+    expect(pickerText('Account')).toBe('Acme Heating (1 waiting)');
   });
 
   it('opens on the account Home or search asked for, then clears the argument', async () => {
@@ -264,6 +271,28 @@ describe('panel', () => {
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
     expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
     expect(screen.getByText('Effect of Add negatives')).toBeTruthy();
+  });
+
+  it("doesn't show the first proposal as chosen while the panel is shut", async () => {
+    shell.state.panelOpen = false;
+    await ready();
+    const details = await screen.findByRole('button', { name: 'Details: Raise the budget' });
+    expect(details.getAttribute('aria-pressed')).toBe('false');
+    expect(details.closest('tr')?.hasAttribute('data-current')).toBe(false);
+  });
+
+  it('Details moves focus to the proposal title, and the status badge matches the table', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    const details = screen.getByRole('button', { name: 'Details: Add negatives' });
+    details.focus(); // a real click focuses the button, so the panel's "focus fell to the page" rule doesn't apply
+    fireEvent.click(details);
+    const title = await screen.findByRole('heading', { name: 'Add negatives' });
+    await waitFor(() => expect(document.activeElement).toBe(title));
+    const badge = within(title.parentElement as HTMLElement)
+      .getAllByText('Proposed')
+      .find((b) => b.classList.contains('badge'));
+    expect(badge?.getAttribute('data-tone')).toBe('waiting');
   });
 
   it('fetches the full text only when its fold opens', async () => {

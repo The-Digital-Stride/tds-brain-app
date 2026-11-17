@@ -4,7 +4,15 @@ import { Proposals, StatusCard } from './Approvals.tsx';
 import { Cadence, DataHealth, Standup } from './Board.tsx';
 import { DeepDive } from './DeepDive.tsx';
 import { identityLine } from './ProposalPanel.tsx';
-import { adStore, findProposal, loadApprovals, loadBoard, selectAccount, useAd } from './store.ts';
+import {
+  adStore,
+  findProposal,
+  loadApprovals,
+  loadBoard,
+  selectAccount,
+  useAd,
+  waitingFor,
+} from './store.ts';
 import { isWaiting } from './words.ts';
 
 /** The Ad Manager sheet: the account's status, what waits for a decision, then the ads board. */
@@ -36,7 +44,7 @@ export function AdManagerSheet() {
     if (s.account && keys.includes(s.account)) return;
     const first =
       (savedAccount && keys.includes(savedAccount) ? savedAccount : null) ??
-      s.accounts.find((a) => a.waiting > 0)?.key ??
+      s.accounts.find((a) => waitingFor(ads, a) > 0)?.key ??
       s.accounts[0]?.key;
     if (first) selectAccount(first);
   }, [s.accounts, toolArg]);

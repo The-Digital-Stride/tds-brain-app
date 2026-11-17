@@ -235,15 +235,15 @@ export function DataHealth({ board }: { board: AdsBoard }) {
     fetchLine +
     (bad.length === 0
       ? `All ${h.applicable} applicable data files present${h.freshThrough ? `, fresh through ${h.freshThrough}` : ''}. Every card has what it needs.`
-      : 'Cards that read the missing or misshapen files stay dark. The rest of the board still works.');
+      : 'Tasks and tables that need the missing or misshapen files will have gaps until they are fixed. The rest of the board still works.');
   return (
-    <section className="card" aria-labelledby="am-health" data-tone={allGood ? undefined : 'warn'}>
+    <section className="card" aria-labelledby="am-health">
       <div className="card-head">
         <h2 id="am-health">{title}</h2>
       </div>
       <p className="card-note">{sum}</p>
       <Fold key={`${board.key}-${allGood}`} title="Files" defaultOpen={!allGood}>
-        <p className="am-sub">
+        <p className="am-sub am-inset">
           Reading from <code>{h.dir}</code>
         </p>
         <ul className="am-health">
@@ -297,7 +297,7 @@ export function Cadence({
             <ul className="am-tasks">
               {cards.map((c) => (
                 <li key={c.id} className="am-task">
-                  <p className="am-sub">
+                  <p className="am-sub am-kinds">
                     <span className="chip">{KIND_WORDS[c.kind]}</span>
                     {c.badge ? (
                       <span className="badge" data-tone="waiting">
@@ -399,7 +399,9 @@ export function Standup({
         <p className="card-note">
           {s.hasStandup
             ? 'One recommended action per campaign, with the debate that produced it. Read-only.'
-            : 'A bull and a bear argue your account, then an account director makes one call per campaign with the reasoning shown. Read-only.'}
+            : v
+              ? 'This is the last standup on file, but the account has no standup set-up yet. Set it up to run it from here. Read-only.'
+              : 'A bull and a bear argue your account, then an account director makes one call per campaign with the reasoning shown. Read-only.'}
         </p>
         {v ? (
           <p className="card-note am-verdict" data-stale={stale ? 'true' : undefined}>

@@ -4,6 +4,7 @@ import type {
   AdsApprovals,
   AdsBoard,
   AdsChangeReply,
+  AdsSummary,
   ClientApprovals,
   ProposalFull,
   ProposalSummary,
@@ -38,6 +39,8 @@ export interface AdState {
   /** Full proposals (with their text), by `client/id`, fetched when "Full proposal text" opens or a change replies. */
   full: Record<string, ProposalFull>;
   panelMode: 'proposal' | 'rate';
+  /** Details was pressed: the panel moves focus to the proposal's title once it shows, then clears this. */
+  focusTitle: boolean;
   /** What is running (`apply:<id>`, `approve:<id>`…) or null. One change at a time, as on the server. */
   busy: string | null;
   /** Applies whose outcome we don't know (network failure, or a time-out), by `client/id`. */
@@ -59,6 +62,7 @@ const initial = (): AdState => ({
   selected: null,
   full: {},
   panelMode: 'proposal',
+  focusTitle: false,
   busy: null,
   unknownApply: [],
   last: null,
@@ -94,6 +98,14 @@ export function useAd(): AdState {
 }
 
 export const proposalKey = (client: string, id: string) => `${client}/${id}`;
+
+/**
+ * How many proposals wait for this person's decision on an account: the rail's own count (approved ones are waiting
+ * for Apply, not a decision). Falls back to the bridge's count, which older bridges made with approved ones included.
+ */
+export function waitingFor(ads: AdsSummary | null | undefined, account: AdsAccount): number {
+  return ads?.clients.find((c) => c.slug === account.key)?.waiting ?? account.waiting;
+}
 
 /** The proposal summary selected in the panel, from the open list (or the recent one). */
 export function findProposal(

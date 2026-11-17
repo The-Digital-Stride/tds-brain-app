@@ -9,12 +9,13 @@ import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
+import { StatusBadge } from './Approvals.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { RateCalls } from './RateCalls.tsx';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
-import { adsErrorText, proposalFacts, statusWords } from './words.ts';
+import { adsErrorText, proposalFacts } from './words.ts';
 
 type Ask = 'approve' | 'reject' | 'apply' | null;
 
@@ -405,7 +406,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
 
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
-  const { approvals, selected, full, panelMode, last, busy } = useAd();
+  const { approvals, selected, full, panelMode, last, busy, focusTitle } = useAd();
   const found = findProposal(approvals, selected);
   const key = found ? proposalKey(found.client.slug, found.proposal.id) : '';
   // After a decision the next proposal replaces this one and the button that was pressed is gone: the heading
@@ -417,6 +418,14 @@ export function ProposalPanel() {
     const a = document.activeElement;
     if (!a || a === document.body) document.querySelector<HTMLElement>('.am-title')?.focus();
   }, [key]);
+  // Details was pressed: say where the details are by moving focus to the title (the panel may only just have opened).
+  useEffect(() => {
+    if (!focusTitle || !key) return;
+    const title = document.querySelector<HTMLElement>('.am-title');
+    if (!title) return;
+    title.focus();
+    adStore.set({ focusTitle: false });
+  }, [focusTitle, key]);
   if (panelMode === 'rate') return <RateCalls />;
   // One status region for the whole panel, always mounted, so each result is announced once.
   const spoken = busy
@@ -459,7 +468,7 @@ export function ProposalPanel() {
       </h3>
       <p className="am-sub">
         <code>{p.id}</code> · <span className="badge">Tier {p.fm.tier}</span>{' '}
-        <span className="badge">{statusWords(p.fm.status)}</span>
+        <StatusBadge status={p.fm.status} />
       </p>
       <dl className="kv">
         {facts.map(([k, v]) => (

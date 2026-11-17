@@ -223,10 +223,12 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
                     aria-pressed={current}
                     aria-label={`Details: ${p.fm.title}`}
                     onClick={() => {
+                      // A shut panel takes focus to its heading as it opens (and gives it back here on close); an open
+                      // one doesn't move, so focus goes to the new proposal's title.
                       adStore.set({
                         selected: { client: client.slug, id: p.id },
                         panelMode: 'proposal',
-                        focusTitle: true,
+                        focusTitle: state.panelOpen,
                       });
                       dispatch({ type: 'set-panel', open: true });
                     }}

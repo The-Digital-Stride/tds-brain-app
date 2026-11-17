@@ -39,7 +39,10 @@ export interface AdState {
   /** Full proposals (with their text), by `client/id`, fetched when "Full proposal text" opens or a change replies. */
   full: Record<string, ProposalFull>;
   panelMode: 'proposal' | 'rate';
-  /** Details was pressed: the panel moves focus to the proposal's title once it shows, then clears this. */
+  /**
+   * Details was pressed with the panel already open: the panel moves focus to the proposal's title, then clears this.
+   * Not set when the panel opens, where the Dock focuses its heading and records Details to give focus back to.
+   */
   focusTitle: boolean;
   /** What is running (`apply:<id>`, `approve:<id>`…) or null. One change at a time, as on the server. */
   busy: string | null;

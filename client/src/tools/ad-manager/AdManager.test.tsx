@@ -295,6 +295,18 @@ describe('panel', () => {
     expect(badge?.getAttribute('data-tone')).toBe('waiting');
   });
 
+  it('leaves focus to the Dock when Details opens a shut panel, so closing it can return to Details', async () => {
+    shell.state.panelOpen = false;
+    await ready();
+    const details = await screen.findByRole('button', { name: 'Details: Add negatives' });
+    details.focus();
+    fireEvent.click(details);
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
+    await screen.findByRole('heading', { name: 'Add negatives' });
+    expect(adStore.get().focusTitle).toBe(false);
+    expect(document.activeElement).toBe(details);
+  });
+
   it('fetches the full text only when its fold opens', async () => {
     await ready();
     await screen.findByRole('heading', { name: 'Raise the budget' });

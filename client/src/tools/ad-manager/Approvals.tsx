@@ -150,6 +150,16 @@ export function StatusCard({ client }: { client: ClientApprovals }) {
   );
 }
 
+/** A proposal's status as a badge, the same tone in the table and the panel: amber while it waits for a decision. */
+export const StatusBadge = ({ status }: { status: string }) => (
+  <span
+    className="badge"
+    data-tone={status === 'proposed' || status === 'changes-requested' ? 'waiting' : undefined}
+  >
+    {statusWords(status)}
+  </span>
+);
+
 const Tier = ({ n }: { n: number }) => (
   <span className="badge" data-tier={n} title={`Tier ${n}`} role="img" aria-label={`Tier ${n}`}>
     T{n}
@@ -158,15 +168,17 @@ const Tier = ({ n }: { n: number }) => (
 
 function WaitingTable({ client, rows }: { client: ClientApprovals; rows: ProposalSummary[] }) {
   const { selected } = useAd();
-  const { dispatch } = useShell();
+  const { state, dispatch } = useShell();
   if (rows.length === 0) return <p className="card-note">Nothing open.</p>;
+  // ID, Type and Section are also in the panel, so a narrow sheet drops them (CSS) and keeps Status and Details in view.
+  const minor: Record<string, string> = { ID: 'id', Type: 'type', Section: 'section' };
   return (
     <div className="am-scroll">
       <table className="am-table">
         <thead>
           <tr>
             {['ID', 'Tier', 'Type', 'Proposal', 'Section', 'Campaigns', 'Expires', 'Status', ''].map((h) => (
-              <th key={h || 'details'} scope="col">
+              <th key={h || 'details'} scope="col" data-minor={minor[h]}>
                 {h || <span className="visually-hidden">Details</span>}
               </th>
             ))}
@@ -175,18 +187,19 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
         <tbody>
           {rows.map((p) => {
             const camps = Array.isArray(p.fm.campaigns) ? (p.fm.campaigns as string[]) : [];
-            const current = selected?.client === client.slug && selected.id === p.id;
+            // Shown as chosen only while the panel is open: the first proposal is picked for it before it opens.
+            const current = state.panelOpen && selected?.client === client.slug && selected.id === p.id;
             return (
               <tr key={p.id} data-current={current ? 'true' : undefined}>
-                <td>
+                <td data-minor="id">
                   <code>{p.id}</code>
                 </td>
                 <td>
                   <Tier n={p.fm.tier} />
                 </td>
-                <td>{p.fm.type}</td>
+                <td data-minor="type">{p.fm.type}</td>
                 <td className="am-wide">{p.fm.title}</td>
-                <td>{String(p.fm.framework_section ?? '')}</td>
+                <td data-minor="section">{String(p.fm.framework_section ?? '')}</td>
                 <td>
                   {camps.length ? (
                     camps.map((c) => (
@@ -200,9 +213,7 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
                 </td>
                 <td className="am-nowrap">{String(p.fm.expires ?? '')}</td>
                 <td>
-                  <span className="badge" data-tone={p.fm.status === 'approved' ? undefined : 'waiting'}>
-                    {statusWords(p.fm.status)}
-                  </span>
+                  <StatusBadge status={p.fm.status} />
                 </td>
                 <td>
                   <button
@@ -212,7 +223,13 @@ function WaitingTable({ client, rows }: { client: ClientApprovals; rows: Proposa
                     aria-pressed={current}
                     aria-label={`Details: ${p.fm.title}`}
                     onClick={() => {
-                      adStore.set({ selected: { client: client.slug, id: p.id }, panelMode: 'proposal' });
+                      // A shut panel takes focus to its heading as it opens (and gives it back here on close); an open
+                      // one doesn't move, so focus goes to the new proposal's title.
+                      adStore.set({
+                        selected: { client: client.slug, id: p.id },
+                        panelMode: 'proposal',
+                        focusTitle: state.panelOpen,
+                      });
                       dispatch({ type: 'set-panel', open: true });
                     }}
                   >

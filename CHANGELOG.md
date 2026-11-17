@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.49.1 — 2026-11-17
+
+- **fix**: Ad Manager review fixes: one waiting count, no phantom selection, focus to the proposal, tidier type and spacing
+- **fix**: a narrow proposals table keeps Details in view
+- **fix**: Details moves focus to the title only when the panel is already open
+
 ## v0.49.0 — 2026-11-16
 
 - **feat**: tool chats open in a drawer on the right, so Ad Manager's board stays in view while Claude works

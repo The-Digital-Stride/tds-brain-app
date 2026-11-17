@@ -209,6 +209,9 @@
   .am-table [data-minor] {
     display: none;
   }
+  .am-table .am-wide {
+    min-width: 160px;
+  }
 }
 .am-status .am-open {
   display: inline-block;

@@ -1,5 +1,5 @@
-import { useId, useMemo, useState } from 'react';
-import { useStore } from '../store.tsx';
+import { useId, useState } from 'react';
+import { useStore, useToolSnapshot } from '../store.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -21,6 +21,7 @@ function ToolRow({
   onOpen: () => void;
 }) {
   const count = tool.badge?.(snap) ?? 0;
+  const note = tool.rowNote?.(snap) ?? null;
   return (
     <li>
       <button
@@ -34,6 +35,7 @@ function ToolRow({
           <span className="line-title">{tool.title}</span>
           <span className="line-meta">{tool.summary}</span>
         </span>
+        {note ? <span className="line-meta section-note">{note}</span> : null}
         {count > 0 ? <span className="count">{count}</span> : null}
       </button>
     </li>
@@ -46,18 +48,24 @@ function ToolRow({
  */
 export function SectionDrawer() {
   const { state, dispatch } = useShell();
-  const { ads, view, openTool } = useStore();
+  const { boot, view, openTool, updatePrefs } = useStore();
   const [query, setQuery] = useState('');
   const searchId = useId();
   const section = SECTIONS.find((s) => s.id === state.section);
-  const snap = useMemo<ToolSnapshot>(() => ({ ads }), [ads]);
+  const snap = useToolSnapshot();
   if (!section) return null;
+  // Folded group names for this section, remembered in the settings (an older settings file has none: all open).
+  const folded = boot?.prefs.foldedGroups?.[section.id] ?? [];
+  const setFolded = (group: string, open: boolean) => {
+    const next = open ? folded.filter((g) => g !== group) : [...new Set([...folded, group])];
+    void updatePrefs({ foldedGroups: { ...(boot?.prefs.foldedGroups ?? {}), [section.id]: next } });
+  };
 
   const tools = visibleTools(section, snap);
   const q = query.trim().toLowerCase();
   const shown = q ? tools.filter((t) => `${t.title} ${t.summary}`.toLowerCase().includes(q)) : tools;
   const groupNames = [...new Set(tools.map((t) => t.group).filter((g): g is string => !!g))];
-  const grouped = !q && groupNames.length >= 2;
+  const grouped = !q && groupNames.length >= 1;
 
   const row = (t: ToolSlot) => (
     <ToolRow
@@ -100,8 +108,12 @@ export function SectionDrawer() {
           ) : grouped ? (
             groupNames.map((g) => {
               const inGroup = tools.filter((t) => t.group === g);
+              const open = !folded.includes(g);
+              // Shut, the heading still says how much waits inside; open, it shows no count (a tool count looks like a waiting badge).
+              const waiting = inGroup.reduce((n, t) => n + (t.badge?.(snap) ?? 0), 0);
+              const count = !open && waiting > 0 ? waiting : undefined;
               return (
-                <Fold key={g} title={g} count={inGroup.length}>
+                <Fold key={g} title={g} count={count} open={open} onToggle={(next) => setFolded(g, next)}>
                   <ul className="drawer-list">{inGroup.map(row)}</ul>
                 </Fold>
               );

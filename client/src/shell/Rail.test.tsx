@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TodoItem } from '../../../shared/contract.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
-vi.mock('../store.tsx', () => ({ useStore: () => store.current }));
+vi.mock('../store.tsx', () => ({
+  useStore: () => store.current,
+  useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: store.current.adsDue ?? null }),
+}));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: { drawer: null, singleKeys: true }, dispatch: vi.fn() }),
   useDesk: () => ({ railShowsNames: false, width: 1400 }),

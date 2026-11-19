@@ -84,6 +84,15 @@ describe('section tools and the global search', () => {
     expect(unexplained, `Tools with \`search: null\` and no reason: ${unexplained.join(', ')}`).toEqual([]);
   });
 
+  it('the three Ads tools each have their own search source', () => {
+    const ads = tools.filter((t) => t.group === 'Ads');
+    expect(ads.map((t) => t.id)).toEqual(['ad-manager', 'ads-command-centre', 'ads-account-summary']);
+    for (const t of ads) {
+      expect(t.search, t.id).not.toBeNull();
+      expect(t.search?.title, t.id).toBe(t.title);
+    }
+  });
+
   it("a tool's search source is in the palette's sources exactly once", () => {
     const ids = searchSources().map((s) => s.id);
     for (const t of tools) {

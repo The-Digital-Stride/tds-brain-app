@@ -80,3 +80,44 @@ describe('actionLabel', () => {
 it('keeps the unknown-outcome wording', () => {
   expect(ADS_ERROR_MESSAGES['unknown-outcome']).toMatch(/don't know whether/);
 });
+
+describe('dates in words', () => {
+  const now = new Date(2026, 10, 19, 15, 30); // Thu 19 Nov 2026, local
+  it('writes a day with its weekday, and the year only when it is not this one', async () => {
+    const { dateWords } = await import('./words.ts');
+    expect(dateWords('2026-11-17', now)).toBe('Tue 17 Nov');
+    expect(dateWords('2026-11-17T09:00:00Z', now)).toBe('Tue 17 Nov');
+    expect(dateWords('2027-01-04', now)).toBe('Mon 4 Jan 2027');
+    expect(dateWords('', now)).toBe('');
+    expect(dateWords('2026-13-40', now)).toBe('');
+  });
+  it('counts local calendar days, not 24-hour blocks', async () => {
+    const { daysFromNow, relativeWords } = await import('./words.ts');
+    expect(daysFromNow('2026-11-19', now)).toBe(0);
+    expect(daysFromNow('2026-11-22', now)).toBe(3);
+    expect(daysFromNow('2026-11-18', new Date(2026, 10, 19, 0, 5))).toBe(-1);
+    expect(daysFromNow(null, now)).toBeNull();
+    expect(relativeWords('2026-11-19', now)).toBe('today');
+    expect(relativeWords('2026-11-20', now)).toBe('tomorrow');
+    expect(relativeWords('2026-11-18', now)).toBe('yesterday');
+    expect(relativeWords('2026-11-22', now)).toBe('in 3 days');
+    expect(relativeWords('2026-11-14', now)).toBe('5 days ago');
+  });
+  it('says Today, Yesterday or Tomorrow near now, else the date', async () => {
+    const { whenWords } = await import('./words.ts');
+    expect(whenWords('2026-11-19', now)).toBe('Today');
+    expect(whenWords('2026-11-18', now)).toBe('Yesterday');
+    expect(whenWords('2026-11-20', now)).toBe('Tomorrow');
+    expect(whenWords('2026-11-24', now)).toBe('Tue 24 Nov');
+  });
+  it('names the next step of an approved proposal', async () => {
+    const { nextStepWords } = await import('./words.ts');
+    const p = (over: Record<string, unknown>, flags: Record<string, boolean> = {}) =>
+      ({ fm: { status: 'approved', ...over }, flags }) as never;
+    expect(nextStepWords(p({ dry_run: 'passed' })).text).toBe('Dry run passed');
+    expect(nextStepWords(p({}, { canClientDraft: true })).text).toBe('Draft the email');
+    expect(nextStepWords(p({}, { canDryRun: true })).text).toBe('Dry run first');
+    expect(nextStepWords(p({}, { canApply: true })).text).toBe('Ready to apply');
+    expect(nextStepWords(p({}, { inflight: true, canApply: true })).text).toBe('Apply outcome unknown');
+  });
+});

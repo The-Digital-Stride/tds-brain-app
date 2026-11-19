@@ -117,6 +117,7 @@ import {
   SessionError,
   type SessionManager,
 } from '../engine/session-manager.ts';
+import { FOLDED_SECTIONS_MAX, isGroupNameList } from '../store/app-store.ts';
 import { type ClientPickTally, guessOutcome } from '../store/client-pick-tally.ts';
 import { isPageKey } from '../store/page-copies.ts';
 import {
@@ -470,9 +471,21 @@ export async function validatePrefsPatch(
           entries.length > ADS_FOLDS_MAX ||
           !entries.every(([k, v]) => k !== '' && k.length <= ADS_PREF_KEY_MAX && typeof v === 'boolean')
         ) {
-          throw bad('The open and shut lists in Ad Manager were not understood.');
+          throw bad('The open and shut lists in Ads Manager were not understood.');
         }
         patch.adsFolds = Object.fromEntries(entries as [string, boolean][]);
+        break;
+      }
+      case 'foldedGroups': {
+        const entries = isRec(value) ? Object.entries(value) : null;
+        if (
+          entries === null ||
+          entries.length > FOLDED_SECTIONS_MAX ||
+          !entries.every(([k, v]) => SECTION_ID_PATTERN.test(k) && isGroupNameList(v))
+        ) {
+          throw bad('The folded groups in the drawer were not understood.');
+        }
+        patch.foldedGroups = Object.fromEntries(entries as [string, string[]][]);
         break;
       }
       default:

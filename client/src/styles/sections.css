@@ -17,3 +17,9 @@
 .section-row .count {
   flex: none;
 }
+
+/* A row note ("3 due"): text, not a count badge; never wraps or squeezes the title. */
+.section-row .section-note {
+  flex: none;
+  white-space: nowrap;
+}

@@ -328,6 +328,30 @@ Plan: `docs/plans/2026-11-16-run-chat-drawer.md`.
   but never while its message box holds text.
 - A floating right panel closes before a tool opens its chat in the drawer; a pushing one stays beside it.
 
+## Category colours
+
+Six soft fills for "kind of thing" (a task type, a tag), so a colour never has to mean "state". Plan:
+`docs/plans/2026-11-19-ads-workbench-sections.md`, decision 7.
+
+| Token | Value | Used for |
+|---|---|---|
+| `--cat-aqua` | `#bef9f1` | Ads task type Report (`--type-report`) |
+| `--cat-yellow` | `#fef08a` | Insight, which highlights a finding (`--type-insight`) |
+| `--cat-rose` | `#fecbd8` | Action, which changes the account, so it reads as caution (`--type-action`) |
+| `--cat-iris` | `#d2d3ff` | Daily standup (`--type-standup`) |
+| `--cat-sky` | `#bceefe` | Free for other tools |
+| `--cat-mauve` | `#e3d2e8` | Free for other tools |
+
+- A category is a whole fill with navy text and its word on it. Dots and coloured edges stay for status.
+- One exception: a whole panel may be tinted by status (the account data panel's green, amber or red). Never a single card or chip.
+- The key shows the same fill as the thing it explains.
+- On a fill use the standard white `.btn`, not the quiet one.
+- Named by hue, used by meaning: tools alias the shared names (`--type-report: var(--cat-aqua)`), so a dark set can
+  later redefine the same names.
+- Navy, `#525252` and `#33456a` text pass WCAG AA on every fill (checked 2026-11-18 and 19). Only about six soft
+  colours stay clearly apart for people with colour blindness once the status colours are left out, so there are
+  six, not eight.
+
 ## Old tokens being retired
 
 `--s1`…`--s5`, `--radius`, `--radius-sm`, `--card`, `--rule`, `--rule-strong`, `--accent`, `--accent-ink`,

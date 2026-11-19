@@ -171,7 +171,7 @@ export const ADS_ERROR_MESSAGES: Record<AdsErrorCode, string> = {
   'no-access': "This Mac can't reach Google Ads, so this can't be done here.",
   'unknown-outcome':
     "We don't know whether this change reached Google Ads. Check the account before trying again.",
-  unavailable: 'Ad Manager needs the tdsapp-ads skill. Ask Ian or Pete to add it.',
+  unavailable: 'Ads Manager needs the tdsapp-ads skill. Ask Ian or Pete to add it.',
   internal: 'That could not be done. Try again, and tell Ian if it keeps happening.',
 };
 

@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   setChatKind: vi.fn(),
 }));
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({
     boot: {
       identity: { role: h.role },

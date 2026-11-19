@@ -703,6 +703,8 @@ interface Pending {
 interface Session {
   id: string;
   sdkSessionId: string | null;
+  /** How the latest reply ended; set by every `turn-end` event. */
+  lastTurn?: 'ok' | 'stopped' | 'failed';
   title: string;
   client: string | null;
   /** The to-do this chat was started on (A19), kept while the chat is open. */
@@ -1006,6 +1008,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const now = new Date();
     s.lastActivityAt = now.toISOString();
     s.lastActivityMs = now.getTime();
+    if (event.type === 'turn-end') s.lastTurn = event.interrupted ? 'stopped' : event.ok ? 'ok' : 'failed';
     const item: SequencedEvent = { seq: ++s.seq, at: s.lastActivityAt, event };
     if (event.type === 'assistant-message') {
       // The finished block replaces its deltas; keep the replay log small.
@@ -1078,6 +1081,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,
       helpers: s.helperList.list(),
+      ...(s.lastTurn === undefined ? {} : { lastTurn: s.lastTurn }),
     };
   }
 

@@ -9,13 +9,13 @@ const TOOL = 'ad-manager';
 type OpensTools = { openTool: (section: string, tool: string, arg?: string) => void };
 
 /**
- * Ad Manager in the global search: the tool itself, and each ads account by name (choosing one opens Ad Manager on
- * it). Server-backed because the accounts live in the brain; a Mac without Ad Manager gets an error, which is no hits.
+ * Ads Manager in the global search: the tool itself (the old name, "ad manager", still finds it), and each ads account
+ * by name (choosing one opens Ads Manager on it). Server-backed because the accounts live in the brain; a Mac without Ad Manager gets an error, which is no hits.
  * Kept out of `ui.ts` so the palette never loads the screens.
  */
 export const adManagerSearch: SearchSource = {
   id: 'ad-manager',
-  title: 'Ad Manager',
+  title: 'Ads Manager',
   searchAsync: async (query, signal) => {
     let accounts: AdsAccount[] = [];
     try {
@@ -26,10 +26,10 @@ export const adManagerSearch: SearchSource = {
     if (signal.aborted) return { hits: [], total: 0 };
     const open = (arg?: string) => (a: unknown) => (a as OpensTools).openTool(SECTION, TOOL, arg);
     const hits: SearchHit[] = [];
-    if (matchRank(query, 'Ad Manager', ['ads', 'google ads', 'proposals']) !== null)
+    if (matchRank(query, 'Ads Manager', ['ad manager', 'ads', 'google ads', 'proposals']) !== null)
       hits.push({
         id: 'tool',
-        label: 'Ad Manager',
+        label: 'Ads Manager',
         hint: 'Workbench',
         icon: 'chart' as SearchHit['icon'],
         run: open(),
@@ -39,7 +39,7 @@ export const adManagerSearch: SearchSource = {
       hits.push({
         id: `account:${a.key}`,
         label: a.name,
-        hint: a.waiting > 0 ? `Ad Manager, ${a.waiting} waiting` : 'Ad Manager',
+        hint: a.waiting > 0 ? `Ads Manager, ${a.waiting} waiting` : 'Ads Manager',
         icon: 'chart' as SearchHit['icon'],
         run: open(a.key),
       });

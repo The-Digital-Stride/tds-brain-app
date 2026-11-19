@@ -97,6 +97,8 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   // A rising line over an axis: Ad Manager.
   chart: <path d="M3.5 4v12.5h13M6.5 13l3-3.5 2.5 2L16 6.5M13 6.5h3V9.5" />,
+  inbox: <path d="M3.5 11l2-6.5h9l2 6.5v4.5h-13zM3.5 11h4l1 2h3l1-2h4" />,
+  play: <path d="M6.5 4.5v11l9-5.5z" />,
   stop: <rect x="5" y="5" width="10" height="10" rx="1.5" />,
   // Six dots, two across and three down: a drag handle.
   grip: <path d="M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01" strokeWidth={2.6} />,

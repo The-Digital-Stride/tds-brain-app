@@ -1,58 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useStore } from '../../store.tsx';
-import { Proposals, StatusCard } from './Approvals.tsx';
-import { Cadence, DataHealth, Standup } from './Board.tsx';
-import { DeepDive } from './DeepDive.tsx';
+import { AccountHead, FactTiles, goToClose, MonthlyClose, NeedsYou, Proposals } from './Approvals.tsx';
 import { identityLine } from './ProposalPanel.tsx';
-import {
-  adStore,
-  findProposal,
-  loadApprovals,
-  loadBoard,
-  selectAccount,
-  useAd,
-  waitingFor,
-} from './store.ts';
+import { adStore, findProposal, useAd } from './store.ts';
+import { useAdsAccount } from './use-ads-account.ts';
 import { isWaiting } from './words.ts';
 
-/** The Ad Manager sheet: the account's status, what waits for a decision, then the ads board. */
+/** The Ads Manager sheet: the account's facts, what needs you, the proposals, then the monthly close. */
 export function AdManagerSheet() {
-  const { ads, boot, toolArg, clearToolArg, updatePrefs } = useStore();
+  const { ads, openTool } = useStore();
   const s = useAd();
-  const [started, setStarted] = useState<string | null>(null);
-
-  // Load on arrival, on the ads summary changing (the `ads-changed` event) and on Refresh.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `ads` and `refresh` are the triggers
-  useEffect(() => {
-    void loadApprovals();
-  }, [ads, s.refresh]);
-
-  // The account: from the caller (Home, search), else the one used last, else the first with something waiting.
-  const keys = s.accounts?.map((a) => a.key);
-  const savedAccount = boot?.prefs.adsAccount ?? null;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the list or the caller's choice arrives
-  useEffect(() => {
-    if (!s.accounts || !keys) return;
-    if (toolArg) {
-      clearToolArg();
-      if (keys.includes(toolArg)) {
-        selectAccount(toolArg);
-        void updatePrefs({ adsAccount: toolArg });
-        return;
-      }
-    }
-    if (s.account && keys.includes(s.account)) return;
-    const first =
-      (savedAccount && keys.includes(savedAccount) ? savedAccount : null) ??
-      s.accounts.find((a) => waitingFor(ads, a) > 0)?.key ??
-      s.accounts[0]?.key;
-    if (first) selectAccount(first);
-  }, [s.accounts, toolArg]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `ads` and `refresh` are the triggers
-  useEffect(() => {
-    if (s.account) void loadBoard(s.account);
-  }, [s.account, ads, s.refresh]);
+  useAdsAccount();
 
   // The panel shows a proposal as soon as there is one waiting for this account.
   useEffect(() => {
@@ -65,62 +23,82 @@ export function AdManagerSheet() {
   const account = s.accounts?.find((a) => a.key === s.account);
   const client = s.approvals?.clients.find((c) => c.slug === s.account);
   const mismatch = ads?.sameIdentity === false;
-  const name = account?.name ?? s.account ?? '';
+  const board = s.boardFor === s.account ? s.board : null;
+  const shown = Boolean(account && s.approvals && client?.mine);
 
+  // A jump to the monthly close (from another tool, or search): once the card has drawn, go there, then clear it.
+  const jump = s.jump;
+  useEffect(() => {
+    if (jump !== 'close' || !shown) return;
+    goToClose();
+    adStore.set({ jump: null });
+  }, [jump, shown]);
+
+  // On a proposals account they close the page; otherwise they follow the status line.
+  const toolLinks = account ? (
+    <div className="am-links-row">
+      <button
+        type="button"
+        className="btn"
+        onClick={() => openTool('workbench', 'ads-command-centre', account.key)}
+      >
+        Ads Command Centre
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => openTool('workbench', 'ads-account-summary', account.key)}
+      >
+        Ads Account Summary
+      </button>
+    </div>
+  ) : null;
   return (
     <div className="am">
-      {/* One status region, always mounted, so a started chat is announced when it happens. */}
-      <p className="visually-hidden" role="status">
-        {started ?? ''}
-      </p>
       {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
       {s.loadError ? (
         <p className="am-line" role="alert">
           {s.loadError}
         </p>
       ) : null}
-      {started ? <p className="am-line">{started}</p> : null}
       {!s.accounts && !s.loadError ? <p className="card-note">Loading</p> : null}
       {s.accounts && s.accounts.length === 0 ? <p className="card-note">No accounts found.</p> : null}
-
-      {account && s.approvals ? (
-        client ? (
-          client.mine ? (
-            <>
-              <div className="tray am-tray" data-cols="1">
-                <StatusCard client={client} />
-              </div>
-              <Proposals client={client} />
-            </>
-          ) : (
-            <p className="am-line">
-              {client.name}'s proposals are reviewed by {client.reviewer || client.owner || 'someone else'}.
-            </p>
-          )
-        ) : (
-          <p className="am-line">
-            {account.name} is not on the supervised ads-manager yet, so it has no proposals.
-          </p>
-        )
-      ) : null}
 
       {s.boardError ? (
         <p className="am-line" role="alert">
           {s.boardError}
         </p>
       ) : null}
-      {s.board && s.boardFor === s.account && account ? (
+
+      {account && s.approvals ? (
         <>
-          <h2 className="am-h">What I run on {name}</h2>
+          <AccountHead client={client} name={account.name} currency={account.currency} />
+          {client?.mine ? <FactTiles client={client} /> : null}
           <div className="tray am-tray" data-cols="1">
-            <DataHealth board={s.board} />
+            <NeedsYou slug={account.key} client={client?.mine ? client : null} board={board} />
           </div>
-          <Cadence board={s.board} name={name} onStarted={setStarted} />
-          <Standup board={s.board} name={name} canAct={!mismatch} onStarted={setStarted} />
-          <DeepDive board={s.board} currency={account.currency} />
+          {client ? (
+            client.mine ? null : (
+              <p className="am-line">
+                {client.name}'s proposals are reviewed by {client.reviewer || client.owner || 'someone else'}.
+              </p>
+            )
+          ) : (
+            <p className="am-line">
+              {account.name} is not on the supervised ads-manager yet, so it has no proposals.
+            </p>
+          )}
+          {client?.mine ? null : toolLinks}
+          {client?.mine ? (
+            <>
+              <Proposals client={client} />
+              <div className="tray am-tray" data-cols="1">
+                <MonthlyClose client={client} />
+              </div>
+              {toolLinks}
+            </>
+          ) : null}
         </>
-      ) : s.account && !s.boardError ? (
-        <p className="card-note">Loading the board</p>
       ) : null}
     </div>
   );

@@ -13,7 +13,6 @@ import { StatusBadge } from './Approvals.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
-import { RateCalls } from './RateCalls.tsx';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
 import { adsErrorText, proposalFacts } from './words.ts';
 
@@ -406,7 +405,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
 
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
-  const { approvals, selected, full, panelMode, last, busy, focusTitle } = useAd();
+  const { approvals, selected, full, last, busy, focusTitle } = useAd();
   const found = findProposal(approvals, selected);
   const key = found ? proposalKey(found.client.slug, found.proposal.id) : '';
   // After a decision the next proposal replaces this one and the button that was pressed is gone: the heading
@@ -426,7 +425,6 @@ export function ProposalPanel() {
     title.focus();
     adStore.set({ focusTitle: false });
   }, [focusTitle, key]);
-  if (panelMode === 'rate') return <RateCalls />;
   // One status region for the whole panel, always mounted, so each result is announced once.
   const spoken = busy
     ? busy.startsWith('apply:')

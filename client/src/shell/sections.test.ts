@@ -43,8 +43,11 @@ describe('visibleTools', () => {
     expect(visibleTools(workbench, { ads: ads({ visible: false }) })).toEqual([]);
   });
 
-  it('shows Ad Manager once visible', () => {
-    expect(visibleTools(workbench, { ads: ads() }).map((t) => t.id)).toEqual(['ad-manager']);
+  it('shows the three Ads tools once visible, in order, all in the Ads group', () => {
+    const shown = visibleTools(workbench, { ads: ads() });
+    expect(shown.map((t) => t.id)).toEqual(['ad-manager', 'ads-command-centre', 'ads-account-summary']);
+    expect(shown.map((t) => t.title)).toEqual(['Ads Manager', 'Ads Command Centre', 'Ads Account Summary']);
+    expect(shown.every((t) => t.group === 'Ads')).toBe(true);
   });
 
   it('keeps the order of tools and drops the hidden ones', () => {
@@ -63,6 +66,8 @@ describe('the rail', () => {
 
   it('counts the visible tools badges, and W only while visible', () => {
     expect(sectionBadge(workbench, { ads: ads({ waiting: 4 }) })).toBe(4);
+    // Due tasks are a note on the drawer row, never part of the rail's waiting count.
+    expect(sectionBadge(workbench, { ads: ads({ waiting: 4 }), adsDue: 9 })).toBe(4);
     expect(sectionBadge(workbench, { ads: null })).toBe(0);
     expect(sectionKeys({ ads: null })).toEqual({});
     expect(sectionKeys({ ads: ads() })).toEqual({ w: 'workbench' });
@@ -79,6 +84,38 @@ describe('tool views', () => {
     expect(toolFor('tool:workbench')).toBeNull();
     expect(toolFor('tool:workbench/ad-manager/x')).toBeNull();
     expect(toolFor('app:images')).toBeNull();
+  });
+
+  it('each Ads tool opens directly at its own view, with no visit to Ads Manager first', () => {
+    for (const id of ['ad-manager', 'ads-command-centre', 'ads-account-summary']) {
+      const view = toolView('workbench', id);
+      expect(view).toBe(`tool:workbench/${id}`);
+      expect(toolFor(view)?.tool.id).toBe(id);
+      expect(visibleToolFor(view, { ads: ads() })?.tool.id).toBe(id);
+      expect(visibleToolFor(view, { ads: null })).toBeNull();
+    }
+  });
+
+  it('each Ads tool shows a note and count as it should', () => {
+    const [manager, command, summary] = workbench.tools;
+    const snap = { ads: ads({ waiting: 2 }), adsDue: 3 };
+    expect(manager?.badge?.(snap)).toBe(2);
+    expect(manager?.rowNote?.(snap) ?? null).toBeNull();
+    expect(command?.badge?.(snap)).toBe(0);
+    expect(command?.rowNote?.(snap)).toBe('3 due');
+    expect(command?.rowNote?.({ ads: ads(), adsDue: 0 })).toBeNull();
+    expect(command?.rowNote?.({ ads: ads(), adsDue: null })).toBeNull();
+    expect(command?.rowNote?.({ ads: ads() })).toBeNull();
+    expect(summary?.badge).toBeUndefined();
+    expect(summary?.rowNote).toBeUndefined();
+  });
+
+  it('Rate calls is the Ads Command Centre panel, and the others keep theirs', () => {
+    const [manager, command, summary] = workbench.tools;
+    expect(command?.Panel).toBeDefined();
+    expect(command?.panelLabel).toBe('Rate calls');
+    expect(manager?.panelLabel).toBe('Proposal');
+    expect(summary?.Panel).toBeUndefined();
   });
 
   it('an invisible tool view resolves to nothing (so the sheet shows Home)', () => {

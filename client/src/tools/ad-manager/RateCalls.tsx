@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ADS_NOTE_MAX } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
-import { adStore, useAd } from './store.ts';
+import { useAd } from './store.ts';
 import type { StandupBrief } from './types.ts';
 import { actionLabel, adsErrorText } from './words.ts';
 
 type Rating = { score: string; note: string };
 
-/** Rate the latest standup brief's per-campaign calls, 1 to 5 and a note (the Workbench's "Rate calls"). Shown in the panel. */
+/** Rate the latest standup brief's per-campaign calls, 1 to 5 and a note (the Workbench's "Rate calls"). Shown in Ads Command Centre's side panel. */
 export function RateCalls() {
   const { account } = useAd();
   const [brief, setBrief] = useState<StandupBrief | null | undefined>(undefined);
@@ -34,17 +34,6 @@ export function RateCalls() {
     };
   }, [account]);
 
-  const back = (
-    <button
-      type="button"
-      className="btn"
-      data-variant="quiet"
-      data-size="small"
-      onClick={() => adStore.set({ panelMode: 'proposal' })}
-    >
-      Back to proposals
-    </button>
-  );
   if (brief === undefined)
     return (
       <div className="am-panel">
@@ -57,7 +46,6 @@ export function RateCalls() {
       <div className="am-panel">
         <h3 className="am-title">Rate the standup calls</h3>
         <p className="am-line">{error ?? 'No standup calls to rate yet. Run the Daily standup first.'}</p>
-        {back}
       </div>
     );
   const set = (i: number, patch: Partial<Rating>) =>
@@ -146,7 +134,6 @@ export function RateCalls() {
         >
           {saving ? 'Saving…' : 'Save ratings'}
         </button>
-        {back}
       </div>
       {/* One status region, always mounted, so the result is announced when it arrives. */}
       <p className="visually-hidden" role="status">

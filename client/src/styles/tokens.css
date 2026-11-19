@@ -94,4 +94,20 @@
   --danger-wash-strong: #f9d9d6;
   --ok: #17673a;
   --ok-wash: #e6f4ea;
+
+  /*
+   * Category colours: soft fills for "kind of thing", never "state" (status keeps green, amber, red and blue).
+   * Navy, #525252 and #33456a text pass WCAG AA on every one. Named by hue; tools alias them by meaning.
+   */
+  --cat-rose: #fecbd8;
+  --cat-yellow: #fef08a;
+  --cat-aqua: #bef9f1;
+  --cat-sky: #bceefe;
+  --cat-iris: #d2d3ff;
+  --cat-mauve: #e3d2e8;
+  /* Ads task types */
+  --type-report: var(--cat-aqua);
+  --type-insight: var(--cat-yellow);
+  --type-action: var(--cat-rose);
+  --type-standup: var(--cat-iris);
 }

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdsSummary } from '../../shared/ads-contract.ts';
 import type { StreamFrame } from '../../shared/contract.ts';
 import type { Store } from './store.tsx';
+import { readRuns, runKey, taskRuns } from './tools/ad-manager/task-runs.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -266,5 +267,89 @@ describe('ads summary', () => {
       await store.reloadAds();
     });
     expect(store.ads?.waiting).toBe(2);
+  });
+});
+
+describe('openPast', () => {
+  const live = (id: string, sdk: string) => ({ id, sdkSessionId: sdk, state: 'idle' });
+
+  it('opens on the chat screen by default and resolves true', async () => {
+    await mount();
+    api.startSession.mockResolvedValue({ session: { id: 's5' } });
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    let opened: boolean | undefined;
+    await act(async () => {
+      opened = await store.openPast('sdk-1');
+    });
+    expect(opened).toBe(true);
+    expect(api.startSession).toHaveBeenCalledWith({ resume: 'sdk-1' });
+    expect(store.view).toBe('chat');
+    expect(store.activeChat).toEqual({ kind: 'live', sessionId: 's5' });
+    expect(store.chatDrawer).toBeNull();
+  });
+
+  it("with in: 'drawer' keeps the tool and shows the chat in the drawer", async () => {
+    await mount();
+    api.startSession.mockResolvedValue({ session: { id: 's5' } });
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    const tool = store.view;
+    await act(async () => {
+      await store.openPast('sdk-1', { in: 'drawer' });
+    });
+    expect(store.view).toBe(tool);
+    expect(store.chatDrawer).toBe('s5');
+  });
+
+  it('an already-open chat opens in the asked place too, and resolves true', async () => {
+    await mount();
+    const { ApiFailure } = await import('./api.ts');
+    api.startSession.mockRejectedValue(new ApiFailure('already-open', 'Open already', 409));
+    api.sessions.mockResolvedValue({ live: [live('s7', 'sdk-1')], past: [] });
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    const tool = store.view;
+    let opened: boolean | undefined;
+    await act(async () => {
+      opened = await store.openPast('sdk-1', { in: 'drawer' });
+    });
+    expect(opened).toBe(true);
+    expect(store.view).toBe(tool);
+    expect(store.chatDrawer).toBe('s7');
+    await act(async () => {
+      await store.openPast('sdk-1');
+    });
+    expect(store.view).toBe('chat');
+    expect(store.chatDrawer).toBeNull();
+  });
+
+  it('resolves false and sets actionError when the chat cannot be opened', async () => {
+    await mount();
+    api.startSession.mockRejectedValue(new Error('Gone'));
+    let opened: boolean | undefined;
+    await act(async () => {
+      opened = await store.openPast('sdk-1');
+    });
+    expect(opened).toBe(false);
+    expect(store.actionError).toBeTruthy();
+  });
+});
+
+describe('task run reconcile', () => {
+  it('records the sdk id and a good run when the chat list shows a finished chat, and writes only on change', async () => {
+    const key = runKey('acme', 'weekly');
+    taskRuns.record('acme', 'weekly', 'c1', new Date('2026-11-16T10:00:00.000Z'));
+    api.sessions.mockResolvedValue({
+      live: [{ id: 'c1', sdkSessionId: 'sdk-1', state: 'idle', lastTurn: 'ok' }],
+      past: [],
+    });
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+    await mount();
+    await waitFor(() =>
+      expect(readRuns()[key]?.good).toEqual({ at: '2026-11-16T10:00:00.000Z', sdk: 'sdk-1' }),
+    );
+    expect(readRuns()[key]?.sdk).toBe('sdk-1');
+    const writes = set.mock.calls.filter(([k]) => k === 'tds.adManager.taskRuns.v1').length;
+    expect(writes).toBe(1);
+    set.mockRestore();
+    localStorage.clear();
   });
 });

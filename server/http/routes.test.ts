@@ -1855,6 +1855,22 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     }
   });
 
+  it('saves folded drawer groups through the real route, and refuses bad ones', async () => {
+    const sent = await call('/api/prefs', 'PUT', { foldedGroups: { workbench: ['Ads'] } });
+    expect(sent.status).toBe(200);
+    expect(sent.json).toMatchObject({ foldedGroups: { workbench: ['Ads'] } });
+    expect((await call('/api/prefs', 'PUT', { foldedGroups: {} })).status).toBe(200);
+    for (const patch of [
+      { foldedGroups: ['Ads'] },
+      { foldedGroups: { workbench: 'Ads' } },
+      { foldedGroups: { workbench: [1] } },
+      { foldedGroups: { workbench: ['x'.repeat(61)] } },
+      { foldedGroups: null },
+    ]) {
+      expect((await call('/api/prefs', 'PUT', patch)).status).toBe(400);
+    }
+  });
+
   it('does not touch the sessions when the patch has neither', async () => {
     const sent = await call('/api/prefs', 'PUT', { pins: [] });
     expect(sent.status).toBe(200);

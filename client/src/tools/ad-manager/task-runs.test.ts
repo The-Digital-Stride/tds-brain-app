@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession } from '../../../../shared/contract.ts';
 import {
   lastRunText,
   readRuns,
+  reconcileRuns,
   recordRun,
   runKey,
   runStatus,
   shownRun,
   TASK_RUNS_KEY,
   type TaskRuns,
+  taskRuns,
   writeRuns,
 } from './task-runs.ts';
 
@@ -138,5 +140,108 @@ describe('shownRun', () => {
       at: pete.at,
       by: 'pete-smith',
     });
+  });
+});
+
+describe('good runs and the Claude session id (decision 9)', () => {
+  const sess = (id: string, extra: Partial<LiveSession>) => ({ id, ...extra }) as LiveSession;
+  const start = (chat: string | null = 'c1', at = '2026-11-16T10:00:00.000Z'): TaskRuns => ({
+    [runKey('acme', 't')]: { at, chat },
+  });
+
+  it('keeps sdk and good through a save and load, and still loads old records', () => {
+    const runs: TaskRuns = {
+      a: {
+        at: '2026-11-16T10:00:00.000Z',
+        chat: 'c1',
+        sdk: 'sdk1',
+        good: { at: '2026-11-15T10:00:00.000Z', sdk: 'sdk0' },
+      },
+      b: { at: '2026-11-16T10:00:00.000Z', chat: null },
+    };
+    const mem = memory();
+    writeRuns(runs, mem);
+    expect(readRuns(mem)).toEqual(runs);
+    const old = memory(JSON.stringify({ x: { at: '2026-11-16T10:00:00.000Z', chat: 'c9' } }));
+    expect(readRuns(old)).toEqual({ x: { at: '2026-11-16T10:00:00.000Z', chat: 'c9' } });
+  });
+  it('drops a malformed sdk or good but keeps the run', () => {
+    const mem = memory(
+      JSON.stringify({
+        x: { at: '2026-11-16T10:00:00.000Z', chat: 'c', sdk: 4, good: { at: 'nope', sdk: 's' } },
+      }),
+    );
+    expect(readRuns(mem)).toEqual({ x: { at: '2026-11-16T10:00:00.000Z', chat: 'c' } });
+  });
+  it('records the sdk id once it is known', () => {
+    const next = reconcileRuns(start(), [sess('c1', { sdkSessionId: 'sdk1' })]);
+    expect(next[runKey('acme', 't')]).toMatchObject({ sdk: 'sdk1' });
+    expect(next[runKey('acme', 't')]?.good).toBeUndefined();
+  });
+  it('sets good the first time the chat shows lastTurn ok', () => {
+    const next = reconcileRuns(start(), [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'ok' })]);
+    expect(next[runKey('acme', 't')]?.good).toEqual({ at: '2026-11-16T10:00:00.000Z', sdk: 'sdk1' });
+  });
+  it('records no good for an older server without lastTurn, or a stopped or failed run', () => {
+    for (const lastTurn of [undefined, 'stopped', 'failed'] as const) {
+      const next = reconcileRuns(start(), [sess('c1', { sdkSessionId: 'sdk1', lastTurn })]);
+      expect(next[runKey('acme', 't')]?.good).toBeUndefined();
+    }
+  });
+  it('a stopped or failed newest run keeps the previous good', () => {
+    const good = { at: '2026-11-10T10:00:00.000Z', sdk: 'old' };
+    const runs: TaskRuns = { [runKey('acme', 't')]: { at: '2026-11-16T10:00:00.000Z', chat: 'c1', good } };
+    const next = reconcileRuns(runs, [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'failed' })]);
+    expect(next[runKey('acme', 't')]?.good).toEqual(good);
+  });
+  it('a new good replaces the previous one', () => {
+    const runs: TaskRuns = {
+      [runKey('acme', 't')]: {
+        at: '2026-11-16T10:00:00.000Z',
+        chat: 'c1',
+        good: { at: '2026-11-10T10:00:00.000Z', sdk: 'old' },
+      },
+    };
+    const next = reconcileRuns(runs, [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'ok' })]);
+    expect(next[runKey('acme', 't')]?.good).toEqual({ at: '2026-11-16T10:00:00.000Z', sdk: 'sdk1' });
+  });
+  it('returns the same object when nothing changed, and ignores runs with no live chat', () => {
+    const runs = start();
+    expect(reconcileRuns(runs, [])).toBe(runs);
+    expect(reconcileRuns(runs, [sess('other', { sdkSessionId: 'x', lastTurn: 'ok' })])).toBe(runs);
+    const done = reconcileRuns(runs, [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'ok' })]);
+    expect(reconcileRuns(done, [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'ok' })])).toBe(done);
+    expect(reconcileRuns(start(null), [sess('c1', { sdkSessionId: 'sdk1', lastTurn: 'ok' })])).toEqual(
+      start(null),
+    );
+  });
+  it('recording a new run keeps the previous good', () => {
+    const good = { at: '2026-11-10T10:00:00.000Z', sdk: 'old' };
+    const a: TaskRuns = {
+      [runKey('acme', 't')]: { at: '2026-11-11T10:00:00.000Z', chat: 'c1', sdk: 's', good },
+    };
+    const b = recordRun(a, 'acme', 't', new Date('2026-11-16T10:00:00Z'), 'c2');
+    expect(b[runKey('acme', 't')]).toEqual({ at: '2026-11-16T10:00:00.000Z', chat: 'c2', good });
+  });
+});
+
+describe('taskRuns.reconcile with a second window', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("re-reads the saved records first, so another window's newer run is not overwritten", () => {
+    const mem = memory();
+    vi.stubGlobal('localStorage', mem);
+    // Window A holds t1.
+    taskRuns.record('acme', 't1', 'c1', new Date('2026-11-16T10:00:00Z'));
+    // Window B saves t2; A has no Ads sheet open, so it never hears about it.
+    writeRuns(
+      { ...readRuns(mem), [runKey('acme', 't2')]: { at: '2026-11-16T11:00:00.000Z', chat: 'c2' } },
+      mem,
+    );
+    // A reconciles a finished chat for t1.
+    taskRuns.reconcile([{ id: 'c1', sdkSessionId: 'sdk1', lastTurn: 'ok' }] as LiveSession[]);
+    const saved = readRuns(mem);
+    expect(saved[runKey('acme', 't1')]?.good).toBeDefined();
+    expect(saved[runKey('acme', 't2')]).toMatchObject({ chat: 'c2' });
   });
 });

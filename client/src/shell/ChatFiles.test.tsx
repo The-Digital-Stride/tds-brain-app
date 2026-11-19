@@ -22,6 +22,7 @@ vi.mock('../api.ts', () => ({
   },
 }));
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({
     chats: { s1: { files: h.files, sessionState: h.sessionState } },
     sessions: { live: [{ id: 's1', state: h.sessionState }], past: [] },

@@ -483,3 +483,159 @@
   z-index: 1;
   background: #fff;
 }
+
+/* Ads Manager page (plan 2026-11-19-ads-workbench-sections, decision 5): account head, fact tiles, Needs you,
+   proposals cards and the Monthly close card. ------------------------------------------------------------ */
+.am-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+.am-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.am-facts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+@container (max-width: 760px) {
+  .am-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (max-width: 400px) {
+  .am-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.am-fact {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--lift-1, none);
+}
+.am-fact[data-tone="waiting"] {
+  background: var(--amber-bg);
+}
+.am-fact,
+.am-fact-jump {
+  gap: 2px;
+  padding: 10px 12px;
+  text-align: left;
+}
+.am-fact:has(.am-fact-jump) {
+  padding: 0;
+}
+.am-fact-jump {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.am-fact-jump:hover {
+  background: var(--wash);
+}
+.am-fact-jump:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.am-fact-l {
+  font-size: 12px;
+  color: var(--iron);
+}
+.am-fact-v {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.am-fact-d {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+/* Needs you: one line per thing, a status dot, the words, one button. */
+.am-needs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+}
+.am-needs-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.am-needs-list li + li {
+  border-top: 1px solid var(--line);
+}
+.am-need-text {
+  flex: 1;
+  min-width: 0;
+}
+.am-need-text p {
+  margin: 0;
+}
+.am-need-sub {
+  font-size: 12px;
+  color: var(--iron);
+}
+.am-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px;
+}
+/* A proposal's title with its campaign underneath; a date with its words underneath. */
+.am-title-cell {
+  min-width: 200px;
+}
+.am-subline {
+  display: block;
+  font-size: 12px;
+  color: var(--iron);
+}
+/* Monthly close. */
+.am-close .am-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+.am-close > .btn,
+.am-close > .am-sign {
+  margin: 0 8px 8px;
+}
+.am-close > .btn {
+  align-self: flex-start;
+}
+.am-close .am-sign {
+  display: grid;
+  gap: 8px;
+}
+/* The jump to Monthly close outlines the card for 1.6 s (FLASH_MS in Approvals.tsx). */
+.am-close {
+  scroll-margin-top: 12px;
+}
+.am-flash {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .am-close {
+    transition: outline-color 0.3s;
+  }
+}

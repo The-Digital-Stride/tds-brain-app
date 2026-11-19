@@ -1,0 +1,276 @@
+/*
+ * Ads Command Centre (plan 2026-11-19-ads-workbench-sections). The board's base rules live in ad-manager.css; these
+ * add the account head, the readiness panel, the type key and the filled task cards, and override the cadence
+ * columns to five across.
+ */
+
+/* Account data: a tinted panel by overall state. */
+.cc-ready {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--lift-1);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.cc-ready[data-tone="ok"] {
+  background: var(--ok-wash);
+}
+.cc-ready[data-tone="warn"] {
+  background: var(--amber-bg);
+  display: block;
+}
+.cc-ready[data-tone="bad"] {
+  background: var(--danger-wash);
+  display: block;
+}
+.cc-ready h2 {
+  margin: 0;
+  font-size: 14px;
+}
+/* Shown for any focus, not only the keyboard: a jump from Ads Manager can't be told from a click here. */
+.cc-ready h2:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.cc-ready .am-sub {
+  color: var(--ink-soft);
+}
+.cc-ready-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-ready .card-note {
+  padding-inline: 0;
+}
+.cc-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey-dot);
+  vertical-align: middle;
+}
+.cc-dot[data-s="ok"] {
+  background: var(--ok);
+}
+.cc-dot[data-s="warn"] {
+  background: var(--attn-asking-edge);
+}
+.cc-dot[data-s="bad"] {
+  background: var(--danger);
+}
+.cc-dot[data-s="na"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--grey-dot);
+}
+.cc-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+.cc-group {
+  background: var(--glass-strong);
+  border-radius: 9px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.cc-group-h {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cc-count {
+  margin-left: auto;
+  font-weight: 400;
+}
+.cc-group ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.cc-group li {
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 0 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.cc-group li > .cc-note {
+  grid-column: 2;
+}
+.cc-file {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cc-key {
+  margin-top: 6px;
+}
+
+/* "What I run on", and the key. */
+.cc-board-head {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+.cc-h {
+  margin: 0 4px;
+}
+.cc-board-head > .am-sub {
+  margin-inline: 4px;
+  max-width: 70ch;
+}
+.cc-key-list {
+  list-style: none;
+  margin: 4px 4px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.cc-key-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cc-tkey {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-weight: 500;
+  color: var(--navy);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.cc-tkey[data-type="report"],
+.cc-task[data-type="report"] {
+  background: var(--type-report);
+}
+.cc-tkey[data-type="insight"],
+.cc-task[data-type="insight"] {
+  background: var(--type-insight);
+}
+.cc-tkey[data-type="action"],
+.cc-task[data-type="action"] {
+  background: var(--type-action);
+}
+.cc-tkey[data-type="standup"],
+.cc-task[data-type="standup"] {
+  background: var(--type-standup);
+}
+
+/* Five columns by frequency: five across, then fewer as the sheet narrows. */
+.cc .am-tray[data-cols="cadence"] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@container (max-width: 1100px) {
+  .cc .am-tray[data-cols="cadence"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container (max-width: 760px) {
+  .cc .am-tray[data-cols="cadence"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (max-width: 460px) {
+  .cc .am-tray[data-cols="cadence"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A task card: the whole fill is its type, with navy text. */
+.cc-task {
+  margin: 0 2px 6px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px 10px;
+  gap: 3px;
+  color: var(--navy);
+}
+.cc-task:first-child {
+  border-top: 0;
+}
+.cc-task .am-sub,
+.cc-task .am-run {
+  color: var(--ink-soft);
+}
+.cc-task .am-camp {
+  margin: 0;
+  line-height: 1.3;
+}
+.cc-top {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.cc-type {
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+.cc-due {
+  display: inline-flex;
+}
+.cc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cc-actions .btn {
+  margin-top: 0;
+}
+.cc-verdict {
+  margin: 0;
+}
+.cc-verdict[data-stale] {
+  color: var(--amber-text);
+}
+.cc-task .am-hint {
+  color: var(--danger);
+}
+
+/* A run time that opens that run's chat. */
+.cc-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--blue-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cc-link:hover {
+  color: var(--navy);
+}
+.cc-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* A default badge on a category fill: a 1px edge in blue-ink keeps it readable (AA) against the colour. */
+.cc-task .badge:not([data-tone]) {
+  box-shadow: inset 0 0 0 1px var(--blue-ink);
+}

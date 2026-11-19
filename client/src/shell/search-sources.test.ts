@@ -7,10 +7,17 @@ vi.mock('./apps.ts', () => ({ APPS: apps }));
 const sections = vi.hoisted(() => [] as { tools: { search: SearchSource | null }[] }[]);
 vi.mock('./sections.ts', () => ({ SECTIONS: sections }));
 
+const adsAccounts = vi.hoisted(() => vi.fn());
+vi.mock('../api.ts', () => ({ api: { adsAccounts } }));
+
 const searchFn = vi.hoisted(() => vi.fn());
 vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
 
 const { SEARCH_GROUP_MAX, searchSources } = await import('./search-sources.ts');
+const { adManagerSearch } = await import('../tools/ad-manager/search.ts');
+const { commandSearch } = await import('../tools/ad-manager/command-search.ts');
+const { summarySearch } = await import('../tools/ad-manager/summary-search.ts');
+const { adStore } = await import('../tools/ad-manager/store.ts');
 
 const skill = (name: string, title: string, description = ''): SkillInfo => ({
   name,
@@ -395,5 +402,103 @@ describe('Help source', () => {
 
   it('has no idle list', () => {
     expect(source('help').idle).toBeUndefined();
+  });
+});
+
+describe('the Ads tools in the search', () => {
+  const adsCtx = (visible = true) => ctx({ ads: { visible } as SearchContext['ads'] });
+  const openTool = vi.fn();
+  const actions = { openTool } as unknown as SearchActions;
+  const board = {
+    key: 'acme',
+    cards: [
+      {
+        id: 'w-search',
+        cadence: 'weekly',
+        title: 'Search terms audit',
+        description: 'Wasted spend in queries',
+      },
+      { id: 'q-review', cadence: 'quarterly', title: 'Quarterly strategy review', description: 'Look back' },
+    ],
+    tables: [
+      { id: 'waste', title: 'Wasted spend', subtitle: 'Terms that cost but never converted' },
+      { id: 'quality', title: 'Quality Score', subtitle: 'Keywords scoring 4 or lower' },
+    ],
+  };
+
+  beforeEach(() => {
+    openTool.mockClear();
+    adsAccounts.mockReset();
+    adStore.reset();
+  });
+
+  it('"ad manager" still finds Ads Manager, and "ads manager" too', async () => {
+    adsAccounts.mockResolvedValue([]);
+    const signal = new AbortController().signal;
+    for (const q of ['ad manager', 'ads manager', 'proposals']) {
+      const r = await adManagerSearch.searchAsync?.(q, signal);
+      expect(labels(r?.hits ?? []), q).toEqual(['Ads Manager']);
+    }
+    const r = await adManagerSearch.searchAsync?.('ad manager', signal);
+    r?.hits[0]?.run(actions);
+    expect(openTool).toHaveBeenCalledWith('workbench', 'ad-manager', undefined);
+  });
+
+  it('each Ads tool has a source, with its own title', () => {
+    expect([adManagerSearch.title, commandSearch.title, summarySearch.title]).toEqual([
+      'Ads Manager',
+      'Ads Command Centre',
+      'Ads Account Summary',
+    ]);
+    for (const src of [commandSearch, summarySearch]) {
+      expect(Boolean(src.search) !== Boolean(src.searchAsync)).toBe(true);
+    }
+  });
+
+  it('with no board loaded, each offers just its tool', () => {
+    expect(labels(commandSearch.search?.('command centre', adsCtx()).hits ?? [])).toEqual([
+      'Ads Command Centre',
+    ]);
+    expect(labels(commandSearch.search?.('audit', adsCtx()).hits ?? [])).toEqual([]);
+    expect(labels(summarySearch.search?.('account summary', adsCtx()).hits ?? [])).toEqual([
+      'Ads Account Summary',
+    ]);
+    expect(labels(summarySearch.search?.('wasted', adsCtx()).hits ?? [])).toEqual([]);
+  });
+
+  it('offers nothing while the ads tools are hidden', () => {
+    adStore.set({ account: 'acme', boardFor: 'acme', board: board as never });
+    expect(commandSearch.search?.('audit', adsCtx(false)).hits).toEqual([]);
+    expect(summarySearch.search?.('wasted', adsCtx(false)).hits).toEqual([]);
+  });
+
+  it('finds a task by title, and choosing it opens Ads Command Centre on the current account', () => {
+    adStore.set({ account: 'acme', boardFor: 'acme', board: board as never });
+    const r = commandSearch.search?.('audit', adsCtx());
+    expect(labels(r?.hits ?? [])).toEqual(['Search terms audit']);
+    expect(r?.hits[0]?.hint).toBe('Ads Command Centre, Weekly');
+    r?.hits[0]?.run(actions);
+    expect(openTool).toHaveBeenCalledWith('workbench', 'ads-command-centre', 'acme');
+  });
+
+  it('ignores a board that belongs to another account (the picker moved on)', () => {
+    adStore.set({ account: 'other', boardFor: 'acme', board: board as never });
+    expect(commandSearch.search?.('audit', adsCtx()).hits).toEqual([]);
+  });
+
+  it('finds a table by title, and choosing it opens Ads Account Summary on the current account', () => {
+    adStore.set({ account: 'acme', boardFor: 'acme', board: board as never });
+    const r = summarySearch.search?.('quality', adsCtx());
+    expect(labels(r?.hits ?? [])).toEqual(['Quality Score']);
+    r?.hits[0]?.run(actions);
+    expect(openTool).toHaveBeenCalledWith('workbench', 'ads-account-summary', 'acme');
+    expect(adStore.get().jump).toBe('table:quality');
+  });
+
+  it('never asks the bridge while you type', () => {
+    adStore.set({ account: 'acme', boardFor: 'acme', board: board as never });
+    commandSearch.search?.('audit', adsCtx());
+    summarySearch.search?.('wasted', adsCtx());
+    expect(adsAccounts).not.toHaveBeenCalled();
   });
 });

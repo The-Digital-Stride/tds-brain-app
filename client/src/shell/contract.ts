@@ -289,8 +289,12 @@ export type IconName =
   | 'wide'
   /** A toolbox: the Workbench section. */
   | 'workbench'
-  /** A rising line: Ad Manager. */
-  | 'chart';
+  /** A rising line: Ads Account Summary. */
+  | 'chart'
+  /** A tray: Ads Manager (decisions waiting). */
+  | 'inbox'
+  /** A triangle: Ads Command Centre (tasks to run). */
+  | 'play';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {

@@ -3,17 +3,17 @@ id: workbench
 title: Workbench
 area: getting-around
 order: 6
-summary: A home on the rail for the agency's working tools, starting with Ad Manager.
+summary: A home on the rail for the agency's working tools, starting with the Ads tools.
 benefit: Your working tools sit in one place, one press away from wherever you are.
 roles: all
 related: [home, search-and-jump, keyboard-shortcuts]
 since: 0.46.0
-reviewed: 2026-11-16
+reviewed: 2026-11-19
 ---
 
 ## What it does
 
-**Workbench** is a button on the rail that opens a list of working tools. Each tool opens on the main screen, with room to work. The first tool is **Ad Manager**, where you decide on Google Ads proposals and see how each account is doing.
+**Workbench** is a button on the rail that opens a list of working tools. Each tool opens on the main screen, with room to work. The first tools sit under an **Ads** heading. **Ads Manager** is for deciding on Google Ads proposals. **Ads Command Centre** is for running an account. **Ads Account Summary** holds its report tables. Press the heading to fold the group away.
 
 ## Why it helps
 
@@ -29,10 +29,10 @@ reviewed: 2026-11-16
 
 ## Good to know
 
-- You only see **Workbench** if a tool in it is open to you. Ad Manager needs a Mac that can reach Google Ads, and a role that has been given the skill.
+- You only see **Workbench** if a tool in it is open to you. The Ads tools need a Mac that can reach Google Ads, and a role that has been given the skill.
 - The list closes when you reload the page.
 - You can also type a tool's name into **Search or jump to** to open it.
 
 ## Try this
 
-Press W, then pick Ad Manager to see which clients are waiting on you.
+Press W, then pick Ads Manager to see which clients are waiting on you.

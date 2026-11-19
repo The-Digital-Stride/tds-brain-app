@@ -24,6 +24,8 @@ const store = vi.hoisted(() => ({
   },
   toolArg: null as string | null,
   clearToolArg: vi.fn(),
+  openTool: vi.fn(),
+  setAdsDue: vi.fn(),
   updatePrefs: vi.fn(async () => {}),
   startChat: vi.fn(async () => 'chat-1' as string | null),
   reloadAds: vi.fn(async () => {}),
@@ -182,7 +184,7 @@ function mount() {
 }
 async function ready() {
   mount();
-  await screen.findByText(/Waiting for a decision/);
+  await screen.findByRole('heading', { name: 'Waiting for a decision' });
 }
 
 beforeEach(() => {
@@ -241,11 +243,9 @@ describe('account', () => {
 });
 
 describe('folds', () => {
-  it('opens Waiting and shuts Recent by default, and saves a change per client', async () => {
+  it('shuts Recent decisions by default, and saves a change per client', async () => {
     await ready();
-    const waiting = screen.getByRole('button', { name: /Waiting for a decision.*2/ });
     const recent = screen.getByRole('button', { name: /Recent decisions, last 14 days.*0/ });
-    expect(waiting.getAttribute('aria-expanded')).toBe('true');
     expect(recent.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(recent);
     expect(store.updatePrefs).toHaveBeenCalledWith({ adsFolds: { 'acme:recent': true } });
@@ -254,12 +254,11 @@ describe('folds', () => {
   it('starts as the person left it', async () => {
     store.boot.prefs.adsFolds = { 'acme:open': false, 'acme:recent': true };
     await ready();
-    expect(screen.getByRole('button', { name: /Waiting for a decision/ }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
     expect(screen.getByRole('button', { name: /Recent decisions/ }).getAttribute('aria-expanded')).toBe(
       'true',
     );
+    // The waiting list is a card now, not a fold: an old saved "open" choice does nothing.
+    expect(screen.getByRole('heading', { name: 'Waiting for a decision' })).toBeTruthy();
   });
 });
 
@@ -560,252 +559,201 @@ describe('panel', () => {
   });
 });
 
-describe('board', () => {
-  it('Run starts a new chat with the card prompt as it is, for the account', async () => {
+describe('Ads Manager page', () => {
+  const approved = (): ProposalSummary => ({
+    ...proposal('20261110-03-raise-cap', 'Raise the cap', {}, 'approved'),
+    fm: {
+      ...proposal('x', 'Raise the cap').fm,
+      id: '20261110-03-raise-cap',
+      status: 'approved',
+      approved_by: 'ian',
+      approved_at: '2026-11-18',
+      campaigns: ['Shopping – Bags'],
+    },
+  });
+  const monthly = {
+    month: '2026-10',
+    monthName: 'October',
+    partial: false,
+    dataTo: null,
+    generatedAt: null,
+    signed: false,
+    stale: false,
+    reason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    note: null,
+    files: { close: 'c.md', body: 'b.md', draftPdf: 'd.pdf', pdf: null, email: null, review: null },
+    canSign: true,
+  };
+  const withMonth = (open: ProposalSummary[]) => {
+    const a = approvals(open);
+    const acme = a.clients[0];
+    if (acme) acme.monthly = monthly as never;
+    api.adsApprovals.mockResolvedValue(a);
+  };
+
+  it('has two proposal cards: waiting, and approved with their own columns', async () => {
+    withMonth([p1, p2, approved()]);
     await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
+    const waiting = screen.getByRole('heading', { name: 'Waiting for a decision' }).closest('section');
+    const ready2 = screen.getByRole('heading', { name: 'Approved, ready to apply' }).closest('section');
+    expect(
+      within(waiting as HTMLElement)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Proposal', 'Tier', 'Expires', 'Status', 'Details']);
+    expect(within(waiting as HTMLElement).getByText('Raise the budget')).toBeTruthy();
+    expect(within(waiting as HTMLElement).queryByText('Raise the cap')).toBeNull();
+    const table = within(ready2 as HTMLElement);
+    expect(table.getAllByRole('columnheader').map((h) => h.textContent)).toContain('Next step');
+    expect(table.getByText('Raise the cap')).toBeTruthy();
+    expect(table.getByText('Shopping – Bags')).toBeTruthy();
+    expect(table.getByText('by ian')).toBeTruthy();
+    // Id, type and section left the table for the panel.
+    expect(within(waiting as HTMLElement).queryByText('20261110-01-raise-budget')).toBeNull();
+  });
+
+  it('jumps to Monthly close from the Needs you line: focus on its heading and an outline for 1.6 s', async () => {
+    withMonth([p1]);
+    await ready();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: 'Go to monthly close' }));
+      const heading = screen.getByRole('heading', { name: 'Monthly close' });
+      const card = heading.closest('section') as HTMLElement;
+      expect(document.activeElement).toBe(heading);
+      expect(card.classList.contains('am-flash')).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(1700);
+      });
+      expect(card.classList.contains('am-flash')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the Monthly close fact tile does the same jump, and an incoming close jump is honoured once', async () => {
+    withMonth([p1]);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: /Monthly close\s*October/ }));
+    const heading = screen.getByRole('heading', { name: 'Monthly close' });
+    expect(document.activeElement).toBe(heading);
+    (document.activeElement as HTMLElement).blur();
+    act(() => adStore.set({ jump: 'close' }));
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(adStore.get().jump).toBeNull();
+  });
+
+  it('opens Ads Command Centre on the data panel from a data problem', async () => {
+    withMonth([p1]);
+    api.adsBoard.mockImplementation(async (k: string) => {
+      const b = board(k);
+      return {
+        ...b,
+        health: {
+          ...(b.health as NonNullable<AdsBoard['health']>),
+          files: [
+            {
+              file: 'products.csv',
+              group: 'products',
+              powers: 'Product tables',
+              status: 'missing',
+              latest: null,
+              missingCols: [],
+            },
+          ],
+        },
+      } as AdsBoard;
+    });
+    await ready();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Ads Command Centre' }))[0] as HTMLElement);
+    expect(adStore.get().jump).toBe('readiness');
+    expect(store.openTool).toHaveBeenCalledWith('workbench', 'ads-command-centre', 'acme');
+  });
+
+  it('sign-off is one button that opens the confirm step with its note', async () => {
+    withMonth([p1]);
+    api.adsChange.mockResolvedValue({ ok: true });
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign off the report…' }));
+    fireEvent.change(screen.getByLabelText('Sign-off note (optional)'), { target: { value: 'Read it' } });
+    const group = screen.getByRole('group', { name: 'Sign off the report' });
+    expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'Sign off' }));
     await waitFor(() =>
-      expect(store.startChat).toHaveBeenCalledWith('PROMPT {{kept}} as is', 'acme', {
-        open: true,
-        in: 'drawer',
+      expect(api.adsChange).toHaveBeenCalledWith('sign-monthly', {
+        client: 'acme',
+        month: '2026-10',
+        note: 'Read it',
       }),
     );
   });
 
-  it('a run shows when it ran, then Running and Open chat while its chat works', async () => {
-    store.sessions = { live: [], past: [] };
-    await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
-    await waitFor(() => expect(store.startChat).toHaveBeenCalled());
-    const task = () => screen.getByText('Spend check').closest('li') as HTMLElement;
-    await waitFor(() => expect(within(task()).getByText(/^Last run Today, \d\d:\d\d$/)).toBeTruthy());
-
-    cleanup();
-    store.sessions = { live: [{ id: 'chat-1', state: 'working' }], past: [] };
-    await ready();
-    const open = await screen.findByRole('button', { name: 'Open chat: Spend check' });
-    expect(within(task()).getByRole('status').textContent).toBe('Spend check: Running');
-    expect(within(task()).getByText(/^started Today/)).toBeTruthy();
-    expect(within(task()).queryByRole('button', { name: /^Run/ })).toBeNull();
-    fireEvent.click(open);
-    expect(store.openChat).toHaveBeenCalledWith('chat-1', { in: 'drawer' });
-
-    cleanup();
-    store.sessions = { live: [{ id: 'chat-1', state: 'waiting' }], past: [] };
-    await ready();
-    await screen.findByRole('button', { name: 'Open chat: Spend check' });
-    expect(within(task()).getByRole('status').textContent).toBe('Spend check: Needs your answer');
-
-    cleanup();
-    store.sessions = { live: [{ id: 'chat-1', state: 'idle' }], past: [] };
-    await ready();
-    await screen.findByRole('button', { name: 'Run: Spend check' });
-    expect(within(task()).getByRole('status').textContent).toBe('');
-  });
-
-  it('a task with no run shows no run line, but keeps its (empty) status region', async () => {
-    await ready();
-    const run = await screen.findByRole('button', { name: /^Run: Daily standup/ });
-    const card = run.closest('section') as HTMLElement;
-    expect(within(card).queryByText(/^Last run/)).toBeNull();
-    expect(within(card).getByRole('status').textContent).toBe('');
-  });
-
-  it("shows a teammate's run from the brain with their first name", async () => {
+  it('an account that is not on the supervised ads-manager still gets its needs, the line and both tool buttons', async () => {
+    store.boot.prefs.adsAccount = 'nw';
+    api.adsApprovals.mockResolvedValue({ ...approvals([]), clients: [] });
     api.adsBoard.mockImplementation(async (k: string) => {
       const b = board(k);
       return {
         ...b,
-        cards: b.cards.map((c) => ({
-          ...c,
-          lastRun: { at: new Date().toISOString(), by: 'pete-smith', byName: 'Pete Smith' },
-        })),
-      };
-    });
-    await ready();
-    const task = (await screen.findByText('Spend check')).closest('li') as HTMLElement;
-    await waitFor(() => expect(within(task).getByText(/by Pete$/)).toBeTruthy());
-  });
-
-  it('my own run from the brain shows without a name', async () => {
-    api.adsBoard.mockImplementation(async (k: string) => {
-      const b = board(k);
-      return {
-        ...b,
-        cards: b.cards.map((c) => ({
-          ...c,
-          lastRun: { at: new Date().toISOString(), by: 'sam', byName: 'Sam' },
-        })),
-      };
-    });
-    await ready();
-    const task = (await screen.findByText('Spend check')).closest('li') as HTMLElement;
-    await waitFor(() => expect(within(task).getByText(/Last run/)).toBeTruthy());
-    expect(within(task).queryByText(/by Sam/)).toBeNull();
-  });
-
-  it('the standup Run records standup:daily in the brain', async () => {
-    api.adsBoard.mockImplementation(async (k: string) => {
-      const b = board(k);
-      return { ...b, cards: b.cards.map((c) => ({ ...c, lastRun: null })) };
-    });
-    await ready();
-    fireEvent.click(await screen.findByRole('button', { name: /^Run: Daily standup/ }));
-    await waitFor(() =>
-      expect(api.adsTaskRun).toHaveBeenCalledWith({ account: 'acme', task: 'standup:daily' }),
-    );
-  });
-
-  it('records a run in the brain only when the skill shares runs', async () => {
-    await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
-    await waitFor(() => expect(store.startChat).toHaveBeenCalled());
-    // This board has no lastRun field: an older skill, so the run stays in this browser.
-    expect(api.adsTaskRun).not.toHaveBeenCalled();
-
-    cleanup();
-    api.adsBoard.mockImplementation(async (k: string) => {
-      const b = board(k);
-      return { ...b, cards: b.cards.map((c) => ({ ...c, lastRun: null })) };
-    });
-    await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Run: Spend check' }));
-    await waitFor(() => expect(api.adsTaskRun).toHaveBeenCalledWith({ account: 'acme', task: 'd-spend' }));
-  });
-
-  it('the standup Run uses the standup prompt', async () => {
-    await ready();
-    fireEvent.click(await screen.findByRole('button', { name: /^Run: Daily standup/ }));
-    await waitFor(() =>
-      expect(store.startChat).toHaveBeenCalledWith('STANDUP PROMPT', 'acme', { open: true, in: 'drawer' }),
-    );
-  });
-});
-
-describe('deep dive tables', () => {
-  const KEY = 'tds.adManager.tableLayout.v1';
-  const table = (id: string, title: string, n: number) => ({
-    id,
-    title,
-    subtitle: `${title} subtitle`,
-    cols: [
-      { key: 'name', label: 'Name', type: 'text' as const },
-      { key: 'spend', label: 'Spend', type: 'money' as const },
-    ],
-    rows: Array.from({ length: n }, (_, i) => [`${title} row ${i + 1}`, 10 + i]),
-    defaultSort: 1,
-  });
-  const withTables = () =>
-    api.adsBoard.mockImplementation(async (k: string) => ({
-      ...board(k),
-      tables: [table('a', 'Alpha', 8), table('b', 'Beta', 3), table('c', 'Gamma', 3)],
-    }));
-  const handles = () =>
-    screen.getAllByRole('button', { name: /^Move / }).map((b) => b.getAttribute('aria-label'));
-  const saved = () => JSON.parse(localStorage.getItem(KEY) ?? '{}');
-
-  beforeEach(() => {
-    localStorage.clear();
-    withTables();
-  });
-  afterEach(() => localStorage.clear());
-
-  it('flags a low ROAS only on a row that spent, and draws a Spend bar to scale', async () => {
-    api.adsBoard.mockImplementation(async (k: string) => ({
-      ...board(k),
-      tables: [
-        {
-          id: 'kw',
-          title: 'Keywords',
-          subtitle: '',
-          cols: [
-            { key: 'kw', label: 'Keyword', type: 'text' as const },
-            { key: 'cost', label: 'Spend', type: 'money' as const },
-            { key: 'roas', label: 'ROAS', type: 'x' as const },
+        health: {
+          ...(b.health as NonNullable<AdsBoard['health']>),
+          files: [
+            {
+              file: 'p.csv',
+              group: 'products',
+              powers: 'Products',
+              status: 'missing',
+              latest: null,
+              missingCols: [],
+            },
           ],
-          rows: [
-            ['good', 200, 4],
-            ['poor', 100, 0.5],
-            ['idle', 0, 0],
-          ],
-          defaultSort: 1,
         },
-      ],
-    }));
-    await ready();
-    const t = await screen.findByRole('region', { name: 'Keywords' });
-    const cell = (row: string, text: string) =>
-      within(within(t).getByText(row).closest('tr') as HTMLElement).getByText(text);
-    expect(cell('poor', '0.50x').getAttribute('data-low')).toBe('true');
-    expect(within(t).getByText(', low')).toBeTruthy();
-    expect(cell('idle', '0.00x').getAttribute('data-low')).toBeNull();
-    expect(cell('idle', '0.00x').getAttribute('data-zero')).toBe('true');
-    expect(cell('good', '4.00x').getAttribute('data-low')).toBeNull();
-    const bars = Array.from(t.querySelectorAll<HTMLElement>('.am-bar')).map((b) => b.style.width);
-    expect(bars).toEqual(['100%', '50%']);
+      } as AdsBoard;
+    });
+    mount();
+    expect(await screen.findByText(/Northwind is not on the supervised ads-manager yet/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Northwind' })).toBeTruthy();
+    expect(await screen.findByText('1 data file is missing')).toBeTruthy();
+    expect(screen.getByText('Act')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Waiting for a decision' })).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ads Account Summary' })[0] as HTMLElement);
+    expect(store.openTool).toHaveBeenCalledWith('workbench', 'ads-account-summary', 'nw');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ads Command Centre' }).at(-1) as HTMLElement);
+    expect(store.openTool).toHaveBeenCalledWith('workbench', 'ads-command-centre', 'nw');
   });
 
-  it('shows five rows, then Show all and Show fewer', async () => {
-    await ready();
-    const alpha = screen.getByRole('region', { name: 'Alpha' });
-    expect(within(alpha).getAllByRole('row')).toHaveLength(6);
-    const more = within(alpha).getByRole('button', { name: 'Show all 8' });
-    expect(more.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(more);
-    expect(within(alpha).getAllByRole('row')).toHaveLength(9);
-    expect(within(alpha).getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    );
-    expect(
-      within(screen.getByRole('region', { name: 'Beta' })).queryByRole('button', { name: /Show/ }),
-    ).toBeNull();
+  it("someone else's account shows who reviews it, no proposals, and both tool buttons", async () => {
+    store.boot.prefs.adsAccount = 'nw';
+    const a = approvals([]);
+    api.adsApprovals.mockResolvedValue({
+      ...a,
+      clients: a.clients.map((c) => (c.slug === 'nw' ? { ...c, mine: false, reviewer: 'pat' } : c)),
+    });
+    mount();
+    expect(await screen.findByText(/Northwind's proposals are reviewed by pat/)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Monthly close' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ads Account Summary' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Ads Command Centre' })).toBeTruthy();
   });
 
-  it('moves a table with the keyboard, announces it and saves the order', async () => {
-    await ready();
-    expect(handles()).toEqual(['Move Alpha, 1 of 3', 'Move Beta, 2 of 3', 'Move Gamma, 3 of 3']);
-    const grip = screen.getByRole('button', { name: 'Move Alpha, 1 of 3' });
-    grip.focus();
-    fireEvent.keyDown(grip, { key: 'ArrowRight' });
-    expect(handles()).toEqual(['Move Beta, 1 of 3', 'Move Alpha, 2 of 3', 'Move Gamma, 3 of 3']);
-    expect(screen.getByText('Alpha moved to 2 of 3').getAttribute('role')).toBe('status');
-    expect(saved()).toEqual({ order: ['b', 'a', 'c'], wide: [] });
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Alpha, 2 of 3' })),
-    );
-    fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
-    expect(saved().order).toEqual(['b', 'c', 'a']);
-    fireEvent.keyDown(document.activeElement as Element, { key: 'Home' });
-    expect(saved().order).toEqual(['a', 'b', 'c']);
+  it('shows a board error as an alert', async () => {
+    api.adsBoard.mockRejectedValue(new Error('no board'));
+    mount();
+    expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0);
   });
 
-  it('starts in the saved order', async () => {
-    localStorage.setItem(KEY, JSON.stringify({ order: ['c', 'a'], wide: [] }));
+  it('no longer shows the board or the report tables', async () => {
     await ready();
-    expect(handles()).toEqual(['Move Gamma, 1 of 3', 'Move Alpha, 2 of 3', 'Move Beta, 3 of 3']);
+    expect(screen.queryByText(/What I run on/)).toBeNull();
+    expect(screen.queryByText('Spend check')).toBeNull();
   });
 
-  it('toggles full width and saves it', async () => {
-    await ready();
-    const wide = screen.getByRole('button', { name: 'Full width: Beta' });
-    expect(wide.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(wide);
-    expect(wide.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('region', { name: 'Beta' }).getAttribute('data-wide')).toBe('true');
-    expect(saved().wide).toEqual(['b']);
-    fireEvent.click(wide);
-    expect(saved().wide).toEqual([]);
-  });
-
-  it('offers Reset layout only once the layout differs, and puts it back', async () => {
-    await ready();
-    expect(screen.queryByRole('button', { name: 'Reset layout' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Full width: Beta' }));
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Gamma, 3 of 3' }), { key: 'Home' });
-    expect(handles()[0]).toBe('Move Gamma, 1 of 3');
-    fireEvent.click(screen.getByRole('button', { name: 'Reset layout' }));
-    expect(handles()).toEqual(['Move Alpha, 1 of 3', 'Move Beta, 2 of 3', 'Move Gamma, 3 of 3']);
-    expect(saved()).toEqual({ order: [], wide: [] });
-    expect(screen.queryByRole('button', { name: 'Reset layout' })).toBeNull();
+  it('still opens an old tool:workbench/ad-manager view, now titled Ads Manager', async () => {
+    const { toolFor } = await import('../../shell/sections.ts');
+    const found = toolFor('tool:workbench/ad-manager');
+    expect(found?.tool.id).toBe('ad-manager');
+    expect(found?.tool.title).toBe('Ads Manager');
   });
 });

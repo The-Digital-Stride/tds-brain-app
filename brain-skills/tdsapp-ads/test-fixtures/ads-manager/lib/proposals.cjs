@@ -41,7 +41,7 @@ const FIELD_ORDER = [
   'changes_requested_by', 'changes_requested_at', 'changes_note',
   'client_request_at', 'client_request_draft', 'client_request_gmail_draft_id',
   'client_approved_by', 'client_approved_at', 'client_approval_recorded_by', 'client_approval_note',
-  'executor',
+  'executor', 'follows',
   'applied_at', 'verified_at', 'outcome', 'voided_at',
 ];
 // client_request_* are system stamps (the draft was written); client_approved_* are written only
@@ -444,7 +444,7 @@ if (require.main === module) {
       'proposals.cjs <command> --client=<slug|alias|id> [--client-dir=<path>]',
       '  list [--status=a,b] [--tier=N] [--type=T] [--reviewer=slug] [--json]',
       '  show --id=<id>',
-      '  new --type=<change|decision|email|info-request|report> --tier=<0-3> --slug=<s> --title="..." --body-file=<md>',
+      '  new --type=<change|decision|email|info-request|report> --tier=<0-3> --slug=<s> --title="..." --body-file=<md> [--follows=<decision id>]',
       '      [--operations=<rel path>] [--campaign="name" ...repeatable] [--evidence=a,b] [--section=1-9] [--expected="..."] [--risk="..."]',
       '      [--window=<days>] [--expires-days=N] [--needs-client-approval --client-approver="..."] [--status=draft|proposed]',
       '      [--created-by=<slug>]  default ads-manager; a person raising one by hand passes their own slug',
@@ -485,6 +485,7 @@ if (require.main === module) {
             learning_window_days: arg('window') ? Number(arg('window')) : undefined,
             expiresDays: arg('expires-days') ? Number(arg('expires-days')) : undefined,
             needs_client_approval: has('needs-client-approval'), client_approver: arg('client-approver') || undefined,
+            follows: arg('follows') || undefined,
           },
         });
         r.warnings.forEach((w) => console.error(`  ! ${w}`));

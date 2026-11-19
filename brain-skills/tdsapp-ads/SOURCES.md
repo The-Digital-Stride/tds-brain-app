@@ -9,7 +9,11 @@ and fails when one has changed: copy it again, check the copy still behaves, and
 The proposal, monthly, apply and client-draft rules are never copied: the bridge loads them from the
 brain's `.claude/skills/ads-manager/scripts/` every time it runs.
 
-Copied 2026-11-16. Paths are from the brain's root.
+Copied 2026-11-16. Paths are from the brain's root. `server.cjs` re-checked 2026-11-19 after the brain changed it on
+2026-11-17: every copied part still matches, so only its sha256 moved. That change added a "draft the change"
+chat to `POST /api/approvals/decided`, which the bridge does not copy (it records the decision only).
+The test copy of `proposals.cjs` was refreshed the same day: the brain added an optional `follows` field (the
+decision a change proposal follows). The bridge keeps no field list of its own, so it needed no change.
 
 | Source | sha256 | Copied to |
 |---|---|---|
@@ -18,8 +22,8 @@ Copied 2026-11-16. Paths are from the brain's root.
 | `tools/members/command-centre/lib/ads-normalize.cjs` | `6200318ce4c53bee5d3b67f3152d4a7af68a017f82c15af99730e3568a23edc3` | `scripts/lib/ads-normalize.cjs` (header added only) |
 | `tools/members/command-centre/lib/standup-board.cjs` | `c1390a96bc30a3ed05c1fbe27a5e102f11e47c5145081078d3e275b11c49e85c` | `scripts/lib/standup-board.cjs` (header added; BRAIN_ROOT fallback five folders up) |
 | `tools/members/command-centre/public/ads-command-board.html` | `59a7ecbd4c961e791327a65430062e56aa0dd54c57320980d876b62afb7dae0e` | `scripts/cadence-tasks.json`: `TYPES`, `COLS`, `COL_LABEL`, `BASE`, `TASKS` (16 cards, each prompt `BASE` plus its own text), `CONTRACT_PATH`, `P_DISCOVER`, `P_SHEET`, `P_PROXY`, `STANDUP_PROMPT`, `ACTION_LABELS`, word for word |
-| `tools/members/command-centre/server.cjs` | `392d7f56dd838b6c019f61542f4df231995199102cfbb2f336ee430f92a774d7` | `scripts/cadence-tasks.json` `revisePrompt` (from `POST /api/approvals/decide`), and the bridge's checks and wording for the approvals, standup-config, standup-brief and standup-feedback routes; `hasAdsAccess()` |
-| `.claude/skills/ads-manager/scripts/lib/proposals.cjs` | `8a6b4b1b6a7c9ea0d6a0aed0e5dbb71f47b85ea6a95d444448d1ef2b23296992` | `test-fixtures/ads-manager/lib/proposals.cjs` (tests only, verbatim) |
+| `tools/members/command-centre/server.cjs` | `75a45eff83afa744f9d3ab8614bc8d0e3b1f57c2514351e74575726ac8808073` | `scripts/cadence-tasks.json` `revisePrompt` (from `POST /api/approvals/decide`), and the bridge's checks and wording for the approvals, standup-config, standup-brief and standup-feedback routes; `hasAdsAccess()` |
+| `.claude/skills/ads-manager/scripts/lib/proposals.cjs` | `e03b6a9713c32045daaa0c5046df12b62d60656eb05478e38448627c2e4e9243` | `test-fixtures/ads-manager/lib/proposals.cjs` (tests only, verbatim) |
 | `.claude/skills/ads-manager/scripts/lib/common.cjs` | `04e206494c8662686f38ca63bc2dbf0b0dfd36a653fc2bd91dfe6d93efc10050` | `test-fixtures/ads-manager/lib/common.cjs` (tests only, verbatim) |
 | `.claude/skills/ads-manager/scripts/monthly.cjs` | `bdca36481e32d8ba1e431dbb3673e1b84192146ac02e0034f29a1d404a78b979` | `test-fixtures/ads-manager/monthly.cjs` (tests only, verbatim) |
 

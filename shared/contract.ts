@@ -1003,6 +1003,11 @@ export interface AppPrefs {
    * recent shut).
    */
   adsFolds?: Record<string, boolean>;
+  /**
+   * Folded group names per section id in the section drawer, e.g. `{ workbench: ['Ads'] }` (plan
+   * 2026-11-19-ads-workbench-sections, decision 1). Optional: older settings files still load.
+   */
+  foldedGroups?: Record<string, string[]>;
 }
 
 /** Section and tool ids in prefs: lowercase letters, digits and hyphens. */
@@ -1178,6 +1183,11 @@ export interface LiveSession {
    * in start order (oldest first). Cleared when the next message is sent. Absent from older servers; treat as [].
    */
   helpers?: LiveHelper[];
+  /**
+   * How this chat's latest reply ended (plan 2026-11-19-ads-workbench-sections, decision 9): 'ok', 'stopped' (the
+   * person stopped it) or 'failed'. Absent until a reply has ended, and from older servers: then treat as unknown.
+   */
+  lastTurn?: 'ok' | 'stopped' | 'failed';
 }
 
 /** 'stopped': the reply ended or the chat closed before the helper reported back. */

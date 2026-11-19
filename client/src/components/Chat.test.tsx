@@ -33,6 +33,7 @@ const uploads = vi.hoisted(() => ({
 }));
 vi.mock('../api.ts', () => ({ api, ...uploads }));
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({
     boot: {
       prefs: { pins: [], lastClient: null },

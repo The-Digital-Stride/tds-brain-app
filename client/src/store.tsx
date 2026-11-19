@@ -37,6 +37,7 @@ import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { toolView } from './shell/sections.ts';
+import type { ToolSnapshot } from './shell/sections-contract.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
 import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
@@ -44,6 +45,7 @@ import type { ListState } from './state/health.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 import { loadAdsSummary } from './tools/ad-manager/summary.ts';
+import { taskRuns } from './tools/ad-manager/task-runs.ts';
 
 export interface ChangeTodosResult {
   done: number;
@@ -180,7 +182,8 @@ export interface Store {
   hideChatDrawer: () => void;
   /** Moves the drawer's chat to the chat screen. */
   expandChatDrawer: () => void;
-  openPast: (sdkSessionId: string) => Promise<void>;
+  /** Reopens a past chat. Resolves true when it opened, false when it couldn't (the reason is in `actionError`). */
+  openPast: (sdkSessionId: string, opts?: { in?: ChatPlace }) => Promise<boolean>;
   /** Opens a section's tool on the sheet and records it as the section's last tool. `arg` is read once via `toolArg`. */
   openTool: (sectionId: string, toolId: string, arg?: string) => void;
   toolArg: string | null;
@@ -198,6 +201,12 @@ export interface Store {
   /** The ads summary: loaded after boot and on `ads-changed`; null until then or when the server has none. */
   ads: AdsSummary | null;
   reloadAds: () => Promise<void>;
+  /**
+   * The current Ads account's due-or-overdue task count (plan 2026-11-19-ads-workbench-sections, decision 4). Set by
+   * the ad store when a board loads; null until then. Read through `useToolSnapshot`.
+   */
+  adsDue: number | null;
+  setAdsDue: (n: number | null) => void;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
   /** Asks Claude, in `sessionId`, to change a page or brand it. Returns null when sent, else the plain reason it wasn't. */
@@ -317,6 +326,12 @@ export function useStore(): Store {
   return s;
 }
 
+/** What a tool's `visible`, `badge` and `rowNote` read: one snapshot, so the rail, drawer and sheets agree. */
+export function useToolSnapshot(): ToolSnapshot {
+  const { ads, adsDue } = useStore();
+  return useMemo(() => ({ ads, adsDue }), [ads, adsDue]);
+}
+
 function messageOf(err: unknown): string {
   return err instanceof ApiFailure ? err.message : 'Something went wrong. Please try again.';
 }
@@ -348,6 +363,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [chatsState, setChatsState] = useState<ListState>('loading');
   const [actionError, setActionError] = useState<string | null>(null);
   const [ads, setAds] = useState<AdsSummary | null>(null);
+  const [adsDue, setAdsDue] = useState<number | null>(null);
   const [toolArg, setToolArg] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
@@ -375,6 +391,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   activeRef.current = activeChat;
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  // Task runs learn their Claude session id and whether they finished well from the chats (decision 9).
+  useEffect(() => {
+    if (sessions) taskRuns.reconcile(sessions.live);
+  }, [sessions]);
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
@@ -754,22 +774,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       : null;
 
   const openPast = useCallback(
-    async (sdkSessionId: string) => {
+    async (sdkSessionId: string, opts?: { in?: ChatPlace }): Promise<boolean> => {
       try {
         const { session } = await api.startSession({ resume: sdkSessionId });
         void loadSessions();
-        openChat(session.id);
+        openChat(session.id, opts);
+        return true;
       } catch (err) {
         if (err instanceof ApiFailure && err.code === 'already-open') {
           const list = await api.sessions().catch(() => null);
           const live = list?.live.find((s) => s.sdkSessionId === sdkSessionId);
           if (live) {
             setSessions(list);
-            openChat(live.id);
-            return;
+            openChat(live.id, opts);
+            return true;
           }
         }
         setActionError(messageOf(err));
+        return false;
       }
     },
     [loadSessions, openChat],
@@ -1311,6 +1333,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startChat,
       ads,
       reloadAds,
+      adsDue,
+      setAdsDue,
       send,
       askPage,
       updatePrefs,
@@ -1385,6 +1409,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startChat,
       ads,
       reloadAds,
+      adsDue,
       send,
       askPage,
       updatePrefs,

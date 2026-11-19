@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   }),
 }));
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({
     chats: {
       s1: {

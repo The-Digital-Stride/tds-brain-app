@@ -22,7 +22,12 @@ import {
 import { AdsError, type AdsInflightEntry, type AdsService } from '../brain/ads-skill.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
-import { createAppStore } from '../store/app-store.ts';
+import {
+  createAppStore,
+  FOLDED_GROUP_NAME_MAX,
+  FOLDED_GROUPS_MAX,
+  FOLDED_SECTIONS_MAX,
+} from '../store/app-store.ts';
 import { type HttpError, validatePrefsPatch } from './routes.ts';
 import { cookieValueFor, createAuthCodes } from './security.ts';
 import { type AppServer, createAppServer } from './server.ts';
@@ -538,6 +543,44 @@ describe('prefs for the Workbench and Ad Manager (decision 21)', () => {
       { adsFolds: many(ADS_FOLDS_MAX + 1, true) },
     ])
       expect(await refused(body), JSON.stringify(body).slice(0, 80)).toBe(400);
+  });
+
+  it('accepts and reads back foldedGroups, and refuses bad shapes', async () => {
+    const good = { workbench: ['Ads', 'Reports'], tools: [] };
+    expect(await ok({ foldedGroups: good })).toEqual({ foldedGroups: good });
+    const names = (n: number) => Array.from({ length: n }, (_, i) => `g${i}`);
+    for (const body of [
+      { foldedGroups: ['Ads'] },
+      { foldedGroups: null },
+      { foldedGroups: { workbench: 'Ads' } },
+      { foldedGroups: { workbench: [3] } },
+      { foldedGroups: { workbench: [''] } },
+      { foldedGroups: { Workbench: ['Ads'] } },
+      { foldedGroups: { workbench: ['x'.repeat(FOLDED_GROUP_NAME_MAX + 1)] } },
+      { foldedGroups: { workbench: names(FOLDED_GROUPS_MAX + 1) } },
+      {
+        foldedGroups: Object.fromEntries(
+          Array.from({ length: FOLDED_SECTIONS_MAX + 1 }, (_, i) => [`s${i}`, ['Ads']]),
+        ),
+      },
+    ])
+      expect(await refused(body), JSON.stringify(body).slice(0, 80)).toBe(400);
+    const dir = mkdtempSync(join(tmpdir(), 'ads-folded-'));
+    try {
+      const store = createAppStore(dir);
+      expect(await store.get()).not.toHaveProperty('foldedGroups');
+      expect(await store.update({ foldedGroups: good })).toMatchObject({ foldedGroups: good });
+      expect((await createAppStore(dir).get()).foldedGroups).toEqual(good);
+      writeFileSync(
+        join(dir, 'prefs.json'),
+        JSON.stringify({ foldedGroups: { workbench: ['Ads'], BAD: ['x'], tools: [1], more: 'no' } }),
+      );
+      expect((await createAppStore(dir).get()).foldedGroups).toEqual({ workbench: ['Ads'] });
+      writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ foldedGroups: 'nope' }));
+      expect(await createAppStore(dir).get()).not.toHaveProperty('foldedGroups');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('the store keeps them, drops bad entries from a hand-edited file, and an old file reads as before', async () => {

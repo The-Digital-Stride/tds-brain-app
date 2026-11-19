@@ -10,6 +10,7 @@ import type {
   ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import type { AdsJump } from './ads-tools-contract.ts';
 import { adsErrorText, isWaiting, OPEN_STATUSES } from './words.ts';
 
 /** The last change's result line, kept across list rebuilds (the Workbench lost it within a second once). */
@@ -51,6 +52,11 @@ export interface AdState {
   last: LastResult | null;
   /** Goes up on Refresh so the sheet reloads. */
   refresh: number;
+  /**
+   * A place on the next Ads sheet to land on (plan 2026-11-19-ads-workbench-sections, decision 5): set before
+   * `openTool`, read once by the target sheet after it has drawn (it focuses that heading), then cleared.
+   */
+  jump?: AdsJump | null;
 }
 
 const initial = (): AdState => ({
@@ -70,6 +76,7 @@ const initial = (): AdState => ({
   unknownApply: [],
   last: null,
   refresh: 0,
+  jump: null,
 });
 
 let state = initial();

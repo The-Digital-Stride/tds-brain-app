@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHELL_STORAGE_KEY } from './contract.ts';
 
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({ view: 'chat', activeChat: { kind: 'none' } }),
 }));
 

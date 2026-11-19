@@ -513,6 +513,24 @@ select.field:disabled {
 .dot[data-attention="asking"] {
   background: var(--attn-asking-edge);
 }
+/* Status dots that stand for urgency (Needs you, Worth a look): amber for watch, red for act. */
+.dot[data-tone] {
+  background: var(--amber-edge);
+}
+.dot[data-tone="bad"] {
+  background: var(--danger);
+}
+/* The word beside the dot, so urgency isn't shown by colour alone. Both colours are AA on a card. */
+.status-tag {
+  flex: none;
+  min-width: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber-text);
+}
+.status-tag[data-tone="bad"] {
+  color: var(--danger);
+}
 
 /* A word badge, e.g. "Still being tested". `data-tone` waiting or draft for amber. */
 .badge {
@@ -530,6 +548,20 @@ select.field:disabled {
   background: var(--amber-bg);
   color: var(--amber-text);
   border: 1px solid var(--amber-edge);
+}
+.badge[data-tone="ok"] {
+  background: var(--ok-wash);
+  color: var(--ok);
+}
+.badge[data-tone="bad"] {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.badge[data-tone="muted"] {
+  background: #fff;
+  color: var(--ink-soft);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 /* Segmented choice (the Seg component). */

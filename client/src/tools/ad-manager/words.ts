@@ -230,3 +230,65 @@ export function proposalFacts(p: ProposalSummary): [string, string][] {
   ];
   return rows.filter(([, v]) => v);
 }
+
+// ---------- Dates in words (Ads Manager, plan 2026-11-19 decision 5) ----------
+
+const DAY_MS = 86_400_000;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** A YYYY-MM-DD (or longer ISO) date as a local calendar day, or null. */
+function localDay(d: unknown): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d ?? ''));
+  if (!m) return null;
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(day.getTime()) || day.getMonth() !== Number(m[2]) - 1 ? null : day;
+}
+
+/** Whole local calendar days from `now` to the date: 0 today, 1 tomorrow, -1 yesterday. Null for no date. */
+export function daysFromNow(d: unknown, now: Date = new Date()): number | null {
+  const day = localDay(d);
+  if (!day) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((day.getTime() - today.getTime()) / DAY_MS);
+}
+
+/** "Mon 17 Nov", with the year only when it isn't this year. Empty for no date. */
+export function dateWords(d: unknown, now: Date = new Date()): string {
+  const day = localDay(d);
+  if (!day) return '';
+  const base = `${WEEKDAYS[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`;
+  return day.getFullYear() === now.getFullYear() ? base : `${base} ${day.getFullYear()}`;
+}
+
+/** "today", "tomorrow", "yesterday", "in 3 days", "3 days ago". Empty for no date. */
+export function relativeWords(d: unknown, now: Date = new Date()): string {
+  const n = daysFromNow(d, now);
+  if (n === null) return '';
+  if (n === 0) return 'today';
+  if (n === 1) return 'tomorrow';
+  if (n === -1) return 'yesterday';
+  return n > 0 ? `in ${n} days` : `${-n} days ago`;
+}
+
+/** "Today", "Tomorrow", "Yesterday", else "Mon 17 Nov". */
+export function whenWords(d: unknown, now: Date = new Date()): string {
+  const n = daysFromNow(d, now);
+  if (n !== null && Math.abs(n) <= 1) {
+    const r = relativeWords(d, now);
+    return r.charAt(0).toUpperCase() + r.slice(1);
+  }
+  return dateWords(d, now);
+}
+
+/** What an approved proposal needs next, in a few words, with the badge tone it takes. */
+export function nextStepWords(p: ProposalSummary): { text: string; tone: 'ok' | 'draft' | 'waiting' | null } {
+  const f = p.flags;
+  const dry = String((p.fm as Record<string, unknown>).dry_run ?? '');
+  if (f.inflight) return { text: 'Apply outcome unknown', tone: 'waiting' };
+  if (/^(true|pass|passed|ok)/i.test(dry)) return { text: 'Dry run passed', tone: 'ok' };
+  if (f.canClientDraft) return { text: 'Draft the email', tone: 'draft' };
+  if (f.canDryRun) return { text: 'Dry run first', tone: 'draft' };
+  if (f.canApply) return { text: 'Ready to apply', tone: 'ok' };
+  return { text: 'Waiting on someone else', tone: null };
+}

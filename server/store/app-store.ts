@@ -131,6 +131,31 @@ export function cleanAdsFolds(v: unknown): Record<string, boolean> | undefined {
   return out;
 }
 
+/** Limits on `foldedGroups`: section ids, group names per section, and the length of a group name. */
+export const FOLDED_SECTIONS_MAX = 20;
+export const FOLDED_GROUPS_MAX = 20;
+export const FOLDED_GROUP_NAME_MAX = 60;
+
+/** True for a list of at most FOLDED_GROUPS_MAX non-empty group names, each at most FOLDED_GROUP_NAME_MAX long. */
+export function isGroupNameList(v: unknown): v is string[] {
+  return (
+    Array.isArray(v) &&
+    v.length <= FOLDED_GROUPS_MAX &&
+    v.every((n) => typeof n === 'string' && n !== '' && n.length <= FOLDED_GROUP_NAME_MAX)
+  );
+}
+
+/** Folded drawer groups per section: valid section ids and group-name lists only, within the limits. */
+export function cleanFoldedGroups(v: unknown): Record<string, string[]> | undefined {
+  if (!isRecord(v)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [k, names] of Object.entries(v)) {
+    if (Object.keys(out).length >= FOLDED_SECTIONS_MAX) break;
+    if (SECTION_ID_PATTERN.test(k) && isGroupNameList(names)) out[k] = [...names];
+  }
+  return out;
+}
+
 function isLevelMode(v: unknown): v is LevelMode {
   return v === 'auto' || v === 'manual';
 }
@@ -145,10 +170,14 @@ function sanitise(input: unknown, base: AppPrefs): AppPrefs {
   const lastTool = cleanLastTool(o.lastTool) ?? base.lastTool;
   const adsAccount = isAdsAccountPref(o.adsAccount) ? o.adsAccount : base.adsAccount;
   const adsFolds = cleanAdsFolds(o.adsFolds) ?? base.adsFolds;
+  const foldedGroups = cleanFoldedGroups(o.foldedGroups) ?? base.foldedGroups;
   return {
     ...(lastTool === undefined ? {} : { lastTool: { ...lastTool } }),
     ...(adsAccount === undefined ? {} : { adsAccount }),
     ...(adsFolds === undefined ? {} : { adsFolds: { ...adsFolds } }),
+    ...(foldedGroups === undefined
+      ? {}
+      : { foldedGroups: Object.fromEntries(Object.entries(foldedGroups).map(([k, v]) => [k, [...v]])) }),
     pins: cleanPins(o.pins) ?? [...base.pins],
     lastClient:
       lastClient === null ||

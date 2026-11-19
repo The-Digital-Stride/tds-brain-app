@@ -337,7 +337,7 @@ export function Home() {
                     data-size="small"
                     onClick={() => openTool('workbench', 'ad-manager')}
                   >
-                    Open Ad Manager
+                    Open Ads Manager
                   </button>
                 </div>
                 {ads.clients

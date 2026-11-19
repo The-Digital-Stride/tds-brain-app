@@ -4,7 +4,7 @@ import { helpVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
 import { newToYou } from '../state/todo-new.ts';
-import { useStore } from '../store.tsx';
+import { useStore, useToolSnapshot } from '../store.tsx';
 import { APPS } from './apps.ts';
 import type { DrawerName, IconName } from './contract.ts';
 import { DOCK_IDS } from './Dock.tsx';
@@ -97,7 +97,8 @@ function Mark() {
 
 /** Layer 1: one slim strip that gets you everywhere. */
 export function Rail({ inert = false }: { inert?: boolean }) {
-  const { boot, todos, sessions, view, activeChat, newChat, openView, ads } = useStore();
+  const { boot, todos, sessions, view, activeChat, newChat, openView } = useStore();
+  const snap = useToolSnapshot();
   const { state, dispatch } = useShell();
   const { railShowsNames: wide, width } = useDesk();
   if (!boot) return null;
@@ -107,7 +108,6 @@ export function Rail({ inert = false }: { inert?: boolean }) {
   const fresh = todos
     ? newToYou(todos.mine, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date()).length
     : 0;
-  const snap = { ads };
   const sections = visibleSections(snap);
   const app = APPS.find((a) => view === `app:${a.id}`);
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);

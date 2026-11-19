@@ -28,7 +28,7 @@ import {
   shellReducer,
   toggleRail,
 } from '../state/shell.ts';
-import { type Store, useStore } from '../store.tsx';
+import { type Store, useStore, useToolSnapshot } from '../store.tsx';
 import { APPS } from './apps.ts';
 import {
   type DrawerName,
@@ -152,7 +152,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat, chats, boot, ads, chatDrawer, hideChatDrawer } = useStore();
+  const { view, activeChat, chats, boot, chatDrawer, hideChatDrawer } = useStore();
+  const snap = useToolSnapshot();
   // Read by the key listener and dispatch, which are made once.
   // A store without the drawer (an older test double) reads as closed.
   const chatDrawerRef = useRef({ open: chatDrawer != null, hide: hideChatDrawer });
@@ -164,13 +165,13 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   // Where the person is, read only when Help opens (see `dispatch`): the page Help starts on follows from it.
   // The sections visible now and their single keys (`W`), read by the key listener.
   const sectionKeysRef = useRef<Record<string, string>>({});
-  sectionKeysRef.current = sectionKeys({ ads });
+  sectionKeysRef.current = sectionKeys(snap);
   const whereRef = useRef({ view, activeChat, chats });
   whereRef.current = { view, activeChat, chats };
   const liveOnSheet =
     (view === 'chat' && activeChat?.kind === 'live') ||
     APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||
-    visibleToolFor(view, { ads })?.tool.Panel !== undefined;
+    visibleToolFor(view, snap)?.tool.Panel !== undefined;
   const [railOverride, setRailOverride] = useState(false);
   const layout = useMemo(
     () => layoutOf(state, width, { liveOnSheet, railOverride }),

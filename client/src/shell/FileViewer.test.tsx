@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({ openView: vi.fn(), openLibraryItem: vi.fn() }));
 const api = vi.hoisted(() => ({ libraryText: vi.fn() }));
 vi.mock('../api.ts', () => ({ api }));
 vi.mock('../store.tsx', () => ({
+  useToolSnapshot: () => ({ ads: null }),
   useStore: () => ({ libraryVersion: 0, openView: h.openView, view: 'chat', activeChat: { kind: 'none' } }),
 }));
 vi.mock('../apps/shared/search.ts', async (importOriginal) => ({

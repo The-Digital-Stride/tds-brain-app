@@ -71,7 +71,9 @@ function DeepCard({
           {KEY_HINT}
         </span>
         <div className="am-th-text">
-          <h3 id={`am-t-${t.id}`}>{t.title}</h3>
+          <h3 id={`am-t-${t.id}`} data-table={t.id} tabIndex={-1} className="am-t-h">
+            {t.title}
+          </h3>
           {t.subtitle ? <p className="am-sub">{t.subtitle}</p> : null}
         </div>
         {t.tone === 'warn' ? (

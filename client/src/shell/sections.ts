@@ -1,4 +1,6 @@
+import { adsCommandTool } from '../tools/ad-manager/command-slot.ts';
 import { adManagerTool } from '../tools/ad-manager/slot.ts';
+import { adsSummaryTool } from '../tools/ad-manager/summary-slot.ts';
 import type { SectionSlot, SectionsModule, ToolSlot, ToolSnapshot, ToolView } from './sections-contract.ts';
 
 /**
@@ -13,7 +15,7 @@ export const SECTIONS: SectionSlot[] = [
     icon: 'workbench',
     key: 'w',
     railName: (n) => `Workbench, ${n} waiting`,
-    tools: [adManagerTool],
+    tools: [adManagerTool, adsCommandTool, adsSummaryTool],
   },
 ];
 

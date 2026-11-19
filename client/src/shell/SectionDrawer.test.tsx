@@ -9,7 +9,10 @@ const shell = vi.hoisted(() => ({
   dispatch: vi.fn(),
   state: { drawer: 'section', section: 'workbench', singleKeys: true },
 }));
-vi.mock('../store.tsx', () => ({ useStore: () => store.current }));
+vi.mock('../store.tsx', () => ({
+  useStore: () => store.current,
+  useToolSnapshot: () => ({ ads: store.current.ads, adsDue: store.current.adsDue }),
+}));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: shell.state, dispatch: shell.dispatch }),
   useDesk: () => ({ railShowsNames: false, width: 1400 }),
@@ -41,11 +44,17 @@ const section = (tools: ToolSlot[]): SectionSlot => ({
   tools,
 });
 const openTool = vi.fn();
-function setup(tools: ToolSlot[], view = 'chat', adsValue: AdsSummary | null = ads()) {
+const updatePrefs = vi.fn(() => Promise.resolve());
+function setup(
+  tools: ToolSlot[],
+  view = 'chat',
+  adsValue: AdsSummary | null = ads(),
+  prefs: Record<string, unknown> = {},
+) {
   // The real Workbench section, with the tools this test wants in it.
   Object.assign(SECTIONS[0] as SectionSlot, section(tools));
   store.current = {
-    boot: { identity: { slug: 'sam', name: 'Sam', role: 'owner' }, prefs: {} },
+    boot: { identity: { slug: 'sam', name: 'Sam', role: 'owner' }, prefs },
     todos: { mine: [] },
     sessions: { live: [] },
     view,
@@ -53,12 +62,14 @@ function setup(tools: ToolSlot[], view = 'chat', adsValue: AdsSummary | null = a
     newChat: vi.fn(),
     openView: vi.fn(),
     openTool,
+    updatePrefs,
     ads: adsValue,
   };
 }
 beforeEach(() => {
   shell.dispatch.mockClear();
   openTool.mockClear();
+  updatePrefs.mockClear();
 });
 afterEach(cleanup);
 
@@ -97,14 +108,103 @@ describe('SectionDrawer', () => {
     expect(screen.queryByRole('button', { name: /Tool b/ })).toBeNull();
   });
 
-  it('uses folds only with two or more groups', () => {
-    setup([tool('a', { group: 'One' }), tool('b', { group: 'One' })]);
+  it('uses a fold from one group, and loose tools sit below the folds', () => {
+    setup([tool('a', { group: 'One' }), tool('b', { group: 'One' }), tool('c')]);
     const one = render(<SectionDrawer />);
-    expect(one.container.querySelector('.fold')).toBeNull();
+    expect(one.container.querySelectorAll('.fold')).toHaveLength(1);
+    expect(one.container.querySelector('.fold-head .count')).toBeNull();
+    expect(
+      one.container.querySelector('.fold')?.contains(screen.getByRole('button', { name: /Tool c/ })),
+    ).toBe(false);
     cleanup();
     setup([tool('a', { group: 'One' }), tool('b', { group: 'Two' })]);
     const two = render(<SectionDrawer />);
     expect(two.container.querySelectorAll('.fold')).toHaveLength(2);
+  });
+
+  it('no groups: no folds', () => {
+    setup([tool('a'), tool('b')]);
+    expect(render(<SectionDrawer />).container.querySelector('.fold')).toBeNull();
+  });
+
+  it('a group listed as folded in the settings starts shut and shows the summed badges', () => {
+    setup(
+      [
+        tool('a', { group: 'Ads', badge: () => 3 }),
+        tool('b', { group: 'Ads', badge: () => 4 }),
+        tool('c', { group: 'Ads' }),
+      ],
+      'chat',
+      ads(),
+      { foldedGroups: { workbench: ['Ads'] } },
+    );
+    const { container } = render(<SectionDrawer />);
+    const fold = container.querySelector('.fold') as HTMLElement;
+    expect(fold.getAttribute('data-open')).toBe('false');
+    expect(within(fold).getByRole('button', { name: /Ads/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(within(fold).getByRole('button', { name: /Ads/ }).textContent).toContain('7');
+  });
+
+  it('an older settings file with no foldedGroups reads as all open, with no count', () => {
+    setup([tool('a', { group: 'Ads', badge: () => 3 }), tool('b', { group: 'Ads' })], 'chat', ads(), {});
+    const { container } = render(<SectionDrawer />);
+    const fold = container.querySelector('.fold') as HTMLElement;
+    expect(fold.getAttribute('data-open')).toBe('true');
+    expect(fold.querySelector('.fold-head .count')).toBeNull();
+  });
+
+  it('folding and unfolding a group is saved through updatePrefs, keeping other sections', () => {
+    setup([tool('a', { group: 'Ads' }), tool('b', { group: 'Other' })], 'chat', ads(), {
+      foldedGroups: { elsewhere: ['X'] },
+    });
+    render(<SectionDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: /^Ads/ }));
+    expect(updatePrefs).toHaveBeenLastCalledWith({ foldedGroups: { elsewhere: ['X'], workbench: ['Ads'] } });
+  });
+
+  it('opening a folded group removes it from the saved list', () => {
+    setup([tool('a', { group: 'Ads' }), tool('b', { group: 'Other' })], 'chat', ads(), {
+      foldedGroups: { workbench: ['Ads', 'Other'] },
+    });
+    render(<SectionDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: /^Ads/ }));
+    expect(updatePrefs).toHaveBeenLastCalledWith({ foldedGroups: { workbench: ['Other'] } });
+  });
+
+  it('a row note is not part of a folded group sum', () => {
+    setup([tool('a', { group: 'Ads', badge: () => 0, rowNote: () => '3 due' })], 'chat', ads(), {
+      foldedGroups: { workbench: ['Ads'] },
+    });
+    const { container } = render(<SectionDrawer />);
+    expect(container.querySelector('.fold-head .count')).toBeNull();
+  });
+
+  it('a folded group with nothing waiting shows no count, and an open one shows none', () => {
+    setup([tool('a', { group: 'Ads', badge: () => 0 }), tool('b', { group: 'Ads' })], 'chat', ads(), {
+      foldedGroups: { workbench: ['Ads'] },
+    });
+    const shut = render(<SectionDrawer />);
+    expect(shut.container.querySelector('.fold-head .count')).toBeNull();
+    shut.unmount();
+    setup([tool('a', { group: 'Ads', badge: () => 0 }), tool('b', { group: 'Ads' })]);
+    const open = render(<SectionDrawer />);
+    expect(open.container.querySelector('.fold-head .count')).toBeNull();
+  });
+
+  it('a row note appears on its row beside the summary, and none when null', () => {
+    setup([tool('a', { rowNote: () => '3 due' }), tool('b', { rowNote: () => null })]);
+    render(<SectionDrawer />);
+    const a = screen.getByRole('button', { name: /Tool a/ });
+    expect(within(a).getByText('3 due')).toBeTruthy();
+    expect(a.querySelector('.count')).toBeNull();
+    expect(screen.getByRole('button', { name: /Tool b/ }).textContent).not.toContain('due');
+  });
+
+  it('reads the due count from the snapshot for a rowNote', () => {
+    setup([tool('a', { rowNote: (snap) => (snap.adsDue ? `${snap.adsDue} due` : null) })]);
+    (store.current as { adsDue?: number }).adsDue = 5;
+    render(<SectionDrawer />);
+    expect(screen.getByText('5 due')).toBeTruthy();
   });
 
   it('has a search row only above 8 tools', () => {

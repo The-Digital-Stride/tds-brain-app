@@ -1641,6 +1641,37 @@ describe('races (review)', () => {
     expect(fx.queries).toHaveLength(0);
   });
 
+  it('reports how the latest reply ended in lastTurn', async () => {
+    setup();
+    const ok = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await mgr.list()).live.find((l) => l.id === ok.id)?.lastTurn).toBe('ok');
+  });
+
+  it('reports lastTurn stopped after a stop through the engine, and failed after an error', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      await q.ask('Write', { file_path: '/a' }).promise;
+      q.result('error_during_execution');
+    });
+    const s = await mgr.start({ prompt: 'go' });
+    await flush();
+    expect((await mgr.list()).live[0]).not.toHaveProperty('lastTurn');
+    await mgr.interrupt(s.id);
+    await flush();
+    expect((await mgr.list()).live[0]?.lastTurn).toBe('stopped');
+  });
+
+  it('reports lastTurn failed when the engine ends the reply with an error', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      q.finish();
+    });
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await mgr.list()).live[0]?.lastTurn).toBe('failed');
+  });
+
   it('ignores an interrupt after the turn has already finished', async () => {
     const { queries } = setup();
     const s = await mgr.start({ prompt: 'hi' });
@@ -2989,6 +3020,7 @@ describe('levels', () => {
     expect(fx.queries[0]?.interrupts).toBe(0);
     const ev = events(mgr, s.id);
     expect(ev.find((e) => e.type === 'turn-end')).toMatchObject({ ok: false, interrupted: true });
+    expect((await mgr.list()).live[0]?.lastTurn).toBe('stopped');
     expect((await mgr.list()).live[0]?.state).toBe('idle');
     await mgr.send(s.id, 'again');
     await flush();

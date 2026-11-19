@@ -28,7 +28,7 @@ import { SECTIONS, visibleToolFor } from './shell/sections.ts';
 import { TodosDrawer } from './shell/TodosDrawer.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
-import { StoreProvider, useStore } from './store.tsx';
+import { StoreProvider, useStore, useToolSnapshot } from './store.tsx';
 import { Tour, useTourOpen } from './tour/index.ts';
 
 /** Says what changed, for screen readers. Nothing visible. */
@@ -68,7 +68,8 @@ const DRAWER_BODIES: Record<DrawerName, ComponentType> = {
 
 /** What the sheet shows for the current view. An unknown app shows Home. */
 function SheetContent() {
-  const { view, activeChat, boot, ads } = useStore();
+  const { view, activeChat, boot } = useStore();
+  const snap = useToolSnapshot();
   if (view === 'guide') {
     // Whoever helpVisible turns away (nobody, since 2026-11-15) lands on Home.
     if (!helpVisible(boot?.identity.role ?? 'unknown')) return <Home />;
@@ -129,12 +130,15 @@ function SheetContent() {
   }
   if (view.startsWith('tool:')) {
     // An unknown tool, or one this person can't see (yet), shows Home.
-    const hit = visibleToolFor(view, { ads });
+    const hit = visibleToolFor(view, snap);
     if (!hit) return <Home />;
     const { tool } = hit;
     return (
       <>
-        <SheetBar title={tool.title} panel={tool.Panel ? (tool.panelLabel ?? tool.title) : undefined}>
+        <SheetBar
+          title={`Workbench · ${tool.title}`}
+          panel={tool.Panel ? (tool.panelLabel ?? tool.title) : undefined}
+        >
           {tool.BarActions ? (
             <Suspense fallback={null}>
               <tool.BarActions />
@@ -155,7 +159,8 @@ function SheetContent() {
 function Shell() {
   // The tour's card is the only thing in reach while it shows.
   const touring = useTourOpen();
-  const { boot, newChat, view, ads } = useStore();
+  const { boot, newChat, view } = useStore();
+  const snap = useToolSnapshot();
   const { state, dispatch, modes } = useShell();
   // One source of truth for what shows and what floats: the shell provider's layout.
   const { railShowsNames, drawerModal, panelShowing, panelModal } = useDesk();
@@ -181,7 +186,7 @@ function Shell() {
   // An app with a panel of its own fills the right dock while it is on the sheet.
   const app = APPS.find((a) => view === `app:${a.id}`);
   // A tool with a panel of its own does the same, once it is visible.
-  const tool = visibleToolFor(view, { ads })?.tool;
+  const tool = visibleToolFor(view, snap)?.tool;
   const sheetApp = app ?? tool;
   const AppPanel = sheetApp?.Panel;
 

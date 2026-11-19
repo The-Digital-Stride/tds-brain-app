@@ -54,4 +54,6 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'personal-todos',
   'workbench',
   'ad-manager',
+  'ads-command-centre',
+  'ads-account-summary',
 ];

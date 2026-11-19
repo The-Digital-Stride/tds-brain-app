@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.50.0 — 2026-11-19
+
+- **feat**: split the Ad Manager into three Ads tools under a foldable Ads group
+
 ## v0.49.1 — 2026-11-17
 
 - **fix**: Ad Manager review fixes: one waiting count, no phantom selection, focus to the proposal, tidier type and spacing

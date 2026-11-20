@@ -22,6 +22,8 @@ import {
   earlierMonthWords,
   isWaiting,
   nextStepWords,
+  type People,
+  personName,
   relativeWords,
   statusWords,
   whenWords,
@@ -63,10 +65,16 @@ export function goToClose(): void {
 // ---------- Header: the account and four fact tiles ----------
 
 /** Plain words for where the month stands. */
-function monthStatus(m: NonNullable<ReturnType<typeof readMonthly>>): { text: string; tone: 'ok' | 'draft' } {
+function monthStatus(
+  m: NonNullable<ReturnType<typeof readMonthly>>,
+  people?: People,
+): { text: string; tone: 'ok' | 'draft' } {
   if (m.signed) {
     const day = dateWords(m.reviewedAt);
-    return { text: `Signed off by ${m.reviewedBy ?? 'someone'}${day ? ` on ${day}` : ''}`, tone: 'ok' };
+    return {
+      text: `Signed off by ${personName(m.reviewedBy, people) || 'someone'}${day ? ` on ${day}` : ''}`,
+      tone: 'ok',
+    };
   }
   if (m.partial)
     return {
@@ -92,7 +100,10 @@ export function AccountHead({
   /** Anything that belongs at the end of the head, such as the Summary's period. */
   children?: ReactNode;
 }) {
-  const who = client ? client.reviewer || client.owner || 'not set' : reviewer;
+  const people = useAd().approvals?.people;
+  const who = client
+    ? personName(client.reviewer || client.owner, people) || 'not set'
+    : personName(reviewer, people);
   return (
     <header className="am-head">
       <h2 id="am-account-h">{name}</h2>
@@ -104,6 +115,7 @@ export function AccountHead({
 }
 
 export function FactTiles({ client }: { client: ClientApprovals }) {
+  const people = useAd().approvals?.people;
   const now = new Date();
   const waiting = client.open.filter(isWaiting);
   const approved = client.open.filter((p) => !isWaiting(p));
@@ -114,7 +126,7 @@ export function FactTiles({ client }: { client: ClientApprovals }) {
   const dryRuns = approved.filter((p) => nextStepWords(p).text === 'Dry run passed').length;
   const pack = readPack(client);
   const m = readMonthly(client);
-  const ms = m ? monthStatus(m) : null;
+  const ms = m ? monthStatus(m, people) : null;
   return (
     <ul className="am-facts" aria-label="Where this account stands">
       <li className="am-fact" data-tone={waiting.length > 0 ? 'waiting' : undefined}>
@@ -317,6 +329,7 @@ function SignOff({
 
 /** Release 2: the months before the latest, newest first, each with its status, files and a late sign-off. */
 function EarlierMonths({ client }: { client: ClientApprovals }) {
+  const people = useAd().approvals?.people;
   const months = Array.isArray(client.earlierMonths) ? client.earlierMonths : [];
   if (months.length === 0) return null;
   return (
@@ -329,7 +342,7 @@ function EarlierMonths({ client }: { client: ClientApprovals }) {
             <li key={m.month} className="am-earlier-item">
               <p className="am-earlier-head">
                 <strong>{m.monthName || m.month}</strong>
-                <span className="am-sub"> {earlierMonthWords(m)}</span>
+                <span className="am-sub"> {earlierMonthWords(m, people)}</span>
               </p>
               <div className="am-links">
                 {pdf ? (
@@ -349,8 +362,9 @@ function EarlierMonths({ client }: { client: ClientApprovals }) {
 
 /** The monthly close: status, the one Sign off button, and the month's files. */
 export function MonthlyClose({ client }: { client: ClientApprovals }) {
+  const people = useAd().approvals?.people;
   const m = readMonthly(client);
-  const ms = m ? monthStatus(m) : null;
+  const ms = m ? monthStatus(m, people) : null;
   return (
     <section className="card am-close" id="am-close" aria-labelledby="am-close-h">
       <div className="card-head">
@@ -422,6 +436,7 @@ function ProposalsTable({
   rows: ProposalSummary[];
   mode: 'waiting' | 'approved';
 }) {
+  const people = useAd().approvals?.people;
   const { selected } = useAd();
   const { state, dispatch } = useShell();
   const now = new Date();
@@ -465,7 +480,9 @@ function ProposalsTable({
                   ) : (
                     <>
                       {whenWords(f.approved_at, now)}
-                      {f.approved_by ? <span className="am-subline">by {String(f.approved_by)}</span> : null}
+                      {f.approved_by ? (
+                        <span className="am-subline">by {personName(f.approved_by, people)}</span>
+                      ) : null}
                     </>
                   )}
                 </td>
@@ -509,6 +526,7 @@ function ProposalsTable({
 }
 
 function RecentTable({ rows }: { rows: ProposalSummary[] }) {
+  const people = useAd().approvals?.people;
   const now = new Date();
   if (rows.length === 0) return <p className="card-note">None yet.</p>;
   return (
@@ -525,7 +543,7 @@ function RecentTable({ rows }: { rows: ProposalSummary[] }) {
         </thead>
         <tbody>
           {rows.map((p) => {
-            const d = decisionWords(p.fm);
+            const d = decisionWords(p.fm, people);
             return (
               <tr key={p.id}>
                 <td className="am-nowrap">{dateWords(d.when, now) || d.when}</td>

@@ -1,8 +1,8 @@
 ---
 name: tdsapp-ads
 description: The bridge TDS Cortex's Ad Manager uses to read and decide ads-manager proposals, run a dry run or the live apply, draft the client email, record the client's yes or a decision, sign off a monthly report, and read the Ads board and Daily Standup - always through the brain's own ads-manager scripts, as the person at this Mac. USE WHEN TDS Cortex runs it for Ad Manager, or someone asks "what ads proposals are waiting for me?", "show the ads board for Acme", "dry run that proposal", "set up the standup for Acme", or "rate the standup calls". Approving, rejecting, recording a decision or the client's yes, signing off a report and applying a change are the person's own decisions, made in Ad Manager: Claude never runs `decide`, `decided`, `client-approved`, `sign-monthly` or `apply` from a chat.
-version: 0.3
-last_updated: 2026-11-19
+version: 0.4
+last_updated: 2026-11-20
 roles: owner, scout
 maturity: draft
 members: false
@@ -69,12 +69,18 @@ Release 2 additions to existing replies (version 0.3; `capabilities.features` li
 `earlier-months-v1`, `draft-change-v1`, `task-results-v1`):
 
 - `board` carries `totalRanges`: `{ranges, wastedSpend}`, one range per 7, 30 and 90 days from the daily file
-  (`summary.csv`), ending on its newest date, with `current`, `previous` (null when the file doesn't reach back),
+  (`summary.csv`), ending on the board pull's `through` date (`_refreshed.json`, else the newest row), with
+  `current`, `previous` (null when the file doesn't reach back),
   `partial`, `dataFrom`, and spend, conversions, value, ROAS and CPA. It is never named `totals`.
   `wastedSpend` adds up every search term with no conversions. No daily file: `ranges` is empty.
 - `approvals` carries `earlierMonths` per client: up to 12 months before the latest close, newest first, each with
   the same `canSign` rule as `monthly`.
 - `lastRun` may carry `result`, the file that run saved.
+
+Release 3 (version 0.4), add-only:
+
+- `approvals` carries `people`: `{ "<name-slug>": "<Name>" }` for everyone on `.team-config/roles.json`, keyed by
+  the name slug proposals and configs use (`pete-tyler`) and by the roster's own `slug`. Names only, never emails.
 
 It prints one line of JSON: `{"ok":true,…}` or `{"ok":false,"code":…,"error":…}`. Exit 0 means it
 worked, exit 2 means it refused, exit 1 means something went wrong. The codes are `bad-request`,

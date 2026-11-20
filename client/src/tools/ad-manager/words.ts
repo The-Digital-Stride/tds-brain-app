@@ -160,8 +160,27 @@ export function adsErrorText(err: unknown): string {
   return ADS_ERROR_MESSAGES.internal;
 }
 
+/** slug -> name, from the bridge's `approvals.people` (Release 3). Absent from older skills. */
+export type People = Readonly<Record<string, string>> | null | undefined;
+
+/**
+ * A person as the brain writes them (`pete-tyler`, a roster slug, or already a name) in words: their roster name when
+ * the bridge sent one, else exactly as written. Only the map's own string values count, so a slug such as
+ * `constructor` can't pick up an inherited property.
+ */
+export function personName(who: unknown, people?: People): string {
+  const w = who == null ? '' : String(who).trim();
+  if (!w || !people) return w;
+  const key = w.toLowerCase();
+  const name = Object.hasOwn(people, key) ? people[key] : undefined;
+  return typeof name === 'string' && name.trim() ? name : w;
+}
+
 /** The decision column of Recent decisions, as the Workbench words it. */
-export function decisionWords(fm: ProposalSummary['fm']): {
+export function decisionWords(
+  fm: ProposalSummary['fm'],
+  people?: People,
+): {
   decision: string;
   note: string;
   when: string;
@@ -171,7 +190,7 @@ export function decisionWords(fm: ProposalSummary['fm']): {
   const when = dayOf(
     f.verified_at || f.applied_at || f.rejected_at || f.approved_at || f.voided_at || f.changes_requested_at,
   );
-  const by = String(f.rejected_by || f.approved_by || f.changes_requested_by || '');
+  const by = personName(f.rejected_by || f.approved_by || f.changes_requested_by || '', people);
   let decision = fm.status;
   let note = '';
   if (fm.status === 'rejected') note = String(f.rejection_reason ?? '');
@@ -189,15 +208,22 @@ export function decisionWords(fm: ProposalSummary['fm']): {
 }
 
 /** The key/value rows of a proposal's details, empty ones dropped (cc.js apprRows). Dates are in words. */
-export function proposalFacts(p: ProposalSummary, now: Date = new Date()): [string, string][] {
+export function proposalFacts(
+  p: ProposalSummary,
+  now: Date = new Date(),
+  people?: People,
+): [string, string][] {
   const fm = p.fm as Record<string, unknown>;
   const s = (v: unknown) => (v == null ? '' : String(v));
+  const named = (v: unknown) => personName(v, people);
+  // "Pete Tyler, Tue 17 Nov": either part may be missing.
+  const byOn = (by: unknown, at: unknown) => [named(by), day(at)].filter(Boolean).join(', ');
   const day = (v: unknown) => dateWords(v, now) || dayOf(v);
   let client = '';
   if (fm.needs_client_approval) {
     const who = s(fm.client_approver) || 'the client';
     if (fm.client_approved_at)
-      client = `Yes from ${s(fm.client_approved_by)} (${day(fm.client_approved_at)}, recorded by ${s(fm.client_approval_recorded_by)})`;
+      client = `Yes from ${s(fm.client_approved_by)} (${day(fm.client_approved_at)}, recorded by ${named(fm.client_approval_recorded_by)})`;
     else if (fm.client_request_at)
       client = `Needed from ${who}. Request drafted ${day(fm.client_request_at)}${fm.client_request_gmail_draft_id ? ' (in Gmail drafts, not sent)' : ' (markdown only)'}. Waiting for their yes.`;
     else client = `Needed from ${who}. Request not drafted yet.`;
@@ -226,12 +252,12 @@ export function proposalFacts(p: ProposalSummary, now: Date = new Date()): [stri
     ['Dry run', s(fm.dry_run)],
     ['Evidence', evidence],
     ['Client approval', client],
-    ['Proposed', fm.created_by || fm.created_at ? `${s(fm.created_by)} ${day(fm.created_at)}`.trim() : ''],
-    ['Approved', fm.approved_by ? `${s(fm.approved_by)} ${day(fm.approved_at)}`.trim() : ''],
+    ['Proposed', byOn(fm.created_by, fm.created_at)],
+    ['Approved', fm.approved_by ? byOn(fm.approved_by, fm.approved_at) : ''],
     [
       'Changes requested',
       fm.changes_requested_by
-        ? `${s(fm.changes_requested_by)} ${day(fm.changes_requested_at)}: ${s(fm.changes_note)}`
+        ? `${byOn(fm.changes_requested_by, fm.changes_requested_at)}: ${s(fm.changes_note)}`
         : '',
     ],
     ['Warnings', (p.warnings ?? []).join('; ')],
@@ -375,14 +401,17 @@ export function totalsChange(
 }
 
 /** A past month's status in words, for the Earlier months list. */
-export function earlierMonthWords(m: {
-  signed: boolean;
-  stale: boolean;
-  partial: boolean | null;
-  reviewedBy: string | null;
-  reviewedAt: string | null;
-  reason?: string | null;
-}): string {
+export function earlierMonthWords(
+  m: {
+    signed: boolean;
+    stale: boolean;
+    partial: boolean | null;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    reason?: string | null;
+  },
+  people?: People,
+): string {
   // monthly.cjs reviewState: a stamp that no longer matches the body is `signed: false, stale: true`.
   if (!m.signed && m.stale) {
     const why = m.reason?.trim().replace(/\.$/, '');
@@ -390,7 +419,7 @@ export function earlierMonthWords(m: {
   }
   if (m.signed) {
     const day = shortDate(m.reviewedAt);
-    return `Signed off by ${m.reviewedBy ?? 'someone'}${day ? ` on ${day}` : ''}`;
+    return `Signed off by ${personName(m.reviewedBy, people) || 'someone'}${day ? ` on ${day}` : ''}`;
   }
   if (m.partial) return 'Month-to-date draft';
   return 'Not signed off';

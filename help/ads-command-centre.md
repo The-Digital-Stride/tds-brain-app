@@ -23,9 +23,9 @@ Ads Command Centre is for running a client's Google Ads account. The top panel s
 ## How to use it
 
 1. Open **Workbench**, then **Ads**, and choose **Ads Command Centre**.
-2. Read the data panel. Green means every file is ready. Amber means something is stale or the daily fetch has a problem. Red means a file is missing. Open **Files** to see each one.
+2. Read the data panel. Green means every file is ready. Amber means something is stale or the daily fetch has a problem. Red means a file is missing. Press **Show files** to see each one.
 3. Use the colour key. A report pulls information together, insights find what to do, actions make a change, and the standup is a multi-agent debate.
-4. Check the badge on each card. **Due** means it is time to run it. **Overdue** says how late it is. A date means it is coming up. **Stopped** means the last run was stopped or failed.
+4. Check the badge on each card. The Workbench menu shows how many are due before you open the tool. **Due** means it is time to run it. **Overdue** says how late it is. A date means it is coming up. **Stopped** means the last run was stopped or failed.
 5. Press **Run**. The chat opens over the page, and **Hide chat** takes you back. The card says **Running**.
 6. A card shows when it last ran. After a stopped run, **Last good run** opens the last one that finished.
 7. On the Daily standup card, press **Rate calls** to score each call it made.

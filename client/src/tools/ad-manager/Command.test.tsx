@@ -40,6 +40,13 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
 const { CommandSheet } = await import('./CommandSheet.tsx');
 const { adStore } = await import('./store.ts');
 const { taskRuns } = await import('./task-runs.ts');
+const { useAdsDue } = await import('./use-ads-due.ts');
+
+/** The shell's always-on hook for the drawer's "N due" note, mounted beside the sheet as App.tsx does. */
+function DueHook() {
+  useAdsDue();
+  return null;
+}
 
 type Health = AdsBoard['health'];
 type Card = AdsBoard['cards'][number];
@@ -120,7 +127,12 @@ const live = (...s: object[]) => {
 
 async function mount(over: Partial<AdsBoard> = {}) {
   current = makeBoard(over);
-  render(<CommandSheet />);
+  render(
+    <>
+      <DueHook />
+      <CommandSheet />
+    </>,
+  );
   await screen.findByRole('heading', { name: /What I run on/ });
 }
 
@@ -472,6 +484,46 @@ describe('running a task', () => {
 });
 
 describe('the due count for the menu', () => {
+  it('is worked out at start-up from the saved account, before any Ads tool opens', async () => {
+    current = makeBoard();
+    render(<DueHook />);
+    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
+    expect(api.adsBoard).toHaveBeenCalledWith(key);
+    expect(adStore.get().account).toBe(key);
+  });
+
+  it('with nothing saved, starts from the first account with proposals waiting, as the tools do', async () => {
+    store.boot.prefs = { adsAccount: null };
+    store.ads = { ...(store.ads as object), clients: [{ slug: key, name: key, waiting: 2 }] };
+    current = makeBoard();
+    render(<DueHook />);
+    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
+    expect(api.adsBoard).toHaveBeenCalledWith(key);
+  });
+
+  it('reloads the board when the Ads summary changes, with no tool open', async () => {
+    current = makeBoard();
+    const view = render(<DueHook />);
+    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
+    expect(api.adsBoard).toHaveBeenCalledTimes(1);
+    store.ads = { ...(store.ads as object), waiting: 1 };
+    view.rerender(<DueHook />);
+    await waitFor(() => expect(api.adsBoard).toHaveBeenCalledTimes(2));
+  });
+
+  it('stays hidden at start-up when Ads is not available or no account was used before', async () => {
+    store.ads = { ...(store.ads as object), visible: false };
+    render(<DueHook />);
+    store.boot.prefs = { adsAccount: null };
+    cleanup();
+    adStore.reset();
+    store.ads = { ...(store.ads as object), visible: true };
+    render(<DueHook />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.adsBoard).not.toHaveBeenCalled();
+    expect(store.setAdsDue).not.toHaveBeenCalledWith(expect.any(Number));
+  });
+
   it('is cleared on an account change, then set once the board arrives, counting the standup', async () => {
     await mount();
     expect(store.setAdsDue).toHaveBeenCalledWith(null);

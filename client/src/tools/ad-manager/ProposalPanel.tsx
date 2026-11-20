@@ -15,7 +15,7 @@ import { type RunOptions, useAdsRunner } from './actions.ts';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
-import { adsErrorText, proposalFacts } from './words.ts';
+import { adsErrorText, isWaiting, personName, proposalFacts } from './words.ts';
 
 type Ask = 'approve' | 'reject' | 'apply' | null;
 
@@ -78,7 +78,7 @@ function LastResult() {
 
 function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary }) {
   const { ads } = useStore();
-  const { busy, unknownApply } = useAd();
+  const { busy, unknownApply, approvals } = useAd();
   const run = useAdsRunner();
   const [ask, setAsk] = useState<Ask>(null);
   const [note, setNote] = useState('');
@@ -417,7 +417,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         <p className="am-line">
           {client.mine
             ? 'Nothing to do here from Cortex. It was applied by hand or by a script.'
-            : `Waiting for ${client.reviewer || client.owner || 'the reviewer'}.`}
+            : `Waiting for ${personName(client.reviewer || client.owner, approvals?.people) || 'the reviewer'}.`}
         </p>
       ) : null}
     </div>
@@ -468,8 +468,15 @@ export function ProposalPanel() {
       </div>
     );
   const { client, proposal: p } = found;
+  // Previous and Next follow the page's order: waiting for a decision, then approved and ready to apply.
+  const order = [...client.open.filter(isWaiting), ...client.open.filter((x) => !isWaiting(x))];
+  const at = order.findIndex((x) => x.id === p.id);
+  const step = (by: -1 | 1) => {
+    const to = order[at + by];
+    if (to) adStore.set({ selected: { client: client.slug, id: to.id }, panelMode: 'proposal' });
+  };
   const text = full[key];
-  const facts = proposalFacts(text ?? p);
+  const facts = proposalFacts(text ?? p, undefined, approvals?.people);
   const loadText = (open: boolean) => {
     if (!open || full[key]) return;
     api
@@ -482,6 +489,38 @@ export function ProposalPanel() {
   return (
     <div className="am-panel">
       {region}
+      {order.length > 1 && at >= 0 ? (
+        <nav className="am-step" aria-label="Proposals">
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            aria-disabled={at === 0 || undefined}
+            aria-label="Previous proposal"
+            onClick={() => step(-1)}
+          >
+            Previous
+          </button>
+          <span className="am-sub" aria-hidden="true">
+            {at + 1} of {order.length}
+          </span>
+          <span className="visually-hidden" aria-live="polite">
+            {`Proposal ${at + 1} of ${order.length}, ${p.fm.title}`}
+          </span>
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            aria-disabled={at === order.length - 1 || undefined}
+            aria-label="Next proposal"
+            onClick={() => step(1)}
+          >
+            Next
+          </button>
+        </nav>
+      ) : null}
       <h3 className="am-title" tabIndex={-1}>
         {p.fm.title}
       </h3>

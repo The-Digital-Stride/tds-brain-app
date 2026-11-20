@@ -14,7 +14,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
 
-const { fakeShell } = await import('./todo-test-kit.tsx');
+const { fakeShell, sent } = await import('./todo-test-kit.tsx');
 
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
 
@@ -136,6 +136,32 @@ describe('To-dos drawer, changing to-dos', () => {
     setStore('restricted');
     render(<TodosDrawer />);
     expect(screen.queryByText(/switched off/)).toBeNull();
+  });
+
+  it('the Settings link closes a floating drawer first, so the sheet is not inert', () => {
+    setStore('switched-off');
+    fakeShell.reset({}, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(sent.map((a) => a.type)).toContain('close-drawer');
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
+  });
+
+  it('already on Settings, the link closes an open to-do panel without putting focus back on its row', async () => {
+    setStore('switched-off');
+    (store.current as { view: string }).view = 'settings';
+    render(<TodosDrawer />);
+    const row = screen.getByRole('button', { name: 'Renew contract' });
+    fireEvent.click(row);
+    await waitFor(() => expect(fakeShell.state.todoPanel).not.toBeNull());
+    const link = screen.getByRole('button', { name: 'Settings' });
+    link.focus();
+    fireEvent.click(link);
+    expect(fakeShell.state.todoPanel).toBeNull();
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
+    // Give the drawer's focus-return effects a chance to run: the row must not take focus.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.activeElement).not.toBe(row);
   });
 
   it('adds with the person themselves as the default assignee', async () => {

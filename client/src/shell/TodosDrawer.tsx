@@ -323,6 +323,7 @@ export function TodosDrawer() {
     boot,
     changeTodos,
     openSettings,
+    view,
     heldTodos,
     holdTodo,
     undoHeld,
@@ -468,12 +469,17 @@ export function TodosDrawer() {
 
   // The panel closed (a key press, the veil, Esc, a finished to-do): put the keyboard back on the row's button,
   // unless a held to-do's Undo took it.
+  // Not when the Settings link closed it: the keyboard is going to the switch there.
   const openKey = panel === null ? undefined : (panel.key ?? '');
   const wasOpen = useRef<string | undefined>(undefined);
+  const leavingForSettings = useRef(false);
   useEffect(() => {
     const was = wasOpen.current;
     wasOpen.current = openKey;
-    if (was !== undefined && openKey === undefined && focusUndo !== was) setRefocus(was);
+    if (openKey !== undefined) return;
+    const skip = leavingForSettings.current;
+    leavingForSettings.current = false;
+    if (was !== undefined && !skip && focusUndo !== was) setRefocus(was);
   }, [openKey, focusUndo]);
 
   if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
@@ -892,6 +898,13 @@ export function TodosDrawer() {
             onClick={() => {
               // A floating drawer covers the sheet (and makes it inert): it makes way, as choosing a to-do does.
               if (modes.drawerOverlays) shellDispatch({ type: 'close-drawer' });
+              // Changing view closes an open to-do panel (ShellProvider); already on Settings, nothing changes, so
+              // close it here (it asks first when it holds changes), or the switch stays behind it.
+              if (view === 'settings' && shell.todoPanel) {
+                // Unsaved changes: it asks first and stays open, so the row keeps its usual focus return.
+                leavingForSettings.current = !shell.todoPanel.dirty;
+                shellDispatch({ type: 'close-todo' });
+              }
               openSettings('general', 'set-direct');
             }}
           >

@@ -281,7 +281,9 @@ describe('To-dos drawer, changing to-dos', () => {
     await openEdit('Renew contract');
     type('Title', 'Renew it');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('That to-do could not be found.')).toBeTruthy();
+    expect(
+      await screen.findByText('That to-do could not be found. Your changes are still here.'),
+    ).toBeTruthy();
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
   });
 
@@ -369,7 +371,7 @@ describe('To-dos drawer, changing to-dos', () => {
     type('Title', 'Renew it');
     type('Assigned to', 'ben-mcadam');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await screen.findByText('Nope.');
+    await screen.findByText('Nope. Your changes are still here.');
     expect(holdTodo).not.toHaveBeenCalled();
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
   });
@@ -487,6 +489,36 @@ describe('To-dos drawer, conflict check and open adds', () => {
     ]);
   });
 
+  // The title and details step went through (the script added a title history line) and the date step failed:
+  // pressing Save again must send only the date, never the typed details without that line.
+  it('after a save that half went through, Save again sends only what is still unsaved', async () => {
+    const fresh = list('on', [
+      todo({
+        title: 'Renew it',
+        details: 'New notes\n\n## Title history\n\n- 2030-01-01: was "Renew contract"',
+        version: 'v2',
+      }),
+    ]);
+    changeTodos.mockImplementationOnce(async () => {
+      store.current.todos = fresh;
+      return { done: 1, error: { code: 'internal', message: 'Nope.' }, todos: fresh };
+    });
+    render(<TodosDrawer />);
+    await openEdit('Renew contract');
+    type('Title', 'Renew it ');
+    type('Details', 'New notes');
+    type('Due date', '2030-02-02');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/Some of your changes were saved, but not all/);
+    expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toContain('## Title history');
+    changeTodos.mockResolvedValueOnce({ done: 1, todos: fresh });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
+    expect(changeTodos.mock.calls[1]?.[0]).toEqual([
+      { kind: 'due', id: 't1.md', due: '2030-02-02', expect: 'v2' },
+    ]);
+  });
+
   it('keeps text typed while a failing save is in flight', async () => {
     let fail: (v: unknown) => void = () => {};
     changeTodos.mockImplementationOnce(
@@ -578,7 +610,9 @@ describe('To-dos drawer, edge cases', () => {
     await openEdit('Renew contract');
     type('Title', 'x');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect((await screen.findByText('Nope.')).getAttribute('data-tone')).toBe('error');
+    expect((await screen.findByText('Nope. Your changes are still here.')).getAttribute('data-tone')).toBe(
+      'error',
+    );
   });
 
   it('drops the "You can undo" line once the held change is sent, but keeps "Undone."', async () => {

@@ -316,6 +316,45 @@ describe('ticking while reading', () => {
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
   });
 
+  it('shows a tick at once, while it saves, and takes it off again if it is refused', async () => {
+    let answer: (v: unknown) => void = () => {};
+    changeTodos.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          answer = r;
+        }),
+    );
+    mount();
+    await open('First');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 1' }));
+    expect(screen.getByLabelText('Details').textContent).toContain('- [x] one\n- [x] two');
+    expect(screen.getByText('Saving your tick…')).toBeTruthy();
+    // A second press while the first saves is not sent.
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 2' }));
+    answer({ done: 0, error: { code: 'internal', message: 'The change could not be made. Try again.' } });
+    expect(await screen.findByText("Your tick wasn't saved. Try again.")).toBeTruthy();
+    expect(screen.getByLabelText('Details').textContent).toContain('- [ ] one\n- [x] two');
+    expect(changeTodos).toHaveBeenCalledTimes(1);
+  });
+
+  // Review finding: a saved tick was held on screen, so details later put back elsewhere showed the old tick and
+  // every later press was ignored.
+  it('a saved tick later undone elsewhere shows as undone, and can be ticked again', async () => {
+    changeTodos.mockResolvedValue({ done: 1 });
+    const view = mount();
+    await open('First');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 1' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(1));
+    setStore('on', [todo('a.md', 'First', { details: '- [x] one\n- [x] two', version: 'v2' })]);
+    await act(async () => reload(view));
+    expect(screen.getByLabelText('Details').textContent).toContain('- [x] one');
+    setStore('on', [todo('a.md', 'First', { details: '- [ ] one\n- [x] two', version: 'v3' })]);
+    await act(async () => reload(view));
+    expect(screen.getByLabelText('Details').textContent).toContain('- [ ] one');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 2' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(2));
+  });
+
   it('shows the refusal in the usual words and leaves the details as they were', async () => {
     changeTodos.mockResolvedValue({
       done: 0,
@@ -324,7 +363,7 @@ describe('ticking while reading', () => {
     mount();
     await open('First');
     fireEvent.click(screen.getByRole('button', { name: 'Tick 2' }));
-    expect(await screen.findByText('Someone else changed this to-do.')).toBeTruthy();
+    expect(await screen.findByText("Your tick wasn't saved. Someone else changed this to-do.")).toBeTruthy();
     expect(screen.getByLabelText('Details').textContent).toContain('- [ ] one\n- [x] two');
   });
 
@@ -662,8 +701,13 @@ describe('the panel itself', () => {
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save.getAttribute('aria-disabled')).toBe('true');
     expect(save.hasAttribute('disabled')).toBe(false);
+    // It says why.
+    const why = screen.getByText('Add a title to save.');
+    expect(save.getAttribute('aria-describedby')).toBe(why.id);
     fireEvent.click(save);
     expect(changeTodos).not.toHaveBeenCalled();
+    type('Title', 'Back');
+    expect(screen.queryByText('Add a title to save.')).toBeNull();
   });
 });
 

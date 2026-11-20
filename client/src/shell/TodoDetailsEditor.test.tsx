@@ -37,6 +37,97 @@ describe('TodoDetailsEditor (the real editor and converter)', () => {
     expect((boxes[0] as HTMLInputElement).checked).toBe(false);
   });
 
+  it('keeps focus on a tick box when its saved details come back', async () => {
+    const { rerender } = render(
+      <TodoDetailsEditor markdown={md} editable={false} onToggleTask={() => {}} label="Details" />,
+    );
+    await screen.findByRole('heading', { name: 'Plan' });
+    screen.getByRole('checkbox', { name: 'one' }).focus();
+    rerender(
+      <TodoDetailsEditor
+        markdown={md.replace('- [ ] one', '- [x] one')}
+        editable={false}
+        onToggleTask={() => {}}
+        label="Details"
+      />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(document.activeElement).toBe(box);
+  });
+
+  it('while a tick saves, the boxes stay focusable but a press is not sent', async () => {
+    const onToggleTask = vi.fn();
+    render(
+      <TodoDetailsEditor
+        markdown={md}
+        editable={false}
+        onToggleTask={onToggleTask}
+        pending
+        label="Details"
+      />,
+    );
+    await screen.findByRole('heading', { name: 'Plan' });
+    const box = screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement;
+    await waitFor(() => expect(box.getAttribute('aria-disabled')).toBe('true'));
+    expect(box.disabled).toBe(false);
+    fireEvent.click(box);
+    expect(onToggleTask).not.toHaveBeenCalled();
+    expect(box.checked).toBe(false);
+  });
+
+  it('the Link button turns a brain-path link shown as text into a web link', async () => {
+    let out = '';
+    render(
+      <TodoDetailsEditor
+        markdown="Read the [brief](clients/acme/brief.md)."
+        editable
+        onChange={(m) => {
+          out = m;
+        }}
+        label="Details"
+      />,
+    );
+    const area = await screen.findByRole('textbox', { name: 'Details' });
+    // Put the cursor inside "brief".
+    const text = area.querySelector('[data-todo-link]')?.firstChild as Text;
+    area.focus();
+    window.getSelection()?.setBaseAndExtent(text, 2, text, 2);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((r) => setTimeout(r, 50));
+    fireEvent.click(screen.getByRole('button', { name: 'Link' }));
+    fireEvent.change(await screen.findByLabelText('Web address'), { target: { value: 'example.com/brief' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(out).toBe('Read the [brief](https://example.com/brief).'));
+  });
+
+  it('a refused address leaves a brain-path link as it was', async () => {
+    let out = 'unchanged';
+    render(
+      <TodoDetailsEditor
+        markdown="Read the [brief](clients/acme/brief.md)."
+        editable
+        onChange={(m) => {
+          out = m;
+        }}
+        label="Details"
+      />,
+    );
+    const area = await screen.findByRole('textbox', { name: 'Details' });
+    const text = area.querySelector('[data-todo-link]')?.firstChild as Text;
+    area.focus();
+    window.getSelection()?.setBaseAndExtent(text, 2, text, 2);
+    document.dispatchEvent(new Event('selectionchange'));
+    await new Promise((r) => setTimeout(r, 50));
+    fireEvent.click(screen.getByRole('button', { name: 'Link' }));
+    const field = await screen.findByLabelText('Web address');
+    fireEvent.change(field, { target: { value: 'tel:01234567890' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await screen.findByRole('alert');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(out === 'unchanged' || out === 'Read the [brief](clients/acme/brief.md).').toBe(true);
+  });
+
   it('offers the seven toolbar buttons when editing, each with a name', async () => {
     render(<TodoDetailsEditor markdown={md} editable onChange={() => {}} label="Details" />);
     const bar = await screen.findByRole('toolbar', { name: 'Formatting' });

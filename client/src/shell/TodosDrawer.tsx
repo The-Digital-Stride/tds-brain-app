@@ -46,11 +46,35 @@ interface RowControls {
   actionable: boolean;
 }
 
+type DraftFields = EditDraft['base'];
+
+/** What the steps of a save that went through wrote, as draft fields (the title as sent, trimmed). */
+function landedBy(steps: TodoAction[]): Partial<DraftFields> {
+  const out: Partial<DraftFields> = {};
+  for (const a of steps) {
+    if (a.kind === 'edit') {
+      out.title = a.title;
+      if (a.details !== undefined) out.details = a.details;
+    } else if (a.kind === 'due') out.due = a.due ?? '';
+    else if (a.kind === 'move') out.scope = a.to;
+  }
+  return out;
+}
+
 /**
  * Moves a draft onto the version now in the brain: fields the person didn't touch take the fresh value,
- * fields they edited stay as typed. Functional, so text typed while a save was in flight survives.
+ * fields they edited stay as typed. Functional, so text typed while a save was in flight survives. `landed`:
+ * what the steps that did go through wrote. A field still as it was sent is saved, so it takes the fresh value
+ * too: the script may have added to it (a title change adds "## Title history" to the details), and keeping
+ * the typed text would drop that on the next Save.
  */
-function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean, canAttach: boolean): EditDraft {
+function rebase(
+  d: EditDraft,
+  fresh: TodoItem,
+  conflict: boolean,
+  canAttach: boolean,
+  landed: Partial<DraftFields> = {},
+): EditDraft {
   const now = {
     title: fresh.title,
     details: detailsText(fresh, canAttach),
@@ -58,7 +82,9 @@ function rebase(d: EditDraft, fresh: TodoItem, conflict: boolean, canAttach: boo
     assignee: fresh.assignee ?? '',
     scope: fresh.scope,
   };
-  const keep = <K extends keyof typeof now>(k: K) => (d[k] === d.base[k] ? now[k] : d[k]);
+  const sent = <K extends keyof typeof now>(k: K) =>
+    landed[k] !== undefined && (k === 'title' ? d.title.trim() : d[k]) === landed[k];
+  const keep = <K extends keyof typeof now>(k: K) => (d[k] === d.base[k] || sent(k) ? now[k] : d[k]);
   return {
     title: keep('title'),
     details: keep('details'),
@@ -671,19 +697,20 @@ export function TodosDrawer() {
       // Keep the editor and the draft untouched, but adopt the version now in the brain (a teammate's
       // change, or our own earlier steps), so pressing Save again is a deliberate overwrite.
       const fresh = all.find((t) => t.key === key);
+      const landed = landedBy(now.slice(0, result.done));
       if (key !== todo.key) shellDispatch({ type: 'open-todo', key, mode: 'edit', force: true });
       if (result.error.code === 'changed') {
-        if (fresh) setDraft((d) => rebase(d, fresh, true, todos.canAttach));
+        if (fresh) setDraft((d) => rebase(d, fresh, true, todos.canAttach, landed));
         setMessage(`${result.error.message} Your changes are still here.`, true);
         return result;
       }
-      if (fresh) setDraft((d) => rebase(d, fresh, false, todos.canAttach));
+      if (fresh) setDraft((d) => rebase(d, fresh, false, todos.canAttach, landed));
       if (result.done > 0) {
         setMessage(
           'Some of your changes were saved, but not all. Your other changes are still here. Press Save to try again.',
           true,
         );
-      } else setMessage(result.error.message, true);
+      } else setMessage(`${result.error.message} Your changes are still here.`, true);
       return result;
     }
     let finalKey = key;
@@ -729,12 +756,23 @@ export function TodosDrawer() {
   };
 
   /** A tick box pressed while reading: one details change, through the same conflict check as Save. */
-  const tick = async (todo: TodoItem, markdown: string) => {
+  const tick = async (todo: TodoItem, markdown: string): Promise<boolean> => {
     const actions = buildEditActions(todo, { ...draftOf(todo), details: markdown }, true, todos.canAttach);
-    if (actions.length === 0) return;
+    if (actions.length === 0) return true;
+    // Said in the panel's status line, so a screen reader hears the tick go out and what became of it.
+    setMessage('Saving your tick…');
     const result = await run(actions);
-    if (result.error) return setMessage(result.error.message, true);
+    if (result.error) {
+      // The box clears again. A refusal that explains itself (someone else's change, a to-do gone) is said
+      // in full; the others only need "try again".
+      const { code, message } = result.error;
+      const why =
+        code === 'changed' || code === 'not-found' || code === 'not-allowed' ? message : 'Try again.';
+      setMessage(`Your tick wasn't saved. ${why}`, true);
+      return false;
+    }
     setMessage('');
+    return true;
   };
 
   const finishPanel = {

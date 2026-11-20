@@ -4,6 +4,7 @@ import '@tiptap/starter-kit';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { KEPT_LINK } from '../todo-doc/extensions.ts';
 import {
   isSafeHref,
   type TodoDetailsEditorProps,
@@ -26,6 +27,9 @@ const TOOLS: { action: ToolbarAction; label: string; icon: IconName }[] = [
   { action: 'link', label: 'Link', icon: 'link' },
 ];
 
+/** The tick boxes the editor makes, one per task item. */
+const TICK_BOX = 'li[data-checked] input[type="checkbox"]';
+
 /** "example.com" is meant as a web address: give it a scheme so it can be a link. */
 function withScheme(raw: string): string {
   const text = raw.trim();
@@ -42,6 +46,7 @@ export default function TodoDetailsEditor({
   editable,
   onChange,
   onToggleTask,
+  pending = false,
   label,
   describedBy,
 }: TodoDetailsEditorProps) {
@@ -91,11 +96,16 @@ export default function TodoDetailsEditor({
     },
   });
 
-  // A version from outside (another person's change, a saved tick) replaces the document.
+  // A version from outside (another person's change, a saved tick) replaces the document. A tick box that had
+  // focus keeps it: the boxes are made again, and focus would otherwise drop to the page.
   useEffect(() => {
     if (!editor || markdown === current.current) return;
     current.current = markdown;
+    const boxes = () => [...(box.current?.querySelectorAll<HTMLInputElement>(TICK_BOX) ?? [])];
+    const focused = document.activeElement;
+    const at = focused instanceof HTMLInputElement ? boxes().indexOf(focused) : -1;
     editor.commands.setContent(toDoc(markdown), { emitUpdate: false });
+    if (at >= 0 && !focused?.isConnected) boxes()[at]?.focus({ preventScroll: true });
   }, [markdown, editor]);
 
   useEffect(() => {
@@ -116,6 +126,7 @@ export default function TodoDetailsEditor({
   // A tick box that can't be pressed (reading, with no way to save a tick) is disabled, so it isn't offered. The
   // editor makes the boxes itself, so they are set after each change to the document.
   const tickable = editable || onToggleTask !== undefined;
+  const busy = !editable && pending;
   useEffect(() => {
     if (!editor) return;
     const sync = () => {
@@ -127,8 +138,12 @@ export default function TodoDetailsEditor({
       } catch {
         return;
       }
-      for (const box of dom.querySelectorAll<HTMLInputElement>('li[data-checked] input[type="checkbox"]'))
+      for (const box of dom.querySelectorAll<HTMLInputElement>(TICK_BOX)) {
         box.disabled = !tickable;
+        // While a tick saves the boxes stay focusable (a disabled box would drop focus) but can't be pressed.
+        if (busy) box.setAttribute('aria-disabled', 'true');
+        else box.removeAttribute('aria-disabled');
+      }
     };
     const later = () => queueMicrotask(sync);
     sync();
@@ -138,7 +153,7 @@ export default function TodoDetailsEditor({
       editor.off('create', later);
       editor.off('transaction', later);
     };
-  }, [editor, tickable]);
+  }, [editor, tickable, busy]);
 
   const active = useEditorState({
     editor,
@@ -213,7 +228,15 @@ export default function TodoDetailsEditor({
       setLinkError('Links can start with http, https or mailto.');
       return;
     }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: target }).run();
+    // A brain-path link shown as text (decision 14) gives way to the web link, once the address is accepted.
+    editor
+      .chain()
+      .focus()
+      .extendMarkRange(KEPT_LINK)
+      .unsetMark(KEPT_LINK)
+      .extendMarkRange('link')
+      .setLink({ href: target })
+      .run();
     closeLink();
   };
   // Not a form: this sits inside the panel's own form, and forms can't nest.
@@ -239,6 +262,7 @@ export default function TodoDetailsEditor({
     if (!item || !box.current) return;
     e.preventDefault();
     e.stopPropagation();
+    if (busy) return;
     const items = [...box.current.querySelectorAll('li[data-checked]')];
     const index = items.indexOf(item);
     if (index < 0) return;
@@ -278,7 +302,11 @@ export default function TodoDetailsEditor({
   };
 
   return (
-    <div className="todo-details" data-editable={editable ? 'true' : 'false'}>
+    <div
+      className="todo-details"
+      data-editable={editable ? 'true' : 'false'}
+      data-pending={busy ? 'true' : undefined}
+    >
       {editable ? (
         <div
           className="todo-toolbar"

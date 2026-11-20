@@ -30,7 +30,7 @@ export const APP_VIA = 'TDS Cortex';
 
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {
-  'bad-request': "That change wasn't understood. Check the title and date, then try again.",
+  'bad-request': "That change couldn't be saved. Try again, or make it in a chat instead.",
   'not-found': 'That to-do could not be found. It may have been finished, deleted or passed on.',
   'not-allowed': "Changing to-dos isn't available to you in the app yet.",
   changed: "Someone else changed this to-do since you opened it, so your change wasn't made.",

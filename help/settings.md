@@ -34,7 +34,7 @@ Settings has tabs under the top bar: **General**, **Claude**, **Skill levels**, 
 
 ## Good to know
 
-- Each tab has its own help page. Press Help while you are on a tab and it opens the page for that tab. See Related below.
+- Press Help on a tab and it opens the closest help page. **Claude** opens Levels, and **Health** opens How Cortex is running. **Skill levels** opens its own page. **General** and **About** open this page. See Related below.
 - You can also press **⌘K** and type "Settings: Health", for example, to go straight to a tab.
 - Your choices are kept on this Mac, not shared with the team.
 - **What's changed** shows only for owners and scouts.

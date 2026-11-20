@@ -105,7 +105,7 @@ The terminal is a window where you type commands. You never need it for everyday
 
 ### Settings
 
-Settings is where you change how Cortex behaves and check that it is working. It has five tabs: **General**, **Claude**, **Skill levels**, **Health** and **About**.
+Settings is where you change how Cortex behaves and check that it is working. It has five tabs: **General**, **Claude**, **Skill levels**, **Health** and **About**. **Skill levels** shows only when the Brain has skill levels.
 
 ### Help
 

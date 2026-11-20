@@ -357,7 +357,7 @@ export function TodosDrawer() {
     scope: '',
     open: {},
   });
-  const { state: shell, dispatch: shellDispatch } = useShell();
+  const { state: shell, dispatch: shellDispatch, modes } = useShell();
   const panel = shell.todoPanel ?? null;
   // The asked-of-others list is its own request: it never blocks or fails the main list. It loads with the
   // drawer and again whenever the to-dos reload (`todos` is a new object each time). A failed reload keeps
@@ -886,7 +886,15 @@ export function TodosDrawer() {
       {todos.changes === 'switched-off' ? (
         <p className="todo-note todo-off">
           Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
-          <button type="button" className="link-btn" onClick={() => openSettings('general', 'set-direct')}>
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              // A floating drawer covers the sheet (and makes it inert): it makes way, as choosing a to-do does.
+              if (modes.drawerOverlays) shellDispatch({ type: 'close-drawer' });
+              openSettings('general', 'set-direct');
+            }}
+          >
             Settings
           </button>
           .

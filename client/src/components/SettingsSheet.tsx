@@ -7,6 +7,9 @@ import { healthChecks, healthSummary } from '../state/health.ts';
 import { useStore } from '../store.tsx';
 import { SettingsView } from './SettingsView.tsx';
 
+/** Frames a focus request waits for the sheet to stop being inert (about half a second). */
+const INERT_WAIT_FRAMES = 30;
+
 /**
  * The Settings sheet (plan 2026-11-20-settings-tabs): the bar, the tab row and the shown tab's page. The health
  * checks and the focus request live here, outside the page that is keyed by tab, so a tab press keeps focus on the
@@ -28,18 +31,31 @@ export function SettingsSheet() {
   const title = items.find((t) => t.id === tab)?.label ?? '';
   const ready = Boolean(boot);
 
-  // One focus effect: focus the control, else the fallback, and always clear the request.
+  // One focus effect: focus the control, else the fallback, and always clear the request. While the control sits
+  // in an inert page (a closing drawer or to-do panel still covers the sheet), it waits a few frames, since focus()
+  // there does nothing; it gives up after about half a second.
   useEffect(() => {
     if (!settingsFocus || !ready) return;
-    const el =
-      document.getElementById(settingsFocus) ??
-      // In Automatic level there is no Model box: land on the chosen Level option instead.
-      (settingsFocus === 'set-model'
-        ? document.querySelector<HTMLElement>('.level-mode [role="radio"][aria-checked="true"]')
-        : null);
-    el?.focus();
-    el?.scrollIntoView?.({ block: 'center' });
-    clearSettingsFocus();
+    const id = settingsFocus;
+    let frame = 0;
+    let tries = 0;
+    const land = () => {
+      const el =
+        document.getElementById(id) ??
+        // In Automatic level there is no Model box: land on the chosen Level option instead.
+        (id === 'set-model'
+          ? document.querySelector<HTMLElement>('.level-mode [role="radio"][aria-checked="true"]')
+          : null);
+      if (el?.closest('[inert]') && tries++ < INERT_WAIT_FRAMES) {
+        frame = requestAnimationFrame(land);
+        return;
+      }
+      el?.focus();
+      el?.scrollIntoView?.({ block: 'center' });
+      clearSettingsFocus();
+    };
+    land();
+    return () => cancelAnimationFrame(frame);
   }, [settingsFocus, ready, clearSettingsFocus]);
 
   // The current tab scrolls into view when the row is cut off (narrow sheet).

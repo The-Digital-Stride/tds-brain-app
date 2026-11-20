@@ -179,6 +179,21 @@ describe('Settings tabs, in the real app', () => {
     expect(tab('General').getAttribute('aria-current')).toBe('page');
   });
 
+  it('waits for an inert sheet (a closing drawer or panel) before focusing the switch', async () => {
+    await openSettings();
+    fireEvent.click(tab('About'));
+    await screen.findByRole('heading', { name: /^About TDS Cortex/ });
+    const main = document.querySelector('main') as HTMLElement;
+    main.setAttribute('inert', '');
+    act(() => store().openSettings('general', 'set-direct'));
+    await screen.findByRole('heading', { name: 'Preferences' });
+    // focus() inside an inert page does nothing in a browser; jsdom would allow it, so this proves the wait.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.activeElement?.id).not.toBe('set-direct');
+    main.removeAttribute('inert');
+    await waitFor(() => expect(document.activeElement?.id).toBe('set-direct'));
+  });
+
   it('clears a focus request for an element on another tab, so it never steals focus later', async () => {
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });

@@ -8,6 +8,54 @@ import { KeptBlock } from './extensions.ts';
 // Each block's hint has its own id, so `aria-describedby` can point at it.
 let hints = 0;
 
+/**
+ * A kept block's task items shown as ☐ and ☑ (the sanitiser drops checkbox inputs, so done and not done would
+ * look the same). For showing only: the block's source is kept as it was. Lines in code fences are left alone.
+ */
+export function showTicks(source: string): string {
+  let fence: string | null = null;
+  return source
+    .split('\n')
+    .map((line) => {
+      const f = /^[ \t>]*?(`{3,}|~{3,})/.exec(line)?.[1];
+      if (fence) {
+        if (f && f[0] === fence[0] && f.length >= fence.length) fence = null;
+        return line;
+      }
+      if (f) {
+        fence = f;
+        return line;
+      }
+      return line.replace(
+        /^([ \t>]*[-+*][ \t]+)\[([ xX])\](?=[ \t]|$)/,
+        (_m, lead: string, mark: string) => `${lead}${mark === ' ' ? '☐' : '☑'}`,
+      );
+    })
+    .join('\n');
+}
+
+/**
+ * The ☐ and ☑ of `showTicks` are shapes only, and screen readers say them differently or not at all: each is
+ * hidden from them and "Not done" or "Done" is said instead.
+ */
+function speakTicks(root: HTMLElement): void {
+  for (const li of root.querySelectorAll('li')) {
+    const first = li.firstChild;
+    const text = first?.nodeType === Node.TEXT_NODE ? (first.textContent ?? '') : '';
+    const mark = text.startsWith('☑') ? 'Done' : text.startsWith('☐') ? 'Not done' : null;
+    if (!mark || !first) continue;
+    const shape = document.createElement('span');
+    shape.setAttribute('aria-hidden', 'true');
+    shape.textContent = text[0] as string;
+    const said = document.createElement('span');
+    said.className = 'visually-hidden';
+    said.textContent = `${mark}: `;
+    first.textContent = text.slice(1);
+    li.insertBefore(said, first);
+    li.insertBefore(shape, said);
+  }
+}
+
 export const KeptBlockView = KeptBlock.extend({
   addNodeView() {
     return ({ node }) => {
@@ -31,7 +79,8 @@ export const KeptBlockView = KeptBlock.extend({
       const body = document.createElement('div');
       body.className = 'markdown';
       // Sanitised by renderMarkdown: unsafe links come out as plain text.
-      body.innerHTML = renderMarkdown(source);
+      body.innerHTML = renderMarkdown(showTicks(source));
+      speakTicks(body);
       const hint = document.createElement('p');
       hint.className = 'todo-note todo-kept-hint';
       hint.id = `todo-kept-hint-${++hints}`;

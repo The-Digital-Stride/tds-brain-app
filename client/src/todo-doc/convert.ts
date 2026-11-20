@@ -17,7 +17,7 @@ import { getSchema, type JSONContent } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
 import type { Schema } from '@tiptap/pm/model';
 import { Marked, type Token, type Tokens, type TokensList } from 'marked';
-import { type BlockOrigin, baseExtensions, KEPT_BLOCK } from './extensions.ts';
+import { type BlockOrigin, baseExtensions, KEPT_BLOCK, KEPT_LINK } from './extensions.ts';
 import { isSafeHref } from './links.ts';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -165,6 +165,42 @@ function canon(node: JSONContent): JSONContent | null {
   }
 }
 
+type Marks = NonNullable<JSONContent['marks']>;
+
+/** Each mark of every text node in `node` passed through `map` (a new tree; `node` is not changed). */
+function mapMarks(node: JSONContent, map: (marks: Marks) => Marks): JSONContent {
+  const out: JSONContent = { ...node };
+  if (out.marks) out.marks = map(out.marks);
+  if (out.content) out.content = out.content.map((c) => mapMarks(c, map));
+  return out;
+}
+
+/** A link the editor must not show as a link (decision 14) becomes a `keptLink` holding its address. */
+function keepUnsafeLinks(node: JSONContent): JSONContent {
+  return mapMarks(node, (marks) =>
+    marks.map((m) => {
+      if (m.type !== 'link' || isSafeHref(String(m.attrs?.href ?? ''))) return m;
+      const title = typeof m.attrs?.title === 'string' && m.attrs.title ? m.attrs.title : null;
+      return { type: KEPT_LINK, attrs: { href: String(m.attrs?.href ?? ''), title } };
+    }),
+  );
+}
+
+/** Back to markdown links for writing; a `keptLink` under a real link (the Link button) gives way to it. */
+function restoreKeptLinks(node: JSONContent): JSONContent {
+  return mapMarks(node, (marks) => {
+    if (!marks.some((m) => m.type === KEPT_LINK)) return marks;
+    const linked = marks.some((m) => m.type === 'link');
+    return marks.flatMap((m) =>
+      m.type !== KEPT_LINK
+        ? [m]
+        : linked
+          ? []
+          : [{ type: 'link', attrs: { href: String(m.attrs?.href ?? ''), title: m.attrs?.title ?? null } }],
+    );
+  });
+}
+
 /** Soft line breaks read as spaces, so the editor shows flowing text. */
 function softBreaksToSpaces(node: JSONContent): void {
   if (node.type === 'text' && node.text) node.text = node.text.replace(/[ \t]*\n[ \t]*/g, ' ');
@@ -182,7 +218,7 @@ function parseBlock(source: string): JSONContent | null {
     const nodes = engine().manager.parse(source).content ?? [];
     if (nodes.length === 1 && nodes[0]) {
       softBreaksToSpaces(nodes[0]);
-      result = canon(nodes[0]);
+      result = canon(keepUnsafeLinks(nodes[0]));
     }
   } catch {
     result = null;
@@ -222,7 +258,7 @@ function withMarkdownLinks(node: JSONContent): JSONContent {
 /** One top-level node in brain style, as Tiptap writes it. */
 function serialiseNode(node: JSONContent): string {
   return engine()
-    .manager.serialize({ type: 'doc', content: [withMarkdownLinks(tidy(node))] })
+    .manager.serialize({ type: 'doc', content: [withMarkdownLinks(restoreKeptLinks(tidy(node)))] })
     .trim()
     .replaceAll(CODE_SPACE, ' ');
 }
@@ -232,7 +268,7 @@ function serialiseNode(node: JSONContent): string {
 // ends of a line, around a hard break and at the edges of bold, italic, strike and links may lose those
 // marks or go, and a bare URL may come back as a link to itself.
 
-const EDGE_MARKS = new Set(['bold', 'italic', 'strike', 'link']);
+const EDGE_MARKS = new Set(['bold', 'italic', 'strike', 'link', KEPT_LINK]);
 
 interface Char {
   ch: string;
@@ -646,13 +682,22 @@ function plainText(node: JSONContent): string {
   return node.type === 'paragraph' || node.type === 'heading' ? inner.join('') : inner.join('\n\n');
 }
 
-function separator(prev: Written, cur: Written): string {
+/**
+ * What goes between two pieces: the whitespace that was there when they were neighbours, else a blank line. A
+ * tight one ("Text:\n- list", or a tick list straight above a plain one) is kept when a side changed too, so a
+ * tick or a word typed doesn't loosen the list; `keepBlocksApart` loosens it (`loose`) if they then run together.
+ */
+function separator(prev: Piece, cur: Piece): string {
   const a = prev.origin;
   const b = cur.origin;
   if (!a || !b || a.index + 1 !== b.index) return '\n\n';
-  // A tight separator ("Text:\n- list") only holds while both sides are as they were.
-  if ((prev.unchanged && cur.unchanged) || /\n[ \t]*\n/.test(b.before)) return b.before;
-  return '\n\n';
+  if (cur.loose && !/\n[ \t]*\n/.test(b.before)) return '\n\n';
+  return b.before;
+}
+
+/** Whether the separator before `cur` has no blank line, so it could be loosened. */
+function isTight(prev: Piece, cur: Piece): boolean {
+  return !/\n[ \t]*\n/.test(separator(prev, cur));
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -678,6 +723,8 @@ interface Piece extends Written {
   list: boolean;
   /** A `BLOCK_BREAK` added here. */
   breaker: boolean;
+  /** Its tight separator ran it into the piece before, so it gets a blank line instead. */
+  loose?: boolean;
 }
 
 const spanCache = new Map<string, { start: number; end: number; type: string }[] | null>();
@@ -767,11 +814,20 @@ function keepBlocksApart(pieces: Piece[]): string {
   // The details are stored trimmed, so a first block starting with spaces (indented code) needs a break.
   if (/^[ \t]/.test(pieces[0]?.text ?? '')) pieces.unshift(breaker());
   let { out, offsets } = join(pieces);
-  for (let round = 0; round < pieces.length; round++) {
+  // Each piece can be loosened once and each gap broken once.
+  for (let round = 0; round < pieces.length * 3; round++) {
     const at = runTogether(out, offsets, pieces);
     if (at === null) break;
+    const prev = pieces[at];
+    const next = pieces[at + 1];
+    // A tight separator first gives way to a blank line, which is all most blocks need.
+    if (prev && next && !next.loose && !next.breaker && !prev.breaker && isTight(prev, next)) {
+      next.loose = true;
+      ({ out, offsets } = join(pieces));
+      continue;
+    }
     // Already broken there: nothing better can be done without rewriting an untouched block.
-    if (pieces[at]?.breaker || pieces[at + 1]?.breaker) break;
+    if (prev?.breaker || next?.breaker) break;
     pieces.splice(at + 1, 0, breaker());
     ({ out, offsets } = join(pieces));
   }

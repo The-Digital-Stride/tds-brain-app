@@ -55,6 +55,8 @@ export interface TodoDetailsEditorProps {
   onChange?: (markdown: string) => void;
   /** Read mode: a tick item was pressed. Absent = tick items are not pressable. */
   onToggleTask?: (index: number, checked: boolean) => void;
+  /** Read mode: a tick is being saved. The boxes show it but can't be pressed again until it is done. */
+  pending?: boolean;
   /** Accessible name of the editing area, e.g. "Details". */
   label: string;
   /** Id for `aria-describedby` notes. */

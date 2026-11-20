@@ -2,7 +2,8 @@
 import { Editor, getSchema, type JSONContent } from '@tiptap/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { analyse } from './convert.ts';
-import { isFaithful, isSafeHref, toDoc, todoDocExtensions, toMarkdown } from './index.ts';
+import { countTasks, isFaithful, isSafeHref, toDoc, todoDocExtensions, toMarkdown } from './index.ts';
+import { showTicks } from './kept-view.ts';
 
 // Synthetic fixtures in the style of live to-do bodies (no real brain content).
 const MIXED = [
@@ -207,17 +208,39 @@ describe('blocks the editor offers and kept blocks', () => {
     expect(kinds('![alt](https://example.com/a.png)')).toEqual(['keptBlock']);
   });
 
-  it('keeps unsafe links as text, never as a link', () => {
+  // Decision 14: kept in the markdown, shown as plain text. The block stays editable (its tick boxes work); the
+  // address is held by a `keptLink` mark, never a `link`.
+  it('keeps unsafe links as text, never as a link, in an editable block', () => {
     for (const md of [
       '[x](javascript:alert(1))',
       '[x](data:text/html,hi)',
       '[x](notes/a.md)',
       '[x](//evil.example)',
+      'See [the brief](<clients/acme/a brief.md> "Brief") now.',
     ]) {
       const nodes = top(toDoc(md));
-      expect(nodes[0]?.type).toBe('keptBlock');
-      expect(JSON.stringify(nodes)).not.toContain('"link"');
+      expect(nodes[0]?.type, md).toBe('paragraph');
+      expect(JSON.stringify(nodes), md).not.toContain('"type":"link"');
+      expect(JSON.stringify(nodes), md).toContain('"type":"keptLink"');
+      expect(roundTrip(md), md).toBe(md);
+      expect(isFaithful(md), md).toBe(true);
     }
+  });
+
+  it('a checklist linking a brain file keeps its tick boxes and its links', () => {
+    const md = '## Steps\n\n- [ ] Read the [brief](clients/acme/brief.md)\n- [x] Ring Bob\n- [ ] Send quote';
+    expect(kinds(md)).toEqual(['heading', 'taskList']);
+    expect(isFaithful(md)).toBe(true);
+    expect(countTasks(md)).toBe(3);
+    // Ticked through the editor: the link is written back as it was.
+    const doc = asEditorJson(toDoc(md));
+    const list = top(doc)[1] as JSONContent;
+    const first = list.content?.[0] as JSONContent;
+    first.attrs = { ...first.attrs, checked: true };
+    expect(toMarkdown(doc)).toBe(md.replace('- [ ] Read', '- [x] Read'));
+    // Typed into: the link stays a link in the markdown.
+    const edited = retextBlock(asEditorJson(toDoc(md)), 1, 'Now read the ');
+    expect(toMarkdown(edited)).toContain('[brief](clients/acme/brief.md)');
   });
 
   it('keeps safe links as link marks', () => {
@@ -384,8 +407,28 @@ describe('editing one block changes only that block', () => {
     const md = 'Steps:\n- one\n- two\n\nEnd.';
     const doc = asEditorJson(toDoc(md));
     expect(toMarkdown(doc)).toBe(md);
-    // Edit the paragraph: the list must stay a list, so the tight separator becomes a blank line.
-    expect(toMarkdown(retextBlock(doc, 0, 'Do these:'))).toBe('Do these:\n\n- one\n- two\n\nEnd.');
+    // Edit the paragraph: the list still reads as its own list, so the separator stays as it was.
+    expect(toMarkdown(retextBlock(doc, 0, 'Do these:'))).toBe('Do these:\n- one\n- two\n\nEnd.');
+  });
+
+  it('ticking in a list of ticks and plain bullets adds no blank line', () => {
+    const md = '- [ ] a\n- plain\n- [x] c';
+    const doc = asEditorJson(toDoc(md));
+    const item = (top(doc)[0] as JSONContent).content?.[0] as JSONContent;
+    item.attrs = { ...item.attrs, checked: true };
+    expect(toMarkdown(doc)).toBe('- [x] a\n- plain\n- [x] c');
+  });
+
+  it('falls back to a blank line where the tight one would join the blocks', () => {
+    const md = 'Text\n- one';
+    const doc = asEditorJson(toDoc(md));
+    // A numbered list from 2 can't interrupt a paragraph, so "Text\n2. one" would read as one paragraph.
+    const list = top(doc)[1] as JSONContent;
+    doc.content = [
+      top(doc)[0] as JSONContent,
+      { ...list, type: 'orderedList', attrs: { ...list.attrs, start: 2 } },
+    ];
+    expect(toMarkdown(doc)).toBe('Text\n\n2. one');
   });
 
   it('deleting a block joins its neighbours with one blank line', () => {
@@ -868,11 +911,24 @@ describe('in a real editor', () => {
     expect(kept?.getAttribute('contenteditable')).toBe('false');
   });
 
-  it('renders an unsafe link in a kept block as plain text', () => {
-    const ed = open('Do not [click](javascript:alert(1)) this.');
+  it('renders an unsafe link as plain text, never an <a>', () => {
+    const ed = open('Do not [click](javascript:alert(1)) this.\n\n- [ ] Read the [brief](clients/a.md)');
+    expect(ed.view.dom.querySelector('.todo-kept')).toBeNull();
+    expect(ed.view.dom.textContent).toContain('click');
+    expect(ed.view.dom.querySelector('a')).toBeNull();
+    expect(ed.view.dom.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+  });
+
+  it("shows a kept block's tick items as ☐ and ☑, and saves them unchanged", () => {
+    const md = '- [ ] a\n- plain\n- [x] c';
+    const ed = open(md);
     const kept = ed.view.dom.querySelector('.todo-kept');
-    expect(kept?.textContent).toContain('click');
-    expect(kept?.querySelector('a')).toBeNull();
+    expect(kept?.textContent).toContain('☑Done:  c');
+    expect(kept?.querySelector('[aria-hidden="true"]')?.textContent).toBe('☑');
+    expect(kept?.querySelector('.visually-hidden')?.textContent).toBe('Done: ');
+    expect(kept?.textContent).not.toContain('[x]');
+    expect(toMarkdown(ed.getJSON())).toBe(md);
+    expect(showTicks('```\n- [ ] code\n```\n- [X] done')).toBe('```\n- [ ] code\n```\n- ☑ done');
   });
 
   it('renders safe links with a safe rel', () => {

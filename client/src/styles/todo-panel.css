@@ -470,9 +470,20 @@ fieldset.todo-link {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* A tick is being saved: it shows at once, and the boxes wait (still focusable) until it is done. */
+.todo-details[data-pending="true"] .todo-prose input[type="checkbox"] {
+  opacity: 0.6;
+  cursor: progress;
+}
 .todo-prose a {
   color: var(--blue-ink);
   text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A link to a Brain file (or any address that isn't the web or email): plain text, with a dotted line to say a
+   reference is there. Its address shows on hover. */
+.todo-prose [data-todo-link] {
+  text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
 /* A link that isn't safe to open stays in the text, plain. */

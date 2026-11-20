@@ -79,8 +79,8 @@ export interface TodoPanelProps {
   /** Back to reading, dropping the draft. Never asks: the person pressed Cancel. */
   onCancelEdit: () => void;
   onSave: (todo: TodoItem, actions: TodoAction[]) => Promise<ChangeTodosResult>;
-  /** A tick box pressed while reading: the whole new details, sent as one change. */
-  onTick: (todo: TodoItem, markdown: string) => Promise<void>;
+  /** A tick box pressed while reading: the whole new details, sent as one change. True when it was saved. */
+  onTick: (todo: TodoItem, markdown: string) => Promise<boolean>;
   onDone: (todo: TodoItem) => void;
   onDelete: (todo: TodoItem) => void;
   onAdd: (action: TodoAction) => void;
@@ -420,11 +420,18 @@ function ReadView({
   const shown = detailsText(todo, filesBlock);
   const canTickDetails = p.canEdit && faithful && !tooLong;
   const note = tooLong ? LONG_NOTE : faithful ? null : UNFAITHFUL_NOTE;
+  // A tick shows at once, while it saves, and only while the details it was made on are still the ones shown.
+  const [ticked, setTicked] = useState<{ key: string; from: string; md: string } | null>(null);
+  const tickedNow = ticked && ticked.key === todo.key && ticked.from === shown ? ticked.md : null;
   const onToggleTask = canTickDetails
     ? (index: number, checked: boolean) => {
-        if (p.busy) return;
+        if (p.busy || tickedNow !== null) return;
         const next = setTask(shown, index, checked);
-        if (next !== shown && next.length <= TODO_DETAILS_MAX) void p.onTick(todo, next);
+        if (next === shown || next.length > TODO_DETAILS_MAX) return;
+        setTicked({ key: todo.key, from: shown, md: next });
+        // Saved or not, it is done: a saved tick comes back in the details themselves (review finding: held on,
+        // it showed again, and blocked every press, if the details later went back to what they were).
+        void p.onTick(todo, next).finally(() => setTicked(null));
       }
     : undefined;
   return (
@@ -433,9 +440,10 @@ function ReadView({
         <div className="todo-main-col" aria-busy={p.busy}>
           {shown ? (
             <TodoDetailsEditor
-              markdown={shown}
+              markdown={tickedNow ?? shown}
               editable={false}
               onToggleTask={onToggleTask}
+              pending={p.busy || tickedNow !== null}
               label="Details"
               describedBy={note ? `${uid}-note` : undefined}
             />
@@ -613,7 +621,8 @@ function EditView({
     if (hasConflict) conflictRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [hasConflict]);
 
-  const canSave = !p.busy && draft.title.trim() !== '' && !overLimit;
+  const noTitle = draft.title.trim() === '';
+  const canSave = !p.busy && !noTitle && !overLimit;
   const save = () => {
     if (!canSave) return;
     if (actions.length === 0) return p.onCancelEdit();
@@ -776,7 +785,11 @@ function EditView({
             className="btn"
             data-variant="primary"
             aria-disabled={canSave ? undefined : true}
-            aria-describedby={warnPersonal ? `${uid}-personal` : undefined}
+            aria-describedby={
+              [noTitle ? `${uid}-no-title` : '', warnPersonal ? `${uid}-personal` : '']
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
           >
             Save
           </button>
@@ -784,6 +797,11 @@ function EditView({
             Cancel
           </button>
         </div>
+        {noTitle ? (
+          <p className="todo-note todo-foot-note" id={`${uid}-no-title`}>
+            Add a title to save.
+          </p>
+        ) : null}
         {dirty ? (
           <p className="todo-note todo-foot-note" id={`${uid}-dirty`}>
             Save or cancel your changes before marking it as done.

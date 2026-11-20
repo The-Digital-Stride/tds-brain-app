@@ -237,7 +237,7 @@ describe('parseTodoAction', () => {
     ];
     for (const body of bad) {
       expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow(
-        "That change wasn't understood. Check the title and date, then try again.",
+        "That change couldn't be saved. Try again, or make it in a chat instead.",
       );
     }
   });
@@ -502,7 +502,7 @@ process.stdin.on('end', () => {
       expect(status, JSON.stringify(body)).toBe(400);
       expect(json.error.code).toBe('bad-request');
       expect(json.error.message).toBe(
-        "That change wasn't understood. Check the title and date, then try again.",
+        "That change couldn't be saved. Try again, or make it in a chat instead.",
       );
     }
     expect((await send(brain, { method: 'GET' })).status).toBe(405);

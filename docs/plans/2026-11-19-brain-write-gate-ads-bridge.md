@@ -1,7 +1,12 @@
 # Brain change request: cover the Ads bridge in the write gate
 
-For: whoever looks after `~/agencybrain/.claude/hooks/gads-write-gate.cjs` (Pete). The app never edits the brain,
-so this is a request, not something the app does.
+For: whoever looks after `~/agencybrain/.claude/hooks/gads-write-gate.cjs` (Pete).
+
+**Status: done on 2026-11-20.** Ian asked for it to be made in the brain because it only adds a check. Section 1b
+went in as below, with one tightening: only the command word right after the script name counts, so reading the file
+with grep or sed is never gated. Tested first on a copy: 12 commands, every non-bridge one decided as before, and no
+existing line was changed (15 lines added). The gate is wired only where `settings.local.json` turns it on (Pete's
+Mac). Ian syncs the brain; no tool here ran git in it.
 
 ## The gap
 
@@ -14,14 +19,14 @@ rules say Claude must not. This is true of the copy already in the brain (v0.2),
 The app itself runs the bridge directly, not through Claude's Bash tool, so the hook never sees the app's own calls.
 Adding these patterns can't break Ad Manager.
 
-## Suggested patch
+## The patch (as applied)
 
 Add after section 1 (proposal decisions) in `gads-write-gate.cjs`:
 
 ```js
 // 1b. The TDS Brain App's Ads bridge takes the same decisions as JSON on stdin. Ad Manager runs it without a
 //     shell, so this only fires when Claude runs it from a chat. Applying is never Claude's to do: refuse it.
-const bridge = cmd.match(/tdsapp-ads\.cjs\b[^\n;&|]*\b(decide|decided|client-approved|sign-monthly|apply)\b/);
+const bridge = cmd.match(/tdsapp-ads\.cjs['"]?\s+['"]?(decide|decided|client-approved|sign-monthly|apply)\b/);
 if (bridge) {
   if (bridge[1] === 'apply') {
     deny('Apply refused: a live change to Google Ads is made with Apply now in Ad Manager (TDS Cortex), never from a chat.', { kind: 'tdsapp-ads-apply', cmd });

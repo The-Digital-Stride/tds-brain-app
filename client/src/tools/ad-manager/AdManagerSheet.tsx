@@ -4,7 +4,7 @@ import { AccountHead, FactTiles, goToClose, MonthlyClose, NeedsYou, Proposals } 
 import { identityLine } from './ProposalPanel.tsx';
 import { adStore, findProposal, useAd } from './store.ts';
 import { useAdsAccount } from './use-ads-account.ts';
-import { isWaiting } from './words.ts';
+import { isWaiting, personName } from './words.ts';
 
 /** The Ads Manager sheet: the account's facts, what needs you, the proposals, then the monthly close. */
 export function AdManagerSheet() {
@@ -80,7 +80,8 @@ export function AdManagerSheet() {
           {client ? (
             client.mine ? null : (
               <p className="am-line">
-                {client.name}'s proposals are reviewed by {client.reviewer || client.owner || 'someone else'}.
+                {client.name}'s proposals are reviewed by{' '}
+                {personName(client.reviewer || client.owner, s.approvals?.people) || 'someone else'}.
               </p>
             )
           ) : (

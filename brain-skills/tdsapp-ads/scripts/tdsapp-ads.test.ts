@@ -377,7 +377,7 @@ describe('capabilities', () => {
       ok: true,
       action: 'capabilities',
       features: FEATURES,
-      version: '0.3',
+      version: '0.4',
       adsManager: true,
       adsAccess: false,
       me: { slug: 'rita-reviewer', name: 'Rita Reviewer', role: 'team' },
@@ -420,6 +420,27 @@ describe('capabilities', () => {
 });
 
 describe('approvals', () => {
+  it('carries people: each roster member by name slug (as proposals and configs write them), to their name', () => {
+    writeFileSync(
+      abs('.team-config/roles.json'),
+      JSON.stringify({
+        members: [
+          ...ROLES.members,
+          { name: 'Pete Tyler', email: 'pete@example.test', role: 'owner', slug: 'owner' },
+          { name: '', email: 'blank@example.test', role: 'team' },
+        ],
+      }),
+    );
+    const people = bridge('approvals').reply.people as Record<string, string>;
+    expect(people['rita-reviewer']).toBe('Rita Reviewer');
+    expect(people['sam-scout']).toBe('Sam Scout');
+    expect(people['pete-tyler']).toBe('Pete Tyler');
+    // The roster's own slug field also names them, and emails never leave the bridge.
+    expect(people.owner).toBe('Pete Tyler');
+    expect(JSON.stringify(people)).not.toContain('@');
+    expect(Object.values(people)).not.toContain('');
+  });
+
   it("lists the person's clients with summaries (no bodies), flags, pack and monthly", () => {
     const a = mkProposal('pause-generic');
     const b = mkProposal('a-decision', { type: 'decision', tier: 1 });

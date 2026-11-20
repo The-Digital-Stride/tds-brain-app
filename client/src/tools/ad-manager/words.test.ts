@@ -14,6 +14,8 @@ const {
   totalsValue,
   totalsChange,
   proposalFacts,
+  personName,
+  decisionWords,
   datesInWords,
   earlierMonthWords,
   triageWords,
@@ -224,7 +226,17 @@ describe('proposalFacts', () => {
     expect(get('Status')).toBe('Changes requested');
     expect(get('Campaigns')).toBe('A, B');
     expect(get('Expires')).toBe('Sat 21 Nov, in 3 days');
-    expect(get('Proposed')).toBe('ian Tue 17 Nov');
+    expect(get('Proposed')).toBe('ian, Tue 17 Nov');
+  });
+  it('names people from the roster when the bridge sends `people`, else as written', () => {
+    const q = {
+      ...p,
+      fm: { ...p.fm, created_by: 'pete-tyler', approved_by: 'rita', approved_at: '2026-11-18' },
+    } as typeof p;
+    const people = { 'pete-tyler': 'Pete Tyler' };
+    const get = (k: string) => proposalFacts(q, now, people).find(([n]) => n === k)?.[1];
+    expect(get('Proposed')).toBe('Pete Tyler, Tue 17 Nov');
+    expect(get('Approved')).toBe('rita, Wed 18 Nov');
   });
   it('leaves out an expiry the data does not have', () => {
     const { expires: _e, ...rest } = p.fm;
@@ -244,5 +256,29 @@ describe('datesInWords and stale months', () => {
     expect(earlierMonthWords({ ...m, reason: 'The report was edited after sign-off.' })).toBe(
       'The report was edited after sign-off, sign again',
     );
+  });
+});
+
+describe('personName', () => {
+  const people = { 'pete-tyler': 'Pete Tyler', owner: 'Pete Tyler', ian: '  ' };
+  it('maps a slug to its roster name, any case, and leaves anything else as written', () => {
+    expect(personName('pete-tyler', people)).toBe('Pete Tyler');
+    expect(personName('Pete-Tyler', people)).toBe('Pete Tyler');
+    expect(personName('owner', people)).toBe('Pete Tyler');
+    expect(personName('simon', people)).toBe('simon');
+    expect(personName('pete-tyler', undefined)).toBe('pete-tyler');
+    expect(personName(null, people)).toBe('');
+    // A blank name in the map doesn't blank the person out.
+    expect(personName('ian', people)).toBe('ian');
+  });
+  it('never picks up an inherited property for slugs like constructor', () => {
+    expect(personName('constructor', people)).toBe('constructor');
+    expect(personName('__proto__', people)).toBe('__proto__');
+    expect(personName('toString', {})).toBe('toString');
+  });
+  it('names the decider in Recent decisions', () => {
+    const fm = { status: 'approved', approved_by: 'pete-tyler', approved_at: '2026-11-17' } as never;
+    expect(decisionWords(fm, people).by).toBe('Pete Tyler');
+    expect(decisionWords(fm).by).toBe('pete-tyler');
   });
 });

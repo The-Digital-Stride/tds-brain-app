@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-ads.cjs (v0.3): the bridge TDS Cortex's Ad Manager runs for the Workbench's Ads tab, without the
+// tdsapp-ads.cjs (v0.4): the bridge TDS Cortex's Ad Manager runs for the Workbench's Ads tab, without the
 // Workbench. Plan: the app repo's docs/plans/2026-11-16-workbench-ad-manager.md (decisions 7-12); shapes:
 // its shared/ads-contract.ts (a test checks the constants here match).
 //
@@ -39,7 +39,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.3';
+const SCRIPT_VERSION = '0.4';
 
 // Mirrors shared/ads-contract.ts (a test checks they match).
 const ADS_CAPABILITY = 'ads-v1';
@@ -354,6 +354,29 @@ function earlierMonthsFor(L, ctx, c) {
   return out;
 }
 
+// Release 3: who's who, so the app shows "Pete Tyler", not "pete-tyler". Keys are the name slug the brain writes in
+// proposals and configs (proposals.cjs findMember's normalised slug) and the roster's own `slug` field; the value is
+// the roster name. Only names leave the bridge, never emails. Older brains without the helpers give {}.
+function peopleNames(L, ctx) {
+  const out = new Map();
+  if (typeof L.P.loadRoster !== 'function' || typeof L.P.slugify !== 'function') return {};
+  let roster;
+  try {
+    roster = L.P.loadRoster(ctx.root);
+  } catch {
+    return {};
+  }
+  for (const m of Array.isArray(roster) ? roster : []) {
+    const name = m && typeof m.name === 'string' ? flat(m.name) : '';
+    if (!name) continue;
+    for (const k of [L.P.slugify(name), m.slug]) {
+      const key = typeof k === 'string' ? k.trim().toLowerCase() : '';
+      if (key && !out.has(key)) out.set(key, name);
+    }
+  }
+  return Object.fromEntries(out);
+}
+
 function approvals(input, ctx) {
   const only = input.client === undefined ? null : clientSlug(input);
   const L = needLibs(ctx);
@@ -378,7 +401,14 @@ function approvals(input, ctx) {
         earlierMonths: earlierMonthsFor(L, ctx, c),
       };
     });
-  return { me: data.me, generatedAt: data.generatedAt, waiting: data.waiting, toApply: data.toApply, clients };
+  return {
+    me: data.me,
+    generatedAt: data.generatedAt,
+    waiting: data.waiting,
+    toApply: data.toApply,
+    clients,
+    people: peopleNames(L, ctx),
+  };
 }
 
 function proposal(input, ctx) {

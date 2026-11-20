@@ -263,6 +263,44 @@ describe('folds', () => {
 });
 
 describe('panel', () => {
+  it('Previous and Next step through waiting, then approved proposals, and stop at the ends', async () => {
+    const p3 = proposal(
+      '20261110-03-apply-me',
+      'Ready to apply',
+      { canDecide: false, canApply: true },
+      'approved',
+    );
+    api.adsApprovals.mockResolvedValue(approvals([p3, p1, p2]));
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    const nav = screen.getByRole('navigation', { name: 'Proposals' });
+    const prev = within(nav).getByRole('button', { name: 'Previous proposal' });
+    const next = within(nav).getByRole('button', { name: 'Next proposal' });
+    expect(nav.textContent).toContain('1 of 3');
+    expect(prev.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(prev);
+    expect(screen.getByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+    fireEvent.click(next);
+    expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Proposals' })).getByRole('button', {
+        name: 'Next proposal',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Ready to apply' })).toBeTruthy();
+    const nav3 = screen.getByRole('navigation', { name: 'Proposals' });
+    expect(nav3.textContent).toContain('3 of 3');
+    expect(within(nav3).getByRole('button', { name: 'Next proposal' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+  });
+
+  it('names the reviewer from the roster when the skill sends people, and keeps the slug otherwise', async () => {
+    api.adsApprovals.mockResolvedValue({ ...approvals([p1, p2]), people: { sam: 'Sam Smith' } });
+    await ready();
+    expect(await screen.findByText('Reviewer: Sam Smith')).toBeTruthy();
+  });
+
   it('shows the first waiting proposal, and Details opens the panel on the one chosen', async () => {
     await ready();
     expect(await screen.findByRole('heading', { name: 'Raise the budget' })).toBeTruthy();

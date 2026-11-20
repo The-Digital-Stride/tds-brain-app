@@ -366,6 +366,11 @@ export interface AdsApprovals {
   waiting: number;
   toApply: number;
   clients: ClientApprovals[];
+  /**
+   * Release 3 (skill 0.4, add-only): who's who on `.team-config/roles.json`, name slug (and roster slug) to name,
+   * so screens show "Pete Tyler", not "pete-tyler". Absent from older skills: show the slug as written.
+   */
+  people?: Record<string, string>;
 }
 
 /** ads-board-data.cjs dataHealth(): one entry per data file. */

@@ -334,6 +334,15 @@
   margin: 0;
   font-size: 14px;
 }
+/* Previous / Next through the account's open proposals, above the title. */
+.am-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.am-step .am-sub {
+  margin: 0 auto;
+}
 .am-kvrow {
   display: contents;
 }

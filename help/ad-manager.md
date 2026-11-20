@@ -36,7 +36,7 @@ Only owners and scouts can use them. Ask one if you need access.
 1. Open **Workbench** on the rail, then open **Ads** and choose **Ads Manager**.
 2. Pick a client in **Account**. A number in brackets shows how many proposals wait for you.
 3. Read **Needs you**. Each line has one button: open the report, go to the Ads Command Centre, or go to the monthly close.
-4. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel on the right.
+4. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel. **Previous** and **Next** move between proposals.
 5. Choose **Approve**, **Request changes** or **Reject**. Rejecting and requesting changes both need a note.
 6. For an approved change, try **Dry run** first. It checks everything and changes nothing. Then press **Apply now** to make it live.
 7. At **Monthly close**, read the draft PDF, then press **Sign off the report…**. **Earlier months** holds past reports.

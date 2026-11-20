@@ -4,8 +4,9 @@
  * it knows runs started from this app on this machine, not ones started in a terminal or by a teammate.
  */
 import { useSyncExternalStore } from 'react';
-import type { AdsTaskRun } from '../../../../shared/ads-contract.ts';
+import { ADS_TASK_RESULTS_CAPABILITY, type AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import type { LiveSession } from '../../../../shared/contract.ts';
+import { api } from '../../api.ts';
 
 export const TASK_RUNS_KEY = 'tds.adManager.taskRuns.v1';
 const MAX_RUNS = 300;
@@ -19,6 +20,10 @@ export interface TaskRun {
   sdk?: string | null;
   /** The last run of this task that finished well: set the first time its chat shows `lastTurn: 'ok'`. */
   good?: { at: string; sdk: string } | null;
+  /** The brain's own `at` for this run (from the `task-run` reply), which `task-result` names to attach a file to it. */
+  brainAt?: string;
+  /** The result post was made (or given up on) for this run: set before posting, never retried. */
+  resultSent?: true;
 }
 export type TaskRuns = Record<string, TaskRun>;
 export type RunStatus = 'running' | 'waiting' | null;
@@ -44,6 +49,7 @@ export function recordRun(
   at: Date,
   chat: string | null,
 ): TaskRuns {
+  // A new run starts without the old one's brainAt or resultSent: only `good` carries over.
   const good = runs[runKey(client, task)]?.good;
   const run: TaskRun = { at: at.toISOString(), chat, ...(good ? { good } : {}) };
   const next: TaskRuns = { ...runs, [runKey(client, task)]: run };
@@ -86,7 +92,18 @@ export function readRuns(storage: Readable = browserStorage()): TaskRuns {
       if (k.length <= 200 && isRun(v)) {
         const good = cleanGood(v.good);
         const sdk = typeof v.sdk === 'string' && v.sdk !== '' && v.sdk.length <= 128 ? v.sdk : undefined;
-        out[k] = { at: v.at, chat: v.chat, ...(sdk ? { sdk } : {}), ...(good ? { good } : {}) };
+        const brainAt =
+          typeof v.brainAt === 'string' && v.brainAt.length <= 40 && !Number.isNaN(Date.parse(v.brainAt))
+            ? v.brainAt
+            : undefined;
+        out[k] = {
+          at: v.at,
+          chat: v.chat,
+          ...(sdk ? { sdk } : {}),
+          ...(good ? { good } : {}),
+          ...(brainAt ? { brainAt } : {}),
+          ...(v.resultSent === true ? { resultSent: true as const } : {}),
+        };
       }
     }
     return out;
@@ -100,7 +117,12 @@ export function readRuns(storage: Readable = browserStorage()): TaskRuns {
  * shows `lastTurn: 'ok'` the run becomes `good`. Stopped, failed or unknown (older server) leave `good` alone.
  * Returns `runs` itself when nothing changed.
  */
-export function reconcileRuns(runs: TaskRuns, sessions: readonly LiveSession[]): TaskRuns {
+export function reconcileRuns(
+  runs: TaskRuns,
+  sessions: readonly LiveSession[],
+  /** The skill records results (ADS_TASK_RESULTS_CAPABILITY): a run turning good with a `brainAt` is marked `resultSent`. */
+  results = false,
+): TaskRuns {
   let next: TaskRuns | null = null;
   for (const [key, run] of Object.entries(runs)) {
     if (!run.chat) continue;
@@ -112,11 +134,27 @@ export function reconcileRuns(runs: TaskRuns, sessions: readonly LiveSession[]):
     if (s.lastTurn === 'ok' && sdk && !(run.good?.at === run.at && run.good.sdk === sdk)) {
       updated = { ...updated, good: { at: run.at, sdk } };
     }
+    // Apart from turning good: a run that finished before the skill's features were known still gets its post.
+    if (results && s.lastTurn === 'ok' && updated.good?.at === run.at && run.brainAt && !run.resultSent) {
+      updated = { ...updated, resultSent: true };
+    }
     if (updated === run) continue;
     next ??= { ...runs };
     next[key] = updated;
   }
   return next ?? runs;
+}
+
+/** The runs that `after` marks `resultSent` and `before` didn't: each needs one `task-result` post. */
+export function newResultPosts(before: TaskRuns, after: TaskRuns) {
+  const posts: { account: string; task: string; at: string; chat: string }[] = [];
+  for (const [key, run] of Object.entries(after)) {
+    if (!run.resultSent || before[key]?.resultSent || !run.brainAt || !run.chat) continue;
+    const slash = key.indexOf('/');
+    if (slash < 1) continue;
+    posts.push({ account: key.slice(0, slash), task: key.slice(slash + 1), at: run.brainAt, chat: run.chat });
+  }
+  return posts;
 }
 
 export function writeRuns(runs: TaskRuns, storage: Writable = browserStorage()): void {
@@ -185,12 +223,24 @@ const snapshot = () => {
   return current;
 };
 
+/** Whether the installed skill records results; set from the capabilities (summary.ts). Unknown: off. */
+let resultsOn = false;
+/** The live chats the last reconcile saw, so switching results on can catch up at once. */
+let lastSessions: readonly LiveSession[] | null = null;
+
 export const taskRuns = {
+  /** Tells the runs what the skill can do (ADS_TASK_RESULTS_CAPABILITY switches result posting on). */
+  setFeatures(features: readonly string[] | undefined) {
+    const was = resultsOn;
+    resultsOn = features?.includes(ADS_TASK_RESULTS_CAPABILITY) === true;
+    if (resultsOn && !was && lastSessions) taskRuns.reconcile(lastSessions);
+  },
   /** Updates the runs from the live chats (see `reconcileRuns`); saves and notifies only when something changed. */
   reconcile(sessions: readonly LiveSession[]) {
+    lastSessions = sessions;
     // Re-read first: a window with no Ads sheet open isn't listening for storage changes, so its copy may be stale.
     const fresh = readRuns();
-    const next = reconcileRuns(fresh, sessions);
+    const next = reconcileRuns(fresh, sessions, resultsOn);
     const moved = JSON.stringify(fresh) !== JSON.stringify(current);
     if (next === fresh) {
       if (!moved) return;
@@ -201,6 +251,30 @@ export const taskRuns = {
     current = next;
     writeRuns(current);
     for (const l of listeners) l();
+    // Marked and saved above first, so a second window re-reading storage sees `resultSent` and doesn't post too.
+    for (const post of newResultPosts(fresh, next)) void api.adsChange('task-result', post).catch(() => {});
+  },
+  /**
+   * Records the run in the brain so the team sees it (the caller checks the board carries `lastRun`), and keeps the
+   * brain's own `at` as `brainAt` on this browser's run so its result can be attached later. Not waited on; a failure
+   * says nothing. `brainAt` goes on only if the run is still the one that was current when this was called.
+   */
+  share(account: string, task: string) {
+    const key = runKey(account, task);
+    const started = snapshot()[key]?.at;
+    void api
+      .adsTaskRun({ account, task })
+      .then((reply) => {
+        const at = reply?.run?.at;
+        if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) return;
+        const fresh = readRuns();
+        const run = fresh[key];
+        if (!run || !started || run.at !== started || run.resultSent) return;
+        current = { ...fresh, [key]: { ...run, brainAt: at } };
+        writeRuns(current);
+        for (const l of listeners) l();
+      })
+      .catch(() => {});
   },
   record(client: string, task: string, chat: string | null, at = new Date()) {
     current = recordRun(snapshot(), client, task, at, chat);

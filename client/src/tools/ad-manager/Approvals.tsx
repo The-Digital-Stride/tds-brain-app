@@ -1,5 +1,10 @@
 import { type ReactNode, useState } from 'react';
-import type { AdsBoard, ClientApprovals, ProposalSummary } from '../../../../shared/ads-contract.ts';
+import type {
+  AdsBoard,
+  AdsMonthly,
+  ClientApprovals,
+  ProposalSummary,
+} from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
@@ -14,6 +19,7 @@ import { readMonthly, readPack } from './types.ts';
 import {
   dateWords,
   decisionWords,
+  earlierMonthWords,
   isWaiting,
   nextStepWords,
   relativeWords,
@@ -184,6 +190,7 @@ export function NeedsYou({
     monthly: client ? readMonthly(client) : null,
     health: board?.health ?? null,
     open: client?.open ?? [],
+    earlier: Array.isArray(client?.earlierMonths) ? client.earlierMonths : [],
   });
   return (
     <section className="card am-needs" aria-labelledby="am-needs-h">
@@ -234,15 +241,27 @@ export function NeedsYou({
 
 // ---------- Monthly close ----------
 
-function SignOff({ client }: { client: ClientApprovals }) {
+function SignOff({
+  client,
+  month,
+  earlier,
+}: {
+  client: ClientApprovals;
+  month?: AdsMonthly;
+  earlier?: boolean;
+}) {
   const { ads } = useStore();
   const { busy } = useAd();
   const run = useAdsRunner();
   const [ask, setAsk] = useState(false);
   const [note, setNote] = useState('');
-  useRestoreFocus(ask ? 'sign' : null);
-  const m = readMonthly(client);
-  if (!m || !client.mine || m.signed || m.partial || !m.files.body || m.canSign === false) return null;
+  const m = month ?? readMonthly(client);
+  const opener = earlier && m ? `sign-${m.month}` : 'sign';
+  useRestoreFocus(ask ? opener : null);
+  if (!m || !client.mine) return null;
+  // The latest month keeps its own rule. An earlier month is signed late whenever the bridge says it can be.
+  if (earlier ? m.canSign !== true : m.signed || m.partial || !m.files.body || m.canSign === false)
+    return null;
   if (ads && ads.sameIdentity === false) return null;
   if (ask)
     return (
@@ -253,7 +272,7 @@ function SignOff({ client }: { client: ClientApprovals }) {
         </label>
         <Confirm
           label="Sign off the report"
-          text={`Sign off the ${m.monthName} report for ${client.name} in your name? Only do this after reading the draft PDF. The final PDF is built from the report as it is now.`}
+          text={`Sign off the ${m.monthName || m.month} report for ${client.name} in your name? Only do this after reading the draft PDF. The final PDF is built from the report as it is now.`}
           action="Sign off"
           variant="primary"
           busy={busy !== null}
@@ -281,12 +300,50 @@ function SignOff({ client }: { client: ClientApprovals }) {
       className="btn"
       data-variant="primary"
       data-size="small"
-      data-am-opener="sign"
+      data-am-opener={opener}
       aria-disabled={busy !== null || undefined}
       onClick={() => busy === null && setAsk(true)}
     >
-      Sign off the report…
+      {earlier ? (
+        <>
+          Sign off…<span className="visually-hidden">{`: ${m.monthName || m.month}`}</span>
+        </>
+      ) : (
+        'Sign off the report…'
+      )}
     </button>
+  );
+}
+
+/** Release 2: the months before the latest, newest first, each with its status, files and a late sign-off. */
+function EarlierMonths({ client }: { client: ClientApprovals }) {
+  const months = Array.isArray(client.earlierMonths) ? client.earlierMonths : [];
+  if (months.length === 0) return null;
+  return (
+    <Fold key={client.slug} title="Earlier months" count={months.length} defaultOpen={false}>
+      <ul className="am-earlier">
+        {months.map((raw) => {
+          const m = { ...raw, files: raw.files ?? {} } as AdsMonthly;
+          const pdf = m.files.pdf ?? m.files.draftPdf;
+          return (
+            <li key={m.month} className="am-earlier-item">
+              <p className="am-earlier-head">
+                <strong>{m.monthName || m.month}</strong>
+                <span className="am-sub"> {earlierMonthWords(m)}</span>
+              </p>
+              <div className="am-links">
+                {pdf ? (
+                  <OpenFile path={pdf} label={m.files.pdf ? 'Open final PDF' : 'Open draft PDF'} />
+                ) : null}
+                {m.files.close ? <OpenFile path={m.files.close} label="Close notes" /> : null}
+                {m.files.email ? <OpenFile path={m.files.email} label="Email draft" /> : null}
+              </div>
+              <SignOff client={client} month={m} earlier />
+            </li>
+          );
+        })}
+      </ul>
+    </Fold>
   );
 }
 
@@ -327,6 +384,7 @@ export function MonthlyClose({ client }: { client: ClientApprovals }) {
       ) : (
         <p className="card-note">No monthly close yet.</p>
       )}
+      <EarlierMonths client={client} />
     </section>
   );
 }

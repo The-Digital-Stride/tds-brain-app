@@ -31,11 +31,70 @@ export const ADS_CAPABILITY = 'ads-v1';
  */
 export const ADS_TASK_RUNS_CAPABILITY = 'task-runs-v1';
 
+// ── Release 2 (plan 2026-11-19-ads-release-2). Each is add-only: an older skill leaves the feature out, and the
+// client shows nothing new. The client reads `features` from GET ADS_ROUTES.capabilities (summary.ts already does).
+
+/** The `triage` read: every account's latest standup verdict, worst first (the "All accounts' standups…" pop-up). */
+export const ADS_TRIAGE_CAPABILITY = 'triage-all-v1';
+/**
+ * The board carries `totalRanges` (Ads Account Summary's totals strip and its 7 / 30 / 90-day switch). Never `totals`:
+ * v0.50.0 draws a strip from a `totals` field of another shape, so the bridge must never send one.
+ */
+export const ADS_TOTALS_CAPABILITY = 'totals-v1';
+/** The approvals reply carries `earlierMonths` per client (Monthly close's "Earlier months" fold). */
+export const ADS_EARLIER_MONTHS_CAPABILITY = 'earlier-months-v1';
+/** `decided` takes `draftChange` and replies `draftPrompt` ("Record and draft the change"). */
+export const ADS_DRAFT_CHANGE_CAPABILITY = 'draft-change-v1';
+/** `task-result` records a finished run's result file; the board's `lastRun` carries `result`. */
+export const ADS_TASK_RESULTS_CAPABILITY = 'task-results-v1';
+
+/** The totals ranges, in days. The board carries one `AdsTotalsRange` per entry, so the switch needs no reload. */
+export const ADS_TOTALS_DAYS = [7, 30, 90] as const;
+export type AdsTotalsDays = (typeof ADS_TOTALS_DAYS)[number];
+/** Earlier months listed per client, newest first, the latest month (`monthly`) left out. */
+export const ADS_EARLIER_MONTHS_MAX = 12;
+/** A standup verdict this many local calendar days older than today, or more, is `stale` in the triage list. */
+export const ADS_TRIAGE_STALE_DAYS = 2;
+
 /** A task run as the brain's run log has it: when, and who (roster slug and display name). */
 export interface AdsTaskRun {
   at: string;
   by: string;
   byName: string;
+  /**
+   * Release 2 (ADS_TASK_RESULTS_CAPABILITY): the brain-relative file this run saved, recorded by the app that ran it
+   * once the run finished (`task-result`). Matches ADS_FILE_PATTERN for this account's client. Absent or null: none.
+   */
+  result?: string | null;
+}
+
+/**
+ * `POST /api/ads/do/task-result` body (the browser never names a path). `at` is the run's own `AdsTaskRun.at` from the
+ * `task-run` reply, so the result attaches to that run and no other; `chat` is the run's live session id. The server
+ * replays that chat's newest `files` event, picks the newest file it created or changed that matches ADS_FILE_PATTERN
+ * under `clients/<account>/`, and sends the bridge `AdsTaskResultInput`. No match: `{ result: null }`, nothing written.
+ */
+export interface AdsTaskResultRequest {
+  account: string;
+  task: string;
+  at: string;
+  chat: string;
+}
+/**
+ * The bridge's `task-result` input (stdin). It appends `{ v: 2, kind: 'result', ts, run_ts, account, task, by,
+ * by_name, result }` to the person's run log, once per run (a second call for the same `run_ts` writes nothing).
+ * Older bridges and apps skip any line whose `v` isn't 1. Compaction keeps each task's newest v1 line plus the result
+ * line for it.
+ */
+export interface AdsTaskResultInput {
+  account: string;
+  task: string;
+  at: string;
+  result: string;
+}
+/** `task-result` reply as the route sends it: the file recorded, or null when the chat saved none. */
+export interface AdsTaskResultReply {
+  result: string | null;
 }
 
 /** `POST /api/ads/do/task-run` body: the account and the task (a cadence card id, or `standup:daily`). */
@@ -59,6 +118,8 @@ export type AdsReadAction =
   | 'proposal'
   | 'board'
   | 'standup-brief'
+  /** Release 2: every account's latest standup verdict (ADS_TRIAGE_CAPABILITY). Read when the pop-up opens. */
+  | 'triage'
   | 'file';
 export type AdsChangeAction =
   | 'decide'
@@ -71,7 +132,9 @@ export type AdsChangeAction =
   | 'standup-setup'
   | 'standup-feedback'
   /** Records a task run in the brain. Runs unqueued (a one-line append), never behind an apply. */
-  | 'task-run';
+  | 'task-run'
+  /** Release 2: records a finished run's result file (ADS_TASK_RESULTS_CAPABILITY). Unqueued, like `task-run`. */
+  | 'task-result';
 export type AdsAction = AdsReadAction | AdsChangeAction;
 
 /**
@@ -88,6 +151,7 @@ export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   proposal: 15_000,
   board: 15_000,
   'standup-brief': 15_000,
+  triage: 15_000,
   file: 15_000,
   /** An approve that needs the client's yes also drafts the client email (the Workbench's 60 s), so 30 + 60. */
   decide: 90_000,
@@ -97,6 +161,7 @@ export const ADS_TIMEOUT_MS: Record<AdsAction, number> = {
   'standup-setup': 30_000,
   'standup-feedback': 30_000,
   'task-run': 15_000,
+  'task-result': 15_000,
   'sign-monthly': 120_000,
   'dry-run': 180_000,
   apply: 180_000,
@@ -251,6 +316,11 @@ export interface ClientApprovals {
   recent: ProposalSummary[]; // last ADS_RECENT_DAYS, newest first
   pack: AdsPack | null;
   monthly: AdsMonthly | null;
+  /**
+   * Release 2 (ADS_EARLIER_MONTHS_CAPABILITY): the months before `monthly`, newest first, at most
+   * ADS_EARLIER_MONTHS_MAX, each from monthly.cjs monthStatus() with the same `canSign` rule. Absent from older skills.
+   */
+  earlierMonths?: AdsMonthly[];
 }
 
 /** The latest weekly pack (approvals-board.cjs latestPack()). */
@@ -378,6 +448,61 @@ export interface AdsTriage {
   verdict: AdsStandupVerdict | null;
 }
 
+/** Release 2: one row of the "All accounts' standups…" pop-up (the `triage` read). */
+export interface AdsTriageRow {
+  key: string;
+  name: string;
+  hasStandup: boolean;
+  verdict: AdsStandupVerdict | null;
+  /** `verdict.date` is ADS_TRIAGE_STALE_DAYS or more local days before today. False without a verdict. */
+  stale: boolean;
+}
+/**
+ * `triage` reply, worst first: fresh verdicts (by `flagged`, then `anomalies`, most first), then stale verdicts (the
+ * same order), then accounts with a standup but no verdict yet, then accounts without a standup. Ties by name. Only
+ * keys matching ADS_ACCOUNT_KEY.
+ */
+export interface AdsTriageReply {
+  rows: AdsTriageRow[];
+}
+
+/** Release 2: totals for one range, from the dated daily file (summary.csv), ending on its latest date. */
+export interface AdsTotalsRange {
+  days: AdsTotalsDays;
+  /** YYYY-MM-DD, inclusive. `to` is the newest date in the daily file; `from` is `days - 1` days before it. */
+  from: string;
+  to: string;
+  /** The `days` days before `from`, inclusive. */
+  previousFrom: string;
+  previousTo: string;
+  current: AdsTotalsFigures;
+  /** Null when the daily file doesn't reach back to `previousFrom` (no fair comparison). */
+  previous: AdsTotalsFigures | null;
+  /** The daily file starts after `from`, so `current` covers fewer days than the range says. */
+  partial: boolean;
+  /** The earliest YYYY-MM-DD date in the daily file ("Data starts 3 Jul" when `partial`). Null when there are no rows. */
+  dataFrom: string | null;
+}
+export interface AdsTotalsFigures {
+  /** Money in the account currency, to 2 decimals. */
+  spend: number;
+  conversions: number;
+  value: number;
+  /** value / spend, to 4 decimals; null when spend or value is 0 (lead-gen accounts track no value). */
+  roas: number | null;
+  /** spend / conversions, to 2 decimals; null when conversions are 0. */
+  cpa: number | null;
+}
+export interface AdsTotals {
+  /** One per ADS_TOTALS_DAYS entry, in that order. Empty when the account has no daily file. */
+  ranges: AdsTotalsRange[];
+  /**
+   * Spend on search terms with no conversions, from the search-terms file (the "Wasted spend" table's rows, all of
+   * them, not just the top ten). That file has no dates, so it has no range and no comparison. Null without the file.
+   */
+  wastedSpend: number | null;
+}
+
 /** The three Copy prompt buttons of the "Get your account data flowing" card, verbatim. */
 export interface AdsSetupPrompts {
   discover: string;
@@ -424,6 +549,8 @@ export interface AdsBoard {
   triage: AdsTriage;
   /** Shown when the account has no data files yet (health.ok === 0). */
   setupPrompts: AdsSetupPrompts;
+  /** Release 2 (ADS_TOTALS_CAPABILITY): the totals strip. Absent from older skills: no strip. Never named `totals`. */
+  totalRanges?: AdsTotals;
 }
 
 /** Reply to any change action: the proposal's new state (so the screen needs no re-fetch) and output. */
@@ -443,6 +570,12 @@ export interface AdsChangeReply {
    * for this proposal and person. The client starts the background chat with it (decision 26).
    */
   revisePrompt?: string;
+  /**
+   * Release 2: `decided` with `draftChange: true` only. The Workbench's draft prompt (cadence-tasks.json
+   * `draftChangePrompt`, from server.cjs `POST /api/approvals/decided`) filled in. The client starts the background
+   * chat with it, as for `revisePrompt`.
+   */
+  draftPrompt?: string;
   /** The script ran but did not succeed (dry run or apply refused or failed, a draft that failed); `message` says how. */
   failed?: boolean;
 }
@@ -457,12 +590,14 @@ export interface AdsRequests {
   board: { account: string };
   file: { path: string };
   'standup-brief': { account: string };
+  triage: Record<string, never>;
   decide: { client: string; id: string; action: 'approve' | 'request-changes' | 'reject'; note?: string };
   'dry-run': { client: string; id: string };
   apply: { client: string; id: string; confirmed: true };
   'client-draft': { client: string; id: string; again?: boolean };
   'client-approved': { client: string; id: string; who: string; note?: string };
-  decided: { client: string; id: string; note: string };
+  /** `draftChange` (Release 2, ADS_DRAFT_CHANGE_CAPABILITY): also reply `draftPrompt`. An older bridge ignores it. */
+  decided: { client: string; id: string; note: string; draftChange?: boolean };
   'sign-monthly': { client: string; month: string; note?: string };
   'standup-setup': { account: string };
   /**
@@ -478,6 +613,7 @@ export interface AdsRequests {
     note?: string;
   };
   'task-run': AdsTaskRunRequest;
+  'task-result': AdsTaskResultInput;
 }
 
 /** App routes. All go through checkRequest; changes are POST JSON with body AdsRequests[action]. */
@@ -488,6 +624,8 @@ export const ADS_ROUTES = {
   proposal: '/api/ads/proposal', // ?client=&id=
   board: '/api/ads/board', // ?account=
   standupBrief: '/api/ads/standup-brief', // ?account=
+  /** Release 2: `GET` → AdsTriageReply. */
+  triage: '/api/ads/triage',
   /** `GET ?p=` → LibraryItem (see ADS_FILE_PATTERN). */
   file: '/api/ads/file',
   /** `POST /api/ads/do/<AdsChangeAction>`. */
@@ -506,6 +644,11 @@ export interface AdsSummary {
   me: AdsCapabilities['me'];
   /** Same person as the app's identity (see AdsCapabilities.me). */
   sameIdentity: boolean;
+  /**
+   * Release 2: the skill's `features` (AdsCapabilities.features), so screens can show what the installed skill
+   * supports (ADS_DRAFT_CHANGE_CAPABILITY and the rest). Absent in older app builds' cached summaries: treat as [].
+   */
+  features?: string[];
   waiting: number;
   clients: { slug: string; name: string; waiting: number }[];
 }

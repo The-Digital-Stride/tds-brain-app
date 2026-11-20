@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ADS_DRAFT_CHANGE_CAPABILITY,
   ADS_ERROR_MESSAGES,
   ADS_NOTE_MAX,
   type ClientApprovals,
@@ -90,6 +91,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   const key = proposalKey(client.slug, p.id);
   useRestoreFocus(ask, () => document.querySelector<HTMLElement>('.am-title'));
   const f = p.flags;
+  const canDraft = (ads?.features ?? []).includes(ADS_DRAFT_CHANGE_CAPABILITY);
   const isBusy = busy !== null;
   const inflight = f.inflight === true || unknownApply.includes(key);
 
@@ -386,6 +388,25 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
             Record decision
           </button>
         ) : null}
+        {f.canRecordDecision && canDraft ? (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            {...guard}
+            onClick={press(() => {
+              if (!need(decided, decidedBox, 'Write what was decided first.')) return;
+              void run({
+                ...base,
+                label: 'Recording',
+                draft: true,
+                call: () => api.adsChange('decided', { ...base, note: decided.trim(), draftChange: true }),
+              }).then(done);
+            })}
+          >
+            Record and draft the change
+          </button>
+        ) : null}
       </div>
       {busy ? (
         <p className="am-line">
@@ -464,15 +485,13 @@ export function ProposalPanel() {
       <h3 className="am-title" tabIndex={-1}>
         {p.fm.title}
       </h3>
-      <p className="am-sub">
-        <code>{p.id}</code> · <span className="badge">Tier {p.fm.tier}</span>{' '}
-        <StatusBadge status={p.fm.status} />
-      </p>
       <dl className="kv">
         {facts.map(([k, v]) => (
           <div key={k} className="am-kvrow">
             <dt>{k}</dt>
-            <dd data-warn={k === 'Warnings' ? 'true' : undefined}>{v}</dd>
+            <dd data-warn={k === 'Warnings' ? 'true' : undefined}>
+              {k === 'Status' ? <StatusBadge status={p.fm.status} /> : v}
+            </dd>
           </div>
         ))}
       </dl>

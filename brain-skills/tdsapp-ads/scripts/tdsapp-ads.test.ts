@@ -28,13 +28,22 @@ import {
   ADS_ACCOUNT_KEY,
   ADS_CAPABILITY,
   ADS_CLIENT_SLUG,
+  ADS_DRAFT_CHANGE_CAPABILITY,
+  ADS_EARLIER_MONTHS_CAPABILITY,
+  ADS_EARLIER_MONTHS_MAX,
+  ADS_FILE_PATTERN,
   ADS_MONTH,
   ADS_NOTE_MAX,
   ADS_OUTPUT_TAIL,
   ADS_PROPOSAL_ID,
   ADS_RECENT_DAYS,
   ADS_SKILL,
+  ADS_TASK_RESULTS_CAPABILITY,
   ADS_TASK_RUNS_CAPABILITY,
+  ADS_TOTALS_CAPABILITY,
+  ADS_TOTALS_DAYS,
+  ADS_TRIAGE_CAPABILITY,
+  ADS_TRIAGE_STALE_DAYS,
 } from '../../../shared/ads-contract.ts';
 
 const SKILL_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -331,6 +340,16 @@ describe('the script and the contract agree', () => {
     expect(mod.ADS_NOTE_MAX).toBe(ADS_NOTE_MAX);
     expect(mod.ADS_RECENT_DAYS).toBe(ADS_RECENT_DAYS);
     expect(mod.ADS_OUTPUT_TAIL).toBe(ADS_OUTPUT_TAIL);
+    // Release 2.
+    expect(mod.ADS_TRIAGE_CAPABILITY).toBe(ADS_TRIAGE_CAPABILITY);
+    expect(mod.ADS_TOTALS_CAPABILITY).toBe(ADS_TOTALS_CAPABILITY);
+    expect(mod.ADS_EARLIER_MONTHS_CAPABILITY).toBe(ADS_EARLIER_MONTHS_CAPABILITY);
+    expect(mod.ADS_DRAFT_CHANGE_CAPABILITY).toBe(ADS_DRAFT_CHANGE_CAPABILITY);
+    expect(mod.ADS_TASK_RESULTS_CAPABILITY).toBe(ADS_TASK_RESULTS_CAPABILITY);
+    expect(mod.ADS_TOTALS_DAYS).toEqual([...ADS_TOTALS_DAYS]);
+    expect(mod.ADS_EARLIER_MONTHS_MAX).toBe(ADS_EARLIER_MONTHS_MAX);
+    expect(mod.ADS_TRIAGE_STALE_DAYS).toBe(ADS_TRIAGE_STALE_DAYS);
+    expect(String(mod.ADS_FILE_PATTERN)).toBe(String(ADS_FILE_PATTERN));
   });
 
   it('answers one JSON line; unknown actions and bad JSON are bad requests', () => {
@@ -340,6 +359,16 @@ describe('the script and the contract agree', () => {
   });
 });
 
+const FEATURES = [
+  ADS_CAPABILITY,
+  ADS_TASK_RUNS_CAPABILITY,
+  ADS_TRIAGE_CAPABILITY,
+  ADS_TOTALS_CAPABILITY,
+  ADS_EARLIER_MONTHS_CAPABILITY,
+  ADS_DRAFT_CHANGE_CAPABILITY,
+  ADS_TASK_RESULTS_CAPABILITY,
+];
+
 describe('capabilities', () => {
   it('reports the feature, the ads-manager libraries and the roster person, not cached', () => {
     const r = bridge('capabilities');
@@ -347,7 +376,8 @@ describe('capabilities', () => {
     expect(r.reply).toMatchObject({
       ok: true,
       action: 'capabilities',
-      features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
+      features: FEATURES,
+      version: '0.3',
       adsManager: true,
       adsAccess: false,
       me: { slug: 'rita-reviewer', name: 'Rita Reviewer', role: 'team' },
@@ -381,7 +411,7 @@ describe('capabilities', () => {
     const r2 = bridge('capabilities');
     expect(r2.reply).toMatchObject({
       ok: true,
-      features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
+      features: FEATURES,
       adsManager: false,
       me: null,
     });
@@ -950,6 +980,7 @@ describe('copies from the Workbench (decision 9)', () => {
       '.claude/skills/ads-manager/scripts/lib/proposals.cjs',
       '.claude/skills/ads-manager/scripts/lib/common.cjs',
       '.claude/skills/ads-manager/scripts/monthly.cjs',
+      '.claude/skills/ads-manager/scripts/apply.cjs',
     ])
       expect(paths).toContain(p);
     for (const f of ['ads-normalize', 'ads-board-data', 'standup-board', 'approvals-board'])
@@ -972,7 +1003,7 @@ describe('task-run and lastRun', () => {
   const runsDir = () => abs('tdsapp-ads/runs/acme');
   const logs = () => (existsSync(runsDir()) ? readdirSync(runsDir()) : []);
   const logLine = (o: Record<string, unknown>) =>
-    JSON.stringify({
+    `${JSON.stringify({
       v: 1,
       ts: new Date().toISOString(),
       account: 'acme',
@@ -980,7 +1011,7 @@ describe('task-run and lastRun', () => {
       by: 'tess-team',
       by_name: 'Tess Team',
       ...o,
-    }) + '\n';
+    })}\n`;
   const cards = () =>
     bridge('board', { account: 'acme' }).reply.board as {
       cards: { id: string; lastRun: unknown }[];
@@ -1142,7 +1173,7 @@ describe('task-run and lastRun', () => {
   it('a log padded past 4 MB is left alone, and recording still works', () => {
     bridge('task-run', { account: 'acme', task: 'w-search' });
     const file = join(runsDir(), logs()[0] as string);
-    writeFileSync(file, readFileSync(file, 'utf8') + 'x'.repeat(4 * 1024 * 1024 + 10) + '\n');
+    writeFileSync(file, `${readFileSync(file, 'utf8') + 'x'.repeat(4 * 1024 * 1024 + 10)}\n`);
     const before = lstatSync(file).size;
     expect(bridge('task-run', { account: 'acme', task: 'w-search' }).exit).toBe(0);
     expect(lstatSync(file).size).toBeGreaterThan(before);
@@ -1200,7 +1231,7 @@ describe('task-run and lastRun', () => {
     expect(lastOf('w-search')).toBeNull();
     writeFileSync(
       join(runsDir(), 'tess-team.aaaaaa.jsonl'),
-      logLine({ ts: '2026-11-09T08:00:00.000Z', by_name: 'T\nes' + 'x'.repeat(200) }),
+      logLine({ ts: '2026-11-09T08:00:00.000Z', by_name: `T\nes${'x'.repeat(200)}` }),
     );
     const got = lastOf('w-search') as { by: string; byName: string };
     expect(got.by).toBe('tess-team');
@@ -1216,5 +1247,531 @@ describe('task-run and lastRun', () => {
     expect(existsSync(join(home, '.config'))).toBe(false);
     expect(b.cards.every((c) => c.lastRun === null)).toBe(true);
     expect(b.standup.lastRun).toBeNull();
+  });
+});
+
+// ── Release 2 ────────────────────────────────────────────────────────────────────────────────
+
+const localYmd = (daysBack: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+};
+const dashed = (y: string) => `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
+
+describe('triage', () => {
+  const standup = (key: string, daysBack: number | null, flagged: number, anomalies = 0, config = true) => {
+    if (config) put(`clients/${key}/standup/config.json`, JSON.stringify({ campaigns: [] }));
+    if (daysBack === null) return;
+    const verdicts = Array.from({ length: flagged }, (_, i) => ({
+      campaign: `C${i}`,
+      action_category: 'ADD_NEGATIVES',
+    }));
+    put(
+      `clients/${key}/standup/${localYmd(daysBack)}/brief.json`,
+      JSON.stringify({
+        headline: `${key} headline`,
+        per_campaign_verdicts: verdicts,
+        anomalies: Array.from({ length: anomalies }, () => ({})),
+      }),
+    );
+  };
+  const dataFor = (key: string) =>
+    put(`clients/${key}/context/google-ads/board/summary.csv`, 'Date,Campaign,Cost\n2026-11-01,X,1\n');
+  type Row = {
+    key: string;
+    name: string;
+    hasStandup: boolean;
+    verdict: { date: string } | null;
+    stale: boolean;
+  };
+  const rows = () => bridge('triage').reply.rows as Row[];
+
+  it('orders fresh by flagged then anomalies, then stale, then not run, then no standup, ties by name', () => {
+    rmSync(abs('clients/acme/standup/20261115'), { recursive: true });
+    standup('acme', 0, 1, 0);
+    standup('bravo', 1, 3, 0);
+    standup('charlie', 0, 3, 2);
+    standup('delta', 0, 3, 2);
+    standup('stale-big', ADS_TRIAGE_STALE_DAYS, 9, 9);
+    standup('stale-small', ADS_TRIAGE_STALE_DAYS + 5, 1, 0);
+    standup('no-verdict', null, 0);
+    dataFor('no-standup');
+    const out = rows();
+    expect(out.map((r) => r.key)).toEqual([
+      'charlie',
+      'delta',
+      'bravo',
+      'acme',
+      'stale-big',
+      'stale-small',
+      'no-verdict',
+      'Gamma_Co',
+      'no-standup',
+    ]);
+    const by = Object.fromEntries(out.map((r) => [r.key, r]));
+    expect(by.charlie).toMatchObject({ name: 'charlie', hasStandup: true, stale: false });
+    expect(by.charlie?.verdict).toMatchObject({ date: dashed(localYmd(0)), flagged: 3, anomalies: 2 });
+    expect(by.bravo?.stale).toBe(false);
+    expect(by['stale-big']?.stale).toBe(true);
+    expect(by['no-verdict']).toMatchObject({ hasStandup: true, verdict: null, stale: false });
+    expect(by['no-standup']).toMatchObject({ hasStandup: false, verdict: null, stale: false });
+    expect(by.acme?.name).toBe('Acme Ltd');
+  });
+
+  it('counts local calendar days: one day old is fresh, ADS_TRIAGE_STALE_DAYS is stale', () => {
+    standup('one', 1, 1);
+    standup('limit', ADS_TRIAGE_STALE_DAYS, 1);
+    const by = Object.fromEntries(rows().map((r) => [r.key, r]));
+    expect(by.one?.stale).toBe(ADS_TRIAGE_STALE_DAYS <= 1);
+    expect(by.limit?.stale).toBe(true);
+  });
+
+  it('only lists keys that match the account pattern, and changes nothing', () => {
+    put('clients/bad key/context/google-ads/board/summary.csv', 'Date,Campaign,Cost\n2026-11-01,X,1\n');
+    expect(rows().map((r) => r.key)).not.toContain('bad key');
+    const r = bridge('triage');
+    expect(r.exit).toBe(0);
+    expect(r.reply.action).toBe('triage');
+  });
+});
+
+describe('board totalRanges', () => {
+  const END = '2026-11-15';
+  const dayStr = (back: number) =>
+    new Date(Date.parse(`${END}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10);
+  // One Brand row a day (cost 10, 1 conversion, value 40) for `n` days ending END; the last day also has a
+  // Generic row (cost 5, no conversions).
+  const daily = (n: number) =>
+    `Date,Campaign,Cost,Conversions,Conv. value,Impressions,Clicks\n${[
+      ...Array.from({ length: n }, (_, i) => `${dayStr(n - 1 - i)},Brand,10,1,40,100,10`),
+      `${END},Generic,5,0,0,50,5`,
+    ].join('\n')}\n`;
+  const ranges = (account = 'acme') =>
+    (
+      bridge('board', { account }).reply.board as {
+        totalRanges: { ranges: Range[]; wastedSpend: number | null };
+      }
+    ).totalRanges;
+  type Fig = { spend: number; conversions: number; value: number; roas: number | null; cpa: number | null };
+  type Range = {
+    days: number;
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: Fig;
+    previous: Fig | null;
+    partial: boolean;
+    dataFrom: string | null;
+  };
+  const csv = (rel: string, text: string) => put(`clients/acme/context/google-ads/board/${rel}`, text);
+
+  it('has one range per ADS_TOTALS_DAYS ending on the newest date, with the period before', () => {
+    csv('summary.csv', daily(100));
+    const t = ranges();
+    expect(t.ranges.map((r) => r.days)).toEqual([...ADS_TOTALS_DAYS]);
+    const [r7, r30, r90] = t.ranges as [Range, Range, Range];
+    expect(r7).toMatchObject({
+      from: dayStr(6),
+      to: END,
+      previousFrom: dayStr(13),
+      previousTo: dayStr(7),
+      partial: false,
+    });
+    expect(r7.current).toEqual({ spend: 75, conversions: 7, value: 280, roas: 3.7333, cpa: 10.71 });
+    expect(r7.previous).toEqual({ spend: 70, conversions: 7, value: 280, roas: 4, cpa: 10 });
+    expect(r30.current.spend).toBe(305);
+    expect(r30.previous).toMatchObject({ spend: 300, conversions: 30 });
+    expect(r30.previousTo).toBe(dayStr(30));
+    // 90 days: the file (100 days) doesn't reach 180 back.
+    expect(r90.partial).toBe(false);
+    expect(r90.previous).toBeNull();
+    expect(r90.previousFrom).toBe(dayStr(179));
+  });
+
+  it('is partial when the file starts inside the range, and has no previous when it cannot reach', () => {
+    csv('summary.csv', daily(20));
+    const [r7, r30, r90] = ranges().ranges as [Range, Range, Range];
+    expect(r7.partial).toBe(false);
+    expect(r7.previous).not.toBeNull();
+    expect(r30.partial).toBe(true);
+    expect(r30.dataFrom).toBe(dayStr(19));
+    expect(r7.dataFrom).toBe(dayStr(19));
+    expect(r30.previous).toBeNull();
+    expect(r30.current.spend).toBe(205);
+    expect(r90.partial).toBe(true);
+    expect(r90.previous).toBeNull();
+  });
+
+  it('ends on the pull date and covers the whole pull when early days had no rows (account not serving)', () => {
+    // 175 days of rows ending 3 days before the pull's `through`: the pull asked for 180 days to END.
+    const rows = Array.from({ length: 175 }, (_, i) => `${dayStr(177 - i)},Brand,10,1,40,100,10`);
+    csv('summary.csv', `Date,Campaign,Cost,Conversions,Conv. value\n${rows.join('\n')}\n`);
+    csv('_refreshed.json', JSON.stringify({ at: '2026-11-16T06:00:00.000Z', through: END }));
+    const [r7, , r90] = ranges().ranges as [Range, Range, Range];
+    expect(r7).toMatchObject({ from: dayStr(6), to: END, partial: false, dataFrom: dayStr(179) });
+    expect(r7.current.spend).toBe(40); // 4 days with rows, 3 quiet days at the end
+    expect(r90.partial).toBe(false);
+    expect(r90.previous).toMatchObject({ spend: 880 }); // 88 of its 90 days have rows
+  });
+
+  it('ignores a pull date older than the newest row, and keeps short files partial', () => {
+    csv('summary.csv', daily(20));
+    csv('_refreshed.json', JSON.stringify({ at: '2026-11-01T06:00:00.000Z', through: dayStr(30) }));
+    const [r7, r30] = ranges().ranges as [Range, Range, Range];
+    expect(r7.to).toBe(END);
+    expect(r30).toMatchObject({ partial: true, previous: null, dataFrom: dayStr(19) });
+    // A current pull date still doesn't stretch a file that starts long after the pull's first day.
+    csv('_refreshed.json', JSON.stringify({ at: '2026-11-16T06:00:00.000Z', through: END }));
+    expect(ranges().ranges[1]).toMatchObject({ partial: true, previous: null, dataFrom: dayStr(19) });
+  });
+
+  it('gives roas null for zero value or spend and cpa null for zero conversions', () => {
+    const t = ranges('Gamma_Co');
+    const r = t.ranges[1] as Range;
+    expect(r.current).toEqual({ spend: 10, conversions: 0, value: 0, roas: null, cpa: null });
+    csv('summary.csv', 'Date,Campaign,Cost,Conversions,Conv. value\n2026-11-15,A,0,2,50\n');
+    expect((ranges().ranges[1] as Range).current).toEqual({
+      spend: 0,
+      conversions: 2,
+      value: 50,
+      roas: null,
+      cpa: 0,
+    });
+  });
+
+  it('wastedSpend sums every search term with no conversions, not just the top ten', () => {
+    csv(
+      'search80.csv',
+      `Search term,Campaign,Cost,Conversions,Conv. value,Clicks,Impressions\n${[
+        ...Array.from({ length: 12 }, (_, i) => `junk ${i},G,1.5,0,0,1,10`),
+        'free,G,0,0,0,1,10',
+        'half,G,9,0.5,0,1,10',
+        'good,B,20,3,90,5,50',
+      ].join('\n')}\n`,
+    );
+    expect(ranges().wastedSpend).toBe(27);
+  });
+
+  it('has empty ranges and null wastedSpend without data, and never a `totals` key', () => {
+    const t = ranges('beta');
+    expect(t).toEqual({ ranges: [], wastedSpend: null });
+    expect(bridge('board', { account: 'beta' }).reply.board).not.toHaveProperty('totals');
+    expect(bridge('board', { account: 'acme' }).reply.board).not.toHaveProperty('totals');
+    expect(bridge('board', { account: 'acme' }).reply.board).toHaveProperty('totalRanges');
+  });
+});
+
+describe('earlierMonths', () => {
+  const close = (month: string, extra: Record<string, unknown> = {}, body = true) => {
+    put(
+      `clients/acme/reports/monthly/${month}-monthly-close.json`,
+      JSON.stringify({
+        name: 'Acme Ltd',
+        monthName: `M ${month}`,
+        partial: false,
+        dataTo: `${month}-28`,
+        ...extra,
+      }),
+    );
+    if (body)
+      put(`clients/acme/reports/monthly/Acme-Ltd-Google-Ads-Report-${month}.body.html`, '<div>x</div>');
+  };
+  const acme = (who?: string) => {
+    if (who) actAs(who, `${who.split(' ')[0]?.toLowerCase()}@example.test`);
+    const cs = bridge('approvals').reply.clients as Record<string, unknown>[];
+    return cs.find((c) => c.slug === 'acme') as {
+      monthly: { month: string } | null;
+      earlierMonths: { month: string; canSign: boolean; signed: boolean }[];
+    };
+  };
+
+  it('lists the months before the latest, newest first, with the same canSign rule', () => {
+    close('2026-11', { partial: true });
+    close('2026-09');
+    close('2026-08', { partial: true });
+    close('2026-07', {}, false);
+    const a = acme();
+    expect(a.monthly?.month).toBe('2026-11');
+    expect(a.earlierMonths.map((m) => m.month)).toEqual(['2026-10', '2026-09', '2026-08', '2026-07']);
+    expect(a.earlierMonths.map((m) => m.canSign)).toEqual([true, true, false, false]);
+    expect(a.earlierMonths[0]).toMatchObject({ monthName: 'October 2026', signed: false });
+    expect(a.earlierMonths[0]).toHaveProperty('files');
+  });
+
+  it('is capped at ADS_EARLIER_MONTHS_MAX, and canSign is false for someone who is not on the client', () => {
+    for (let m = 1; m <= 9; m++) close(`2025-0${m}`);
+    for (let m = 10; m <= 12; m++) close(`2025-${m}`);
+    for (let m = 1; m <= 5; m++) close(`2026-0${m}`);
+    const a = acme();
+    expect(a.monthly?.month).toBe('2026-10');
+    expect(a.earlierMonths).toHaveLength(ADS_EARLIER_MONTHS_MAX);
+    expect(a.earlierMonths[0]?.month).toBe('2026-05');
+    const t = acme('Tess Team');
+    expect(t.earlierMonths.every((m) => m.canSign === false)).toBe(true);
+  });
+
+  it('is empty for a client with no month files, and leaves approvals-board output otherwise as it was', () => {
+    const cs = bridge('approvals').reply.clients as {
+      slug: string;
+      earlierMonths: unknown[];
+      monthly: unknown;
+    }[];
+    const beta = cs.find((c) => c.slug === 'beta');
+    expect(beta?.monthly).toBeNull();
+    expect(beta?.earlierMonths).toEqual([]);
+    expect(acme().earlierMonths).toEqual([]);
+  });
+});
+
+describe('decided with draftChange', () => {
+  const approvedDecision = (slug = 'a-decision') => {
+    const d = mkProposal(slug, { type: 'decision', tier: 1 });
+    P.approve({ clientDir: abs('clients/acme'), id: d, by: 'rita-reviewer' });
+    return d;
+  };
+
+  it('replies the filled draft prompt only when asked, and records the decision either way', () => {
+    const d = approvedDecision();
+    const r = bridge('decided', { client: 'acme', id: d, note: 'Keep "the" budget', draftChange: true });
+    expect(r.reply.ok, JSON.stringify(r.reply)).toBe(true);
+    expect(r.reply.message).toBe(
+      'Decision recorded. A chat is drafting the change proposal: open it to follow along. It may ask you a question, or stop if no change is needed.',
+    );
+    expect(r.reply.draftPrompt).toBe(
+      `Draft a change proposal from an ads-manager decision. Decision proposal ${d} for client acme. Rita Reviewer recorded this decision on the Workbench:\n\n"Keep 'the' budget"\n\nFollow the ads-manager skill, section "Turning a decision into a change proposal". Never approve, apply or post anything: the new change proposal goes to Rita Reviewer on the Workbench Ads tab as proposed.`,
+    );
+    expect(fmOf(d)).toMatchObject({ status: 'applied' });
+    const e = approvedDecision('another-decision');
+    const plain = bridge('decided', { client: 'acme', id: e, note: 'Fine' });
+    expect(plain.reply).toMatchObject({ ok: true, message: 'Decision recorded.' });
+    expect(plain.reply).not.toHaveProperty('draftPrompt');
+    const off = approvedDecision('third-decision');
+    const no = bridge('decided', { client: 'acme', id: off, note: 'Fine', draftChange: false });
+    expect(no.reply).toMatchObject({ ok: true, message: 'Decision recorded.' });
+    expect(no.reply).not.toHaveProperty('draftPrompt');
+  });
+
+  it('refuses a draftChange that is not a boolean, recording nothing', () => {
+    const d = approvedDecision();
+    for (const bad of ['true', 1, null, {}, []])
+      refused(bridge('decided', { client: 'acme', id: d, note: 'Yes', draftChange: bad }), 'bad-request');
+    expect(fmOf(d).status).toBe('approved');
+  });
+
+  it('keeps the prompt in cadence-tasks.json and says so in _source', () => {
+    const tasks = JSON.parse(readFileSync(join(SKILL_DIR, 'scripts', 'cadence-tasks.json'), 'utf8'));
+    expect(tasks.draftChangePrompt).toContain('{{id}}');
+    expect(tasks._source).toContain('draftChangePrompt');
+    expect(readFileSync(join(SKILL_DIR, 'SOURCES.md'), 'utf8')).toContain('draftChangePrompt');
+  });
+});
+
+describe('task-result', () => {
+  const runsDir = () => abs('tdsapp-ads/runs/acme');
+  const logFile = () => join(runsDir(), readdirSync(runsDir())[0] as string);
+  const lines = () =>
+    readFileSync(logFile(), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+  const REPORT = 'clients/acme/reports/weekly/search.md';
+  const run = (task = 'w-search') =>
+    bridge('task-run', { account: 'acme', task }).reply.run as { at: string };
+  const result = (at: string, path: unknown, task: unknown = 'w-search', account: unknown = 'acme') =>
+    bridge('task-result', { account, task, at, result: path });
+  const lastRunOf = (id: string) =>
+    (
+      bridge('board', { account: 'acme' }).reply.board as {
+        cards: { id: string; lastRun: { at: string; result?: string } | null }[];
+      }
+    ).cards.find((c) => c.id === id)?.lastRun;
+  beforeEach(() => put(REPORT, '# report'));
+
+  it('appends one v2 line per run and a second call writes nothing', () => {
+    const { at } = run();
+    const r = result(at, REPORT);
+    expect(r.exit, JSON.stringify(r.reply)).toBe(0);
+    expect(r.reply.result).toBe(REPORT);
+    expect(lines()).toHaveLength(2);
+    const l = lines()[1] as Record<string, unknown>;
+    expect(l).toMatchObject({
+      v: 2,
+      kind: 'result',
+      run_ts: at,
+      account: 'acme',
+      task: 'w-search',
+      by: 'rita-reviewer',
+      by_name: 'Rita Reviewer',
+      result: REPORT,
+    });
+    expect(typeof l.ts).toBe('string');
+    put('clients/acme/reports/weekly/other.md', 'x');
+    expect(result(at, 'clients/acme/reports/weekly/other.md').reply).toMatchObject({
+      ok: true,
+      result: REPORT,
+    });
+    expect(lines()).toHaveLength(2);
+  });
+
+  it('refuses bad paths and records nothing', () => {
+    const { at } = run();
+    put('clients/beta/reports/x.md', 'x');
+    put('clients/acme/notes/x.md', 'x');
+    mkdirSync(abs('clients/acme/reports/dir.md'), { recursive: true });
+    for (const bad of [
+      'clients/beta/reports/x.md',
+      'clients/acme/notes/x.md',
+      'clients/acme/reports/../reports/weekly/search.md',
+      'clients/acme/reports/./weekly/search.md',
+      'clients/acme/reports/weekly/missing.md',
+      'clients/acme/reports/dir.md',
+      '/etc/passwd',
+      `${REPORT}\n`,
+      'clients/acme/reports/x.exe',
+      `clients/acme/reports/${'a'.repeat(400)}.md`,
+      7,
+      null,
+      undefined,
+    ])
+      refused(result(at, bad), 'bad-request');
+    expect(lines()).toHaveLength(1);
+  });
+
+  it('refuses a symlinked file or folder along the path', () => {
+    const { at } = run();
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'ads-else-')));
+    try {
+      writeFileSync(join(elsewhere, 'secret.md'), 's');
+      symlinkSync(join(elsewhere, 'secret.md'), abs('clients/acme/reports/link.md'));
+      symlinkSync(elsewhere, abs('clients/acme/reports/linkdir'));
+      refused(result(at, 'clients/acme/reports/link.md'), 'bad-request');
+      refused(result(at, 'clients/acme/reports/linkdir/secret.md'), 'bad-request');
+      expect(lines()).toHaveLength(1);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses unknown runs, tasks, accounts and people', () => {
+    const { at } = run();
+    refused(result(new Date().toISOString(), REPORT), 'bad-request');
+    refused(result(at, REPORT, 'm-rsa'), 'bad-request');
+    refused(result(at, REPORT, 'nope'), 'bad-request');
+    refused(result(7 as unknown as string, REPORT), 'bad-request');
+    refused(result(at, REPORT, 'w-search', '../x'), 'bad-request');
+    refused(result(at, REPORT, 'w-search', 'nobody'), 'not-found');
+    actAs('Stranger Danger', 'stranger@example.test');
+    refused(result(at, REPORT), 'not-allowed');
+    expect(lines()).toHaveLength(1);
+  });
+
+  it("refuses another person's run, and a log that is a link", () => {
+    mkdirSync(runsDir(), { recursive: true });
+    const at = '2026-11-10T10:00:00.000Z';
+    writeFileSync(
+      join(runsDir(), 'tess-team.aaaaaa.jsonl'),
+      `${JSON.stringify({ v: 1, ts: at, account: 'acme', task: 'w-search', by: 'tess-team', by_name: 'Tess Team' })}\n`,
+    );
+    // Rita has no log of her own yet: nothing to attach to.
+    refused(result(at, REPORT), 'bad-request');
+    expect(readdirSync(runsDir())).toEqual(['tess-team.aaaaaa.jsonl']);
+    const { at: mine } = run();
+    const file = logFile();
+    const text = readFileSync(file, 'utf8');
+    rmSync(file);
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'ads-else-')));
+    try {
+      writeFileSync(join(elsewhere, 'target'), text);
+      symlinkSync(join(elsewhere, 'target'), file);
+      refused(result(mine, REPORT), 'not-allowed');
+      expect(readFileSync(join(elsewhere, 'target'), 'utf8')).toBe(text);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it('attaches the result to its own run only, and a v2 line never counts as a run', () => {
+    const first = run();
+    result(first.at, REPORT);
+    expect(lastRunOf('w-search')).toMatchObject({ at: first.at, result: REPORT });
+    const second = run();
+    expect(second.at).not.toBe(first.at);
+    expect(lastRunOf('w-search')?.at).toBe(second.at);
+    expect(lastRunOf('w-search')).not.toHaveProperty('result');
+    // A log holding only a result line has no run.
+    mkdirSync(runsDir(), { recursive: true });
+    writeFileSync(
+      join(runsDir(), 'tess-team.aaaaaa.jsonl'),
+      `${JSON.stringify({ v: 2, kind: 'result', ts: new Date().toISOString(), run_ts: '2026-11-01T00:00:00.000Z', account: 'acme', task: 'm-rsa', by: 'tess-team', by_name: 'Tess', result: REPORT })}\n`,
+    );
+    expect(lastRunOf('m-rsa')).toBeNull();
+  });
+
+  it('ignores a result line from another file or person, and a hand-edited bad path', () => {
+    const { at } = run();
+    result(at, REPORT);
+    const file = logFile();
+    const good = readFileSync(file, 'utf8');
+    for (const bad of [
+      '../../etc/passwd',
+      'clients/beta/reports/x.md',
+      'clients/acme/reports/../reports/weekly/search.md',
+      'clients/acme/notes/x.md',
+      `clients/acme/reports/${'a'.repeat(400)}.md`,
+      42,
+    ]) {
+      writeFileSync(file, good.replace(JSON.stringify(REPORT), JSON.stringify(bad)));
+      expect(lastRunOf('w-search')).toEqual({ at, by: 'rita-reviewer', byName: 'Rita Reviewer' });
+    }
+    // The same result line, in someone else's file, doesn't attach to Rita's run.
+    writeFileSync(file, `${good.split('\n')[0]}\n`);
+    writeFileSync(
+      join(runsDir(), 'tess-team.aaaaaa.jsonl'),
+      `${JSON.stringify({ v: 2, kind: 'result', ts: new Date().toISOString(), run_ts: at, account: 'acme', task: 'w-search', by: 'tess-team', by_name: 'Tess', result: REPORT })}\n`,
+    );
+    expect(lastRunOf('w-search')).toEqual({ at, by: 'rita-reviewer', byName: 'Rita Reviewer' });
+    // A result line whose by isn't the file's person is ignored too.
+    writeFileSync(
+      file,
+      good.replace(
+        '"by":"rita-reviewer","by_name":"Rita Reviewer","result"',
+        '"by":"tess-team","by_name":"Rita Reviewer","result"',
+      ),
+    );
+    expect(lastRunOf('w-search')).toEqual({ at, by: 'rita-reviewer', byName: 'Rita Reviewer' });
+    writeFileSync(file, good);
+    expect(lastRunOf('w-search')?.result).toBe(REPORT);
+  });
+
+  it('compaction keeps each task newest v1 line and its result line, and drops stale result lines', () => {
+    const old = run('w-search');
+    result(old.at, REPORT);
+    const newest = run('w-search');
+    const other = run('m-rsa');
+    result(other.at, REPORT, 'm-rsa');
+    result(newest.at, REPORT);
+    const file = logFile();
+    const filler = Array.from({ length: 3000 }, (_, i) =>
+      JSON.stringify({
+        v: 1,
+        ts: new Date(Date.now() - 50_000 + i).toISOString(),
+        account: 'acme',
+        task: 'standup:daily',
+        by: 'rita-reviewer',
+        by_name: 'Rita Reviewer',
+      }),
+    ).join('\n');
+    writeFileSync(file, `${readFileSync(file, 'utf8')}${filler}\n`);
+    run('standup:daily');
+    const kept = lines();
+    const v1 = kept.filter((l) => l.v === 1);
+    const v2 = kept.filter((l) => l.v === 2);
+    expect(v1.map((l) => l.task).sort()).toEqual(['m-rsa', 'standup:daily', 'w-search']);
+    expect(v1.find((l) => l.task === 'w-search')?.ts).toBe(newest.at);
+    expect(v2.map((l) => l.run_ts).sort()).toEqual([other.at, newest.at].sort());
+    expect(lastRunOf('w-search')).toMatchObject({ at: newest.at, result: REPORT });
+    expect(lastRunOf('m-rsa')).toMatchObject({ at: other.at, result: REPORT });
   });
 });

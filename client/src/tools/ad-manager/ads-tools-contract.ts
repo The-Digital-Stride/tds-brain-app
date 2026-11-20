@@ -10,7 +10,6 @@ import type {
   AdsHealthFile,
   AdsMonthly,
   AdsPack,
-  AdsStandupVerdict,
   ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 
@@ -189,42 +188,6 @@ export interface LiveSessionAdditions {
  */
 export type OpenPast = (sdkSessionId: string, opts?: { in?: 'sheet' | 'drawer' }) => Promise<boolean>;
 
-// ---------- Release 2 (bridge, add-only; moves to shared/ads-contract.ts when Release 2 starts) ----------
-
-/** Capability flags the bridge adds to `features`. The client never sees `features`: it gates on the field. */
-export const ADS_TRIAGE_ALL_CAPABILITY = 'triage-all-v1';
-export const ADS_TOTALS_CAPABILITY = 'totals-v1';
-
-/** One row of the cross-account triage pop-up (decision 13), worst first. */
-export interface AdsTriageRow {
-  key: string;
-  name: string;
-  hasStandup: boolean;
-  verdict: AdsStandupVerdict | null;
-  /** The verdict is older than the latest data. */
-  stale: boolean;
-}
-
-/** Account totals for the period and the one before (decision 14). Money in the account currency. */
-export interface AdsTotals {
-  from: string;
-  to: string;
-  previousFrom: string;
-  previousTo: string;
-  current: AdsTotalsFigures;
-  previous: AdsTotalsFigures;
-}
-export interface AdsTotalsFigures {
-  spend: number;
-  conversions: number;
-  value: number;
-  roas: number | null;
-  cpa: number | null;
-  wastedSpend: number;
-}
-
-/** Release 2 additions to `AdsBoard`, both optional. The client shows the triage button or totals strip only when present. */
-export interface AdsBoardRelease2 {
-  triageAll?: AdsTriageRow[];
-  totals?: AdsTotals;
-}
+// ---------- Release 2 ----------
+// Moved to shared/ads-contract.ts (ADS_TRIAGE_CAPABILITY, ADS_TOTALS_CAPABILITY, AdsTriageRow, AdsTotals and the rest),
+// as planned; see docs/plans/2026-11-19-ads-release-2.md.

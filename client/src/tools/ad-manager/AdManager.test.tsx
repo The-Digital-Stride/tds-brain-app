@@ -757,3 +757,158 @@ describe('Ads Manager page', () => {
     expect(found?.tool.title).toBe('Ads Manager');
   });
 });
+
+describe('Release 2: Record and draft the change', () => {
+  const rec = proposal('20261110-04-pause', 'Pause the ad group', {
+    canDecide: false,
+    canRecordDecision: true,
+  });
+  const open = async (features: string[] | undefined) => {
+    store.ads = { ...(store.ads as object), features };
+    api.adsApprovals.mockResolvedValue(approvals([rec]));
+    api.adsProposal.mockResolvedValue(full(rec));
+    await ready();
+    await screen.findByRole('heading', { name: 'Pause the ad group' });
+  };
+
+  it('shows only with the feature, next to Record decision', async () => {
+    await open(undefined);
+    expect(screen.getByRole('button', { name: 'Record decision' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record and draft the change' })).toBeNull();
+    cleanup();
+    await open(['draft-change-v1']);
+    expect(screen.getByRole('button', { name: 'Record and draft the change' })).toBeTruthy();
+  });
+
+  it('needs the same note, then records with draftChange and starts the chat from draftPrompt', async () => {
+    await open(['draft-change-v1']);
+    fireEvent.click(screen.getByRole('button', { name: 'Record and draft the change' }));
+    expect(screen.getByText('Write what was decided first.')).toBeTruthy();
+    expect(api.adsChange).not.toHaveBeenCalled();
+    api.adsChange.mockResolvedValue({
+      message:
+        'Decision recorded. A chat is drafting the change proposal: open it to follow along. It may ask you a question, or stop if no change is needed.',
+      proposal: full(rec),
+      draftPrompt: 'DRAFT it',
+    });
+    fireEvent.change(screen.getByLabelText('What was decided'), { target: { value: 'Pause it' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record and draft the change' }));
+    await screen.findByRole('button', { name: 'Open chat' });
+    expect(api.adsChange).toHaveBeenCalledWith('decided', {
+      client: 'acme',
+      id: rec.id,
+      note: 'Pause it',
+      draftChange: true,
+    });
+    expect(store.startChat).toHaveBeenCalledWith('DRAFT it', 'acme', { open: false });
+  });
+
+  it("says plainly when the drafting chat couldn't start", async () => {
+    await open(['draft-change-v1']);
+    store.startChat.mockResolvedValueOnce(null);
+    api.adsChange.mockResolvedValue({
+      message: 'Decision recorded.',
+      proposal: full(rec),
+      draftPrompt: 'DRAFT it',
+    });
+    fireEvent.change(screen.getByLabelText('What was decided'), { target: { value: 'Pause it' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record and draft the change' }));
+    await screen.findAllByText(/The drafting chat couldn't start/);
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
+  });
+
+  it('Record decision alone sends no draftChange', async () => {
+    await open(['draft-change-v1']);
+    api.adsChange.mockResolvedValue({ message: 'Decision recorded.', proposal: full(rec) });
+    fireEvent.change(screen.getByLabelText('What was decided'), { target: { value: 'Pause it' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record decision' }));
+    await waitFor(() =>
+      expect(api.adsChange).toHaveBeenCalledWith('decided', { client: 'acme', id: rec.id, note: 'Pause it' }),
+    );
+  });
+});
+
+describe('Release 2: Earlier months', () => {
+  const month = (m: string, name: string, over: object = {}) => ({
+    month: m,
+    monthName: name,
+    partial: false,
+    dataTo: null,
+    generatedAt: null,
+    signed: false,
+    stale: false,
+    reason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    note: null,
+    files: {
+      close: `${m}-close.json`,
+      body: 'b.md',
+      draftPdf: `${m}-draft.pdf`,
+      pdf: null,
+      email: null,
+      review: null,
+    },
+    canSign: true,
+    ...over,
+  });
+  const withEarlier = (earlier: unknown) => {
+    const a = approvals([p1]);
+    const acme = a.clients[0];
+    if (acme) {
+      acme.monthly = month('2026-10', 'October') as never;
+      (acme as { earlierMonths?: unknown }).earlierMonths = earlier;
+    }
+    api.adsApprovals.mockResolvedValue(a);
+  };
+
+  it('has no fold when the list is missing or empty', async () => {
+    withEarlier(undefined);
+    await ready();
+    expect(screen.queryByRole('button', { name: /Earlier months/ })).toBeNull();
+    cleanup();
+    withEarlier([]);
+    await ready();
+    expect(screen.queryByRole('button', { name: /Earlier months/ })).toBeNull();
+  });
+
+  it('lists each month with its status in words and its file buttons', async () => {
+    withEarlier([
+      month('2026-09', 'September', {
+        signed: true,
+        reviewedBy: 'Pete',
+        reviewedAt: '2026-10-03',
+        canSign: false,
+      }),
+      month('2026-08', 'August'),
+      month('2026-07', 'July', { signed: false, stale: true }),
+      month('2026-06', 'June', { partial: true, canSign: false }),
+    ]);
+    await ready();
+    const fold = await screen.findByRole('button', { name: /Earlier months/ });
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(fold);
+    expect(screen.getByText(/Signed off by Pete on/)).toBeTruthy();
+    expect(screen.getByText('Not signed off')).toBeTruthy();
+    expect(screen.getByText('Changed after sign-off, sign again')).toBeTruthy();
+    expect(screen.getByText('Month-to-date draft')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Open draft PDF' }).length).toBeGreaterThanOrEqual(4);
+    // Sign off… only where the bridge says canSign.
+    expect(screen.getAllByRole('button', { name: /^Sign off…/ })).toHaveLength(2);
+  });
+
+  it('signs a late month through the same confirm step', async () => {
+    withEarlier([month('2026-08', 'August')]);
+    api.adsChange.mockResolvedValue({ ok: true });
+    await ready();
+    fireEvent.click(await screen.findByRole('button', { name: /Earlier months/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Sign off…: August/ }));
+    const group = screen.getByRole('group', { name: 'Sign off the report' });
+    expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
+    expect(within(group).getByText(/Sign off the August report for Acme Heating/)).toBeTruthy();
+    fireEvent.click(within(group).getByRole('button', { name: 'Sign off' }));
+    await waitFor(() =>
+      expect(api.adsChange).toHaveBeenCalledWith('sign-monthly', { client: 'acme', month: '2026-08' }),
+    );
+  });
+});

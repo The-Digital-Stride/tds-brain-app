@@ -18,8 +18,8 @@ Ads Manager is where you decide on the changes Claude has proposed for a client'
 It is one of three Ads tools in Workbench:
 
 - **Ads Manager** is for decisions.
-- **Ads Command Centre** is for running the account: whether its data is ready, and the jobs to start, by how often they run.
-- **Ads Account Summary** is for the report tables: campaigns, search terms, keywords and more.
+- **Ads Command Centre** is for running the account.
+- **Ads Account Summary** is for the report tables.
 
 Pick a client once and all three show that client.
 
@@ -39,14 +39,15 @@ Only owners and scouts can use them. Ask one if you need access.
 4. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel on the right.
 5. Choose **Approve**, **Request changes** or **Reject**. Rejecting and requesting changes both need a note.
 6. For an approved change, try **Dry run** first. It checks everything and changes nothing. Then press **Apply now** to make it live.
-7. At **Monthly close**, read the draft PDF, then press **Sign off the report…**. You can add a note.
+7. At **Monthly close**, read the draft PDF, then press **Sign off the report…**. **Earlier months** holds past reports.
+8. After a decision made elsewhere, write it down and press **Record decision**. **Record and draft the change** also has Claude draft the change.
 
 ## Good to know
 
 - Cortex asks you to confirm approving, rejecting, applying and signing off a report.
 - If Cortex can't tell whether an apply reached Google Ads, it says so and stops. Check the account, then press **I've checked the account**.
+- The newest buttons need the updated Ads skill in the Brain.
 - **Recent decisions** covers the last 14 days.
-- **Rate calls** lives in Ads Command Centre, on the Daily standup card.
 - **Refresh** reloads the account.
 
 ## Try this

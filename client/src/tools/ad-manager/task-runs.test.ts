@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ADS_TASK_RESULTS_CAPABILITY } from '../../../../shared/ads-contract.ts';
 import type { LiveSession } from '../../../../shared/contract.ts';
+import { api } from '../../api.ts';
 import {
   lastRunText,
+  newResultPosts,
   readRuns,
   reconcileRuns,
   recordRun,
@@ -243,5 +246,119 @@ describe('taskRuns.reconcile with a second window', () => {
     const saved = readRuns(mem);
     expect(saved[runKey('acme', 't1')]?.good).toBeDefined();
     expect(saved[runKey('acme', 't2')]).toMatchObject({ chat: 'c2' });
+  });
+});
+
+describe("sending a run's result (plan 2026-11-19-ads-release-2, decision 5)", () => {
+  const BRAIN = '2026-11-16T10:00:00.500Z';
+  const sess = (extra: Partial<LiveSession>) =>
+    ({ id: 'c1', sdkSessionId: 'sdk1', lastTurn: 'ok', ...extra }) as LiveSession;
+  const run = (extra: Partial<TaskRuns[string]> = {}): TaskRuns => ({
+    [runKey('acme', 't')]: { at: '2026-11-16T10:00:00.000Z', chat: 'c1', ...extra },
+  });
+
+  it('brainAt and resultSent survive a save and load; a bad brainAt is dropped', () => {
+    const runs = run({ brainAt: BRAIN, resultSent: true });
+    const mem = memory();
+    writeRuns(runs, mem);
+    expect(readRuns(mem)).toEqual(runs);
+    expect(readRuns(memory(JSON.stringify(run({ brainAt: 'soon', resultSent: false } as never))))).toEqual(
+      run(),
+    );
+  });
+  it('a new run of the task starts without the old brainAt or resultSent', () => {
+    const next = recordRun(
+      run({ brainAt: BRAIN, resultSent: true }),
+      'acme',
+      't',
+      new Date('2026-11-17T10:00:00Z'),
+      'c2',
+    );
+    expect(next[runKey('acme', 't')]).toEqual({ at: '2026-11-17T10:00:00.000Z', chat: 'c2' });
+  });
+  it('marks resultSent the first time a run with a brainAt turns good, and only then', () => {
+    const first = reconcileRuns(run({ brainAt: BRAIN }), [sess({})], true);
+    expect(first[runKey('acme', 't')]?.resultSent).toBe(true);
+    expect(newResultPosts(run({ brainAt: BRAIN }), first)).toEqual([
+      { account: 'acme', task: 't', at: BRAIN, chat: 'c1' },
+    ]);
+    expect(reconcileRuns(first, [sess({})], true)).toBe(first);
+    expect(newResultPosts(first, first)).toEqual([]);
+  });
+  it('still posts for a run that turned good before the feature was known', () => {
+    const before = reconcileRuns(run({ brainAt: BRAIN }), [sess({})], false);
+    expect(before[runKey('acme', 't')]?.good).toBeTruthy();
+    expect(before[runKey('acme', 't')]?.resultSent).toBeUndefined();
+    const after = reconcileRuns(before, [sess({})], true);
+    expect(after[runKey('acme', 't')]?.resultSent).toBe(true);
+    expect(newResultPosts(before, after)).toEqual([{ account: 'acme', task: 't', at: BRAIN, chat: 'c1' }]);
+  });
+  it('marks nothing without a brainAt, without the feature, or for a run that did not finish well', () => {
+    expect(reconcileRuns(run(), [sess({})], true)[runKey('acme', 't')]?.resultSent).toBeUndefined();
+    expect(
+      reconcileRuns(run({ brainAt: BRAIN }), [sess({})])[runKey('acme', 't')]?.resultSent,
+    ).toBeUndefined();
+    expect(
+      reconcileRuns(run({ brainAt: BRAIN }), [sess({ lastTurn: 'failed' })], true)[runKey('acme', 't')]
+        ?.resultSent,
+    ).toBeUndefined();
+  });
+
+  describe('taskRuns', () => {
+    afterEach(() => {
+      // Forget this test's chats, so the next test's setFeatures has nothing to catch up on.
+      taskRuns.reconcile([]);
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      taskRuns.setFeatures([]);
+    });
+    const setup = (features: string[]) => {
+      const mem = memory(JSON.stringify(run({ brainAt: BRAIN })));
+      vi.stubGlobal('localStorage', mem);
+      taskRuns.reconcile([]); // no chats seen yet, whatever ran before in this file
+      taskRuns.setFeatures(features);
+      return mem;
+    };
+    it('posts task-result once when the run first turns good, and never again', () => {
+      const mem = setup([ADS_TASK_RESULTS_CAPABILITY]);
+      const post = vi.spyOn(api, 'adsChange').mockResolvedValue({ result: null } as never);
+      taskRuns.reconcile([sess({})]);
+      taskRuns.reconcile([sess({})]);
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith('task-result', { account: 'acme', task: 't', at: BRAIN, chat: 'c1' });
+      expect(readRuns(mem)[runKey('acme', 't')]?.resultSent).toBe(true);
+    });
+    it('does not retry a failed post', async () => {
+      setup([ADS_TASK_RESULTS_CAPABILITY]);
+      const post = vi.spyOn(api, 'adsChange').mockRejectedValue(new Error('no'));
+      taskRuns.reconcile([sess({})]);
+      await Promise.resolve();
+      taskRuns.reconcile([sess({})]);
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+    it('catches up as soon as the feature is known, for a run that finished first', () => {
+      setup([]);
+      const post = vi.spyOn(api, 'adsChange').mockResolvedValue({ result: null } as never);
+      taskRuns.reconcile([sess({})]);
+      expect(post).not.toHaveBeenCalled();
+      taskRuns.setFeatures([ADS_TASK_RESULTS_CAPABILITY]);
+      expect(post).toHaveBeenCalledTimes(1);
+    });
+    it('posts nothing when the skill does not list the feature', () => {
+      setup([]);
+      const post = vi.spyOn(api, 'adsChange').mockResolvedValue({ result: null } as never);
+      taskRuns.reconcile([sess({})]);
+      expect(post).not.toHaveBeenCalled();
+    });
+    it("share keeps the brain's own at as brainAt on the run just recorded", async () => {
+      const mem = memory();
+      vi.stubGlobal('localStorage', mem);
+      taskRuns.record('acme', 'shared', 'c1', new Date('2026-11-16T10:00:00Z'));
+      vi.spyOn(api, 'adsTaskRun').mockResolvedValue({
+        run: { at: BRAIN, by: 'ian', byName: 'Ian' },
+      });
+      taskRuns.share('acme', 'shared');
+      await vi.waitFor(() => expect(readRuns(mem)[runKey('acme', 'shared')]?.brainAt).toBe(BRAIN));
+    });
   });
 });

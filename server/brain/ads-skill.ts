@@ -96,8 +96,8 @@ export interface AdsService {
 
 /** Spawned detached and never stopped (decision 12). */
 const DETACHED: ReadonlySet<AdsChangeAction> = new Set(['apply', 'dry-run', 'sign-monthly']);
-/** Changes that run at once, outside the queue: `task-run` is a one-line append whose time must not wait behind an apply. */
-const UNQUEUED: ReadonlySet<AdsChangeAction> = new Set(['task-run']);
+/** Changes that run at once, outside the queue: `task-run` and `task-result` are one-line appends whose time must not wait behind an apply. */
+const UNQUEUED: ReadonlySet<AdsChangeAction> = new Set(['task-run', 'task-result']);
 
 const CODES: ReadonlySet<string> = new Set<AdsErrorCode>([
   'bad-request',

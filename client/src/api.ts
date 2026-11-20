@@ -8,8 +8,11 @@ import {
   type AdsChangeAction,
   type AdsChangeReply,
   type AdsRequests,
+  type AdsTaskResultReply,
+  type AdsTaskResultRequest,
   type AdsTaskRunReply,
   type AdsTaskRunRequest,
+  type AdsTriageReply,
   type ProposalFull,
 } from '../../shared/ads-contract.ts';
 import type { ChatContextDetail } from '../../shared/context-contract.ts';
@@ -153,6 +156,14 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+/** `task-result` takes the browser's request (the server picks the file); every other change takes AdsRequests. */
+type AdsChangeBody<A extends AdsChangeAction> = A extends 'task-result'
+  ? AdsTaskResultRequest
+  : AdsRequests[A];
+type AdsChangeResult<A extends AdsChangeAction> = A extends 'task-result'
+  ? AdsTaskResultReply
+  : AdsChangeReply;
+
 const adsQuery = (params: Record<string, string>) => `?${new URLSearchParams(params).toString()}`;
 
 export const api = {
@@ -169,9 +180,14 @@ export const api = {
     request<unknown>('GET', `${ADS_ROUTES.standupBrief}${adsQuery({ account })}`),
   /** The file as a library item, for the file viewer (`{ kind: 'file', item }`). */
   adsFile: (path: string) => request<LibraryItem>('GET', `${ADS_ROUTES.file}${adsQuery({ p: path })}`),
-  adsChange: async <A extends AdsChangeAction>(action: A, body: AdsRequests[A]): Promise<AdsChangeReply> => {
+  /** Every account's latest standup verdict, worst first (only when the skill lists ADS_TRIAGE_CAPABILITY). */
+  adsTriage: () => request<AdsTriageReply>('GET', ADS_ROUTES.triage),
+  adsChange: async <A extends AdsChangeAction>(
+    action: A,
+    body: AdsChangeBody<A>,
+  ): Promise<AdsChangeResult<A>> => {
     try {
-      return await request<AdsChangeReply>('POST', ADS_ROUTES.change(action), body);
+      return await request<AdsChangeResult<A>>('POST', ADS_ROUTES.change(action), body);
     } catch (err) {
       if (action === 'apply' && err instanceof ApiFailure && err.code === 'network') {
         throw new ApiFailure('internal', ADS_ERROR_MESSAGES['unknown-outcome'], 0);

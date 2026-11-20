@@ -7,7 +7,8 @@ import { adsErrorText } from './words.ts';
  * A report, PDF or notes file: asks the server for it as a library item, then opens it in the file viewer without
  * delete. JSON, CSV and anything the viewer can't show are downloaded instead.
  */
-export function OpenFile({ path, label }: { path: string; label: string }) {
+/** `name`: a fuller accessible name when several buttons share one label ("Open result: Spend & anomaly check"). */
+export function OpenFile({ path, label, name }: { path: string; label: string; name?: string }) {
   const { dispatch } = useShell();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,6 +42,7 @@ export function OpenFile({ path, label }: { path: string; label: string }) {
         className="btn"
         data-size="small"
         aria-disabled={busy || undefined}
+        aria-label={name}
         onClick={() => void press()}
       >
         {download ? `Download ${label.toLowerCase()}` : label}

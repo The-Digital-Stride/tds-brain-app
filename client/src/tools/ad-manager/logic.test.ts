@@ -333,6 +333,35 @@ describe('needsYou', () => {
     expect(items[0]?.text).toContain('October 2026');
   });
 
+  it('an unsigned earlier month that can be signed is a warn line to the monthly close', () => {
+    const items = needsYou({
+      ...none,
+      earlier: [
+        monthly({ month: '2026-09', monthName: 'September 2026' }),
+        monthly({ month: '2026-08', monthName: 'August 2026', signed: true }),
+        monthly({ month: '2026-07', monthName: 'July 2026', canSign: false }),
+      ],
+    });
+    expect(items.map((i) => i.text)).toEqual(['September 2026 is not signed off']);
+    expect(items[0]?.target).toEqual({ kind: 'jump', anchor: 'close' });
+  });
+
+  it('puts dates in words and a proposal title for its id in findings', () => {
+    const items = needsYou({
+      ...none,
+      open: [{ id: '20261026-04-water', fm: { title: 'Water-cooled bidding' } } as never],
+      pack: pack([
+        {
+          severity: 'watch',
+          title: '20261026-04-water: decision due',
+          detail: 'Due 2026-11-09',
+        },
+      ]),
+    });
+    expect(items[0]?.text).toBe('Water-cooled bidding: decision due');
+    expect(items[0]?.sub).toMatch(/^Due Mon 9 Nov/);
+  });
+
   it('a signed month, or a month still in progress, is no line', () => {
     expect(needsYou({ ...none, monthly: monthly({ signed: true }) })).toEqual([]);
     expect(needsYou({ ...none, monthly: monthly({ partial: true }) })).toEqual([]);
@@ -382,9 +411,11 @@ const quality = (rows: (string | number | null)[][]) =>
   table(
     'quality',
     'Quality Score',
+    // As the board builds it: one row per score band, with how many keywords sit in it.
     [
-      { key: 'keyword', label: 'Keyword', type: 'text' },
       { key: 'qs', label: 'Quality Score', type: 'qs' },
+      { key: 'kw', label: 'Keywords', type: 'int' },
+      { key: 'pct', label: 'Share', type: 'pct' },
     ],
     rows,
   );
@@ -463,30 +494,47 @@ describe('worthALook', () => {
     ).toEqual([]);
   });
 
-  it('Quality Score: counts scores of 4 or below, and 5 is fine', () => {
+  it('Quality Score: adds up the keywords in bands of 4 or below, and 5 is fine', () => {
     const out = worthALook(
       board([
         quality([
-          ['a', 4],
-          ['b', 2],
-          ['c', 5],
-          ['d', null],
+          [7, 30, 50],
+          [5, 9, 15],
+          [4, 12, 20],
+          [2, 9, 15],
         ]),
       ]),
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ table: 'quality', tableTitle: 'Quality Score' });
-    expect(out[0]?.text).toContain('2');
+    expect(out[0]?.text).toBe('21 keywords have a Quality Score of 4 or below');
+    expect(worthALook(board([quality([[3, 1, 100]])]))[0]?.text).toBe(
+      '1 keyword has a Quality Score of 4 or below',
+    );
     expect(
       worthALook(
         board([
           quality([
-            ['a', 5],
-            ['b', 8],
+            [5, 4, 40],
+            [8, 6, 60],
           ]),
         ]),
       ),
     ).toEqual([]);
+  });
+
+  it('Quality Score: gives no second line from the QS column on Top keywords', () => {
+    const keywords = table(
+      'keywords',
+      'Top keywords',
+      [
+        { key: 'kw', label: 'Keyword', type: 'text' },
+        { key: 'qs', label: 'QS', type: 'qs' },
+      ],
+      [['a', 3]],
+    );
+    const out = worthALook(board([keywords, quality([[3, 2, 100]])]));
+    expect(out.map((i) => i.table)).toEqual(['quality']);
   });
 
   it('a missing table gives no line, and the others still show', () => {

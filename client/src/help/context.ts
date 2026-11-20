@@ -1,3 +1,4 @@
+import { SETTINGS_TABS } from '../shell/settings-tabs.ts';
 import type { HelpContext, HelpForContext } from './contract.ts';
 import { HELP_FALLBACK_ID } from './contract.ts';
 
@@ -25,7 +26,7 @@ function pick(ctx: HelpContext): string {
     case 'chat':
       return 'talking-to-claude';
     case 'settings':
-      return 'settings';
+      return SETTINGS_TABS.find((t) => t.id === ctx.settingsTab)?.help ?? 'settings';
     case 'profile':
       return 'your-profile';
     case 'guide':

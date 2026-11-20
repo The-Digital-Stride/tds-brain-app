@@ -1,6 +1,6 @@
 import { HelpLink } from '../shell/HelpLink.tsx';
 import { useLastSync } from '../shell/useLastSync.ts';
-import { healthChecks, healthSummary, STATE_WORDS } from '../state/health.ts';
+import { type HealthCheck, healthChecks, healthSummary, STATE_WORDS } from '../state/health.ts';
 import { useStore } from '../store.tsx';
 
 /**
@@ -9,11 +9,20 @@ import { useStore } from '../store.tsx';
  * sync, the lists loading). Only the summary line is announced, so a screen reader hears a change
  * once rather than every row.
  */
-export function HealthPanel() {
-  const { boot, streamUp, lists, setSetupOpen } = useStore();
+export function HealthPanel({ checks }: { checks?: HealthCheck[] }) {
+  return checks ? <HealthList checks={checks} /> : <OwnHealth />;
+}
+
+/** With no checks handed in (Settings hands them in, so one sync poll serves the tab dot and the list), work them out here. */
+function OwnHealth() {
+  const { boot, streamUp, lists } = useStore();
   const { lastSync, now } = useLastSync();
   if (!boot) return null;
-  const checks = healthChecks({ boot, streamUp, lists, lastSync, now });
+  return <HealthList checks={healthChecks({ boot, streamUp, lists, lastSync, now })} />;
+}
+
+function HealthList({ checks }: { checks: HealthCheck[] }) {
+  const { setSetupOpen } = useStore();
   const summary = healthSummary(checks);
   return (
     <section aria-labelledby="health-h" className="health">

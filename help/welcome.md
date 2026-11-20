@@ -8,7 +8,7 @@ benefit: Get more done with less admin, and share your work with the team withou
 roles: all
 related: [home, talking-to-claude, todos, skills]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 TDS Cortex is where you work with Claude, our AI helper, using everything the agency knows. That shared folder of knowledge is called the Brain. The Brain knows. Cortex gets it done.
@@ -35,7 +35,7 @@ The first time you open Cortex after this update, a short tour walks you round. 
 
 ## How to get help
 
-When you aren't typing, press the H key or the ? key to open Help. (This needs **Single-key shortcuts** switched on in Settings. It is on unless you turned it off.) You can also use the Help item on the left-hand rail. It opens on the page for the screen you're on.
+When you aren't typing, press the H key or the ? key to open Help. (This needs **Single-key shortcuts** switched on in Settings (**General** tab). It is on unless you turned it off.) You can also use the Help item on the left-hand rail. It opens on the page for the screen you're on.
 
 ## Where to go next
 

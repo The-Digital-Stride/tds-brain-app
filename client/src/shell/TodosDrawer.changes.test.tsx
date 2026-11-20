@@ -57,6 +57,7 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
 
 const changeTodos = vi.fn();
 const openView = vi.fn();
+const openSettings = vi.fn();
 const holdTodo = vi.fn();
 const undoHeld = vi.fn();
 
@@ -64,6 +65,7 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
   store.current = {
     changeTodos,
     openView,
+    openSettings,
     heldTodos,
     holdTodo,
     undoHeld,
@@ -95,6 +97,7 @@ beforeEach(() => {
   changeTodos.mockReset();
   changeTodos.mockResolvedValue({ done: 1, todos: list('on', [todo({ version: 'v2' })]) });
   openView.mockReset();
+  openSettings.mockReset();
   holdTodo.mockReset();
   undoHeld.mockReset();
   setStore('on');
@@ -127,7 +130,7 @@ describe('To-dos drawer, changing to-dos', () => {
     render(<TodosDrawer />);
     expect(screen.getByText(/Adding and editing to-dos is switched off/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(openView).toHaveBeenCalledWith('settings');
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
     cleanup();
     fakeShell.reset();
     setStore('restricted');

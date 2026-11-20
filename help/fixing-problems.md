@@ -8,10 +8,10 @@ benefit: Get back to work fast, and know when to ask for help.
 roles: all
 related: [health, getting-help, attaching-files]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
-Start in Settings. The health panel at the top says what's wrong. [How Cortex is running](help:health) explains each line.
+Start in Settings, on the **Health** tab. It says what's wrong. A red dot on the tab shows when something needs attention. [How Cortex is running](help:health) explains each line.
 
 ## Changes in the Brain don't show up
 

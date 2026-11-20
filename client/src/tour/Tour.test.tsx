@@ -166,7 +166,7 @@ describe('after the tour', () => {
     fireEvent.click(
       document.querySelector('.rail [aria-label="Settings"], .rail [data-tip="Settings"]') as HTMLElement,
     );
-    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    await screen.findByRole('heading', { level: 1, name: /^Settings/ });
     act(() => startTour());
     await dialog();
     expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeTruthy();

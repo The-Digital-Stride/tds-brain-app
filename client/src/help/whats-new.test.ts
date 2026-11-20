@@ -84,8 +84,8 @@ describe('parseNote and loadNotes', () => {
     };
     expect(loadNotes(files).map((n) => n.version)).toEqual(['0.40.0', '0.9.0']);
   });
-  it('bundles the 0.53.0, 0.52.0 and 0.51.0 notes, newest first', () => {
-    expect(whatsNewNotes.slice(0, 3).map((n) => n.version)).toEqual(['0.53.0', '0.52.0', '0.51.0']);
+  it('bundles the 0.54.0, 0.53.0 and 0.52.0 notes, newest first', () => {
+    expect(whatsNewNotes.slice(0, 3).map((n) => n.version)).toEqual(['0.54.0', '0.53.0', '0.52.0']);
   });
 });
 

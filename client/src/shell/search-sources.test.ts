@@ -174,8 +174,20 @@ describe('Go to', () => {
   it('lists Home, To-dos, Chats, Skills, Settings and then every app, derived from APPS', () => {
     apps.push(fakeApp('images', 'Images', null), fakeApp('notes', 'Notes', null));
     const go = source('go').idle?.(ctx()) ?? [];
-    expect(labels(go)).toEqual(['Home', 'To-dos', 'Chats', 'Skills', 'Settings', 'Images', 'Notes']);
-    expect(go.map((h) => h.hint)).toEqual([null, 'T', 'C', 'S', null, null, null]);
+    expect(labels(go)).toEqual([
+      'Home',
+      'To-dos',
+      'Chats',
+      'Skills',
+      'Settings',
+      'Settings: General',
+      'Settings: Claude',
+      'Settings: Health',
+      'Settings: About',
+      'Images',
+      'Notes',
+    ]);
+    expect(go.map((h) => h.hint)).toEqual([null, 'T', 'C', 'S', null, null, null, null, null, null, null]);
   });
 
   it('finds an app by its title and opens its view', () => {
@@ -195,6 +207,30 @@ describe('Go to', () => {
     }
     expect(actions.goHome).toHaveBeenCalledTimes(1);
     expect(actions.openDrawer).toHaveBeenCalledWith('chats');
+    expect(actions.openView).toHaveBeenCalledWith('settings');
+  });
+});
+
+describe('Settings tabs in Go to', () => {
+  it('lists Skill levels only when the person has levels', () => {
+    const without = labels(source('go').idle?.(ctx()) ?? []);
+    expect(without).not.toContain('Settings: Skill levels');
+    const withLevels = labels(source('go').idle?.({ ...ctx(), hasSkillLevels: true }) ?? []);
+    expect(withLevels).toContain('Settings: Skill levels');
+  });
+
+  it('finds a tab by its words and opens Settings on it', () => {
+    const [hit] = hits('go', 'settings health');
+    expect(hit?.label).toBe('Settings: Health');
+    const actions = { openSettings: vi.fn(), openView: vi.fn() } as unknown as SearchActions;
+    hit?.run(actions);
+    expect(actions.openSettings).toHaveBeenCalledWith('health');
+  });
+
+  it('falls back to the plain Settings view when the action is missing', () => {
+    const [hit] = hits('go', 'settings about');
+    const actions = { openView: vi.fn() } as unknown as SearchActions;
+    hit?.run(actions);
     expect(actions.openView).toHaveBeenCalledWith('settings');
   });
 });

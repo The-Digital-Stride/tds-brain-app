@@ -8,7 +8,7 @@ benefit: You can note private jobs without cluttering the team's list.
 roles: all
 related: [todos, adding-todos, passing-todos-on]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -23,7 +23,7 @@ A personal to-do is private. It stays on your Mac, and your teammates never see 
 
 ## How to use it
 
-1. Switch on **Let the app change to-dos** in Settings, if it is off.
+1. Switch on **Let the app change to-dos** in Settings (**General** tab), if it is off.
 2. Open the To-dos drawer and press **Add a to-do**.
 3. Press **Keep it personal** (the padlock) before you press **Add**.
 4. To see only these, pick **Personal** at the top of the list. Pick **All** to see everything again.

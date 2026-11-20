@@ -8,7 +8,7 @@ benefit: Cortex is one click away, with no web address to remember.
 roles: all
 related: [settings, health, updates]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -23,7 +23,7 @@ You can add Cortex to your Mac's Dock (the row of app icons). It then opens in i
 
 ## How to use it
 
-1. Open Settings from the rail.
+1. Open Settings from the rail, then the **About** tab.
 2. Under **About TDS Cortex on this computer**, find **Dock app**.
 3. Press **Add TDS Cortex to your Dock**.
 4. Choose to install when Chrome asks.

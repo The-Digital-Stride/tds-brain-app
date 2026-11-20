@@ -20,6 +20,7 @@ import type {
   SearchSource,
 } from './contract.ts';
 import { SECTIONS } from './sections.ts';
+import { visibleSettingsTabs } from './settings-tabs.ts';
 import { placeName, todoPlaces, whenWords } from './words.ts';
 
 /** Hits shown per group; the heading says "6 of N" when there are more. */
@@ -230,6 +231,16 @@ function goToEntries(ctx?: SearchContext): GoTo[] {
       icon: 'settings',
       run: (a) => a.openView('settings'),
     },
+    ...visibleSettingsTabs({ hasSkillLevels: Boolean(ctx?.hasSkillLevels) }).map(
+      (t): GoTo => ({
+        id: `go-settings-${t.id}`,
+        label: `Settings: ${t.label}`,
+        hint: null,
+        icon: 'settings',
+        // An older palette without the tab action opens Settings on the tab it remembers.
+        run: (a) => (a.openSettings ? a.openSettings(t.id) : a.openView('settings')),
+      }),
+    ),
     ...APPS.map(
       (app): GoTo => ({
         id: `go-app-${app.id}`,

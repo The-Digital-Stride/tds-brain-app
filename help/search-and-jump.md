@@ -8,7 +8,7 @@ benefit: Get anywhere in a few key presses, without hunting through drawers.
 roles: all
 related: [keyboard-shortcuts, home, getting-help]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -37,7 +37,7 @@ reviewed: 2026-11-15
 - Picking a client starts a new chat for that client.
 - Picking a skill starts a chat with that skill.
 - **Help** is here too, and help pages show in the results.
-- The slash key needs **Single-key shortcuts** switched on in Settings. **⌘K** works everywhere except an open file. Press Esc to close the file first.
+- The slash key needs **Single-key shortcuts** switched on in Settings (**General** tab). **⌘K** works everywhere except an open file. Press Esc to close the file first.
 
 ## Try this
 

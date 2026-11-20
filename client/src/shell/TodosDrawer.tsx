@@ -322,7 +322,7 @@ export function TodosDrawer() {
     todos,
     boot,
     changeTodos,
-    openView,
+    openSettings,
     heldTodos,
     holdTodo,
     undoHeld,
@@ -886,7 +886,7 @@ export function TodosDrawer() {
       {todos.changes === 'switched-off' ? (
         <p className="todo-note todo-off">
           Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
-          <button type="button" className="link-btn" onClick={() => openView('settings')}>
+          <button type="button" className="link-btn" onClick={() => openSettings('general', 'set-direct')}>
             Settings
           </button>
           .

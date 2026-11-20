@@ -8,7 +8,7 @@ benefit: A job is written down the moment you think of it, so it can't be forgot
 roles: all
 related: [todos, files-on-todos, passing-todos-on, personal-todos, change-todos-setting]
 since: 0.38.0
-reviewed: 2026-11-16
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -22,7 +22,7 @@ You can add a to-do, give it a due date, change it later or delete it. A wide pa
 
 ## How to use it
 
-1. First switch on **Let the app change to-dos** in Settings. Until then you can read to-dos but not change them.
+1. First switch on **Let the app change to-dos** in Settings (**General** tab). Until then you can read to-dos but not change them.
 2. Open the To-dos drawer and press **Add a to-do**. The panel opens.
 3. Type what needs doing and press **Add**. It goes to you, with no date. For a date or a person first, press **More options**.
 4. If you want to write more, fill in the optional **Details** box before you press **Add**. After you add one for yourself, the panel stays on it. You can add files from there.

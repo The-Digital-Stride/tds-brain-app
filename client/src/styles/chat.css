@@ -995,6 +995,22 @@
   padding: 24px 28px 32px;
   gap: 24px;
 }
+/* The tab row sits over the settings column: same width and side padding, sized to its buttons. */
+.page-tabs {
+  flex: none;
+  max-width: 600px;
+  margin: 12px auto 0;
+  padding: 0 28px;
+  width: 100%;
+}
+.page-tabs > .tool-tabs {
+  margin: 0;
+  max-width: 100%;
+  width: fit-content;
+}
+.page-tabs + .sheet-scroll .page.settings {
+  padding-top: 16px;
+}
 .settings h2 {
   margin-bottom: 4px;
   font-size: 14px;
@@ -1236,6 +1252,9 @@
   }
   .page.settings {
     padding: 16px;
+  }
+  .page-tabs {
+    padding: 0 16px;
   }
 }
 

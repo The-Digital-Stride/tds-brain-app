@@ -64,6 +64,10 @@
   width: 212px;
   box-shadow: var(--lift-2);
 }
+/* Names pinned: the rail is already 212px while the slot grows to meet it, so pinning from hover never dips. */
+.desk[data-rail="wide"] .rail {
+  width: 212px;
+}
 @media (prefers-reduced-motion: reduce) {
   .railslot,
   .rail {

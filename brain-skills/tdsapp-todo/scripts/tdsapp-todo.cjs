@@ -788,9 +788,11 @@ function splitFiles(body) {
   return { details: details.trim(), files };
 }
 
-// Details sent by a caller may not hold the section: only attach and detach change it.
+// Details sent by a caller may not hold the section: only attach and detach change it. A heading inside a
+// code fence is not one, the same as filesRange and shared/todo-files.ts.
 function refuseFilesHeading(text) {
-  if (text.split('\n').some(l => FILES_HEADING.test(l))) {
+  const lines = text.split('\n');
+  if (linesOutsideFences(lines).some(i => FILES_HEADING.test(lines[i]))) {
     throw new Refusal(400, 'details can\'t hold a "## Files" section: files are linked with attach');
   }
 }

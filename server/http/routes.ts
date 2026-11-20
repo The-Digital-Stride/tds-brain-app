@@ -723,8 +723,11 @@ const TODO_HISTORY_BAD_KEY = "That to-do wasn't understood.";
 const TODO_SWITCHED_OFF =
   "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings.";
 
-/** Each action's fields besides `kind`: required text, text or null, or optional text. */
-const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-null' | 'optional-text'>> = {
+/** Each action's fields besides `kind`: required text, text or null, optional text, or optional `true`. */
+const TODO_SHAPES: Record<
+  TodoAction['kind'],
+  Record<string, 'text' | 'text-or-null' | 'optional-text' | 'optional-true'>
+> = {
   add: {
     title: 'text',
     due: 'text-or-null',
@@ -736,6 +739,8 @@ const TODO_SHAPES: Record<TodoAction['kind'], Record<string, 'text' | 'text-or-n
     id: 'text',
     title: 'text',
     details: 'optional-text',
+    // The browser sent the details without the `## Files` section (it saw canAttach): see TodoAction.
+    detailsOnly: 'optional-true',
     expect: 'optional-text',
     scope: 'optional-text',
   },
@@ -763,7 +768,12 @@ export function parseTodoAction(body: unknown): TodoAction {
   const action: Record<string, unknown> = { kind: body.kind };
   for (const [key, type] of Object.entries(shape)) {
     const v = body[key];
-    if (type === 'optional-text' && v === undefined) continue;
+    if ((type === 'optional-text' || type === 'optional-true') && v === undefined) continue;
+    if (type === 'optional-true') {
+      if (v !== true) throw bad();
+      action[key] = v;
+      continue;
+    }
     if (!(typeof v === 'string' || (type === 'text-or-null' && v === null))) throw bad();
     if ((key === 'scope' || key === 'to') && !isTodoScope(v)) throw bad();
     action[key] = v;

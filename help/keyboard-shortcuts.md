@@ -8,7 +8,7 @@ benefit: Move around Cortex quickly without reaching for the mouse.
 roles: all
 related: [search-and-jump, settings, getting-help]
 since: 0.38.0
-reviewed: 2026-11-16
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -37,7 +37,7 @@ In the message box, press Enter to send. Press Shift and Enter for a new line.
 ## Good to know
 
 - Single keys do nothing while you are typing in a box. **P**, **N** and **E** are single keys too, so they follow the switch. ⌘ Enter and Esc work whether it is on or off.
-- The **Single-key shortcuts** switch in Settings turns them on or off. It is on to begin with.
+- The **Single-key shortcuts** switch in Settings (**General** tab) turns them on or off. It is on to begin with.
 - ⌘K and Esc work whether the switch is on or off.
 - While the first-run tour shows, single keys do nothing.
 - Each key press toggles its drawer, so pressing it again closes the drawer.

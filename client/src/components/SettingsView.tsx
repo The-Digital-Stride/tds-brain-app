@@ -27,8 +27,10 @@ import { HelpLink } from '../shell/HelpLink.tsx';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
+import type { SettingsTab } from '../shell/settings-tabs.ts';
 import { phaseText, UpdateAction } from '../shell/UpdateBanner.tsx';
 import { syncWords } from '../shell/words.ts';
+import type { HealthCheck } from '../state/health.ts';
 import { useUpdate } from '../state/update.ts';
 import { useStore } from '../store.tsx';
 import { useDockApp } from '../useDockApp.ts';
@@ -113,12 +115,20 @@ function TokensSavedSection() {
   );
 }
 
-export function SettingsView() {
-  const { boot, updatePrefs, settingsFocus, clearSettingsFocus, skillLevels, setSkillLevel, openView } =
-    useStore();
+export interface SettingsViewProps {
+  /** The tab to show; `SettingsSheet` has already settled an unknown or hidden tab to General. */
+  tab: SettingsTab;
+  /** The health checks, worked out once by `SettingsSheet` (which also shows the Health tab's dot). */
+  checks?: HealthCheck[];
+}
+
+/** One tab's page of Settings. The sheet bar and the tab row are `SettingsSheet`'s. */
+export function SettingsView({ tab, checks }: SettingsViewProps) {
+  const { boot, updatePrefs, skillLevels, setSkillLevel, openView } = useStore();
   const showHelp = helpVisible(boot?.identity.role ?? 'unknown');
   const [choices, setChoices] = useState<EngineChoices | null>(null);
   useEffect(() => {
+    if (tab !== 'claude') return;
     let live = true;
     // Never blocks the page: until this arrives (or if it fails) the selects use the fallback model list.
     Promise.resolve()
@@ -128,15 +138,7 @@ export function SettingsView() {
     return () => {
       live = false;
     };
-  }, []);
-  const ready = Boolean(boot);
-  useEffect(() => {
-    if (!settingsFocus || !ready) return;
-    const el = document.getElementById('set-model');
-    el?.focus();
-    el?.scrollIntoView?.({ block: 'center' });
-    clearSettingsFocus();
-  }, [settingsFocus, ready, clearSettingsFocus]);
+  }, [tab]);
   const dock = useDockApp();
   const { state: shell, dispatch } = useShell();
   const update = useUpdate();
@@ -145,128 +147,137 @@ export function SettingsView() {
   return (
     // The sheet bar above carries the page's heading.
     <div className="page settings">
-      <HealthPanel />
+      {tab === 'health' ? <HealthPanel checks={checks} /> : null}
 
-      <section aria-labelledby="prefs-h">
-        <h2 id="prefs-h">Preferences</h2>
-        <div className="setting-rows">
-          <div className="setting">
-            <div>
-              <div className="help-inline">
-                <label className="setting-label" htmlFor="set-direct">
-                  Let the app change to-dos
-                </label>
-                <HelpLink page="change-todos-setting" size={28} />
-              </div>
-              <p className="setting-help" id="set-direct-help">
-                Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is
-                made in the shared brain, so the whole team sees it. Off by default.
-              </p>
-            </div>
-            <input
-              id="set-direct"
-              type="checkbox"
-              role="switch"
-              className="switch"
-              aria-describedby="set-direct-help"
-              checked={prefs.directWrites}
-              aria-checked={prefs.directWrites}
-              onChange={(e) => void updatePrefs({ directWrites: e.target.checked })}
-            />
-          </div>
-          <div className="setting">
-            <div>
-              <div className="help-inline">
-                <label className="setting-label" htmlFor="set-keys">
-                  Single-key shortcuts
-                </label>
-                <HelpLink page="keyboard-shortcuts" size={28} />
-              </div>
-              <p className="setting-help" id="set-keys-help">
-                When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail, <kbd>T</kbd>{' '}
-                for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills, <kbd>P</kbd> and <kbd>N</kbd> for
-                the previous and next to-do in its panel
-                {showHelp ? (
-                  <>
-                    , <kbd>H</kbd> or <kbd>?</kbd> for Help
-                  </>
-                ) : null}{' '}
-                and <kbd>/</kbd> to search.
-              </p>
-            </div>
-            <input
-              id="set-keys"
-              type="checkbox"
-              role="switch"
-              className="switch"
-              aria-describedby="set-keys-help"
-              checked={shell.singleKeys}
-              aria-checked={shell.singleKeys}
-              onChange={(e) => dispatch({ type: 'set-single-keys', on: e.target.checked })}
-            />
-          </div>
-          <div className="setting">
-            <div>
-              <div className="help-inline">
-                <p className="setting-label">Working out the client</p>
-                <HelpLink page="picking-the-client" size={28} />
-              </div>
-              <p className="setting-help">
-                With Client set to Auto, the first message of a new chat and your client list go to Jev, a
-                TypeSafe service, to work out the client. Choose a client, or No client, and nothing is sent.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section aria-labelledby="claude-h">
-        <h2 id="claude-h">Claude in chats</h2>
-        <p className="setting-help" id="claude-help">
-          Used by new chats, and by open chats from their next reply.
-        </p>
-        {/* An older server sends no levelMode: the Model and Effort controls stay as they were. */}
-        {prefs.levelMode ? (
+      {tab === 'general' ? (
+        <section aria-labelledby="prefs-h">
+          <h2 id="prefs-h">Preferences</h2>
           <div className="setting-rows">
-            <div className="setting level-mode">
+            <div className="setting">
               <div>
                 <div className="help-inline">
-                  <p className="setting-label" id="level-mode-label">
-                    Level
-                  </p>
-                  <HelpLink page="levels" size={28} />
+                  <label className="setting-label" htmlFor="set-direct">
+                    Let the app change to-dos
+                  </label>
+                  <HelpLink page="change-todos-setting" size={28} />
                 </div>
-                <p className="setting-help" id="level-mode-help">
-                  {prefs.levelMode === 'auto'
-                    ? 'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.'
-                    : 'You choose the model and effort below for every chat.'}
+                <p className="setting-help" id="set-direct-help">
+                  Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is
+                  made in the shared brain, so the whole team sees it. Off by default.
                 </p>
               </div>
-              <Seg<LevelMode>
-                label="How the level is chosen"
-                value={prefs.levelMode}
-                options={[
-                  { value: 'auto', label: 'Automatic (recommended)' },
-                  { value: 'manual', label: 'Choose myself' },
-                ]}
-                onChange={(levelMode) => {
-                  if (levelMode !== prefs.levelMode) void updatePrefs({ levelMode });
-                }}
+              <input
+                id="set-direct"
+                type="checkbox"
+                role="switch"
+                className="switch"
+                aria-describedby="set-direct-help"
+                checked={prefs.directWrites}
+                aria-checked={prefs.directWrites}
+                onChange={(e) => void updatePrefs({ directWrites: e.target.checked })}
               />
             </div>
+            <div className="setting">
+              <div>
+                <div className="help-inline">
+                  <label className="setting-label" htmlFor="set-keys">
+                    Single-key shortcuts
+                  </label>
+                  <HelpLink page="keyboard-shortcuts" size={28} />
+                </div>
+                <p className="setting-help" id="set-keys-help">
+                  When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail,{' '}
+                  <kbd>T</kbd> for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills, <kbd>P</kbd> and{' '}
+                  <kbd>N</kbd> for the previous and next to-do in its panel
+                  {showHelp ? (
+                    <>
+                      , <kbd>H</kbd> or <kbd>?</kbd> for Help
+                    </>
+                  ) : null}{' '}
+                  and <kbd>/</kbd> to search.
+                </p>
+              </div>
+              <input
+                id="set-keys"
+                type="checkbox"
+                role="switch"
+                className="switch"
+                aria-describedby="set-keys-help"
+                checked={shell.singleKeys}
+                aria-checked={shell.singleKeys}
+                onChange={(e) => dispatch({ type: 'set-single-keys', on: e.target.checked })}
+              />
+            </div>
+            <div className="setting">
+              <div>
+                <div className="help-inline">
+                  <p className="setting-label">Working out the client</p>
+                  <HelpLink page="picking-the-client" size={28} />
+                </div>
+                <p className="setting-help">
+                  With Client set to Auto, the first message of a new chat and your client list go to Jev, a
+                  TypeSafe service, to work out the client. Choose a client, or No client, and nothing is
+                  sent.
+                </p>
+              </div>
+            </div>
           </div>
-        ) : null}
-        {prefs.levelMode === 'auto' ? null : (
-          <ClaudeChoices
-            choices={choices}
-            model={prefs.model ?? null}
-            effort={prefs.effort ?? null}
-            save={(patch) => void updatePrefs(patch)}
-          />
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      {skillLevels ? (
+      {tab === 'claude' ? (
+        <>
+          <section aria-labelledby="claude-h">
+            <h2 id="claude-h">Claude in chats</h2>
+            <p className="setting-help" id="claude-help">
+              Used by new chats, and by open chats from their next reply.
+            </p>
+            {/* An older server sends no levelMode: the Model and Effort controls stay as they were. */}
+            {prefs.levelMode ? (
+              <div className="setting-rows">
+                <div className="setting level-mode">
+                  <div>
+                    <div className="help-inline">
+                      <p className="setting-label" id="level-mode-label">
+                        Level
+                      </p>
+                      <HelpLink page="levels" size={28} />
+                    </div>
+                    <p className="setting-help" id="level-mode-help">
+                      {prefs.levelMode === 'auto'
+                        ? 'The app picks Quick, Standard or Deep for each chat. You can change it under the message box.'
+                        : 'You choose the model and effort below for every chat.'}
+                    </p>
+                  </div>
+                  <Seg<LevelMode>
+                    label="How the level is chosen"
+                    value={prefs.levelMode}
+                    options={[
+                      { value: 'auto', label: 'Automatic (recommended)' },
+                      { value: 'manual', label: 'Choose myself' },
+                    ]}
+                    onChange={(levelMode) => {
+                      if (levelMode !== prefs.levelMode) void updatePrefs({ levelMode });
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {prefs.levelMode === 'auto' ? null : (
+              <ClaudeChoices
+                choices={choices}
+                model={prefs.model ?? null}
+                effort={prefs.effort ?? null}
+                save={(patch) => void updatePrefs(patch)}
+              />
+            )}
+          </section>
+
+          <TokensSavedSection />
+        </>
+      ) : null}
+
+      {tab === 'skill-levels' && skillLevels ? (
         <SkillLevelsSection
           levels={skillLevels}
           skills={boot.skills}
@@ -274,84 +285,86 @@ export function SettingsView() {
         />
       ) : null}
 
-      <TokensSavedSection />
-
-      <section aria-labelledby="about-h">
-        <h2 id="about-h">About TDS Cortex on this computer</h2>
-        <dl className="kv about">
-          <dt>You are</dt>
-          <dd>
-            {identity.name}, {ROLE_WORDS[identity.role]}
-            {identity.knownMember ? '' : ' (not found in the team list)'}
-          </dd>
-          <dt>Approvals</dt>
-          <dd>
-            {APPROVALS_SHORT}
-            <span className="kv-note">{approvalsSentence(engine.permissionMode)}</span>
-            <span className="kv-note">
-              This follows your Claude Code setting, so the app asks as often as your terminal does.
-            </span>
-          </dd>
-          <dt>Dock app</dt>
-          <dd>
-            {dock.state === 'installed' && 'Installed. TDS Cortex is in your Dock.'}
-            {dock.state === 'added' && 'Added. TDS Cortex is in your Dock.'}
-            {dock.state === 'dismissed' && "Not added. You can add it later from Chrome's menu."}
-            {dock.state === 'can-install' && (
-              <button type="button" className="btn" onClick={() => void dock.install()}>
-                Add TDS Cortex to your Dock
-              </button>
-            )}
-            {dock.state === 'manual' &&
-              "If TDS Cortex isn't in your Dock yet, choose Install TDS Cortex from Chrome's menu or the address bar."}
-          </dd>
-          {showHelp ? (
-            <>
-              <dt>Help</dt>
+      {tab === 'about' ? (
+        <>
+          <section aria-labelledby="about-h">
+            <h2 id="about-h">About TDS Cortex on this computer</h2>
+            <dl className="kv about">
+              <dt>You are</dt>
               <dd>
+                {identity.name}, {ROLE_WORDS[identity.role]}
+                {identity.knownMember ? '' : ' (not found in the team list)'}
+              </dd>
+              <dt>Approvals</dt>
+              <dd>
+                {APPROVALS_SHORT}
+                <span className="kv-note">{approvalsSentence(engine.permissionMode)}</span>
+                <span className="kv-note">
+                  This follows your Claude Code setting, so the app asks as often as your terminal does.
+                </span>
+              </dd>
+              <dt>Dock app</dt>
+              <dd>
+                {dock.state === 'installed' && 'Installed. TDS Cortex is in your Dock.'}
+                {dock.state === 'added' && 'Added. TDS Cortex is in your Dock.'}
+                {dock.state === 'dismissed' && "Not added. You can add it later from Chrome's menu."}
+                {dock.state === 'can-install' && (
+                  <button type="button" className="btn" onClick={() => void dock.install()}>
+                    Add TDS Cortex to your Dock
+                  </button>
+                )}
+                {dock.state === 'manual' &&
+                  "If TDS Cortex isn't in your Dock yet, choose Install TDS Cortex from Chrome's menu or the address bar."}
+              </dd>
+              {showHelp ? (
+                <>
+                  <dt>Help</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="btn"
+                      data-variant="quiet"
+                      data-size="small"
+                      onClick={() => openView('guide')}
+                    >
+                      Read the Cortex Guide
+                    </button>
+                  </dd>
+                </>
+              ) : null}
+              <dt>App version</dt>
+              <dd>
+                {appVersion}{' '}
                 <button
                   type="button"
                   className="btn"
                   data-variant="quiet"
                   data-size="small"
-                  onClick={() => openView('guide')}
+                  aria-disabled={update.checking}
+                  onClick={() => {
+                    if (!update.checking) void update.check();
+                  }}
                 >
-                  Read the Cortex Guide
+                  {update.checking ? 'Checking…' : 'Check for updates'}
                 </button>
+                <UpdateResult update={update} />
               </dd>
-            </>
-          ) : null}
-          <dt>App version</dt>
-          <dd>
-            {appVersion}{' '}
-            <button
-              type="button"
-              className="btn"
-              data-variant="quiet"
-              data-size="small"
-              aria-disabled={update.checking}
-              onClick={() => {
-                if (!update.checking) void update.check();
-              }}
-            >
-              {update.checking ? 'Checking…' : 'Check for updates'}
-            </button>
-            <UpdateResult update={update} />
-          </dd>
-        </dl>
-      </section>
+            </dl>
+          </section>
 
-      {identity.role === 'owner' || identity.role === 'scout' ? (
-        <section aria-labelledby="changes-h">
-          <div className="help-inline" data-heading="true">
-            <h2 id="changes-h">What's changed</h2>
-            <HelpLink page="version-history" />
-          </div>
-          <p className="setting-help">
-            Every version of the app, newest first. Select a version to see what changed.
-          </p>
-          <VersionHistory current={appVersion} />
-        </section>
+          {identity.role === 'owner' || identity.role === 'scout' ? (
+            <section aria-labelledby="changes-h">
+              <div className="help-inline" data-heading="true">
+                <h2 id="changes-h">What's changed</h2>
+                <HelpLink page="version-history" />
+              </div>
+              <p className="setting-help">
+                Every version of the app, newest first. Select a version to see what changed.
+              </p>
+              <VersionHistory current={appVersion} />
+            </section>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

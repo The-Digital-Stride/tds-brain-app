@@ -38,6 +38,7 @@ import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { toolView } from './shell/sections.ts';
 import type { ToolSnapshot } from './shell/sections-contract.ts';
+import { type SettingsTab, settingsTabForFocus } from './shell/settings-tabs.ts';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
 import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
@@ -311,9 +312,14 @@ export interface Store {
    * True when the chat's "Change" button asked Settings to put the cursor on Model. One-shot, like
    * `reveal`: Settings takes it once it has rendered and calls `clearSettingsFocus`.
    */
-  settingsFocus: boolean;
-  requestSettingsFocus: () => void;
+  settingsFocus: string | null;
+  /** Asks Settings to focus the control with this id (default Model), on the tab that holds it. */
+  requestSettingsFocus: (id?: string) => void;
   clearSettingsFocus: () => void;
+  /** The Settings tab shown (kept for the session; not saved). */
+  settingsTab: SettingsTab;
+  /** Opens Settings on a tab (default: the remembered one), optionally asking for a control to be focused. */
+  openSettings: (tab?: SettingsTab, focusId?: string) => void;
   /** Runs a chat action (answer, stop) and reports a failure in plain words. */
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }
@@ -367,9 +373,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toolArg, setToolArg] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
-  const [settingsFocus, setSettingsFocus] = useState(false);
-  const requestSettingsFocus = useCallback(() => setSettingsFocus(true), []);
-  const clearSettingsFocus = useCallback(() => setSettingsFocus(false), []);
+  const [settingsFocus, setSettingsFocus] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const requestSettingsFocus = useCallback((id = 'set-model') => {
+    setSettingsTab(settingsTabForFocus(id));
+    setSettingsFocus(id);
+  }, []);
+  const clearSettingsFocus = useCallback(() => setSettingsFocus(null), []);
   const [reveal, setReveal] = useState<{ todo: TodoItem; n: number } | null>(null);
   const revealCount = useRef(0);
   const revealTodo = useCallback((todo: TodoItem) => {
@@ -596,6 +606,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openView = useCallback((v: View) => setView(v), []);
+  const openSettings = useCallback((tab?: SettingsTab, focusId?: string) => {
+    if (tab) setSettingsTab(tab);
+    if (focusId) setSettingsFocus(focusId);
+    setView('settings');
+  }, []);
 
   const newChat = useCallback(
     (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null; client?: string | null }) => {
@@ -1367,6 +1382,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       revealTodo,
       clearReveal,
       settingsFocus,
+      settingsTab,
+      openSettings,
       requestSettingsFocus,
       clearSettingsFocus,
       closeRequest,
@@ -1441,6 +1458,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       revealTodo,
       clearReveal,
       settingsFocus,
+      settingsTab,
+      openSettings,
       requestSettingsFocus,
       clearSettingsFocus,
       closeRequest,

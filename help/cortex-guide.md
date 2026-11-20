@@ -8,7 +8,7 @@ benefit: Read all of Cortex's help in order, or keep a printed copy.
 roles: all
 related: [getting-help, welcome, why-cortex, settings]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -25,7 +25,7 @@ The Cortex Guide shows every help page in order, like a book. Contents sit on th
 
 1. Open it from the Help drawer. Press **Open the Cortex Guide**.
 2. Or press **⌘K**, then choose **Cortex Guide**.
-3. Or go to Settings and press **Read the Cortex Guide**.
+3. Or go to Settings, open the **About** tab and press **Read the Cortex Guide**.
 4. Pick a page in the contents. On a narrow screen the contents become a picker above the page.
 5. Follow a link under "Related" to go to another page.
 6. Press **Print the guide** to print every page.

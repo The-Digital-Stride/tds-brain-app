@@ -713,7 +713,7 @@ describe('sign-off fixes', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'This chat' }));
     // Leaving the chat unmounts the panel toggle and hides the panel.
     fireEvent.click(railButton('Settings'));
-    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    await screen.findByRole('heading', { level: 1, name: /^Settings/ });
     expect(panelDock().hasAttribute('inert')).toBe(true);
     expect(document.activeElement).toBe(document.getElementById('main'));
   });

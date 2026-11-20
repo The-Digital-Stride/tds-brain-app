@@ -8,7 +8,7 @@ benefit: Simple jobs come back fast, and hard ones get Claude's full attention.
 roles: all
 related: [helpers, skill-levels, how-full-a-chat-is, settings]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -33,7 +33,7 @@ A level is how hard Claude works on a chat. There are three. **Quick** is for lo
 ## Good to know
 
 - Quick uses Haiku, Standard uses Sonnet and Deep uses Opus. These are different Claude models. Effort is how much thinking Claude does.
-- To choose the model and effort yourself, open Settings. Under **Claude in chats**, set **Level** to **Choose myself**. The **Model** and **Effort** lists then appear.
+- To choose the model and effort yourself, open Settings, then the **Claude** tab. Under **Claude in chats**, set **Level** to **Choose myself**. The **Model** and **Effort** lists then appear.
 - Some skills have a level set by the team. The line then says "team level". See [Skill levels](help:skill-levels).
 - Cortex sometimes stays on a higher level mid-chat, because switching down would cost more.
 

@@ -4,7 +4,7 @@ import { useBlockStrayDrops } from './components/Attachments.tsx';
 import { ChatView } from './components/Chat.tsx';
 import { BootProblem, GateScreen, Loading } from './components/Gates.tsx';
 import { ProfileView } from './components/ProfileView.tsx';
-import { SettingsView } from './components/SettingsView.tsx';
+import { SettingsSheet } from './components/SettingsSheet.tsx';
 import { SetupView } from './components/SetupView.tsx';
 import { helpVisible } from './help/visibility.ts';
 import { APPS } from './shell/apps.ts';
@@ -91,14 +91,7 @@ function SheetContent() {
     );
   }
   if (view === 'settings') {
-    return (
-      <>
-        <SheetBar title="Settings" />
-        <div className="sheet-scroll">
-          <SettingsView />
-        </div>
-      </>
-    );
+    return <SettingsSheet />;
   }
   if (view === 'profile') {
     return (

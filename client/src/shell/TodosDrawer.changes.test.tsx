@@ -14,7 +14,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
 }));
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
 
-const { fakeShell } = await import('./todo-test-kit.tsx');
+const { fakeShell, sent } = await import('./todo-test-kit.tsx');
 
 const { TodosDrawer } = await import('./TodosDrawer.tsx');
 
@@ -57,6 +57,7 @@ const list = (changes: TodoChangeAccess, items: TodoItem[] = [todo()]): TodoList
 
 const changeTodos = vi.fn();
 const openView = vi.fn();
+const openSettings = vi.fn();
 const holdTodo = vi.fn();
 const undoHeld = vi.fn();
 
@@ -64,6 +65,7 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
   store.current = {
     changeTodos,
     openView,
+    openSettings,
     heldTodos,
     holdTodo,
     undoHeld,
@@ -95,6 +97,7 @@ beforeEach(() => {
   changeTodos.mockReset();
   changeTodos.mockResolvedValue({ done: 1, todos: list('on', [todo({ version: 'v2' })]) });
   openView.mockReset();
+  openSettings.mockReset();
   holdTodo.mockReset();
   undoHeld.mockReset();
   setStore('on');
@@ -127,12 +130,54 @@ describe('To-dos drawer, changing to-dos', () => {
     render(<TodosDrawer />);
     expect(screen.getByText(/Adding and editing to-dos is switched off/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(openView).toHaveBeenCalledWith('settings');
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
     cleanup();
     fakeShell.reset();
     setStore('restricted');
     render(<TodosDrawer />);
     expect(screen.queryByText(/switched off/)).toBeNull();
+  });
+
+  it('the Settings link closes a floating drawer first, so the sheet is not inert', () => {
+    setStore('switched-off');
+    fakeShell.reset({}, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(sent.map((a) => a.type)).toContain('close-drawer');
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
+  });
+
+  it('with the drawer floating, the link closes only the drawer (which closes the panel), never asking twice', async () => {
+    setStore('switched-off');
+    (store.current as { view: string }).view = 'settings';
+    fakeShell.reset({}, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
+    await waitFor(() => expect(fakeShell.state.todoPanel).not.toBeNull());
+    sent.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    // Other actions (the panel's list order) may arrive while it loads; what matters is one close, no second question.
+    const types = sent.map((a) => a.type);
+    expect(types).toContain('close-drawer');
+    expect(types).not.toContain('close-todo');
+    expect(types).not.toContain('ask-todo');
+  });
+
+  it('already on Settings, the link closes an open to-do panel without putting focus back on its row', async () => {
+    setStore('switched-off');
+    (store.current as { view: string }).view = 'settings';
+    render(<TodosDrawer />);
+    const row = screen.getByRole('button', { name: 'Renew contract' });
+    fireEvent.click(row);
+    await waitFor(() => expect(fakeShell.state.todoPanel).not.toBeNull());
+    const link = screen.getByRole('button', { name: 'Settings' });
+    link.focus();
+    fireEvent.click(link);
+    expect(fakeShell.state.todoPanel).toBeNull();
+    expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
+    // Give the drawer's focus-return effects a chance to run: the row must not take focus.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.activeElement).not.toBe(row);
   });
 
   it('adds with the person themselves as the default assignee', async () => {

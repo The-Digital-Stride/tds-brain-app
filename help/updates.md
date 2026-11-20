@@ -8,7 +8,7 @@ benefit: You get fixes and new features without installing anything by hand.
 roles: all
 related: [settings, getting-help, version-history, health, fixing-problems]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -25,7 +25,7 @@ Cortex checks for a newer version a few minutes after it starts, then about ever
 
 1. When the bar says a new version is available, press **Update and restart**.
 2. If chats are open, Cortex warns you that updating closes them. Press **Update now**, or **Not now** to wait.
-3. To check yourself, open Settings. Under **About TDS Cortex on this computer**, find **App version** and press **Check for updates**.
+3. To check yourself, open Settings, then the **About** tab. Under **About TDS Cortex on this computer**, find **App version** and press **Check for updates**.
 4. If you're busy, press **Later** on the bar.
 5. After an update, a What's new card may show on Home with a short note. Press **Close** to hide it.
 
@@ -38,4 +38,4 @@ Cortex checks for a newer version a few minutes after it starts, then about ever
 
 ## Try this
 
-Open Settings and press **Check for updates**. It tells you if you have the newest version.
+Open Settings, then the **About** tab, and press **Check for updates**. It tells you if you have the newest version.

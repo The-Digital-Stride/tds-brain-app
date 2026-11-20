@@ -8,7 +8,7 @@ benefit: Claude uses the right client's notes, so answers fit the job.
 roles: all
 related: [home, talking-to-claude, settings, pinned]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -38,7 +38,7 @@ If Cortex isn't sure, it asks **Which client is this for?** Pick a name, pick **
 - Auto only works on the first message of a new chat. Cortex first looks for a client's name in your message. If it can't tell, it sends that message and the client list to Jev, a TypeSafe service, to work it out.
 - If you pick a client or **No client** yourself, nothing is sent to Jev.
 - The picker remembers the clients you used recently.
-- You can read this note in Settings, under **Working out the client**.
+- You can read this note in Settings, on the **General** tab, under **Working out the client**.
 
 ## Try this
 

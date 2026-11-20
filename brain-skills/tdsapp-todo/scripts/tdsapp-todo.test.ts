@@ -2534,6 +2534,18 @@ describe('v0.5: edit with keep_files', () => {
     }
   });
 
+  // The app's own reader (shared/todo-files.ts) skips headings in code fences, so it let these through and the
+  // script refused every tick and Save on them with a 400 (2026-11-20).
+  it('accepts a ## Files line inside a code fence, on edit and add', () => {
+    put('a.md', ON_DISK);
+    for (const body of ['- [ ] a\n\n```\n## Files\n```', 'x\n\n~~~md\n## Files\n- y\n~~~\n\nAfter.']) {
+      expect(splitTodoFiles(body).files, body).toBe('');
+      expect(run('edit', { file: 'a.md', title: 'T', body, keep_files: true }).code, body).toBe(0);
+      expect(linked(read('a.md'))).toEqual([Q]);
+      expect(run('add', { title: 'Fenced', assignee: 'sam-example', body }).code, body).toBe(0);
+    }
+  });
+
   it('counts only the details sent against the 8,000 limit', () => {
     const lines = Array.from({ length: 20 }, (_, i) => `- [f${i}.pdf](../clients/acme/files/f${i}.pdf)`);
     put('a.md', `---\ntitle: T\n---\n\nOld.\n\n## Files\n\n${lines.join('\n')}\n`);

@@ -3287,4 +3287,30 @@ describe('parseTodoAction: release 3 shapes', () => {
       expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow();
     }
   });
+
+  // The browser sends `detailsOnly: true` with every details change once files are on (a Save or a tick in the
+  // panel). The route refused it, so every such save failed with "That change wasn't understood".
+  it('passes an edit that says it sent the details alone', () => {
+    const body = {
+      kind: 'edit',
+      id: 'a.md',
+      title: 'T',
+      details: '- [x] One',
+      detailsOnly: true,
+      expect: 'v1',
+    };
+    expect(parseTodoAction(body)).toEqual(body);
+  });
+
+  it('refuses detailsOnly with any value but true, or on any action but edit', () => {
+    for (const body of [
+      { kind: 'edit', id: 'a.md', title: 'T', details: 'x', detailsOnly: false },
+      { kind: 'edit', id: 'a.md', title: 'T', details: 'x', detailsOnly: 'true' },
+      { kind: 'edit', id: 'a.md', title: 'T', details: 'x', detailsOnly: null },
+      { kind: 'due', id: 'a.md', due: null, detailsOnly: true },
+      { kind: 'add', title: 'T', due: null, assignee: 'sam-example', detailsOnly: true },
+    ]) {
+      expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow();
+    }
+  });
 });

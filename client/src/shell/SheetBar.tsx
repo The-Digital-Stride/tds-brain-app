@@ -10,7 +10,7 @@ const onMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
  * whatever the sheet adds on the right, then the button that opens the palette, and last (top
  * right, always) the right panel's toggle when the sheet has a panel.
  */
-export function SheetBar({ title, crumb, panel, children }: SheetBarProps) {
+export function SheetBar({ title, crumb, titleHidden, panel, children }: SheetBarProps) {
   const { state, dispatch } = useShell();
   return (
     <div className="sheet-bar">
@@ -24,7 +24,10 @@ export function SheetBar({ title, crumb, panel, children }: SheetBarProps) {
           </>
         ) : null}
         {/* The full title on hover: it truncates when the docks are open. */}
-        <h1 title={title}>{title}</h1>
+        <h1 title={titleHidden ? `${title}${titleHidden}` : title}>
+          {title}
+          {titleHidden ? <span className="visually-hidden">{titleHidden}</span> : null}
+        </h1>
       </div>
       {children}
       <button

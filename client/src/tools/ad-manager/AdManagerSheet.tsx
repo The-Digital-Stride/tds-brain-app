@@ -8,7 +8,7 @@ import { isWaiting, personName } from './words.ts';
 
 /** The Ads Manager sheet: the account's facts, what needs you, the proposals, then the monthly close. */
 export function AdManagerSheet() {
-  const { ads, openTool } = useStore();
+  const { ads } = useStore();
   const s = useAd();
   useAdsAccount();
 
@@ -34,25 +34,6 @@ export function AdManagerSheet() {
     adStore.set({ jump: null });
   }, [jump, shown]);
 
-  // On a proposals account they close the page; otherwise they follow the status line.
-  const toolLinks = account ? (
-    <div className="am-links-row">
-      <button
-        type="button"
-        className="btn"
-        onClick={() => openTool('workbench', 'ads-command-centre', account.key)}
-      >
-        Ads Command Centre
-      </button>
-      <button
-        type="button"
-        className="btn"
-        onClick={() => openTool('workbench', 'ads-account-summary', account.key)}
-      >
-        Ads Account Summary
-      </button>
-    </div>
-  ) : null;
   return (
     <div className="am">
       {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
@@ -89,14 +70,12 @@ export function AdManagerSheet() {
               {account.name} is not on the supervised ads-manager yet, so it has no proposals.
             </p>
           )}
-          {client?.mine ? null : toolLinks}
           {client?.mine ? (
             <>
               <Proposals client={client} />
               <div className="tray am-tray" data-cols="1">
                 <MonthlyClose client={client} />
               </div>
-              {toolLinks}
             </>
           ) : null}
         </>

@@ -338,6 +338,8 @@ export interface DockProps {
 export interface SheetBarProps {
   title: string;
   crumb?: string;
+  /** Screen-reader-only text added after the title inside the h1; the `title` attribute carries both. */
+  titleHidden?: string;
   /** The right panel's toggle label ("Files and details"). Given, the toggle sits last: top right. */
   panel?: string;
   /** Sheet buttons, placed before "Search or jump to". */

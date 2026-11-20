@@ -181,6 +181,17 @@ describe('startChat', () => {
     expect(store.view).toBe('chat');
   });
 
+  it('the drawer stays open when another tool of the same section is opened (a tab press)', async () => {
+    await mount();
+    await act(async () => store.openTool('workbench', 'ad-manager'));
+    await act(async () => store.openChat('s9', { in: 'drawer' }));
+    expect(store.chatDrawer).toBe('s9');
+    await act(async () => store.openTool('workbench', 'ads-command-centre'));
+    expect(store.view).toBe('tool:workbench/ads-command-centre');
+    expect(store.chatDrawer).toBe('s9');
+    expect(store.activeChat).toEqual({ kind: 'live', sessionId: 's9' });
+  });
+
   it('a chat opened without in: drawer still goes to the chat screen', async () => {
     await mount();
     await act(async () => store.openTool('workbench', 'ad-manager'));

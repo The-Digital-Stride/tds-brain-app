@@ -1,14 +1,16 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { Attention } from '../../../shared/contract.ts';
 import { helpVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { useStore, useToolSnapshot } from '../store.tsx';
+import { useTourOpen } from '../tour/request.ts';
 import { APPS } from './apps.ts';
 import type { DrawerName, IconName } from './contract.ts';
 import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
+import { createRailHover, type RailHover } from './rail-hover.ts';
 import { useDesk, useShell } from './ShellProvider.tsx';
 import { SyncStamp } from './SyncStamp.tsx';
 import { sectionBadge, toolFor, visibleSections } from './sections.ts';
@@ -40,6 +42,7 @@ interface ItemProps {
   count?: number;
   after?: ReactNode;
   keys?: string;
+  choose: () => void;
 }
 
 function Item({
@@ -55,6 +58,7 @@ function Item({
   count,
   after,
   keys,
+  choose,
 }: ItemProps) {
   return (
     <button
@@ -71,6 +75,8 @@ function Item({
       onClick={(e) => {
         // Safari doesn't focus a clicked button; the drawer returns focus to its opener on close.
         if (drawer) e.currentTarget.focus();
+        // Choosing an item puts the names away (and so does opening a drawer from it).
+        choose();
         onClick();
       }}
     >
@@ -100,7 +106,54 @@ export function Rail({ inert = false }: { inert?: boolean }) {
   const { boot, todos, sessions, view, activeChat, newChat, openView } = useStore();
   const snap = useToolSnapshot();
   const { state, dispatch } = useShell();
-  const { railShowsNames: wide, width } = useDesk();
+  const { railShowsNames: wide, width, drawerModal, panelModal } = useDesk();
+  const touring = useTourOpen();
+
+  // Hover or Tab expands an icons-only rail over the page, never the saved setting (rail-hover.ts). Not while
+  // the names are pinned or anything modal is open.
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const blocked =
+    inert ||
+    drawerModal ||
+    panelModal ||
+    touring ||
+    Boolean(state.paletteOpen || state.viewer || state.todoPanel);
+  const can = useRef(false);
+  can.current = !wide && !blocked;
+  const hover = useRef<RailHover | null>(null);
+  // Whether the last input was Tab: only then does focus in the rail open it (a click or a closing drawer's
+  // focus handback does not).
+  const tabbed = useRef(false);
+  useEffect(() => {
+    const control = createRailHover({ onChange: setHoverOpen });
+    hover.current = control;
+    const onKey = (e: KeyboardEvent) => {
+      tabbed.current = e.key === 'Tab';
+      // Pointer-opened: Escape closes it and stops there. Focus-opened: it closes, and Escape goes on to close
+      // a drawer, as the tooltip layer does.
+      if (e.key === 'Escape' && control.isExpanded()) {
+        if (control.openedBy() === 'pointer') e.preventDefault();
+        control.escape();
+      }
+    };
+    const onPointer = () => {
+      tabbed.current = false;
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+      control.dispose();
+      hover.current = null;
+    };
+  }, []);
+  // Names pinned, or something modal opened: close it at once. Not a dismissal: the pointer may never have been here.
+  useEffect(() => {
+    if (wide || blocked) hover.current?.collapse();
+  }, [wide, blocked]);
+  const expanded = hoverOpen && can.current;
+  const showsNames = wide || expanded;
   if (!boot) return null;
 
   const live = sessions?.live ?? [];
@@ -112,143 +165,181 @@ export function Rail({ inert = false }: { inert?: boolean }) {
   const app = APPS.find((a) => view === `app:${a.id}`);
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);
   const drawer = (name: DrawerName) => ({ name, open: state.drawer === name });
+  const choose = () => hover.current?.choose();
   const toggle = (name: DrawerName) => dispatch({ type: 'toggle-drawer', drawer: name });
   const { name, role } = boot.identity;
   // Only advertise the single keys while they are switched on.
   const shortcut = (key: string) => (state.singleKeys ? key : undefined);
-  const toggleName = wide ? 'Icons only' : 'Show names';
+  const toggleName = wide ? 'Icons only' : expanded ? 'Keep names showing' : 'Show names';
 
   return (
-    <nav className="rail glass" aria-label="Main" data-wide={wide} inert={inert}>
-      <div className="rail-brand">
-        <Mark />
-        <span className="rail-label">TDS Cortex</span>
-        {/* The show/hide names toggle: an icon only, at the top right like every dock's close
+    <div
+      className="railslot"
+      onPointerEnter={(e) => {
+        if (can.current) hover.current?.pointerEnter(e.pointerType);
+      }}
+      onPointerLeave={() => hover.current?.pointerLeave()}
+    >
+      <nav
+        className="rail glass"
+        aria-label="Main"
+        data-wide={showsNames}
+        data-expanded={expanded || undefined}
+        inert={inert}
+        onFocus={() => {
+          if (can.current && tabbed.current) hover.current?.focusIn();
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) hover.current?.focusOut();
+        }}
+      >
+        <div className="rail-brand">
+          <Mark />
+          <span className="rail-label">TDS Cortex</span>
+          {/* The show/hide names toggle: an icon only, at the top right like every dock's close
             button. Icons only, it sits over the mark and shows on hover or keyboard focus. One
             element in both widths, so focus stays on it when it is pressed. */}
-        {width >= RAIL_NAMES_FROM ? (
-          <button
-            type="button"
-            className="icon-btn rail-toggle"
-            aria-label={toggleName}
-            data-tip={state.singleKeys ? `${toggleName} ([)` : toggleName}
-            aria-keyshortcuts={shortcut('[')}
-            onClick={() => dispatch({ type: 'toggle-rail' })}
-          >
-            <Icon name="rail" />
-          </button>
-        ) : null}
-      </div>
-
-      <Item icon="home" label="Home" wide={wide} current={onHome} onClick={() => newChat()} />
-      <Item
-        icon="chat"
-        label="Chats"
-        name={chatsRailLabel(live)}
-        wide={wide}
-        drawer={drawer('chats')}
-        pip={mostUrgent(live)}
-        count={live.length}
-        keys={shortcut('c')}
-        onClick={() => toggle('chats')}
-      />
-      <Item
-        icon="todos"
-        label="To-dos"
-        name={todosRailLabel(mine, fresh)}
-        fresh={fresh > 0}
-        wide={wide}
-        drawer={drawer('todos')}
-        count={mine}
-        keys={shortcut('t')}
-        onClick={() => toggle('todos')}
-      />
-      <Item
-        icon="skills"
-        label="Skills"
-        wide={wide}
-        drawer={drawer('skills')}
-        keys={shortcut('s')}
-        onClick={() => toggle('skills')}
-      />
-
-      {sections.map((sec) => {
-        const n = sectionBadge(sec, snap);
-        return (
-          <Item
-            key={sec.id}
-            icon={sec.icon}
-            label={sec.title}
-            name={n > 0 ? sec.railName?.(n) : undefined}
-            wide={wide}
-            drawer={{
-              name: 'section',
-              open: state.drawer === 'section' && state.section === sec.id,
-              label: sec.title,
-            }}
-            count={n}
-            current={toolFor(view)?.section.id === sec.id}
-            keys={sec.key ? shortcut(sec.key) : undefined}
-            onClick={() => dispatch({ type: 'toggle-section', section: sec.id })}
-          />
-        );
-      })}
-
-      {APPS.length > 0 ? (
-        <div className="rail-group">
-          <span className="rail-group-name rail-label">Apps</span>
-          {APPS.map((a) => (
-            <Item
-              key={a.id}
-              icon={a.icon}
-              label={a.title}
-              wide={wide}
-              current={app?.id === a.id}
-              onClick={() => openView(`app:${a.id}`)}
-            />
-          ))}
+          {width >= RAIL_NAMES_FROM ? (
+            <button
+              type="button"
+              className="icon-btn rail-toggle"
+              aria-label={toggleName}
+              data-tip={state.singleKeys ? `${toggleName} ([)` : toggleName}
+              aria-keyshortcuts={shortcut('[')}
+              onClick={() => dispatch({ type: 'toggle-rail' })}
+            >
+              <Icon name="rail" />
+            </button>
+          ) : null}
         </div>
-      ) : null}
 
-      <span className="rail-spacer" />
-
-      {helpVisible(role) ? (
         <Item
-          icon="help"
-          label="Help"
-          wide={wide}
-          drawer={drawer('help')}
-          keys={shortcut('h')}
-          onClick={() => toggle('help')}
+          choose={choose}
+          icon="home"
+          label="Home"
+          wide={showsNames}
+          current={onHome}
+          onClick={() => newChat()}
         />
-      ) : null}
-      <Item
-        icon="settings"
-        label="Settings"
-        wide={wide}
-        current={view === 'settings'}
-        onClick={() => openView('settings')}
-      />
-      {/* Opens the Profile page. One spoken name in both widths; the visible name leads it. */}
-      <button
-        type="button"
-        className="rail-person"
-        aria-label={`${name}, ${ROLE_WORDS[role]}: your profile`}
-        data-tip={wide ? undefined : `${name}, ${ROLE_WORDS[role]}: your profile`}
-        aria-current={view === 'profile' ? 'page' : undefined}
-        onClick={() => openView('profile')}
-      >
-        <span className="avatar" aria-hidden="true">
-          {initials(name)}
-        </span>
-        {wide ? (
-          <span className="rail-label rail-who">
-            <span>{name}</span>
-            <small>{ROLE_WORDS[role]}</small>
-          </span>
+        <Item
+          choose={choose}
+          icon="chat"
+          label="Chats"
+          name={chatsRailLabel(live)}
+          wide={showsNames}
+          drawer={drawer('chats')}
+          pip={mostUrgent(live)}
+          count={live.length}
+          keys={shortcut('c')}
+          onClick={() => toggle('chats')}
+        />
+        <Item
+          choose={choose}
+          icon="todos"
+          label="To-dos"
+          name={todosRailLabel(mine, fresh)}
+          fresh={fresh > 0}
+          wide={showsNames}
+          drawer={drawer('todos')}
+          count={mine}
+          keys={shortcut('t')}
+          onClick={() => toggle('todos')}
+        />
+        <Item
+          choose={choose}
+          icon="skills"
+          label="Skills"
+          wide={showsNames}
+          drawer={drawer('skills')}
+          keys={shortcut('s')}
+          onClick={() => toggle('skills')}
+        />
+
+        {sections.map((sec) => {
+          const n = sectionBadge(sec, snap);
+          return (
+            <Item
+              choose={choose}
+              key={sec.id}
+              icon={sec.icon}
+              label={sec.title}
+              name={n > 0 ? sec.railName?.(n) : undefined}
+              wide={showsNames}
+              drawer={{
+                name: 'section',
+                open: state.drawer === 'section' && state.section === sec.id,
+                label: sec.title,
+              }}
+              count={n}
+              current={toolFor(view)?.section.id === sec.id}
+              keys={sec.key ? shortcut(sec.key) : undefined}
+              onClick={() => dispatch({ type: 'toggle-section', section: sec.id })}
+            />
+          );
+        })}
+
+        {APPS.length > 0 ? (
+          <div className="rail-group">
+            <span className="rail-group-name rail-label">Apps</span>
+            {APPS.map((a) => (
+              <Item
+                choose={choose}
+                key={a.id}
+                icon={a.icon}
+                label={a.title}
+                wide={showsNames}
+                current={app?.id === a.id}
+                onClick={() => openView(`app:${a.id}`)}
+              />
+            ))}
+          </div>
         ) : null}
-      </button>
-      <SyncStamp wide={wide} />
-    </nav>
+
+        <span className="rail-spacer" />
+
+        {helpVisible(role) ? (
+          <Item
+            choose={choose}
+            icon="help"
+            label="Help"
+            wide={showsNames}
+            drawer={drawer('help')}
+            keys={shortcut('h')}
+            onClick={() => toggle('help')}
+          />
+        ) : null}
+        <Item
+          choose={choose}
+          icon="settings"
+          label="Settings"
+          wide={showsNames}
+          current={view === 'settings'}
+          onClick={() => openView('settings')}
+        />
+        {/* Opens the Profile page. One spoken name in both widths; the visible name leads it. */}
+        <button
+          type="button"
+          className="rail-person"
+          aria-label={`${name}, ${ROLE_WORDS[role]}: your profile`}
+          data-tip={showsNames ? undefined : `${name}, ${ROLE_WORDS[role]}: your profile`}
+          aria-current={view === 'profile' ? 'page' : undefined}
+          onClick={() => {
+            choose();
+            openView('profile');
+          }}
+        >
+          <span className="avatar" aria-hidden="true">
+            {initials(name)}
+          </span>
+          {showsNames ? (
+            <span className="rail-label rail-who">
+              <span>{name}</span>
+              <small>{ROLE_WORDS[role]}</small>
+            </span>
+          ) : null}
+        </button>
+        <SyncStamp wide={showsNames} />
+      </nav>
+    </div>
   );
 }

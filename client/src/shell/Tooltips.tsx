@@ -69,6 +69,9 @@ export function Tooltips() {
       clear();
       // A button that left the page while its wait ran (Escape closing the drawer it sat in) has no place to show.
       if (!el.isConnected) return;
+      // Nor one that no longer qualifies (the rail's item whose data-tip went at 200ms, as it widened): it
+      // must not fall back to its aria-label at 350ms.
+      if (tipTarget(el) !== el) return;
       const text = tipText(el);
       if (text !== null) setShown({ el, text, byPointer });
     };

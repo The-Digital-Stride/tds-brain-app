@@ -728,7 +728,7 @@ describe('Ads Manager page', () => {
     );
   });
 
-  it('an account that is not on the supervised ads-manager still gets its needs, the line and both tool buttons', async () => {
+  it('an account that is not on the supervised ads-manager still gets its needs and the line', async () => {
     store.boot.prefs.adsAccount = 'nw';
     api.adsApprovals.mockResolvedValue({ ...approvals([]), clients: [] });
     api.adsBoard.mockImplementation(async (k: string) => {
@@ -756,13 +756,10 @@ describe('Ads Manager page', () => {
     expect(await screen.findByText('1 data file is missing')).toBeTruthy();
     expect(screen.getByText('Act')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Waiting for a decision' })).toBeNull();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ads Account Summary' })[0] as HTMLElement);
-    expect(store.openTool).toHaveBeenCalledWith('workbench', 'ads-account-summary', 'nw');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ads Command Centre' }).at(-1) as HTMLElement);
-    expect(store.openTool).toHaveBeenCalledWith('workbench', 'ads-command-centre', 'nw');
+    expect(screen.queryByRole('button', { name: 'Ads Account Summary' })).toBeNull();
   });
 
-  it("someone else's account shows who reviews it, no proposals, and both tool buttons", async () => {
+  it("someone else's account shows who reviews it, and no proposals", async () => {
     store.boot.prefs.adsAccount = 'nw';
     const a = approvals([]);
     api.adsApprovals.mockResolvedValue({
@@ -772,8 +769,7 @@ describe('Ads Manager page', () => {
     mount();
     expect(await screen.findByText(/Northwind's proposals are reviewed by pat/)).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Monthly close' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Ads Account Summary' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Ads Command Centre' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Ads Account Summary' })).toBeNull();
   });
 
   it('shows a board error as an alert', async () => {

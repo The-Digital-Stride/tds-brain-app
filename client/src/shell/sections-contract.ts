@@ -24,6 +24,8 @@ export interface ToolSnapshot {
 export interface ToolSlot extends AppSlot {
   /** One line under the title in the drawer, e.g. "Proposals, the ads board and monthly reports". UK English. */
   summary: string;
+  /** A shorter name for the tool's tab under the sheet bar, e.g. "Manager". Falls back to `title`. */
+  tabLabel?: string;
   /** Optional group name. The drawer shows group folds when its tools use at least one group. */
   group?: string;
   /** Whether this person may see the tool now. False while unknown, so the rail never flashes an item. */

@@ -16,6 +16,7 @@ export const adManagerTool: ToolSlot = {
   title: 'Ads Manager',
   icon: 'inbox',
   summary: 'Proposals waiting for a decision, recent decisions and the monthly close',
+  tabLabel: 'Manager',
   group: ADS_GROUP,
   Sheet: lazy(() => ui().then((m) => ({ default: m.AdManagerSheet }))),
   BarActions: lazy(() => ui().then((m) => ({ default: m.AdManagerBar }))),

@@ -165,6 +165,18 @@ describe('Tooltips', () => {
     expect(tip()?.textContent).toBe('Home');
   });
 
+  it('shows nothing for a button that lost its data-tip while its wait ran (the rail widening)', () => {
+    page();
+    const home = document.querySelector('[data-tip="Home"]') as HTMLElement;
+    home.setAttribute('aria-label', 'Home, with a long name');
+    fireEvent.pointerOver(home);
+    wait(200);
+    // The rail widened: the name is visible, so the item drops its data-tip but keeps its aria-label.
+    home.removeAttribute('data-tip');
+    wait(TIP_DELAY_MS);
+    expect(tip()).toBeNull();
+  });
+
   it('stays when something else scrolls (a chat streaming a reply), and goes when its own list scrolls', () => {
     render(
       <>

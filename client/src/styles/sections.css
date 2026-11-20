@@ -23,3 +23,25 @@
   flex: none;
   white-space: nowrap;
 }
+
+/* Tool tabs under the sheet bar: the .seg look on a row of page buttons. Sizes to its words, scrolls sideways when narrow. */
+.tool-tabs {
+  flex: none;
+  align-self: flex-start;
+  max-width: calc(100% - 32px);
+  margin: 12px 16px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tool-tabs > button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tool-tabs .tool-tab-note {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--iron);
+}

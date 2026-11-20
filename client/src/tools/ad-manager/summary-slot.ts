@@ -11,6 +11,7 @@ export const adsSummaryTool: ToolSlot = {
   title: 'Ads Account Summary',
   icon: 'chart',
   summary: 'Top campaigns, search terms, wasted spend, keywords, products and Quality Score',
+  tabLabel: 'Account Summary',
   group: ADS_GROUP,
   Sheet: lazy(() => ui().then((m) => ({ default: m.SummarySheet }))),
   BarActions: lazy(() => ui().then((m) => ({ default: m.AdManagerBar }))),

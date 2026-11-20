@@ -22,18 +22,53 @@
 }
 
 /* Layer 1: the rail ------------------------------------------------------------------------- */
-.rail {
+/* The slot keeps the rail's footprint (--rail-w) in the desk's row; the rail inside can widen over the page. */
+.railslot {
   position: relative;
   z-index: 5;
   flex: none;
   width: var(--rail-w);
+  transition: width var(--t) var(--ease);
+}
+/* Part of the hover zone: reaches left over the desk's gutter, so the mouse at the screen edge keeps it open. */
+.railslot::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--desk-pad));
+  width: var(--desk-pad);
+}
+/* Opened by hover or Tab over an icons-only rail: under the veil (40) and every modal layer. */
+.railslot:has(.rail[data-expanded="true"]) {
+  z-index: 39;
+}
+.rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 2px;
   /* No padding above: the brand row is the rail's share of the header band. */
   padding: 0 10px 10px;
   border-radius: 16px;
-  transition: width var(--t) var(--ease);
+  overflow: hidden;
+  transition:
+    width 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+}
+/* Names slide out over the drawer and sheet; nothing else moves. Only width, shadow and layer: the names
+   themselves come from data-wide. */
+.rail[data-expanded="true"] {
+  width: 212px;
+  box-shadow: var(--lift-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .railslot,
+  .rail {
+    transition: none;
+  }
 }
 .rail-brand {
   position: relative;
@@ -74,21 +109,15 @@
 .rail[data-wide="false"] .rail-mark {
   opacity: 0;
 }
-/* With a pointer that hovers: the mark shows, and the toggle replaces it on hover or keyboard focus. */
+/* With a pointer that hovers: the mark stays, and the toggle waits for the rail to open (hover or Tab), then
+   shows top right as it does with names on, so it never jumps from under the mouse. Still reachable by Tab. */
 @media (hover: hover) {
   .rail[data-wide="false"] .rail-mark {
     opacity: 1;
   }
   .rail[data-wide="false"] .rail-toggle {
     opacity: 0;
-  }
-  .rail[data-wide="false"] .rail-brand:hover .rail-toggle,
-  .rail[data-wide="false"] .rail-toggle:focus-visible {
-    opacity: 1;
-  }
-  .rail[data-wide="false"] .rail-brand:hover .rail-mark,
-  .rail[data-wide="false"] .rail-brand:has(.rail-toggle:focus-visible) .rail-mark {
-    opacity: 0;
+    pointer-events: none;
   }
 }
 .rail-item {

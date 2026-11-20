@@ -16,6 +16,7 @@ export const adsCommandTool: ToolSlot = {
   icon: 'play',
   summary:
     'Your Google Ads operating rhythm: account data, the daily standup and every task from daily to quarterly',
+  tabLabel: 'Command Centre',
   group: ADS_GROUP,
   Sheet: lazy(() => ui().then((m) => ({ default: m.CommandSheet }))),
   BarActions: lazy(() => ui().then((m) => ({ default: m.AdManagerBar }))),

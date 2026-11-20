@@ -125,6 +125,7 @@
     -webkit-mask-image: none;
     mask-image: none;
   }
+  .desk:has(.guide) .railslot,
   .desk:has(.guide) .rail,
   .desk:has(.guide) .dock-slot,
   .desk:has(.guide) .dock,

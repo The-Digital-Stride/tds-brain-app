@@ -8,14 +8,14 @@ benefit: Ad changes get a clear yes or no from you, and nothing goes live by acc
 roles: [owner, scout]
 related: [workbench, ads-command-centre, ads-account-summary, documents]
 since: 0.46.0
-reviewed: 2026-11-19
+reviewed: 2026-11-20
 ---
 
 ## What it does
 
 Ads Manager is where you decide on the changes Claude has proposed for a client's Google Ads account. It opens on what needs you. Then come the proposals waiting for a decision, the approved ones ready to apply, and the monthly report to sign off.
 
-It is one of three Ads tools in Workbench:
+It is one of three Ads tools in Workbench, shown as tabs:
 
 - **Ads Manager** is for decisions.
 - **Ads Command Centre** is for running the account.
@@ -48,7 +48,6 @@ Only owners and scouts can use them. Ask one if you need access.
 - If Cortex can't tell whether an apply reached Google Ads, it says so and stops. Check the account, then press **I've checked the account**.
 - The newest buttons need the updated Ads skill in the Brain.
 - **Recent decisions** covers the last 14 days.
-- **Refresh** reloads the account.
 
 ## Try this
 

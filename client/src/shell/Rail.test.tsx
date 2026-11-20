@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TodoItem } from '../../../shared/contract.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+const desk = vi.hoisted(() => ({
+  current: { railShowsNames: false, width: 1400 } as Record<string, unknown>,
+  shell: { drawer: null, singleKeys: true } as Record<string, unknown>,
+}));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
   useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: store.current.adsDue ?? null }),
 }));
 vi.mock('./ShellProvider.tsx', () => ({
-  useShell: () => ({ state: { drawer: null, singleKeys: true }, dispatch: vi.fn() }),
-  useDesk: () => ({ railShowsNames: false, width: 1400 }),
+  useShell: () => ({ state: desk.shell, dispatch: vi.fn() }),
+  useDesk: () => desk.current,
 }));
 vi.mock('./SyncStamp.tsx', () => ({ SyncStamp: () => null }));
 
@@ -51,7 +55,11 @@ function setStore(mine: TodoItem[], seen: Record<string, string> = {}, role = 't
     openView: vi.fn(),
   };
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  desk.current = { railShowsNames: false, width: 1400 };
+  desk.shell = { drawer: null, singleKeys: true };
+});
 
 describe('Rail to-dos item', () => {
   it('says how many are new and shows the pip', () => {
@@ -97,5 +105,118 @@ describe('Rail Workbench item', () => {
     store.current.view = 'chat';
     render(<Rail />);
     expect(screen.getByRole('button', { name: /Workbench/ }).getAttribute('aria-current')).toBeNull();
+  });
+});
+
+describe('Rail hover expand', () => {
+  const nav = (c: HTMLElement) => c.querySelector('.rail') as HTMLElement;
+  const slot = (c: HTMLElement) => c.querySelector('.railslot') as HTMLElement;
+  const rest = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+  const mouse = { pointerType: 'mouse' };
+  const toggle = (c: HTMLElement) => c.querySelector('.rail-toggle') as HTMLElement;
+
+  it('opens after the mouse rests, names showing, without touching the saved width', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container } = render(<Rail />);
+    expect(nav(container).getAttribute('data-wide')).toBe('false');
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(199);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    rest(1);
+    expect(nav(container).getAttribute('data-expanded')).toBe('true');
+    expect(nav(container).getAttribute('data-wide')).toBe('true');
+    // The names show, so there is no rail tooltip to blink beside them.
+    expect(container.querySelector('.rail-item[data-tip]')).toBeNull();
+    expect(toggle(container).getAttribute('aria-label')).toBe('Keep names showing');
+    fireEvent.pointerLeave(slot(container), mouse);
+    rest(150);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    expect(toggle(container).getAttribute('aria-label')).toBe('Show names');
+    vi.useRealTimers();
+  });
+
+  it('never opens for touch, with the names pinned, or while something modal is open', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container, rerender } = render(<Rail />);
+    fireEvent.pointerEnter(slot(container), { pointerType: 'touch' });
+    rest(1000);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    fireEvent.pointerLeave(slot(container));
+
+    desk.shell = { drawer: null, singleKeys: true, paletteOpen: true };
+    rerender(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(1000);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    fireEvent.pointerLeave(slot(container));
+
+    desk.shell = { drawer: null, singleKeys: true };
+    desk.current = { railShowsNames: true, width: 1400 };
+    rerender(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(1000);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('closes when a modal opens while it is open', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container, rerender } = render(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(200);
+    desk.current = { railShowsNames: false, width: 1400, drawerModal: true };
+    rerender(<Rail />);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('opens when Tab moves focus in, but not for a click or a focus handed back after Escape', () => {
+    setStore([]);
+    const { container } = render(<Rail />);
+    const home = screen.getByRole('button', { name: 'Home' });
+    fireEvent.pointerDown(home);
+    act(() => home.focus());
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    act(() => home.blur());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    act(() => home.focus());
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    act(() => home.blur());
+    fireEvent.keyDown(window, { key: 'Tab' });
+    act(() => home.focus());
+    expect(nav(container).getAttribute('data-expanded')).toBe('true');
+    act(() => home.blur());
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+  });
+
+  it('Escape closes a pointer-opened rail and stops there; a focus-opened one lets Escape through', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container } = render(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(200);
+    expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(false);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    vi.useRealTimers();
+
+    fireEvent.keyDown(window, { key: 'Tab' });
+    act(() => screen.getByRole('button', { name: 'Home' }).focus());
+    expect(nav(container).getAttribute('data-expanded')).toBe('true');
+    expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(true);
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+  });
+
+  it('closes when an item is chosen', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container } = render(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(200);
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+    expect(nav(container).getAttribute('data-expanded')).toBeNull();
+    vi.useRealTimers();
   });
 });

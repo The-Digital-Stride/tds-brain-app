@@ -24,8 +24,9 @@ import { SheetBar } from './shell/SheetBar.tsx';
 import { SheetNotices } from './shell/SheetNotices.tsx';
 import { ShellProvider, useDesk, useShell } from './shell/ShellProvider.tsx';
 import { SkillsDrawer } from './shell/SkillsDrawer.tsx';
-import { SECTIONS, visibleToolFor } from './shell/sections.ts';
+import { SECTIONS, visibleToolFor, visibleTools } from './shell/sections.ts';
 import { TodosDrawer } from './shell/TodosDrawer.tsx';
+import { ToolTabs, tabGroupFor } from './shell/ToolTabs.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
 import { StoreProvider, useStore, useToolSnapshot } from './store.tsx';
@@ -133,11 +134,13 @@ function SheetContent() {
     // An unknown tool, or one this person can't see (yet), shows Home.
     const hit = visibleToolFor(view, snap);
     if (!hit) return <Home />;
-    const { tool } = hit;
+    const { section, tool } = hit;
+    const tabs = tabGroupFor(tool, visibleTools(section, snap)).length >= 2;
     return (
       <>
         <SheetBar
-          title={`Workbench · ${tool.title}`}
+          title={tabs ? `${section.title} · ${tool.group}` : `${section.title} · ${tool.title}`}
+          titleHidden={tabs ? `: ${tool.title}` : undefined}
           panel={tool.Panel ? (tool.panelLabel ?? tool.title) : undefined}
         >
           {tool.BarActions ? (
@@ -146,6 +149,7 @@ function SheetContent() {
             </Suspense>
           ) : null}
         </SheetBar>
+        {tabs ? <ToolTabs section={section} tool={tool} /> : null}
         <div className="sheet-scroll">
           <Suspense fallback={null}>
             <tool.Sheet />

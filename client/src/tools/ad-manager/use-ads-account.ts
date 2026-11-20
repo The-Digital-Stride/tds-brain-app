@@ -69,7 +69,11 @@ export function useAdsAccount(): { account: string | null; loading: boolean } {
         (c) => runs[runKey(board.key, c.id)]?.at,
         // The Daily standup card shows a daily badge once it is set up, so it counts too.
         standup.hasStandup && standup.prompt
-          ? { sharedAt: standup.lastRun?.at, localAt: runs[runKey(board.key, 'standup:daily')]?.at }
+          ? {
+              // A verdict on file with no run record (run outside the app) still counts as the last run.
+              sharedAt: standup.lastRun?.at ?? standup.verdict?.date,
+              localAt: runs[runKey(board.key, 'standup:daily')]?.at,
+            }
           : null,
       ),
     );

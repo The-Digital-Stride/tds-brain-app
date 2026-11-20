@@ -9,6 +9,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   ADS_ERROR_MESSAGES,
   ADS_ROUTES,
+  ADS_TASK_RESULTS_CAPABILITY,
+  ADS_TRIAGE_CAPABILITY,
   type AdsCapabilities,
   type AdsChangeAction,
 } from '../../shared/ads-contract.ts';
@@ -22,6 +24,7 @@ import {
 import { AdsError, type AdsInflightEntry, type AdsService } from '../brain/ads-skill.ts';
 import { createBrainReaders } from '../brain/index.ts';
 import { copyFixture } from '../brain/test-helpers.ts';
+import { SessionError } from '../engine/session-manager.ts';
 import {
   createAppStore,
   FOLDED_GROUP_NAME_MAX,
@@ -39,7 +42,7 @@ const COOKIE = `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`;
 const ID = '20261116-01-pause-generic';
 
 const CAPS: AdsCapabilities = {
-  features: ['ads-v1', 'task-runs-v1'],
+  features: ['ads-v1', 'task-runs-v1', ADS_TRIAGE_CAPABILITY, ADS_TASK_RESULTS_CAPABILITY],
   version: '0.1',
   adsAccess: true,
   adsManager: true,
@@ -73,7 +76,18 @@ const seen = {
   reads: [] as [string, unknown][],
   changes: [] as [string, unknown][],
   cleared: [] as string[],
+  unsubscribed: 0,
 };
+/** Chats the session stub knows, by id: the events a replay gives. Anything else is not live. */
+const chats = new Map<string, unknown[]>();
+const fileEvent = (
+  files: { path: string; actions: string[]; order: number }[],
+  seq = 1,
+): { seq: number; at: string; event: unknown } => ({
+  seq,
+  at: 'x',
+  event: { type: 'files', files, attachments: [], links: [] },
+});
 let state: {
   caps: AdsCapabilities | null;
   access: 'allowed' | 'restricted' | 'unknown-skill';
@@ -99,6 +113,7 @@ const stub: AdsService = {
     if (action === 'accounts')
       return { accounts: [{ key: 'acme', name: 'Acme', currency: 'GBP', waiting: 1, supervised: true }] };
     if (action === 'board') return { board: { key: input.account } };
+    if (action === 'triage') return { rows: [] };
     return { brief: { ymd: null, date: null, headline: null, recommendations: [] } };
   },
   change: async (action, input) => {
@@ -136,7 +151,19 @@ beforeAll(async () => {
     underService: false,
     brain: brain as never,
     store: {} as never,
-    sessions: { onChange: () => () => {} } as never,
+    sessions: {
+      onChange: () => () => {},
+      subscribe: (id: string) => {
+        const events = chats.get(id);
+        if (!events) throw new SessionError('not-found', 'no such chat');
+        return {
+          replay: events,
+          unsubscribe: () => {
+            seen.unsubscribed++;
+          },
+        };
+      },
+    } as never,
     thumbs: {} as never,
     uploads: {} as never,
     engineHealth: () => ({}) as never,
@@ -155,6 +182,8 @@ beforeEach(() => {
   seen.reads.length = 0;
   seen.changes.length = 0;
   seen.cleared.length = 0;
+  seen.unsubscribed = 0;
+  chats.clear();
 });
 
 interface Reply {
@@ -206,6 +235,7 @@ const READS = [
   `${ADS_ROUTES.proposal}?client=acme&id=${ID}`,
   `${ADS_ROUTES.board}?account=acme`,
   `${ADS_ROUTES.standupBrief}?account=acme`,
+  ADS_ROUTES.triage,
   `${ADS_ROUTES.file}?p=clients/acme-heating/reports/2026-10-summary.pdf`,
 ];
 const CHANGES: [AdsChangeAction, Record<string, unknown>][] = [
@@ -222,6 +252,7 @@ const CHANGES: [AdsChangeAction, Record<string, unknown>][] = [
     { account: 'acme', date: '20261115', campaign: 'G', action_category: 'NONE', score: 3 },
   ],
   ['task-run', { account: 'acme', task: 'weekly-check' }],
+  ['task-result', { account: 'acme', task: 'weekly-check', at: '2026-11-19T10:00:00.000Z', chat: 'c1' }],
 ];
 
 describe('the security gate', () => {
@@ -257,6 +288,8 @@ describe('the security gate', () => {
       expect(form.status, path).toBe(415);
     }
     expect(seen.changes).toEqual([]);
+    // task-result reaches the bridge only when the chat saved a file of this client.
+    chats.set('c1', [fileEvent([{ path: 'clients/acme/reports/a.md', actions: ['created'], order: 1 }])]);
     for (const [action, body] of CHANGES)
       expect((await post(ADS_ROUTES.change(action), body)).status, action).toBe(200);
     expect(seen.changes.map(([a]) => a)).toEqual(CHANGES.map(([a]) => a));
@@ -406,6 +439,97 @@ describe('recording a task run (plan 2026-11-16-ad-manager-shared-run-times)', (
     expect(
       (await post(ADS_ROUTES.change('task-run'), { account: 'acme', task: 'weekly-check' })).status,
     ).toBe(403);
+    expect(seen.changes).toEqual([]);
+  });
+});
+
+describe('Release 2: triage, draftChange and task-result (through the gate)', () => {
+  const AT = '2026-11-19T10:00:00.000Z';
+  const REPORT = 'clients/acme/reports/2026-11-weekly.md';
+  const result = (extra: Record<string, unknown> = {}) =>
+    post(ADS_ROUTES.change('task-result'), {
+      account: 'acme',
+      task: 'weekly-check',
+      at: AT,
+      chat: 'c1',
+      ...extra,
+    });
+
+  it('triage reads the bridge, and is unavailable without the feature', async () => {
+    const ok = await get(ADS_ROUTES.triage);
+    expect(ok.status).toBe(200);
+    expect(ok.json).toEqual({ rows: [] });
+    expect(seen.reads.at(-1)).toEqual(['triage', {}]);
+    state.caps = { ...CAPS, features: ['ads-v1'] };
+    seen.reads.length = 0;
+    const no = await get(ADS_ROUTES.triage);
+    expect(no.json.error?.code).toBe('unavailable');
+    expect(seen.reads).toEqual([]);
+  });
+
+  it('decided passes draftChange only as a boolean', async () => {
+    const base = { client: 'acme', id: ID, note: 'x' };
+    await post(ADS_ROUTES.change('decided'), { ...base, draftChange: true });
+    await post(ADS_ROUTES.change('decided'), { ...base, draftChange: 'yes' });
+    await post(ADS_ROUTES.change('decided'), { ...base, draftChange: 1 });
+    await post(ADS_ROUTES.change('decided'), base);
+    expect(seen.changes).toEqual([
+      ['decided', { ...base, draftChange: true }],
+      ['decided', base],
+      ['decided', base],
+      ['decided', base],
+    ]);
+  });
+
+  it('task-result sends the newest created or changed file of this client, never the browser path', async () => {
+    chats.set('c1', [
+      fileEvent([{ path: 'clients/acme/reports/old.md', actions: ['created'], order: 1 }], 1),
+      fileEvent(
+        [
+          { path: 'clients/acme/reports/old.md', actions: ['created'], order: 1 },
+          { path: REPORT, actions: ['read', 'changed'], order: 5 },
+          { path: 'clients/acme/reports/newer-but-read.md', actions: ['read'], order: 9 },
+          { path: 'clients/other/reports/2026-11-weekly.md', actions: ['created'], order: 8 },
+          { path: 'clients/acme/notes.txt', actions: ['created'], order: 7 },
+        ],
+        2,
+      ),
+    ]);
+    const r = await result({ result: 'clients/acme/reports/evil.md' });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ result: REPORT });
+    expect(seen.changes).toEqual([
+      ['task-result', { account: 'acme', task: 'weekly-check', at: AT, result: REPORT }],
+    ]);
+    expect(seen.unsubscribed).toBe(1);
+  });
+
+  it('replies null without running the bridge when the chat is not live or saved nothing of this client', async () => {
+    expect((await result()).json).toEqual({ result: null });
+    chats.set('c1', [fileEvent([{ path: 'clients/other/reports/a.md', actions: ['created'], order: 1 }])]);
+    expect((await result()).json).toEqual({ result: null });
+    chats.set('c1', [{ seq: 1, at: 'x', event: { type: 'text' } }]);
+    expect((await result()).json).toEqual({ result: null });
+    expect(seen.changes).toEqual([]);
+  });
+
+  it('is unavailable without the feature, and refuses bad fields before replaying anything', async () => {
+    state.caps = { ...CAPS, features: ['ads-v1', 'task-runs-v1'] };
+    expect((await result()).json.error?.code).toBe('unavailable');
+    state.caps = CAPS;
+    chats.set('c1', [fileEvent([{ path: REPORT, actions: ['created'], order: 1 }])]);
+    for (const bad of [
+      { account: '../x' },
+      { task: 'Weekly Check' },
+      { at: 'yesterday' },
+      { at: 5 },
+      { chat: '../c1' },
+      { chat: 7 },
+      { chat: undefined },
+    ]) {
+      expect((await result(bad)).status, JSON.stringify(bad)).toBe(400);
+    }
+    expect(seen.unsubscribed).toBe(0);
     expect(seen.changes).toEqual([]);
   });
 });

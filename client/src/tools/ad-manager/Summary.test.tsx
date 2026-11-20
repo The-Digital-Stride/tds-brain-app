@@ -93,14 +93,28 @@ const board = (key: string, extra: object = {}): AdsBoard =>
     ...extra,
   }) as unknown as AdsBoard;
 
-const totals = {
-  from: '2026-10-19',
-  to: '2026-11-17',
-  previousFrom: '2026-09-19',
-  previousTo: '2026-10-18',
-  current: { spend: 200, conversions: 10, value: 600, roas: 3, cpa: 20, wastedSpend: 30 },
-  previous: { spend: 100, conversions: 8, value: 400, roas: 4, cpa: 12.5, wastedSpend: 10 },
-};
+const fig = (spend: number, conv: number, value: number) => ({
+  spend,
+  conversions: conv,
+  value,
+  roas: value > 0 ? value / spend : null,
+  cpa: conv > 0 ? spend / conv : null,
+});
+const rangeOf = (days: 7 | 30 | 90, over: object = {}) => ({
+  days,
+  from: '2026-10-10',
+  to: '2026-11-08',
+  previousFrom: '2026-09-10',
+  previousTo: '2026-10-09',
+  current: fig(1348 * days, 10, 600),
+  previous: fig(1204 * days, 8, 400),
+  partial: false,
+  ...over,
+});
+const totalRanges = (over: Record<number, object> = {}) => ({
+  ranges: ([7, 30, 90] as const).map((d) => rangeOf(d, over[d])),
+  wastedSpend: 77,
+});
 
 beforeEach(() => {
   adStore.reset();
@@ -152,18 +166,75 @@ describe('Ads Account Summary', () => {
     await screen.findByText('Nothing stands out in the tables right now.');
   });
 
-  it('has no totals strip without totals', async () => {
+  it('has no totals strip without totalRanges, and keeps the Last 30 days tag', async () => {
     render(<SummarySheet />);
     await screen.findByRole('heading', { name: 'Worth a look' });
-    expect(screen.queryByRole('list', { name: /Headline figures/ })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Headline figures' })).toBeNull();
+    expect(screen.queryByText('Conv. value')).toBeNull();
+    expect(screen.getByText('Last 30 days')).toBeTruthy();
+  });
+
+  it('ignores a v0.50.0-shaped totals field', async () => {
+    api.adsBoard.mockImplementation(async (k: string) => board(k, { totals: { current: {} } }));
+    render(<SummarySheet />);
+    await screen.findByRole('heading', { name: 'Worth a look' });
     expect(screen.queryByText('Conv. value')).toBeNull();
   });
 
-  it('shows the totals strip when the board carries totals', async () => {
-    api.adsBoard.mockImplementation(async (k: string) => board(k, { totals }));
-    render(<SummarySheet />);
-    await screen.findByText('Conv. value');
-    expect(screen.getByText('+100% vs £100')).toBeTruthy();
+  describe('totals strip', () => {
+    const open = async (ranges = totalRanges()) => {
+      api.adsBoard.mockImplementation(async (k: string) => board(k, { totalRanges: ranges }));
+      render(<SummarySheet />);
+      await screen.findByText('Conv. value');
+    };
+
+    it('starts at 30 days with a labelled radio group, dates in words and the change', async () => {
+      await open();
+      const group = screen.getByRole('group', { name: 'Show the last' });
+      expect((within(group).getByRole('radio', { name: '30 days' }) as HTMLInputElement).checked).toBe(true);
+      expect(screen.getByText(/Last 30 days, 10 Oct to 8 Nov, against the 30 days before/)).toBeTruthy();
+      expect(screen.getByText('+12% vs £36,120')).toBeTruthy();
+      // The fixed tag goes while the strip shows.
+      expect(screen.queryByText('Last 30 days')).toBeNull();
+    });
+
+    it('the switch changes the figures and the label', async () => {
+      await open();
+      fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
+      expect(screen.getByText(/Last 7 days, .* against the 7 days before/)).toBeTruthy();
+      expect(screen.getByText('£9,436')).toBeTruthy();
+      fireEvent.click(screen.getByRole('radio', { name: '90 days' }));
+      expect(screen.getByText(/against the 90 days before/)).toBeTruthy();
+    });
+
+    it('says when there is nothing earlier to compare, and when the earlier figure is 0', async () => {
+      await open(totalRanges({ 30: { previous: null } }));
+      expect(screen.getAllByText('No earlier data to compare')).toHaveLength(5);
+      cleanup();
+      await open(totalRanges({ 30: { previous: fig(0, 0, 0) } }));
+      expect(screen.getAllByText('vs £0').length).toBeGreaterThan(0);
+      expect(screen.queryByText('No earlier data to compare')).toBeNull();
+    });
+
+    it('shows ROAS as n/a with no value, and notes a partial range', async () => {
+      await open(totalRanges({ 30: { current: fig(100, 0, 0), partial: true, dataFrom: '2026-07-03' } }));
+      expect(screen.getAllByText('n/a').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText(/Data starts 3 Jul( 2026)?, so it covers fewer days/)).toBeTruthy();
+      cleanup();
+      await open(totalRanges({ 30: { partial: true, dataFrom: null } }));
+      expect(screen.getByText(/data starts part-way through this period/)).toBeTruthy();
+    });
+
+    it('captions wasted spend apart from the period figures', async () => {
+      await open();
+      expect(screen.getByText('Wasted spend £77')).toBeTruthy();
+      expect(
+        screen.getByText(/search terms with no conversions in the last 30 days \(Google basis\)/),
+      ).toBeTruthy();
+      expect(screen.getByText(/Google basis: as Google Ads reports them/)).toBeTruthy();
+      const facts = screen.getByRole('group', { name: 'Show the last' }).closest('section') as HTMLElement;
+      expect(within(facts).queryByText('Wasted spend', { selector: 'dt' })).toBeNull();
+    });
   });
 
   it('opens on the account a caller named', async () => {

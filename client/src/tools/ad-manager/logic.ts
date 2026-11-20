@@ -3,7 +3,7 @@
  * readiness, when a task is due, what needs the person on Ads Manager, and what is worth a look on the summary.
  * Types are in `ads-tools-contract.ts`. No React, no clock, no storage: the caller passes `now`.
  */
-import type { AdsBoard, AdsHealthFile } from '../../../../shared/ads-contract.ts';
+import type { AdsBoard, AdsHealthFile, AdsMonthly } from '../../../../shared/ads-contract.ts';
 import type {
   DueState,
   DueStateFn,
@@ -17,7 +17,7 @@ import type {
   WorthALookFn,
   WorthALookItem,
 } from './ads-tools-contract.ts';
-import { isLow } from './words.ts';
+import { datesInWords, isLow } from './words.ts';
 
 // ---------- Readiness ----------
 
@@ -171,7 +171,22 @@ const pluralOf = (n: number, one: string, many: string) => `${n} ${n === 1 ? one
  * is warn, `info` is left out), account data problems from the board's health, and a month not yet signed off.
  * Bad before warn, each line with one target. Proposals (`open`) have their own tables, so they add no line here.
  */
-export const needsYou: NeedsYouFn = ({ pack, monthly, health }) => {
+export const needsYou = ({
+  pack,
+  monthly,
+  health,
+  open,
+  earlier,
+}: Parameters<NeedsYouFn>[0] & {
+  /** The months before `monthly` (ClientApprovals.earlierMonths). Absent from older skills. */
+  earlier?: AdsMonthly[];
+}): NeedsYouItem[] => {
+  /** Machine text in words: ISO dates as "Mon 9 Nov", and a proposal's id as its title when it is open. */
+  const plain = (t: string) => {
+    let out = t;
+    for (const p of open ?? []) if (p.id && p.fm?.title) out = out.split(p.id).join(p.fm.title);
+    return datesInWords(out);
+  };
   const items: NeedsYouItem[] = [];
 
   if (pack?.report) {
@@ -181,8 +196,8 @@ export const needsYou: NeedsYouFn = ({ pack, monthly, health }) => {
       items.push({
         id: `verify:${i}`,
         tone,
-        text: f.title,
-        sub: f.detail,
+        text: plain(f.title),
+        sub: plain(f.detail),
         action: 'Open report',
         target: { kind: 'report', path: pack.report },
       });
@@ -238,6 +253,18 @@ export const needsYou: NeedsYouFn = ({ pack, monthly, health }) => {
       target: { kind: 'jump', anchor: 'close' },
     });
 
+  // An earlier month nobody signed would otherwise be hidden in the Earlier months fold.
+  for (const m of Array.isArray(earlier) ? earlier : [])
+    if (m?.canSign === true && !m.signed && m.partial !== true)
+      items.push({
+        id: `monthly:${m.month}`,
+        tone: 'warn',
+        text: `${m.monthName || m.month} is not signed off`,
+        sub: m.stale && m.reason ? m.reason : 'Read the report, then sign it off.',
+        action: 'Go to monthly close',
+        target: { kind: 'jump', anchor: 'close' },
+      });
+
   return [...items.filter((i) => i.tone === 'bad'), ...items.filter((i) => i.tone === 'warn')];
 };
 
@@ -262,6 +289,16 @@ const NOUNS: Record<string, [string, string]> = {
  * rows that spent and returned under 1.00x, and Quality Scores of 4 or below. The same tests the tables use to flag
  * a cell (`isLow`). A table missing from the board gives no line. Bad before warn.
  */
+const lowKeywords = (t: AdsBoard['tables'][number]): number => {
+  const at = t.cols.findIndex((c) => c.type === 'qs');
+  const kwAt = t.cols.findIndex((c) => c.key === 'kw');
+  if (at < 0 || kwAt < 0) return 0;
+  const column = t.rows.map((r) => r[at] ?? null);
+  return t.rows
+    .filter((r) => isLow(r[at] ?? null, 'qs', column))
+    .reduce((n, r) => n + (Number(r[kwAt]) || 0), 0);
+};
+
 export const worthALook: WorthALookFn = (board) => {
   const tables = Array.isArray(board.tables) ? board.tables : [];
   const items: WorthALookItem[] = [];
@@ -297,7 +334,9 @@ export const worthALook: WorthALookFn = (board) => {
         table: t.id,
         tableTitle: t.title,
       });
-    const qs = lowCount('qs');
+    // One Quality Score line, from the spread table: its rows are score bands with a Keywords count, so add up
+    // the keywords in the low bands. Other tables' QS cells (Top keywords) would only repeat a subset of it.
+    const qs = t.id === 'quality' ? lowKeywords(t) : 0;
     if (qs > 0)
       items.push({
         id: `qs:${t.id}`,

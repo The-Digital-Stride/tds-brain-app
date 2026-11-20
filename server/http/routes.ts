@@ -15,7 +15,9 @@ import {
   ADS_PROPOSAL_ID,
   ADS_ROUTES,
   ADS_SKILL,
+  ADS_TASK_RESULTS_CAPABILITY,
   ADS_TASK_RUNS_CAPABILITY,
+  ADS_TRIAGE_CAPABILITY,
   type AdsCapabilities,
   type AdsChangeAction,
   type AdsErrorCode,
@@ -33,6 +35,7 @@ import {
   type BrainHealth,
   type BrainReaders,
   type ChangelogResponse,
+  type ChatFile,
   CLIENT_PICK_REPORTED,
   type ClientGuessResponse,
   type ClientPickReported,
@@ -59,6 +62,7 @@ import {
   SECTION_ID_PATTERN,
   SECTIONS_MAX,
   SESSION_UUID_PATTERN,
+  type SequencedEvent,
   type StartSessionRequest,
   type SyncStatus,
   THUMB_WIDTHS,
@@ -1490,11 +1494,12 @@ const ADS_CHANGE_FIELDS: { [A in AdsChangeAction]: readonly (keyof AdsRequests[A
   apply: ['client', 'id', 'confirmed'],
   'client-draft': ['client', 'id', 'again'],
   'client-approved': ['client', 'id', 'who', 'note'],
-  decided: ['client', 'id', 'note'],
+  decided: ['client', 'id', 'note', 'draftChange'],
   'sign-monthly': ['client', 'month', 'note'],
   'standup-setup': ['account'],
   'standup-feedback': ['account', 'date', 'campaign', 'action_category', 'score', 'note'],
   'task-run': ['account', 'task'],
+  'task-result': ['account', 'task', 'at', 'result'],
 };
 const isAdsChange = (a: string): a is AdsChangeAction => Object.hasOwn(ADS_CHANGE_FIELDS, a);
 
@@ -1566,6 +1571,13 @@ async function adsRead(url: URL, ctx: RouteContext, ads: AdsService, path: strin
       return (await ads.read('board', { account: adsParam(url, 'account', ADS_ACCOUNT_KEY) })).board;
     case ADS_ROUTES.standupBrief:
       return (await ads.read('standup-brief', { account: adsParam(url, 'account', ADS_ACCOUNT_KEY) })).brief;
+    case ADS_ROUTES.triage: {
+      // Read each time the pop-up opens; a skill that can't build it is unavailable, not empty.
+      const caps = await ads.capabilities();
+      if (!caps?.features.includes(ADS_TRIAGE_CAPABILITY)) throw new AdsError('unavailable');
+      const { rows } = await ads.read('triage', {});
+      return { rows: Array.isArray(rows) ? rows : [] };
+    }
     case ADS_ROUTES.file: {
       // Decision 18: only reports and proposals, never `..` or `.`, and only what the library lists.
       const p = url.searchParams.get('p') ?? '';
@@ -1596,8 +1608,39 @@ async function adsChanger(ads: AdsService, identity: Identity): Promise<AdsCapab
 /** A task id: a cadence card id (lower-case words) or `standup:daily`. The bridge checks it against its list. */
 const ADS_TASK_ID = /^[a-z0-9][a-z0-9:-]{0,63}$/;
 
+/** A chat's app id (a UUID today; any plain token is accepted, the session manager says whether it is live). */
+const ADS_CHAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * The file a finished chat saved for this account: the newest (by `order`) in its latest `files` event that it
+ * created or changed, matching ADS_FILE_PATTERN under `clients/<account>/`. Null for no live chat or no such file.
+ * The browser can't see a background chat's files, so the server replays them (plan 2026-11-19-ads-release-2, 5).
+ */
+function pickChatResult(ctx: RouteContext, chat: string, account: string): string | null {
+  let sub: { replay: SequencedEvent[]; unsubscribe(): void };
+  try {
+    sub = ctx.sessions.subscribe(chat, 0, () => {});
+  } catch (err) {
+    if (err instanceof SessionError) return null;
+    throw err;
+  }
+  sub.unsubscribe();
+  let files: ChatFile[] = [];
+  for (const { event } of sub.replay) if (event.type === 'files') files = event.files;
+  const prefix = `clients/${account}/`;
+  let best: ChatFile | null = null;
+  for (const f of files) {
+    if (!(f.actions.includes('created') || f.actions.includes('changed'))) continue;
+    if (!ADS_FILE_PATTERN.test(f.path) || !f.path.startsWith(prefix)) continue;
+    if (f.path.split('/').some((seg) => seg === '..' || seg === '.')) continue;
+    if (!best || f.order > best.order) best = f;
+  }
+  return best?.path ?? null;
+}
+
 async function adsChange(
   req: IncomingMessage,
+  ctx: RouteContext,
   ads: AdsService,
   identity: Identity,
   action: AdsChangeAction,
@@ -1612,9 +1655,25 @@ async function adsChange(
     if (typeof account !== 'string' || !ADS_ACCOUNT_KEY.test(account)) throw new AdsError('bad-request');
     if (typeof task !== 'string' || !ADS_TASK_ID.test(task)) throw new AdsError('bad-request');
   }
+  if (action === 'task-result') {
+    if (!caps.features.includes(ADS_TASK_RESULTS_CAPABILITY)) throw new AdsError('unavailable');
+    const { account, task, at, chat } = body;
+    if (typeof account !== 'string' || !ADS_ACCOUNT_KEY.test(account)) throw new AdsError('bad-request');
+    if (typeof task !== 'string' || !ADS_TASK_ID.test(task)) throw new AdsError('bad-request');
+    if (typeof at !== 'string' || at.length > 40 || Number.isNaN(Date.parse(at))) {
+      throw new AdsError('bad-request');
+    }
+    if (typeof chat !== 'string' || !ADS_CHAT_ID.test(chat)) throw new AdsError('bad-request');
+    const result = pickChatResult(ctx, chat, account);
+    if (result === null) return { result: null };
+    await ads.change('task-result', { account, task, at, result });
+    return { result };
+  }
   const input: Record<string, unknown> = {};
   for (const key of ADS_CHANGE_FIELDS[action] as readonly string[]) {
-    if (body[key] !== undefined) input[key] = body[key];
+    if (key === 'draftChange') {
+      if (typeof body[key] === 'boolean') input[key] = body[key];
+    } else if (body[key] !== undefined) input[key] = body[key];
   }
   const reply = await ads.change(action, input);
   if (isRec(reply.proposal) && typeof input.client === 'string') {
@@ -1651,7 +1710,7 @@ async function routeAds(
       if (!isAdsChange(action)) throw new HttpError(404, 'not-found', 'There is nothing at that address.');
       if (method !== 'POST') throw methodNotAllowed();
       const ads = await adsFor(ctx, identity);
-      sendJson(res, 200, await adsChange(req, ads, identity, action));
+      sendJson(res, 200, await adsChange(req, ctx, ads, identity, action));
       return true;
     }
     if (path === ADS_ROUTES.clearInflight) {
@@ -1679,6 +1738,7 @@ async function routeAds(
         ADS_ROUTES.proposal,
         ADS_ROUTES.board,
         ADS_ROUTES.standupBrief,
+        ADS_ROUTES.triage,
         ADS_ROUTES.file,
       ].includes(path as never)
     ) {

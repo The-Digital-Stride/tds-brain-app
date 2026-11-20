@@ -20,6 +20,8 @@ export interface RunOptions {
   reload?: boolean;
   /** Request changes: start the revising chat in the background and offer Open chat. */
   revise?: boolean;
+  /** Record and draft the change: start the drafting chat in the background from `reply.draftPrompt`. */
+  draft?: boolean;
 }
 
 const unknownOutcome = (err: unknown) =>
@@ -41,15 +43,22 @@ export function useAdsRunner() {
           const prompt = reply.revisePrompt ?? null;
           if (prompt) chatId = await startChat(prompt, o.client, { open: false });
         }
+        if (o.draft && !chatId) {
+          const prompt = reply.draftPrompt ?? null;
+          if (prompt) chatId = await startChat(prompt, o.client, { open: false });
+        }
+        const text =
+          o.revise && !chatId && reply.revisePrompt
+            ? "Changes requested. The revision chat couldn't start, so ask for the changes in a chat yourself."
+            : o.draft && !chatId && reply.draftPrompt
+              ? "Decision recorded. The drafting chat couldn't start, so ask for the change proposal in a chat yourself."
+              : reply.message;
         adStore.set({
           last: {
             client: o.client,
             id: o.id,
             ok: reply.failed !== true,
-            text:
-              o.revise && !chatId && reply.revisePrompt
-                ? "Changes requested. The revision chat couldn't start, so ask for the changes in a chat yourself."
-                : reply.message,
+            text,
             output: reply.output,
             chatId,
           },

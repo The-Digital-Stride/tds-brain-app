@@ -1,8 +1,8 @@
 ---
 name: tdsapp-ads
-description: The bridge TDS Cortex's Ad Manager uses to read and decide ads-manager proposals, run a dry run or the live apply, draft the client email, record the client's yes or a decision, sign off a monthly report, and read the Ads board and Daily Standup - always through the brain's own ads-manager scripts, as the person at this Mac. USE WHEN TDS Cortex runs it for Ad Manager, or someone asks "what ads proposals are waiting for me?", "show the ads board for Acme", "approve proposal 20261116-01-pause-generic", "dry run that proposal", "sign off the October report", "set up the standup for Acme", or "rate the standup calls". Applying a change to Google Ads only ever happens when the person presses Apply now in Ad Manager or runs `apply` themselves; Claude never runs `apply`.
-version: 0.1
-last_updated: 2026-11-16
+description: The bridge TDS Cortex's Ad Manager uses to read and decide ads-manager proposals, run a dry run or the live apply, draft the client email, record the client's yes or a decision, sign off a monthly report, and read the Ads board and Daily Standup - always through the brain's own ads-manager scripts, as the person at this Mac. USE WHEN TDS Cortex runs it for Ad Manager, or someone asks "what ads proposals are waiting for me?", "show the ads board for Acme", "dry run that proposal", "set up the standup for Acme", or "rate the standup calls". Approving, rejecting, recording a decision or the client's yes, signing off a report and applying a change are the person's own decisions, made in Ad Manager: Claude never runs `decide`, `decided`, `client-approved`, `sign-monthly` or `apply` from a chat.
+version: 0.3
+last_updated: 2026-11-19
 roles: owner, scout
 maturity: draft
 members: false
@@ -52,16 +52,29 @@ echo '{"client":"acme"}' | node .claude/skills/tdsapp-ads/scripts/tdsapp-ads.cjs
 | `proposal` | `client`, `id` | One proposal in full. |
 | `board` | `account` | The account's data health, deep-dive tables, the 16 cards with their badges and prompts, and the standup. |
 | `standup-brief` | `account` | The latest standup brief's call for each campaign. |
+| `triage` | none | Every account's latest standup verdict as `rows` of `{key, name, hasStandup, verdict, stale}`, worst first: fresh verdicts (most flagged, then most anomalies), then stale ones (2 or more local days old), then standups not run yet, then accounts with no standup. Ties by name. |
 | `decide` | `client`, `id`, `action` (`approve`, `request-changes` or `reject`), `note` | Decides. A note is needed to reject or request changes. Approving a proposal the client must agree to also drafts the client email. |
 | `dry-run` | `client`, `id` | Runs `apply.cjs` without `--confirmed`: nothing changes in Google Ads. |
 | `apply` | `client`, `id`, `confirmed: true` | Runs `apply.cjs --confirmed`: the LIVE change to Google Ads. |
 | `client-draft` | `client`, `id`, optional `again` | Runs `client-draft.cjs` (a Gmail draft and a markdown copy, never sent). |
 | `client-approved` | `client`, `id`, `who`, optional `note` | Records who at the client said yes, and how. |
-| `decided` | `client`, `id`, `note` | Records what was decided on an approved decision proposal. |
+| `decided` | `client`, `id`, `note`, optional `draftChange` (true or false) | Records what was decided on an approved decision proposal. With `draftChange: true` it also replies `draftPrompt`, the Workbench's prompt for a chat that drafts the change proposal (from `cadence-tasks.json` `draftChangePrompt`). |
 | `sign-monthly` | `client`, `month` (YYYY-MM), optional `note` | Signs off the month's report in your name and builds the final PDF. |
 | `standup-setup` | `account` | Writes a starter standup config from the account's enabled campaigns. Never overwrites one. |
 | `standup-feedback` | `account`, `date`, `campaign`, `action_category`, `score` (1-5), optional `note` | Saves your rating of one standup call for the next run. |
 | `task-run` | `account`, `task` (a card id from `cadence-tasks.json`, or `standup:daily`) | Records that you ran a task, in the shared run log. Replies `{run: {at, by, byName}}`. |
+| `task-result` | `account`, `task`, `at` (the run's own time from `task-run`), `result` (a brain-relative report path) | Records the file a finished run saved, once per run. The path must match the app's file pattern (`clients/<account>/reports|proposals/...`), hold no `.` or `..`, and be a plain file now (no links). Refuses a run that isn't yours. Replies `{result}`. |
+
+Release 2 additions to existing replies (version 0.3; `capabilities.features` lists `triage-all-v1`, `totals-v1`,
+`earlier-months-v1`, `draft-change-v1`, `task-results-v1`):
+
+- `board` carries `totalRanges`: `{ranges, wastedSpend}`, one range per 7, 30 and 90 days from the daily file
+  (`summary.csv`), ending on its newest date, with `current`, `previous` (null when the file doesn't reach back),
+  `partial`, `dataFrom`, and spend, conversions, value, ROAS and CPA. It is never named `totals`.
+  `wastedSpend` adds up every search term with no conversions. No daily file: `ranges` is empty.
+- `approvals` carries `earlierMonths` per client: up to 12 months before the latest close, newest first, each with
+  the same `canSign` rule as `monthly`.
+- `lastRun` may carry `result`, the file that run saved.
 
 It prints one line of JSON: `{"ok":true,…}` or `{"ok":false,"code":…,"error":…}`. Exit 0 means it
 worked, exit 2 means it refused, exit 1 means something went wrong. The codes are `bad-request`,
@@ -83,6 +96,11 @@ is rewritten with only its newest line per task.
 `board` reads every `.jsonl` in that account's folder and puts `lastRun` (`{at, by, byName}` or `null`)
 on each card and on `standup` (task `standup:daily`). It never writes. It skips links, bad lines, other
 accounts, times more than 10 minutes ahead and lines whose `by` is not the file name's person.
+
+`task-result` appends `{"v":2,"kind":"result","ts","run_ts","account","task","by","by_name","result"}` to the
+same file, once per `run_ts`. Older readers skip any line whose `v` isn't 1, so it never counts as a run. A
+file that grows past 64 KB keeps each task's newest run line and its result line. `board` attaches `result` to
+a task's newest run only when the result line is in the same person's file and its path passes the checks again.
 
 This is a convenience record, not an audit trail: anyone who can write the brain could add or edit a
 log file, so don't treat a `lastRun` as proof of who did what.

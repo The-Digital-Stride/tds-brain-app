@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-ads.cjs (v0.1): the bridge TDS Cortex's Ad Manager runs for the Workbench's Ads tab, without the
+// tdsapp-ads.cjs (v0.3): the bridge TDS Cortex's Ad Manager runs for the Workbench's Ads tab, without the
 // Workbench. Plan: the app repo's docs/plans/2026-11-16-workbench-ad-manager.md (decisions 7-12); shapes:
 // its shared/ads-contract.ts (a test checks the constants here match).
 //
@@ -39,11 +39,21 @@ const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.2';
+const SCRIPT_VERSION = '0.3';
 
 // Mirrors shared/ads-contract.ts (a test checks they match).
 const ADS_CAPABILITY = 'ads-v1';
 const ADS_TASK_RUNS_CAPABILITY = 'task-runs-v1';
+// Release 2 (plan 2026-11-19-ads-release-2).
+const ADS_TRIAGE_CAPABILITY = 'triage-all-v1';
+const ADS_TOTALS_CAPABILITY = 'totals-v1';
+const ADS_EARLIER_MONTHS_CAPABILITY = 'earlier-months-v1';
+const ADS_DRAFT_CHANGE_CAPABILITY = 'draft-change-v1';
+const ADS_TASK_RESULTS_CAPABILITY = 'task-results-v1';
+const ADS_TOTALS_DAYS = [7, 30, 90];
+const ADS_EARLIER_MONTHS_MAX = 12;
+const ADS_TRIAGE_STALE_DAYS = 2;
+const ADS_FILE_PATTERN = /^clients\/[a-z0-9-]+\/(reports|proposals)\/.+\.(pdf|html|md|json|csv|txt)$/;
 const ADS_ACCOUNT_KEY = /^[A-Za-z0-9_-]{1,80}$/;
 const ADS_PROPOSAL_ID = /^\d{8}-\d{2}-[a-z0-9-]+$/;
 const ADS_CLIENT_SLUG = /^[a-z0-9-]+$/;
@@ -66,6 +76,7 @@ const RUN_FILE = /^([a-z0-9-]{1,80})\.[0-9a-f]{6}[^/]*\.jsonl$/;
 const RUN_READ_FILES = 200;
 const RUN_READ_BYTES = 1024 * 1024;
 const RUN_FUTURE_MS = 10 * 60 * 1000;
+const RESULT_MAX = 300;
 const RUNS_DIR = 'tdsapp-ads';
 const ERRORS = new Set([
   'bad-request',
@@ -296,7 +307,15 @@ function capabilities(_input, ctx) {
   const L = brainLibs(ctx.root);
   return {
     version: SCRIPT_VERSION,
-    features: [ADS_CAPABILITY, ADS_TASK_RUNS_CAPABILITY],
+    features: [
+      ADS_CAPABILITY,
+      ADS_TASK_RUNS_CAPABILITY,
+      ADS_TRIAGE_CAPABILITY,
+      ADS_TOTALS_CAPABILITY,
+      ADS_EARLIER_MONTHS_CAPABILITY,
+      ADS_DRAFT_CHANGE_CAPABILITY,
+      ADS_TASK_RESULTS_CAPABILITY,
+    ],
     adsAccess: hasAdsAccess(ctx),
     adsManager: Boolean(L),
     me: L ? whoAmI(L, ctx) : null,
@@ -305,6 +324,34 @@ function capabilities(_input, ctx) {
 
 function approvalsData(L, ctx, me) {
   return ported(ctx, 'approvals-board.cjs').board(me);
+}
+
+// The months before the client's latest monthly close, newest first (monthly.cjs monthStatus, the same canSign rule
+// as `monthly`). The bridge lists the folder itself; approvals-board.cjs stays a verbatim copy.
+function earlierMonthsFor(L, ctx, c) {
+  const dir = path.join(ctx.root, 'clients', c.slug, 'reports', 'monthly');
+  let months;
+  try {
+    months = fs
+      .readdirSync(dir)
+      .map((n) => /^(\d{4}-\d{2})-monthly-close\.json$/.exec(n))
+      .filter(Boolean)
+      .map((m) => m[1])
+      .sort();
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const month of months.slice(0, -1).reverse()) {
+    if (out.length >= ADS_EARLIER_MONTHS_MAX) break;
+    try {
+      const mo = L.M.monthStatus(path.join(ctx.root, 'clients', c.slug), month);
+      out.push({ ...mo, canSign: Boolean(c.mine && !mo.signed && !mo.partial && mo.files && mo.files.body) });
+    } catch {
+      // A month that can't be read is left out.
+    }
+  }
+  return out;
 }
 
 function approvals(input, ctx) {
@@ -328,6 +375,7 @@ function approvals(input, ctx) {
         monthly: mo
           ? { ...mo, canSign: Boolean(c.mine && !mo.signed && !mo.partial && mo.files && mo.files.body) }
           : null,
+        earlierMonths: earlierMonthsFor(L, ctx, c),
       };
     });
   return { me: data.me, generatedAt: data.generatedAt, waiting: data.waiting, toApply: data.toApply, clients };
@@ -379,6 +427,123 @@ function accounts(_input, ctx) {
     });
   }
   return { accounts: out.filter((a) => ADS_ACCOUNT_KEY.test(a.key)) };
+}
+
+// Every account's latest standup verdict, worst first (the "All accounts' standups" pop-up).
+function localDayNumber(d) {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+}
+function isStale(verdict) {
+  const m = verdict && isStr(verdict.date) ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(verdict.date) : null;
+  if (!m) return false;
+  const then = Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000);
+  return localDayNumber(new Date()) - then >= ADS_TRIAGE_STALE_DAYS;
+}
+function triage(_input, ctx) {
+  const rows = ported(ctx, 'ads-board-data.cjs')
+    .listAccounts()
+    .filter((a) => ADS_ACCOUNT_KEY.test(a.key))
+    .map((a) => {
+      const verdict = a.standup || null;
+      return {
+        key: a.key,
+        name: a.name,
+        hasStandup: Boolean(a.hasStandup),
+        verdict,
+        stale: Boolean(verdict) && isStale(verdict),
+      };
+    });
+  const group = (r) => (r.verdict ? (r.stale ? 1 : 0) : r.hasStandup ? 2 : 3);
+  rows.sort(
+    (a, b) =>
+      group(a) - group(b) ||
+      (group(a) < 2 ? b.verdict.flagged - a.verdict.flagged || b.verdict.anomalies - a.verdict.anomalies : 0) ||
+      a.name.localeCompare(b.name),
+  );
+  return { rows };
+}
+
+// ---- totals ------------------------------------------------------------------------------------
+// Totals for 7, 30 and 90 days from the dated daily file (summary.csv), read the way buildBoardData reads it.
+
+const r2 = (n) => Math.round(n * 100) / 100;
+const DAY_MS = 86400000;
+const FETCH_DAYS = 180; // ads-board-refresh.cjs pulls summary.csv with --days=180
+const START_SLACK_DAYS = 14; // no rows for the pull's first days = the account wasn't serving yet
+const dayMs = (ymd) => Date.parse(`${ymd}T00:00:00Z`);
+const ymdOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+function figures(rows) {
+  let spend = 0;
+  let conversions = 0;
+  let value = 0;
+  for (const r of rows) {
+    spend += r.cost;
+    conversions += r.conv;
+    value += r.value;
+  }
+  return {
+    spend: r2(spend),
+    conversions: r2(conversions),
+    value: r2(value),
+    roas: spend > 0 && value > 0 ? Math.round((value / spend) * 10000) / 10000 : null,
+    cpa: conversions > 0 ? r2(spend / conversions) : null,
+  };
+}
+
+function totalRanges(ctx, key) {
+  const B = ported(ctx, 'ads-board-data.cjs');
+  const N = ported(ctx, 'ads-normalize.cjs');
+  const dir = B.dataDirFor(key);
+  const read = (dataset) => N.readTable(dir, N.FILE_ALIASES[dataset] || []).rows;
+  const daily = read('summary')
+    .map((r) => ({
+      d: String(r.date || '').slice(0, 10),
+      cost: N.num(r.cost),
+      conv: N.num(r.conversions),
+      value: N.num(r.convValue),
+    }))
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.d) && !Number.isNaN(dayMs(r.d)));
+  const terms = read('search80');
+  const wastedSpend = terms.length
+    ? r2(terms.map((r) => ({ cost: N.num(r.cost), conv: N.num(r.conversions) })).filter((r) => r.conv < 1 && r.cost > 0).reduce((t, r) => t + r.cost, 0))
+    : null;
+  if (!daily.length) return { ranges: [], wastedSpend };
+  const dates = daily.map((r) => r.d).sort();
+  const newest = dates[dates.length - 1];
+  // The brain's board refresh (tools/ads-board-refresh.cjs) pulls summary.csv as FETCH_DAYS days ending on
+  // `through`, and a day the account didn't serve has no row. So when _refreshed.json says when the pull
+  // ended, the ranges end there (a paused week counts as a quiet week, not the last active one), and a
+  // file whose first row is only a little after the pull's first day still covers the whole window.
+  let through = null;
+  try {
+    const t = JSON.parse(fs.readFileSync(path.join(dir, '_refreshed.json'), 'utf8')).through;
+    if (typeof t === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t) && !Number.isNaN(dayMs(t)) && t >= newest) through = t;
+  } catch {
+    /* older board, or no pull record: use the rows alone */
+  }
+  const end = dayMs(through || newest);
+  const pullStart = through ? ymdOf(end - (FETCH_DAYS - 1) * DAY_MS) : null;
+  const first = pullStart && dates[0] <= ymdOf(dayMs(pullStart) + START_SLACK_DAYS * DAY_MS) ? pullStart : dates[0];
+  const within = (from, to) => daily.filter((r) => r.d >= from && r.d <= to);
+  const ranges = ADS_TOTALS_DAYS.map((days) => {
+    const from = ymdOf(end - (days - 1) * DAY_MS);
+    const to = ymdOf(end);
+    const previousFrom = ymdOf(end - (2 * days - 1) * DAY_MS);
+    const previousTo = ymdOf(end - days * DAY_MS);
+    return {
+      days,
+      from,
+      to,
+      previousFrom,
+      previousTo,
+      current: figures(within(from, to)),
+      previous: first <= previousFrom ? figures(within(previousFrom, previousTo)) : null,
+      partial: first > from,
+      dataFrom: first,
+    };
+  });
+  return { ranges, wastedSpend };
 }
 
 // ---- run log -----------------------------------------------------------------------------------
@@ -475,6 +640,7 @@ function compactRunLog(file) {
   // skips files over RUN_READ_BYTES anyway.
   if (!st || !st.isFile() || st.size <= RUN_COMPACT_BYTES || st.size > RUN_COMPACT_MAX) return;
   const newest = new Map();
+  const results = new Map();
   for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
     let line;
     try {
@@ -484,12 +650,21 @@ function compactRunLog(file) {
     }
     // Only real tasks are kept, so a log padded with made-up task names still shrinks.
     if (!line || typeof line !== 'object' || !validTask(line.task) || !isStr(line.ts)) continue;
+    // A result line (v2) is kept only beside the run it belongs to; it is never itself the newest run.
+    if (line.v === 2) {
+      if (line.kind === 'result' && isStr(line.run_ts) && !results.has(`${line.task}|${line.run_ts}`)) {
+        results.set(`${line.task}|${line.run_ts}`, raw);
+      }
+      continue;
+    }
     const t = Date.parse(line.ts);
     if (Number.isNaN(t)) continue;
     const have = newest.get(line.task);
-    if (!have || t >= have.t) newest.set(line.task, { t, raw });
+    if (!have || t >= have.t) newest.set(line.task, { t, raw, task: line.task, ts: line.ts });
   }
-  const keep = [...newest.values()].sort((a, b) => a.t - b.t).map((e) => e.raw);
+  const keep = [...newest.values()]
+    .sort((a, b) => a.t - b.t)
+    .flatMap((e) => (results.has(`${e.task}|${e.ts}`) ? [e.raw, results.get(`${e.task}|${e.ts}`)] : [e.raw]));
   // A random name, created only if nothing is there ('wx' is O_EXCL): a link planted in the brain is never
   // followed out of it (tdsapp-files does the same).
   const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
@@ -511,6 +686,103 @@ function compactRunLog(file) {
   }
 }
 
+// One line, appended without following a link; then the log is compacted if it has grown.
+function appendRunLine(file, line) {
+  let fd;
+  try {
+    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0);
+    fd = fs.openSync(file, flags, 0o644);
+    fs.writeSync(fd, JSON.stringify(line) + '\n');
+  } catch (err) {
+    throw refuse(errCode(err) === 'ELOOP' ? 'not-allowed' : 'internal', 'could not write the run log');
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  try {
+    compactRunLog(file);
+  } catch {
+    // The line is written; compaction can wait for the next run.
+  }
+}
+
+// A result path as ADS_FILE_PATTERN has it, under this account's own clients/<key>/ folder, with no `.`, `..` or
+// empty parts. Pure text: whether the file exists is resultFileIsPlain's job.
+function resultPathOk(key, p) {
+  if (!isStr(p) || p.length > RESULT_MAX || !ADS_FILE_PATTERN.test(p) || !p.startsWith(`clients/${key}/`)) return false;
+  return p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..' && !/[\\\u0000-\u001f]/.test(seg));
+}
+// A plain file in the brain now: no link at any step of the path.
+function resultFileIsPlain(root, p) {
+  let cur = root;
+  const segs = p.split('/');
+  for (let i = 0; i < segs.length; i++) {
+    cur = path.join(cur, segs[i]);
+    let st;
+    try {
+      st = lstatOrNull(cur);
+    } catch {
+      return false;
+    }
+    if (!st || st.isSymbolicLink()) return false;
+    if (i < segs.length - 1 ? !st.isDirectory() : !st.isFile()) return false;
+  }
+  return true;
+}
+
+// Records the file a finished run saved, once per run, as a v2 line in the person's own log. Older readers skip it.
+function taskResult(input, ctx) {
+  const key = accountKey(input);
+  const task = input.task;
+  if (!validTask(task)) throw refuse('bad-request', 'bad task');
+  const at = input.at;
+  if (!isStr(at) || at.length > 40 || Number.isNaN(Date.parse(at))) throw refuse('bad-request', 'bad run time');
+  const L = needLibs(ctx);
+  const me = requireMe(L, ctx);
+  if (!RUN_SLUG.test(me.slug)) throw refuse('not-allowed', 'your roster slug cannot be used in a file name');
+  accountDir(ctx, key);
+  if (!resultPathOk(key, input.result)) throw refuse('bad-request', 'bad result file');
+  if (!resultFileIsPlain(ctx.root, input.result)) throw refuse('bad-request', 'no such file');
+  let dir = ctx.root;
+  for (const seg of [RUNS_DIR, 'runs', key]) {
+    dir = path.join(dir, seg);
+    const st = lstatOrNull(dir);
+    if (!st) throw refuse('bad-request', 'no such run');
+    if (st.isSymbolicLink() || !st.isDirectory()) throw refuse('not-allowed', `${seg} isn't a plain folder`);
+  }
+  const file = path.join(dir, `${me.slug}.${machineId(ctx)}.jsonl`);
+  const st = lstatOrNull(file);
+  if (!st) throw refuse('bad-request', 'no such run');
+  if (st.isSymbolicLink() || !st.isFile()) throw refuse('not-allowed', 'the run log is not a plain file');
+  if (st.size > RUN_COMPACT_MAX) throw refuse('bad-request', 'the run log is too large');
+  let found = false;
+  let existing = null;
+  for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
+    let l;
+    try {
+      l = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!l || typeof l !== 'object' || l.account !== key || l.task !== task || l.by !== me.slug) continue;
+    if (l.v === 1 && l.ts === at) found = true;
+    if (l.v === 2 && l.kind === 'result' && l.run_ts === at && isStr(l.result)) existing = existing || l.result;
+  }
+  if (!found) throw refuse('bad-request', 'no such run');
+  if (existing) return { result: existing };
+  appendRunLine(file, {
+    v: 2,
+    kind: 'result',
+    ts: new Date().toISOString(),
+    run_ts: at,
+    account: key,
+    task,
+    by: me.slug,
+    by_name: me.name,
+    result: input.result,
+  });
+  return { result: input.result };
+}
+
 function taskRun(input, ctx) {
   const key = accountKey(input);
   const task = input.task;
@@ -527,22 +799,7 @@ function taskRun(input, ctx) {
   const st = lstatOrNull(file);
   if (st && (st.isSymbolicLink() || !st.isFile())) throw refuse('not-allowed', 'the run log is not a plain file');
   const at = new Date().toISOString();
-  const line = { v: 1, ts: at, account: key, task, by: me.slug, by_name: me.name };
-  let fd;
-  try {
-    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0);
-    fd = fs.openSync(file, flags, 0o644);
-    fs.writeSync(fd, JSON.stringify(line) + '\n');
-  } catch (err) {
-    throw refuse(errCode(err) === 'ELOOP' ? 'not-allowed' : 'internal', 'could not write the run log');
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-  try {
-    compactRunLog(file);
-  } catch {
-    // The line is written; compaction can wait for the next run.
-  }
+  appendRunLine(file, { v: 1, ts: at, account: key, task, by: me.slug, by_name: me.name });
   return { ok: true, run: { at, by: me.slug, byName: flat(me.name).slice(0, RUN_NAME_MAX) || me.slug } };
 }
 
@@ -568,6 +825,8 @@ function readRuns(ctx, key) {
     return out;
   }
   const limit = Date.now() + RUN_FUTURE_MS;
+  // Result lines (v2) by file, so one only ever attaches to a run in the same person's file.
+  const resultsByFile = new Map();
   for (const name of names) {
     const slug = RUN_FILE.exec(name)?.[1] ?? '';
     const file = path.join(dir, name);
@@ -587,15 +846,26 @@ function readRuns(ctx, key) {
       } catch {
         continue;
       }
-      if (!l || typeof l !== 'object' || l.v !== 1 || l.account !== key || !isStr(l.task) || !isStr(l.ts)) continue;
+      if (!l || typeof l !== 'object' || l.account !== key || !isStr(l.task)) continue;
+      if (l.v === 2 && l.kind === 'result' && l.by === slug && isStr(l.run_ts) && resultPathOk(key, l.result)) {
+        const m = resultsByFile.get(name) || new Map();
+        if (!m.has(`${l.task}|${l.run_ts}`)) m.set(`${l.task}|${l.run_ts}`, l.result);
+        resultsByFile.set(name, m);
+        continue;
+      }
+      if (l.v !== 1 || !isStr(l.ts)) continue;
       if (l.by !== slug) continue;
       const t = Date.parse(l.ts);
       if (Number.isNaN(t) || t > limit) continue;
       const have = out.get(l.task);
       if (have && have.t >= t) continue;
       const byName = isStr(l.by_name) ? flat(l.by_name).slice(0, RUN_NAME_MAX) : '';
-      out.set(l.task, { t, run: { at: new Date(t).toISOString(), by: slug, byName: byName || slug } });
+      out.set(l.task, { t, run: { at: new Date(t).toISOString(), by: slug, byName: byName || slug }, name, ts: l.ts });
     }
+  }
+  for (const [task, e] of out) {
+    const result = resultsByFile.get(e.name)?.get(`${task}|${e.ts}`);
+    if (result) e.run.result = result;
   }
   return out;
 }
@@ -637,6 +907,8 @@ function board(input, ctx) {
       },
       triage: { key, name: data.name, hasStandup: Boolean(data.hasStandup), verdict: data.standup || null },
       setupPrompts: { ...tasks.setupPrompts, contractPath: tasks.contractPath },
+      // Never named `totals`: v0.50.0 reads a `totals` field of another shape.
+      totalRanges: totalRanges(ctx, key),
     },
   };
 }
@@ -824,10 +1096,24 @@ function clientApproved(input, ctx) {
 
 function decided(input, ctx) {
   const note = text(input, 'note', ADS_NOTE_MAX);
+  if (input.draftChange !== undefined && typeof input.draftChange !== 'boolean') {
+    throw refuse('bad-request', 'draftChange must be true or false');
+  }
   const c = proposalChange(input, ctx, 'canRecordDecision');
   if (!note.trim()) throw refuse('bad-request', 'say what was decided');
   viaLibrary(() => ported(ctx, 'approvals-board.cjs').recordDecision({ client: c.slug, id: c.id, by: c.me.slug, text: note }));
-  return { proposal: after(c, ctx), message: 'Decision recorded.' };
+  const reply = { proposal: after(c, ctx), message: 'Decision recorded.' };
+  if (input.draftChange === true) {
+    reply.message =
+      'Decision recorded. A chat is drafting the change proposal: open it to follow along. It may ask you a question, or stop if no change is needed.';
+    reply.draftPrompt = fill(cadenceTasks().draftChangePrompt, {
+      id: c.id,
+      client: c.slug,
+      name: c.me.name,
+      note: note.replace(/"/g, "'"),
+    });
+  }
+  return reply;
 }
 
 function signMonthly(input, ctx) {
@@ -898,6 +1184,7 @@ const ACTIONS = {
   proposal,
   board,
   'standup-brief': standupBrief,
+  triage,
   decide,
   'dry-run': dryRun,
   apply,
@@ -908,6 +1195,7 @@ const ACTIONS = {
   'standup-setup': standupSetup,
   'standup-feedback': standupFeedback,
   'task-run': taskRun,
+  'task-result': taskResult,
 };
 
 // Runs one action. Returns the exit code and the reply; never throws.
@@ -971,6 +1259,15 @@ module.exports = {
   SCRIPT_VERSION,
   ADS_CAPABILITY,
   ADS_TASK_RUNS_CAPABILITY,
+  ADS_TRIAGE_CAPABILITY,
+  ADS_TOTALS_CAPABILITY,
+  ADS_EARLIER_MONTHS_CAPABILITY,
+  ADS_DRAFT_CHANGE_CAPABILITY,
+  ADS_TASK_RESULTS_CAPABILITY,
+  ADS_TOTALS_DAYS,
+  ADS_EARLIER_MONTHS_MAX,
+  ADS_TRIAGE_STALE_DAYS,
+  ADS_FILE_PATTERN,
   ADS_ACCOUNT_KEY,
   ADS_PROPOSAL_ID,
   ADS_CLIENT_SLUG,

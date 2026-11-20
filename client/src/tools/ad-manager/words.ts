@@ -188,23 +188,31 @@ export function decisionWords(fm: ProposalSummary['fm']): {
   return { decision: statusWords(decision), note, when, by };
 }
 
-/** The key/value rows of a proposal's details, empty ones dropped (cc.js apprRows). */
-export function proposalFacts(p: ProposalSummary): [string, string][] {
+/** The key/value rows of a proposal's details, empty ones dropped (cc.js apprRows). Dates are in words. */
+export function proposalFacts(p: ProposalSummary, now: Date = new Date()): [string, string][] {
   const fm = p.fm as Record<string, unknown>;
   const s = (v: unknown) => (v == null ? '' : String(v));
+  const day = (v: unknown) => dateWords(v, now) || dayOf(v);
   let client = '';
   if (fm.needs_client_approval) {
     const who = s(fm.client_approver) || 'the client';
     if (fm.client_approved_at)
-      client = `Yes from ${s(fm.client_approved_by)} (${dayOf(fm.client_approved_at)}, recorded by ${s(fm.client_approval_recorded_by)})`;
+      client = `Yes from ${s(fm.client_approved_by)} (${day(fm.client_approved_at)}, recorded by ${s(fm.client_approval_recorded_by)})`;
     else if (fm.client_request_at)
-      client = `Needed from ${who}. Request drafted ${dayOf(fm.client_request_at)}${fm.client_request_gmail_draft_id ? ' (in Gmail drafts, not sent)' : ' (markdown only)'}. Waiting for their yes.`;
+      client = `Needed from ${who}. Request drafted ${day(fm.client_request_at)}${fm.client_request_gmail_draft_id ? ' (in Gmail drafts, not sent)' : ' (markdown only)'}. Waiting for their yes.`;
     else client = `Needed from ${who}. Request not drafted yet.`;
   }
   const evidence = Array.isArray(fm.evidence) ? (fm.evidence as unknown[]).join(', ') : s(fm.evidence);
+  const campaigns = Array.isArray(fm.campaigns) ? (fm.campaigns as unknown[]).join(', ') : s(fm.campaigns);
+  const expiry = dateWords(fm.expires, now);
+  const rel = relativeWords(fm.expires, now);
   const rows: [string, string][] = [
-    ['Type', s(fm.type)],
+    ['Status', statusWords(fm.status)],
+    ['Tier', s(fm.tier)],
+    ['Campaigns', campaigns],
     ['Section', s(fm.framework_section)],
+    ['Type', s(fm.type)],
+    ['Expires', expiry ? `${expiry}, ${rel}` : ''],
     ['Expected effect', s(fm.expected_effect)],
     ['Risk and rollback', s(fm.risk_notes)],
     [
@@ -218,15 +226,16 @@ export function proposalFacts(p: ProposalSummary): [string, string][] {
     ['Dry run', s(fm.dry_run)],
     ['Evidence', evidence],
     ['Client approval', client],
-    ['Proposed by', `${s(fm.created_by)} ${dayOf(fm.created_at)}`.trim()],
-    ['Approved', fm.approved_by ? `${s(fm.approved_by)} ${dayOf(fm.approved_at)}` : ''],
+    ['Proposed', fm.created_by || fm.created_at ? `${s(fm.created_by)} ${day(fm.created_at)}`.trim() : ''],
+    ['Approved', fm.approved_by ? `${s(fm.approved_by)} ${day(fm.approved_at)}`.trim() : ''],
     [
       'Changes requested',
       fm.changes_requested_by
-        ? `${s(fm.changes_requested_by)} ${dayOf(fm.changes_requested_at)}: ${s(fm.changes_note)}`
+        ? `${s(fm.changes_requested_by)} ${day(fm.changes_requested_at)}: ${s(fm.changes_note)}`
         : '',
     ],
     ['Warnings', (p.warnings ?? []).join('; ')],
+    ['Proposal ID', s(p.id || fm.id)],
   ];
   return rows.filter(([, v]) => v);
 }
@@ -281,6 +290,11 @@ export function whenWords(d: unknown, now: Date = new Date()): string {
   return dateWords(d, now);
 }
 
+/** Machine text made readable: every YYYY-MM-DD becomes "Mon 9 Nov". Anything else is left as it is. */
+export function datesInWords(text: string, now: Date = new Date()): string {
+  return text.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (m) => dateWords(m, now) || m);
+}
+
 /** What an approved proposal needs next, in a few words, with the badge tone it takes. */
 export function nextStepWords(p: ProposalSummary): { text: string; tone: 'ok' | 'draft' | 'waiting' | null } {
   const f = p.flags;
@@ -290,5 +304,104 @@ export function nextStepWords(p: ProposalSummary): { text: string; tone: 'ok' | 
   if (f.canClientDraft) return { text: 'Draft the email', tone: 'draft' };
   if (f.canDryRun) return { text: 'Dry run first', tone: 'draft' };
   if (f.canApply) return { text: 'Ready to apply', tone: 'ok' };
+  if (f.canRecordDecision) return { text: 'Record the decision', tone: 'draft' };
   return { text: 'Waiting on someone else', tone: null };
+}
+
+// ---------- Release 2 ----------
+
+/** "8 Nov", with the year only when it isn't this year. Empty for no date. */
+export function shortDate(d: unknown, now: Date = new Date()): string {
+  const day = localDay(d);
+  if (!day) return '';
+  const base = `${day.getDate()} ${MONTHS[day.getMonth()]}`;
+  return day.getFullYear() === now.getFullYear() ? base : `${base} ${day.getFullYear()}`;
+}
+
+/** "10 Oct to 8 Nov": a totals range in words. */
+export const rangeWords = (from: string, to: string, now: Date = new Date()): string =>
+  `${shortDate(from, now) || from} to ${shortDate(to, now) || to}`;
+
+const pounds = (n: number, currency: string, digits: 0 | 2) => {
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(n);
+  } catch {
+    return `${currency} ${n.toFixed(digits)}`;
+  }
+};
+
+export type TotalsKey = 'spend' | 'conversions' | 'value' | 'roas' | 'cpa';
+/** One totals figure as text. ROAS with nothing to divide, and CPA with no conversions, read "n/a". */
+export function totalsValue(key: TotalsKey, n: number | null, currency: string): string {
+  if (n === null) return 'n/a';
+  if (key === 'conversions') return String(Math.round(n * 10) / 10);
+  if (key === 'roas') return `${n.toFixed(2)}x`;
+  return pounds(n, currency, key === 'cpa' ? 2 : 0);
+}
+
+export type ChangeTone = 'good' | 'bad' | 'neutral';
+export interface TotalsChange {
+  text: string;
+  tone: ChangeTone;
+  /** For screen readers, so colour isn't the only cue: ", better", ", worse" or "". */
+  hidden: string;
+}
+
+/**
+ * How a figure compares with the period before: "+12% vs £1,204". A previous figure of 0 has no percentage, so
+ * it reads "vs £0". No previous range at all reads "No earlier data to compare". The tone says better or worse:
+ * a lower CPA is better; spend going up or down is neither.
+ */
+export function totalsChange(
+  key: TotalsKey,
+  now: number | null,
+  was: { value: number | null } | null,
+  currency: string,
+): TotalsChange {
+  if (!was) return { text: 'No earlier data to compare', tone: 'neutral', hidden: '' };
+  const before = totalsValue(key, was.value, currency);
+  if (now === null || was.value === null || was.value === 0)
+    return { text: `vs ${before}`, tone: 'neutral', hidden: '' };
+  const pct = Math.round(((now - was.value) / was.value) * 100);
+  const text = `${pct >= 0 ? '+' : '−'}${Math.abs(pct)}% vs ${before}`;
+  if (pct === 0 || key === 'spend') return { text, tone: 'neutral', hidden: '' };
+  const better = key === 'cpa' ? pct < 0 : pct > 0;
+  return { text, tone: better ? 'good' : 'bad', hidden: better ? ', better' : ', worse' };
+}
+
+/** A past month's status in words, for the Earlier months list. */
+export function earlierMonthWords(m: {
+  signed: boolean;
+  stale: boolean;
+  partial: boolean | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reason?: string | null;
+}): string {
+  // monthly.cjs reviewState: a stamp that no longer matches the body is `signed: false, stale: true`.
+  if (!m.signed && m.stale) {
+    const why = m.reason?.trim().replace(/\.$/, '');
+    return why ? `${why}, sign again` : 'Changed after sign-off, sign again';
+  }
+  if (m.signed) {
+    const day = shortDate(m.reviewedAt);
+    return `Signed off by ${m.reviewedBy ?? 'someone'}${day ? ` on ${day}` : ''}`;
+  }
+  if (m.partial) return 'Month-to-date draft';
+  return 'Not signed off';
+}
+
+/** A triage row's second line: what the account's standup says. */
+export function triageWords(row: {
+  hasStandup: boolean;
+  verdict: { headline: string | null } | null;
+}): string {
+  if (!row.hasStandup) return 'No standup set up';
+  if (!row.verdict) return 'Not run yet';
+  return row.verdict.headline?.trim() || 'Standup run';
 }

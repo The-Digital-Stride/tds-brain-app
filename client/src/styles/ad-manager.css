@@ -55,6 +55,11 @@
   margin: 0;
   font: inherit;
 }
+.am-h .sm-missing {
+  margin: 4px 0 0;
+  font-weight: 400;
+}
+
 .am-hrow {
   display: flex;
   flex-wrap: wrap;
@@ -638,4 +643,29 @@
   .am-close {
     transition: outline-color 0.3s;
   }
+}
+/* Release 2: Earlier months under Monthly close. */
+.am-close .fold {
+  margin: 0 8px 8px;
+}
+.am-earlier {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.am-earlier-item {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.am-earlier-head {
+  margin: 0;
+}
+.am-earlier .am-links {
+  padding: 0;
+}
+.am-earlier .am-sign {
+  margin: 0;
 }

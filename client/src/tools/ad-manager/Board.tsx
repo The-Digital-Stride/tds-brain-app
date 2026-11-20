@@ -1,14 +1,15 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { AdsBoard, AdsTaskRun } from '../../../../shared/ads-contract.ts';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { ADS_TRIAGE_CAPABILITY, type AdsBoard, type AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
-import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import type { DueState, FileDot, Readiness } from './ads-tools-contract.ts';
 import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { dueState, readiness } from './logic.ts';
+import { OpenFile } from './OpenFile.tsx';
 import { adStore, loadBoard, useAd } from './store.ts';
+import { TriagePopup } from './TriagePopup.tsx';
 import { lastRunText, runKey, runStatus, shownRun, taskRuns, useTaskRuns } from './task-runs.ts';
 import { type HealthFile, readHealth, readSetupPrompts, readStandup } from './types.ts';
 import { actionLabel, adsErrorText, ageDays, dateWords, whenWords } from './words.ts';
@@ -34,13 +35,9 @@ const STANDUP_TASK = 'standup:daily';
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/**
- * Records a run in the brain so the team sees it, when the skill shares runs (its board carries `lastRun`).
- * Not waited on, and a failure says nothing: the run still shows here from this browser's record.
- */
+/** Tells the brain about a run, when the skill shares runs (its board carries `lastRun`). */
 function shareRun(board: AdsBoard, task: string) {
-  if (!board.cards.some((c) => 'lastRun' in c)) return;
-  void api.adsTaskRun({ account: board.key, task }).catch(() => {});
+  if (board.cards.some((c) => 'lastRun' in c)) taskRuns.share(board.key, task);
 }
 
 /** A task's run on this account: its live status and when it last ran (from this app), or null. */
@@ -92,6 +89,7 @@ function RunInfo({
   title,
   cadence,
   shared,
+  onFile = null,
 }: {
   client: string;
   task: string;
@@ -99,6 +97,11 @@ function RunInfo({
   cadence: AdsBoard['cards'][number]['cadence'] | null;
   /** The brain's latest run by anyone (`lastRun`), when the skill shares runs. */
   shared?: AdsTaskRun | null;
+  /**
+   * The date of the newest result on file when no run record exists (a standup verdict made outside the app):
+   * the task has run, so it counts for "due" and the card never says "Never run here".
+   */
+  onFile?: string | null;
 }) {
   const { ads, openPast } = useStore();
   const { run: local, status, lastTurn } = useTaskRun(client, task);
@@ -108,8 +111,12 @@ function RunInfo({
   const mine = run !== null && run.by === null;
   const stopped = mine && !words && (lastTurn === 'stopped' || lastTurn === 'failed');
   const good = local?.good ?? null;
+  // Release 2: a saved result belongs to the run shown (a teammate's, or my own once the brain has its time).
+  const brainAt = (local as { brainAt?: string } | undefined)?.brainAt;
+  const result =
+    !words && shared?.result && run && (run.at === shared.at || brainAt === shared.at) ? shared.result : null;
   const due =
-    stopped || words ? null : dueBadge(cadence ? dueState(cadence, run?.at ?? null, new Date()) : null);
+    stopped || words ? null : dueBadge(cadence ? dueState(cadence, run?.at ?? onFile, new Date()) : null);
 
   const open = async (sdk: string) => {
     setGone(false);
@@ -169,7 +176,7 @@ function RunInfo({
         ) : null}
       </>
     );
-  } else if (!words) {
+  } else if (!words && !onFile) {
     line = <>Never run here</>;
   }
   return (
@@ -191,6 +198,11 @@ function RunInfo({
         </span>
       ) : null}
       {line ? <p className="am-run">{line}</p> : null}
+      {result ? (
+        <span className="cc-result">
+          <OpenFile path={result} label="Open result" name={`Open result: ${title}`} />
+        </span>
+      ) : null}
       {gone ? (
         <p className="am-hint" role="alert">
           That chat can't be opened any more.
@@ -249,7 +261,8 @@ function RunButton({
 }
 
 function fileNote(f: HealthFile): string {
-  if (f.status === 'ok') return f.latest ? `through ${dateWords(f.latest) || f.latest}` : 'ok';
+  // A ready file with no date needs no note: its dot (and the hidden words) already say it is ready.
+  if (f.status === 'ok') return f.latest ? `through ${dateWords(f.latest) || f.latest}` : '';
   if (f.status === 'na') return 'not needed for this account';
   if (f.status === 'missing') return 'missing';
   if (f.status === 'stale') return `stale, last ${(f.latest && dateWords(f.latest)) || f.latest || '?'}`;
@@ -329,6 +342,9 @@ const DOT_WORDS: Record<FileDot, string> = {
 export function ReadinessPanel({ board }: { board: AdsBoard }) {
   const { jump } = useAd();
   const head = useRef<HTMLHeadingElement>(null);
+  const filesId = useId();
+  // The files start open when something needs attention, closed when all is ready; a press overrides it per account.
+  const [shown, setShown] = useState<{ key: string; open: boolean } | null>(null);
   const h = readHealth(board);
   const noData = !h || h.ok === 0 || h.files.every((f) => f.status === 'missing' || f.status === 'na');
   const r: Readiness | null = noData ? null : readiness(board.health);
@@ -366,24 +382,20 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
         : `No fetch for ${dayCount(fx.ageHours)} (last${dateWords(fx.lastRun) || fx.lastRun.slice(0, 10)}). `
       : `Fetched ${fetchWords(fx.lastRun)}. `;
 
-  if (r.tone === 'ok')
-    return (
-      <section className="cc-ready" data-tone="ok" aria-labelledby="cc-ready-h">
-        <span className="cc-dot" data-s="ok" aria-hidden="true" />
-        <h2 id="cc-ready-h" ref={head} tabIndex={-1}>
-          Account data ready
-        </h2>
-        <p className="am-sub">
-          {fetchLine}All {r.required} required files are ready
-          {h.freshThrough ? `, fresh through ${dateWords(h.freshThrough) || h.freshThrough}` : ''}.
-        </p>
-      </section>
-    );
-
-  const title =
-    fetchBad && r.ready === r.required
+  const ok = r.tone === 'ok';
+  const open = shown?.key === board.key ? shown.open : !ok;
+  const fresh = h.freshThrough ? dateWords(h.freshThrough) || h.freshThrough : '';
+  const notNeeded = r.notNeeded
+    ? ` ${r.notNeeded} ${r.notNeeded === 1 ? 'file is' : 'files are'} not needed for this account.`
+    : '';
+  const title = ok
+    ? 'Account data ready'
+    : fetchBad && r.ready === r.required
       ? 'Account data: daily fetch problem'
       : `Account data: ${r.ready} of ${r.required} required files ready`;
+  const note = ok
+    ? `All ${r.required} required files are in${fresh ? `, fresh to ${fresh}` : ''}. ${fetchLine}Every task has what it needs.${notNeeded}`
+    : `${fetchLine}Tasks and tables that read the files marked amber or red will have gaps until they are fixed. The rest still works.`;
   const anyBad = r.groups.some((g) => g.files.some((f) => f.dot === 'bad' || f.dot === 'warn'));
   return (
     <section className="cc-ready" data-tone={r.tone} aria-labelledby="cc-ready-h">
@@ -392,26 +404,30 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
         <h2 id="cc-ready-h" ref={head} tabIndex={-1}>
           {title}
         </h2>
+        <button
+          type="button"
+          className="btn"
+          data-variant="quiet"
+          data-size="small"
+          aria-expanded={open}
+          aria-controls={filesId}
+          onClick={() => setShown({ key: board.key, open: !open })}
+        >
+          {open ? 'Hide files' : 'Show files'}
+        </button>
       </div>
-      <p className="card-note">
-        {fetchLine}
-        Tasks and tables that read the files marked amber or red will have gaps until they are fixed. The rest
-        still works.
-      </p>
-      <Fold key={board.key} title="Files" defaultOpen>
-        <p className="am-sub am-inset">
-          Reading from <code>{h.dir}</code>
-        </p>
-        <div className="cc-groups">
-          {r.groups.map((g) => (
-            <div key={g.group} className="cc-group">
-              <h3 className="cc-group-h">
-                <span className="cc-dot" data-s={g.tone} aria-hidden="true" />
-                {g.label}
-                <span className="am-sub cc-count">
-                  {g.ready} of {g.required} ready
-                </span>
-              </h3>
+      <p className="card-note">{note}</p>
+      <div className="cc-groups" id={filesId}>
+        {r.groups.map((g) => (
+          <div key={g.group} className="cc-group">
+            <h3 className="cc-group-h">
+              <span className="cc-dot" data-s={g.required === 0 ? 'na' : g.tone} aria-hidden="true" />
+              {g.label}
+              <span className="am-sub cc-count">
+                {g.required === 0 ? 'Not needed' : `${g.ready} of ${g.required} ready`}
+              </span>
+            </h3>
+            {open ? (
               <ul>
                 {g.files.map(({ file, dot }) => (
                   <li key={file.file}>
@@ -420,20 +436,24 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
                       {file.file}
                       <span className="visually-hidden">, {DOT_WORDS[dot]}</span>
                     </span>
-                    <span className="am-sub cc-note">{fileNote(file)}</span>
+                    {fileNote(file) ? <span className="am-sub cc-note">{fileNote(file)}</span> : null}
                   </li>
                 ))}
               </ul>
-            </div>
-          ))}
-        </div>
-        <p className="am-sub am-inset cc-key" aria-hidden="true">
-          Key: <span className="cc-dot" data-s="ok" /> ready · <span className="cc-dot" data-s="na" /> not
-          needed · <span className="cc-dot" data-s="warn" /> stale or wrong shape ·{' '}
-          <span className="cc-dot" data-s="bad" /> missing
-        </p>
-        {anyBad ? <CopyPrompts board={board} /> : null}
-      </Fold>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {open ? (
+        <>
+          <p className="am-sub cc-key" aria-hidden="true">
+            Key: <span className="cc-dot" data-s="ok" /> ready · <span className="cc-dot" data-s="na" /> not
+            needed · <span className="cc-dot" data-s="warn" /> stale or wrong shape ·{' '}
+            <span className="cc-dot" data-s="bad" /> missing. Reading from <code>{h.dir}</code>
+          </p>
+          {anyBad ? <CopyPrompts board={board} /> : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -511,10 +531,13 @@ function StandupCard({
   canAct: boolean;
   onStarted: (text: string) => void;
 }) {
-  const { startChat } = useStore();
+  const { startChat, ads } = useStore();
   const { dispatch } = useShell();
   const { busy } = useAd();
   const [ask, setAsk] = useState(false);
+  const [triage, setTriage] = useState(false);
+  const triageBtn = useRef<HTMLButtonElement>(null);
+  const canTriage = (ads?.features ?? []).includes(ADS_TRIAGE_CAPABILITY);
   const [starting, setStarting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -583,6 +606,7 @@ function StandupCard({
           title="Daily standup"
           cadence="daily"
           shared={s.lastRun}
+          onFile={v?.date ?? null}
         />
       ) : null}
       {ask ? (
@@ -633,6 +657,24 @@ function StandupCard({
               ) : null}
             </>
           )}
+          {canTriage ? (
+            <span className="cc-triage-wrap">
+              <button
+                type="button"
+                className="btn"
+                data-size="small"
+                ref={triageBtn}
+                aria-haspopup="dialog"
+                aria-expanded={triage}
+                onClick={() => setTriage((o) => !o)}
+              >
+                All accounts' standups…
+              </button>
+              {triage ? (
+                <TriagePopup account={board.key} openerRef={triageBtn} onClose={() => setTriage(false)} />
+              ) : null}
+            </span>
+          ) : null}
         </span>
       )}
       {error ? (

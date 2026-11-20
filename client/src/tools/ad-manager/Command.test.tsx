@@ -28,6 +28,8 @@ const api = vi.hoisted(() => ({
   adsStandupBrief: vi.fn(),
   adsChange: vi.fn(),
   adsTaskRun: vi.fn(async () => ({ ok: true })),
+  adsTriage: vi.fn(),
+  adsFile: vi.fn(),
 }));
 vi.mock('../../api.ts', () => ({ api, ApiFailure: class extends Error {} }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
@@ -137,6 +139,7 @@ beforeEach(() => {
     sameIdentity: true,
     clients: [],
   };
+  store.updatePrefs.mockClear();
   api.adsAccounts.mockImplementation(async () => [
     { key, name: 'Acme Heating', currency: 'GBP', waiting: 0, supervised: true },
   ]);
@@ -192,12 +195,22 @@ describe('columns and types', () => {
 });
 
 describe('account data panel', () => {
-  it('is one green line when every required file is ready', async () => {
+  it('when every required file is ready, still shows each group and opens the files on request', async () => {
     await mount();
     const head = screen.getByRole('heading', { name: 'Account data ready' });
-    expect(head.closest('section')?.getAttribute('data-tone')).toBe('ok');
-    expect(screen.getByText(/All 2 required files are ready/)).toBeTruthy();
-    expect(screen.queryByText('a.csv')).toBeNull();
+    const panel = head.closest('section') as HTMLElement;
+    expect(panel.getAttribute('data-tone')).toBe('ok');
+    expect(within(panel).getByText(/All 2 required files are in/)).toBeTruthy();
+    expect(within(panel).getByText(/Every task has what it needs\./)).toBeTruthy();
+    expect(within(panel).getAllByText(/\d+ of \d+ ready/).length).toBeGreaterThan(0);
+    expect(within(panel).queryByText('a.csv')).toBeNull();
+    const show = within(panel).getByRole('button', { name: 'Show files' });
+    expect(show.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(show);
+    expect(within(panel).getByText('a.csv')).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: 'Hide files' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
   });
 
   it('is amber with the fetch message when the daily fetch has a problem', async () => {
@@ -261,7 +274,7 @@ describe('account data panel', () => {
       }),
     });
     expect(screen.getByText(/Fetched today, 05:00/)).toBeTruthy();
-    expect(screen.getByText(/fresh through [A-Z][a-z]{2} 18 Nov/)).toBeTruthy();
+    expect(screen.getByText(/fresh to [A-Z][a-z]{2} 18 Nov/)).toBeTruthy();
   });
 
   it('clears a pending jump when the board fails to load, so it cannot fire on a later visit', async () => {
@@ -406,12 +419,22 @@ describe('running a task', () => {
   });
 
   it('a task with no run says "Never run here" in the run line, and keeps its (empty) status region', async () => {
-    await mount();
+    await mount({ standup: { ...makeBoard().standup, verdict: null } });
     const run = await runBtn('Daily standup');
     const li = run.closest('li') as HTMLElement;
     expect(within(li).queryByText(/^Last run/)).toBeNull();
     expect(within(li).getByText('Never run here').closest('.am-run')).toBeTruthy();
     expect(within(li).getByRole('status').textContent).toBe('');
+  });
+
+  it('a standup verdict on file with no run record never says "Never run here", and counts for due', async () => {
+    const today = new Date();
+    const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await mount({ standup: { ...makeBoard().standup, verdict: { ...VERDICT, date: ymd } } });
+    const li = (await runBtn('Daily standup')).closest('li') as HTMLElement;
+    expect(within(li).queryByText('Never run here')).toBeNull();
+    // Today's verdict: not due.
+    expect(within(li).queryByText(/^Due/)).toBeNull();
   });
 
   it("shows a teammate's run from the brain with their first name, mine without a name", async () => {
@@ -452,7 +475,7 @@ describe('the due count for the menu', () => {
   it('is cleared on an account change, then set once the board arrives, counting the standup', async () => {
     await mount();
     expect(store.setAdsDue).toHaveBeenCalledWith(null);
-    // The daily card and the set-up standup have never run: both are due.
+    // The daily card has never run, and the standup's newest verdict is from 2026-11-18: both are due.
     await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
   });
 
@@ -470,5 +493,152 @@ describe('the due count for the menu', () => {
       standup: { ...makeBoard().standup, lastRun: { at: new Date().toISOString(), by: 'x', byName: 'X' } },
     });
     await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(1));
+  });
+});
+
+describe("Release 2: all accounts' standups", () => {
+  const withFeature = () => {
+    store.ads = { ...(store.ads as object), features: ['triage-all-v1'] };
+  };
+  const rows = () => [
+    {
+      key: 'other',
+      name: 'Other Ltd',
+      hasStandup: true,
+      verdict: { ...VERDICT, headline: 'Spend is up', flagged: 3, anomalies: 1 },
+      stale: false,
+    },
+    {
+      key: 'old',
+      name: 'Old Co',
+      hasStandup: true,
+      verdict: { ...VERDICT, date: '2026-11-10', headline: 'Quiet', flagged: 0, anomalies: 0 },
+      stale: true,
+    },
+    { key: 'new', name: 'New Co', hasStandup: true, verdict: null, stale: false },
+    { key: 'none', name: 'None Co', hasStandup: false, verdict: null, stale: false },
+    { key: key, name: 'Acme Heating', hasStandup: true, verdict: VERDICT, stale: false },
+  ];
+  const button = () => screen.getByRole('button', { name: "All accounts' standups…" });
+
+  it('has no button without the feature', async () => {
+    await mount();
+    expect(screen.queryByRole('button', { name: "All accounts' standups…" })).toBeNull();
+  });
+
+  it('opens a dialog, reads the list, words every row and marks the current account', async () => {
+    withFeature();
+    api.adsTriage.mockResolvedValue({ rows: rows() });
+    await mount();
+    fireEvent.click(button());
+    const dlg = await screen.findByRole('dialog', { name: "All accounts' standups" });
+    expect(document.activeElement).toBe(within(dlg).getByRole('button', { name: 'Close' }));
+    await within(dlg).findByText('Other Ltd');
+    expect(within(dlg).getByText('Spend is up')).toBeTruthy();
+    expect(within(dlg).getByText('3 flagged').getAttribute('data-tone')).toBe('waiting');
+    expect(within(dlg).getByText('Worst first. Choose an account to open it.')).toBeTruthy();
+    expect(within(dlg).getByText('Old')).toBeTruthy();
+    expect(within(dlg).getByText('Not run yet')).toBeTruthy();
+    expect(within(dlg).getByText('No standup set up')).toBeTruthy();
+    const current = dlg.querySelector('[aria-current="true"]');
+    expect(current?.textContent).toContain('Acme Heating');
+  });
+
+  it('reads again each time it opens', async () => {
+    withFeature();
+    api.adsTriage.mockResolvedValue({ rows: rows() });
+    await mount();
+    fireEvent.click(button());
+    await screen.findByText('Other Ltd');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(button());
+    await screen.findByText('Other Ltd');
+    expect(api.adsTriage).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows Loading… then an error with Try again', async () => {
+    withFeature();
+    api.adsTriage.mockRejectedValueOnce(new Error('nope')).mockResolvedValueOnce({ rows: rows() });
+    await mount();
+    fireEvent.click(button());
+    expect(screen.getByText('Loading…')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await screen.findByText('Other Ltd');
+  });
+
+  it('closes on Esc with focus back on the button, and on an outside click', async () => {
+    withFeature();
+    api.adsTriage.mockResolvedValue({ rows: rows() });
+    await mount();
+    fireEvent.click(button());
+    await screen.findByRole('dialog');
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(button());
+    fireEvent.click(button());
+    await screen.findByRole('dialog');
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('choosing a row switches the shared account, saves it and closes', async () => {
+    withFeature();
+    api.adsTriage.mockResolvedValue({ rows: rows() });
+    await mount();
+    fireEvent.click(button());
+    fireEvent.click(await screen.findByRole('button', { name: /Other Ltd/ }));
+    expect(adStore.get().account).toBe('other');
+    expect(store.updatePrefs).toHaveBeenCalledWith({ adsAccount: 'other' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('Release 2: Open result', () => {
+  const taskOf = (title: string) => screen.getByText(title).closest('li') as HTMLElement;
+  const shared = (by: string, byName: string, result?: string | null) => ({
+    at: at(19, 7, 58),
+    by,
+    byName,
+    ...(result !== undefined ? { result } : {}),
+  });
+  it("opens a teammate's saved result through the file route", async () => {
+    api.adsFile.mockResolvedValue({ id: 'f1', name: 'report.md', view: 'md' });
+    await mount({
+      cards: [
+        card('d-spend', 'daily', 'report', {
+          lastRun: shared('pete-smith', 'Pete Smith', `clients/${key}/reports/spend.md`),
+        }),
+      ],
+    });
+    fireEvent.click(
+      within(taskOf('Title d-spend')).getByRole('button', { name: 'Open result: Title d-spend' }),
+    );
+    await waitFor(() => expect(api.adsFile).toHaveBeenCalledWith(`clients/${key}/reports/spend.md`));
+    await waitFor(() =>
+      expect(shell.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'open-viewer' })),
+    );
+  });
+
+  it('shows no link without a result', async () => {
+    await mount({
+      cards: [card('d-spend', 'daily', 'report', { lastRun: shared('pete-smith', 'Pete Smith', null) })],
+    });
+    expect(
+      within(taskOf('Title d-spend')).queryByRole('button', { name: 'Open result: Title d-spend' }),
+    ).toBeNull();
+  });
+
+  it('keeps the chat link on my own run beside the result', async () => {
+    finishedRun('d-spend', at(19, 7, 58));
+    await mount({
+      cards: [
+        card('d-spend', 'daily', 'report', {
+          lastRun: shared('sam', 'Sam', `clients/${key}/reports/spend.md`),
+        }),
+      ],
+    });
+    const li = taskOf('Title d-spend');
+    expect(within(li).getByRole('button', { name: 'Open result: Title d-spend' })).toBeTruthy();
+    expect(within(li).getByRole('button', { name: /open the chat/ })).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 {
-  "_source": "Copied verbatim from the brain Workbench (plan 2026-11-16-workbench-ad-manager, decision 9). Cards, base, standupPrompt, setupPrompts and actionLabels: tools/members/command-centre/public/ads-command-board.html (TYPES, COLS, BASE, TASKS, CONTRACT_PATH, P_DISCOVER, P_SHEET, P_PROXY, STANDUP_PROMPT, ACTION_LABELS). revisePrompt: tools/members/command-centre/server.cjs (POST /api/approvals/decide), with its ${...} parts written as {{id}}, {{client}}, {{name}} and {{note}} (the note with double quotes turned into single ones). Each card prompt is BASE plus its own text, as the board builds it. {{account}} is the account name and {{key}} the account key. Never edit by hand: copy again from the source and update SOURCES.md.",
+  "_source": "Copied verbatim from the brain Workbench (plan 2026-11-16-workbench-ad-manager, decision 9). Cards, base, standupPrompt, setupPrompts and actionLabels: tools/members/command-centre/public/ads-command-board.html (TYPES, COLS, BASE, TASKS, CONTRACT_PATH, P_DISCOVER, P_SHEET, P_PROXY, STANDUP_PROMPT, ACTION_LABELS). revisePrompt: tools/members/command-centre/server.cjs (POST /api/approvals/decide), with its ${...} parts written as {{id}}, {{client}}, {{name}} and {{note}} (the note with double quotes turned into single ones). draftChangePrompt: the same file (POST /api/approvals/decided, the draftChange prompt), written the same way. Each card prompt is BASE plus its own text, as the board builds it. {{account}} is the account name and {{key}} the account key. Never edit by hand: copy again from the source and update SOURCES.md.",
   "types": {
     "report": {
       "label": "Report",
@@ -192,5 +192,6 @@
     "REVIEW_CONVERSION_TRACKING": "Check tracking",
     "OTHER": "Other"
   },
-  "revisePrompt": "Revise ads-manager proposal {{id}} for client {{client}}. {{name}} reviewed it on the Workbench and asked for this change:\n\n\"{{note}}\"\n\nFollow the ads-manager skill, section \"Revising a proposal after Request changes\". Never approve, apply or post anything: the revised proposal goes back to {{name}} on the Workbench Ads tab."
+  "revisePrompt": "Revise ads-manager proposal {{id}} for client {{client}}. {{name}} reviewed it on the Workbench and asked for this change:\n\n\"{{note}}\"\n\nFollow the ads-manager skill, section \"Revising a proposal after Request changes\". Never approve, apply or post anything: the revised proposal goes back to {{name}} on the Workbench Ads tab.",
+  "draftChangePrompt": "Draft a change proposal from an ads-manager decision. Decision proposal {{id}} for client {{client}}. {{name}} recorded this decision on the Workbench:\n\n\"{{note}}\"\n\nFollow the ads-manager skill, section \"Turning a decision into a change proposal\". Never approve, apply or post anything: the new change proposal goes to {{name}} on the Workbench Ads tab as proposed."
 }

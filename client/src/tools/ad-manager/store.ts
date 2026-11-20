@@ -5,6 +5,7 @@ import type {
   AdsBoard,
   AdsChangeReply,
   AdsSummary,
+  AdsTotalsDays,
   ClientApprovals,
   ProposalFull,
   ProposalSummary,
@@ -57,6 +58,11 @@ export interface AdState {
    * `openTool`, read once by the target sheet after it has drawn (it focuses that heading), then cleared.
    */
   jump?: AdsJump | null;
+  /**
+   * The totals strip's chosen range in days (Ads Account Summary, plan 2026-11-19-ads-release-2, decision 2). Starts
+   * at 30, the sheet sets it back to 30 when it opens (a new visit), and it is kept when the account changes. Set with `adStore.set({ totalsDays })`.
+   */
+  totalsDays: AdsTotalsDays;
 }
 
 const initial = (): AdState => ({
@@ -77,6 +83,7 @@ const initial = (): AdState => ({
   last: null,
   refresh: 0,
   jump: null,
+  totalsDays: 30,
 });
 
 let state = initial();

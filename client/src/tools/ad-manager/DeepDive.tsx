@@ -99,7 +99,16 @@ function DeepCard({
 }
 
 /** "Ads account deep dive": up to six sortable tables, in the order and widths the person left them. */
-export function DeepDive({ board, currency }: { board: AdsBoard; currency: string }) {
+export function DeepDive({
+  board,
+  currency,
+  note = null,
+}: {
+  board: AdsBoard;
+  currency: string;
+  /** Why a table is missing (Summary: Top products on an account without Shopping), under the heading. */
+  note?: string | null;
+}) {
   const tables = readTables(board);
   const [layout, setLayout] = useState<TableLayout>(() => readLayout());
   const [announce, setAnnounce] = useState('');
@@ -265,6 +274,7 @@ export function DeepDive({ board, currency }: { board: AdsBoard; currency: strin
           <span className="am-dim">
             {tables.length} tables, press a column to sort, drag the grip to move
           </span>
+          {note ? <p className="card-note sm-missing">{note}</p> : null}
         </div>
         {isDefault ? null : (
           <button

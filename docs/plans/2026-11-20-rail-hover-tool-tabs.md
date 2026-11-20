@@ -121,4 +121,19 @@ No saved setting is added or changes meaning. `ToolSlot.tabLabel` is optional. O
 
 ## Review outcomes
 
-(filled in after review)
+- Overseer pre-review (fable): chose tabs over the shrinking strip; added the tooltip race fix, the Tab-only focus
+  rule, z-index 39 under the veil, the gutter hover zone, the toggle not jumping, `tabLabel`, shell-rendered tabs.
+  All folded into decisions 1 and 2 before building.
+- Correctness review (opus): 2 confirmed. (1) A modal opening called `escape()`, which dismissed the rail until the
+  pointer left it, so the first hover after the palette, viewer or to-do panel did nothing: fixed with
+  `collapse()` (no dismissal), tests in `rail-hover.test.ts` and `Rail.test.tsx` (the latter fails without the fix).
+  (2) The 2d and 2e tests were missing: added `ToolTabs.app.test.tsx` (title and hidden name; account kept) and a
+  store test for the run chat drawer surviving a tab press.
+- UI and accessibility review (sonnet): 1 confirmed. After Tab then Esc, focus could sit on the invisible names
+  toggle: it now shows over the mark while it has keyboard focus. Nit kept: the tabs row has no overflow hint;
+  three Ads tabs need about 400px, so it rarely clips.
+- Lead: put back the help line "Every live change needs your yes" that the builder had cut for length; hid
+  `.railslot` in the Guide's print styles; browser check on a preview (hover over the Chats drawer and a tool page,
+  choosing closes it, tabs switch in one click keeping the client).
+- Known: on a touch laptop that reports `hover: hover`, a tap can't reveal the names toggle at icons only; `[` and
+  Tab still reach it.

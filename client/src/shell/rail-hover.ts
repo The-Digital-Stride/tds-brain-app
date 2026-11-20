@@ -27,6 +27,8 @@ export interface RailHover {
   focusOut(): void;
   escape(): void;
   choose(): void;
+  /** Shuts it without dismissing (names pinned, or something modal opened): the next rest still opens it. */
+  collapse(): void;
   dispose(): void;
 }
 
@@ -95,6 +97,11 @@ export function createRailHover({ onChange }: RailHoverOptions): RailHover {
     },
     escape: shut,
     choose: shut,
+    collapse() {
+      clearOpen();
+      clearClose();
+      set(false, null);
+    },
     dispose() {
       clearOpen();
       clearClose();

@@ -173,6 +173,20 @@ describe('Rail hover expand', () => {
     vi.useRealTimers();
   });
 
+  it('still opens on the first rest after a pop-up came and went with the pointer elsewhere', () => {
+    vi.useFakeTimers();
+    setStore([]);
+    const { container, rerender } = render(<Rail />);
+    desk.shell = { drawer: null, singleKeys: true, paletteOpen: true };
+    rerender(<Rail />);
+    desk.shell = { drawer: null, singleKeys: true };
+    rerender(<Rail />);
+    fireEvent.pointerEnter(slot(container), mouse);
+    rest(200);
+    expect(nav(container).getAttribute('data-expanded')).toBe('true');
+    vi.useRealTimers();
+  });
+
   it('opens when Tab moves focus in, but not for a click or a focus handed back after Escape', () => {
     setStore([]);
     const { container } = render(<Rail />);

@@ -119,6 +119,13 @@
     opacity: 0;
     pointer-events: none;
   }
+  /* Focus never sits on something unseen (Esc after Tab shuts the rail with focus here): show it over the mark. */
+  .rail[data-wide="false"] .rail-toggle:focus-visible {
+    opacity: 1;
+  }
+  .rail[data-wide="false"] .rail-brand:has(.rail-toggle:focus-visible) .rail-mark {
+    opacity: 0;
+  }
 }
 .rail-item {
   position: relative;

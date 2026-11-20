@@ -91,6 +91,24 @@ describe('rail hover expand', () => {
     expect(hover.isExpanded()).toBe(false);
   });
 
+  it('collapse shuts it without dismissing, so the next rest still opens it (a pop-up came and went)', () => {
+    const { hover } = make();
+    hover.collapse();
+    hover.pointerEnter('mouse');
+    vi.advanceTimersByTime(HOVER_OPEN_MS);
+    expect(hover.isExpanded()).toBe(true);
+    hover.collapse();
+    expect(hover.isExpanded()).toBe(false);
+  });
+
+  it('collapse cancels a pending open', () => {
+    const { hover } = make();
+    hover.pointerEnter('mouse');
+    hover.collapse();
+    vi.advanceTimersByTime(HOVER_OPEN_MS);
+    expect(hover.isExpanded()).toBe(false);
+  });
+
   it('opens for a mouse or a pen, never for touch', () => {
     for (const type of ['mouse', 'pen']) {
       const { hover } = make();

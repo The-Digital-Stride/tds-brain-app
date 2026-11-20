@@ -148,9 +148,9 @@ export function Rail({ inert = false }: { inert?: boolean }) {
       hover.current = null;
     };
   }, []);
-  // Names pinned, or something modal opened: close it at once, and not again until the pointer returns.
+  // Names pinned, or something modal opened: close it at once. Not a dismissal: the pointer may never have been here.
   useEffect(() => {
-    if (wide || blocked) hover.current?.escape();
+    if (wide || blocked) hover.current?.collapse();
   }, [wide, blocked]);
   const expanded = hoverOpen && can.current;
   const showsNames = wide || expanded;

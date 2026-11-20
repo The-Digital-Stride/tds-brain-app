@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.52.0 — 2026-11-20
+
+- **feat**: names instead of usernames, the due count from start-up, Previous and Next in the proposal panel
+
 ## v0.51.0 — 2026-11-20
 
 - **feat**: Release 2 - all accounts' standups, 7/30/90-day totals, earlier months, result links, record and draft

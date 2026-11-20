@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.53.0 — 2026-11-20
+
+- **feat**: rail slides out on hover; tabs for the Ads tools
+- **fix**: rail hover opens after a pop-up closes; focused toggle is visible
+- **fix**: pinning names from the hovered rail no longer dips its width
+
 ## v0.52.0 — 2026-11-20
 
 - **feat**: names instead of usernames, the due count from start-up, Previous and Next in the proposal panel

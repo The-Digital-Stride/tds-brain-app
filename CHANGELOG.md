@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.53.1 — 2026-11-20
+
+- **fix**: ticks and saves in the to-do panel no longer fail with "That change wasn't understood"
+
 ## v0.53.0 — 2026-11-20
 
 - **feat**: rail slides out on hover; tabs for the Ads tools

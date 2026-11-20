@@ -369,6 +369,10 @@ describe('Palette', () => {
     fireEvent.change(input(), { target: { value: 'sett' } });
     expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toEqual([
       'Settings',
+      'Settings: General',
+      'Settings: Claude',
+      'Settings: Health',
+      'Settings: About',
       'Settings',
       'Letting Cortex change to-dos',
       'Welcome to TDS Cortex',
@@ -390,7 +394,7 @@ describe('Palette', () => {
     await openPalette();
     fireEvent.change(input(), { target: { value: 'settings' } });
     fireEvent.keyDown(input(), { key: 'Enter' });
-    await screen.findAllByRole('heading', { name: 'Settings' });
+    await screen.findAllByRole('heading', { name: /^Settings/ });
   });
 
   it('closes on Esc and a click on the veil, and focus returns to where it was', async () => {
@@ -475,7 +479,7 @@ describe('global search', () => {
     await renderHome();
     await openPalette();
     expect(groupTitles()).toEqual(['Go to', 'To-dos', 'Open chats', 'Skills']);
-    expect(labelsOf().slice(0, 9)).toEqual([
+    expect(labelsOf().slice(0, 13)).toEqual([
       'Home',
       'To-dos',
       'Chats',
@@ -483,6 +487,10 @@ describe('global search', () => {
       'Help',
       'Cortex Guide',
       'Settings',
+      'Settings: General',
+      'Settings: Claude',
+      'Settings: Health',
+      'Settings: About',
       'Images',
       'Documents',
     ]);
@@ -829,7 +837,7 @@ describe('global search', () => {
       fireEvent.change(input(), { target: { value: 'sett' } });
       fireEvent.keyDown(input(), { key: 'ArrowDown' });
       await pause(450);
-      expect(selectedLabel()).toBe('Settings');
+      expect(selectedLabel()).toBe('Settings: General');
       expect(tip()).toBeNull();
     });
 
@@ -861,7 +869,7 @@ describe('global search', () => {
           within(screen.getByRole('dialog'))
             .getAllByRole('status')
             .map((n) => n.textContent),
-        ).toContain('6 results'),
+        ).toContain('10 results'),
       { timeout: 3000 },
     );
   });
@@ -874,6 +882,10 @@ describe('global search', () => {
     await waitFor(() => expect(screen.queryByText('Searching…')).toBeNull());
     expect(labelsOf()).toEqual([
       'Settings',
+      'Settings: General',
+      'Settings: Claude',
+      'Settings: Health',
+      'Settings: About',
       'Settings',
       'Welcome to TDS Cortex',
       'Picking the client',

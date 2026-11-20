@@ -8,12 +8,12 @@ benefit: One glance tells you if Cortex is working, before you lose time.
 roles: all
 related: [settings, fixing-problems, choosing-your-brain-folder, updates]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
 
-The top of Settings has a heading, **How TDS Cortex is running**. Under it is one sentence, then a line for each thing Cortex needs.
+The **Health** tab in Settings has a heading, **How TDS Cortex is running**. Under it is one sentence, then a line for each thing Cortex needs.
 
 ## Why it helps
 
@@ -23,7 +23,7 @@ The top of Settings has a heading, **How TDS Cortex is running**. Under it is on
 
 ## How to use it
 
-1. Open Settings from the rail.
+1. Open Settings from the rail, then the **Health** tab. If something is wrong, a red dot shows on this tab, whichever tab you are on.
 2. Read the first sentence. It says if everything is connected and working.
 3. If something is wrong, read the line marked **Needs attention**.
 4. For the fix, see the Fixing problems page.
@@ -42,4 +42,4 @@ Each line means this:
 
 ## Try this
 
-Open Settings and check **Brain sync**. It should show a time from the last few minutes.
+Open the **Health** tab and check **Brain sync**. It should show a time from the last few minutes.

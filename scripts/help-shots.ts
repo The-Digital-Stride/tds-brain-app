@@ -249,9 +249,18 @@ async function openThisChat(page: Page): Promise<void> {
   await page.locator('.inspector').waitFor();
 }
 
+/** Opens Settings and presses one of its tabs (the sheet remembers the last tab, so always press it). */
+async function openSettingsTab(page: Page, tab: string | RegExp): Promise<void> {
+  await page.locator('button.rail-item[aria-label="Settings"]').click();
+  await page
+    .getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: tab })
+    .click();
+}
+
 /** The Settings switch that lets the app change to-dos (the demo Brain has a stand-in to-do skill). */
 async function enableTodoChanges(page: Page): Promise<void> {
-  await page.locator('button.rail-item[aria-label="Settings"]').click();
+  await openSettingsTab(page, 'General');
   await page.locator('#set-direct').click();
   await page.locator('#set-direct[aria-checked="true"]').waitFor();
   await goHome(page);
@@ -301,7 +310,7 @@ const SCENES: Record<string, Scene> = {
 
   async 'todos-drawer'(page) {
     // The change switch lives in Settings; the demo Brain has a stand-in to-do skill so the button shows.
-    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await openSettingsTab(page, 'General');
     await page.locator('#set-direct').click();
     await page.locator('#set-direct[aria-checked="true"]').waitFor();
     await goHome(page);
@@ -429,7 +438,7 @@ const SCENES: Record<string, Scene> = {
   },
 
   async 'settings-todos-switch'(page) {
-    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await openSettingsTab(page, 'General');
     await page.locator('#set-direct').waitFor();
   },
 
@@ -456,12 +465,12 @@ const SCENES: Record<string, Scene> = {
   },
 
   async 'settings-prefs'(page) {
-    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await openSettingsTab(page, 'General');
     await page.locator('section[aria-labelledby="prefs-h"]').waitFor();
   },
 
   async 'tokens-saved'(page) {
-    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await openSettingsTab(page, 'Claude');
     await page.locator('section[aria-labelledby="saved-h"] dl.kv').waitFor();
     await page.locator('section[aria-labelledby="saved-h"]').scrollIntoViewIfNeeded();
     // Today and the last 7 and 30 days follow the real date: only the total since the first day stays in.
@@ -481,7 +490,7 @@ const SCENES: Record<string, Scene> = {
   },
 
   async 'skill-levels'(page) {
-    await page.locator('button.rail-item[aria-label="Settings"]').click();
+    await openSettingsTab(page, 'Skill levels');
     await page.locator('section[aria-labelledby="levels-h"] .levels-row').first().waitFor();
     await page.locator('section[aria-labelledby="levels-h"]').scrollIntoViewIfNeeded();
   },

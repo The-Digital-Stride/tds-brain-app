@@ -8,12 +8,12 @@ benefit: You can manage the team's to-dos without leaving Cortex.
 roles: all
 related: [todos, adding-todos, settings, passing-todos-on]
 since: 0.38.0
-reviewed: 2026-11-16
+reviewed: 2026-11-20
 ---
 
 ## What it does
 
-**Let the app change to-dos** is a switch in Settings. When it is on, you can mark to-dos as done, add, edit, pass them on and delete them in Cortex.
+**Let the app change to-dos** is a switch in Settings, on the **General** tab. When it is on, you can mark to-dos as done, add, edit, pass them on and delete them in Cortex.
 
 ## Why it helps
 
@@ -23,7 +23,7 @@ reviewed: 2026-11-16
 
 ## How to use it
 
-1. Open Settings from the rail.
+1. Open Settings from the rail. It opens on the **General** tab.
 2. Find **Preferences**.
 3. Switch on **Let the app change to-dos**.
 4. Open the To-dos drawer. The add button is now there, and so is **Edit** in each to-do's panel. If they aren't, your role may not be allowed to use them yet. Ask whoever looks after Cortex.

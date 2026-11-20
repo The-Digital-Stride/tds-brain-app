@@ -144,6 +144,8 @@ export interface HelpContext {
   drawer: DrawerName | null;
   /** The active chat is waiting on an approval or a question → `approvals-and-questions`. */
   waiting: boolean;
+  /** The Settings tab on show (a `SettingsTab` id); Help opens that tab's page. Missing: the Settings page. */
+  settingsTab?: string;
 }
 
 /*

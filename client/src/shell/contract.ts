@@ -15,6 +15,7 @@ import type {
   TodoItem,
   TodoList,
 } from '../../../shared/contract.ts';
+import type { SettingsTab } from './settings-tabs.ts';
 
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
 
@@ -513,6 +514,8 @@ export interface ChatsLists {
 /** What a hit may do when chosen. The palette closes itself after `run` unless the hit says otherwise. */
 export interface SearchActions {
   openView: (view: 'chat' | 'settings' | 'profile' | 'guide' | `app:${string}`) => void;
+  /** Opens Settings on a tab. Optional: without it a Settings tab entry opens Settings on the remembered tab. */
+  openSettings?: (tab: SettingsTab) => void;
   /** Opens a section's tool on the sheet (store `openTool`), closing the open drawer. `arg` is handed to the tool. */
   openTool: (sectionId: string, toolId: string, arg?: string) => void;
   /** Opens the Help drawer on a page (a help page id). */
@@ -566,6 +569,8 @@ export interface SearchContext {
   clients: ClientInfo[];
   /** Help is switched on for this person's role: "Go to" lists Help. Missing means no. */
   helpVisible?: boolean;
+  /** The team skill levels are on for this person: "Go to" lists the Skill levels tab. Missing means no. */
+  hasSkillLevels?: boolean;
   /** The ads summary (store `ads`), for tools that search it; null or missing until it has loaded. */
   ads?: AdsSummary | null;
 }

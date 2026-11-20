@@ -8,7 +8,7 @@ benefit: Get an answer where you are, then go straight back to work.
 roles: all
 related: [cortex-guide, welcome, updates, search-and-jump, fixing-problems]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -41,7 +41,7 @@ The Help drawer opens on the help page for the screen you're on. It also lets yo
 - Some screens have a small "?" button beside a heading. It opens Help on the right page.
 - Closing Help brings back the drawer it replaced.
 - Help is part of the app, so it doesn't need the Brain to load.
-- The H and ? keys need **Single-key shortcuts** switched on in Settings.
+- The H and ? keys need **Single-key shortcuts** switched on in Settings (**General** tab).
 
 ## Try this
 

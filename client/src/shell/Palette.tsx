@@ -43,6 +43,8 @@ function PaletteDialog() {
     sessions,
     newChat,
     openView,
+    openSettings,
+    skillLevels,
     openChat,
     openPast,
     startSkill,
@@ -79,9 +81,10 @@ function PaletteDialog() {
       pins: boot?.prefs.pins ?? [],
       clients: boot?.clients ?? [],
       helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
+      hasSkillLevels: Boolean(skillLevels),
       ads,
     }),
-    [boot, todos, sessions, ads],
+    [boot, todos, sessions, ads, skillLevels],
   );
   const slots = useAsyncSearch(sources, q);
   const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
@@ -148,6 +151,7 @@ function PaletteDialog() {
   // What a chosen hit may do. Most of it moves focus itself, so the palette must not hand it back.
   const actions: SearchActions = {
     openView: (view) => openView(view),
+    openSettings: (tab) => openSettings(tab),
     openChat: (id) => {
       skipRestore.current = true;
       openChat(id);

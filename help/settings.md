@@ -8,37 +8,37 @@ benefit: You set Cortex up once, and it works the way you like.
 roles: all
 related: [change-todos-setting, keyboard-shortcuts, levels, skill-levels, tokens-saved, health, version-history]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
 
-Settings is one page with your choices and a check on how Cortex is running. It opens from the rail.
+Settings has tabs under the top bar: **General**, **Claude**, **Skill levels**, **Health** and **About**. Each tab is one short page. Settings opens on the tab you used last, or on **General** after Cortex restarts.
 
 ## Why it helps
 
 - You can turn features on or off without asking anyone.
-- A quick look tells you if something is wrong.
-- Owners and scouts can see what changed in each version.
+- You don't scroll past things you didn't come for.
+- A red dot on **Health** tells you something is wrong, whichever tab you are on.
 
 ## How to use it
 
-1. Open Settings from the rail.
-2. At the top, read **How TDS Cortex is running**. It says if everything works.
-3. Under **Preferences**, switch **Let the app change to-dos** and **Single-key shortcuts** on or off.
-4. Under **Claude in chats**, choose how Claude picks a level for each chat.
-5. Under **Skill levels**, see the level the team set for each skill.
-6. Under **Tokens saved**, see how much shorter chats became.
-7. Under **About TDS Cortex on this computer**, see who you are, the version and the Dock app.
+1. Open Settings from the rail, then press a tab.
+2. **General** has **Preferences**: switch **Let the app change to-dos** and **Single-key shortcuts** on or off. It also has **Working out the client**.
+3. **Claude** has **Claude in chats**, where you choose how Claude picks a level for each chat. Below it is **Tokens saved**.
+4. **Skill levels** shows the level the team set for each skill. This tab shows only when your Brain has skill levels.
+5. **Health** says how Cortex is running, with a line for each thing it needs.
+6. **About** shows who you are, your approvals, the Dock app, the Cortex Guide and the version. Owners and scouts also see **What's changed**.
 
 ![The Preferences part of Settings.](images/settings-prefs.webp)
 
 ## Good to know
 
-- Each part has its own help page. See Related below.
+- Press Help on a tab and it opens the closest help page. **Claude** opens Levels, and **Health** opens How Cortex is running. **Skill levels** opens its own page. **General** and **About** open this page. See Related below.
+- You can also press **⌘K** and type "Settings: Health", for example, to go straight to a tab.
 - Your choices are kept on this Mac, not shared with the team.
 - **What's changed** shows only for owners and scouts.
 
 ## Try this
 
-Open Settings and read the line under **How TDS Cortex is running**. It should say everything is working.
+Open Settings, press **Health** and read the first line. It should say everything is working.

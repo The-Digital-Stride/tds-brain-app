@@ -8,7 +8,7 @@ benefit: Shorter chats run faster and cost less, and you can see the result.
 roles: all
 related: [settings, how-full-a-chat-is, levels]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -23,8 +23,8 @@ Tokens are the small pieces of text Claude reads and writes. When a chat gets lo
 
 ## How to use it
 
-1. Open Settings from the rail.
-2. Scroll to **Tokens saved**.
+1. Open Settings from the rail, then the **Claude** tab.
+2. Scroll down to **Tokens saved**.
 3. Read **Saved by summarising long chats**. It gives the total for **Today**, **Last 7 days**, **Last 30 days** and the whole time since counting began. The picture shows that last line.
 
 ![Tokens saved in Settings.](images/tokens-saved.webp)

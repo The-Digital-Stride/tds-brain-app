@@ -1,6 +1,8 @@
 import { useStore, useToolSnapshot } from '../store.tsx';
+import { SheetTabs } from './SheetTabs.tsx';
 import { visibleTools } from './sections.ts';
 import type { SectionSlot, ToolSlot } from './sections-contract.ts';
+import type { SheetTabItem } from './settings-tabs.ts';
 
 /** The tools shown as tabs for `tool`: the visible tools of its group. Fewer than two means no tabs. */
 export function tabGroupFor(tool: ToolSlot, tools: ToolSlot[]): ToolSlot[] {
@@ -19,30 +21,18 @@ export function ToolTabs({ section, tool }: { section: SectionSlot; tool: ToolSl
   const snap = useToolSnapshot();
   const tabs = tabGroupFor(tool, visibleTools(section, snap));
   if (tabs.length < 2) return null;
+  const items: SheetTabItem[] = tabs.map((t) => {
+    const label = t.tabLabel ?? t.title;
+    const count = t.badge?.(snap) ?? 0;
+    return { id: t.id, label, count, note: count > 0 ? null : (t.rowNote?.(snap) ?? null) };
+  });
   return (
-    <nav className="tool-tabs seg" aria-label={`${tool.group} tools`}>
-      {tabs.map((t) => {
-        const label = t.tabLabel ?? t.title;
-        const count = t.badge?.(snap) ?? 0;
-        const note = count > 0 ? null : (t.rowNote?.(snap) ?? null);
-        const spoken = count > 0 ? `${label}, ${count} waiting` : note ? `${label}, ${note}` : undefined;
-        const current = t.id === tool.id;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            aria-current={current ? 'page' : undefined}
-            aria-label={spoken}
-            onClick={() => {
-              if (!current) openTool(section.id, t.id);
-            }}
-          >
-            {label}
-            {count > 0 ? <span className="count">{count}</span> : null}
-            {note ? <span className="tool-tab-note">{note}</span> : null}
-          </button>
-        );
-      })}
-    </nav>
+    <SheetTabs
+      className="tool-tabs seg"
+      label={`${tool.group} tools`}
+      items={items}
+      current={tool.id}
+      onChoose={(id) => openTool(section.id, id)}
+    />
   );
 }

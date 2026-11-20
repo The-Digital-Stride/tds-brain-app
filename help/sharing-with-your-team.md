@@ -8,7 +8,7 @@ benefit: Hand-overs are clear, and nobody has to ask for access.
 roles: all
 related: [todos, passing-todos-on, adding-todos, brain-and-cortex]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-20
 ---
 
 ## What it does
@@ -36,7 +36,7 @@ To file a note, ask Claude in a chat, such as "File these call notes under North
 
 - A sync is when your computer's copy of the Brain catches up with the shared one. It happens on its own.
 - If the stamp turns red, your Brain hasn't synced for over five minutes. Check you're online.
-- To change to-dos here, switch on **Let the app change to-dos** in Settings first.
+- To change to-dos here, switch on **Let the app change to-dos** in Settings (**General** tab) first.
 - Personal to-dos stay private. Passing one on makes it a TDS to-do, so your teammate can see it.
 - Stars and pins are not shared. They stay on your computer.
 

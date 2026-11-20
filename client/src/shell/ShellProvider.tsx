@@ -38,6 +38,7 @@ import {
   type ShellState,
 } from './contract.ts';
 import { sectionKeys, visibleToolFor } from './sections.ts';
+import { settingsTabOrDefault } from './settings-tabs.ts';
 
 type DockSide = 'left' | 'right';
 
@@ -114,7 +115,7 @@ function step(state: ShellState, s: Step): ShellState {
 
 /** Where the person is, in the words Help uses: Home is the chat view with no active chat. */
 function helpContext(
-  { view, activeChat, chats }: Pick<Store, 'view' | 'activeChat' | 'chats'>,
+  { view, activeChat, chats, settingsTab }: Pick<Store, 'view' | 'activeChat' | 'chats' | 'settingsTab'>,
   drawer: DrawerName | null,
 ): HelpContext {
   const live = activeChat.kind === 'live';
@@ -123,6 +124,7 @@ function helpContext(
     view: view === 'chat' && !live ? 'home' : (view as HelpContext['view']),
     drawer,
     waiting: pendingCard(chat ?? initialChatState) !== null,
+    ...(view === 'settings' && settingsTab ? { settingsTab } : {}),
   };
 }
 
@@ -152,7 +154,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat, chats, boot, chatDrawer, hideChatDrawer } = useStore();
+  const { view, activeChat, chats, boot, chatDrawer, hideChatDrawer, settingsTab, skillLevels } = useStore();
   const snap = useToolSnapshot();
   // Read by the key listener and dispatch, which are made once.
   // A store without the drawer (an older test double) reads as closed.
@@ -166,8 +168,14 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   // The sections visible now and their single keys (`W`), read by the key listener.
   const sectionKeysRef = useRef<Record<string, string>>({});
   sectionKeysRef.current = sectionKeys(snap);
-  const whereRef = useRef({ view, activeChat, chats });
-  whereRef.current = { view, activeChat, chats };
+  const whereRef = useRef({ view, activeChat, chats, settingsTab });
+  // The tab on show: a remembered Skill levels tab that is hidden shows General, and Help follows what shows.
+  whereRef.current = {
+    view,
+    activeChat,
+    chats,
+    settingsTab: settingsTabOrDefault(settingsTab, { hasSkillLevels: Boolean(skillLevels) }),
+  };
   const liveOnSheet =
     (view === 'chat' && activeChat?.kind === 'live') ||
     APPS.some((a) => view === `app:${a.id}` && a.Panel !== undefined) ||

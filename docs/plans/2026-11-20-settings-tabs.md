@@ -138,3 +138,26 @@ Sources: UX/UI overseer (fable) and design expert (opus) reviews, 2026-11-20.
   clears (4). Should, folded in: tab id `skill-levels`; `HelpContext.settingsTab` and `SearchContext.hasSkillLevels`;
   `.seg` stretch trap (7); spoken name from `summary.text`; extra app tests; Builder B's selector and a shot-scene
   gate. Nice, folded in: scroll the current tab into view; confirm the version at merge.
+- UI and accessibility review (sonnet): no findings.
+- Copy review (sonnet): 2 confirmed, fixed. `help/settings.md` said each tab has its own help page (General and About
+  share `settings`; Claude opens `levels`): now names the page each opens. The 0.54.0 note now says "each tab you can
+  see" and "until the app restarts"; the glossary says Skill levels shows only with levels.
+- Correctness review (opus): 1 confirmed, fixed (d33c5bf). On a narrow window the To-dos drawer floats and `<main>` is
+  inert, so the Settings link's jump to `#set-direct` was lost. The link closes a floating drawer first, and the focus
+  effect waits up to 30 frames while its target is inside `[inert]`. App test fails without it. A fresh review of
+  the fix: no findings, and it raised a timing question for an open to-do panel.
+- Lead, browser check of that question: already on Settings, the link left an open to-do panel open (the view
+  didn't change, so `ShellProvider` didn't close it), and once closed, the panel put focus back on its row. Fixed
+  (72dc878): the link closes the panel (asking first if it has unsaved changes) and skips that one focus return.
+  Drawer test fails without the skip.
+- Overseer sign-off (fable): signed off, no blockers, on condition the fix review came back clean. Should-fixes done:
+  narrow sheet checked (476px sheet: 5 tabs 347px, no clipping, aligned with the headings at 16px), version
+  confirmed (main at 0.53.1, so this `feat` becomes 0.54.0), these outcomes recorded.
+- Known, left: leaving Settings within the half-second inert wait leaves the focus request set, so the switch gets
+  focus on the next visit to General. Clearing it on unmount would break React StrictMode's double mount in
+  development.
+- Gates: `pnpm check` green (224 files, 4415 tests; Shell.test.tsx flaked once, clean on rerun). Help-shot scenes
+  settings-prefs, settings-todos-switch, tokens-saved, skill-levels and todos-drawer ran; pictures refreshed.
+  Browser (demo app, headless Chrome): tab row aligned with the first heading, not stretched; focus stays on the
+  pressed tab; hidden title per tab; each tab's sections as planned; the tab is remembered; ⌘K lists each tab; the
+  Health dot shows on a problem; the To-dos link lands on the switch at 820px, at 560px and with a panel open.

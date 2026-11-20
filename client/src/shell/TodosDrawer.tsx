@@ -899,8 +899,9 @@ export function TodosDrawer() {
               // A floating drawer covers the sheet (and makes it inert): it makes way, as choosing a to-do does.
               if (modes.drawerOverlays) shellDispatch({ type: 'close-drawer' });
               // Changing view closes an open to-do panel (ShellProvider); already on Settings, nothing changes, so
-              // close it here (it asks first when it holds changes), or the switch stays behind it.
-              if (view === 'settings' && shell.todoPanel) {
+              // close it here (it asks first when it holds changes), or the switch stays behind it. Not when the
+              // drawer floats: closing it already closes the panel, and a second question would replace the first.
+              if (view === 'settings' && shell.todoPanel && !modes.drawerOverlays) {
                 // Unsaved changes: it asks first and stays open, so the row keeps its usual focus return.
                 leavingForSettings.current = !shell.todoPanel.dirty;
                 shellDispatch({ type: 'close-todo' });

@@ -150,13 +150,17 @@ Sources: UX/UI overseer (fable) and design expert (opus) reviews, 2026-11-20.
   didn't change, so `ShellProvider` didn't close it), and once closed, the panel put focus back on its row. Fixed
   (72dc878): the link closes the panel (asking first if it has unsaved changes) and skips that one focus return.
   Drawer test fails without the skip.
+- Fresh review of 72dc878 (opus): 1 confirmed, fixed. With the drawer floating and unsaved changes in the panel, the
+  link asked twice and the second question replaced the first, so Discard left the drawer over Settings. Now the link
+  closes only the floating drawer (which closes the panel); test fails without it.
 - Overseer sign-off (fable): signed off, no blockers, on condition the fix review came back clean. Should-fixes done:
   narrow sheet checked (476px sheet: 5 tabs 347px, no clipping, aligned with the headings at 16px), version
   confirmed (main at 0.53.1, so this `feat` becomes 0.54.0), these outcomes recorded.
 - Known, left: leaving Settings within the half-second inert wait leaves the focus request set, so the switch gets
   focus on the next visit to General. Clearing it on unmount would break React StrictMode's double mount in
   development.
-- Gates: `pnpm check` green (224 files, 4415 tests; Shell.test.tsx flaked once, clean on rerun). Help-shot scenes
+- Gates: `pnpm check` green (224 files, 4416 tests). Flaky under load, each clean on rerun and outside this change's
+  logic: Shell.test.tsx, TodoFiles.test.tsx, one Tour.test.tsx focus test. Help-shot scenes
   settings-prefs, settings-todos-switch, tokens-saved, skill-levels and todos-drawer ran; pictures refreshed.
   Browser (demo app, headless Chrome): tab row aligned with the first heading, not stretched; focus stays on the
   pressed tab; hidden title per tab; each tab's sections as planned; the tab is remembered; ⌘K lists each tab; the

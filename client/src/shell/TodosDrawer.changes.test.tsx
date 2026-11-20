@@ -147,6 +147,22 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
   });
 
+  it('with the drawer floating, the link closes only the drawer (which closes the panel), never asking twice', async () => {
+    setStore('switched-off');
+    (store.current as { view: string }).view = 'settings';
+    fakeShell.reset({}, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
+    await waitFor(() => expect(fakeShell.state.todoPanel).not.toBeNull());
+    sent.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    // Other actions (the panel's list order) may arrive while it loads; what matters is one close, no second question.
+    const types = sent.map((a) => a.type);
+    expect(types).toContain('close-drawer');
+    expect(types).not.toContain('close-todo');
+    expect(types).not.toContain('ask-todo');
+  });
+
   it('already on Settings, the link closes an open to-do panel without putting focus back on its row', async () => {
     setStore('switched-off');
     (store.current as { view: string }).view = 'settings';

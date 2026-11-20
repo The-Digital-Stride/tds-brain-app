@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.54.1 — 2026-11-20
+
+- **fix**: to-do panel ticks show at once, brain-file links keep their checklists, and retries keep the title history
+
 ## v0.54.0 — 2026-11-20
 
 - **feat**: tabs for General, Claude, Skill levels, Health and About

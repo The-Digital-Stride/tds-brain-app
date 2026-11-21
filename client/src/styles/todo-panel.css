@@ -280,8 +280,9 @@
   padding: 0;
 }
 
-/* The footer: what can be done on the left, Edit or Save and Cancel on the right. */
-.todo-foot {
+/* The footer: what can be done on the left, Edit or Save and Cancel on the right. Scoped to the panel: the drawer's
+   to-do rows use .todo-foot too (drawers.css), and this file loads later, so a bare rule laid this padding on them. */
+.todo-panel .todo-foot {
   flex: none;
   display: flex;
   flex-wrap: wrap;

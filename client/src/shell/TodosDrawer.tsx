@@ -158,11 +158,14 @@ function TodoRow({
   favourite,
   onStar,
   onProject,
+  showPlace = true,
 }: {
   todo: TodoItem;
   controls: RowControls;
   /** Filters the drawer by a project; absent while a project filter is on, so the project shows as text. */
   onProject?: (key: string) => void;
+  /** False while a project filter is on: every row is in that project, so the select already says it. */
+  showPlace?: boolean;
   /** In "New to you": a dot, and opening it marks it seen. */
   fresh: boolean;
   /** The scope filter is All: a personal row says so. */
@@ -194,7 +197,7 @@ function TodoRow({
   if (due) parts.push({ text: due, late: overdue });
   // A known project is a chip that filters by it (at the end of the line); anything else stays text.
   const chip = onProject ? todoProjectChip(todo, projectList?.projects, boot?.clients ?? []) : null;
-  if (!chip)
+  if (!chip && showPlace)
     for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
@@ -902,6 +905,7 @@ export function TodosDrawer() {
         favourite={favs.includes(t.key)}
         onStar={onStar}
         onProject={project ? undefined : pickProject}
+        showPlace={!project}
       />
     );
   };
@@ -964,7 +968,8 @@ export function TodosDrawer() {
         <div
           className="drawer-tools todo-filters"
           ref={filtersRef}
-          data-stacked={showKind && showClient ? 'true' : undefined}
+          // The kind switch takes a line of its own whenever a select shares the row: three controls don't fit 296px.
+          data-stacked={showKind && (showClient || showProject) ? 'true' : undefined}
         >
           {showKind ? (
             <Seg<TodoFilter['scope']>
@@ -1024,9 +1029,11 @@ export function TodosDrawer() {
               />
             </>
           ) : null}
+          {addToggle}
           {pickedProject ? (
             // The locked select shows the project; this says why, and Clear hands it back to the drawer.
-            <span className="todo-project-chip" id="todo-project-why" style={{ flex: '1 1 100%' }}>
+            // After the +, so the + keeps the end of the select's line and Tab runs select, +, Clear.
+            <span className="todo-project-why" id="todo-project-why">
               Set by Working on (Home) ·{' '}
               <button
                 type="button"
@@ -1041,7 +1048,6 @@ export function TodosDrawer() {
               </button>
             </span>
           ) : null}
-          {addToggle}
         </div>
       ) : null}
       {todos.changes === 'switched-off' ? (

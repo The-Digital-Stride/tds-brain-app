@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   LibraryItem,
@@ -43,7 +43,7 @@ class FakeEventSource {
 }
 
 const { App } = await import('../App.tsx');
-const { clientChoice } = await import('../state/client-choice.ts');
+const { clientChoice, projectChoice } = await import('../state/client-choice.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
   name,
@@ -161,6 +161,7 @@ beforeEach(() => {
   api.libraryItems.mockResolvedValue({ files: [] });
 });
 afterEach(() => {
+  projectChoice.set('');
   clientChoice.set('');
   cleanup();
   vi.unstubAllGlobals();
@@ -241,10 +242,10 @@ describe('Home', () => {
   };
   const select = () => screen.getByRole('combobox', { name: 'Chat for' }) as HTMLInputElement;
 
-  it('has no separate client row; the select sits in the composer foot and starts on auto', async () => {
+  it('has no separate client row; the select sits in the message box and starts on auto', async () => {
     await renderHome();
     expect(document.querySelector('.home-client')).toBeNull();
-    expect(select().closest('.composer-foot')).toBeTruthy();
+    expect(select().closest('.home-composer .composer-scope')).toBeTruthy();
     expect(select().value).toBe('Auto');
     openPicker('Chat for');
     expect(screen.getAllByRole('option').map((o) => o.textContent?.replace(/, chosen$/, ''))).toEqual([
@@ -281,6 +282,46 @@ describe('Home', () => {
     expect(select().value).toBe('Auto');
     pickOption('Chat for', 'Acme Heating');
     expect(clientChoice.get()).toBe('client:northwind');
+  });
+
+  it("Working on sits in the message box, first, and starts Chat for on its project's client", async () => {
+    projectChoice.set('northwind/site');
+    const box = await renderHome();
+    const working = screen.getByRole('combobox', { name: 'Working on' });
+    expect(working.closest('.home-composer .composer-scope')).toBeTruthy();
+    expect(working.compareDocumentPosition(select()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(select().value).toBe('Northwind');
+    expect(select().getAttribute('aria-describedby')).toBe('client-select-why');
+    typeAndSend(box, 'Hello there');
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
+    expect(api.clientGuess).not.toHaveBeenCalled();
+    expect(api.clientPickOutcome).toHaveBeenCalledWith('preset');
+    // Never written back: the app-wide choice is the project's, untouched by the chat.
+    expect(projectChoice.get().project).toBe('northwind/site');
+  });
+
+  it('a hand-picked Chat for beats the project, and is not written back', async () => {
+    projectChoice.set('northwind/site');
+    const box = await renderHome();
+    pickOption('Chat for', 'Acme Heating');
+    expect(select().getAttribute('aria-describedby')).toBeNull();
+    typeAndSend(box, 'Hello there');
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'acme' });
+    expect(clientChoice.get()).toBe('client:northwind');
+  });
+
+  it('a personal project starts Chat for on No client; a client not in the list leaves Auto', async () => {
+    projectChoice.set('personal/diary');
+    await renderHome();
+    expect(select().value).toBe('No client');
+    cleanup();
+    projectChoice.set('');
+    clientChoice.set('');
+    projectChoice.set('gone/site');
+    await renderHome();
+    expect(select().value).toBe('Auto');
   });
 
   it('auto: a sure guess starts the chat with that client', async () => {
@@ -420,7 +461,10 @@ describe('Home', () => {
     api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
     const box = await renderHome();
     expect(screen.getByText('Chat for', { selector: 'label' }).className).not.toContain('visually-hidden');
-    expect(screen.getByText('Enter to send, Shift and Enter for a new line.')).toBeTruthy();
+    // The keys are said to screen readers only: Enter to send is expected, and Send is plain to see.
+    expect(screen.getByText('Enter to send, Shift and Enter for a new line.').className).toBe(
+      'visually-hidden',
+    );
     typeAndSend(box, 'Vague');
     await screen.findByText('Answer the question above, or Cancel to change your message.');
     expect(screen.queryByText('Enter to send, Shift and Enter for a new line.')).toBeNull();
@@ -503,6 +547,30 @@ describe('Home', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.clientPickOutcome).toHaveBeenCalledWith('preset');
     expect(api.clientGuess).not.toHaveBeenCalled();
+  });
+
+  it("a to-do's client beats Working on's, and isn't credited to it", async () => {
+    api.todos.mockResolvedValue({ ...todoList, mine: [todo('t-a.md', 'Acme thing', dayOffset(0), 'acme')] });
+    await renderHome();
+    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Acme thing/ }));
+    await waitFor(() => expect(select().value).toBe('Acme Heating'));
+    act(() => projectChoice.set('northwind/site'));
+    expect(select().value).toBe('Acme Heating');
+    expect(select().getAttribute('aria-describedby')).toBeNull();
+    // A to-do whose client matches the project's: still the to-do's choice, not credited to Working on.
+    act(() => projectChoice.set('acme/site'));
+    expect(select().value).toBe('Acme Heating');
+    expect(select().getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('locks Working on with Chat for while the client question is open', async () => {
+    api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
+    // A client not in the list leaves Chat for on Auto, so the question is asked.
+    projectChoice.set('gone/site');
+    const box = await renderHome();
+    typeAndSend(box, 'Vague');
+    await screen.findByText('Answer the question above, or Cancel to change your message.');
+    expect((screen.getByRole('combobox', { name: 'Working on' }) as HTMLInputElement).disabled).toBe(true);
   });
 
   it('never sends /clear: it just empties the box', async () => {

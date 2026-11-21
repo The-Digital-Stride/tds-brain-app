@@ -36,7 +36,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'client',
-    anchor: '.home-composer .client-select',
+    anchor: '.home-composer #client-select',
     title: 'Who is it for?',
     text: 'Leave this on Auto and it works out the client from your message. Or pick one yourself.',
   },

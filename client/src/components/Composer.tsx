@@ -431,6 +431,9 @@ export function Composer({
           }
         }}
       />
+      {/* What the message is about (Home's Working on and Chat for): a row of its own above the actions, so
+          two labelled pickers never crowd Send (Ian, 2026-11-21). */}
+      {tools ? <div className="composer-scope">{tools}</div> : null}
       <div className="composer-foot">
         <input
           ref={picker}
@@ -457,12 +460,14 @@ export function Composer({
             <Icon name="paperclip" />
           </button>
         )}
-        {tools}
         {disabledReason ? (
           <p className="visually-hidden" id={reasonId}>
             {disabledReason}
           </p>
         ) : (
+          // Shows only when there is something to say: uploads, files that can't be attached, or the caller's hint.
+          // Otherwise the keys are said to screen readers only (Enter to send is what everyone expects, and Send is
+          // plain to see: Ian, 2026-11-21), so the box keeps its description.
           <p className="composer-hint" id={hintId} data-wait={uploading > 0 || errored > 0}>
             {uploading > 0
               ? "Uploading files. Send will work when they're done."
@@ -470,7 +475,9 @@ export function Composer({
                 ? "Remove the file that can't be attached, then send."
                 : errored > 1
                   ? "Remove the files that can't be attached, then send."
-                  : (hint ?? 'Enter to send, Shift and Enter for a new line.')}
+                  : (hint ?? (
+                      <span className="visually-hidden">Enter to send, Shift and Enter for a new line.</span>
+                    ))}
           </p>
         )}
         <p className="visually-hidden" role="status" aria-live="polite">

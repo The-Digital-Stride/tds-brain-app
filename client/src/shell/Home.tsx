@@ -11,7 +11,13 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { projectChoice, todoChatClient, useProjectChoice } from '../state/client-choice.ts';
+import {
+  clientForProject,
+  clientSlugOf,
+  projectChoice,
+  todoChatClient,
+  useProjectChoice,
+} from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
 import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
@@ -47,32 +53,37 @@ const ALL = 'all';
 
 /**
  * The app-wide picker (decision 11), as one control: "Working on [project]", every live project under its
- * client. Choosing a project narrows Home, the To-dos drawer, Images, Documents and search, and sets its client
- * too. It used to start with a Client select, but beside the composer's "Chat for" that read as two client
- * pickers (Ian, 2026-11-21), and a client alone changed nothing here. Shown once the brain has projects.
+ * client. Choosing a project narrows Home, the To-dos drawer, Images, Documents and search, and starts a new
+ * chat's "Chat for" on that project's client. It sits in the message box beside Chat for, first because it
+ * drives it (Ian, 2026-11-21). Shown once the brain has projects.
  */
-function ProjectPicker({ clients }: { clients: { slug: string; name: string; aliases?: string[] }[] }) {
+function ProjectPicker({
+  clients,
+  disabled = false,
+}: {
+  clients: { slug: string; name: string; aliases?: string[] }[];
+  /** While a client guess or question is pending, as Chat for: the project can't change the chat mid-send. */
+  disabled?: boolean;
+}) {
   const { list } = useProjects();
   const project = useProjectChoice();
   const cards = list?.projects ?? [];
   if (cards.length === 0 && !project) return null;
   return (
-    // One compact row: "Working on [Project]", wrapping on a narrow sheet.
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+    <span className="scope-field">
       <label className="client-label" htmlFor="pick-project">
         Working on
       </label>
-      <span style={{ flex: '0 1 260px', minWidth: 0 }}>
-        <SearchSelect
-          id="pick-project"
-          className="client-select"
-          value={project || ALL}
-          options={[{ value: ALL, label: 'All projects' }, ...filterOptions(cards, clients)]}
-          recentKey="projects"
-          onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
-        />
-      </span>
-    </div>
+      <SearchSelect
+        id="pick-project"
+        className="project-select"
+        value={project || ALL}
+        options={[{ value: ALL, label: 'All projects' }, ...filterOptions(cards, clients)]}
+        recentKey="projects"
+        disabled={disabled}
+        onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
+      />
+    </span>
   );
 }
 
@@ -131,10 +142,26 @@ export function Home() {
   const chatKey = activeChat.kind === 'new' ? activeChat.key : -1;
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the chat changes
   useEffect(() => () => cancelAsk.current?.(), [chatKey]);
-  const initial =
-    activeChat.kind === 'new' && activeChat.client !== undefined ? (activeChat.client ?? NONE) : AUTO;
-  const choice = activeChat.kind === 'new' && picked?.key === activeChat.key ? picked.value : initial;
   const listed = (slug: string) => clients.some((c) => c.slug === slug);
+  // Working on's project starts Chat for on its client (a personal project on No client); a client not in the list
+  // leaves it on Auto. Worked out here, never stored, and never written back: picking Chat for by hand changes
+  // nothing app-wide.
+  const fromProject = (() => {
+    if (!project) return null;
+    const slug = clientSlugOf(clientForProject(project));
+    if (slug === '') return NONE;
+    return slug && listed(slug) ? slug : null;
+  })();
+  // A chat opened with a client (palette, to-do) starts on it; else on Working on's client; else Auto.
+  const initial =
+    activeChat.kind === 'new' && activeChat.client !== undefined
+      ? (activeChat.client ?? NONE)
+      : (fromProject ?? AUTO);
+  const byHand = activeChat.kind === 'new' && picked?.key === activeChat.key;
+  const choice = byHand ? (picked?.value ?? initial) : initial;
+  const presetByChat = activeChat.kind === 'new' && activeChat.client !== undefined;
+  // Said only when the project set it: not a hand pick, nor a to-do's or the palette's client that matches.
+  const setByProject = !byHand && !presetByChat && fromProject !== null;
   // Counted in the app's own data folder so we can see how often people are asked; never in the way.
   const report = (outcome: ClientPickReported) =>
     void Promise.resolve()
@@ -264,24 +291,33 @@ export function Home() {
                 hint={ask ? 'Answer the question above, or Cancel to change your message.' : undefined}
                 tools={
                   <>
+                    <ProjectPicker clients={clients} disabled={busy} />
                     {/* Which client the new chat is about. "Chat for", not "Client", so it isn't read as a
                         second Working on picker (Ian, 2026-11-21). */}
-                    <label className="client-label" htmlFor="client-select">
-                      Chat for
-                    </label>
-                    <SearchSelect
-                      id="client-select"
-                      className="client-select"
-                      value={choice}
-                      options={[
-                        { value: AUTO, label: 'Auto' },
-                        { value: NONE, label: 'No client' },
-                        ...clientOptions(clients),
-                      ]}
-                      recentKey="clients"
-                      disabled={busy}
-                      onChange={(value) => setPicked({ key: activeChat.key, value })}
-                    />
+                    <span className="scope-field">
+                      <label className="client-label" htmlFor="client-select">
+                        Chat for
+                      </label>
+                      <SearchSelect
+                        id="client-select"
+                        className="client-select"
+                        value={choice}
+                        options={[
+                          { value: AUTO, label: 'Auto' },
+                          { value: NONE, label: 'No client' },
+                          ...clientOptions(clients),
+                        ]}
+                        recentKey="clients"
+                        disabled={busy}
+                        aria-describedby={setByProject ? 'client-select-why' : undefined}
+                        onChange={(value) => setPicked({ key: activeChat.key, value })}
+                      />
+                      {setByProject ? (
+                        <span className="visually-hidden" id="client-select-why">
+                          Set by Working on
+                        </span>
+                      ) : null}
+                    </span>
                   </>
                 }
                 onSend={async (text, uploadIds) => {
@@ -366,12 +402,16 @@ export function Home() {
               />
             </div>
           ) : (
-            <button type="button" className="btn" data-variant="primary" onClick={() => newChat()}>
-              New chat
-            </button>
+            <>
+              <button type="button" className="btn" data-variant="primary" onClick={() => newChat()}>
+                New chat
+              </button>
+              {/* No message box here (a chat is open elsewhere): Working on keeps its own line. */}
+              <div className="home-scope">
+                <ProjectPicker clients={clients} />
+              </div>
+            </>
           )}
-
-          <ProjectPicker clients={clients} />
 
           <div className="tray">
             {ads?.visible && ads.waiting > 0 ? (

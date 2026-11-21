@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
-import type { ProjectAction } from '../../../../shared/projects-contract.ts';
+import type { ProjectAction, ProjectList } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
 import { useProjects } from '../../state/projects.ts';
 import { errorWords } from './logic.ts';
 
 export const CHANGED_RELOADED = "Someone changed this project. It's been reloaded, so try again.";
 
-export type ChangeResult = { ok: true } | { ok: false; code: string; message: string };
+export type ChangeResult = { ok: true; list: ProjectList } | { ok: false; code: string; message: string };
 
 /** Sends one project change, puts the fresh list into the shared cache, and turns a refusal into plain words. */
 export function useProjectChange(
@@ -17,8 +17,10 @@ export function useProjectChange(
   return useCallback(
     async (action) => {
       try {
-        apply(await api.changeProject(action));
-        return { ok: true };
+        const list = await api.changeProject(action);
+        apply(list);
+        // The fresh list carries the card's new version, so a run of changes can chain them (Link several files).
+        return { ok: true, list };
       } catch (err) {
         if (err instanceof ApiFailure && err.code === 'changed' && reload) {
           // Not in a form: nothing to keep, so reload quietly and ask for another try.

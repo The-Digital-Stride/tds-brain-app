@@ -5,8 +5,9 @@ import {
   type LibraryKind,
   type LibrarySearchHit,
 } from '../../../../shared/contract.ts';
-import type { ProjectCard } from '../../../../shared/projects-contract.ts';
+import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { Icon } from '../../shell/Icon.tsx';
 import { useLoaded } from '../shared/data.ts';
 import { ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
@@ -62,6 +63,14 @@ function FileRow({
   );
 }
 
+/** Why a search hit can't be ticked, or null when it can. */
+function blockedWhy(card: ProjectCard, path: string): string | null {
+  if (card.links.includes(path)) return 'Already linked';
+  // The skill refuses this (a shared project would show the team something private), so say so up front.
+  if (card.space !== 'personal' && path.startsWith('personal/')) return "Personal: can't be shared";
+  return null;
+}
+
 function Picker({
   card,
   onClose,
@@ -69,14 +78,18 @@ function Picker({
 }: {
   card: ProjectCard;
   onClose: () => void;
-  onLinked: () => void;
+  onLinked: (count: number) => void;
 }) {
   const change = useProjectChange({ reloadOnChanged: true });
   const [term, setTerm] = useState('');
   const [hits, setHits] = useState<LibrarySearchHit[] | null>(null);
+  // Chosen files, by path: they stay chosen across searches, so files from several searches link in one go.
+  const [picked, setPicked] = useState<Map<string, LibrarySearchHit>>(() => new Map());
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const id = useId();
+  const room = PROJECT_LINKS_MAX - card.links.length;
 
   const search = async (e: FormEvent) => {
     e.preventDefault();
@@ -96,17 +109,47 @@ function Picker({
     setBusy(false);
   };
 
-  const link = async (item: LibraryItem) => {
+  const toggle = (hit: LibrarySearchHit) =>
+    setPicked((p) => {
+      const next = new Map(p);
+      if (next.has(hit.item.path)) next.delete(hit.item.path);
+      else if (next.size < room) next.set(hit.item.path, hit);
+      return next;
+    });
+
+  // The skill links one file per call, so each link waits for the last and builds on the card it wrote.
+  const linkChosen = async () => {
+    const todo = [...picked.values()].filter((h) => blockedWhy(card, h.item.path) === null);
+    if (todo.length === 0) return;
     setBusy(true);
     setMessage('');
-    const res = await change({ kind: 'link', key: card.key, path: item.path, expect: card.version });
+    let expect = card.version;
+    let done = 0;
+    for (const h of todo) {
+      setProgress(`Linking ${done + 1} of ${todo.length}…`);
+      const res = await change({ kind: 'link', key: card.key, path: h.item.path, expect });
+      if (!res.ok) {
+        // Keep what's still to do chosen, so another press finishes the job.
+        const left = new Map(todo.slice(done).map((x) => [x.item.path, x] as const));
+        setPicked(left);
+        setProgress('');
+        setBusy(false);
+        setMessage(done > 0 ? `Linked ${done} of ${todo.length}. ${res.message}` : res.message);
+        return;
+      }
+      done += 1;
+      expect = res.list.projects.find((p) => p.key === card.key)?.version ?? expect;
+    }
+    setProgress('');
     setBusy(false);
-    if (res.ok) onLinked();
-    else setMessage(res.message);
+    onLinked(done);
   };
 
+  const chosen = [...picked.values()];
+  const count = chosen.length;
+
   return (
-    <section className="card proj-card" aria-label="Link a file">
+    <section className="card proj-card" aria-label="Link files">
       <form className="proj-search" onSubmit={(e) => void search(e)} aria-label="Search files to link">
         <label htmlFor={id} className="visually-hidden">
           Search files to link
@@ -118,13 +161,13 @@ function Picker({
           placeholder="Search images and documents"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          // biome-ignore lint/a11y/noAutofocus: the person just pressed Link a file.
+          // biome-ignore lint/a11y/noAutofocus: the person just pressed Link files.
           autoFocus
         />
         <button type="submit" className="btn" disabled={busy}>
           Search
         </button>
-        <button type="button" className="btn" data-variant="quiet" onClick={onClose}>
+        <button type="button" className="btn" data-variant="quiet" onClick={onClose} disabled={busy}>
           Close
         </button>
       </form>
@@ -133,32 +176,77 @@ function Picker({
           {message}
         </p>
       ) : null}
+      <p className="visually-hidden" role="status">
+        {progress}
+      </p>
       {hits && hits.length === 0 ? <p className="proj-note">No files found.</p> : null}
       {hits && hits.length > 0 ? (
-        <ul className="lib-list">
-          {hits.map((h) => (
-            <li key={h.item.id} className="line lib-row">
-              <span className="line-text">
-                <span className="line-title">{h.item.title || h.item.name}</span>
-                <span className="line-meta">{h.item.path}</span>
-              </span>
-              {card.links.includes(h.item.path) ? (
-                <span className="line-meta">Already linked</span>
-              ) : (
+        <ul className="lib-list proj-pick-list" aria-label="Files found">
+          {hits.map((h) => {
+            const why = blockedWhy(card, h.item.path);
+            const on = picked.has(h.item.path);
+            const boxId = `${id}-${h.item.id}`;
+            return (
+              <li key={h.item.id} className="line lib-row proj-pick">
+                <input
+                  id={boxId}
+                  type="checkbox"
+                  checked={why === 'Already linked' || on}
+                  disabled={busy || why !== null || (!on && count >= room)}
+                  onChange={() => toggle(h)}
+                />
+                <label htmlFor={boxId} className="line-text">
+                  <span className="line-title">{h.item.title || h.item.name}</span>
+                  <span className="line-meta">{h.item.path}</span>
+                </label>
+                {why ? <span className="line-meta proj-pick-why">{why}</span> : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {/* Under the results, so ticking the first file doesn't push the list down under the pointer. */}
+      {count > 0 ? (
+        <div className="proj-pick-bar">
+          <ul className="proj-pick-chosen" aria-label="Chosen files">
+            {chosen.map((h) => (
+              <li key={h.item.path}>
+                <span className="proj-pick-name">{h.item.title || h.item.name}</span>
                 <button
                   type="button"
-                  className="btn"
-                  data-size="small"
+                  className="icon-btn"
+                  aria-label={`Remove ${h.item.title || h.item.name} from the chosen files`}
                   disabled={busy}
-                  aria-label={`Link ${h.item.title || h.item.name}`}
-                  onClick={() => void link(h.item)}
+                  onClick={() => toggle(h)}
                 >
-                  Link
+                  <Icon name="close" size={14} />
                 </button>
-              )}
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+          <div className="proj-actions">
+            <button
+              type="button"
+              className="btn"
+              data-variant="primary"
+              data-size="small"
+              disabled={busy}
+              onClick={() => void linkChosen()}
+            >
+              {progress || (count > 1 ? `Link ${count} files` : 'Link file')}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              data-variant="quiet"
+              disabled={busy}
+              onClick={() => setPicked(new Map())}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -240,11 +328,12 @@ function Kind({
   );
 }
 
-/** The project's images and documents (in its folder, or linked), with Link a file and Unlink. */
+/** The project's images and documents (in its folder, or linked), with Link files and Unlink. */
 export function ProjectFiles({ card, canChange }: { card: ProjectCard; canChange: boolean }) {
   const [viewing, setViewing] = useState<LibraryItem | null>(null);
   const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState('');
+  const [done, setDone] = useState('');
 
   if (viewing) {
     return <Viewer item={viewing} name={viewing.name} onBack={() => setViewing(null)} />;
@@ -257,21 +346,34 @@ export function ProjectFiles({ card, canChange }: { card: ProjectCard; canChange
             type="button"
             className="btn"
             data-size="small"
-            onClick={() => setLinking(true)}
+            onClick={() => {
+              setDone('');
+              setLinking(true);
+            }}
             disabled={linking}
           >
-            Link a file
+            Link files
           </button>
         </div>
       ) : null}
       {linking ? (
-        <Picker card={card} onClose={() => setLinking(false)} onLinked={() => setLinking(false)} />
+        <Picker
+          card={card}
+          onClose={() => setLinking(false)}
+          onLinked={(count) => {
+            setLinking(false);
+            setDone(count === 1 ? 'Linked 1 file.' : `Linked ${count} files.`);
+          }}
+        />
       ) : null}
       {message ? (
         <p className="proj-error" role="alert">
           {message}
         </p>
       ) : null}
+      <p className={done ? 'proj-note' : 'visually-hidden'} role="status">
+        {done}
+      </p>
       {KINDS.map((k) => (
         <Kind
           key={k.kind}

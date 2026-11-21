@@ -51,11 +51,28 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--iron);
+  white-space: nowrap;
 }
-.composer-foot .client-select {
-  flex: 0 1 180px;
+/* One labelled picker in the message box's scope row (Working on, Chat for). */
+.scope-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 200px;
   min-width: 0;
-  width: 180px;
+  max-width: 300px;
+}
+.scope-field .client-select,
+.scope-field .project-select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 120px;
+}
+/* Home without a message box (a chat is open elsewhere): Working on sits on its own line. */
+.home-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .client-ask {
   display: grid;

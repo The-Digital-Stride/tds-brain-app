@@ -60,9 +60,22 @@ describe('Composer keys', () => {
 });
 
 describe('Composer tools and pending sends', () => {
-  it('shows the tools slot in the foot', () => {
+  it('shows the tools slot on its own row in the box, above the attach and Send row', () => {
     setup({ tools: <select aria-label="Client" /> });
-    expect(screen.getByLabelText('Client').closest('.composer-foot')).toBeTruthy();
+    const scope = screen.getByLabelText('Client').closest('.composer-scope') as HTMLElement;
+    expect(scope).toBeTruthy();
+    expect(scope.closest('.composer')).toBeTruthy();
+    expect(scope.nextElementSibling?.classList.contains('composer-foot')).toBe(true);
+  });
+
+  it('has no scope row without tools, and says the keys to screen readers only', () => {
+    const { box } = setup({});
+    expect(document.querySelector('.composer-scope')).toBeNull();
+    const keys = screen.getByText('Enter to send, Shift and Enter for a new line.');
+    expect(keys.className).toBe('visually-hidden');
+    // Still the box's description, so screen-reader users hear how to send.
+    const hint = document.getElementById(box.getAttribute('aria-describedby') ?? '');
+    expect(hint?.contains(keys)).toBe(true);
   });
 
   it('stays read-only and keeps its text while onSend is pending, then clears on true', async () => {

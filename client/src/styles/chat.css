@@ -746,6 +746,16 @@
 .composer-foot .btn {
   margin-left: auto;
 }
+/* Home's Working on and Chat for: their own row inside the box, under a hairline, above the attach and Send row.
+   Side by side when there is room, stacked on a narrow sheet. */
+.composer-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 /* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
 .engine-line {
   margin: -4px 0 0;

@@ -13,7 +13,7 @@ reviewed: 2026-11-21
 
 ## What it does
 
-Each new chat can be about one client. The **Chat for** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes.
+Each new chat can be about one client. The **Chat for** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes. If **Working on** is set to a project, Chat for starts on that project's client.
 
 ## Why it helps
 
@@ -36,7 +36,7 @@ If Cortex isn't sure, it asks **Which client is this for?** Pick a name, pick **
 ## Good to know
 
 - Auto only works on the first message of a new chat. Cortex first looks for a client's name in your message. If it can't tell, it sends that message and the client list to Jev, a TypeSafe service, to work it out.
-- If you pick a client or **No client** yourself, nothing is sent to Jev.
+- If you pick a client or **No client** yourself, nothing is sent to Jev. Nor is it when Working on set the client.
 - The picker remembers the clients you used recently.
 - You can read this note in Settings, on the **General** tab, under **Working out the client**.
 

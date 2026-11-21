@@ -35,7 +35,7 @@ Projects shows the work the team is doing for each client. Every project has a p
 - Anyone on the team can create and edit shared projects. Personal projects are only yours.
 - A project without a card is read-only. Press **Add a card** to fix that.
 - If the brain's skills are out of date, Projects is read-only until you update them.
-- On Home, **Working on** narrows your work to one project. You can search by project or client.
+- On Home, **Working on** sits in the message box. It narrows your work to one project and starts new chats with its client.
 - In To-dos, the Project filter covers **Mine**, **Open** and **Asked**. Press a to-do's project to see only that project.
 - Images and Documents have a Project filter, so you can see only the files linked to one project.
 - A to-do has Project and Stage fields, so it can sit in a project and a stage.

@@ -5,10 +5,12 @@
  * per brain, so changes run one at a time, in the order asked.
  */
 import { promises as fs } from 'node:fs';
+import { parseProjectKey } from '../../shared/projects.ts';
 import {
   PROJECTS_SCRIPT_TIMEOUT_MS,
   type ProjectAction,
   type ProjectKey,
+  type ProjectMoveCheck,
   ProjectsError,
   type ProjectsErrorCode,
 } from '../../shared/projects-contract.ts';
@@ -31,9 +33,16 @@ export const PROJECTS_SCRIPT_MAX_OUTPUT_BYTES = 64 * 1024;
 /** Test injection: the spawner (`spawn`), environment, time limit and output cap. */
 export type ProjectsSkillOptions = ScriptOptions;
 
+/** What a run answers: the project's key (a move's new one) and its card's version; a move check adds `check`. */
+export interface ProjectsSkillResult {
+  key: ProjectKey;
+  version: string;
+  check?: ProjectMoveCheck;
+}
+
 export interface ProjectsSkillRunner {
   /** Runs one change. Resolves with the project's key and its card's new version; else rejects with ProjectsError. */
-  run(action: ProjectAction): Promise<{ key: ProjectKey; version: string }>;
+  run(action: ProjectAction): Promise<ProjectsSkillResult>;
   /** The script's `capabilities` features, cached per script real path and mtime. None when it is missing or fails. */
   capabilities(): Promise<string[]>;
 }
@@ -48,13 +57,28 @@ export const PROJECTS_CHANGE_MESSAGES = {
   internal: 'The change could not be made. Try again.',
 } as const satisfies Record<ProjectsErrorCode, string>;
 
+/** A move refused because the folder's files aren't those its check listed (`filesExpect`). */
+export const PROJECTS_MOVE_FILES_CHANGED =
+  'The files in this project changed since you checked. Check again.';
+const FILES_CHANGED_REASON = /^the files in this project changed since you checked\b/i;
+
 /** Refusals whose reason, written in plain words by the script, is shown to the person. */
 const SHOW_REASON: readonly ProjectsErrorCode[] = ['bad-request', 'exists', 'not-allowed'];
 const REASON_MAX = 300;
 const CODES: readonly ProjectsErrorCode[] = ['bad-request', 'not-found', 'exists', 'changed', 'not-allowed'];
 
 /** The fixed command line per action: nothing from a request ever becomes part of it. */
-const COMMAND = { create: 'create', card: 'card', edit: 'edit', link: 'link', unlink: 'unlink' } as const;
+const COMMAND = {
+  create: 'create',
+  card: 'card',
+  edit: 'edit',
+  link: 'link',
+  unlink: 'unlink',
+  move: 'move',
+} as const;
+/** A move check lists at most this many files (contract ProjectMoveCheck). */
+const MOVE_FILES_MAX = 50;
+const MOVE_PATH_MAX = 1024;
 
 export async function findProjectsSkill(
   root: string,
@@ -76,7 +100,39 @@ function reasonOf(message: unknown): string | null {
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
 }
 
-function judge(outcome: Outcome): { key: ProjectKey; version: string } | ProjectsError {
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+const isVersion = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+const pathList = (v: unknown, max: number): v is string[] =>
+  Array.isArray(v) &&
+  v.length <= max &&
+  v.every((p) => typeof p === 'string' && p !== '' && p.length <= MOVE_PATH_MAX && !/[\p{Cc}]/u.test(p));
+
+/** A move check's answer, exactly as the contract has it, or null. */
+function moveCheckOf(v: unknown, key: ProjectKey): ProjectMoveCheck | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const c = v as Record<string, unknown>;
+  if (
+    c.key !== key ||
+    !pathList(c.files, MOVE_FILES_MAX) ||
+    !isCount(c.fileCount) ||
+    c.fileCount < c.files.length ||
+    !isCount(c.ignoredCount) ||
+    c.ignoredCount > c.fileCount ||
+    !pathList(c.personalLinks, Number.MAX_SAFE_INTEGER) ||
+    !isVersion(c.filesVersion)
+  )
+    return null;
+  return {
+    key,
+    files: [...c.files],
+    fileCount: c.fileCount,
+    ignoredCount: c.ignoredCount,
+    personalLinks: [...c.personalLinks],
+    filesVersion: c.filesVersion,
+  };
+}
+
+function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | ProjectsError {
   const internal = new ProjectsError('internal', PROJECTS_CHANGE_MESSAGES.internal);
   if (outcome.failed) return internal;
   const reply = parseReply(outcome.stdout);
@@ -88,12 +144,25 @@ function judge(outcome: Outcome): { key: ProjectKey; version: string } | Project
       !/^[0-9a-f]{64}$/.test(reply.version)
     )
       return internal;
-    return { key: reply.key, version: reply.version };
+    if (action.kind !== 'move') return { key: reply.key, version: reply.version };
+    // A move answers the new key, which is always `<client>/<the same slug>`.
+    const slug = parseProjectKey(action.key)?.slug;
+    if (!slug || reply.key !== `${action.client}/${slug}`) return internal;
+    if (action.check !== true) return { key: reply.key, version: reply.version };
+    const check = moveCheckOf(reply.check, reply.key);
+    return check ? { key: reply.key, version: reply.version, check } : internal;
   }
   if (outcome.code === 2 && reply.ok === false) {
     const code = reply.error;
     if (typeof code === 'string' && (CODES as readonly string[]).includes(code)) {
       const c = code as ProjectsErrorCode;
+      if (
+        c === 'changed' &&
+        action.kind === 'move' &&
+        typeof reply.message === 'string' &&
+        FILES_CHANGED_REASON.test(reply.message)
+      )
+        return new ProjectsError(c, PROJECTS_MOVE_FILES_CHANGED);
       const reason = SHOW_REASON.includes(c) ? reasonOf(reply.message) : null;
       return new ProjectsError(c, reason ?? PROJECTS_CHANGE_MESSAGES[c]);
     }
@@ -109,7 +178,7 @@ export function createProjectsSkillRunner(
   const options = withDefaults(opts, PROJECTS_SCRIPT_TIMEOUT_MS, PROJECTS_SCRIPT_MAX_OUTPUT_BYTES);
   const queue = createQueue();
 
-  const runOnce = async (action: ProjectAction): Promise<{ key: ProjectKey; version: string }> => {
+  const runOnce = async (action: ProjectAction): Promise<ProjectsSkillResult> => {
     if (action.kind === 'capabilities' || !Object.hasOwn(COMMAND, action.kind)) {
       throw new ProjectsError('bad-request', PROJECTS_CHANGE_MESSAGES['bad-request']);
     }
@@ -122,7 +191,7 @@ export function createProjectsSkillRunner(
       throw new ProjectsError('internal', PROJECTS_CHANGE_MESSAGES.internal);
     }
     const outcome = await runScript(script, realRoot, COMMAND[action.kind], JSON.stringify(action), options);
-    const result = judge(outcome);
+    const result = judge(action, outcome);
     if (result instanceof ProjectsError) throw result;
     return result;
   };

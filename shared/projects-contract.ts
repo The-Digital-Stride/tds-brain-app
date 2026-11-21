@@ -160,6 +160,11 @@ export interface ProjectCard {
    * counted as to-dos (six legacy folders have one).
    */
   checklist: string | null;
+  /**
+   * Move plan decision 4: keys this project had before it was moved (frontmatter `moved_from:`, oldest
+   * first, at most PROJECT_MOVED_FROM_MAX). Old keys resolve here (decision 5). Absent from older readers.
+   */
+  movedFrom?: ProjectKey[];
 }
 
 /**
@@ -193,6 +198,13 @@ export interface ProjectList {
   duplicates: string[];
   /** Folders whose names fail PROJECT_SLUG_PATTERN, skipped. */
   skippedFolders: number;
+  /**
+   * Move plan: the script answers PROJECTS_MOVE_CAPABILITY and tdsapp-todo answers TODO_PROJECT_CAPABILITY.
+   * False (or absent, older servers) → no Move button; the client shows read-only.
+   */
+  canMove?: boolean;
+  /** Move plan B1: card-less folders left behind by a move (their key is in a live card's movedFrom). Not in `projects`. */
+  leftovers?: string[];
 }
 
 // ─── Changing (decisions 8, 9) ─────────────────────────────────────────────────────────────────────
@@ -242,7 +254,73 @@ export type ProjectAction =
   /** Adds a `- [name](path)` line to `## Linked files`. Refused when a shared project would link a `personal/` file. */
   | { kind: 'link'; key: ProjectKey; path: string; expect: string }
   | { kind: 'unlink'; key: ProjectKey; path: string; expect: string }
+  /**
+   * Move plan (docs/plans/2026-11-21-project-move.md): moves the folder to `clients/<client>/projects/<slug>`.
+   * `client` is never 'personal'. `check: true` writes nothing and answers `{ok:true, check: ProjectMoveCheck}`
+   * or the refusal the move would get. Otherwise answers `{ok:true, key: <new key>, version}`.
+   * `filesExpect` (a check's `filesVersion`): refused with `changed` when the folder's files differ.
+   */
+  | {
+      kind: 'move';
+      key: ProjectKey;
+      client: string;
+      expect: string;
+      dropPersonal?: true;
+      check?: true;
+      filesExpect?: string;
+    }
   | { kind: 'capabilities' };
+
+/** The script answers `capabilities` with this too once it can `move` (tdsapp-projects 0.2). */
+export const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
+/** At most this many old keys are kept in `moved_from:`; the oldest drop off. */
+export const PROJECT_MOVED_FROM_MAX = 10;
+
+/** What a move would do, for the confirm panel (`check: true`). Paths are brain-relative. */
+export interface ProjectMoveCheck {
+  /** The new key, `<client>/<slug>`. */
+  key: ProjectKey;
+  /** Files in the folder that will move (git would sync them for a shared destination), sorted, at most 50. */
+  files: string[];
+  fileCount: number;
+  /** Files in the folder git ignores at the destination: they move but stay on this Mac. */
+  ignoredCount: number;
+  /** `personal/` files the card links from outside its own folder: unlinked by `dropPersonal`. */
+  personalLinks: string[];
+  /**
+   * Security review: a fingerprint of the folder's files, so a file saved into it after the check can't
+   * move unlisted. Hex SHA-256 of every file the walk sees (ignored ones included), folder-relative,
+   * sorted, joined with "\n". Sent back as the move's `filesExpect`.
+   */
+  filesVersion: string;
+}
+
+/** `POST /api/projects/move`: exactly these fields. */
+export interface ProjectMoveRequest {
+  key: ProjectKey;
+  client: string;
+  expect: string;
+  dropPersonal?: true;
+  check?: true;
+  /** The check's `filesVersion`. Optional on the wire (older apps); the current app always sends it with a move. */
+  filesExpect?: string;
+}
+
+/** Answer to a check. */
+export interface ProjectMoveCheckResponse {
+  check: ProjectMoveCheck;
+  /** Open to-dos (TDS and this person's personal ones) that will be re-pointed. */
+  todos: number;
+}
+
+/** Answer to a move. */
+export interface ProjectMoveResult {
+  list: ProjectList;
+  key: ProjectKey;
+  /** Open to-dos re-pointed to the new key, and those that couldn't be (they still resolve by alias). */
+  todosMoved: number;
+  todosLeft: number;
+}
 
 export type ProjectsErrorCode =
   | 'bad-request'

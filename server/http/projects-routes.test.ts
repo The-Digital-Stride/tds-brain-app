@@ -14,6 +14,7 @@ import {
 import {
   type ProjectAction,
   type ProjectList,
+  type ProjectMoveRequest,
   ProjectsError,
   type ProjectsErrorCode,
   type ProjectTodosResponse,
@@ -63,6 +64,7 @@ const seen = {
   todoChanges: [] as TodoAction[],
   projectTodos: [] as [string, string][],
   access: [] as string[],
+  moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
 };
 type Access = 'allowed' | 'restricted' | 'unknown-skill';
 let state: { has: boolean; directWrites: boolean; fail: unknown; access: Access; todos: TodoList } = {
@@ -87,6 +89,18 @@ const PROJECT_TODOS = {
   ],
   count: 1,
 } satisfies ProjectTodosResponse;
+
+const MOVE_CHECK = {
+  check: {
+    key: 'skyseal/web',
+    files: [],
+    fileCount: 0,
+    ignoredCount: 0,
+    personalLinks: [],
+    filesVersion: 'e'.repeat(64),
+  },
+  todos: 2,
+};
 
 const maybeFail = () => {
   if (state.fail) throw state.fail;
@@ -123,6 +137,15 @@ beforeAll(async () => {
             maybeFail();
             seen.changes.push(action);
             return LIST;
+          }
+        : undefined;
+    },
+    get moveProject() {
+      return state.has
+        ? async (req: ProjectMoveRequest, by: Identity, opts?: { todos?: boolean }) => {
+            maybeFail();
+            seen.moves.push({ req, by: by.slug, todos: opts?.todos });
+            return req.check ? MOVE_CHECK : { list: LIST, key: 'skyseal/web', todosMoved: 1, todosLeft: 0 };
           }
         : undefined;
     },
@@ -201,6 +224,7 @@ beforeEach(() => {
   seen.todoChanges.length = 0;
   seen.projectTodos.length = 0;
   seen.access.length = 0;
+  seen.moves.length = 0;
 });
 
 interface Reply {
@@ -705,5 +729,128 @@ describe('a brain without the projects readers (older fakes)', () => {
       expect(r.json.error?.code).toBe('not-found');
     }
     expect((await send(ROUTES.projects)).status).toBe(401);
+  });
+});
+
+// Move plan (docs/plans/2026-11-21-project-move.md).
+describe('POST /api/projects/move', () => {
+  const MOVE: ProjectMoveRequest = { key: KEY, client: 'skyseal', expect: VERSION };
+
+  it('needs the session, the app origin and JSON, and is POST only', async () => {
+    const path = ROUTES.projectsMove;
+    const headers = { origin: `http://${HOST}`, 'content-type': 'application/json' };
+    expect((await send(path, { method: 'POST', headers, body: MOVE })).status).toBe(401);
+    const evil = await send(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: COOKIE, origin: 'https://evil.example' },
+      body: MOVE,
+    });
+    expect(evil.status).toBe(403);
+    const form = await send(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: COOKIE, 'content-type': 'text/plain' },
+      body: MOVE,
+    });
+    expect(form.status).toBe(415);
+    expect((await get(path)).status).toBe(405);
+    expect(seen.moves).toEqual([]);
+    expect((await post(path, MOVE)).status).toBe(200);
+  });
+
+  it('passes exactly the move shape on, for the signed-in person, and answers the brain', async () => {
+    const shapes: ProjectMoveRequest[] = [
+      MOVE,
+      { ...MOVE, check: true },
+      { ...MOVE, dropPersonal: true },
+      { ...MOVE, filesExpect: VERSION },
+      {
+        key: 'personal/plan',
+        client: 'the-digital-stride',
+        expect: VERSION,
+        dropPersonal: true,
+        check: true,
+      },
+    ];
+    const answers = [];
+    for (const body of shapes) {
+      const r = await post(ROUTES.projectsMove, body);
+      expect(r.status, JSON.stringify(body)).toBe(200);
+      answers.push(r.json);
+    }
+    expect(seen.moves.map((m) => m.req)).toEqual(shapes);
+    expect(seen.moves.every((m) => m.by === 'sam-example')).toBe(true);
+    expect(answers[1]).toEqual(MOVE_CHECK);
+    expect(answers[0]).toMatchObject({ key: 'skyseal/web', todosMoved: 1, todosLeft: 0 });
+  });
+
+  it('refuses any other shape before the brain is asked', async () => {
+    const bad: unknown[] = [
+      null,
+      [],
+      {},
+      { key: KEY, client: 'skyseal' },
+      { key: KEY, expect: VERSION },
+      { client: 'skyseal', expect: VERSION },
+      { ...MOVE, kind: 'move' },
+      { ...MOVE, extra: 1 },
+      { ...MOVE, client: 'personal' },
+      { ...MOVE, client: 'Sky Seal' },
+      { ...MOVE, client: '_archive' },
+      { ...MOVE, client: 'a'.repeat(61) },
+      { ...MOVE, client: 5 },
+      { ...MOVE, key: 'Acme/web' },
+      { ...MOVE, key: 'acme' },
+      { ...MOVE, key: 'personal/../x' },
+      { ...MOVE, expect: 'short' },
+      { ...MOVE, expect: VERSION.toUpperCase() },
+      { ...MOVE, dropPersonal: false },
+      { ...MOVE, dropPersonal: 'yes' },
+      { ...MOVE, check: false },
+      { ...MOVE, check: 1 },
+      { ...MOVE, filesExpect: 'short' },
+      { ...MOVE, filesExpect: VERSION.toUpperCase() },
+      { ...MOVE, filesExpect: 5 },
+      { ...MOVE, filesExpect: null },
+    ];
+    for (const body of bad) {
+      const r = await post(ROUTES.projectsMove, body);
+      expect(r.status, JSON.stringify(body)).toBe(400);
+      expect(r.json.error?.code).toBe('bad-request');
+    }
+    expect(seen.moves).toEqual([]);
+  });
+
+  it("refuses someone the tdsapp-projects skill's roles leave out", async () => {
+    state.access = 'restricted';
+    const r = await post(ROUTES.projectsMove, MOVE);
+    expect(r.status).toBe(403);
+    expect(r.json.error?.code).toBe('not-allowed');
+    expect(seen.access).toEqual(['tdsapp-projects']);
+    expect(seen.moves).toEqual([]);
+  });
+
+  it('lets the to-dos follow only where the app may change to-dos', async () => {
+    expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
+    state.directWrites = false;
+    expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
+    state.directWrites = true;
+    state.todos = { ...TODOS, changes: 'restricted' };
+    expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
+    state.todos = { ...TODOS, canProject: false };
+    expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
+    expect(seen.moves.map((m) => m.todos)).toEqual([true, false, false, false]);
+  });
+
+  it('answers a ProjectsError with its status, and 404 without the brain', async () => {
+    state.fail = new ProjectsError('exists', "There's already a project called web for that client.");
+    const r = await post(ROUTES.projectsMove, MOVE);
+    expect(r.status).toBe(409);
+    expect(r.json.error).toEqual({
+      code: 'changed',
+      message: "There's already a project called web for that client.",
+    });
+    state.fail = null;
+    state.has = false;
+    expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(404);
   });
 });

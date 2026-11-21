@@ -93,6 +93,11 @@ export function takeProjectPageRequest(): string {
   return key;
 }
 
+/** A project was moved: if Home's "Working on" was the old key, follow it to the new one instead of clearing. */
+export function followMovedProject(oldKey: string, newKey: string): void {
+  if (state.project === oldKey) projectChoice.set(newKey);
+}
+
 /** Clears the picker's project, keeping its client. */
 export function clearPickedProject(): void {
   projectChoice.set('');

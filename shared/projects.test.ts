@@ -3,6 +3,8 @@ import {
   folderTitle,
   isProjectSlug,
   matchedKey,
+  movedFolderPath,
+  movedKey,
   parseLinkedFiles,
   parseProjectKey,
   projectLabel,
@@ -217,5 +219,111 @@ describe('the ## Linked files section', () => {
     for (const bad of ['/clients/a.pdf', '../todo/x.md', '../clients/%2e%2e/a', '../clients/./a', 'a:b']) {
       expect(resolveLinkedFilePath(bad), bad).toBeNull();
     }
+  });
+});
+
+// Move plan decisions 5 and S2/S6: old keys resolve through a card's movedFrom.
+describe('moved projects (aliases)', () => {
+  type M = P & { movedFrom?: string[] };
+  const moved = (p: P, movedFrom: string[]): M => ({ ...p, movedFrom });
+  const MOVED: M[] = [
+    moved(shared('skyseal', 'jev'), ['personal/jev', 'acme/jev']),
+    moved(shared('skyseal', 'site'), ['acme/site']),
+    moved(shared('harvey-nash', 'site'), ['acme/site']),
+    moved(shared('book-vault', 'live'), ['acme/live']),
+    shared('acme', 'live'),
+    // A hand edit: a personal card claiming a shared key.
+    moved(personal('notes'), ['acme/notes']),
+  ];
+  const t = (value: string, client: string | null = null) =>
+    resolveTodoProject(value, client, 'tds', MOVED, CLIENTS);
+  const m = (value: string, client: string | null = null) =>
+    resolveTodoProject(value, client, 'personal', MOVED, CLIENTS);
+
+  it('resolves an old key to the project that moved, as a key match', () => {
+    expect(t('acme/jev')).toEqual({ how: 'key', key: 'skyseal/jev' });
+    expect(m('acme/jev')).toEqual({ how: 'key', key: 'skyseal/jev' });
+  });
+
+  it('lets a live folder at the key win over an alias', () => {
+    expect(t('acme/live')).toEqual({ how: 'key', key: 'acme/live' });
+  });
+
+  it('picks the lowest sorted key when two cards claim one old key', () => {
+    expect(t('acme/site')).toEqual({ how: 'key', key: 'harvey-nash/site' });
+    expect(movedKey('acme/site', MOVED)).toBe('harvey-nash/site');
+  });
+
+  it('resolves a personal/ alias only for a personal to-do', () => {
+    expect(t('personal/jev')).toEqual({ how: 'missing', key: 'personal/jev' });
+    expect(m('personal/jev')).toEqual({ how: 'key', key: 'skyseal/jev' });
+  });
+
+  it('never resolves a TDS to-do to a personal project through an alias', () => {
+    expect(t('acme/notes')).toEqual({ how: 'missing', key: 'acme/notes' });
+    expect(m('acme/notes')).toEqual({ how: 'key', key: 'personal/notes' });
+  });
+
+  it('resolves a bare slug through <to-do client>/<label>, never personal/ for a TDS to-do', () => {
+    // The slug is unchanged by a move, so a client-less label still finds it by slug.
+    expect(t('jev')).toEqual({ how: 'legacy', key: 'skyseal/jev' });
+    expect(t('jev', 'acme')).toEqual({ how: 'legacy', key: 'skyseal/jev' });
+    expect(t('site', 'acme')).toEqual({ how: 'legacy', key: 'harvey-nash/site' });
+    expect(t('jev', 'personal')).toEqual({ how: 'loose', label: 'jev' });
+    expect(m('jev', 'personal')).toEqual({ how: 'legacy', key: 'skyseal/jev' });
+    expect(t('nothing', 'acme')).toEqual({ how: 'loose', label: 'nothing' });
+  });
+
+  it("lets this Mac's own personal folder (card or not) win over a teammate's personal/ alias", () => {
+    // skyseal/jev synced from a teammate lists personal/jev; this Mac has its own personal/projects/jev.
+    const here: M[] = [...MOVED, personal('jev')];
+    expect(movedKey('personal/jev', here)).toBeNull();
+    expect(resolveTodoProject('personal/jev', null, 'personal', here, CLIENTS)).toEqual({
+      how: 'key',
+      key: 'personal/jev',
+    });
+    const cards = [
+      {
+        ...moved(shared('skyseal', 'jev'), ['personal/jev']),
+        folder: 'clients/skyseal/projects/jev',
+      },
+      { ...personal('jev'), folder: 'personal/projects/jev' },
+    ];
+    expect(movedFolderPath('personal/projects/jev/notes.md', cards)).toBe('personal/projects/jev/notes.md');
+    // With no such folder here, the alias still applies.
+    expect(movedKey('personal/jev', MOVED)).toBe('skyseal/jev');
+    expect(movedFolderPath('personal/projects/jev/notes.md', cards.slice(0, 1))).toBe(
+      'clients/skyseal/projects/jev/notes.md',
+    );
+  });
+
+  it('is missing for an unknown key, as before', () => {
+    expect(t('acme/nothing')).toEqual({ how: 'missing', key: 'acme/nothing' });
+    expect(movedKey('acme/nothing', MOVED)).toBeNull();
+  });
+
+  it('maps a path in an old folder to where the project went (S8)', () => {
+    const cards = [
+      {
+        ...moved(shared('skyseal', 'jev'), ['personal/jev', 'acme/jev']),
+        folder: 'clients/skyseal/projects/jev',
+      },
+      { ...shared('acme', 'live'), folder: 'clients/acme/projects/live' },
+      { ...moved(shared('book-vault', 'live'), ['acme/live']), folder: 'clients/book-vault/projects/live' },
+    ];
+    expect(movedFolderPath('clients/acme/projects/jev/brief.pdf', cards)).toBe(
+      'clients/skyseal/projects/jev/brief.pdf',
+    );
+    expect(movedFolderPath('personal/projects/jev/a/b.md', cards)).toBe(
+      'clients/skyseal/projects/jev/a/b.md',
+    );
+    // A live project at the old key keeps its own files; anything else is left as written.
+    expect(movedFolderPath('clients/acme/projects/live/a.pdf', cards)).toBe(
+      'clients/acme/projects/live/a.pdf',
+    );
+    expect(movedFolderPath('clients/acme/projects/jevx/a.pdf', cards)).toBe(
+      'clients/acme/projects/jevx/a.pdf',
+    );
+    expect(movedFolderPath('clients/acme/files/a.pdf', cards)).toBe('clients/acme/files/a.pdf');
   });
 });

@@ -1,7 +1,8 @@
 /**
  * Reads the projects (plan docs/plans/2026-11-20-projects-system.md, decisions 1, 4, 4b, 8, 10, 13 and
  * 26): walks every projects location, reads each card, counts open to-dos, works out the team from
- * to-dos, and runs the tidy-up. Writes nothing in the brain: changes go through the `tdsapp-projects`
+ * to-dos, and runs the tidy-up. Moving a project (docs/plans/2026-11-21-project-move.md) runs the
+ * script's `move`, then re-points this Mac's open to-dos; old keys keep resolving through `movedFrom`. Writes nothing in the brain: changes go through the `tdsapp-projects`
  * script (projects-skill.ts) and to-do lines through `tdsapp-todo` (todo-skill.ts). The only file it
  * writes is `tidy-skips.json` in the app's own data folder.
  */
@@ -13,7 +14,10 @@ import {
   folderTitle,
   isProjectSlug,
   matchedKey,
+  movedFolderPath,
+  movedKey,
   parseLinkedFiles,
+  parseProjectKey,
   resolveTodoProject,
   splitLinkedFiles,
 } from '../../shared/projects.ts';
@@ -22,13 +26,18 @@ import {
   INTERNAL_CLIENT,
   type Light,
   PROJECT_CARD_FILE,
+  PROJECT_MOVED_FROM_MAX,
   PROJECT_TITLE_MAX,
   PROJECTS_CAPABILITY,
+  PROJECTS_MOVE_CAPABILITY,
   type ProjectAction,
   type ProjectCard,
   type ProjectKey,
   type ProjectKind,
   type ProjectList,
+  type ProjectMoveCheckResponse,
+  type ProjectMoveRequest,
+  type ProjectMoveResult,
   type ProjectSpace,
   type ProjectStatus,
   ProjectsError,
@@ -39,6 +48,7 @@ import {
   type TidyApply,
   type TidyList,
   type TidySuggestion,
+  TODO_PROJECT_CAPABILITY,
   type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
@@ -62,6 +72,16 @@ export interface ProjectsService {
   index(): Promise<ProjectsIndex>;
   list(identity: Identity): Promise<ProjectList>;
   change(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  /**
+   * Move plan: `check: true` answers what the move would do; otherwise moves the folder, then re-points
+   * this Mac's open to-dos (TDS ones and this person's personal ones) unless `todos` is false. Throws
+   * ProjectsError.
+   */
+  move(
+    req: ProjectMoveRequest,
+    identity: Identity,
+    opts?: { todos?: boolean },
+  ): Promise<ProjectMoveCheckResponse | ProjectMoveResult>;
   tidy(identity: Identity): Promise<TidyList>;
   applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Every open to-do in the project (UX B2): all TDS ones, whoever has them, and this person's own personal ones. */
@@ -89,6 +109,8 @@ export interface ProjectsOptions {
    * here by the same rule (theirs, an open TDS one, or their own personal one).
    */
   todoList?: (identity: Identity) => Promise<Pick<TodoList, 'mine' | 'open'>>;
+  /** After a move: the old and new folders (brain-relative), so the library drops both from its caches. */
+  onMoved?: (from: string, to: string) => void;
 }
 
 /** How long a read is reused when no watcher says the brain changed. */
@@ -204,6 +226,8 @@ interface Location {
 interface Walk {
   cards: ProjectCard[];
   duplicates: string[];
+  /** Move plan B1: card-less folders whose key a live card's movedFrom lists. Not in `cards`. */
+  leftovers: string[];
   skippedFolders: number;
   clients: string[];
 }
@@ -260,6 +284,10 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
   }
   const checklist = (await lstat(join(folderAbs, 'todo.md')))?.isFile() ? `${loc.folder}/todo.md` : null;
   const links = parseLinkedFiles(body).filter((p) => loc.space === 'personal' || !p.startsWith('personal/'));
+  // Move plan decision 4: the keys it had before, well-formed, never its own, the newest MAX.
+  const movedFrom = [
+    ...new Set(list(data.moved_from).filter((k) => parseProjectKey(k) !== null && k !== loc.key)),
+  ].slice(-PROJECT_MOVED_FROM_MAX);
   const budget = Number(text(data.budget_hours) ?? Number.NaN);
   const billable = text(data.billable);
   return {
@@ -293,6 +321,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
     openTodos: 0,
     teamFromTodos: [],
     checklist,
+    ...(movedFrom.length > 0 ? { movedFrom } : {}),
   };
 }
 
@@ -369,7 +398,20 @@ async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Pro
       kept.push(loc);
     }
   }
-  const cards = await Promise.all(kept.map((loc) => readCard(root, loc)));
+  const read = await Promise.all(kept.map((loc) => readCard(root, loc)));
+  // B1: git deletes only tracked files, so a moved project's old folder can linger on a teammate's Mac
+  // with no card. The alias wins: the folder is a leftover, not a project. Never a `personal/` one:
+  // a moved card syncs to teammates, where `personal/` is THEIR private folder, which always wins
+  // over the alias (card or not). The alias then applies only on a Mac with no such folder.
+  const aliases = new Set(read.flatMap((c) => c.movedFrom ?? []));
+  const leftovers = read
+    .filter((c) => c.card === 'none' && c.space !== 'personal' && aliases.has(c.key))
+    .map((c) => c.folder);
+  const cards = read.filter((c) => !leftovers.includes(c.folder));
+  // S8: links written before a move into a moved project's old folder follow it.
+  if (aliases.size > 0) {
+    for (const c of cards) c.links = [...new Set(c.links.map((p) => movedFolderPath(p, cards)))];
+  }
 
   const roles = await readRoles(root);
   const shared = cards.filter((c) => c.space !== 'personal');
@@ -388,7 +430,7 @@ async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Pro
       }),
     );
   }
-  return { cards, duplicates, skippedFolders, clients: [...clientDirs, ...archivedClients] };
+  return { cards, duplicates, leftovers, skippedFolders, clients: [...clientDirs, ...archivedClients] };
 }
 
 // ─── To-dos ───────────────────────────────────────────────────────────────────────────────────────
@@ -485,7 +527,13 @@ function makeIndex(w: Walk, clients: string[]): ProjectsIndex {
   const byKey = new Map(w.cards.map((c) => [c.key, c]));
   return {
     cards: w.cards,
-    byKey: (key) => byKey.get(key) ?? null,
+    // A live project at the key, else the one it moved to (move plan decision 5).
+    byKey: (key) => {
+      const live = byKey.get(key);
+      if (live) return live;
+      const moved = movedKey(key, w.cards);
+      return moved === null ? null : (byKey.get(moved) ?? null);
+    },
     keysForPath: (rel) =>
       w.cards.filter((c) => rel.startsWith(`${c.folder}/`) || c.links.includes(rel)).map((c) => c.key),
     resolve: (value, client, scope) => resolveTodoProject(value, client, scope, w.cards, clients),
@@ -626,19 +674,24 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
               );
       return { ...c, openTodos: open.get(c.key) ?? 0, teamFromTodos: fromTodos };
     });
-    const [hasScript, allowed, tidied] = await Promise.all([
-      opts.skill
-        .capabilities()
-        .then((f) => f.includes(PROJECTS_CAPABILITY))
-        .catch(() => false),
+    const [features, todoFeatures, allowed, tidied] = await Promise.all([
+      opts.skill.capabilities().catch(() => [] as string[]),
+      opts.todoSkill.capabilities().catch(() => [] as readonly string[]),
       mayChange(identity),
       tidy(identity),
     ]);
+    const canChange = features.includes(PROJECTS_CAPABILITY) && allowed;
     return {
       projects,
-      canChange: hasScript && allowed,
+      canChange,
+      // Move plan S2: moving re-points to-dos, so it needs the to-do script's `project` action too.
+      canMove:
+        canChange &&
+        features.includes(PROJECTS_MOVE_CAPABILITY) &&
+        todoFeatures.includes(TODO_PROJECT_CAPABILITY),
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
+      leftovers: w.leftovers,
       skippedFolders: w.skippedFolders,
     };
   };
@@ -676,6 +729,106 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       changed();
     }
     return list(identity);
+  };
+
+  const move = async (
+    req: ProjectMoveRequest,
+    identity: Identity,
+    moveOpts: { todos?: boolean } = {},
+  ): Promise<ProjectMoveCheckResponse | ProjectMoveResult> => {
+    const bad = () =>
+      new ProjectsError('bad-request', "That move couldn't be made. Check the details and try again.");
+    if (!req || typeof req !== 'object' || typeof req.expect !== 'string') throw bad();
+    if (
+      req.filesExpect !== undefined &&
+      (typeof req.filesExpect !== 'string' || !/^[0-9a-f]{64}$/.test(req.filesExpect))
+    )
+      throw bad();
+    const from = parseProjectKey(req.key);
+    if (!from || typeof req.client !== 'string' || req.client === 'personal' || !isProjectSlug(req.client))
+      throw bad();
+    if (!(await mayChange(identity))) {
+      throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
+    }
+    const [features, todoFeatures] = await Promise.all([
+      opts.skill.capabilities().catch(() => [] as string[]),
+      opts.todoSkill.capabilities().catch(() => [] as readonly string[]),
+    ]);
+    if (!features.includes(PROJECTS_MOVE_CAPABILITY) || !todoFeatures.includes(TODO_PROJECT_CAPABILITY)) {
+      throw new ProjectsError('not-allowed', "Update the brain's skills to move projects.");
+    }
+    // The to-dos to re-point are chosen from a fresh read, before the move.
+    if (req.check !== true) changed();
+    const { index } = await load();
+    const card = index.cards.find((c) => c.key === req.key) ?? null;
+    if (card?.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
+    const newKey = `${req.client}/${from.slug}`;
+    // The script refuses any folder there; an old key another project still answers to counts too.
+    const there = index.byKey(newKey);
+    if (there && there.key !== req.key) {
+      throw new ProjectsError(
+        'exists',
+        `There's already a project called ${from.slug} for that client, or one that was moved from there.`,
+      );
+    }
+    const pool =
+      card && moveOpts.todos !== false
+        ? (await todos()).filter(
+            (t) =>
+              !t.done &&
+              (t.scope === 'tds' || ownPersonal(t, identity)) &&
+              matchedKey(index.resolve(t.project, t.client, t.scope)) === card.key,
+          )
+        : [];
+    const base = {
+      kind: 'move',
+      key: req.key,
+      client: req.client,
+      expect: req.expect,
+      // Security review: the check's file fingerprint, so a file saved meanwhile can't move unlisted.
+      ...(req.filesExpect !== undefined ? { filesExpect: req.filesExpect } : {}),
+    } as const;
+    if (req.check === true) {
+      const r = await opts.skill.run({ ...base, check: true });
+      if (!r.check) throw new ProjectsError('internal', "The move couldn't be checked. Try again.");
+      return { check: r.check, todos: pool.length };
+    }
+    let result: { key: ProjectKey; version: string };
+    try {
+      result = await opts.skill.run({
+        ...base,
+        ...(req.dropPersonal === true ? { dropPersonal: true } : {}),
+      });
+    } finally {
+      changed();
+    }
+    const oldFolder =
+      card?.folder ??
+      (from.client === 'personal'
+        ? `personal/projects/${from.slug}`
+        : `clients/${from.client}/projects/${from.slug}`);
+    opts.onMoved?.(oldFolder, `clients/${req.client}/projects/${from.slug}`);
+    // Decision 7: the to-dos follow, keeping their stage. A failure leaves one on the old key, which
+    // still resolves through movedFrom, so none is fatal.
+    let todosMoved = 0;
+    for (const t of pool) {
+      try {
+        await opts.todoSkill.run({
+          kind: 'project',
+          id: t.id,
+          scope: t.scope,
+          client: req.client,
+          project: result.key,
+          stage: t.stage,
+          expect: t.version,
+        });
+        todosMoved++;
+      } catch {
+        /* counted in todosLeft */
+      }
+    }
+    if (pool.length > 0) changed();
+    return { list: await list(identity), key: result.key, todosMoved, todosLeft: pool.length - todosMoved };
   };
 
   const applyTidy = async (apply: TidyApply, identity: Identity): Promise<TidyList> => {
@@ -780,6 +933,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     index: async () => (await load()).index,
     list,
     change,
+    move,
     tidy,
     applyTidy,
     projectTodos,

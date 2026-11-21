@@ -77,6 +77,9 @@ import type {
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
+  ProjectMoveCheckResponse,
+  ProjectMoveRequest,
+  ProjectMoveResult,
   ProjectTodosResponse,
   TidyApply,
   TidyList,
@@ -233,6 +236,10 @@ export const api = {
   /** Projects R1 (plan 2026-11-20-projects-system). */
   projects: () => request<ProjectList>('GET', ROUTES.projects),
   changeProject: (action: ProjectAction) => request<ProjectList>('POST', ROUTES.projectsChange, action),
+  checkProjectMove: (req: Omit<ProjectMoveRequest, 'check' | 'dropPersonal'>) =>
+    request<ProjectMoveCheckResponse>('POST', ROUTES.projectsMove, { ...req, check: true }),
+  moveProject: (req: Omit<ProjectMoveRequest, 'check'>) =>
+    request<ProjectMoveResult>('POST', ROUTES.projectsMove, req),
   projectFiles: (key: ProjectKey, kind: LibraryKind) =>
     request<ProjectFilesResponse>(
       'GET',

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
+import { followMovedProject, projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
-import { READ_ONLY_NOTICE } from './logic.ts';
+import { moveState, plural, READ_ONLY_NOTICE } from './logic.ts';
+import { MoveScreen } from './MoveScreen.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { ProjectListView } from './ProjectList.tsx';
 import { ProjectPage, type ProjectTab } from './ProjectPage.tsx';
@@ -13,13 +14,15 @@ type Screen =
   | { is: 'tidy' }
   | { is: 'project'; key: string; tab: ProjectTab }
   | { is: 'new' }
-  | { is: 'edit' | 'card'; key: string };
+  | { is: 'edit' | 'card' | 'move'; key: string };
 
 /** The Projects app: the list, one project's page, the create and edit form, and the tidy-up. */
 export function ProjectsSheet() {
   const { boot, todos } = useStore();
   const { list, error, refresh } = useProjects();
   const [screen, setScreen] = useState<Screen>({ is: 'list' });
+  // Said aloud after a move; always mounted so a screen reader hears it when the page changes.
+  const [announce, setAnnounce] = useState('');
   // A Projects search hit asks for a project's page (client-choice `projectPageRequest`): open it on
   // mount, and again whenever another hit asks while the app is already showing.
   useEffect(() => {
@@ -126,8 +129,29 @@ export function ProjectsSheet() {
         clients={clients}
         team={team}
         me={me}
+        canMove={moveState(card, list)}
+        onMove={() => go({ is: 'move', key: card.key }, 'move')}
         onDone={() => toProject(card.key)}
         onCancel={() => toProject(card.key)}
+      />
+    );
+  } else if (screen.is === 'move' && card) {
+    body = (
+      <MoveScreen
+        card={card}
+        clients={clients}
+        onCancel={() => toProject(card.key)}
+        onMoved={(res, name) => {
+          followMovedProject(card.key, res.key);
+          // Cleared first, so a second move with the same words is still read out.
+          setAnnounce('');
+          const words =
+            res.todosMoved > 0
+              ? `Moved to ${name}. ${plural(res.todosMoved, 'to-do')} moved with it.`
+              : `Moved to ${name}.`;
+          setTimeout(() => setAnnounce(words), 50);
+          toProject(res.key);
+        }}
       />
     );
   } else if (screen.is === 'project' && card) {
@@ -139,6 +163,7 @@ export function ProjectsSheet() {
         onTab={(tab) => toTab(card.key, tab)}
         onBack={toList}
         onEdit={() => go({ is: 'edit', key: card.key }, 'edit')}
+        onMove={() => go({ is: 'move', key: card.key }, 'move')}
         onAddCard={() => go({ is: 'card', key: card.key }, 'addcard')}
         team={team}
         clients={clients}
@@ -192,6 +217,12 @@ export function ProjectsSheet() {
             .
           </p>
         ) : null}
+        {(list.leftovers ?? []).length > 0 ? (
+          <p className="proj-banner" role="status">
+            These folders were left behind when a project moved, so they're hidden. Anything still in them
+            stays only on this Mac: {(list.leftovers ?? []).join(', ')}.
+          </p>
+        ) : null}
         <ProjectListView
           data={list}
           me={me}
@@ -206,6 +237,9 @@ export function ProjectsSheet() {
   return (
     <div className="lib proj" ref={root}>
       {body}
+      <p className="visually-hidden" role="status">
+        {announce}
+      </p>
     </div>
   );
 }

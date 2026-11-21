@@ -20,6 +20,9 @@ import type {
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
+  ProjectMoveCheckResponse,
+  ProjectMoveRequest,
+  ProjectMoveResult,
   ProjectTodosResponse,
   TidyApply,
   TidyList,
@@ -827,6 +830,15 @@ export interface BrainReaders {
    */
   projects?(identity: Identity): Promise<ProjectList>;
   changeProject?(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  /**
+   * Move plan (2026-11-21-project-move): a check (`check: true`) or a move. `todos: false` leaves the
+   * to-dos as they are (they still resolve through the old key).
+   */
+  moveProject?(
+    req: ProjectMoveRequest,
+    identity: Identity,
+    opts?: { todos?: boolean },
+  ): Promise<ProjectMoveCheckResponse | ProjectMoveResult>;
   projectFiles?(key: ProjectKey, kind: LibraryKind, identity: Identity): Promise<ProjectFilesResponse>;
   projectTodos?(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
   tidy?(identity: Identity): Promise<TidyList>;
@@ -1883,6 +1895,7 @@ export const ROUTES = {
   projects: '/api/projects',
   /** `POST` ProjectAction → ProjectList. Errors as ProjectsErrorCode with a plain UK-English `error`. */
   projectsChange: '/api/projects/change',
+  projectsMove: '/api/projects/move',
   /** `GET ?key=<ProjectKey>&kind=image|document` → ProjectFilesResponse (decision 7). */
   projectFiles: '/api/projects/files',
   /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */

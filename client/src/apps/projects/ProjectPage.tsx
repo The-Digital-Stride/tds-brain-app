@@ -8,6 +8,8 @@ import {
   dotState,
   isEditable,
   LIGHT_WORDS,
+  type MoveState,
+  moveState,
   personName,
   READ_ONLY_NOTICE,
   STATUS_WORDS,
@@ -104,19 +106,23 @@ function Overview({
   team,
   clients,
   canChange,
+  canMove,
   onAddCard,
+  onMove,
 }: {
   card: ProjectCard;
   team: readonly TeamMember[] | undefined;
   clients: readonly { slug: string; name: string }[];
   canChange: boolean;
+  canMove: MoveState;
   onAddCard: () => void;
+  onMove: () => void;
 }) {
   const { newChat } = useStore();
   const editable = canChange && isEditable(card);
   const clientName =
     card.space === 'personal'
-      ? 'Personal'
+      ? 'Just me'
       : (clients.find((c) => c.slug === card.client)?.name ?? card.client ?? '');
   const hoursLabel = card.kind === 'ongoing' ? 'Hours a month' : 'Budget hours';
 
@@ -154,7 +160,21 @@ function Overview({
       <section className="card proj-card" aria-label="Details">
         <dl className="kv">
           <dt>Client</dt>
-          <dd>{clientName}</dd>
+          <dd>
+            {clientName}
+            {canChange && canMove === 'yes' ? (
+              <button
+                type="button"
+                className="btn proj-move-btn"
+                data-size="small"
+                data-focus="move"
+                aria-label={`Move ${card.title} to another client`}
+                onClick={onMove}
+              >
+                Move…
+              </button>
+            ) : null}
+          </dd>
           <dt>Status</dt>
           <dd>{STATUS_WORDS[statusOf(card)]}</dd>
           <dt>Kind</dt>
@@ -241,6 +261,7 @@ export function ProjectPage({
   onTab,
   onBack,
   onEdit,
+  onMove,
   onAddCard,
   team,
   clients,
@@ -252,6 +273,7 @@ export function ProjectPage({
   onTab: (tab: ProjectTab) => void;
   onBack: () => void;
   onEdit: () => void;
+  onMove: () => void;
   onAddCard: () => void;
   team: readonly TeamMember[] | undefined;
   clients: readonly { slug: string; name: string }[];
@@ -295,7 +317,15 @@ export function ProjectPage({
       />
       <div className="proj-body">
         {tab === 'overview' ? (
-          <Overview card={card} team={team} clients={clients} canChange={canChange} onAddCard={onAddCard} />
+          <Overview
+            card={card}
+            team={team}
+            clients={clients}
+            canChange={canChange}
+            canMove={moveState(card, list)}
+            onAddCard={onAddCard}
+            onMove={onMove}
+          />
         ) : null}
         {tab === 'todos' ? (
           <ProjectTodos

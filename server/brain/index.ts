@@ -95,6 +95,11 @@ export function createBrainReaders(
     mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
     // A project's to-dos say which ones this person's to-do panel can open (in `mine` or `open`).
     todoList: (identity) => listTodos(root, identity, { capabilities: () => todoSkill.capabilities() }),
+    // A moved folder's files leave one library scope and join another.
+    onMoved: (from, to) => {
+      library.changed(from);
+      library.changed(to);
+    },
   });
   const library = createLibrary(root, {
     projects: () => projects.index(),
@@ -170,6 +175,8 @@ export function createBrainReaders(
       projects.changed();
       return list;
     },
+    // The service drops its own caches after a move; onMoved (above) drops the library's.
+    moveProject: (req, identity, opts) => projects.move(req, identity, opts),
     projectFiles: async (key, kind) => {
       const card = (await projects.index()).byKey(key);
       if (!card)

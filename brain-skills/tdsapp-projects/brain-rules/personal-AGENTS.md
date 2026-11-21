@@ -28,6 +28,6 @@ private like the rest of this folder. The key is `personal/<slug>`, and your per
 skill. Never rename the folder after it's made.
 
 A personal project is never shared. A team to-do, a shared project or a client folder must not
-link to it or name it. To share one, start a new project under the client (or The Digital Stride) and
-move the finished files in by hand.
+link to it or name it. To share one, move it to the client (or The Digital Stride) with the
+`tdsapp-projects` skill's `move`: everything in its folder is then shared with the team.
 ````

@@ -20,6 +20,9 @@ import {
   joinWords,
   KNOWN_SERVICES,
   LIGHT_WORDS,
+  MOVE_LEGACY,
+  MOVE_NO_SKILL,
+  type MoveState,
   mergeOntoLatest,
   personName,
   STATUS_WORDS,
@@ -86,6 +89,8 @@ export function ProjectForm({
   clients,
   team,
   me,
+  canMove = 'none',
+  onMove,
   onDone,
   onCancel,
 }: {
@@ -94,6 +99,10 @@ export function ProjectForm({
   clients: readonly { slug: string; name: string; aliases?: string[] }[];
   team: readonly TeamMember[] | undefined;
   me: string;
+  /** Edit only: whether Move… is offered, and if not, why. */
+  canMove?: MoveState;
+  /** Leaves the form for the move screen. */
+  onMove?: () => void;
   /** The new project's key after a create; null otherwise. */
   onDone: (key: string | null) => void;
   onCancel: () => void;
@@ -107,7 +116,7 @@ export function ProjectForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState<'' | 'cancel' | 'move'>('');
   const [dropEnd, setDropEnd] = useState(false);
   const [kindNote, setKindNote] = useState('');
   const [reloaded, setReloaded] = useState('');
@@ -117,12 +126,11 @@ export function ProjectForm({
   const base = useId();
   const id = (n: string) => `${base}-${n}`;
   const set = (patch: Partial<FormValues>) => setV((x) => ({ ...x, ...patch }));
+  const justMe = v.client === 'personal';
+  const lastClient = useRef('');
 
   const clientOptions = useMemo<PickOption[]>(
-    () => [
-      { value: 'personal', label: 'Personal (only you)' },
-      ...clients.map((c) => ({ value: c.slug, label: c.name, terms: c.aliases, group: 'Clients' })),
-    ],
+    () => clients.map((c) => ({ value: c.slug, label: c.name, terms: c.aliases, group: 'Clients' })),
     [clients],
   );
 
@@ -162,7 +170,8 @@ export function ProjectForm({
   };
 
   const dirty = JSON.stringify(v) !== initial.current;
-  const cancel = () => (dirty ? setAsking(true) : onCancel());
+  const cancel = () => (dirty ? setAsking('cancel') : onCancel());
+  const startMove = () => (dirty ? setAsking('move') : onMove?.());
 
   const setKind = (kind: FormValues['kind'], confirmed = false) => {
     if (kind === v.kind) return;
@@ -232,6 +241,7 @@ export function ProjectForm({
         ? `Add a card to ${card?.title ?? 'this project'}`
         : 'Edit project';
   const ongoing = v.kind === 'ongoing';
+  const clientName = clients.find((c) => c.slug === card?.client)?.name ?? card?.client ?? '';
 
   return (
     <form className="proj-form-page" onSubmit={(e) => void submit(e)} noValidate aria-label={heading}>
@@ -272,20 +282,79 @@ export function ProjectForm({
           />
         </Field>
 
+        {mode === 'edit' && card ? (
+          <div className="proj-field">
+            <span className="proj-label" id={id('client-label')}>
+              Client
+            </span>
+            <div className="proj-static">
+              <span id={id('client-now')}>{card.space === 'personal' ? 'Just me' : clientName}</span>
+              {canMove === 'yes' ? (
+                <button
+                  type="button"
+                  className="btn"
+                  data-size="small"
+                  aria-describedby={`${id('client-now')} ${id('client-hint')}`}
+                  onClick={startMove}
+                >
+                  Move…
+                </button>
+              ) : null}
+            </div>
+            <p className="proj-hint" id={id('client-hint')}>
+              {canMove === 'yes'
+                ? card.space === 'personal'
+                  ? 'Only you can see it. You can move it to a client.'
+                  : 'The team can see it.'
+                : canMove === 'no-skill'
+                  ? MOVE_NO_SKILL
+                  : canMove === 'legacy'
+                    ? MOVE_LEGACY
+                    : ''}
+            </p>
+          </div>
+        ) : null}
+
         {mode === 'create' ? (
           <>
-            <Field id={id('client')} label="Client" error={errors.client}>
-              <SearchSelect
-                id={id('client')}
-                aria-invalid={errors.client ? true : undefined}
-                aria-describedby={errors.client ? `${id('client')}-err` : undefined}
-                value={v.client}
-                options={clientOptions}
-                onChange={(client) => set({ client })}
-                recentKey="clients"
-                placeholder="Choose a client"
+            <div className="proj-field">
+              <span className="proj-label" id={id('who-label')}>
+                Who is it for
+              </span>
+              <Seg
+                label="Who is it for"
+                labelledBy={id('who-label')}
+                value={justMe ? 'me' : 'client'}
+                options={[
+                  { value: 'client', label: 'A client' },
+                  { value: 'me', label: 'Just me' },
+                ]}
+                onChange={(who) => {
+                  if (who === 'me') {
+                    if (v.client !== 'personal') lastClient.current = v.client;
+                    set({ client: 'personal' });
+                  } else set({ client: lastClient.current });
+                  setErrors((e) => ({ ...e, client: undefined }));
+                }}
               />
-            </Field>
+              {justMe ? (
+                <p className="proj-hint">Only you can see it. You can move it to a client later.</p>
+              ) : null}
+            </div>
+            {justMe ? null : (
+              <Field id={id('client')} label="Client" error={errors.client} hint="The team can see it.">
+                <SearchSelect
+                  id={id('client')}
+                  aria-invalid={errors.client ? true : undefined}
+                  aria-describedby={`${id('client')}-hint${errors.client ? ` ${id('client')}-err` : ''}`}
+                  value={v.client}
+                  options={clientOptions}
+                  onChange={(client) => set({ client })}
+                  recentKey="clients"
+                  placeholder="Choose a client"
+                />
+              </Field>
+            )}
             <Field
               id={id('slug')}
               label="Folder name"
@@ -529,11 +598,17 @@ export function ProjectForm({
             if (e.key !== 'Escape') return;
             e.preventDefault();
             e.stopPropagation();
-            setAsking(false);
+            setAsking('');
           }}
         >
           <legend className="proj-ask-q">Discard your changes?</legend>
-          <button type="button" className="btn" data-variant="danger" data-size="small" onClick={onCancel}>
+          <button
+            type="button"
+            className="btn"
+            data-variant="danger"
+            data-size="small"
+            onClick={() => (asking === 'move' ? onMove?.() : onCancel())}
+          >
             Discard changes
           </button>
           <button
@@ -541,7 +616,7 @@ export function ProjectForm({
             className="btn"
             data-size="small"
             ref={keepEditing}
-            onClick={() => setAsking(false)}
+            onClick={() => setAsking('')}
           >
             Keep editing
           </button>

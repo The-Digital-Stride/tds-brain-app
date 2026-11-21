@@ -1002,15 +1002,15 @@
 /* Settings: plain content and hairline rows, no cards ----------------------------------------- */
 .page.settings {
   max-width: 600px;
-  padding: 24px 28px 32px;
+  margin-left: 0;
+  padding: 24px var(--sheet-gutter) 32px;
   gap: 24px;
 }
-/* The tab row sits over the settings column: same width and side padding, sized to its buttons. */
+/* The tab row starts on the sheet gutter, like the title above it, sized to its buttons. */
 .page-tabs {
   flex: none;
-  max-width: 600px;
-  margin: 12px auto 0;
-  padding: 0 28px;
+  margin: 12px 0 0;
+  padding: 0 var(--sheet-gutter);
   width: 100%;
 }
 .page-tabs > .tool-tabs {
@@ -1019,7 +1019,7 @@
   width: fit-content;
 }
 .page-tabs + .sheet-scroll .page.settings {
-  padding-top: 16px;
+  padding-top: 8px;
 }
 .settings h2 {
   margin-bottom: 4px;
@@ -1261,10 +1261,7 @@
     margin-left: 16px;
   }
   .page.settings {
-    padding: 16px;
-  }
-  .page-tabs {
-    padding: 0 16px;
+    padding: 16px var(--sheet-gutter);
   }
 }
 

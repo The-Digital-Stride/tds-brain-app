@@ -26,6 +26,9 @@
   /* A switch that is off and an idle status dot. */
   --grey-dot: #8a94a6;
 
+  /* The one left/right edge of every main sheet (docs/design-system.md, "Alignment"). */
+  --sheet-gutter: 16px;
+
   /* Layers, back to front: desk, tray, glass, sheet */
   --desk: #e9e5dd;
   --tray: #f3f0ea;

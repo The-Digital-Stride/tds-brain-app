@@ -33,6 +33,13 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* Inside a .lib the sheet already supplies the gutter and the first-row gap. */
+/* Tabs inside a sheet's padded body (the project page wraps them in a row with its action) sit on the gutter. */
+.lib > .tool-tabs,
+.lib > .proj-tabrow > .tool-tabs {
+  margin: 0;
+  max-width: 100%;
+}
 .tool-tabs > button {
   flex: none;
   display: inline-flex;

@@ -104,20 +104,20 @@ export function HelpDrawer() {
       </div>
       <div className="drawer-scroll" ref={scroll}>
         <div className="drawer-body">
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            onClick={() => {
-              // Not close-help: that would put the earlier drawer back over the sheet.
-              dispatch({ type: 'close-drawer' });
-              openView('guide');
-            }}
-          >
-            Open the Cortex Guide
-          </button>
           <div className="help-extras">
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              onClick={() => {
+                // Not close-help: that would put the earlier drawer back over the sheet.
+                dispatch({ type: 'close-drawer' });
+                openView('guide');
+              }}
+            >
+              Open the Cortex Guide
+            </button>
             <button
               type="button"
               className="btn"

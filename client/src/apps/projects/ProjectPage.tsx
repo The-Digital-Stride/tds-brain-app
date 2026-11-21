@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectList } from '../../../../shared/projects-contract.ts';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
@@ -157,98 +157,104 @@ function Overview({
         </div>
       ) : null}
 
-      <section className="card proj-card" aria-label="Details">
-        <dl className="kv">
-          <dt>Client</dt>
-          <dd>
-            {clientName}
-            {canChange && canMove === 'yes' ? (
-              <button
-                type="button"
-                className="btn proj-move-btn"
-                data-size="small"
-                data-focus="move"
-                aria-label={`Move ${card.title} to another client`}
-                onClick={onMove}
-              >
-                Move…
-              </button>
+      <div className="tray lib-tray">
+        <section className="card proj-card" aria-label="Details">
+          <dl className="kv">
+            <dt>Client</dt>
+            <dd>
+              {clientName}
+              {canChange && canMove === 'yes' ? (
+                <button
+                  type="button"
+                  className="btn proj-move-btn"
+                  data-size="small"
+                  data-focus="move"
+                  aria-label={`Move ${card.title} to another client`}
+                  onClick={onMove}
+                >
+                  Move…
+                </button>
+              ) : null}
+            </dd>
+            <dt>Status</dt>
+            <dd>{STATUS_WORDS[statusOf(card)]}</dd>
+            <dt>Kind</dt>
+            <dd>{card.kind === 'ongoing' ? 'Ongoing' : card.kind === 'one-off' ? 'One-off' : 'Not set'}</dd>
+            <dt>Health</dt>
+            <dd>
+              <Light light={card.health} />
+            </dd>
+            <dt>Client comms</dt>
+            <dd>
+              <Light light={card.comms} />
+            </dd>
+            <dt>Account Owner</dt>
+            <dd>{card.owner ? personName(card.owner, team) : 'Not set'}</dd>
+            <dt>Service</dt>
+            <dd>{card.service.length > 0 ? card.service.map(serviceWords).join(', ') : 'Not set'}</dd>
+            <dt>Starts</dt>
+            <dd>{card.start ? dateWords(card.start) : 'Not set'}</dd>
+            {card.kind === 'ongoing' ? null : (
+              <>
+                <dt>Ends</dt>
+                <dd>{card.end ? dateWords(card.end) : 'Not set'}</dd>
+              </>
+            )}
+            <dt>{hoursLabel}</dt>
+            <dd>{card.budgetHours === null ? 'Not set' : card.budgetHours.toLocaleString('en-GB')}</dd>
+            <dt>Billable</dt>
+            <dd>{card.billable === null ? 'Not set' : card.billable ? 'Yes' : 'No'}</dd>
+            <dt>Stages</dt>
+            <dd>{card.stages.length > 0 ? card.stages.join(', ') : 'None'}</dd>
+            {card.lastChanged ? (
+              <>
+                <dt>Last changed</dt>
+                <dd>
+                  {dateWords(card.lastChanged.at)} by {personName(card.lastChanged.by, team)}
+                </dd>
+              </>
             ) : null}
-          </dd>
-          <dt>Status</dt>
-          <dd>{STATUS_WORDS[statusOf(card)]}</dd>
-          <dt>Kind</dt>
-          <dd>{card.kind === 'ongoing' ? 'Ongoing' : card.kind === 'one-off' ? 'One-off' : 'Not set'}</dd>
-          <dt>Health</dt>
-          <dd>
-            <Light light={card.health} />
-          </dd>
-          <dt>Client comms</dt>
-          <dd>
-            <Light light={card.comms} />
-          </dd>
-          <dt>Account Owner</dt>
-          <dd>{card.owner ? personName(card.owner, team) : 'Not set'}</dd>
-          <dt>Service</dt>
-          <dd>{card.service.length > 0 ? card.service.map(serviceWords).join(', ') : 'Not set'}</dd>
-          <dt>Starts</dt>
-          <dd>{card.start ? dateWords(card.start) : 'Not set'}</dd>
-          {card.kind === 'ongoing' ? null : (
-            <>
-              <dt>Ends</dt>
-              <dd>{card.end ? dateWords(card.end) : 'Not set'}</dd>
-            </>
-          )}
-          <dt>{hoursLabel}</dt>
-          <dd>{card.budgetHours === null ? 'Not set' : card.budgetHours.toLocaleString('en-GB')}</dd>
-          <dt>Billable</dt>
-          <dd>{card.billable === null ? 'Not set' : card.billable ? 'Yes' : 'No'}</dd>
-          <dt>Stages</dt>
-          <dd>{card.stages.length > 0 ? card.stages.join(', ') : 'None'}</dd>
-          {card.lastChanged ? (
-            <>
-              <dt>Last changed</dt>
-              <dd>
-                {dateWords(card.lastChanged.at)} by {personName(card.lastChanged.by, team)}
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      </section>
-
-      <section className="card proj-card" aria-labelledby="proj-brief">
-        <div className="card-head">
-          <h3 id="proj-brief">Brief</h3>
-        </div>
-        {card.brief ? <p className="proj-brief">{card.brief}</p> : <p className="proj-note">No brief yet.</p>}
-      </section>
-
-      <section className="card proj-card" aria-labelledby="proj-team">
-        <div className="card-head">
-          <h3 id="proj-team">Team</h3>
-        </div>
-        <Team card={card} team={team} canEdit={editable} />
-      </section>
-
-      {card.checklist ? (
-        <section className="card proj-card" aria-labelledby="proj-checklist">
-          <div className="card-head">
-            <h3 id="proj-checklist">Old checklist</h3>
-          </div>
-          <p className="proj-note">
-            This project has a checklist from before to-dos were linked to projects:{' '}
-            <code>{card.checklist}</code>
-          </p>
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            onClick={() => newChat({ draft: `Show me the checklist in ${card.checklist}` })}
-          >
-            Ask Claude about the checklist
-          </button>
+          </dl>
         </section>
-      ) : null}
+
+        <section className="card proj-card" aria-labelledby="proj-brief">
+          <div className="card-head">
+            <h3 id="proj-brief">Brief</h3>
+          </div>
+          {card.brief ? (
+            <p className="proj-brief">{card.brief}</p>
+          ) : (
+            <p className="proj-note">No brief yet.</p>
+          )}
+        </section>
+
+        <section className="card proj-card" aria-labelledby="proj-team">
+          <div className="card-head">
+            <h3 id="proj-team">Team</h3>
+          </div>
+          <Team card={card} team={team} canEdit={editable} />
+        </section>
+
+        {card.checklist ? (
+          <section className="card proj-card" aria-labelledby="proj-checklist">
+            <div className="card-head">
+              <h3 id="proj-checklist">Old checklist</h3>
+            </div>
+            <p className="proj-note">
+              This project has a checklist from before to-dos were linked to projects:{' '}
+              <code>{card.checklist}</code>
+            </p>
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              onClick={() => newChat({ draft: `Show me the checklist in ${card.checklist}` })}
+            >
+              Ask Claude about the checklist
+            </button>
+          </section>
+        ) : null}
+      </div>
     </>
   );
 }
@@ -282,6 +288,15 @@ export function ProjectPage({
   const canChange = list.canChange;
   const editable = canChange && isEditable(card);
   const projectTodos = useProjectTodos(card.key, card.openTodos);
+  // Link files sits at the right end of the tabs row, so the picker's state lives here.
+  const [linking, setLinking] = useState(false);
+  // Add a to-do sits there too.
+  const [adding, setAdding] = useState(false);
+  const { todos } = useStore();
+  const canAddTodo = todos?.canProject === true && !card.archived;
+  useEffect(() => {
+    if (tab !== 'files') setLinking(false);
+  }, [tab]);
   return (
     <>
       <div className="proj-head">
@@ -305,16 +320,40 @@ export function ProjectPage({
           Another folder has the same name as this project and is hidden: {list.duplicates.join(', ')}.
         </p>
       ) : null}
-      <SheetTabs
-        label="Project sections"
-        current={tab}
-        onChoose={(id) => onTab(id as ProjectTab)}
-        items={[
-          { id: 'overview', label: 'Overview', dot: null },
-          { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
-          { id: 'files', label: 'Files' },
-        ]}
-      />
+      <div className="proj-tabrow">
+        <SheetTabs
+          label="Project sections"
+          current={tab}
+          onChoose={(id) => onTab(id as ProjectTab)}
+          items={[
+            { id: 'overview', label: 'Overview', dot: null },
+            { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
+            { id: 'files', label: 'Files' },
+          ]}
+        />
+        {tab === 'todos' && canAddTodo ? (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            onClick={() => setAdding(true)}
+            disabled={adding}
+          >
+            Add a to-do
+          </button>
+        ) : null}
+        {tab === 'files' && editable ? (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            onClick={() => setLinking(true)}
+            disabled={linking}
+          >
+            Link files
+          </button>
+        ) : null}
+      </div>
       <div className="proj-body">
         {tab === 'overview' ? (
           <Overview
@@ -335,9 +374,13 @@ export function ProjectPage({
             rows={projectTodos.data?.todos ?? null}
             failed={projectTodos.error}
             reload={projectTodos.reload}
+            adding={adding}
+            onAdding={setAdding}
           />
         ) : null}
-        {tab === 'files' ? <ProjectFiles card={card} canChange={editable} /> : null}
+        {tab === 'files' ? (
+          <ProjectFiles card={card} canChange={editable} linking={linking} onLinking={setLinking} />
+        ) : null}
       </div>
     </>
   );

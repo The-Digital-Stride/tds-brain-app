@@ -25,6 +25,7 @@ import {
 } from '../../shared/contract.ts';
 import { FilesChangeError, PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
 import {
+  LEGACY_PROJECTS_SCOPE,
   PROJECT_KEY_PATTERN,
   PROJECT_STAGE_MAX,
   TODO_PROJECT_CAPABILITY,
@@ -43,6 +44,7 @@ import {
   APP_VIA,
   findTodoSkill,
   TODO_ATTACH_CAPABILITY,
+  TODO_PRIVATE_PROJECT_MESSAGE,
   type TodoRunAction,
   type TodoSkillRunner,
   type TodoTickAction,
@@ -116,11 +118,21 @@ function stampHandover(
 // `tdsapp-todo` skill is the only writer of the `## Files` section.
 // ---------------------------------------------------------------------------
 
+/** True when a to-do's project label is, or matches, a personal project. */
+function inPersonalProject(t: TodoItem): boolean {
+  const m = t.projectMatch;
+  if (m && (m.how === 'key' || m.how === 'legacy' || m.how === 'missing') && m.key.startsWith('personal/'))
+    return true;
+  return (t.project ?? '').trim().toLowerCase().startsWith('personal/');
+}
+
 /** The library scope id a brain path would be listed under (as library.ts names them), or null. */
 function libraryScopeOf(path: string): string | null {
   const segs = path.split('/');
   if (segs[0] === 'personal') return 'personal';
   if (segs[0] === 'templates') return 'shared:templates';
+  // The older top-level projects/ folders (projects R1, decision 7); cards and updates stay hidden.
+  if (segs[0] === 'projects' && segs.length >= 3 && segs[1]) return LEGACY_PROJECTS_SCOPE;
   if (segs[0] === 'clients' && segs.length >= 3 && segs[1]) return `client:${segs[1]}`;
   return null;
 }
@@ -630,6 +642,11 @@ export async function changeTodo(
     if (!listed) throw todoChangeError('not-found');
     if (action.expect !== undefined && listed.version !== action.expect) throw todoChangeError('changed');
     if (action.kind === 'attach') await checkAttach(root, listed, action.path);
+    // An older script (no canProject) moves the bytes as they are, so a private project's name would
+    // reach todo/: refuse while the to-do is in one (decision 8; overseer sign-off, should 2).
+    if (action.kind === 'move' && action.to === 'tds' && !list.canProject && inPersonalProject(listed)) {
+      throw new TodoChangeError('not-allowed', TODO_PRIVATE_PROJECT_MESSAGE);
+    }
     // A browser that saw canAttach sends details without the Files section and says so. If this check
     // now says otherwise (a capabilities probe failed), the whole body would be replaced and the links
     // lost: refuse as changed so the browser reloads instead (correctness review, release 3). An edit

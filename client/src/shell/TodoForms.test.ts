@@ -51,6 +51,22 @@ describe('buildEditActions with a project', () => {
     expect(actions[1]).not.toHaveProperty('expect');
   });
 
+  it('a team save never sends a personal key left in the draft, and keeps the team project', () => {
+    const t = todo({ projectMatch: { how: 'key', key: 'acme/site' }, stage: 'Build', client: 'acme' });
+    // Switched to Personal, picked a private project, switched back to the team, saved.
+    const kept = buildEditActions(
+      t,
+      draftOf(t, { project: 'personal/diary', stage: 'Ideas' }),
+      false,
+      false,
+      true,
+    );
+    expect(kept).toEqual([]);
+    const none = todo();
+    const cleared = buildEditActions(none, draftOf(none, { project: 'personal/diary' }), false, false, true);
+    expect(cleared.filter((a) => a.kind === 'project')).toEqual([]);
+  });
+
   it('sends nothing for the project when it is not touched, or the server cannot save one', () => {
     const t = todo({ projectMatch: { how: 'key', key: 'acme/site' }, stage: 'Build', client: 'acme' });
     expect(buildEditActions(t, draftOf(t), false, false, true)).toEqual([]);

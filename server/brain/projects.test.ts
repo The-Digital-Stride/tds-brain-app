@@ -557,6 +557,23 @@ describe('tidy', () => {
     expect(after.rows.find((r) => r.label === 'harvey-nash')?.todos.map((t) => t.id)).toEqual(['b.md']);
   });
 
+  it("refuses a new project when the projects skill's roles don't allow this person, writing nothing", async () => {
+    const s = service({ mayChange: async () => false });
+    const suggestion = {
+      do: 'new-project',
+      client: INTERNAL_CLIENT,
+      slug: 'x-new',
+      why: 'no-match',
+    } as const;
+    await expect(
+      s.applyTidy({ label: 'ad-manager-cortex', do: 'approve', suggestion }, ME),
+    ).rejects.toMatchObject({
+      code: 'not-allowed',
+    });
+    expect(fakes.skillRuns).toEqual([]);
+    expect(fakes.todoRuns).toEqual([]);
+  });
+
   it('creates a new project then links, and an exists becomes a link', async () => {
     const s = service();
     const suggestion = {

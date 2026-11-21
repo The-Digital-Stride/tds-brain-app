@@ -734,3 +734,27 @@ describe('uploadTodoFile (decision 3)', () => {
     expect(s.calls()).toEqual([]);
   });
 });
+
+describe('files in the older projects/ folder (projects R1, decision 7)', () => {
+  it('attaches and opens a projects/ file, but never a project card or its updates', async () => {
+    const { root, brain, calls } = setup();
+    put(root, 'projects/client-portal/notes.md');
+    put(root, 'projects/client-portal/project.md');
+    put(root, 'projects/client-portal/updates/2026-11-21.md');
+    await brain.changeTodo({ kind: 'attach', id: MINE, path: 'projects/client-portal/notes.md' }, sam);
+    expect(calls().map((c) => c.command)).toEqual(['attach']);
+    for (const path of ['projects/client-portal/project.md', 'projects/client-portal/updates/2026-11-21.md']) {
+      const got = await codeOf(brain.changeTodo({ kind: 'attach', id: MINE, path }, sam));
+      expect(got?.code, path).toBe('bad-request');
+    }
+    writeTodo(
+      root,
+      `todo/${MINE}`,
+      '---\nassignee: sam-example\n---\n# T\n\n## Files\n\n- [notes.md](../projects/client-portal/notes.md)\n',
+    );
+    const item = (await brain.todos(sam)).mine.find((t) => t.id === MINE);
+    const want = (await brain.libraryItemForPath?.('projects/client-portal/notes.md'))?.key ?? null;
+    expect(want).not.toBeNull();
+    expect(item?.attachments?.[0]?.libraryId).toBe(want);
+  });
+});

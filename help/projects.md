@@ -39,6 +39,7 @@ Projects shows the work the team is doing for each client. Every project has a p
 - Images and Documents have a Project filter, so you can see only the files linked to one project.
 - A to-do has Project and Stage fields, so it can sit in a project and a stage.
 - The tidy-up changes teammates' to-dos too, but only their client, project and stage lines.
+- Only one person should run the tidy-up, straight after the brain has synced, so two Macs don't make the same project twice.
 - Nothing is deleted or moved when you use Projects.
 
 ## Try this

@@ -453,8 +453,13 @@ export function buildEditActions(
   if (canProject) {
     const stageHere = todo.stage ?? '';
     let want = draft.project ?? here;
-    if (toTeam && want.startsWith('personal/')) want = '';
-    const wantStage = want ? (draft.stage ?? stageHere) : '';
+    let wantStage = want ? (draft.stage ?? stageHere) : '';
+    // A team save never sends a personal key (decision 8). The draft keeps one picked before switching
+    // back to the team (fix-round review): a moved to-do leaves the project; a team one keeps its own.
+    if (draft.scope === 'tds' && want.startsWith('personal/')) {
+      want = toTeam || here.startsWith('personal/') ? '' : here;
+      wantStage = want ? stageHere : '';
+    }
     const nowKey = drop ? '' : here;
     const nowStage = drop ? '' : stageHere;
     if (want !== nowKey || wantStage !== nowStage) {

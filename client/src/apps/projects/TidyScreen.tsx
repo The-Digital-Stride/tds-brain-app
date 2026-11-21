@@ -322,6 +322,10 @@ export function TidyScreen({
         approve it. Approving changes your teammates' to-dos too, but only their client, project and stage
         lines.
       </p>
+      <p className="proj-note">
+        Only one person should do this, straight after the brain has synced, so two Macs don't make the same
+        project twice.
+      </p>
       {status ? (
         <p className="proj-note" role="status">
           {status}

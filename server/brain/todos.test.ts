@@ -894,6 +894,27 @@ describe('changeTodo: personal scope', () => {
     expect(calls()).toEqual([]);
   });
 
+  it('on an older script, refuses moving a to-do in a personal project to TDS, running nothing', async () => {
+    const { root, brain: b, calls } = brain(['handover', 'scope']);
+    personalFile(
+      root,
+      '20261111-jev.md',
+      '---\ntitle: Jev plan\nassignee: sam-example\nproject: personal/jev\n---\n',
+    );
+    const x = EX(root, 'personal/todo', '20261111-jev.md');
+    const got = await codeOf(
+      b.changeTodo({ kind: 'move', id: '20261111-jev.md', scope: 'personal', to: 'tds', expect: x }, sam),
+    );
+    expect(got).toBe('not-allowed');
+    expect(calls()).toEqual([]);
+    // A to-do in no project still moves on the older script.
+    await b.changeTodo(
+      { kind: 'move', id: '20261110-dentist.md', scope: 'personal', to: 'tds', expect: dentist(root) },
+      sam,
+    );
+    expect(calls()).toHaveLength(1);
+  });
+
   it('needs expect on personal actions with an id, and the right values', async () => {
     const { root, brain: b, calls } = brain();
     const x = dentist(root);

@@ -206,13 +206,16 @@ export function ProjectForm({
     } else if (card && mode === 'card') {
       res = await change({ kind: 'card', key: card.key, fields: fieldsFromValues(v) });
     } else if (card) {
-      const fields = changedFields(card, v);
+      // Against the card the form was filled from, not the live one: a refresh while editing must not
+      // turn a teammate's change into one of ours, and must still end in a "changed" refusal.
+      const base = seen.current ?? card;
+      const fields = changedFields(base, v);
       if (Object.keys(fields).length === 0) {
         setBusy(false);
         onCancel();
         return;
       }
-      res = await change({ kind: 'edit', key: card.key, fields, expect: card.version });
+      res = await change({ kind: 'edit', key: card.key, fields, expect: base.version });
     } else {
       setBusy(false);
       return;

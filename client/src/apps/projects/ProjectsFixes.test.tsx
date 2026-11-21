@@ -109,6 +109,33 @@ describe('the form after a "changed" refusal (fix 1)', () => {
   });
 });
 
+describe('a refresh while editing (fix-round review)', () => {
+  it("saves against the card the form opened with, so a teammate's change is never undone", async () => {
+    await show(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    // Simon puts it on hold; the window regains focus and the store refreshes underneath the form.
+    act(() => {
+      projectsStore.apply(
+        projectList([
+          card({ slug: 'site', title: 'Sky site', owner: 'me', status: 'on-hold', version: 'v2' }),
+        ]),
+      );
+    });
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Sky site 2' } });
+    api.changeProject.mockResolvedValue(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() =>
+      expect(api.changeProject).toHaveBeenLastCalledWith({
+        kind: 'edit',
+        key: SKY.key,
+        fields: { title: 'Sky site 2' },
+        expect: SKY.version,
+      }),
+    );
+  });
+});
+
 describe('the To-dos tab (fix 2)', () => {
   const rows = {
     count: 3,

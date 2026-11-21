@@ -699,6 +699,10 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       return tidy(identity);
     }
     if (s.do === 'new-project') {
+      // Making a project is a projects change: the same roles check as `change` (fix-round review).
+      if (!(await mayChange(identity))) {
+        throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
+      }
       const title = /[A-Z ]/.test(label) && label.length <= PROJECT_TITLE_MAX ? label : folderTitle(s.slug);
       try {
         await opts.skill.run(

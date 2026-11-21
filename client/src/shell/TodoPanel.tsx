@@ -36,8 +36,8 @@ import {
   Assignee,
   buildEditActions,
   conflictNote,
-  DROP_PROJECT_QUESTION,
   detailsText,
+  dropProjectQuestion,
   type EditDraft,
   PASS_ON_NOTE,
   PERSONAL_WARNING,
@@ -616,6 +616,8 @@ function EditView({
   const chat = useChat(todo);
   const [askDrop, setAskDrop] = useState(false);
   const dropButton = useRef<HTMLButtonElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
+  const { list: projectList } = useProjects();
   useEffect(() => {
     if (askDrop) dropButton.current?.focus();
   }, [askDrop]);
@@ -665,12 +667,19 @@ function EditView({
       save();
     }
   };
-  // Moving to the team: a private project can't come along, so it clears from the fields.
-  const setScope = (scope: TodoScope) =>
-    set({
-      scope,
-      ...(scope === 'tds' && projectNow.startsWith('personal/') ? { project: '', stage: '' } : {}),
-    });
+  // Moving to the team: a private project can't come along, so it shows as none and is left out of the save,
+  // but the draft keeps it: switching back to Personal restores the project and stage as they were.
+  const setScope = (scope: TodoScope) => set({ scope });
+  // The question was dismissed (Cancel or Escape): the move is undone, so the scope returns with its
+  // project and stage, and the keyboard goes back to Save.
+  const closeAsk = () => {
+    setAskDrop(false);
+    set({ scope: todo.scope });
+    saveButton.current?.focus();
+  };
+  const privateKey = todoProjectValue(todo);
+  const privateName =
+    projectList?.projects.find((c) => c.key === privateKey)?.title || privateKey.split('/')[1] || null;
   const detailsNote = tooLong ? LONG_NOTE : detailsEditable ? null : UNFAITHFUL_NOTE;
 
   return (
@@ -800,10 +809,10 @@ function EditView({
             if (e.key !== 'Escape') return;
             e.preventDefault();
             e.stopPropagation();
-            setAskDrop(false);
+            closeAsk();
           }}
         >
-          <legend className="todo-ask-q">{DROP_PROJECT_QUESTION}</legend>
+          <legend className="todo-ask-q">{dropProjectQuestion(privateName)}</legend>
           <button
             type="button"
             className="btn"
@@ -814,7 +823,7 @@ function EditView({
           >
             Move to the team
           </button>
-          <button type="button" className="btn" data-size="small" onClick={() => setAskDrop(false)}>
+          <button type="button" className="btn" data-size="small" onClick={closeAsk}>
             Cancel
           </button>
         </fieldset>
@@ -853,6 +862,7 @@ function EditView({
             type="submit"
             className="btn"
             data-variant="primary"
+            ref={saveButton}
             aria-disabled={canSave ? undefined : true}
             aria-describedby={
               [noTitle ? `${uid}-no-title` : '', warnPersonal ? `${uid}-personal` : '']

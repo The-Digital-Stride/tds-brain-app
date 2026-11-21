@@ -16,6 +16,7 @@ import {
   type ProjectList,
   ProjectsError,
   type ProjectsErrorCode,
+  type ProjectTodosResponse,
   type TidyApply,
   type TidyList,
 } from '../../shared/projects-contract.ts';
@@ -60,12 +61,32 @@ const seen = {
   tidy: 0,
   applies: [] as { apply: TidyApply; by: string }[],
   todoChanges: [] as TodoAction[],
+  projectTodos: [] as [string, string][],
+  access: [] as string[],
 };
-let state: { has: boolean; directWrites: boolean; fail: unknown } = {
+type Access = 'allowed' | 'restricted' | 'unknown-skill';
+let state: { has: boolean; directWrites: boolean; fail: unknown; access: Access; todos: TodoList } = {
   has: true,
   directWrites: true,
   fail: null,
+  access: 'allowed',
+  todos: TODOS,
 };
+const PROJECT_TODOS = {
+  todos: [
+    {
+      key: 'a.md',
+      id: 'a.md',
+      scope: 'tds',
+      title: 'Send it',
+      assignee: 'ben-mcadam',
+      due: null,
+      stage: null,
+      mine: false,
+    },
+  ],
+  count: 1,
+} satisfies ProjectTodosResponse;
 
 const maybeFail = () => {
   if (state.fail) throw state.fail;
@@ -78,7 +99,11 @@ beforeAll(async () => {
   const brain = {
     watch: () => () => {},
     identity: async () => sam,
-    todos: async () => TODOS,
+    todos: async () => state.todos,
+    skillAccess: async (_who: Identity, name: string) => {
+      seen.access.push(name);
+      return state.access;
+    },
     changeTodo: async (action: TodoAction) => {
       seen.todoChanges.push(action);
       return {};
@@ -107,6 +132,15 @@ beforeAll(async () => {
             maybeFail();
             seen.files.push([key, kind]);
             return { items: [], hidden: 0 };
+          }
+        : undefined;
+    },
+    get projectTodos() {
+      return state.has
+        ? async (key: string, by: Identity) => {
+            maybeFail();
+            seen.projectTodos.push([key, by.slug]);
+            return PROJECT_TODOS;
           }
         : undefined;
     },
@@ -158,13 +192,15 @@ afterAll(async () => {
   await new Promise((done) => app.server.close(done));
 });
 beforeEach(() => {
-  state = { has: true, directWrites: true, fail: null };
+  state = { has: true, directWrites: true, fail: null, access: 'allowed', todos: TODOS };
   seen.projects = 0;
   seen.changes.length = 0;
   seen.files.length = 0;
   seen.tidy = 0;
   seen.applies.length = 0;
   seen.todoChanges.length = 0;
+  seen.projectTodos.length = 0;
+  seen.access.length = 0;
 });
 
 interface Reply {
@@ -237,7 +273,12 @@ const CHANGES: ProjectAction[] = [
 
 describe('the security gate', () => {
   it('every read needs the session, and refuses another site', async () => {
-    for (const path of [ROUTES.projects, filesPath(KEY, 'image'), ROUTES.projectsTidy]) {
+    for (const path of [
+      ROUTES.projects,
+      filesPath(KEY, 'image'),
+      `${ROUTES.projectTodos}?key=${KEY}`,
+      ROUTES.projectsTidy,
+    ]) {
       expect((await send(path)).status, path).toBe(401);
       const cross = await send(path, { headers: { cookie: COOKIE, 'sec-fetch-site': 'cross-site' } });
       expect(cross.status, path).toBe(403);
@@ -502,6 +543,86 @@ describe('/api/projects/tidy (decision 13)', () => {
   });
 });
 
+// Review fixes (release 1): who may change projects and approve tidy-ups, and a project's to-dos.
+describe('permissions (review fix 4)', () => {
+  it("refuses a project change unless the tdsapp-projects skill's roles allow this person", async () => {
+    for (const access of ['restricted', 'unknown-skill'] as const) {
+      state.access = access;
+      const r = await post(ROUTES.projectsChange, CHANGES[0]);
+      expect(r.status, access).toBe(403);
+      expect(r.json.error).toEqual({
+        code: 'not-allowed',
+        message: "Changing projects isn't available to you in the app yet.",
+      });
+    }
+    expect(seen.access).toEqual(['tdsapp-projects', 'tdsapp-projects']);
+    expect(seen.changes).toEqual([]);
+    state.access = 'allowed';
+    expect((await post(ROUTES.projectsChange, CHANGES[0])).status).toBe(200);
+  });
+
+  it('refuses a tidy approval unless changing to-dos is on and can set projects', async () => {
+    for (const todos of [
+      { ...TODOS, changes: 'restricted' },
+      { ...TODOS, changes: 'no-skill' },
+      { ...TODOS, canProject: false },
+    ] satisfies TodoList[]) {
+      state.todos = todos;
+      const r = await post(ROUTES.projectsTidy, TIDY_APPROVE);
+      expect(r.status, JSON.stringify(todos)).toBe(403);
+      expect(r.json.error).toEqual({
+        code: 'not-allowed',
+        message: "Changing to-dos isn't available to you in the app yet.",
+      });
+    }
+    expect(seen.applies).toEqual([]);
+  });
+
+  it('skips and unskips with the to-do switch off and no to-do access: they only write the app’s data folder', async () => {
+    state.directWrites = false;
+    state.todos = { ...TODOS, changes: 'restricted', canProject: false };
+    state.access = 'restricted';
+    for (const apply of [
+      { label: 'x', do: 'skip' },
+      { label: 'x', do: 'unskip' },
+    ] satisfies TidyApply[]) {
+      expect((await post(ROUTES.projectsTidy, apply)).status, apply.do).toBe(200);
+    }
+    expect(seen.applies.map((a) => a.apply.do)).toEqual(['skip', 'unskip']);
+    expect((await post(ROUTES.projectsTidy, TIDY_APPROVE)).status).toBe(403);
+  });
+});
+
+describe('GET /api/projects/todos (UX B2)', () => {
+  it("answers the project's to-dos for the signed-in person", async () => {
+    const r = await get(`${ROUTES.projectTodos}?key=${encodeURIComponent('personal/plan')}`);
+    expect(r).toEqual({ status: 200, json: PROJECT_TODOS });
+    expect(seen.projectTodos).toEqual([['personal/plan', 'sam-example']]);
+  });
+
+  it('refuses a missing or malformed key before the brain is asked, and is GET only', async () => {
+    for (const path of [
+      ROUTES.projectTodos,
+      `${ROUTES.projectTodos}?key=`,
+      `${ROUTES.projectTodos}?key=acme`,
+      `${ROUTES.projectTodos}?key=Acme/web`,
+      `${ROUTES.projectTodos}?key=personal/../x`,
+      `${ROUTES.projectTodos}?key=${'a'.repeat(61)}/web`,
+    ]) {
+      expect((await get(path)).status, path).toBe(400);
+    }
+    expect((await post(`${ROUTES.projectTodos}?key=${KEY}`, {})).status).toBe(405);
+    expect(seen.projectTodos).toEqual([]);
+  });
+
+  it('maps a project the brain does not know to 404', async () => {
+    state.fail = new ProjectsError('not-found', "That project couldn't be found. It may have been moved.");
+    const r = await get(`${ROUTES.projectTodos}?key=${KEY}`);
+    expect(r.status).toBe(404);
+    expect(r.json.error?.code).toBe('not-found');
+  });
+});
+
 describe('the to-do project action (decisions 5 and 6)', () => {
   const project = (over: Record<string, unknown> = {}) => ({
     kind: 'project',
@@ -576,6 +697,7 @@ describe('a brain without the projects readers (older fakes)', () => {
       await get(ROUTES.projects),
       await post(ROUTES.projectsChange, CHANGES[0]),
       await get(filesPath(KEY, 'image')),
+      await get(`${ROUTES.projectTodos}?key=${KEY}`),
       await get(ROUTES.projectsTidy),
       await post(ROUTES.projectsTidy, TIDY_APPROVE),
     ]) {

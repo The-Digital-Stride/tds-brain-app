@@ -13,7 +13,7 @@ import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
 import { createProjects } from './projects.ts';
-import { createProjectsSkillRunner, type ProjectsSkillOptions } from './projects-skill.ts';
+import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
@@ -91,6 +91,10 @@ export function createBrainReaders(
     todoSkill,
     clients: () => listClients(root),
     dataDir: deps.dataDir ?? null,
+    // Review fix (release 1): changing projects follows the skill's `roles:`, like the other skills.
+    mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
+    // A project's to-dos say which ones this person's to-do panel can open (in `mine` or `open`).
+    todoList: (identity) => listTodos(root, identity, { capabilities: () => todoSkill.capabilities() }),
   });
   const library = createLibrary(root, {
     projects: () => projects.index(),
@@ -172,6 +176,7 @@ export function createBrainReaders(
         throw new ProjectsError('not-found', "That project couldn't be found. It may have been moved.");
       return library.projectFiles(card, kind);
     },
+    projectTodos: (key, identity) => projects.projectTodos(key, identity),
     tidy: (identity) => projects.tidy(identity),
     applyTidy: async (apply, identity) => {
       const list = await projects.applyTidy(apply, identity);

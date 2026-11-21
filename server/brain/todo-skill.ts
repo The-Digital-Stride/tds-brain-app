@@ -34,6 +34,9 @@ export const APP_VIA = 'TDS Cortex';
  */
 export const TODO_PRIVATE_PROJECT_MESSAGE =
   "A team to-do can't be in a personal project, so nothing was changed. Take it out of the project first.";
+/** The same rule for files: a team to-do can't link a file kept in a personal project's folder. */
+export const TODO_PRIVATE_FILE_MESSAGE =
+  "A team to-do can't link a file from a personal project, so nothing was changed. Take the link off first, or keep the to-do personal.";
 
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {
@@ -240,7 +243,7 @@ export interface TodoSkillRunner {
 }
 
 /** What the script's exit code and reply mean for the app. 'private' is a 403: the privacy rule. */
-function judge(outcome: Outcome): TodoChangeErrorCode | 'private' | null {
+function judge(outcome: Outcome): TodoChangeErrorCode | 'private' | 'private-file' | null {
   if (outcome.failed) return 'internal';
   const reply = parseReply(outcome.stdout);
   if (reply === null) return 'internal';
@@ -249,7 +252,9 @@ function judge(outcome: Outcome): TodoChangeErrorCode | 'private' | null {
     if (reply.status === 400) return 'bad-request';
     if (reply.status === 404) return 'not-found';
     if (reply.status === 409) return 'changed';
-    if (reply.status === 403) return 'private';
+    // The script's words are never shown, but they say whether a project or a file broke the rule.
+    if (reply.status === 403)
+      return typeof reply.error === 'string' && /\bfile\b/.test(reply.error) ? 'private-file' : 'private';
   }
   return 'internal';
 }
@@ -281,6 +286,7 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
     );
     const code = judge(outcome);
     if (code === 'private') throw new TodoChangeError('not-allowed', TODO_PRIVATE_PROJECT_MESSAGE);
+    if (code === 'private-file') throw new TodoChangeError('not-allowed', TODO_PRIVATE_FILE_MESSAGE);
     if (code) throw todoChangeError(code);
     const file = parseReply(outcome.stdout)?.file;
     return { file: typeof file === 'string' ? file : null };

@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import {
   PROJECT_SLUG_MAX,
@@ -8,15 +8,19 @@ import {
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
-import { useProjects } from '../../state/projects.ts';
+import { projectsStore, useProjects } from '../../state/projects.ts';
 import {
   changedFields,
+  changedFieldWords,
+  dateWords,
   EMPTY_VALUES,
   type FormErrors,
   type FormValues,
   fieldsFromValues,
+  joinWords,
   KNOWN_SERVICES,
   LIGHT_WORDS,
+  mergeOntoLatest,
   personName,
   STATUS_WORDS,
   STATUSES,
@@ -27,9 +31,13 @@ import {
 } from './logic.ts';
 import { useProjectChange } from './useChange.ts';
 
+/** Form order, so the first invalid field gets focus. Ids match `id(name)` below. */
+const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brief', 'team'] as const;
+
 type Mode = 'create' | 'edit' | 'card';
 
 const KINDS = [
+  { value: '', label: 'Not set' },
   { value: 'one-off', label: 'One-off' },
   { value: 'ongoing', label: 'Ongoing' },
 ] as const;
@@ -91,7 +99,7 @@ export function ProjectForm({
   onCancel: () => void;
 }) {
   const change = useProjectChange();
-  const { list, refresh } = useProjects();
+  const { refresh } = useProjects();
   const [v, setV] = useState<FormValues>(() =>
     card ? valuesFromCard(card) : { ...EMPTY_VALUES, owner: me },
   );
@@ -99,6 +107,13 @@ export function ProjectForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [dropEnd, setDropEnd] = useState(false);
+  const [kindNote, setKindNote] = useState('');
+  const [reloaded, setReloaded] = useState('');
+  const initial = useRef(JSON.stringify(v));
+  const seen = useRef<ProjectCard | null>(card);
+  const keepEditing = useRef<HTMLButtonElement>(null);
   const base = useId();
   const id = (n: string) => `${base}-${n}`;
   const set = (patch: Partial<FormValues>) => setV((x) => ({ ...x, ...patch }));
@@ -119,11 +134,48 @@ export function ProjectForm({
   }, [team, v.team, v.owner, card]);
   const services = useMemo(() => [...new Set([...KNOWN_SERVICES, ...v.service])], [v.service]);
 
+  useEffect(() => {
+    if (asking) keepEditing.current?.focus();
+  }, [asking]);
+
+  // After a "changed" refusal: take the latest card, keep what this person typed, and say what a teammate changed.
   const reload = async () => {
     await refresh();
-    const latest = list?.projects.find((p) => p.key === card?.key);
-    if (latest) setV(valuesFromCard(latest));
+    const latest = projectsStore.get().list?.projects.find((p) => p.key === card?.key);
+    const old = seen.current;
+    if (!latest || !old) return;
+    const theirs = changedFieldWords(old, latest);
+    const mine = changedFields(old, v);
+    const mineWords = changedFieldWords(old, { ...old, ...mine, version: old.version } as ProjectCard);
+    const both = theirs.filter((w) => mineWords.includes(w));
+    const who = latest.lastChanged ? personName(latest.lastChanged.by, team) : 'Someone';
+    setV(mergeOntoLatest(old, v, latest));
+    seen.current = latest;
+    initial.current = JSON.stringify(valuesFromCard(latest));
+    setReloaded(
+      `${who} changed ${theirs.length > 0 ? joinWords(theirs) : 'this project'}. ` +
+        (both.length > 0
+          ? `You also changed ${joinWords(both)}, so your version is shown. Check it before you save. Your other changes are kept.`
+          : 'Your other changes are kept.'),
+    );
     setFailure(null);
+  };
+
+  const dirty = JSON.stringify(v) !== initial.current;
+  const cancel = () => (dirty ? setAsking(true) : onCancel());
+
+  const setKind = (kind: FormValues['kind'], confirmed = false) => {
+    if (kind === v.kind) return;
+    if (kind === 'ongoing' && v.end && !confirmed) {
+      setDropEnd(true);
+      return;
+    }
+    setDropEnd(false);
+    const clearBudget = v.kind !== '' && v.budget.trim() !== '';
+    set({ kind, ...(kind === 'ongoing' ? { end: '' } : {}), ...(clearBudget ? { budget: '' } : {}) });
+    setKindNote(
+      clearBudget ? 'Budget hours cleared: one-off is for the whole project, ongoing is per month.' : '',
+    );
   };
 
   const submit = async (e: FormEvent) => {
@@ -131,7 +183,13 @@ export function ProjectForm({
     const found = validate(v, mode);
     setErrors(found);
     setFailure(null);
-    if (Object.keys(found).length > 0) return;
+    setReloaded('');
+    const first = FIELD_ORDER.find((k) => found[k]);
+    if (first) {
+      // Focus after the errors have drawn.
+      setTimeout(() => document.getElementById(id(first))?.focus(), 0);
+      return;
+    }
     setBusy(true);
     let res: Awaited<ReturnType<typeof change>>;
     let key: string | null = null;
@@ -177,6 +235,11 @@ export function ProjectForm({
       <div className="proj-head">
         <h2 className="proj-title">{heading}</h2>
       </div>
+      {reloaded ? (
+        <p className="proj-banner" data-level="warning" role="status">
+          {reloaded}
+        </p>
+      ) : null}
       {failure ? (
         <div className="proj-banner" data-level="error" role="alert">
           <span>{failure.message}</span>
@@ -211,6 +274,8 @@ export function ProjectForm({
             <Field id={id('client')} label="Client" error={errors.client}>
               <SearchSelect
                 id={id('client')}
+                aria-invalid={errors.client ? true : undefined}
+                aria-describedby={errors.client ? `${id('client')}-err` : undefined}
                 value={v.client}
                 options={clientOptions}
                 onChange={(client) => set({ client })}
@@ -240,33 +305,71 @@ export function ProjectForm({
         ) : null}
 
         <div className="proj-field">
-          <span className="proj-label" id={id('kind')}>
+          <span className="proj-label" id={id('kind-label')}>
             Kind
           </span>
           <Seg
             label="Kind"
-            value={v.kind || 'one-off'}
+            labelledBy={id('kind-label')}
+            value={v.kind}
             options={[...KINDS]}
-            onChange={(kind) => set({ kind })}
+            onChange={(kind) => setKind(kind)}
           />
+          {dropEnd ? (
+            <div className="proj-banner" data-level="warning" role="alert">
+              <span>
+                Ongoing projects have no end date, so the end date ({dateWords(v.end)}) will be removed.
+              </span>
+              <button
+                type="button"
+                className="btn"
+                data-size="small"
+                onClick={() => setKind('ongoing', true)}
+              >
+                Switch to ongoing
+              </button>
+              <button type="button" className="btn" data-size="small" onClick={() => setDropEnd(false)}>
+                Keep one-off
+              </button>
+            </div>
+          ) : null}
+          {kindNote ? (
+            <p className="proj-hint" role="status">
+              {kindNote}
+            </p>
+          ) : null}
         </div>
         <div className="proj-field">
-          <span className="proj-label">Status</span>
+          <span className="proj-label" id={id('status-label')}>
+            Status
+          </span>
           <Seg
             label="Status"
+            labelledBy={id('status-label')}
             value={v.status}
             options={STATUSES.map((s) => ({ value: s, label: STATUS_WORDS[s] }))}
             onChange={(status) => set({ status })}
           />
         </div>
         <div className="proj-field">
-          <span className="proj-label">Health</span>
-          <Seg label="Health" value={v.health} options={[...LIGHTS]} onChange={(health) => set({ health })} />
+          <span className="proj-label" id={id('health-label')}>
+            Health
+          </span>
+          <Seg
+            label="Health"
+            labelledBy={id('health-label')}
+            value={v.health}
+            options={[...LIGHTS]}
+            onChange={(health) => set({ health })}
+          />
         </div>
         <div className="proj-field">
-          <span className="proj-label">Client comms</span>
+          <span className="proj-label" id={id('comms-label')}>
+            Client comms
+          </span>
           <Seg
             label="Client comms"
+            labelledBy={id('comms-label')}
             value={v.comms}
             options={[...LIGHTS]}
             onChange={(comms) => set({ comms })}
@@ -290,7 +393,7 @@ export function ProjectForm({
             ))}
           </select>
         </Field>
-        <fieldset className="proj-field proj-checks">
+        <fieldset className="proj-field proj-checks" id={id('team')} tabIndex={-1}>
           <legend>Team</legend>
           {people.map((p) => (
             <label key={p} className="proj-check">
@@ -374,7 +477,7 @@ export function ProjectForm({
           <input
             type="checkbox"
             className="tick"
-            checked={v.billable}
+            checked={v.billable === true}
             onChange={(e) => set({ billable: e.target.checked })}
           />
           <span>Billable</span>
@@ -390,6 +493,7 @@ export function ProjectForm({
             className="field proj-area"
             rows={3}
             value={v.stages}
+            aria-invalid={errors.stages ? true : undefined}
             aria-describedby={`${id('stages')}-hint${errors.stages ? ` ${id('stages')}-err` : ''}`}
             onChange={(e) => set({ stages: e.target.value })}
           />
@@ -400,6 +504,8 @@ export function ProjectForm({
             className="field proj-area"
             rows={6}
             value={v.brief}
+            aria-invalid={errors.brief ? true : undefined}
+            aria-describedby={errors.brief ? `${id('brief')}-err` : undefined}
             onChange={(e) => set({ brief: e.target.value })}
           />
         </Field>
@@ -409,10 +515,35 @@ export function ProjectForm({
         <button type="submit" className="btn" data-variant="primary" disabled={busy}>
           {mode === 'create' ? 'Create project' : mode === 'card' ? 'Add card' : 'Save changes'}
         </button>
-        <button type="button" className="btn" onClick={onCancel}>
+        <button type="button" className="btn" onClick={cancel}>
           Cancel
         </button>
       </div>
+      {asking ? (
+        <fieldset
+          className="proj-ask"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            setAsking(false);
+          }}
+        >
+          <legend className="proj-ask-q">Discard your changes?</legend>
+          <button type="button" className="btn" data-variant="danger" data-size="small" onClick={onCancel}>
+            Discard changes
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            ref={keepEditing}
+            onClick={() => setAsking(false)}
+          >
+            Keep editing
+          </button>
+        </fieldset>
+      ) : null}
     </form>
   );
 }

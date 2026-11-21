@@ -434,7 +434,7 @@ export interface TidyRow {
     version: string;
   }[];
   /** To-dos with this label left out because their `client:` names another client. Shown, not changed. */
-  conflicts: { id: string; title: string; client: string }[];
+  conflicts: { id: string; scope: 'tds' | 'personal'; title: string; client: string }[];
   suggestion: TidySuggestion;
 }
 

@@ -27,6 +27,7 @@ import {
   findTodoSkill,
   scriptPayload,
   TODO_CHANGE_MESSAGES,
+  TODO_PRIVATE_FILE_MESSAGE,
   TODO_PRIVATE_PROJECT_MESSAGE,
   type TodoSpawner,
 } from './todo-skill.ts';
@@ -722,5 +723,21 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
         }),
       ),
     ).toEqual({ code: 'not-allowed', message: TODO_PRIVATE_PROJECT_MESSAGE });
+  });
+
+  it("maps a 403 about a personal project's file to the file message", async () => {
+    const refused = setup({
+      exit: 2,
+      out: '{"error":"a team to-do can\'t link a file from a personal project","status":403}\n',
+    });
+    expect(
+      await codeOf(
+        createTodoSkillRunner(refused.root, { env: refused.env }).run({
+          kind: 'attach',
+          id: 'a.md',
+          path: 'personal/projects/jev/plan.md',
+        } as never),
+      ),
+    ).toEqual({ code: 'not-allowed', message: TODO_PRIVATE_FILE_MESSAGE });
   });
 });

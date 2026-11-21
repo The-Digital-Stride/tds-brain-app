@@ -15,6 +15,7 @@ const searchFn = vi.hoisted(() => vi.fn());
 vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
 
 const { SEARCH_GROUP_MAX, searchSources } = await import('./search-sources.ts');
+const { projectPageRequest } = await import('../state/client-choice.ts');
 const { adManagerSearch } = await import('../tools/ad-manager/search.ts');
 const { commandSearch } = await import('../tools/ad-manager/command-search.ts');
 const { summarySearch } = await import('../tools/ad-manager/summary-search.ts');
@@ -592,26 +593,42 @@ describe('the Projects group', () => {
     });
 
   it('finds a project by title, client name, alias or slug, and skips archived ones', () => {
-    expect(hits('projects', 'website', withProjects()).map((h) => h.id)).toEqual([
-      'acme-heating/website-rebuild',
-    ]);
-    expect(hits('projects', 'northwind', withProjects()).map((h) => h.id)).toEqual([
-      'northwind/seo-retainer',
-    ]);
-    expect(hits('projects', 'AH', withProjects()).map((h) => h.id)).toEqual(['acme-heating/website-rebuild']);
-    expect(hits('projects', 'seo-retainer', withProjects()).map((h) => h.id)).toEqual([
-      'northwind/seo-retainer',
-    ]);
+    expect(
+      hits('projects', 'website', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['acme-heating/website-rebuild']);
+    expect(
+      hits('projects', 'northwind', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['northwind/seo-retainer']);
+    expect(
+      hits('projects', 'AH', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['acme-heating/website-rebuild']);
+    expect(
+      hits('projects', 'seo-retainer', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['northwind/seo-retainer']);
     expect(hits('projects', 'old site', withProjects())).toEqual([]);
   });
 
-  it('shows "Client · Project" and offers to filter to it', () => {
-    const [hit] = hits('projects', 'website', withProjects());
-    expect(hit?.label).toBe('Acme Heating · Website rebuild');
-    expect(hit?.hint).toBe('Filter to this project');
+  it('opens the project page first, with "Filter to this project" as the second action', () => {
+    const [open, filter] = hits('projects', 'website', withProjects());
+    expect(open?.label).toBe('Acme Heating · Website rebuild');
+    expect(open?.hint).toBe('Open project');
+    const openView = vi.fn();
+    open?.run({ openView } as unknown as SearchActions);
+    expect(openView).toHaveBeenCalledWith('app:projects');
+    expect(projectPageRequest.get()).toBe('acme-heating/website-rebuild');
+    expect(filter?.hint).toBe('Filter to this project');
     const filterToProject = vi.fn();
-    hit?.run({ filterToProject } as unknown as SearchActions);
+    filter?.run({ filterToProject } as unknown as SearchActions);
     expect(filterToProject).toHaveBeenCalledWith('acme-heating/website-rebuild');
+    projectPageRequest.set('');
   });
 
   it('has no hits before the list has loaded (an older server too)', () => {

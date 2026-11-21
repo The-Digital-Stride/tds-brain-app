@@ -39,8 +39,9 @@ export function detailsText(todo: { details: string }, canAttach: boolean): stri
 }
 
 /** Said before moving a personal to-do that sits in a private project to the team (decision 8). */
-export const DROP_PROJECT_QUESTION =
-  'This to-do is in a private project. Moving it to the team removes it from that project.';
+export function dropProjectQuestion(name: string | null): string {
+  return `This to-do is in your private project${name ? ` '${name}'` : ''}. Moving it to the team removes it from that project.`;
+}
 
 const NO_PROJECT = 'none';
 

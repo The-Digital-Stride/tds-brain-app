@@ -63,6 +63,41 @@ export const projectChoice = {
   subscribe: clientChoice.subscribe,
 };
 
+/**
+ * A request to open one project's page in the Projects app, made by search (decision 14). The app reads
+ * it when it mounts (`takeProjectPageRequest`) or, if already showing, through `subscribe`, and clears it
+ * once it has acted. '' means no request.
+ */
+let pageRequest = '';
+const pageListeners = new Set<() => void>();
+export const projectPageRequest = {
+  get: (): string => pageRequest,
+  /** Asks for a project's page; '' withdraws the request. */
+  set(key: string): void {
+    if (key === pageRequest) return;
+    pageRequest = key;
+    for (const l of [...pageListeners]) l();
+  },
+  subscribe(listener: () => void): () => void {
+    pageListeners.add(listener);
+    return () => {
+      pageListeners.delete(listener);
+    };
+  },
+};
+
+/** Returns the pending project-page request and clears it; '' when there is none. */
+export function takeProjectPageRequest(): string {
+  const key = pageRequest;
+  if (key) projectPageRequest.set('');
+  return key;
+}
+
+/** Clears the picker's project, keeping its client. */
+export function clearPickedProject(): void {
+  projectChoice.set('');
+}
+
 export function useClientChoice(): string {
   return useSyncExternalStore(clientChoice.subscribe, clientChoice.get);
 }

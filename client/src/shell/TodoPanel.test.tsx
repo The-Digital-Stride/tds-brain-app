@@ -908,7 +908,7 @@ describe('projects in the panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText(
-        'This to-do is in a private project. Moving it to the team removes it from that project.',
+        "This to-do is in your private project 'diary'. Moving it to the team removes it from that project.",
       ),
     ).toBeTruthy();
     expect(changeTodos).not.toHaveBeenCalled();
@@ -929,6 +929,26 @@ describe('projects in the panel', () => {
     await screen.findByText(/private project/);
     const question = screen.getByText(/private project/).closest('fieldset') as HTMLElement;
     fireEvent.click(within(question).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/private project/)).toBeNull();
+    expect(changeTodos).not.toHaveBeenCalled();
+    // The move is undone, and the keyboard is back on Save.
+    expect(
+      within(screen.getByRole('dialog'))
+        .getByRole('radio', { name: 'Personal' })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Save' }));
+  });
+
+  it('switching to the team and back keeps the private project, so nothing is saved', async () => {
+    withProjects([privateTodo()]);
+    mount();
+    await open('Diary job');
+    edit();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('radio', { name: 'TDS' }));
+    fireEvent.click(dialog.getByRole('radio', { name: 'Personal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.queryByText(/private project/)).toBeNull();
     expect(changeTodos).not.toHaveBeenCalled();
   });

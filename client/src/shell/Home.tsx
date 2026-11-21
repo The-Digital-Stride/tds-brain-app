@@ -69,47 +69,59 @@ function ProjectPicker({ clients }: { clients: { slug: string; name: string; ali
       : choice === 'personal'
         ? 'personal'
         : choice.slice('client:'.length);
+  const hasPersonal = cards.some((c) => c.space === 'personal');
+  // No client yet: only personal projects can be picked (and only if there are any).
   const forClient = filterOptions(
     cards.filter((c) =>
       clientValue === ALL
-        ? true
+        ? c.space === 'personal'
         : clientValue === 'personal'
           ? c.space === 'personal'
           : c.client === clientValue,
     ),
     clients,
   );
+  const needClient = clientValue === ALL && !hasPersonal && !project;
+  const locked = needClient || (forClient.length === 0 && !project);
+  const slot = { flex: '0 1 200px', minWidth: 0 } as const;
   return (
-    <div className="lib-tools">
+    // One compact row: "Working on [Client] [Project]", wrapping on a narrow sheet.
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
       <label className="client-label" htmlFor="pick-client">
         Working on
       </label>
-      <SearchSelect
-        id="pick-client"
-        className="client-select"
-        value={clientValue}
-        options={[
-          { value: ALL, label: 'All clients' },
-          ...(cards.some((c) => c.space === 'personal')
-            ? [{ value: 'personal', label: 'My personal projects' }]
-            : []),
-          ...clientOptions(clients),
-        ]}
-        recentKey="clients"
-        onChange={(v) => clientChoice.set(v === ALL ? '' : v === 'personal' ? 'personal' : `client:${v}`)}
-      />
+      <span style={slot}>
+        <SearchSelect
+          id="pick-client"
+          className="client-select"
+          value={clientValue}
+          options={[
+            { value: ALL, label: 'All clients' },
+            ...(hasPersonal ? [{ value: 'personal', label: 'My personal projects' }] : []),
+            ...clientOptions(clients),
+          ]}
+          recentKey="clients"
+          onChange={(v) => clientChoice.set(v === ALL ? '' : v === 'personal' ? 'personal' : `client:${v}`)}
+        />
+      </span>
       <label className="visually-hidden" htmlFor="pick-project">
         Project
       </label>
-      <SearchSelect
-        id="pick-project"
-        className="client-select"
-        value={project || ALL}
-        options={[{ value: ALL, label: 'All projects' }, ...forClient]}
-        recentKey="projects"
-        disabled={forClient.length === 0 && !project}
-        onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
-      />
+      <span style={slot}>
+        <SearchSelect
+          id="pick-project"
+          className="client-select"
+          value={needClient ? 'need' : project || ALL}
+          options={
+            needClient
+              ? [{ value: 'need', label: 'Pick a client first' }]
+              : [{ value: ALL, label: 'All projects' }, ...forClient]
+          }
+          recentKey="projects"
+          disabled={locked}
+          onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
+        />
+      </span>
     </div>
   );
 }

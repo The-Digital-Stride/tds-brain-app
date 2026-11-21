@@ -1,21 +1,30 @@
 import { type FormEvent, useId, useMemo, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
-import type { ProjectCard } from '../../../../shared/projects-contract.ts';
+import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
-import { dateWords, groupByStage, personName, todosForProject } from './logic.ts';
+import { dateWords, groupByStage, personName } from './logic.ts';
 
 /** The project's open to-dos, by stage, and a way to add one with client and project filled in. */
 export function ProjectTodos({
   card,
   team,
   me,
+  rows,
+  failed,
+  reload,
 }: {
   card: ProjectCard;
   team: readonly TeamMember[] | undefined;
   me: string;
+  /** The project's open to-dos from the server, or null while loading. */
+  rows: readonly ProjectTodoRow[] | null;
+  failed: boolean;
+  reload: () => Promise<void>;
 }) {
   const { todos, changeTodos } = useStore();
+  const { dispatch } = useShell();
   const { refresh } = useProjects();
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -25,11 +34,12 @@ export function ProjectTodos({
   const titleId = useId();
   const stageId = useId();
 
-  const mine = useMemo(
-    () => todosForProject([...(todos?.mine ?? []), ...(todos?.open ?? [])], card.key),
-    [todos, card.key],
-  );
-  const groups = useMemo(() => groupByStage(mine, card.stages), [mine, card.stages]);
+  const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
+  // The to-do panel belongs to the To-dos drawer, so open the drawer first.
+  const openPanel = (key: string) => {
+    dispatch({ type: 'open-drawer', drawer: 'todos' });
+    dispatch({ type: 'open-todo', key, mode: 'read' });
+  };
   const canAdd = todos?.canProject === true && !card.archived;
 
   const submit = async (e: FormEvent) => {
@@ -61,6 +71,7 @@ export function ProjectTodos({
     setStage('');
     setAdding(false);
     void refresh();
+    void reload();
   };
 
   return (
@@ -129,7 +140,14 @@ export function ProjectTodos({
           </div>
         </form>
       ) : null}
-      {todos === null ? (
+      {failed && rows === null ? (
+        <p className="proj-note" role="alert">
+          The to-dos can't be loaded right now.{' '}
+          <button type="button" className="btn" data-size="small" onClick={() => void reload()}>
+            Try again
+          </button>
+        </p>
+      ) : rows === null ? (
         <p className="proj-note" role="status">
           Loading to-dos…
         </p>
@@ -145,13 +163,13 @@ export function ProjectTodos({
             <ul className="lib-list">
               {g.items.map((t) => (
                 <li key={t.key} className="line proj-todo">
-                  <span className="line-text">
-                    <span className="line-title">{t.title}</span>
-                    <span className="line-meta">
-                      {t.assignee ? personName(t.assignee, team) : 'Open to anyone'}
-                      {t.due ? ` · due ${dateWords(t.due)}` : ''}
-                    </span>
-                  </span>
+                  {t.mine ? (
+                    <button type="button" className="proj-open" onClick={() => openPanel(t.key)}>
+                      <TodoText t={t} team={team} />
+                    </button>
+                  ) : (
+                    <TodoText t={t} team={team} />
+                  )}
                 </li>
               ))}
             </ul>
@@ -159,5 +177,17 @@ export function ProjectTodos({
         ))
       )}
     </>
+  );
+}
+
+function TodoText({ t, team }: { t: ProjectTodoRow; team: readonly TeamMember[] | undefined }) {
+  return (
+    <span className="line-text">
+      <span className="line-title">{t.title}</span>
+      <span className="line-meta">
+        {t.assignee ? personName(t.assignee, team) : 'Open to anyone'}
+        {t.due ? ` · due ${dateWords(t.due)}` : ''}
+      </span>
+    </span>
   );
 }

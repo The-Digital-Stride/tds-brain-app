@@ -84,10 +84,15 @@
 //     client (none for a personal key); a stage needs a project. A TDS to-do can't take a personal/
 //     key: refused with 403 (the privacy rule), as is everything below that would leak one.
 //   - add takes optional `client`, `project` and `stage`, with the same checks, written after `due`.
-//   - move to TDS of a to-do whose `project:` is a personal/ key is refused (403) unless the request
-//     sends `dropProject: true`; then the moved copy loses its `project:` and `stage:` lines. Any
-//     other move still copies the bytes unchanged.
+//   - move to TDS of a to-do whose `project:` names a personal project (a personal/ key, or the bare
+//     name of a personal/projects/<slug>/ folder; read as leniently as the app reads it: spaces before
+//     the colon, any case, `- ` items) or whose "## Files" section links anything under
+//     personal/projects/ is refused (403) unless the request sends `dropProject: true`. With it, the
+//     moved copy always loses its `project:` and `stage:` lines, whatever they hold, and those
+//     "## Files" lines. Any other move still copies the bytes unchanged.
 //   - attach and detach also take files under projects/<project>/ (the legacy project folders).
+//   - attach of a file under personal/projects/ to a TDS to-do is refused (403). Other personal/
+//     files stay allowed there, as in v0.5.
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
@@ -926,6 +931,11 @@ function attach(body, res) {
   const file = fileOf(body);
   const rel = filePathOf(body);
   const dir = dirOf(body);
+  // v0.6 (decision 8): a team to-do never links into a personal project. Other personal/ files stay
+  // allowed, as in v0.5 (each line says whose Mac has it).
+  if (dir === TODO_DIR && rel.toLowerCase().startsWith(PERSONAL_PROJECTS_PREFIX)) {
+    throw new Refusal(403, "a team to-do can't link a file from a personal project");
+  }
   const todo = openTodo(dir, file, expectOf(body), true);
   const line = fileLineFor(rel, dir, rel.startsWith('personal/') ? adderOf(body) : '');
   const { head, body: lines } = todoParts(todo, file);
@@ -1420,12 +1430,14 @@ function move(body, res) {
   // v0.6 (overseer B2): a private project name never goes to todo/, where git syncs it.
   if (body.dropProject !== undefined && body.dropProject !== true) throw new Refusal(400, 'dropProject must be true');
   let data = todo.bytes;
-  const placedIn = String(parseFrontmatter(stripBom(todo.text)).frontmatter.project || '').trim();
-  if (to === 'tds' && placedIn.startsWith('personal/')) {
-    if (body.dropProject !== true) {
-      throw new Refusal(403, 'this to-do is in a personal project: moving it to the team takes it out of that project');
+  if (to === 'tds') {
+    if (body.dropProject === true) {
+      const text = withoutProjectTraces(todo.text);
+      if (text !== todo.text) data = Buffer.from(encodeFile(todo.shape, text), 'utf8');
+    } else {
+      const trace = personalProjectTrace(todo.text);
+      if (trace) throw new Refusal(403, trace);
     }
-    data = Buffer.from(encodeFile(todo.shape, setFrontmatterLines(todo.text, [['project', null], ['stage', null]])), 'utf8');
   }
   fs.mkdirSync(toDir, { recursive: true });
   requireInside(toDir, to === 'personal' ? PERSONAL_DIR : TODO_DIR);
@@ -1449,6 +1461,122 @@ function move(body, res) {
     throw err;
   }
   res.json({ ok: true, file: name, moved: path.relative(BRAIN_ROOT, dest) });
+}
+
+// ---- move to TDS: nothing from a personal project goes with it (v0.6 review fix) -----------------
+//
+// The app's reader (server/brain/frontmatter.ts) is lenient: `project : x` is a project line, and so
+// is `project:` with `- x` items under it. These helpers read the same way, so nothing it would show
+// as a project is missed, and they read a little more widely still (any letter case).
+
+const PERSONAL_PROJECTS_PREFIX = 'personal/projects/';
+
+// The closing `---` as the app's reader finds it (a line that is `---` once trimmed), or -1.
+function readerClose(lines) {
+  if (lines.length === 0 || lines[0].trim() !== '---') return -1;
+  for (let i = 1; i < lines.length; i++) if (lines[i].trim() === '---') return i;
+  return -1;
+}
+
+// Each `<key>:` frontmatter entry as [its line, the line after its last continuation line].
+// Continuation lines are indented or `- ` items, with any blank lines between them.
+function entrySpans(lines, close, key) {
+  const keyLine = new RegExp(`^${key}\\s*:`, 'i');
+  const spans = [];
+  for (let i = 1; i < close; i++) {
+    if (!keyLine.test(lines[i])) continue;
+    let end = i + 1;
+    for (let j = i + 1; j < close; j++) {
+      if (lines[j].trim() === '') continue;
+      if (!/^\s/.test(lines[j]) && !/^-\s/.test(lines[j])) break;
+      end = j + 1;
+    }
+    spans.push([i, end]);
+    i = end - 1;
+  }
+  return spans;
+}
+
+// Every value the `project:` entries hold, lower case: inline, `[a, b]` lists and `- ` items.
+function projectTokens(lines, close) {
+  const out = [];
+  for (const [start, end] of entrySpans(lines, close, 'project')) {
+    const parts = [lines[start].slice(lines[start].indexOf(':') + 1)];
+    for (let j = start + 1; j < end; j++) parts.push(lines[j].trim().replace(/^-\s*/, ''));
+    for (const part of parts) {
+      let value = unquote(part);
+      if (value.startsWith('[') && value.endsWith(']')) value = value.slice(1, -1);
+      for (const item of value.split(',')) {
+        const token = unquote(item).replace(/\s*\/\s*/g, '/').toLowerCase();
+        if (token !== '') out.push(token);
+      }
+    }
+  }
+  return out;
+}
+
+// The names of this Mac's personal project folders, lower case.
+function personalProjectNames() {
+  try {
+    return new Set(fs.readdirSync(path.join(BRAIN_ROOT, 'personal', 'projects')).map(n => n.toLowerCase()));
+  } catch {
+    return new Set();
+  }
+}
+
+// The lines of the body's "## Files" section that point under personal/projects/, and the section.
+function personalFileLines(bodyLines) {
+  const range = filesRange(bodyLines);
+  const hits = new Set();
+  if (range) {
+    for (let i = range[0] + 1; i < range[1]; i++) {
+      if (bodyLines[i].toLowerCase().includes(PERSONAL_PROJECTS_PREFIX)) hits.add(i);
+    }
+  }
+  return { range, hits };
+}
+
+// Why this to-do can't go to the team as it is, or null: its `project:` names a personal project
+// (a personal/ key, or the bare name of one of this Mac's personal projects), or its "## Files"
+// section links something in one.
+function personalProjectTrace(text) {
+  const lines = text.split('\n');
+  const close = readerClose(lines);
+  if (close !== -1) {
+    const names = personalProjectNames();
+    if (projectTokens(lines, close).some(t => t.startsWith('personal/') || names.has(t))) {
+      return 'this to-do is in a personal project: moving it to the team takes it out of that project';
+    }
+  }
+  if (personalFileLines(lines.slice(close + 1)).hits.size > 0) {
+    return 'this to-do links a file in a personal project: moving it to the team takes that link off';
+  }
+  return null;
+}
+
+// The to-do without its `project:` and `stage:` entries, whatever they hold, and without the
+// "## Files" lines under personal/projects/ (the section goes once nothing is left in it).
+function withoutProjectTraces(text) {
+  let lines = text.split('\n');
+  const close = readerClose(lines);
+  let bodyStart = 0;
+  if (close !== -1) {
+    const drop = new Set();
+    for (const key of ['project', 'stage']) {
+      for (const [start, end] of entrySpans(lines, close, key)) for (let i = start; i < end; i++) drop.add(i);
+    }
+    lines = lines.filter((_, i) => !drop.has(i));
+    bodyStart = close - drop.size + 1;
+  }
+  const head = lines.slice(0, bodyStart);
+  let body = lines.slice(bodyStart);
+  const { range, hits } = personalFileLines(body);
+  if (hits.size > 0) {
+    body = body.filter((_, i) => !hits.has(i));
+    const end = range[1] - hits.size;
+    if (body.slice(range[0] + 1, end).every(l => l.trim() === '')) body = dropSection(body, range[0], end, head.length > 0);
+  }
+  return [...head, ...body].join('\n');
 }
 
 // ---- projects (v0.6) ---------------------------------------------------------------------------

@@ -168,6 +168,7 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
    Personal items may point at shared projects. **v0.6 `move`** of a personal to-do with a `personal/`
    key into TDS is refused unless the app sends `dropProject: true` after asking, and then the moved
    copy loses its `project:`/`stage:` lines (overseer B2), so a private name never reaches git.
+   One exception, Ian's smallest rule (2026-11-21 review): a team to-do may still link other `personal/` files, as in v0.5 (each line says whose Mac has it); only files under `personal/projects/` are refused.
    Plain: nothing private ever leaks into what the team sees.
 9. **All writes go through brain skills.** New `brain-skills/tdsapp-projects` (actions in
    `ProjectAction`: create, card, edit, link, unlink, capabilities) and `tdsapp-todo` v0.6 with a new

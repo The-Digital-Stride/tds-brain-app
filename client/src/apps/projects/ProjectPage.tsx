@@ -18,6 +18,7 @@ import {
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
 import { useProjectChange } from './useChange.ts';
+import { useProjectTodos } from './useProjectTodos.ts';
 
 export type ProjectTab = 'overview' | 'todos' | 'files';
 
@@ -40,7 +41,7 @@ function Team({
   team: readonly TeamMember[] | undefined;
   canEdit: boolean;
 }) {
-  const change = useProjectChange();
+  const change = useProjectChange({ reloadOnChanged: true });
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const rows = teamRows(card);
@@ -130,7 +131,7 @@ function Overview({
         <div className="proj-banner">
           <span>This project has no card yet, so its details can't be edited.</span>
           {canChange && !card.archived ? (
-            <button type="button" className="btn" data-size="small" onClick={onAddCard}>
+            <button type="button" className="btn" data-size="small" data-focus="addcard" onClick={onAddCard}>
               Add a card
             </button>
           ) : null}
@@ -143,7 +144,7 @@ function Overview({
             to fix the file.
           </span>
           {canChange && !card.archived ? (
-            <button type="button" className="btn" data-size="small" onClick={onAddCard}>
+            <button type="button" className="btn" data-size="small" data-focus="addcard" onClick={onAddCard}>
               Add a card
             </button>
           ) : null}
@@ -258,6 +259,7 @@ export function ProjectPage({
 }) {
   const canChange = list.canChange;
   const editable = canChange && isEditable(card);
+  const projectTodos = useProjectTodos(card.key, card.openTodos);
   return (
     <>
       <div className="proj-head">
@@ -266,7 +268,7 @@ export function ProjectPage({
         </button>
         <h2 className="proj-title">{card.title}</h2>
         {editable ? (
-          <button type="button" className="btn" data-size="small" onClick={onEdit}>
+          <button type="button" className="btn" data-size="small" data-focus="edit" onClick={onEdit}>
             Edit
           </button>
         ) : null}
@@ -287,7 +289,7 @@ export function ProjectPage({
         onChoose={(id) => onTab(id as ProjectTab)}
         items={[
           { id: 'overview', label: 'Overview', dot: null },
-          { id: 'todos', label: 'To-dos', count: card.openTodos },
+          { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
           { id: 'files', label: 'Files' },
         ]}
       />
@@ -295,7 +297,16 @@ export function ProjectPage({
         {tab === 'overview' ? (
           <Overview card={card} team={team} clients={clients} canChange={canChange} onAddCard={onAddCard} />
         ) : null}
-        {tab === 'todos' ? <ProjectTodos card={card} team={team} me={me} /> : null}
+        {tab === 'todos' ? (
+          <ProjectTodos
+            card={card}
+            team={team}
+            me={me}
+            rows={projectTodos.data?.todos ?? null}
+            failed={projectTodos.error}
+            reload={projectTodos.reload}
+          />
+        ) : null}
         {tab === 'files' ? <ProjectFiles card={card} canChange={editable} /> : null}
       </div>
     </>

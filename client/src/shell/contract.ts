@@ -418,6 +418,8 @@ export interface FoldProps {
 /** `client/src/shell/Seg.tsx`. A segmented choice (radio group behaviour, arrow keys move). */
 export interface SegProps<T extends string> {
   label: string;
+  /** Id of a visible label; when set, it names the group instead of `label` (which is then not read). */
+  labelledBy?: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;

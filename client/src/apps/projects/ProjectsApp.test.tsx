@@ -149,7 +149,7 @@ describe('Add to team', () => {
     await show(projectList([c]));
     fireEvent.click(screen.getByRole('button', { name: /Website rebuild/ }));
     fireEvent.click(screen.getByRole('button', { name: /Add Pat Jones/ }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Reload/);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/It's been reloaded, so try again/);
   });
 });
 
@@ -184,7 +184,7 @@ describe('the tidy-up', () => {
         todos: [
           { id: 'a.md', scope: 'tds', title: 'Fix header', client: null, assignee: null, version: 'v' },
         ],
-        conflicts: [{ id: 'b.md', title: 'Other job', client: 'acme' }],
+        conflicts: [{ id: 'b.md', scope: 'tds', title: 'Other job', client: 'acme' }],
         suggestion: { do: 'link', key: SKY.key, why: 'same-slug' },
       },
       {

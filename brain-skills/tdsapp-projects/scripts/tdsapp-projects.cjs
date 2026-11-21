@@ -211,17 +211,18 @@ function needsQuotes(value) {
 }
 
 // A one-line value, quoted only when YAML would misread it, and only in a way that needs no escapes
-// (none of the brain's readers unescape). Null when it can't be written that way.
+// (none of the brain's readers unescape). Null when it can't be written that way. A backslash is
+// never double-quoted: YAML reads `\` as an escape there (as tdsapp-todo's guard).
 function yamlText(value) {
   if (!needsQuotes(value)) return value;
-  if (!value.includes('"')) return `"${value}"`;
+  if (!value.includes('"') && !value.includes('\\')) return `"${value}"`;
   if (!value.includes("'")) return `'${value}'`;
   return null;
 }
 
 // A list item: always quoted, so commas and colons read back as written.
 function yamlItem(value) {
-  if (!value.includes('"')) return `"${value}"`;
+  if (!value.includes('"') && !value.includes('\\')) return `"${value}"`;
   if (!value.includes("'")) return `'${value}'`;
   return null;
 }
@@ -454,12 +455,23 @@ function encodeFile(shape, text) {
   return shape.bom + (shape.eol === '\n' ? text : text.replace(/\n/g, shape.eol));
 }
 
-const CONFLICT_MARKER = /^(?:<{7}|={7}|>{7})(?: |$)/m;
+// A git merge conflict: a `<<<<<<<` line, then a `=======` line, then a `>>>>>>>` line. One marker
+// alone is not one, so a brief with a `=======` divider stays editable (the app reads it the same way).
+function hasConflict(text) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex(l => /^<{7}(?: |$)/.test(l));
+  if (start === -1) return false;
+  let mid = -1;
+  for (let i = start + 1; i < lines.length; i++) if (/^={7}[ \t]*$/.test(lines[i])) { mid = i; break; }
+  if (mid === -1) return false;
+  for (let i = mid + 1; i < lines.length; i++) if (/^>{7}(?: |$)/.test(lines[i])) return true;
+  return false;
+}
 
 // The card split into its frontmatter entries and body lines, or null when it can't be read (no
-// frontmatter block, or git merge markers anywhere): such a card is never changed.
+// frontmatter block, or a git merge conflict): such a card is never changed.
 function cardParts(text) {
-  if (CONFLICT_MARKER.test(text)) return null;
+  if (hasConflict(text)) return null;
   const lines = text.split('\n');
   if (lines[0] !== '---') return null;
   let close = -1;
@@ -608,6 +620,8 @@ function checkFields(fields, ctx, requireTitle) {
       if (linesOutsideFences(lines).some(i => LINKED_HEADING.test(lines[i]))) {
         throw refuse('bad-request', "the brief can't hold a \"## Linked files\" section: files are linked with link");
       }
+      // It would read back as a merge conflict, and the card could no longer be changed.
+      if (hasConflict(brief)) throw refuse('bad-request', "the brief can't hold git's merge conflict lines");
       continue;
     }
     if (!Object.prototype.hasOwnProperty.call(FIELD_KEYS, name)) throw refuse('bad-request', `unknown field ${name}`);
@@ -924,13 +938,15 @@ function card(input, ctx) {
   return { ok: true, action: 'card', key: loc.key, version };
 }
 
+// edit, link and unlink: who, what and where are checked first; the card is read and compared with
+// `expect` last, right before the write, so nothing slow sits between the fingerprint and the swap.
 function edit(input, ctx) {
   const loc = locate(ctx, input.key);
   const expect = expectOf(input, true);
-  const cardFile = openCard(ctx, loc, expect);
-  const { values, brief } = checkFields(input.fields, ctx, false);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
+  const { values, brief } = checkFields(input.fields, ctx, false);
+  const cardFile = openCard(ctx, loc, expect);
   const current = cardValues(cardFile.parts.entries);
   checkMerged(Object.assign({}, current, values));
   let entries = cardFile.parts.entries;
@@ -947,7 +963,6 @@ function link(input, ctx) {
   if (loc.space !== 'personal' && rel.startsWith('personal/')) {
     throw refuse('not-allowed', "a shared project can't link a personal file: it would show the team something private");
   }
-  const cardFile = openCard(ctx, loc, expect);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
   if (isNeverListed(rel)) throw refuse('bad-request', 'that path is never listed in the library');
@@ -970,6 +985,7 @@ function link(input, ctx) {
   const line = `- [${shown}](${/[\s()<>]/.test(target) ? `<${target}>` : target})`;
   if (/[\p{Cc}]/u.test(rel) || linkOf(line) !== rel) throw refuse('bad-request', `${rel} can't be written as a link`);
 
+  const cardFile = openCard(ctx, loc, expect);
   const lines = cardFile.parts.body.slice();
   const range = linkedRange(lines);
   const linked = [];
@@ -1001,9 +1017,9 @@ function unlink(input, ctx) {
   const loc = locate(ctx, input.key);
   const expect = expectOf(input, true);
   const rel = linkPathOf(input);
-  const cardFile = openCard(ctx, loc, expect);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
+  const cardFile = openCard(ctx, loc, expect);
   const lines = cardFile.parts.body;
   const range = linkedRange(lines);
   const hits = new Set();

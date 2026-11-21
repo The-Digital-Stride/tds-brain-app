@@ -35,6 +35,10 @@ Projects shows the work the team is doing for each client. Every project has a p
 - Anyone on the team can create and edit shared projects. Personal projects are only yours.
 - A project without a card is read-only. Press **Add a card** to fix that.
 - If the brain's skills are out of date, Projects is read-only until you update them.
+- On Home, the Client and Project picker narrows your work to one project. Pick the client first, then the project.
+- Images and Documents have a Project filter, so you can see only the files linked to one project.
+- A to-do has Project and Stage fields, so it can sit in a project and a stage.
+- The tidy-up changes teammates' to-dos too, but only their client, project and stage lines.
 - Nothing is deleted or moved when you use Projects.
 
 ## Try this

@@ -119,6 +119,16 @@ export function tidyTarget(
   }
 }
 
+/**
+ * A to-do left out of a row because its `client:` names another client. It carries its scope, so an
+ * approval only ever reaches that very to-do, never a personal namesake (review fix, release 1).
+ */
+export type TidyConflict = TidyRow['conflicts'][number];
+/** TidyRow as the server builds it: each conflict with its scope (extra to the contract's fields). */
+export interface ScopedTidyRow extends TidyRow {
+  conflicts: TidyConflict[];
+}
+
 /** The suggestion for one label, from the rules in the contract. */
 function suggestionFor(label: string, todos: TidyTodo[], ctx: TidyContext): TidySuggestion {
   const anyTds = todos.some((t) => t.scope === 'tds');
@@ -148,14 +158,14 @@ function suggestionFor(label: string, todos: TidyTodo[], ctx: TidyContext): Tidy
 }
 
 /** One row: the suggestion, the to-dos it changes, and those left alone because of their `client:`. */
-export function suggestTidy(label: string, todos: TidyTodo[], ctx: TidyContext): TidyRow {
+export function suggestTidy(label: string, todos: TidyTodo[], ctx: TidyContext): ScopedTidyRow {
   const suggestion = suggestionFor(label, todos, ctx);
   const rowTodos: TidyRow['todos'] = [];
-  const conflicts: TidyRow['conflicts'] = [];
+  const conflicts: TidyConflict[] = [];
   for (const t of todos) {
     const target = suggestion.do === 'skip' ? t : tidyTarget(t, suggestion);
     if (target === null) {
-      if (t.client) conflicts.push({ id: t.id, title: t.title, client: t.client });
+      if (t.client) conflicts.push({ id: t.id, scope: t.scope, title: t.title, client: t.client });
       continue;
     }
     rowTodos.push({
@@ -175,7 +185,7 @@ export function suggestTidy(label: string, todos: TidyTodo[], ctx: TidyContext):
  * key, a missing key or none), grouped by label, most to-dos first. A personal to-do whose label
  * already reads as one of its own personal projects stays out of a row its TDS namesakes share.
  */
-export function buildTidyRows(todos: TidyTodo[], ctx: TidyContext): TidyRow[] {
+export function buildTidyRows(todos: TidyTodo[], ctx: TidyContext): ScopedTidyRow[] {
   const groups = new Map<string, { todo: TidyTodo; personalMatch: boolean }[]>();
   for (const t of todos) {
     const m = resolveTodoProject(t.project, t.client, t.scope, ctx.projects, ctx.clients);
@@ -186,7 +196,7 @@ export function buildTidyRows(todos: TidyTodo[], ctx: TidyContext): TidyRow[] {
     list.push({ todo: t, personalMatch });
     groups.set(label, list);
   }
-  const rows: TidyRow[] = [];
+  const rows: ScopedTidyRow[] = [];
   for (const [label, entries] of groups) {
     const anyTds = entries.some((e) => e.todo.scope === 'tds');
     const members = entries.filter((e) => !(anyTds && e.personalMatch)).map((e) => e.todo);

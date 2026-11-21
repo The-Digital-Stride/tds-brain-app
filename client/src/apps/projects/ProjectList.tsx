@@ -9,6 +9,7 @@ import {
   groupProjects,
   LIGHT_WORDS,
   NO_FILTERS,
+  needsCard,
   ownersIn,
   personName,
   rowMeta,
@@ -58,7 +59,7 @@ function Row({ card, onOpen }: { card: ProjectCard; onOpen: () => void }) {
   const dot = dotState(card.health);
   return (
     <li className="line proj-row">
-      <button type="button" className="proj-open" onClick={onOpen}>
+      <button type="button" className="proj-open" data-focus={`proj:${card.key}`} onClick={onOpen}>
         <span className="health-dot" data-state={dot} aria-hidden="true" />
         <span className="line-text">
           <span className="line-title">{card.title}</span>
@@ -91,10 +92,27 @@ export function ProjectListView({
   const groups = useMemo(() => groupProjects(shown, clients), [shown, clients]);
   const owners = useMemo(() => ownersIn(data.projects), [data.projects]);
   const services = useMemo(() => servicesIn(data.projects), [data.projects]);
+  const cardless = useMemo(() => data.projects.filter(needsCard).length, [data.projects]);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
   return (
     <>
+      {cardless > 0 ? (
+        <div className="proj-banner">
+          <span>
+            {cardless} project{cardless === 1 ? ' needs' : 's need'} a card
+          </span>
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            aria-pressed={filters.noCard}
+            onClick={() => set({ noCard: !filters.noCard })}
+          >
+            {filters.noCard ? 'Show all' : 'Show them'}
+          </button>
+        </div>
+      ) : null}
       <div className="proj-tools">
         <Seg
           label="Show"

@@ -3,7 +3,7 @@ import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
-import { useProjectChoice } from '../../state/client-choice.ts';
+import { clearPickedProject, useProjectChoice } from '../../state/client-choice.ts';
 import { filterOptions, useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { useCopy } from './copy.ts';
@@ -66,15 +66,29 @@ export function ProjectFilter({
       <label className="visually-hidden" htmlFor={id}>
         Project
       </label>
-      <SearchSelect
-        id={id}
-        className="lib-client lib-project"
-        value={picked || value || ALL_PROJECTS}
-        options={options}
-        disabled={picked !== ''}
-        onChange={(v) => onChange(v === ALL_PROJECTS ? '' : v)}
-      />
-      {picked ? <span className="visually-hidden">Set by the project picker</span> : null}
+      {/* The locked select sits in a group that the visible reason describes (SearchSelect takes no describedby of its own). */}
+      <fieldset
+        aria-label="Project"
+        aria-describedby={picked ? `${id}-why` : undefined}
+        style={{ display: 'contents' }}
+      >
+        <SearchSelect
+          id={id}
+          className="lib-client lib-project"
+          value={picked || value || ALL_PROJECTS}
+          options={options}
+          disabled={picked !== ''}
+          onChange={(v) => onChange(v === ALL_PROJECTS ? '' : v)}
+        />
+      </fieldset>
+      {picked ? (
+        <span id={`${id}-why`} className="lib-project-why">
+          Set by Working on (Home) ·{' '}
+          <button type="button" className="link-btn" onClick={clearPickedProject}>
+            Clear
+          </button>
+        </span>
+      ) : null}
     </>
   );
 }

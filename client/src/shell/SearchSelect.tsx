@@ -27,6 +27,10 @@ export interface SearchSelectProps {
   id: string;
   /** Name when there is no `<label>`. */
   'aria-label'?: string;
+  /** Links the input to help or error text (e.g. a form's error message). */
+  'aria-describedby'?: string;
+  /** Marks the input as failing validation. */
+  'aria-invalid'?: boolean;
   value: string;
   options: readonly PickOption[];
   onChange: (value: string) => void;
@@ -90,6 +94,8 @@ function marked(label: string, ranges: readonly MatchRange[]): ReactNode {
 export function SearchSelect({
   id,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   value,
   options,
   onChange,
@@ -247,6 +253,8 @@ export function SearchSelect({
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && active ? optionId(active) : undefined}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid || undefined}
         aria-autocomplete="list"
         autoComplete="off"
         spellCheck={false}

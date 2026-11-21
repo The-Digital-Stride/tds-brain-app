@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { type ClientInfo, type Identity, TodoChangeError } from '../../shared/contract.ts';
+import { type ClientInfo, type Identity, TodoChangeError, type TodoList } from '../../shared/contract.ts';
 import {
   folderTitle,
   isProjectSlug,
@@ -32,6 +32,8 @@ import {
   type ProjectSpace,
   type ProjectStatus,
   ProjectsError,
+  type ProjectTodoRow,
+  type ProjectTodosResponse,
   TEAM_FROM_TODOS_DAYS,
   type TeamFromTodo,
   type TidyApply,
@@ -62,6 +64,8 @@ export interface ProjectsService {
   change(action: ProjectAction, identity: Identity): Promise<ProjectList>;
   tidy(identity: Identity): Promise<TidyList>;
   applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
+  /** Every open to-do in the project (UX B2): all TDS ones, whoever has them, and this person's own personal ones. */
+  projectTodos(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
   /** Drops the caches (the watcher, and after a write). */
   changed(brainRel?: string): void;
 }
@@ -75,6 +79,16 @@ export interface ProjectsOptions {
   now?: () => Date;
   /** Runs read-only git (lastChanged, which personal folders git tracks). Injectable for tests. */
   git?: (args: string[], cwd: string) => Promise<string>;
+  /**
+   * Whether the brain's `tdsapp-projects` skill allows this person (its `roles:`). Feeds
+   * `ProjectList.canChange` and refuses `change`. Missing: everyone (tests and older wiring).
+   */
+  mayChange?: (identity: Identity) => Promise<boolean>;
+  /**
+   * This person's to-do list, for `projectTodos`' `mine` (in `mine` or `open`). Missing: worked out
+   * here by the same rule (theirs, an open TDS one, or their own personal one).
+   */
+  todoList?: (identity: Identity) => Promise<Pick<TodoList, 'mine' | 'open'>>;
 }
 
 /** How long a read is reused when no watcher says the brain changed. */
@@ -88,7 +102,19 @@ const KINDS: readonly ProjectKind[] = ['one-off', 'ongoing'];
 const STATUSES: readonly ProjectStatus[] = ['planned', 'active', 'on-hold', 'done'];
 const LIGHTS: readonly Light[] = ['green', 'amber', 'red'];
 const RULES_FILES = new Set(['claude.md', 'readme.md', 'agents.md']);
-const CONFLICT_MARKER = /^(?:<{7}|={7}|>{7})(?: |$)/m;
+
+/**
+ * A git merge conflict: a `<<<<<<<` line, then a `=======` line, then a `>>>>>>>` line, as the
+ * `tdsapp-projects` script reads it. One marker alone is not one, so a brief with a `=======`
+ * divider stays readable and editable.
+ */
+export function hasConflict(src: string): boolean {
+  const lines = src.split('\n');
+  const start = lines.findIndex((l) => /^<{7}(?: |$)/.test(l));
+  if (start === -1) return false;
+  const mid = lines.findIndex((l, i) => i > start && /^={7}[ \t]*$/.test(l));
+  return mid !== -1 && lines.some((l, i) => i > mid && /^>{7}(?: |$)/.test(l));
+}
 
 // ─── Small readers ──────────────────────────────────────────────────────────────────────────────────
 
@@ -220,7 +246,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
         const src = bytes.toString('utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
         const lines = src.split('\n');
         const hasBlock = lines[0] === '---' && lines.slice(1).includes('---');
-        if (hasBlock && !CONFLICT_MARKER.test(src)) {
+        if (hasBlock && !hasConflict(src)) {
           const fm = parseFrontmatter(src);
           state = 'ok';
           data = fm.data;
@@ -376,6 +402,8 @@ interface TodoRec {
   assignee: string | null;
   project: string | null;
   stage: string | null;
+  /** YYYY-MM-DD from `due`, else null. */
+  due: string | null;
   /** The latest of created / assigned_at (and the done date), YYYY-MM-DD, or ''. */
   lastActive: string;
   /** completed_at, else completed (YYYY-MM-DD); null when neither (decision 26). */
@@ -430,6 +458,7 @@ async function readTodoDir(
       assignee: text(data.assignee),
       project: text(data.project),
       stage: text(data.stage),
+      due: date(data.due),
       lastActive: dates.sort().at(-1) ?? '',
       doneDate,
       version: sha256(bytes),
@@ -474,6 +503,8 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
   let memorySkips: string[] = [];
 
   const fresh = (at: number) => now().getTime() - at < PROJECTS_STALE_MS;
+  const mayChange = (identity: Identity) =>
+    opts.mayChange ? opts.mayChange(identity).catch(() => false) : Promise.resolve(true);
 
   const load = () => {
     if (indexCache && fresh(indexCache.at)) return indexCache.value;
@@ -595,16 +626,17 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
               );
       return { ...c, openTodos: open.get(c.key) ?? 0, teamFromTodos: fromTodos };
     });
-    const [canChange, tidied] = await Promise.all([
+    const [hasScript, allowed, tidied] = await Promise.all([
       opts.skill
         .capabilities()
         .then((f) => f.includes(PROJECTS_CAPABILITY))
         .catch(() => false),
+      mayChange(identity),
       tidy(identity),
     ]);
     return {
       projects,
-      canChange,
+      canChange: hasScript && allowed,
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
       skippedFolders: w.skippedFolders,
@@ -616,6 +648,9 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       new ProjectsError('bad-request', "That change couldn't be saved. Check the details and try again.");
     if (!action || typeof action !== 'object') throw bad();
     if (!['create', 'card', 'edit', 'link', 'unlink'].includes(action.kind)) throw bad();
+    if (!(await mayChange(identity))) {
+      throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
+    }
     const caps = await opts.skill.capabilities().catch(() => [] as string[]);
     if (!caps.includes(PROJECTS_CAPABILITY)) {
       throw new ProjectsError('not-allowed', "Update the brain's skills to change projects.");
@@ -678,12 +713,14 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       changed();
     }
     // The row's to-dos and its conflicts: a changed suggestion may take in a to-do the offered one left out.
+    // Each by its own scope, and only while it still carries this label, so a personal to-do that shares
+    // a file name with a TDS one is never touched (review fix, release 1).
     const ids = new Set([
       ...row.todos.map((t) => `${t.scope}:${t.id}`),
-      ...row.conflicts.flatMap((c) => [`tds:${c.id}`, `personal:${c.id}`]),
+      ...row.conflicts.map((c) => `${c.scope}:${c.id}`),
     ]);
     for (const t of pool) {
-      if (!ids.has(`${t.scope}:${t.id}`)) continue;
+      if (!ids.has(`${t.scope}:${t.id}`) || (t.project ?? '').trim() !== row.label) continue;
       const target = tidyTarget(t, s);
       if (target === null) continue;
       try {
@@ -697,12 +734,51 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     return tidy(identity);
   };
 
+  const projectTodos = async (key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse> => {
+    const { index } = await load();
+    const card = index.byKey(key);
+    if (!card)
+      throw new ProjectsError('not-found', "That project couldn't be found. It may have been moved.");
+    const [all, listed] = await Promise.all([
+      todos(),
+      opts.todoList ? opts.todoList(identity).catch(() => null) : Promise.resolve(null),
+    ]);
+    const keyOf = (t: TodoRec) => (t.scope === 'personal' ? `personal/${t.id}` : t.id);
+    const theirs = listed ? new Set([...listed.mine, ...listed.open].map((t) => t.key)) : null;
+    const isMine = (t: TodoRec) =>
+      theirs
+        ? theirs.has(keyOf(t))
+        : t.scope === 'personal' || t.assignee === null || t.assignee === identity.slug;
+    // The same to-dos `list` counts as openTodos: open, TDS or this person's own personal ones.
+    const rows: ProjectTodoRow[] = all
+      .filter((t) => !t.done && (t.scope === 'tds' || ownPersonal(t, identity)))
+      .filter((t) => matchedKey(index.resolve(t.project, t.client, t.scope)) === card.key)
+      .map((t) => ({
+        key: keyOf(t),
+        id: t.id,
+        scope: t.scope,
+        title: t.title,
+        assignee: t.assignee,
+        due: t.due,
+        stage: t.stage,
+        mine: isMine(t),
+      }))
+      .sort(
+        (a, b) =>
+          (a.due ?? '9999').localeCompare(b.due ?? '9999') ||
+          a.title.localeCompare(b.title) ||
+          a.key.localeCompare(b.key),
+      );
+    return { todos: rows, count: rows.length };
+  };
+
   return {
     index: async () => (await load()).index,
     list,
     change,
     tidy,
     applyTidy,
+    projectTodos,
     changed: () => changed(),
   };
 }

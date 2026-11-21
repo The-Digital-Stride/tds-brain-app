@@ -8,6 +8,7 @@
 import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
 import { helpLibrary } from '../help/library.ts';
+import { projectPageRequest } from '../state/client-choice.ts';
 import { projectText, todoPlaceParts } from '../state/projects.ts';
 import { matchRank } from '../state/search-match.ts';
 import { APPS } from './apps.ts';
@@ -23,6 +24,9 @@ import type {
 import { SECTIONS } from './sections.ts';
 import { visibleSettingsTabs } from './settings-tabs.ts';
 import { placeName, whenWords } from './words.ts';
+
+/** The Projects app's id (`apps.ts`): a Projects hit opens its page there. */
+const PROJECTS_APP_ID = 'projects';
 
 /** Hits shown per group; the heading says "6 of N" when there are more. */
 export const SEARCH_GROUP_MAX = 6;
@@ -44,6 +48,7 @@ function ranked<T>(
   describe: (item: T) => Match,
   hit: (item: T) => SearchHit,
   tie: (a: T, b: T) => number = () => 0,
+  alsoHit?: (item: T) => SearchHit,
 ): SearchResults {
   const scored: { item: T; rank: number }[] = [];
   for (const item of items) {
@@ -52,7 +57,11 @@ function ranked<T>(
     if (rank !== null) scored.push({ item, rank });
   }
   scored.sort((a, b) => a.rank - b.rank || tie(a.item, b.item));
-  return { hits: scored.slice(0, SEARCH_GROUP_MAX).map((s) => hit(s.item)), total: scored.length };
+  const top = scored.slice(0, SEARCH_GROUP_MAX);
+  return {
+    hits: top.flatMap((s) => (alsoHit ? [hit(s.item), alsoHit(s.item)] : [hit(s.item)])),
+    total: scored.length,
+  };
 }
 
 /** Soonest due first, undated last. */
@@ -226,11 +235,23 @@ const projects: SearchSource = {
       (p) => ({
         id: p.key,
         label: projectText(p, ctx.clients),
+        hint: 'Open project',
+        icon: 'bullets',
+        run: (a) => {
+          // The Projects app reads the request when it shows (or is already showing).
+          projectPageRequest.set(p.key);
+          a.openView(`app:${PROJECTS_APP_ID}`);
+        },
+      }),
+      (a, b) => b.openTodos - a.openTodos,
+      // The second action, as its own row straight after the first.
+      (p) => ({
+        id: `${p.key}#filter`,
+        label: projectText(p, ctx.clients),
         hint: 'Filter to this project',
         icon: 'bullets',
         run: (a) => a.filterToProject?.(p.key),
       }),
-      (a, b) => b.openTodos - a.openTodos,
     ),
 };
 

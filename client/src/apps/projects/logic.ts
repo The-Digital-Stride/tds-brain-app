@@ -69,12 +69,18 @@ export interface Filters {
   status: ProjectStatus | '';
   owner: string;
   service: string;
+  /** Only projects whose card is missing or unreadable. */
+  noCard: boolean;
 }
-export const NO_FILTERS: Filters = { mine: false, status: '', owner: '', service: '' };
+export const NO_FILTERS: Filters = { mine: false, status: '', owner: '', service: '', noCard: false };
+
+/** True when the project has no usable card. */
+export const needsCard = (c: ProjectCard): boolean => c.card !== 'ok';
 
 export function filterProjects(cards: readonly ProjectCard[], f: Filters, me: string): ProjectCard[] {
   return cards.filter((c) => {
     if (f.mine && !isMine(c, me)) return false;
+    if (f.noCard && !needsCard(c)) return false;
     if (f.status && statusOf(c) !== f.status) return false;
     if (f.owner && c.owner !== f.owner) return false;
     if (f.service && !c.service.includes(f.service)) return false;
@@ -146,6 +152,8 @@ export const todoWords = (n: number): string =>
 
 /** The label that goes under a row's title. */
 export function rowMeta(card: ProjectCard): string {
+  if (card.card === 'none') return `No card yet · ${todoWords(card.openTodos).toLowerCase()}`;
+  if (card.card === 'unreadable') return `Card can't be read · ${todoWords(card.openTodos).toLowerCase()}`;
   const bits = [STATUS_WORDS[statusOf(card)]];
   if (card.end) bits.push(`ends ${dateWords(card.end)}`);
   bits.push(todoWords(card.openTodos).toLowerCase());
@@ -273,7 +281,8 @@ export interface FormValues {
   start: string;
   end: string;
   budget: string;
-  billable: boolean;
+  /** null: the card never set it, and the person has not touched the box. */
+  billable: boolean | null;
   stages: string;
   brief: string;
 }
@@ -293,7 +302,7 @@ export function valuesFromCard(card: ProjectCard): FormValues {
     start: card.start ?? '',
     end: card.end ?? '',
     budget: card.budgetHours === null ? '' : String(card.budgetHours),
-    billable: card.billable ?? false,
+    billable: card.billable,
     stages: card.stages.join('\n'),
     brief: card.brief,
   };
@@ -313,7 +322,7 @@ export const EMPTY_VALUES: FormValues = {
   start: '',
   end: '',
   budget: '',
-  billable: false,
+  billable: null,
   stages: '',
   brief: '',
 };
@@ -397,9 +406,50 @@ export function changedFields(card: ProjectCard, v: FormValues): ProjectFields {
   };
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(next) as (keyof ProjectFields)[]) {
-    // An untouched billable box on a card that never set it is not a change.
-    if (k === 'billable' && card.billable === null && next.billable === false) continue;
     if (!same(next[k], was[k])) out[k] = next[k];
   }
   return out as ProjectFields;
+}
+
+/** The fields a teammate changed between two versions of a card, in words ("Status and Health"). */
+export function changedFieldWords(a: ProjectCard, b: ProjectCard): string[] {
+  const labels: [keyof ProjectFields, string][] = [
+    ['title', 'Title'],
+    ['kind', 'Kind'],
+    ['status', 'Status'],
+    ['health', 'Health'],
+    ['comms', 'Client comms'],
+    ['owner', 'Account Owner'],
+    ['team', 'Team'],
+    ['service', 'Service'],
+    ['start', 'Start date'],
+    ['end', 'End date'],
+    ['budgetHours', 'Budget hours'],
+    ['billable', 'Billable'],
+    ['stages', 'Stages'],
+    ['brief', 'Brief'],
+  ];
+  return labels
+    .filter(([k]) => !same(a[k as keyof ProjectCard], b[k as keyof ProjectCard]))
+    .map(([, l]) => l);
+}
+
+/** "Status and Health", "Status, Health and Brief". */
+export function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
+
+/**
+ * After a "changed" refusal: the person's edits laid over the latest card. A field the person did not
+ * touch (equal to the old card) takes the teammate's value; a field they did touch keeps theirs.
+ */
+export function mergeOntoLatest(old: ProjectCard, mine: FormValues, latest: ProjectCard): FormValues {
+  const was = valuesFromCard(old);
+  const now = valuesFromCard(latest);
+  const out = { ...now } as Record<string, unknown>;
+  for (const k of Object.keys(mine) as (keyof FormValues)[]) {
+    if (!same(mine[k], was[k])) out[k] = mine[k];
+  }
+  return out as unknown as FormValues;
 }

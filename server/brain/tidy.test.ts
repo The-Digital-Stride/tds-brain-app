@@ -142,7 +142,7 @@ describe('suggestTidy: what it never does', () => {
     const other = todo('harvey-nash', { client: 'weightmans' });
     const r = row('harvey-nash', [todo('harvey-nash'), other]);
     expect(r.todos.map((t) => t.id)).not.toContain(other.id);
-    expect(r.conflicts).toEqual([{ id: other.id, title: other.title, client: 'weightmans' }]);
+    expect(r.conflicts).toEqual([{ id: other.id, scope: 'tds', title: other.title, client: 'weightmans' }]);
   });
 
   it('never makes a TDS to-do a personal project, even when one of that name is on this Mac', () => {

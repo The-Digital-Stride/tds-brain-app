@@ -71,7 +71,7 @@ function Picker({
   onClose: () => void;
   onLinked: () => void;
 }) {
-  const change = useProjectChange();
+  const change = useProjectChange({ reloadOnChanged: true });
   const [term, setTerm] = useState('');
   const [hits, setHits] = useState<LibrarySearchHit[] | null>(null);
   const [message, setMessage] = useState('');
@@ -179,7 +179,7 @@ function Kind({
   onView: (item: LibraryItem) => void;
   onChanged: (message: string) => void;
 }) {
-  const change = useProjectChange();
+  const change = useProjectChange({ reloadOnChanged: true });
   const [busy, setBusy] = useState(false);
   const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
 

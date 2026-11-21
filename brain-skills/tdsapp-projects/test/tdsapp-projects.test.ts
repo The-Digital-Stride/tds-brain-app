@@ -746,3 +746,75 @@ describe('the skill file', () => {
     expect(skill.description).toContain('USE WHEN');
   });
 });
+
+// Review fixes (release 1): merge-conflict detection, backslashes in quoted values, and the order of
+// the checks before a write.
+describe('review fixes', () => {
+  it('keeps a card with a ======= divider in its brief editable, but not one with a full conflict', () => {
+    const divided =
+      '---\nv: 1\ntitle: Website rebuild\nclient: acme\nstatus: active\n---\n\nPart one\n=======\nPart two\n';
+    put(CARD, divided);
+    expect(
+      call('edit', { kind: 'edit', key: 'acme/website', fields: { status: 'done' }, expect: sha(CARD) }).exit,
+    ).toBe(0);
+    expect(read(CARD)).toBe(divided.replace('status: active', 'status: done'));
+    put(CARD, `${divided}<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> main\n`);
+    expect(
+      refusal(
+        call('edit', { kind: 'edit', key: 'acme/website', fields: { status: 'done' }, expect: sha(CARD) }),
+      ),
+    ).toEqual({ exit: 2, error: 'not-allowed' });
+  });
+
+  it('writes a brief with a ======= divider, and refuses one holding a whole conflict', () => {
+    expect(create('website', { brief: 'Part one\n=======\nPart two' }).exit).toBe(0);
+    expect(
+      call('edit', { kind: 'edit', key: 'acme/website', fields: { status: 'done' }, expect: sha(CARD) }).exit,
+    ).toBe(0);
+    expect(refusal(create('other', { brief: '<<<<<<< HEAD\na\n=======\nb\n>>>>>>> main' }))).toEqual({
+      exit: 2,
+      error: 'bad-request',
+    });
+  });
+
+  it('never double-quotes a value holding a backslash, so it reads back as written', () => {
+    expect(create('website', { title: 'Fix: C:\\temp', stages: ['C:\\build'] }).exit).toBe(0);
+    const text = read(CARD);
+    expect(text).toContain("\ntitle: 'Fix: C:\\temp'\n");
+    expect(text).toContain("\n  - 'C:\\build'\n");
+    expect(parseFrontmatter(text).data.title).toBe('Fix: C:\\temp');
+    expect(parseFrontmatter(text).data.stages).toEqual(['C:\\build']);
+  });
+
+  it('checks the writer, the fields and the file before the fingerprint, which comes last', () => {
+    put(CARD, EDITABLE);
+    put('clients/acme/files/quote.pdf');
+    const stale = 'c'.repeat(64);
+    expect(
+      refusal(call('edit', { kind: 'edit', key: 'acme/website', fields: { status: 'nope' }, expect: stale })),
+    ).toEqual({ exit: 2, error: 'bad-request' });
+    expect(
+      refusal(
+        call('link', {
+          kind: 'link',
+          key: 'acme/website',
+          path: 'clients/acme/files/none.pdf',
+          expect: stale,
+        }),
+      ),
+    ).toEqual({ exit: 2, error: 'bad-request' });
+    git(['config', 'user.email', 'stranger@example.test']);
+    git(['config', 'user.name', 'A Stranger']);
+    for (const [kind, extra] of [
+      ['edit', { fields: { status: 'done' } }],
+      ['link', { path: 'clients/acme/files/quote.pdf' }],
+      ['unlink', { path: 'clients/acme/files/quote.pdf' }],
+    ] as const) {
+      expect(refusal(call(kind, { kind, key: 'acme/website', expect: stale, ...extra })), kind).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+    }
+    expect(read(CARD)).toBe(EDITABLE);
+  });
+});

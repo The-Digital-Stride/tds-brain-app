@@ -196,6 +196,36 @@ describe('links to files in projects/', () => {
   });
 });
 
+// Review fix (decision 8): a team to-do never links into a personal project; other personal files
+// stay linkable there, as in v0.5.
+describe('links to personal files', () => {
+  beforeEach(() => {
+    b.put('personal/projects/jev/plan.md', '# Plan\n');
+    b.put('personal/files/notes.pdf', 'pdf');
+  });
+
+  it('refuses a file under personal/projects/ on a team to-do, writing nothing', () => {
+    b.put('todo/a.md', TODO);
+    expect(b.run('attach', { file: 'a.md', path: 'personal/projects/jev/plan.md' }).json).toEqual({
+      error: "a team to-do can't link a file from a personal project",
+      status: 403,
+    });
+    expect(b.read('todo/a.md')).toBe(TODO);
+  });
+
+  it('still links another personal/ file on a team to-do, and a personal project file on a personal one', () => {
+    b.put('todo/a.md', TODO);
+    expect(b.run('attach', { file: 'a.md', path: 'personal/files/notes.pdf' }).json).toMatchObject({
+      ok: true,
+      changed: true,
+    });
+    b.put('personal/todo/b.md', TODO);
+    expect(
+      b.run('attach', { file: 'b.md', scope: 'personal', path: 'personal/projects/jev/plan.md' }).json,
+    ).toMatchObject({ ok: true, changed: true });
+  });
+});
+
 describe('capabilities', () => {
   it(`reports v0.6 with ${TODO_PROJECT_CAPABILITY}`, () => {
     expect(b.run('capabilities').json).toEqual({

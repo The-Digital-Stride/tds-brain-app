@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ClientInfo, Identity } from '../../shared/contract.ts';
+import type { ClientInfo, Identity, TodoItem } from '../../shared/contract.ts';
 import { TodoChangeError } from '../../shared/contract.ts';
 import {
   INTERNAL_CLIENT,
@@ -12,7 +12,7 @@ import {
   type ProjectCard,
   ProjectsError,
 } from '../../shared/projects-contract.ts';
-import { createProjects } from './projects.ts';
+import { createProjects, type ProjectsOptions } from './projects.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
 import type { TodoRunAction, TodoSkillRunner } from './todo-skill.ts';
 
@@ -72,7 +72,13 @@ interface Fakes {
 }
 let fakes: Fakes;
 
-function service(extra: { dataDir?: string | null } = {}) {
+function service(
+  extra: {
+    dataDir?: string | null;
+    mayChange?: ProjectsOptions['mayChange'];
+    todoList?: ProjectsOptions['todoList'];
+  } = {},
+) {
   fakes = {
     skillRuns: [],
     todoRuns: [],
@@ -128,6 +134,8 @@ function service(extra: { dataDir?: string | null } = {}) {
     todoSkill,
     clients: async () => CLIENTS,
     dataDir: extra.dataDir === undefined ? data : extra.dataDir,
+    ...(extra.mayChange ? { mayChange: extra.mayChange } : {}),
+    ...(extra.todoList ? { todoList: extra.todoList } : {}),
     now: () => NOW,
     git: async (args) => {
       fakes.gitCalls.push([...args]);
@@ -177,6 +185,21 @@ describe('walking the projects locations', () => {
     expect(index.byKey('personal/jev')).toMatchObject({ title: 'Jev', client: null });
     expect(index.byKey(`${INTERNAL_CLIENT}/old-funnel`)?.status).toBe('done');
     expect(index.byKey('zed/old-site')?.status).toBe('done');
+  });
+
+  it('reads a brief with a ======= divider, and only a full conflict as unreadable (review fix 6)', async () => {
+    put(
+      'clients/acme/projects/divided/project.md',
+      card('Divided', '').replace('The brief.', 'One\n=======\nTwo'),
+    );
+    put(
+      'clients/acme/projects/merged/project.md',
+      `${card('Merged')}<<<<<<< HEAD\na\n=======\nb\n>>>>>>> main\n`,
+    );
+    const { cards } = await service().index();
+    expect(byKey(cards, 'acme/divided')?.card).toBe('ok');
+    expect(byKey(cards, 'acme/divided')?.brief).toBe('One\n=======\nTwo');
+    expect(byKey(cards, 'acme/merged')?.card).toBe('unreadable');
   });
 
   it('keeps an unreadable card as a project, titled from its folder', async () => {
@@ -355,6 +378,59 @@ describe('counts and the team from to-dos', () => {
     fakes.caps = [];
     expect((await s.list(ME)).canChange).toBe(false);
   });
+
+  it("reports canChange false when the skill's roles leave this person out (review fix 4)", async () => {
+    let allowed = false;
+    const s = service({ mayChange: async () => allowed });
+    expect((await s.list(ME)).canChange).toBe(false);
+    allowed = true;
+    expect((await s.list(ME)).canChange).toBe(true);
+  });
+
+  // UX B2: every open to-do in the project, whoever has it, and this person's own personal ones.
+  it("lists a project's open to-dos, every assignee's, with count equal to openTodos", async () => {
+    put(
+      'todo/b.md',
+      todoText({ assignee: 'simon-jones', project: 'acme/site', due: '2026-11-25', stage: 'Build' }),
+    );
+    put('todo/o.md', todoText({ project: 'acme/site' }));
+    const item = (key: string) => ({ key }) as TodoItem;
+    const s = service({
+      todoList: async () => ({
+        mine: [item('d.md'), item('personal/p.md'), item('personal/q.md')],
+        open: [item('o.md')],
+      }),
+    });
+    const list = await s.list(ME);
+    const res = await s.projectTodos('acme/site', ME);
+    expect(res.count).toBe(byKey(list.projects, 'acme/site')?.openTodos);
+    expect(res.count).toBe(res.todos.length);
+    expect(res.todos.map((t) => [t.key, t.mine])).toEqual([
+      ['b.md', false],
+      ['a.md', false],
+      ['c.md', false],
+      ['d.md', true],
+      ['o.md', true],
+      ['personal/p.md', true],
+    ]);
+    expect(res.todos[0]).toEqual({
+      key: 'b.md',
+      id: 'b.md',
+      scope: 'tds',
+      title: 'To-do',
+      assignee: 'simon-jones',
+      due: '2026-11-25',
+      stage: 'Build',
+      mine: false,
+    });
+    // Never someone else's personal to-do, never a done one.
+    expect(res.todos.map((t) => t.key)).not.toContain('personal/r.md');
+    expect(res.todos.map((t) => t.key)).not.toContain('f.md');
+    const jev = await s.projectTodos('personal/jev', ME);
+    expect(jev).toEqual({ todos: [expect.objectContaining({ key: 'personal/q.md', mine: true })], count: 1 });
+    expect(jev.count).toBe(byKey(list.projects, 'personal/jev')?.openTodos);
+    await expect(s.projectTodos('acme/nothing', ME)).rejects.toMatchObject({ code: 'not-found' });
+  });
 });
 
 describe('change', () => {
@@ -396,6 +472,15 @@ describe('change', () => {
     expect(await codeOf({ kind: 'capabilities' })).toBe('bad-request');
     fakes.caps = [];
     expect(await codeOf({ kind: 'card', key: 'acme/site', fields: {} })).toBe('not-allowed');
+    expect(fakes.skillRuns).toEqual([]);
+  });
+
+  it("refuses not-allowed when the tdsapp-projects skill's roles leave this person out (review fix 4)", async () => {
+    const s = service({ mayChange: async () => false });
+    await expect(s.change({ kind: 'card', key: 'acme/site', fields: {} }, ME)).rejects.toMatchObject({
+      code: 'not-allowed',
+      message: "Changing projects isn't available to you in the app yet.",
+    });
     expect(fakes.skillRuns).toEqual([]);
   });
 });
@@ -533,6 +618,32 @@ describe('tidy', () => {
     const labels = (await service().tidy(ME)).rows.map((r) => r.label);
     expect(labels).toContain('notes-app');
     expect(labels).not.toContain('other-app');
+  });
+
+  it('never touches a personal to-do that shares a file name with a TDS conflict (review fix 3)', async () => {
+    // x.md (TDS) carries the label but names another client: a conflict. The personal x.md is a
+    // different to-do with a different label; it must stay exactly as it is.
+    put('todo/x.md', todoText({ assignee: 'ben-mcadam', project: 'harvey-nash', client: 'acme' }));
+    put('personal/todo/x.md', todoText({ assignee: 'ian-hancock', project: 'my-notes' }));
+    const personal = readFileSync(abs('personal/todo/x.md'), 'utf8');
+    const tds = readFileSync(abs('todo/x.md'), 'utf8');
+    const s = service();
+    const row = (await s.tidy(ME)).rows.find((r) => r.label === 'harvey-nash');
+    expect(row?.conflicts).toEqual([{ id: 'x.md', scope: 'tds', title: 'To-do', client: 'acme' }]);
+    await s.applyTidy(
+      {
+        label: 'harvey-nash',
+        do: 'approve',
+        suggestion: { do: 'client-only', client: 'harvey-nash', why: 'is-a-client' },
+      },
+      ME,
+    );
+    expect(fakes.todoRuns.map((r) => ('id' in r ? `${r.scope}:${r.id}` : ''))).toEqual([
+      'tds:a.md',
+      'tds:b.md',
+    ]);
+    expect(readFileSync(abs('personal/todo/x.md'), 'utf8')).toBe(personal);
+    expect(readFileSync(abs('todo/x.md'), 'utf8')).toBe(tds);
   });
 
   it('keeps skips in memory without a data folder', async () => {

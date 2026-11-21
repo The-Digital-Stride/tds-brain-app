@@ -122,6 +122,7 @@ import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { classify } from '../brain/library-rules.ts';
+import { PROJECTS_SKILL } from '../brain/projects-skill.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
 import { TODO_FILES_MESSAGES } from '../brain/todos.ts';
@@ -834,6 +835,8 @@ const PROJECT_PATH_MAX = 1024;
 const PROJECT_LABEL_MAX = 200;
 const PROJECT_NAME_MAX = 120;
 
+const PROJECTS_NOT_ALLOWED = "Changing projects isn't available to you in the app yet.";
+
 const projectBad = () => new HttpError(400, 'bad-request', PROJECTS_BAD_REQUEST);
 
 /** A key, checked as the contract says: the pattern, and each side at most PROJECT_KEY_SEGMENT_MAX. */
@@ -1031,7 +1034,7 @@ function projectsFailure(err: unknown, ctx: RouteContext, what: string): HttpErr
   return new HttpError(500, 'internal', PROJECTS_INTERNAL);
 }
 
-/** The four projects routes. Every one has already passed the security gate. */
+/** The five projects routes. Every one has already passed the security gate. */
 async function projectsRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1061,8 +1064,12 @@ async function projectsRoute(
     const action = parseProjectAction(body);
     const change = ctx.brain.changeProject;
     if (!change) throw missing();
+    // Review fix (release 1): only people the `tdsapp-projects` skill's `roles:` allow.
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
     try {
-      const list = await change.call(ctx.brain, action, await identity());
+      const list = await change.call(ctx.brain, action, who);
       ctx.log(`Changed a project (${action.kind}).`);
       sendJson(res, 200, list);
     } catch (err) {
@@ -1086,6 +1093,20 @@ async function projectsRoute(
     return;
   }
 
+  if (path === ROUTES.projectTodos) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const read = ctx.brain.projectTodos;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain, key, await identity()));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's to-dos");
+    }
+    return;
+  }
+
   if (path === ROUTES.projectsTidy) {
     if (method === 'GET') {
       const tidy = ctx.brain.tidy;
@@ -1099,14 +1120,21 @@ async function projectsRoute(
     }
     if (method !== 'POST') throw methodNotAllowed();
     const body = await readJson(req);
-    // The tidy-up changes to-dos (a teammate's included), so it follows the same Settings switch.
-    const prefs = await ctx.store.get();
-    if (!prefs.directWrites) throw new HttpError(403, 'not-allowed', TODO_SWITCHED_OFF);
     const apply = parseTidyApply(body);
     const run = ctx.brain.applyTidy;
     if (!run) throw missing();
+    const who = await identity();
+    // Skip and unskip only write the app's own data folder. An approval changes to-dos (a teammate's
+    // included), so it follows the Settings switch and the same access changing a to-do needs.
+    if (apply.do === 'approve') {
+      const prefs = await ctx.store.get();
+      if (!prefs.directWrites) throw new HttpError(403, 'not-allowed', TODO_SWITCHED_OFF);
+      const list = await safe(ctx.brain.todos(who), null);
+      if (list?.changes !== 'on' || !list.canProject)
+        throw new HttpError(403, 'not-allowed', TODO_CHANGE_MESSAGES['not-allowed']);
+    }
     try {
-      const list = await run.call(ctx.brain, apply, await identity());
+      const list = await run.call(ctx.brain, apply, who);
       ctx.log(`Tidied to-do projects (${apply.do}).`);
       sendJson(res, 200, list);
     } catch (err) {
@@ -2163,6 +2191,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projects ||
     path === ROUTES.projectsChange ||
     path === ROUTES.projectFiles ||
+    path === ROUTES.projectTodos ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

@@ -24,7 +24,7 @@ Projects shows the work the team is doing for each client. Every project has a p
 
 1. Open Projects from the rail.
 2. Choose **Mine** to see only projects you own or work on. Use the filters for status, Account Owner and service.
-3. Open a project. **Overview** shows the details and the team. **To-dos** shows open to-dos by stage. **Files** shows images and documents. To add files kept elsewhere in the brain, press **Link files**, search, tick the ones you want (you can search again and keep ticking), then press **Link**.
+3. Open a project. **Overview** shows the details and the team. **To-dos** shows open to-dos by stage. **Files** shows images and documents. Press **Link files** to tick and link several files at once.
 4. Press **New project** to add one. Press **Edit** on a project to change it.
 5. Press **Add to team** beside a person marked "from to-dos" to keep them on the team.
 6. If you see a tidy-up notice, press **Tidy up**. Approve, change or skip each old label.
@@ -38,7 +38,7 @@ Projects shows the work the team is doing for each client. Every project has a p
 - On Home, **Working on** sits in the message box. It narrows your work to one project and starts new chats with its client.
 - Images, Documents and to-dos have a Project filter. A to-do also has a Stage.
 - Tidy-up changes teammates' to-dos too. Only one person should run it, straight after a sync.
-- Moving: a personal project can go to a client, and a client project to another client. Nothing moves back to personal.
+- A move can't take a project back to personal.
 - Moving a personal project shares its whole folder with the team. Ask the team to sync first, so nobody adds files to the old folder.
 - After a move, files linked to a to-do from inside the old folder need linking again.
 - Nothing is deleted when you use Projects.

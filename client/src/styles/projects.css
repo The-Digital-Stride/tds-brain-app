@@ -28,6 +28,9 @@
 }
 .proj-tools .seg button {
   white-space: nowrap;
+  /* Each option sizes to its words: equal shares (flex: 1 from base.css) let "All projects" spill past its
+     background and focus ring beside the shorter "Mine". */
+  flex: 1 0 auto;
 }
 .proj-filter .field {
   width: auto;

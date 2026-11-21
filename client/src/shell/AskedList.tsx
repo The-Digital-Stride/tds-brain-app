@@ -2,10 +2,17 @@ import { useState } from 'react';
 import { ASKED_DONE_DAYS, type AskedTodo, type AskedTodoList } from '../../../shared/contract.ts';
 import { dueInWords, isOverdue } from '../format.ts';
 import { Fold } from './Fold.tsx';
+import { ProjectChip } from './ProjectChip.tsx';
 import { askedMeta } from './words.ts';
 
 /** How the separate "asked of others" request is going. */
 export type AskedState = 'loading' | 'loaded' | 'failed';
+
+/** Where an asked to-do belongs, as its row shows it: a project chip that filters by it, else plain words. */
+export interface AskedPlace {
+  chip: { key: string; label: string } | null;
+  places: string[];
+}
 
 /** The order previous and next walk in this tab: waiting first, then done. */
 export function askedOrder(list: AskedTodoList | null): string[] {
@@ -16,12 +23,18 @@ function AskedRow({
   todo,
   open,
   onOpen,
+  place,
+  onProject,
 }: {
   todo: AskedTodo;
   open: boolean;
   onOpen: (t: AskedTodo) => void;
+  place: AskedPlace | null;
+  onProject?: (key: string) => void;
 }) {
   const due = todo.due ? dueInWords(todo.due) : '';
+  const chip = onProject ? (place?.chip ?? null) : null;
+  const places = chip ? [] : (place?.places ?? []);
   return (
     <li className="todo" data-panel-open={open ? 'true' : undefined}>
       <div className="todo-main">
@@ -50,6 +63,10 @@ function AskedRow({
               </span>
             </>
           ) : null}
+          {places.map((text) => (
+            <span key={text}>, {text}</span>
+          ))}
+          {chip && onProject ? <ProjectChip label={chip.label} onPick={() => onProject(chip.key)} /> : null}
         </span>
       </div>
     </li>
@@ -62,12 +79,21 @@ function AskedRow({
  */
 export function AskedList({
   list,
+  filteredBy = null,
+  placeOf,
+  onProject,
   state,
   onRetry,
   openKey,
   onOpen,
 }: {
   list: AskedTodoList | null;
+  /** The drawer's filter, named ("Acme · Website"), while one is on: `list` is already narrowed to it. */
+  filteredBy?: string | null;
+  /** Where each row belongs, as the other tabs show it. Without it, rows don't say. */
+  placeOf?: (t: AskedTodo) => AskedPlace;
+  /** Filters the drawer by a row's project; absent while a project filter is on. */
+  onProject?: (key: string) => void;
   state: AskedState;
   onRetry: () => void;
   openKey: string | null;
@@ -112,7 +138,14 @@ export function AskedList({
   const rows = (items: AskedTodo[]) => (
     <ul className="drawer-list">
       {items.map((t) => (
-        <AskedRow key={t.key} todo={t} open={openKey === t.key} onOpen={onOpen} />
+        <AskedRow
+          key={t.key}
+          todo={t}
+          open={openKey === t.key}
+          onOpen={onOpen}
+          place={placeOf ? placeOf(t) : null}
+          onProject={onProject}
+        />
       ))}
     </ul>
   );
@@ -140,7 +173,11 @@ export function AskedList({
         onToggle={(o) => setFolds((f) => ({ ...f, waiting: o }))}
       >
         {list.waiting.length === 0 ? (
-          <p className="dock-empty">Nothing you've asked of others is waiting.</p>
+          <p className="dock-empty">
+            {filteredBy
+              ? `Nothing in ${filteredBy} is waiting.`
+              : "Nothing you've asked of others is waiting."}
+          </p>
         ) : (
           rows(list.waiting)
         )}
@@ -153,7 +190,11 @@ export function AskedList({
         onToggle={(o) => setFolds((f) => ({ ...f, done: o }))}
       >
         {list.done.length === 0 ? (
-          <p className="dock-empty">Nothing you've asked of others was finished recently.</p>
+          <p className="dock-empty">
+            {filteredBy
+              ? `Nothing in ${filteredBy} was finished recently.`
+              : "Nothing you've asked of others was finished recently."}
+          </p>
         ) : (
           rows(list.done)
         )}

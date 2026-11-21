@@ -373,6 +373,13 @@ export interface AskedTodo {
   version: string;
   /** As TodoItem.attachments (release 3). Shown read only. */
   attachments: TodoAttachment[];
+  /**
+   * As TodoItem.client / project / projectMatch, so the drawer's filters apply to the Asked tab too.
+   * Optional: an older server sends none, and the row then matches only "All".
+   */
+  client?: string | null;
+  project?: string | null;
+  projectMatch?: TodoProjectMatch;
 }
 
 /** Finished to-dos older than this many days (by `done.at`) are left out of AskedTodoList.done. */

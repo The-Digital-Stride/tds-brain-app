@@ -16,6 +16,7 @@ import {
 } from '../../shared/contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { type GitLogRunner, runGit } from './todo-history.ts';
 import {
   authorSlug,
@@ -237,7 +238,13 @@ function byDoneNewest(a: AskedTodo, b: AskedTodo): number {
 }
 
 export interface AskedTodos {
-  list(root: string, identity: Identity, now: Date): Promise<AskedTodoList>;
+  /** `projects` (projects R1) fills each row's `projectMatch`; without it, or if it fails, none is set. */
+  list(
+    root: string,
+    identity: Identity,
+    now: Date,
+    projects?: () => Promise<ProjectsIndex>,
+  ): Promise<AskedTodoList>;
 }
 
 /** The parsed log for one brain at one HEAD, or 'unread' when git couldn't give the whole log. */
@@ -277,7 +284,7 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
   };
 
   return {
-    async list(root, identity, now) {
+    async list(root, identity, now, projects) {
       if (!identity.slug) return { waiting: [], done: [], historyRead: true };
       const [waitingFiles, doneFiles] = await Promise.all([
         readTodoFiles(root, 'waiting'),
@@ -291,6 +298,14 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
       const waiting: AskedTodo[] = [];
       const done: AskedTodo[] = [];
       const attachments = createAttachmentReader(root, identity.slug);
+      let index: ProjectsIndex | null = null;
+      if (projects) {
+        try {
+          index = await projects();
+        } catch {
+          index = null;
+        }
+      }
       for (const file of files) {
         const assignee = lower(file.data.assignee);
         if (!assignee || assignee === 'open' || assignee === identity.slug) continue;
@@ -318,6 +333,18 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
           done: finished,
           version: file.version,
           attachments: await attachments(file.body),
+          client: asString(file.data.client).trim() || null,
+          project: asString(file.data.project).trim() || null,
+          // Everything in `todo/` is TDS: a personal project never matches here.
+          ...(index
+            ? {
+                projectMatch: index.resolve(
+                  asString(file.data.project).trim() || null,
+                  asString(file.data.client).trim() || null,
+                  'tds',
+                ),
+              }
+            : {}),
         };
         (file.state === 'done' ? done : waiting).push(item);
       }

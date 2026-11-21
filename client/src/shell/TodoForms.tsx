@@ -171,6 +171,7 @@ export function AddTodoForm({
   canAttach = false,
   canProject = false,
   startPersonal,
+  startProject = '',
   onAdd,
   onCancel,
   onDirty,
@@ -188,6 +189,8 @@ export function AddTodoForm({
   canProject?: boolean;
   /** Start as personal (the Personal filter is showing). Ignored unless canUsePersonal. */
   startPersonal: boolean;
+  /** The drawer's project filter: a new to-do starts in it. Else the app-wide picker's project. */
+  startProject?: string;
   onAdd: (action: TodoAction) => void;
   onCancel: () => void;
   /** Told when there is something typed that Cancel would lose (a title), so the panel can ask first. */
@@ -202,9 +205,9 @@ export function AddTodoForm({
   const [whoOpen, setWhoOpen] = useState(false);
   const [full, setFull] = useState(false);
   const [details, setDetails] = useState('');
-  // The app-wide picker's project is where a new to-do starts.
+  // A new to-do starts in the project the drawer is filtered to (that is the app-wide picker's while it holds one).
   const picked = useProjectChoice();
-  const [project, setProject] = useState(canProject ? picked : '');
+  const [project, setProject] = useState(canProject ? startProject || picked : '');
   const [stage, setStage] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);

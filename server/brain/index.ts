@@ -151,7 +151,7 @@ export function createBrainReaders(
           projects.changed(path);
         },
       }),
-    askedTodos: (identity) => askedTodos.list(root, identity, now()),
+    askedTodos: (identity) => askedTodos.list(root, identity, now(), () => projects.index()),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {

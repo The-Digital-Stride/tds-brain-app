@@ -11,14 +11,7 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import {
-  clientChoice,
-  NO_CLIENT,
-  projectChoice,
-  todoChatClient,
-  useClientChoice,
-  useProjectChoice,
-} from '../state/client-choice.ts';
+import { projectChoice, todoChatClient, useProjectChoice } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
 import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
@@ -53,72 +46,29 @@ function metaParts(
 const ALL = 'all';
 
 /**
- * The app-wide picker (decision 11): Client, then Project. Choosing a project narrows Home, the To-dos
- * drawer, Images, Documents and search; choosing only a client changes nothing here. Shown once the
- * brain has projects.
+ * The app-wide picker (decision 11), as one control: "Working on [project]", every live project under its
+ * client. Choosing a project narrows Home, the To-dos drawer, Images, Documents and search, and sets its client
+ * too. It used to start with a Client select, but beside the composer's "Chat for" that read as two client
+ * pickers (Ian, 2026-11-21), and a client alone changed nothing here. Shown once the brain has projects.
  */
 function ProjectPicker({ clients }: { clients: { slug: string; name: string; aliases?: string[] }[] }) {
   const { list } = useProjects();
-  const choice = useClientChoice();
   const project = useProjectChoice();
   const cards = list?.projects ?? [];
   if (cards.length === 0 && !project) return null;
-  const clientValue =
-    choice === '' || choice === NO_CLIENT
-      ? ALL
-      : choice === 'personal'
-        ? 'personal'
-        : choice.slice('client:'.length);
-  const hasPersonal = cards.some((c) => c.space === 'personal');
-  // No client yet: only personal projects can be picked (and only if there are any).
-  const forClient = filterOptions(
-    cards.filter((c) =>
-      clientValue === ALL
-        ? c.space === 'personal'
-        : clientValue === 'personal'
-          ? c.space === 'personal'
-          : c.client === clientValue,
-    ),
-    clients,
-  );
-  const needClient = clientValue === ALL && !hasPersonal && !project;
-  const locked = needClient || (forClient.length === 0 && !project);
-  const slot = { flex: '0 1 200px', minWidth: 0 } as const;
   return (
-    // One compact row: "Working on [Client] [Project]", wrapping on a narrow sheet.
+    // One compact row: "Working on [Project]", wrapping on a narrow sheet.
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-      <label className="client-label" htmlFor="pick-client">
+      <label className="client-label" htmlFor="pick-project">
         Working on
       </label>
-      <span style={slot}>
-        <SearchSelect
-          id="pick-client"
-          className="client-select"
-          value={clientValue}
-          options={[
-            { value: ALL, label: 'All clients' },
-            ...(hasPersonal ? [{ value: 'personal', label: 'My personal projects' }] : []),
-            ...clientOptions(clients),
-          ]}
-          recentKey="clients"
-          onChange={(v) => clientChoice.set(v === ALL ? '' : v === 'personal' ? 'personal' : `client:${v}`)}
-        />
-      </span>
-      <label className="visually-hidden" htmlFor="pick-project">
-        Project
-      </label>
-      <span style={slot}>
+      <span style={{ flex: '0 1 260px', minWidth: 0 }}>
         <SearchSelect
           id="pick-project"
           className="client-select"
-          value={needClient ? 'need' : project || ALL}
-          options={
-            needClient
-              ? [{ value: 'need', label: 'Pick a client first' }]
-              : [{ value: ALL, label: 'All projects' }, ...forClient]
-          }
+          value={project || ALL}
+          options={[{ value: ALL, label: 'All projects' }, ...filterOptions(cards, clients)]}
           recentKey="projects"
-          disabled={locked}
           onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
         />
       </span>
@@ -314,8 +264,10 @@ export function Home() {
                 hint={ask ? 'Answer the question above, or Cancel to change your message.' : undefined}
                 tools={
                   <>
+                    {/* Which client the new chat is about. "Chat for", not "Client", so it isn't read as a
+                        second Working on picker (Ian, 2026-11-21). */}
                     <label className="client-label" htmlFor="client-select">
-                      Client
+                      Chat for
                     </label>
                     <SearchSelect
                       id="client-select"

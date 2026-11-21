@@ -12,9 +12,15 @@ import { api } from '../api.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { setChoice, todoChatClient, useClientChoice, useProjectChoice } from '../state/client-choice.ts';
-import { filterOptions, labelForKey, todoPlaceParts, useProjects } from '../state/projects.ts';
+import {
+  filterOptions,
+  labelForKey,
+  todoPlaceParts,
+  todoProjectChip,
+  useProjects,
+} from '../state/projects.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
-import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
+import { EMPTY_FILTER, filterActive, filterAsked, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
@@ -22,6 +28,7 @@ import { AskedList, type AskedState, askedOrder } from './AskedList.tsx';
 import type { TodoFilter, TodoPanelState } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
+import { ProjectChip } from './ProjectChip.tsx';
 import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -150,9 +157,12 @@ function TodoRow({
   onOpened,
   favourite,
   onStar,
+  onProject,
 }: {
   todo: TodoItem;
   controls: RowControls;
+  /** Filters the drawer by a project; absent while a project filter is on, so the project shows as text. */
+  onProject?: (key: string) => void;
   /** In "New to you": a dot, and opening it marks it seen. */
   fresh: boolean;
   /** The scope filter is All: a personal row says so. */
@@ -182,7 +192,10 @@ function TodoRow({
   if (from) parts.push({ text: from });
   if (showScope && todo.scope === 'personal') parts.push({ text: 'Personal', icon: 'lock' });
   if (due) parts.push({ text: due, late: overdue });
-  for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
+  // A known project is a chip that filters by it (at the end of the line); anything else stays text.
+  const chip = onProject ? todoProjectChip(todo, projectList?.projects, boot?.clients ?? []) : null;
+  if (!chip)
+    for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
@@ -247,6 +260,7 @@ function TodoRow({
               <span className={part.late ? 'late' : undefined}>{part.text}</span>
             </span>
           ))}
+          {chip && onProject ? <ProjectChip label={chip.label} onPick={() => onProject(chip.key)} /> : null}
         </span>
         {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
         <StarButton
@@ -530,19 +544,64 @@ export function TodosDrawer() {
 
   // Filters (the text search is the global search's now). The kind filter belongs to Mine: everything open
   // to anyone is TDS.
-  const showKind = tab === 'mine' && (todos.canUsePersonal || todos.mine.some((t) => t.scope === 'personal'));
-  const clientSlugs = [...new Set(items.map((t) => t.client).filter((c): c is string => c !== null))];
-  const showClient = clientSlugs.length >= 2;
-  const active: TodoFilter = {
-    scope: showKind ? filter.scope : 'all',
-    client:
-      showClient && filter.client !== null && clientSlugs.includes(filter.client) ? filter.client : null,
-    // The app-wide picker's project narrows the drawer too (projects plan, decision 11) and locks the
-    // drawer's own Project filter; with no picker project the filter is the drawer's own.
-    project: pickedProject || filter.project || null,
+  // One project filter for every tab: the app-wide picker's project when it holds one (projects plan, decision 11;
+  // it locks the drawer's Project select), else the drawer's own. A project names its client, so while one is on the
+  // Client filter steps aside. Kind is Mine's alone: everything open to anyone, or asked of others, is TDS.
+  const project = pickedProject || filter.project || null;
+  const kindOnMine = todos.canUsePersonal || todos.mine.some((t) => t.scope === 'personal');
+  const slugsOf = (list: readonly { client?: string | null }[]) => [
+    ...new Set(list.map((t) => t.client ?? null).filter((c): c is string => c !== null)),
+  ];
+  const activeFor = (which: Tab, list: readonly { client?: string | null }[]): TodoFilter => {
+    const slugs = slugsOf(list);
+    return {
+      scope: which === 'mine' && kindOnMine ? filter.scope : 'all',
+      client:
+        !project && slugs.length >= 2 && filter.client !== null && slugs.includes(filter.client)
+          ? filter.client
+          : null,
+      project,
+    };
   };
+  const askedAll = asked ? [...asked.waiting, ...asked.done] : [];
+  const tabItems = tab === 'asked' ? askedAll : items;
+  const showKind = tab === 'mine' && kindOnMine;
+  const clientSlugs = slugsOf(tabItems);
+  const showClient = !project && clientSlugs.length >= 2;
+  const active = activeFor(tab, tabItems);
   const filtering = filterActive(active);
   const shown = filterTodos(items, active, clients);
+  const askedActive = activeFor('asked', askedAll);
+  const askedShown = asked
+    ? {
+        ...asked,
+        waiting: filterAsked(asked.waiting, askedActive),
+        done: filterAsked(asked.done, askedActive),
+      }
+    : null;
+  // The tab counts follow the filters, so a number always matches what its tab shows.
+  const counts = {
+    mine: filterTodos(todos.mine, activeFor('mine', todos.mine), clients).length,
+    open: filterTodos(todos.open, activeFor('open', todos.open), clients).length,
+    asked: askedShown ? askedShown.waiting.length : null,
+  };
+  const shownCount =
+    tab === 'asked' ? (askedShown ? askedShown.waiting.length + askedShown.done.length : 0) : shown.length;
+  /** The keyboard to the Project select; if it has gone (no projects listed), the first filter, else the list. */
+  const focusProjectFilter = () => {
+    const target =
+      document.getElementById('todo-project') ??
+      filtersRef.current?.querySelector<HTMLElement>(
+        '[role="combobox"], [role="radio"][aria-checked="true"]',
+      ) ??
+      scrollRef.current;
+    target?.focus();
+  };
+  /** Filters the drawer by a row's project; the chip goes with the filter, so the keyboard goes to the Project select. */
+  const pickProject = (key: string) => {
+    setFilter({ ...filter, project: key });
+    requestAnimationFrame(focusProjectFilter);
+  };
   // "New to you" is worked out over every row, so a starred new to-do keeps its dot and is marked seen when
   // opened. Then the starred ones go to Favourites, the only place they show; new ones not starred go to
   // "New to you"; the rest are grouped by date.
@@ -592,7 +651,7 @@ export function TodosDrawer() {
   };
   const clearFilters = () => {
     setFilter(EMPTY_FILTER);
-    clearPicked();
+    if (pickedProject) clearPicked();
     // The button leaves with the "No to-dos match" panel: put the keyboard on a filter, now reset.
     const row = filtersRef.current;
     const filter =
@@ -676,7 +735,7 @@ export function TodosDrawer() {
   // The order previous and next walk through: what the drawer shows now, held rows left out.
   const order =
     tab === 'asked'
-      ? askedOrder(asked)
+      ? askedOrder(askedShown)
       : [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
           .map((t) => t.key)
           .filter((k) => !heldById.has(k));
@@ -842,6 +901,7 @@ export function TodosDrawer() {
         onOpened={opened}
         favourite={favs.includes(t.key)}
         onStar={onStar}
+        onProject={project ? undefined : pickProject}
       />
     );
   };
@@ -851,9 +911,12 @@ export function TodosDrawer() {
   // own, right-aligned to line up with that +. Both primary: adding is the drawer's main action.
   const showProject = (projectCards?.projects.length ?? 0) > 0 || pickedProject !== '';
   const hasFilterRow = showKind || showClient || showProject;
-  const pickedName = pickedProject
-    ? (labelForKey(pickedProject, projectCards?.projects, clients) ?? pickedProject)
-    : '';
+  // What the drawer is narrowed to, for the Asked tab's empty lines: the project, else the client.
+  const filterName = project
+    ? (labelForKey(project, projectCards?.projects, clients) ?? project)
+    : active.client
+      ? (clients.find((c) => c.slug === active.client)?.name ?? active.client)
+      : '';
   const addToggle = canChange ? (
     hasFilterRow ? (
       <button
@@ -891,9 +954,9 @@ export function TodosDrawer() {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'mine', label: `Mine, ${todos.mine.length}` },
-            { value: 'open', label: `Open, ${todos.open.length}` },
-            { value: 'asked', label: asked ? `Asked, ${asked.waiting.length}` : 'Asked' },
+            { value: 'mine', label: `Mine, ${counts.mine}` },
+            { value: 'open', label: `Open, ${counts.open}` },
+            { value: 'asked', label: counts.asked !== null ? `Asked, ${counts.asked}` : 'Asked' },
           ]}
         />
       </div>
@@ -951,6 +1014,7 @@ export function TodosDrawer() {
                 className="todo-client-pick"
                 value={active.project ?? ''}
                 disabled={pickedProject !== ''}
+                aria-describedby={pickedProject ? 'todo-project-why' : undefined}
                 options={[
                   { value: '', label: 'All projects' },
                   ...filterOptions(projectCards?.projects ?? [], clients),
@@ -961,9 +1025,18 @@ export function TodosDrawer() {
             </>
           ) : null}
           {pickedProject ? (
+            // The locked select shows the project; this says why, and Clear hands it back to the drawer.
             <span className="todo-project-chip" id="todo-project-why" style={{ flex: '1 1 100%' }}>
-              Project: {pickedName} ·{' '}
-              <button type="button" className="link-btn" onClick={clearPicked}>
+              Set by Working on (Home) ·{' '}
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  clearPicked();
+                  // The button goes with the reason: the keyboard moves to the Project select, now free.
+                  requestAnimationFrame(focusProjectFilter);
+                }}
+              >
                 Clear
               </button>
             </span>
@@ -996,16 +1069,38 @@ export function TodosDrawer() {
           .
         </p>
       ) : null}
-      <ResultsAnnouncer filtering={filtering} count={shown.length} />
+      <ResultsAnnouncer filtering={filtering} count={shownCount} />
       {/* With the panel open the status is said there (it may cover this drawer). */}
       <p className="todo-status" role="status" data-tone={isError ? 'error' : undefined}>
         {panel === null ? message : ''}
       </p>
       <div className="drawer-scroll" ref={scrollRef} tabIndex={-1}>
         <div className="drawer-body">
-          {tab === 'asked' ? (
+          {tab === 'asked' && filtering && askedShown && shownCount === 0 && askedAll.length > 0 ? (
+            <div className="dock-empty todo-nomatch">
+              <p>None of the to-dos you've asked of others are in {filterName || 'this filter'}.</p>
+              <p>
+                <button type="button" className="btn" data-size="small" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              </p>
+            </div>
+          ) : tab === 'asked' ? (
             <AskedList
-              list={asked}
+              list={askedShown}
+              filteredBy={filtering ? filterName || null : null}
+              placeOf={(t) => {
+                // Where it belongs, as on the other tabs: a known project is a chip, anything else words.
+                const where = {
+                  client: t.client ?? null,
+                  project: t.project ?? null,
+                  projectMatch: t.projectMatch,
+                };
+                const chip = todoProjectChip(where, projectCards?.projects, clients);
+                // The words too: while a project filter is on the row shows them instead of the chip.
+                return { chip, places: todoPlaceParts(where, projectCards?.projects, clients) };
+              }}
+              onProject={project ? undefined : pickProject}
               state={askedState}
               onRetry={() => void loadAsked()}
               openKey={panel?.key ?? null}
@@ -1090,7 +1185,8 @@ export function TodosDrawer() {
               ))}
             </>
           )}
-          {tab !== 'asked' && todos.othersCount > 0 ? (
+          {/* It counts everyone's, filter or not: left out while filtering so the numbers don't disagree. */}
+          {tab !== 'asked' && !filtering && todos.othersCount > 0 ? (
             <p className="dock-empty">
               {todos.othersCount} more {todos.othersCount === 1 ? 'belongs' : 'belong'} to other people.
             </p>
@@ -1118,6 +1214,7 @@ export function TodosDrawer() {
           canUpload={todos.canUpload}
           onStatus={setMessage}
           startPersonal={tab === 'mine' && active.scope === 'personal'}
+          startProject={project ?? ''}
           onEdit={(t) => {
             setMessage('');
             setDraft(draftOf(t));

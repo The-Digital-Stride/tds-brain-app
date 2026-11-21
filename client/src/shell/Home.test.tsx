@@ -239,14 +239,14 @@ describe('Home', () => {
     fireEvent.change(box, { target: { value } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   };
-  const select = () => screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement;
+  const select = () => screen.getByRole('combobox', { name: 'Chat for' }) as HTMLInputElement;
 
   it('has no separate client row; the select sits in the composer foot and starts on auto', async () => {
     await renderHome();
     expect(document.querySelector('.home-client')).toBeNull();
     expect(select().closest('.composer-foot')).toBeTruthy();
     expect(select().value).toBe('Auto');
-    openPicker('Client');
+    openPicker('Chat for');
     expect(screen.getAllByRole('option').map((o) => o.textContent?.replace(/, chosen$/, ''))).toEqual([
       'Auto',
       'No client',
@@ -257,7 +257,7 @@ describe('Home', () => {
 
   it('a chosen client skips the guess and is sent', async () => {
     const box = await renderHome();
-    pickOption('Client', 'Northwind');
+    pickOption('Chat for', 'Northwind');
     typeAndSend(box, 'Hello there');
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'northwind' });
@@ -267,7 +267,7 @@ describe('Home', () => {
 
   it('"No client" skips the guess and sends no client', async () => {
     const box = await renderHome();
-    pickOption('Client', 'No client');
+    pickOption('Chat for', 'No client');
     typeAndSend(box, 'Hello there');
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession.mock.calls[0]?.[0].client).toBeNull();
@@ -279,7 +279,7 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, lastClient: 'acme' } });
     await renderHome();
     expect(select().value).toBe('Auto');
-    pickOption('Client', 'Acme Heating');
+    pickOption('Chat for', 'Acme Heating');
     expect(clientChoice.get()).toBe('client:northwind');
   });
 
@@ -419,7 +419,7 @@ describe('Home', () => {
   it('shows a visible Client label, and swaps the hint while the question is open', async () => {
     api.clientGuess.mockResolvedValue({ kind: 'ask', options: [] });
     const box = await renderHome();
-    expect(screen.getByText('Client', { selector: 'label' }).className).not.toContain('visually-hidden');
+    expect(screen.getByText('Chat for', { selector: 'label' }).className).not.toContain('visually-hidden');
     expect(screen.getByText('Enter to send, Shift and Enter for a new line.')).toBeTruthy();
     typeAndSend(box, 'Vague');
     await screen.findByText('Answer the question above, or Cancel to change your message.');

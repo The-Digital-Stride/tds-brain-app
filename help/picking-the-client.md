@@ -8,12 +8,12 @@ benefit: Claude uses the right client's notes, so answers fit the job.
 roles: all
 related: [home, talking-to-claude, settings, pinned]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-21
 ---
 
 ## What it does
 
-Each new chat can be about one client. The **Client** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes.
+Each new chat can be about one client. The **Chat for** picker, inside the message box on Home, tells Claude which one. Claude then reads that client's notes.
 
 ## Why it helps
 
@@ -23,7 +23,7 @@ Each new chat can be about one client. The **Client** picker, inside the message
 
 ## How to use it
 
-1. Click the **Client** picker on Home.
+1. Click the **Chat for** picker on Home.
 2. Leave it on **Auto** to let Cortex guess from your first message.
 3. Or pick a client by name. You can type to search the list.
 4. Choose **No client** if the job isn't about one.

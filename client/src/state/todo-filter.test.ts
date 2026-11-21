@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { TodoItem } from '../../../shared/contract.ts';
-import { EMPTY_FILTER, filterActive, filterTodos } from './todo-filter.ts';
+import type { AskedTodo, TodoItem } from '../../../shared/contract.ts';
+import { EMPTY_FILTER, filterActive, filterAsked, filterTodos } from './todo-filter.ts';
 
 const clients = [
   { slug: 'acme', name: 'Acme Café' },
@@ -81,5 +81,20 @@ describe('the project filter', () => {
       ),
     ).toHaveLength(1);
     expect(filterTodos(items, f, clients)).toEqual([]);
+  });
+});
+
+describe('filterAsked', () => {
+  const asked = (id: string, over: Partial<AskedTodo> = {}) => ({ key: id, ...over }) as AskedTodo;
+  const rows = [
+    asked('a', { client: 'acme', projectMatch: { how: 'key', key: 'acme/site' } }),
+    asked('b', { client: 'bolt' }),
+    // An older server sends neither: it matches only "All".
+    asked('c'),
+  ];
+  it('narrows by client and project, and returns the list itself with no filter', () => {
+    expect(filterAsked(rows, EMPTY_FILTER)).toBe(rows);
+    expect(filterAsked(rows, { ...EMPTY_FILTER, project: 'acme/site' }).map((t) => t.key)).toEqual(['a']);
+    expect(filterAsked(rows, { ...EMPTY_FILTER, client: 'bolt' }).map((t) => t.key)).toEqual(['b']);
   });
 });

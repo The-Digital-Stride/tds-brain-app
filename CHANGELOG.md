@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.58.1 — 2026-11-21
+
+- **fix**: use a folder icon for Projects instead of a calendar
+
 ## v0.58.0 — 2026-11-21
 
 - **feat**: move a project to another client

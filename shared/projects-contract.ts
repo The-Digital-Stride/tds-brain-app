@@ -8,6 +8,8 @@
  * NOT BUILT YET (reserved so phase one stores what they need): TimeEntry (phase 2).
  */
 
+import type { LibraryItem } from './contract.ts';
+
 // ─── Where projects live (decision 1) ─────────────────────────────────────────────────────────────
 
 /** A project's permanent folder name. Never changes after `create`; the title can. */
@@ -250,6 +252,26 @@ export type ProjectsErrorCode =
   | 'not-allowed'
   | 'internal';
 
+/** HTTP status per code (routes): 400, 404, 409, 409, 403, 500. */
+export const PROJECTS_ERROR_STATUS: Record<ProjectsErrorCode, number> = {
+  'bad-request': 400,
+  'not-found': 404,
+  exists: 409,
+  changed: 409,
+  'not-allowed': 403,
+  internal: 500,
+};
+
+/** Thrown by the projects readers and the tidy-up. `message` is plain UK English, fit to show the user. */
+export class ProjectsError extends Error {
+  readonly code: ProjectsErrorCode;
+  constructor(code: ProjectsErrorCode, message: string) {
+    super(message);
+    this.name = 'ProjectsError';
+    this.code = code;
+  }
+}
+
 // ─── To-dos (decisions 5, 6) ───────────────────────────────────────────────────────────────────────
 
 /** Capability `tdsapp-todo` v0.6 answers; the app shows Project/Stage fields only with it (TodoList.canProject). */
@@ -342,7 +364,7 @@ export const LEGACY_PROJECTS_SCOPE = 'shared:projects';
  * project page's Files tab both use this, because a project's files can span scopes.
  */
 export interface ProjectFilesResponse {
-  items: import('./contract').LibraryItem[];
+  items: LibraryItem[];
   hidden: number;
 }
 

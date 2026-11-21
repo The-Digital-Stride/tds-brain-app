@@ -395,18 +395,88 @@ reserved `TimeEntry`, plus `TeamFromTodo` (R1) and the reserved R2/R3 shapes `Pr
 `RetainerTerms`, `Kpi` and `RetainerMonth`. R1 also adds `stage` and `projectMatch` to `TodoItem` and `projects` to
 `LibraryItem` in `shared/contract.ts`, and the two routes to `ROUTES`.
 
+## Build interfaces (release 1, fixed by the lead before building)
+
+Builders code against these signatures in parallel; nobody changes one without telling the lead.
+Already in place: `shared/contract.ts` (TodoItem `stage?`/`projectMatch?`, TodoList `canProject?`,
+TodoAction `project` + `add`/`move` fields, LibraryItem `projects?`, BrainReaders `projects?`,
+`changeProject?`, `projectFiles?`, `tidy?`, `applyTidy?`, ROUTES `projects`, `projectsChange`,
+`projectFiles`, `projectsTidy`), `shared/projects-contract.ts` (incl. `ProjectsError`,
+`PROJECTS_ERROR_STATUS`) and `client/src/api.ts` (`api.projects`, `changeProject`, `projectFiles`,
+`tidy`, `applyTidy`).
+
+**Builder A, `shared/projects.ts`** (pure, browser-safe, no node imports):
+- `parseProjectKey(value: string): { client: string | 'personal'; slug: string } | null` (PROJECT_KEY_PATTERN and segment cap)
+- `resolveTodoProject(value: string | null, todoClient: string | null, scope: 'tds' | 'personal', projects: Pick<ProjectCard, 'key' | 'slug' | 'client' | 'space'>[], clients: string[]): TodoProjectMatch`
+- `matchedKey(m: TodoProjectMatch | undefined): ProjectKey | null` (the key for 'key' and 'legacy', else null)
+- `projectLabel(card: Pick<ProjectCard, 'title' | 'client'>, clientName?: string): string` ("Client · Title")
+
+**Builder A, `server/brain/projects.ts`:**
+```ts
+export interface ProjectsIndex {
+  cards: ProjectCard[];                          // every project, personal only this Mac's
+  byKey(key: ProjectKey): ProjectCard | null;
+  keysForPath(brainRel: string): ProjectKey[];   // by folder prefix or `## Linked files`
+  resolve(value: string | null, client: string | null, scope: 'tds' | 'personal'): TodoProjectMatch;
+}
+export interface ProjectsService {
+  index(): Promise<ProjectsIndex>;               // cached like the library (30 s stale without a watcher)
+  list(identity: Identity): Promise<ProjectList>; // cards with openTodos, teamFromTodos, looseLabels
+  change(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  tidy(identity: Identity): Promise<TidyList>;
+  applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
+  changed(brainRel?: string): void;              // drop caches (watcher, after a write)
+}
+export function createProjects(root: string, opts: {
+  skill: ProjectsSkillRunner;                    // server/brain/projects-skill.ts
+  todoSkill: TodoSkillRunner;                    // server/brain/todo-skill.ts (tidy writes)
+  clients: () => Promise<ClientInfo[]>;
+  dataDir: string | null;                        // tidy-skips.json
+  now?: () => Date;
+  git?: (args: string[], cwd: string) => Promise<string>; // lastChanged; injectable for tests
+}): ProjectsService;
+```
+All errors are `ProjectsError`. A reads to-do frontmatter itself (via `server/brain/frontmatter.ts`) for
+counts, `teamFromTodos` and the tidy-up, so it doesn't depend on `todos.ts`.
+
+**Builder D, `server/brain/library.ts`:** `createLibrary` options gain
+`projects?: () => Promise<ProjectsIndex>`. It fills `LibraryItem.projects` at serve time, adds the
+`shared:projects` scope, hides `PROJECT_PROTECTED_NAMES`, and exports on the library object
+`projectFiles(card: ProjectCard, kind: LibraryKind): Promise<ProjectFilesResponse>`.
+**Builder D, `server/brain/todos.ts`:** `listTodos` options gain `projects?: () => Promise<ProjectsIndex>`;
+it fills `stage` and `projectMatch` (via `index.resolve`) and `canProject` (todo script capabilities
+include TODO_PROJECT_CAPABILITY); `changeTodo` passes `project` through like the other actions.
+
+**Builder C, `client/src/state/projects.ts`** (written first; Builder B imports it):
+```ts
+export function useProjects(): {
+  list: ProjectList | null;       // null until first load
+  error: string | null;
+  refresh(): Promise<void>;       // GET again
+  apply(next: ProjectList): void; // after a change returns a fresh list
+};
+```
+One shared cache for the whole page (a small external store with `useSyncExternalStore`, like
+`client/src/state/client-choice.ts`), loaded on first use and refreshed on window focus.
+**Builder C, `client/src/state/client-choice.ts`:** exports `useProjectChoice(): ProjectChoice` and
+`setChoice(next: { client: string; project: ProjectChoice })` (one atomic set) beside the existing client
+API, which keeps working unchanged.
+
 ## Team and file ownership (release 1)
 
 | Role | Agent and model | Why this model | Owns (files) |
 |---|---|---|---|
 | Overseer | `overseer`, fable | plan critique, product calls, sign-off | (read-only) |
-| Builder A | `builder`, opus | data model and data integrity: key resolution, precedence, privacy rule, script writes with fingerprint checks | `brain-skills/tdsapp-projects/**`, `brain-skills/tdsapp-todo/**` (v0.6: `project`, `add` fields, `move` drop, `projects/` link root), `shared/projects.ts` (+ test), `server/brain/projects.ts` (incl. `teamFromTodos`), `server/brain/projects-skill.ts`, `server/brain/tidy.ts` (+ tests), `server/brain/todo-skill.ts`, `brain-skills/tdsapp-files/**` (protected names in project folders, decision 27) |
-| Builder B | `builder`, sonnet | default (UI) | `client/src/apps/projects/**`, `client/src/shell/apps.ts`, `client/src/styles/projects.css`, `help/**` (Projects pages, UK English) |
-| Builder C | `builder`, sonnet | default (wiring); starts after A's `server/brain/projects.ts` exports are fixed | `client/src/state/client-choice.ts`, `client/src/state/todo-filter.ts`, `client/src/shell/TodoPanel.tsx` + `TodoForms.tsx` (Project/Stage fields), `client/src/shell/search-sources.ts`, `client/src/shell/Home.tsx`, `client/src/apps/shared/**`, `client/src/apps/images/**`, `client/src/apps/documents/**` (project filter), `server/brain/library.ts` + `server/brain/library-rules.ts` (`projects` at serve time, `shared:projects` scope, hidden reserved files per decision 27) |
-| Lead | me | contract edits and route wiring | `shared/contract.ts` (`TodoAction` gains `project`, `TodoList.canProject`), `shared/projects-contract.ts`, `server/http/routes.ts`, `server/brain/todos.ts` (stage + projectMatch), `client/src/api.ts`, `client/src/store.tsx`, `client/src/shell/contract.ts` (`TodoFilter`), `client/src/shell/Palette.tsx`, `brain-skills/README.md` |
+| Builder A | `builder`, opus | data model and data integrity: key resolution, precedence, privacy rule, script writes with fingerprint checks | `brain-skills/tdsapp-projects/**` (new), `brain-skills/tdsapp-todo/**` (v0.6: `project`, `add` fields, `move` drop, `projects/` link root), `brain-skills/tdsapp-files/**` (protected names in project folders), `shared/projects.ts` (+ test), `server/brain/projects.ts` (+ test), `server/brain/projects-skill.ts` (+ test), `server/brain/tidy.ts` (+ test), `server/brain/todo-skill.ts` (+ test) |
+| Builder B | `builder`, sonnet | default (UI) | `client/src/apps/projects/**`, `client/src/shell/apps.ts` (+ test), `client/src/styles/projects.css`, `help/**` (Projects pages, UK English) |
+| Builder C | `builder`, sonnet | default (client wiring) | `client/src/state/projects.ts` (new, first), `client/src/state/client-choice.ts`, `client/src/state/todo-filter.ts`, `client/src/shell/TodoPanel.tsx` + `TodoForms.tsx` (Project/Stage fields), `client/src/shell/search-sources.ts`, `client/src/shell/Home.tsx`, `client/src/shell/contract.ts` (`TodoFilter`), `client/src/shell/Palette.tsx`, `client/src/store.tsx`, `client/src/apps/shared/**`, `client/src/apps/images/**`, `client/src/apps/documents/**` (project filter), and their tests |
+| Builder D | `builder`, sonnet | default (server wiring) | `server/brain/index.ts`, `server/brain/todos.ts`, `server/brain/library.ts` + `server/brain/library-rules.ts`, `server/brain/watch.ts`, `server/http/routes.ts`, `server/http/projects-routes.test.ts` (new), and their tests |
+| Lead | me | contract and interfaces (done before building), checks, review routing | `shared/contract.ts`, `shared/projects-contract.ts`, `client/src/api.ts`, `brain-skills/README.md`, this plan |
 | Gates | `expert` UX/UI (opus, domain gate), `reviewer` correctness (opus), `reviewer` security (opus: paths, input, privacy), `reviewer` UI and accessibility (sonnet) | domain gates and review lenses per agent-workforce | (read-only) |
 
-No file appears in two rows.
+No file appears in two rows. Builder D's server code and Builder C's client code import Builder A's and
+Builder C's interfaces above by their fixed signatures; until they land, type errors in the other
+builder's files are expected and not theirs to fix.
 
 ## Tests (release 1)
 
@@ -419,8 +489,8 @@ No file appears in two rows.
 | `server/brain/projects.test.ts` | walk finds client, personal, legacy, archive and archived-client projects; card-less and unreadable folders are projects; `INTERNAL_PRECEDENCE` order and `duplicates`; bad folder names skipped; personal never read from another person; privacy drop on read; open to-do counts; `teamFromTodos` takes open and 30-day-done assignees, leaves out owner and team, and never counts a personal to-do; done date from `completed_at`, else `completed`, else not counted; personal projects get [] | A |
 | `brain-skills/tdsapp-files/test/*.test.ts` (extend) | delete refuses `project.md`, `retainer.md`, `updates/**` and `months/**` inside a project folder; other files there still delete | A |
 | `server/brain/tidy.test.ts` | the real label set (harvey-nash → client-only, h2o-restorations → merge, optional-project-slug → clear, bookvault → merge into book-vault); negatives (`os` never fuzzy-merged, a different `client:` never overwritten, `missing` keys never offered, TDS `new-project` never personal); partial failure re-reads and `exists` becomes link | A |
-| `server/http/projects-routes.test.ts` | all four routes go through `checkRequest` (bad origin or content type refused) and reject malformed bodies; **tidy changes a teammate's TDS to-do** through the gate, touching only the three lines; tidy refuses another person's personal to-do | Lead |
-| `server/brain/library.test.ts` (extend) | `projects` filled by folder and by link at serve time (a card edit shows without re-walking the other scope); `shared:projects` lists legacy folders and refuses delete; `/api/projects/files` spans scopes and hides links the person can't see; `project.md`, `retainer.md`, `updates/` and `months/` never listed in Documents or Images | C |
+| `server/http/projects-routes.test.ts` | all four routes go through `checkRequest` (bad origin or content type refused) and reject malformed bodies; **tidy changes a teammate's TDS to-do** through the gate, touching only the three lines; tidy refuses another person's personal to-do; the `project` to-do action is validated like the others | D |
+| `server/brain/library.test.ts` (extend) | `projects` filled by folder and by link at serve time (a card edit shows without re-walking the other scope); `shared:projects` lists legacy folders and refuses delete; `/api/projects/files` spans scopes and hides links the person can't see; `project.md`, `retainer.md`, `updates/` and `months/` never listed in Documents or Images | D |
 
 ## Gates
 

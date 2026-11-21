@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.56.0 — 2026-11-21
+
+- **feat**: one project filter across Mine, Open and Asked, with project chips on rows
+
 ## v0.55.0 — 2026-11-21
 
 - **feat**: release 1 of the projects system

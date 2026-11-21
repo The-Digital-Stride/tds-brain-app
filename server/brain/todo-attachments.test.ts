@@ -743,7 +743,10 @@ describe('files in the older projects/ folder (projects R1, decision 7)', () => 
     put(root, 'projects/client-portal/updates/2026-11-21.md');
     await brain.changeTodo({ kind: 'attach', id: MINE, path: 'projects/client-portal/notes.md' }, sam);
     expect(calls().map((c) => c.command)).toEqual(['attach']);
-    for (const path of ['projects/client-portal/project.md', 'projects/client-portal/updates/2026-11-21.md']) {
+    for (const path of [
+      'projects/client-portal/project.md',
+      'projects/client-portal/updates/2026-11-21.md',
+    ]) {
       const got = await codeOf(brain.changeTodo({ kind: 'attach', id: MINE, path }, sam));
       expect(got?.code, path).toBe('bad-request');
     }

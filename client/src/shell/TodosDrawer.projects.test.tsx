@@ -150,9 +150,9 @@ describe('project chips on rows', () => {
     fireEvent.click(chip);
     expect(screen.queryByText('Write the brief', { exact: false })).toBeNull();
     expect(screen.getByText('Fix the header', { exact: false })).toBeTruthy();
-    // Filtered to one project, no row offers a chip (they would all name it); its name stays as words.
+    // Filtered to one project, no row names it at all (they would all say the same): the select says it once.
     expect(screen.queryByRole('button', { name: /^Filter by project/ })).toBeNull();
-    expect(screen.getByText('Acme · Website')).toBeTruthy();
+    expect(screen.queryByText('Acme · Website', { exact: false })).toBeNull();
     // The chip went with the filter: the keyboard is on the Project select, which now shows it.
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Project' })),
@@ -206,13 +206,13 @@ describe('the Asked tab', () => {
 });
 
 describe('review fixes', () => {
-  it('keeps the project as words on Asked rows while a project filter is on', async () => {
+  it("doesn't repeat the filtered project on Asked rows (the Mine tab does the same)", async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Acme · Website' }));
     fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
     const row = (await screen.findByText('Chase the logo')).closest('li') as HTMLElement;
     expect(within(row).queryByRole('button', { name: /^Filter by project/ })).toBeNull();
-    expect(row.textContent).toContain('Acme · Website');
+    expect(row.textContent).not.toContain('Acme · Website');
   });
 
   it('gives an archived project no chip: the Project filter cannot show it', () => {

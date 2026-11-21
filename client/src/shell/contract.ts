@@ -276,6 +276,8 @@ export type IconName =
   | 'plus'
   | 'lock'
   | 'calendar'
+  /** A folder with a tab: Projects. */
+  | 'folder'
   | 'person'
   | 'bin'
   | 'help'

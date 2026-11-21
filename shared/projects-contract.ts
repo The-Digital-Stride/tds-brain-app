@@ -28,6 +28,13 @@ export const LEGACY_PROJECTS_DIR = 'projects/<slug>';
 export const LEGACY_ARCHIVE_DIR = 'projects-archive/<slug>';
 export const ARCHIVED_CLIENT_PROJECTS_DIR = 'clients/_archive/<client>/projects/<slug>';
 /**
+ * Archive plan (docs/plans/2026-11-21-project-archive-delete.md, decision 1): where `archive` puts a
+ * project, beside its live folder and at the same depth (so the card's relative links still work).
+ * Read as archived (read only); keys unchanged. Legacy `projects/<slug>` archives to LEGACY_ARCHIVE_DIR.
+ */
+export const CLIENT_PROJECTS_ARCHIVE_DIR = 'clients/<client>/projects-archive/<slug>';
+export const PERSONAL_PROJECTS_ARCHIVE_DIR = 'personal/projects-archive/<slug>';
+/**
  * Reader precedence for INTERNAL_CLIENT keys (overseer B4): the first folder found wins; any later
  * folder with the same slug is reported in ProjectList.duplicates and never shown as a second project.
  * `create` refuses a slug found in ANY of these.
@@ -203,6 +210,8 @@ export interface ProjectList {
    * False (or absent, older servers) → no Move button; the client shows read-only.
    */
   canMove?: boolean;
+  /** Archive plan: the script answers PROJECTS_ARCHIVE_CAPABILITY. False/absent → no Archive, Unarchive or Delete. */
+  canArchive?: boolean;
   /** Move plan B1: card-less folders left behind by a move (their key is in a live card's movedFrom). Not in `projects`. */
   leftovers?: string[];
 }
@@ -269,7 +278,24 @@ export type ProjectAction =
       check?: true;
       filesExpect?: string;
     }
+  /**
+   * Archive plan decision 2: moves a live project's folder to its archive location (same slug, never
+   * renamed). Card-less folders too. `check: true` writes nothing and answers `{ok:true, check: ProjectRemoveCheck}`.
+   * `expect` is required when the folder has a card. Answers `{ok:true, key, version: ''}`.
+   */
+  | { kind: 'archive'; key: ProjectKey; expect?: string; check?: true; filesExpect?: string }
+  /** Decision 3: the reverse of `archive`, back to the live location. Refused with `exists` if one is there. */
+  | { kind: 'unarchive'; key: ProjectKey; expect?: string; check?: true; filesExpect?: string }
+  /**
+   * Decision 4: removes the folder and everything in it. Only an archived project, or a live one holding
+   * nothing but its card. Shared projects: the card's Account Owner or the brain's Owner (role 'owner');
+   * card-less: the brain's Owner. `filesExpect` is required (not with `check`).
+   */
+  | { kind: 'delete'; key: ProjectKey; expect?: string; check?: true; filesExpect?: string }
   | { kind: 'capabilities' };
+
+/** The script answers `capabilities` with this too once it can `archive`, `unarchive` and `delete` (0.3). */
+export const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
 
 /** The script answers `capabilities` with this too once it can `move` (tdsapp-projects 0.2). */
 export const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
@@ -320,6 +346,95 @@ export interface ProjectMoveResult {
   /** Open to-dos re-pointed to the new key, and those that couldn't be (they still resolve by alias). */
   todosMoved: number;
   todosLeft: number;
+}
+
+/** What archive, unarchive or delete would touch (`check: true`). Paths are brain-relative. */
+export interface ProjectRemoveCheck {
+  key: ProjectKey;
+  /** Where the folder is now, and where it would go (null for delete). */
+  from: string;
+  to: string | null;
+  /** Every file in the folder, the card included, sorted, at most 50 listed. */
+  files: string[];
+  fileCount: number;
+  /** By kind, from the extension (LIBRARY image and document types; anything else is 'other'). */
+  images: number;
+  documents: number;
+  other: number;
+  bytes: number;
+  /** Files git ignores (they never synced: only this Mac has them). */
+  ignoredCount: number;
+  /**
+   * Overseer B3: files no other Mac and no git history has (ignored ones, or every file of a personal
+   * project). Delete can't be undone for these; the panel says so.
+   */
+  localOnlyCount: number;
+  /**
+   * Decision 8: brain files OUTSIDE the folder that name its path (cards' Linked files, to-do `## Files`,
+   * skills, rules), at most 20, so the person sees what will break. Text files only; never todo/done/.
+   */
+  references: string[];
+  /** At least this many (the grep stops early; overseer S4). */
+  referenceCount: number;
+  /** As ProjectMoveCheck.filesVersion. Sent back as `filesExpect`. */
+  filesVersion: string;
+  /** Delete only: the folder holds nothing but its card (a live project may then be deleted). */
+  empty: boolean;
+  /**
+   * Overseer S1: decided by the script alone (its `identity()` and roles). For archive and unarchive,
+   * whether this person may; for delete, whether this person may delete it.
+   */
+  allowed: boolean;
+  /** When not allowed, who can, in words ("Ian Hancock (the Account Owner) or the brain's Owner"). */
+  allowedWho: string;
+}
+
+/**
+ * An OPEN to-do linked to the project (key or moved-from alias), for the archive and delete panels.
+ * Done to-dos are never listed or changed (overseer S3: `todo/done/` is the record); only counted.
+ */
+export interface ProjectRemoveTodo {
+  id: string;
+  title: string;
+  scope: 'tds' | 'personal';
+  /** Assignee slug, or null for nobody. */
+  assignee: string | null;
+  version: string;
+}
+
+/**
+ * `POST /api/projects/archive` and `/api/projects/delete`, exactly these fields.
+ * `todos` (not with `check`): what happens to each listed to-do. Archive: 'done' | 'keep'.
+ * Delete: 'delete' | 'unlink'. A to-do not listed is left as it is.
+ */
+export interface ProjectRemoveRequest {
+  key: ProjectKey;
+  /** 'unarchive' only on the archive route. */
+  action: 'archive' | 'unarchive' | 'delete';
+  expect?: string;
+  check?: true;
+  filesExpect?: string;
+  todos?: {
+    id: string;
+    scope: 'tds' | 'personal';
+    version: string;
+    do: 'done' | 'keep' | 'delete' | 'unlink';
+  }[];
+}
+
+export interface ProjectRemoveCheckResponse {
+  check: ProjectRemoveCheck;
+  todos: ProjectRemoveTodo[];
+  /** Done to-dos linked to the project: kept as they are, counted for the panel. */
+  doneTodos: number;
+}
+
+export interface ProjectRemoveResult {
+  list: ProjectList;
+  key: ProjectKey;
+  /** To-do changes that worked, and the ids of those that didn't (the folder change happened, or threw). */
+  todosChanged: number;
+  todosFailed: string[];
 }
 
 export type ProjectsErrorCode =

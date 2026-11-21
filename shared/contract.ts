@@ -1896,6 +1896,10 @@ export const ROUTES = {
   /** `POST` ProjectAction → ProjectList. Errors as ProjectsErrorCode with a plain UK-English `error`. */
   projectsChange: '/api/projects/change',
   projectsMove: '/api/projects/move',
+  /** Archive plan: archive or unarchive (with `check`). Body ProjectRemoveRequest. */
+  projectsArchive: '/api/projects/archive',
+  /** Archive plan: delete (with `check`). Body ProjectRemoveRequest with action 'delete'. */
+  projectsDelete: '/api/projects/delete',
   /** `GET ?key=<ProjectKey>&kind=image|document` → ProjectFilesResponse (decision 7). */
   projectFiles: '/api/projects/files',
   /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */

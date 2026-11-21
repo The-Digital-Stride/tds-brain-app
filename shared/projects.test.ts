@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  archivedFolderPath,
+  archiveFolderFor,
   folderTitle,
   isProjectSlug,
+  liveFolderFor,
   matchedKey,
   movedFolderPath,
   movedKey,
@@ -325,5 +328,48 @@ describe('moved projects (aliases)', () => {
       'clients/acme/projects/jevx/a.pdf',
     );
     expect(movedFolderPath('clients/acme/files/a.pdf', cards)).toBe('clients/acme/files/a.pdf');
+  });
+});
+
+describe('archive folders (archive plan decision 1, S5)', () => {
+  it('puts the archive beside the live folder, at the same depth', () => {
+    expect(archiveFolderFor('clients/acme/projects/site')).toBe('clients/acme/projects-archive/site');
+    expect(archiveFolderFor('personal/projects/jev')).toBe('personal/projects-archive/jev');
+    expect(archiveFolderFor('projects/old')).toBe('projects-archive/old');
+    expect(liveFolderFor('clients/acme/projects-archive/site')).toBe('clients/acme/projects/site');
+    expect(liveFolderFor('projects-archive/old')).toBe('projects/old');
+  });
+
+  it('has no archive for an archive, or for an archived client', () => {
+    expect(archiveFolderFor('clients/acme/projects-archive/site')).toBeNull();
+    expect(archiveFolderFor('clients/_archive/acme/projects/site')).toBeNull();
+    expect(liveFolderFor('clients/_archive/acme/projects/site')).toBeNull();
+    expect(archiveFolderFor('clients/acme/projects/site/sub')).toBeNull();
+  });
+
+  it("maps a link into an archived project's old folder to where it is now", () => {
+    const cards = [
+      { folder: 'clients/acme/projects-archive/site', archived: true },
+      { folder: 'clients/acme/projects/live', archived: false },
+    ];
+    expect(archivedFolderPath('clients/acme/projects/site/brief.md', cards)).toBe(
+      'clients/acme/projects-archive/site/brief.md',
+    );
+    expect(archivedFolderPath('clients/acme/projects/live/a.md', cards)).toBe(
+      'clients/acme/projects/live/a.md',
+    );
+    expect(archivedFolderPath('clients/acme/projects/sites/a.md', cards)).toBe(
+      'clients/acme/projects/sites/a.md',
+    );
+  });
+
+  it('leaves the path alone when a live project holds the old folder again', () => {
+    const cards = [
+      { folder: 'clients/acme/projects-archive/site', archived: true },
+      { folder: 'clients/acme/projects/site', archived: false },
+    ];
+    expect(archivedFolderPath('clients/acme/projects/site/a.md', cards)).toBe(
+      'clients/acme/projects/site/a.md',
+    );
   });
 });

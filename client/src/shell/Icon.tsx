@@ -95,6 +95,10 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M7.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7M3 11.5h14M10 10.5v2" />
     </>
   ),
+  // A folder with a tab: Projects (each project is a folder in the brain).
+  folder: (
+    <path d="M3 6a1 1 0 0 1 1-1h3.8l1.7 2H16a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 9.5h14" />
+  ),
   // A rising line over an axis: Ad Manager.
   chart: <path d="M3.5 4v12.5h13M6.5 13l3-3.5 2.5 2L16 6.5M13 6.5h3V9.5" />,
   inbox: <path d="M3.5 11l2-6.5h9l2 6.5v4.5h-13zM3.5 11h4l1 2h3l1-2h4" />,

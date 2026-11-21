@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { type ReactNode, useId, useMemo, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectList as ProjectListData } from '../../../../shared/projects-contract.ts';
 import { Seg } from '../../shell/Seg.tsx';
@@ -80,12 +80,15 @@ export function ProjectListView({
   team,
   clients,
   onOpen,
+  action,
 }: {
   data: ProjectListData;
   me: string;
   team: readonly TeamMember[] | undefined;
   clients: readonly { slug: string; name: string }[];
   onOpen: (card: ProjectCard) => void;
+  /** The primary action (New project): last in the tools row, at the right end. */
+  action?: ReactNode;
 }) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const shown = useMemo(() => filterProjects(data.projects, filters, me), [data.projects, filters, me]);
@@ -144,6 +147,7 @@ export function ProjectListView({
         <p className="lib-summary" role="status">
           {shown.length} of {data.projects.length} project{data.projects.length === 1 ? '' : 's'}
         </p>
+        {action}
       </div>
       {data.projects.length === 0 ? (
         <p className="proj-note">No projects yet. Use New project to add the first one.</p>

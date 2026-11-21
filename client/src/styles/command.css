@@ -125,15 +125,15 @@
   margin-top: 12px;
 }
 .cc-h {
-  margin: 0 4px;
+  margin: 0;
 }
 .cc-board-head > .am-sub {
-  margin-inline: 4px;
+  margin-inline: 0;
   max-width: 70ch;
 }
 .cc-key-list {
   list-style: none;
-  margin: 4px 4px 0;
+  margin: 4px 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;

@@ -14,6 +14,8 @@ export function ProjectTodos({
   rows,
   failed,
   reload,
+  adding,
+  onAdding,
 }: {
   card: ProjectCard;
   team: readonly TeamMember[] | undefined;
@@ -22,11 +24,13 @@ export function ProjectTodos({
   rows: readonly ProjectTodoRow[] | null;
   failed: boolean;
   reload: () => Promise<void>;
+  /** The add form is open. Its button sits at the end of the tabs row (ProjectPage), so the state lives there. */
+  adding: boolean;
+  onAdding: (open: boolean) => void;
 }) {
   const { todos, changeTodos } = useStore();
   const { dispatch } = useShell();
   const { refresh } = useProjects();
-  const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [stage, setStage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,29 +73,15 @@ export function ProjectTodos({
     }
     setTitle('');
     setStage('');
-    setAdding(false);
+    onAdding(false);
     void refresh();
     void reload();
   };
 
   return (
     <>
-      <div className="proj-actions">
-        {canAdd ? (
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            onClick={() => setAdding(true)}
-            disabled={adding}
-          >
-            Add a to-do
-          </button>
-        ) : (
-          <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>
-        )}
-      </div>
-      {adding ? (
+      {canAdd ? null : <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>}
+      {adding && canAdd ? (
         <form className="card proj-card proj-form" onSubmit={(e) => void submit(e)} aria-label="Add a to-do">
           <div className="proj-field">
             <label htmlFor={titleId}>To-do</label>
@@ -131,7 +121,7 @@ export function ProjectTodos({
               type="button"
               className="btn"
               onClick={() => {
-                setAdding(false);
+                onAdding(false);
                 setMessage('');
               }}
             >
@@ -154,27 +144,29 @@ export function ProjectTodos({
       ) : groups.length === 0 ? (
         <p className="proj-note">No open to-dos in this project.</p>
       ) : (
-        groups.map((g) => (
-          <section className="card proj-card" key={g.stage || 'none'} aria-label={g.title}>
-            <div className="card-head">
-              <h3>{g.title}</h3>
-              <span className="count">{g.items.length}</span>
-            </div>
-            <ul className="lib-list">
-              {g.items.map((t) => (
-                <li key={t.key} className="line proj-todo">
-                  {t.mine ? (
-                    <button type="button" className="proj-open" onClick={() => openPanel(t.key)}>
+        <div className="tray lib-tray">
+          {groups.map((g) => (
+            <section className="card proj-card" key={g.stage || 'none'} aria-label={g.title}>
+              <div className="card-head">
+                <h3>{g.title}</h3>
+                <span className="count">{g.items.length}</span>
+              </div>
+              <ul className="lib-list">
+                {g.items.map((t) => (
+                  <li key={t.key} className="line proj-todo">
+                    {t.mine ? (
+                      <button type="button" className="proj-open" onClick={() => openPanel(t.key)}>
+                        <TodoText t={t} team={team} />
+                      </button>
+                    ) : (
                       <TodoText t={t} team={team} />
-                    </button>
-                  ) : (
-                    <TodoText t={t} team={team} />
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
     </>
   );

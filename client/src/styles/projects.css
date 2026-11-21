@@ -16,6 +16,16 @@
   color: var(--navy);
 }
 
+/* The project tabs, with Link files at the right end when the Files tab is open. */
+.proj-tabrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.proj-tabrow > .btn {
+  margin-left: auto;
+}
+
 .proj-tools {
   display: flex;
   flex-wrap: wrap;
@@ -43,6 +53,9 @@
   padding: 4px 8px;
   font-size: 13px;
   color: var(--iron);
+}
+.lib > .proj-note {
+  padding-inline: 0;
 }
 .card > .proj-note {
   padding-bottom: 8px;

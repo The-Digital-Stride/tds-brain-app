@@ -563,7 +563,7 @@
   align-items: center;
   gap: 10px;
   min-height: 48px;
-  padding: 0 10px 0 18px;
+  padding: 0 var(--sheet-gutter);
   font-size: 14px;
 }
 .crumb {
@@ -697,7 +697,7 @@
     border-radius: 14px;
   }
   .sheet-bar {
-    padding-left: 14px;
+    padding-left: var(--sheet-gutter);
   }
 }
 

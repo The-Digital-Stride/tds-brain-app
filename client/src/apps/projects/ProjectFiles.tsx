@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useState } from 'react';
 import {
   LIBRARY_SEARCH_QUERY,
   type LibraryItem,
@@ -329,43 +329,31 @@ function Kind({
 }
 
 /** The project's images and documents (in its folder, or linked), with Link files and Unlink. */
-export function ProjectFiles({ card, canChange }: { card: ProjectCard; canChange: boolean }) {
+export function ProjectFiles({
+  card,
+  canChange,
+  linking,
+  onLinking,
+}: {
+  card: ProjectCard;
+  canChange: boolean;
+  /** Whether the picker is open. The page owns it: its Link files button sits in the tabs row. */
+  linking: boolean;
+  onLinking: (open: boolean) => void;
+}) {
   const [viewing, setViewing] = useState<LibraryItem | null>(null);
-  const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState('');
   const [done, setDone] = useState('');
+  // Opening the picker clears the "Linked N files." line.
+  useEffect(() => {
+    if (linking) setDone('');
+  }, [linking]);
 
   if (viewing) {
     return <Viewer item={viewing} name={viewing.name} onBack={() => setViewing(null)} />;
   }
   return (
     <>
-      {canChange ? (
-        <div className="proj-actions">
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            onClick={() => {
-              setDone('');
-              setLinking(true);
-            }}
-            disabled={linking}
-          >
-            Link files
-          </button>
-        </div>
-      ) : null}
-      {linking ? (
-        <Picker
-          card={card}
-          onClose={() => setLinking(false)}
-          onLinked={(count) => {
-            setLinking(false);
-            setDone(count === 1 ? 'Linked 1 file.' : `Linked ${count} files.`);
-          }}
-        />
-      ) : null}
       {message ? (
         <p className="proj-error" role="alert">
           {message}
@@ -374,17 +362,29 @@ export function ProjectFiles({ card, canChange }: { card: ProjectCard; canChange
       <p className={done ? 'proj-note' : 'visually-hidden'} role="status">
         {done}
       </p>
-      {KINDS.map((k) => (
-        <Kind
-          key={k.kind}
-          card={card}
-          kind={k.kind}
-          title={k.title}
-          canChange={canChange}
-          onView={setViewing}
-          onChanged={setMessage}
-        />
-      ))}
+      <div className="tray lib-tray">
+        {linking && canChange ? (
+          <Picker
+            card={card}
+            onClose={() => onLinking(false)}
+            onLinked={(count) => {
+              onLinking(false);
+              setDone(count === 1 ? 'Linked 1 file.' : `Linked ${count} files.`);
+            }}
+          />
+        ) : null}
+        {KINDS.map((k) => (
+          <Kind
+            key={k.kind}
+            card={card}
+            kind={k.kind}
+            title={k.title}
+            canChange={canChange}
+            onView={setViewing}
+            onChanged={setMessage}
+          />
+        ))}
+      </div>
     </>
   );
 }

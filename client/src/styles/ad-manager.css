@@ -7,7 +7,11 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px 16px 24px;
+  padding: 12px var(--sheet-gutter) 24px;
+}
+/* Tabs sit straight above the sheet body: the gap under them is the control-row gap. */
+.tool-tabs + .sheet-scroll > .am {
+  padding-top: 8px;
 }
 .am .tray {
   margin-top: 8px;
@@ -46,7 +50,7 @@
   }
 }
 .am-h {
-  margin: 20px 4px 0;
+  margin: 20px 0 0;
   font-size: 14px;
   font-weight: 600;
 }
@@ -66,7 +70,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px 12px;
-  margin: 20px 4px 0;
+  margin: 20px 0 0;
 }
 .am-account {
   width: 240px;
@@ -505,7 +509,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
+  padding: 0;
 }
 .am-head h2 {
   margin: 0;

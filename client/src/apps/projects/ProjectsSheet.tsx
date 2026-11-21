@@ -173,20 +173,7 @@ export function ProjectsSheet() {
   } else {
     body = (
       <>
-        <div className="proj-head">
-          <h2 className="visually-hidden">Projects</h2>
-          {canChange ? (
-            <button
-              type="button"
-              className="btn"
-              data-variant="primary"
-              data-focus="new"
-              onClick={() => go({ is: 'new' }, 'new')}
-            >
-              New project
-            </button>
-          ) : null}
-        </div>
+        <h2 className="visually-hidden">Projects</h2>
         {!canChange ? (
           <p className="proj-banner" role="status">
             {READ_ONLY_NOTICE}
@@ -229,6 +216,19 @@ export function ProjectsSheet() {
           team={team}
           clients={clients}
           onOpen={(c) => openProject(c.key)}
+          action={
+            canChange ? (
+              <button
+                type="button"
+                className="btn"
+                data-variant="primary"
+                data-focus="new"
+                onClick={() => go({ is: 'new' }, 'new')}
+              >
+                New project
+              </button>
+            ) : null
+          }
         />
       </>
     );

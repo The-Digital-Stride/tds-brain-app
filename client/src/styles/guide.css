@@ -7,7 +7,7 @@
   grid-template-columns: 240px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
-  padding: 16px 24px 32px;
+  padding: 12px var(--sheet-gutter) 32px;
 }
 .guide-contents {
   position: sticky;

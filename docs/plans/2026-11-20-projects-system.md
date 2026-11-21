@@ -528,4 +528,25 @@ numbers, fee tiers set the month's budget.
 
 ## Review outcomes
 
-<Filled at step 10.>
+Release 1, 2026-11-21. Built in 3886c58; fixes in 395f167, d847e5d, 70577b1 and 62a27e3.
+
+| Gate | Model | Confirmed | Dropped | Fixed |
+|---|---|---|---|---|
+| UX expert | opus | 3 blocking, 8 should, 3 nice | 0 | all blocking and should; nice: first-error focus, discard ask, openable rows |
+| UI and accessibility | sonnet | 5 should, 3 minor | 0 | all (Seg `labelledBy`, SearchSelect `aria-describedby`/`aria-invalid` added) |
+| Security | opus | 1 blocking, 1 should, 1 consider | 0 | all (move drops every project trace; attach refuses `personal/projects/`) |
+| Correctness | opus | 3 should, 3 consider | 0 | all |
+| Correctness, fix round | opus | 3 should | 0 | all (form baseline, team save, tidy new-project roles) |
+| Overseer sign-off | fable | SIGN-OFF; 3 should, 3 nice | 0 | should 1–3 fixed; nice left (below) |
+| Lead browser check | — | tidy error wiped, untouched Billable saved, row misalignment | 0 | all |
+
+Gates at merge: `tsc` clean, biome clean, build clean, 4,715 tests (`Shell.test.tsx` flaky under load, passes alone).
+
+**Judgement calls ruled on by the overseer:** `personal/` files outside `personal/projects/` may still be
+attached to team to-dos (v0.5 compatibility, decision 8); the tidy approve access check lives in the route for
+R1 (move it into `applyTidy` before R2 adds a caller); a project search hit shows two rows (open, filter);
+the Home picker's inline styles stay for now.
+
+**Left for later (nice):** a library file change drops the whole projects cache (`projects.ts`); someone
+outside the skill's roles is told to "update the brain's skills" (`ProjectsSheet.tsx`); move the Home picker
+styles into `home.css`.

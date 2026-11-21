@@ -77,6 +77,7 @@ import type {
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
+  ProjectTodosResponse,
   TidyApply,
   TidyList,
 } from '../../shared/projects-contract.ts';
@@ -237,6 +238,8 @@ export const api = {
       'GET',
       `${ROUTES.projectFiles}?key=${encodeURIComponent(key)}&kind=${encodeURIComponent(kind)}`,
     ),
+  projectTodos: (key: ProjectKey) =>
+    request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),
   tidy: () => request<TidyList>('GET', ROUTES.projectsTidy),
   applyTidy: (apply: TidyApply) => request<TidyList>('POST', ROUTES.projectsTidy, apply),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),

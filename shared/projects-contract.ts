@@ -368,6 +368,31 @@ export interface ProjectFilesResponse {
   hidden: number;
 }
 
+// ─── A project's to-dos, every assignee (review fix, UX B2) ──────────────────────────────────────
+
+/**
+ * `GET /api/projects/todos?key=<ProjectKey>` → ProjectTodosResponse: every OPEN to-do whose projectMatch
+ * points at the project — all TDS to-dos whoever they are assigned to, plus this person's own personal
+ * ones (never anyone else's). Read-only rows; `mine` rows can be opened in the to-do panel by `key`.
+ * `count` always equals ProjectCard.openTodos for the same read.
+ */
+export interface ProjectTodoRow {
+  /** TodoItem.key: `id` for TDS, `personal/<id>` for personal. */
+  key: string;
+  id: string;
+  scope: 'tds' | 'personal';
+  title: string;
+  assignee: string | null;
+  due: string | null;
+  stage: string | null;
+  /** True when the to-do is in this person's TodoList (`mine` or `open`), so the panel can open it. */
+  mine: boolean;
+}
+export interface ProjectTodosResponse {
+  todos: ProjectTodoRow[];
+  count: number;
+}
+
 // ─── The picker (decision 11) ──────────────────────────────────────────────────────────────────────
 
 /**

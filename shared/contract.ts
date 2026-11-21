@@ -20,6 +20,7 @@ import type {
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
+  ProjectTodosResponse,
   TidyApply,
   TidyList,
   TodoAddProjectFields,
@@ -820,6 +821,7 @@ export interface BrainReaders {
   projects?(identity: Identity): Promise<ProjectList>;
   changeProject?(action: ProjectAction, identity: Identity): Promise<ProjectList>;
   projectFiles?(key: ProjectKey, kind: LibraryKind, identity: Identity): Promise<ProjectFilesResponse>;
+  projectTodos?(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
   tidy?(identity: Identity): Promise<TidyList>;
   applyTidy?(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Runs the script's `purge` (30-day clean-up). Resolves to the number erased; never throws (0 on any failure). */
@@ -1876,6 +1878,8 @@ export const ROUTES = {
   projectsChange: '/api/projects/change',
   /** `GET ?key=<ProjectKey>&kind=image|document` → ProjectFilesResponse (decision 7). */
   projectFiles: '/api/projects/files',
+  /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */
+  projectTodos: '/api/projects/todos',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

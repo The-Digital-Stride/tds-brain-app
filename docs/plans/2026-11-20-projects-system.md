@@ -32,13 +32,31 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
 - **Extras:** updates log, Claude asks "which project?", close-out summary. Templates: not now.
 - **Releases:** R1 foundation (projects, picker, to-dos, Images/Documents, search, tidy-up);
   R2 chats, call notes, pages, updates log, "which project?"; R3 ads work, close-out summary.
-  Phase 2: time tracking and reports.
+  Phase 2: time tracking and reports. **Superseded 2026-11-21:** R2 also gains activity, meetings and
+  email; retainers become R3; ads work and close-out move to R4.
 - **Internal projects** sit under The Digital Stride (`clients/the-digital-stride`).
 - **Time later comes from:** a timer in Cortex, Claude sessions, and suggestions from tracked activity,
   each approved by the person. (Tracket/Monday import not chosen, but the path stays open.)
 - **Reports:** internal first, client-facing later; phase one keeps a billable flag and client-safe
   notes apart from internal ones.
 - **Visual explainer:** yes.
+
+## User decisions (follow-up, Ian, 2026-11-21)
+
+- **Team fills itself in:** anyone assigned a to-do in a project shows on its team automatically.
+- **Release order:** R1 foundation; R2 activity, meetings and email (plus the old R2 items); **R3
+  retainers**; R4 ads work and close-out (the old R3); phase 2 time.
+- **Email on a project:** the team sees an email entry with a summary, who sent it, who else was on it,
+  the time, date and subject. **The summary is only saved once the inbox owner approves it, or edits it
+  and then submits.** Nothing from an email is shared before that.
+- **Retainers:** a retainer is an ongoing project tied to its signed contract. The contract sets the
+  objectives and KPIs; each month gets a review of time, KPIs and work done, reportable month by month.
+- **Month review approval:** the project's Account Owner approves it before it is saved and the client
+  report is made.
+- **Hours until Cortex time tracking exists:** read from Monday, read only, at month close. Nothing is
+  written back to Monday. *Refined after the overseer check (S5):* Monday's hours columns hold running
+  totals, and the brain's `time` skill says never to quote them as a monthly figure. The month figure
+  comes from the same Tracket entries that feed Monday, counted by entry date (decision 33).
 
 ## Facts checked (2026-11-20, read only)
 
@@ -100,6 +118,9 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
    `## Linked files` section. Status values: Planned, Active, On hold, Done. **No `updated` stamps**:
    two card edits between syncs would always clash and stall the brain's sync; "last changed by and
    when" comes from git on read (overseer S2). Empty fields are left out, not written as null.
+   **`budget_hours` means the whole project for `one-off` and per calendar month for `ongoing`** (the
+   form labels it "Budget hours" or "Hours a month" by kind; a card with no kind reads as whole-project,
+   and changing the kind asks for the budget again), so retainers (decision 32) need no format change.
    Plain: a project's details are a short, readable file anyone (or Claude) can open in the brain.
 3. **The folder name is permanent; the title is not.** Everything links by `ProjectKey`
    (`<client>/<slug>` or `personal/<slug>`). `create` fixes the slug; no R1 action renames or moves a
@@ -171,7 +192,7 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
 12. **Projects app.** New entry in `client/src/shell/apps.ts`: list grouped by client (personal last),
     filters for status, Account Owner and service, a "Mine" view (owner or team includes me); rows show
     health light, end date, open to-dos. Project page with `SheetTabs`: Overview (card fields, brief,
-    lights, budget hours), To-dos (by stage; "Add a to-do" pre-fills client and project), Files (the
+    lights, budget hours, the team with "from to-dos" people per decision 26), To-dos (by stage; "Add a to-do" pre-fills client and project), Files (the
     existing Images and Documents views filtered by key, plus "Link a file" using the attachments
     picker). Create and edit forms reuse `SearchSelect`, `Seg`, `.field`, `Fold`. UK English copy.
     Plain: one place to see and run a project, built from pieces people already know.
@@ -210,6 +231,32 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
     the `client-setup` skill (the layout, the key format, the privacy rule) under `brain-skills/tdsapp-projects/brain-rules/`, for Ian to apply with the usual
     brain-skill copy step. The app and its tooling never write the brain directly.
     Plain: every Claude session in the brain, not just the app, learns the new layout once Ian copies it in.
+26. **Team from to-dos (R1, worked out on read, never written).** `server/brain/projects.ts` fills
+    `ProjectCard.teamFromTodos`: assignees of TDS to-dos whose `projectMatch` points at the project,
+    open, or done (`todo/done/`) within `TEAM_FROM_TODOS_DAYS` (30), minus people already in `owner`
+    or `team`. The done date is `completed_at`, else `completed`; a done to-do with neither doesn't
+    count (122 of 220 done files lack `completed_at` today). File times are never used, as they differ
+    per Mac. `lastActive` falls back to `created`. Personal projects always get an empty list, and
+    personal to-dos never count, so a private to-do never puts anyone on a
+    shared project. The Overview lists them with a "from to-dos" tag and an **Add to team** button,
+    which is an ordinary `edit` adding them to `team`. The "Mine" view counts them too. The card is
+    never changed automatically: an automatic write would leave stale names after a reassignment and
+    clash on sync.
+    Plain: whoever has work in a project shows on its team without anyone typing them in, and one click
+    makes it permanent.
+27. **Names reserved for later releases, and protected now (R1; overseer S1, S2).** Inside a project
+    folder, `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` and `reports/` are
+    reserved; no existing folder uses them. R1 builds two protections. Builder C's library rules hide
+    `project.md`, `retainer.md`, `updates/` and `months/` from the Documents and Images apps (a `.md`
+    is otherwise a document with a bin, `server/brain/library-rules.ts`). Builder A's `tdsapp-files`
+    refuses to delete them (its protected list today covers only `claude.md`, `agents.md` and
+    `readme.md`). `reports/` and `summary.md` stay visible files. Every reserved file layout is flat,
+    because the frontmatter reader takes only text and lists of text (`server/brain/frontmatter.ts`) and
+    the scripts write YAML by hand: no nested keys, lists as quoted `- ` items, and tables in the body.
+    The layouts are fixed in the contract comments (`ProjectUpdate`, `RetainerTerms`, `Kpi`,
+    `RetainerMonth`), so R2 and R3 never change a format.
+    Plain: later features slot into the same project folders, and nobody can bin a project's card or a
+    signed month from the Documents app.
 
 ### Release 2 (decided in outline; planned in full before building)
 
@@ -220,12 +267,110 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
 20. Pages Claude makes in a project chat are saved in the project folder.
 21. Updates log: an `updates/` folder in the project, **one file per entry** (so two people adding
     updates never clash on sync), each marked internal or client-safe,
-    appended by a new `update` action; Claude can add one after a call; status and health changes add one
-    automatically. New Updates tab.
+    appended by a new `update` action; Claude can add one after a call; status, health and **Account
+    Owner** changes add one automatically. File names end in a random suffix, not a counter, so one
+    person's two Macs never pick the same name. New Updates tab.
 22. "Which project?": when Claude adds a to-do or files something for a client with open projects, it
     picks the obvious one or asks (a brain rule plus app prompt context).
+28. **Activity on the project home.** "Since you last looked": a list worked out on read from git
+    history on the project folder, to-dos added or done, files added or linked, status and health
+    changes, call notes and updates, each linked. When this person last opened the project is kept in
+    the app's data folder on this Mac, never in the brain. "Coming up": the next meeting (decision 29),
+    to-dos due soon and the current stage's end date. `personal/` isn't in git, so personal projects
+    use file dates on this Mac instead.
+    Plain: opening a project shows what changed since you last looked and what's next.
+29. **Meetings from each person's calendar.** Cortex has no Google access of its own; calendar data
+    only reaches it inside that person's Claude session, through their own Google Calendar connector.
+    The `/gm` calendar check (beside `gm-calls`, which already finds unfiled calls) matches events to
+    projects by the client's email domain and title words. It keeps a small list (title, time,
+    attendees) on that Mac, never in the shared brain: the session hands it to the app through a local
+    route behind `checkRequest`, falling back to `personal/` (never synced, like `basecamp/calls/`) when
+    the app isn't running. It is shown only to that person as "Last meeting" and
+    "Next meeting", with "File the notes for this meeting?" leading to meeting-notes with the project
+    filled in. Filed notes are shared like any call note (decision 19).
+    Plain: your meetings for a project show on its page for you, and the notes become shared once filed.
+30. **Email entries, shared only after the inbox owner approves.** An email entry is an `updates/` file
+    (`ProjectUpdate` with `kind: email`) holding the subject, sender, other people on the email (to and
+    cc), date and time, the Gmail thread id, the inbox owner, and a summary. Claude drafts the summary
+    when someone says "link this thread to the project" or when the `/gm` check suggests a thread; **the
+    file is only written after the inbox owner approves it, or edits it and submits.** The approval
+    screen shows everything that will be saved (summary, subject, sender, people), all editable; bcc is
+    never included. The draft is never a brain file: the write happens on the owner's click, and the
+    script sets `email_inbox_owner` from this Mac's identity, not from the request. The email's
+    Message-ID is kept too, so two people linking the same thread from their own inboxes make one entry,
+    not two (whether Gmail thread ids differ per mailbox is checked when R2 is planned in full). The
+    email text itself is never saved, and later Claude reads treat saved summaries as untrusted data
+    (as `gmail/SKILL.md` already says of email). Entries are internal unless marked client-safe. Teammates see the entry;
+    "Open in Gmail" works only for the inbox owner, and others see "In <name>'s inbox".
+    Plain: the team sees what an email said and who was on it, but only once its owner has okayed the
+    whole entry.
+31. **Weekly digest.** On Mondays the Account Owner's `/gm` offers a short Claude-written "where we
+    are" for each active project they own. **It reads shared brain files only** (updates, shared to-dos,
+    filed call notes, project files), never the private meeting list, personal to-dos or anything that
+    session read from Gmail. One click saves it as an internal update; nothing is saved without it.
+    Plain: each project can get a short weekly round-up, written by Claude and kept by its owner.
 
-### Release 3
+### Release 3: retainers (decided in outline; planned in full before building)
+
+32. **One retainer project per signed contract.** A retainer is an `ongoing` project, for example
+    `h2o-restoration/seo-retainer` and `h2o-restoration/ppc-retainer` (separate contracts, hours, KPIs
+    and notice). Its terms live in `retainer.md` beside the card, kept apart from `project.md` so
+    editing terms and editing the card never clash on sync. `retainer.md` has flat frontmatter
+    (`RetainerTerms`: contract file link, monthly fee, hourly rate, start, end of the initial term,
+    rolling after it, notice as written (for example "3 months") plus in days, next review date) and a
+    markdown body: objectives, an optional
+    fee-tier table and a KPI table (`Kpi`: name, unit, target, whether higher or lower is better, where
+    the number comes from, client-safe or not). Hours a month stay in the card's `budget_hours`
+    (decision 2) as the default; where the contract has fee tiers (Book Vault: 15 to 30 hours by click
+    spend), the tier sets each month's `hours_budget`. `retainer.md` is the one home for the numbers;
+    `business.md` keeps the story and caveats (such as Book Vault's "under review" note). Each service starts with suggested KPIs: PPC conversions, cost per conversion, ROAS
+    and spend; SEO organic clicks, leads and tracked rankings. A contract change (an addendum) edits
+    the same file and adds a dated update.
+    Plain: each retainer carries its contract terms and the measures it's judged on, in its own file.
+33. **One file per month, approved by the Account Owner.** `months/<YYYY-MM>.md` (`RetainerMonth`):
+    hours budget and hours used (with where the figure came from), each KPI's value against target,
+    work done, health, next month's focus, and separate internal and client-safe sections. Month close:
+    Claude drafts it. KPIs come from the existing data skills (`gads-proxy`, `gdata-proxy`,
+    `seo-proxy`, `semrush`). Work done comes from to-dos finished, files added and updates in the
+    month. **Hours (overseer S5):** Monday's hours columns hold running totals and retainers sit on the
+    TDS Retainers board; the brain's `time` skill says the monthly figure is Tracket billable minutes
+    by entry date, and its `reconcile.cjs` is owner and scout only and lists hours per person. So R3
+    prepares a brain change (as decision 17) in which reconcile writes one shared month total per
+    retainer, with no per-person split; until that exists, the owner types the figure (`hours_source:
+    typed`). Month reviews show total hours only, never per person.
+    **Draft and approval (overseer B1):** the draft never enters the shared brain. It lives in the app's
+    data folder on the drafter's Mac (the owner normally runs month close on their own Mac; if a
+    specialist drafts, it is their own local draft). Approval is one create-only write of
+    `months/<YYYY-MM>.md`; no action edits or deletes that file, so a signed month can't change or clash
+    on sync. A correction is a new `months/<YYYY-MM>.r2.md` approved the same way, and readers take the
+    highest revision. Month close is offered from the third working day; hours booked after close show
+    on the next month as "booked after close".
+    **Who may approve (overseer S4):** only the card's Account Owner. The script reads the caller from
+    this Mac's git identity matched to the team (as `tdsapp-files` does), never from the request or an
+    override, refuses an unknown caller, and records `approved_by`. A card with no owner must get one
+    first. Anyone can change a card's owner, and that change adds an automatic update (decision 21), so
+    this check stops mistakes and leaves a trail; it isn't a lock against a determined teammate. This
+    is the one exception to "anyone, anything".
+    Approval makes the client report (HTML and PDF, in the project's `reports/`). Nothing is sent to
+    the client automatically.
+    Plain: a month review only reaches the team once the account owner has signed it, and after that
+    nothing can change it.
+34. **Retainer views.** A retainer's Overview shows hours used against the month's budget with a
+    projected month-end figure, KPI tiles against target with a trend across months, this month's work,
+    and a contract strip (term, rolling, notice, review date). Warnings: review date within 30 days,
+    notice period not recorded, hours past 90%, a KPI off target two months running. An agency-wide
+    Retainers page lists every retainer this month: hours against budget, KPI status, health and
+    renewals due. These map onto Monday's Hours Budget, Total Billable Hours and % used.
+    Plain: one glance shows whether each retainer is on budget and on target, and which contracts need
+    attention.
+35. **Moving existing retainers in.** Contract terms live today in prose in
+    `clients/<client>/context/business.md`, with signed PDFs in `contracts/`. For each, Claude drafts
+    the retainer project and `retainer.md` from those two, and the Account Owner approves. Prepared brain
+    rule text (as decision 17) has business.md point to `retainer.md` for the numbers, and keeps the prose.
+    Plain: today's contracts become retainer projects with a check by their owner, and nothing is
+    retyped by hand.
+
+### Release 4
 
 23. Ads work: Ad Manager changes and runs carry an optional project key.
 24. Close-out: closing asks what happens to each open to-do (move, close, keep), Claude writes
@@ -235,13 +380,15 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
 
 25. Time entries per `TimeEntry`, from a timer, Claude sessions and approved activity suggestions; the
     Overview gains budget against actual; reports filter and group by client, project, stage, person
-    and month; client-facing reports use only billable entries and client-safe notes.
+    and month; client-facing reports use only billable entries and client-safe notes. Retainer month
+    reviews then take hours from approved entries instead of Monday (decision 33).
 
 ## Contract
 
 `shared/projects-contract.ts`: paths, key format, `ProjectCard`, `ProjectList`, `ProjectAction`,
 `TodoProjectAction`, `TodoProjectMatch`, `LibraryProjectFields`, `ProjectChoice`, `TidyRow`, and the
-reserved `TimeEntry`. R1 also adds `stage` and `projectMatch` to `TodoItem` and `projects` to
+reserved `TimeEntry`, plus `TeamFromTodo` (R1) and the reserved R2/R3 shapes `ProjectUpdate`,
+`RetainerTerms`, `Kpi` and `RetainerMonth`. R1 also adds `stage` and `projectMatch` to `TodoItem` and `projects` to
 `LibraryItem` in `shared/contract.ts`, and the two routes to `ROUTES`.
 
 ## Team and file ownership (release 1)
@@ -249,9 +396,9 @@ reserved `TimeEntry`. R1 also adds `stage` and `projectMatch` to `TodoItem` and 
 | Role | Agent and model | Why this model | Owns (files) |
 |---|---|---|---|
 | Overseer | `overseer`, fable | plan critique, product calls, sign-off | (read-only) |
-| Builder A | `builder`, opus | data model and data integrity: key resolution, precedence, privacy rule, script writes with fingerprint checks | `brain-skills/tdsapp-projects/**`, `brain-skills/tdsapp-todo/**` (v0.6: `project`, `add` fields, `move` drop, `projects/` link root), `shared/projects.ts` (+ test), `server/brain/projects.ts`, `server/brain/projects-skill.ts`, `server/brain/tidy.ts` (+ tests), `server/brain/todo-skill.ts` |
+| Builder A | `builder`, opus | data model and data integrity: key resolution, precedence, privacy rule, script writes with fingerprint checks | `brain-skills/tdsapp-projects/**`, `brain-skills/tdsapp-todo/**` (v0.6: `project`, `add` fields, `move` drop, `projects/` link root), `shared/projects.ts` (+ test), `server/brain/projects.ts` (incl. `teamFromTodos`), `server/brain/projects-skill.ts`, `server/brain/tidy.ts` (+ tests), `server/brain/todo-skill.ts`, `brain-skills/tdsapp-files/**` (protected names in project folders, decision 27) |
 | Builder B | `builder`, sonnet | default (UI) | `client/src/apps/projects/**`, `client/src/shell/apps.ts`, `client/src/styles/projects.css`, `help/**` (Projects pages, UK English) |
-| Builder C | `builder`, sonnet | default (wiring); starts after A's `server/brain/projects.ts` exports are fixed | `client/src/state/client-choice.ts`, `client/src/state/todo-filter.ts`, `client/src/shell/TodoPanel.tsx` + `TodoForms.tsx` (Project/Stage fields), `client/src/shell/search-sources.ts`, `client/src/shell/Home.tsx`, `client/src/apps/shared/**`, `client/src/apps/images/**`, `client/src/apps/documents/**` (project filter), `server/brain/library.ts` + `server/brain/library-rules.ts` (`projects` at serve time, `shared:projects` scope) |
+| Builder C | `builder`, sonnet | default (wiring); starts after A's `server/brain/projects.ts` exports are fixed | `client/src/state/client-choice.ts`, `client/src/state/todo-filter.ts`, `client/src/shell/TodoPanel.tsx` + `TodoForms.tsx` (Project/Stage fields), `client/src/shell/search-sources.ts`, `client/src/shell/Home.tsx`, `client/src/apps/shared/**`, `client/src/apps/images/**`, `client/src/apps/documents/**` (project filter), `server/brain/library.ts` + `server/brain/library-rules.ts` (`projects` at serve time, `shared:projects` scope, hidden reserved files per decision 27) |
 | Lead | me | contract edits and route wiring | `shared/contract.ts` (`TodoAction` gains `project`, `TodoList.canProject`), `shared/projects-contract.ts`, `server/http/routes.ts`, `server/brain/todos.ts` (stage + projectMatch), `client/src/api.ts`, `client/src/store.tsx`, `client/src/shell/contract.ts` (`TodoFilter`), `client/src/shell/Palette.tsx`, `brain-skills/README.md` |
 | Gates | `expert` UX/UI (opus, domain gate), `reviewer` correctness (opus), `reviewer` security (opus: paths, input, privacy), `reviewer` UI and accessibility (sonnet) | domain gates and review lenses per agent-workforce | (read-only) |
 
@@ -265,17 +412,18 @@ No file appears in two rows.
 | `brain-skills/tdsapp-projects/test/*.test.ts` | create refuses bad slug, clash (incl. internal vs `projects/`), `end` before `start`; edit keeps unknown keys and body bytes; `expect` mismatch → `changed`; link of a `personal/` file from a shared project → `not-allowed`; `card` adds only `project.md` | A |
 | `brain-skills/tdsapp-todo/test/project.test.ts` | `project` action writes/removes `client`/`project`/`stage` lines only; TDS to-do + `personal/` key → `not-allowed`; client must match key | A |
 | `brain-skills/tdsapp-todo/test/move-privacy.test.ts` | `move` to TDS with a `personal/` key → `not-allowed`; with `dropProject` → moved copy has no `project:`/`stage:` | A |
-| `server/brain/projects.test.ts` | walk finds client, personal, legacy, archive and archived-client projects; card-less and unreadable folders are projects; `INTERNAL_PRECEDENCE` order and `duplicates`; bad folder names skipped; personal never read from another person; privacy drop on read; open to-do counts | A |
+| `server/brain/projects.test.ts` | walk finds client, personal, legacy, archive and archived-client projects; card-less and unreadable folders are projects; `INTERNAL_PRECEDENCE` order and `duplicates`; bad folder names skipped; personal never read from another person; privacy drop on read; open to-do counts; `teamFromTodos` takes open and 30-day-done assignees, leaves out owner and team, and never counts a personal to-do; done date from `completed_at`, else `completed`, else not counted; personal projects get [] | A |
+| `brain-skills/tdsapp-files/test/*.test.ts` (extend) | delete refuses `project.md`, `retainer.md`, `updates/**` and `months/**` inside a project folder; other files there still delete | A |
 | `server/brain/tidy.test.ts` | the real label set (harvey-nash → client-only, h2o-restorations → merge, optional-project-slug → clear, bookvault → merge into book-vault); negatives (`os` never fuzzy-merged, a different `client:` never overwritten, `missing` keys never offered, TDS `new-project` never personal); partial failure re-reads and `exists` becomes link | A |
 | `server/http/projects-routes.test.ts` | all four routes go through `checkRequest` (bad origin or content type refused) and reject malformed bodies; **tidy changes a teammate's TDS to-do** through the gate, touching only the three lines; tidy refuses another person's personal to-do | Lead |
-| `server/brain/library.test.ts` (extend) | `projects` filled by folder and by link at serve time (a card edit shows without re-walking the other scope); `shared:projects` lists legacy folders and refuses delete; `/api/projects/files` spans scopes and hides links the person can't see | C |
+| `server/brain/library.test.ts` (extend) | `projects` filled by folder and by link at serve time (a card edit shows without re-walking the other scope); `shared:projects` lists legacy folders and refuses delete; `/api/projects/files` spans scopes and hides links the person can't see; `project.md`, `retainer.md`, `updates/` and `months/` never listed in Documents or Images | C |
 
 ## Gates
 
 - [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build (port 3248, own data folder per project rule)
 - [ ] No unintended large deletions: `git diff main --numstat | awk '$2 > 40'`
 - [ ] Domain gates: UX/UI (new app, picker); security (paths from the brain, input, privacy rule)
-- [ ] Browser check: Projects list, project page (all three tabs), create/edit, picker narrowing Home,
+- [ ] Browser check: Projects list, project page (all three tabs, team "from to-dos" and Add to team), create/edit, picker narrowing Home,
       To-dos, Images and Documents, search, tidy-up rows, read-only notice without the new skill
 
 ## Pre-review outcomes (overseer, 2026-11-20)
@@ -289,6 +437,19 @@ or per Mac for R2 updates and phase 2 time, label precedence via `client:`, safe
 with project fields in one write, one atomic picker store, archive read-only, brain rules coverage,
 extra tests. Nice, taken: omit empty keys, key segment cap, skip bad folder names. Left for the build:
 the stage-rename note in the edit form, the add/add "already exists" message after a sync.
+
+### Pre-review of the 2026-11-21 decisions (overseer)
+
+Blocking, fixed: B1 month files didn't freeze and a draft reached the shared brain before approval
+(decision 33: local draft, create-only approved file, `.r2` corrections). Should, all taken: S1 protect
+and hide reserved files in R1 (decision 27, Builders A and C); S2 flat layouts only (decision 27,
+contract); S3 done date fallback (decision 26); S4 owner check is a guard with a trail, identity from
+git (decision 33); S5 hours from Tracket entry dates, not Monday's columns (decision 33); S6 digest
+reads shared files only (decision 31); S7 owner approves the whole email entry (decision 30); S8 a
+private home for the meeting list (decision 29). Nice, all taken: Message-ID, random update suffix,
+personal activity fallback, notice as written, kind change re-asks the budget. Product calls, all
+taken: owner runs month close, close from working day 3, totals only, `retainer.md` is the one home for
+numbers, fee tiers set the month's budget.
 
 ## Review outcomes
 

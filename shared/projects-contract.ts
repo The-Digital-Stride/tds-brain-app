@@ -98,7 +98,7 @@ export const PROJECT_LINKS_MAX = 200;
  *   service: [ppc, seo]
  *   start: 2026-11-20
  *   end: 2027-02-28               # one-off only; the script refuses `end` before `start`
- *   budget_hours: 40
+ *   budget_hours: 40            # whole project for one-off; per calendar month for ongoing
  *   billable: true
  *   stages: [Discovery, Build, Launch]
  *   monday_id: 1234567890         # reserved for the switch-over import (decision 16); omitted when empty
@@ -151,12 +151,28 @@ export interface ProjectCard {
   version: string;
   /** Counted from all open TDS to-dos (and this person's personal ones) whose projectMatch points here. */
   openTodos: number;
+  /** Decision 26: people on the team because of their to-dos, worked out on read. Never written to the card. */
+  teamFromTodos: TeamFromTodo[];
   /**
    * Brain path of a legacy `todo.md` checklist in the folder, else null. Linked from Overview, never
    * counted as to-dos (six legacy folders have one).
    */
   checklist: string | null;
 }
+
+/**
+ * Decision 26. Assignees of TDS to-dos matched to the project that are open, or done (`todo/done/`,
+ * by `completed_at`) within TEAM_FROM_TODOS_DAYS, minus anyone already `owner` or in `team`.
+ * Personal to-dos never count. Sorted by `openTodos` desc, then `lastActive` desc.
+ */
+export interface TeamFromTodo {
+  /** Team slug. */
+  person: string;
+  openTodos: number;
+  /** ISO date of their latest matched to-do activity (created, assigned or completed). */
+  lastActive: string;
+}
+export const TEAM_FROM_TODOS_DAYS = 30;
 
 // ─── Reading (decision 10) ─────────────────────────────────────────────────────────────────────────
 
@@ -421,4 +437,136 @@ export interface TimeEntry {
   note: string;
   /** Client-safe notes are the only ones a client-facing report may show. */
   clientSafe: boolean;
+}
+
+// ─── Reserved names inside a project folder (decision 27) ──────────────────────────────────────────
+
+/** Reserved in every project folder. R1 never lets `tdsapp-files` delete PROTECTED ones. */
+export const PROJECT_RESERVED_NAMES = [
+  'project.md',
+  'retainer.md',
+  'summary.md',
+  'updates/',
+  'months/',
+  'reports/',
+] as const;
+/** Hidden from Documents and Images (library rules) and refused by `tdsapp-files` delete, from R1. */
+export const PROJECT_PROTECTED_NAMES = ['project.md', 'retainer.md', 'updates/', 'months/'] as const;
+// Every reserved layout is FLAT (overseer S2): frontmatter values are text or lists of text only
+// (server/brain/frontmatter.ts), lists as quoted `- ` items, anything tabular as a markdown body table.
+
+// ─── Release 2 (reserved, NOT BUILT): updates and email entries (decisions 21, 30, 31) ─────────────
+
+/**
+ * One file per entry: `<project folder>/updates/<YYYY-MM-DD>-<HHmm>-<person>-<random6>.md` (a random
+ * suffix, so one person's two Macs never collide). Flat frontmatter on disk:
+ *
+ *   v: 1
+ *   kind: email                    # note | call | status | owner | email | digest | contract
+ *   by: ian-hancock                # from this Mac's git identity, never the request
+ *   at: 2026-11-21T10:04:00Z
+ *   client_safe: false
+ *   email_subject: "Budget for December"         # email only, from here down
+ *   email_from: "Alex Smith <alex@example.com>"
+ *   email_people:
+ *     - "Simon Jones <simon@example.com>"          # to and cc as shown; never bcc
+ *   email_sent_at: 2026-11-20T16:30:00Z
+ *   email_thread_id: "18c2f..."                  # "Open in Gmail" works only for the inbox owner
+ *   email_message_id: "<abc@mail.example.com>"   # de-duplicates two inboxes linking one thread
+ *   email_inbox_owner: ian-hancock
+ *
+ * Body: the summary. An `email` entry is written only on the inbox owner's approval of the whole entry
+ * (decision 30); the draft is never a brain file and the email's own text is never saved.
+ */
+export interface ProjectUpdate {
+  v: 1;
+  kind: 'note' | 'call' | 'status' | 'owner' | 'email' | 'digest' | 'contract';
+  by: string;
+  at: string;
+  clientSafe: boolean;
+  summary: string;
+  emailSubject?: string;
+  emailFrom?: string;
+  emailPeople?: string[];
+  emailSentAt?: string;
+  emailThreadId?: string;
+  emailMessageId?: string;
+  emailInboxOwner?: string;
+}
+
+// ─── Release 3 (reserved, NOT BUILT): retainers (decisions 32–35) ──────────────────────────────────
+
+/**
+ * `<project folder>/retainer.md`, flat frontmatter (snake_case on disk), beside `project.md` so term
+ * edits and card edits never clash. Hours a month default to the card's `budget_hours` (decision 2);
+ * a fee-tier table, when present, sets each month's budget instead. The one home for the numbers;
+ * `context/business.md` keeps the story.
+ * Body: `## Objectives`, optional `## Fee tiers` table, `## KPIs` table with one row per `Kpi`:
+ *   | id | name | unit | target | better | source | client safe |
+ */
+export interface RetainerTerms {
+  v: 1;
+  /** Brain path of the signed PDF in `clients/<client>/contracts/`. */
+  contractFile: string | null;
+  feeMonthly: number | null;
+  currency: 'GBP';
+  hourlyRate: number | null;
+  start: string | null;
+  initialEnd: string | null;
+  rollingAfter: boolean | null;
+  /** As the contract words it, e.g. "3 months". */
+  noticeText: string | null;
+  /** Null means not recorded; the Overview warns. */
+  noticeDays: number | null;
+  reviewDate: string | null;
+}
+
+export interface Kpi {
+  /** Stable slug: month rows refer to it. */
+  id: string;
+  name: string;
+  unit: 'count' | 'gbp' | 'percent' | 'ratio' | 'position' | string;
+  target: number | null;
+  better: 'higher' | 'lower';
+  source: 'google-ads' | 'ga4' | 'search-console' | 'semrush' | 'manual' | string;
+  clientSafe: boolean;
+}
+
+/**
+ * `<project folder>/months/<YYYY-MM>.md`, corrections `<YYYY-MM>.r2.md`, `.r3`… (readers take the
+ * highest). Written once, create-only, on the Account Owner's approval (overseer B1); no action edits
+ * or deletes it. Drafts live only in the app's data folder on the drafter's Mac. Flat frontmatter:
+ *
+ *   v: 1
+ *   month: 2026-11
+ *   revision: 1
+ *   approved_by: steve-blassberg   # from this Mac's git identity; must equal the card's owner
+ *   approved_at: 2026-12-03T09:12:00Z
+ *   hours_budget: 15
+ *   hours_used: 13.5               # total only, never per person
+ *   hours_source: typed            # tracket | cortex | typed
+ *   health: green
+ *
+ * Body: `## KPIs` table, each row a snapshot so later edits to retainer.md never change it:
+ *   | id | name | unit | better | target | value |
+ * then `## Work done`, `## Internal notes`, `## Client summary`, `## Next month`.
+ */
+export interface RetainerMonth {
+  v: 1;
+  month: string;
+  revision: number;
+  approvedBy: string;
+  approvedAt: string;
+  hoursBudget: number | null;
+  hoursUsed: number | null;
+  hoursSource: 'tracket' | 'cortex' | 'typed' | null;
+  health: Light | null;
+  kpis: {
+    id: string;
+    name: string;
+    unit: string;
+    better: 'higher' | 'lower';
+    target: number | null;
+    value: number | null;
+  }[];
 }

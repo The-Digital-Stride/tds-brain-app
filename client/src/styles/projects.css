@@ -143,6 +143,10 @@
 .proj-file {
   padding: 4px 8px;
 }
+/* A teammate's row isn't a button: give its text the button's padding so the titles line up. */
+.proj-todo > .line-text {
+  padding: 6px 8px;
+}
 .proj-search {
   display: flex;
   flex-wrap: wrap;

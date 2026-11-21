@@ -43,7 +43,7 @@ function projectsApp(): AppSlot {
     id: 'projects',
     title: 'Projects',
     // The projects' own search group lives in search-sources.ts (plan 2026-11-20-projects-system, decision 14).
-    icon: 'calendar',
+    icon: 'folder',
     Sheet: lazy(() => ui().then((m) => ({ default: m.ProjectsSheet }))),
     search: null,
   };

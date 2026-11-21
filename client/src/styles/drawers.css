@@ -154,6 +154,14 @@
 }
 .todo-add-btn {
   flex: none;
+  margin-left: auto;
+}
+/* Why the project select is locked: a hint under the filters, not body text. */
+.todo-project-why {
+  flex: 1 1 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
 }
 /* The filter row: the kind switch, the client select and the add button, which sits at the right end. */
 .todo-filters {

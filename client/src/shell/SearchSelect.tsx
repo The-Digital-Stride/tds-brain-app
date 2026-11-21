@@ -91,6 +91,15 @@ function marked(label: string, ranges: readonly MatchRange[]): ReactNode {
  * palette uses it; the list is drawn into the body so no drawer or composer clips it. Logic lives in
  * `search-select.ts`. Plan 2026-11-14-client-picker.
  */
+/**
+ * Selects the whole label with the caret at its start, so a label wider than the box shows its beginning
+ * ("Weightmans PPC…"), not its end ("…ns PPC"), which a plain select() scrolls to.
+ */
+function selectAllFromStart(box: HTMLInputElement) {
+  box.setSelectionRange(0, box.value.length, 'backward');
+  box.scrollLeft = 0;
+}
+
 export function SearchSelect({
   id,
   'aria-label': ariaLabel,
@@ -133,7 +142,7 @@ export function SearchSelect({
   /** Selects the shown label, so the next key typed replaces it (only while it shows the label). */
   const selectLabel = () => {
     const box = inputRef.current;
-    if (box && document.activeElement === box) box.select();
+    if (box && document.activeElement === box) selectAllFromStart(box);
   };
   /** Selects the label again on the next frame (Chrome collapses a selection after the click); typing cancels it. */
   const reselectSoon = () => {
@@ -267,7 +276,7 @@ export function SearchSelect({
           setMoved(null);
           show(false);
         }}
-        onFocus={(e) => e.currentTarget.select()}
+        onFocus={(e) => selectAllFromStart(e.currentTarget)}
         onMouseDown={(e) => {
           wasFocused.current = document.activeElement === e.currentTarget;
           // A browser puts the caret down on the press, after the click has selected the label. While
@@ -281,8 +290,10 @@ export function SearchSelect({
         }}
         onClick={() => show()}
         onKeyDown={onKeyDown}
-        onBlur={() => {
+        onBlur={(e) => {
           if (open) close();
+          // Back to the start of the label: a long one left scrolled to its end read "ns PPC".
+          e.currentTarget.scrollLeft = 0;
         }}
       />
       <span className="ss-chevron" aria-hidden="true">

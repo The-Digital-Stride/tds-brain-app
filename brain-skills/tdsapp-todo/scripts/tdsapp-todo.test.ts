@@ -1384,10 +1384,10 @@ describe('the skill files', () => {
   const skill = (rel: string) =>
     appParse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')).data;
 
-  it('tdsapp-todo is v0.5, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
+  it('tdsapp-todo is v0.6, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
     expect(skill('../SKILL.md')).toMatchObject({
       name: 'tdsapp-todo',
-      version: '0.5',
+      version: '0.6',
       roles: 'owner, scout',
       maturity: 'draft',
       members: 'false',
@@ -1410,15 +1410,21 @@ describe('v0.4: capabilities', () => {
   it('offers handover and scope in a brain that is not a git repository', () => {
     expect(run('capabilities')).toEqual({
       code: 0,
-      json: { version: '0.5', features: ['handover', 'attach', 'scope'] },
+      json: { version: '0.6', features: ['handover', 'attach', 'todo-project-v1', 'scope'] },
     });
   });
 
   it('offers scope in a git brain only when git ignores personal/todo/', () => {
     gitInit(false);
-    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
+    expect(run('capabilities').json).toEqual({
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1'],
+    });
     writeFileSync(join(root, '.gitignore'), 'personal/\n');
-    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach', 'scope'] });
+    expect(run('capabilities').json).toEqual({
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
+    });
   });
 
   it('does not offer scope when personal/todo is a symbolic link', () => {
@@ -1426,7 +1432,10 @@ describe('v0.4: capabilities', () => {
     mkdirSync(elsewhere);
     mkdirSync(join(root, 'personal'));
     symlinkSync(elsewhere, join(root, 'personal', 'todo'));
-    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
+    expect(run('capabilities').json).toEqual({
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1'],
+    });
   });
 });
 
@@ -1911,7 +1920,10 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
     expect(r.status, r.stderr).toBe(0);
   };
   const noScope = () =>
-    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach'] });
+    expect(run('capabilities').json).toEqual({
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1'],
+    });
   const refused = (r: RunResult) => {
     expect(r.code).toBe(2);
     expect(r.json.status).toBe(400);
@@ -1970,7 +1982,10 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
       join(root, '.gitignore'),
       'personal/*\n!personal/todo/\npersonal/todo/*\n!personal/todo/*share*.md\n',
     );
-    expect(run('capabilities').json).toEqual({ version: '0.5', features: ['handover', 'attach', 'scope'] });
+    expect(run('capabilities').json).toEqual({
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
+    });
     putPersonal('share-a.md', SAMPLE);
     put('share-b.md', SAMPLE);
     refused(run('due', { file: 'share-a.md', due: '2026-12-01', scope: 'personal' }));
@@ -1992,8 +2007,8 @@ describe('v0.4: personal to-dos never land where git syncs them (review fix)', (
     // Pointed at another repository, git would say personal/todo/ isn't ignored; the brain is no repo.
     const env = { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: root };
     expect(run('capabilities', {}, { env }).json).toEqual({
-      version: '0.5',
-      features: ['handover', 'attach', 'scope'],
+      version: '0.6',
+      features: ['handover', 'attach', 'todo-project-v1', 'scope'],
     });
   });
 
@@ -2283,11 +2298,11 @@ describe('v0.5: attach', () => {
     expect(readPersonal('p.md')).toBe(SAMPLE);
   });
 
-  it('refuses anything but a real library file under clients/<client>/, templates/ or personal/', () => {
+  it('refuses anything but a real library file under clients/<client>/, projects/<project>/, templates/ or personal/', () => {
     put('a.md', SAMPLE);
     put('other.md', SAMPLE);
     for (const rel of [
-      'projects/x/a.pdf',
+      'projects/a.pdf',
       'clients/acme.pdf',
       'clients/_archive/a.pdf',
       'clients/acme/.hidden/a.pdf',
@@ -2309,7 +2324,7 @@ describe('v0.5: attach', () => {
     const paths: unknown[] = [
       'clients/acme/files/missing.pdf',
       'todo/other.md',
-      'projects/x/a.pdf',
+      'projects/a.pdf',
       'clients/acme.pdf',
       'clients/_archive/a.pdf',
       'clients/acme/.hidden/a.pdf',

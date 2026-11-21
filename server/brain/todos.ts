@@ -24,6 +24,11 @@ import {
   type TodoSkillAccess,
 } from '../../shared/contract.ts';
 import { FilesChangeError, PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
+import {
+  PROJECT_KEY_PATTERN,
+  PROJECT_STAGE_MAX,
+  TODO_PROJECT_CAPABILITY,
+} from '../../shared/projects-contract.ts';
 import { parseTodoFiles, resolveTodoFilePath, splitTodoFiles } from '../../shared/todo-files.ts';
 import { stampDone } from './done-record.ts';
 import { FILES_ADD_CAPABILITY, FILES_SKILL, type FilesSkillRunner, findFilesSkill } from './files-skill.ts';
@@ -31,6 +36,7 @@ import { asString, parseFrontmatter } from './frontmatter.ts';
 import { type Member, readMembers } from './identity.ts';
 import { idFor } from './library.ts';
 import { classify, extOf, isHiddenInTemplates, isNeverListed } from './library-rules.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { skillAccess } from './skills.ts';
 import type { GitAuthor, TodoHistory } from './todo-history.ts';
 import {
@@ -182,6 +188,7 @@ async function readFolder(
   me: string,
   team: TeamMember[],
   attachments: ((body: string) => Promise<TodoAttachment[]>) | null = null,
+  projects: ProjectsIndex | null = null,
 ): Promise<TodoItem[]> {
   const rel = scope === 'personal' ? TODO_PERSONAL_DIR : 'todo';
   const dir = join(root, rel);
@@ -217,6 +224,16 @@ async function readFolder(
       surfaceDate: surfaceDate(e.name),
       project: asString(data.project).trim() || null,
       client: asString(data.client).trim() || null,
+      stage: asString(data.stage).trim() || null,
+      ...(projects
+        ? {
+            projectMatch: projects.resolve(
+              asString(data.project).trim() || null,
+              asString(data.client).trim() || null,
+              scope,
+            ),
+          }
+        : {}),
       created: asString(data.created).trim() || null,
       source: asString(data.source).trim() || null,
       details: body.trim(),
@@ -227,11 +244,16 @@ async function readFolder(
   return items;
 }
 
-async function readAll(root: string, me: string, team: TeamMember[]): Promise<TodoItem[]> {
+async function readAll(
+  root: string,
+  me: string,
+  team: TeamMember[],
+  projects: ProjectsIndex | null,
+): Promise<TodoItem[]> {
   const attachments = createAttachmentReader(root, me);
   const [tds, personal] = await Promise.all([
-    readFolder(root, 'tds', me, team, attachments),
-    readFolder(root, 'personal', me, team, attachments),
+    readFolder(root, 'tds', me, team, attachments, projects),
+    readFolder(root, 'personal', me, team, attachments, projects),
   ]);
   return [...tds, ...personal];
 }
@@ -297,6 +319,8 @@ export interface TodoListDeps {
   capabilities?: () => Promise<readonly string[]>;
   /** The `tdsapp-files` script's `capabilities` features (release 3). Without it, nothing can be uploaded. */
   filesCapabilities?: () => Promise<readonly string[]>;
+  /** The projects index (projects R1): fills `projectMatch`. Without it, none is set. */
+  projects?: () => Promise<ProjectsIndex>;
 }
 
 /** Whether this person may save uploads through `tdsapp-files`: its script is there, `roles:` allow them and it lists `add`. */
@@ -368,7 +392,15 @@ export async function listTodos(
   deps: TodoListDeps = {},
 ): Promise<TodoList> {
   const [team, access] = await Promise.all([readTeam(root), changeAccess(root, identity)]);
-  const items = await readAll(root, identity.slug, team);
+  let index: ProjectsIndex | null = null;
+  if (deps.projects) {
+    try {
+      index = await deps.projects();
+    } catch {
+      index = null;
+    }
+  }
+  const items = await readAll(root, identity.slug, team, index);
   const isMine = (t: TodoItem) => t.assignee !== null && t.assignee === identity.slug;
   const history = deps.history;
   // Uncached git lookups are capped per call; the rest wait for a later load (their nulls aren't cached).
@@ -416,6 +448,7 @@ export async function listTodos(
     canUsePersonal: features.includes('scope'),
     canAttach,
     canUpload,
+    canProject: features.includes(TODO_PROJECT_CAPABILITY),
   };
 }
 
@@ -449,6 +482,43 @@ const PATH_MAX = 1024;
 const okFilePath = (v: unknown) =>
   typeof v === 'string' && v.length <= PATH_MAX && resolveTodoFilePath(v) === v;
 
+const CLIENT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const okClientField = (v: unknown) =>
+  v === null || (typeof v === 'string' && v.length <= 60 && CLIENT_SLUG.test(v));
+const okProjectField = (v: unknown) =>
+  v === null || (typeof v === 'string' && v.length <= 121 && PROJECT_KEY_PATTERN.test(v));
+// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point
+const CONTROL = /[\u0000-\u001f\u007f]/;
+const okStageField = (v: unknown) =>
+  v === null ||
+  (typeof v === 'string' &&
+    v.trim() === v &&
+    v.length >= 1 &&
+    v.length <= PROJECT_STAGE_MAX &&
+    !CONTROL.test(v));
+
+/** Whether an `add` or `project` action sets client, project or stage (needs TodoList.canProject). */
+function usesProjectFields(a: TodoAction | TodoTickAction): boolean {
+  if (a.kind === 'project') return true;
+  if (a.kind === 'move') return a.dropProject !== undefined;
+  if (a.kind === 'add') return a.client !== undefined || a.project !== undefined || a.stage !== undefined;
+  return false;
+}
+
+/** The three fields agree: a key's client is its first segment (null for `personal/`), and a team to-do never takes a private project. */
+function projectFieldsAgree(
+  scope: TodoScope,
+  f: { client?: string | null; project?: string | null },
+): 'ok' | 'bad' | 'private' {
+  if (!f.project) return 'ok';
+  const keyClient = f.project.split('/')[0] ?? '';
+  if (keyClient === 'personal') {
+    if (scope === 'tds') return 'private';
+    return f.client === undefined || f.client === null ? 'ok' : 'bad';
+  }
+  return f.client === undefined || f.client === keyClient ? 'ok' : 'bad';
+}
+
 /** The contract's route checks on the values (the route has already checked the shape). */
 function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boolean {
   if ('expect' in a && a.expect !== undefined && !okExpect(a.expect)) return false;
@@ -459,7 +529,10 @@ function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boole
         okTitle(a.title) &&
         okDue(a.due) &&
         (a.assignee === null ? canAddOpen : okAssignee(a.assignee)) &&
-        okDetails(a.details)
+        okDetails(a.details) &&
+        (a.client === undefined || okClientField(a.client)) &&
+        (a.project === undefined || okProjectField(a.project)) &&
+        (a.stage === undefined || okStageField(a.stage))
       );
     case 'edit':
       return (
@@ -480,7 +553,22 @@ function validAction(a: TodoAction | TodoTickAction, canAddOpen: boolean): boole
     case 'tick':
       return okId(a.id) && okScope(a.scope);
     case 'move':
-      return okId(a.id) && okScope(a.scope) && okScope(a.to) && a.scope !== a.to;
+      return (
+        okId(a.id) &&
+        okScope(a.scope) &&
+        okScope(a.to) &&
+        a.scope !== a.to &&
+        (a.dropProject === undefined || a.dropProject === true)
+      );
+    case 'project':
+      return (
+        okId(a.id) &&
+        okClientField(a.client) &&
+        okProjectField(a.project) &&
+        okStageField(a.stage) &&
+        // A stage belongs to a project.
+        (a.stage === null || a.project !== null)
+      );
     default:
       return false;
   }
@@ -516,7 +604,13 @@ export async function changeTodo(
   if (typeof action !== 'object' || action === null) throw todoChangeError('bad-request');
   if ((action.kind === 'attach' || action.kind === 'detach') && !list.canAttach)
     throw todoChangeError('not-allowed');
+  if (usesProjectFields(action) && !list.canProject) throw todoChangeError('not-allowed');
   if (!validAction(action, list.canAddOpen)) throw todoChangeError('bad-request');
+  if (action.kind === 'add' || action.kind === 'project') {
+    const agree = projectFieldsAgree(action.scope ?? 'tds', action);
+    if (agree === 'private') throw todoChangeError('not-allowed');
+    if (agree === 'bad') throw todoChangeError('bad-request');
+  }
   // With canAttach the editor sends the details alone and the script keeps the section (overseer B1).
   if (action.kind === 'edit' && list.canAttach && action.details !== undefined) {
     if (splitTodoFiles(action.details).files !== '')

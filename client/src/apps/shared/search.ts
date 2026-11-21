@@ -1,6 +1,7 @@
 import type { LibraryItem, LibraryKind, LibraryScope } from '../../../../shared/contract.ts';
 import { api } from '../../api.ts';
 import type { IconName, SearchHitDetail, SearchSource } from '../../shell/contract.ts';
+import { labelForKey, projectsStore } from '../../state/projects.ts';
 import { pictureWords } from './library.ts';
 import { dateWords, sizeWords } from './words.ts';
 
@@ -38,6 +39,9 @@ export function fileDetail(
   scope: LibraryScope,
   typeWords: (ext: string) => string = (ext) => ext.toUpperCase(),
 ): SearchHitDetail {
+  // "Client · Project" for the first project the file belongs to (older servers send none).
+  const key = item.projects?.[0];
+  const project = key ? labelForKey(key, projectsStore.get().list?.projects, []) : null;
   const changed = dateWords(item.modified);
   const facts = [
     typeWords(item.ext),
@@ -45,7 +49,7 @@ export function fileDetail(
     sizeWords(item.bytes),
     changed ? `Changed ${changed}` : null,
   ].filter((f): f is string => Boolean(f));
-  const lines = [`${scope.name} · ${item.group}`, facts.join(' · ')];
+  const lines = [`${scope.name} · ${item.group}`, ...(project ? [project] : []), facts.join(' · ')];
   if (item.name !== item.title) lines.unshift(item.name);
   return { lines, path: item.path };
 }

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// tdsapp-files.cjs (v0.2): delete library files into a holding folder, put them back, erase them
+// tdsapp-files.cjs (v0.3): delete library files into a holding folder, put them back, erase them
 // after 30 days, and keep a team action log. The plan is the app repo's
 // docs/plans/2026-11-15-delete-library-files.md (decisions 1-5 and 9); the shapes are in its
 // shared/files-contract.ts (a test checks the constants here match). v0.2 adds `add`, which copies
-// an uploaded file into the library (docs/plans/2026-11-16-todo-attachments.md, decision 3).
+// an uploaded file into the library (docs/plans/2026-11-16-todo-attachments.md, decision 3). v0.3
+// refuses to delete a project's own record inside clients/<client>/projects/<slug>/: project.md,
+// retainer.md and anything in updates/ or months/ (docs/plans/2026-11-20-projects-system.md,
+// decision 27). Other files there delete as before.
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-files/scripts/tdsapp-files.cjs <action>
@@ -62,7 +65,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.2';
+const SCRIPT_VERSION = '0.3';
 
 // Mirrors shared/files-contract.ts (a test checks they match).
 const PURGE_AFTER_DAYS = 30;
@@ -71,6 +74,10 @@ const ACTION_LOG_DIR = 'tdsapp-deleted/log';
 const HOLDING_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
 const PROTECTED_NAMES = ['claude.md', 'agents.md', 'readme.md'];
 const PROTECTED_CLIENT_FILES = ['profile.md'];
+// Mirrors PROJECT_PROTECTED_NAMES in shared/projects-contract.ts (plan 2026-11-20-projects-system,
+// decision 27): inside any project folder (clients/<client>/projects/<slug>/), the card, the retainer
+// terms and everything in updates/ and months/ are never deleted. A name ending in / is a folder.
+const PROJECT_PROTECTED_NAMES = ['project.md', 'retainer.md', 'updates/', 'months/'];
 const FILES_CAPABILITY = 'files-delete-v1';
 // v0.2: `add`, for uploads (the app's TODO_UPLOAD_TYPES and MAX_UPLOAD_BYTES; a test checks).
 const ADD_CAPABILITY = 'files-add-v1';
@@ -192,8 +199,20 @@ function pathSegments(rel) {
   return segs;
 }
 
-// 'client' or 'templates' for a path this role may delete or restore; otherwise a refusal.
-function scopeOf(rel, role) {
+// True for a path inside a project folder (clients/<client>/projects/<slug>/...) that names one of
+// PROJECT_PROTECTED_NAMES: the file itself, or anything inside the protected folder. Case and
+// look-alike letters (NFKC) are ignored, as for the other protected names.
+function isProjectProtected(segs) {
+  if (segs.length < 5 || segs[0] !== 'clients' || segs[2].normalize('NFKC').toLowerCase() !== 'projects') return false;
+  const name = segs[4].normalize('NFKC').toLowerCase();
+  return PROJECT_PROTECTED_NAMES.some(p => (p.endsWith('/')
+    ? segs.length > 5 && name === p.slice(0, -1)
+    : segs.length === 5 && name === p));
+}
+
+// 'client' or 'templates' for a path this role may delete or restore; otherwise a refusal. A project's
+// protected files can't be deleted, but one deleted before v0.3 can still be put back (`restoring`).
+function scopeOf(rel, role, restoring) {
   const segs = pathSegments(rel);
   if (isNeverListed(rel)) throw refuse('not-allowed', 'that path is never listed in the library');
   let scope = null;
@@ -204,6 +223,9 @@ function scopeOf(rel, role) {
   if (PROTECTED_NAMES.includes(base)) throw refuse('not-allowed', `${segs[segs.length - 1]} is protected`);
   if (scope === 'client' && segs.length === 3 && PROTECTED_CLIENT_FILES.includes(base)) {
     throw refuse('not-allowed', "a client's profile.md is protected");
+  }
+  if (scope === 'client' && !restoring && isProjectProtected(segs)) {
+    throw refuse('not-allowed', `${segs.slice(4).join('/')} is part of the project's own record, so it can't be deleted`);
   }
   if (!LIBRARY_EXTENSIONS.includes(extOf(segs[segs.length - 1]))) {
     throw refuse('not-allowed', 'only the image and document types the library lists can be deleted');
@@ -595,7 +617,7 @@ function restore(input, ctx) {
 
   // record.json syncs from every Mac, so its path gets every delete rule again.
   const rel = record.path;
-  const scope = scopeOf(rel, who.role);
+  const scope = scopeOf(rel, who.role, true);
   if (scope !== record.scope) throw refuse('not-allowed', `${id}/record.json names the wrong scope`);
   const segs = rel.split('/');
   const held = path.join(dir, ...segs);
@@ -969,6 +991,7 @@ module.exports = {
   HOLDING_ID_PATTERN,
   PROTECTED_NAMES,
   PROTECTED_CLIENT_FILES,
+  PROJECT_PROTECTED_NAMES,
   FILES_CAPABILITY,
   ADD_CAPABILITY,
   ADD_MAX_BYTES,

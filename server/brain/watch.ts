@@ -29,6 +29,8 @@ const TARGETS: Target[] = [
   { area: 'library', rel: ['clients'], recursive: true, library: 'clients' },
   { area: 'library', rel: ['personal'], recursive: true, library: 'personal' },
   { area: 'library', rel: ['templates'], recursive: true, library: 'templates' },
+  // The older `projects/` folders: their own scope (projects R1, decision 27).
+  { area: 'library', rel: ['projects'], recursive: true, library: 'projects' },
 ];
 
 /**
@@ -62,6 +64,12 @@ export interface WatchHooks {
    * file changed under clients/. Separate from `onChange` because it is not a BrainArea (decision 19).
    */
   onAdsChange?(): void;
+  /**
+   * Called at once for each change that can alter the projects list: any file in a library folder (the
+   * cards and their updates are never-listed there, so this comes before that filter) or a to-do. The
+   * changed path from the brain's root, or null when the platform did not say.
+   */
+  onProjectsChange?(rel: string | null): void;
 }
 
 export function watchBrain(
@@ -112,9 +120,14 @@ export function watchBrain(
       const folder = t.library;
       const w = watch(join(root, ...t.rel), { recursive: t.recursive }, (_event, file) => {
         if (t.only && String(file ?? '') !== t.only) return;
+        const name = file ? String(file).split(sep).join('/') : '';
+        const rel = name ? `${t.rel.join('/')}/${name}` : null;
+        if (folder || t.area === 'todos') {
+          try {
+            hooks.onProjectsChange?.(rel);
+          } catch {}
+        }
         if (folder) {
-          const name = file ? String(file).split(sep).join('/') : '';
-          const rel = name ? `${t.rel.join('/')}/${name}` : null;
           if (folder === 'clients' && (rel === null || isAdsPath(rel))) fireAds();
           // Never-listed places (dot names, crm/data, ...) cannot change what the library shows.
           if (rel && isNeverListed(rel)) return;

@@ -15,6 +15,7 @@ import type {
   TodoItem,
   TodoList,
 } from '../../../shared/contract.ts';
+import type { ProjectCard } from '../../../shared/projects-contract.ts';
 import type { SettingsTab } from './settings-tabs.ts';
 
 // ── Shell state ────────────────────────────────────────────────────────────────────────────────
@@ -468,6 +469,11 @@ export interface TodoFilter {
   scope: 'all' | 'tds' | 'personal';
   /** A client slug, or null for every client. */
   client: string | null;
+  /**
+   * Projects R1 (decision 11): a ProjectKey, or null/absent for every project. The app-wide picker's
+   * project takes this place while it holds one (callers pass it in), so it is never shown as a choice.
+   */
+  project?: string | null;
 }
 
 /**
@@ -533,6 +539,8 @@ export interface SearchActions {
   chooseClient: (slug: string) => void;
   /** Opens a library app (`app:<appId>`) on `scope` with `item` selected (and viewed when it can be). */
   openLibraryItem: (appId: string, scope: string, item: LibraryItem) => void;
+  /** Projects R1 (decision 14): sets the app-wide picker to this project (and so its client) and shows Home. */
+  filterToProject?: (key: string) => void;
 }
 
 export interface SearchHit {
@@ -573,6 +581,8 @@ export interface SearchContext {
   hasSkillLevels?: boolean;
   /** The ads summary (store `ads`), for tools that search it; null or missing until it has loaded. */
   ads?: AdsSummary | null;
+  /** Projects R1: the projects list (`useProjects`), for the Projects group and "Client · Project" on hits. Missing until loaded. */
+  projects?: ProjectCard[];
 }
 
 export interface SearchResults {

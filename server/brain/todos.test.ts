@@ -15,8 +15,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { TODO_SCRIPT, type TodoAction, TodoChangeError } from '../../shared/contract.ts';
+import { TODO_PROJECT_CAPABILITY } from '../../shared/projects-contract.ts';
 import { createBrainReaders } from './index.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, person } from './test-helpers.ts';
+import { listTodos } from './todos.ts';
 
 const sam = person('sam-example', 'scout');
 
@@ -52,6 +55,8 @@ describe('todos', () => {
       surfaceDate: '2026-11-01',
       project: 'renewals',
       client: 'acme-heating',
+      stage: null,
+      projectMatch: expect.objectContaining({ how: expect.any(String) }),
       created: null,
       source: null,
       details: '',
@@ -153,6 +158,7 @@ describe('todos', () => {
       canUsePersonal: false,
       canAttach: false,
       canUpload: false,
+      canProject: false,
     });
   });
 });
@@ -1052,5 +1058,194 @@ describe('changeTodo with the real v0.4 script', () => {
     const text = readFileSync(join(root, 'todo', id), 'utf8');
     expect(text).toContain('assigned_by: sam-example');
     expect(text).toContain('assigned_via: TDS Cortex');
+  });
+});
+
+describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
+  const FILE = '20261105-send-report.md';
+  const KEY = 'acme-heating/web';
+
+  /** A fake index: `resolve` records what it was asked and answers a key for the one label. */
+  function fakeIndex() {
+    const asked: [string | null, string | null, string][] = [];
+    const index: ProjectsIndex = {
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: (value, client, scope) => {
+        asked.push([value, client, scope]);
+        return value === KEY
+          ? { how: 'key', key: KEY }
+          : value
+            ? { how: 'loose', label: value }
+            : { how: 'none' };
+      },
+    };
+    return { index, asked };
+  }
+
+  it('fills stage and projectMatch on every to-do, and asks with its client and place', async () => {
+    const root = copyFixture();
+    writeFileSync(
+      join(root, 'todo', FILE),
+      `---\nassignee: sam-example\nproject: ${KEY}\nclient: acme-heating\nstage: Build\n---\n# Send the monthly report\n`,
+    );
+    const { index, asked } = fakeIndex();
+    const list = await listTodos(root, sam, { projects: async () => index });
+    const all = [...list.mine, ...list.open];
+    const item = all.find((t) => t.id === FILE);
+    expect(item).toMatchObject({ project: KEY, stage: 'Build', projectMatch: { how: 'key', key: KEY } });
+    expect(asked).toContainEqual([KEY, 'acme-heating', 'tds']);
+    for (const t of all) expect(t.projectMatch).toBeDefined();
+    expect(all.find((t) => t.id !== FILE)?.stage).toBeNull();
+    expect(all.find((t) => t.id !== FILE)?.projectMatch).toEqual({ how: 'none' });
+  });
+
+  it('gives a stage but no projectMatch without an index, or when it cannot be read', async () => {
+    const root = copyFixture();
+    writeFileSync(join(root, 'todo', FILE), `---\nassignee: sam-example\nstage: Build\n---\n# Send\n`);
+    for (const projects of [
+      undefined,
+      async () => {
+        throw new Error('no index');
+      },
+    ]) {
+      const list = await listTodos(root, sam, { projects });
+      const item = list.mine.find((t) => t.id === FILE);
+      expect(item?.stage).toBe('Build');
+      expect(item?.projectMatch).toBeUndefined();
+    }
+  });
+
+  it('says canProject only when the script reports todo-project-v1 (and changes are on)', async () => {
+    const root = copyFixture();
+    addTodoSkill(root);
+    const yes = createBrainReaders(root, {
+      todoSkill: { env: fakeEnv({}, ['scope', TODO_PROJECT_CAPABILITY]).env },
+    });
+    expect((await yes.todos(sam)).canProject).toBe(true);
+    const older = createBrainReaders(root, { todoSkill: { env: fakeEnv({}, ['scope']).env } });
+    expect((await older.todos(sam)).canProject).toBe(false);
+    expect((await createBrainReaders(copyFixture()).todos(sam)).canProject).toBe(false);
+  });
+
+  describe('changeTodo', () => {
+    function setup(caps: string[] = ['scope', TODO_PROJECT_CAPABILITY]) {
+      const root = copyFixture();
+      addTodoSkill(root);
+      const fake = fakeEnv({}, caps);
+      const brain = createBrainReaders(root, { todoSkill: { env: fake.env } });
+      const version = async () => (await brain.todos(sam)).mine.find((t) => t.id === FILE)?.version ?? '';
+      return { brain, calls: fake.calls, version };
+    }
+    const set = (over: Record<string, unknown> = {}): TodoAction =>
+      ({
+        kind: 'project',
+        id: FILE,
+        client: 'acme-heating',
+        project: KEY,
+        stage: 'Build',
+        ...over,
+      }) as TodoAction;
+
+    it('passes the project action to the script like the others, with the same expect', async () => {
+      const { brain, calls, version } = setup();
+      const v = await version();
+      await brain.changeTodo(set({ expect: v }), sam);
+      expect(calls()).toHaveLength(1);
+      expect(calls()[0]?.command).toBe('project');
+      expect(calls()[0]?.body).toMatchObject({ file: FILE, project: KEY, expect: v });
+      // Clearing all three is allowed too.
+      await brain.changeTodo(set({ client: null, project: null, stage: null }), sam);
+      expect(calls()).toHaveLength(2);
+    });
+
+    it("refuses it without the capability, and for to-dos that are not this person's or open", async () => {
+      const older = setup(['scope']);
+      expect(await codeOf(older.brain.changeTodo(set(), sam))).toBe('not-allowed');
+      expect(older.calls()).toEqual([]);
+      const { brain, calls, version } = setup();
+      expect(await codeOf(brain.changeTodo(set({ id: '20261102-alex-task.md' }), sam))).toBe('not-found');
+      expect(await codeOf(brain.changeTodo(set({ id: 'nope.md' }), sam))).toBe('not-found');
+      expect(await codeOf(brain.changeTodo(set({ expect: 'f'.repeat(64) }), sam))).toBe('changed');
+      expect(await version()).not.toBe('');
+      expect(calls()).toEqual([]);
+    });
+
+    it('checks the values before anything runs', async () => {
+      const { brain, calls } = setup();
+      const bad: Record<string, unknown>[] = [
+        { project: 'Not A Key' },
+        { project: `${KEY}/extra` },
+        { client: 'Acme' },
+        { client: 'other-client' },
+        { client: 'acme-heating', project: null, stage: 'Build' },
+        { stage: 'x'.repeat(41) },
+        { stage: ' padded ' },
+        { stage: 'two\nlines' },
+        { stage: '' },
+        { id: '../x.md' },
+        { expect: 'short' },
+      ];
+      for (const over of bad) {
+        expect(await codeOf(brain.changeTodo(set(over), sam)), JSON.stringify(over)).toBe('bad-request');
+      }
+      expect(calls()).toEqual([]);
+    });
+
+    it('refuses a private project for a team to-do before the script is asked', async () => {
+      const { brain, calls } = setup();
+      expect(await codeOf(brain.changeTodo(set({ client: null, project: 'personal/plan' }), sam))).toBe(
+        'not-allowed',
+      );
+      expect(calls()).toEqual([]);
+    });
+
+    it('needs expect for a personal to-do, as every personal change does', async () => {
+      const { brain } = setup();
+      expect(
+        await codeOf(
+          brain.changeTodo(set({ scope: 'personal', client: null, project: 'personal/plan' }), sam),
+        ),
+      ).toBe('bad-request');
+    });
+
+    it('passes client, project and stage on an add, and refuses them without the capability', async () => {
+      const { brain, calls } = setup();
+      const add = {
+        kind: 'add',
+        title: 'Scope the build',
+        due: null,
+        assignee: 'sam-example',
+        client: 'acme-heating',
+        project: KEY,
+        stage: 'Build',
+      } as TodoAction;
+      await brain.changeTodo(add, sam);
+      expect(calls()[0]).toMatchObject({ command: 'add', body: { project: KEY } });
+      const older = setup(['scope']);
+      expect(await codeOf(older.brain.changeTodo(add, sam))).toBe('not-allowed');
+      expect(await codeOf(brain.changeTodo({ ...add, project: 'Bad Key' } as TodoAction, sam))).toBe(
+        'bad-request',
+      );
+      expect(await codeOf(brain.changeTodo({ ...add, client: 'other-client' } as TodoAction, sam))).toBe(
+        'bad-request',
+      );
+    });
+
+    it('passes dropProject on a move only with the capability, and only as true', async () => {
+      const { brain, calls, version } = setup();
+      const v = await version();
+      const move = { kind: 'move', id: FILE, scope: 'tds', to: 'personal', expect: v } as TodoAction;
+      await brain.changeTodo({ ...move, dropProject: true } as TodoAction, sam);
+      expect(calls()[0]?.command).toBe('move');
+      expect(
+        await codeOf(brain.changeTodo({ ...move, dropProject: false } as unknown as TodoAction, sam)),
+      ).toBe('bad-request');
+      const older = setup(['scope']);
+      expect(await codeOf(older.brain.changeTodo({ ...move, dropProject: true } as TodoAction, sam))).toBe(
+        'not-allowed',
+      );
+    });
   });
 });

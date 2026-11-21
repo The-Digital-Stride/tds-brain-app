@@ -48,3 +48,38 @@ describe('filterTodos', () => {
     expect(filterActive({ ...EMPTY_FILTER, client: 'bolt' })).toBe(true);
   });
 });
+
+describe('the project filter', () => {
+  const inProject = (id: string, key: string) =>
+    todo(id, { projectMatch: { how: 'key', key }, project: key });
+  const items = [
+    inProject('a', 'acme/website'),
+    inProject('b', 'bolt/seo'),
+    todo('c'),
+    todo('d', { projectMatch: { how: 'loose', label: 'website' }, project: 'website' }),
+  ];
+
+  it('keeps only the to-dos whose project resolves to the key', () => {
+    expect(ids(filterTodos(items, { ...EMPTY_FILTER, project: 'acme/website' }, clients))).toEqual(['a']);
+    expect(filterActive({ ...EMPTY_FILTER, project: 'acme/website' })).toBe(true);
+  });
+
+  it('treats an older server (no projectMatch) as no project', () => {
+    expect(
+      ids(filterTodos(items, { scope: 'all', client: null, project: 'acme/website' }, clients)),
+    ).not.toContain('c');
+    expect(filterTodos(items, { scope: 'all', client: null }, clients)).toBe(items);
+  });
+
+  it('combines with the client filter', () => {
+    const f = { scope: 'all' as const, client: 'bolt', project: 'acme/website' };
+    expect(
+      filterTodos(
+        [todo('x', { client: 'bolt', projectMatch: { how: 'key', key: 'acme/website' } })],
+        f,
+        clients,
+      ),
+    ).toHaveLength(1);
+    expect(filterTodos(items, f, clients)).toEqual([]);
+  });
+});

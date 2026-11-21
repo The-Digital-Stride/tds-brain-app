@@ -1,0 +1,708 @@
+/**
+ * Reads the projects (plan docs/plans/2026-11-20-projects-system.md, decisions 1, 4, 4b, 8, 10, 13 and
+ * 26): walks every projects location, reads each card, counts open to-dos, works out the team from
+ * to-dos, and runs the tidy-up. Writes nothing in the brain: changes go through the `tdsapp-projects`
+ * script (projects-skill.ts) and to-do lines through `tdsapp-todo` (todo-skill.ts). The only file it
+ * writes is `tidy-skips.json` in the app's own data folder.
+ */
+import { createHash } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
+import { type ClientInfo, type Identity, TodoChangeError } from '../../shared/contract.ts';
+import {
+  folderTitle,
+  isProjectSlug,
+  matchedKey,
+  parseLinkedFiles,
+  resolveTodoProject,
+  splitLinkedFiles,
+} from '../../shared/projects.ts';
+import {
+  type CardState,
+  INTERNAL_CLIENT,
+  type Light,
+  PROJECT_CARD_FILE,
+  PROJECT_TITLE_MAX,
+  PROJECTS_CAPABILITY,
+  type ProjectAction,
+  type ProjectCard,
+  type ProjectKey,
+  type ProjectKind,
+  type ProjectList,
+  type ProjectSpace,
+  type ProjectStatus,
+  ProjectsError,
+  TEAM_FROM_TODOS_DAYS,
+  type TeamFromTodo,
+  type TidyApply,
+  type TidyList,
+  type TidySuggestion,
+  type TodoProjectMatch,
+} from '../../shared/projects-contract.ts';
+import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
+import type { ProjectsSkillRunner } from './projects-skill.ts';
+import { buildTidyRows, checkSuggestion, type TidyContext, type TidyTodo, tidyTarget } from './tidy.ts';
+import { defaultGitRunner } from './todo-history.ts';
+import type { TodoSkillRunner } from './todo-skill.ts';
+import { memberSlug } from './util.ts';
+
+export interface ProjectsIndex {
+  /** Every project, personal ones only this Mac's. `openTodos` and `teamFromTodos` are filled by `list`. */
+  cards: ProjectCard[];
+  byKey(key: ProjectKey): ProjectCard | null;
+  /** The projects a file belongs to: by folder prefix, or listed in a card's `## Linked files`. */
+  keysForPath(brainRel: string): ProjectKey[];
+  resolve(value: string | null, client: string | null, scope: 'tds' | 'personal'): TodoProjectMatch;
+}
+
+export interface ProjectsService {
+  /** Cached like the library: 30 s stale without a watcher; `changed()` drops it. */
+  index(): Promise<ProjectsIndex>;
+  list(identity: Identity): Promise<ProjectList>;
+  change(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  tidy(identity: Identity): Promise<TidyList>;
+  applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
+  /** Drops the caches (the watcher, and after a write). */
+  changed(brainRel?: string): void;
+}
+
+export interface ProjectsOptions {
+  skill: ProjectsSkillRunner;
+  todoSkill: TodoSkillRunner;
+  clients: () => Promise<ClientInfo[]>;
+  /** The app's own data folder, for `tidy-skips.json`. Null: skips are kept in memory only. */
+  dataDir: string | null;
+  now?: () => Date;
+  /** Runs read-only git (lastChanged, which personal folders git tracks). Injectable for tests. */
+  git?: (args: string[], cwd: string) => Promise<string>;
+}
+
+/** How long a read is reused when no watcher says the brain changed. */
+export const PROJECTS_STALE_MS = 30_000;
+export const TIDY_SKIPS_FILE = 'tidy-skips.json';
+const GIT_PARALLEL = 4;
+const LABEL_MAX = 200;
+const DAY_MS = 86_400_000;
+
+const KINDS: readonly ProjectKind[] = ['one-off', 'ongoing'];
+const STATUSES: readonly ProjectStatus[] = ['planned', 'active', 'on-hold', 'done'];
+const LIGHTS: readonly Light[] = ['green', 'amber', 'red'];
+const RULES_FILES = new Set(['claude.md', 'readme.md', 'agents.md']);
+const CONFLICT_MARKER = /^(?:<{7}|={7}|>{7})(?: |$)/m;
+
+// ─── Small readers ──────────────────────────────────────────────────────────────────────────────────
+
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+async function lstat(path: string) {
+  try {
+    return await fs.lstat(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Real sub-folders (no links), by name. */
+async function folders(path: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(path, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function text(v: FrontmatterValue | undefined): string | null {
+  const s = asString(v).trim();
+  return s === '' ? null : s;
+}
+
+function list(v: FrontmatterValue | undefined): string[] {
+  if (v === undefined) return [];
+  const items = Array.isArray(v) ? v : v.split(',');
+  return items.map((x) => x.trim()).filter((x) => x !== '');
+}
+
+function oneOf<T extends string>(v: FrontmatterValue | undefined, allowed: readonly T[]): T | null {
+  const s = text(v);
+  return s !== null && (allowed as readonly string[]).includes(s) ? (s as T) : null;
+}
+
+function date(v: FrontmatterValue | undefined): string | null {
+  const s = text(v);
+  return s !== null && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+/** The first `# ` heading of a folder's README.md, outside code fences, or null. */
+async function readmeTitle(folderAbs: string): Promise<string | null> {
+  let src: string;
+  try {
+    src = await fs.readFile(join(folderAbs, 'README.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  let fence: string | null = null;
+  for (const line of src.replace(/\r\n?/g, '\n').split('\n')) {
+    const f = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence !== null) {
+      if (f && (f[1] as string)[0] === fence[0] && (f[1] as string).length >= fence.length) fence = null;
+      continue;
+    }
+    if (f) {
+      fence = f[1] as string;
+      continue;
+    }
+    const m = line.match(/^#\s+(.+?)\s*#*\s*$/);
+    if (m) {
+      const title = (m[1] as string).replace(/\s+/g, ' ').trim().slice(0, PROJECT_TITLE_MAX).trim();
+      return title === '' ? null : title;
+    }
+  }
+  return null;
+}
+
+// ─── The walk ─────────────────────────────────────────────────────────────────────────────────────
+
+interface Location {
+  key: ProjectKey;
+  space: ProjectSpace;
+  slug: string;
+  client: string | null;
+  folder: string;
+  archived: boolean;
+}
+
+interface Walk {
+  cards: ProjectCard[];
+  duplicates: string[];
+  skippedFolders: number;
+  clients: string[];
+}
+
+interface Roles {
+  byEmail: Map<string, string>;
+}
+
+async function readRoles(root: string): Promise<Roles> {
+  const byEmail = new Map<string, string>();
+  try {
+    const members: unknown = JSON.parse(
+      await fs.readFile(join(root, '.team-config', 'roles.json'), 'utf8'),
+    ).members;
+    if (Array.isArray(members)) {
+      for (const m of members) {
+        if (m && typeof m.email === 'string' && typeof m.name === 'string' && memberSlug(m.name))
+          byEmail.set(m.email.toLowerCase(), memberSlug(m.name));
+      }
+    }
+  } catch {
+    /* no roles: git names are shown as they are */
+  }
+  return { byEmail };
+}
+
+async function readCard(root: string, loc: Location): Promise<ProjectCard> {
+  const folderAbs = join(root, ...loc.folder.split('/'));
+  const fallbackTitle = async () => (await readmeTitle(folderAbs)) ?? folderTitle(loc.slug);
+  const st = await lstat(join(folderAbs, PROJECT_CARD_FILE));
+  let state: CardState = 'none';
+  let data: Record<string, FrontmatterValue> = {};
+  let body = '';
+  let version = '';
+  if (st) {
+    state = 'unreadable';
+    if (st.isFile()) {
+      try {
+        const bytes = await fs.readFile(join(folderAbs, PROJECT_CARD_FILE));
+        const src = bytes.toString('utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+        const lines = src.split('\n');
+        const hasBlock = lines[0] === '---' && lines.slice(1).includes('---');
+        if (hasBlock && !CONFLICT_MARKER.test(src)) {
+          const fm = parseFrontmatter(src);
+          state = 'ok';
+          data = fm.data;
+          body = fm.body;
+          version = sha256(bytes);
+        }
+      } catch {
+        /* unreadable */
+      }
+    }
+  }
+  const checklist = (await lstat(join(folderAbs, 'todo.md')))?.isFile() ? `${loc.folder}/todo.md` : null;
+  const links = parseLinkedFiles(body).filter((p) => loc.space === 'personal' || !p.startsWith('personal/'));
+  const budget = Number(text(data.budget_hours) ?? Number.NaN);
+  const billable = text(data.billable);
+  return {
+    key: loc.key,
+    space: loc.space,
+    slug: loc.slug,
+    client: loc.client,
+    folder: loc.folder,
+    card: state,
+    archived: loc.archived,
+    title: text(data.title) ?? (await fallbackTitle()),
+    kind: oneOf(data.kind, KINDS),
+    status: loc.archived ? 'done' : (oneOf(data.status, STATUSES) ?? 'active'),
+    health: oneOf(data.health, LIGHTS),
+    comms: oneOf(data.comms, LIGHTS),
+    owner: text(data.owner),
+    team: list(data.team),
+    service: list(data.service),
+    start: date(data.start),
+    end: date(data.end),
+    budgetHours: Number.isFinite(budget) && budget >= 0 ? budget : null,
+    billable: billable === 'true' ? true : billable === 'false' ? false : null,
+    stages: list(data.stages),
+    mondayId: text(data.monday_id),
+    created: text(data.created),
+    createdBy: text(data.created_by),
+    lastChanged: null,
+    brief: splitLinkedFiles(body).brief,
+    links,
+    version,
+    openTodos: 0,
+    teamFromTodos: [],
+    checklist,
+  };
+}
+
+async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Promise<Walk> {
+  const locations: Location[] = [];
+  let skippedFolders = 0;
+  // Project folders under `base`, keyed under `client` ('personal' for personal ones).
+  const projectsIn = async (base: string, client: string | null, space: ProjectSpace, archived: boolean) => {
+    for (const name of await folders(join(root, ...base.split('/')))) {
+      if (name.startsWith('.')) continue;
+      if (!isProjectSlug(name)) {
+        skippedFolders++;
+        continue;
+      }
+      locations.push({
+        key: `${client ?? 'personal'}/${name}`,
+        space,
+        slug: name,
+        client,
+        folder: `${base}/${name}`,
+        archived,
+      });
+    }
+  };
+  const clientDirs = (await folders(join(root, 'clients'))).filter(
+    (c) => !c.startsWith('_') && !c.startsWith('.'),
+  );
+  const live = clientDirs.filter(isProjectSlug);
+  // The Digital Stride's own folder first: INTERNAL_PRECEDENCE.
+  for (const c of [
+    ...live.filter((c) => c === INTERNAL_CLIENT),
+    ...live.filter((c) => c !== INTERNAL_CLIENT),
+  ]) {
+    await projectsIn(`clients/${c}/projects`, c, 'client', false);
+  }
+  await projectsIn('projects', INTERNAL_CLIENT, 'legacy', false);
+  await projectsIn('projects-archive', INTERNAL_CLIENT, 'legacy', true);
+  const archivedClients = (await folders(join(root, 'clients', '_archive'))).filter(isProjectSlug);
+  for (const c of archivedClients) await projectsIn(`clients/_archive/${c}/projects`, c, 'client', true);
+
+  // Personal: only real folders, and never anything git tracks (that came from someone else's Mac).
+  const personalLinked = await Promise.all(
+    ['personal', 'personal/projects'].map(async (rel) =>
+      (await lstat(join(root, ...rel.split('/'))))?.isSymbolicLink(),
+    ),
+  );
+  if (!personalLinked.some(Boolean)) {
+    let tracked = new Set<string>();
+    try {
+      const out = await git(['ls-files', '-z', '--', 'personal/projects'], root);
+      tracked = new Set(
+        out
+          .split('\0')
+          .filter(Boolean)
+          .map((p) => p.split('/')[2] ?? ''),
+      );
+    } catch {
+      /* not a git repository: nothing is tracked */
+    }
+    const before = locations.length;
+    await projectsIn('personal/projects', null, 'personal', false);
+    for (let i = locations.length - 1; i >= before; i--) {
+      if (tracked.has((locations[i] as Location).slug)) locations.splice(i, 1);
+    }
+  }
+
+  const seen = new Set<ProjectKey>();
+  const duplicates: string[] = [];
+  const kept: Location[] = [];
+  for (const loc of locations) {
+    if (seen.has(loc.key)) duplicates.push(loc.folder);
+    else {
+      seen.add(loc.key);
+      kept.push(loc);
+    }
+  }
+  const cards = await Promise.all(kept.map((loc) => readCard(root, loc)));
+
+  const roles = await readRoles(root);
+  const shared = cards.filter((c) => c.space !== 'personal');
+  for (let i = 0; i < shared.length; i += GIT_PARALLEL) {
+    await Promise.all(
+      shared.slice(i, i + GIT_PARALLEL).map(async (c) => {
+        try {
+          const out = (await git(['log', '-1', '--format=%an%x00%ae%x00%aI', '--', c.folder], root)).trim();
+          const [name, email, at] = out.split('\0');
+          if (!at) return;
+          const by = roles.byEmail.get((email ?? '').toLowerCase()) ?? (name ?? '').trim();
+          if (by) c.lastChanged = { by, at: at.trim() };
+        } catch {
+          /* outside git or unknown */
+        }
+      }),
+    );
+  }
+  return { cards, duplicates, skippedFolders, clients: [...clientDirs, ...archivedClients] };
+}
+
+// ─── To-dos ───────────────────────────────────────────────────────────────────────────────────────
+
+interface TodoRec {
+  id: string;
+  scope: 'tds' | 'personal';
+  done: boolean;
+  title: string;
+  client: string | null;
+  assignee: string | null;
+  project: string | null;
+  stage: string | null;
+  /** The latest of created / assigned_at (and the done date), YYYY-MM-DD, or ''. */
+  lastActive: string;
+  /** completed_at, else completed (YYYY-MM-DD); null when neither (decision 26). */
+  doneDate: string | null;
+  version: string;
+}
+
+const day = (v: FrontmatterValue | undefined) => {
+  const s = text(v);
+  return s !== null && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null;
+};
+
+async function readTodoDir(
+  root: string,
+  rel: string,
+  scope: 'tds' | 'personal',
+  done: boolean,
+): Promise<TodoRec[]> {
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(join(root, ...rel.split('/')), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: TodoRec[] = [];
+  for (const e of entries) {
+    if (
+      !e.isFile() ||
+      !e.name.endsWith('.md') ||
+      e.name.startsWith('.') ||
+      RULES_FILES.has(e.name.toLowerCase())
+    )
+      continue;
+    let bytes: Buffer;
+    try {
+      bytes = await fs.readFile(join(root, ...rel.split('/'), e.name));
+    } catch {
+      continue;
+    }
+    const { data, body } = parseFrontmatter(bytes.toString('utf8'));
+    const h1 = /^#\s+(.+?)\s*$/m.exec(body);
+    const doneDate = done ? (day(data.completed_at) ?? day(data.completed)) : null;
+    const fileDate = /^(\d{4})(\d{2})(\d{2})-/.exec(e.name);
+    const dates = [day(data.created), day(data.assigned_at), doneDate].filter((d): d is string => d !== null);
+    if (dates.length === 0 && fileDate) dates.push(`${fileDate[1]}-${fileDate[2]}-${fileDate[3]}`);
+    out.push({
+      id: e.name,
+      scope,
+      done,
+      title: text(data.title) ?? (h1 ? (h1[1] as string) : e.name.replace(/\.md$/, '')),
+      client: text(data.client),
+      assignee: text(data.assignee),
+      project: text(data.project),
+      stage: text(data.stage),
+      lastActive: dates.sort().at(-1) ?? '',
+      doneDate,
+      version: sha256(bytes),
+    });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function readTodos(root: string): Promise<TodoRec[]> {
+  const [open, done, personal] = await Promise.all([
+    readTodoDir(root, 'todo', 'tds', false),
+    readTodoDir(root, 'todo/done', 'tds', true),
+    readTodoDir(root, 'personal/todo', 'personal', false),
+  ]);
+  return [...open, ...done, ...personal];
+}
+
+/** This person's own personal to-do (personal/todo/ is this Mac's; one for nobody counts as theirs). */
+const ownPersonal = (t: TodoRec, identity: Identity) => !t.assignee || t.assignee === identity.slug;
+
+// ─── The service ────────────────────────────────────────────────────────────────────────────────────
+
+function makeIndex(w: Walk, clients: string[]): ProjectsIndex {
+  const byKey = new Map(w.cards.map((c) => [c.key, c]));
+  return {
+    cards: w.cards,
+    byKey: (key) => byKey.get(key) ?? null,
+    keysForPath: (rel) =>
+      w.cards.filter((c) => rel.startsWith(`${c.folder}/`) || c.links.includes(rel)).map((c) => c.key),
+    resolve: (value, client, scope) => resolveTodoProject(value, client, scope, w.cards, clients),
+  };
+}
+
+export function createProjects(root: string, opts: ProjectsOptions): ProjectsService {
+  const now = opts.now ?? (() => new Date());
+  const git = opts.git ?? ((args: string[], cwd: string) => defaultGitRunner(args, cwd));
+  let indexCache: {
+    at: number;
+    value: Promise<{ index: ProjectsIndex; walk: Walk; clients: string[] }>;
+  } | null = null;
+  let todoCache: { at: number; value: Promise<TodoRec[]> } | null = null;
+  let memorySkips: string[] = [];
+
+  const fresh = (at: number) => now().getTime() - at < PROJECTS_STALE_MS;
+
+  const load = () => {
+    if (indexCache && fresh(indexCache.at)) return indexCache.value;
+    const value = (async () => {
+      const [w, infos] = await Promise.all([walk(root, git), opts.clients().catch(() => [] as ClientInfo[])]);
+      const clients = [...new Set([...infos.map((c) => c.slug), ...w.clients])];
+      return { index: makeIndex(w, clients), walk: w, clients };
+    })();
+    indexCache = { at: now().getTime(), value };
+    value.catch(() => {
+      if (indexCache?.value === value) indexCache = null;
+    });
+    return value;
+  };
+
+  const todos = () => {
+    if (todoCache && fresh(todoCache.at)) return todoCache.value;
+    const value = readTodos(root);
+    todoCache = { at: now().getTime(), value };
+    value.catch(() => {
+      if (todoCache?.value === value) todoCache = null;
+    });
+    return value;
+  };
+
+  const changed = () => {
+    indexCache = null;
+    todoCache = null;
+  };
+
+  // ── tidy-skips.json, in the app's data folder (never the brain) ──
+  const skipsPath = opts.dataDir ? join(opts.dataDir, TIDY_SKIPS_FILE) : null;
+  const readSkips = async (): Promise<string[]> => {
+    if (!skipsPath) return memorySkips;
+    try {
+      const labels: unknown = JSON.parse(await fs.readFile(skipsPath, 'utf8')).labels;
+      return Array.isArray(labels) ? labels.filter((l): l is string => typeof l === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+  const writeSkips = async (labels: string[]) => {
+    const sorted = [...new Set(labels)].sort();
+    if (!skipsPath || !opts.dataDir) {
+      memorySkips = sorted;
+      return;
+    }
+    await fs.mkdir(opts.dataDir, { recursive: true });
+    const tmp = `${skipsPath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tmp, `${JSON.stringify({ v: 1, labels: sorted }, null, 2)}\n`);
+    await fs.rename(tmp, skipsPath);
+  };
+
+  const tidyContext = (loaded: { walk: Walk; clients: string[] }): TidyContext => ({
+    projects: loaded.walk.cards,
+    clients: loaded.clients,
+  });
+
+  const tidyTodos = (all: TodoRec[], identity: Identity): TidyTodo[] =>
+    all
+      .filter((t) => !t.done && (t.scope === 'tds' || ownPersonal(t, identity)))
+      .map((t) => ({
+        id: t.id,
+        scope: t.scope,
+        title: t.title,
+        client: t.client,
+        assignee: t.assignee,
+        version: t.version,
+        project: t.project,
+        stage: t.stage,
+      }));
+
+  const rowsFor = async (identity: Identity) => {
+    const loaded = await load();
+    const ctx = tidyContext(loaded);
+    const pool = tidyTodos(await todos(), identity);
+    return { rows: buildTidyRows(pool, ctx), pool, ctx };
+  };
+
+  const tidy = async (identity: Identity): Promise<TidyList> => {
+    const [{ rows }, skipped] = await Promise.all([rowsFor(identity), readSkips()]);
+    return { rows: rows.filter((r) => !skipped.includes(r.label)), skipped: [...skipped].sort() };
+  };
+
+  const list = async (identity: Identity): Promise<ProjectList> => {
+    const loaded = await load();
+    const { index, walk: w } = loaded;
+    const all = await todos();
+    const cutoff = new Date(now().getTime() - TEAM_FROM_TODOS_DAYS * DAY_MS).toISOString().slice(0, 10);
+    const open = new Map<ProjectKey, number>();
+    const team = new Map<ProjectKey, Map<string, TeamFromTodo>>();
+    for (const t of all) {
+      if (t.scope === 'personal' && !ownPersonal(t, identity)) continue;
+      const key = matchedKey(index.resolve(t.project, t.client, t.scope));
+      if (key === null) continue;
+      if (!t.done) open.set(key, (open.get(key) ?? 0) + 1);
+      // Decision 26: TDS to-dos only, open or done within the window by their own done date.
+      if (t.scope !== 'tds' || !t.assignee) continue;
+      if (t.done && (t.doneDate === null || t.doneDate < cutoff)) continue;
+      const people = team.get(key) ?? new Map<string, TeamFromTodo>();
+      const entry = people.get(t.assignee) ?? { person: t.assignee, openTodos: 0, lastActive: '' };
+      if (!t.done) entry.openTodos += 1;
+      if (t.lastActive > entry.lastActive) entry.lastActive = t.lastActive;
+      people.set(t.assignee, entry);
+      team.set(key, people);
+    }
+    const projects = w.cards.map((c) => {
+      const named = new Set([...(c.owner ? [c.owner] : []), ...c.team]);
+      const fromTodos =
+        c.space === 'personal'
+          ? []
+          : [...(team.get(c.key)?.values() ?? [])]
+              .filter((p) => !named.has(p.person))
+              .sort(
+                (a, b) =>
+                  b.openTodos - a.openTodos ||
+                  b.lastActive.localeCompare(a.lastActive) ||
+                  a.person.localeCompare(b.person),
+              );
+      return { ...c, openTodos: open.get(c.key) ?? 0, teamFromTodos: fromTodos };
+    });
+    const [canChange, tidied] = await Promise.all([
+      opts.skill
+        .capabilities()
+        .then((f) => f.includes(PROJECTS_CAPABILITY))
+        .catch(() => false),
+      tidy(identity),
+    ]);
+    return {
+      projects,
+      canChange,
+      looseLabels: tidied.rows.length,
+      duplicates: w.duplicates,
+      skippedFolders: w.skippedFolders,
+    };
+  };
+
+  const change = async (action: ProjectAction, identity: Identity): Promise<ProjectList> => {
+    const bad = () =>
+      new ProjectsError('bad-request', "That change couldn't be saved. Check the details and try again.");
+    if (!action || typeof action !== 'object') throw bad();
+    if (!['create', 'card', 'edit', 'link', 'unlink'].includes(action.kind)) throw bad();
+    const caps = await opts.skill.capabilities().catch(() => [] as string[]);
+    if (!caps.includes(PROJECTS_CAPABILITY)) {
+      throw new ProjectsError('not-allowed', "Update the brain's skills to change projects.");
+    }
+    if ('key' in action) {
+      const card = (await load()).index.byKey(action.key);
+      if (card?.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
+      if (
+        card &&
+        action.kind === 'link' &&
+        card.space !== 'personal' &&
+        action.path.startsWith('personal/')
+      ) {
+        throw new ProjectsError(
+          'not-allowed',
+          "A shared project can't link a personal file: it would show the team something private.",
+        );
+      }
+    }
+    try {
+      await opts.skill.run(action);
+    } finally {
+      changed();
+    }
+    return list(identity);
+  };
+
+  const applyTidy = async (apply: TidyApply, identity: Identity): Promise<TidyList> => {
+    const bad = () =>
+      new ProjectsError('bad-request', "That change to the old label couldn't be made. Try again.");
+    if (!apply || typeof apply !== 'object' || typeof apply.label !== 'string') throw bad();
+    const label = apply.label.trim();
+    if (label === '' || label.length > LABEL_MAX) throw bad();
+    if (apply.do === 'skip' || apply.do === 'unskip') {
+      const skips = await readSkips();
+      await writeSkips(apply.do === 'skip' ? [...skips, label] : skips.filter((l) => l !== label));
+      return tidy(identity);
+    }
+    if (apply.do !== 'approve' || !apply.suggestion || typeof apply.suggestion !== 'object') throw bad();
+    const { rows, pool, ctx } = await rowsFor(identity);
+    const row = rows.find((r) => r.label === label);
+    if (!row) return tidy(identity);
+    const s: TidySuggestion = checkSuggestion(row.todos, apply.suggestion, ctx);
+    if (s.do === 'skip') {
+      await writeSkips([...(await readSkips()), label]);
+      return tidy(identity);
+    }
+    if (s.do === 'new-project') {
+      const title = /[A-Z ]/.test(label) && label.length <= PROJECT_TITLE_MAX ? label : folderTitle(s.slug);
+      try {
+        await opts.skill.run(
+          s.client === null
+            ? { kind: 'create', space: 'personal', slug: s.slug, fields: { title } }
+            : { kind: 'create', space: 'client', client: s.client, slug: s.slug, fields: { title } },
+        );
+      } catch (err) {
+        // Made meanwhile (another Mac, a sync): link to it instead.
+        if (!(err instanceof ProjectsError && err.code === 'exists')) throw err;
+      }
+      changed();
+    }
+    // The row's to-dos and its conflicts: a changed suggestion may take in a to-do the offered one left out.
+    const ids = new Set([
+      ...row.todos.map((t) => `${t.scope}:${t.id}`),
+      ...row.conflicts.flatMap((c) => [`tds:${c.id}`, `personal:${c.id}`]),
+    ]);
+    for (const t of pool) {
+      if (!ids.has(`${t.scope}:${t.id}`)) continue;
+      const target = tidyTarget(t, s);
+      if (target === null) continue;
+      try {
+        await opts.todoSkill.run({ kind: 'project', id: t.id, scope: t.scope, ...target, expect: t.version });
+      } catch (err) {
+        // The row is re-read below, so a to-do that changed meanwhile simply stays in it.
+        if (!(err instanceof TodoChangeError)) throw err;
+      }
+    }
+    changed();
+    return tidy(identity);
+  };
+
+  return {
+    index: async () => (await load()).index,
+    list,
+    change,
+    tidy,
+    applyTidy,
+    changed: () => changed(),
+  };
+}

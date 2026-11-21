@@ -1,8 +1,8 @@
 ---
 name: tdsapp-files
 description: Delete an image or document from the library the way TDS Cortex does, put a deleted file back, see what's been deleted, or add a new file to a client's (or your personal) Files or Images folder - through one small script that moves a deleted file into tdsapp-deleted/, keeps it for 30 days, then erases it, copies an added file in without overwriting anything, and writes every client delete, put-back, erase and add to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", "save this PDF to Acme's files", "add this image to the client's images", or asks to bin a client file or a template. Deletes: only client files (anyone on the team) and templates (the owner only). Not for to-dos (use tdsapp-todo). TDS Cortex also runs this script for its bin buttons, its daily clear-out and its to-do uploads.
-version: 0.2
-last_updated: 2026-11-16
+version: 0.3
+last_updated: 2026-11-21
 roles: owner, scout
 maturity: draft
 members: false
@@ -97,6 +97,10 @@ It says no rather than guessing. For `delete` and `restore`:
 - templates, unless you're the owner. Who you are comes from this Mac's git email (or name, when no
   email is set) in `.team-config/roles.json`, never from what the caller sends;
 - `CLAUDE.md`, `AGENTS.md` and `README.md` anywhere, and a client's `profile.md`;
+- deleting a project's own record inside `clients/<client>/projects/<project>/`: its card
+  (`project.md`), its contract terms (`retainer.md`) and anything in its `updates/` or `months/`
+  folders (since 0.3). Other files in a project folder delete as usual, and one deleted before 0.3
+  can still be put back;
 - anything that isn't an image or document the library lists (png, jpg, jpeg, webp, gif, avif, svg,
   pdf, md, txt, docx, html, htm, csv, xlsx, pptx);
 - folders, links, and paths that go through a link;

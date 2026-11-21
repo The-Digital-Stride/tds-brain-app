@@ -12,6 +12,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   truncateSync,
@@ -35,6 +36,7 @@ import {
   PROTECTED_NAMES,
   PURGE_AFTER_DAYS,
 } from '../../../shared/files-contract.ts';
+import { PROJECT_PROTECTED_NAMES } from '../../../shared/projects-contract.ts';
 
 const SCRIPT = fileURLToPath(new URL('./tdsapp-files.cjs', import.meta.url));
 const LIBRARY_RULES = fileURLToPath(new URL('../../../server/brain/library-rules.ts', import.meta.url));
@@ -56,6 +58,7 @@ interface FilesModule {
   HOLDING_ID_PATTERN: RegExp;
   PROTECTED_NAMES: string[];
   PROTECTED_CLIENT_FILES: string[];
+  PROJECT_PROTECTED_NAMES: string[];
   FILES_CAPABILITY: string;
   ADD_CAPABILITY: string;
   ADD_MAX_BYTES: number;
@@ -446,6 +449,44 @@ describe('delete', () => {
     expect(del('templates/profile.md').exit).toBe(0);
   });
 
+  // v0.3 (plan 2026-11-20-projects-system, decision 27): a project's own record is never deleted.
+  it("refuses a project's card, retainer terms, updates and months, in any letter case", () => {
+    const folder = 'clients/acme/projects/website';
+    for (const rel of [
+      `${folder}/project.md`,
+      `${folder}/Project.MD`,
+      `${folder}/retainer.md`,
+      `${folder}/updates/2026-11-21-1004-sam-example-a1b2c3.md`,
+      `${folder}/updates/old/note.md`,
+      `${folder}/months/2026-11.md`,
+      `${folder}/Months/2026-11.r2.md`,
+      `clients/acme/Projects/website/project.md`,
+    ]) {
+      put(rel);
+      expectRefused(del(rel), 'not-allowed');
+      expect(has(rel), rel).toBe(true);
+    }
+    expect(holdings()).toEqual([]);
+  });
+
+  it('still deletes other files in a project folder, and the same names elsewhere', () => {
+    for (const rel of [
+      'clients/acme/projects/website/brief.pdf',
+      'clients/acme/projects/website/reports/2026-11.pdf',
+      'clients/acme/projects/website/summary.md',
+      'clients/acme/projects/website/notes/project.md',
+      'clients/acme/projects/website/drafts/updates/a.md',
+      'clients/acme/project.md',
+      'clients/acme/updates/a.md',
+      'clients/acme/months/2026-11.md',
+      'clients/acme/projects/project.md',
+    ]) {
+      put(rel);
+      expect(del(rel).exit, rel).toBe(0);
+      expect(has(rel), rel).toBe(false);
+    }
+  });
+
   it('only deletes the image and document types the library lists', () => {
     for (const rel of [
       'clients/acme/a.json',
@@ -575,6 +616,21 @@ describe('restore', () => {
     expect(r.exit).toBe(0);
     return r.reply.holding as string;
   }
+
+  it("still puts back a project's card deleted before v0.3 (decision 27 guards deletes only)", () => {
+    const folder = 'clients/acme/projects/website';
+    const holding = deleted(`${folder}/old.md`, 'card');
+    // As an older script would have held it: the same record, naming project.md.
+    const dir = join(abs(HOLDING_DIR), holding);
+    renameSync(join(dir, ...`${folder}/old.md`.split('/')), join(dir, ...`${folder}/project.md`.split('/')));
+    const rec = record(holding);
+    writeFileSync(
+      join(dir, 'record.json'),
+      JSON.stringify({ ...rec, path: `${folder}/project.md` }, null, 2),
+    );
+    expect(call('restore', { holding }).exit).toBe(0);
+    expect(readFileSync(abs(`${folder}/project.md`), 'utf8')).toBe('card');
+  });
 
   it('puts the file back, logs it and removes the emptied holding folder', () => {
     const holding = deleted('clients/acme/reports/q3.pdf', 'q3');
@@ -835,10 +891,10 @@ describe('command line', () => {
     expect(r.json).toEqual({
       ok: true,
       action: 'capabilities',
-      version: '0.2',
+      version: '0.3',
       features: [FILES_CAPABILITY, 'files-add-v1'],
     });
-    expect(files.SCRIPT_VERSION).toBe('0.2');
+    expect(files.SCRIPT_VERSION).toBe('0.3');
   });
 
   it('deletes with exit 0 and refuses with exit 2', () => {
@@ -865,6 +921,10 @@ describe('command line', () => {
 });
 
 describe('constants', () => {
+  it('protect the project names the contract reserves', () => {
+    expect(files.PROJECT_PROTECTED_NAMES).toEqual([...PROJECT_PROTECTED_NAMES]);
+  });
+
   it('match the contract', () => {
     expect(files.PURGE_AFTER_DAYS).toBe(PURGE_AFTER_DAYS);
     expect(files.HOLDING_DIR).toBe(HOLDING_DIR);

@@ -11,7 +11,8 @@ import {
 import { api } from '../api.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { todoChatClient } from '../state/client-choice.ts';
+import { todoChatClient, useProjectChoice } from '../state/client-choice.ts';
+import { todoPlaceParts, useProjects } from '../state/projects.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
@@ -27,7 +28,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
-import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
+import { handoverMeta, todoChatDraft } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
@@ -168,6 +169,7 @@ function TodoRow({
   // screen-reader user who lands on it hears them too.
   const newId = useId();
   const metaId = useId();
+  const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
@@ -180,7 +182,7 @@ function TodoRow({
   if (from) parts.push({ text: from });
   if (showScope && todo.scope === 'personal') parts.push({ text: 'Personal', icon: 'lock' });
   if (due) parts.push({ text: due, late: overdue });
-  for (const text of todoPlaces(todo, boot?.clients ?? [])) parts.push({ text });
+  for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
@@ -358,6 +360,7 @@ export function TodosDrawer() {
     clearReveal,
     toggleFavouriteTodo,
   } = useStore();
+  const pickedProject = useProjectChoice();
   const favs = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
@@ -528,6 +531,8 @@ export function TodosDrawer() {
     scope: showKind ? filter.scope : 'all',
     client:
       showClient && filter.client !== null && clientSlugs.includes(filter.client) ? filter.client : null,
+    // The app-wide picker's project narrows the drawer too (projects plan, decision 11).
+    project: pickedProject || null,
   };
   const filtering = filterActive(active);
   const shown = filterTodos(items, active, clients);

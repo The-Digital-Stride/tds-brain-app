@@ -95,6 +95,23 @@ import {
 } from '../../shared/levels-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import {
+  PROJECT_BRIEF_MAX,
+  PROJECT_KEY_PATTERN,
+  PROJECT_KEY_SEGMENT_MAX,
+  PROJECT_SLUG_MAX,
+  PROJECT_SLUG_PATTERN,
+  PROJECT_STAGE_MAX,
+  PROJECT_STAGES_MAX,
+  PROJECT_TEAM_MAX,
+  PROJECT_TITLE_MAX,
+  PROJECTS_ERROR_STATUS,
+  type ProjectAction,
+  type ProjectFields,
+  ProjectsError,
+  type TidyApply,
+  type TidySuggestion,
+} from '../../shared/projects-contract.ts';
+import {
   UPDATE_CHECK_EVERY_MS,
   UpdateRefused,
   type Updater,
@@ -726,7 +743,7 @@ const TODO_SWITCHED_OFF =
 /** Each action's fields besides `kind`: required text, text or null, optional text, or optional `true`. */
 const TODO_SHAPES: Record<
   TodoAction['kind'],
-  Record<string, 'text' | 'text-or-null' | 'optional-text' | 'optional-true'>
+  Record<string, 'text' | 'text-or-null' | 'optional-text' | 'optional-text-or-null' | 'optional-true'>
 > = {
   add: {
     title: 'text',
@@ -734,6 +751,10 @@ const TODO_SHAPES: Record<
     assignee: 'text-or-null',
     scope: 'optional-text',
     details: 'optional-text',
+    // Projects R1: only with TodoList.canProject (checked by changeTodo).
+    client: 'optional-text-or-null',
+    project: 'optional-text-or-null',
+    stage: 'optional-text-or-null',
   },
   edit: {
     id: 'text',
@@ -747,9 +768,18 @@ const TODO_SHAPES: Record<
   due: { id: 'text', due: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
   assignee: { id: 'text', assignee: 'text-or-null', expect: 'optional-text', scope: 'optional-text' },
   delete: { id: 'text', expect: 'optional-text', scope: 'optional-text' },
-  move: { id: 'text', scope: 'text', to: 'text', expect: 'optional-text' },
+  move: { id: 'text', scope: 'text', to: 'text', expect: 'optional-text', dropProject: 'optional-true' },
   attach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
   detach: { id: 'text', path: 'text', expect: 'optional-text', scope: 'optional-text' },
+  // Projects R1 (decisions 5, 6): client, project and stage are all sent; null clears.
+  project: {
+    id: 'text',
+    client: 'text-or-null',
+    project: 'text-or-null',
+    stage: 'text-or-null',
+    expect: 'optional-text',
+    scope: 'optional-text',
+  },
 };
 
 const isTodoScope = (v: unknown): v is TodoScope => v === 'tds' || v === 'personal';
@@ -768,17 +798,324 @@ export function parseTodoAction(body: unknown): TodoAction {
   const action: Record<string, unknown> = { kind: body.kind };
   for (const [key, type] of Object.entries(shape)) {
     const v = body[key];
-    if ((type === 'optional-text' || type === 'optional-true') && v === undefined) continue;
+    if (
+      (type === 'optional-text' || type === 'optional-text-or-null' || type === 'optional-true') &&
+      v === undefined
+    )
+      continue;
     if (type === 'optional-true') {
       if (v !== true) throw bad();
       action[key] = v;
       continue;
     }
-    if (!(typeof v === 'string' || (type === 'text-or-null' && v === null))) throw bad();
+    if (
+      !(
+        typeof v === 'string' ||
+        ((type === 'text-or-null' || type === 'optional-text-or-null') && v === null)
+      )
+    )
+      throw bad();
     if ((key === 'scope' || key === 'to') && !isTodoScope(v)) throw bad();
     action[key] = v;
   }
   return action as unknown as TodoAction;
+}
+
+// ---------------------------------------------------------------------------
+// Projects (plan 2026-11-20-projects-system, decisions 10, 7, 13). The route checks shapes, sizes and the
+// words a field may hold; the service and the brain's script check the rest, again.
+// ---------------------------------------------------------------------------
+
+const PROJECTS_BAD_REQUEST = "That wasn't understood. Check it and try again.";
+const PROJECTS_NOT_THERE = 'Projects are not available in this copy of the brain yet.';
+const PROJECTS_INTERNAL = "That didn't work. Try again, and tell a scout if it keeps happening.";
+const PROJECT_VERSION = /^[0-9a-f]{64}$/;
+const PROJECT_PATH_MAX = 1024;
+const PROJECT_LABEL_MAX = 200;
+const PROJECT_NAME_MAX = 120;
+
+const projectBad = () => new HttpError(400, 'bad-request', PROJECTS_BAD_REQUEST);
+
+/** A key, checked as the contract says: the pattern, and each side at most PROJECT_KEY_SEGMENT_MAX. */
+export function isProjectKey(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 2 * PROJECT_KEY_SEGMENT_MAX + 1 || !PROJECT_KEY_PATTERN.test(v))
+    return false;
+  return v.split('/').every((seg) => seg.length <= PROJECT_KEY_SEGMENT_MAX);
+}
+
+const isSlug = (v: unknown): v is string =>
+  typeof v === 'string' && v.length <= PROJECT_SLUG_MAX && PROJECT_SLUG_PATTERN.test(v);
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+const textList = (v: unknown, count: number, each: number): boolean =>
+  Array.isArray(v) && v.length <= count && v.every((x) => isText(x, each) && x !== '');
+
+const FIELD_ENUMS = {
+  kind: ['one-off', 'ongoing'],
+  status: ['planned', 'active', 'on-hold', 'done'],
+  health: ['green', 'amber', 'red'],
+  comms: ['green', 'amber', 'red'],
+} as const;
+
+/** The fields of a create or edit: known names only, each the right type and size. */
+function parseProjectFields(v: unknown): ProjectFields {
+  if (!isRec(v)) throw projectBad();
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(v)) {
+    switch (key) {
+      case 'title':
+        if (!isText(value, PROJECT_TITLE_MAX)) throw projectBad();
+        break;
+      case 'brief':
+        if (!isText(value, PROJECT_BRIEF_MAX)) throw projectBad();
+        break;
+      case 'kind':
+      case 'status':
+      case 'health':
+      case 'comms': {
+        const allowed = FIELD_ENUMS[key] as readonly string[];
+        // `status` has no null (it is always one of the four); the other three clear with null.
+        if (!(typeof value === 'string' && allowed.includes(value)) && !(key !== 'status' && value === null))
+          throw projectBad();
+        break;
+      }
+      case 'owner':
+      case 'start':
+      case 'end':
+        if (!(value === null || isText(value, PROJECT_NAME_MAX))) throw projectBad();
+        break;
+      case 'team':
+        if (!textList(value, PROJECT_TEAM_MAX, PROJECT_NAME_MAX)) throw projectBad();
+        break;
+      case 'service':
+        if (!textList(value, PROJECT_TEAM_MAX, PROJECT_NAME_MAX)) throw projectBad();
+        break;
+      case 'stages':
+        if (!textList(value, PROJECT_STAGES_MAX, PROJECT_STAGE_MAX)) throw projectBad();
+        break;
+      case 'budgetHours':
+        if (!(value === null || (typeof value === 'number' && Number.isFinite(value)))) throw projectBad();
+        break;
+      case 'billable':
+        if (!(value === null || typeof value === 'boolean')) throw projectBad();
+        break;
+      default:
+        throw projectBad();
+    }
+    out[key] = value;
+  }
+  return out as ProjectFields;
+}
+
+/** Exactly the keys `allowed` (every one in `need`), nothing else. */
+function onlyKeys(body: Record<string, unknown>, allowed: string[], need: string[]): void {
+  for (const k of Object.keys(body)) if (!allowed.includes(k)) throw projectBad();
+  for (const k of need) if (body[k] === undefined) throw projectBad();
+}
+
+/**
+ * `POST ROUTES.projectsChange`: exactly one ProjectAction shape, no other fields. `capabilities` is the
+ * script's own probe and not something a page may send. The service checks the values again.
+ */
+export function parseProjectAction(body: unknown): ProjectAction {
+  if (!isRec(body) || typeof body.kind !== 'string') throw projectBad();
+  switch (body.kind) {
+    case 'create': {
+      onlyKeys(body, ['kind', 'space', 'client', 'slug', 'fields'], ['space', 'slug', 'fields']);
+      const { space, client, slug } = body;
+      if (space !== 'client' && space !== 'personal') throw projectBad();
+      if (!isSlug(slug)) throw projectBad();
+      if (client !== undefined && !isSlug(client)) throw projectBad();
+      const fields = parseProjectFields(body.fields);
+      if (typeof fields.title !== 'string' || fields.title.trim() === '') throw projectBad();
+      return {
+        kind: 'create',
+        space,
+        ...(client !== undefined ? { client } : {}),
+        slug,
+        fields: { ...fields, title: fields.title },
+      };
+    }
+    case 'card': {
+      onlyKeys(body, ['kind', 'key', 'fields'], ['key', 'fields']);
+      if (!isProjectKey(body.key)) throw projectBad();
+      return { kind: 'card', key: body.key, fields: parseProjectFields(body.fields) };
+    }
+    case 'edit': {
+      onlyKeys(body, ['kind', 'key', 'fields', 'expect'], ['key', 'fields', 'expect']);
+      if (!isProjectKey(body.key) || typeof body.expect !== 'string' || !PROJECT_VERSION.test(body.expect))
+        throw projectBad();
+      return { kind: 'edit', key: body.key, fields: parseProjectFields(body.fields), expect: body.expect };
+    }
+    case 'link':
+    case 'unlink': {
+      onlyKeys(body, ['kind', 'key', 'path', 'expect'], ['key', 'path', 'expect']);
+      if (
+        !isProjectKey(body.key) ||
+        typeof body.path !== 'string' ||
+        body.path === '' ||
+        body.path.length > PROJECT_PATH_MAX ||
+        typeof body.expect !== 'string' ||
+        !PROJECT_VERSION.test(body.expect)
+      )
+        throw projectBad();
+      return { kind: body.kind, key: body.key, path: body.path, expect: body.expect };
+    }
+    default:
+      throw projectBad();
+  }
+}
+
+/** One tidy suggestion: exactly the fields of its `do`, with `why` the one value that `do` has. */
+function parseTidySuggestion(v: unknown): TidySuggestion {
+  if (!isRec(v) || typeof v.do !== 'string') throw projectBad();
+  switch (v.do) {
+    case 'link':
+      onlyKeys(v, ['do', 'key', 'why'], ['key', 'why']);
+      if (!isProjectKey(v.key) || v.why !== 'same-slug') throw projectBad();
+      return { do: 'link', key: v.key, why: 'same-slug' };
+    case 'client-only':
+      onlyKeys(v, ['do', 'client', 'why'], ['client', 'why']);
+      if (!isSlug(v.client) || v.why !== 'is-a-client') throw projectBad();
+      return { do: 'client-only', client: v.client, why: 'is-a-client' };
+    case 'merge':
+      onlyKeys(v, ['do', 'into', 'why'], ['into', 'why']);
+      if (!isText(v.into, PROJECT_LABEL_MAX) || v.into === '' || v.why !== 'near-spelling')
+        throw projectBad();
+      return { do: 'merge', into: v.into, why: 'near-spelling' };
+    case 'clear':
+      onlyKeys(v, ['do', 'why'], ['why']);
+      if (v.why !== 'placeholder') throw projectBad();
+      return { do: 'clear', why: 'placeholder' };
+    case 'new-project':
+      onlyKeys(v, ['do', 'client', 'slug', 'why'], ['client', 'slug', 'why']);
+      if (!(v.client === null || isSlug(v.client)) || !isSlug(v.slug) || v.why !== 'no-match')
+        throw projectBad();
+      return { do: 'new-project', client: v.client, slug: v.slug, why: 'no-match' };
+    case 'skip':
+      onlyKeys(v, ['do', 'why'], ['why']);
+      if (v.why !== 'no-match') throw projectBad();
+      return { do: 'skip', why: 'no-match' };
+    default:
+      throw projectBad();
+  }
+}
+
+/** `POST ROUTES.projectsTidy`: a TidyApply: one old label, and approve (with the suggestion), skip or unskip. */
+export function parseTidyApply(body: unknown): TidyApply {
+  if (!isRec(body) || typeof body.do !== 'string') throw projectBad();
+  if (!isText(body.label, PROJECT_LABEL_MAX) || body.label === '') throw projectBad();
+  const label = body.label;
+  if (body.do === 'approve') {
+    onlyKeys(body, ['label', 'do', 'suggestion'], ['suggestion']);
+    return { label, do: 'approve', suggestion: parseTidySuggestion(body.suggestion) };
+  }
+  if (body.do === 'skip' || body.do === 'unskip') {
+    onlyKeys(body, ['label', 'do'], []);
+    return { label, do: body.do };
+  }
+  throw projectBad();
+}
+
+/** A ProjectsError becomes its status and plain message; anything else is logged and answered as a 500. */
+function projectsFailure(err: unknown, ctx: RouteContext, what: string): HttpError {
+  if (err instanceof HttpError) return err;
+  if (err instanceof ProjectsError) {
+    // `exists` is a clash like `changed`: the nearest API code (as for library deletes).
+    return new HttpError(
+      PROJECTS_ERROR_STATUS[err.code],
+      err.code === 'exists' ? 'changed' : err.code,
+      err.message,
+    );
+  }
+  ctx.log(`${what} failed unexpectedly.`);
+  return new HttpError(500, 'internal', PROJECTS_INTERNAL);
+}
+
+/** The four projects routes. Every one has already passed the security gate. */
+async function projectsRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  ctx: RouteContext,
+): Promise<void> {
+  const method = (req.method ?? 'GET').toUpperCase();
+  const path = url.pathname;
+  const identity = () => safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+  const missing = () => new HttpError(404, 'not-found', PROJECTS_NOT_THERE);
+
+  if (path === ROUTES.projects) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const list = ctx.brain.projects;
+    if (!list) throw missing();
+    try {
+      sendJson(res, 200, await list.call(ctx.brain, await identity()));
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'Reading the projects');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectsChange) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const action = parseProjectAction(body);
+    const change = ctx.brain.changeProject;
+    if (!change) throw missing();
+    try {
+      const list = await change.call(ctx.brain, action, await identity());
+      ctx.log(`Changed a project (${action.kind}).`);
+      sendJson(res, 200, list);
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'A project change');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectFiles) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    const kind = url.searchParams.get('kind');
+    if (!isProjectKey(key) || (kind !== 'image' && kind !== 'document')) throw projectBad();
+    const files = ctx.brain.projectFiles;
+    if (!files) throw missing();
+    try {
+      sendJson(res, 200, await files.call(ctx.brain, key, kind, await identity()));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's files");
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectsTidy) {
+    if (method === 'GET') {
+      const tidy = ctx.brain.tidy;
+      if (!tidy) throw missing();
+      try {
+        sendJson(res, 200, await tidy.call(ctx.brain, await identity()));
+      } catch (err) {
+        throw projectsFailure(err, ctx, 'Reading the tidy-up');
+      }
+      return;
+    }
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    // The tidy-up changes to-dos (a teammate's included), so it follows the same Settings switch.
+    const prefs = await ctx.store.get();
+    if (!prefs.directWrites) throw new HttpError(403, 'not-allowed', TODO_SWITCHED_OFF);
+    const apply = parseTidyApply(body);
+    const run = ctx.brain.applyTidy;
+    if (!run) throw missing();
+    try {
+      const list = await run.call(ctx.brain, apply, await identity());
+      ctx.log(`Tidied to-do projects (${apply.do}).`);
+      sendJson(res, 200, list);
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'The to-do tidy-up');
+    }
+    return;
+  }
+
+  throw new HttpError(404, 'not-found', 'There is nothing at that address.');
 }
 
 /**
@@ -1819,6 +2156,16 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (method !== 'GET') throw methodNotAllowed();
     const body: SyncStatus = await safe(ctx.brain.sync(), { lastSync: null });
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (
+    path === ROUTES.projects ||
+    path === ROUTES.projectsChange ||
+    path === ROUTES.projectFiles ||
+    path === ROUTES.projectsTidy
+  ) {
+    await projectsRoute(req, res, url, ctx);
     return;
   }
 

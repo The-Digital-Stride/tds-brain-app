@@ -3,6 +3,8 @@ import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { useProjectChoice } from '../../state/client-choice.ts';
+import { filterOptions, useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { useCopy } from './copy.ts';
 import { FIRST_SHOWN } from './library.ts';
@@ -38,6 +40,45 @@ export function LibraryBar<S extends LibraryState>({
   );
 }
 
+const ALL_PROJECTS = 'all';
+
+/**
+ * A project filter for one app (decision 11). While the app-wide picker holds a project it shows that
+ * project and is locked: change it from the picker.
+ */
+export function ProjectFilter({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  const { list } = useProjects();
+  const clients = useStore().boot?.clients ?? [];
+  const picked = useProjectChoice();
+  const cards = list?.projects ?? [];
+  if (cards.length === 0 && !picked) return null;
+  const options = [{ value: ALL_PROJECTS, label: 'All projects' }, ...filterOptions(cards, clients)];
+  return (
+    <>
+      <label className="visually-hidden" htmlFor={id}>
+        Project
+      </label>
+      <SearchSelect
+        id={id}
+        className="lib-client lib-project"
+        value={picked || value || ALL_PROJECTS}
+        options={options}
+        disabled={picked !== ''}
+        onChange={(v) => onChange(v === ALL_PROJECTS ? '' : v)}
+      />
+      {picked ? <span className="visually-hidden">Set by the project picker</span> : null}
+    </>
+  );
+}
+
 /** The first row of a library sheet: whose library, a search, then the app's own control. */
 export function LibraryTools({
   id,
@@ -48,6 +89,8 @@ export function LibraryTools({
   onQuery,
   searchLabel,
   placeholder,
+  project,
+  onProject,
   children,
 }: {
   /** Prefix for the field ids, e.g. "imgs". */
@@ -59,6 +102,9 @@ export function LibraryTools({
   onQuery: (query: string) => void;
   searchLabel: string;
   placeholder: string;
+  /** This app's own project filter (a ProjectKey, '' for none). Shown when `onProject` is given. */
+  project?: string;
+  onProject?: (key: string) => void;
   children?: ReactNode;
 }) {
   // A client's library is found by the client's codes and other names too ("UC"), as in every client picker.
@@ -93,6 +139,7 @@ export function LibraryTools({
         disabled={scopes.length === 0}
         onChange={onScope}
       />
+      {onProject ? <ProjectFilter id={`${id}-project`} value={project ?? ''} onChange={onProject} /> : null}
       <div className="lib-search">
         <Icon name="search" size={16} />
         <label className="visually-hidden" htmlFor={`${id}-search`}>

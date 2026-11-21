@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { ClientInfo, LibraryItem, Role } from '../../shared/contract.ts';
+import { LEGACY_PROJECTS_SCOPE, type ProjectCard } from '../../shared/projects-contract.ts';
 import { listClients } from './clients.ts';
 import { createBrainReaders } from './index.ts';
 import {
@@ -29,6 +30,7 @@ import {
   svgSize,
   versionOf,
 } from './library.ts';
+import type { ProjectsIndex } from './projects.ts';
 import { copyFixture, FIXTURE } from './test-helpers.ts';
 
 const temps: string[] = [];
@@ -1057,5 +1059,228 @@ describe('version and canDelete (plan 2026-11-15-delete-library-files)', () => {
     expect(isProtectedFile('clients/x/profile.md')).toBe(true);
     expect(isProtectedFile('clients/x/notes/profile.md')).toBe(false);
     expect(isProtectedFile('clients/x/logo.png')).toBe(false);
+  });
+});
+
+describe('projects in the library (projects R1, decisions 7 and 27)', () => {
+  /** A fake index over `cards`: by folder prefix or link, read afresh each time so a test can edit them. */
+  function fakeIndex(cards: Partial<ProjectCard>[]): () => Promise<ProjectsIndex> {
+    return async () => ({
+      cards: cards as ProjectCard[],
+      byKey: (key) => (cards.find((c) => c.key === key) as ProjectCard | undefined) ?? null,
+      keysForPath: (rel) =>
+        cards
+          .filter(
+            (c) =>
+              rel.toLowerCase().startsWith(`${c.folder?.toLowerCase()}/`) ||
+              (c.links ?? []).some((l) => l.toLowerCase() === rel.toLowerCase()),
+          )
+          .map((c) => c.key as string),
+      resolve: () => ({ how: 'none' }),
+    });
+  }
+  const web: Partial<ProjectCard> = {
+    key: 'acme-heating/web',
+    space: 'client',
+    client: 'acme-heating',
+    folder: `${ACME}projects/web`,
+    links: [],
+  };
+
+  function projectRoot() {
+    const root = copyFixture();
+    put(root, `${ACME}projects/web/brief.md`, '# Brief');
+    put(root, `${ACME}projects/web/mock.png`);
+    put(root, `${ACME}reports/r.md`, '# R');
+    put(root, 'templates/logo.png');
+    put(root, 'personal/secret.pdf');
+    put(root, 'projects/old-site/notes.md', '# Notes');
+    put(root, 'projects/old-site/hero.png');
+    return root;
+  }
+
+  it('fills projects by folder and by link when serving, never in the cached listing', async () => {
+    const root = projectRoot();
+    const cards = [{ ...web }];
+    let walks = 0;
+    const l = lib(root, { projects: fakeIndex(cards), onWalk: () => walks++ });
+    const first = await l.list('client:acme-heating');
+    const at = byPath(first?.items ?? []);
+    expect(at.get(`${ACME}projects/web/brief.md`)?.projects).toEqual(['acme-heating/web']);
+    expect(at.get(`${ACME}reports/r.md`)?.projects).toEqual([]);
+    // A card edit (a new link) shows at once, with no walk of that scope.
+    cards[0] = { ...web, links: [`${ACME}reports/r.md`] };
+    const second = await l.list('client:acme-heating');
+    expect(byPath(second?.items ?? []).get(`${ACME}reports/r.md`)?.projects).toEqual(['acme-heating/web']);
+    expect(walks).toBe(1);
+    // The one-file lookups and search are served the same way.
+    const hit = await l.itemForPath(`${ACME}reports/r.md`);
+    expect(hit?.item?.projects).toEqual(['acme-heating/web']);
+    const id = at.get(`${ACME}reports/r.md`)?.id as string;
+    expect((await l.file(id))?.item.projects).toEqual(['acme-heating/web']);
+    const found = await l.search('brief', 'document');
+    expect(found.hits.map((h) => h.item.projects)).toEqual([['acme-heating/web']]);
+  });
+
+  it('adds no projects when there is no index, or it fails', async () => {
+    const root = projectRoot();
+    const plain = await lib(root).list('client:acme-heating');
+    expect(plain?.items.every((i) => i.projects === undefined)).toBe(true);
+    const broken = lib(root, {
+      projects: async () => {
+        throw new Error('no index');
+      },
+    });
+    expect((await broken.list('client:acme-heating'))?.items.every((i) => i.projects === undefined)).toBe(
+      true,
+    );
+  });
+
+  it('lists the older projects folders as a read-only scope with no bin', async () => {
+    const root = projectRoot();
+    const l = lib(root, { deletion: async () => ({ role: 'owner' }), ignored: async () => new Set() });
+    expect(await l.scopes()).toContainEqual({
+      id: LEGACY_PROJECTS_SCOPE,
+      name: 'Older projects',
+      kind: 'shared',
+    });
+    const listing = await l.list(LEGACY_PROJECTS_SCOPE);
+    expect(listing?.items.map((i) => i.path).sort()).toEqual([
+      'projects/old-site/hero.png',
+      'projects/old-site/notes.md',
+    ]);
+    expect(listing?.groups).toEqual(['Old site']);
+    expect(listing?.items.some((i) => i.canDelete)).toBe(false);
+    // The same setup does give a client's files a bin.
+    const client = await l.list('client:acme-heating');
+    expect(client?.items.some((i) => i.canDelete)).toBe(true);
+    const id = listing?.items[0]?.id as string;
+    expect((await l.file(id))?.item.canDelete).toBeUndefined();
+  });
+
+  it('has no older projects scope when projects/ is missing, and marks it stale when it changes', async () => {
+    const root = copyFixture();
+    const l = lib(root);
+    expect((await l.scopes()).map((s) => s.id)).not.toContain(LEGACY_PROJECTS_SCOPE);
+    put(root, 'projects/a/x.md');
+    put(root, 'projects/b/y.md');
+    let walks = 0;
+    const live = lib(root, { onWalk: () => walks++ });
+    live.setLive('projects', true);
+    await live.list(LEGACY_PROJECTS_SCOPE);
+    await live.list(LEGACY_PROJECTS_SCOPE);
+    expect(walks).toBe(1);
+    live.changed('projects/a/z.md');
+    await live.list(LEGACY_PROJECTS_SCOPE);
+    expect(walks).toBe(2);
+    live.changed(null, 'projects');
+    await live.list(LEGACY_PROJECTS_SCOPE);
+    expect(walks).toBe(3);
+  });
+
+  it('never lists or finds the files a card keeps for itself', async () => {
+    const root = copyFixture();
+    for (const folder of ['projects/old', 'personal/projects/mine', `${ACME}projects/web`]) {
+      put(root, `${folder}/notes.md`, '# Notes');
+      put(root, `${folder}/project.md`, '# Card');
+      put(root, `${folder}/retainer.md`, '# Retainer');
+      put(root, `${folder}/updates/2026-11-20.md`, '# Update');
+      put(root, `${folder}/months/2026-11.md`, '# Month');
+      put(root, `${folder}/docs/project.md`, '# Kept: not at the top');
+    }
+    const l = lib(root);
+    const own: [string, string][] = [
+      [LEGACY_PROJECTS_SCOPE, 'projects/old'],
+      ['personal', 'personal/projects/mine'],
+      ['client:acme-heating', `${ACME}projects/web`],
+    ];
+    for (const [scope, folder] of own) {
+      const paths = ((await l.list(scope))?.items.map((i) => i.path) ?? []).filter((p) =>
+        p.startsWith(`${folder}/`),
+      );
+      expect(paths.sort(), scope).toEqual([`${folder}/docs/project.md`, `${folder}/notes.md`]);
+    }
+    const hits = (await l.search('project', 'document')).hits.map((h) => h.item.path);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.some((p) => /\/(retainer|project)\.md$/.test(p) && !p.includes('/docs/'))).toBe(false);
+    expect(hits.some((p) => p.includes('/updates/') || p.includes('/months/'))).toBe(false);
+    expect(await l.itemForPath('projects/old/project.md')).toBeNull();
+    expect(await l.itemForPath(`${ACME}projects/web/updates/2026-11-20.md`)).toBeNull();
+  });
+
+  describe('projectFiles', () => {
+    const card = (over: Partial<ProjectCard> = {}) => ({ ...web, ...over }) as ProjectCard;
+
+    it('spans scopes: the folder, plus each link that is listed now', async () => {
+      const root = projectRoot();
+      const l = lib(root, { projects: fakeIndex([web]) });
+      const out = await l.projectFiles(
+        card({ links: ['templates/logo.png', `${ACME}reports/r.md`, 'templates/gone.png'] }),
+        'image',
+      );
+      expect(out.items.map((i) => i.path).sort()).toEqual([
+        `${ACME}projects/web/mock.png`,
+        'templates/logo.png',
+      ]);
+      // The missing image is counted; the document link is simply not an image.
+      expect(out.hidden).toBe(1);
+      const docs = await l.projectFiles(
+        card({ links: [`${ACME}reports/r.md`, 'templates/logo.png'] }),
+        'document',
+      );
+      expect(docs.items.map((i) => i.path).sort()).toEqual([
+        `${ACME}projects/web/brief.md`,
+        `${ACME}reports/r.md`,
+      ]);
+      expect(docs.hidden).toBe(0);
+    });
+
+    it('serves the files with their projects, and each file once', async () => {
+      const root = projectRoot();
+      const c = card({ links: [`${ACME}projects/web/mock.png`] });
+      const l = lib(root, { projects: fakeIndex([c]) });
+      const out = await l.projectFiles(c, 'image');
+      expect(out.items).toHaveLength(1);
+      expect(out.items[0]?.projects).toEqual(['acme-heating/web']);
+    });
+
+    it("leaves out links that are gone or that would show someone's personal file, and counts them", async () => {
+      const root = projectRoot();
+      const l = lib(root);
+      const shared = await l.projectFiles(
+        card({ links: ['personal/secret.pdf', `${ACME}reports/gone.pdf`] }),
+        'document',
+      );
+      expect(shared.items.map((i) => i.path)).toEqual([`${ACME}projects/web/brief.md`]);
+      expect(shared.hidden).toBe(2);
+      // A personal project may link its own file.
+      const mine = card({
+        key: 'personal/plan',
+        space: 'personal',
+        client: null,
+        folder: 'personal/projects/plan',
+        links: ['personal/secret.pdf'],
+      });
+      const own = await l.projectFiles(mine, 'document');
+      expect(own.items.map((i) => i.path)).toEqual(['personal/secret.pdf']);
+      expect(own.hidden).toBe(0);
+    });
+
+    it('lists a legacy project folder from the older projects scope, and nothing for an archived folder', async () => {
+      const root = projectRoot();
+      put(root, 'projects-archive/done/old.md');
+      const l = lib(root);
+      const legacy = card({
+        key: 'the-digital-stride/old-site',
+        space: 'legacy',
+        folder: 'projects/old-site',
+        links: [],
+      });
+      expect((await l.projectFiles(legacy, 'image')).items.map((i) => i.path)).toEqual([
+        'projects/old-site/hero.png',
+      ]);
+      const archived = card({ folder: 'projects-archive/done', archived: true, links: [] });
+      expect(await l.projectFiles(archived, 'document')).toEqual({ items: [], hidden: 0 });
+    });
   });
 });

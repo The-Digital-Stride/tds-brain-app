@@ -4,6 +4,7 @@
  * without a disk. Paths here use forward slashes.
  */
 import type { DocFormat, LibraryKind, LibraryScope, LibraryView } from '../../shared/contract.ts';
+import { PROJECT_PROTECTED_NAMES } from '../../shared/projects-contract.ts';
 import { keepAcronyms } from '../../shared/words.ts';
 import { humanise } from './util.ts';
 
@@ -86,6 +87,34 @@ export function extOf(name: string): string {
 }
 
 /**
+ * Where a project folder's own name sits in a path (lower-case segments): `projects/<slug>`,
+ * `personal/projects/<slug>` or `clients/<client>/projects/<slug>`. The index of the segment after the
+ * slug, or -1 when the path is not inside a project folder.
+ */
+function afterProjectFolder(segs: string[]): number {
+  if (segs[0] === 'projects') return segs.length > 2 ? 2 : -1;
+  if (segs[0] === 'personal' && segs[1] === 'projects') return segs.length > 3 ? 3 : -1;
+  if (segs[0] === 'clients' && segs[2] === 'projects') return segs.length > 4 ? 4 : -1;
+  return -1;
+}
+
+/**
+ * True for the files a project's card keeps for itself (projects R1, decision 27): `project.md`,
+ * `retainer.md` and everything in `updates/` and `months/`, at the top of a project folder. They are the
+ * projects tool's, not documents, so no listing or search shows them and no link resolves to them.
+ */
+export function isProjectProtected(relFromRoot: string): boolean {
+  const segs = relFromRoot.toLowerCase().split('/');
+  const at = afterProjectFolder(segs);
+  if (at < 0) return false;
+  const first = segs[at] ?? '';
+  const isLast = at === segs.length - 1;
+  return (PROJECT_PROTECTED_NAMES as readonly string[]).some((n) =>
+    n.endsWith('/') ? first === n.slice(0, -1) : isLast && first === n,
+  );
+}
+
+/**
  * True for a path (from the brain's root) that must never be listed or served: any empty, `.` or
  * `..` segment, any name starting with a dot, `node_modules`, `clients/_*`, personal to-dos
  * (`personal/todo/` and its done and deleted folders: the To-dos drawer shows those), and inside a client a
@@ -99,6 +128,7 @@ export function isNeverListed(relFromRoot: string): boolean {
   }
   // Personal to-dos (TODO_PERSONAL_DIR) are to-dos, not documents. Shared ones (`todo/`) are in no scope.
   if (segs[0] === 'personal' && segs[1] === 'todo') return true;
+  if (isProjectProtected(relFromRoot)) return true;
   if (segs[0] === 'clients') {
     if (segs[1]?.startsWith('_')) return true;
     // The folders themselves count too, so a walk never goes into them.

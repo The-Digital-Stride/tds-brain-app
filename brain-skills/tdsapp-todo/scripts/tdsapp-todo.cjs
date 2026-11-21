@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-todo.cjs (v0.5) — change one loose to-do in todo/ (or personal/todo/), the way the
+// tdsapp-todo.cjs (v0.6) — change one loose to-do in todo/ (or personal/todo/), the way the
 // Workbench does, with fixes.
 //
 // A dependency-free port of the Workbench's to-do routes (tools/members/command-centre/server.cjs:
@@ -8,7 +8,8 @@
 // Workbench's. The plan behind v0.3 is the app repo's docs/plans/2026-11-13-todo-skill-fixes.md; the
 // weak spots it fixes are in the brain's os/tds-brain-app/change-requests.md (BCR-xx below). v0.4
 // follows docs/plans/2026-11-13-todo-handover-search-scope.md (decision 2); v0.5 follows
-// docs/plans/2026-11-16-todo-attachments.md (decisions 1, 2 and 8).
+// docs/plans/2026-11-16-todo-attachments.md (decisions 1, 2 and 8); v0.6 follows
+// docs/plans/2026-11-20-projects-system.md (decisions 5, 6, 7 and 8).
 //
 // Differences from the Workbench:
 //   - delete keeps the to-do in todo/deleted/, stamped with who, when and from where (BCR-05).
@@ -72,16 +73,32 @@
 //   The section's read rules mirror the app's shared/todo-files.ts; the app's tests and this
 //   script's run the same fixtures (shared/todo-files.fixtures.json).
 //
+// v0.6 differences (every new field optional; earlier calls give the same results):
+//   - capabilities: features add "todo-project-v1"; version "0.6".
+//   - project {file, scope?, client, project, stage, expect?} sets a to-do's client, project and
+//     stage together: each `client:`, `project:` and `stage:` line is replaced where it is, removed for
+//     null (or ''), or added before the closing `---`; every other byte is kept. `project` is a project
+//     key (<client>/<slug> or personal/<slug>) whose folder is there (clients/<client>/projects/<slug>,
+//     for the-digital-stride also projects/<slug> and projects-archive/<slug>, then
+//     clients/_archive/<client>/projects/<slug>; personal/projects/<slug>); `client` must be the key's
+//     client (none for a personal key); a stage needs a project. A TDS to-do can't take a personal/
+//     key: refused with 403 (the privacy rule), as is everything below that would leak one.
+//   - add takes optional `client`, `project` and `stage`, with the same checks, written after `due`.
+//   - move to TDS of a to-do whose `project:` is a personal/ key is refused (403) unless the request
+//     sends `dropProject: true`; then the moved copy loses its `project:` and `stage:` lines. Any
+//     other move still copies the bytes unchanged.
+//   - attach and detach also take files under projects/<project>/ (the legacy project folders).
+//
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs <command>
 //
-//   <command>  add | edit | due | assignee | delete | tick | move | attach | detach | roster | list |
-//              capabilities
+//   <command>  add | edit | due | assignee | delete | tick | move | attach | detach | project | roster |
+//              list | capabilities
 //   stdin      one JSON object: the Workbench route's request body, same field names (file, title,
 //              body, due, assignee), plus the optional fields above. roster and list need none ({}).
 //   stdout     one JSON line.
 //   exit 0     the success body (no `status`).
-//   exit 2     the error body plus `status` (400, 404, 409 or 500).
+//   exit 2     the error body plus `status` (400, 403, 404, 409 or 500).
 //              Invalid JSON, a non-object or an unknown command → 400.
 //
 // Brain root: BRAIN_ROOT, else four levels up from this file (scripts → tdsapp-todo → skills →
@@ -103,7 +120,9 @@ const BRAIN_ROOT = process.env.BRAIN_ROOT || path.resolve(__dirname, '..', '..',
 const TODO_DIR = path.join(BRAIN_ROOT, 'todo');
 // v0.4: personal to-dos, kept out of git by the brain's own ignore rules.
 const PERSONAL_DIR = path.join(BRAIN_ROOT, 'personal', 'todo');
-const SCRIPT_VERSION = '0.5';
+const SCRIPT_VERSION = '0.6';
+// v0.6: the capability the app looks for before it offers Project and Stage fields.
+const PROJECT_CAPABILITY = 'todo-project-v1';
 
 // WORKBENCH_AS=<name-slug> previews another person's list (server.cjs VIEW_AS).
 const VIEW_AS = /^[a-z0-9-]+$/.test(process.env.WORKBENCH_AS || '') ? process.env.WORKBENCH_AS : null;
@@ -721,7 +740,8 @@ const FILES_HEADING = /^##[ \t]+files[ \t]*$/i;
 const FILES_NEXT_HEADING = /^#{1,2}[ \t]/;
 // `- [name](path)` or `- [name](<path>)`, optionally followed by ` (only on <slug>'s Mac)`.
 const FILE_ITEM = /^[ \t]*[-*][ \t]+\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^\s()<>]+))\)(?:[ \t]+\(only on ([a-z0-9]+(?:-[a-z0-9]+)*)'s Mac\))?[ \t]*$/;
-const FILE_ROOTS = ['clients/', 'templates/', 'personal/'];
+// v0.6: projects/ too, for the legacy project folders.
+const FILE_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/'];
 // Where a new section goes: before the first of the sections this script writes after the details.
 const FILES_ANCHOR = /^##[ \t]+(?:title history|handover history|done \d{4}-\d{2}-\d{2}|deleted \d{4}-\d{2}-\d{2})[ \t]*$/i;
 
@@ -859,14 +879,15 @@ function extOf(name) {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-// The brain path a request names: under clients/<client>/, templates/ or personal/, written exactly
+// The brain path a request names: under clients/<client>/, projects/<project>/, templates/ or personal/, written exactly
 // as a link would resolve (so no `..`, `.`, empty part, backslash, colon, `%` or outer spaces).
 function filePathOf(body) {
   const rel = body.path;
   if (typeof rel !== 'string' || rel === '') throw new Refusal(400, 'path is required');
   if (rel.length > FILE_PATH_MAX) throw new Refusal(400, `path is too long (over ${FILE_PATH_MAX} characters)`);
-  if (resolveFilePath(rel) !== rel || (rel.startsWith('clients/') && rel.split('/').length < 3)) {
-    throw new Refusal(400, 'path must be a file under clients/<client>/, templates/ or personal/');
+  const deep = rel.startsWith('clients/') || rel.startsWith('projects/');
+  if (resolveFilePath(rel) !== rel || (deep && rel.split('/').length < 3)) {
+    throw new Refusal(400, 'path must be a file under clients/<client>/, projects/<project>/, templates/ or personal/');
   }
   return rel;
 }
@@ -1015,6 +1036,7 @@ function add(body, res) {
     assignee = open ? '' : assigneeOf(body);
   }
   const via = viaOf(body);
+  const placed = projectFieldsOf(body, scope);
   const dir = dirOfScope(scope);
 
   const d = new Date();
@@ -1032,6 +1054,7 @@ function add(body, res) {
   fm.push('title: ' + yamlText(title), 'created: ' + today);
   if (adder) fm.push('created_by: ' + adder);
   if (due) fm.push('due: ' + due);
+  for (const [key, value] of projectLines(placed)) if (value !== null) fm.push(`${key}: ${value}`);
   fm.push('source: ' + yamlText(via ? `added from ${via}` : 'added with the todo skill'));
   // Made for someone else: a handover, with nobody it came from.
   if (adder && assignee && assignee !== adder) {
@@ -1394,13 +1417,23 @@ function move(body, res) {
       ? 'only your own to-dos can be made personal'
       : 'only your own personal to-dos can be moved to TDS');
   }
+  // v0.6 (overseer B2): a private project name never goes to todo/, where git syncs it.
+  if (body.dropProject !== undefined && body.dropProject !== true) throw new Refusal(400, 'dropProject must be true');
+  let data = todo.bytes;
+  const placedIn = String(parseFrontmatter(stripBom(todo.text)).frontmatter.project || '').trim();
+  if (to === 'tds' && placedIn.startsWith('personal/')) {
+    if (body.dropProject !== true) {
+      throw new Refusal(403, 'this to-do is in a personal project: moving it to the team takes it out of that project');
+    }
+    data = Buffer.from(encodeFile(todo.shape, setFrontmatterLines(todo.text, [['project', null], ['stage', null]])), 'utf8');
+  }
   fs.mkdirSync(toDir, { recursive: true });
   requireInside(toDir, to === 'personal' ? PERSONAL_DIR : TODO_DIR);
   let name = file;
   for (let n = 2; ; n++) {
     try {
       if (to === 'personal') requireIgnored([path.join(toDir, name)]);
-      createFile(path.join(toDir, name), todo.bytes, todo.mode);
+      createFile(path.join(toDir, name), data, todo.mode);
       break;
     } catch (err) {
       if (err.code !== 'EEXIST' || n >= 1000) throw err;
@@ -1418,17 +1451,162 @@ function move(body, res) {
   res.json({ ok: true, file: name, moved: path.relative(BRAIN_ROOT, dest) });
 }
 
+// ---- projects (v0.6) ---------------------------------------------------------------------------
+//
+// The app's shared/projects-contract.ts has the key format and the folders; tdsapp-projects writes
+// the cards. This script only writes a to-do's own `client:`, `project:` and `stage:` lines.
+
+const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const KEY_PATTERN = /^(personal|[a-z0-9]+(-[a-z0-9]+)*)\/[a-z0-9]+(-[a-z0-9]+)*$/;
+const KEY_SEGMENT_MAX = 60;
+const STAGE_MAX = 40;
+const INTERNAL_CLIENT = 'the-digital-stride';
+const PRIVATE_PROJECT = "a team to-do can't be in a personal project";
+
+// Every folder a key may name, in the app's reader order.
+function projectFolders(client, slug) {
+  if (client === 'personal') return [`personal/projects/${slug}`];
+  const live = [`clients/${client}/projects/${slug}`];
+  if (client === INTERNAL_CLIENT) live.push(`projects/${slug}`, `projects-archive/${slug}`);
+  return [...live, `clients/_archive/${client}/projects/${slug}`];
+}
+
+function projectExists(client, slug) {
+  return projectFolders(client, slug).some((rel) => {
+    try {
+      return fs.statSync(path.join(BRAIN_ROOT, ...rel.split('/'))).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+// '' or null → null; otherwise the value, which must be text.
+function optionalText(value, name) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') throw new Refusal(400, `${name} must be text`);
+  return value;
+}
+
+// The client, project and stage a request sets, checked; all null when none are sent. A personal
+// key on a TDS to-do is refused with 403 (decision 8).
+function projectFieldsOf(body, scope) {
+  const client = optionalText(body.client, 'client');
+  const key = optionalText(body.project, 'project');
+  const rawStage = optionalText(body.stage, 'stage');
+  if (client !== null && (client === 'personal' || client.length > KEY_SEGMENT_MAX || !SLUG_PATTERN.test(client))) {
+    throw new Refusal(400, 'client must be a client folder name');
+  }
+  let stage = null;
+  if (rawStage !== null) {
+    if (/[\p{Cc}\p{Zl}\p{Zp}]/u.test(rawStage)) throw new Refusal(400, 'stage must be one line');
+    stage = rawStage.trim();
+    if (!stage) throw new Refusal(400, 'stage must not be blank');
+    if (stage.length > STAGE_MAX) throw new Refusal(400, `stage is too long (over ${STAGE_MAX} characters)`);
+    if (needsQuotes(stage) && stage.includes('"') && stage.includes("'")) {
+      throw new Refusal(400, "stage can't hold both kinds of quote mark");
+    }
+  }
+  if (key === null) {
+    if (stage !== null) throw new Refusal(400, 'a stage needs a project');
+    return { client, project: null, stage: null };
+  }
+  const at = key.indexOf('/');
+  if (!KEY_PATTERN.test(key) || at > KEY_SEGMENT_MAX || key.length - at - 1 > KEY_SEGMENT_MAX) {
+    throw new Refusal(400, 'project must be <client>/<project> or personal/<project>');
+  }
+  const owner = key.slice(0, at);
+  const slug = key.slice(at + 1);
+  if (owner === 'personal') {
+    if (scope === 'tds') throw new Refusal(403, PRIVATE_PROJECT);
+    if (client !== null) throw new Refusal(400, 'a personal project has no client');
+  } else if (client !== owner) {
+    throw new Refusal(400, `client must be the project's client (${owner})`);
+  }
+  if (!projectExists(owner, slug)) throw new Refusal(400, 'there is no project ' + key);
+  return { client, project: key, stage };
+}
+
+// The three lines as [key, written value or null].
+function projectLines(placed) {
+  return [
+    ['client', placed.client],
+    ['project', placed.project],
+    ['stage', placed.stage === null ? null : yamlText(placed.stage)],
+  ];
+}
+
+// `text` (plain \n lines) with each [key, value] frontmatter line set: replaced where it is (with any
+// continuation lines and later copies dropped), removed for null, or added after the line set just
+// before it, else before the closing `---`. No frontmatter block: one is added when there is a value.
+function setFrontmatterLines(text, pairs) {
+  if (!/^---\n/.test(text)) {
+    const set = pairs.filter(([, v]) => v !== null);
+    if (set.length === 0) return text;
+    return `---\n${set.map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n\n` + text;
+  }
+  const lines = text.split('\n');
+  if (closingLine(lines) === -1) throw new Refusal(500, 'unterminated frontmatter');
+  let after = -1;
+  for (const [key, value] of pairs) {
+    const keyLine = new RegExp(`^${key}\\s*:`);
+    let close = closingLine(lines);
+    let idx = -1;
+    for (let i = 1; i < close; i++) {
+      if (!keyLine.test(lines[i])) continue;
+      // The line and its continuation lines (indented or "- item"), as stampRecord drops them.
+      let end = i + 1;
+      while (end < close && lines[end].trim() !== '' && (/^\s/.test(lines[end]) || /^-\s/.test(lines[end]))) end++;
+      if (idx === -1) {
+        idx = i;
+        lines.splice(i + 1, end - i - 1);
+      } else {
+        lines.splice(i, end - i);
+        i--;
+      }
+      close = closingLine(lines);
+    }
+    if (idx !== -1) {
+      if (value === null) {
+        lines.splice(idx, 1);
+        if (after >= idx) after--;
+        continue;
+      }
+      lines[idx] = `${key}: ${value}`;
+      after = idx;
+    } else if (value !== null) {
+      const at = after !== -1 ? after + 1 : close;
+      lines.splice(at, 0, `${key}: ${value}`);
+      after = at;
+    }
+  }
+  return lines.join('\n');
+}
+
+// project: { file, scope?, client, project, stage, expect? } → the three lines set together.
+function project(body, res) {
+  const file = fileOf(body);
+  const scope = scopeValue(body.scope, 'scope');
+  const placed = projectFieldsOf(body, scope);
+  const todo = openTodo(dirOfScope(scope), file, expectOf(body), true);
+  replaceTodo(todo, setFrontmatterLines(todo.text, projectLines(placed)));
+  res.json({ ok: true, file, client: placed.client, project: placed.project, stage: placed.stage });
+}
+
 // capabilities: {} → what this script can do, so a caller can tell v0.4 from v0.3 (which answers
-// "unknown command"), v0.5 ("attach") from v0.4, and whether personal to-dos are safe to use here.
+// "unknown command"), v0.5 ("attach") from v0.4, v0.6 ("todo-project-v1") from v0.5, and whether
+// personal to-dos are safe to use here.
 function capabilities(body, res) {
-  const features = ['handover', 'attach'];
+  const features = ['handover', 'attach', PROJECT_CAPABILITY];
   if (!personalProblem()) features.push('scope');
   res.json({ version: SCRIPT_VERSION, features });
 }
 
 // ---- command line -----------------------------------------------------------
 
-const COMMANDS = { add, edit, due, assignee, delete: remove, tick, move, attach, detach, roster, list, capabilities };
+const COMMANDS = {
+  add, edit, due, assignee, delete: remove, tick, move, attach, detach, project, roster, list, capabilities,
+};
 
 function finish(code, body) {
   const out = code === 200 ? body : Object.assign({}, body, { status: code });

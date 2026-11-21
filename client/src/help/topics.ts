@@ -9,6 +9,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'skills',
   'documents',
   'images',
+  'projects',
   // Phase 2
   'why-cortex',
   'a-day-with-cortex',

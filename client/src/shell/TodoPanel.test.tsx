@@ -884,3 +884,60 @@ describe('asked of others', () => {
     expect(within(panel).queryByRole('button', { name: 'History' })).toBeNull();
   });
 });
+
+describe('projects in the panel', () => {
+  const withProjects = (mine: TodoItem[]) => {
+    setStore('on', mine);
+    const s = store.current as { todos: TodoList };
+    store.current = { ...s, todos: { ...s.todos, canProject: true, canUsePersonal: true } };
+  };
+  const privateTodo = () =>
+    todo('p.md', 'Diary job', {
+      scope: 'personal',
+      key: 'personal/p.md',
+      project: 'personal/diary',
+      projectMatch: { how: 'key', key: 'personal/diary' },
+    });
+
+  it('asks before moving a to-do out of a private project, then sends dropProject', async () => {
+    withProjects([privateTodo()]);
+    mount();
+    await open('Diary job');
+    edit();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: 'TDS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText(
+        'This to-do is in a private project. Moving it to the team removes it from that project.',
+      ),
+    ).toBeTruthy();
+    expect(changeTodos).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Move to the team' }));
+    await waitFor(() => expect(changeTodos).toHaveBeenCalledTimes(1));
+    expect(changeTodos).toHaveBeenCalledWith([
+      { kind: 'move', id: 'p.md', scope: 'personal', to: 'tds', dropProject: true, expect: 'v1' },
+    ]);
+  });
+
+  it('Cancel on the question keeps the editor and sends nothing', async () => {
+    withProjects([privateTodo()]);
+    mount();
+    await open('Diary job');
+    edit();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: 'TDS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText(/private project/);
+    const question = screen.getByText(/private project/).closest('fieldset') as HTMLElement;
+    fireEvent.click(within(question).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/private project/)).toBeNull();
+    expect(changeTodos).not.toHaveBeenCalled();
+  });
+
+  it('shows no Project field when the server cannot save one', async () => {
+    setStore('on', [todo('a.md', 'First')]);
+    mount();
+    await open('First');
+    edit();
+    expect(screen.queryByLabelText('Project')).toBeNull();
+  });
+});

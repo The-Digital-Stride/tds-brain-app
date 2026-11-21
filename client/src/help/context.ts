@@ -35,6 +35,8 @@ function pick(ctx: HelpContext): string {
       return 'documents';
     case 'app:images':
       return 'images';
+    case 'app:projects':
+      return 'projects';
     default:
       return HELP_FALLBACK_ID;
   }

@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { openLibraryItem, warmLibrarySearch } from '../apps/shared/search.ts';
 import { helpVisible } from '../help/visibility.ts';
+import { projectChoice } from '../state/client-choice.ts';
 import {
   asyncLooking,
   asyncPending,
@@ -12,6 +13,7 @@ import {
   type SearchGroup,
   useAsyncSearch,
 } from '../state/palette.ts';
+import { useProjects } from '../state/projects.ts';
 import { useStore } from '../store.tsx';
 import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
@@ -53,6 +55,7 @@ function PaletteDialog() {
     openTool,
     ads,
   } = useStore();
+  const { list: projectList } = useProjects();
   const [query, setQuery] = useState('');
   // The highlighted option by id, not position: results arriving or changing never move it.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -83,8 +86,9 @@ function PaletteDialog() {
       helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
       hasSkillLevels: Boolean(skillLevels),
       ads,
+      ...(projectList ? { projects: projectList.projects } : {}),
     }),
-    [boot, todos, sessions, ads, skillLevels],
+    [boot, todos, sessions, ads, skillLevels, projectList],
   );
   const slots = useAsyncSearch(sources, q);
   const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
@@ -195,6 +199,11 @@ function PaletteDialog() {
       dispatch({ type: 'open-drawer', drawer });
     },
     goHome: () => newChat(),
+    filterToProject: (key) => {
+      // Home shows the narrowed lists; the chat box there takes the keyboard.
+      projectChoice.set(key);
+      newChat();
+    },
     openHelp: (id) => {
       // The drawer takes focus itself.
       skipRestore.current = true;

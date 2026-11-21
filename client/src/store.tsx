@@ -43,6 +43,7 @@ import { type ChatAction, type ChatState, chatReducer, initialChatState } from '
 import { needsCloseConfirm } from './state/close.ts';
 import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
 import type { ListState } from './state/health.ts';
+import { projectsStore } from './state/projects.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
 import { loadAdsSummary } from './tools/ad-manager/summary.ts';
@@ -1066,6 +1067,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { done, error, ...(latest ? { todos: latest } : {}), ...found() };
         }
       }
+      // Open-to-do counts and teams on the project cards moved with this save.
+      if (actions.some((a) => a.kind === 'project' || (a.kind === 'add' && a.project) || a.kind === 'move'))
+        void projectsStore.refresh();
       return { done, ...(latest ? { todos: latest } : {}), ...found() };
     },
     [renameFavouriteTodo],

@@ -8,6 +8,7 @@
 import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { dueInWords } from '../format.ts';
 import { helpLibrary } from '../help/library.ts';
+import { projectText, todoPlaceParts } from '../state/projects.ts';
 import { matchRank } from '../state/search-match.ts';
 import { APPS } from './apps.ts';
 import type {
@@ -21,7 +22,7 @@ import type {
 } from './contract.ts';
 import { SECTIONS } from './sections.ts';
 import { visibleSettingsTabs } from './settings-tabs.ts';
-import { placeName, todoPlaces, whenWords } from './words.ts';
+import { placeName, whenWords } from './words.ts';
 
 /** Hits shown per group; the heading says "6 of N" when there are more. */
 export const SEARCH_GROUP_MAX = 6;
@@ -101,7 +102,7 @@ const DRAWERS: Record<
           ({ todo }) => ({
             title: todo.title,
             // The words the row shows: client and project by name, never a folder name.
-            fields: [todo.details, ...todoPlaces(todo, ctx.clients)],
+            fields: [todo.details, ...todoPlaceParts(todo, ctx.projects, ctx.clients)],
           }),
           ({ todo, isOpen }) => todoHit(todo, isOpen, ctx),
           (a, b) => soonest(a.todo, b.todo),
@@ -182,7 +183,7 @@ const skillHit = (skill: SkillInfo): SearchHit => ({
 
 function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit {
   const hint = [
-    todoPlaces(todo, ctx.clients)[0],
+    todoPlaceParts(todo, ctx.projects, ctx.clients)[0],
     isOpen ? 'Open to anyone' : null,
     todo.due ? dueInWords(todo.due) : null,
     todo.scope === 'personal' ? 'Personal' : null,
@@ -197,6 +198,41 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
     run: (a) => a.revealTodo(todo),
   };
 }
+
+/**
+ * Projects (decision 14): matched on title, the client's name and aliases, and the slug. Archived projects
+ * are left out. Choosing one sets the picker ("Filter to this project"), which narrows Home, To-dos,
+ * Images, Documents and search.
+ */
+const projects: SearchSource = {
+  id: 'projects',
+  title: 'Projects',
+  search: (query, ctx) =>
+    ranked(
+      query,
+      (ctx.projects ?? []).filter((p) => !p.archived),
+      (p) => {
+        const client = ctx.clients.find((c) => c.slug === p.client);
+        return {
+          title: p.title || p.slug,
+          fields: [
+            p.slug,
+            p.slug.replace(/-/g, ' '),
+            client?.name ?? p.client ?? '',
+            ...(client?.aliases ?? []),
+          ],
+        };
+      },
+      (p) => ({
+        id: p.key,
+        label: projectText(p, ctx.clients),
+        hint: 'Filter to this project',
+        icon: 'bullets',
+        run: (a) => a.filterToProject?.(p.key),
+      }),
+      (a, b) => b.openTodos - a.openTodos,
+    ),
+};
 
 /**
  * Help is a drawer with nothing inside to search, so it has a "Go to" entry and no source. Shown only where Help is
@@ -330,7 +366,7 @@ const help: SearchSource = {
 };
 
 /**
- * Every source, in group order: Go to, To-dos, Open chats, Skills, Clients, Earlier chats, Help, then the apps'
+ * Every source, in group order: Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats, Help, then the apps'
  * (`AppSlot.search`). Async sources go last whatever their place, so a late answer never moves the highlight.
  * Built each time it is called, so it follows `APPS`.
  */
@@ -341,6 +377,7 @@ export function searchSources(): SearchSource[] {
     DRAWERS.chats.source,
     DRAWERS.skills.source,
     clients,
+    projects,
     earlierChats,
     help,
     ...APPS.flatMap((a) => (a.search ? [a.search] : [])),

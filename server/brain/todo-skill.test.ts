@@ -27,6 +27,7 @@ import {
   findTodoSkill,
   scriptPayload,
   TODO_CHANGE_MESSAGES,
+  TODO_PRIVATE_PROJECT_MESSAGE,
   type TodoSpawner,
 } from './todo-skill.ts';
 
@@ -647,5 +648,79 @@ describe('release 3: attach, detach, add body and edit keep_files payloads', () 
         body: 'D',
       },
     );
+  });
+});
+
+describe('v0.6: project, add with a project and move with dropProject (projects R1)', () => {
+  const EXPECT = 'c'.repeat(64);
+  const by = { name: 'Sam Example', slug: 'sam-example' };
+
+  it('sends the project action with all three fields, empty for none', () => {
+    expect(
+      scriptPayload({
+        kind: 'project',
+        id: 'a.md',
+        client: 'acme',
+        project: 'acme/website',
+        stage: 'Build',
+        expect: EXPECT,
+      }),
+    ).toEqual({ file: 'a.md', client: 'acme', project: 'acme/website', stage: 'Build', expect: EXPECT });
+    expect(
+      scriptPayload({
+        kind: 'project',
+        id: 'a.md',
+        scope: 'personal',
+        client: null,
+        project: null,
+        stage: null,
+      }),
+    ).toEqual({ file: 'a.md', client: '', project: '', stage: '', scope: 'personal' });
+  });
+
+  it('adds project fields to add only when set, so an add without them is unchanged', () => {
+    const plain = scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'jo' });
+    expect(
+      scriptPayload({ kind: 'add', title: 'T', due: null, assignee: 'jo', client: null, project: null }),
+    ).toEqual(plain);
+    expect(
+      scriptPayload({
+        kind: 'add',
+        title: 'T',
+        due: null,
+        assignee: 'jo',
+        client: 'acme',
+        project: 'acme/x',
+        stage: 'S',
+      }),
+    ).toEqual({ ...plain, client: 'acme', project: 'acme/x', stage: 'S' });
+  });
+
+  it('sends dropProject on a move only when it is true', () => {
+    const move = { kind: 'move', id: 'a.md', scope: 'personal', to: 'tds' } as const;
+    expect(scriptPayload(move, by)).not.toHaveProperty('dropProject');
+    expect(scriptPayload({ ...move, dropProject: true as const }, by)).toMatchObject({ dropProject: true });
+  });
+
+  it("runs the 'project' command, and maps the script's 403 to not-allowed with the privacy message", async () => {
+    const ok = setup();
+    const runner = createTodoSkillRunner(ok.root, { env: ok.env });
+    await runner.run({ kind: 'project', id: 'a.md', client: 'acme', project: 'acme/x', stage: null });
+    expect(readLog(ok.log)[0]?.argv.slice(1)).toEqual(['project']);
+    const refused = setup({
+      exit: 2,
+      out: '{"error":"a team to-do can\'t be in a personal project","status":403}\n',
+    });
+    expect(
+      await codeOf(
+        createTodoSkillRunner(refused.root, { env: refused.env }).run({
+          kind: 'project',
+          id: 'a.md',
+          client: null,
+          project: 'personal/jev',
+          stage: null,
+        }),
+      ),
+    ).toEqual({ code: 'not-allowed', message: TODO_PRIVATE_PROJECT_MESSAGE });
   });
 });

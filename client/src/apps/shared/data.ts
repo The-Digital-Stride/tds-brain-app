@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LibraryItem, LibraryKind, LibraryScope } from '../../../../shared/contract.ts';
 import { api } from '../../api.ts';
+import { useProjectChoice } from '../../state/client-choice.ts';
 import { useStore } from '../../store.tsx';
 import { pickScope } from './library.ts';
 import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
@@ -77,6 +78,13 @@ export interface LibraryData {
   /** The server's card order, for the whole scope. */
   order: string[];
   truncated: boolean;
+  /**
+   * The project the list is narrowed to (the picker's, else the app's own filter), '' for none. While
+   * one is set the items come from `api.projectFiles`: a project's files span library scopes.
+   */
+  project: string;
+  /** Links the person cannot see, left out of a project's files. */
+  hiddenLinks: number;
 }
 
 const NONE: LibraryItem[] = [];
@@ -94,8 +102,15 @@ export function useLibraryData<S extends LibraryState>(
   const scopesLoad = useLoaded('scopes', libraryVersion, () => api.libraryScopes());
   const scopes = scopesLoad.data ?? [];
   const scope = pickScope(scopes, boot?.prefs.lastClient ?? null, s.scope);
-  const listing = useLoaded(scopesLoad.status === 'ready' && scope ? scope : null, libraryVersion, () =>
-    api.library(scope),
+  const pickerProject = useProjectChoice();
+  const project = pickerProject || s.project || '';
+  const listing = useLoaded(
+    !project && scopesLoad.status === 'ready' && scope ? scope : null,
+    libraryVersion,
+    () => api.library(scope),
+  );
+  const projectFiles = useLoaded(project ? `${project}|${kind}` : null, libraryVersion, () =>
+    api.projectFiles(project, kind),
   );
 
   // Hold the library the screen fell back to, so choosing that same client later drops nothing.
@@ -104,10 +119,31 @@ export function useLibraryData<S extends LibraryState>(
     if (ready && scope && scope !== store.get().scope) store.settle(scope);
   }, [ready, scope, store]);
 
-  const own = listing.data;
-  const items = own ? own.items.filter((i) => i.kind === kind) : NONE;
+  const own = project ? null : listing.data;
+  const byProject = project ? projectFiles.data : null;
+  const items = own
+    ? own.items.filter((i) => i.kind === kind)
+    : byProject
+      ? byProject.items.filter((i) => i.kind === kind)
+      : NONE;
   const base = { scopes, scope, scopeName: scopes.find((x) => x.id === scope)?.name ?? '' };
-  const done = { items, order: own?.groups ?? [], truncated: own?.truncated ?? false };
+  const done = {
+    items,
+    order: own?.groups ?? [],
+    truncated: own?.truncated ?? false,
+    project,
+    hiddenLinks: byProject?.hidden ?? 0,
+  };
+
+  if (project) {
+    return {
+      ...base,
+      ...done,
+      status: projectFiles.status,
+      message: projectFiles.message,
+      retry: projectFiles.retry,
+    };
+  }
 
   if (scopesLoad.status !== 'ready') {
     return {

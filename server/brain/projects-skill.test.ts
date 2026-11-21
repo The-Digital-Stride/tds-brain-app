@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -12,11 +13,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { PROJECTS_CAPABILITY, ProjectsError } from '../../shared/projects-contract.ts';
+import {
+  PROJECTS_CAPABILITY,
+  PROJECTS_MOVE_CAPABILITY,
+  ProjectsError,
+} from '../../shared/projects-contract.ts';
 import {
   createProjectsSkillRunner,
   findProjectsScript,
   PROJECTS_CHANGE_MESSAGES,
+  PROJECTS_MOVE_FILES_CHANGED,
   PROJECTS_SCRIPT,
 } from './projects-skill.ts';
 
@@ -207,7 +213,7 @@ describe('with the real script', () => {
       join(root, PROJECTS_SCRIPT),
     );
     const runner = createProjectsSkillRunner(root, { env: { PATH: process.env.PATH, HOME: home } });
-    expect(await runner.capabilities()).toEqual([PROJECTS_CAPABILITY]);
+    expect(await runner.capabilities()).toEqual([PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY]);
     const done = await runner.run({
       kind: 'create',
       space: 'client',
@@ -229,5 +235,118 @@ describe('with the real script', () => {
       }),
     );
     expect(again?.code).toBe('exists');
+    // Move plan: check, then move to another client.
+    mkdirSync(join(root, 'clients', 'skyseal'), { recursive: true });
+    const move = { kind: 'move', key: 'acme/site', client: 'skyseal', expect: done.version } as const;
+    const checked = await runner.run({ ...move, check: true });
+    expect(checked).toEqual({
+      key: 'skyseal/site',
+      version: done.version,
+      check: {
+        key: 'skyseal/site',
+        files: ['clients/acme/projects/site/project.md'],
+        fileCount: 1,
+        ignoredCount: 0,
+        personalLinks: [],
+        filesVersion: createHash('sha256').update('project.md').digest('hex'),
+      },
+    });
+    // A file saved into the folder after the check: the move with the check's fingerprint is refused.
+    writeFileSync(join(root, 'clients', 'acme', 'projects', 'site', 'late.txt'), 'x');
+    const late = await errorOf(runner.run({ ...move, filesExpect: checked.check?.filesVersion as string }));
+    expect(late).toMatchObject({ code: 'changed', message: PROJECTS_MOVE_FILES_CHANGED });
+    rmSync(join(root, 'clients', 'acme', 'projects', 'site', 'late.txt'));
+    const moved = await runner.run({ ...move, filesExpect: checked.check?.filesVersion as string });
+    expect(moved.key).toBe('skyseal/site');
+    expect(moved.check).toBeUndefined();
+    expect(
+      readFileSync(join(root, 'clients', 'skyseal', 'projects', 'site', 'project.md'), 'utf8'),
+    ).toContain('moved_from:\n  - "acme/site"\n');
+  });
+});
+
+describe('move (move plan)', () => {
+  const MOVE = { kind: 'move', key: 'personal/jev', client: 'skyseal', expect: 'b'.repeat(64) } as const;
+  const V = 'a'.repeat(64);
+  const CHECK = {
+    key: 'skyseal/jev',
+    files: ['personal/projects/jev/project.md'],
+    fileCount: 2,
+    ignoredCount: 1,
+    personalLinks: ['personal/files/a.pdf'],
+    filesVersion: 'c'.repeat(64),
+  };
+  const reply = (extra: object) => ({
+    out: JSON.stringify({ ok: true, key: 'skyseal/jev', version: V, ...extra }),
+  });
+
+  it('runs the move command and answers the new key, with the check when asked', async () => {
+    const b = brain();
+    const runner = createProjectsSkillRunner(b.root, { env: b.env(reply({})) });
+    expect(await runner.run(MOVE)).toEqual({ key: 'skyseal/jev', version: V });
+    const c = brain();
+    const checking = createProjectsSkillRunner(c.root, { env: c.env(reply({ check: CHECK })) });
+    expect(await checking.run({ ...MOVE, check: true })).toEqual({
+      key: 'skyseal/jev',
+      version: V,
+      check: CHECK,
+    });
+    const [call] = c.calls();
+    expect(call?.argv).toEqual(['move']);
+    expect(JSON.parse(call?.stdin ?? '')).toEqual({ ...MOVE, check: true });
+    const d = brain();
+    const fenced = createProjectsSkillRunner(d.root, { env: d.env(reply({})) });
+    await fenced.run({ ...MOVE, filesExpect: CHECK.filesVersion });
+    expect(JSON.parse(d.calls()[0]?.stdin ?? '')).toEqual({ ...MOVE, filesExpect: CHECK.filesVersion });
+  });
+
+  it("says the folder's files changed since the check, and keeps the card message for any other change", async () => {
+    const files = brain();
+    const runner = createProjectsSkillRunner(files.root, {
+      env: files.env({
+        exit: 2,
+        out: JSON.stringify({
+          ok: false,
+          error: 'changed',
+          message: 'the files in this project changed since you checked: check again',
+        }),
+      }),
+    });
+    expect(await errorOf(runner.run({ ...MOVE, filesExpect: CHECK.filesVersion }))).toMatchObject({
+      code: 'changed',
+      message: PROJECTS_MOVE_FILES_CHANGED,
+    });
+    const card = brain();
+    const other = createProjectsSkillRunner(card.root, {
+      env: card.env({ exit: 2, out: '{"ok":false,"error":"changed","message":"the card has changed"}' }),
+    });
+    expect(await errorOf(other.run(MOVE))).toMatchObject({
+      code: 'changed',
+      message: PROJECTS_CHANGE_MESSAGES.changed,
+    });
+  });
+
+  it('is internal when the new key is not <client>/<slug> or the check is not the contract shape', async () => {
+    for (const [action, extra] of [
+      [MOVE, { key: 'acme/jev' }],
+      [MOVE, { key: 'skyseal/other' }],
+      [{ ...MOVE, check: true }, {}],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, key: 'acme/jev' } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, fileCount: -1 } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, fileCount: 0 } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, ignoredCount: 3 } }],
+      [
+        { ...MOVE, check: true },
+        { check: { ...CHECK, files: Array.from({ length: 51 }, (_, i) => `f${i}`) } },
+      ],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, personalLinks: [7] } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, filesVersion: undefined } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, filesVersion: 'C'.repeat(64) } }],
+      [{ ...MOVE, check: true }, { check: { ...CHECK, filesVersion: 'c'.repeat(63) } }],
+    ] as const) {
+      const b = brain();
+      const runner = createProjectsSkillRunner(b.root, { env: b.env(reply(extra)) });
+      expect((await errorOf(runner.run(action)))?.code, JSON.stringify(extra).slice(0, 60)).toBe('internal');
+    }
   });
 });

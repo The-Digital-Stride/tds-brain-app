@@ -173,6 +173,25 @@ export function isEditable(card: ProjectCard): boolean {
   return card.card === 'ok' && !card.archived;
 }
 
+/** Move plan: what the edit form and Overview say about moving this project. */
+export type MoveState = 'yes' | 'no-skill' | 'legacy' | 'none';
+
+export const MOVE_NO_SKILL = "Update the brain's skills to move projects.";
+export const MOVE_LEGACY = "This project is in the old projects folder, so it can't be moved.";
+
+/** 'yes' shows Move…; the others say why not ('none': nothing to say, e.g. archived or card-less). */
+export function moveState(card: ProjectCard, list: { canMove?: boolean }): MoveState {
+  if (!isEditable(card)) return 'none';
+  if (!list.canMove) return 'no-skill';
+  if (card.space === 'legacy') return 'legacy';
+  return 'yes';
+}
+
+/** "1 file" / "3 files". */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 // ─── Team (decision 26) ───────────────────────────────────────────────────────────────────────────
 
 export interface TeamRow {
@@ -336,7 +355,7 @@ export function validate(v: FormValues, mode: 'create' | 'edit' | 'card'): FormE
   if (!title) e.title = 'Give the project a title.';
   else if (title.length > PROJECT_TITLE_MAX) e.title = `Keep the title to ${PROJECT_TITLE_MAX} characters.`;
   if (mode === 'create') {
-    if (!v.client) e.client = 'Choose a client, or Personal.';
+    if (!v.client) e.client = 'Choose a client.';
     if (!v.slug) e.slug = 'Give the project a folder name.';
     else if (v.slug.length > PROJECT_SLUG_MAX)
       e.slug = `Keep the folder name to ${PROJECT_SLUG_MAX} characters.`;

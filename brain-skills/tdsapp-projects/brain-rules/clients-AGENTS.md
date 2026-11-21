@@ -46,7 +46,9 @@ client-comms lights, Account Owner, team, dates and budget hours. Internal TDS w
 internal projects where they are.
 
 - **The folder name is permanent.** To-dos, file links and later time reports all link by the
-  key `<client>/<slug>`, so never rename or move a project folder. The title can change freely.
+  key `<client>/<slug>`, so never rename or move a project folder by hand. The title can change
+  freely. To move a project to another client, use the `tdsapp-projects` skill's `move`: old links
+  keep working.
 - **Files saved inside the folder belong to the project.** Plans, briefs, copy and pages for one
   project go there. A file kept elsewhere (or used by two projects) stays where it is and is
   listed in the card's `## Linked files`. Don't copy it in.

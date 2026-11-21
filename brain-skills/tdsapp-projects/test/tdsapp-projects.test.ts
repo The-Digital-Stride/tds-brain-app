@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -29,12 +30,14 @@ import {
   PROJECT_CARD_FILE,
   PROJECT_KEY_SEGMENT_MAX,
   PROJECT_LINKS_MAX,
+  PROJECT_MOVED_FROM_MAX,
   PROJECT_SLUG_MAX,
   PROJECT_STAGE_MAX,
   PROJECT_STAGES_MAX,
   PROJECT_TEAM_MAX,
   PROJECT_TITLE_MAX,
   PROJECTS_CAPABILITY,
+  PROJECTS_MOVE_CAPABILITY,
 } from '../../../shared/projects-contract.ts';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/tdsapp-projects.cjs', import.meta.url));
@@ -51,11 +54,15 @@ interface Ctx {
   root: string;
   home: string;
   now: Date;
+  /** Test only: stands in for the folder rename. */
+  renameDir?: (from: string, to: string) => void;
 }
 interface ProjectsModule {
   run(action: string, input: unknown, ctx: Ctx): { exit: number; reply: Reply };
   SCRIPT_VERSION: string;
   PROJECTS_CAPABILITY: string;
+  PROJECTS_MOVE_CAPABILITY: string;
+  PROJECT_MOVED_FROM_MAX: number;
   INTERNAL_CLIENT: string;
   INTERNAL_PRECEDENCE: string[];
   PROJECT_CARD_FILE: string;
@@ -660,7 +667,7 @@ describe('capabilities and the command line', () => {
         ok: true,
         action: 'capabilities',
         version: projects.SCRIPT_VERSION,
-        features: [PROJECTS_CAPABILITY],
+        features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY],
       },
     });
   });
@@ -713,6 +720,8 @@ describe('capabilities and the command line', () => {
 describe('constants', () => {
   it('match the contract', () => {
     expect(projects.PROJECTS_CAPABILITY).toBe(PROJECTS_CAPABILITY);
+    expect(projects.PROJECTS_MOVE_CAPABILITY).toBe(PROJECTS_MOVE_CAPABILITY);
+    expect(projects.PROJECT_MOVED_FROM_MAX).toBe(PROJECT_MOVED_FROM_MAX);
     expect(projects.INTERNAL_CLIENT).toBe(INTERNAL_CLIENT);
     expect(projects.INTERNAL_PRECEDENCE).toEqual([...INTERNAL_PRECEDENCE]);
     expect(projects.PROJECT_CARD_FILE).toBe(PROJECT_CARD_FILE);
@@ -731,7 +740,7 @@ describe('constants', () => {
 });
 
 describe('the skill file', () => {
-  it('is v0.1 for the owner and scouts, with USE WHEN triggers, matching the script', () => {
+  it('is the script version for the owner and scouts, with USE WHEN triggers, matching the script', () => {
     const skill = parseFrontmatter(
       readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8'),
     ).data;
@@ -816,5 +825,422 @@ describe('review fixes', () => {
       });
     }
     expect(read(CARD)).toBe(EDITABLE);
+  });
+});
+
+// Move plan (docs/plans/2026-11-21-project-move.md): `move` takes a project's folder to another client.
+describe('move', () => {
+  const PERSONAL_CARD = 'personal/projects/jev/project.md';
+  const JEV = [
+    '---',
+    'v: 1',
+    'title: Jev',
+    'status: active',
+    'created: 2026-11-01',
+    'created_by: sam-example',
+    '---',
+    '',
+    'The brief links [a file](../../../personal/files/keep-as-is.pdf) in prose.',
+    '',
+    '## Linked files',
+    '',
+    '- [spec.pdf](../../../personal/projects/jev/spec.pdf)',
+    '- [quote.pdf](../../../clients/acme/files/quote.pdf)',
+    '* [My notes.md](<../../../personal/projects/jev/sub/My notes.md>)',
+    'A line by hand.',
+    '',
+    '## After',
+    '',
+    '- [spec.pdf](../../../personal/projects/jev/spec.pdf)',
+    '',
+  ].join('\n');
+  const WEBSITE = EDITABLE.replace(
+    '- [logo.png](../../../../clients/acme/images/logo.png)',
+    '- [logo.png](../../../../clients/acme/images/logo.png)\n- [brief.pdf](../../../../clients/acme/projects/website/brief.pdf)',
+  );
+  const move = (key: string, client: string, extra: Record<string, unknown> = {}, rel?: string) =>
+    call('move', {
+      kind: 'move',
+      key,
+      client,
+      expect: rel ? sha(rel) : 'f'.repeat(64),
+      ...extra,
+    });
+  // The check's fingerprint of the folder's files: SHA-256 of the sorted folder-relative paths, one a line.
+  const filesVersion = (files: string[]) =>
+    createHash('sha256')
+      .update([...files].sort().join('\n'))
+      .digest('hex');
+  // Every file under a folder, brain-relative, sorted (to show nothing else was written).
+  const tree = (rel: string): string[] => {
+    if (!existsSync(abs(rel))) return [];
+    return readdirSync(abs(rel), { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => `${join(e.parentPath, e.name).slice(root.length + 1)}`)
+      .sort();
+  };
+
+  beforeEach(() => {
+    put(PERSONAL_CARD, JEV);
+    put('personal/projects/jev/spec.pdf');
+    put('personal/projects/jev/sub/My notes.md');
+    put('clients/acme/files/quote.pdf');
+    put(CARD, WEBSITE);
+    put('clients/acme/projects/website/brief.pdf');
+  });
+
+  it('checks a personal project first, writing nothing, then moves it to a client', () => {
+    const before = { personal: tree('personal'), clients: tree('clients') };
+    const check = move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD);
+    expect(check).toEqual({
+      exit: 0,
+      reply: {
+        ok: true,
+        action: 'move',
+        key: 'skyseal/jev',
+        version: sha(PERSONAL_CARD),
+        check: {
+          key: 'skyseal/jev',
+          files: [
+            'personal/projects/jev/project.md',
+            'personal/projects/jev/spec.pdf',
+            'personal/projects/jev/sub/My notes.md',
+          ],
+          fileCount: 3,
+          ignoredCount: 0,
+          personalLinks: [],
+          filesVersion: filesVersion(['project.md', 'spec.pdf', 'sub/My notes.md']),
+        },
+      },
+    });
+    expect({ personal: tree('personal'), clients: tree('clients') }).toEqual(before);
+    expect(existsSync(abs('clients/skyseal/projects'))).toBe(false);
+
+    const r = move('personal/jev', 'skyseal', {}, PERSONAL_CARD);
+    const moved = 'clients/skyseal/projects/jev/project.md';
+    expect(r).toEqual({
+      exit: 0,
+      reply: { ok: true, action: 'move', key: 'skyseal/jev', version: sha(moved) },
+    });
+    expect(existsSync(abs('personal/projects/jev'))).toBe(false);
+    expect(tree('clients/skyseal')).toEqual([
+      'clients/skyseal/projects/jev/project.md',
+      'clients/skyseal/projects/jev/spec.pdf',
+      'clients/skyseal/projects/jev/sub/My notes.md',
+    ]);
+    // moved_from added; every recognised link line one folder deeper, those inside the folder following
+    // it; the brief, hand-written lines and later sections byte for byte; a client line added after the title.
+    expect(read(moved)).toBe(
+      JEV.replace('title: Jev\n', 'title: Jev\nclient: skyseal\n')
+        .replace('created_by: sam-example\n', 'created_by: sam-example\nmoved_from:\n  - "personal/jev"\n')
+        .replace(
+          '- [spec.pdf](../../../personal/projects/jev/spec.pdf)\n- [quote.pdf](../../../clients/acme/files/quote.pdf)\n* [My notes.md](<../../../personal/projects/jev/sub/My notes.md>)',
+          '- [spec.pdf](../../../../clients/skyseal/projects/jev/spec.pdf)\n- [quote.pdf](../../../../clients/acme/files/quote.pdf)\n* [My notes.md](<../../../../clients/skyseal/projects/jev/sub/My notes.md>)',
+        ),
+    );
+    expect(parseFrontmatter(read(moved)).data.moved_from).toEqual(['personal/jev']);
+    expect(parseLinkedFiles(parseFrontmatter(read(moved)).body)).toEqual([
+      'clients/skyseal/projects/jev/spec.pdf',
+      'clients/acme/files/quote.pdf',
+      'clients/skyseal/projects/jev/sub/My notes.md',
+    ]);
+  });
+
+  it('refuses with changed when the files differ from the ones checked (filesExpect), writing nothing', () => {
+    writeFileSync(join(root, '.gitignore'), 'personal/\n*.mov\n');
+    put('personal/projects/jev/video.mov');
+    const check = move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD);
+    const seen = (check.reply.check as { filesVersion: string }).filesVersion;
+    // Ignored files count too: they move with the folder.
+    expect(seen).toBe(filesVersion(['project.md', 'spec.pdf', 'sub/My notes.md', 'video.mov']));
+    // A file saved into the folder after the check.
+    put('personal/projects/jev/secret.txt');
+    const before = { personal: tree('personal'), clients: tree('clients') };
+    const r = move('personal/jev', 'skyseal', { filesExpect: seen }, PERSONAL_CARD);
+    expect(refusal(r)).toEqual({ exit: 2, error: 'changed' });
+    expect(r.reply.message).toMatch(/^the files in this project changed since you checked/);
+    expect(
+      refusal(move('personal/jev', 'skyseal', { filesExpect: seen, check: true }, PERSONAL_CARD)),
+    ).toEqual({
+      exit: 2,
+      error: 'changed',
+    });
+    expect({ personal: tree('personal'), clients: tree('clients') }).toEqual(before);
+    // A malformed fingerprint is a bad request.
+    for (const bad of ['nope', 'F'.repeat(64), 5, null]) {
+      expect(
+        refusal(move('personal/jev', 'skyseal', { filesExpect: bad }, PERSONAL_CARD)),
+        String(bad),
+      ).toEqual({
+        exit: 2,
+        error: 'bad-request',
+      });
+    }
+    // Checked again, it moves.
+    const again = move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD);
+    const now = (again.reply.check as { filesVersion: string }).filesVersion;
+    expect(now).not.toBe(seen);
+    expect(move('personal/jev', 'skyseal', { filesExpect: now }, PERSONAL_CARD).reply).toMatchObject({
+      ok: true,
+      key: 'skyseal/jev',
+    });
+    expect(existsSync(abs('clients/skyseal/projects/jev/secret.txt'))).toBe(true);
+  });
+
+  it('moves a client project to another client, setting its client line and keeping everything else', () => {
+    const r = move('acme/website', 'skyseal', {}, CARD);
+    const moved = 'clients/skyseal/projects/website/project.md';
+    expect(r.reply).toEqual({ ok: true, action: 'move', key: 'skyseal/website', version: sha(moved) });
+    expect(existsSync(abs('clients/acme/projects/website'))).toBe(false);
+    expect(existsSync(abs('clients/skyseal/projects/website/brief.pdf'))).toBe(true);
+    expect(read(moved)).toBe(
+      WEBSITE.replace('client: acme', 'client: skyseal')
+        .replace('created_by: olive-owner\n', 'created_by: olive-owner\nmoved_from:\n  - "acme/website"\n')
+        .replace(
+          '(../../../../clients/acme/projects/website/brief.pdf)',
+          '(../../../../clients/skyseal/projects/website/brief.pdf)',
+        ),
+    );
+    // And back again: its own key leaves moved_from, which never names the card's own key.
+    const back = move('skyseal/website', 'acme', {}, moved);
+    expect(back.reply).toMatchObject({ ok: true, key: 'acme/website' });
+    expect(parseFrontmatter(read(CARD)).data.moved_from).toEqual(['skyseal/website']);
+  });
+
+  it(`keeps moved_from deduped, newest last, at most ${PROJECT_MOVED_FROM_MAX}`, () => {
+    const keys = Array.from({ length: PROJECT_MOVED_FROM_MAX }, (_, i) => `old-${i}/website`);
+    const withMoved = (list: string[]) =>
+      WEBSITE.replace(
+        'created_by: olive-owner\n',
+        `created_by: olive-owner\nmoved_from:\n${list.map((k) => `  - "${k}"`).join('\n')}\n`,
+      );
+    put(CARD, withMoved(keys));
+    expect(move('acme/website', 'skyseal', {}, CARD).exit).toBe(0);
+    const moved = 'clients/skyseal/projects/website/project.md';
+    expect(parseFrontmatter(read(moved)).data.moved_from).toEqual([...keys.slice(1), 'acme/website']);
+    // A retry after a failed move (the old key already listed) and the new key listed: neither twice.
+    rmSync(abs('clients/skyseal/projects'), { recursive: true });
+    put(CARD, withMoved(['acme/website', 'old-1/website', 'skyseal/website']));
+    expect(move('acme/website', 'skyseal', {}, CARD).exit).toBe(0);
+    expect(parseFrontmatter(read(moved)).data.moved_from).toEqual(['old-1/website', 'acme/website']);
+  });
+
+  it('refuses a personal project that links personal files from outside its folder, unless told to drop them', () => {
+    put('personal/files/notes.pdf');
+    const card = JEV.replace(
+      '- [quote.pdf](../../../clients/acme/files/quote.pdf)',
+      '- [quote.pdf](../../../clients/acme/files/quote.pdf)\n- [notes.pdf](../../../personal/files/notes.pdf)',
+    );
+    put(PERSONAL_CARD, card);
+    const check = move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD);
+    expect(check.reply.check).toMatchObject({ personalLinks: ['personal/files/notes.pdf'] });
+    expect(refusal(move('personal/jev', 'skyseal', {}, PERSONAL_CARD))).toEqual({
+      exit: 2,
+      error: 'not-allowed',
+    });
+    expect(read(PERSONAL_CARD)).toBe(card);
+    expect(existsSync(abs('clients/skyseal/projects'))).toBe(false);
+    expect(move('personal/jev', 'skyseal', { dropPersonal: true }, PERSONAL_CARD).exit).toBe(0);
+    const moved = read('clients/skyseal/projects/jev/project.md');
+    expect(moved).not.toContain('notes.pdf');
+    expect(moved).toContain('(../../../personal/files/keep-as-is.pdf) in prose.');
+  });
+
+  it('takes the linked files section out when dropping leaves it empty', () => {
+    put('personal/files/notes.pdf');
+    const card =
+      '---\nv: 1\ntitle: Jev\nstatus: active\n---\n\nBrief.\n\n## Linked files\n\n- [notes.pdf](../../../personal/files/notes.pdf)\n';
+    put(PERSONAL_CARD, card);
+    expect(move('personal/jev', 'skyseal', { dropPersonal: true }, PERSONAL_CARD).exit).toBe(0);
+    expect(read('clients/skyseal/projects/jev/project.md')).toBe(
+      '---\nv: 1\ntitle: Jev\nclient: skyseal\nstatus: active\nmoved_from:\n  - "personal/jev"\n---\n\nBrief.\n',
+    );
+  });
+
+  it('counts files git would ignore at the destination, and refuses when it would ignore the card', () => {
+    writeFileSync(join(root, '.gitignore'), 'personal/\n*.mov\n');
+    put('personal/projects/jev/video.mov');
+    const check = move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD);
+    expect(check.reply.check).toMatchObject({ fileCount: 4, ignoredCount: 1 });
+    writeFileSync(join(root, '.gitignore'), 'personal/\nclients/skyseal/projects/\n');
+    expect(refusal(move('personal/jev', 'skyseal', { check: true }, PERSONAL_CARD))).toEqual({
+      exit: 2,
+      error: 'not-allowed',
+    });
+    expect(refusal(move('personal/jev', 'skyseal', {}, PERSONAL_CARD))).toEqual({
+      exit: 2,
+      error: 'not-allowed',
+    });
+    expect(read(PERSONAL_CARD)).toBe(JEV);
+  });
+
+  it('refuses what may not move, writing nothing', () => {
+    put('clients/_archive/acme/projects/old/project.md', '---\nv: 1\ntitle: Old\nstatus: done\n---\n');
+    mkdirSync(abs('clients/acme/projects/bare'), { recursive: true });
+    put(
+      'clients/acme/projects/merge/project.md',
+      '---\n<<<<<<< HEAD\ntitle: A\n=======\ntitle: B\n>>>>>>> x\n---\n',
+    );
+    put('clients/acme/projects/nofront/project.md', 'Just text.\n');
+    put('projects/client-portal/project.md', '---\nv: 1\ntitle: Portal\nstatus: active\n---\n');
+    const cases: [string, string, Record<string, unknown>, string | undefined, string][] = [
+      ['acme/old', 'skyseal', {}, 'clients/_archive/acme/projects/old/project.md', 'not-allowed'],
+      ['acme/bare', 'skyseal', {}, undefined, 'not-found'],
+      ['acme/merge', 'skyseal', {}, 'clients/acme/projects/merge/project.md', 'not-allowed'],
+      ['acme/nofront', 'skyseal', {}, 'clients/acme/projects/nofront/project.md', 'not-allowed'],
+      [`${INTERNAL_CLIENT}/client-portal`, 'acme', {}, 'projects/client-portal/project.md', 'not-allowed'],
+      ['acme/website', 'acme', {}, CARD, 'bad-request'],
+      ['acme/website', 'personal', {}, CARD, 'bad-request'],
+      ['acme/website', 'Sky Seal', {}, CARD, 'bad-request'],
+      ['acme/website', 'nobody', {}, CARD, 'not-found'],
+      ['acme/website', 'skyseal', {}, undefined, 'changed'],
+      ['acme/website', 'skyseal', { expect: undefined }, undefined, 'bad-request'],
+      ['acme/website', 'skyseal', { dropPersonal: false }, CARD, 'bad-request'],
+      ['acme/website', 'skyseal', { check: 'yes' }, CARD, 'bad-request'],
+      ['acme/nothing', 'skyseal', {}, CARD, 'not-found'],
+      ['acme', 'skyseal', {}, CARD, 'bad-request'],
+    ];
+    const before = { clients: tree('clients'), projects: tree('projects') };
+    for (const [key, client, extra, rel, code] of cases) {
+      expect(refusal(move(key, client, extra, rel)), `${key} → ${client} ${JSON.stringify(extra)}`).toEqual({
+        exit: 2,
+        error: code,
+      });
+    }
+    expect({ clients: tree('clients'), projects: tree('projects') }).toEqual(before);
+    expect(existsSync(abs('clients/skyseal/projects'))).toBe(false);
+  });
+
+  it('refuses a destination client folder that is a link, and someone not on the team', () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), 'projects-elsewhere-'));
+    symlinkSync(elsewhere, abs('clients/linked'));
+    expect(refusal(move('acme/website', 'linked', {}, CARD))).toEqual({ exit: 2, error: 'not-allowed' });
+    expect(readdirSync(elsewhere)).toEqual([]);
+    rmSync(elsewhere, { recursive: true, force: true });
+    git(['config', 'user.email', 'stranger@example.test']);
+    expect(refusal(move('personal/jev', 'skyseal', {}, PERSONAL_CARD))).toEqual({
+      exit: 2,
+      error: 'not-allowed',
+    });
+    expect(read(PERSONAL_CARD)).toBe(JEV);
+  });
+
+  it('refuses with exists when the new key already names a folder anywhere, archives included', () => {
+    for (const rel of ['clients/skyseal/projects/website', 'clients/_archive/skyseal/projects/website']) {
+      mkdirSync(abs(rel), { recursive: true });
+      expect(refusal(move('acme/website', 'skyseal', {}, CARD)), rel).toEqual({ exit: 2, error: 'exists' });
+      rmSync(abs(rel), { recursive: true });
+    }
+    for (const rel of ['projects/website', 'projects-archive/website']) {
+      mkdirSync(abs(rel), { recursive: true });
+      expect(refusal(move('acme/website', INTERNAL_CLIENT, {}, CARD)), rel).toEqual({
+        exit: 2,
+        error: 'exists',
+      });
+      rmSync(abs(rel), { recursive: true });
+    }
+    expect(read(CARD)).toBe(WEBSITE);
+    // With every clash gone, The Digital Stride takes it.
+    expect(move('acme/website', INTERNAL_CLIENT, {}, CARD).reply).toMatchObject({
+      ok: true,
+      key: `${INTERNAL_CLIENT}/website`,
+    });
+  });
+
+  it('refuses when the old key has a twin the old name would fall through to', () => {
+    mkdirSync(abs('clients/_archive/acme/projects/website'), { recursive: true });
+    expect(refusal(move('acme/website', 'skyseal', {}, CARD))).toEqual({ exit: 2, error: 'not-allowed' });
+    put(
+      `clients/${INTERNAL_CLIENT}/projects/portal/project.md`,
+      '---\nv: 1\ntitle: P\nstatus: active\n---\n',
+    );
+    mkdirSync(abs('projects/portal'), { recursive: true });
+    const rel = `clients/${INTERNAL_CLIENT}/projects/portal/project.md`;
+    expect(refusal(move(`${INTERNAL_CLIENT}/portal`, 'acme', {}, rel))).toEqual({
+      exit: 2,
+      error: 'not-allowed',
+    });
+    expect(read(CARD)).toBe(WEBSITE);
+  });
+
+  it('refuses a folder holding a link, its own git repository, a hard link or something that is not a file', () => {
+    const tries: [string, () => void, () => void][] = [
+      [
+        'link',
+        () =>
+          symlinkSync(abs('clients/acme/files/quote.pdf'), abs('clients/acme/projects/website/alias.pdf')),
+        () => rmSync(abs('clients/acme/projects/website/alias.pdf')),
+      ],
+      [
+        'nested .git',
+        () => mkdirSync(abs('clients/acme/projects/website/code/.git'), { recursive: true }),
+        () => rmSync(abs('clients/acme/projects/website/code'), { recursive: true }),
+      ],
+      [
+        'hard link',
+        () => linkSync(abs('clients/acme/files/quote.pdf'), abs('clients/acme/projects/website/quote.pdf')),
+        () => rmSync(abs('clients/acme/projects/website/quote.pdf')),
+      ],
+      [
+        'fifo',
+        () => {
+          const r = spawnSync('mkfifo', [abs('clients/acme/projects/website/pipe')]);
+          if (r.status !== 0) throw new Error('mkfifo failed');
+        },
+        () => rmSync(abs('clients/acme/projects/website/pipe')),
+      ],
+    ];
+    for (const [what, make, undo] of tries) {
+      make();
+      expect(refusal(move('acme/website', 'skyseal', { check: true }, CARD)), what).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      expect(refusal(move('acme/website', 'skyseal', {}, CARD)), what).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      undo();
+    }
+    expect(read(CARD)).toBe(WEBSITE);
+    expect(existsSync(abs('clients/skyseal/projects'))).toBe(false);
+  });
+
+  it('puts the card back and lets go of the new folder when the rename fails', () => {
+    const failing = (code: string) => () => {
+      throw Object.assign(new Error(`${code}: rename failed`), { code });
+    };
+    for (const code of ['EXDEV', 'EACCES']) {
+      const r = projects.run(
+        'move',
+        { kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) },
+        { root, home, now: T0, renameDir: failing(code) } as Ctx,
+      );
+      expect(refusal(r), code).toEqual({ exit: 1, error: 'internal' });
+      expect(read(CARD)).toBe(WEBSITE);
+      expect(readdirSync(abs('clients/acme/projects/website')).sort()).toEqual(['brief.pdf', 'project.md']);
+      expect(existsSync(abs('clients/skyseal/projects'))).toBe(false);
+    }
+    // An existing projects folder stays; only the claimed one goes.
+    mkdirSync(abs('clients/skyseal/projects'));
+    const r = projects.run(
+      'move',
+      { kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) },
+      { root, home, now: T0, renameDir: failing('EIO') } as Ctx,
+    );
+    expect(r.exit).toBe(1);
+    expect(readdirSync(abs('clients/skyseal/projects'))).toEqual([]);
+    expect(read(CARD)).toBe(WEBSITE);
+  });
+
+  it('answers the move capability and runs move from the command line', () => {
+    expect(call('capabilities').reply.features).toEqual([PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY]);
+    const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
+      input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toMatchObject({ ok: true, action: 'move', key: 'skyseal/website' });
   });
 });

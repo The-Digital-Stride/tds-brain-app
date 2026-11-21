@@ -28,12 +28,65 @@ export function parseProjectKey(value: string): { client: string | 'personal'; s
   return { client, slug };
 }
 
-type Eligible = Pick<ProjectCard, 'key' | 'slug' | 'client' | 'space'>;
+type Eligible = Pick<ProjectCard, 'key' | 'slug' | 'client' | 'space' | 'movedFrom'>;
+
+/**
+ * The project an old key now names (move plan decision 5): the card whose `movedFrom` lists it, the
+ * lowest sorted key when two do (overseer S6). Null when none, and null when `projects` itself holds
+ * the key: a live folder at a key (card or not) always wins over an alias. That matters most for a
+ * `personal/` key: a moved card syncs to teammates, where `personal/` is their own private folder.
+ */
+export function movedKey(
+  key: ProjectKey,
+  projects: Pick<Eligible, 'key' | 'movedFrom'>[],
+): ProjectKey | null {
+  if (projects.some((p) => p.key === key)) return null;
+  let best: ProjectKey | null = null;
+  for (const p of projects) {
+    if (p.movedFrom?.includes(key) && (best === null || p.key < best)) best = p.key;
+  }
+  return best;
+}
+
+/** The folder a movable project's key names: `personal/projects/<slug>` or `clients/<client>/projects/<slug>`. */
+function liveFolderOf(key: ProjectKey): string | null {
+  const parsed = parseProjectKey(key);
+  if (!parsed) return null;
+  return parsed.client === 'personal'
+    ? `personal/projects/${parsed.slug}`
+    : `clients/${parsed.client}/projects/${parsed.slug}`;
+}
+
+/**
+ * A brain path inside a moved project's old folder, mapped to the folder it is in now (overseer S8),
+ * so links written before the move still find the file. Any other path, or one under an old key a live
+ * project now holds, comes back as it is.
+ */
+export function movedFolderPath(
+  path: string,
+  projects: Pick<ProjectCard, 'key' | 'folder' | 'movedFrom'>[],
+): string {
+  if (!projects.some((p) => p.movedFrom && p.movedFrom.length > 0)) return path;
+  const live = new Set(projects.map((p) => p.key));
+  let best: { key: ProjectKey; path: string } | null = null;
+  for (const p of projects) {
+    for (const old of p.movedFrom ?? []) {
+      const folder = liveFolderOf(old);
+      if (folder === null || live.has(old) || !path.startsWith(`${folder}/`)) continue;
+      if (best === null || p.key < best.key)
+        best = { key: p.key, path: p.folder + path.slice(folder.length) };
+    }
+  }
+  return best ? best.path : path;
+}
 
 /**
  * How a to-do's `project:` value reads (contract TodoProjectMatch, overseer S3). A TDS to-do only ever
  * resolves against shared projects, so it reads the same on every Mac; a `personal/` key on one is
  * `missing` (overseer B2). A personal to-do may resolve against either.
+ * Move plan: a key (or `<to-do client>/<label>` for a bare slug) no live project holds resolves
+ * through the cards' `movedFrom` (movedKey). A TDS to-do never takes a `personal/` alias, and never
+ * lands on a personal project through one.
  */
 export function resolveTodoProject(
   value: string | null,
@@ -48,9 +101,9 @@ export function resolveTodoProject(
   const parsed = parseProjectKey(label);
   if (parsed) {
     if (scope === 'tds' && parsed.client === 'personal') return { how: 'missing', key: label };
-    return eligible.some((p) => p.key === label)
-      ? { how: 'key', key: label }
-      : { how: 'missing', key: label };
+    if (eligible.some((p) => p.key === label)) return { how: 'key', key: label };
+    const moved = movedKey(label, eligible);
+    return moved !== null ? { how: 'key', key: moved } : { how: 'missing', key: label };
   }
   if (label.includes('/')) return { how: 'loose', label };
   if (clients.includes(label)) return { how: 'client', client: label };
@@ -58,7 +111,11 @@ export function resolveTodoProject(
   const bySlug = eligible.filter((p) => p.slug === label);
   if (client !== null) {
     const within = bySlug.find((p) => p.client === client);
-    return within ? { how: 'legacy', key: within.key } : { how: 'loose', label };
+    if (within) return { how: 'legacy', key: within.key };
+    const old = `${client}/${label}`;
+    const moved =
+      parseProjectKey(old) && !(scope === 'tds' && client === 'personal') ? movedKey(old, eligible) : null;
+    return moved !== null ? { how: 'legacy', key: moved } : { how: 'loose', label };
   }
   if (bySlug.length === 1) return { how: 'legacy', key: (bySlug[0] as Eligible).key };
   return { how: 'loose', label };

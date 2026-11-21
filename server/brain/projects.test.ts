@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,9 +16,13 @@ import { TodoChangeError } from '../../shared/contract.ts';
 import {
   INTERNAL_CLIENT,
   PROJECTS_CAPABILITY,
+  PROJECTS_MOVE_CAPABILITY,
   type ProjectAction,
   type ProjectCard,
+  type ProjectMoveCheckResponse,
+  type ProjectMoveResult,
   ProjectsError,
+  type ProjectsErrorCode,
 } from '../../shared/projects-contract.ts';
 import { createProjects, type ProjectsOptions } from './projects.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
@@ -66,9 +78,13 @@ interface Fakes {
   gitCalls: string[][];
   /** Answers per git call; default: no output. */
   gitAnswer: (args: string[]) => string;
-  /** Per to-do id: fail its tidy write with this code. */
-  todoFail: Record<string, 'changed' | 'not-found'>;
+  /** Per to-do id: fail its tidy write with this code ('crash': a plain Error). */
+  todoFail: Record<string, 'changed' | 'not-found' | 'crash'>;
   createExists: boolean;
+  todoCaps: string[];
+  /** A move's script refusal. */
+  moveFail: ProjectsErrorCode | null;
+  moved: [string, string][];
 }
 let fakes: Fakes;
 
@@ -87,6 +103,9 @@ function service(
     gitAnswer: () => '',
     todoFail: {},
     createExists: false,
+    todoCaps: ['todo-project-v1'],
+    moveFail: null,
+    moved: [],
   };
   const skill: ProjectsSkillRunner = {
     async run(action) {
@@ -103,6 +122,34 @@ function service(
           version: 'x',
         };
       }
+      if (action.kind === 'move') {
+        // Stands in for the script's move: renames the folder and adds moved_from.
+        if (fakes.moveFail) throw new ProjectsError(fakes.moveFail, 'The script said no.');
+        const [client, slug] = action.key.split('/') as [string, string];
+        const key = `${action.client}/${slug}`;
+        if (action.check) {
+          const check = {
+            key,
+            files: [],
+            fileCount: 0,
+            ignoredCount: 0,
+            personalLinks: [],
+            filesVersion: 'f'.repeat(64),
+          };
+          return { key, version: 'v'.repeat(64), check };
+        }
+        const from =
+          client === 'personal' ? `personal/projects/${slug}` : `clients/${client}/projects/${slug}`;
+        const to = `clients/${action.client}/projects/${slug}`;
+        mkdirSync(dirname(abs(to)), { recursive: true });
+        renameSync(abs(from), abs(to));
+        const text = readFileSync(abs(`${to}/project.md`), 'utf8');
+        writeFileSync(
+          abs(`${to}/project.md`),
+          text.replace('\n---\n', `\nmoved_from:\n  - "${action.key}"\n---\n`),
+        );
+        return { key, version: 'w'.repeat(64) };
+      }
       return { key: 'key' in action ? action.key : '', version: 'v'.repeat(64) };
     },
     capabilities: async () => fakes.caps,
@@ -113,6 +160,7 @@ function service(
       fakes.todoRuns.push(action);
       if (action.kind !== 'project') return { file: null };
       const fail = fakes.todoFail[action.id];
+      if (fail === 'crash') throw new Error('the script crashed');
       if (fail) throw new TodoChangeError(fail, 'no');
       const rel = action.scope === 'personal' ? `personal/todo/${action.id}` : `todo/${action.id}`;
       const lines = readFileSync(abs(rel), 'utf8')
@@ -127,7 +175,7 @@ function service(
       writeFileSync(abs(rel), lines.join('\n'));
       return { file: action.id };
     },
-    capabilities: async () => ['todo-project-v1'],
+    capabilities: async () => fakes.todoCaps,
   };
   return createProjects(root, {
     skill,
@@ -136,6 +184,7 @@ function service(
     dataDir: extra.dataDir === undefined ? data : extra.dataDir,
     ...(extra.mayChange ? { mayChange: extra.mayChange } : {}),
     ...(extra.todoList ? { todoList: extra.todoList } : {}),
+    onMoved: (from, to) => fakes.moved.push([from, to]),
     now: () => NOW,
     git: async (args) => {
       fakes.gitCalls.push([...args]);
@@ -666,5 +715,301 @@ describe('tidy', () => {
   it('keeps skips in memory without a data folder', async () => {
     const s = service({ dataDir: null });
     expect((await s.applyTidy({ label: 'os', do: 'skip' }, ME)).skipped).toEqual(['os']);
+  });
+});
+
+// Move plan (docs/plans/2026-11-21-project-move.md).
+describe('moved projects', () => {
+  beforeEach(() => {
+    put(
+      'clients/skyseal/projects/jev/project.md',
+      card(
+        'Jev',
+        'client: skyseal\nmoved_from:\n  - "personal/jev"\n  - "Not A Key"\n  - "acme/jev"\n  - "skyseal/jev"\n',
+      ),
+    );
+    // Left behind on a teammate's Mac: ignored files only, no card (B1).
+    put('clients/acme/projects/jev/.DS_Store', 'x');
+    // A live carded folder at an old key wins over the alias.
+    put('clients/acme/projects/live/project.md', card('Live here'));
+    put('clients/harvey-nash/projects/live/project.md', card('Moved', 'moved_from:\n  - "acme/live"\n'));
+    put(
+      'clients/acme/projects/other/project.md',
+      card('Other').replace(
+        'The brief.\n',
+        'The brief.\n\n## Linked files\n\n- [b.pdf](../../../../clients/acme/projects/jev/b.pdf)\n- [c.pdf](../../../../clients/acme/files/c.pdf)\n',
+      ),
+    );
+    put('todo/a.md', todoText({ project: 'acme/jev', client: 'acme' }));
+    put('todo/done/b.md', todoText({ project: 'acme/jev', completed: '2026-11-19' }));
+  });
+
+  it('reads moved_from, resolves old keys to where the project went, and leaves leftovers out (B1)', async () => {
+    const s = service();
+    const list = await s.list(ME);
+    expect(list.projects.map((p) => p.key)).not.toContain('acme/jev');
+    expect(list.leftovers).toEqual(['clients/acme/projects/jev']);
+    expect(byKey(list.projects, 'skyseal/jev')?.movedFrom).toEqual(['personal/jev', 'acme/jev']);
+    expect(byKey(list.projects, 'skyseal/jev')?.openTodos).toBe(1);
+    expect(byKey(list.projects, 'acme/live')).toMatchObject({ title: 'Live here' });
+    expect(byKey(list.projects, 'acme/live')?.movedFrom).toBeUndefined();
+    const index = await s.index();
+    expect(index.byKey('acme/jev')?.key).toBe('skyseal/jev');
+    expect(index.byKey('personal/jev')?.key).toBe('skyseal/jev');
+    expect(index.byKey('acme/live')?.key).toBe('acme/live');
+    expect(index.byKey('acme/none')).toBeNull();
+    expect(index.resolve('acme/jev', 'acme', 'tds')).toEqual({ how: 'key', key: 'skyseal/jev' });
+    expect(index.resolve('personal/jev', null, 'tds')).toEqual({ how: 'missing', key: 'personal/jev' });
+    expect(index.resolve('personal/jev', null, 'personal')).toEqual({ how: 'key', key: 'skyseal/jev' });
+    expect((await s.projectTodos('acme/jev', ME)).count).toBe(1);
+  });
+
+  it("never treats this Mac's own personal folder as a leftover of a teammate's personal/ alias", async () => {
+    // skyseal/jev (synced from a teammate) lists personal/jev: on THIS Mac, personal/ is this person's own.
+    put('personal/projects/jev/notes.md', 'mine');
+    put('personal/todo/mine.md', todoText({ assignee: 'ian-hancock', project: 'personal/jev' }));
+    put(
+      'personal/projects/diary/project.md',
+      card('Diary').replace(
+        'The brief.\n',
+        'The brief.\n\n## Linked files\n\n- [notes.md](../../../personal/projects/jev/notes.md)\n',
+      ),
+    );
+    const s = service();
+    const list = await s.list(ME);
+    expect(list.leftovers).toEqual(['clients/acme/projects/jev']);
+    expect(byKey(list.projects, 'personal/jev')).toMatchObject({ card: 'none', openTodos: 1 });
+    expect(byKey(list.projects, 'skyseal/jev')?.openTodos).toBe(1);
+    expect(byKey(list.projects, 'personal/diary')?.links).toEqual(['personal/projects/jev/notes.md']);
+    const index = await s.index();
+    expect(index.byKey('personal/jev')?.key).toBe('personal/jev');
+    expect(index.resolve('personal/jev', null, 'personal')).toEqual({ how: 'key', key: 'personal/jev' });
+    expect((await s.projectTodos('personal/jev', ME)).count).toBe(1);
+    // A shared old key's leftover is still a leftover.
+    expect(index.byKey('acme/jev')?.key).toBe('skyseal/jev');
+  });
+
+  it("maps other cards' links into an old folder to the new one (S8)", async () => {
+    const s = service();
+    const other = byKey((await s.list(ME)).projects, 'acme/other');
+    expect(other?.links).toEqual(['clients/skyseal/projects/jev/b.pdf', 'clients/acme/files/c.pdf']);
+    expect((await s.index()).keysForPath('clients/skyseal/projects/jev/b.pdf')).toEqual([
+      'acme/other',
+      'skyseal/jev',
+    ]);
+  });
+
+  it('reports canMove only with both scripts able and this person allowed', async () => {
+    let allowed = true;
+    const s = service({ mayChange: async () => allowed });
+    expect((await s.list(ME)).canMove).toBe(false);
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY];
+    expect((await s.list(ME)).canMove).toBe(true);
+    fakes.todoCaps = [];
+    expect((await s.list(ME)).canMove).toBe(false);
+    fakes.todoCaps = ['todo-project-v1'];
+    allowed = false;
+    expect((await s.list(ME)).canMove).toBe(false);
+  });
+});
+
+describe('move', () => {
+  const V = 'c'.repeat(64);
+  beforeEach(() => {
+    put('personal/projects/jev/project.md', card('Jev', 'stages:\n  - "Build"\n'));
+    put('clients/acme/projects/site/project.md', card('Site'));
+    put('clients/_archive/acme/projects/old/project.md', card('Old'));
+    put('clients/harvey-nash/projects/moved/project.md', card('Moved', 'moved_from:\n  - "acme/moved"\n'));
+    folder('clients/acme/projects/moved-x');
+    put('personal/todo/p.md', todoText({ assignee: 'ian-hancock', project: 'personal/jev', stage: 'Build' }));
+    put('personal/todo/q.md', todoText({ project: 'jev' }));
+    put('personal/todo/r.md', todoText({ assignee: 'someone-else', project: 'personal/jev' }));
+    put('personal/todo/s.md', todoText({ assignee: 'ian-hancock', project: 'acme/site' }));
+    put(
+      'todo/t.md',
+      todoText({ assignee: 'simon-jones', project: 'acme/site', client: 'acme', stage: 'Build' }),
+    );
+    put('todo/u.md', todoText({ assignee: 'simon-jones', project: 'site', client: 'acme' }));
+    put('todo/done/v.md', todoText({ assignee: 'simon-jones', project: 'acme/site' }));
+  });
+  const moving = () => {
+    const s = service();
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY];
+    return s;
+  };
+  const codeOf = async (p: Promise<unknown>) => {
+    try {
+      await p;
+      return null;
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProjectsError);
+      return (err as ProjectsError).code;
+    }
+  };
+
+  it('checks first, counting the open to-dos it would move and writing nothing', async () => {
+    const s = moving();
+    const r = (await s.move(
+      { key: 'personal/jev', client: 'skyseal', expect: V, check: true },
+      ME,
+    )) as ProjectMoveCheckResponse;
+    expect(r).toEqual({
+      check: {
+        key: 'skyseal/jev',
+        files: [],
+        fileCount: 0,
+        ignoredCount: 0,
+        personalLinks: [],
+        filesVersion: 'f'.repeat(64),
+      },
+      todos: 2,
+    });
+    expect(fakes.skillRuns).toEqual([
+      { kind: 'move', key: 'personal/jev', client: 'skyseal', expect: V, check: true },
+    ]);
+    expect(fakes.todoRuns).toEqual([]);
+    expect(fakes.moved).toEqual([]);
+    const tds = (await s.move(
+      { key: 'acme/site', client: 'skyseal', expect: V, check: true },
+      ME,
+    )) as ProjectMoveCheckResponse;
+    expect(tds.todos).toBe(3);
+    // Without the to-dos (the Settings switch): none counted.
+    const off = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V, check: true }, ME, {
+      todos: false,
+    })) as ProjectMoveCheckResponse;
+    expect(off.todos).toBe(0);
+  });
+
+  it('moves, then re-points only the open to-dos chosen before the move, keeping their stage', async () => {
+    const s = moving();
+    const before = { t: sha('todo/t.md'), u: sha('todo/u.md'), s: sha('personal/todo/s.md') };
+    const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME)) as ProjectMoveResult;
+    expect(fakes.skillRuns).toEqual([{ kind: 'move', key: 'acme/site', client: 'skyseal', expect: V }]);
+    expect(fakes.moved).toEqual([['clients/acme/projects/site', 'clients/skyseal/projects/site']]);
+    const runs = fakes.todoRuns.map((a) => a as Extract<TodoRunAction, { kind: 'project' }>);
+    expect(runs.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      {
+        kind: 'project',
+        id: 's.md',
+        scope: 'personal',
+        client: 'skyseal',
+        project: 'skyseal/site',
+        stage: null,
+        expect: before.s,
+      },
+      {
+        kind: 'project',
+        id: 't.md',
+        scope: 'tds',
+        client: 'skyseal',
+        project: 'skyseal/site',
+        stage: 'Build',
+        expect: before.t,
+      },
+      {
+        kind: 'project',
+        id: 'u.md',
+        scope: 'tds',
+        client: 'skyseal',
+        project: 'skyseal/site',
+        stage: null,
+        expect: before.u,
+      },
+    ]);
+    expect(r.key).toBe('skyseal/site');
+    expect(r.todosMoved).toBe(3);
+    expect(r.todosLeft).toBe(0);
+    expect(byKey(r.list.projects, 'skyseal/site')).toMatchObject({ movedFrom: ['acme/site'], openTodos: 3 });
+    expect(byKey(r.list.projects, 'acme/site')).toBeUndefined();
+    // The done one is never rewritten.
+    expect(readFileSync(abs('todo/done/v.md'), 'utf8')).toContain('project: acme/site');
+  });
+
+  it("passes the check's file fingerprint on to the script, and refuses a malformed one", async () => {
+    const s = moving();
+    const F = 'f'.repeat(64);
+    await s.move({ key: 'acme/site', client: 'skyseal', expect: V, filesExpect: F }, ME);
+    expect(fakes.skillRuns).toEqual([
+      { kind: 'move', key: 'acme/site', client: 'skyseal', expect: V, filesExpect: F },
+    ]);
+    fakes.skillRuns.length = 0;
+    for (const bad of ['short', F.toUpperCase(), 5]) {
+      const req = { key: 'skyseal/site', client: 'acme', expect: V, filesExpect: bad as string };
+      expect(await codeOf(s.move(req, ME)), String(bad)).toBe('bad-request');
+    }
+    expect(fakes.skillRuns).toEqual([]);
+  });
+
+  it('moves a personal project, its own personal to-dos and none of anyone else’s', async () => {
+    const s = moving();
+    const r = (await s.move(
+      { key: 'personal/jev', client: 'skyseal', expect: V, dropPersonal: true },
+      ME,
+    )) as ProjectMoveResult;
+    expect(fakes.skillRuns).toEqual([
+      { kind: 'move', key: 'personal/jev', client: 'skyseal', expect: V, dropPersonal: true },
+    ]);
+    expect(fakes.moved).toEqual([['personal/projects/jev', 'clients/skyseal/projects/jev']]);
+    expect(fakes.todoRuns.map((a) => ('id' in a ? a.id : '')).sort()).toEqual(['p.md', 'q.md']);
+    expect(r).toMatchObject({ key: 'skyseal/jev', todosMoved: 2, todosLeft: 0 });
+  });
+
+  it('counts a to-do it could not re-point as left, and still answers the move', async () => {
+    const s = moving();
+    fakes.todoFail = { 't.md': 'changed', 'u.md': 'crash' };
+    const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME)) as ProjectMoveResult;
+    expect(r).toMatchObject({ key: 'skyseal/site', todosMoved: 1, todosLeft: 2 });
+    // Those left still resolve to the project through its old key.
+    expect(byKey(r.list.projects, 'skyseal/site')?.openTodos).toBe(3);
+  });
+
+  it('re-points nothing when told not to change to-dos', async () => {
+    const s = moving();
+    const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME, {
+      todos: false,
+    })) as ProjectMoveResult;
+    expect(fakes.todoRuns).toEqual([]);
+    expect(r).toMatchObject({ todosMoved: 0, todosLeft: 0 });
+  });
+
+  it('refuses without both scripts, this person, an archived project, a taken old key or a bad shape', async () => {
+    const s = moving();
+    const req = { key: 'acme/site', client: 'skyseal', expect: V };
+    fakes.caps = [PROJECTS_CAPABILITY];
+    expect(await codeOf(s.move(req, ME))).toBe('not-allowed');
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY];
+    fakes.todoCaps = [];
+    expect(await codeOf(s.move(req, ME))).toBe('not-allowed');
+    fakes.todoCaps = ['todo-project-v1'];
+    expect(await codeOf(s.move({ ...req, key: 'acme/old' }, ME))).toBe('not-allowed');
+    // acme/moved answers for harvey-nash/moved, so nothing else may take it.
+    put('clients/skyseal/projects/moved/project.md', card('Another'));
+    expect(await codeOf(s.move({ key: 'skyseal/moved', client: 'acme', expect: V }, ME))).toBe('exists');
+    // ...but the project that moved may go back.
+    expect(
+      await codeOf(s.move({ key: 'harvey-nash/moved', client: 'acme', expect: V, check: true }, ME)),
+    ).toBeNull();
+    for (const bad of [
+      { ...req, client: 'personal' },
+      { ...req, client: 'Sky Seal' },
+      { ...req, key: 'nope' },
+      { key: 'acme/site', client: 'skyseal' },
+    ]) {
+      expect(await codeOf(s.move(bad as never, ME)), JSON.stringify(bad)).toBe('bad-request');
+    }
+    expect(fakes.skillRuns.filter((a) => !('check' in a))).toEqual([]);
+    const denied = service({ mayChange: async () => false });
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY];
+    expect(await codeOf(denied.move(req, ME))).toBe('not-allowed');
+    expect(fakes.skillRuns).toEqual([]);
+  });
+
+  it("passes the script's refusal on and re-points nothing", async () => {
+    const s = moving();
+    fakes.moveFail = 'changed';
+    expect(await codeOf(s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME))).toBe('changed');
+    expect(fakes.todoRuns).toEqual([]);
+    expect(fakes.moved).toEqual([]);
   });
 });

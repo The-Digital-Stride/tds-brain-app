@@ -107,6 +107,7 @@ import {
   PROJECTS_ERROR_STATUS,
   type ProjectAction,
   type ProjectFields,
+  type ProjectMoveRequest,
   ProjectsError,
   type TidyApply,
   type TidySuggestion,
@@ -968,6 +969,35 @@ export function parseProjectAction(body: unknown): ProjectAction {
   }
 }
 
+/**
+ * `POST ROUTES.projectsMove` (move plan): exactly `key`, `client` and `expect`, with `dropPersonal` and
+ * `check` only ever `true`. The client is a client folder name, never `personal`.
+ */
+export function parseProjectMove(body: unknown): ProjectMoveRequest {
+  if (!isRec(body)) throw projectBad();
+  onlyKeys(
+    body,
+    ['key', 'client', 'expect', 'dropPersonal', 'check', 'filesExpect'],
+    ['key', 'client', 'expect'],
+  );
+  const { key, client, expect, dropPersonal, check, filesExpect } = body;
+  if (!isProjectKey(key) || !isSlug(client) || client === 'personal') throw projectBad();
+  if (typeof expect !== 'string' || !PROJECT_VERSION.test(expect)) throw projectBad();
+  if ((dropPersonal !== undefined && dropPersonal !== true) || (check !== undefined && check !== true))
+    throw projectBad();
+  // The check's filesVersion (security review): optional, so an older app still moves.
+  if (filesExpect !== undefined && (typeof filesExpect !== 'string' || !PROJECT_VERSION.test(filesExpect)))
+    throw projectBad();
+  return {
+    key,
+    client,
+    expect,
+    ...(dropPersonal === true ? { dropPersonal: true } : {}),
+    ...(check === true ? { check: true } : {}),
+    ...(filesExpect !== undefined ? { filesExpect } : {}),
+  };
+}
+
 /** One tidy suggestion: exactly the fields of its `do`, with `why` the one value that `do` has. */
 function parseTidySuggestion(v: unknown): TidySuggestion {
   if (!isRec(v) || typeof v.do !== 'string') throw projectBad();
@@ -1034,7 +1064,7 @@ function projectsFailure(err: unknown, ctx: RouteContext, what: string): HttpErr
   return new HttpError(500, 'internal', PROJECTS_INTERNAL);
 }
 
-/** The five projects routes. Every one has already passed the security gate. */
+/** The six projects routes. Every one has already passed the security gate. */
 async function projectsRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1074,6 +1104,31 @@ async function projectsRoute(
       sendJson(res, 200, list);
     } catch (err) {
       throw projectsFailure(err, ctx, 'A project change');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectsMove) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const move = parseProjectMove(body);
+    const run = ctx.brain.moveProject;
+    if (!run) throw missing();
+    // The same roles check as any project change.
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    // The to-dos follow the project only where the app may change to-dos (the Settings switch and the
+    // to-do script), as the tidy-up; otherwise they stay and still resolve through the old key.
+    const prefs = await ctx.store.get();
+    const todos = prefs.directWrites ? await safe(ctx.brain.todos(who), null) : null;
+    const repoint = todos?.changes === 'on' && todos.canProject === true;
+    try {
+      const answer = await run.call(ctx.brain, move, who, { todos: repoint });
+      ctx.log(move.check ? 'Checked a project move.' : 'Moved a project to another client.');
+      sendJson(res, 200, answer);
+    } catch (err) {
+      throw projectsFailure(err, ctx, move.check ? 'A project move check' : 'A project move');
     }
     return;
   }
@@ -2190,6 +2245,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
   if (
     path === ROUTES.projects ||
     path === ROUTES.projectsChange ||
+    path === ROUTES.projectsMove ||
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
     path === ROUTES.projectsTidy

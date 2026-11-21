@@ -16,7 +16,7 @@ Project files need their own rows so every session saves them inside the project
 ### Proposed replacement
 
 ````text
-| A file for one client project: plan, brief, copy, page, notes | `clients/<client>/projects/<project>/`. The folder has a `project.md` card. Never rename or move it. A file kept elsewhere is linked from the card's `## Linked files`, not copied |
+| A file for one client project: plan, brief, copy, page, notes | `clients/<client>/projects/<project>/`. The folder has a `project.md` card. Never rename or move it by hand (the `tdsapp-projects` skill's `move` takes it to another client). A file kept elsewhere is linked from the card's `## Linked files`, not copied |
 | A file for an internal TDS project | `clients/the-digital-stride/projects/<project>/`. Older internal folders in `projects/<project>/` stay where they are |
 | A file for your own personal project | `personal/projects/<project>/` (stays on your machine, never shared) |
 | A project card (`project.md`) | Made or changed only through the `tdsapp-projects` skill. Never save anything else called `project.md`, `retainer.md` or `summary.md` in a project folder, or use `updates/`, `months/` or `reports/` there for anything but their own purpose |

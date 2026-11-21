@@ -1,18 +1,24 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.1): make and change project cards (`project.md`) the way TDS Cortex does.
-// The plan is the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27);
-// the shapes are in its shared/projects-contract.ts (a test checks the constants here match).
+// tdsapp-projects.cjs (v0.2): make and change project cards (`project.md`) the way TDS Cortex does,
+// and move a project to another client. The plans are the app repo's
+// docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27) and
+// docs/plans/2026-11-21-project-move.md; the shapes are in its shared/projects-contract.ts (a test
+// checks the constants here match).
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
-//   <action>  create | card | edit | link | unlink | capabilities
+//   <action>  create | card | edit | link | unlink | move | capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
-//             link {key, path, expect}, unlink {key, path, expect}, capabilities {}.
+//             link {key, path, expect}, unlink {key, path, expect},
+//             move {key, client, expect, dropPersonal?: true, check?: true, filesExpect?}, capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
-//             `version` is the hex SHA-256 of project.md's bytes after the change.
+//             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
+//             new key; with `check: true` it writes nothing and adds `check` (what the move would do,
+//             with `filesVersion`, the fingerprint of the folder's files). Sent back as `filesExpect`,
+//             the move is refused with `changed` when the folder's files are no longer those checked.
 //   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed); exit 1 internal.
 //
 // Where projects live (every folder there is a project, card or not):
@@ -24,6 +30,13 @@
 // A key resolves to the first folder found: for the-digital-stride, clients/the-digital-stride/projects/,
 // then projects/, then projects-archive/; for any other client, its live folder, then its archive.
 // `create` refuses a slug found in ANY of them.
+//
+// `move` takes clients/<client>/projects/<slug>/ or personal/projects/<slug>/ to
+// clients/<other client>/projects/<slug>/ (never to personal). The folder name stays; the key's client
+// changes and the old key goes on the card's `moved_from:` list, so the app keeps resolving it. Every
+// check runs before anything is written; then the new folder is claimed (an empty mkdir), the card is
+// rewritten in place, and the folder is renamed onto the claim. A failed rename puts the card's old
+// bytes back and lets go of the claim, so the project is wholly in one place or the other.
 //
 // The caller is DISTRUSTED and everything fails closed:
 //   - Who did it comes from this Mac's `git config user.email` (else `user.name` when no email is set)
@@ -43,7 +56,7 @@
 // The card (frontmatter keys in this order; empty fields left out, never written as null; lists as
 // quoted `- ` items, so the brain's simple frontmatter readers take them):
 //   v, title, client, kind, status, health, comms, owner, team, service, start, end, budget_hours,
-//   billable, stages, monday_id, created, created_by
+//   billable, stages, monday_id, created, created_by, moved_from
 // Body: the brief, then an optional `## Linked files` section of `- [name](path from the card)` lines.
 //
 // When `require`d it runs nothing and exports `run(action, input, ctx)`, so tests can pass a brain
@@ -58,10 +71,12 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.1';
+const SCRIPT_VERSION = '0.2';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
+const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
+const PROJECT_MOVED_FROM_MAX = 10;
 const INTERNAL_CLIENT = 'the-digital-stride';
 const INTERNAL_PRECEDENCE = [
   'clients/the-digital-stride/projects/<slug>',
@@ -99,12 +114,15 @@ const INPUT_MAX = 262144;
 const PATH_MAX = 1024;
 const NAME_MAX = 80;
 const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal']);
-const ACTION_NAMES = ['create', 'card', 'edit', 'link', 'unlink', 'capabilities'];
+const ACTION_NAMES = ['create', 'card', 'edit', 'link', 'unlink', 'move', 'capabilities'];
+// A move lists at most this many of the folder's files in its check, and walks at most this many entries.
+const MOVE_FILES_SHOWN = 50;
+const MOVE_WALK_MAX = 5000;
 
 // Card frontmatter keys, in the order they are written.
 const ORDER = [
   'v', 'title', 'client', 'kind', 'status', 'health', 'comms', 'owner', 'team', 'service', 'start', 'end',
-  'budget_hours', 'billable', 'stages', 'monday_id', 'created', 'created_by',
+  'budget_hours', 'billable', 'stages', 'monday_id', 'created', 'created_by', 'moved_from',
 ];
 // ProjectFields (camelCase) → the card key on disk.
 const FIELD_KEYS = {
@@ -122,7 +140,7 @@ const FIELD_KEYS = {
   billable: 'billable',
   stages: 'stages',
 };
-const LIST_KEYS = new Set(['team', 'service', 'stages']);
+const LIST_KEYS = new Set(['team', 'service', 'stages', 'moved_from']);
 
 class Refusal extends Error {
   constructor(code, message) {
@@ -247,7 +265,9 @@ function gitInBrain(ctx, args, input) {
   env.HOME = ctx.home;
   env.LC_ALL = 'C';
   env.LANGUAGE = '';
-  const out = spawnSync('git', args, { cwd: ctx.root, encoding: 'utf8', timeout: 5000, env, input });
+  const out = spawnSync('git', args, {
+    cwd: ctx.root, encoding: 'utf8', timeout: 5000, env, input, maxBuffer: 16 * 1024 * 1024,
+  });
   return out.error ? null : out;
 }
 
@@ -320,6 +340,18 @@ function requirePrivate(ctx, rel) {
   if (!ignored.includes(rel)) throw refuse('not-allowed', `${rel} would sync to the team: git doesn't ignore it`);
 }
 
+// What git ignores among `rels` (brain-relative), or an empty set when the brain isn't a git
+// repository. Refuses when git can't tell.
+function ignoredPaths(ctx, rels) {
+  const repo = brainRepo(ctx);
+  if (repo === 'none') return new Set();
+  const fail = () => refuse('not-allowed', "git couldn't check what would sync to the team");
+  if (repo === null) throw fail();
+  const out = gitInBrain(ctx, ['check-ignore', '--stdin', '-z'], rels.map(r => `${r}\0`).join(''));
+  if (!out || (out.status !== 0 && out.status !== 1)) throw fail();
+  return new Set((out.stdout || '').split('\0').filter(Boolean));
+}
+
 function requireTeam(who) {
   if (!who.known) {
     throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can change shared projects');
@@ -367,6 +399,17 @@ function locate(ctx, value) {
     return { ...loc, key: value, client: key.client === 'personal' ? null : key.client, slug: key.slug, abs };
   }
   throw refuse('not-found', `there is no project ${value}`);
+}
+
+// A live client's folder, clients/<client>, checked as a real folder. Its lstat for the same-disk check.
+function requireClientFolder(ctx, client) {
+  const clientAbs = path.join(ctx.root, 'clients', client);
+  const st = lstatOrNull(clientAbs);
+  if (!st) throw refuse('not-found', `there is no client folder clients/${client}`);
+  if (st.isSymbolicLink()) throw refuse('not-allowed', `clients/${client} is a link`);
+  if (!st.isDirectory()) throw refuse('not-found', `clients/${client} isn't a folder`);
+  requireRealPath(ctx, clientAbs, `clients/${client}`);
+  return st;
 }
 
 // Refuses a path whose real location isn't exactly where it says (a link along the way, or letters
@@ -742,6 +785,22 @@ function bodyWithBrief(oldBody, brief) {
   return out;
 }
 
+// The body without the `hits` lines of the `## Linked files` section at `range`; the section goes
+// too once it is empty, blank lines either side collapsed.
+function withoutLines(lines, range, hits) {
+  let out = lines.filter((_, i) => !hits.has(i));
+  const end = range[1] - hits.size;
+  if (out.slice(range[0] + 1, end).every(l => l.trim() === '')) {
+    const before = out.slice(0, range[0]);
+    while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
+    const after = out.slice(end);
+    while (after.length > 0 && after[0].trim() === '') after.shift();
+    if (after.length === 0) out = before.length > 0 ? [...before, ''] : [];
+    else out = before.length > 0 ? [...before, '', ...after] : ['', ...after];
+  }
+  return out;
+}
+
 // The library's isNeverListed (server/brain/library-rules.ts), as tdsapp-files has it.
 function isNeverListed(rel) {
   if (rel === '' || rel.includes('\\') || rel.includes('\0')) return true;
@@ -878,12 +937,7 @@ function create(input, ctx) {
       throw refuse('bad-request', 'client must be a client folder name');
     }
     requireTeam(who);
-    const clientAbs = path.join(ctx.root, 'clients', client);
-    const st = lstatOrNull(clientAbs);
-    if (!st) throw refuse('not-found', `there is no client folder clients/${client}`);
-    if (st.isSymbolicLink()) throw refuse('not-allowed', `clients/${client} is a link`);
-    if (!st.isDirectory()) throw refuse('not-found', `clients/${client} isn't a folder`);
-    requireRealPath(ctx, clientAbs, `clients/${client}`);
+    requireClientFolder(ctx, client);
     rel = `clients/${client}/projects/${slug}`;
   } else {
     if (input.client !== undefined && input.client !== null) throw refuse('bad-request', 'a personal project has no client');
@@ -1025,28 +1079,251 @@ function unlink(input, ctx) {
   const hits = new Set();
   if (range) for (let i = range[0] + 1; i < range[1]; i++) if (linkOf(lines[i]) === rel) hits.add(i);
   if (hits.size === 0) return { ok: true, action: 'unlink', key: loc.key, version: sha256(cardFile.bytes) };
-  let out = lines.filter((_, i) => !hits.has(i));
-  const end = range[1] - hits.size;
-  if (out.slice(range[0] + 1, end).every(l => l.trim() === '')) {
-    // The section is empty now: take it out, blank lines either side collapsed.
-    const before = out.slice(0, range[0]);
-    while (before.length > 0 && before[before.length - 1].trim() === '') before.pop();
-    const after = out.slice(end);
-    while (after.length > 0 && after[0].trim() === '') after.shift();
-    if (after.length === 0) out = before.length > 0 ? [...before, ''] : [];
-    else out = before.length > 0 ? [...before, '', ...after] : ['', ...after];
-  }
-  const version = writeCard(cardFile, joinCard(cardFile.parts.entries, out));
+  const version = writeCard(cardFile, joinCard(cardFile.parts.entries, withoutLines(lines, range, hits)));
   return { ok: true, action: 'unlink', key: loc.key, version };
 }
 
+// ---- move (docs/plans/2026-11-21-project-move.md) ------------------------------------------------
+
+// A `## Linked files` line in parts: everything up to the target, the target, and the rest.
+const LINK_PARTS = /^([ \t]*[-*][ \t]+\[[^\]\n]+\]\()(?:<([^>\n]+)>|([^\s()<>]+))(\)[ \t]*)$/;
+
+// Every file in a project folder (paths from the folder, sorted), walked once before anything is
+// written. Refuses links, a git repository inside, hard-linked files, anything that isn't a plain
+// file or folder, and anything on another disk: each would come out wrong after a rename.
+function walkFolder(loc, dev) {
+  const files = [];
+  const stack = [''];
+  let entries = 0;
+  const no = (rel, why) => refuse('not-allowed', `${loc.rel}/${rel} ${why}, so the project can't be moved`);
+  while (stack.length > 0) {
+    const sub = stack.pop();
+    const dirAbs = sub === '' ? loc.abs : path.join(loc.abs, ...sub.split('/'));
+    let names;
+    try {
+      names = fs.readdirSync(dirAbs);
+    } catch {
+      throw no(sub, "can't be read");
+    }
+    for (const name of names) {
+      entries++;
+      if (entries > MOVE_WALK_MAX) {
+        throw refuse('not-allowed', `${loc.rel} holds more than ${MOVE_WALK_MAX} files and folders, so it can't be moved here`);
+      }
+      const rel = sub === '' ? name : `${sub}/${name}`;
+      if (name === '.git') throw no(rel, 'is a git repository inside the project');
+      const st = fs.lstatSync(path.join(dirAbs, name));
+      if (st.isSymbolicLink()) throw no(rel, 'is a link');
+      if (st.dev !== dev) throw no(rel, 'is on another disk');
+      if (st.isDirectory()) {
+        stack.push(rel);
+        continue;
+      }
+      if (!st.isFile()) throw no(rel, "isn't a plain file or folder");
+      if (st.nlink > 1) throw no(rel, 'is hard-linked to another file');
+      files.push(rel);
+    }
+  }
+  return files.sort();
+}
+
+// The fingerprint of a folder's files (walkFolder's list, ignored files included): hex SHA-256 of the
+// sorted folder-relative paths joined with "\n". A file saved into the folder after the check changes it.
+function filesVersionOf(files) {
+  return sha256(Buffer.from([...files].sort().join('\n'), 'utf8'));
+}
+
+// The `## Linked files` lines of a body that resolve, as [line index, brain path].
+function linkedLines(body) {
+  const range = linkedRange(body);
+  const out = [];
+  if (range) for (let i = range[0] + 1; i < range[1]; i++) { const p = linkOf(body[i]); if (p) out.push([i, p]); }
+  return { range, out };
+}
+
+// `personal/` files a personal card links from outside its own folder: moving would share them.
+function personalLinksOf(body, folderRel) {
+  const out = [];
+  for (const [, p] of linkedLines(body).out) {
+    if (p.startsWith('personal/') && !p.startsWith(`${folderRel}/`) && !out.includes(p)) out.push(p);
+  }
+  return out;
+}
+
+// The moved card's text: `moved_from` gains the old key (deduped, never the new key, the oldest
+// dropping off past PROJECT_MOVED_FROM_MAX), a `client:` line follows the move when there is one, and
+// every recognised `## Linked files` line is written from the new folder's depth, those inside the
+// old folder pointing into the new one. With `drop`, the personal links outside the folder go.
+// Every other line is kept byte for byte.
+function movedCardText(cardFile, loc, newRel, newKey, client, drop) {
+  const { entries } = cardFile.parts;
+  const old = cardValues(entries).moved_from;
+  const listed = Array.isArray(old) ? old : typeof old === 'string' && old !== '' ? [old] : [];
+  const keys = [];
+  for (const k of [...listed, loc.key]) {
+    if (!parseKey(k) || k === newKey) continue;
+    const at = keys.indexOf(k);
+    if (at !== -1) keys.splice(at, 1);
+    keys.push(k);
+  }
+  while (keys.length > PROJECT_MOVED_FROM_MAX) keys.shift();
+  let next = setEntry(entries, 'moved_from', renderField('moved_from', keys));
+  // Always: a personal card has no `client:` line, and a moved card should read like a created one.
+  next = setEntry(next, 'client', [`client: ${client}`]);
+
+  const body = cardFile.parts.body.slice();
+  const { range, out } = linkedLines(body);
+  const hits = new Set();
+  const depth = '../'.repeat(newRel.split('/').length);
+  for (const [i, p] of out) {
+    if (drop && p.startsWith('personal/') && !p.startsWith(`${loc.rel}/`)) {
+      hits.add(i);
+      continue;
+    }
+    const m = LINK_PARTS.exec(body[i]);
+    if (!m) continue;
+    const target = depth + (p.startsWith(`${loc.rel}/`) ? newRel + p.slice(loc.rel.length) : p);
+    body[i] = m[1] + (/[\s()<>]/.test(target) ? `<${target}>` : target) + m[4];
+  }
+  return joinCard(next, hits.size > 0 ? withoutLines(body, range, hits) : body);
+}
+
+// Every check first; then claim the new folder, rewrite the card, rename onto the claim.
+function move(input, ctx) {
+  const loc = locate(ctx, input.key);
+  const expect = expectOf(input, true);
+  const client = input.client;
+  if (typeof client !== 'string' || client === 'personal' || !isSlug(client)) {
+    throw refuse('bad-request', 'client must be a client folder name');
+  }
+  if (input.dropPersonal !== undefined && input.dropPersonal !== true) throw refuse('bad-request', 'dropPersonal can only be true');
+  if (input.check !== undefined && input.check !== true) throw refuse('bad-request', 'check can only be true');
+  const filesExpect = input.filesExpect;
+  if (filesExpect !== undefined && (typeof filesExpect !== 'string' || !/^[0-9a-f]{64}$/.test(filesExpect))) {
+    throw refuse('bad-request', "filesExpect must be a check's filesVersion");
+  }
+  if (loc.archived) throw refuse('not-allowed', 'archived projects are read only');
+  if (loc.space === 'legacy') {
+    throw refuse('not-allowed', `${loc.rel} is one of the older project folders other skills still write to, so it can't be moved yet`);
+  }
+  if (loc.client === client) throw refuse('bad-request', `${loc.key} is already in ${client}`);
+  // The old key must stop resolving to a folder, or old links would land on its twin.
+  const was = parseKey(loc.key);
+  for (const other of locationsOf(was.client, was.slug)) {
+    if (other.rel !== loc.rel && lstatOrNull(path.join(ctx.root, ...other.rel.split('/')))) {
+      throw refuse('not-allowed', `there's another folder for ${loc.key} (${other.rel}): tidy that up first, or old links would point at it`);
+    }
+  }
+  const who = identity(ctx);
+  requireTeam(who);
+  const clientSt = requireClientFolder(ctx, client);
+  const newRel = `clients/${client}/projects/${loc.slug}`;
+  const newKey = `${client}/${loc.slug}`;
+  for (const other of locationsOf(client, loc.slug)) {
+    if (lstatOrNull(path.join(ctx.root, ...other.rel.split('/')))) {
+      throw refuse('exists', `there is already a project called ${loc.slug} (${other.rel})`);
+    }
+  }
+  openCard(ctx, loc, null);
+  const parentRel = `clients/${client}/projects`;
+  const parentAbs = path.join(ctx.root, ...parentRel.split('/'));
+  const parentSt = lstatOrNull(parentAbs);
+  if (parentSt) {
+    if (parentSt.isSymbolicLink() || !parentSt.isDirectory()) throw refuse('not-allowed', `${parentRel} isn't a plain folder`);
+    requireRealPath(ctx, parentAbs, parentRel);
+  }
+  const dev = fs.lstatSync(loc.abs).dev;
+  if ((parentSt || clientSt).dev !== dev) {
+    throw refuse('not-allowed', `${loc.rel} and clients/${client} are on different disks, so the project can't be moved`);
+  }
+  const files = walkFolder(loc, dev);
+  const filesVersion = filesVersionOf(files);
+  if (filesExpect !== undefined && filesExpect !== filesVersion) {
+    throw refuse('changed', 'the files in this project changed since you checked: check again');
+  }
+  const cardRel = `${newRel}/${PROJECT_CARD_FILE}`;
+  const ignored = ignoredPaths(ctx, [cardRel, ...files.map(f => `${newRel}/${f}`)]);
+  if (ignored.has(cardRel)) throw refuse('not-allowed', `${cardRel} wouldn't sync to the team: git ignores it`);
+
+  // The fingerprint last, right before the write.
+  const cardFile = openCard(ctx, loc, expect);
+  const personalLinks = loc.space === 'personal' ? personalLinksOf(cardFile.parts.body, loc.rel) : [];
+  if (input.check === true) {
+    return {
+      ok: true,
+      action: 'move',
+      key: newKey,
+      version: sha256(cardFile.bytes),
+      check: {
+        key: newKey,
+        files: files.slice(0, MOVE_FILES_SHOWN).map(f => `${loc.rel}/${f}`),
+        fileCount: files.length,
+        ignoredCount: files.filter(f => ignored.has(`${newRel}/${f}`)).length,
+        personalLinks,
+        filesVersion,
+      },
+    };
+  }
+  if (personalLinks.length > 0 && input.dropPersonal !== true) {
+    throw refuse('not-allowed', `the card links ${personalLinks.length === 1 ? 'a personal file' : `${personalLinks.length} personal files`} from outside the project, which moving would share with the team: unlink ${personalLinks.length === 1 ? 'it' : 'them'} first`);
+  }
+  const text = movedCardText(cardFile, loc, newRel, newKey, client, input.dropPersonal === true);
+
+  // Claim the new folder: an empty folder nothing else can take meanwhile.
+  let madeParent = false;
+  if (!parentSt) {
+    try {
+      fs.mkdirSync(parentAbs);
+      madeParent = true;
+    } catch (err) {
+      if (errCode(err) !== 'EEXIST') throw err;
+    }
+  }
+  const newAbs = path.join(ctx.root, ...newRel.split('/'));
+  const letGo = () => {
+    try { fs.rmdirSync(newAbs); } catch { /* not ours or not empty: leave it */ }
+    if (madeParent) { try { fs.rmdirSync(parentAbs); } catch { /* not empty: leave it */ } }
+  };
+  try {
+    requireRealPath(ctx, parentAbs, parentRel);
+    fs.mkdirSync(newAbs);
+  } catch (err) {
+    if (madeParent) { try { fs.rmdirSync(parentAbs); } catch { /* leave it */ } }
+    if (errCode(err) === 'EEXIST') throw refuse('exists', `there is already a project called ${loc.slug} (${newRel})`);
+    throw err;
+  }
+  let version;
+  try {
+    version = writeCard(cardFile, text);
+  } catch (err) {
+    letGo();
+    throw err;
+  }
+  try {
+    (ctx.renameDir || fs.renameSync)(loc.abs, newAbs);
+  } catch (err) {
+    try { replaceFile(cardFile.abs, cardFile.bytes, cardFile.mode); } catch { /* the card keeps its extra lines */ }
+    letGo();
+    if (errCode(err) === 'EXDEV') throw refuse('internal', "the project's folder couldn't be moved to another disk");
+    throw refuse('internal', `the project's folder couldn't be moved (${errCode(err) || 'error'}), so it stays where it was`);
+  }
+  syncDir(path.dirname(loc.abs));
+  syncDir(parentAbs);
+  return { ok: true, action: 'move', key: newKey, version };
+}
+
 function capabilities() {
-  return { ok: true, action: 'capabilities', version: SCRIPT_VERSION, features: [PROJECTS_CAPABILITY] };
+  return {
+    ok: true,
+    action: 'capabilities',
+    version: SCRIPT_VERSION,
+    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY],
+  };
 }
 
 // ---- command line --------------------------------------------------------------------------------
 
-const ACTIONS = { create, card, edit, link, unlink, capabilities };
+const ACTIONS = { create, card, edit, link, unlink, move, capabilities };
 
 function defaultCtx() {
   return {
@@ -1112,6 +1389,8 @@ module.exports = {
   run,
   SCRIPT_VERSION,
   PROJECTS_CAPABILITY,
+  PROJECTS_MOVE_CAPABILITY,
+  PROJECT_MOVED_FROM_MAX,
   INTERNAL_CLIENT,
   INTERNAL_PRECEDENCE,
   PROJECT_CARD_FILE,

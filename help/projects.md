@@ -18,7 +18,6 @@ Projects shows the work the team is doing for each client. Every project has a p
 ## Why it helps
 
 - You see all of a client's projects together.
-- You see who is on a project, even if nobody typed their name in.
 - Old to-do labels can be tidied into real projects.
 
 ## How to use it
@@ -29,6 +28,7 @@ Projects shows the work the team is doing for each client. Every project has a p
 4. Press **New project** to add one. Press **Edit** on a project to change it.
 5. Press **Add to team** beside a person marked "from to-dos" to keep them on the team.
 6. If you see a tidy-up notice, press **Tidy up**. Approve, change or skip each old label.
+7. To move a project to another client, press **Move…** on its page or in Edit. You see what will happen first.
 
 ## Good to know
 
@@ -36,12 +36,12 @@ Projects shows the work the team is doing for each client. Every project has a p
 - A project without a card is read-only. Press **Add a card** to fix that.
 - If the brain's skills are out of date, Projects is read-only until you update them.
 - On Home, **Working on** sits in the message box. It narrows your work to one project and starts new chats with its client.
-- In To-dos, the Project filter covers **Mine**, **Open** and **Asked**. Press a to-do's project to see only that project.
-- Images and Documents have a Project filter, so you can see only the files linked to one project.
-- A to-do has Project and Stage fields, so it can sit in a project and a stage.
-- The tidy-up changes teammates' to-dos too, but only their client, project and stage lines.
-- Only one person should run the tidy-up, straight after the brain has synced, so two Macs don't make the same project twice.
-- Nothing is deleted or moved when you use Projects.
+- Images, Documents and to-dos have a Project filter. A to-do also has a Stage.
+- Tidy-up changes teammates' to-dos too. Only one person should run it, straight after a sync.
+- Moving: a personal project can go to a client, and a client project to another client. Nothing moves back to personal.
+- Moving a personal project shares its whole folder with the team. Ask the team to sync first, so nobody adds files to the old folder.
+- After a move, files linked to a to-do from inside the old folder need linking again.
+- Nothing is deleted when you use Projects.
 
 ## Try this
 

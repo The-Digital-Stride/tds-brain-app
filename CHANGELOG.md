@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.59.1 — 2026-11-21
+
+- **fix**: line every sheet up to one gutter
+
 ## v0.59.0 — 2026-11-21
 
 - **feat**: link several files to a project at once

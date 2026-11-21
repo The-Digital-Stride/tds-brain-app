@@ -5,7 +5,7 @@ import type { AppSlot } from './contract.ts';
 
 /**
  * The library apps (`client/src/apps/images`, `client/src/apps/documents`): the images and
- * documents the server lists from the brain. They share `client/src/apps/shared` and are always on
+ * documents the server lists from the brain. The Projects app (`client/src/apps/projects`) is the third. They share `client/src/apps/shared` and are always on
  * the rail. Each loads its code only when first opened; its search source sits outside that lazy chunk
  * (`search.ts` in each app), so the global search never loads the screens.
  */
@@ -37,8 +37,20 @@ function documentsApp(): AppSlot {
   };
 }
 
+function projectsApp(): AppSlot {
+  const ui = () => import('../apps/projects/ui.ts');
+  return {
+    id: 'projects',
+    title: 'Projects',
+    // The projects' own search group lives in search-sources.ts (plan 2026-11-20-projects-system, decision 14).
+    icon: 'calendar',
+    Sheet: lazy(() => ui().then((m) => ({ default: m.ProjectsSheet }))),
+    search: null,
+  };
+}
+
 /**
  * Apps on the rail. The rail shows an "Apps" group only when this has entries, and the view
  * `app:<id>` shows the matching `Sheet`.
  */
-export const APPS: AppSlot[] = [imagesApp(), documentsApp()];
+export const APPS: AppSlot[] = [imagesApp(), documentsApp(), projectsApp()];

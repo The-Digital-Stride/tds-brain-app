@@ -20,7 +20,7 @@ const NEXT_HEADING = /^#{1,2}[ \t]/;
  */
 const ITEM =
   /^[ \t]*[-*][ \t]+\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^\s()<>]+))\)(?:[ \t]+\(only on ([a-z0-9]+(?:-[a-z0-9]+)*)'s Mac\))?[ \t]*$/;
-const ROOTS = ['clients/', 'templates/', 'personal/'];
+const ROOTS = ['clients/', 'projects/', 'templates/', 'personal/'];
 
 export interface TodoFileLink {
   /** Brain-relative, e.g. "clients/acme/images/logo.png". */
@@ -33,7 +33,7 @@ export interface TodoFileLink {
 
 /**
  * A link target as a brain path, or null. Every leading `../` is dropped (so a link still resolves after
- * the to-do moves to `done/`), then the rest must start with clients/, templates/ or personal/ and have
+ * the to-do moves to `done/`), then the rest must start with clients/, projects/ (projects plan, decision 7), templates/ or personal/ and have
  * no empty, `.` or `..` segment, no backslash, no colon (scheme) and no `%` (nothing is decoded).
  */
 export function resolveTodoFilePath(target: string): string | null {

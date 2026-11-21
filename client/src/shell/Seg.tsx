@@ -5,7 +5,7 @@ import type { SegProps } from './contract.ts';
  * A segmented choice. Behaves as a radio group: one tab stop (the chosen option), and the arrow
  * keys, Home and End move the choice and the focus together.
  */
-export function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>) {
+export function Seg<T extends string>({ label, labelledBy, value, options, onChange }: SegProps<T>) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const current = Math.max(
     0,
@@ -34,7 +34,13 @@ export function Seg<T extends string>({ label, value, options, onChange }: SegPr
   };
 
   return (
-    <div className="seg" role="radiogroup" aria-label={label} onKeyDown={onKeyDown}>
+    <div
+      className="seg"
+      role="radiogroup"
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
+      onKeyDown={onKeyDown}
+    >
       {options.map((o, i) => {
         const on = i === current;
         return (

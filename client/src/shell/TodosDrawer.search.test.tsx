@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TodoHandover, TodoItem, TodoList } from '../../../shared/contract.ts';
 import { pickOption } from '../test/pick.ts';
@@ -247,6 +247,27 @@ describe('filters', () => {
     pickOption('Client', 'Bolt');
     expect(screen.getByText('Ring Bob', { exact: false })).toBeTruthy();
     expect(screen.queryByText('Renew contract', { exact: false })).toBeNull();
+  });
+
+  it('shows a chip while the picker holds a project, and Clear, or Clear filters, lets it go', async () => {
+    const { projectChoice, clientChoice } = await import('../state/client-choice.ts');
+    setStore([todo('a.md', 'Renew contract')]);
+    projectChoice.set('acme/site');
+    render(<TodosDrawer />);
+    // Nothing is in that project: the list is empty and the reason is on screen.
+    expect(screen.getByText('No to-dos match.')).toBeTruthy();
+    expect(screen.getByText(/Project: acme\/site/)).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Project' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(projectChoice.get().project).toBe('');
+    expect(clientChoice.get()).toBe('client:acme');
+    expect(screen.getByText('Renew contract', { exact: false })).toBeTruthy();
+    expect(screen.queryByText(/Project: /)).toBeNull();
+    act(() => projectChoice.set('acme/site'));
+    const chip = screen.getByText(/Project: acme\/site/);
+    fireEvent.click(within(chip).getByRole('button', { name: 'Clear' }));
+    expect(projectChoice.get().project).toBe('');
+    clientChoice.set('');
   });
 
   it('says when nothing matches, with a Clear filters button that works', () => {

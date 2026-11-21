@@ -1,0 +1,445 @@
+<title>Projects in Cortex</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one reading column; each section is a "folder" with a tab label, because projects are folders. */
+:root {
+  --bg: #f6f7f9;
+  --paper: #ffffff;
+  --ink: #1c2330;
+  --muted: #5b6677;
+  --line: #d5dbe4;
+  --accent: #2c55c9;
+  --accent-soft: #e6ecfb;
+  --r1: #2c55c9;
+  --r2: #0f8a7a;
+  --r3: #9a5a12;
+  --p2: #7a3fb0;
+  --r4: #b0306e;
+  --green: #1d8a4e;
+  --amber: #b77a00;
+  --red: #c23a3a;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-head: ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+    --accent: #86a5ff; --accent-soft: #232f4a; --r1: #86a5ff; --r2: #4fd1bd; --r3: #e0a458; --p2: #c79bf0; --r4: #f08cbf;
+    --green: #4cc683; --amber: #e8b444; --red: #f07a7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+  --accent: #86a5ff; --accent-soft: #232f4a; --r1: #86a5ff; --r2: #4fd1bd; --r3: #e0a458; --p2: #c79bf0; --r4: #f08cbf;
+  --green: #4cc683; --amber: #e8b444; --red: #f07a7a; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font); }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 34px; }
+h1, h2 { font-family: var(--font-head); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; }
+h2 { font-size: 22px; line-height: 1.25; }
+p { margin: 0; max-width: 65ch; }
+.lead { font-size: 18px; color: var(--muted); }
+header { display: grid; gap: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+section.folder { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 0 12px 12px 12px;
+  padding: 22px 20px 20px; display: grid; gap: 14px; margin-top: 18px; }
+section.folder > .tab { position: absolute; top: -27px; left: -1px; background: var(--paper); border: 1px solid var(--line);
+  border-bottom: none; border-radius: 8px 8px 0 0; padding: 4px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
+  letter-spacing: .04em; }
+figure { margin: 0; display: grid; gap: 8px; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 65ch; }
+.svgbox { overflow-x: auto; }
+svg { display: block; max-width: 100%; height: auto; }
+svg text { font-family: var(--font); fill: currentColor; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.chip b { font-weight: 600; }
+.k-r1 { color: var(--r1); } .k-r2 { color: var(--r2); } .k-r3 { color: var(--r3); } .k-p2 { color: var(--p2); } .k-r4 { color: var(--r4); }
+code { font-family: var(--mono); font-size: .9em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+ul.plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 65ch; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tablebox { overflow-x: auto; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+td code { white-space: nowrap; }
+.steps { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.step { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 4px; }
+.step .when { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.step p { font-size: 14px; }
+.play { justify-self: start; font: inherit; font-size: 14px; border: 1px solid var(--accent); color: var(--accent);
+  background: transparent; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+.play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { font-size: 14px; color: var(--muted); }
+dl.words { margin: 0; display: grid; gap: 10px; }
+dl.words div { display: grid; gap: 2px; }
+dt { font-weight: 600; }
+dd { margin: 0; color: var(--muted); max-width: 65ch; }
+
+/* Save-flow animation: a dot travels the path once, then rests at the end. */
+.dot { opacity: 0; }
+.run .dot { animation: travel 4.8s ease-in-out forwards; }
+.people { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.person { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; font-size: 14px; }
+.tag { justify-self: start; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--accent-soft); color: var(--accent); }
+.tag.auto { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+@keyframes travel {
+  0% { opacity: 1; transform: translateX(0); }
+  20% { transform: translateX(170px); }
+  45% { transform: translateX(340px); }
+  70% { transform: translateX(510px); }
+  100% { opacity: 1; transform: translateX(680px); }
+}
+.check { opacity: 1; }
+.run .check { animation: pop 4.8s ease-out both; }
+.run .check.c2 { animation-name: pop2; }
+@keyframes pop { 0%, 30% { opacity: .25; } 38%, 100% { opacity: 1; } }
+@keyframes pop2 { 0%, 55% { opacity: .25; } 63%, 100% { opacity: 1; } }
+/* Picker: the whole app narrows. */
+.narrow rect.app { transition: opacity .6s ease; }
+.run-picker .other { animation: dim 3s ease forwards; }
+@keyframes dim { 0%, 35% { opacity: 1; } 70%, 100% { opacity: .22; } }
+@media (prefers-reduced-motion: reduce) {
+  .run .dot, .run .check, .run-picker .other { animation: none; }
+  .dot { opacity: 0; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Plan for the TDS Brain app · 20 November 2026, updated 21 November</span>
+    <h1>Projects in Cortex</h1>
+    <p class="lead">A project is one tidy place for a piece of work. Its to-dos, files, pictures and documents (and later its chats, notes, emails, meetings, monthly retainer reviews and time) all point at it, so you can find everything about it in one go.</p>
+  </header>
+
+  <section class="folder" aria-labelledby="s1">
+    <span class="tab">The shape</span>
+    <h2 id="s1">Client, then project, then to-do</h2>
+    <figure>
+      <div class="svgbox">
+        <svg viewBox="0 0 800 330" role="img" aria-label="A tree: clients hold projects, projects hold to-dos grouped by stage. A to-do can also sit straight under a client. Personal projects stay on your own Mac.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+          </defs>
+          <g fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5">
+            <path d="M120 60 V250"/>
+            <path d="M120 100 H190"/><path d="M120 175 H190"/><path d="M120 250 H190"/>
+            <path d="M380 100 H440"/><path d="M410 100 V160 H440"/>
+          </g>
+          <!-- client -->
+          <rect x="30" y="34" width="180" height="40" rx="8" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+          <text x="120" y="59" text-anchor="middle" font-size="14" font-weight="600">Client: Skyseal</text>
+          <!-- projects -->
+          <rect x="190" y="80" width="190" height="40" rx="8" stroke="currentColor" stroke-opacity=".5" style="fill: var(--paper)"/>
+          <text x="285" y="98" text-anchor="middle" font-size="13" font-weight="600">Project: Website rebuild</text>
+          <text x="285" y="113" text-anchor="middle" font-size="11" opacity=".7">one-off · has an end date</text>
+          <rect x="190" y="155" width="190" height="40" rx="8" stroke="currentColor" stroke-opacity=".5" style="fill: var(--paper)"/>
+          <text x="285" y="173" text-anchor="middle" font-size="13" font-weight="600">Project: Google Ads</text>
+          <text x="285" y="188" text-anchor="middle" font-size="11" opacity=".7">ongoing · a retainer</text>
+          <rect x="190" y="230" width="190" height="40" rx="8" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 4" style="fill: var(--paper)"/>
+          <text x="285" y="255" text-anchor="middle" font-size="13">To-do with no project</text>
+          <!-- stages + todos -->
+          <rect x="440" y="82" width="150" height="36" rx="6" stroke="currentColor" stroke-opacity=".35" style="fill: var(--paper)"/>
+          <text x="515" y="104" text-anchor="middle" font-size="12">Stage: Build</text>
+          <rect x="440" y="142" width="150" height="36" rx="6" stroke="currentColor" stroke-opacity=".35" style="fill: var(--paper)"/>
+          <text x="515" y="164" text-anchor="middle" font-size="12">Stage: Launch</text>
+          <g fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5"><path d="M590 100 H630"/><path d="M590 160 H630"/></g>
+          <rect x="630" y="82" width="150" height="36" rx="6" style="fill: var(--paper); stroke: var(--green)"/>
+          <text x="705" y="104" text-anchor="middle" font-size="12">To-do: new menus</text>
+          <rect x="630" y="142" width="150" height="36" rx="6" style="fill: var(--paper); stroke: var(--green)"/>
+          <text x="705" y="164" text-anchor="middle" font-size="12">To-do: go-live checks</text>
+          <!-- personal -->
+          <rect x="440" y="230" width="340" height="60" rx="8" fill="none" stroke-dasharray="5 4" style="stroke: var(--p2)"/>
+          <text x="610" y="255" text-anchor="middle" font-size="13" font-weight="600" style="fill: var(--p2); fill: var(--p2)">Personal projects</text>
+          <text x="610" y="275" text-anchor="middle" font-size="11" opacity=".8">stay on your own Mac · the team never sees them</text>
+        </svg>
+      </div>
+      <figcaption>Clients hold projects. A project holds to-dos, and you can group them into stages if you like. A to-do can still sit straight under a client. Our own work goes under The Digital Stride, like any other client.</figcaption>
+    </figure>
+    <ul class="plain">
+      <li><b>One-off</b> projects have an end, like a website rebuild. <b>Ongoing</b> ones are retainers, like monthly Google Ads work.</li>
+      <li>Each project is a folder, for example <code>clients/skyseal/projects/website-rebuild/</code>, with a short card file called <code>project.md</code>.</li>
+      <li>The card holds the same details Monday does: Account Owner, team, service, dates, budget hours, a health light and a client-comms light.</li>
+      <li>A project's folder name never changes, even if you rename its title. That's why links to it never break.</li>
+    </ul>
+  </section>
+
+  <section class="folder" aria-labelledby="s2">
+    <span class="tab">What hangs off a project</span>
+    <h2 id="s2">Everything points at the project</h2>
+    <figure>
+      <div class="svgbox">
+        <svg viewBox="0 0 800 340" role="img" aria-label="The project card in the middle. Release 1 links to-dos, images and documents. Release 2 adds chats, call notes, updates, emails and meetings. Release 3 adds retainer terms and monthly reviews. Release 4 adds ads work and a close-out summary. Phase two adds time.">
+          <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <g stroke="currentColor" stroke-opacity=".4" stroke-width="1.5" fill="none" marker-end="url(#a2)">
+            <path d="M175 80 L318 148"/><path d="M175 170 L318 170"/><path d="M175 260 L318 192"/>
+            <path d="M625 40 L482 145"/><path d="M625 105 L482 158"/><path d="M625 170 L482 170"/><path d="M625 235 L482 182"/><path d="M625 300 L482 195"/>
+          </g>
+          <rect x="320" y="130" width="160" height="80" rx="10" stroke-width="2" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+          <text x="400" y="165" text-anchor="middle" font-size="15" font-weight="700">Project card</text>
+          <text x="400" y="186" text-anchor="middle" font-size="11" opacity=".75">project.md</text>
+          <g font-size="13">
+            <rect x="15" y="60" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r1)"/><text x="95" y="85" text-anchor="middle">To-dos · team</text>
+            <rect x="15" y="150" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r1)"/><text x="95" y="175" text-anchor="middle">Images</text>
+            <rect x="15" y="240" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r1)"/><text x="95" y="265" text-anchor="middle">Documents</text>
+            <rect x="625" y="20" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r2)"/><text x="705" y="45" text-anchor="middle">Chats · call notes</text>
+            <rect x="625" y="85" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r2)"/><text x="705" y="110" text-anchor="middle">Updates · emails</text>
+            <rect x="625" y="150" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r3)"/><text x="705" y="175" text-anchor="middle">Retainer · months</text>
+            <rect x="625" y="215" width="160" height="40" rx="8" style="fill: var(--paper); stroke: var(--r4)"/><text x="705" y="240" text-anchor="middle">Ads · close-out</text>
+            <rect x="625" y="280" width="160" height="40" rx="8" stroke-dasharray="5 4" style="fill: var(--paper); stroke: var(--p2)"/><text x="705" y="305" text-anchor="middle">Time spent</text>
+          </g>
+          <text x="95" y="44" text-anchor="middle" font-size="11" font-weight="700" style="fill: var(--r1)">RELEASE 1</text>
+          <text x="705" y="12" text-anchor="middle" font-size="11" font-weight="700" style="fill: var(--muted)">LATER RELEASES</text>
+        </svg>
+      </div>
+      <figcaption>Release 1 links to-dos, images and documents. Later releases add more, each one pointing at the same card.</figcaption>
+    </figure>
+    <div class="chips" aria-label="Colour key">
+      <span class="chip"><b class="k-r1">■</b> Release 1</span>
+      <span class="chip"><b class="k-r2">■</b> Release 2</span>
+      <span class="chip"><b class="k-r3">■</b> Release 3: retainers</span>
+      <span class="chip"><b class="k-r4">■</b> Release 4</span>
+      <span class="chip"><b class="k-p2">■</b> Phase 2: time</span>
+    </div>
+    <ul class="plain">
+      <li>A file saved <b>inside</b> the project folder belongs to it automatically.</li>
+      <li>A file kept <b>somewhere else</b> (or used by two projects) is <b>linked</b> from the card. Nothing gets moved, so nothing that already points at the file breaks.</li>
+    </ul>
+  </section>
+
+  <section class="folder" aria-labelledby="s3">
+    <span class="tab">Saving a change</span>
+    <h2 id="s3">How a change gets into the brain safely</h2>
+    <figure>
+      <div class="svgbox" id="flow">
+        <svg viewBox="0 0 800 210" role="img" aria-label="A change goes from the app to a brain helper, which checks the file hasn't changed and nothing private leaks, then writes the file. The brain's sync then shares it with the team.">
+          <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <g stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" fill="none" marker-end="url(#a3)">
+            <path d="M140 70 H190"/><path d="M310 70 H360"/><path d="M480 70 H530"/><path d="M650 70 H690"/>
+          </g>
+          <g font-size="13" text-anchor="middle">
+            <rect x="20" y="45" width="120" height="50" rx="8" stroke="currentColor" stroke-opacity=".5" style="fill: var(--paper)"/>
+            <text x="80" y="67" font-weight="600">You, in Cortex</text><text x="80" y="84" font-size="11" opacity=".7">edit a project</text>
+            <rect x="190" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--accent)"/>
+            <text x="250" y="67" font-weight="600">Brain helper</text><text x="250" y="84" font-size="11" opacity=".7">tdsapp-projects</text>
+            <rect x="360" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--amber)"/>
+            <text x="420" y="67" font-weight="600">Changed?</text><text x="420" y="84" font-size="11" opacity=".7">since you opened it</text>
+            <rect x="530" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--red)"/>
+            <text x="590" y="67" font-weight="600">Private?</text><text x="590" y="84" font-size="11" opacity=".7">personal stays home</text>
+            <rect x="690" y="45" width="100" height="50" rx="8" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+            <text x="740" y="67" font-weight="600">Saved</text><text x="740" y="84" font-size="11" opacity=".7">then synced</text>
+          </g>
+          <circle class="dot" cx="80" cy="120" r="7" style="fill: var(--accent)"/>
+          <g font-size="12">
+            <text class="check" x="420" y="128" text-anchor="middle" style="fill: var(--amber)">✓ nobody else changed it</text>
+            <text class="check c2" x="590" y="128" text-anchor="middle" style="fill: var(--red)">✓ nothing private leaks</text>
+          </g>
+          <text x="400" y="180" text-anchor="middle" font-size="12" opacity=".75">If someone else saved first, you're told and shown the newer version, so nobody's work gets quietly undone.</text>
+        </svg>
+      </div>
+      <figcaption>The app never writes brain files itself. A small brain helper does it, after two checks. These two checks are where things could go wrong, so each has its own tests.</figcaption>
+    </figure>
+    <button class="play" type="button" id="play-flow">Play</button>
+  </section>
+
+  <section class="folder" aria-labelledby="s8">
+    <span class="tab">Who's on the team</span>
+    <h2 id="s8">The team fills itself in</h2>
+    <p>Give someone a to-do in a project and they show on its team straight away. Nobody has to type them in.</p>
+    <div class="people" aria-label="Example team for Skyseal website rebuild">
+      <div class="person"><b>Steve</b><span class="tag">Account Owner</span><span class="note">Chosen by hand</span></div>
+      <div class="person"><b>Simon</b><span class="tag">On the team</span><span class="note">Added by hand</span></div>
+      <div class="person"><b>Ian</b><span class="tag auto">from to-dos</span><span class="note">Has 2 open to-dos · <u>Add to team</u></span></div>
+    </div>
+    <ul class="plain">
+      <li>People who came from to-dos drop off 30 days after their last to-do in the project is done. One click on <b>Add to team</b> keeps them for good.</li>
+      <li>A private to-do never puts anyone on a team project.</li>
+      <li>Cortex works the "from to-dos" list out each time instead of writing it into the card, so it can't go stale or clash when the brain syncs.</li>
+    </ul>
+  </section>
+
+  <section class="folder" aria-labelledby="s9">
+    <span class="tab">The project home</span>
+    <h2 id="s9">What's new, what's next, and the emails that matter</h2>
+    <div class="steps">
+      <div class="step"><span class="when k-r2">Since you last looked</span><p>New files, to-dos done, calls filed, a health light that changed. Each one is a link.</p></div>
+      <div class="step"><span class="when k-r2">Coming up</span><p>Your next meeting, to-dos due soon and the end of the current stage.</p></div>
+      <div class="step"><span class="when k-r2">Meetings</span><p>Found in <b>your</b> calendar and shown only to you. The meeting notes are shared once you file them.</p></div>
+      <div class="step"><span class="when k-r2">Weekly round-up</span><p>Claude writes a short "where we are" for the owner on Mondays, using only things the team can already see.</p></div>
+    </div>
+    <figure>
+      <div class="svgbox" id="email">
+        <svg viewBox="0 0 800 210" role="img" aria-label="An email in your inbox. Claude drafts a summary with the subject, sender and people on it. You check and edit the whole entry. Only when you approve is it saved to the project for the team. The email's own text is never saved.">
+          <defs><marker id="a9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <g stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" fill="none" marker-end="url(#a9)">
+            <path d="M140 70 H190"/><path d="M310 70 H360"/><path d="M480 70 H530"/><path d="M650 70 H690"/>
+          </g>
+          <g font-size="13" text-anchor="middle">
+            <rect x="20" y="45" width="120" height="50" rx="8" stroke="currentColor" stroke-opacity=".5" style="fill: var(--paper)"/>
+            <text x="80" y="67" font-weight="600">An email</text><text x="80" y="84" font-size="11" opacity=".7">in your inbox</text>
+            <rect x="190" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--r2)"/>
+            <text x="250" y="67" font-weight="600">Claude drafts</text><text x="250" y="84" font-size="11" opacity=".7">a summary</text>
+            <rect x="360" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--amber)"/>
+            <text x="420" y="67" font-weight="600">You check it</text><text x="420" y="84" font-size="11" opacity=".7">edit any part</text>
+            <rect x="530" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--green)"/>
+            <text x="590" y="67" font-weight="600">You approve</text><text x="590" y="84" font-size="11" opacity=".7">or nothing is saved</text>
+            <rect x="690" y="45" width="100" height="50" rx="8" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+            <text x="740" y="67" font-weight="600">Team sees</text><text x="740" y="84" font-size="11" opacity=".7">the entry</text>
+          </g>
+          <circle class="dot" cx="80" cy="120" r="7" style="fill: var(--r2)"/>
+          <g font-size="12" text-anchor="middle">
+            <text x="420" y="160" opacity=".8">The entry holds the summary, subject, who sent it, who else was on it, and the date and time.</text>
+            <text x="420" y="182" opacity=".8">The email's own text never goes into the brain, and bcc is never shown.</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>An email only reaches the project after its owner has checked and approved everything that will be saved. Teammates see the entry; only the owner can open the email itself.</figcaption>
+    </figure>
+    <button class="play" type="button" id="play-email">Play</button>
+  </section>
+
+  <section class="folder" aria-labelledby="s10">
+    <span class="tab">Retainers</span>
+    <h2 id="s10">Retainers, month by month</h2>
+    <p>A retainer is an ongoing project with a signed contract, one project per contract. H2O's SEO and PPC retainers are two projects, because their hours, measures and notice differ.</p>
+    <figure>
+      <div class="svgbox" id="month">
+        <svg viewBox="0 0 800 210" role="img" aria-label="The contract sets the hours and KPIs. Each month Claude drafts a review on the owner's Mac from KPI data, work done and hours. The Account Owner signs it. The signed month is saved for the team and never changes, and the client report is made from it.">
+          <defs><marker id="a10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <g stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" fill="none" marker-end="url(#a10)">
+            <path d="M140 70 H190"/><path d="M310 70 H360"/><path d="M480 70 H530"/><path d="M650 70 H690"/>
+          </g>
+          <g font-size="13" text-anchor="middle">
+            <rect x="20" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--r3)"/>
+            <text x="80" y="67" font-weight="600">Contract</text><text x="80" y="84" font-size="11" opacity=".7">hours and KPIs</text>
+            <rect x="190" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--r3)"/>
+            <text x="250" y="67" font-weight="600">Month's data</text><text x="250" y="84" font-size="11" opacity=".7">KPIs, work, hours</text>
+            <rect x="360" y="45" width="120" height="50" rx="8" stroke-dasharray="5 4" style="fill: var(--paper); stroke: var(--amber)"/>
+            <text x="420" y="67" font-weight="600">Draft review</text><text x="420" y="84" font-size="11" opacity=".7">on your Mac only</text>
+            <rect x="530" y="45" width="120" height="50" rx="8" style="fill: var(--paper); stroke: var(--green)"/>
+            <text x="590" y="67" font-weight="600">Owner signs</text><text x="590" y="84" font-size="11" opacity=".7">Account Owner</text>
+            <rect x="690" y="45" width="100" height="50" rx="8" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+            <text x="740" y="67" font-weight="600">Month saved</text><text x="740" y="84" font-size="11" opacity=".7">+ client report</text>
+          </g>
+          <circle class="dot" cx="80" cy="120" r="7" style="fill: var(--r3)"/>
+          <g font-size="12" text-anchor="middle">
+            <text x="420" y="160" opacity=".8">KPIs come from Google Ads, GA4, Search Console and Semrush. Hours come from Tracket's dated entries.</text>
+            <text x="420" y="182" opacity=".8">A signed month never changes. A correction is saved as a new version beside it.</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The draft stays on the owner's Mac, so the team only ever sees a signed month. Nothing is sent to the client automatically.</figcaption>
+    </figure>
+    <button class="play" type="button" id="play-month">Play</button>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>On the retainer's page</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td>Hours this month</td><td>11 of 15 hours used, on track to finish at 16</td></tr>
+          <tr><td>KPIs against target</td><td>Conversions 38 / 40, with a small trend line across the months</td></tr>
+          <tr><td>Contract strip</td><td>Rolling monthly since 14 Nov · 90 days' notice · review 14 Feb</td></tr>
+          <tr><td>Warnings</td><td>Review due within 30 days · notice not recorded · hours past 90% · a KPI missed two months running</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">An agency-wide Retainers page shows every retainer for the month on one screen: hours against budget, KPIs, health and renewals coming up. Today's contract details in each client's notes become retainer projects with a check by their owner, so nothing is retyped.</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s4">
+    <span class="tab">Picking a project</span>
+    <h2 id="s4">Pick a project once, and the whole app follows</h2>
+    <figure>
+      <div class="svgbox" id="picker">
+        <svg viewBox="0 0 800 200" role="img" aria-label="You choose Skyseal, then Website rebuild. Home, To-dos, Images, Documents and search then show only that project's things.">
+          <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+          <rect x="20" y="70" width="210" height="60" rx="10" style="fill: var(--accent-soft); stroke: var(--accent)"/>
+          <text x="125" y="96" text-anchor="middle" font-size="13" font-weight="600">Skyseal  ›  Website rebuild</text>
+          <text x="125" y="115" text-anchor="middle" font-size="11" opacity=".75">the picker</text>
+          <path d="M230 100 H300" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" marker-end="url(#a4)"/>
+          <g font-size="12" text-anchor="middle">
+            <rect x="310" y="20" width="140" height="44" rx="8" style="fill: var(--paper); stroke: var(--accent)"/><text x="380" y="47">Home</text>
+            <rect x="470" y="20" width="140" height="44" rx="8" style="fill: var(--paper); stroke: var(--accent)"/><text x="540" y="47">To-dos</text>
+            <rect x="630" y="20" width="150" height="44" rx="8" style="fill: var(--paper); stroke: var(--accent)"/><text x="705" y="47">Images</text>
+            <rect x="310" y="78" width="140" height="44" rx="8" style="fill: var(--paper); stroke: var(--accent)"/><text x="380" y="105">Documents</text>
+            <rect x="470" y="78" width="140" height="44" rx="8" style="fill: var(--paper); stroke: var(--accent)"/><text x="540" y="105">Search</text>
+            <g class="other"><rect x="630" y="78" width="150" height="44" rx="8" fill="none" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 4"/><text x="705" y="105" opacity=".6">Other projects</text></g>
+          </g>
+          <text x="545" y="160" text-anchor="middle" font-size="12" opacity=".75">Clear the picker to see everything again.</text>
+          <text x="545" y="180" text-anchor="middle" font-size="12" opacity=".75">Choosing only a client works exactly as it does today.</text>
+        </svg>
+      </div>
+      <figcaption>The picker works like today's client picker, with one extra step for the project.</figcaption>
+    </figure>
+    <button class="play" type="button" id="play-picker">Play</button>
+  </section>
+
+  <section class="folder" aria-labelledby="s5">
+    <span class="tab">The tidy-up</span>
+    <h2 id="s5">Sorting out the old labels, with your say-so</h2>
+    <p>Sixty of today's to-dos have a <code>project:</code> label typed in by hand, and some of them don't match anything. The Projects app suggests a fix for each label. <b>Nothing changes until you approve that row.</b></p>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>Old label</th><th>What it really is</th><th>Suggestion</th></tr></thead>
+        <tbody>
+          <tr><td><code>harvey-nash</code></td><td>A client, not a project</td><td>Set the client, no project</td></tr>
+          <tr><td><code>h2o-restorations</code></td><td>A misspelling</td><td>Merge into <code>h2o-restoration</code></td></tr>
+          <tr><td><code>bookvault</code></td><td>The client folder is <code>book-vault</code></td><td>Merge</td></tr>
+          <tr><td><code>optional-project-slug</code></td><td>Left over from a template</td><td>Clear it</td></tr>
+          <tr><td><code>os</code></td><td>Too short to guess safely</td><td>Make a new project, or skip</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The tidy-up can fix a teammate's to-do too, but it only ever changes the client, project and stage lines. Old folders in <code>projects/</code> show up as The Digital Stride's projects straight away, without being moved.</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s6">
+    <span class="tab">When</span>
+    <h2 id="s6">What arrives when</h2>
+    <div class="steps">
+      <div class="step"><span class="when k-r1">Release 1</span><p>Projects app and project page, a team that fills itself in from to-dos, the Client → Project picker, to-dos with project and stage, images and documents, search, the tidy-up.</p></div>
+      <div class="step"><span class="when k-r2">Release 2</span><p>Chats and call notes carry the project. Pages are saved in the project. Updates log, "since you last looked", your meetings, approved email entries, a weekly round-up. Claude asks "which project?".</p></div>
+      <div class="step"><span class="when k-r3">Release 3</span><p>Retainers: contract terms and KPIs, a monthly review signed by the Account Owner, client reports, and the agency-wide Retainers page.</p></div>
+      <div class="step"><span class="when k-r4">Release 4</span><p>Ads work tagged to a project. Closing a project writes a short summary and keeps the folder.</p></div>
+      <div class="step"><span class="when k-p2">Phase 2</span><p>Time from a timer, from Claude chats and from activity suggestions, each one approved by the person. Reports by client, project, person and month. Retainer hours then come from here.</p></div>
+    </div>
+    <p>Monday stays our live system for now. Projects copy Monday's shape, so moving across later is a straight swap: Monday projects become cards, subitems become to-dos, and booked hours come in marked "from Tracket".</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s7">
+    <span class="tab">Words</span>
+    <h2 id="s7">A few words explained</h2>
+    <dl class="words">
+      <div><dt>Card</dt><dd>The small file in a project's folder that holds its details, like a label on a box.</dd></div>
+      <div><dt>Key</dt><dd>A project's fixed address, such as <code>skyseal/website-rebuild</code>. To-dos and, later, time entries use it to point at the project.</dd></div>
+      <div><dt>Brain helper</dt><dd>A small script inside the brain that makes every change. The app asks it to make changes and never edits brain files itself.</dd></div>
+      <div><dt>Sync</dt><dd>How the brain shares changes with the team. If two people change the same line before syncing, it stops until someone sorts it out. The plan avoids that by never stamping "last edited" into files.</dd></div>
+      <div><dt>Retainer</dt><dd>Ongoing monthly work under a signed contract, with a set number of hours a month and measures it's judged on.</dd></div>
+      <div><dt>KPI</dt><dd>A number that shows whether the work is going well, such as conversions or organic clicks, with a target to aim for.</dd></div>
+      <div><dt>Worked out, not stored</dt><dd>Cortex builds some lists (the "from to-dos" team, "since you last looked") fresh each time from what's already in the brain, so they can never go out of date.</dd></div>
+      <div><dt>Stage</dt><dd>An optional label that groups a project's to-dos, such as Build or Launch.</dd></div>
+    </dl>
+  </section>
+</div>
+
+<script>
+(function () {
+  function replay(btnId, boxId, cls) {
+    var btn = document.getElementById(btnId);
+    var box = document.getElementById(boxId);
+    if (!btn || !box) return;
+    btn.addEventListener('click', function () {
+      box.classList.remove(cls);
+      void box.offsetWidth;
+      box.classList.add(cls);
+      btn.textContent = 'Replay';
+    });
+  }
+  replay('play-flow', 'flow', 'run');
+  replay('play-picker', 'picker', 'run-picker');
+  replay('play-email', 'email', 'run');
+  replay('play-month', 'month', 'run');
+})();
+</script>

@@ -85,7 +85,7 @@
     },
     {
       "name": "unsafe or foreign targets are skipped",
-      "body": "## Files\n\n- [web](https://example.com/a.pdf)\n- [up](../clients/../todo/x.md)\n- [abs](/clients/acme/a.pdf)\n- [enc](../clients/acme/%2e%2e/a.pdf)\n- [bs](..\\clients\\acme\\a.pdf)\n- [other](../projects/x/a.pdf)\n- [dot](../clients/./acme/a.pdf)\n- [ok](../templates/brief.docx)",
+      "body": "## Files\n\n- [web](https://example.com/a.pdf)\n- [up](../clients/../todo/x.md)\n- [abs](/clients/acme/a.pdf)\n- [enc](../clients/acme/%2e%2e/a.pdf)\n- [bs](..\\clients\\acme\\a.pdf)\n- [other](../os/x/a.pdf)\n- [dot](../clients/./acme/a.pdf)\n- [ok](../templates/brief.docx)",
       "files": [
         {
           "path": "templates/brief.docx",
@@ -122,6 +122,17 @@
         {
           "path": "clients/acme/files/c.pdf",
           "name": "c.pdf",
+          "holder": null
+        }
+      ]
+    },
+    {
+      "name": "projects/ links are read (v0.6, projects plan decision 7)",
+      "body": "## Files\n\n- [brief](../projects/client-portal/brief.pdf)",
+      "files": [
+        {
+          "path": "projects/client-portal/brief.pdf",
+          "name": "brief",
           "holder": null
         }
       ]

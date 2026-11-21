@@ -24,6 +24,12 @@ import type {
 } from '../../shared/contract.ts';
 import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
 import { PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
+import {
+  LEGACY_PROJECTS_SCOPE,
+  type ProjectCard,
+  type ProjectFilesResponse,
+  type ProjectKey,
+} from '../../shared/projects-contract.ts';
 import { asString, parseFrontmatter } from './frontmatter.ts';
 import {
   classify,
@@ -35,6 +41,7 @@ import {
   orderGroups,
   tidyFileName,
 } from './library-rules.ts';
+import type { ProjectsIndex } from './projects.ts';
 
 export const LIMITS = { depth: 8, listed: 5000, visited: 50_000 } as const;
 export const THUMB_MAX_BYTES = 50 * 1024 * 1024;
@@ -53,7 +60,7 @@ const MAX_ID_LENGTH = 400;
 const HASH_LENGTH = 24;
 const META_FILE = 'library-meta.json';
 
-export type WatchFolder = 'clients' | 'personal' | 'templates';
+export type WatchFolder = 'clients' | 'personal' | 'templates' | 'projects';
 
 export interface LibraryOptions {
   /** The brain's clients, as `BrainReaders.clients()` gives them. */
@@ -85,6 +92,12 @@ export interface LibraryOptions {
    * answer. Default: one `git check-ignore --stdin -z` in the brain. Tests inject a fake.
    */
   ignored?: (rels: string[]) => Promise<Set<string> | null>;
+  /**
+   * The projects index (projects R1, decision 7). Each item served gets `projects` from it, worked out
+   * at serve time and never cached with the listing: a card edit changes items cached in another scope.
+   * Missing, or failing: items carry no `projects`.
+   */
+  projects?: () => Promise<ProjectsIndex>;
 }
 
 /** Names and paths the script refuses to delete (shared/files-contract.ts), checked case-insensitively. */
@@ -169,6 +182,12 @@ export interface Library {
    * list, or for a file that is there but not listed (a symbolic link, too deep). Never throws.
    */
   itemForPath(rel: string): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null>;
+  /**
+   * Every listed file of `kind` in a project's folder (whatever scope the folder falls in) plus each of
+   * the card's `links` that resolves to a listed item now. A link that is gone, or that would show a
+   * personal file in a shared project, is left out and counted in `hidden`. Never throws.
+   */
+  projectFiles(card: ProjectCard, kind: LibraryKind): Promise<ProjectFilesResponse>;
   /**
    * The watcher saw a change. `rel` is the changed path from the brain's root (forward slashes), or
    * null when the platform did not say, in which case every scope under `folder` is marked stale.
@@ -470,7 +489,12 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   const gens = new Map<string, number>();
   /** One build per scope at a time, with the generation it started at. */
   const inflight = new Map<string, { gen: number; promise: Promise<Entry> }>();
-  const live: Record<WatchFolder, boolean> = { clients: false, personal: false, templates: false };
+  const live: Record<WatchFolder, boolean> = {
+    clients: false,
+    personal: false,
+    templates: false,
+    projects: false,
+  };
 
   let meta: Map<string, MetaEntry> | null = null;
   let metaLoad: Promise<Map<string, MetaEntry>> | null = null;
@@ -549,6 +573,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     if (await isRealFolder('templates')) {
       out.push({ id: 'shared:templates', name: 'Templates', kind: 'shared', folder: 'templates' });
     }
+    // The older `projects/` folders: read-only, with their own watch folder (projects R1, decision 27).
+    if (await isRealFolder('projects')) {
+      out.push({ id: LEGACY_PROJECTS_SCOPE, name: 'Older projects', kind: 'shared', folder: 'projects' });
+    }
     // `clients/` itself must be the real folder in the brain: if it is a link elsewhere, no names
     // from there may appear.
     if (!(await isRealFolder('clients'))) return out;
@@ -590,6 +618,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   }
 
   function folderOf(scope: ScopeDef): WatchFolder {
+    if (scope.id === LEGACY_PROJECTS_SCOPE) return 'projects';
     return scope.kind === 'personal' ? 'personal' : scope.kind === 'shared' ? 'templates' : 'clients';
   }
 
@@ -699,6 +728,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     return true;
   }
 
+  /** The grouping rules a scope uses: the older projects folder groups by project, as personal files do. */
+  const groupKind = (scope: ScopeDef): LibraryScope['kind'] =>
+    scope.id === LEGACY_PROJECTS_SCOPE ? 'personal' : scope.kind;
+
   function itemFor(scope: ScopeDef, f: Found, m: MetaEntry | undefined): LibraryItem {
     const thumb = canThumb(f.cls, f.ext, f.bytes, docThumbs);
     return {
@@ -706,7 +739,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       kind: f.cls.kind,
       format: f.cls.format,
       ext: f.ext,
-      group: groupFor(f.relInScope, scope.kind),
+      group: groupFor(f.relInScope, groupKind(scope)),
       name: f.name,
       title: (f.ext === 'md' ? m?.title : null) || tidyFileName(f.name),
       path: f.rel,
@@ -744,7 +777,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const items = found.map((f) => itemFor(scope, f, store.get(f.rel)));
     const groups = orderGroups(
       items.map((i) => i.group),
-      scope.kind,
+      groupKind(scope),
     );
     const rank = new Map(groups.map((g, i) => [g, i]));
     items.sort(
@@ -796,7 +829,9 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
           ? id === 'personal'
           : folder === 'templates'
             ? id === 'shared:templates'
-            : id.startsWith('client:');
+            : folder === 'projects'
+              ? id === LEGACY_PROJECTS_SCOPE
+              : id.startsWith('client:');
       if (own) bump(id);
     }
   }
@@ -860,7 +895,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
 
   /** Whether this person may delete in this scope right now (any known role for a client, the owner for Templates). */
   async function mayDeleteIn(scope: ScopeDef): Promise<boolean> {
-    if (!opts.deletion || scope.kind === 'personal') return false;
+    if (!opts.deletion || scope.kind === 'personal' || scope.id === LEGACY_PROJECTS_SCOPE) return false;
     let who: { role: Role } | null = null;
     try {
       who = await opts.deletion();
@@ -903,6 +938,28 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     const entry = cache.get(scope.id) ?? (await entryFor(scope));
     const ok = await deletableIds(entry);
     return ok?.has(item.id) ? { ...item, canDelete: true } : item;
+  }
+
+  /** `keysForPath` of the projects index now, or null when there is none (or it can't be read). */
+  async function projectKeysFor(): Promise<((rel: string) => ProjectKey[]) | null> {
+    if (!opts.projects) return null;
+    try {
+      const index = await opts.projects();
+      return (rel) => index.keysForPath(rel);
+    } catch {
+      return null;
+    }
+  }
+
+  /** `item` with the projects it belongs to, as of now. The cached item is never changed. */
+  async function withProjects(item: LibraryItem): Promise<LibraryItem> {
+    const keys = await projectKeysFor();
+    return keys ? { ...item, projects: keys(item.path) } : item;
+  }
+
+  async function withProjectsAll(items: LibraryItem[]): Promise<LibraryItem[]> {
+    const keys = await projectKeysFor();
+    return keys ? items.map((i) => ({ ...i, projects: keys(i.path) })) : items;
   }
 
   let defsInFlight: Promise<ScopeDef[]> | null = null;
@@ -1064,11 +1121,27 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         b.at - a.at ||
         a.hit.item.path.localeCompare(b.hit.item.path, 'en', { sensitivity: 'base' }),
     );
+    const top = found.slice(0, LIBRARY_SEARCH_MAX).map((f) => f.hit);
+    const keys = await projectKeysFor();
     return {
-      hits: found.slice(0, LIBRARY_SEARCH_MAX).map((f) => f.hit),
+      hits: keys ? top.map((h) => ({ ...h, item: { ...h.item, projects: keys(h.item.path) } })) : top,
       total: found.length,
       partial,
     };
+  }
+
+  /** `itemForPath` with the delete flag and projects an item is served with. */
+  async function servedItemForPath(
+    rel: string,
+  ): Promise<{ key: string; scope: LibraryScope; item: LibraryItem | null } | null> {
+    try {
+      const hit = await itemForPath(rel);
+      if (!hit?.item) return hit;
+      const scope = await findScope(hit.scope.id);
+      return scope ? { ...hit, item: await withProjects(await deletableItem(scope, hit.item)) } : hit;
+    } catch {
+      return null;
+    }
   }
 
   return {
@@ -1093,7 +1166,11 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         const scope = await findScope(scopeId);
         if (!scope) return null;
         const entry = await entryFor(scope);
-        return await withDeletable(scope, entry);
+        const listing = await withDeletable(scope, entry);
+        const keys = await projectKeysFor();
+        return keys
+          ? { ...listing, items: listing.items.map((i) => ({ ...i, projects: keys(i.path) })) }
+          : listing;
       } catch {
         return null;
       }
@@ -1112,21 +1189,48 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
         }
         // `canDelete` goes on before `check`, never on a copy after: readChecked/openChecked trust only
         // the very object `check` returned.
-        return item ? await check(scope, await deletableItem(scope, item)) : null;
+        return item ? await check(scope, await withProjects(await deletableItem(scope, item))) : null;
       } catch {
         return null;
       }
     },
 
-    async itemForPath(rel) {
+    itemForPath: servedItemForPath,
+
+    async projectFiles(card, kind) {
+      const out: ProjectFilesResponse = { items: [], hidden: 0 };
       try {
-        const hit = await itemForPath(rel);
-        if (!hit?.item) return hit;
-        const scope = await findScope(hit.scope.id);
-        return scope ? { ...hit, item: await deletableItem(scope, hit.item) } : hit;
+        const seen = new Set<string>();
+        const add = (item: LibraryItem) => {
+          if (item.kind !== kind || seen.has(item.id)) return;
+          seen.add(item.id);
+          out.items.push(item);
+        };
+        // The folder's own files, from whichever scope the folder falls in.
+        const folder = `${card.folder.toLowerCase()}/`;
+        const scope = (await scopeDefs()).find((s) => folder.startsWith(`${s.folder.toLowerCase()}/`));
+        if (scope && !isNeverListed(card.folder)) {
+          const entry = await entryFor(scope);
+          for (const item of await withProjectsAll(
+            (await withDeletable(scope, entry)).items.filter((i) => i.path.toLowerCase().startsWith(folder)),
+          ))
+            add(item);
+        }
+        // Each linked file that is listed now. Others are left out and counted.
+        for (const link of card.links) {
+          if (classify(extOf(basename(link)))?.kind !== kind) continue;
+          // A shared project never shows a personal file: it would be this Mac's own, not the linker's.
+          const hit =
+            card.space !== 'personal' && link.toLowerCase().startsWith('personal/')
+              ? null
+              : await servedItemForPath(link);
+          if (hit?.item) add(hit.item);
+          else out.hidden += 1;
+        }
       } catch {
-        return null;
+        // what was found so far is still right
       }
+      return out;
     },
 
     changed(rel, folder) {
@@ -1137,6 +1241,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       const segs = rel.split('/');
       if (segs[0] === 'personal') bump('personal');
       else if (segs[0] === 'templates') bump('shared:templates');
+      else if (segs[0] === 'projects') bump(LEGACY_PROJECTS_SCOPE);
       else if (segs[0] === 'clients') {
         if (segs[1]) bump(`client:${segs[1]}`);
         else bumpFolder('clients');

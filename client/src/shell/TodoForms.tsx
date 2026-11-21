@@ -7,9 +7,14 @@ import {
   type TodoItem,
   type TodoScope,
 } from '../../../shared/contract.ts';
+import { parseProjectKey } from '../../../shared/projects.ts';
 import { splitTodoFiles } from '../../../shared/todo-files.ts';
 import { dueInWords } from '../format.ts';
+import { useProjectChoice } from '../state/client-choice.ts';
+import { todoProjectOptions, useProjects } from '../state/projects.ts';
+import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
+import { SearchSelect } from './SearchSelect.tsx';
 import TodoDetailsEditor from './TodoDetailsEditor.tsx';
 
 /** Said when a to-do is set to Personal in the editor (plan decision 9). */
@@ -31,6 +36,90 @@ function shortDate(iso: string): string {
  */
 export function detailsText(todo: { details: string }, canAttach: boolean): string {
   return canAttach ? splitTodoFiles(todo.details).details : todo.details;
+}
+
+/** Said before moving a personal to-do that sits in a private project to the team (decision 8). */
+export function dropProjectQuestion(name: string | null): string {
+  return `This to-do is in your private project${name ? ` '${name}'` : ''}. Moving it to the team removes it from that project.`;
+}
+
+const NO_PROJECT = 'none';
+
+/** The ProjectKey a to-do sits in now ('' for none): a key, a legacy match or a key whose folder is missing. */
+export function todoProjectValue(todo: Pick<TodoItem, 'projectMatch'>): string {
+  const m = todo.projectMatch;
+  return m && (m.how === 'key' || m.how === 'legacy' || m.how === 'missing') ? m.key : '';
+}
+
+/** The client a key belongs to: its folder name, or null for a personal project. */
+function clientOfKey(key: string): string | null {
+  const parsed = parseProjectKey(key);
+  return parsed && parsed.client !== 'personal' ? parsed.client : null;
+}
+
+/**
+ * The Project and Stage fields (decisions 5 and 6). Only drawn when the server can save them
+ * (`TodoList.canProject`). A TDS to-do is never offered a personal project. Choosing another project
+ * clears the stage, since stages belong to the project.
+ */
+export function ProjectFields({
+  id,
+  scope,
+  client,
+  project,
+  stage,
+  onChange,
+}: {
+  id: string;
+  scope: TodoScope;
+  client: string | null;
+  project: string;
+  stage: string;
+  onChange: (next: { project: string; stage: string }) => void;
+}) {
+  const { list } = useProjects();
+  const clients = useStore().boot?.clients ?? [];
+  const cards = list?.projects ?? [];
+  const options = [
+    { value: NO_PROJECT, label: 'No project' },
+    ...todoProjectOptions(cards, clients, { scope, client, current: project || null }),
+  ];
+  const card = cards.find((c) => c.key === project);
+  const stages = card?.stages ?? [];
+  const stageKnown = stage === '' || stages.includes(stage);
+  return (
+    <>
+      <div className="todo-field">
+        <label htmlFor={`${id}-project`}>Project</label>
+        <SearchSelect
+          id={`${id}-project`}
+          value={project || NO_PROJECT}
+          options={options}
+          recentKey="todo-projects"
+          onChange={(v) => onChange({ project: v === NO_PROJECT ? '' : v, stage: '' })}
+        />
+      </div>
+      {project && (stages.length > 0 || stage !== '') ? (
+        <div className="todo-field">
+          <label htmlFor={`${id}-stage`}>Stage</label>
+          <select
+            id={`${id}-stage`}
+            className="field"
+            value={stage}
+            onChange={(e) => onChange({ project, stage: e.target.value })}
+          >
+            <option value="">No stage</option>
+            {stages.map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+            {stageKnown ? null : <option value={stage}>{stage}</option>}
+          </select>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** Who a to-do can go to: you first, then the team (not you). */
@@ -80,6 +169,7 @@ export function AddTodoForm({
   canAddOpen,
   canUsePersonal,
   canAttach = false,
+  canProject = false,
   startPersonal,
   onAdd,
   onCancel,
@@ -94,6 +184,8 @@ export function AddTodoForm({
   canUsePersonal: boolean;
   /** TodoList.canAttach: shows a details field and sends it with the new to-do. */
   canAttach?: boolean;
+  /** TodoList.canProject: shows Project and Stage, and sends them with the new to-do. */
+  canProject?: boolean;
   /** Start as personal (the Personal filter is showing). Ignored unless canUsePersonal. */
   startPersonal: boolean;
   onAdd: (action: TodoAction) => void;
@@ -110,6 +202,10 @@ export function AddTodoForm({
   const [whoOpen, setWhoOpen] = useState(false);
   const [full, setFull] = useState(false);
   const [details, setDetails] = useState('');
+  // The app-wide picker's project is where a new to-do starts.
+  const picked = useProjectChoice();
+  const [project, setProject] = useState(canProject ? picked : '');
+  const [stage, setStage] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
@@ -129,6 +225,9 @@ export function AddTodoForm({
     assignee === '' ? 'Open to anyone' : (team.find((m) => m.slug === assignee)?.name ?? assignee);
   const showDate = full || dateOpen;
   const showWho = full || whoOpen;
+  // A TDS to-do is never put in a personal project, so a preset one falls away when it isn't personal.
+  const projectKey = canProject && (personal || !project.startsWith('personal/')) ? project : '';
+  const showProject = canProject && (full || projectKey !== '');
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -141,6 +240,9 @@ export function AddTodoForm({
       assignee: assignee === '' ? null : assignee,
       ...(personal ? { scope: 'personal' as const } : {}),
       ...(hasDetails ? { details: details.trim() } : {}),
+      ...(projectKey
+        ? { client: clientOfKey(projectKey), project: projectKey, ...(stage ? { stage } : {}) }
+        : {}),
     });
   };
   const onKeyDown = (e: KeyboardEvent) => {
@@ -242,6 +344,19 @@ export function AddTodoForm({
           />
         </div>
       ) : null}
+      {showProject ? (
+        <ProjectFields
+          id={`${uid}-add`}
+          scope={personal ? 'personal' : 'tds'}
+          client={null}
+          project={projectKey}
+          stage={stage}
+          onChange={(n) => {
+            setProject(n.project);
+            setStage(n.stage);
+          }}
+        />
+      ) : null}
       {canAttach ? (
         <div className="todo-field">
           <span className="todo-label">Details (optional)</span>
@@ -290,7 +405,7 @@ export function AddTodoForm({
 }
 
 /**
- * Builds the actions for a save: only changed fields, in the order edit, due, move, assignee. Personal
+ * Builds the actions for a save: only changed fields, in the order edit, due, move, project, assignee. Personal
  * to-dos send `scope: 'personal'` on every step; TDS steps keep the old shape. After a `move` the later
  * steps address the to-do where it now lives.
  */
@@ -299,6 +414,7 @@ export function buildEditActions(
   draft: EditDraft,
   detailsEditable: boolean,
   canAttach = false,
+  canProject = false,
 ): TodoAction[] {
   const actions: TodoAction[] = [];
   const at = (scope: TodoScope) => (scope === 'personal' ? { scope } : {});
@@ -320,8 +436,42 @@ export function buildEditActions(
   if (draft.due !== (todo.due ?? '')) {
     actions.push({ kind: 'due', id: todo.id, due: draft.due || null, ...at(todo.scope) });
   }
+  // Moving a personal to-do that is in a private project to the team takes it out of the project: the
+  // panel asked first, and the script wants `dropProject` to allow it.
+  const here = todoProjectValue(todo);
+  const toTeam = todo.scope === 'personal' && draft.scope === 'tds';
+  const drop = canProject && toTeam && here.startsWith('personal/');
   if (draft.scope !== todo.scope) {
-    actions.push({ kind: 'move', id: todo.id, scope: todo.scope, to: draft.scope });
+    actions.push({
+      kind: 'move',
+      id: todo.id,
+      scope: todo.scope,
+      to: draft.scope,
+      ...(drop ? { dropProject: true as const } : {}),
+    });
+  }
+  if (canProject) {
+    const stageHere = todo.stage ?? '';
+    let want = draft.project ?? here;
+    let wantStage = want ? (draft.stage ?? stageHere) : '';
+    // A team save never sends a personal key (decision 8). The draft keeps one picked before switching
+    // back to the team (fix-round review): a moved to-do leaves the project; a team one keeps its own.
+    if (draft.scope === 'tds' && want.startsWith('personal/')) {
+      want = toTeam || here.startsWith('personal/') ? '' : here;
+      wantStage = want ? stageHere : '';
+    }
+    const nowKey = drop ? '' : here;
+    const nowStage = drop ? '' : stageHere;
+    if (want !== nowKey || wantStage !== nowStage) {
+      actions.push({
+        kind: 'project',
+        id: todo.id,
+        client: want ? clientOfKey(want) : todo.client,
+        project: want || null,
+        stage: wantStage || null,
+        ...at(draft.scope),
+      });
+    }
   }
   if (draft.assignee !== (todo.assignee ?? '')) {
     actions.push({ kind: 'assignee', id: todo.id, assignee: draft.assignee || null, ...at(draft.scope) });
@@ -340,6 +490,12 @@ export interface EditDraft {
   assignee: string;
   /** TDS or personal: where the to-do will live after saving. */
   scope: TodoScope;
+  /**
+   * Projects R1: a ProjectKey ('' for none) and a stage. Absent until the person touches the fields, which
+   * reads as "unchanged" (the drawer that opens the editor does not know about them).
+   */
+  project?: string;
+  stage?: string;
   /** TodoItem.version when the editor opened (or the fresh one adopted after a 'changed' refusal). */
   version: string;
   /** The field values the editor opened with (or last rebased on), to tell what the person edited. */

@@ -1,5 +1,6 @@
 import type { BrainReaders, Identity } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
+import { LEGACY_PROJECTS_SCOPE, ProjectsError } from '../../shared/projects-contract.ts';
 import { type AdsService, type AdsServiceOptions, createAdsService } from './ads-skill.ts';
 import { listClients } from './clients.ts';
 import {
@@ -11,6 +12,8 @@ import {
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
+import { createProjects } from './projects.ts';
+import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
@@ -45,6 +48,8 @@ export interface BrainDeps {
   libraryIgnored?: LibraryOptions['ignored'];
   /** How the brain's `tdsapp-ads` bridge is run (Ad Manager). Its in-flight file goes in `dataDir`. */
   adsSkill?: Omit<AdsServiceOptions, 'dataDir'>;
+  /** How the brain's `tdsapp-projects` skill script is run (Projects). Tests pass an environment or a spawner. */
+  projectsSkill?: ProjectsSkillOptions;
 }
 
 /** How long a read of who is using the app and what the files skill offers them is reused. */
@@ -78,7 +83,21 @@ export function createBrainReaders(
     access = { at: now().getTime(), who };
     return who;
   };
+  // One runner per brain, so to-do changes run one at a time.
+  const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
+  // The projects service reads the brain itself; its writes (and the tidy-up's to-do changes) are scripts'.
+  const projects = createProjects(root, {
+    skill: createProjectsSkillRunner(root, deps.projectsSkill),
+    todoSkill,
+    clients: () => listClients(root),
+    dataDir: deps.dataDir ?? null,
+    // Review fix (release 1): changing projects follows the skill's `roles:`, like the other skills.
+    mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
+    // A project's to-dos say which ones this person's to-do panel can open (in `mine` or `open`).
+    todoList: (identity) => listTodos(root, identity, { capabilities: () => todoSkill.capabilities() }),
+  });
   const library = createLibrary(root, {
+    projects: () => projects.index(),
     clients: () => listClients(root),
     dataDir: deps.dataDir ?? null,
     docThumbs: deps.docThumbs ?? false,
@@ -90,8 +109,6 @@ export function createBrainReaders(
     ignored: deps.libraryIgnored,
   });
   const syncReader = createSyncReader(root);
-  // One runner per brain, so to-do changes run one at a time.
-  const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   const todoHistory = createTodoHistory(deps.todoGit);
   const askedTodos = createAskedTodos(deps.todoLog);
   // One bridge per brain, so ads changes run one at a time; the in-flight file lives in the app's data folder.
@@ -110,9 +127,15 @@ export function createBrainReaders(
         history: todoHistory,
         capabilities: () => todoSkill.capabilities(),
         filesCapabilities: () => filesSkill.capabilities(),
+        projects: () => projects.index(),
       }),
     completeTodo: (id, by) => completeTodo(root, id, by, now()),
-    changeTodo: (action, identity) => changeTodo(root, action, identity, todoSkill, { history: todoHistory }),
+    changeTodo: async (action, identity) => {
+      const outcome = await changeTodo(root, action, identity, todoSkill, { history: todoHistory });
+      // A to-do's project or stage moves its counts.
+      projects.changed();
+      return outcome;
+    },
     completePersonalTodo: async (id, expect, by) => {
       await changeTodo(root, { kind: 'tick', id, scope: 'personal', expect }, by, todoSkill, {
         history: todoHistory,
@@ -123,7 +146,10 @@ export function createBrainReaders(
         history: todoHistory,
         clients: () => listClients(root),
         files: filesSkill,
-        onSaved: (path) => library.changed(path),
+        onSaved: (path) => {
+          library.changed(path);
+          projects.changed(path);
+        },
       }),
     askedTodos: (identity) => askedTodos.list(root, identity, now()),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
@@ -137,12 +163,33 @@ export function createBrainReaders(
     library: (scope) => library.list(scope),
     libraryFile: (id) => library.file(id),
     libraryItemForPath: (rel) => library.itemForPath(rel),
+    projects: (identity) => projects.list(identity),
+    changeProject: async (action, identity) => {
+      const list = await projects.change(action, identity);
+      // A card or its links changed: files listed in any scope may now belong elsewhere.
+      projects.changed();
+      return list;
+    },
+    projectFiles: async (key, kind) => {
+      const card = (await projects.index()).byKey(key);
+      if (!card)
+        throw new ProjectsError('not-found', "That project couldn't be found. It may have been moved.");
+      return library.projectFiles(card, kind);
+    },
+    projectTodos: (key, identity) => projects.projectTodos(key, identity),
+    tidy: (identity) => projects.tidy(identity),
+    applyTidy: async (apply, identity) => {
+      const list = await projects.applyTidy(apply, identity);
+      projects.changed();
+      return list;
+    },
     deleteLibraryFile: async (id, opts) => {
       const who = await deleteAccess();
       if (!who) throw new FilesChangeError('not-allowed');
       const scope = scopeOfId(id);
       // Refused early for a clear message; the script checks all of this again.
-      if (scope === null || scope === 'personal') throw new FilesChangeError('not-allowed');
+      if (scope === null || scope === 'personal' || scope === LEGACY_PROJECTS_SCOPE)
+        throw new FilesChangeError('not-allowed');
       if (scope === 'shared:templates' ? who.role !== 'owner' : who.role === 'unknown')
         throw new FilesChangeError('not-allowed');
       const file = await library.file(id);
@@ -154,6 +201,7 @@ export function createBrainReaders(
         by: { slug: who.slug, name: who.name },
       });
       library.changed(file.item.path);
+      projects.changed(file.item.path);
     },
     purgeDeletedFiles: async () => {
       try {
@@ -166,6 +214,7 @@ export function createBrainReaders(
     watch: (onChange) =>
       watchBrain(root, onChange, {
         onLibraryChange: (rel, folder) => library.changed(rel, folder),
+        onProjectsChange: (rel) => projects.changed(rel ?? undefined),
         onLibraryLive: (folder, on) => library.setLive(folder, on),
         onAdsChange: () => ads.changed(),
       }),

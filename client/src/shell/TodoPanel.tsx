@@ -22,6 +22,7 @@ import { splitTodoFiles, todoFileExtras } from '../../../shared/todo-files.ts';
 import { dueInWords, isOverdue } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
 import { todoChatClient } from '../state/client-choice.ts';
+import { todoPlaceParts, useProjects } from '../state/projects.ts';
 import { type ChangeTodosResult, useStore } from '../store.tsx';
 import { isFaithful, setTask } from '../todo-doc/index.ts';
 import type { TodoPanelMode } from './contract.ts';
@@ -36,12 +37,15 @@ import {
   buildEditActions,
   conflictNote,
   detailsText,
+  dropProjectQuestion,
   type EditDraft,
   PASS_ON_NOTE,
   PERSONAL_WARNING,
+  ProjectFields,
+  todoProjectValue,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
-import { askedStatusLine, handoverLine, todoChatDraft, todoPlaces } from './words.ts';
+import { askedStatusLine, handoverLine, todoChatDraft } from './words.ts';
 
 const LONG_NOTE = 'These details are too long to edit here. Change them in a chat instead.';
 const UNFAITHFUL_NOTE =
@@ -110,6 +114,8 @@ export default function TodoPanel(props: TodoPanelProps) {
   const keepButton = useRef<HTMLButtonElement>(null);
 
   const [addDirty, setAddDirty] = useState(false);
+  // Older servers send no `canProject`: the Project and Stage fields stay hidden.
+  const canProject = useStore().todos?.canProject === true;
 
   const draft = props.draft;
   // With canAttach the panel works on the details part only: the Files section is its own block.
@@ -118,7 +124,9 @@ export default function TodoPanel(props: TodoPanelProps) {
   const faithful = useMemo(() => todo !== null && !tooLong && isFaithful(body), [todo, tooLong, body]);
   const detailsEditable = faithful;
   const actions =
-    todo !== null && mode === 'edit' ? buildEditActions(todo, draft, detailsEditable, props.canAttach) : [];
+    todo !== null && mode === 'edit'
+      ? buildEditActions(todo, draft, detailsEditable, props.canAttach, canProject)
+      : [];
   const dirty = mode === 'add' ? addDirty : mode === 'edit' && actions.length > 0;
   const overLimit = mode === 'edit' && detailsEditable && draft.details.length > TODO_DETAILS_MAX;
 
@@ -272,6 +280,7 @@ export default function TodoPanel(props: TodoPanelProps) {
               canAddOpen={props.canAddOpen}
               canUsePersonal={props.canUsePersonal}
               canAttach={props.canAttach}
+              canProject={canProject}
               startPersonal={props.startPersonal}
               onAdd={props.onAdd}
               onCancel={props.onCancelAdd}
@@ -285,6 +294,7 @@ export default function TodoPanel(props: TodoPanelProps) {
             {...props}
             todo={todo}
             actions={actions}
+            canProject={canProject}
             dirty={dirty}
             detailsEditable={detailsEditable}
             tooLong={tooLong}
@@ -320,8 +330,9 @@ function Facts({
   canUsePersonal: boolean;
 }) {
   const { boot, sessions } = useStore();
+  const { list } = useProjects();
   const due = todo.due ? dueInWords(todo.due) : '';
-  const places = todoPlaces(todo, boot?.clients ?? []);
+  const places = todoPlaceParts(todo, list?.projects, boot?.clients ?? []);
   const who =
     todo.assignee === null
       ? 'Open to anyone'
@@ -359,6 +370,7 @@ function Facts({
         ]
       : []),
     ...(places.length > 0 ? [{ label: 'For', value: places.join(', ') }] : []),
+    ...(todo.stage ? [{ label: 'Stage', value: todo.stage }] : []),
     ...(handover ? [{ label: 'Handed over', value: handover }] : []),
     ...(chat ? [{ label: 'Chat', value: 'Has a chat' }] : []),
   ];
@@ -597,10 +609,18 @@ function EditView({
   detailsEditable: boolean;
   tooLong: boolean;
   overLimit: boolean;
+  canProject: boolean;
   titleInput: React.RefObject<HTMLInputElement | null>;
 }) {
   const uid = useId();
   const chat = useChat(todo);
+  const [askDrop, setAskDrop] = useState(false);
+  const dropButton = useRef<HTMLButtonElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
+  const { list: projectList } = useProjects();
+  useEffect(() => {
+    if (askDrop) dropButton.current?.focus();
+  }, [askDrop]);
   const { draft, setDraft, me, team } = p;
   const set = (patch: Partial<EditDraft>) => setDraft((d) => ({ ...d, ...patch }));
   // Giving a personal to-do to someone else makes it a TDS one: they can't see a personal file.
@@ -623,11 +643,20 @@ function EditView({
 
   const noTitle = draft.title.trim() === '';
   const canSave = !p.busy && !noTitle && !overLimit;
-  const save = () => {
+  // Moving a to-do out of a private project removes it from the project: ask before saving (decision 8).
+  const dropping = actions.some((a) => a.kind === 'move' && a.dropProject === true);
+  useEffect(() => {
+    if (!dropping) setAskDrop(false);
+  }, [dropping]);
+  const save = (confirmed = false) => {
     if (!canSave) return;
     if (actions.length === 0) return p.onCancelEdit();
+    if (dropping && !confirmed) return setAskDrop(true);
+    setAskDrop(false);
     void p.onSave(todo, actions);
   };
+  const projectNow = draft.project ?? todoProjectValue(todo);
+  const stageNow = draft.stage ?? todo.stage ?? '';
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save();
@@ -638,6 +667,19 @@ function EditView({
       save();
     }
   };
+  // Moving to the team: a private project can't come along, so it shows as none and is left out of the save,
+  // but the draft keeps it: switching back to Personal restores the project and stage as they were.
+  const setScope = (scope: TodoScope) => set({ scope });
+  // The question was dismissed (Cancel or Escape): the move is undone, so the scope returns with its
+  // project and stage, and the keyboard goes back to Save.
+  const closeAsk = () => {
+    setAskDrop(false);
+    set({ scope: todo.scope });
+    saveButton.current?.focus();
+  };
+  const privateKey = todoProjectValue(todo);
+  const privateName =
+    projectList?.projects.find((c) => c.key === privateKey)?.title || privateKey.split('/')[1] || null;
   const detailsNote = tooLong ? LONG_NOTE : detailsEditable ? null : UNFAITHFUL_NOTE;
 
   return (
@@ -729,13 +771,23 @@ function EditView({
             />
             {passing ? <p className="todo-note">{PASS_ON_NOTE}</p> : null}
           </div>
+          {p.canProject ? (
+            <ProjectFields
+              id={uid}
+              scope={draft.scope}
+              client={todo.client}
+              project={projectNow.startsWith('personal/') && draft.scope === 'tds' ? '' : projectNow}
+              stage={stageNow}
+              onChange={(n) => set({ project: n.project, stage: n.stage })}
+            />
+          ) : null}
           {switchable ? (
             <div className="todo-field">
               <span className="todo-label">Where it's kept</span>
               <Seg<TodoScope>
                 label="Where this to-do is kept"
                 value={draft.scope}
-                onChange={(scope) => set({ scope })}
+                onChange={setScope}
                 options={[
                   { value: 'tds', label: 'TDS' },
                   { value: 'personal', label: 'Personal' },
@@ -750,6 +802,32 @@ function EditView({
           ) : null}
         </div>
       </div>
+      {askDrop ? (
+        <fieldset
+          className="todo-ask"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            closeAsk();
+          }}
+        >
+          <legend className="todo-ask-q">{dropProjectQuestion(privateName)}</legend>
+          <button
+            type="button"
+            className="btn"
+            data-variant="primary"
+            data-size="small"
+            ref={dropButton}
+            onClick={() => save(true)}
+          >
+            Move to the team
+          </button>
+          <button type="button" className="btn" data-size="small" onClick={closeAsk}>
+            Cancel
+          </button>
+        </fieldset>
+      ) : null}
       {draft.theirs ? (
         <p className="todo-note" id={`${uid}-conflict`} ref={conflictRef}>
           {conflictNote(draft.theirs, draft, team, me)}
@@ -784,6 +862,7 @@ function EditView({
             type="submit"
             className="btn"
             data-variant="primary"
+            ref={saveButton}
             aria-disabled={canSave ? undefined : true}
             aria-describedby={
               [noTitle ? `${uid}-no-title` : '', warnPersonal ? `${uid}-personal` : '']

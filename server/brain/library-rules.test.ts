@@ -4,6 +4,7 @@ import {
   groupFor,
   isHiddenInTemplates,
   isNeverListed,
+  isProjectProtected,
   orderGroups,
   RULES,
   tidyFileName,
@@ -227,5 +228,30 @@ describe('shared (Templates) rules', () => {
     expect(isHiddenInTemplates('templates/emails/claude.MD')).toBe(true);
     expect(isHiddenInTemplates('templates/emails/welcome.md')).toBe(false);
     expect(isHiddenInTemplates('personal/CLAUDE.md')).toBe(false);
+  });
+});
+
+describe('project files the card keeps for itself (projects R1, decision 27)', () => {
+  it('protects project.md, retainer.md, updates/ and months/ at the top of a project folder', () => {
+    for (const folder of ['projects/web', 'personal/projects/web', 'clients/acme/projects/web']) {
+      for (const name of [
+        'project.md',
+        'Retainer.MD',
+        'updates',
+        'updates/2026-11-20.md',
+        'months/2026-11.md',
+      ]) {
+        expect(isProjectProtected(`${folder}/${name}`), `${folder}/${name}`).toBe(true);
+        expect(isNeverListed(`${folder}/${name}`), `${folder}/${name}`).toBe(true);
+      }
+    }
+  });
+
+  it('lists every other file in a project folder, and the same names elsewhere', () => {
+    expect(isNeverListed('projects/web/brief.md')).toBe(false);
+    expect(isNeverListed('projects/web/docs/project.md')).toBe(false);
+    expect(isNeverListed('clients/acme/reports/project.md')).toBe(false);
+    expect(isNeverListed('projects/project.md')).toBe(false);
+    expect(isNeverListed('clients/acme/projects/updates')).toBe(false);
   });
 });

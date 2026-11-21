@@ -1,8 +1,8 @@
 ---
 name: tdsapp-todo
-description: Change a loose to-do in todo/ the way the Workbench does, with its known weak spots fixed - add one (for someone or open to anyone, or a private one in personal/todo/), edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, tick it off, move it between TDS and personal, or link a library file to it (or unlink one) - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off", "make that personal", "add a personal to-do", "attach the quote to that to-do", "link the logo to the to-do", "take that file off the to-do". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
-version: 0.5
-last_updated: 2026-11-16
+description: Change a loose to-do in todo/ the way the Workbench does, with its known weak spots fixed - add one (for someone or open to anyone, or a private one in personal/todo/), edit its title or details, pass it on to someone else (or make it open to anyone), set or clear its due date, delete it, tick it off, move it between TDS and personal, put it in a project (with a stage), or link a library file to it (or unlink one) - through one small script, so every tool changes to-do files the same way. USE WHEN asked to add, edit, pass on, re-date, delete or tick a to-do, or someone says "add a to-do", "pass that to Ben", "move the due date", "clear the date", "make it open", "delete that to-do", "tick it off", "make that personal", "add a personal to-do", "attach the quote to that to-do", "link the logo to the to-do", "take that file off the to-do", "put that to-do in the website project", "move it to the Build stage". Not for project to-dos in projects/<name>/todo.md. The TDS Brain app also runs this script for its to-do controls.
+version: 0.6
+last_updated: 2026-11-21
 roles: owner, scout
 maturity: draft
 members: false
@@ -31,18 +31,19 @@ echo '{"title":"Renew the Acme contract","due":"2026-12-01"}' \
 
 | Command | Fields | What it does |
 |---|---|---|
-| `add` | `title`; optional `due`, `assignee`, `open`, `via`, `by`, `scope`, `body` | Writes `todo/YYYYMMDD-<slug>.md` dated today, with a name not already used in `todo/`, `personal/todo/` or the `done/` and `deleted/` folders of either. No assignee means the person in `git config user.name`; `open: true` leaves it open to anyone instead. `via` names the tool, written as `source: added from <via>` (`added with the todo skill` when not sent). Records `created_by` (`by`, else the git user). A to-do for someone else is stamped as passed on (see below). `scope: "personal"` writes it to `personal/todo/` instead, always for the person adding it. `body` becomes its details, for anyone it's for. |
+| `add` | `title`; optional `due`, `assignee`, `open`, `via`, `by`, `scope`, `body`, `client`, `project`, `stage` | Writes `todo/YYYYMMDD-<slug>.md` dated today, with a name not already used in `todo/`, `personal/todo/` or the `done/` and `deleted/` folders of either. No assignee means the person in `git config user.name`; `open: true` leaves it open to anyone instead. `via` names the tool, written as `source: added from <via>` (`added with the todo skill` when not sent). Records `created_by` (`by`, else the git user). A to-do for someone else is stamped as passed on (see below). `scope: "personal"` writes it to `personal/todo/` instead, always for the person adding it. `body` becomes its details, for anyone it's for. `client`, `project` and `stage` put it straight into a project, with the same checks as `project`. |
 | `edit` | `file`, `title`; optional `body`, `expect`, `keep_files` | Replaces the title. Replaces all the details below the frontmatter only when `body` is sent. When the title really changes, the old one goes under `## Title history` (see below). With `keep_files: true`, `body` is the details without the `## Files` section, and the section already in the file is kept (see below). |
 | `due` | `file`, `due`; optional `expect` | Sets the due date (`YYYY-MM-DD`, a real date), or clears it when empty or null. |
 | `assignee` | `file`, `assignee`; optional `expect`, `by`, `by_name`, `via` | Passes it on (a team member's name slug such as `ben-mcadam`), or makes it open to anyone when empty or null. Records who passed it on (see below). If the assignee is already that, nothing is written. Not for personal to-dos: move it to TDS first. |
 | `delete` | `file`; optional `via`, `by`, `by_name`, `expect` | Moves it to `todo/deleted/`, adding `status: deleted`, `deleted` (date), `deleted_at` (UK time), `deleted_by` (`by`, else the person in `git config user.name`) and `deleted_via` (`via`, such as `TDS Brain App`; `todo skill` when not sent), and a "Deleted by … at …" line at the end. An earlier deleted to-do of the same name is kept: the new one gets a number added. |
 | `tick` | `file`; optional `via`, `by`, `by_name`, `expect` | Moves it to `todo/done/`, adding `status: done`, `completed`, `completed_at`, `completed_by` and `completed_via` and a "Ticked off by … at …" line, the same record the app writes when you tick a to-do there. |
-| `move` | `file`, `to` (`"personal"` or `"tds"`); optional `scope`, `expect`, `by`, `by_name`, `via` | Moves your own to-do between `todo/` and `personal/todo/` without changing a byte. Only the person it's assigned to can move it. If the name is taken there, a number is added; the reply's `file` is the new name. |
-| `attach` | `file`, `path`; optional `scope`, `expect`, `by` | Links a file from the library to the to-do, in its `## Files` section (see below). `path` is from the brain folder, such as `clients/acme/files/quote.pdf`. If it's already linked, nothing is written. |
+| `move` | `file`, `to` (`"personal"` or `"tds"`); optional `scope`, `expect`, `by`, `by_name`, `via`, `dropProject` | Moves your own to-do between `todo/` and `personal/todo/` without changing a byte. Only the person it's assigned to can move it. If the name is taken there, a number is added; the reply's `file` is the new name. A personal to-do in a personal project (`project: personal/…`, or the bare name of one of your personal projects), or one linking a file under `personal/projects/`, only moves to TDS with `dropProject: true`. Then it always loses its `project:` and `stage:` lines and those file links, so a private project's name never reaches the team. Ask the person first. |
+| `project` | `file`, `client`, `project`, `stage`; optional `scope`, `expect` | Puts the to-do in a project, or takes it out: sets its `client:`, `project:` and `stage:` lines together (null or empty removes a line) and leaves everything else as it was. `project` is a project key: `<client>/<project>` (such as `skyseal/website-rebuild`, or `the-digital-stride/client-portal` for a folder in `projects/`) or `personal/<project>`. `client` must be the key's client (none for a personal project). A stage needs a project. |
+| `attach` | `file`, `path`; optional `scope`, `expect`, `by` | Links a file from the library to the to-do, in its `## Files` section (see below). `path` is from the brain folder, such as `clients/acme/files/quote.pdf`. If it's already linked, nothing is written. A team to-do can't link a file under `personal/projects/` (403); other `personal/` files are fine. |
 | `detach` | `file`, `path`; optional `scope`, `expect` | Takes that file's link out of the `## Files` section, and the section too once it's empty. The file itself stays where it is. If it isn't linked, nothing is written. |
 | `roster` | none | Lists the team from `.team-config/roles.json`. |
 | `list` | none | Lists this person's to-dos and the open ones. Each has a `version`. |
-| `capabilities` | none | Says what this script can do: `{"version":"0.5","features":["handover","attach","scope"]}`. `scope` is there only when personal to-dos are safe to use in this brain (see below). |
+| `capabilities` | none | Says what this script can do: `{"version":"0.6","features":["handover","attach","todo-project-v1","scope"]}`. `scope` is there only when personal to-dos are safe to use in this brain (see below). |
 
 `file` is the file name inside `todo/`, such as `20261201-renew-acme-contract.md`.
 
@@ -68,6 +69,16 @@ any earlier ones; `open` stands for nobody) and adds a line for people under `##
 the end, such as `- 13 Nov 2026, 14:05 UK: Ben McAdam passed it from ben-mcadam to ian-hancock (TDS Brain App).`
 Who did it is `by` and `by_name`, else the person in `git config user.name`. Adding a to-do for
 someone else records the same frontmatter, without `assigned_from`.
+
+### Projects
+
+A project is a folder: `clients/<client>/projects/<project>/` (internal work under
+`clients/the-digital-stride/projects/`, and the older `projects/<project>/` folders), or
+`personal/projects/<project>/` for your own. Its key is `<client>/<project>` or `personal/<project>`.
+`project` checks the folder is there and writes both `client:` and `project:`, such as
+`client: skyseal` and `project: skyseal/website-rebuild`. A team to-do can never be in a personal
+project: that would show the team something private, so the script refuses it (`status` 403).
+Older labels such as `project: harvey-nash` are left alone until someone tidies them up.
 
 ### Files on a to-do
 
@@ -98,7 +109,8 @@ written and you get status 409, `changed since read`. Read it again and check wi
 before trying again.
 
 It prints one line of JSON. Exit 0 means it worked. Exit 2 means it refused, and the JSON says why
-(`error`, with `status` 400 for bad input, 404 when the to-do isn't there, 409 when it changed since
+(`error`, with `status` 400 for bad input, 403 when it would put a personal project on a team
+to-do, 404 when the to-do isn't there, 409 when it changed since
 it was read, 500 when the file couldn't be changed). Tell the person in a plain sentence what
 changed, or why it didn't.
 
@@ -108,8 +120,8 @@ It says no, with a clear message, rather than quietly changing what you sent:
 
 - a title over 200 characters, details over 8,000 characters, or an assignee over 40 characters;
 - details with a `## Files` heading on `add`, or on `edit` with `keep_files` (use `attach`);
-- for `attach`: a path that isn't a real file under `clients/<client>/`, `templates/` or
-  `personal/`; a link, or a path through a link; a type the library doesn't list (images, and pdf,
+- for `attach`: a path that isn't a real file under `clients/<client>/`, `projects/<project>/`,
+  `templates/` or `personal/`; a link, or a path through a link; a type the library doesn't list (images, and pdf,
   md, txt, docx, html, htm, csv, xlsx, pptx); a place the library never lists, such as
   `personal/todo/` or a folder starting with a dot; a name with `>` in it; and a 21st file;
 - an assignee who isn't on the team in `.team-config/roles.json` (either way of turning their name
@@ -120,6 +132,10 @@ It says no, with a clear message, rather than quietly changing what you sent:
   safe to use here (see above);
 - passing on a personal to-do, adding one that's open or for someone else, and moving a to-do that
   isn't yours;
+- for `project` (and `add` with a project): a key that isn't well formed or has no folder, a client
+  that isn't the key's, a stage over 40 characters or with no project, and a personal project on a
+  team to-do; for `move` to TDS, a to-do in a personal project or linking a file in one, unless
+  `dropProject` is sent; for `attach` on a team to-do, a file under `personal/projects/`;
 - a to-do that is a link to another file, or (for `edit`, `due` and `assignee`) one it isn't
   allowed to write.
 
@@ -155,6 +171,11 @@ before (a `## Files` section included), and `add` without `body` writes what 0.4
 script answers `attach` and `detach` with `unknown command` and ignores `body` on `add`, so a caller
 checks `capabilities` for `attach` first. Files linked by a newer script stay readable everywhere:
 they're plain markdown links.
+
+Everything added in 0.6 is optional too. `add` without `client`, `project` or `stage` writes what 0.5
+wrote, and `move` without a personal project is unchanged. An older script answers `project` with
+`unknown command` and ignores the new `add` fields, so a caller checks `capabilities` for
+`todo-project-v1` first. The new lines are plain frontmatter that other readers show as text.
 
 The `todo` skill stays for one release as a stand-in: its script just runs this one, so an older
 copy of the app still works. Use `tdsapp-todo`.

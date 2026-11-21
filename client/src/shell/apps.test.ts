@@ -4,15 +4,18 @@ import { searchSources } from './search-sources.ts';
 import { SECTIONS } from './sections.ts';
 
 /**
- * Apps that may declare `search: null`, each with the reason. Empty today: both apps are searchable. A new
+ * Apps that may declare `search: null`, each with the reason. Projects is listed: its group lives in search-sources.ts. A new
  * app is searchable as part of building it (plan 2026-11-13-global-search, decision 9); an entry here
  * needs a reason a reviewer would accept, e.g. "holds nothing a person would look up".
  */
-const NULL_SEARCH_REASONS: Record<string, string> = {};
+const NULL_SEARCH_REASONS: Record<string, string> = {
+  projects:
+    'Projects have their own group in search-sources.ts (plan 2026-11-20-projects-system, decision 14).',
+};
 
 describe('APPS', () => {
-  it('holds the library apps in a normal build, each with a panel of its own', () => {
-    expect(APPS.map((a) => a.id)).toEqual(['images', 'documents']);
+  it('holds the library apps and Projects in a normal build; the library apps each have a panel', () => {
+    expect(APPS.map((a) => a.id)).toEqual(['images', 'documents', 'projects']);
     expect(APPS[0]?.Panel).toBeDefined();
     expect(APPS[0]?.panelLabel).toBe('Image details');
     expect(APPS[1]?.Panel).toBeDefined();

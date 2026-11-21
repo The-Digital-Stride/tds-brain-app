@@ -72,6 +72,15 @@ import type {
   TurnLevel,
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
+import type {
+  ProjectAction,
+  ProjectFilesResponse,
+  ProjectKey,
+  ProjectList,
+  ProjectTodosResponse,
+  TidyApply,
+  TidyList,
+} from '../../shared/projects-contract.ts';
 import { type StartUpdateRequest, UPDATE_ROUTES, type UpdateStatus } from '../../shared/update-contract.ts';
 
 /** Every failure from the server, or from reaching it, arrives as one of these. */
@@ -221,6 +230,18 @@ export const api = {
     request<TodoList>('POST', ROUTES.changeTodo, action satisfies ChangeTodoRequest, undefined, opts),
   /** Files a staged upload into the library and links it to the to-do (release 3). */
   uploadTodoFile: (req: TodoUploadRequest) => request<TodoUploadResponse>('POST', ROUTES.todoUpload, req),
+  /** Projects R1 (plan 2026-11-20-projects-system). */
+  projects: () => request<ProjectList>('GET', ROUTES.projects),
+  changeProject: (action: ProjectAction) => request<ProjectList>('POST', ROUTES.projectsChange, action),
+  projectFiles: (key: ProjectKey, kind: LibraryKind) =>
+    request<ProjectFilesResponse>(
+      'GET',
+      `${ROUTES.projectFiles}?key=${encodeURIComponent(key)}&kind=${encodeURIComponent(kind)}`,
+    ),
+  projectTodos: (key: ProjectKey) =>
+    request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),
+  tidy: () => request<TidyList>('GET', ROUTES.projectsTidy),
+  applyTidy: (apply: TidyApply) => request<TidyList>('POST', ROUTES.projectsTidy, apply),
   updatePrefs: (patch: Partial<AppPrefs>) => request<AppPrefs>('PUT', ROUTES.prefs, patch),
   engineChoices: () => request<EngineChoices>('GET', ROUTES.engineChoices),
   sessions: () => request<SessionList>('GET', ROUTES.sessions),

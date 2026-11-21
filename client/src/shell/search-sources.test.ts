@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession, PastSession, SkillInfo, TodoItem, TodoList } from '../../../shared/contract.ts';
+import type { ProjectCard } from '../../../shared/projects-contract.ts';
 import type { AppSlot, SearchActions, SearchContext, SearchHit, SearchSource } from './contract.ts';
 
 const apps = vi.hoisted(() => [] as AppSlot[]);
@@ -14,6 +15,7 @@ const searchFn = vi.hoisted(() => vi.fn());
 vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
 
 const { SEARCH_GROUP_MAX, searchSources } = await import('./search-sources.ts');
+const { projectPageRequest } = await import('../state/client-choice.ts');
 const { adManagerSearch } = await import('../tools/ad-manager/search.ts');
 const { commandSearch } = await import('../tools/ad-manager/command-search.ts');
 const { summarySearch } = await import('../tools/ad-manager/summary-search.ts');
@@ -131,7 +133,7 @@ describe('section tools in the sources', () => {
 });
 
 describe('searchSources order', () => {
-  it('is Go to, To-dos, Open chats, Skills, Clients, Earlier chats, Help, then apps', () => {
+  it('is Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats, Help, then apps', () => {
     apps.push(
       fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
     );
@@ -141,6 +143,7 @@ describe('searchSources order', () => {
       'chats',
       'skills',
       'clients',
+      'projects',
       'earlier',
       'help',
       'notes',
@@ -536,5 +539,107 @@ describe('the Ads tools in the search', () => {
     commandSearch.search?.('audit', adsCtx());
     summarySearch.search?.('wasted', adsCtx());
     expect(adsAccounts).not.toHaveBeenCalled();
+  });
+});
+
+const card = (over: Partial<ProjectCard> = {}): ProjectCard => ({
+  key: 'acme-heating/website-rebuild',
+  space: 'client',
+  slug: 'website-rebuild',
+  client: 'acme-heating',
+  folder: 'clients/acme-heating/projects/website-rebuild',
+  card: 'ok',
+  archived: false,
+  title: 'Website rebuild',
+  kind: 'one-off',
+  status: 'active',
+  health: null,
+  comms: null,
+  owner: null,
+  team: [],
+  service: [],
+  start: null,
+  end: null,
+  budgetHours: null,
+  billable: null,
+  stages: ['Build'],
+  mondayId: null,
+  created: null,
+  createdBy: null,
+  lastChanged: null,
+  brief: '',
+  links: [],
+  version: 'v',
+  openTodos: 2,
+  teamFromTodos: [],
+  checklist: null,
+  ...over,
+});
+
+describe('the Projects group', () => {
+  const projects = [
+    card(),
+    card({ key: 'northwind/seo-retainer', slug: 'seo-retainer', client: 'northwind', title: 'SEO retainer' }),
+    card({ key: 'acme-heating/old', slug: 'old', title: 'Old site', archived: true }),
+  ];
+  const withProjects = (over: Partial<SearchContext> = {}) =>
+    ctx({
+      projects,
+      clients: [
+        { slug: 'acme-heating', name: 'Acme Heating', aliases: ['AH'] },
+        { slug: 'northwind', name: 'Northwind' },
+      ],
+      ...over,
+    });
+
+  it('finds a project by title, client name, alias or slug, and skips archived ones', () => {
+    expect(
+      hits('projects', 'website', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['acme-heating/website-rebuild']);
+    expect(
+      hits('projects', 'northwind', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['northwind/seo-retainer']);
+    expect(
+      hits('projects', 'AH', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['acme-heating/website-rebuild']);
+    expect(
+      hits('projects', 'seo-retainer', withProjects())
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter')),
+    ).toEqual(['northwind/seo-retainer']);
+    expect(hits('projects', 'old site', withProjects())).toEqual([]);
+  });
+
+  it('opens the project page first, with "Filter to this project" as the second action', () => {
+    const [open, filter] = hits('projects', 'website', withProjects());
+    expect(open?.label).toBe('Acme Heating · Website rebuild');
+    expect(open?.hint).toBe('Open project');
+    const openView = vi.fn();
+    open?.run({ openView } as unknown as SearchActions);
+    expect(openView).toHaveBeenCalledWith('app:projects');
+    expect(projectPageRequest.get()).toBe('acme-heating/website-rebuild');
+    expect(filter?.hint).toBe('Filter to this project');
+    const filterToProject = vi.fn();
+    filter?.run({ filterToProject } as unknown as SearchActions);
+    expect(filterToProject).toHaveBeenCalledWith('acme-heating/website-rebuild');
+    projectPageRequest.set('');
+  });
+
+  it('has no hits before the list has loaded (an older server too)', () => {
+    expect(hits('projects', 'website')).toEqual([]);
+  });
+
+  it('puts "Client · Project" on a to-do hit', () => {
+    const t = todo('t1', 'Ship the build', {
+      projectMatch: { how: 'key', key: 'acme-heating/website-rebuild' },
+    });
+    const [hit] = hits('todos', 'ship', withProjects({ todos: list([t]) }));
+    expect(hit?.hint).toContain('Acme Heating · Website rebuild');
   });
 });

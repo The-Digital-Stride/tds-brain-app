@@ -202,6 +202,8 @@ export function DocumentsSheet() {
           onScope={(scope) => docsStore.set({ scope })}
           query={s.query}
           onQuery={(query) => docsStore.set({ query })}
+          project={s.project ?? ''}
+          onProject={(project) => docsStore.set({ project })}
           searchLabel="Search documents"
           placeholder="Search by name or folder"
         >
@@ -263,6 +265,13 @@ export function DocumentsSheet() {
               />
             ))}
           </div>
+        ) : null}
+        {ready && data.hiddenLinks > 0 ? (
+          <p className="lib-note">
+            {data.hiddenLinks === 1
+              ? '1 linked file is not shown because you cannot see it.'
+              : `${data.hiddenLinks} linked files are not shown because you cannot see them.`}
+          </p>
         ) : null}
         {ready && data.truncated ? (
           <p className="lib-note">This library is very large, so some files are not listed.</p>

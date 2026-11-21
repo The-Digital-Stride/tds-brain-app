@@ -15,6 +15,19 @@ import { chatContextPath } from './context-contract.ts';
 import type { AppState } from './install-contract.ts';
 import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
 import type { ChatPage } from './pages-contract.ts';
+import type {
+  ProjectAction,
+  ProjectFilesResponse,
+  ProjectKey,
+  ProjectList,
+  ProjectTodosResponse,
+  TidyApply,
+  TidyList,
+  TodoAddProjectFields,
+  TodoMoveProjectFields,
+  TodoProjectAction,
+  TodoProjectMatch,
+} from './projects-contract.ts';
 import { UPDATE_ROUTES } from './update-contract.ts';
 
 export const DEFAULT_PORT = 3877;
@@ -146,8 +159,19 @@ export interface TodoItem {
   due: string | null;
   /** YYYY-MM-DD from the file name's date prefix, else null. */
   surfaceDate: string | null;
+  /** Frontmatter `project:` exactly as written (a ProjectKey, an old label, or null). See `projectMatch`. */
   project: string | null;
   client: string | null;
+  /**
+   * Projects R1 (plan 2026-11-20-projects-system, decision 6): frontmatter `stage`, else null.
+   * Absent from older servers: the client treats absent as null.
+   */
+  stage?: string | null;
+  /**
+   * Projects R1 (decision 5): how `project` resolves, by `resolveTodoProject` (shared/projects.ts).
+   * Absent from older servers: the client treats absent as `{ how: 'none' }`.
+   */
+  projectMatch?: TodoProjectMatch;
   /** Frontmatter `created` as written, else null. */
   created: string | null;
   /** Frontmatter `source` (where the to-do came from), else null. */
@@ -258,6 +282,12 @@ export interface TodoList {
    * `tdsapp-files` skill is here, allowed for this person, and its `capabilities` list "files-add-v1".
    */
   canUpload: boolean;
+  /**
+   * Projects R1 (decision 15): the to-do script answers `capabilities` with TODO_PROJECT_CAPABILITY
+   * ('todo-project-v1'), so the `project` action, `add` with client/project/stage and `move` with
+   * `dropProject` are understood. False hides the Project and Stage fields. Absent from older servers = false.
+   */
+  canProject?: boolean;
   /**
    * Only in the reply to a `move` change: the to-do's `key` before and after (a name clash at the
    * destination changes the id). Lets a multi-step save address the next step to the new place.
@@ -441,14 +471,14 @@ export type TodoAction =
    * added for someone else can carry details. Only sent when TodoList.canAttach (the script is v0.5+);
    * an older script would ignore it.
    */
-  | {
+  | ({
       kind: 'add';
       title: string;
       due: string | null;
       assignee: string | null;
       scope?: TodoScope;
       details?: string;
-    }
+    } & TodoAddProjectFields)
   /**
    * Release 3: when TodoList.canAttach, `details` is the body WITHOUT its `## Files` section (the client
    * sends `splitTodoFiles(...).details`), TODO_DETAILS_MAX counts only that, and the server always runs the
@@ -470,7 +500,7 @@ export type TodoAction =
   | { kind: 'assignee'; id: string; assignee: string | null; expect?: string; scope?: TodoScope }
   | { kind: 'delete'; id: string; expect?: string; scope?: TodoScope }
   /** v0.4: moves the file between `todo/` (tds) and `personal/todo/` (personal), bytes unchanged. */
-  | { kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string }
+  | ({ kind: 'move'; id: string; scope: TodoScope; to: TodoScope; expect?: string } & TodoMoveProjectFields)
   /**
    * Release 3: links a library file (brain-relative `path`) in the body's `## Files` section, or unlinks
    * it. Only when TodoList.canAttach. `attach` checks the file is a real file the library lists (not a
@@ -479,7 +509,9 @@ export type TodoAction =
    * touches the file itself.
    */
   | { kind: 'attach'; id: string; path: string; expect?: string; scope?: TodoScope }
-  | { kind: 'detach'; id: string; path: string; expect?: string; scope?: TodoScope };
+  | { kind: 'detach'; id: string; path: string; expect?: string; scope?: TodoScope }
+  /** Projects R1 (decisions 5, 6): set client, project and stage together. Only when TodoList.canProject. */
+  | TodoProjectAction;
 /*
  * v0.4 rules for `scope` (plan 2026-11-13-todo-handover-search-scope, decisions 2 and 4):
  * - Absent means 'tds', so every v0.3 action shape is unchanged. The server matches the listed to-do
@@ -781,6 +813,17 @@ export interface BrainReaders {
    * type; the route answers 404 `not-found` when it is missing.
    */
   deleteLibraryFile?(id: string, opts: { expect?: string }): Promise<void>;
+  /**
+   * Projects R1 (plan 2026-11-20-projects-system, decisions 10, 7, 13). Optional so older test fakes
+   * still satisfy the type; the routes answer 404 `not-found` when missing. All throw ProjectsError
+   * (shared/projects-contract.ts) with a plain UK-English message.
+   */
+  projects?(identity: Identity): Promise<ProjectList>;
+  changeProject?(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  projectFiles?(key: ProjectKey, kind: LibraryKind, identity: Identity): Promise<ProjectFilesResponse>;
+  projectTodos?(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
+  tidy?(identity: Identity): Promise<TidyList>;
+  applyTidy?(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Runs the script's `purge` (30-day clean-up). Resolves to the number erased; never throws (0 on any failure). */
   purgeDeletedFiles?(): Promise<number>;
   /** When the brain last synced (see SyncStatus). Never throws. */
@@ -867,6 +910,11 @@ export interface LibraryItem {
    * protected name. The script checks all of this again. Missing or false: no bin.
    */
   canDelete?: boolean;
+  /**
+   * Projects R1 (decision 7, LibraryProjectFields): keys of every project this file belongs to, by
+   * folder or by link. Filled when serving, never cached with the item. Absent from older servers = [].
+   */
+  projects?: ProjectKey[];
 }
 
 export interface LibraryListing {
@@ -1824,6 +1872,16 @@ export const ROUTES = {
    * used up either way.
    */
   todoUpload: '/api/todos/upload',
+  /** Projects R1 (decision 10). `GET` → ProjectList (shared/projects-contract.ts). */
+  projects: '/api/projects',
+  /** `POST` ProjectAction → ProjectList. Errors as ProjectsErrorCode with a plain UK-English `error`. */
+  projectsChange: '/api/projects/change',
+  /** `GET ?key=<ProjectKey>&kind=image|document` → ProjectFilesResponse (decision 7). */
+  projectFiles: '/api/projects/files',
+  /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */
+  projectTodos: '/api/projects/todos',
+  /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
+  projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',
   /** `GET`: EngineChoices. `no-store`, every role. */
   engineChoices: '/api/engine/choices',

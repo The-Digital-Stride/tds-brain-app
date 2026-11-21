@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import type { ProjectChoice } from '../../../shared/projects-contract.ts';
+import { projectsStore } from './projects.ts';
 
 /**
  * The client the person is working on, shared by Home and every library app (Images, Documents), so
@@ -10,15 +12,39 @@ import { useSyncExternalStore } from 'react';
  */
 export const NO_CLIENT = 'none';
 
-let chosen = '';
+interface Choice {
+  client: string;
+  project: ProjectChoice;
+}
+
+// One snapshot, replaced whole on every change, so a reader never sees a client and a project that
+// disagree (decision 11). `get`/`set` below are the client-only view of it and keep working as before.
+let state: Choice = { client: '', project: '' };
 const listeners = new Set<() => void>();
 
+/** The client choice a project implies: its client folder, or "personal" for a personal project. */
+export function clientForProject(key: string): string {
+  const client = key.split('/')[0] ?? '';
+  return client === 'personal' ? 'personal' : `client:${client}`;
+}
+
+function publish(next: Choice): void {
+  if (next.client === state.client && next.project === state.project) return;
+  state = next;
+  for (const l of [...listeners]) l();
+}
+
+/** Sets client and project together. A project must belong to the client: otherwise the client wins and the project clears. */
+export function setChoice(next: { client: string; project: ProjectChoice }): void {
+  const project = next.project && clientForProject(next.project) === next.client ? next.project : '';
+  publish({ client: next.client, project });
+}
+
 export const clientChoice = {
-  get: (): string => chosen,
+  get: (): string => state.client,
+  /** Choosing a different client clears the project; choosing the same one keeps it. */
   set(next: string): void {
-    if (next === chosen) return;
-    chosen = next;
-    for (const l of [...listeners]) l();
+    publish({ client: next, project: next === state.client ? state.project : '' });
   },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
@@ -28,8 +54,68 @@ export const clientChoice = {
   },
 };
 
+export const projectChoice = {
+  get: (): Choice => state,
+  /** A project always sets its client with it; '' clears the project only. */
+  set(key: ProjectChoice): void {
+    publish(key ? { client: clientForProject(key), project: key } : { client: state.client, project: '' });
+  },
+  subscribe: clientChoice.subscribe,
+};
+
+/**
+ * A request to open one project's page in the Projects app, made by search (decision 14). The app reads
+ * it when it mounts (`takeProjectPageRequest`) or, if already showing, through `subscribe`, and clears it
+ * once it has acted. '' means no request.
+ */
+let pageRequest = '';
+const pageListeners = new Set<() => void>();
+export const projectPageRequest = {
+  get: (): string => pageRequest,
+  /** Asks for a project's page; '' withdraws the request. */
+  set(key: string): void {
+    if (key === pageRequest) return;
+    pageRequest = key;
+    for (const l of [...pageListeners]) l();
+  },
+  subscribe(listener: () => void): () => void {
+    pageListeners.add(listener);
+    return () => {
+      pageListeners.delete(listener);
+    };
+  },
+};
+
+/** Returns the pending project-page request and clears it; '' when there is none. */
+export function takeProjectPageRequest(): string {
+  const key = pageRequest;
+  if (key) projectPageRequest.set('');
+  return key;
+}
+
+/** Clears the picker's project, keeping its client. */
+export function clearPickedProject(): void {
+  projectChoice.set('');
+}
+
 export function useClientChoice(): string {
   return useSyncExternalStore(clientChoice.subscribe, clientChoice.get);
+}
+
+/**
+ * The chosen project key ('' for none). While one is chosen it clears itself if the projects list
+ * loads without it (closed out of existence, or the folder went), so no screen filters to nothing.
+ */
+export function useProjectChoice(): ProjectChoice {
+  const { project } = useSyncExternalStore(projectChoice.subscribe, projectChoice.get);
+  const { list } = useSyncExternalStore(projectsStore.subscribe, projectsStore.get);
+  useEffect(() => {
+    if (project) projectsStore.ensure();
+  }, [project]);
+  useEffect(() => {
+    if (project && list && !list.projects.some((p) => p.key === project)) projectChoice.set('');
+  }, [project, list]);
+  return project;
 }
 
 /** The client's folder name in a choice; '' when the choice is no client at all; null when nothing was chosen. */

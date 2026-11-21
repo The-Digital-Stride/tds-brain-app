@@ -11,10 +11,19 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { todoChatClient } from '../state/client-choice.ts';
+import {
+  clientChoice,
+  NO_CLIENT,
+  projectChoice,
+  todoChatClient,
+  useClientChoice,
+  useProjectChoice,
+} from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
 import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
+import { filterOptions, todoPlaceParts, useProjects } from '../state/projects.ts';
+import { todoProjectKey } from '../state/todo-filter.ts';
 import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import { ClientAsk } from './ClientAsk.tsx';
@@ -31,12 +40,90 @@ function metaParts(
   t: TodoItem,
   today: string,
   clientName: (slug: string | null) => string | null,
+  place?: string | null,
 ): { text: string; late?: boolean }[] {
   const parts: { text: string; late?: boolean }[] = [];
   if (t.due) parts.push({ text: dueInWords(t.due, today), late: isOverdue(t.due, today) });
-  const name = clientName(t.client);
+  // "Client · Project" when the to-do is in a known project; else the client, as before.
+  const name = place ?? clientName(t.client);
   if (name) parts.push({ text: name });
   return parts;
+}
+
+const ALL = 'all';
+
+/**
+ * The app-wide picker (decision 11): Client, then Project. Choosing a project narrows Home, the To-dos
+ * drawer, Images, Documents and search; choosing only a client changes nothing here. Shown once the
+ * brain has projects.
+ */
+function ProjectPicker({ clients }: { clients: { slug: string; name: string; aliases?: string[] }[] }) {
+  const { list } = useProjects();
+  const choice = useClientChoice();
+  const project = useProjectChoice();
+  const cards = list?.projects ?? [];
+  if (cards.length === 0 && !project) return null;
+  const clientValue =
+    choice === '' || choice === NO_CLIENT
+      ? ALL
+      : choice === 'personal'
+        ? 'personal'
+        : choice.slice('client:'.length);
+  const hasPersonal = cards.some((c) => c.space === 'personal');
+  // No client yet: only personal projects can be picked (and only if there are any).
+  const forClient = filterOptions(
+    cards.filter((c) =>
+      clientValue === ALL
+        ? c.space === 'personal'
+        : clientValue === 'personal'
+          ? c.space === 'personal'
+          : c.client === clientValue,
+    ),
+    clients,
+  );
+  const needClient = clientValue === ALL && !hasPersonal && !project;
+  const locked = needClient || (forClient.length === 0 && !project);
+  const slot = { flex: '0 1 200px', minWidth: 0 } as const;
+  return (
+    // One compact row: "Working on [Client] [Project]", wrapping on a narrow sheet.
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+      <label className="client-label" htmlFor="pick-client">
+        Working on
+      </label>
+      <span style={slot}>
+        <SearchSelect
+          id="pick-client"
+          className="client-select"
+          value={clientValue}
+          options={[
+            { value: ALL, label: 'All clients' },
+            ...(hasPersonal ? [{ value: 'personal', label: 'My personal projects' }] : []),
+            ...clientOptions(clients),
+          ]}
+          recentKey="clients"
+          onChange={(v) => clientChoice.set(v === ALL ? '' : v === 'personal' ? 'personal' : `client:${v}`)}
+        />
+      </span>
+      <label className="visually-hidden" htmlFor="pick-project">
+        Project
+      </label>
+      <span style={slot}>
+        <SearchSelect
+          id="pick-project"
+          className="client-select"
+          value={needClient ? 'need' : project || ALL}
+          options={
+            needClient
+              ? [{ value: 'need', label: 'Pick a client first' }]
+              : [{ value: ALL, label: 'All projects' }, ...forClient]
+          }
+          recentKey="projects"
+          disabled={locked}
+          onChange={(v) => projectChoice.set(v === ALL ? '' : v)}
+        />
+      </span>
+    </div>
+  );
 }
 
 const AUTO = '@auto';
@@ -67,6 +154,8 @@ export function Home() {
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
+  const project = useProjectChoice();
+  const { list: projectList } = useProjects();
   // The client picker's value: "auto", "none" or a slug. A chat opened with a client (palette, to-do) starts on it.
   const [picked, setPicked] = useState<{ key: number; value: string } | null>(null);
   // Pinned cards opened with "Show N more". Not saved: Home starts compact each visit.
@@ -137,10 +226,16 @@ export function Home() {
   const today = todayIso();
   const live = sessions?.live ?? [];
   const mine = todos?.mine ?? [];
-  const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []);
+  // Only a chosen project narrows Home; a client alone behaves as it always has.
+  const inProject = <T extends TodoItem>(t: T) => !project || todoProjectKey(t) === project;
+  const pinnedTodoRows = pinnedTodos(mine, todos?.open ?? [], boot.prefs.favouriteTodos ?? []).filter(
+    inProject,
+  );
   const pinnedChatRows = pinnedChats(live, sessions?.past ?? [], boot.prefs.favouriteChats ?? []);
   const starredFiles = new Set(boot.prefs.favouriteFiles ?? []);
-  const pinnedFileRows = (pinnedFiles ?? []).filter((f) => starredFiles.has(f.item.id));
+  const pinnedFileRows = (pinnedFiles ?? []).filter(
+    (f) => starredFiles.has(f.item.id) && (!project || (f.item.projects ?? []).includes(project)),
+  );
   const openFile = (f: LibraryItemsResponse['files'][number]) =>
     dispatch({
       type: 'open-viewer',
@@ -324,6 +419,8 @@ export function Home() {
             </button>
           )}
 
+          <ProjectPicker clients={clients} />
+
           <div className="tray">
             {ads?.visible && ads.waiting > 0 ? (
               <section className="card" aria-labelledby="home-ads">
@@ -374,7 +471,9 @@ export function Home() {
               {!todos ? (
                 <p className="card-note">Loading</p>
               ) : pinnedTodoRows.length === 0 ? (
-                <p className="card-note">Star a to-do to keep it here.</p>
+                <p className="card-note">
+                  {project ? 'No pinned to-dos in this project.' : 'Star a to-do to keep it here.'}
+                </p>
               ) : (
                 <>
                   {pinnedTodoRows.slice(0, rowsShown('todos')).map((t) => (
@@ -382,7 +481,14 @@ export function Home() {
                       <span className="line-text">
                         <span className="line-title">{t.title}</span>
                         <span className="line-meta">
-                          {metaParts(t, today, clientName).map((part, i) => (
+                          {metaParts(
+                            t,
+                            today,
+                            clientName,
+                            todoProjectKey(t)
+                              ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
+                              : null,
+                          ).map((part, i) => (
                             <span key={part.text}>
                               {i > 0 ? ', ' : ''}
                               <span className={part.late ? 'late' : undefined}>{part.text}</span>
@@ -481,7 +587,9 @@ export function Home() {
               ) : pinnedFiles === null ? (
                 <p className="card-note">Loading</p>
               ) : pinnedFileRows.length === 0 ? (
-                <p className="card-note">Star a file to keep it here.</p>
+                <p className="card-note">
+                  {project ? 'No pinned files in this project.' : 'Star a file to keep it here.'}
+                </p>
               ) : (
                 <>
                   {pinnedFileRows.slice(0, rowsShown('files')).map((f) => (

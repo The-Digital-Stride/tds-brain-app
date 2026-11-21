@@ -179,6 +179,8 @@ export function ImagesSheet() {
           onScope={(scope) => imagesStore.set({ scope })}
           query={s.query}
           onQuery={(query) => imagesStore.set({ query })}
+          project={s.project ?? ''}
+          onProject={(project) => imagesStore.set({ project })}
           searchLabel="Search images"
           placeholder="Search by name or folder"
         >
@@ -229,6 +231,13 @@ export function ImagesSheet() {
               />
             ))}
           </div>
+        ) : null}
+        {ready && data.hiddenLinks > 0 ? (
+          <p className="lib-note">
+            {data.hiddenLinks === 1
+              ? '1 linked file is not shown because you cannot see it.'
+              : `${data.hiddenLinks} linked files are not shown because you cannot see them.`}
+          </p>
         ) : null}
         {ready && data.truncated ? (
           <p className="lib-note">This library is very large, so some files are not listed.</p>

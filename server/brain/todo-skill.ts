@@ -28,6 +28,16 @@ import {
 /** The tool name the app records on to-dos it finishes or deletes. */
 export const APP_VIA = 'TDS Cortex';
 
+/**
+ * The script refuses with status 403 only for the privacy rule (v0.6, plan 2026-11-20-projects-system,
+ * decision 8): a personal project on a team to-do, or a move to TDS that would carry one.
+ */
+export const TODO_PRIVATE_PROJECT_MESSAGE =
+  "A team to-do can't be in a personal project, so nothing was changed. Take it out of the project first.";
+/** The same rule for files: a team to-do can't link a file kept in a personal project's folder. */
+export const TODO_PRIVATE_FILE_MESSAGE =
+  "A team to-do can't link a file from a personal project, so nothing was changed. Take the link off first, or keep the to-do personal.";
+
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {
   'bad-request': "That change couldn't be saved. Try again, or make it in a chat instead.",
@@ -69,6 +79,7 @@ const COMMAND: Record<TodoRunAction['kind'], string> = {
   tick: 'tick',
   attach: 'attach',
   detach: 'detach',
+  project: 'project',
 };
 
 /** The script's `capabilities` feature for `attach` / `detach`, `add` with a body and `edit` with `keep_files` (v0.5). */
@@ -104,12 +115,27 @@ export function scriptPayload(
     'scope' in action && action.scope === 'personal' ? { scope: 'personal' } : {};
   const actor: Record<string, string> = by ? { by: by.slug, by_name: by.name } : {};
   switch (action.kind) {
+    case 'project':
+      // v0.6: the three lines are set together; '' clears one (the script reads '' as none).
+      return {
+        file: action.id,
+        client: action.client ?? '',
+        project: action.project ?? '',
+        stage: action.stage ?? '',
+        ...expect,
+        ...scope,
+      };
     case 'add': {
       // `via` names this app as the tool; an open to-do sends `open` and no assignee. An older script
       // ignores both and the server only offers open adds when the newer skill is there. `body` (v0.5)
       // is only here when the server kept `details`, which it does only when canAttach.
       const body: Record<string, string> =
         action.details !== undefined && action.details !== '' ? { body: action.details } : {};
+      // v0.6: only the project fields that are set, so an add without them stays byte-identical.
+      for (const key of ['client', 'project', 'stage'] as const) {
+        const value = action[key];
+        if (typeof value === 'string' && value !== '') body[key] = value;
+      }
       return action.assignee === null
         ? {
             title: action.title,
@@ -162,7 +188,16 @@ export function scriptPayload(
     case 'tick':
       return { file: action.id, via: APP_VIA, ...actor, ...expect, ...scope };
     case 'move':
-      return { file: action.id, scope: action.scope, to: action.to, ...expect, ...actor, via: APP_VIA };
+      // v0.6: `dropProject` only when the person agreed to leave a personal project (overseer B2).
+      return {
+        file: action.id,
+        scope: action.scope,
+        to: action.to,
+        ...expect,
+        ...actor,
+        via: APP_VIA,
+        ...(action.dropProject === true ? { dropProject: true } : {}),
+      };
   }
 }
 
@@ -207,8 +242,8 @@ export interface TodoSkillRunner {
   capabilities(): Promise<readonly string[]>;
 }
 
-/** What the script's exit code and reply mean for the app. */
-function judge(outcome: Outcome): TodoChangeErrorCode | null {
+/** What the script's exit code and reply mean for the app. 'private' is a 403: the privacy rule. */
+function judge(outcome: Outcome): TodoChangeErrorCode | 'private' | 'private-file' | null {
   if (outcome.failed) return 'internal';
   const reply = parseReply(outcome.stdout);
   if (reply === null) return 'internal';
@@ -217,6 +252,9 @@ function judge(outcome: Outcome): TodoChangeErrorCode | null {
     if (reply.status === 400) return 'bad-request';
     if (reply.status === 404) return 'not-found';
     if (reply.status === 409) return 'changed';
+    // The script's words are never shown, but they say whether a project or a file broke the rule.
+    if (reply.status === 403)
+      return typeof reply.error === 'string' && /\bfile\b/.test(reply.error) ? 'private-file' : 'private';
   }
   return 'internal';
 }
@@ -247,6 +285,8 @@ export function createTodoSkillRunner(root: string, options: TodoSkillOptions = 
       opts,
     );
     const code = judge(outcome);
+    if (code === 'private') throw new TodoChangeError('not-allowed', TODO_PRIVATE_PROJECT_MESSAGE);
+    if (code === 'private-file') throw new TodoChangeError('not-allowed', TODO_PRIVATE_FILE_MESSAGE);
     if (code) throw todoChangeError(code);
     const file = parseReply(outcome.stdout)?.file;
     return { file: typeof file === 'string' ? file : null };

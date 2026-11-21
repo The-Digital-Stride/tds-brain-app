@@ -15,6 +15,8 @@ export interface LibraryState {
   viewing: LibraryItem | null;
   /** The items ticked for a bulk action. */
   ticked: ReadonlySet<string>;
+  /** This app's own project filter (a ProjectKey), '' or absent for none. The app-wide picker's project overrides it. */
+  project?: string;
 }
 
 export interface LibraryStore<S extends LibraryState> {

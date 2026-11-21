@@ -11,7 +11,8 @@ import {
 import { api } from '../api.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { todoChatClient } from '../state/client-choice.ts';
+import { setChoice, todoChatClient, useClientChoice, useProjectChoice } from '../state/client-choice.ts';
+import { filterOptions, labelForKey, todoPlaceParts, useProjects } from '../state/projects.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import { EMPTY_FILTER, filterActive, filterTodos } from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
@@ -27,7 +28,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
-import { handoverMeta, todoChatDraft, todoPlaces } from './words.ts';
+import { handoverMeta, todoChatDraft } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
@@ -168,6 +169,7 @@ function TodoRow({
   // screen-reader user who lands on it hears them too.
   const newId = useId();
   const metaId = useId();
+  const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
   const current =
@@ -180,7 +182,7 @@ function TodoRow({
   if (from) parts.push({ text: from });
   if (showScope && todo.scope === 'personal') parts.push({ text: 'Personal', icon: 'lock' });
   if (due) parts.push({ text: due, late: overdue });
-  for (const text of todoPlaces(todo, boot?.clients ?? [])) parts.push({ text });
+  for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
   if (chat)
     parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
 
@@ -358,6 +360,11 @@ export function TodosDrawer() {
     clearReveal,
     toggleFavouriteTodo,
   } = useStore();
+  const pickedProject = useProjectChoice();
+  const pickedClient = useClientChoice();
+  const { list: projectCards } = useProjects();
+  /** Clears the app-wide picker's project (keeping its client): what the drawer's "Clear" and "Clear filters" do. */
+  const clearPicked = () => setChoice({ client: pickedClient, project: '' });
   const favs = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
@@ -454,6 +461,8 @@ export function TodosDrawer() {
     setVisitSeen(new Set());
     setTabState(inMine ? 'mine' : 'open');
     setFilter(EMPTY_FILTER);
+    // The to-do must show: a project held by the picker would hide it.
+    if (pickedProject) setChoice({ client: pickedClient, project: '' });
     setRevealed({ key, n: reveal.n });
     // The to-do opens in the panel, read first; closing it puts the keyboard back on the row.
     setMessage('');
@@ -528,6 +537,9 @@ export function TodosDrawer() {
     scope: showKind ? filter.scope : 'all',
     client:
       showClient && filter.client !== null && clientSlugs.includes(filter.client) ? filter.client : null,
+    // The app-wide picker's project narrows the drawer too (projects plan, decision 11) and locks the
+    // drawer's own Project filter; with no picker project the filter is the drawer's own.
+    project: pickedProject || filter.project || null,
   };
   const filtering = filterActive(active);
   const shown = filterTodos(items, active, clients);
@@ -580,6 +592,7 @@ export function TodosDrawer() {
   };
   const clearFilters = () => {
     setFilter(EMPTY_FILTER);
+    clearPicked();
     // The button leaves with the "No to-dos match" panel: put the keyboard on a filter, now reset.
     const row = filtersRef.current;
     const filter =
@@ -836,7 +849,11 @@ export function TodosDrawer() {
   // The tools sit on the drawer above the list: only the list scrolls.
   // With a filter row the + icon closes it at the right end. With none, a labelled button on a row of its
   // own, right-aligned to line up with that +. Both primary: adding is the drawer's main action.
-  const hasFilterRow = showKind || showClient;
+  const showProject = (projectCards?.projects.length ?? 0) > 0 || pickedProject !== '';
+  const hasFilterRow = showKind || showClient || showProject;
+  const pickedName = pickedProject
+    ? (labelForKey(pickedProject, projectCards?.projects, clients) ?? pickedProject)
+    : '';
   const addToggle = canChange ? (
     hasFilterRow ? (
       <button
@@ -923,6 +940,33 @@ export function TodosDrawer() {
                 onChange={(value) => setFilter({ ...filter, client: value || null })}
               />
             </>
+          ) : null}
+          {showProject ? (
+            <>
+              <label className="visually-hidden" htmlFor="todo-project">
+                Project
+              </label>
+              <SearchSelect
+                id="todo-project"
+                className="todo-client-pick"
+                value={active.project ?? ''}
+                disabled={pickedProject !== ''}
+                options={[
+                  { value: '', label: 'All projects' },
+                  ...filterOptions(projectCards?.projects ?? [], clients),
+                ]}
+                recentKey="projects"
+                onChange={(value) => setFilter({ ...filter, project: value || null })}
+              />
+            </>
+          ) : null}
+          {pickedProject ? (
+            <span className="todo-project-chip" id="todo-project-why" style={{ flex: '1 1 100%' }}>
+              Project: {pickedName} ·{' '}
+              <button type="button" className="link-btn" onClick={clearPicked}>
+                Clear
+              </button>
+            </span>
           ) : null}
           {addToggle}
         </div>

@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.55.0 — 2026-11-21
+
+- **feat**: release 1 of the projects system
+- **fix**: review fixes for release 1
+- **fix**: line up teammates' to-do rows with your own on a project's To-dos tab
+- **fix**: sign-off and fix-round review items
+
 ## v0.54.1 — 2026-11-20
 
 - **fix**: to-do panel ticks show at once, brain-file links keep their checklists, and retries keep the title history

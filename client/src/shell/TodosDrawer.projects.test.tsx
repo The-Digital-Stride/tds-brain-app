@@ -206,13 +206,13 @@ describe('the Asked tab', () => {
 });
 
 describe('review fixes', () => {
-  it('keeps the project as words on Asked rows while a project filter is on', async () => {
+  it("doesn't repeat the filtered project on Asked rows (the Mine tab does the same)", async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Acme · Website' }));
     fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
     const row = (await screen.findByText('Chase the logo')).closest('li') as HTMLElement;
     expect(within(row).queryByRole('button', { name: /^Filter by project/ })).toBeNull();
-    expect(row.textContent).toContain('Acme · Website');
+    expect(row.textContent).not.toContain('Acme · Website');
   });
 
   it('gives an archived project no chip: the Project filter cannot show it', () => {

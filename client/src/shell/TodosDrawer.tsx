@@ -1103,8 +1103,11 @@ export function TodosDrawer() {
                   projectMatch: t.projectMatch,
                 };
                 const chip = todoProjectChip(where, projectCards?.projects, clients);
-                // The words too: while a project filter is on the row shows them instead of the chip.
-                return { chip, places: todoPlaceParts(where, projectCards?.projects, clients) };
+                // No words while a project filter is on: every row is in it, and the select says so once.
+                return {
+                  chip,
+                  places: project ? [] : todoPlaceParts(where, projectCards?.projects, clients),
+                };
               }}
               onProject={project ? undefined : pickProject}
               state={askedState}

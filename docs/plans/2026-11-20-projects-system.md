@@ -53,10 +53,9 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
   objectives and KPIs; each month gets a review of time, KPIs and work done, reportable month by month.
 - **Month review approval:** the project's Account Owner approves it before it is saved and the client
   report is made.
-- **Hours until Cortex time tracking exists:** read from Monday, read only, at month close. Nothing is
-  written back to Monday. *Refined after the overseer check (S5):* Monday's hours columns hold running
-  totals, and the brain's `time` skill says never to quote them as a monthly figure. The month figure
-  comes from the same Tracket entries that feed Monday, counted by entry date (decision 33).
+- **Hours until Cortex time tracking exists:** ~~read from Monday~~ **from Tracket, not Monday** (Ian,
+  2026-11-21, after the overseer found Monday's hours columns hold running totals). Billable Tracket
+  minutes by entry date, read only, at month close. Nothing is written to Tracket or Monday.
 
 ## Facts checked (2026-11-20, read only)
 
@@ -332,12 +331,17 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
     work done, health, next month's focus, and separate internal and client-safe sections. Month close:
     Claude drafts it. KPIs come from the existing data skills (`gads-proxy`, `gdata-proxy`,
     `seo-proxy`, `semrush`). Work done comes from to-dos finished, files added and updates in the
-    month. **Hours (overseer S5):** Monday's hours columns hold running totals and retainers sit on the
-    TDS Retainers board; the brain's `time` skill says the monthly figure is Tracket billable minutes
-    by entry date, and its `reconcile.cjs` is owner and scout only and lists hours per person. So R3
-    prepares a brain change (as decision 17) in which reconcile writes one shared month total per
-    retainer, with no per-person split; until that exists, the owner types the figure (`hours_source:
-    typed`). Month reviews show total hours only, never per person.
+    month. **Hours come from Tracket, not Monday (Ian, 2026-11-21; overseer S5):** billable Tracket
+    minutes on the retainer's Monday item and its subitems, counted by entry date for the month, read
+    only. The project links to that item through the card's `monday_id`; month close refuses to fetch
+    hours for a retainer without one. Monday's own hours columns are never read: they hold running
+    totals, and the `time` skill says never to quote them as a monthly figure. Access: with the
+    account-level Tracket credentials (owner and scout Macs) the existing `tracket.cjs list --item`
+    already gives this. Team members' personal time-proxy tokens only read their own entries, so R3
+    prepares a brain change (as decision 17, for Ian and Pete) adding a read-only time-proxy command
+    that returns one billable total for an item and month, with no per-person split. Until a Mac can
+    reach either, the owner types the figure (`hours_source: typed`). Month reviews show total hours
+    only, never per person.
     **Draft and approval (overseer B1):** the draft never enters the shared brain. It lives in the app's
     data folder on the drafter's Mac (the owner normally runs month close on their own Mac; if a
     specialist drafts, it is their own local draft). Approval is one create-only write of

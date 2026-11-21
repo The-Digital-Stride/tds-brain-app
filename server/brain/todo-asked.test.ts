@@ -112,8 +112,46 @@ describe('asked of others', () => {
           .update(readFileSync(join(root, 'todo', '20261110-quote.md')))
           .digest('hex'),
         attachments: [],
+        client: null,
+        project: null,
       },
     ]);
+  });
+
+  it('carries client and project, resolved as TDS by the projects index (projects filter on Asked)', async () => {
+    const text = fm([
+      'title: Send the draft quote',
+      'assignee: alex-sample',
+      'assigned_to: alex-sample',
+      'assigned_by: sam-example',
+      'assigned_at: 2026-11-10T09:00:00+00:00',
+      'client: acme',
+      'project: acme/relaunch',
+    ]);
+    const root = brainWith({ 'todo/20261110-quote.md': text });
+    const seen: unknown[] = [];
+    const index = {
+      cards: [],
+      byKey: () => null,
+      keysForPath: () => [],
+      resolve: (value: string | null, client: string | null, scope: 'tds' | 'personal') => {
+        seen.push([value, client, scope]);
+        return { how: 'key' as const, key: 'acme/relaunch' };
+      },
+    };
+    const list = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => index);
+    expect(seen).toEqual([['acme/relaunch', 'acme', 'tds']]);
+    expect(list.waiting[0]).toMatchObject({
+      client: 'acme',
+      project: 'acme/relaunch',
+      projectMatch: { how: 'key', key: 'acme/relaunch' },
+    });
+    // A failing index leaves the match out; the list still loads.
+    const failed = await createAskedTodos(fakeGit('').run).list(root, sam, NOW, async () => {
+      throw new Error('no index');
+    });
+    expect(failed.waiting[0]?.project).toBe('acme/relaunch');
+    expect(failed.waiting[0]).not.toHaveProperty('projectMatch');
   });
 
   it('a stamp naming someone else means not asked by me, whatever git says', async () => {

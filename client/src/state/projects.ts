@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import type { TodoItem } from '../../../shared/contract.ts';
 import { matchedKey, projectLabel } from '../../../shared/projects.ts';
-import type { ProjectCard, ProjectList } from '../../../shared/projects-contract.ts';
+import type { ProjectCard, ProjectList, TodoProjectMatch } from '../../../shared/projects-contract.ts';
 import { api } from '../api.ts';
 import type { PickOption } from '../shell/search-select.ts';
 import { todoPlaces } from '../shell/words.ts';
@@ -111,19 +111,36 @@ export function isOpenProject(card: Pick<ProjectCard, 'status' | 'archived'>): b
 /** Options for an app's project filter: every live project, under its client. */
 export function filterOptions(
   cards: readonly ProjectCard[],
-  clients: readonly { slug: string; name: string }[],
+  clients: readonly { slug: string; name: string; aliases?: string[] }[],
 ): PickOption[] {
   return cards
     .filter((c) => !c.archived)
-    .map((c) => ({
-      value: c.key,
-      label: c.title || c.slug,
-      group:
-        c.space === 'personal'
-          ? 'Mine'
-          : (clients.find((x) => x.slug === c.client)?.name ?? c.client ?? 'Other'),
-      terms: [c.slug, c.client ?? ''].filter(Boolean),
-    }));
+    .map((c) => {
+      const client = clients.find((x) => x.slug === c.client);
+      return {
+        value: c.key,
+        label: c.title || c.slug,
+        group: c.space === 'personal' ? 'Mine' : (client?.name ?? c.client ?? 'Other'),
+        // Typing the client's name (or an alias) finds its projects too.
+        terms: [c.slug, c.client ?? '', client?.name ?? '', ...(client?.aliases ?? [])].filter(Boolean),
+      };
+    });
+}
+
+/**
+ * The project a to-do row can filter by: its matched key and that project's "Client · Project" label, or
+ * null when it isn't in a known project (a client only, a loose label, a key not in the list yet).
+ */
+export function todoProjectChip(
+  todo: { projectMatch?: TodoProjectMatch },
+  cards: readonly ProjectCard[] | undefined,
+  clients: readonly { slug: string; name: string }[],
+): { key: string; label: string } | null {
+  const key = matchedKey(todo.projectMatch ?? { how: 'none' });
+  // An archived project isn't in the Project filter's list, so it can't be filtered by: it stays words.
+  if (!key || cards?.find((c) => c.key === key)?.archived) return null;
+  const label = labelForKey(key, cards, clients);
+  return label ? { key, label } : null;
 }
 
 /**

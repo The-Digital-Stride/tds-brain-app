@@ -117,6 +117,12 @@ describe('filterOptions and todoPlaceParts', () => {
     expect(groups).toMatchObject({ 'acme/site': 'Acme', 'bolt/seo': 'Bolt', 'personal/diary': 'Mine' });
   });
 
+  it("finds a project by its client's name or alias (Working on is one project list now)", () => {
+    const named = [{ slug: 'acme', name: 'Acme Heating', aliases: ['AH'] }];
+    const site = filterOptions(cards, named).find((o) => o.value === 'acme/site');
+    expect(site?.terms).toEqual(expect.arrayContaining(['Acme Heating', 'AH']));
+  });
+
   it('says "Client · Project" for a known project and falls back to the old words otherwise', () => {
     const base = { client: 'acme', project: 'site' };
     expect(

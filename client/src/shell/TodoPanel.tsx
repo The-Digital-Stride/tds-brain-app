@@ -79,6 +79,8 @@ export interface TodoPanelProps {
   onStatus: (text: string, isError?: boolean) => void;
   /** Add form: start personal (the Personal filter is showing). */
   startPersonal: boolean;
+  /** Add form: start in this project (the drawer's project filter). */
+  startProject?: string;
   onEdit: (todo: TodoItem) => void;
   /** Back to reading, dropping the draft. Never asks: the person pressed Cancel. */
   onCancelEdit: () => void;
@@ -282,6 +284,7 @@ export default function TodoPanel(props: TodoPanelProps) {
               canAttach={props.canAttach}
               canProject={canProject}
               startPersonal={props.startPersonal}
+              startProject={props.startProject}
               onAdd={props.onAdd}
               onCancel={props.onCancelAdd}
               onDirty={setAddDirty}

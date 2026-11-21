@@ -504,7 +504,7 @@ describe('global search', () => {
     expect(groupTitles()).toContain('Clients');
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('option', { name: 'Northwind' }));
     await screen.findByRole('heading', { level: 1, name: 'Home' });
-    expect((screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement).value).toBe('Northwind');
+    expect((screen.getByRole('combobox', { name: 'Chat for' }) as HTMLInputElement).value).toBe('Northwind');
     expect(clientChoice.get()).toBe('');
   });
 

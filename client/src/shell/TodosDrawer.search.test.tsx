@@ -256,15 +256,18 @@ describe('filters', () => {
     render(<TodosDrawer />);
     // Nothing is in that project: the list is empty and the reason is on screen.
     expect(screen.getByText('No to-dos match.')).toBeTruthy();
-    expect(screen.getByText(/Project: acme\/site/)).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Project' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/Set by Working on \(Home\)/)).toBeTruthy();
+    const select = screen.getByRole('combobox', { name: 'Project' });
+    expect(select.hasAttribute('disabled')).toBe(true);
+    // The locked select says why.
+    expect(select.getAttribute('aria-describedby')).toBe('todo-project-why');
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(projectChoice.get().project).toBe('');
     expect(clientChoice.get()).toBe('client:acme');
     expect(screen.getByText('Renew contract', { exact: false })).toBeTruthy();
-    expect(screen.queryByText(/Project: /)).toBeNull();
+    expect(screen.queryByText(/Set by Working on/)).toBeNull();
     act(() => projectChoice.set('acme/site'));
-    const chip = screen.getByText(/Project: acme\/site/);
+    const chip = screen.getByText(/Set by Working on/);
     fireEvent.click(within(chip).getByRole('button', { name: 'Clear' }));
     expect(projectChoice.get().project).toBe('');
     clientChoice.set('');

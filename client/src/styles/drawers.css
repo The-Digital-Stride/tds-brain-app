@@ -471,3 +471,27 @@
 .asked-retry {
   margin: 0 0 8px;
 }
+
+/* A to-do row's project, as a chip that filters the drawer by it (ProjectChip). It follows the details on the
+   same line and gives up its width first, ending in an ellipsis. 24px tall (WCAG 2.5.8) without pushing the
+   line taller: it reaches into the row's padding as the icon buttons do. */
+.todo-place {
+  min-height: 24px;
+  max-width: 100%;
+  margin-block: -3px;
+  margin-left: 4px;
+  vertical-align: middle;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+.todo-place-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.todo-place:hover {
+  background: var(--tint-1);
+}

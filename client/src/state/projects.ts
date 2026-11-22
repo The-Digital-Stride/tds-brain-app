@@ -113,18 +113,25 @@ export function filterOptions(
   cards: readonly ProjectCard[],
   clients: readonly { slug: string; name: string; aliases?: string[] }[],
 ): PickOption[] {
-  return cards
-    .filter((c) => !c.archived)
-    .map((c) => {
-      const client = clients.find((x) => x.slug === c.client);
-      return {
-        value: c.key,
-        label: c.title || c.slug,
-        group: c.space === 'personal' ? 'Mine' : (client?.name ?? c.client ?? 'Other'),
-        // Typing the client's name (or an alias) finds its projects too.
-        terms: [c.slug, c.client ?? '', client?.name ?? '', ...(client?.aliases ?? [])].filter(Boolean),
-      };
-    });
+  return cards.filter((c) => !c.archived).map((c) => projectOption(c, clients));
+}
+
+/**
+ * One project as a picker option: its own name, under its client's heading ("Mine" for a personal
+ * one), so a long name still fits the box once chosen.
+ */
+function projectOption(
+  c: ProjectCard,
+  clients: readonly { slug: string; name: string; aliases?: readonly string[] }[],
+): PickOption {
+  const client = clients.find((x) => x.slug === c.client);
+  return {
+    value: c.key,
+    label: c.title || c.slug,
+    group: c.space === 'personal' ? 'Mine' : (client?.name ?? c.client ?? 'Other'),
+    // Typing the client's name (or an alias) finds its projects too.
+    terms: [c.slug, c.title, c.client ?? '', client?.name ?? '', ...(client?.aliases ?? [])].filter(Boolean),
+  };
 }
 
 /**
@@ -168,7 +175,7 @@ export function chipLabel(client: string, title: string): string {
  */
 export function todoProjectOptions(
   cards: readonly ProjectCard[],
-  clients: readonly { slug: string; name: string }[],
+  clients: readonly { slug: string; name: string; aliases?: readonly string[] }[],
   opts: { scope: 'tds' | 'personal'; client: string | null; current?: string | null },
 ): PickOption[] {
   const out = cards.filter((c) => {
@@ -177,12 +184,7 @@ export function todoProjectOptions(
     if (c.space === 'personal') return opts.scope === 'personal';
     return !opts.client || c.client === opts.client;
   });
-  return out.map((c) => ({
-    value: c.key,
-    label: projectText(c, clients),
-    group: c.space === 'personal' ? 'Mine' : undefined,
-    terms: [c.slug, c.title],
-  }));
+  return out.map((c) => projectOption(c, clients));
 }
 
 /**

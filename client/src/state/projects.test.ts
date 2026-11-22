@@ -104,6 +104,16 @@ describe('todoProjectOptions', () => {
     expect(values(opts)).toEqual(['acme/site', 'personal/diary']);
   });
 
+  it('shows just the project name, under its client, so a long name fits the box', () => {
+    const named = [{ slug: 'acme', name: 'Acme Heating', aliases: ['AH'] }];
+    const opts = todoProjectOptions(cards, named, { scope: 'personal', client: null });
+    const site = opts.find((o) => o.value === 'acme/site');
+    expect(site).toMatchObject({ label: 'Site', group: 'Acme Heating' });
+    expect(site?.terms).toEqual(expect.arrayContaining(['Acme Heating', 'AH', 'site']));
+    expect(opts.find((o) => o.value === 'bolt/seo')).toMatchObject({ label: 'SEO', group: 'bolt' });
+    expect(opts.find((o) => o.value === 'personal/diary')).toMatchObject({ label: 'Diary', group: 'Mine' });
+  });
+
   it('keeps the current project even when it is closed, so it still shows', () => {
     const opts = todoProjectOptions(cards, clients, { scope: 'tds', client: 'acme', current: 'acme/done' });
     expect(values(opts)).toContain('acme/done');

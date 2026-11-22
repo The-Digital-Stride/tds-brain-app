@@ -270,6 +270,8 @@ export function SearchSelect({
         disabled={disabled}
         placeholder={placeholder}
         value={text ?? chosen?.label ?? ''}
+        // The box cuts a long name short; hovering shows all of it.
+        title={text === null ? chosen?.label : undefined}
         onChange={(e) => {
           cancelAnimationFrame(reselect.current);
           setText(e.target.value);

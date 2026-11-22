@@ -444,6 +444,22 @@ function Overview({
               This project has a checklist from before to-dos were linked to projects:{' '}
               <code>{card.checklist}</code>
             </p>
+            {card.checklistOpen && card.checklistOpen.length > 0 ? (
+              <>
+                <p className="proj-note">
+                  {card.checklistOpen.length === 1
+                    ? '1 item is still open. It shows on the Workbench and isn’t counted in this project’s to-dos:'
+                    : `${card.checklistOpen.length} items are still open. They show on the Workbench and aren’t counted in this project’s to-dos:`}
+                </p>
+                <ul className="proj-checklist">
+                  {card.checklistOpen.map((item, i) => (
+                    // Items can repeat, so the position keeps keys unique.
+                    // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <button
               type="button"
               className="btn"

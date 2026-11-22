@@ -39,7 +39,7 @@ const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brie
 
 /** Shown after Add a card when the Account Owner we sent didn't stick. */
 export const OWNER_DROPPED =
-  "Saved. Only the brain's Owner can set the Account Owner on an existing folder, so it was left blank.";
+  'Saved. Only an owner or a scout can set the Account Owner on an existing folder, so it was left blank.';
 
 type Mode = 'create' | 'edit' | 'card';
 

@@ -442,3 +442,17 @@
 .proj-pick-why {
   flex: none;
 }
+
+/* Open items from a legacy todo.md checklist: read-only, quiet, the same size as the note above. */
+.proj-checklist {
+  margin: 0;
+  padding: 0 8px 8px 28px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.proj-checklist > li {
+  overflow-wrap: anywhere;
+}
+.proj-checklist > li + li {
+  margin-top: 2px;
+}

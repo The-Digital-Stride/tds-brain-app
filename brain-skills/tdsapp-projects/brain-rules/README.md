@@ -59,3 +59,29 @@ edits, which are already in the brain, so each "current passage" quotes that tex
 
 The Command Centre's "Archive project" (`tools/members/command-centre/server.cjs`) is noted, not
 changed: it renames a clashing folder to `<slug>-2`, which breaks the key. Use the skill instead.
+
+## Brain compatibility (tdsapp-projects 0.3.1)
+
+These edits keep the brain working as it does today for everyone, on Cortex or not, now that
+projects can live inside a client folder (docs/plans/2026-11-22-brain-compat-projects.md). Earlier
+edits are already in the brain, so each "current passage" quotes the brain file as it is now.
+
+### Before you start
+
+- Copy `tdsapp-projects` 0.3.1 into the brain first. It opens the skill to the `team` role, lets
+  owners and scouts change a project's Account Owner, and stops a list file blocking an archive.
+- The Workbench patch changes `tools/members/command-centre`. Check `patch --dry-run` applies cleanly
+  first, and stop on any mismatch: never overwrite whole files.
+
+### Order and one-line checks
+
+| # | File here | Brain file | Check after applying |
+|---|---|---|---|
+| 12 | `meeting-notes-SKILL.md` (1 edit) | `.claude/skills/meeting-notes/SKILL.md` | `grep -c "Internal (projects/)" .claude/skills/meeting-notes/SKILL.md` is 0 |
+| 13 | `transcripts.md` (2 edits) | `.claude/rules/transcripts.md` | `grep -c "or \`projects/<project>/\` \|" .claude/rules/transcripts.md` is 0 |
+| 14 | `root-AGENTS.md` (1 edit) | `AGENTS.md` | `grep -c "Ongoing project docs → \`projects/\`\." AGENTS.md` is 0 |
+| 15 | `find-call-note-cjs.md` (3 edits) | `tools/find-call-note.cjs` | `node tools/find-call-note.cjs --client the-digital-stride --date 2026-11-20 --json` runs |
+| 16 | `gm-SKILL.md` (1 edit) | `.claude/skills/gm/SKILL.md` | `grep -c "a leftover from archiving" .claude/skills/gm/SKILL.md` is 1 |
+| 17 | `command-centre.patch` (see `command-centre.md`) | `tools/members/command-centre/` | `patch --dry-run -p1` is clean, then the checks in `command-centre.md` |
+
+Item 17 replaces the note above: the Workbench's Archive now refuses a clash instead of renaming.

@@ -289,6 +289,29 @@ describe('walking the projects locations', () => {
     expect(index.byKey('zed/old-site')?.status).toBe('done');
   });
 
+  it("lists an old checklist's open ## Active items, as the Workbench shows them (brain compat 10)", async () => {
+    put('projects/client-portal/README.md', '# Client Portal\n');
+    put(
+      'projects/client-portal/todo.md',
+      [
+        '# Client Portal — todo',
+        '- [ ] above any heading',
+        '## Active',
+        '- [ ] Ship the login page',
+        '- [x] Ticked already',
+        '  - [ ]   Indented item  ',
+        `- [ ] ${'x'.repeat(250)}`,
+        '## Backlog',
+        '- [ ] Later',
+      ].join('\n'),
+    );
+    put('clients/acme/projects/website/project.md', card('Website rebuild', ''));
+    const index = await service().index();
+    const portal = index.byKey(`${INTERNAL_CLIENT}/client-portal`) as ProjectCard;
+    expect(portal.checklistOpen).toEqual(['Ship the login page', 'Indented item', 'x'.repeat(200)]);
+    expect(index.byKey('acme/website')).not.toHaveProperty('checklistOpen');
+  });
+
   it('reads a brief with a ======= divider, and only a full conflict as unreadable (review fix 6)', async () => {
     put(
       'clients/acme/projects/divided/project.md',

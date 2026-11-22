@@ -1,9 +1,9 @@
 ---
 name: tdsapp-projects
 description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, and delete one for good - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project". Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
-version: 0.3
+version: 0.3.1
 last_updated: 2026-11-22
-roles: owner, scout
+roles: owner, scout, team
 maturity: draft
 members: false
 agency: true
@@ -14,8 +14,9 @@ agency: true
 One script that makes projects and changes their cards. TDS Cortex runs it for its Projects app, so a
 change made here or in the app comes out the same, and nothing else writes a project card.
 
-It's in testing. Only the owner and scouts can use it until Pete, as brain guardian, releases it to
-the team.
+It's in testing, and released to the whole team: anyone in `.team-config/roles.json` can make and
+change shared projects. Changing a project's Account Owner is for its Account Owner, an owner or a
+scout, and deleting one is for its Account Owner or the brain's Owner.
 
 ## Where projects live
 
@@ -111,8 +112,8 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | Action | Fields | What it does |
 |---|---|---|
 | `create` | `space` (`"client"` or `"personal"`), `client` (for a client project), `slug`, `fields` (with `title`) | Makes the folder and its card. `slug` is the folder name: lower-case letters, numbers and single dashes, at most 60. Refused with `exists` if the name is used anywhere the key could point, archives included. |
-| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. Only the brain's Owner can name an Account Owner here: anyone else's card is written without one, and the reply adds `"ownerDropped":true`. |
-| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. Changing or clearing a shared project's `owner` is for its Account Owner or the brain's Owner (on a card with none, the brain's Owner only); sending the same `owner` back is always fine. |
+| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. Only an owner or a scout can name an Account Owner here: anyone else's card is written without one, and the reply adds `"ownerDropped":true`. |
+| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. Changing or clearing a shared project's `owner` is for its Account Owner, an owner or a scout (on a card with none, an owner or a scout); sending the same `owner` back is always fine. |
 | `link` | `key`, `path`, `expect` | Adds a file from the brain to `## Linked files`. `path` is from the brain folder, such as `clients/skyseal/files/Brief.pdf`. Already linked: nothing is written. |
 | `unlink` | `key`, `path`, `expect` | Takes that file's line out, and the section once it's empty. The file itself stays where it is. A line pointing into a project's folder from before it was archived or moved is taken out by the path TDS Cortex shows for it now. |
 | `move` | `key`, `client`, `expect`, optional `dropPersonal: true`, optional `check: true`, optional `filesExpect` | Moves the project's folder to `clients/<client>/projects/` under the same folder name and answers the new key. Works on client projects and personal ones, never into your personal space. See "Moving a project" below. |

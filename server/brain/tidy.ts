@@ -36,7 +36,8 @@ export interface TidyContext {
 }
 
 /** Template placeholders: cleared, never turned into a project. */
-export const PLACEHOLDER_LABELS: readonly string[] = ['optional-project-slug'];
+// The to-do template's example `project:` value, old wording and new (todo/AGENTS.md).
+export const PLACEHOLDER_LABELS: readonly string[] = ['optional-project-slug', 'optional-project-key'];
 /** Both labels at least this long before a near spelling counts (so `os` never merges). */
 export const NEAR_MIN_LENGTH = 6;
 

@@ -37,7 +37,7 @@ Projects shows the work the team does for each client. Each project has a page w
 - A project without a card is read-only. Press **Add a card** to fix that.
 - Archived projects stay out of the list and pickers.
 - Anyone who can edit a project can archive it. Only its Account Owner or the brain's Owner can delete it.
-- Anyone on the team can create and edit shared projects. Only the Account Owner or the brain's Owner can change the Account Owner.
+- Anyone on the team can create, edit and rename shared projects. Only the Account Owner, an owner or a scout can change the Account Owner.
 - Personal projects are only yours, and a move can't take a project back to personal.
 - Images, Documents and to-dos have a Project filter.
 - Delete is final. Files that exist only on this Mac can't be recovered. Deleted to-dos can be brought back, and chats are kept.

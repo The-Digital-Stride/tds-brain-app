@@ -1,4 +1,4 @@
-import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createBrainReaders } from './index.ts';
@@ -84,6 +84,19 @@ describe('skills', () => {
     expect(await brain.skillAccess(team, 'nope')).toBe('unknown-skill');
     expect(await brain.skillAccess(team, '../etc')).toBe('unknown-skill');
     expect(await brain.skillAccess(person('sam-example', 'scout'), 'trusted-audit')).toBe('allowed');
+  });
+
+  it('lets every role run the tdsapp-projects copy this repo ships to the brain (brain compat 9)', async () => {
+    const root = copyFixture();
+    mkdirSync(join(root, '.claude', 'skills', 'tdsapp-projects'), { recursive: true });
+    copyFileSync(
+      join(import.meta.dirname, '..', '..', 'brain-skills', 'tdsapp-projects', 'SKILL.md'),
+      join(root, '.claude', 'skills', 'tdsapp-projects', 'SKILL.md'),
+    );
+    const readers = createBrainReaders(root);
+    for (const role of ['owner', 'scout', 'team'] as const) {
+      expect(await readers.skillAccess(person('alex-sample', role), 'tdsapp-projects'), role).toBe('allowed');
+    }
   });
 
   it('returns an empty list when the brain is missing', async () => {

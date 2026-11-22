@@ -89,6 +89,7 @@ const ROLES = {
     { name: 'Olive Owner', email: 'olive@example.test', role: 'owner' },
     { name: 'Sam Example', email: 'sam@example.test', role: 'scout' },
     { name: 'Tess Team', email: 'tess@example.test', role: 'team' },
+    { name: 'Terry Team', email: 'terry@example.test', role: 'team' },
   ],
 };
 const T0 = new Date('2026-11-20T10:20:30.000Z');
@@ -754,14 +755,14 @@ describe('constants', () => {
 });
 
 describe('the skill file', () => {
-  it('is the script version for the owner and scouts, with USE WHEN triggers, matching the script', () => {
+  it('is the script version for the whole team, with USE WHEN triggers, matching the script', () => {
     const skill = parseFrontmatter(
       readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8'),
     ).data;
     expect(skill).toMatchObject({
       name: 'tdsapp-projects',
       version: projects.SCRIPT_VERSION,
-      roles: 'owner, scout',
+      roles: 'owner, scout, team',
       maturity: 'draft',
       members: 'false',
       agency: 'true',
@@ -1594,6 +1595,14 @@ describe('archive, unarchive and delete', () => {
     expect(existsSync(abs('projects-archive/portal/project.md'))).toBe(true);
   });
 
+  it("doesn't count the save-location scan's findings list as a file that writes the folder", () => {
+    put('projects/portal/project.md', '---\nv: 1\ntitle: Portal\nstatus: active\n---\n');
+    put('tools/save-location-baseline.json', '{"paths": ["projects/portal/notes/old.md"]}\n');
+    const r = act('archive', `${INTERNAL_CLIENT}/portal`, { expect: sha('projects/portal/project.md') });
+    expect(r.reply).toMatchObject({ ok: true });
+    expect(existsSync(abs('projects-archive/portal/project.md'))).toBe(true);
+  });
+
   it('lets only people on the team archive a shared project', () => {
     as('stranger@example.test');
     expect(checkOf('archive', 'acme/website')).toMatchObject({
@@ -1991,11 +2000,12 @@ describe('security and correctness review', () => {
   });
 
   describe("who may change a shared card's Account Owner", () => {
-    it('refuses a teammate claiming the Account Owner, so they can never go on to delete it', () => {
-      const r = editOwner('sam-example');
+    it('refuses a team-role teammate claiming the Account Owner, so they can never go on to delete it', () => {
+      as('terry@example.test');
+      const r = editOwner('terry-team');
       expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
       expect(r.reply.message).toBe(
-        "Only Tess Team (the Account Owner) or the brain's Owner can change the Account Owner.",
+        'Only Tess Team (the Account Owner), an owner or a scout can change the Account Owner.',
       );
       expect(read(`${LIVE}/project.md`)).toBe(OWNED);
       expect(refusal(editOwner(null))).toEqual({ exit: 2, error: 'not-allowed' });
@@ -2010,6 +2020,26 @@ describe('security and correctness review', () => {
         error: 'not-allowed',
       });
       expect(existsSync(abs('clients/acme/projects-archive/website/project.md'))).toBe(true);
+    });
+
+    it('lets a scout change or clear the Account Owner (decision 13), ', () => {
+      as('sam@example.test');
+      expect(editOwner('terry-team').reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\nowner: terry-team\n');
+      expect(editOwner(null).reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).not.toContain('owner:');
+    });
+
+    it('lets a team-role teammate who is not the Account Owner rename the project (decision 12)', () => {
+      as('terry@example.test');
+      const r = act('edit', 'acme/website', {
+        fields: { title: 'Website relaunch' },
+        expect: sha(`${LIVE}/project.md`),
+      });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\ntitle: Website relaunch\n');
+      expect(read(`${LIVE}/project.md`)).toContain('\nowner: tess-team\n');
+      expect(existsSync(abs(LIVE))).toBe(true);
     });
 
     it('always lets the same Account Owner be sent back, as older apps do with every field', () => {
@@ -2029,27 +2059,28 @@ describe('security and correctness review', () => {
       expect(read(`${LIVE}/project.md`)).not.toContain('owner:');
     });
 
-    it("leaves naming an Account Owner on a card with none to the brain's Owner", () => {
+    it('leaves naming an Account Owner on a card with none to an owner or a scout', () => {
       put(`${LIVE}/project.md`, OWNED.replace('owner: tess-team\n', ''));
       as('tess@example.test');
       const r = editOwner('tess-team');
       expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
-      expect(r.reply.message).toBe("Only the brain's Owner can change the Account Owner.");
+      expect(r.reply.message).toBe('Only an owner or a scout can change the Account Owner.');
       expect(read(`${LIVE}/project.md`)).not.toContain('owner:');
-      as('olive@example.test');
+      as('sam@example.test');
       expect(editOwner('tess-team').reply).toMatchObject({ ok: true });
       expect(read(`${LIVE}/project.md`)).toContain('\nowner: tess-team\n');
     });
 
-    it("writes a card-less folder's card without an Account Owner unless the brain's Owner names one", () => {
+    it("writes a card-less folder's card without an Account Owner unless an owner or a scout names one", () => {
       mkdirSync(abs('clients/acme/projects/bare'), { recursive: true });
+      as('tess@example.test');
       const r = act('card', 'acme/bare', { fields: { owner: 'sam-example', health: 'green' } });
       expect(r.reply).toMatchObject({ ok: true, key: 'acme/bare', ownerDropped: true });
       expect(r.reply.version).toBe(sha('clients/acme/projects/bare/project.md'));
       expect(read('clients/acme/projects/bare/project.md')).not.toContain('owner:');
       expect(read('clients/acme/projects/bare/project.md')).toContain('\nhealth: green\n');
       mkdirSync(abs('clients/acme/projects/bare-two'), { recursive: true });
-      as('olive@example.test');
+      as('sam@example.test');
       const kept = act('card', 'acme/bare-two', { fields: { owner: 'sam-example' } });
       expect(kept.reply).toMatchObject({ ok: true });
       expect(kept.reply).not.toHaveProperty('ownerDropped');

@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.61.4 — 2026-11-22
+
+- **fix**: documents and images always open in the viewer drawer
+- **fix**: project files open in the drawer at once; the library name follows
+- **fix**: keep the opener's delete choice on refresh; Open in Documents shows the details panel
+
 ## v0.61.3 — 2026-11-22
 
 - **fix**: move the old project folders into clients/ (tdsapp-projects 0.3.2, migration, Workbench v2)

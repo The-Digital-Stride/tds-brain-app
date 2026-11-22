@@ -135,12 +135,29 @@ export function todoProjectChip(
   todo: { projectMatch?: TodoProjectMatch },
   cards: readonly ProjectCard[] | undefined,
   clients: readonly { slug: string; name: string }[],
-): { key: string; label: string } | null {
+): { key: string; label: string; short: string } | null {
   const key = matchedKey(todo.projectMatch ?? { how: 'none' });
+  const card = key ? cards?.find((c) => c.key === key) : undefined;
   // An archived project isn't in the Project filter's list, so it can't be filtered by: it stays words.
-  if (!key || cards?.find((c) => c.key === key)?.archived) return null;
-  const label = labelForKey(key, cards, clients);
-  return label ? { key, label } : null;
+  if (!key || !card || card.archived) return null;
+  const label = projectText(card, clients);
+  const client = card.client ? clients.find((c) => c.slug === card.client)?.name : undefined;
+  return { key, label, short: client ? chipLabel(client, card.title) : label };
+}
+
+/**
+ * A row chip's words: "Client · Project", without the client's name repeated at the start of the project
+ * title ("Weightmans · Weightmans PPC" reads "Weightmans · PPC"). The full label stays the chip's name.
+ */
+export function chipLabel(client: string, title: string): string {
+  const name = title || 'Untitled project';
+  // Only a whole-word lead: "Weightmans PPC" drops it, "Weightmansfield" doesn't.
+  if (client !== '' && name.toLowerCase().startsWith(client.toLowerCase())) {
+    const after = name.slice(client.length);
+    const rest = after.replace(/^[\s\-–—:·|]+/, '');
+    if (rest !== '' && rest !== after) return `${client} · ${rest}`;
+  }
+  return `${client} · ${name}`;
 }
 
 /**

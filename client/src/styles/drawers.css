@@ -126,23 +126,74 @@
    is not a button. */
 .todo:has(> .todo-foot) {
   grid-template-columns: minmax(0, 1fr);
-  row-gap: 0;
+  row-gap: 2px;
 }
 .todo-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px 8px;
   min-width: 0;
 }
 .todo-meta {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
-  margin-right: 6px;
 }
-/* The buttons (28px) don't set the line's height, so one line of details sits as close under the title as two do.
-   They reach into the row's 7px padding instead. */
-.todo-foot > .icon-btn {
-  margin-block: -5px;
+.todo-meta-item {
+  white-space: nowrap;
+}
+.todo-meta-item .dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+.todo-end {
+  flex: 1 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.todo-end:has(> .todo-where) {
+  flex-basis: 100%;
+}
+.todo-where {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.todo-where-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The buttons (28px) don't set the line's height; they reach into the row's padding. Always bottom right. */
+.todo-btns {
+  display: flex;
+  gap: 2px;
+  margin: -5px 0 -5px auto;
+  flex: none;
+}
+.todo-title-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+@media (pointer: coarse) {
+  .todo-btns {
+    margin-block: 0;
+  }
+  .todo-btns .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
 }
 .todo-go {
   color: var(--blue-ink);
@@ -487,8 +538,7 @@
   min-height: 24px;
   max-width: 100%;
   margin-block: -3px;
-  margin-left: 4px;
-  vertical-align: middle;
+  margin-left: 0;
   border: 0;
   cursor: pointer;
   font: inherit;
@@ -502,4 +552,17 @@
 }
 .todo-place:hover {
   background: var(--tint-1);
+}
+/* The drawer's title: 14px, medium weight (Home and the palette keep their own). */
+.todo .todo-open {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* The pill reaches into the row's padding so its words start on the same edge as the title and details. */
+.todo-where > .todo-place {
+  margin-left: -7px;
+  padding-inline: 7px;
+  /* The negative margin takes 7px from the box it sits in: give them back, or its words cut short. */
+  max-width: calc(100% + 7px);
 }

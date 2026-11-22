@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.61.0 — 2026-11-22
+
+- **feat**: keep the brain working with projects in their new homes
+- **feat**: Workbench patch that shows projects in client folders
+- **fix**: review fixes for the brain compatibility work
+- **fix**: Workbench refreshes project cards after a linked to-do is ticked
+
 ## v0.60.1 — 2026-11-22
 
 - **fix**: show each client's real name

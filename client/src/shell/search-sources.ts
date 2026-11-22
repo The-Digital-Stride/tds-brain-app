@@ -274,7 +274,7 @@ function goToEntries(ctx?: SearchContext): GoTo[] {
     { id: 'go-home', label: 'Home', hint: null, icon: 'home', run: (a) => a.goHome() },
     drawer('todos'),
     drawer('chats'),
-    drawer('skills'),
+    ...(ctx?.skillsHidden ? [] : [drawer('skills')]),
     ...(ctx?.helpVisible
       ? [
           { ...HELP_GO, run: (a: SearchActions) => a.openDrawer('help') },

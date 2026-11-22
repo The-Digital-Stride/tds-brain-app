@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { openLibraryItem, warmLibrarySearch } from '../apps/shared/search.ts';
-import { helpVisible } from '../help/visibility.ts';
+import { helpVisible, skillsMenuVisible } from '../help/visibility.ts';
 import { projectChoice } from '../state/client-choice.ts';
 import {
   asyncLooking,
@@ -84,6 +84,7 @@ function PaletteDialog() {
       pins: boot?.prefs.pins ?? [],
       clients: boot?.clients ?? [],
       helpVisible: helpVisible(boot?.identity.role ?? 'unknown'),
+      skillsHidden: !skillsMenuVisible(boot?.identity.role ?? 'unknown'),
       hasSkillLevels: Boolean(skillLevels),
       ads,
       ...(projectList ? { projects: projectList.projects } : {}),

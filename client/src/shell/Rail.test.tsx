@@ -223,13 +223,29 @@ describe('Rail hover expand', () => {
     expect(nav(container).getAttribute('data-expanded')).toBeNull();
   });
 
+  it('shows Skills to owners and scouts only, at the foot just above Help', () => {
+    setStore([], {}, 'team');
+    const { unmount } = render(<Rail />);
+    expect(screen.queryByRole('button', { name: 'Skills' })).toBeNull();
+    unmount();
+    for (const role of ['owner', 'scout']) {
+      setStore([], {}, role);
+      const r = render(<Rail />);
+      const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+      const at = names.indexOf('Skills');
+      expect(at).toBeGreaterThan(names.indexOf('Projects'));
+      expect(names[at + 1]).toBe('Help');
+      r.unmount();
+    }
+  });
+
   it('closes when an item is chosen', () => {
     vi.useFakeTimers();
     setStore([]);
     const { container } = render(<Rail />);
     fireEvent.pointerEnter(slot(container), mouse);
     rest(200);
-    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Chats/ }));
     expect(nav(container).getAttribute('data-expanded')).toBeNull();
     vi.useRealTimers();
   });

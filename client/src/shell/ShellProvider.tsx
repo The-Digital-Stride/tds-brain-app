@@ -13,7 +13,7 @@ import {
 import { helpForContext } from '../help/context.ts';
 import type { HelpContext } from '../help/contract.ts';
 import { helpLibrary } from '../help/library.ts';
-import { helpVisible } from '../help/visibility.ts';
+import { helpVisible, skillsMenuVisible } from '../help/visibility.ts';
 import { initialChatState, pendingCard } from '../state/chat-reducer.ts';
 import { keyAction } from '../state/keys.ts';
 import {
@@ -164,6 +164,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const helpOn = helpVisible(role);
   const helpOnRef = useRef(helpOn);
   helpOnRef.current = helpOn;
+  const skillsHidden = !skillsMenuVisible(role);
+  const skillsHiddenRef = useRef(skillsHidden);
+  skillsHiddenRef.current = skillsHidden;
   // Where the person is, read only when Help opens (see `dispatch`): the page Help starts on follows from it.
   // The sections visible now and their single keys (`W`), read by the key listener.
   const sectionKeysRef = useRef<Record<string, string>>({});
@@ -303,6 +306,12 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'close-drawer' });
   }, [view, dispatch]);
 
+  // The Skills drawer is only for owners and scouts: one saved from before (or opened any other way) shuts.
+  const skillsDrawer = state.drawer === 'skills';
+  useEffect(() => {
+    if (skillsDrawer && skillsHidden) dispatch({ type: 'close-drawer' });
+  }, [skillsDrawer, skillsHidden, dispatch]);
+
   // A new page (the rail, a link in a drawer, Home, a search result) closes the to-do panel, which would
   // otherwise stay over it with the sheet out of reach. With unsaved changes the panel asks first.
   const todoView = useRef(view);
@@ -345,6 +354,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         state: stateRef.current,
         panelFloating: layoutRef.current.panelModal,
         helpVisible: helpOnRef.current,
+        skillsHidden: skillsHiddenRef.current,
         sectionKeys: sectionKeysRef.current,
         // Under a floating left drawer the sheet (and the chat drawer in it) is out of reach: Esc is the drawer's.
         chatDrawer: chatDrawerRef.current.open && !layoutRef.current.drawerModal,

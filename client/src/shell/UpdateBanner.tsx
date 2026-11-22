@@ -44,15 +44,20 @@ function moveFocus(el: HTMLElement | null) {
 
 /**
  * The "Update and restart" button. With chats open it first asks, in place, because the restart
- * closes them. Shared by the banner and Settings. `onMoved` is called after "Update now".
+ * closes them. Shared by the banner, Settings and the rail. `onMoved` is called after "Update now".
+ * `name` is a fuller spoken name (it must start with the label's words) and `tip` a tooltip, for a short label.
  */
 export function UpdateAction({
   update,
   label = 'Update and restart',
+  name,
+  tip,
   onMoved,
 }: {
   update: Update;
   label?: string;
+  name?: string;
+  tip?: string;
   onMoved?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -111,6 +116,8 @@ export function UpdateAction({
       className="btn"
       data-variant="primary"
       data-size="small"
+      aria-label={name}
+      data-tip={tip}
       ref={trigger}
       onClick={() => {
         if (openChats > 0) setConfirming(true);

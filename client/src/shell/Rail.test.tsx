@@ -17,6 +17,7 @@ vi.mock('./ShellProvider.tsx', () => ({
   useDesk: () => desk.current,
 }));
 vi.mock('./SyncStamp.tsx', () => ({ SyncStamp: () => null }));
+vi.mock('./RailUpdate.tsx', () => ({ RailUpdate: () => null }));
 
 const { Rail } = await import('./Rail.tsx');
 

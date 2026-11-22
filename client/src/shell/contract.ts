@@ -306,7 +306,11 @@ export type IconName =
   /** A tray: Ads Manager (decisions waiting). */
   | 'inbox'
   /** A triangle: Ads Command Centre (tasks to run). */
-  | 'play';
+  | 'play'
+  /** A circling arrow: check for updates. */
+  | 'refresh'
+  /** An arrow down into a tray: install an update. */
+  | 'update';
 
 /** `client/src/shell/Icon.tsx`. Decorative: always `aria-hidden`; the control carries the name. */
 export interface IconProps {

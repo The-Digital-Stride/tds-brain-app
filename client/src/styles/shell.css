@@ -299,6 +299,70 @@
   color: var(--iron);
 }
 
+/* The app's version and its update button (RailUpdate.tsx), under the person and above the sync stamp. A
+   hairline above, so it and the sync stamp read as the app's status rather than lines about the person. */
+.rail-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 4px 0 0;
+  padding: 6px 0 0 7px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--iron);
+  font-variant-numeric: tabular-nums;
+}
+.rail-update .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.rail-version {
+  flex: 1;
+  margin: 0;
+  white-space: nowrap;
+}
+.rail-update-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+.rail-update-note:empty {
+  display: none;
+}
+/* An update is ready: the button ends the version line; the in-place question about open chats wraps below. */
+.rail-update > .close-confirm {
+  flex-basis: 100%;
+}
+.rail-update > .close-confirm {
+  font-size: 12px;
+  gap: 6px;
+}
+.rail-update[data-wide="false"] {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  padding: 6px 0 0;
+  font-size: 10px;
+  text-align: center;
+}
+.rail-update[data-wide="false"] .rail-version {
+  flex: none;
+}
+.rail-update[data-wide="false"] .rail-update-note {
+  flex-basis: auto;
+}
+/* While an update runs, icons only: a blue dot in place of the button; its tooltip says the step. */
+.rail-update-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--blue-ink);
+}
+@media (forced-colors: active) {
+  .rail-update-dot {
+    border: 1px solid CanvasText;
+  }
+}
 /* The last sync with GitHub, at the foot of the rail. Red once it is over five minutes old. */
 .rail-sync {
   position: relative;
@@ -357,6 +421,12 @@
   .rail-sync-dot {
     border: 1px solid CanvasText;
   }
+}
+/* Under the version line, which already draws the hairline. */
+.rail-update + .rail-sync {
+  margin-top: 0;
+  padding-top: 4px;
+  border-top: 0;
 }
 
 /* Tooltips (Tooltips.tsx): the name of an icon-only button, under it (to the right of the rail's icons), drawn

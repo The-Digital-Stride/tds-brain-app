@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.60.1 — 2026-11-22
+
+- **fix**: show each client's real name
+
 ## v0.60.0 — 2026-11-22
 
 - **feat**: archive, unarchive and delete a project

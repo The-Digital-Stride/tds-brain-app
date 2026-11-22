@@ -3,4 +3,4 @@ import '../shared/library.css';
 import './images.css';
 
 export { ImagesPanel } from './ImagesPanel.tsx';
-export { ImagesBar, ImagesSheet } from './ImagesSheet.tsx';
+export { ImagesSheet } from './ImagesSheet.tsx';

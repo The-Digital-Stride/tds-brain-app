@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROUTES } from '../../../../shared/contract.ts';
 import { doc, item, listing, SCOPES } from '../shared/testing.ts';
@@ -22,7 +22,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
   useShell: () => ({ state: shell.state, dispatch: shell.dispatch, modes: {} }),
 }));
 
-const { DocumentsSheet, DocumentsBar } = await import('./DocumentsSheet.tsx');
+const { DocumentsSheet } = await import('./DocumentsSheet.tsx');
 const { DocumentsPanel } = await import('./DocumentsPanel.tsx');
 const { docsStore } = await import('./store.ts');
 
@@ -186,7 +186,7 @@ describe('DocumentsSheet', () => {
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
     expect(screen.queryByRole('group', { name: 'Selected documents' })).toBeNull();
   });
-  it('Open on a row shows a document the app can show straight away; others have no Open', async () => {
+  it('Open on a row shows the document in the viewer drawer; one the app cannot show has no Open', async () => {
     render(<DocumentsSheet />);
     await card('Plans');
     expect(screen.queryByRole('button', { name: 'Open Winter budget split' })).toBeNull();
@@ -194,7 +194,13 @@ describe('DocumentsSheet', () => {
     const split = screen.getByRole('button', { name: /^Winter budget split/ }).closest('li') as HTMLElement;
     expect(split.querySelector('.lib-view-gap')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open Winter boiler campaign' }));
-    expect(docsStore.get()).toMatchObject({ current: plan, viewing: plan });
+    expect(docsStore.get().current).toBe(plan);
+    expect(shell.dispatch).toHaveBeenCalledWith({
+      type: 'open-viewer',
+      viewer: { item: plan, place: 'Acme Heating Ltd' },
+    });
+    // The list stays: the drawer slides over it.
+    expect(screen.getByRole('region', { name: 'Plans' })).toBeTruthy();
   });
   it('opens as a list; Grid shows each document as a tile with its page picture, or its icon', async () => {
     const { container } = render(<DocumentsSheet />);
@@ -218,7 +224,11 @@ describe('DocumentsSheet', () => {
     expect(note.querySelector('.img-thumb[data-plain="true"] svg.icon')).not.toBeNull();
     // A tile has Open too, for a document the app can show.
     fireEvent.click(within(tile).getByRole('button', { name: 'Open Lead quality' }));
-    expect(docsStore.get()).toMatchObject({ current: lead, viewing: lead });
+    expect(docsStore.get().current).toBe(lead);
+    expect(shell.dispatch).toHaveBeenCalledWith({
+      type: 'open-viewer',
+      viewer: { item: lead, place: 'Acme Heating Ltd' },
+    });
   });
 });
 
@@ -274,161 +284,13 @@ describe('DocumentsPanel', () => {
   });
 });
 
-describe('opening a document', () => {
-  const all = () => (
-    <div className="sheet-scroll">
-      <DocumentsBar />
-      <DocumentsSheet />
-      <DocumentsPanel />
-    </div>
-  );
-  const openFrom = async (name: RegExp) => {
-    await card('Plans');
-    fireEvent.click(screen.getByRole('button', { name }));
+describe('opening a document from the panel', () => {
+  it('Open shows it in the viewer drawer, and a floating panel closes so it is not under the drawer', async () => {
+    docsStore.set({ current: plan });
+    render(<DocumentsPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  };
-
-  it('renders a Markdown file with the safe renderer inside a card, and Back returns focus', async () => {
-    const { container } = render(all());
-    const row = (await card('Plans')) && screen.getByRole('button', { name: /^Winter boiler campaign/ });
-    fireEvent.click(row);
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Hello' })).toBeTruthy();
-    expect(api.libraryText).toHaveBeenCalledWith(plan.id);
-    expect(container.querySelector('.lib-doc.card .markdown')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Documents' }));
-    expect(screen.queryByRole('heading', { level: 1, name: 'Hello' })).toBeNull();
-    expect(document.activeElement).toBe(row);
-  });
-
-  it('says when a long file was cut short', async () => {
-    api.libraryText.mockResolvedValue({ text: 'Start of it', truncated: true });
-    render(all());
-    await openFrom(/^Winter boiler campaign/);
-    expect(await screen.findByText('This file is long, so only the start is shown.')).toBeTruthy();
-  });
-
-  it('shows plain text as pre-wrapped text, not Markdown', async () => {
-    const txt = { ...plan, ext: 'txt', title: 'Notes file' };
-    api.library.mockResolvedValue(listing('client:acme', [txt], ['Plans']));
-    api.libraryText.mockResolvedValue({ text: '# not a heading', truncated: false });
-    const { container } = render(all());
-    await openFrom(/^Notes file/);
-    await screen.findByText('# not a heading');
-    expect(container.querySelector('pre.lib-text')).not.toBeNull();
-    expect(container.querySelector('.markdown')).toBeNull();
-  });
-
-  it('shows a failure to read the file with Try again', async () => {
-    api.libraryText.mockRejectedValueOnce(new Error('That file is no longer there.'));
-    render(all());
-    await openFrom(/^Winter boiler campaign/);
-    expect(await screen.findByText('That file is no longer there.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Hello' })).toBeTruthy();
-  });
-
-  it('opens an HTML page in a frame that may run scripts but never gets the app origin', async () => {
-    const { container } = render(all());
-    await openFrom(/^Explainer/);
-    const frame = container.querySelector('iframe') as HTMLIFrameElement;
-    expect(frame.hasAttribute('sandbox')).toBe(true);
-    expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-popups');
-    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
-    expect(frame.getAttribute('title')).toBe('Explainer');
-    expect(frame.getAttribute('src')).toBe(`/api/library/page/${encodeURIComponent(page.id)}`);
-    expect(frame.closest('.card')).not.toBeNull();
-    // The text route is not used for a page.
-    expect(api.libraryText).not.toHaveBeenCalled();
-  });
-
-  it('opens a PDF in the browser’s own reader, in a frame without a sandbox', async () => {
-    const { container } = render(all());
-    await openFrom(/^Lead quality/);
-    const frame = container.querySelector('iframe') as HTMLIFrameElement;
-    // A sandboxed frame makes the browser refuse to show a PDF at all.
-    expect(frame.hasAttribute('sandbox')).toBe(false);
-    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer');
-    expect(frame.getAttribute('title')).toBe('Lead quality');
-    expect(frame.getAttribute('src')).toBe(
-      `/api/library/pdf/${encodeURIComponent(lead.id)}#navpanes=0&view=FitH`,
-    );
-    expect(frame.closest('.card.lib-page.lib-pdf')).not.toBeNull();
-    expect(api.libraryText).not.toHaveBeenCalled();
-  });
-
-  it('a changed HTML page reloads its frame, but another file changing does not', async () => {
-    const view = render(all());
-    await openFrom(/^Explainer/);
-    const frame = view.container.querySelector('iframe');
-    const items = (modified: string) => [audit, lead, plan, prices, { ...page, modified }, picture];
-    api.library.mockResolvedValue(
-      listing('client:acme', items(page.modified), ['Reports', 'Plans', 'Brand']),
-    );
-    store.libraryVersion = 1;
-    view.rerender(all());
-    await waitFor(() => expect(api.library).toHaveBeenCalledTimes(2));
-    expect(view.container.querySelector('iframe')).toBe(frame);
-
-    api.library.mockResolvedValue(
-      listing('client:acme', items('2026-11-08T09:00:00.000Z'), ['Reports', 'Plans', 'Brand']),
-    );
-    store.libraryVersion = 2;
-    view.rerender(all());
-    await waitFor(() => expect(view.container.querySelector('iframe')).not.toBe(frame));
-  });
-
-  it('a blocked move to another site stops the page frame (no reload loop) and offers it back; other violations do nothing', async () => {
-    const { container } = render(all());
-    await openFrom(/^Explainer/);
-    const frame = container.querySelector('iframe');
-    const violate = (violatedDirective: string) => {
-      const e = new Event('securitypolicyviolation');
-      Object.defineProperty(e, 'violatedDirective', { value: violatedDirective });
-      act(() => {
-        document.dispatchEvent(e);
-      });
-    };
-    violate('img-src');
-    expect(container.querySelector('iframe')).toBe(frame);
-    expect(screen.queryByText('Links to other sites are switched off here.')).toBeNull();
-    violate('frame-src https://example.com');
-    // Stopped, not reloaded: a page that leaves as soon as it opens would otherwise reload for ever.
-    expect(container.querySelector('iframe')).toBeNull();
-    expect(
-      screen.getByText('This page tried to move the viewer to another site, so it was stopped.'),
-    ).toBeTruthy();
-    expect(screen.getByText('Links to other sites are switched off here.').getAttribute('role')).toBe(
-      'status',
-    );
-    violate('frame-src https://example.com');
-    expect(container.querySelector('iframe')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Show the page again' }));
-    const again = container.querySelector('iframe');
-    expect(again).not.toBeNull();
-    expect(again).not.toBe(frame);
-    expect(screen.queryByText('Links to other sites are switched off here.')).toBeNull();
-    violate('frame-src https://example.com');
-    expect(container.querySelector('iframe')).toBeNull();
-  });
-
-  it('an open note is not fetched again when other files change', async () => {
-    const view = render(all());
-    await openFrom(/^Winter boiler campaign/);
-    await screen.findByRole('heading', { level: 1, name: 'Hello' });
-    store.libraryVersion = 1;
-    view.rerender(all());
-    await waitFor(() => expect(api.library).toHaveBeenCalledTimes(2));
-    expect(api.libraryText).toHaveBeenCalledTimes(1);
-  });
-
-  it('Escape in the viewer goes back and puts focus on the item', async () => {
-    render(all());
-    await openFrom(/^Explainer/);
-    const viewer = screen.getByRole('region', { name: 'Explainer' });
-    expect(document.activeElement).toBe(viewer);
-    fireEvent.keyDown(viewer, { key: 'Escape' });
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Explainer/ }));
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: plan } });
+    expect(shell.dispatch).not.toHaveBeenCalledWith({ type: 'set-panel', open: false });
   });
 });
 

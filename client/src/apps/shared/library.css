@@ -246,6 +246,19 @@
   gap: 6px;
   margin-bottom: 8px;
 }
+/* Shared by Documents and a project's Files tab. */
+/* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
+.doc-glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--iron);
+}
 /* Rows: the tray's own (Home's hover and pressed states apply). */
 .lib .lib-row {
   position: relative;
@@ -430,6 +443,11 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+/* A list row's picture: a small 3:2 box beside the name (Images and a project's Files tab). */
+.lib-row .img-thumb {
+  flex: none;
+  width: 48px;
 }
 .lib[data-layout="grid"] .lib-list:not([hidden]) {
   display: grid;

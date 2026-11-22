@@ -159,6 +159,11 @@ const coreReducer: ShellReducer = (state, action) => {
       return state.paletteOpen === action.open ? state : { ...state, paletteOpen: action.open };
     case 'open-viewer':
       return { ...state, viewer: action.viewer };
+    case 'update-viewer': {
+      const shown = state.viewer;
+      if (shown === null || shown.kind === 'page' || shown.item.id !== action.viewer.item.id) return state;
+      return { ...state, viewer: action.viewer };
+    }
     case 'close-viewer':
       return state.viewer === null ? state : { ...state, viewer: null };
     case 'set-single-keys':

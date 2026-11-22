@@ -4,12 +4,11 @@ import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
-import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
+import { useKeepCurrent, useLibraryData } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
 import {
   DeleteButton,
   FolderCard,
-  LibraryBar,
   LibraryNotice,
   LibraryTools,
   neighbourId,
@@ -17,7 +16,6 @@ import {
   ViewButton,
 } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
-import { Viewer } from '../shared/Viewer.tsx';
 import { dateWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
 import { filterDocs, metaWords, type Sort, sortDocs, summaryWords } from './library.ts';
@@ -40,11 +38,6 @@ const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
   { value: 'grid', label: 'Grid' },
   { value: 'list', label: 'List' },
 ];
-
-/** The buttons in the sheet bar: Back while a document is open, and the details button. */
-export function DocumentsBar() {
-  return <LibraryBar store={docsStore} back="Back to Documents" />;
-}
 
 /** A grid tile: the first page where Quick Look drew one, otherwise the type's icon on the page. */
 function Tile({
@@ -148,8 +141,7 @@ export function DocumentsSheet() {
   const summary = useRef<HTMLParagraphElement>(null);
   const data = useLibraryData(docsStore, 'document');
   useKeepCurrent(docsStore, data);
-  useViewerReturn(docsStore, root, summary);
-  const focusAfterDelete = useDeleteFocus(root, summary, s.viewing !== null);
+  const focusAfterDelete = useDeleteFocus(root, summary, false);
 
   // A file being deleted is out of the list at once, even if a refresh still carries it.
   const items = useMemo(
@@ -171,7 +163,13 @@ export function DocumentsSheet() {
     if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
   };
 
-  // Delete with an Undo; the viewer closes and focus goes to the next file shown (found by id).
+  // A file opens in the viewer drawer over the right of the page, the same everywhere in the app.
+  const view = (doc: LibraryItem) => {
+    docsStore.set({ current: doc });
+    dispatch({ type: 'open-viewer', viewer: { item: doc, place: data.scopeName || undefined } });
+  };
+
+  // Delete with an Undo; focus goes to the next file shown (found by id).
   const remove = (doc: LibraryItem) => {
     const next = neighbourId(
       groups.flatMap((g) => g.items.map((i) => i.id)),
@@ -180,21 +178,13 @@ export function DocumentsSheet() {
     deleteFile(doc);
     docsStore.set({
       ...(s.current?.id === doc.id ? { current: null } : {}),
-      ...(s.viewing?.id === doc.id ? { viewing: null } : {}),
     });
     focusAfterDelete(next);
   };
 
   return (
     <div className="lib docs" ref={root} data-layout={s.layout}>
-      {s.viewing ? (
-        <Viewer
-          item={s.viewing}
-          onBack={() => docsStore.set({ viewing: null })}
-          onDelete={() => remove(s.viewing as LibraryItem)}
-        />
-      ) : null}
-      <div className="lib-main" hidden={s.viewing !== null}>
+      <div className="lib-main">
         <LibraryTools
           id="docs"
           scopes={data.scopes}
@@ -256,7 +246,7 @@ export function DocumentsSheet() {
                       doc={doc}
                       current={s.current?.id === doc.id}
                       onOpen={() => open(doc)}
-                      onView={() => docsStore.set({ current: doc, viewing: doc })}
+                      onView={() => view(doc)}
                       onDelete={() => remove(doc)}
                       reserveBin={reserveBin}
                     />

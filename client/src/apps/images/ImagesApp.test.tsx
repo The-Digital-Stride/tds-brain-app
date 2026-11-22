@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROUTES } from '../../../../shared/contract.ts';
 import { openPicker, pickOption } from '../../test/pick.ts';
@@ -30,7 +30,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
   useShell: () => ({ state: shell.state, dispatch: shell.dispatch, modes: shell.modes }),
 }));
 
-const { ImagesSheet, ImagesBar } = await import('./ImagesSheet.tsx');
+const { ImagesSheet } = await import('./ImagesSheet.tsx');
 const { ImagesPanel } = await import('./ImagesPanel.tsx');
 const { imagesStore } = await import('./store.ts');
 
@@ -192,14 +192,18 @@ describe('ImagesSheet', () => {
     expect(brand.querySelector('ul')?.hasAttribute('hidden')).toBe(false);
   });
 
-  it('Open on a tile or row shows an image straight away; one the app cannot show has no Open', async () => {
+  it('Open on a tile or row shows an image in the viewer drawer; one the app cannot show has no Open', async () => {
     render(<ImagesSheet />);
     await card('Photography');
     expect(screen.queryByRole('button', { name: 'Open odd.svg' })).toBeNull();
     // Images keep their ticks for picking several.
     expect(screen.getByRole('checkbox', { name: 'Select acme-mark.png' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open van-front.jpg' }));
-    expect(imagesStore.get()).toMatchObject({ current: van, viewing: van });
+    expect(imagesStore.get().current).toBe(van);
+    expect(shell.dispatch).toHaveBeenCalledWith({
+      type: 'open-viewer',
+      viewer: { item: van, place: 'Acme Heating Ltd' },
+    });
   });
 
   it('draws the first 60 of a long card until Show all is pressed', async () => {
@@ -367,73 +371,22 @@ describe('ImagesPanel', () => {
   });
 });
 
-describe('opening a picture', () => {
+describe('opening a picture from the panel', () => {
   const all = () => (
     <div className="sheet-scroll">
-      <ImagesBar />
       <ImagesSheet />
       <ImagesPanel />
     </div>
   );
 
-  it('swaps the list for the picture, gives a Back button, and Escape returns focus to the item', async () => {
+  it('Open shows it in the viewer drawer and leaves the list where it was', async () => {
     const { container } = render(all());
     await card('Brand');
-    const open = screen.getByRole('button', { name: /^acme-logo\.png/ });
-    fireEvent.click(open);
+    fireEvent.click(screen.getByRole('button', { name: /^acme-logo\.png/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-
-    const viewer = screen.getByRole('region', { name: 'Acme logo' });
-    expect(document.activeElement).toBe(viewer);
-    const big = viewer.querySelector('img') as HTMLImageElement;
-    expect(big.getAttribute('src')).toContain('w=1600');
-    expect(container.querySelector('.lib-main')?.hasAttribute('hidden')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Back to Images' })).toBeTruthy();
-
-    fireEvent.keyDown(viewer, { key: 'Escape' });
-    expect(screen.queryByRole('region', { name: 'Acme logo' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Back to Images' })).toBeNull();
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: logo } });
     expect(container.querySelector('.lib-main')?.hasAttribute('hidden')).toBe(false);
-    expect(document.activeElement).toBe(open);
-  });
-
-  it('Back restores the scroll position of the list', async () => {
-    let top = 340;
-    const { container } = render(all());
-    const scroller = container.querySelector('.sheet-scroll') as HTMLElement;
-    Object.defineProperty(scroller, 'scrollTop', {
-      get: () => top,
-      set: (v: number) => {
-        top = v;
-      },
-    });
-    await card('Brand');
-    fireEvent.click(screen.getByRole('button', { name: /^acme-logo\.png/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    top = 0; // the list has gone, so the container has scrolled back
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Images' }));
-    expect(top).toBe(340);
-  });
-
-  it('a picture that failed in the viewer gets another go when the file changes', async () => {
-    const view = render(all());
-    await card('Brand');
-    fireEvent.click(screen.getByRole('button', { name: /^acme-logo\.png/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    const viewer = screen.getByRole('region', { name: 'Acme logo' });
-    fireEvent.error(viewer.querySelector('img') as HTMLImageElement);
-    expect(screen.getByText('This picture could not be shown.')).toBeTruthy();
-    api.library.mockResolvedValue(
-      listing(
-        'client:acme',
-        [{ ...logo, modified: '2026-11-06T10:00:00.000Z' }, mark, van, noPicture],
-        ['Brand', 'Photography'],
-      ),
-    );
-    store.libraryVersion = 1;
-    view.rerender(all());
-    await waitFor(() => expect(screen.queryByText('This picture could not be shown.')).toBeNull());
-    expect(screen.getByRole('region', { name: 'Acme logo' }).querySelector('.tray .card img')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Back to Images' })).toBeNull();
   });
 
   it('a floating panel closes when Open is pressed, and a docked one stays', async () => {
@@ -453,30 +406,6 @@ describe('opening a picture', () => {
     shell.dispatch.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     expect(shell.dispatch).not.toHaveBeenCalledWith({ type: 'set-panel', open: false });
-  });
-
-  it('the viewer takes focus after something else grabs it as the panel closes', async () => {
-    render(all());
-    await card('Brand');
-    fireEvent.click(screen.getByRole('button', { name: /^acme-logo\.png/ }));
-    const opener = screen.getByRole('button', { name: 'Open' });
-    fireEvent.click(opener);
-    (screen.getByRole('button', { name: 'Back to Images' }) as HTMLElement).focus();
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Acme logo' })),
-    );
-  });
-
-  it('a picture that fails in the viewer says so', async () => {
-    render(all());
-    await card('Brand');
-    fireEvent.click(screen.getByRole('button', { name: /^acme-logo\.png/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    const viewer = screen.getByRole('region', { name: 'Acme logo' });
-    act(() => {
-      fireEvent.error(viewer.querySelector('img') as HTMLImageElement);
-    });
-    expect(screen.getByText('This picture could not be shown.')).toBeTruthy();
   });
 });
 
@@ -509,25 +438,6 @@ describe('deleting an image', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Delete file: acme-logo.png' })).toBeNull(),
     );
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        document.querySelector(`[data-open-id="${mark.id}"]`) as HTMLElement,
-      ),
-    );
-  });
-
-  it('closes the viewer after a delete from it, and focus goes to the next file', async () => {
-    render(<ImagesSheet />);
-    await card('Brand');
-    fireEvent.click(screen.getByRole('button', { name: 'Open acme-logo.png' }));
-    const viewer = screen.getByRole('region', { name: 'Acme logo' });
-    fireEvent.click(within(viewer).getByRole('button', { name: 'Delete file: acme-logo.png' }));
-    expect(store.deleteFile).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ id: logo.id }),
-      'acme-logo.png',
-    );
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Acme logo' })).toBeNull());
-    expect(imagesStore.get().viewing).toBeNull();
     await waitFor(() =>
       expect(document.activeElement).toBe(
         document.querySelector(`[data-open-id="${mark.id}"]`) as HTMLElement,

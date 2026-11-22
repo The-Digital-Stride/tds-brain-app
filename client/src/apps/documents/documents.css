@@ -7,18 +7,6 @@
 .docs .img-tile {
   --thumb-ratio: 3 / 4;
 }
-/* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
-.doc-glyph {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--iron);
-}
 /* The columns on the right line up from row to row and from card to card. */
 .doc-col {
   flex: none;

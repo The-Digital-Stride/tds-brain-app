@@ -15,6 +15,7 @@ import {
   type ProjectAction,
   type ProjectList,
   type ProjectMoveRequest,
+  type ProjectRemoveRequest,
   ProjectsError,
   type ProjectsErrorCode,
   type ProjectTodosResponse,
@@ -65,6 +66,7 @@ const seen = {
   projectTodos: [] as [string, string][],
   access: [] as string[],
   moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
+  removes: [] as { req: ProjectRemoveRequest; by: string; todos: boolean | undefined }[],
 };
 type Access = 'allowed' | 'restricted' | 'unknown-skill';
 let state: { has: boolean; directWrites: boolean; fail: unknown; access: Access; todos: TodoList } = {
@@ -149,6 +151,17 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get removeProject() {
+      return state.has
+        ? async (req: ProjectRemoveRequest, by: Identity, opts?: { todos?: boolean }) => {
+            maybeFail();
+            seen.removes.push({ req, by: by.slug, todos: opts?.todos });
+            return req.check
+              ? { check: { key: req.key, allowed: false, allowedWho: 'The owner.' }, todos: [], doneTodos: 0 }
+              : { list: LIST, key: req.key, todosChanged: 1, todosFailed: [] };
+          }
+        : undefined;
+    },
     get projectFiles() {
       return state.has
         ? async (key: string, kind: string) => {
@@ -225,6 +238,7 @@ beforeEach(() => {
   seen.projectTodos.length = 0;
   seen.access.length = 0;
   seen.moves.length = 0;
+  seen.removes.length = 0;
 });
 
 interface Reply {
@@ -852,5 +866,139 @@ describe('POST /api/projects/move', () => {
     state.fail = null;
     state.has = false;
     expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(404);
+  });
+});
+
+// Archive plan (docs/plans/2026-11-21-project-archive-delete.md). Real HTTP, so the real request gate
+// (checkRequest) runs first, as a 415 on every delete once slipped past tests that skipped it.
+describe.each([
+  [ROUTES.projectsArchive, 'archive', ['archive', 'unarchive']],
+  [ROUTES.projectsDelete, 'delete', ['delete']],
+] as const)('POST %s', (path, name, actions) => {
+  const REQ: ProjectRemoveRequest = { key: KEY, action: actions[0] };
+  const choice = (d: string) => ({ id: 'a.md', scope: 'tds', version: VERSION, do: d });
+
+  it('goes through the real gate: needs the session, the app origin and JSON, and is POST only', async () => {
+    const headers = { origin: `http://${HOST}`, 'content-type': 'application/json' };
+    expect((await send(path, { method: 'POST', headers, body: REQ })).status).toBe(401);
+    const evil = await send(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: COOKIE, origin: 'https://evil.example' },
+      body: REQ,
+    });
+    expect(evil.status).toBe(403);
+    const form = await send(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: COOKIE, 'content-type': 'text/plain' },
+      body: REQ,
+    });
+    expect(form.status).toBe(415);
+    expect((await get(path)).status).toBe(405);
+    expect(seen.removes).toEqual([]);
+    expect((await post(path, REQ)).status).toBe(200);
+  });
+
+  it('passes exactly the request shape on, for the signed-in person, and answers the brain', async () => {
+    const shapes: ProjectRemoveRequest[] = [
+      REQ,
+      { ...REQ, check: true },
+      { ...REQ, expect: VERSION, filesExpect: VERSION },
+      ...actions.map((action) => ({ key: 'personal/plan', action, check: true as const })),
+      {
+        ...REQ,
+        todos: [choice(name === 'archive' ? 'done' : 'delete'), { ...choice('keep'), id: 'b.md' }].filter(
+          (c) => name === 'archive' || c.do !== 'keep',
+        ) as never,
+      },
+    ];
+    const answers = [];
+    for (const body of shapes) {
+      const r = await post(path, body);
+      expect(r.status, JSON.stringify(body)).toBe(200);
+      answers.push(r.json);
+    }
+    expect(seen.removes.map((m) => m.req)).toEqual(shapes);
+    expect(seen.removes.every((m) => m.by === 'sam-example')).toBe(true);
+    expect(answers[1]).toMatchObject({ check: { allowed: false, allowedWho: 'The owner.' }, doneTodos: 0 });
+    expect(answers[0]).toMatchObject({ key: KEY, todosChanged: 1, todosFailed: [] });
+  });
+
+  it('refuses any other shape before the brain is asked', async () => {
+    const other = name === 'archive' ? 'delete' : 'archive';
+    const bad: unknown[] = [
+      null,
+      [],
+      {},
+      { key: KEY },
+      { action: REQ.action },
+      { ...REQ, extra: 1 },
+      { ...REQ, action: other },
+      { ...REQ, action: 'move' },
+      { ...REQ, action: 5 },
+      { ...REQ, key: 'Acme/web' },
+      { ...REQ, key: 'personal/../x' },
+      { ...REQ, expect: 'short' },
+      { ...REQ, expect: VERSION.toUpperCase() },
+      { ...REQ, filesExpect: 5 },
+      { ...REQ, check: false },
+      { ...REQ, check: 1 },
+      { ...REQ, todos: 'all' },
+      { ...REQ, check: true, todos: [] },
+      { ...REQ, todos: [{ id: 'a.md', scope: 'tds', version: VERSION }] },
+      { ...REQ, todos: [{ ...choice('done'), extra: 1 }] },
+      { ...REQ, todos: [{ ...choice('done'), id: '../a.md' }] },
+      { ...REQ, todos: [{ ...choice('done'), id: '' }] },
+      { ...REQ, todos: [{ ...choice('done'), scope: 'team' }] },
+      { ...REQ, todos: [{ ...choice('done'), version: 'short' }] },
+      { ...REQ, todos: [choice('nope')] },
+      // A choice that doesn't fit the action.
+      { ...REQ, todos: [choice(name === 'archive' ? 'delete' : 'done')] },
+      { ...REQ, todos: [choice(name === 'archive' ? 'unlink' : 'keep')] },
+    ];
+    for (const body of bad) {
+      const r = await post(path, body);
+      expect(r.status, JSON.stringify(body)).toBe(400);
+      expect(r.json.error?.code).toBe('bad-request');
+    }
+    expect(seen.removes).toEqual([]);
+  });
+
+  it("refuses someone the tdsapp-projects skill's roles leave out", async () => {
+    state.access = 'restricted';
+    const r = await post(path, REQ);
+    expect(r.status).toBe(403);
+    expect(r.json.error?.code).toBe('not-allowed');
+    expect(seen.access).toEqual(['tdsapp-projects']);
+    expect(seen.removes).toEqual([]);
+  });
+
+  it('lets to-do choices run only where the app may change to-dos', async () => {
+    expect((await post(path, REQ)).status).toBe(200);
+    state.directWrites = false;
+    expect((await post(path, REQ)).status).toBe(200);
+    state.directWrites = true;
+    state.todos = { ...TODOS, changes: 'restricted' };
+    expect((await post(path, REQ)).status).toBe(200);
+    expect(seen.removes.map((m) => m.todos)).toEqual([true, false, false]);
+  });
+
+  it('answers a ProjectsError with its status, and 404 without the brain', async () => {
+    state.fail = new ProjectsError('not-allowed', 'Only the owner can delete this project.');
+    const r = await post(path, REQ);
+    expect(r.status).toBe(403);
+    expect(r.json.error).toEqual({ code: 'not-allowed', message: 'Only the owner can delete this project.' });
+    state.fail = new ProjectsError('changed', 'The files in this project changed since you checked.');
+    expect((await post(path, REQ)).status).toBe(409);
+    state.fail = null;
+    state.has = false;
+    expect((await post(path, REQ)).status).toBe(404);
+  });
+});
+
+describe('archive routes keep their own actions apart', () => {
+  it('unarchive is only on the archive route, delete only on the delete route', async () => {
+    expect((await post(ROUTES.projectsArchive, { key: KEY, action: 'unarchive' })).status).toBe(200);
+    expect((await post(ROUTES.projectsDelete, { key: KEY, action: 'unarchive' })).status).toBe(400);
+    expect((await post(ROUTES.projectsArchive, { key: KEY, action: 'delete' })).status).toBe(400);
   });
 });

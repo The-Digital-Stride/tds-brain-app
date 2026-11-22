@@ -81,6 +81,43 @@ export function movedFolderPath(
 }
 
 /**
+ * Archive plan decision 1: the archive folder for a live project folder, beside it at the same depth, or
+ * null for a folder that has none (an archive already, or `clients/_archive/**`, which is read only).
+ */
+export function archiveFolderFor(folder: string): string | null {
+  const m = /^(clients\/(?!_)[^/]+\/|personal\/)?projects\/([^/]+)$/.exec(folder);
+  if (!m) return null;
+  return `${m[1] ?? ''}projects-archive/${m[2]}`;
+}
+
+/** The reverse of archiveFolderFor: the live folder an archived one came from, or null. */
+export function liveFolderFor(folder: string): string | null {
+  const m = /^(clients\/(?!_)[^/]+\/|personal\/)?projects-archive\/([^/]+)$/.exec(folder);
+  if (!m) return null;
+  return `${m[1] ?? ''}projects/${m[2]}`;
+}
+
+/**
+ * Archive plan S5: a brain path inside an archived project's live folder (a link written before it was
+ * archived), mapped into the archive folder, so its links still find their files. A path under a live
+ * folder some project still has comes back as it is.
+ */
+export function archivedFolderPath(
+  path: string,
+  projects: Pick<ProjectCard, 'folder' | 'archived'>[],
+): string {
+  if (!projects.some((p) => p.archived)) return path;
+  const liveFolders = new Set(projects.filter((p) => !p.archived).map((p) => p.folder));
+  for (const p of projects) {
+    if (!p.archived) continue;
+    const from = liveFolderFor(p.folder);
+    if (from === null || liveFolders.has(from) || !path.startsWith(`${from}/`)) continue;
+    return p.folder + path.slice(from.length);
+  }
+  return path;
+}
+
+/**
  * How a to-do's `project:` value reads (contract TodoProjectMatch, overseer S3). A TDS to-do only ever
  * resolves against shared projects, so it reads the same on every Mac; a `personal/` key on one is
  * `missing` (overseer B2). A personal to-do may resolve against either.
@@ -149,7 +186,13 @@ const NEXT_HEADING = /^#{1,2}[ \t]/;
 /** `- [name](path)` or `- [name](<path>)`, as shared/todo-files.ts (no "only on" note on a card). */
 const ITEM = /^[ \t]*[-*][ \t]+\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^\s()<>]+))\)[ \t]*$/;
 /** A card may link files under these brain folders. `personal/` only from a personal project (decision 8). */
-export const LINKED_FILE_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/'] as const;
+export const LINKED_FILE_ROOTS = [
+  'clients/',
+  'templates/',
+  'personal/',
+  'projects/',
+  'projects-archive/',
+] as const;
 
 /**
  * A link target as a brain path, or null: every leading `../` dropped, then it must start with one of

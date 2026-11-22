@@ -162,6 +162,8 @@ describe('notices on a project', () => {
     expect(screen.getByRole('button', { name: 'Add a card' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    // Archived projects are off the list until the Archived filter is chosen.
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'archived' } });
     fireEvent.click(screen.getByRole('button', { name: /Gone/ }));
     expect(screen.getByText(/archived/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();

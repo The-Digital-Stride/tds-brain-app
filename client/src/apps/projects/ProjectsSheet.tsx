@@ -23,6 +23,8 @@ export function ProjectsSheet() {
   const [screen, setScreen] = useState<Screen>({ is: 'list' });
   // Said aloud after a move; always mounted so a screen reader hears it when the page changes.
   const [announce, setAnnounce] = useState('');
+  // Shown on the list after a delete, because the project's own page is gone.
+  const [notice, setNotice] = useState('');
   // A Projects search hit asks for a project's page (client-choice `projectPageRequest`): open it on
   // mount, and again whenever another hit asks while the app is already showing.
   useEffect(() => {
@@ -93,6 +95,7 @@ export function ProjectsSheet() {
   const go = (next: Screen, from: string) => {
     came.current.push(from);
     returnTo.current = null;
+    setNotice('');
     setScreen(next);
   };
   const back = (next: Screen) => {
@@ -131,7 +134,14 @@ export function ProjectsSheet() {
         me={me}
         canMove={moveState(card, list)}
         onMove={() => go({ is: 'move', key: card.key }, 'move')}
-        onDone={() => toProject(card.key)}
+        onDone={(_key, words) => {
+          toProject(card.key);
+          if (words) {
+            setNotice(words);
+            setAnnounce('');
+            setTimeout(() => setAnnounce(words), 50);
+          }
+        }}
         onCancel={() => toProject(card.key)}
       />
     );
@@ -156,19 +166,28 @@ export function ProjectsSheet() {
     );
   } else if (screen.is === 'project' && card) {
     body = (
-      <ProjectPage
-        card={card}
-        list={list}
-        tab={screen.tab}
-        onTab={(tab) => toTab(card.key, tab)}
-        onBack={toList}
-        onEdit={() => go({ is: 'edit', key: card.key }, 'edit')}
-        onMove={() => go({ is: 'move', key: card.key }, 'move')}
-        onAddCard={() => go({ is: 'card', key: card.key }, 'addcard')}
-        team={team}
-        clients={clients}
-        me={me}
-      />
+      <>
+        {notice ? <p className="proj-banner">{notice}</p> : null}
+        <ProjectPage
+          card={card}
+          list={list}
+          tab={screen.tab}
+          onTab={(tab) => toTab(card.key, tab)}
+          onBack={toList}
+          onEdit={() => go({ is: 'edit', key: card.key }, 'edit')}
+          onMove={() => go({ is: 'move', key: card.key }, 'move')}
+          onAddCard={() => go({ is: 'card', key: card.key }, 'addcard')}
+          onRemoved={(words) => {
+            setNotice(words);
+            setAnnounce('');
+            setTimeout(() => setAnnounce(words), 50);
+            toList();
+          }}
+          team={team}
+          clients={clients}
+          me={me}
+        />
+      </>
     );
   } else {
     body = (
@@ -179,6 +198,7 @@ export function ProjectsSheet() {
             {READ_ONLY_NOTICE}
           </p>
         ) : null}
+        {notice ? <p className="proj-banner">{notice}</p> : null}
         {list.looseLabels > 0 ? (
           <div className="proj-banner">
             <span>
@@ -206,8 +226,8 @@ export function ProjectsSheet() {
         ) : null}
         {(list.leftovers ?? []).length > 0 ? (
           <p className="proj-banner" role="status">
-            These folders were left behind when a project moved, so they're hidden. Anything still in them
-            stays only on this Mac: {(list.leftovers ?? []).join(', ')}.
+            These folders were left behind when a project moved or was archived, so they're hidden. Anything
+            still in them stays only on this Mac: {(list.leftovers ?? []).join(', ')}.
           </p>
         ) : null}
         <ProjectListView

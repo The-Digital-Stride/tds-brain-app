@@ -372,3 +372,27 @@ describe('the list (fix 4) and focus (fix 7)', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /Bare/ }));
   });
 });
+
+describe('Add a card when the Account Owner is dropped', () => {
+  const bare = card({ slug: 'bare', title: 'Bare', card: 'none', version: '', owner: null });
+
+  async function addCard(returned: ReturnType<typeof card>) {
+    await show(projectList([bare]));
+    fireEvent.click(screen.getByRole('button', { name: /Bare/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a card' }));
+    fireEvent.change(screen.getByLabelText('Account Owner'), { target: { value: 'simon' } });
+    api.changeProject.mockResolvedValue(projectList([returned]));
+    fireEvent.click(screen.getByRole('button', { name: 'Add card' }));
+  }
+
+  it('says the owner was left blank when the saved card has none', async () => {
+    await addCard(card({ slug: 'bare', title: 'Bare', owner: null }));
+    expect(await screen.findByText(/it was left blank/)).toBeTruthy();
+  });
+
+  it('says nothing when the owner stuck', async () => {
+    await addCard(card({ slug: 'bare', title: 'Bare', owner: 'simon' }));
+    await screen.findByRole('heading', { name: 'Bare' });
+    expect(screen.queryByText(/it was left blank/)).toBeNull();
+  });
+});

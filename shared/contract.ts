@@ -23,6 +23,9 @@ import type {
   ProjectMoveCheckResponse,
   ProjectMoveRequest,
   ProjectMoveResult,
+  ProjectRemoveCheckResponse,
+  ProjectRemoveRequest,
+  ProjectRemoveResult,
   ProjectTodosResponse,
   TidyApply,
   TidyList,
@@ -839,6 +842,12 @@ export interface BrainReaders {
     identity: Identity,
     opts?: { todos?: boolean },
   ): Promise<ProjectMoveCheckResponse | ProjectMoveResult>;
+  /** Archive plan: archive, unarchive or delete a project (with `check`, the panel's facts). */
+  removeProject?(
+    req: ProjectRemoveRequest,
+    identity: Identity,
+    opts?: { todos?: boolean },
+  ): Promise<ProjectRemoveCheckResponse | ProjectRemoveResult>;
   projectFiles?(key: ProjectKey, kind: LibraryKind, identity: Identity): Promise<ProjectFilesResponse>;
   projectTodos?(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
   tidy?(identity: Identity): Promise<TidyList>;
@@ -1896,6 +1905,10 @@ export const ROUTES = {
   /** `POST` ProjectAction → ProjectList. Errors as ProjectsErrorCode with a plain UK-English `error`. */
   projectsChange: '/api/projects/change',
   projectsMove: '/api/projects/move',
+  /** Archive plan: archive or unarchive (with `check`). Body ProjectRemoveRequest. */
+  projectsArchive: '/api/projects/archive',
+  /** Archive plan: delete (with `check`). Body ProjectRemoveRequest with action 'delete'. */
+  projectsDelete: '/api/projects/delete',
   /** `GET ?key=<ProjectKey>&kind=image|document` → ProjectFilesResponse (decision 7). */
   projectFiles: '/api/projects/files',
   /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */

@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  INTERNAL_CLIENT,
+  PROJECTS_ARCHIVE_CAPABILITY,
   PROJECTS_CAPABILITY,
   PROJECTS_MOVE_CAPABILITY,
   ProjectsError,
@@ -213,7 +215,11 @@ describe('with the real script', () => {
       join(root, PROJECTS_SCRIPT),
     );
     const runner = createProjectsSkillRunner(root, { env: { PATH: process.env.PATH, HOME: home } });
-    expect(await runner.capabilities()).toEqual([PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY]);
+    expect(await runner.capabilities()).toEqual([
+      PROJECTS_CAPABILITY,
+      PROJECTS_MOVE_CAPABILITY,
+      PROJECTS_ARCHIVE_CAPABILITY,
+    ]);
     const done = await runner.run({
       kind: 'create',
       space: 'client',
@@ -348,5 +354,150 @@ describe('move (move plan)', () => {
       const runner = createProjectsSkillRunner(b.root, { env: b.env(reply(extra)) });
       expect((await errorOf(runner.run(action)))?.code, JSON.stringify(extra).slice(0, 60)).toBe('internal');
     }
+  });
+});
+
+describe('archive, unarchive and delete (archive plan)', () => {
+  const KEY = 'acme/site';
+  const CHECK = {
+    key: KEY,
+    from: 'clients/acme/projects/site',
+    to: 'clients/acme/projects-archive/site',
+    files: ['clients/acme/projects/site/project.md'],
+    fileCount: 2,
+    images: 0,
+    documents: 1,
+    other: 1,
+    bytes: 120,
+    ignoredCount: 1,
+    localOnlyCount: 1,
+    references: ['todo/a.md'],
+    referenceCount: 1,
+    filesVersion: 'c'.repeat(64),
+    empty: false,
+    allowed: false,
+    allowedWho: "Ian Hancock (the Account Owner) or the brain's Owner",
+  };
+  const reply = (extra: object) => ({ out: JSON.stringify({ ok: true, key: KEY, version: '', ...extra }) });
+
+  it('runs each as its own command and answers the key; a check answers the contract shape', async () => {
+    for (const kind of ['archive', 'unarchive', 'delete'] as const) {
+      const b = brain();
+      const runner = createProjectsSkillRunner(b.root, { env: b.env(reply({})) });
+      expect(await runner.run({ kind, key: KEY, filesExpect: 'd'.repeat(64) })).toEqual({
+        key: KEY,
+        version: '',
+      });
+      expect(b.calls()[0]?.argv).toEqual([kind]);
+      const c = brain();
+      const checking = createProjectsSkillRunner(c.root, { env: c.env(reply({ check: CHECK })) });
+      const r = await checking.run({ kind, key: KEY, check: true });
+      expect(r.removeCheck).toEqual({
+        ...CHECK,
+        allowedWho: "Ian Hancock (the Account Owner) or the brain's Owner.",
+      });
+      expect(JSON.parse(c.calls()[0]?.stdin ?? '')).toEqual({ kind, key: KEY, check: true });
+    }
+  });
+
+  it('is internal when the key is not the project, or the check is not the contract shape', async () => {
+    for (const [check, extra] of [
+      [false, { key: 'acme/other' }],
+      [true, {}],
+      [true, { check: { ...CHECK, key: 'acme/other' } }],
+      [true, { check: { ...CHECK, allowed: 'yes' } }],
+      [true, { check: { ...CHECK, to: 5 } }],
+      [true, { check: { ...CHECK, localOnlyCount: 3 } }],
+      [true, { check: { ...CHECK, referenceCount: 0 } }],
+      [
+        true,
+        {
+          check: { ...CHECK, references: Array.from({ length: 21 }, (_, i) => `f${i}`), referenceCount: 21 },
+        },
+      ],
+      [true, { check: { ...CHECK, filesVersion: 'x' } }],
+      [true, { check: { ...CHECK, empty: undefined } }],
+    ] as const) {
+      const b = brain();
+      const runner = createProjectsSkillRunner(b.root, { env: b.env(reply(extra)) });
+      const action = check
+        ? ({ kind: 'delete', key: KEY, check: true } as const)
+        : ({ kind: 'delete', key: KEY } as const);
+      expect((await errorOf(runner.run(action)))?.code, JSON.stringify(extra).slice(0, 60)).toBe('internal');
+    }
+  });
+
+  it('passes on a delete that left its hidden folder behind, and nothing else like it', async () => {
+    const LEFT = 'clients/acme/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~';
+    const b = brain();
+    const runner = createProjectsSkillRunner(b.root, { env: b.env(reply({ leftBehind: LEFT })) });
+    expect(await runner.run({ kind: 'delete', key: KEY, filesExpect: 'd'.repeat(64) })).toEqual({
+      key: KEY,
+      version: '',
+      leftBehind: LEFT,
+    });
+    // Its own live folder's parent, and the legacy ones for a The Digital Stride key.
+    for (const [key, left] of [
+      [KEY, 'clients/acme/projects/.tdsapp-projects-site-0123456789ab.deleting~'],
+      [`${INTERNAL_CLIENT}/site`, 'projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+      [
+        `${INTERNAL_CLIENT}/site`,
+        `clients/${INTERNAL_CLIENT}/projects/.tdsapp-projects-site-0123456789ab.deleting~`,
+      ],
+      ['personal/site', 'personal/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+    ] as const) {
+      const c = brain();
+      const r = createProjectsSkillRunner(c.root, { env: c.env(reply({ key, leftBehind: left })) });
+      expect(await r.run({ kind: 'delete', key, filesExpect: 'd'.repeat(64) }), left).toEqual({
+        key,
+        version: '',
+        leftBehind: left,
+      });
+    }
+    for (const [kind, left] of [
+      ['archive', LEFT],
+      ['delete', 'clients/acme/projects-archive/site'],
+      ['delete', 'clients/acme/projects-archive/.tdsapp-projects-other-0123456789ab.deleting~'],
+      ['delete', '../outside/.tdsapp-projects-site-0123456789ab.deleting~'],
+      // The right slug in another client's, someone's personal or the legacy folders: never its own.
+      ['delete', 'clients/skyseal/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 'personal/projects/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 'projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 5],
+    ] as const) {
+      const c = brain();
+      const r = createProjectsSkillRunner(c.root, { env: c.env(reply({ leftBehind: left })) });
+      expect(
+        (await errorOf(r.run({ kind, key: KEY, filesExpect: 'd'.repeat(64) })))?.code,
+        String(left),
+      ).toBe('internal');
+    }
+  });
+
+  it("shows the script's refusal reason and says when the files changed", async () => {
+    const refused = brain();
+    const runner = createProjectsSkillRunner(refused.root, {
+      env: refused.env({
+        exit: 2,
+        out: '{"ok":false,"error":"not-allowed","message":"only the owner can delete this project"}',
+      }),
+    });
+    expect(await errorOf(runner.run({ kind: 'delete', key: KEY }))).toEqual({
+      code: 'not-allowed',
+      message: 'Only the owner can delete this project.',
+    });
+    const files = brain();
+    const changed = createProjectsSkillRunner(files.root, {
+      env: files.env({
+        exit: 2,
+        out: '{"ok":false,"error":"changed","message":"the files in this project changed since you checked"}',
+      }),
+    });
+    expect(
+      await errorOf(changed.run({ kind: 'archive', key: KEY, filesExpect: 'c'.repeat(64) })),
+    ).toMatchObject({
+      code: 'changed',
+      message: PROJECTS_MOVE_FILES_CHANGED,
+    });
   });
 });

@@ -31,3 +31,30 @@ A personal project is never shared. A team to-do, a shared project or a client f
 link to it or name it. To share one, move it to the client (or The Digital Stride) with the
 `tdsapp-projects` skill's `move`: everything in its folder is then shared with the team.
 ````
+
+## Archive and delete (tdsapp-projects 0.3)
+
+This edit applies on top of edit 1, which is already in the brain. The "current passage" is its text
+as applied.
+
+### Why
+
+Personal projects can now be archived to `personal/projects-archive/` and deleted. Both stay on your
+machine. Doing either by hand would leave your to-dos pointing at nothing.
+
+### Edit 2: archive and delete with the skill
+
+#### Current passage
+
+````text
+skill. Never rename the folder after it's made.
+````
+
+#### Proposed replacement
+
+````text
+skill. Never rename the folder after it's made. Archive and delete a personal project only with the
+`tdsapp-projects` skill, never by hand: `archive` moves it to `personal/projects-archive/<slug>/`
+(still private, same key), `unarchive` brings it back, and `delete` removes it for good. Nothing
+in `personal/` is backed up, so a deleted personal project can't be got back.
+````

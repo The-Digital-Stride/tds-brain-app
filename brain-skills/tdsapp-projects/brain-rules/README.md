@@ -31,3 +31,31 @@ Clients first, because the other files point at its "Projects" section.
   folders, and the skill pre-creates only folders that carry a README. `tdsapp-projects` makes the
   folder with the first project.
 - Then save and sync as usual so the team gets the text.
+
+## Archive and delete (tdsapp-projects 0.3)
+
+Each of the files below has a new "Archive and delete" section at the end, for the
+`projects-archive/` folders and the skill's `archive`, `unarchive` and `delete` actions
+(docs/plans/2026-11-21-project-archive-delete.md, decision 14). They apply on top of the release 1
+edits, which are already in the brain, so each "current passage" quotes that text as applied.
+
+### Before you start
+
+- Copy `tdsapp-projects` 0.3 into the brain first, and make sure every Mac runs the TDS Cortex release
+  that reads the archive folders before anyone archives: older apps don't see archived projects.
+- Check the brain's `.gitignore` ignores names ending in `~` (a `*~` line). Delete hides a project's
+  folder as `.tdsapp-projects-<project>-<code>.deleting~` while it removes it, so a sync mid-delete
+  never shares half a project; without `*~` the skill refuses to delete.
+
+### Order and one-line checks
+
+| # | File here | Brain file | Check after applying |
+|---|---|---|---|
+| 7 | `clients-AGENTS.md` (edits 4, 5) | `clients/AGENTS.md` | `grep -c "projects-archive/" clients/AGENTS.md` is at least 2 |
+| 8 | `personal-AGENTS.md` (edit 2) | `personal/AGENTS.md` | `grep -c "personal/projects-archive" personal/AGENTS.md` is 1 |
+| 9 | `projects-AGENTS.md` (edit 3) | `projects/AGENTS.md` | `grep -c "Archive and delete" projects/AGENTS.md` is 1 |
+| 10 | `save-locations.md` (edit 3) | `.claude/rules/save-locations.md` | `grep -c "An archived project" .claude/rules/save-locations.md` is 1 |
+| 11 | `save-locations-cjs.md` (edit 1) | `tools/lib/save-locations.cjs` | `grep -c "'projects-archive'" tools/lib/save-locations.cjs` is 1 |
+
+The Command Centre's "Archive project" (`tools/members/command-centre/server.cjs`) is noted, not
+changed: it renames a clashing folder to `<slug>-2`, which breaks the key. Use the skill instead.

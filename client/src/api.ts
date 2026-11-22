@@ -80,6 +80,9 @@ import type {
   ProjectMoveCheckResponse,
   ProjectMoveRequest,
   ProjectMoveResult,
+  ProjectRemoveCheckResponse,
+  ProjectRemoveRequest,
+  ProjectRemoveResult,
   ProjectTodosResponse,
   TidyApply,
   TidyList,
@@ -240,6 +243,20 @@ export const api = {
     request<ProjectMoveCheckResponse>('POST', ROUTES.projectsMove, { ...req, check: true }),
   moveProject: (req: Omit<ProjectMoveRequest, 'check'>) =>
     request<ProjectMoveResult>('POST', ROUTES.projectsMove, req),
+  /** Archive plan: what archive, unarchive or delete would touch. Writes nothing. */
+  checkProjectRemove: (req: Omit<ProjectRemoveRequest, 'check' | 'todos'>) =>
+    request<ProjectRemoveCheckResponse>(
+      'POST',
+      req.action === 'delete' ? ROUTES.projectsDelete : ROUTES.projectsArchive,
+      { ...req, check: true },
+    ),
+  /** Archive, unarchive or delete (with each open to-do's choice). */
+  removeProject: (req: Omit<ProjectRemoveRequest, 'check'>) =>
+    request<ProjectRemoveResult>(
+      'POST',
+      req.action === 'delete' ? ROUTES.projectsDelete : ROUTES.projectsArchive,
+      req,
+    ),
   projectFiles: (key: ProjectKey, kind: LibraryKind) =>
     request<ProjectFilesResponse>(
       'GET',

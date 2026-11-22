@@ -11,8 +11,11 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { type ClientInfo, type Identity, TodoChangeError, type TodoList } from '../../shared/contract.ts';
 import {
+  archivedFolderPath,
+  archiveFolderFor,
   folderTitle,
   isProjectSlug,
+  liveFolderFor,
   matchedKey,
   movedFolderPath,
   movedKey,
@@ -28,6 +31,7 @@ import {
   PROJECT_CARD_FILE,
   PROJECT_MOVED_FROM_MAX,
   PROJECT_TITLE_MAX,
+  PROJECTS_ARCHIVE_CAPABILITY,
   PROJECTS_CAPABILITY,
   PROJECTS_MOVE_CAPABILITY,
   type ProjectAction,
@@ -38,6 +42,10 @@ import {
   type ProjectMoveCheckResponse,
   type ProjectMoveRequest,
   type ProjectMoveResult,
+  type ProjectRemoveCheckResponse,
+  type ProjectRemoveRequest,
+  type ProjectRemoveResult,
+  type ProjectRemoveTodo,
   type ProjectSpace,
   type ProjectStatus,
   ProjectsError,
@@ -82,6 +90,17 @@ export interface ProjectsService {
     identity: Identity,
     opts?: { todos?: boolean },
   ): Promise<ProjectMoveCheckResponse | ProjectMoveResult>;
+  /**
+   * Archive plan: archive, unarchive or delete a project's folder. `check: true` answers what it would
+   * touch plus the open to-dos linked to it. Otherwise the script changes the folder first, then each
+   * listed to-do choice is applied (`opts.todos` false: a choice other than keep is refused up front).
+   * Whether this person may is the script's answer alone. Throws ProjectsError.
+   */
+  remove(
+    req: ProjectRemoveRequest,
+    identity: Identity,
+    opts?: { todos?: boolean },
+  ): Promise<ProjectRemoveCheckResponse | ProjectRemoveResult>;
   tidy(identity: Identity): Promise<TidyList>;
   applyTidy(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Every open to-do in the project (UX B2): all TDS ones, whoever has them, and this person's own personal ones. */
@@ -109,7 +128,7 @@ export interface ProjectsOptions {
    * here by the same rule (theirs, an open TDS one, or their own personal one).
    */
   todoList?: (identity: Identity) => Promise<Pick<TodoList, 'mine' | 'open'>>;
-  /** After a move: the old and new folders (brain-relative), so the library drops both from its caches. */
+  /** After a move, archive, unarchive or delete: the old and new folders (brain-relative), so the library drops both from its caches. */
   onMoved?: (from: string, to: string) => void;
 }
 
@@ -160,6 +179,59 @@ async function folders(path: string): Promise<string[]> {
       .sort();
   } catch {
     return [];
+  }
+}
+
+/** As the script's LEFTOVER_FILES_MAX: a bigger card-less folder is never a leftover. */
+const LEFTOVER_FILES_MAX = 200;
+
+/**
+ * The files in a card-less folder, folder-relative, as the script's `looseFiles`; null when there are
+ * too many or anything isn't a plain file or folder (then it is never a leftover).
+ */
+async function looseFiles(abs: string): Promise<string[] | null> {
+  const files: string[] = [];
+  const stack = [''];
+  while (stack.length > 0) {
+    const sub = stack.pop() as string;
+    let names: string[];
+    try {
+      names = await fs.readdir(sub === '' ? abs : join(abs, ...sub.split('/')));
+    } catch {
+      return null;
+    }
+    for (const name of names) {
+      const rel = sub === '' ? name : `${sub}/${name}`;
+      const st = await lstat(join(abs, ...rel.split('/')));
+      if (!st || st.isSymbolicLink()) return null;
+      if (st.isDirectory()) stack.push(rel);
+      else if (st.isFile()) files.push(rel);
+      else return null;
+      if (files.length + stack.length > LEFTOVER_FILES_MAX) return null;
+    }
+  }
+  return files;
+}
+
+/**
+ * As the script's `onlyIgnored`: a card-less shared folder (live or archive) holding at least one
+ * file, every one of which git ignores. False when git can't tell or the brain isn't a repository.
+ */
+async function onlyIgnored(
+  root: string,
+  git: NonNullable<ProjectsOptions['git']>,
+  c: Pick<ProjectCard, 'space' | 'folder'>,
+): Promise<boolean> {
+  if (c.space === 'personal') return false;
+  const files = await looseFiles(join(root, ...c.folder.split('/')));
+  if (!files || files.length === 0) return false;
+  const rels = files.map((f) => `${c.folder}/${f}`);
+  try {
+    const ignored = new Set((await git(['check-ignore', '-z', '--', ...rels], root)).split('\0'));
+    return rels.every((r) => ignored.has(r));
+  } catch {
+    // git check-ignore exits 1 when nothing is ignored; any failure means "not a leftover".
+    return false;
   }
 }
 
@@ -351,66 +423,116 @@ async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Pro
   );
   const live = clientDirs.filter(isProjectSlug);
   // The Digital Stride's own folder first: INTERNAL_PRECEDENCE.
-  for (const c of [
+  const ordered = [
     ...live.filter((c) => c === INTERNAL_CLIENT),
     ...live.filter((c) => c !== INTERNAL_CLIENT),
-  ]) {
-    await projectsIn(`clients/${c}/projects`, c, 'client', false);
-  }
+  ];
+  for (const c of ordered) await projectsIn(`clients/${c}/projects`, c, 'client', false);
   await projectsIn('projects', INTERNAL_CLIENT, 'legacy', false);
+  // Archive plan decision 1: archives come after every live folder, each location explicit about
+  // `archived` and `space` (never worked out from its name).
+  if (live.includes(INTERNAL_CLIENT))
+    await projectsIn(`clients/${INTERNAL_CLIENT}/projects-archive`, INTERNAL_CLIENT, 'client', true);
   await projectsIn('projects-archive', INTERNAL_CLIENT, 'legacy', true);
+  for (const c of ordered.filter((c) => c !== INTERNAL_CLIENT))
+    await projectsIn(`clients/${c}/projects-archive`, c, 'client', true);
   const archivedClients = (await folders(join(root, 'clients', '_archive'))).filter(isProjectSlug);
   for (const c of archivedClients) await projectsIn(`clients/_archive/${c}/projects`, c, 'client', true);
 
   // Personal: only real folders, and never anything git tracks (that came from someone else's Mac).
+  const personalBases = ['personal/projects', 'personal/projects-archive'] as const;
   const personalLinked = await Promise.all(
-    ['personal', 'personal/projects'].map(async (rel) =>
+    ['personal', ...personalBases].map(async (rel) =>
       (await lstat(join(root, ...rel.split('/'))))?.isSymbolicLink(),
     ),
   );
   if (!personalLinked.some(Boolean)) {
     let tracked = new Set<string>();
     try {
-      const out = await git(['ls-files', '-z', '--', 'personal/projects'], root);
-      tracked = new Set(
-        out
-          .split('\0')
-          .filter(Boolean)
-          .map((p) => p.split('/')[2] ?? ''),
-      );
+      const out = await git(['ls-files', '-z', '--', ...personalBases], root);
+      tracked = new Set(out.split('\0').filter(Boolean));
     } catch {
       /* not a git repository: nothing is tracked */
     }
-    const before = locations.length;
-    await projectsIn('personal/projects', null, 'personal', false);
-    for (let i = locations.length - 1; i >= before; i--) {
-      if (tracked.has((locations[i] as Location).slug)) locations.splice(i, 1);
+    for (const base of personalBases) {
+      const before = locations.length;
+      await projectsIn(base, null, 'personal', base.endsWith('-archive'));
+      for (let i = locations.length - 1; i >= before; i--) {
+        const slug = (locations[i] as Location).slug;
+        if ([...tracked].some((p) => p.startsWith(`${base}/${slug}/`))) locations.splice(i, 1);
+      }
     }
   }
 
-  const seen = new Set<ProjectKey>();
-  const duplicates: string[] = [];
-  const kept: Location[] = [];
-  for (const loc of locations) {
-    if (seen.has(loc.key)) duplicates.push(loc.folder);
-    else {
-      seen.add(loc.key);
-      kept.push(loc);
-    }
+  const all = await Promise.all(locations.map((loc) => readCard(root, loc)));
+  // Archive plan decision 2 (leftovers). These rules copy the script's `foldersOf` and `locate`
+  // (brain-skills/tdsapp-projects/scripts/tdsapp-projects.cjs), which is the source of truth, so the
+  // list and the script always read the same folder for a key:
+  // - A key's folders are taken in reader precedence (the walk order above, per key).
+  // - A folder is a leftover when it has no `project.md` at all AND either
+  //   (a) it is a live folder and some archive folder for the key has a plain-file `project.md`, or
+  //   (b) it is not personal and holds at least one file, every one of them git-ignored, with no
+  //       link or special file and at most LEFTOVER_FILES_MAX entries (git unable to tell: not a leftover).
+  //   Rule (b) applies to archive folders too.
+  // - The key reads the first folder that is not a leftover, else the first leftover. Other leftovers
+  //   go in `leftovers`; other non-leftover folders go in `duplicates`. A leftover is never a project.
+  const groups = new Map<ProjectKey, ProjectCard[]>();
+  for (const c of all) {
+    const group = groups.get(c.key);
+    if (group) group.push(c);
+    else groups.set(c.key, [c]);
   }
-  const read = await Promise.all(kept.map((loc) => readCard(root, loc)));
+  const isLeftover = new Map<ProjectCard, boolean>();
+  await Promise.all(
+    [...groups.values()].map(async (group) => {
+      const plain = await Promise.all(
+        group.map(async (c) =>
+          c.archived && c.card !== 'none'
+            ? Boolean((await lstat(join(root, ...c.folder.split('/'), PROJECT_CARD_FILE)))?.isFile())
+            : false,
+        ),
+      );
+      const cardedArchive = plain.some(Boolean);
+      await Promise.all(
+        group.map(async (c) => {
+          const flag =
+            c.card === 'none' && ((!c.archived && cardedArchive) || (await onlyIgnored(root, git, c)));
+          isLeftover.set(c, flag);
+        }),
+      );
+    }),
+  );
+  const picks = new Map<ProjectKey, ProjectCard>();
+  for (const [key, group] of groups) {
+    picks.set(key, group.find((c) => !isLeftover.get(c)) ?? (group[0] as ProjectCard));
+  }
+  const strays: string[] = [];
+  const duplicates: string[] = [];
+  const read: ProjectCard[] = [];
+  for (const c of all) {
+    if (isLeftover.get(c)) strays.push(c.folder);
+    else if (picks.get(c.key) === c) read.push(c);
+    else duplicates.push(c.folder);
+  }
   // B1: git deletes only tracked files, so a moved project's old folder can linger on a teammate's Mac
   // with no card. The alias wins: the folder is a leftover, not a project. Never a `personal/` one:
   // a moved card syncs to teammates, where `personal/` is THEIR private folder, which always wins
   // over the alias (card or not). The alias then applies only on a Mac with no such folder.
   const aliases = new Set(read.flatMap((c) => c.movedFrom ?? []));
-  const leftovers = read
-    .filter((c) => c.card === 'none' && c.space !== 'personal' && aliases.has(c.key))
-    .map((c) => c.folder);
+  const leftovers = [
+    ...strays,
+    ...read
+      .filter((c) => c.card === 'none' && c.space !== 'personal' && aliases.has(c.key))
+      .map((c) => c.folder),
+  ].filter((f, i, a) => a.indexOf(f) === i);
   const cards = read.filter((c) => !leftovers.includes(c.folder));
   // S8: links written before a move into a moved project's old folder follow it.
   if (aliases.size > 0) {
     for (const c of cards) c.links = [...new Set(c.links.map((p) => movedFolderPath(p, cards)))];
+  }
+  // Archive plan S5: links into an archived project's old live folder follow it into the archive.
+  if (cards.some((c) => c.archived)) {
+    for (const c of cards) c.links = [...new Set(c.links.map((p) => archivedFolderPath(p, cards)))];
   }
 
   const roles = await readRoles(root);
@@ -689,6 +811,8 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
         canChange &&
         features.includes(PROJECTS_MOVE_CAPABILITY) &&
         todoFeatures.includes(TODO_PROJECT_CAPABILITY),
+      // Archive plan decision 11: the script's own capability, and the same roles check as any change.
+      canArchive: canChange && features.includes(PROJECTS_ARCHIVE_CAPABILITY),
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
       leftovers: w.leftovers,
@@ -831,6 +955,144 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     return { list: await list(identity), key: result.key, todosMoved, todosLeft: pool.length - todosMoved };
   };
 
+  const remove = async (
+    req: ProjectRemoveRequest,
+    identity: Identity,
+    removeOpts: { todos?: boolean } = {},
+  ): Promise<ProjectRemoveCheckResponse | ProjectRemoveResult> => {
+    const bad = () =>
+      new ProjectsError('bad-request', "That change couldn't be made. Check the details and try again.");
+    if (!req || typeof req !== 'object') throw bad();
+    const kind = req.action;
+    if (kind !== 'archive' && kind !== 'unarchive' && kind !== 'delete') throw bad();
+    if (!parseProjectKey(req.key)) throw bad();
+    for (const v of [req.expect, req.filesExpect]) {
+      if (v !== undefined && (typeof v !== 'string' || !/^[0-9a-f]{64}$/.test(v))) throw bad();
+    }
+    if (req.check !== undefined && req.check !== true) throw bad();
+    const choices = req.todos ?? [];
+    if (!Array.isArray(choices) || (req.check === true && choices.length > 0)) throw bad();
+    const allowedDo: readonly string[] =
+      kind === 'archive' ? ['done', 'keep'] : kind === 'delete' ? ['delete', 'unlink'] : [];
+    const seenChoice = new Set<string>();
+    for (const c of choices) {
+      if (!c || typeof c !== 'object' || typeof c.id !== 'string' || c.id === '') throw bad();
+      if (c.scope !== 'tds' && c.scope !== 'personal') throw bad();
+      if (typeof c.version !== 'string' || !/^[0-9a-f]{64}$/.test(c.version)) throw bad();
+      if (!allowedDo.includes(c.do) || seenChoice.has(`${c.scope}:${c.id}`)) throw bad();
+      seenChoice.add(`${c.scope}:${c.id}`);
+    }
+    if (!(await mayChange(identity))) {
+      throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
+    }
+    const [features, todoFeatures] = await Promise.all([
+      opts.skill.capabilities().catch(() => [] as string[]),
+      opts.todoSkill.capabilities().catch(() => [] as readonly string[]),
+    ]);
+    if (!features.includes(PROJECTS_ARCHIVE_CAPABILITY)) {
+      throw new ProjectsError('not-allowed', "Update the brain's skills to archive or delete projects.");
+    }
+    const acting = choices.filter((c) => c.do !== 'keep');
+    if (acting.length > 0 && removeOpts.todos === false) {
+      throw new ProjectsError(
+        'not-allowed',
+        'Changing to-dos is switched off, so they can only be kept. Turn on changes to the shared brain in Settings first.',
+      );
+    }
+    if (acting.some((c) => c.do === 'unlink') && !todoFeatures.includes(TODO_PROJECT_CAPABILITY)) {
+      throw new ProjectsError('not-allowed', "Update the brain's skills to unlink to-dos.");
+    }
+    // The to-dos are chosen from a fresh read, before the folder changes.
+    if (req.check !== true) changed();
+    const { index } = await load();
+    const card = index.cards.find((c) => c.key === req.key) ?? null;
+    const linked = (done: boolean) =>
+      card && kind !== 'unarchive'
+        ? todos().then((all) =>
+            all.filter(
+              (t) =>
+                t.done === done &&
+                (t.scope === 'tds' || ownPersonal(t, identity)) &&
+                matchedKey(index.resolve(t.project, t.client, t.scope)) === card.key,
+            ),
+          )
+        : Promise.resolve([] as TodoRec[]);
+    const pool = await linked(false);
+    const base = {
+      kind,
+      key: req.key,
+      ...(req.expect !== undefined ? { expect: req.expect } : {}),
+      ...(req.filesExpect !== undefined ? { filesExpect: req.filesExpect } : {}),
+    } as const;
+    if (req.check === true) {
+      const r = await opts.skill.run({ ...base, check: true });
+      if (!r.removeCheck) throw new ProjectsError('internal', "That couldn't be checked. Try again.");
+      const rows: ProjectRemoveTodo[] = pool.map((t) => ({
+        id: t.id,
+        title: t.title,
+        scope: t.scope,
+        assignee: t.assignee,
+        version: t.version,
+      }));
+      return { check: r.removeCheck, todos: rows, doneTodos: (await linked(true)).length };
+    }
+    // Correctness review: a to-do that is no longer an open linked one (a teammate ticked or
+    // unlinked it since the check) is dropped, never a reason to refuse: counted neither way.
+    const byId = new Map(pool.map((t) => [`${t.scope}:${t.id}`, t]));
+    const applying = acting.filter((c) => byId.has(`${c.scope}:${c.id}`));
+    let leftBehind: string | undefined;
+    try {
+      leftBehind = (await opts.skill.run(base)).leftBehind;
+    } finally {
+      changed();
+    }
+    if (card) {
+      const other =
+        kind === 'delete'
+          ? card.folder
+          : kind === 'archive'
+            ? archiveFolderFor(card.folder)
+            : liveFolderFor(card.folder);
+      opts.onMoved?.(card.folder, other ?? card.folder);
+    }
+    // Folder first, then each to-do through tdsapp-todo. A failure is named, never fatal.
+    const by = { name: identity.name, slug: identity.slug };
+    let todosChanged = 0;
+    const todosFailed: string[] = [];
+    for (const c of applying) {
+      const t = byId.get(`${c.scope}:${c.id}`) as TodoRec;
+      try {
+        await opts.todoSkill.run(
+          c.do === 'done'
+            ? { kind: 'tick', id: t.id, scope: t.scope, expect: c.version }
+            : c.do === 'delete'
+              ? { kind: 'delete', id: t.id, scope: t.scope, expect: c.version }
+              : {
+                  kind: 'project',
+                  id: t.id,
+                  scope: t.scope,
+                  client: t.client,
+                  project: null,
+                  stage: null,
+                  expect: c.version,
+                },
+          by,
+        );
+        todosChanged++;
+      } catch {
+        todosFailed.push(t.id);
+      }
+    }
+    if (applying.length > 0) changed();
+    return {
+      list: await list(identity),
+      key: req.key,
+      todosChanged,
+      todosFailed,
+      ...(kind === 'delete' && leftBehind !== undefined ? { leftBehind } : {}),
+    };
+  };
+
   const applyTidy = async (apply: TidyApply, identity: Identity): Promise<TidyList> => {
     const bad = () =>
       new ProjectsError('bad-request', "That change to the old label couldn't be made. Try again.");
@@ -934,6 +1196,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     list,
     change,
     move,
+    remove,
     tidy,
     applyTidy,
     projectTodos,

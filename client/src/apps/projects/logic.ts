@@ -29,6 +29,8 @@ export const STATUS_WORDS: Record<ProjectStatus, string> = {
   done: 'Done',
 };
 export const STATUSES = Object.keys(STATUS_WORDS) as ProjectStatus[];
+/** The status filter's extra choice: only archived projects. */
+export const ARCHIVED = 'archived';
 
 export const LIGHT_WORDS: Record<Light, string> = { green: 'Green', amber: 'Amber', red: 'Red' };
 
@@ -66,7 +68,7 @@ export function isMine(card: ProjectCard, me: string): boolean {
 
 export interface Filters {
   mine: boolean;
-  status: ProjectStatus | '';
+  status: ProjectStatus | typeof ARCHIVED | '';
   owner: string;
   service: string;
   /** Only projects whose card is missing or unreadable. */
@@ -81,7 +83,11 @@ export function filterProjects(cards: readonly ProjectCard[], f: Filters, me: st
   return cards.filter((c) => {
     if (f.mine && !isMine(c, me)) return false;
     if (f.noCard && !needsCard(c)) return false;
-    if (f.status && statusOf(c) !== f.status) return false;
+    // Decision 12: archived projects only show under the Archived filter, never under Done or Any.
+    if (f.status === ARCHIVED) {
+      if (!c.archived) return false;
+    } else if (c.archived) return false;
+    else if (f.status && c.status !== f.status) return false;
     if (f.owner && c.owner !== f.owner) return false;
     if (f.service && !c.service.includes(f.service)) return false;
     return true;
@@ -154,7 +160,7 @@ export const todoWords = (n: number): string =>
 export function rowMeta(card: ProjectCard): string {
   if (card.card === 'none') return `No card yet · ${todoWords(card.openTodos).toLowerCase()}`;
   if (card.card === 'unreadable') return `Card can't be read · ${todoWords(card.openTodos).toLowerCase()}`;
-  const bits = [STATUS_WORDS[statusOf(card)]];
+  const bits = [card.archived ? 'Archived' : STATUS_WORDS[statusOf(card)]];
   if (card.end) bits.push(`ends ${dateWords(card.end)}`);
   bits.push(todoWords(card.openTodos).toLowerCase());
   return bits.join(' · ');
@@ -185,6 +191,19 @@ export function moveState(card: ProjectCard, list: { canMove?: boolean }): MoveS
   if (!list.canMove) return 'no-skill';
   if (card.space === 'legacy') return 'legacy';
   return 'yes';
+}
+
+/** A size in plain words: "512 bytes", "3.4 MB". */
+export function sizeWords(bytes: number): string {
+  if (bytes < 1024) return plural(bytes, 'byte');
+  const units = ['KB', 'MB', 'GB'];
+  let n = bytes / 1024;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n >= 10 ? Math.round(n) : Math.round(n * 10) / 10} ${units[i]}`;
 }
 
 /** "1 file" / "3 files". */
@@ -262,6 +281,12 @@ export function errorWords(code: string, message?: string): string {
     default:
       return message || 'Something went wrong. Please try again.';
   }
+}
+
+/** A refusal in the server's own words (it names who can, or what changed), else the plain words for its code. */
+export function refusalWords(code: string, message?: string): string {
+  if (code === 'internal' || !message) return errorWords(code, message);
+  return message;
 }
 
 // ─── The form ─────────────────────────────────────────────────────────────────────────────────────

@@ -202,3 +202,11 @@ Rehearsal on a fresh copy of the brain (no git, private folders left out), with 
 - **Apply:** 23 to-dos (22 plus Steve's), 23 items ticked, 10 folders moved, 61 files rewritten.
 - **Second apply:** 0 changes.
 - **Cortex's reader and the patched Workbench agree on every project's name and open to-do count.** The one duplicate is `projects/ai-search-outreach`, until Steve moves his private files.
+
+Applied to the real brain on 2026-11-22 with Ian's yes (files only, no git run):
+- **Step 1:** skill 0.3.2, Workbench v2 patch, edits D–G and I.
+- **Step 2:** edits A–C and H. Edit B is reworded so it doesn't name the old path: the script's preflight caught the first wording.
+- **The move:** the dry run gave the same 108 actions as the rehearsal. `--apply` made 130 changes: 23 to-dos, 10 folders, 61 files. A second run made 0.
+- **Checks:** the live Workbench and Cortex's reader agree on every project, and Created by keeps each project's original author.
+- **Brain Map:** its local `node_modules` moved to the new folder.
+- **Still to do:** `projects/ai-search-outreach/` stays until Steve moves his private files.

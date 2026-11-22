@@ -88,7 +88,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.3.1';
+const SCRIPT_VERSION = '0.3.2';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -1673,7 +1673,7 @@ const REFERENCE_FILE_MAX = 1024 * 1024;
 const REFERENCE_TIME_MS = 3000;
 const REFERENCE_EXTENSIONS = new Set(['md', 'json', 'cjs', 'js', 'yaml', 'yml']);
 const REFERENCE_SKIP_DIRS = new Set(['.git', 'node_modules', 'z-logs', 'z-backup']);
-// What a skill or tool could be written in, for the legacy archive refusal.
+// What a skill or tool could be written in, for the archive refusal.
 const NAMING_EXTENSIONS = new Set([...REFERENCE_EXTENSIONS, 'mjs', 'ts', 'sh', 'py', 'txt']);
 // Brain files that list paths without ever writing them, so they never block an archive.
 // save-location-baseline.json is the save-location scan's list of findings it already knew about.
@@ -1891,8 +1891,9 @@ function removeAction(kind, input, ctx) {
   }
   const dev = fs.lstatSync(loc.abs).dev;
   const parent = to === null ? null : removeParent(ctx, to, dev);
-  // A skill or tool that writes to an older projects/ folder would make it again (overseer S4).
-  if (kind === 'archive' && loc.space === 'legacy') {
+  // A skill or tool that writes to the folder would make it again (overseer S4). Every shared
+  // project since 0.3.2: the older projects/ folders moved into clients/, and their tools with them.
+  if (kind === 'archive' && loc.space !== 'personal') {
     const naming = filesNaming(ctx, loc.rel, ['.claude/skills', 'tools'], NAMING_EXTENSIONS, null, false).filter(
       (f) => !NOT_WRITERS.has(f),
     );

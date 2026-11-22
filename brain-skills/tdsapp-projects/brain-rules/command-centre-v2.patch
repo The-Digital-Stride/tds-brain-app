@@ -1,0 +1,281 @@
+diff -ruN a/lib/todo-parser.cjs b/lib/todo-parser.cjs
+--- a/lib/todo-parser.cjs	2026-11-22 12:38:31
++++ b/lib/todo-parser.cjs	2026-11-22 12:38:31
+@@ -350,6 +350,10 @@
+ const CLIENTS_DIR = path.join(BRAIN_ROOT, 'clients');
+ const TDS_CLIENT = 'the-digital-stride';
+ 
++// Marker: this Workbench has the v2 card-project rules (ghost folders, all-done with linked
++// to-dos, created-by history, Archive project). The migration script looks for this exact name.
++const cardProjectsV2 = true;
++
+ /** The `  - "x"` items under `key:` in a file's frontmatter. [] when none. */
+ function parseFrontmatterList(content, key) {
+   if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return [];
+@@ -426,6 +430,8 @@
+ function isGhost(name, movedKeys) {
+   if (fs.existsSync(path.join(PROJECTS_DIR, name, 'project.md'))) return false;
+   if (fs.existsSync(path.join(BRAIN_ROOT, 'projects-archive', name, 'project.md'))) return true;
++  // A leftover of a project that now lives (with a card) in the client folder.
++  if (fs.existsSync(path.join(CLIENTS_DIR, TDS_CLIENT, 'projects', name, 'project.md'))) return true;
+   return movedKeys.has(TDS_CLIENT + '/' + name);
+ }
+ 
+@@ -441,6 +447,13 @@
+   catch { return {}; }
+ }
+ 
++function countTicked(file) {
++  try {
++    if (!plainFileInBrain(file)) return 0;
++    return (fs.readFileSync(file, 'utf8').match(/^\s*-\s*\[x\]/gim) || []).length;
++  } catch { return 0; }
++}
++
+ function getCardProjects() {
+   const map = readClientMap();
+   const names = {};
+@@ -458,11 +471,14 @@
+         folder,
+         createdBy: c.fm.created_by || null,
+         movedFrom: parseFrontmatterList(c.content, 'moved_from'),
++        owner: c.fm.owner || null,
+         status: c.fm.status || null,
+         linkedTodos: [],
+         checklist: plainFileInBrain(path.join(BRAIN_ROOT, folder, 'todo.md'))
+           ? parseSectionTodosAt(path.join(BRAIN_ROOT, folder, 'todo.md'), 'Active')
+           : [],
++        // Ticked items in the folder's own todo.md (used for "all done").
++        checklistDone: countTicked(path.join(BRAIN_ROOT, folder, 'todo.md')),
+       };
+     });
+   if (!cards.length) return cards;
+@@ -551,6 +567,7 @@
+ }
+ 
+ module.exports = {
++  cardProjectsV2,
+   plainFileInBrain,
+   parseFrontmatter,
+   getProjectTodos,
+diff -ruN a/public/js/cc.js b/public/js/cc.js
+--- a/public/js/cc.js	2026-11-22 12:38:31
++++ b/public/js/cc.js	2026-11-22 12:38:31
+@@ -8,7 +8,7 @@
+     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+ 
+   const SEED_PROMPT =
+-`Look at my projects/ folder. For each project folder that doesn't already have a todo.md, create one with a "## Active" section listing 2 to 4 concrete next actions you infer from that project's README or notes, written as markdown checkboxes like "- [ ] do the thing". Keep each list short and specific. Do this once, for my current projects, then tell me which files you created.`;
++`Look at my project folders. For each project folder that doesn't already have a todo.md, create one with a "## Active" section listing 2 to 4 concrete next actions you infer from that project's README or notes, written as markdown checkboxes like "- [ ] do the thing". Keep each list short and specific. Do this once, for my current projects, then tell me which files you created.`;
+ 
+   // A reply that is not JSON means the server does not know the route: it is
+   // still running the code from before an update. It restarts itself within a
+@@ -88,19 +88,25 @@
+   }
+ 
+   // ---- projects ----
++  let cardArchiveOn = false;
+   async function loadProjects() {
+     try {
+-      const { projects, cardProjects } = await getJSON('/api/projects');
++      const { projects, cardProjects, cardArchive } = await getJSON('/api/projects');
+       // cardProjects is new: an older server doesn't send it and the page then looks as it always did.
+       const cards = Array.isArray(cardProjects) ? cardProjects : [];
++      // New server field: true only when the brain's projects script can archive. Absent on an old server.
++      // Set before the cards are drawn, since each card's foot reads it.
++      cardArchiveOn = cardArchive === true;
+       const total = projects.length + cards.length;
+       const box = $('cc-projects'); box.innerHTML = '';
+       $('cc-projects-count').textContent = total ? `${total}` : '';
+-      if (!total) { box.innerHTML = '<p class="cc-empty">No project folders yet. Add folders under projects/ then run the seed prompt below.</p>'; }
++      if (!total) { box.innerHTML = '<p class="cc-empty">No project folders yet. Add project folders, then run the seed prompt below.</p>'; }
+       projects.forEach(p => box.append(projectCard(p)));
+       cards.forEach(c => box.append(cardProjectCard(c)));
+       scoreState.projects = total;
+-      scoreState.todos = projects.reduce((n, p) => n + (p.activeTodos ? p.activeTodos.length : 0), 0);
++      // Card projects count too: their linked to-dos (linkedTotal) and their own checklist items.
++      scoreState.todos = projects.reduce((n, p) => n + (p.activeTodos ? p.activeTodos.length : 0), 0)
++        + cards.reduce((n, c) => n + (c.linkedTotal || (c.linkedTodos || []).length) + (c.checklist || []).length, 0);
+       paintScores();
+       return total;
+     } catch (e) { $('cc-projects').innerHTML = '<p class="cc-empty">Could not load projects.</p>'; }
+@@ -204,7 +210,7 @@
+ 
+   // A project made in TDS Cortex (clients/<client>/projects/<slug>/). Same look as
+   // the cards above. Its to-dos are todo/ files that name it in `project:` (ticked
+-  // like any loose to-do) plus any items in its own todo.md. No Archive here: Cortex owns that.
++  // like any loose to-do) plus any items in its own todo.md. Archive project shows only when the server says the brain can do it.
+   function cardProjectCard(c) {
+     const card = el('div', 'cc-item cc-card-project');
+     tagScope(card, 'card', 'project:' + c.key, `The "${c.title}" project card`,
+@@ -262,6 +268,14 @@
+         const m = el('div', 'cc-more'); m.textContent = `+${more} more`;
+         card.append(m);
+       }
++    } else if (c.allDone && cardArchiveOn) {
++      // Allowed by the server's `allDone` (new field) and the skill's capabilities.
++      const done = el('div', 'cc-project-done');
++      const msg = el('span', 'txt'); msg.textContent = '✓ All to-dos complete';
++      const btn = el('button', 'cc-archive-btn'); btn.textContent = 'Archive project';
++      btn.title = 'Move this finished project out of the Projects column (into projects-archive/)';
++      btn.onclick = (e) => { e.stopPropagation(); archiveCardProject(c, btn); };
++      done.append(msg, btn); card.append(done);
+     } else {
+       const none = el('div', 'no-todos'); none.textContent = 'No open to-dos';
+       card.append(none);
+@@ -270,6 +284,22 @@
+     return card;
+   }
+ 
++  // Archive a card project: ask the server to check (it counts the files), confirm in the page,
++  // then archive. The server shows the project script's own refusal text, so we pass it on as it is.
++  async function archiveCardProject(c, btn) {
++    btn.disabled = true;
++    const fail = (r) => { toast((r && r.error) || 'Could not archive'); btn.disabled = false; };
++    const chk = await postJSON('/api/projects/archive-card', { key: c.key, check: true }).catch(() => ({ error: 'network error' }));
++    if (!chk || chk.error) return fail(chk);
++    const n = chk.fileCount;
++    const files = n === 1 ? '1 file' : `${n} files`;
++    if (!window.confirm(`Archive "${c.title || c.key}"?\n\nIt moves out of the Projects column into projects-archive/, with its ${files}. You can move it back any time.`)) { btn.disabled = false; return; }
++    const r = await postJSON('/api/projects/archive-card', { key: c.key, filesExpect: chk.filesVersion }).catch(() => ({ error: 'network error' }));
++    if (!r || r.error) return fail(r);
++    toast('Archived ' + (c.title || c.key));
++    setTimeout(loadProjects, 600);
++  }
++
+   // Footer row on a project card: "+ Add to-do" (inline form → /api/projects/add-todo)
+   // and, unless the all-done block is already showing one, an "Archive" button.
+   // For a Cortex project (`isCard`) it adds a loose to-do with that project instead, and has no Archive.
+@@ -304,6 +334,13 @@
+     form.append(inp, save, cancel);
+     addWrap.append(addBtn, form);
+     foot.append(addWrap);
++
++    if (isCard && cardArchiveOn && !(p.allDone && !(p.linkedTodos || []).length && !(p.checklist || []).length)) {
++      const arch = el('button', 'cc-proj-link cc-proj-archive'); arch.type = 'button'; arch.textContent = 'Archive project';
++      arch.title = 'Move this project out of the Projects column (into projects-archive/)';
++      arch.onclick = () => archiveCardProject(p, arch);
++      foot.append(arch);
++    }
+ 
+     if (!isCard && !p.allDone) {
+       const arch = el('button', 'cc-proj-link cc-proj-archive'); arch.type = 'button'; arch.textContent = 'Archive';
+diff -ruN a/server.cjs b/server.cjs
+--- a/server.cjs	2026-11-22 12:38:31
++++ b/server.cjs	2026-11-22 12:38:31
+@@ -253,15 +253,61 @@
+ // oldest = the creator. Returns null if the folder isn't committed yet (brand
+ // new, still local) or git isn't available.
+ function projectCreator(name) {
++  return gitFirstAuthor(path.posix.join('projects', name));
++}
++
++// The oldest author of anything added under a brain-relative path (null if none / no git).
++function gitFirstAuthor(rel) {
+   try {
+     const out = spawnSync('git',
+-      ['log', '--diff-filter=A', '--format=%an', '--', path.posix.join('projects', name)],
++      ['log', '--diff-filter=A', '--format=%an', '--', rel],
+       { cwd: BRAIN_ROOT, encoding: 'utf8', timeout: 4000 });
+     const authors = ((out && out.stdout) || '').trim().split(/\r?\n/).filter(Boolean);
+     return authors.length ? authors[authors.length - 1] : null;
+   } catch { return null; }
+ }
+ 
++// A card project's creator: git history of its folder, else of its old projects/<slug>/project.md
++// (a moved folder shows up as a rename, not an add), else the card's created_by, then owner.
++function cardProjectCreator(c) {
++  const slug = c.key.split('/')[1];
++  // An internal project that moved in from projects/<slug>/ (November 2026): git lists the moved
++  // folder as added by whoever moved it, so the old folder's first author comes first.
++  return (c.client === 'the-digital-stride' ? projectCreator(slug) : null)
++    || gitFirstAuthor(c.folder)
++    || c.createdBy || c.owner || null;
++}
++
++// A card project is "all done" when nothing is open (no linked to-do, no checklist item) and
++// something was ticked in its todo.md. Same rule as the older projects, plus the linked to-dos.
++function cardProjectAllDone(c) {
++  return c.linkedTodos.length === 0 && c.checklist.length === 0 && (c.checklistDone || 0) > 0;
++}
++
++// ---- Archive project (card projects), through the tdsapp-projects skill ----------------------
++const PROJECTS_SCRIPT = path.join(BRAIN_ROOT, '.claude', 'skills', 'tdsapp-projects', 'scripts', 'tdsapp-projects.cjs');
++let projectsCaps = null; // { at, archive } cached; a failed probe is retried after a minute
++
++function runProjectsScript(action, input) {
++  const out = spawnSync(process.execPath, [PROJECTS_SCRIPT, action],
++    { cwd: BRAIN_ROOT, input: JSON.stringify(input || {}), encoding: 'utf8', timeout: 15000, env: process.env });
++  try { return JSON.parse((out.stdout || '').trim().split('\n').pop()); }
++  catch { return { ok: false, error: 'internal', message: 'The projects script did not answer.' }; }
++}
++
++function canArchiveCards() {
++  if (projectsCaps && (projectsCaps.archive || Date.now() - projectsCaps.at < 60000)) return projectsCaps.archive;
++  let archive = false;
++  try {
++    if (fs.existsSync(PROJECTS_SCRIPT)) {
++      const r = runProjectsScript('capabilities');
++      archive = !!(r && r.ok && Array.isArray(r.features) && r.features.includes('projects-archive-v1'));
++    }
++  } catch { archive = false; }
++  projectsCaps = { at: Date.now(), archive };
++  return archive;
++}
++
+ app.get('/api/content', (req, res) => {
+   try {
+     res.set('Cache-Control', 'no-store').json(contentParser.getContent());
+@@ -308,13 +354,17 @@
+     try {
+       cardProjects = todoParser.getCardProjects().map(c => ({
+         key: c.key, title: c.title, client: c.client, clientName: c.clientName,
+-        createdBy: c.createdBy, status: c.status,
++        createdBy: cardProjectCreator(c), status: c.status,
+         linkedTodos: c.linkedTodos.slice(0, 3),
+         linkedTotal: c.linkedTodos.length,
+         checklist: c.checklist,
++        allDone: cardProjectAllDone(c),
+       }));
+     } catch { cardProjects = []; }
+-    res.set('Cache-Control', 'no-store').json({ projects, cardProjects, generated: new Date().toISOString() });
++    const body = { projects, cardProjects, generated: new Date().toISOString() };
++    // New: the Archive project button on card projects shows only when the skill can do it.
++    if (cardProjects.length && canArchiveCards()) body.cardArchive = true;
++    res.set('Cache-Control', 'no-store').json(body);
+   } catch (err) {
+     res.status(500).json({ error: err.message });
+   }
+@@ -1521,6 +1571,32 @@
+ 
+ // Tick off a project to-do: rewrites its `- [ ]` line in
+ // projects/<project>/todo.md as `- [x]`, so it drops out of ## Active.
++// Archive a card project through the tdsapp-projects skill: check first (so the page can say how
++// many files move), then archive with the check's own `expect` and `filesExpect`.
++// POST {key, check:true} -> the check; POST {key, filesExpect} -> archives. The key must be one
++// the server's own scan knows. The script's refusal text is passed back as it is.
++app.post('/api/projects/archive-card', express.json({ limit: '8kb' }), (req, res) => {
++  const key = req.body && typeof req.body.key === 'string' ? req.body.key : '';
++  const card = key ? findCardProject(key) : null;
++  if (!card) return res.status(400).json({ error: 'unknown project' });
++  if (!canArchiveCards()) return res.status(501).json({ error: 'This brain cannot archive projects from here yet.' });
++  const refuse = (r) => res.status(r && r.error === 'changed' ? 409 : (r && r.error === 'not-allowed' ? 403 : 422))
++    .json({ error: (r && r.message) || 'The projects script refused.' });
++  const chk = runProjectsScript('archive', { key: card.key, check: true });
++  if (!chk || !chk.ok || !chk.check) return refuse(chk);
++  if (chk.check.allowed === false) return res.status(403).json({ error: "You can't archive " + card.key + '. Who can: ' + chk.check.allowedWho + '.' });
++  if (req.body.check === true) {
++    return res.json({ ok: true, key: card.key, fileCount: chk.check.fileCount, filesVersion: chk.check.filesVersion });
++  }
++  const sent = typeof req.body.filesExpect === 'string' ? req.body.filesExpect : '';
++  if (!sent || sent !== chk.check.filesVersion) {
++    return res.status(409).json({ error: 'Files in this project changed since you were asked. Try Archive project again.' });
++  }
++  const r = runProjectsScript('archive', { key: card.key, expect: chk.version, filesExpect: chk.check.filesVersion });
++  if (!r || !r.ok) return refuse(r);
++  res.json({ ok: true, key: card.key });
++});
++
+ app.post('/api/projects/tick', express.json({ limit: '8kb' }), (req, res) => {
+   const project = String((req.body && req.body.project) || '');
+   const text = String((req.body && req.body.text) || '');

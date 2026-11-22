@@ -11,6 +11,7 @@ import {
   type ProjectAction,
   type ProjectKey,
   type ProjectMoveCheck,
+  type ProjectRemoveCheck,
   ProjectsError,
   type ProjectsErrorCode,
 } from '../../shared/projects-contract.ts';
@@ -38,6 +39,8 @@ export interface ProjectsSkillResult {
   key: ProjectKey;
   version: string;
   check?: ProjectMoveCheck;
+  /** An archive, unarchive or delete check's answer. */
+  removeCheck?: ProjectRemoveCheck;
 }
 
 export interface ProjectsSkillRunner {
@@ -75,7 +78,12 @@ const COMMAND = {
   link: 'link',
   unlink: 'unlink',
   move: 'move',
+  archive: 'archive',
+  unarchive: 'unarchive',
+  delete: 'delete',
 } as const;
+const REMOVE_KINDS: readonly string[] = ['archive', 'unarchive', 'delete'];
+const REFERENCES_MAX = 20;
 /** A move check lists at most this many files (contract ProjectMoveCheck). */
 const MOVE_FILES_MAX = 50;
 const MOVE_PATH_MAX = 1024;
@@ -132,12 +140,74 @@ function moveCheckOf(v: unknown, key: ProjectKey): ProjectMoveCheck | null {
   };
 }
 
+const isFlag = (v: unknown): v is boolean => typeof v === 'boolean';
+
+/** An archive, unarchive or delete check's answer, exactly as the contract has it, or null. */
+function removeCheckOf(v: unknown, key: ProjectKey): ProjectRemoveCheck | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const c = v as Record<string, unknown>;
+  const place = (x: unknown): x is string => typeof x === 'string' && x !== '' && x.length <= MOVE_PATH_MAX;
+  const who = reasonOf(c.allowedWho) ?? (c.allowedWho === '' ? '' : null);
+  if (
+    c.key !== key ||
+    !place(c.from) ||
+    !(c.to === null || place(c.to)) ||
+    !pathList(c.files, MOVE_FILES_MAX) ||
+    !isCount(c.fileCount) ||
+    c.fileCount < c.files.length ||
+    !isCount(c.images) ||
+    !isCount(c.documents) ||
+    !isCount(c.other) ||
+    !isCount(c.bytes) ||
+    !isCount(c.ignoredCount) ||
+    c.ignoredCount > c.fileCount ||
+    !isCount(c.localOnlyCount) ||
+    c.localOnlyCount > c.fileCount ||
+    !pathList(c.references, REFERENCES_MAX) ||
+    !isCount(c.referenceCount) ||
+    c.referenceCount < c.references.length ||
+    !isVersion(c.filesVersion) ||
+    !isFlag(c.empty) ||
+    !isFlag(c.allowed) ||
+    who === null
+  )
+    return null;
+  return {
+    key,
+    from: c.from,
+    to: c.to,
+    files: [...c.files],
+    fileCount: c.fileCount,
+    images: c.images,
+    documents: c.documents,
+    other: c.other,
+    bytes: c.bytes,
+    ignoredCount: c.ignoredCount,
+    localOnlyCount: c.localOnlyCount,
+    references: [...c.references],
+    referenceCount: c.referenceCount,
+    filesVersion: c.filesVersion,
+    empty: c.empty,
+    allowed: c.allowed,
+    allowedWho: who,
+  };
+}
+
 function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | ProjectsError {
   const internal = new ProjectsError('internal', PROJECTS_CHANGE_MESSAGES.internal);
   if (outcome.failed) return internal;
   const reply = parseReply(outcome.stdout);
   if (reply === null) return internal;
   if (outcome.code === 0 && reply.ok === true) {
+    if (REMOVE_KINDS.includes(action.kind)) {
+      // Archive, unarchive, delete: the key is the project's own; a real run's version is '' (no card edit).
+      if (reply.key !== undefined && reply.key !== (action as { key: ProjectKey }).key) return internal;
+      if (reply.version !== undefined && reply.version !== '' && !isVersion(reply.version)) return internal;
+      const key = (action as { key: ProjectKey }).key;
+      if ((action as { check?: true }).check !== true) return { key, version: '' };
+      const removeCheck = removeCheckOf(reply.check, key);
+      return removeCheck ? { key, version: '', removeCheck } : internal;
+    }
     if (
       typeof reply.key !== 'string' ||
       typeof reply.version !== 'string' ||
@@ -158,7 +228,7 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
       const c = code as ProjectsErrorCode;
       if (
         c === 'changed' &&
-        action.kind === 'move' &&
+        (action.kind === 'move' || REMOVE_KINDS.includes(action.kind)) &&
         typeof reply.message === 'string' &&
         FILES_CHANGED_REASON.test(reply.message)
       )

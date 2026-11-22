@@ -1,35 +1,52 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.2): make and change project cards (`project.md`) the way TDS Cortex does,
-// and move a project to another client. The plans are the app repo's
-// docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27) and
-// docs/plans/2026-11-21-project-move.md; the shapes are in its shared/projects-contract.ts (a test
-// checks the constants here match).
+// tdsapp-projects.cjs (v0.3): make and change project cards (`project.md`) the way TDS Cortex does,
+// move a project to another client, and archive, unarchive or delete one. The plans are the app
+// repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
+// docs/plans/2026-11-21-project-move.md and docs/plans/2026-11-21-project-archive-delete.md; the
+// shapes are in its shared/projects-contract.ts (a test checks the constants here match).
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
-//   <action>  create | card | edit | link | unlink | move | capabilities
+//   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
 //             link {key, path, expect}, unlink {key, path, expect},
-//             move {key, client, expect, dropPersonal?: true, check?: true, filesExpect?}, capabilities {}.
+//             move {key, client, expect, dropPersonal?: true, check?: true, filesExpect?},
+//             archive / unarchive {key, expect?, check?: true, filesExpect?},
+//             delete {key, expect?, check?: true, filesExpect?, leftover?: true}, capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
 //             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
 //             new key; with `check: true` it writes nothing and adds `check` (what the move would do,
 //             with `filesVersion`, the fingerprint of the folder's files). Sent back as `filesExpect`,
 //             the move is refused with `changed` when the folder's files are no longer those checked.
+//             archive, unarchive and delete answer `version: ''`; with `check: true` they add `check`
+//             (ProjectRemoveCheck: what would move or go, who may, and what else names the folder).
 //   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed); exit 1 internal.
 //
 // Where projects live (every folder there is a project, card or not):
 //   clients/<client>/projects/<slug>/            key <client>/<slug>
+//   clients/<client>/projects-archive/<slug>/    key <client>/<slug> (archived)
 //   projects/<slug>/                             key the-digital-stride/<slug> (legacy, read in place)
-//   projects-archive/<slug>/                     key the-digital-stride/<slug> (archived: read only)
-//   clients/_archive/<client>/projects/<slug>/   key <client>/<slug> (archived: read only)
+//   projects-archive/<slug>/                     key the-digital-stride/<slug> (archived)
+//   clients/_archive/<client>/projects/<slug>/   key <client>/<slug> (an archived client's: read only)
 //   personal/projects/<slug>/                    key personal/<slug> (never syncs)
-// A key resolves to the first folder found: for the-digital-stride, clients/the-digital-stride/projects/,
-// then projects/, then projects-archive/; for any other client, its live folder, then its archive.
-// `create` refuses a slug found in ANY of them.
+//   personal/projects-archive/<slug>/            key personal/<slug> (archived; never syncs)
+// A key resolves to the first folder found (LOCATIONS below): for the-digital-stride,
+// clients/the-digital-stride/projects/, projects/, clients/the-digital-stride/projects-archive/, then
+// projects-archive/; for any other client, its live folder, its archive, then clients/_archive/; for
+// personal, the live folder then the archive. `create` refuses a slug found in ANY of them.
+// Leftovers (archive plan decision 2) never win: a card-less live folder whose key has a carded
+// archive twin, and a card-less shared folder holding nothing but files git ignores (`.DS_Store`),
+// are what a sync left behind on this Mac. A key reads the next folder; a leftover is found only
+// when there is nothing else, or by `delete` with `leftover: true`.
+//
+// `archive` renames a live folder to its archive folder beside it (same slug, same depth, so the
+// card's relative links still work) and `unarchive` back; nothing else changes. `delete` hides the
+// folder under a git-ignored name (`.tdsapp-projects-<slug>-<hex>.deleting~`) in the same parent, then
+// removes it. Every action first sweeps such hidden folders left by a failed delete from the parents
+// of the key's folders.
 //
 // `move` takes clients/<client>/projects/<slug>/ or personal/projects/<slug>/ to
 // clients/<other client>/projects/<slug>/ (never to personal). The folder name stays; the key's client
@@ -71,16 +88,18 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.2';
+const SCRIPT_VERSION = '0.3';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
 const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
+const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
 const PROJECT_MOVED_FROM_MAX = 10;
 const INTERNAL_CLIENT = 'the-digital-stride';
 const INTERNAL_PRECEDENCE = [
   'clients/the-digital-stride/projects/<slug>',
   'projects/<slug>',
+  'clients/the-digital-stride/projects-archive/<slug>',
   'projects-archive/<slug>',
 ];
 const PROJECT_CARD_FILE = 'project.md';
@@ -114,7 +133,7 @@ const INPUT_MAX = 262144;
 const PATH_MAX = 1024;
 const NAME_MAX = 80;
 const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal']);
-const ACTION_NAMES = ['create', 'card', 'edit', 'link', 'unlink', 'move', 'capabilities'];
+const ACTION_NAMES = ['create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'capabilities'];
 // A move lists at most this many of the folder's files in its check, and walks at most this many entries.
 const MOVE_FILES_SHOWN = 50;
 const MOVE_WALK_MAX = 5000;
@@ -297,9 +316,15 @@ function identity(ctx) {
     member = members.find(m => typeof m.name === 'string' && memberSlug(m.name) === memberSlug(name));
   }
   if (member && typeof member.name === 'string' && memberSlug(member.name)) {
-    return { slug: memberSlug(member.name), name: displayText(member.name, NAME_MAX), known: true };
+    return {
+      slug: memberSlug(member.name),
+      name: displayText(member.name, NAME_MAX),
+      known: true,
+      member,
+      role: typeof member.role === 'string' ? member.role.trim().toLowerCase() : '',
+    };
   }
-  return { slug: memberSlug(name), name: displayText(name, NAME_MAX), known: false };
+  return { slug: memberSlug(name), name: displayText(name, NAME_MAX), known: false, member: null, role: '' };
 }
 
 // Every slug a team member can go by (both slug rules); null when roles.json names nobody.
@@ -325,7 +350,7 @@ function brainRepo(ctx) {
 // A personal card is written only where nothing syncs it: personal/ and personal/projects/ are real
 // folders, and git ignores the card (or the brain isn't a git repository).
 function requirePrivate(ctx, rel) {
-  for (const dir of ['personal', 'personal/projects']) {
+  for (const dir of ['personal', 'personal/projects', 'personal/projects-archive']) {
     const st = lstatOrNull(path.join(ctx.root, ...dir.split('/')));
     if (st && st.isSymbolicLink()) throw refuse('not-allowed', `${dir} is a link to another folder, so it can't be kept private`);
   }
@@ -369,36 +394,177 @@ function parseKey(value) {
   return { client, slug };
 }
 
-// Every folder a key may name, in reader precedence, with whether it is an archive location.
+// Every folder a key may name, in reader precedence (archive plan decision 1), each explicit about
+// whether it is an archive location and which space it reads as. `readOnly`: an archived client's
+// folder, which nothing here archives, unarchives or deletes.
 function locationsOf(client, slug) {
-  if (client === 'personal') return [{ rel: `personal/projects/${slug}`, archived: false, space: 'personal' }];
+  if (client === 'personal') {
+    return [
+      { rel: `personal/projects/${slug}`, archived: false, space: 'personal', readOnly: false },
+      { rel: `personal/projects-archive/${slug}`, archived: true, space: 'personal', readOnly: false },
+    ];
+  }
   if (client === INTERNAL_CLIENT) {
-    return INTERNAL_PRECEDENCE.map((pattern, i) => ({
-      rel: pattern.replace('<slug>', slug),
-      archived: pattern.startsWith('projects-archive/'),
-      space: i === 0 ? 'client' : 'legacy',
-    }));
+    return [
+      { rel: `clients/${INTERNAL_CLIENT}/projects/${slug}`, archived: false, space: 'client', readOnly: false },
+      { rel: `projects/${slug}`, archived: false, space: 'legacy', readOnly: false },
+      { rel: `clients/${INTERNAL_CLIENT}/projects-archive/${slug}`, archived: true, space: 'client', readOnly: false },
+      { rel: `projects-archive/${slug}`, archived: true, space: 'legacy', readOnly: false },
+    ];
   }
   return [
-    { rel: `clients/${client}/projects/${slug}`, archived: false, space: 'client' },
-    { rel: `clients/_archive/${client}/projects/${slug}`, archived: true, space: 'client' },
+    { rel: `clients/${client}/projects/${slug}`, archived: false, space: 'client', readOnly: false },
+    { rel: `clients/${client}/projects-archive/${slug}`, archived: true, space: 'client', readOnly: false },
+    { rel: `clients/_archive/${client}/projects/${slug}`, archived: true, space: 'client', readOnly: true },
   ];
 }
 
-// The folder a key resolves to (the first one there), or a refusal.
-function locate(ctx, value) {
-  const key = parseKey(value);
-  if (!key) throw refuse('bad-request', 'key must be <client>/<slug> or personal/<slug>');
-  for (const loc of locationsOf(key.client, key.slug)) {
+// Mirrors archiveFolderFor / liveFolderFor in shared/projects.ts: a live folder's archive folder
+// beside it, and back. Null for anywhere else (an archived client's folder has neither).
+function archiveFolderFor(rel) {
+  const m = /^(clients\/(?!_)[^/]+\/|personal\/)?projects\/([^/]+)$/.exec(rel);
+  return m ? `${m[1] || ''}projects-archive/${m[2]}` : null;
+}
+
+function liveFolderFor(rel) {
+  const m = /^(clients\/(?!_)[^/]+\/|personal\/)?projects-archive\/([^/]+)$/.exec(rel);
+  return m ? `${m[1] || ''}projects/${m[2]}` : null;
+}
+
+// Whether a folder has a card: true for anything called project.md (a link or a folder too, so such a
+// folder is never taken for a leftover), 'plain' when it is a plain file.
+function cardState(abs) {
+  const st = lstatOrNull(path.join(abs, PROJECT_CARD_FILE));
+  if (!st) return false;
+  return st.isFile() && !st.isSymbolicLink() ? 'plain' : true;
+}
+
+// The files in a card-less folder, folder-relative, for the leftover rule; null when there are too
+// many or anything isn't a plain file or folder (then it is never a leftover).
+const LEFTOVER_FILES_MAX = 200;
+function looseFiles(abs) {
+  const files = [];
+  const stack = [''];
+  while (stack.length > 0) {
+    const sub = stack.pop();
+    let names;
+    try {
+      names = fs.readdirSync(sub === '' ? abs : path.join(abs, ...sub.split('/')));
+    } catch {
+      return null;
+    }
+    for (const name of names) {
+      const rel = sub === '' ? name : `${sub}/${name}`;
+      const st = lstatOrNull(path.join(abs, ...rel.split('/')));
+      if (!st || st.isSymbolicLink()) return null;
+      if (st.isDirectory()) stack.push(rel);
+      else if (st.isFile()) files.push(rel);
+      else return null;
+      if (files.length + stack.length > LEFTOVER_FILES_MAX) return null;
+    }
+  }
+  return files;
+}
+
+// Archive plan decision 2: a card-less shared folder holding at least one file, every one of which git
+// ignores, never synced anything: it is what a sync left behind. False when git can't tell.
+function onlyIgnored(ctx, loc) {
+  if (loc.space === 'personal') return false;
+  const files = looseFiles(loc.abs);
+  if (!files || files.length === 0) return false;
+  try {
+    const ignored = ignoredPaths(ctx, files.map(f => `${loc.rel}/${f}`));
+    return files.every(f => ignored.has(`${loc.rel}/${f}`));
+  } catch {
+    return false;
+  }
+}
+
+// Every folder there for a key, in reader precedence, each marked `card` and `leftover`; and the
+// symlinks met on the way, by position.
+function foldersOf(ctx, key) {
+  const found = [];
+  const links = [];
+  locationsOf(key.client, key.slug).forEach((loc, at) => {
     const abs = path.join(ctx.root, ...loc.rel.split('/'));
     const st = lstatOrNull(abs);
-    if (!st) continue;
-    if (st.isSymbolicLink()) throw refuse('not-allowed', `${loc.rel} is a link`);
-    if (!st.isDirectory()) continue;
-    requireRealPath(ctx, abs, loc.rel);
-    return { ...loc, key: value, client: key.client === 'personal' ? null : key.client, slug: key.slug, abs };
+    if (!st) return;
+    if (st.isSymbolicLink()) { links.push({ at, rel: loc.rel }); return; }
+    if (!st.isDirectory()) return;
+    found.push({ ...loc, at, abs, card: cardState(abs) });
+  });
+  const cardedArchive = found.some(f => f.archived && f.card === 'plain');
+  for (const f of found) {
+    f.leftover = f.card === false && ((!f.archived && cardedArchive) || onlyIgnored(ctx, f));
   }
-  throw refuse('not-found', `there is no project ${value}`);
+  return { found, links };
+}
+
+// Removes the hidden folders a failed delete left (`.tdsapp-projects-<slug>-<12 hex>.deleting~`) from
+// the parents of every folder a key may name, where the parent is a real folder. Never follows a link.
+const DELETING = /^\.tdsapp-projects-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{12}\.deleting~$/;
+function sweepDeleting(ctx, client, slug) {
+  const parents = new Set(locationsOf(client, slug).map(l => l.rel.slice(0, l.rel.lastIndexOf('/'))));
+  for (const parentRel of parents) {
+    const parentAbs = path.join(ctx.root, ...parentRel.split('/'));
+    const st = lstatOrNull(parentAbs);
+    if (!st || st.isSymbolicLink() || !st.isDirectory()) continue;
+    try {
+      requireRealPath(ctx, parentAbs, parentRel);
+    } catch {
+      continue;
+    }
+    let names;
+    try {
+      names = fs.readdirSync(parentAbs);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!DELETING.test(name)) continue;
+      const abs = path.join(parentAbs, name);
+      const hst = lstatOrNull(abs);
+      if (!hst || hst.isSymbolicLink() || !hst.isDirectory()) continue;
+      try { removeTree(ctx, abs); } catch { /* still busy: the next call tries again */ }
+    }
+  }
+}
+
+function removeTree(ctx, abs) {
+  (ctx.removeDir || (p => fs.rmSync(p, { recursive: true, force: true, maxRetries: 3 })))(abs);
+}
+
+// The folder a key resolves to: the first one there that isn't a leftover, else the first leftover;
+// with `leftover`, the first leftover only. A link met before it is refused, as it always was.
+function locate(ctx, value, opts) {
+  const key = parseKey(value);
+  if (!key) throw refuse('bad-request', 'key must be <client>/<slug> or personal/<slug>');
+  sweepDeleting(ctx, key.client, key.slug);
+  const { found, links } = foldersOf(ctx, key);
+  const wantLeftover = Boolean(opts && opts.leftover);
+  const pick = wantLeftover
+    ? found.find(f => f.leftover)
+    : found.find(f => !f.leftover) || found.find(f => f.leftover);
+  const link = links.find(l => !pick || l.at < pick.at);
+  if (link && !wantLeftover) throw refuse('not-allowed', `${link.rel} is a link`);
+  if (!pick) {
+    if (wantLeftover) throw refuse('not-found', `there is no folder left behind for ${value}`);
+    throw refuse('not-found', `there is no project ${value}`);
+  }
+  requireRealPath(ctx, pick.abs, pick.rel);
+  const others = found.filter(f => f !== pick).map(f => f.rel);
+  return {
+    rel: pick.rel,
+    archived: pick.archived,
+    space: pick.space,
+    readOnly: pick.readOnly,
+    leftover: pick.leftover,
+    key: value,
+    client: key.client === 'personal' ? null : key.client,
+    slug: key.slug,
+    abs: pick.abs,
+    others,
+  };
 }
 
 // A live client's folder, clients/<client>, checked as a real folder. Its lstat for the same-disk check.
@@ -943,6 +1109,7 @@ function create(input, ctx) {
     if (input.client !== undefined && input.client !== null) throw refuse('bad-request', 'a personal project has no client');
     rel = `personal/projects/${slug}`;
   }
+  sweepDeleting(ctx, space === 'personal' ? 'personal' : client, slug);
   for (const loc of locationsOf(space === 'personal' ? 'personal' : client, slug)) {
     if (lstatOrNull(path.join(ctx.root, ...loc.rel.split('/')))) {
       throw refuse('exists', `there is already a project called ${slug} (${loc.rel})`);
@@ -1091,11 +1258,12 @@ const LINK_PARTS = /^([ \t]*[-*][ \t]+\[[^\]\n]+\]\()(?:<([^>\n]+)>|([^\s()<>]+)
 // Every file in a project folder (paths from the folder, sorted), walked once before anything is
 // written. Refuses links, a git repository inside, hard-linked files, anything that isn't a plain
 // file or folder, and anything on another disk: each would come out wrong after a rename.
-function walkFolder(loc, dev) {
+function walkFolder(loc, dev, verb, sizes) {
+  const done = verb || 'moved';
   const files = [];
   const stack = [''];
   let entries = 0;
-  const no = (rel, why) => refuse('not-allowed', `${loc.rel}/${rel} ${why}, so the project can't be moved`);
+  const no = (rel, why) => refuse('not-allowed', `${loc.rel}/${rel} ${why}, so the project can't be ${done}`);
   while (stack.length > 0) {
     const sub = stack.pop();
     const dirAbs = sub === '' ? loc.abs : path.join(loc.abs, ...sub.split('/'));
@@ -1108,7 +1276,7 @@ function walkFolder(loc, dev) {
     for (const name of names) {
       entries++;
       if (entries > MOVE_WALK_MAX) {
-        throw refuse('not-allowed', `${loc.rel} holds more than ${MOVE_WALK_MAX} files and folders, so it can't be moved here`);
+        throw refuse('not-allowed', `${loc.rel} holds more than ${MOVE_WALK_MAX} files and folders, so it can't be ${done} here`);
       }
       const rel = sub === '' ? name : `${sub}/${name}`;
       if (name === '.git') throw no(rel, 'is a git repository inside the project');
@@ -1122,6 +1290,7 @@ function walkFolder(loc, dev) {
       if (!st.isFile()) throw no(rel, "isn't a plain file or folder");
       if (st.nlink > 1) throw no(rel, 'is hard-linked to another file');
       files.push(rel);
+      if (sizes) sizes.set(rel, st.size);
     }
   }
   return files.sort();
@@ -1219,6 +1388,7 @@ function move(input, ctx) {
   const clientSt = requireClientFolder(ctx, client);
   const newRel = `clients/${client}/projects/${loc.slug}`;
   const newKey = `${client}/${loc.slug}`;
+  sweepDeleting(ctx, client, loc.slug);
   for (const other of locationsOf(client, loc.slug)) {
     if (lstatOrNull(path.join(ctx.root, ...other.rel.split('/')))) {
       throw refuse('exists', `there is already a project called ${loc.slug} (${other.rel})`);
@@ -1312,18 +1482,367 @@ function move(input, ctx) {
   return { ok: true, action: 'move', key: newKey, version };
 }
 
+// ---- archive, unarchive and delete (docs/plans/2026-11-21-project-archive-delete.md) ---------------
+
+// A check lists at most this many of the folder's files and of the brain files that name it.
+const REMOVE_FILES_SHOWN = 50;
+const REFERENCES_SHOWN = 20;
+// The reference search reads at most this many text files, none bigger than this, and stops after
+// this long (the app gives the script 10 seconds in all), so its count is "at least".
+const REFERENCE_WALK_MAX = 20000;
+const REFERENCE_FILE_MAX = 1024 * 1024;
+const REFERENCE_TIME_MS = 3000;
+const REFERENCE_EXTENSIONS = new Set(['md', 'json', 'cjs', 'js', 'yaml', 'yml']);
+const REFERENCE_SKIP_DIRS = new Set(['.git', 'node_modules', 'z-logs', 'z-backup']);
+// What a skill or tool could be written in, for the legacy archive refusal.
+const NAMING_EXTENSIONS = new Set([...REFERENCE_EXTENSIONS, 'mjs', 'ts', 'sh', 'py', 'txt']);
+const REMOVE_VERBS = { archive: 'archived', unarchive: 'unarchived', delete: 'deleted' };
+
+// Whether `text` names brain path `p` on path boundaries (decision 8): after it a `/`, `)`, `>`, white
+// space, a quote or the end; before it the start, a character that can't be in a path, or `../` or
+// `agencybrain/` (a link from another folder, or the brain's own folder). So `projects/a` is never
+// found in `clients/x/projects/a`, nor `clients/x/projects/a` in `clients/x/projects/a-old`.
+function namesPath(text, p) {
+  for (let at = text.indexOf(p); at !== -1; at = text.indexOf(p, at + 1)) {
+    const after = text[at + p.length];
+    if (after !== undefined && !/[/)>\s'"`]/.test(after)) continue;
+    if (at === 0 || !/[A-Za-z0-9_.~/-]/.test(text[at - 1])) return true;
+    if (text[at - 1] !== '/') continue;
+    const seg = /([A-Za-z0-9_.~-]*)$/.exec(text.slice(0, at - 1))[1];
+    if (seg === '..' || seg === 'agencybrain') return true;
+  }
+  return false;
+}
+
+// Brain text files under `dirs` (brain-relative, '' for the whole brain) that name `p`, sorted. Never
+// inside `skipRel`, `.git`, `node_modules`, `z-logs`, `z-backup`, a `todo/done` or `todo/deleted`
+// folder, or a hidden delete folder; links are never followed. With `timed`, stops after
+// REFERENCE_WALK_MAX files or REFERENCE_TIME_MS, so the count is "at least".
+function filesNaming(ctx, p, dirs, exts, skipRel, timed) {
+  const hits = [];
+  let read = 0;
+  const stack = dirs.slice();
+  const until = Date.now() + REFERENCE_TIME_MS;
+  while (stack.length > 0 && (!timed || (read < REFERENCE_WALK_MAX && Date.now() < until))) {
+    const sub = stack.pop();
+    const dirAbs = sub === '' ? ctx.root : path.join(ctx.root, ...sub.split('/'));
+    let entries;
+    try {
+      entries = fs.readdirSync(dirAbs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const rel = sub === '' ? e.name : `${sub}/${e.name}`;
+      if (e.isDirectory()) {
+        if (REFERENCE_SKIP_DIRS.has(e.name) || DELETING.test(e.name) || rel === skipRel) continue;
+        if ((e.name === 'done' || e.name === 'deleted') && sub.split('/').pop() === 'todo') continue;
+        stack.push(rel);
+        continue;
+      }
+      if (!e.isFile() || !exts.has(extOf(e.name))) continue;
+      if (++read > REFERENCE_WALK_MAX && timed) break;
+      let text;
+      try {
+        const fileAbs = path.join(dirAbs, e.name);
+        if (fs.lstatSync(fileAbs).size > REFERENCE_FILE_MAX) continue;
+        text = fs.readFileSync(fileAbs, 'utf8');
+      } catch {
+        continue;
+      }
+      if (namesPath(text, p)) hits.push(rel);
+    }
+  }
+  return hits.sort();
+}
+
+// "a, b and c", at most five named.
+function listed(items) {
+  if (items.length === 1) return items[0];
+  const shown = items.slice(0, 5);
+  const more = items.length - shown.length;
+  if (more > 0) return `${shown.join(', ')} and ${more} more`;
+  return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+}
+
+function removeOptions(input, kind) {
+  if (input.check !== undefined && input.check !== true) throw refuse('bad-request', 'check can only be true');
+  const filesExpect = input.filesExpect;
+  if (filesExpect !== undefined && (typeof filesExpect !== 'string' || !/^[0-9a-f]{64}$/.test(filesExpect))) {
+    throw refuse('bad-request', "filesExpect must be a check's filesVersion");
+  }
+  if (kind === 'delete') {
+    if (input.leftover !== undefined && input.leftover !== true) throw refuse('bad-request', 'leftover can only be true');
+    if (input.check !== true && filesExpect === undefined) {
+      throw refuse('bad-request', "filesExpect is required to delete: check first and send its filesVersion");
+    }
+  }
+  return {
+    check: input.check === true,
+    filesExpect,
+    // A card-less project has no version: '' is the same as none.
+    expect: input.expect === '' ? null : expectOf(input, false),
+    leftover: kind === 'delete' && input.leftover === true,
+  };
+}
+
+// The card of a project being archived, unarchived or deleted, read once and compared with `expect`
+// (needed when `required` and there is a card); null when there is none. Archive never changes it.
+function removeCard(loc, expect, required) {
+  const abs = path.join(loc.abs, PROJECT_CARD_FILE);
+  const st = lstatOrNull(abs);
+  if (!st) {
+    if (expect !== null) throw refuse('changed', 'the card has changed since it was read');
+    return null;
+  }
+  if (st.isSymbolicLink() || !st.isFile()) throw refuse('not-allowed', `${loc.rel}/${PROJECT_CARD_FILE} isn't a plain file`);
+  const bytes = fs.readFileSync(abs);
+  if (expect === null && required) throw refuse('bad-request', 'expect is required when the project has a card');
+  if (expect !== null && sha256(bytes) !== expect) throw refuse('changed', 'the card has changed since it was read');
+  return bytes;
+}
+
+// A team member's name for a slug in either slug form, or null.
+function memberNamed(root, slug) {
+  const m = readMembers(root).find(x => typeof x.name === 'string' && (memberSlug(x.name) === slug || workbenchSlug(x.name) === slug));
+  return m ? displayText(m.name, NAME_MAX) : null;
+}
+
+// Who may delete (decision 5, overseer S1), decided here alone: a personal project, the person; a
+// leftover, anyone on the team; a card with an Account Owner, that person or the brain's Owner (role
+// `owner`); a card-less or owner-less project, or an unreadable card, the brain's Owner.
+function deleteRule(ctx, loc, bytes, who) {
+  if (loc.space === 'personal') return { allowed: true, allowedWho: 'only you' };
+  if (loc.leftover) return { allowed: who.known, allowedWho: 'anyone on the team' };
+  const brainOwner = who.known && who.role === 'owner';
+  const parts = bytes ? cardParts(decodeFile(bytes).text) : null;
+  const owner = parts ? cardValues(parts.entries).owner : undefined;
+  if (typeof owner === 'string' && isSlug(owner)) {
+    const name = who.known ? who.member.name : '';
+    const isOwner = who.known && (memberSlug(name) === owner || workbenchSlug(name) === owner);
+    return {
+      allowed: brainOwner || isOwner,
+      allowedWho: `${memberNamed(ctx.root, owner) || owner} (the Account Owner) or the brain's Owner`,
+    };
+  }
+  return { allowed: brainOwner, allowedWho: "the brain's Owner" };
+}
+
+// The folder a project would go to is checked as move's: its parent is a real folder or will be made
+// one level down from one that must already be real (never a client folder), on the same disk.
+function removeParent(ctx, to, dev) {
+  const parentRel = to.slice(0, to.lastIndexOf('/'));
+  const baseRel = parentRel.includes('/') ? parentRel.slice(0, parentRel.lastIndexOf('/')) : '';
+  let baseSt;
+  if (baseRel === '') {
+    baseSt = fs.lstatSync(ctx.root);
+  } else if (baseRel.startsWith('clients/')) {
+    baseSt = requireClientFolder(ctx, baseRel.slice('clients/'.length));
+  } else {
+    const baseAbs = path.join(ctx.root, ...baseRel.split('/'));
+    baseSt = lstatOrNull(baseAbs);
+    if (!baseSt || baseSt.isSymbolicLink() || !baseSt.isDirectory()) throw refuse('not-allowed', `${baseRel} isn't a plain folder`);
+    requireRealPath(ctx, baseAbs, baseRel);
+  }
+  const parentAbs = path.join(ctx.root, ...parentRel.split('/'));
+  const parentSt = lstatOrNull(parentAbs);
+  if (parentSt) {
+    if (parentSt.isSymbolicLink() || !parentSt.isDirectory()) throw refuse('not-allowed', `${parentRel} isn't a plain folder`);
+    requireRealPath(ctx, parentAbs, parentRel);
+  }
+  if ((parentSt || baseSt).dev !== dev) {
+    throw refuse('not-allowed', `${to} would be on a different disk, so the project can't be moved there`);
+  }
+  return { rel: parentRel, abs: parentAbs, exists: Boolean(parentSt) };
+}
+
+// archive, unarchive and delete: every check first (as move), the card and its fingerprint last.
+// Then one rename (archive, unarchive), or a rename to a hidden git-ignored name and a recursive
+// remove (delete). A refusal leaves everything as it was.
+function removeAction(kind, input, ctx) {
+  const opts = removeOptions(input, kind);
+  const loc = locate(ctx, input.key, { leftover: opts.leftover });
+  const verb = REMOVE_VERBS[kind];
+  if (loc.readOnly) {
+    throw refuse('not-allowed', `${loc.key} belongs to an archived client (${loc.rel}), so it stays read only`);
+  }
+  let to = null;
+  if (kind !== 'delete') {
+    if (kind === 'archive' && loc.archived) throw refuse('bad-request', `${loc.key} is already archived`);
+    if (kind === 'unarchive' && !loc.archived) throw refuse('bad-request', `${loc.key} isn't archived`);
+    if (loc.leftover) {
+      throw refuse('not-allowed', `${loc.rel} was left behind on this Mac (it has no card), so it can't be ${verb}: delete it instead`);
+    }
+    to = kind === 'archive' ? archiveFolderFor(loc.rel) : liveFolderFor(loc.rel);
+    if (to === null) throw refuse('not-allowed', `${loc.rel} can't be ${verb}`);
+    // Never renamed on a clash: any other folder for the key (decisions 3 and 4).
+    const was = parseKey(loc.key);
+    for (const other of locationsOf(was.client, was.slug)) {
+      if (other.rel !== loc.rel && lstatOrNull(path.join(ctx.root, ...other.rel.split('/')))) {
+        throw refuse('exists', `there is already a folder for ${loc.key} (${other.rel}), so it can't be ${verb}`);
+      }
+    }
+  }
+  const dev = fs.lstatSync(loc.abs).dev;
+  const parent = to === null ? null : removeParent(ctx, to, dev);
+  // A skill or tool that writes to an older projects/ folder would make it again (overseer S4).
+  if (kind === 'archive' && loc.space === 'legacy') {
+    const naming = filesNaming(ctx, loc.rel, ['.claude/skills', 'tools'], NAMING_EXTENSIONS, null, false);
+    if (naming.length > 0) {
+      throw refuse('not-allowed', `${listed(naming)} ${naming.length === 1 ? 'names' : 'name'} ${loc.rel} and would make it again, so it can't be archived yet: change ${naming.length === 1 ? 'that file' : 'those files'} first`);
+    }
+  }
+  if (loc.space === 'personal') requirePrivate(ctx, `${to === null ? loc.rel : to}/${PROJECT_CARD_FILE}`);
+
+  const sizes = new Map();
+  const files = walkFolder(loc, dev, verb, sizes);
+  const empty = files.every(f => f === PROJECT_CARD_FILE);
+  if (kind === 'delete' && !loc.archived && !loc.leftover && !empty) {
+    throw refuse('not-allowed', `${loc.key} still holds files, so it can't be deleted: archive it first`);
+  }
+  const filesVersion = filesVersionOf(files);
+  if (opts.filesExpect !== undefined && opts.filesExpect !== filesVersion) {
+    throw refuse('changed', 'the files in this project changed since you checked: check again');
+  }
+  // Delete hides the folder first under a name git must ignore (`*~`), so a sync mid-remove can't
+  // share half a project.
+  let hidden = null;
+  const rels = files.map(f => `${loc.rel}/${f}`);
+  if (kind === 'delete') {
+    const name = `.tdsapp-projects-${loc.slug}-${crypto.randomBytes(6).toString('hex')}.deleting~`;
+    hidden = { rel: `${loc.rel.slice(0, loc.rel.lastIndexOf('/'))}/${name}`, abs: path.join(path.dirname(loc.abs), name) };
+    rels.push(hidden.rel);
+  }
+  const ignored = ignoredPaths(ctx, rels);
+  if (hidden && !ignored.has(hidden.rel) && brainRepo(ctx) !== 'none') {
+    throw refuse('not-allowed', "git doesn't ignore files ending in ~ in this brain, so the folder can't be removed without the team seeing half of it: add *~ to the brain's .gitignore");
+  }
+
+  const who = identity(ctx);
+  // The fingerprint last, right before the write.
+  const bytes = removeCard(loc, opts.expect, kind !== 'delete' && !opts.check);
+  let rule;
+  if (kind === 'delete') rule = deleteRule(ctx, loc, bytes, who);
+  else if (loc.space === 'personal') rule = { allowed: true, allowedWho: 'only you' };
+  else rule = { allowed: who.known, allowedWho: 'anyone on the team' };
+
+  if (opts.check) {
+    const references = filesNaming(ctx, loc.rel, [''], REFERENCE_EXTENSIONS, loc.rel, true);
+    let images = 0;
+    let documents = 0;
+    let other = 0;
+    let total = 0;
+    for (const f of files) {
+      const ext = extOf(f.slice(f.lastIndexOf('/') + 1));
+      if (IMAGE_EXTENSIONS.includes(ext)) images++;
+      else if (DOCUMENT_EXTENSIONS.includes(ext)) documents++;
+      else other++;
+      total += sizes.get(f) || 0;
+    }
+    const ignoredCount = files.filter(f => ignored.has(`${loc.rel}/${f}`)).length;
+    return {
+      ok: true,
+      action: kind,
+      key: loc.key,
+      version: bytes ? sha256(bytes) : '',
+      check: {
+        key: loc.key,
+        from: loc.rel,
+        to,
+        files: rels.slice(0, Math.min(files.length, REMOVE_FILES_SHOWN)),
+        fileCount: files.length,
+        images,
+        documents,
+        other,
+        bytes: total,
+        ignoredCount,
+        localOnlyCount: loc.space === 'personal' ? files.length : ignoredCount,
+        references: references.slice(0, REFERENCES_SHOWN),
+        referenceCount: references.length,
+        filesVersion,
+        empty,
+        allowed: rule.allowed,
+        allowedWho: rule.allowedWho,
+      },
+    };
+  }
+  if (!rule.allowed) {
+    if (kind === 'delete') throw refuse('not-allowed', `only ${rule.allowedWho} can delete ${loc.key}`);
+    requireTeam(who);
+  }
+
+  const rename = ctx.renameDir || fs.renameSync;
+  const fromParent = path.dirname(loc.abs);
+  if (kind === 'delete') {
+    try {
+      rename(loc.abs, hidden.abs);
+    } catch (err) {
+      throw refuse('internal', `the project's folder couldn't be deleted (${errCode(err) || 'error'}), so it stays where it was`);
+    }
+    syncDir(fromParent);
+    try { removeTree(ctx, hidden.abs); } catch { /* checked next */ }
+    if (lstatOrNull(hidden.abs)) {
+      throw refuse('internal', `${loc.key} is deleted, but some of its files couldn't be removed: they're in ${hidden.rel}, on this Mac only (git ignores it), and the next change to a project there tries again`);
+    }
+    return { ok: true, action: kind, key: loc.key, version: '' };
+  }
+
+  // One level only, under a folder already checked as real.
+  let madeParent = false;
+  if (!parent.exists) {
+    try {
+      fs.mkdirSync(parent.abs);
+      madeParent = true;
+    } catch (err) {
+      if (errCode(err) !== 'EEXIST') throw err;
+    }
+  }
+  const letGo = () => {
+    if (madeParent) { try { fs.rmdirSync(parent.abs); } catch { /* not empty: leave it */ } }
+  };
+  const toAbs = path.join(ctx.root, ...to.split('/'));
+  try {
+    requireRealPath(ctx, parent.abs, parent.rel);
+    if (lstatOrNull(toAbs)) throw refuse('exists', `there is already a folder for ${loc.key} (${to}), so it can't be ${verb}`);
+  } catch (err) {
+    letGo();
+    throw err;
+  }
+  try {
+    rename(loc.abs, toAbs);
+  } catch (err) {
+    letGo();
+    throw refuse('internal', `the project's folder couldn't be ${verb} (${errCode(err) || 'error'}), so it stays where it was`);
+  }
+  syncDir(fromParent);
+  syncDir(parent.abs);
+  return { ok: true, action: kind, key: loc.key, version: '' };
+}
+
+function archive(input, ctx) {
+  return removeAction('archive', input, ctx);
+}
+
+function unarchive(input, ctx) {
+  return removeAction('unarchive', input, ctx);
+}
+
+function deleteProject(input, ctx) {
+  return removeAction('delete', input, ctx);
+}
+
 function capabilities() {
   return {
     ok: true,
     action: 'capabilities',
     version: SCRIPT_VERSION,
-    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY],
+    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY],
   };
 }
 
 // ---- command line --------------------------------------------------------------------------------
 
-const ACTIONS = { create, card, edit, link, unlink, move, capabilities };
+const ACTIONS = { create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, capabilities };
 
 function defaultCtx() {
   return {
@@ -1390,6 +1909,7 @@ module.exports = {
   SCRIPT_VERSION,
   PROJECTS_CAPABILITY,
   PROJECTS_MOVE_CAPABILITY,
+  PROJECTS_ARCHIVE_CAPABILITY,
   PROJECT_MOVED_FROM_MAX,
   INTERNAL_CLIENT,
   INTERNAL_PRECEDENCE,

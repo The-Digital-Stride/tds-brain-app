@@ -42,9 +42,11 @@ export const PERSONAL_PROJECTS_ARCHIVE_DIR = 'personal/projects-archive/<slug>';
 export const INTERNAL_PRECEDENCE = [
   'clients/the-digital-stride/projects/<slug>',
   'projects/<slug>',
+  'clients/the-digital-stride/projects-archive/<slug>',
   'projects-archive/<slug>',
 ] as const;
-// Any other client: the live folder first, then `clients/_archive/<client>/projects/<slug>`.
+// Any other client: the live folder, then `clients/<client>/projects-archive/<slug>`, then
+// `clients/_archive/<client>/projects/<slug>`. Personal: `personal/projects`, then `personal/projects-archive`.
 /** The client legacy and internal projects belong to. */
 export const INTERNAL_CLIENT = 'the-digital-stride';
 
@@ -291,7 +293,15 @@ export type ProjectAction =
    * nothing but its card. Shared projects: the card's Account Owner or the brain's Owner (role 'owner');
    * card-less: the brain's Owner. `filesExpect` is required (not with `check`).
    */
-  | { kind: 'delete'; key: ProjectKey; expect?: string; check?: true; filesExpect?: string }
+  | {
+      kind: 'delete';
+      key: ProjectKey;
+      expect?: string;
+      check?: true;
+      filesExpect?: string;
+      /** Deletes the stray live folder (ProjectList.leftovers), not the archive the key reads. */
+      leftover?: true;
+    }
   | { kind: 'capabilities' };
 
 /** The script answers `capabilities` with this too once it can `archive`, `unarchive` and `delete` (0.3). */

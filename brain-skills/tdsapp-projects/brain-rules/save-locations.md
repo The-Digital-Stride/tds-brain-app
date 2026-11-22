@@ -38,3 +38,28 @@ Project files need their own rows so every session saves them inside the project
   the `clients/` root or a client's root. `projects/` at the brain root is the older home for
   internal projects: don't start new ones there.
 ````
+
+## Archive and delete (tdsapp-projects 0.3)
+
+This edit applies on top of edit 1, which is already in the brain. The "current passage" is its text
+as applied.
+
+### Why
+
+Archived projects now live in a `projects-archive/` folder beside each `projects/` folder. Sessions
+need to know that's where they are, and that only the skill puts them there.
+
+### Edit 3: the archive rows
+
+#### Current passage
+
+````text
+| A file for your own personal project | `personal/projects/<project>/` (stays on your machine, never shared) |
+````
+
+#### Proposed replacement
+
+````text
+| A file for your own personal project | `personal/projects/<project>/` (stays on your machine, never shared) |
+| An archived project | `clients/<client>/projects-archive/<project>/`, `personal/projects-archive/<project>/` or `projects-archive/<project>/`, same folder name. Archive, unarchive and delete only with the `tdsapp-projects` skill, never by hand. Files for an archived project still go in its folder there |
+````

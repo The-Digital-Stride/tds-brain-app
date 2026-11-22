@@ -77,3 +77,48 @@ pre-created: the skills that own them create them on demand, with their own inte
 `config/`, `created/`, `projects/`, `context/memory/` and `context/analysis/` are deliberately NOT
 pre-created: the skills that own them create them on demand, with their own internal
 ````
+
+## Archive and delete (tdsapp-projects 0.3)
+
+The edits below apply on top of edits 1 and 2, which are already in the brain. The "current
+passage" is their text as applied.
+
+### Why
+
+A finished project now moves to `projects-archive/` beside `projects/`, keeping its name and key, so
+every to-do and link still finds it. Archiving or deleting by hand would break those links, or leave
+a half-deleted project for the team to sync.
+
+### Edit 4: add `projects-archive/` to the layout
+
+#### Current passage
+
+````text
+    projects/           <- One folder per project, each with a project.md card (see "Projects")
+````
+
+#### Proposed replacement
+
+````text
+    projects/           <- One folder per project, each with a project.md card (see "Projects")
+    projects-archive/   <- Archived projects, same folder names (see "Projects")
+````
+
+### Edit 5: archive and delete with the skill
+
+#### Current passage
+
+````text
+- **Change a card only through the `tdsapp-projects` skill** (create, card, edit, link, unlink).
+````
+
+#### Proposed replacement
+
+````text
+- **Archive and delete a project only with the `tdsapp-projects` skill, never by hand.** `archive`
+  moves the folder to `clients/<client>/projects-archive/<slug>/` under the same key, so to-dos and
+  links keep working, and `unarchive` brings it back. `delete` removes it for good (only an archived
+  project, or one holding nothing but its card; only its Account Owner or the brain's Owner). Never
+  rename a project to `<slug>-2` or similar to make room.
+- **Change a card only through the `tdsapp-projects` skill** (create, card, edit, link, unlink).
+````

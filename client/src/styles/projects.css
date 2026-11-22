@@ -309,6 +309,43 @@
   margin: 0;
 }
 
+/* Archive and delete confirm: to-do choices, one row each; the warning in the error colour. */
+.proj-remove-todos {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.proj-remove-todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.proj-remove-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.proj-remove-opts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.proj-remove-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.proj-remove-warn {
+  font-weight: 600;
+}
+.proj-remove-ask .proj-field {
+  margin-top: 8px;
+}
+
 /* Read-only client on the edit form, with Move… beside it */
 .proj-static {
   display: flex;

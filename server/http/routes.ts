@@ -108,6 +108,7 @@ import {
   type ProjectAction,
   type ProjectFields,
   type ProjectMoveRequest,
+  type ProjectRemoveRequest,
   ProjectsError,
   type TidyApply,
   type TidySuggestion,
@@ -998,6 +999,59 @@ export function parseProjectMove(body: unknown): ProjectMoveRequest {
   };
 }
 
+/**
+ * `POST ROUTES.projectsArchive` / `ROUTES.projectsDelete` (archive plan): exactly `key` and `action`
+ * (the archive route takes 'archive' or 'unarchive', the delete route 'delete'), with `expect`,
+ * `filesExpect`, `check` (only ever `true`) and `todos` (not with `check`) optional. A to-do choice must
+ * fit the action: archive 'done' | 'keep', delete 'delete' | 'unlink'; unarchive takes none.
+ */
+export function parseProjectRemove(body: unknown, route: 'archive' | 'delete'): ProjectRemoveRequest {
+  if (!isRec(body)) throw projectBad();
+  onlyKeys(body, ['key', 'action', 'expect', 'check', 'filesExpect', 'todos'], ['key', 'action']);
+  const { key, action, expect, check, filesExpect, todos } = body;
+  if (!isProjectKey(key)) throw projectBad();
+  const actions = route === 'archive' ? ['archive', 'unarchive'] : ['delete'];
+  if (typeof action !== 'string' || !actions.includes(action)) throw projectBad();
+  for (const v of [expect, filesExpect]) {
+    if (v !== undefined && (typeof v !== 'string' || !PROJECT_VERSION.test(v))) throw projectBad();
+  }
+  if (check !== undefined && check !== true) throw projectBad();
+  let choices: NonNullable<ProjectRemoveRequest['todos']> | undefined;
+  if (todos !== undefined) {
+    const fits = action === 'archive' ? ['done', 'keep'] : action === 'delete' ? ['delete', 'unlink'] : [];
+    if (check === true || !Array.isArray(todos) || todos.length > 500) throw projectBad();
+    choices = todos.map((t) => {
+      if (!isRec(t)) throw projectBad();
+      onlyKeys(t, ['id', 'scope', 'version', 'do'], ['id', 'scope', 'version', 'do']);
+      if (
+        typeof t.id !== 'string' ||
+        t.id === '' ||
+        t.id.length > 255 ||
+        /[\\/\0]/.test(t.id) ||
+        t.id.startsWith('.')
+      )
+        throw projectBad();
+      if (!isTodoScope(t.scope) || typeof t.version !== 'string' || !PROJECT_VERSION.test(t.version))
+        throw projectBad();
+      if (typeof t.do !== 'string' || !fits.includes(t.do)) throw projectBad();
+      return {
+        id: t.id,
+        scope: t.scope,
+        version: t.version,
+        do: t.do as 'done' | 'keep' | 'delete' | 'unlink',
+      };
+    });
+  }
+  return {
+    key,
+    action: action as ProjectRemoveRequest['action'],
+    ...(expect !== undefined ? { expect: expect as string } : {}),
+    ...(check === true ? { check: true } : {}),
+    ...(filesExpect !== undefined ? { filesExpect: filesExpect as string } : {}),
+    ...(choices !== undefined ? { todos: choices } : {}),
+  };
+}
+
 /** One tidy suggestion: exactly the fields of its `do`, with `why` the one value that `do` has. */
 function parseTidySuggestion(v: unknown): TidySuggestion {
   if (!isRec(v) || typeof v.do !== 'string') throw projectBad();
@@ -1129,6 +1183,33 @@ async function projectsRoute(
       sendJson(res, 200, answer);
     } catch (err) {
       throw projectsFailure(err, ctx, move.check ? 'A project move check' : 'A project move');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectsArchive || path === ROUTES.projectsDelete) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const isDelete = path === ROUTES.projectsDelete;
+    const change = parseProjectRemove(body, isDelete ? 'delete' : 'archive');
+    const run = ctx.brain.removeProject;
+    if (!run) throw missing();
+    // The same roles check as any project change; whether this person may archive or delete THIS project
+    // is the skill script's answer alone.
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    // To-do choices run only where the app may change to-dos (the Settings switch and the to-do script).
+    const prefs = await ctx.store.get();
+    const todoState = prefs.directWrites ? await safe(ctx.brain.todos(who), null) : null;
+    const mayTodos = todoState?.changes === 'on';
+    const what = change.check ? `A project ${change.action} check` : `A project ${change.action}`;
+    try {
+      const answer = await run.call(ctx.brain, change, who, { todos: mayTodos });
+      ctx.log(`${what} was done.`);
+      sendJson(res, 200, answer);
+    } catch (err) {
+      throw projectsFailure(err, ctx, what);
     }
     return;
   }
@@ -2246,6 +2327,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projects ||
     path === ROUTES.projectsChange ||
     path === ROUTES.projectsMove ||
+    path === ROUTES.projectsArchive ||
+    path === ROUTES.projectsDelete ||
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
     path === ROUTES.projectsTidy

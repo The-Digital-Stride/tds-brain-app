@@ -3,6 +3,7 @@ import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectList as ProjectListData } from '../../../../shared/projects-contract.ts';
 import { Seg } from '../../shell/Seg.tsx';
 import {
+  ARCHIVED,
   dotState,
   type Filters,
   filterProjects,
@@ -95,7 +96,10 @@ export function ProjectListView({
   const groups = useMemo(() => groupProjects(shown, clients), [shown, clients]);
   const owners = useMemo(() => ownersIn(data.projects), [data.projects]);
   const services = useMemo(() => servicesIn(data.projects), [data.projects]);
-  const cardless = useMemo(() => data.projects.filter(needsCard).length, [data.projects]);
+  // Decision 12: archived projects sit outside the count and the empty state; the Archived filter shows them.
+  const live = useMemo(() => data.projects.filter((c) => !c.archived), [data.projects]);
+  const archivedCount = data.projects.length - live.length;
+  const cardless = useMemo(() => live.filter(needsCard).length, [live]);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
   return (
@@ -127,7 +131,12 @@ export function ProjectListView({
           label="Status"
           value={filters.status}
           any="Any status"
-          options={STATUSES.map((s) => ({ value: s, label: STATUS_WORDS[s] }))}
+          options={[
+            ...STATUSES.map((s) => ({ value: s, label: STATUS_WORDS[s] })),
+            ...(archivedCount > 0 || filters.status === ARCHIVED
+              ? [{ value: ARCHIVED, label: 'Archived' }]
+              : []),
+          ]}
           onChange={(v) => set({ status: v as Filters['status'] })}
         />
         <Select
@@ -145,18 +154,38 @@ export function ProjectListView({
           onChange={(v) => set({ service: v })}
         />
         <p className="lib-summary" role="status">
-          {shown.length} of {data.projects.length} project{data.projects.length === 1 ? '' : 's'}
+          {filters.status === ARCHIVED
+            ? `${shown.length} of ${archivedCount} archived project${archivedCount === 1 ? '' : 's'}`
+            : `${shown.length} of ${live.length} project${live.length === 1 ? '' : 's'}`}
         </p>
         {action}
       </div>
-      {data.projects.length === 0 ? (
-        <p className="proj-note">No projects yet. Use New project to add the first one.</p>
+      {live.length === 0 && filters.status !== ARCHIVED ? (
+        <p className="proj-note">
+          No projects yet. Use New project to add the first one.
+          {archivedCount > 0 ? (
+            <>
+              {' '}
+              <button type="button" className="link-btn" onClick={() => set({ status: ARCHIVED })}>
+                {archivedCount} archived
+              </button>
+            </>
+          ) : null}
+        </p>
       ) : shown.length === 0 ? (
         <p className="proj-note">
           No projects match these filters.{' '}
           <button type="button" className="link-btn" onClick={() => setFilters(NO_FILTERS)}>
             Show all projects
           </button>
+          {archivedCount > 0 && filters.status !== ARCHIVED ? (
+            <>
+              {' '}
+              <button type="button" className="link-btn" onClick={() => set({ status: ARCHIVED })}>
+                {archivedCount} archived
+              </button>
+            </>
+          ) : null}
         </p>
       ) : (
         <div className="tray lib-tray">

@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
-import type { ProjectCard, ProjectList } from '../../../../shared/projects-contract.ts';
+import type {
+  ProjectCard,
+  ProjectList,
+  ProjectRemoveCheck,
+  ProjectRemoveResult,
+} from '../../../../shared/projects-contract.ts';
+import { ApiFailure, api } from '../../api.ts';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
+import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import {
   dateWords,
@@ -12,6 +19,7 @@ import {
   moveState,
   personName,
   READ_ONLY_NOTICE,
+  refusalWords,
   STATUS_WORDS,
   serviceWords,
   statusOf,
@@ -19,10 +27,105 @@ import {
 } from './logic.ts';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
+import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useProjectTodos } from './useProjectTodos.ts';
 
 export type ProjectTab = 'overview' | 'todos' | 'files';
+
+/** What the Overview needs to archive, unarchive and delete this project. */
+interface Removal {
+  /** The brain can archive and this person can change projects. */
+  on: boolean;
+  /** A check made when the page opened: archive's for a live project, delete's for an archived one. */
+  pre: ProjectRemoveCheck | null;
+  panel: 'archive' | 'delete' | null;
+  setPanel: (p: 'archive' | 'delete' | null) => void;
+  me: string;
+  busy: boolean;
+  problem: string;
+  unarchive: () => void;
+  onDone: (res: ProjectRemoveResult, mode: 'archive' | 'delete') => void;
+}
+
+function useRemoval(
+  card: ProjectCard,
+  list: ProjectList,
+  me: string,
+  onRemoved: (words: string) => void,
+  setNote: (words: string) => void,
+): Removal {
+  const { apply } = useProjects();
+  const on = list.canArchive === true && list.canChange;
+  const live = on && isEditable(card);
+  const [pre, setPre] = useState<ProjectRemoveCheck | null>(null);
+  const [panel, setPanel] = useState<'archive' | 'delete' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const expect = card.card === 'ok' ? card.version : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a different project, state or card version needs a fresh check.
+  useEffect(() => {
+    setPre(null);
+    setPanel(null);
+    setProblem('');
+    if (!live && !(on && card.archived)) return;
+    let cancelled = false;
+    api
+      .checkProjectRemove({
+        key: card.key,
+        action: card.archived ? 'delete' : 'archive',
+        ...(expect ? { expect } : {}),
+      })
+      .then((r) => {
+        if (!cancelled) setPre(r.check);
+      })
+      .catch(() => {
+        if (!cancelled) setPre(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card.key, card.archived, card.version, live, on]);
+
+  const unarchive = async () => {
+    if (busy) return;
+    setBusy(true);
+    setProblem('');
+    try {
+      const c = await api.checkProjectRemove({
+        key: card.key,
+        action: 'unarchive',
+        ...(expect ? { expect } : {}),
+      });
+      if (!c.check.allowed) {
+        setProblem(notAllowedWords('unarchive', c.check.allowedWho));
+      } else {
+        const res = await api.removeProject({
+          key: card.key,
+          action: 'unarchive',
+          ...(expect ? { expect } : {}),
+          filesExpect: c.check.filesVersion,
+        });
+        setNote('Unarchived. It is back in the Projects list.');
+        apply(res.list);
+      }
+    } catch (err) {
+      setProblem(err instanceof ApiFailure ? refusalWords(err.code, err.message) : refusalWords('internal'));
+    }
+    setBusy(false);
+  };
+
+  const onDone = (res: ProjectRemoveResult, mode: 'archive' | 'delete') => {
+    setPanel(null);
+    if (mode === 'delete') onRemoved(resultWords(`Deleted ${card.title}.`, res));
+    else
+      setNote(
+        resultWords('Archived. It has left the Projects list and sits under the Archived filter.', res),
+      );
+  };
+
+  return { on, pre, panel, setPanel, me, busy, problem, unarchive: () => void unarchive(), onDone };
+}
 
 function Light({ light }: { light: ProjectCard['health'] }) {
   if (!light) return <>Not set</>;
@@ -107,6 +210,7 @@ function Overview({
   clients,
   canChange,
   canMove,
+  removal,
   onAddCard,
   onMove,
 }: {
@@ -115,6 +219,7 @@ function Overview({
   clients: readonly { slug: string; name: string }[];
   canChange: boolean;
   canMove: MoveState;
+  removal: Removal;
   onAddCard: () => void;
   onMove: () => void;
 }) {
@@ -128,9 +233,51 @@ function Overview({
 
   return (
     <>
+      {removal.panel ? (
+        <RemovePanel
+          card={card}
+          mode={removal.panel}
+          me={removal.me}
+          onCancel={() => removal.setPanel(null)}
+          onDone={(res) => removal.onDone(res, removal.panel ?? 'archive')}
+        />
+      ) : null}
       {card.archived ? (
-        <p className="proj-banner" role="status">
-          This project is archived, so it can't be changed.
+        <div className="proj-banner" role="status">
+          <span>
+            This project is archived, so it can't be changed.
+            {removal.on && removal.pre && !removal.pre.allowed
+              ? ` ${notAllowedWords('delete', removal.pre.allowedWho)}`
+              : ''}
+          </span>
+          {removal.on ? (
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              disabled={removal.busy}
+              onClick={removal.unarchive}
+            >
+              Unarchive
+            </button>
+          ) : null}
+          {removal.on && removal.pre?.allowed && !removal.panel ? (
+            <button
+              type="button"
+              className="btn"
+              data-size="small"
+              data-variant="danger"
+              data-focus="delete"
+              onClick={() => removal.setPanel('delete')}
+            >
+              Delete…
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {removal.problem ? (
+        <p className="proj-error" role="alert">
+          {removal.problem}
         </p>
       ) : null}
       {card.card === 'none' ? (
@@ -177,7 +324,35 @@ function Overview({
               ) : null}
             </dd>
             <dt>Status</dt>
-            <dd>{STATUS_WORDS[statusOf(card)]}</dd>
+            <dd>
+              {card.archived ? 'Archived' : STATUS_WORDS[statusOf(card)]}
+              {removal.on && editable && !removal.panel ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn proj-move-btn"
+                    data-size="small"
+                    data-focus="archive"
+                    aria-label={`Archive ${card.title}`}
+                    onClick={() => removal.setPanel('archive')}
+                  >
+                    Archive…
+                  </button>
+                  {removal.pre?.empty ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      data-size="small"
+                      data-focus="delete"
+                      aria-label={`Delete ${card.title}`}
+                      onClick={() => removal.setPanel('delete')}
+                    >
+                      Delete…
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+            </dd>
             <dt>Kind</dt>
             <dd>{card.kind === 'ongoing' ? 'Ongoing' : card.kind === 'one-off' ? 'One-off' : 'Not set'}</dd>
             <dt>Health</dt>
@@ -269,6 +444,7 @@ export function ProjectPage({
   onEdit,
   onMove,
   onAddCard,
+  onRemoved,
   team,
   clients,
   me,
@@ -281,12 +457,16 @@ export function ProjectPage({
   onEdit: () => void;
   onMove: () => void;
   onAddCard: () => void;
+  /** After a delete: the page is gone, so the list says what happened. */
+  onRemoved?: (words: string) => void;
   team: readonly TeamMember[] | undefined;
   clients: readonly { slug: string; name: string }[];
   me: string;
 }) {
   const canChange = list.canChange;
   const editable = canChange && isEditable(card);
+  const [note, setNote] = useState('');
+  const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
   const projectTodos = useProjectTodos(card.key, card.openTodos);
   // Link files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
@@ -313,6 +493,11 @@ export function ProjectPage({
       {!canChange ? (
         <p className="proj-banner" role="status">
           {READ_ONLY_NOTICE}
+        </p>
+      ) : null}
+      {note ? (
+        <p className="proj-banner" role="status">
+          {note}
         </p>
       ) : null}
       {list.duplicates.some((d) => d.endsWith(`/${card.slug}`)) ? (
@@ -362,6 +547,7 @@ export function ProjectPage({
             clients={clients}
             canChange={canChange}
             canMove={moveState(card, list)}
+            removal={removal}
             onAddCard={onAddCard}
             onMove={onMove}
           />

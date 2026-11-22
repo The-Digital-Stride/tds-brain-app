@@ -6,9 +6,8 @@ import type { ProjectCard, ProjectList } from '../../../shared/projects-contract
 const projectsApi = vi.hoisted(() => vi.fn());
 vi.mock('../api.ts', () => ({ api: { projects: projectsApi } }));
 
-const { filterOptions, projectsStore, todoPlaceParts, todoProjectOptions, useProjects } = await import(
-  './projects.ts'
-);
+const { chipLabel, filterOptions, projectsStore, todoPlaceParts, todoProjectOptions, useProjects } =
+  await import('./projects.ts');
 
 const card = (over: Partial<ProjectCard>): ProjectCard =>
   ({
@@ -138,5 +137,19 @@ describe('filterOptions and todoPlaceParts', () => {
     ).toEqual(['Acme', 'Misc']);
     // An older server sends no projectMatch at all.
     expect(todoPlaceParts({ client: 'acme', project: null }, undefined, clients)).toEqual(['Acme']);
+  });
+});
+
+describe('chipLabel', () => {
+  it("drops the client's name from the start of the project title", () => {
+    expect(chipLabel('Weightmans', 'Weightmans PPC')).toBe('Weightmans · PPC');
+    expect(chipLabel('H2O Restoration', 'H2O Restoration - Website')).toBe('H2O Restoration · Website');
+    expect(chipLabel('Weightmans', 'weightmans: litigation')).toBe('Weightmans · litigation');
+  });
+
+  it('keeps the title when the name is only part of a word, or the whole title', () => {
+    expect(chipLabel('Weightmans', 'Weightmansfield audit')).toBe('Weightmans · Weightmansfield audit');
+    expect(chipLabel('Weightmans', 'Weightmans')).toBe('Weightmans · Weightmans');
+    expect(chipLabel('Acme', 'Site rebuild')).toBe('Acme · Site rebuild');
   });
 });

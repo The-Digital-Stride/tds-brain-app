@@ -144,7 +144,7 @@ describe('project chips on rows', () => {
   it('shows a known project as a chip that filters the drawer by it; a client alone stays words', async () => {
     render(<TodosDrawer />);
     const chip = screen.getByRole('button', { name: 'Filter by project: Acme · Website' });
-    expect(chip.getAttribute('data-tip')).toBe('Filter by this project');
+    expect(chip.getAttribute('data-tip')).toBe('Filter by Acme · Website');
     // Ring the bank is in no project: its client is plain words, not a button.
     expect(screen.queryByRole('button', { name: /Filter by project: Acme$/ })).toBeNull();
     fireEvent.click(chip);

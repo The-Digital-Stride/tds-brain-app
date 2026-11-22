@@ -35,7 +35,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
-import { handoverMeta, todoChatDraft } from './words.ts';
+import { cap, handoverMeta, todoChatDraft } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
@@ -182,6 +182,7 @@ function TodoRow({
   // screen-reader user who lands on it hears them too.
   const newId = useId();
   const metaId = useId();
+  const whereId = useId();
   const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const attention = chat ? attentionFor(chat.state) : null;
@@ -190,17 +191,24 @@ function TodoRow({
   const due = todo.due ? dueInWords(todo.due) : '';
   const overdue = todo.due ? isOverdue(todo.due) : false;
 
-  const parts: { text: string; late?: boolean; icon?: 'lock' }[] = [];
+  const parts: { text: string; late?: boolean; icon?: 'lock'; dot?: string }[] = [];
+  if (due) parts.push({ text: cap(due), late: overdue });
   const from = handoverMeta(todo, boot?.identity.slug ?? '');
-  if (from) parts.push({ text: from });
+  if (from) parts.push({ text: cap(from) });
   if (showScope && todo.scope === 'personal') parts.push({ text: 'Personal', icon: 'lock' });
-  if (due) parts.push({ text: due, late: overdue });
-  // A known project is a chip that filters by it (at the end of the line); anything else stays text.
-  const chip = onProject ? todoProjectChip(todo, projectList?.projects, boot?.clients ?? []) : null;
-  if (!chip && showPlace)
-    for (const text of todoPlaceParts(todo, projectList?.projects, boot?.clients ?? [])) parts.push({ text });
   if (chat)
-    parts.push({ text: `open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}` });
+    parts.push({
+      text: cap(`open chat${attention ? `, ${ATTENTION_LABEL[attention].toLowerCase()}` : ''}`),
+      ...(attention ? { dot: attention } : {}),
+    });
+  // A known project is a chip that filters by it; anything else stays text. Either way it sits on the bottom line.
+  const chip = onProject ? todoProjectChip(todo, projectList?.projects, boot?.clients ?? []) : null;
+  const whereText =
+    !chip && showPlace ? todoPlaceParts(todo, projectList?.projects, boot?.clients ?? []).join(' · ') : '';
+  const hasWhere = Boolean(chip) || whereText !== '';
+  const describedBy = [fresh ? newId : '', parts.length > 0 ? metaId : '', hasWhere ? whereId : '']
+    .filter(Boolean)
+    .join(' ');
 
   const choose = () => {
     // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
@@ -246,59 +254,74 @@ function TodoRow({
               controls.open(todo, 'read');
             }}
           >
-            {todo.title}
+            <span className="todo-title-text">{todo.title}</span>
           </button>
         </span>
       </div>
       <div className="todo-foot">
-        <span className="line-meta todo-meta" id={metaId}>
-          {parts.map((part, i) => (
-            <span key={part.text}>
-              {i > 0 ? ', ' : ''}
-              {part.icon ? (
-                <span className="todo-lock">
-                  <Icon name={part.icon} size={12} />
-                </span>
-              ) : null}
-              <span className={part.late ? 'late' : undefined}>{part.text}</span>
-            </span>
-          ))}
-          {chip && onProject ? <ProjectChip label={chip.label} onPick={() => onProject(chip.key)} /> : null}
-        </span>
-        {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
-        <StarButton
-          id={todo.key}
-          title={todo.title}
-          on={favourite}
-          onPress={(_, button) => onStar(todo, button)}
-        />
-        {controls.actionable ? (
-          <button
-            type="button"
-            className="icon-btn todo-edit"
-            data-edit-for={todo.key}
-            aria-label={controls.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
-            data-tip={controls.canEdit ? 'Edit' : 'Options'}
-            disabled={controls.busy}
-            onClick={() => {
-              onOpened(todo);
-              controls.open(todo, controls.canEdit ? 'edit' : 'read');
-            }}
-          >
-            <Icon name={controls.canEdit ? 'edit' : 'more'} size={16} />
-          </button>
+        {parts.length > 0 ? (
+          <span className="line-meta todo-meta" id={metaId}>
+            {parts.map((part, i) => (
+              <span key={part.text} className="todo-meta-item">
+                {i > 0 ? <span className="todo-sep"> · </span> : null}
+                {part.dot ? <span className="dot" data-attention={part.dot} aria-hidden="true" /> : null}
+                {part.icon ? (
+                  <span className="todo-lock">
+                    <Icon name={part.icon} size={12} />
+                  </span>
+                ) : null}
+                <span className={part.late ? 'late' : undefined}>{part.text}</span>
+              </span>
+            ))}
+          </span>
         ) : null}
-        <button
-          type="button"
-          className="icon-btn todo-go"
-          data-todo-open={todo.key}
-          aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
-          data-tip={chat ? 'Open chat' : 'Start a chat'}
-          aria-describedby={fresh ? `${newId} ${metaId}` : metaId}
-          onClick={choose}
-        >
-          <Icon name="chat" size={16} />
-        </button>
+        <div className="todo-end">
+          {hasWhere ? (
+            <span className="todo-where" id={whereId}>
+              {chip && onProject ? (
+                <ProjectChip label={chip.label} short={chip.short} onPick={() => onProject(chip.key)} />
+              ) : (
+                <span className="line-meta todo-where-text">{whereText}</span>
+              )}
+            </span>
+          ) : null}
+          <div className="todo-btns">
+            {/* The star changes no to-do (it lives in the app's own settings), so it shows whether or not changes are on. */}
+            <StarButton
+              id={todo.key}
+              title={todo.title}
+              on={favourite}
+              onPress={(_, button) => onStar(todo, button)}
+            />
+            {controls.actionable ? (
+              <button
+                type="button"
+                className="icon-btn todo-edit"
+                data-edit-for={todo.key}
+                aria-label={controls.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
+                data-tip={controls.canEdit ? 'Edit' : 'Options'}
+                disabled={controls.busy}
+                onClick={() => {
+                  onOpened(todo);
+                  controls.open(todo, controls.canEdit ? 'edit' : 'read');
+                }}
+              >
+                <Icon name={controls.canEdit ? 'edit' : 'more'} size={16} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="icon-btn todo-go"
+              data-todo-open={todo.key}
+              aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
+              data-tip={chat ? 'Open chat' : 'Start a chat'}
+              aria-describedby={describedBy || undefined}
+              onClick={choose}
+            >
+              <Icon name="chat" size={16} />
+            </button>
+          </div>
+        </div>
       </div>
     </li>
   );

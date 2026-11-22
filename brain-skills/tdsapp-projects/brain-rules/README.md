@@ -80,7 +80,7 @@ edits are already in the brain, so each "current passage" quotes the brain file 
 | 12 | `meeting-notes-SKILL.md` (1 edit) | `.claude/skills/meeting-notes/SKILL.md` | `grep -c "Internal (projects/)" .claude/skills/meeting-notes/SKILL.md` is 0 |
 | 13 | `transcripts.md` (2 edits) | `.claude/rules/transcripts.md` | `grep -c "or \`projects/<project>/\` \|" .claude/rules/transcripts.md` is 0 |
 | 14 | `root-AGENTS.md` (1 edit) | `AGENTS.md` | `grep -c "Ongoing project docs → \`projects/\`\." AGENTS.md` is 0 |
-| 15 | `find-call-note-cjs.md` (2 edits) | `tools/find-call-note.cjs` | `node tools/find-call-note.cjs --client the-digital-stride --date 2026-11-20 --json` runs |
+| 15 | `find-call-note-cjs.md` (3 edits) | `tools/find-call-note.cjs` | `node tools/find-call-note.cjs --client the-digital-stride --date 2026-11-20 --json` runs |
 | 16 | `gm-SKILL.md` (1 edit) | `.claude/skills/gm/SKILL.md` | `grep -c "a leftover from archiving" .claude/skills/gm/SKILL.md` is 1 |
 | 17 | `command-centre.patch` (see `command-centre.md`) | `tools/members/command-centre/` | `patch --dry-run -p1` is clean, then the checks in `command-centre.md` |
 

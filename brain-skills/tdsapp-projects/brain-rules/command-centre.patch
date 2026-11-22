@@ -499,7 +499,16 @@
        const arch = el('button', 'cc-proj-link cc-proj-archive'); arch.type = 'button'; arch.textContent = 'Archive';
        arch.title = 'Move this project out of the Projects column (into projects-archive/)';
        arch.onclick = async () => {
-@@ -1249,7 +1324,7 @@
+@@ -1238,6 +1313,8 @@
+       tr.classList.add('done');
+       toast('Done — moved to todo/done/');
+       setTimeout(removeRow, 900);
++      // A to-do tied to a project card also shows on that card: refresh the cards so it drops off there too.
++      if (t.projectLabel) setTimeout(loadProjects, 900);
+     };
+     tdTick.append(cb);
+ 
+@@ -1249,7 +1326,7 @@
      };
      paintTitle();
      tdTitle.append(txt);

@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.61.1 — 2026-11-22
+
+- **fix**: Skills sits above Help and is for owners and scouts only
+
 ## v0.61.0 — 2026-11-22
 
 - **feat**: keep the brain working with projects in their new homes

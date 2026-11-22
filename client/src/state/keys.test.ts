@@ -108,6 +108,14 @@ describe('keyAction: single keys', () => {
     expect(keyAction(key('s'), ctx())).toEqual({ type: 'toggle-drawer', drawer: 'skills' });
   });
 
+  it('s does nothing for someone the Skills drawer is not for', () => {
+    expect(keyAction(key('s'), { ...ctx(), skillsHidden: true })).toBeNull();
+    expect(keyAction(key('t'), { ...ctx(), skillsHidden: true })).toEqual({
+      type: 'toggle-drawer',
+      drawer: 'todos',
+    });
+  });
+
   it('caps lock still counts as the same letter', () => {
     expect(keyAction(key('T'), ctx())).toEqual({ type: 'toggle-drawer', drawer: 'todos' });
   });

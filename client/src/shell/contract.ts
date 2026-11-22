@@ -219,6 +219,8 @@ export interface KeyContext {
   panelFloating?: boolean;
   /** Help is switched on for this person's role (`helpVisible`). Missing means no. */
   helpVisible?: boolean;
+  /** The Skills drawer is not this person's (`skillsMenuVisible`): `s` does nothing. Missing means shown. */
+  skillsHidden?: boolean;
   /** Single key to section id, for the sections visible to this person now (`W` for Workbench). Missing means none. */
   sectionKeys?: Record<string, string>;
   /** The chat drawer is open over the tool (plan 2026-11-16-run-chat-drawer). Missing means no. */
@@ -241,7 +243,8 @@ export interface KeyContext {
  * - While the to-do panel is open: Esc closes it first (it asks when there are unsaved changes), and `p` / `n`
  *   move to the previous / next to-do. Anything that would close or change the panel while it holds unsaved changes
  *   is held back and asks (`ShellProvider`).
- * - `[`, `t`, `c`, `s` (no modifier, not typing, palette shut, `singleKeys` on): rail, To-dos, Chats, Skills.
+ * - `[`, `t`, `c`, `s` (no modifier, not typing, palette shut, `singleKeys` on): rail, To-dos, Chats, Skills
+ *   (`s` only without `skillsHidden`).
  * - `/` (not typing, palette shut, `singleKeys` on; Shift allowed, as some keyboards need it): open the global search.
  * - `h` toggles Help and `?` opens it (Shift allowed), under the same rules, and only with `helpVisible`.
  */
@@ -581,6 +584,8 @@ export interface SearchContext {
   clients: ClientInfo[];
   /** Help is switched on for this person's role: "Go to" lists Help. Missing means no. */
   helpVisible?: boolean;
+  /** The Skills drawer is not this person's (`skillsMenuVisible`): "Go to" leaves it out. Missing means shown. */
+  skillsHidden?: boolean;
   /** The team skill levels are on for this person: "Go to" lists the Skill levels tab. Missing means no. */
   hasSkillLevels?: boolean;
   /** The ads summary (store `ads`), for tools that search it; null or missing until it has loaded. */

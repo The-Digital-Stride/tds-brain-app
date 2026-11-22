@@ -108,6 +108,10 @@ const PATHS: Record<IconName, ReactNode> = {
   grip: <path d="M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01" strokeWidth={2.6} />,
   // Two arrows pointing apart: full width.
   wide: <path d="M3 10h14M6 7l-3 3 3 3M14 7l3 3-3 3" />,
+  // A door frame with an arrow leaving it: End chat (ends the session; X only closes a surface).
+  end: <path d="M8.5 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3.5M12.5 6.5 16 10l-3.5 3.5M16 10H8" />,
+  // Two corner arrows pointing out: open full screen.
+  expand: <path d="M11.5 4H16v4.5M8.5 16H4v-4.5M16 4l-5 5M4 16l5-5" />,
   // A paper plane: Send's, paired with Stop's square.
   send: <path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8" />,
   refresh: <path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3h-3" />,

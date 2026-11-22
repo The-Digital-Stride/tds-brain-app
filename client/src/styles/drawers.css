@@ -33,10 +33,6 @@
   gap: 10px;
   min-width: 0;
 }
-.line .icon-btn {
-  width: 28px;
-  height: 28px;
-}
 /* A drawer with tools above its list (the Skills search, the To-dos switch). The tools sit on the drawer's own glass
    and only the list scrolls, so nothing needs a backing of its own. */
 .dock-body:has(> .drawer-split) {
@@ -198,11 +194,7 @@
 .todo-go {
   color: var(--blue-ink);
 }
-.drawer-tools.todo-add {
-  display: block;
-  max-height: 60vh;
-  overflow-y: auto;
-}
+
 .todo-add-btn {
   flex: none;
   margin-left: auto;
@@ -285,23 +277,14 @@
   vertical-align: -1px;
   margin-right: 3px;
 }
-.todo-editing {
-  display: block;
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.todo-editing:hover {
-  transform: none;
-}
+
 .todo-form {
   display: grid;
   gap: 10px;
   width: 100%;
   min-width: 0;
 }
-.todo-add .todo-form {
-  padding: 4px 0 0;
-}
+
 .todo-field {
   display: grid;
   gap: 4px;
@@ -339,31 +322,7 @@
   align-items: center;
   gap: 8px;
 }
-.todo-finish {
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.todo-delete {
-  margin-left: auto;
-}
-.todo-done {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.todo-done-title {
-  margin: 0;
-  padding: 0;
-  float: left;
-  width: 100%;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.todo-done-details {
-  max-height: 8lh;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
+
 /* A tick, delete or pass-on waiting out its undo time: nothing is in the brain yet. */
 .todo-held {
   position: relative;
@@ -422,10 +381,7 @@
   line-height: 1.45;
   color: var(--iron);
 }
-.todo-finish .todo-note {
-  flex-basis: 100%;
-  margin: 0;
-}
+
 .todo-field .todo-note {
   padding: 0;
 }

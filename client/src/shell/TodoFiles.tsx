@@ -477,8 +477,6 @@ function AddFile({
             className="btn"
             data-variant="primary"
             data-size="small"
-            // biome-ignore lint/a11y/noAutofocus: the question has just appeared; the answer is next.
-            autoFocus
             onClick={() => {
               const files = pending;
               const picks = pendingPicks;
@@ -495,7 +493,14 @@ function AddFile({
           >
             Continue
           </button>
-          <button type="button" className="btn" data-size="small" onClick={close}>
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            // biome-ignore lint/a11y/noAutofocus: the question has just appeared; focus starts on the safe answer.
+            autoFocus
+            onClick={close}
+          >
             Cancel
           </button>
         </fieldset>
@@ -629,6 +634,7 @@ function LibraryPicker({
                 <input
                   id={id}
                   type="checkbox"
+                  className="tick"
                   checked={already || picked.has(h.item.path)}
                   disabled={already || (!picked.has(h.item.path) && picked.size >= room)}
                   onChange={() => toggle(h)}

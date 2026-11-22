@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import {
   LIBRARY_SEARCH_QUERY,
   type LibraryItem,
@@ -34,10 +34,11 @@ function FileRow({
   onView: () => void;
   onUnlink: () => void;
 }) {
-  // The whole row opens the file in the viewer drawer, as a row does in Documents and Images.
+  // The whole row opens the file in the viewer drawer. Documents rows select instead; a project's file rows open,
+  // deliberately: linking and unlinking are the only things to do here, and they have their own buttons.
   return (
     <li className="line lib-row proj-file">
-      <button type="button" className="lib-open" onClick={onView}>
+      <button type="button" className="lib-open" data-file={item.id} onClick={onView}>
         {item.kind === 'image' ? (
           <Thumb item={item} width={96} iconSize={18} />
         ) : (
@@ -199,6 +200,7 @@ function Picker({
                 <input
                   id={boxId}
                   type="checkbox"
+                  className="tick"
                   checked={why === 'Already linked' || on}
                   disabled={busy || why !== null || (!on && count >= room)}
                   onChange={() => toggle(h)}
@@ -267,6 +269,7 @@ function Kind({
   canChange,
   onView,
   onChanged,
+  onUnlinked,
 }: {
   card: ProjectCard;
   kind: LibraryKind;
@@ -274,16 +277,38 @@ function Kind({
   canChange: boolean;
   onView: (item: LibraryItem) => void;
   onChanged: (message: string) => void;
+  onUnlinked: (name: string) => void;
 }) {
   const change = useProjectChange({ reloadOnChanged: true });
   const [busy, setBusy] = useState(false);
   const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
 
+  // After an unlink the row may be gone and the Unlink button always is: focus goes to the next row's open button,
+  // else the previous, else the Link files button, once the list has reloaded.
+  const focusId = useRef<string | null>(null);
+  const items = loaded.status === 'ready' ? loaded.data.items : null;
+  useEffect(() => {
+    if (focusId.current === null || !items) return;
+    const wanted = focusId.current;
+    focusId.current = null;
+    const target =
+      (wanted ? document.querySelector<HTMLElement>(`[data-file="${CSS.escape(wanted)}"]`) : null) ??
+      document.querySelector<HTMLElement>('[data-focus="linkfiles"]');
+    target?.focus({ preventScroll: true });
+  }, [items]);
+
   const unlink = async (item: LibraryItem) => {
+    const list = items ?? [];
+    const at = list.findIndex((i) => i.id === item.id);
+    const neighbour = list[at + 1] ?? list[at - 1];
     setBusy(true);
     const res = await change({ kind: 'unlink', key: card.key, path: item.path, expect: card.version });
     setBusy(false);
     onChanged(res.ok ? '' : res.message);
+    if (res.ok) {
+      focusId.current = neighbour?.id ?? '';
+      onUnlinked(item.title || item.name);
+    }
   };
 
   return (
@@ -408,6 +433,7 @@ export function ProjectFiles({
             canChange={canChange}
             onView={(item) => void view(item)}
             onChanged={setMessage}
+            onUnlinked={(name) => setDone(`${name} removed from this project.`)}
           />
         ))}
       </div>

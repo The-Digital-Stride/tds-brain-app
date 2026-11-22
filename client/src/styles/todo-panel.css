@@ -271,12 +271,12 @@
   color: var(--danger);
 }
 
-.todo-status {
+.todo-panel .todo-status {
   flex: none;
   margin: 0;
   padding: 0 18px 6px;
 }
-.todo-status:empty {
+.todo-panel .todo-status:empty {
   padding: 0;
 }
 

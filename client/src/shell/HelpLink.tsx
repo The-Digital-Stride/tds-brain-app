@@ -17,7 +17,7 @@ export function HelpLink({ page, size = 32 }: { page: string; size?: 28 | 32 }) 
     <button
       type="button"
       className="icon-btn"
-      data-size={size === 28 ? '28' : undefined}
+      data-size={size === 28 ? 'small' : undefined}
       aria-label={`Help: ${topic.title}`}
       data-tip="Help"
       onClick={() => dispatch({ type: 'open-help', page })}

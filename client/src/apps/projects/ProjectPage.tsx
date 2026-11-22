@@ -289,7 +289,6 @@ function Overview({
                   type="button"
                   className="btn"
                   data-size="small"
-                  data-variant="danger"
                   data-focus="delete"
                   onClick={() => removal.setPanel('delete')}
                 >
@@ -575,6 +574,7 @@ export function ProjectPage({
             type="button"
             className="btn"
             data-size="small"
+            data-focus="linkfiles"
             onClick={() => setLinking(true)}
             disabled={linking}
           >

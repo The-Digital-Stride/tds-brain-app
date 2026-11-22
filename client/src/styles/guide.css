@@ -187,8 +187,3 @@
 .settings .help-inline[data-heading="true"] h2 {
   margin: 0;
 }
-/* HelpLink in a row: a step smaller than the header size. */
-.icon-btn[data-size="28"] {
-  width: 28px;
-  height: 28px;
-}

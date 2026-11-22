@@ -164,7 +164,7 @@ export function FactTiles({ client }: { client: ClientApprovals }) {
       </li>
       <li className="am-fact">
         {m ? (
-          <button type="button" className="am-fact-jump" title="Go to monthly close" onClick={goToClose}>
+          <button type="button" className="am-fact-jump" onClick={goToClose}>
             <span className="am-fact-l">Monthly close</span>
             <span className="am-fact-v">{m.monthName || m.month}</span>
             <span className="am-fact-d">{ms?.text}</span>

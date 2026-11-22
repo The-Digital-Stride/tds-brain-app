@@ -8,7 +8,6 @@ import {
   type Filters,
   filterProjects,
   groupProjects,
-  LIGHT_WORDS,
   NO_FILTERS,
   needsCard,
   ownersIn,
@@ -65,9 +64,6 @@ function Row({ card, onOpen }: { card: ProjectCard; onOpen: () => void }) {
         <span className="line-text">
           <span className="line-title">{card.title}</span>
           <span className="line-meta">{rowMeta(card)}</span>
-        </span>
-        <span className="visually-hidden">
-          {card.health ? `. Health: ${LIGHT_WORDS[card.health].toLowerCase()}` : '. No health light set'}
         </span>
       </button>
     </li>

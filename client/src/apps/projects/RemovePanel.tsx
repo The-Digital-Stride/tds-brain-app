@@ -224,6 +224,7 @@ export function RemovePanel({
                         <label key={o.value} className="proj-remove-opt">
                           <input
                             type="radio"
+                            className="tick"
                             name={`${base}-${t.id}`}
                             checked={choice[t.id] === o.value}
                             onChange={() => setChoice((c) => ({ ...c, [t.id]: o.value }))}

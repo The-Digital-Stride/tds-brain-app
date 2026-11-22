@@ -91,6 +91,7 @@ export function RailUpdate({ wide, pinned }: { wide: boolean; pinned: boolean })
       <button
         type="button"
         className="icon-btn"
+        data-size="small"
         data-variant="primary"
         aria-label={name}
         data-tip={tip}
@@ -108,6 +109,7 @@ export function RailUpdate({ wide, pinned }: { wide: boolean; pinned: boolean })
       <button
         type="button"
         className="icon-btn"
+        data-size="small"
         aria-label={checkLabel}
         data-tip={tick ? 'Up to date' : checkLabel}
         aria-disabled={checking || undefined}

@@ -314,10 +314,6 @@
   color: var(--iron);
   font-variant-numeric: tabular-nums;
 }
-.rail-update .icon-btn {
-  width: 28px;
-  height: 28px;
-}
 .rail-version {
   flex: 1;
   margin: 0;

@@ -310,6 +310,8 @@
 }
 .cc-triage-head h4 {
   margin: 0;
+  font-family: var(--head);
+  font-weight: 600;
   font-size: 14px;
   flex: 1;
 }

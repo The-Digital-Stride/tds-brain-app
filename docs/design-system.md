@@ -11,7 +11,7 @@ Sentence case everywhere: no capitals-only labels, no letter-spacing. WCAG 2.2 A
 non-text 3:1, targets at least 24×24 CSS px (a smaller visual box is fine when its clickable area,
 including label or padding, reaches 24px), visible focus on everything.
 
-## Type (seven sizes: 11.5, 12, 13, 14, 15, 18, 26)
+## Type (seven sizes: 11.5, 12, 13, 14, 15, 18, 26, plus 12.5 for mono)
 
 | Role | Font | px / weight / line-height | Colour |
 |---|---|---|---|
@@ -29,11 +29,17 @@ including label or padding, reaches 24px), visible focus on everything.
 | Code | `--mono` | 12.5 (inline 0.88em) | navy |
 | `kbd` | `--body` | 11.5 / 500 | iron |
 
+13.5 is used in one place only: a background helper's report card (see Thread content). Nothing else is off this list; `client/src/styles/design-system.test.ts` fails for a new size.
+
 ## Spacing, radii, widths
 
-- Spacing steps: 4, 6, 8, 12, 16, 24, 32. Old tokens map `--s1`→8, `--s2`→12, `--s3`→16, `--s4`→24, `--s5`→32.
-- Radii: 6, 9, 10, 14, 18.
+- Spacing steps: 2, 4, 6, 8, 10, 12, 16, 24, 32.
+- Radii: 5, 6, 8, 9, 10, 12, 14, 16, 18 (5 ticks, 6 and 8 small pieces, 9 buttons and fields, 10 cards and tiles, 12 pop-ups, 14 big cards and your message, 16 the glass layers, 18 the largest surfaces).
 - Column widths: reading 680px, settings 600px, Home 880px.
+
+## Layers (z-index)
+
+The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 60, viewer 50, pop-up 45 (search-select list), floating to-do panel 45, floating dock 41, veil 40, hover rail 39, docked to-do panel 8, rail and chat drawer 5. Values from -1 to 3 only order things inside one component. The rule: a pop-up sits above the layer that hosts it. `design-system.test.ts` fails for a value outside this list.
 
 ## Dimensions
 
@@ -239,7 +245,7 @@ Every app declares `search` (global search); a new list or inventory is searchab
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
 with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,
-then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline Open), `LibraryBar` (Back, details), `DetailActions`,
+then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline Open), `DetailActions`,
 `LibraryNotice` (loading, failed with "Try again", empty), `Thumb`, `Viewer`, the data hooks and a
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples
@@ -288,8 +294,7 @@ out of every list at once and shows a held line at the top of the page (`FileDel
 `.update-banner` "<name> deleted." with Undo) for 10 seconds; the clock stops while the pointer or focus
 is on that line. One visually hidden `role="status"` line stays on the page and says "<name> deleted.
 Undo is at the top of the page.", then the result ("<name> deleted. To get it back within 30 days, ask
-Claude."), so a screen reader announces both. The open file's viewer carries the same bin in
-`.lib-viewer-bar`, right aligned above the file, and the file viewer drawer has it among its actions.
+Claude."), so a screen reader announces both. The file viewer drawer has the same bin among its actions.
 
 Opening a file ("Open" on the item or in the panel, or a file chosen in Search or jump to) swaps the sheet's list for the viewer and adds a quiet small
 "Back to ..." button to the sheet bar. When the panel floats, Open also closes it, and the viewer takes
@@ -365,14 +370,6 @@ Six soft fills for "kind of thing" (a task type, a tag), so a colour never has t
 - Navy, `#525252` and `#33456a` text pass WCAG AA on every fill (checked 2026-11-18 and 19). Only about six soft
   colours stay clearly apart for people with colour blindness once the status colours are left out, so there are
   six, not eight.
-
-## Old tokens being retired
-
-`--s1`…`--s5`, `--radius`, `--radius-sm`, `--card`, `--rule`, `--rule-strong`, `--accent`, `--accent-ink`,
-`--accent-wash`, `--ink`, `--text-soft`, `--font`. Swap: `--rule-strong`→`--line-strong`, `--rule`→`--line`,
-`--accent` and `--accent-ink`→`--blue-ink`, `--accent-wash`→`--wash`, `--card`→`#fff`,
-`--text-soft`→`--iron`, `--radius`→`14px`, `--radius-sm`→`10px`, spacing as mapped above. They stay
-defined in `tokens.css` as aliases until no file uses them; the lead removes them last.
 
 ## Tokens saved (Settings)
 

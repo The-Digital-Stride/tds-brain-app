@@ -1175,7 +1175,7 @@
   background: var(--danger);
 }
 .health-dot[data-state="note"] {
-  background: var(--amber-edge);
+  background: var(--attn-asking-edge);
 }
 .health-check > .health-dot {
   /* Centred on the label's line. */

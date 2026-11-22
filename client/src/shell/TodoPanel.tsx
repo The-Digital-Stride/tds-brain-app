@@ -618,11 +618,12 @@ function EditView({
   const uid = useId();
   const chat = useChat(todo);
   const [askDrop, setAskDrop] = useState(false);
-  const dropButton = useRef<HTMLButtonElement>(null);
+  // The safe answer gets focus when the question opens.
+  const cancelAsk = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   const { list: projectList } = useProjects();
   useEffect(() => {
-    if (askDrop) dropButton.current?.focus();
+    if (askDrop) cancelAsk.current?.focus();
   }, [askDrop]);
   const { draft, setDraft, me, team } = p;
   const set = (patch: Partial<EditDraft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -821,12 +822,11 @@ function EditView({
             className="btn"
             data-variant="primary"
             data-size="small"
-            ref={dropButton}
             onClick={() => save(true)}
           >
             Move to the team
           </button>
-          <button type="button" className="btn" data-size="small" onClick={closeAsk}>
+          <button type="button" className="btn" data-size="small" ref={cancelAsk} onClick={closeAsk}>
             Cancel
           </button>
         </fieldset>

@@ -274,7 +274,8 @@ a.btn:hover {
   color: var(--ink-soft);
   cursor: pointer;
 }
-/* Inside a row, a step smaller. */
+/* Small (data-size="small"), and inside a row: a step smaller, 28px. */
+.icon-btn[data-size="small"],
 .line .icon-btn,
 .todo .icon-btn {
   width: 28px;
@@ -515,7 +516,8 @@ select.field:disabled {
 }
 /* Status dots that stand for urgency (Needs you, Worth a look): amber for watch, red for act. */
 .dot[data-tone] {
-  background: var(--amber-edge);
+  /* The deeper amber: --amber-edge is under 3:1 on white. */
+  background: var(--attn-asking-edge);
 }
 .dot[data-tone="bad"] {
   background: var(--danger);

@@ -258,6 +258,8 @@ export type KeyAction = (e: KeyLike, ctx: KeyContext) => ShellAction | null;
 // ── Icons ──────────────────────────────────────────────────────────────────────────────────────
 
 export type IconName =
+  | 'end'
+  | 'expand'
   | 'home'
   | 'star'
   | 'edit'

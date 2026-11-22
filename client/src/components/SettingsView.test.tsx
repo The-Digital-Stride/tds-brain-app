@@ -557,7 +557,7 @@ describe('help links', () => {
     render(<AllTabs />);
     for (const [page, size] of pages) {
       const b = screen.getByRole('button', { name: `Help: ${page}` });
-      expect(b.getAttribute('data-size')).toBe(size === 28 ? '28' : null);
+      expect(b.getAttribute('data-size')).toBe(size === 28 ? 'small' : null);
     }
     expect(screen.getByRole('button', { name: 'Help: health' })).toBeTruthy();
   });

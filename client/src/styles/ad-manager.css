@@ -112,9 +112,7 @@
   font-size: 13px;
   font-weight: 600;
 }
-.am-pad {
-  padding: 4px 8px 8px;
-}
+
 .am-actions {
   display: flex;
   flex-wrap: wrap;
@@ -198,10 +196,6 @@
   transform: rotate(180deg);
 }
 
-/* Status card, data health and the set-up options. */
-.am-status .am-sign {
-  margin-top: 6px;
-}
 /* Proposal ids and file paths: the app's monospace, a touch smaller than the text around them. */
 .am code,
 .am-panel code {
@@ -209,8 +203,7 @@
   font-size: 0.88em;
 }
 /* Key/value lists and notes in a card line up with the card's heading. */
-.am .card > .kv,
-.am-inset {
+.am .card > .kv {
   padding-inline: 8px;
 }
 /* A narrow sheet drops the proposals' ID, Type and Section (all in the panel) so Status and Details stay in view. */
@@ -222,51 +215,7 @@
     min-width: 160px;
   }
 }
-.am-status .am-open {
-  display: inline-block;
-}
-.am-health {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 2px 16px;
-  font-size: 12px;
-}
-.am-health li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  align-content: start;
-  gap: 0 8px;
-}
-.am-meta {
-  color: var(--iron);
-  font-size: 12px;
-  font-weight: 400;
-}
-.am-health .am-meta {
-  flex-basis: 100%;
-  padding-left: 16px;
-}
-.am-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--grey-dot);
-}
-.am-dot[data-status="ok"] {
-  background: var(--ok);
-}
-.am-dot[data-status="stale"],
-.am-dot[data-status="wrong-shape"] {
-  background: var(--amber-text);
-}
-.am-dot[data-status="missing"] {
-  background: var(--danger);
-}
+
 .am-opts {
   list-style: none;
   margin: 8px 0 0;
@@ -296,13 +245,6 @@
 .am-task:first-child {
   border-top: 0;
 }
-/* The kind chip and any count badge: a wrapped badge lines up under the chip, not indented. */
-.am-kinds {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-}
 .am-task .btn {
   margin-top: 6px;
 }
@@ -322,9 +264,6 @@
 }
 .card > .am-run {
   padding: 0 8px;
-}
-.am-verdict[data-stale] {
-  color: var(--amber-text);
 }
 
 /* The panel. */

@@ -42,9 +42,9 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  /* A 20px grab strip centred on the drawer's edge (WCAG 2.5.8 target size). */
-  left: -10px;
-  width: 20px;
+  /* A 24px grab strip centred on the drawer's edge (WCAG 2.5.8 target size). */
+  left: -12px;
+  width: 24px;
   z-index: 1;
   cursor: col-resize;
   touch-action: none;
@@ -58,7 +58,7 @@
   content: "";
   position: absolute;
   top: 50%;
-  left: 3px;
+  left: 5px;
   width: 4px;
   height: 48px;
   border-radius: 2px;
@@ -162,48 +162,81 @@ body.viewer-resizing iframe {
   flex: 1;
   margin-top: 0;
 }
-.viewer-body .lib-note {
+/* The file stage: what a file open on a sheet, in the viewer or in the chat's Files panel shows.
+   Eager on purpose: the viewer and the Files panel open before any library app has loaded. */
+.lib-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+}
+.lib-failed p {
   margin: 0;
-  padding: 0 4px;
+  color: var(--iron);
+}
+/* A quiet line: a cap that was hit, or a file cut short. */
+.lib-note {
+  margin: 0;
+  padding: 0;
   font-size: 12px;
   line-height: 1.45;
   color: var(--iron);
 }
+.viewer-body .lib-note {
+  padding: 0 4px;
+}
 .viewer-body .lib-note:empty {
   display: none;
 }
+.lib-file {
+  margin: -6px 0 0;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--iron);
+  overflow-wrap: anywhere;
+}
+/* A picture sits flat on the white card with a hairline edge and no shadow. */
+.tray .lib-pic,
 .viewer-body .lib-pic {
   display: grid;
   place-items: center;
   min-height: 160px;
   padding: 8px;
 }
-.viewer-body .lib-viewer-image {
+.lib-viewer-image {
   display: block;
   max-width: 100%;
-  max-height: calc(100dvh - 120px);
+  max-height: calc(100dvh - 150px);
   object-fit: contain;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
 }
+/* The viewer has no sheet header above the picture, so it gets 30px more. */
+.viewer-body .lib-viewer-image {
+  max-height: calc(100dvh - 120px);
+}
+.tray .lib-doc,
 .viewer-body .lib-doc {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 20px 24px;
 }
-.viewer-body .lib-text {
+.lib-text {
   margin: 0;
   font: 400 14px / 1.6 var(--body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.tray .lib-page,
 .viewer-body .lib-page {
   flex: 1;
   display: flex;
   padding: 6px;
 }
-.viewer-body .lib-frame {
+.lib-frame {
   flex: 1;
   width: 100%;
   min-height: 420px;
@@ -211,12 +244,13 @@ body.viewer-resizing iframe {
   border-radius: 10px;
   background: #fff;
 }
-/* A PDF's reader is dark: the card itself is its edge, corners clipped by the card. */
+/* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
+.tray .lib-pdf,
 .viewer-body .lib-pdf {
   padding: 0;
   overflow: hidden;
 }
-.viewer-body .lib-pdf .lib-frame {
+.lib-pdf .lib-frame {
   border-radius: 0;
 }
 

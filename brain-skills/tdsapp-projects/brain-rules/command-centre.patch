@@ -1,0 +1,614 @@
+diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
+--- a/lib/todo-parser.cjs	2026-10-27 17:44:35
++++ b/lib/todo-parser.cjs	2026-11-22 10:45:05
+@@ -98,7 +98,11 @@
+  * Returns [{ text, dispatchable: true }, ...] up to `limit`.
+  */
+ function parseSectionTodos(name, section, limit = Infinity) {
+-  const file = path.join(PROJECTS_DIR, name, 'todo.md');
++  return parseSectionTodosAt(path.join(PROJECTS_DIR, name, 'todo.md'), section, limit);
++}
++
++// Same rules, for any todo.md path (card projects keep theirs in their own folder).
++function parseSectionTodosAt(file, section, limit = Infinity) {
+   if (!fs.existsSync(file)) return [];
+   const content = fs.readFileSync(file, 'utf8');
+   const lines = content.split(/\r?\n/);
+@@ -166,6 +170,10 @@
+       if (t) return t;
+     }
+   }
++  return titleFromSlug(name);
++}
++
++function titleFromSlug(name) {
+   return name.split(/[-_]+/).filter(Boolean)
+     .map(w => TITLE_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))
+     .join(' ');
+@@ -206,12 +214,8 @@
+ function getMiscTodos() {
+   if (!fs.existsSync(TODO_DIR)) return [];
+ 
+-  const entries = fs.readdirSync(TODO_DIR, { withFileTypes: true })
+-    .filter(e => e.isFile()
+-      && e.name.endsWith('.md')
+-      && e.name !== 'CLAUDE.md'
+-      && e.name !== 'AGENTS.md'
+-      && e.name !== 'README.md')
++  const labelIndex = buildLabelIndex();
++  const entries = listOpenTodoFiles()
+     .map(e => {
+       const abs = path.join(TODO_DIR, e.name);
+       const stat = fs.statSync(abs);
+@@ -233,6 +237,8 @@
+         source: frontmatter.source || null,
+         assignee: frontmatter.assignee || null,
+         project: frontmatter.project || null,
++        // Optional: the project's title when `project:` is a key or an old label we know.
++        projectLabel: frontmatter.project ? projectLabel(frontmatter.project, labelIndex) : null,
+         body: body.trim(),
+         file: e.name,
+         mtime: stat.mtime.toISOString(),
+@@ -240,19 +246,31 @@
+     })
+     .filter(Boolean);
+ 
+-  // Sort: items with due dates first (soonest first), then by created desc.
+-  entries.sort((a, b) => {
+-    if (a.due && b.due) return a.due.localeCompare(b.due);
+-    if (a.due && !b.due) return -1;
+-    if (!a.due && b.due) return 1;
+-    const ac = a.created || a.mtime;
+-    const bc = b.created || b.mtime;
+-    return bc.localeCompare(ac);
+-  });
++  entries.sort(sortTodos);
+ 
+   return entries;
+ }
+ 
++// Sort: items with due dates first (soonest first), then by created desc.
++function sortTodos(a, b) {
++  if (a.due && b.due) return a.due.localeCompare(b.due);
++  if (a.due && !b.due) return -1;
++  if (!a.due && b.due) return 1;
++  const ac = a.created || a.mtime;
++  const bc = b.created || b.mtime;
++  return bc.localeCompare(ac);
++}
++
++// The todo/*.md files getMiscTodos reads (top level only, folder docs skipped).
++function listOpenTodoFiles() {
++  return fs.readdirSync(TODO_DIR, { withFileTypes: true })
++    .filter(e => e.isFile()
++      && e.name.endsWith('.md')
++      && e.name !== 'CLAUDE.md'
++      && e.name !== 'AGENTS.md'
++      && e.name !== 'README.md');
++}
++
+ // ---- Projects list -------------------------------------------------------
+ 
+ /**
+@@ -270,8 +288,11 @@
+ function getProjectsList() {
+   if (!fs.existsSync(PROJECTS_DIR)) return [];
+ 
++  const movedKeys = liveMovedFromKeys();
+   const out = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true })
+-    .filter(e => e.isDirectory() && !PROJECT_DIR_DENY.has(e.name))
++    .filter(e => e.isDirectory() && !PROJECT_DIR_DENY.has(e.name)
++      && !e.name.startsWith('.')
++      && !isGhost(e.name, movedKeys))
+     .map(e => {
+       const dir = path.join(PROJECTS_DIR, e.name);
+       let mostRecent = 0;
+@@ -311,6 +332,211 @@
+   return out;
+ }
+ 
++// ---- Card projects (clients/<c>/projects/<slug>/project.md) --------------
++//
++// Projects made in TDS Cortex live inside the client folder. They are read by
++// their own function so getProjectsList() (which Today reads too) stays as is.
++
++const CLIENTS_DIR = path.join(BRAIN_ROOT, 'clients');
++const TDS_CLIENT = 'the-digital-stride';
++
++/** The `  - "x"` items under `key:` in a file's frontmatter. [] when none. */
++function parseFrontmatterList(content, key) {
++  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return [];
++  const lines = content.split(/\r?\n/);
++  let closeIdx = -1;
++  for (let i = 1; i < lines.length; i++) if (lines[i] === '---') { closeIdx = i; break; }
++  if (closeIdx === -1) return [];
++  const head = new RegExp('^' + key + ':\\s*(.*)$');
++  const out = [];
++  for (let i = 1; i < closeIdx; i++) {
++    const m = lines[i].match(head);
++    if (!m) continue;
++    const inline = m[1].trim();
++    if (inline.startsWith('[') && inline.endsWith(']')) {
++      // Inline list: moved_from: ["a", "b"]
++      inline.slice(1, -1).split(',').forEach(v => { const t = unquote(v.trim()); if (t) out.push(t); });
++      return out;
++    }
++    if (inline) return out; // a plain scalar, not a list
++    for (let j = i + 1; j < closeIdx; j++) {
++      const li = lines[j].match(/^\s+-\s*(.*?)\s*$/);
++      if (!li) { if (lines[j].trim() && !/^\s*#/.test(lines[j])) break; continue; }
++      const t = unquote(li[1]);
++      if (t) out.push(t);
++    }
++    return out;
++  }
++  return out;
++}
++
++function unquote(v) {
++  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1);
++  return v;
++}
++
++function safeDirs(dir) {
++  try {
++    return fs.readdirSync(dir, { withFileTypes: true })
++      .filter(e => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'))
++      .map(e => e.name);
++  } catch { return []; }
++}
++
++function readCard(file) {
++  try {
++    const content = fs.readFileSync(file, 'utf8');
++    return { ...parseFrontmatter(content), content };
++  } catch { return null; }
++}
++
++/** Every project.md under clients/<c>/<sub>/<slug>/ → [{ client, slug, fm, content }]. */
++function scanCards(sub) {
++  const out = [];
++  for (const client of safeDirs(CLIENTS_DIR)) {
++    for (const slug of safeDirs(path.join(CLIENTS_DIR, client, sub))) {
++      const card = readCard(path.join(CLIENTS_DIR, client, sub, slug, 'project.md'));
++      if (card) out.push({ client, slug, fm: card.frontmatter, content: card.content });
++    }
++  }
++  return out;
++}
++
++/** The moved_from keys of every live card, as a Set. */
++function liveMovedFromKeys() {
++  const set = new Set();
++  for (const c of scanCards('projects')) {
++    for (const k of parseFrontmatterList(c.content, 'moved_from')) set.add(k);
++  }
++  return set;
++}
++
++/** A card-less projects/<name>/ that was archived or moved on another Mac. */
++function isGhost(name, movedKeys) {
++  if (fs.existsSync(path.join(PROJECTS_DIR, name, 'project.md'))) return false;
++  if (fs.existsSync(path.join(BRAIN_ROOT, 'projects-archive', name, 'project.md'))) return true;
++  return movedKeys.has(TDS_CLIENT + '/' + name);
++}
++
++function clientDisplayName(client, map) {
++  if (map && map[client] && map[client].name) return String(map[client].name);
++  const prof = readCard(path.join(CLIENTS_DIR, client, 'profile.md'));
++  if (prof && prof.frontmatter.client) return prof.frontmatter.client;
++  return client;
++}
++
++function readClientMap() {
++  try { return JSON.parse(fs.readFileSync(path.join(CLIENTS_DIR, 'map.json'), 'utf8')) || {}; }
++  catch { return {}; }
++}
++
++function getCardProjects() {
++  const map = readClientMap();
++  const names = {};
++  const cards = scanCards('projects')
++    .filter(c => String(c.fm.status || '').toLowerCase() !== 'done')
++    .map(c => {
++      const key = c.client + '/' + c.slug;
++      const folder = 'clients/' + c.client + '/projects/' + c.slug;
++      if (!(c.client in names)) names[c.client] = clientDisplayName(c.client, map);
++      return {
++        key,
++        title: c.fm.title || c.slug,
++        client: c.client,
++        clientName: names[c.client],
++        folder,
++        createdBy: c.fm.created_by || null,
++        movedFrom: parseFrontmatterList(c.content, 'moved_from'),
++        status: c.fm.status || null,
++        linkedTodos: [],
++        checklist: parseSectionTodosAt(path.join(BRAIN_ROOT, folder, 'todo.md'), 'Active'),
++      };
++    });
++  if (!cards.length) return cards;
++
++  // Link each open to-do whose project: is the key or one of its moved_from keys.
++  const byKey = new Map();
++  for (const c of cards) { byKey.set(c.key, c); c.movedFrom.forEach(k => { if (!byKey.has(k)) byKey.set(k, c); }); }
++  const todos = [];
++  if (fs.existsSync(TODO_DIR)) {
++    for (const e of listOpenTodoFiles()) {
++      try {
++        const abs = path.join(TODO_DIR, e.name);
++        const st = fs.statSync(abs);
++        if (st.size === 0) continue;
++        const { frontmatter } = parseFrontmatter(fs.readFileSync(abs, 'utf8'));
++        const card = frontmatter.project && byKey.get(frontmatter.project.trim());
++        if (!card) continue;
++        let title = frontmatter.title;
++        if (!title) title = e.name.replace(/\.md$/, '');
++        todos.push({
++          card,
++          created: frontmatter.created || null,
++          mtime: st.mtime.toISOString(),
++          due: frontmatter.due || null,
++          item: { title, file: e.name, assignee: frontmatter.assignee || null, due: frontmatter.due || null },
++        });
++      } catch { /* unreadable to-do, skip */ }
++    }
++  }
++  todos.sort(sortTodos);
++  for (const t of todos) t.card.linkedTodos.push(t.item);
++
++  cards.sort((a, b) => a.title.localeCompare(b.title));
++  return cards;
++}
++
++// ---- Project labels ------------------------------------------------------
++
++/** Lookup tables for projectLabel(): key → title. Built once per call site. */
++function buildLabelIndex() {
++  const keys = new Map();
++  const add = (k, t) => { if (k && t && !keys.has(k)) keys.set(k, t); };
++  for (const c of scanCards('projects')) {
++    const t = c.fm.title || c.slug;
++    add(c.client + '/' + c.slug, t);
++    parseFrontmatterList(c.content, 'moved_from').forEach(k => add(k, t));
++  }
++  for (const c of scanCards('projects-archive')) {
++    const t = c.fm.title || c.slug;
++    add(c.client + '/' + c.slug, t);
++    parseFrontmatterList(c.content, 'moved_from').forEach(k => add(k, t));
++  }
++  return { keys };
++}
++
++/**
++ * A project's title for a to-do's `project:` value, or null when we don't
++ * know it (the UI then shows the raw value, as it always did).
++ */
++function projectLabel(value, index) {
++  const v = String(value || '').trim();
++  if (!v) return null;
++  const idx = index || buildLabelIndex();
++  if (idx.keys.has(v)) return idx.keys.get(v);
++  const m = v.match(/^the-digital-stride\/([A-Za-z0-9][A-Za-z0-9 ._-]*)$/);
++  if (m) {
++    const name = m[1];
++    if (fs.existsSync(path.join(PROJECTS_DIR, name))) return getProjectTitle(name);
++    const arch = path.join(BRAIN_ROOT, 'projects-archive', name);
++    if (fs.existsSync(arch)) return getProjectTitleAt(arch, name);
++  }
++  return null;
++}
++
++// getProjectTitle's rules, for a folder that isn't under projects/.
++function getProjectTitleAt(dir, name) {
++  const file = path.join(dir, 'todo.md');
++  if (fs.existsSync(file)) {
++    const h1 = fs.readFileSync(file, 'utf8').split(/\r?\n/).find(l => /^#\s+\S/.test(l));
++    if (h1) {
++      const t = h1.replace(/^#\s+/, '').replace(/\s*[—–-]\s*todo\s*$/i, '').trim();
++      if (t) return t;
++    }
++  }
++  return titleFromSlug(name);
++}
++
+ module.exports = {
+   parseFrontmatter,
+   getProjectTodos,
+@@ -320,6 +546,9 @@
+   getProjectDetail,
+   getMiscTodos,
+   getProjectsList,
++  getCardProjects,
++  projectLabel,
++  parseFrontmatterList,
+   // Paths exported for tests / debugging.
+   _paths: { BRAIN_ROOT, PROJECTS_DIR, TODO_DIR },
+ };
+diff -ru a/public/css/cc.css b/public/css/cc.css
+--- a/public/css/cc.css	2026-11-04 13:24:23
++++ b/public/css/cc.css	2026-11-22 10:45:50
+@@ -473,6 +473,8 @@
+ 
+ /* project card: creator line + per-project actions footer */
+ .cc-project-by { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
++.cc-todo .who { font-size: 12px; color: var(--ink-2); margin-left: auto; white-space: nowrap; }
++.cc-item .cc-more { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+ .cc-project-foot {
+   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+   margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+diff -ru a/public/js/cc.js b/public/js/cc.js
+--- a/public/js/cc.js	2026-11-17 13:06:14
++++ b/public/js/cc.js	2026-11-22 10:45:43
+@@ -90,15 +90,19 @@
+   // ---- projects ----
+   async function loadProjects() {
+     try {
+-      const { projects } = await getJSON('/api/projects');
++      const { projects, cardProjects } = await getJSON('/api/projects');
++      // cardProjects is new: an older server doesn't send it and the page then looks as it always did.
++      const cards = Array.isArray(cardProjects) ? cardProjects : [];
++      const total = projects.length + cards.length;
+       const box = $('cc-projects'); box.innerHTML = '';
+-      $('cc-projects-count').textContent = projects.length ? `${projects.length}` : '';
+-      if (!projects.length) { box.innerHTML = '<p class="cc-empty">No project folders yet. Add folders under projects/ then run the seed prompt below.</p>'; }
++      $('cc-projects-count').textContent = total ? `${total}` : '';
++      if (!total) { box.innerHTML = '<p class="cc-empty">No project folders yet. Add folders under projects/ then run the seed prompt below.</p>'; }
+       projects.forEach(p => box.append(projectCard(p)));
+-      scoreState.projects = projects.length;
++      cards.forEach(c => box.append(cardProjectCard(c)));
++      scoreState.projects = total;
+       scoreState.todos = projects.reduce((n, p) => n + (p.activeTodos ? p.activeTodos.length : 0), 0);
+       paintScores();
+-      return projects.length;
++      return total;
+     } catch (e) { $('cc-projects').innerHTML = '<p class="cc-empty">Could not load projects.</p>'; }
+   }
+ 
+@@ -198,14 +202,81 @@
+     return card;
+   }
+ 
++  // A project made in TDS Cortex (clients/<client>/projects/<slug>/). Same look as
++  // the cards above. Its to-dos are todo/ files that name it in `project:` (ticked
++  // like any loose to-do) plus any items in its own todo.md. No Archive here: Cortex owns that.
++  function cardProjectCard(c) {
++    const card = el('div', 'cc-item');
++    tagScope(card, 'card', 'project:' + c.key, `The "${c.title}" project card`,
++      'public/js/cc.js cardProjectCard() + SECTION:projects; data from /api/projects cardProjects (server.cjs + lib/todo-parser.cjs)');
++    const title = el('div', 'title'); title.textContent = c.title || c.key;
++    const meta = el('div', 'meta'); meta.textContent = c.clientName || c.client || '';
++    card.append(title, meta);
++    if (c.createdBy) {
++      const by = el('div', 'cc-project-by');
++      by.textContent = 'Created by ' + c.createdBy;
++      card.append(by);
++    }
++
++    // After any tick, refresh the project cards and the to-do list.
++    const refresh = () => { loadProjects(); if (typeof loadTodoTable === 'function') loadTodoTable(); };
++    const linked = c.linkedTodos || [];
++    const checklist = c.checklist || [];
++    const row = (label, who, onTick, runArgs, tip) => {
++      const r = el('div', 'cc-todo');
++      tagScope(r, 'element', 'todo:' + short(label, 40), `The to-do "${short(label, 60)}" (in project "${c.title}")`,
++        'public/js/cc.js cardProjectCard() (the cc-todo rows); dispatch via /api/spawn in server.cjs');
++      const cb = el('input'); cb.type = 'checkbox'; cb.title = tip;
++      cb.onclick = (e) => e.stopPropagation();
++      cb.onchange = async () => {
++        if (!cb.checked) return;
++        cb.disabled = true;
++        const res = await onTick().catch(() => ({ error: 'network error' }));
++        if (!res || res.error) {
++          toast('Could not tick off: ' + ((res && res.error) || 'unknown error'));
++          cb.checked = false; cb.disabled = false; return;
++        }
++        r.classList.add('done');
++        toast('Done — ticked off in ' + (c.title || c.key));
++        setTimeout(refresh, 900);
++      };
++      const run = el('button', 'run'); run.textContent = '▷'; run.title = 'Start a session for this';
++      run.onclick = (e) => { e.stopPropagation(); dispatch(runArgs); };
++      const txt = el('span', 'txt'); txt.textContent = label;
++      r.append(cb, run, txt);
++      if (who) { const w = el('span', 'who'); w.textContent = who; r.append(w); }
++      return r;
++    };
++
++    if (linked.length || checklist.length) {
++      const list = el('div', 'cc-todos');
++      linked.forEach(t => list.append(row(t.title, t.assignee, () => postJSON('/api/todos/tick', { file: t.file }),
++        { project: c.key, todo: t.title }, 'Tick off — moves the to-do file to todo/done/')));
++      checklist.forEach(t => list.append(row(t.text, null, () => postJSON('/api/projects/tick', { project: c.key, text: t.text }),
++        { project: c.key, todo: t.text }, 'Tick off — marks it done in the project todo.md')));
++      card.append(list);
++      const more = (c.linkedTotal || 0) - linked.length;
++      if (more > 0) {
++        const m = el('div', 'cc-more'); m.textContent = `+${more} more`;
++        card.append(m);
++      }
++    } else {
++      const none = el('div', 'no-todos'); none.textContent = 'No open to-dos';
++      card.append(none);
++    }
++    card.append(projectFoot(c, true));
++    return card;
++  }
++
+   // Footer row on a project card: "+ Add to-do" (inline form → /api/projects/add-todo)
+   // and, unless the all-done block is already showing one, an "Archive" button.
+-  function projectFoot(p) {
++  // For a Cortex project (`isCard`) it adds a loose to-do with that project instead, and has no Archive.
++  function projectFoot(p, isCard) {
+     const foot = el('div', 'cc-project-foot');
+ 
+     const addWrap = el('span', 'cc-proj-add');
+     const addBtn = el('button', 'cc-proj-link'); addBtn.type = 'button'; addBtn.textContent = '+ Add to-do';
+-    addBtn.title = 'Add a to-do to this project’s ## Active list';
++    addBtn.title = isCard ? 'Add a to-do to this project' : 'Add a to-do to this project’s ## Active list';
+     const form = el('span', 'cc-proj-add-form'); form.hidden = true;
+     const inp = el('input'); inp.type = 'text'; inp.placeholder = 'What needs doing?'; inp.maxLength = 200;
+     const save = el('button', 'cc-proj-save'); save.type = 'button'; save.textContent = 'Add';
+@@ -217,12 +288,14 @@
+       const text = inp.value.trim();
+       if (!text) { inp.focus(); return; }
+       save.disabled = true;
+-      const r = await postJSON('/api/projects/add-todo', { project: p.name, text })
++      const r = await (isCard ? postJSON('/api/todos/add', { title: text, project: p.key })
++        : postJSON('/api/projects/add-todo', { project: p.name, text }))
+         .catch(() => ({ error: 'network error' }));
+       save.disabled = false;
+       if (!r || r.error) { toast('Could not add: ' + ((r && r.error) || 'unknown error')); return; }
+       toast('Added to ' + (p.title || p.name));
+       loadProjects();
++      if (isCard && typeof loadTodoTable === 'function') loadTodoTable();
+     };
+     save.onclick = submit;
+     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') closeForm(); });
+@@ -230,7 +303,7 @@
+     addWrap.append(addBtn, form);
+     foot.append(addWrap);
+ 
+-    if (!p.allDone) {
++    if (!isCard && !p.allDone) {
+       const arch = el('button', 'cc-proj-link cc-proj-archive'); arch.type = 'button'; arch.textContent = 'Archive';
+       arch.title = 'Move this project out of the Projects column (into projects-archive/)';
+       arch.onclick = async () => {
+@@ -1249,7 +1322,7 @@
+     };
+     paintTitle();
+     tdTitle.append(txt);
+-    const bits = [t.project, t.source].filter(Boolean);
++    const bits = [t.projectLabel || t.project, t.source].filter(Boolean);
+     if (bits.length) { const m = el('div', 'meta'); m.textContent = bits.join('  ·  '); tdTitle.append(m); }
+ 
+     // Edit the wording inline: the title becomes an input and the long
+diff -ru a/server.cjs b/server.cjs
+--- a/server.cjs	2026-11-17 13:06:14
++++ b/server.cjs	2026-11-22 10:45:21
+@@ -301,7 +301,20 @@
+       allDone: projectAllDone(p.name),
+       createdBy: projectCreator(p.name),
+     }));
+-    res.set('Cache-Control', 'no-store').json({ projects, generated: new Date().toISOString() });
++    // Projects made in TDS Cortex (clients/<c>/projects/<slug>/). Separate from
++    // `projects` so everything that reads that list is unchanged; an older page
++    // simply ignores this field.
++    let cardProjects = [];
++    try {
++      cardProjects = todoParser.getCardProjects().map(c => ({
++        key: c.key, title: c.title, client: c.client, clientName: c.clientName,
++        createdBy: c.createdBy, status: c.status,
++        linkedTodos: c.linkedTodos.slice(0, 3),
++        linkedTotal: c.linkedTodos.length,
++        checklist: c.checklist,
++      }));
++    } catch { cardProjects = []; }
++    res.set('Cache-Control', 'no-store').json({ projects, cardProjects, generated: new Date().toISOString() });
+   } catch (err) {
+     res.status(500).json({ error: err.message });
+   }
+@@ -1383,6 +1396,12 @@
+ 
+ // ---- Dispatch + manage ---------------------------------------------------
+ 
++// A live card project by key, from the server's own scan (never from request text).
++function findCardProject(key) {
++  try { return todoParser.getCardProjects().find(c => c.key === key) || null; }
++  catch { return null; }
++}
++
+ app.post('/api/spawn', express.json({ limit: '64kb' }), (req, res) => {
+   const body = req.body || {};
+   const project = body.project ? String(body.project) : null;
+@@ -1419,6 +1438,15 @@
+     return res.status(400).json({ error: 'one of "todo", "prompt", "client", "meeting" or "content" is required' });
+   }
+ 
++  // A card project's key (<client>/<slug>) resolves through the server's own
++  // scan to its folder. Request text never becomes a path. Unknown key → 400.
++  let cardFolder = null;
++  if (project && project.includes('/')) {
++    const found = findCardProject(project);
++    if (!found) return res.status(400).json({ error: 'unknown project: ' + project.slice(0, 80) });
++    cardFolder = found.folder;
++  }
++
+   let prompt;
+   if (content) {
+     prompt = `Help me work on this piece of content: "${content.title}" (${content.file}). `
+@@ -1445,6 +1473,10 @@
+       + `then check clients/${client}/context/memory/ for the latest operational notes before suggesting next steps.`;
+   } else if (explicitPrompt) {
+     prompt = explicitPrompt;
++  } else if (project && cardFolder) {
++    prompt = `Pick up this todo for the ${project} project: "${todoText}". `
++      + `The brain root is your working directory. Read ${cardFolder}/project.md `
++      + `(and any todo.md / notes in that folder) before starting, if they exist.`;
+   } else if (project) {
+     prompt = `Pick up this todo for the ${project} project: "${todoText}". `
+       + `The brain root is your working directory. Read projects/${project}/README.md `
+@@ -1492,12 +1524,17 @@
+ app.post('/api/projects/tick', express.json({ limit: '8kb' }), (req, res) => {
+   const project = String((req.body && req.body.project) || '');
+   const text = String((req.body && req.body.text) || '');
+-  if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(project)) {
++  // A card project's key (<client>/<slug>) is looked up in the scan, then its own todo.md is used.
++  const card = project.includes('/') ? findCardProject(project) : null;
++  if (project.includes('/') && !card) return res.status(400).json({ error: 'invalid project' });
++  if (!card && !/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(project)) {
+     return res.status(400).json({ error: 'invalid project' });
+   }
+   if (!text) return res.status(400).json({ error: 'text is required' });
+ 
+-  const file = path.join(BRAIN_ROOT, 'projects', project, 'todo.md');
++  const file = card
++    ? path.join(BRAIN_ROOT, card.folder, 'todo.md')
++    : path.join(BRAIN_ROOT, 'projects', project, 'todo.md');
+   if (!fs.existsSync(file)) return res.status(404).json({ error: 'no todo.md for ' + project });
+   try {
+     const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+@@ -1525,12 +1562,18 @@
+   }
+   const src = path.join(BRAIN_ROOT, 'projects', project);
+   if (!fs.existsSync(src)) return res.status(404).json({ error: 'no such project' });
++  // Never rename on a clash (a "-2" name would break the project's key): refuse instead.
++  const clash = [
++    path.join(BRAIN_ROOT, 'projects-archive', project),
++    path.join(BRAIN_ROOT, 'clients', 'the-digital-stride', 'projects-archive', project),
++  ].find(d => fs.existsSync(d));
++  if (clash) {
++    return res.status(409).json({ error: `There is already an archived project called "${project}". Rename or remove the archived one first, then try again.` });
++  }
+   try {
+     const archiveDir = path.join(BRAIN_ROOT, 'projects-archive');
+     fs.mkdirSync(archiveDir, { recursive: true });
+-    let dest = path.join(archiveDir, project);
+-    let n = 2;
+-    while (fs.existsSync(dest)) { dest = path.join(archiveDir, project + '-' + n); n += 1; }
++    const dest = path.join(archiveDir, project);
+     fs.renameSync(src, dest);
+     res.json({ ok: true, project, archived: path.relative(BRAIN_ROOT, dest) });
+   } catch (err) {
+@@ -1591,6 +1634,13 @@
+   const due = String((req.body && req.body.due) || '');
+   if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: 'due must be YYYY-MM-DD' });
+ 
++  // Optional: put the to-do in a card project. Only a key the server's own scan knows.
++  let card = null;
++  if (req.body && req.body.project !== undefined && req.body.project !== null && req.body.project !== '') {
++    card = typeof req.body.project === 'string' ? findCardProject(req.body.project) : null;
++    if (!card) return res.status(400).json({ error: 'unknown project' });
++  }
++
+   // Assignee slug, if the caller picked one on the add form. Empty → fall back
+   // to this machine's git user (below), matching "todos belong to the capturer".
+   let assignee = String((req.body && req.body.assignee) || '').toLowerCase()
+@@ -1621,6 +1671,7 @@
+     if (assignee) fm.push('assignee: ' + assignee);
+     fm.push('title: ' + title, 'created: ' + today);
+     if (due) fm.push('due: ' + due);
++    if (card) fm.push('client: ' + card.client, 'project: ' + card.key);
+     fm.push('source: added from the Workbench', '---', '');
+     fs.writeFileSync(path.join(todoDir, file), fm.join('\n'), 'utf8');
+     res.json({ ok: true, file });

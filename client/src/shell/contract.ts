@@ -148,6 +148,11 @@ export type ShellAction =
   | { type: 'set-palette'; open: boolean }
   /** Shows a file in the viewer over the desk (replacing one already shown). */
   | { type: 'open-viewer'; viewer: ViewerRequest }
+  /**
+   * Fills in more about the file the viewer shows (where it is, "Open in Documents", a newer copy),
+   * only while that same file is still shown: a late answer never reopens or replaces anything.
+   */
+  | { type: 'update-viewer'; viewer: LibraryViewerRequest }
   | { type: 'close-viewer' }
   /** Opens the to-do panel on a to-do (read or edit) or, with a null key, on the add form. Replaces one already open (`force`: even over unsaved changes, for a to-do that was just saved or added). */
   | { type: 'open-todo'; key: string | null; mode: TodoPanelMode; force?: true }

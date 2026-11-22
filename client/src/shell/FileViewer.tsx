@@ -69,7 +69,7 @@ export function FileViewer() {
         const now = latest.current;
         if (!live || !fresh || now === null || now.kind === 'page' || now.item.id !== fresh.id) return;
         if (now.item.modified !== fresh.modified)
-          dispatch({ type: 'open-viewer', viewer: { ...now, item: fresh } });
+          dispatch({ type: 'update-viewer', viewer: { ...now, item: fresh } });
       })
       .catch(() => {
         // Offline or gone: the copy on screen stays; a delete closes the drawer by its own route.

@@ -427,9 +427,11 @@ describe('the Files tab', () => {
       files: [{ item: doc, scope: { id: 'tds', name: 'The Digital Stride' } }],
     });
     fireEvent.click(await openFiles());
+    // It opens at once; the library's name and "Open in Documents" follow when the lookup answers.
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: doc } });
     await waitFor(() =>
       expect(shell.dispatch).toHaveBeenCalledWith({
-        type: 'open-viewer',
+        type: 'update-viewer',
         viewer: { item: doc, place: 'The Digital Stride', openIn: { app: 'documents', scope: 'tds' } },
       }),
     );
@@ -440,8 +442,8 @@ describe('the Files tab', () => {
   it('still opens the file when its library cannot be looked up', async () => {
     api.libraryItems.mockRejectedValue(new Error('offline'));
     fireEvent.click(await openFiles());
-    await waitFor(() =>
-      expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: doc } }),
-    );
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: doc } });
+    await waitFor(() => expect(api.libraryItems).toHaveBeenCalled());
+    expect(shell.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'update-viewer' }));
   });
 });

@@ -357,26 +357,25 @@ export function ProjectFiles({
     if (linking) setDone('');
   }, [linking]);
 
-  // A file opens in the viewer drawer over the right of the page, like a to-do's or a chat's files.
-  // Its library (for the place line and "Open in Documents") is looked up first; if that fails the
-  // file still opens, just without them.
+  // A file opens at once in the viewer drawer over the right of the page, like a to-do's or a chat's
+  // files. Its library (the place line and "Open in Documents") is filled in when the lookup answers,
+  // and only while that file is still open; if the lookup fails the file just shows without them.
   const view = async (item: LibraryItem) => {
-    let found: { item: LibraryItem; scope: { id: string; name: string } } | undefined;
+    dispatch({ type: 'open-viewer', viewer: { item } });
     try {
-      found = (await api.libraryItems([item.id])).files[0];
+      const found = (await api.libraryItems([item.id])).files[0];
+      if (!found) return;
+      dispatch({
+        type: 'update-viewer',
+        viewer: {
+          item: found.item,
+          place: found.scope.name,
+          openIn: { app: found.item.kind === 'image' ? 'images' : 'documents', scope: found.scope.id },
+        },
+      });
     } catch {
-      found = undefined;
+      // Shown without its library's name.
     }
-    dispatch({
-      type: 'open-viewer',
-      viewer: found
-        ? {
-            item: found.item,
-            place: found.scope.name,
-            openIn: { app: found.item.kind === 'image' ? 'images' : 'documents', scope: found.scope.id },
-          }
-        : { item },
-    });
   };
 
   return (

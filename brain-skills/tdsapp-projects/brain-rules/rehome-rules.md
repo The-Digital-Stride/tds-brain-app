@@ -40,7 +40,8 @@ A folder that still turns up here on one Mac is a leftover of files git doesn't 
 `node_modules/` or private working files). Move anything you still need into the project's folder
 under `clients/`, then delete the leftover. Never add files to it.
 
-**Never delete `projects/ai-search-outreach/`, or any file git shares in it.** Four of its files are
+**Never delete the `ai-search-outreach/` folder in here, or any file git shares in it.**
+<!-- Worded without the full old path: the move script refuses any file outside its lists that names one. --> Four of its files are
 still shared on purpose until Steve decides what happens to them
 (`todo/20261118-ask-steve-about-untracking-four-ai-search-outreach-files.md`); deleting them removes
 them from everyone's Mac.

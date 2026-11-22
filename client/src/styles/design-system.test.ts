@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
  * defined twice, a class nothing uses, a class the eager code uses but only a lazy sheet defines, and loose
  * checkboxes and sizes.
  *
- * Each check has a NAMED allowlist of today's remaining offenders ("file value"). A new offender fails and is
- * printed; fixing an old one fails too until its line is deleted from the list, so the lists only ever shrink.
+ * Each check has a NAMED allowlist of today's remaining offenders with counts ("file value": n). A new offender
+ * or a higher count fails and is printed; fixing one fails too until the count is lowered, so the lists only shrink.
  */
 const SRC = join(import.meta.dirname, '..');
 const ROOT = join(SRC, '..', '..');
@@ -37,12 +37,24 @@ const tsxFiles = sourceFiles.filter((f) => f.endsWith('.tsx'));
 
 type Rule = { selector: string; body: string; top: boolean };
 
-/** Every rule in a stylesheet (comments gone). `top` is false inside an @media, @container or @supports block. */
+/**
+ * Every rule in a stylesheet (comments gone). `top` is false inside an @media, @container or @supports block;
+ * an @layer block is not conditional, so it keeps the caller's `top`.
+ */
 function rules(css: string, top = true): Rule[] {
   const out: Rule[] = [];
   let i = 0;
   while (i < css.length) {
     const open = css.indexOf('{', i);
+    const at = css.slice(i).search(/\S/);
+    if (at >= 0 && css[i + at] === '@') {
+      // A statement at-rule (`@layer a, b;`, `@import …;`, `@charset …;`) has no block: skip it, not the next rule.
+      const semi = css.indexOf(';', i + at);
+      if (semi >= 0 && (open < 0 || semi < open)) {
+        i = semi + 1;
+        continue;
+      }
+    }
     if (open < 0) break;
     let depth = 0;
     let end = open;
@@ -53,7 +65,8 @@ function rules(css: string, top = true): Rule[] {
     const head = css.slice(i, open).trim();
     const body = css.slice(open + 1, end);
     if (head.startsWith('@')) {
-      if (/^@(media|container|supports|layer)/.test(head)) out.push(...rules(body, false));
+      if (/^@layer\b/.test(head)) out.push(...rules(body, top));
+      else if (/^@(media|container|supports)\b/.test(head)) out.push(...rules(body, false));
     } else out.push({ selector: head, body, top });
     i = end + 1;
   }
@@ -63,14 +76,25 @@ function rules(css: string, top = true): Rule[] {
 const parsed = cssFiles.map((file) => ({ file: rel(file), rules: rules(stripComments(read(file))) }));
 const notTokens = parsed.filter((p) => p.file !== 'styles/tokens.css');
 
-/** Report what is not allowed and what is allowed but no longer needed, so the lists stay honest. */
-function check(what: string, found: string[], allowed: string[]) {
-  const seen = new Set(found);
-  const fresh = [...seen].filter((x) => !allowed.includes(x)).sort();
-  const stale = allowed.filter((x) => !seen.has(x));
-  expect({ [`new ${what}`]: fresh, 'fixed, delete from the allowlist': stale }).toEqual({
+/**
+ * Allowlists hold counts ("file value" -> how many times). A count that rises (or a new key) fails and is
+ * printed; a count that falls fails too, until the allowlist is lowered, so the numbers only ever shrink.
+ */
+type Allow = Record<string, number>;
+function check(what: string, found: string[], allowed: Allow) {
+  const counts: Allow = {};
+  for (const x of found) counts[x] = (counts[x] ?? 0) + 1;
+  const fresh = Object.entries(counts)
+    .filter(([k, n]) => n > (allowed[k] ?? 0))
+    .map(([k, n]) => `${k} ×${n} (allowed ${allowed[k] ?? 0})`)
+    .sort();
+  const fixed = Object.entries(allowed)
+    .filter(([k, n]) => (counts[k] ?? 0) < n)
+    .map(([k, n]) => `${k} ×${counts[k] ?? 0} (allowed ${n})`)
+    .sort();
+  expect({ [`new ${what}`]: fresh, 'fixed, lower the allowlist': fixed }).toEqual({
     [`new ${what}`]: [],
-    'fixed, delete from the allowlist': [],
+    'fixed, lower the allowlist': [],
   });
 }
 
@@ -97,6 +121,49 @@ const num = (n: string) => String(Number.parseFloat(n));
 const TYPE_SIZES = ['11.5', '12', '12.5', '13', '13.5', '14', '15', '18', '26'];
 const RADII = ['0', '5', '6', '8', '9', '10', '12', '14', '16', '18'];
 const LAYERS = ['5', '8', '39', '40', '41', '45', '50', '60', '70', '71', '72', '80', '200'];
+
+/** Every source file main.tsx reaches through static relative imports (dynamic `import()` is a lazy chunk). */
+function eagerFiles(): string[] {
+  const seen = new Set<string>();
+  const visit = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const m of readCode(file).matchAll(
+      /\b(?:import|export)\s+(?:[^'"();]*?\sfrom\s+)?['"](\.[^'"]*)['"]/g,
+    )) {
+      const base = join(file, '..', m[1] as string);
+      const hit = ['', '.tsx', '.ts', '/index.tsx', '/index.ts']
+        .map((x) => base + x)
+        .find((f) => sourceSet.has(f));
+      if (hit) visit(hit);
+    }
+  };
+  visit(join(SRC, 'main.tsx'));
+  return [...seen];
+}
+const sourceSet = new Set(sourceFiles);
+
+describe('the design system guard: the scanner', () => {
+  it('sees a rule after a statement at-rule', () => {
+    const r = rules('@charset "utf-8";\n@layer a, b;\n@import url(x.css);\n.x { color: red }');
+    expect(r.map((x) => x.selector)).toEqual(['.x']);
+  });
+  it('treats @layer as top level but @media and @supports as conditional', () => {
+    const r = rules(
+      '@layer x { .a { color: red } }\n@media (min-width: 1px) { .b { color: red } }\n@supports (a: b) { .c { color: red } }',
+    );
+    expect(r.map((x) => [x.selector, x.top])).toEqual([
+      ['.a', true],
+      ['.b', false],
+      ['.c', false],
+    ]);
+  });
+  it('still sees a class defined in two layered sheets', () => {
+    const sheets = ['@layer a, b;\n@layer a { .dup { color: red } }', '@layer b { .dup { color: blue } }'];
+    const tops = sheets.flatMap((c) => rules(c)).filter((r) => r.top && r.selector === '.dup');
+    expect(tops.length).toBe(2);
+  });
+});
 
 describe('the design system guard: scales', () => {
   it('finds the stylesheets and declarations (so the scan itself still works)', () => {
@@ -207,10 +274,8 @@ describe('the design system guard: classes', () => {
     );
     expect(lazySheets.size).toBeGreaterThan(5);
     expect(eagerSheets.has('styles/viewer.css')).toBe(true);
-    const eagerCode = [
-      ...tsxFiles.filter((f) => /^(shell|components)\//.test(rel(f))),
-      join(SRC, 'apps/shared/Viewer.tsx'),
-    ];
+    const eagerCode = eagerFiles();
+    expect(eagerCode.length).toBeGreaterThan(20);
     const eagerWords = new Set(
       eagerCode
         .map(readCode)
@@ -256,7 +321,7 @@ describe('the design system guard: markup', () => {
       }),
     );
     expect(seen).toBeGreaterThan(100);
-    check('data-size values', found, []);
+    check('data-size values', found, {});
   });
 
   it('every checkbox and radio is a .tick or a .switch', () => {
@@ -275,79 +340,98 @@ describe('the design system guard: markup', () => {
   });
 });
 
-// Today's remaining offenders. Delete a line when you fix it; the test fails until you do. -----------------
-const ALLOW_FONT_SIZE: string[] = [
-  'styles/ad-manager.css 20px',
-  'styles/home.css 22px',
-  'styles/palette.css 11px',
-  'styles/palette.css 16px',
-  'styles/shell.css 10px',
-  'styles/shell.css 11px',
-  'styles/summary.css 16px',
-];
-const ALLOW_RADIUS: string[] = [
-  'styles/ad-manager.css 4px',
-  'styles/chat.css 2px',
-  'styles/chat.css 4px',
-  'styles/command.css 3px',
-  'styles/drawers.css 2px',
-  'styles/shell.css 3px',
-  'styles/summary.css 4px',
-  'styles/todo-panel.css 4px',
-  'styles/viewer.css 2px',
-];
-const ALLOW_Z_INDEX: string[] = ['styles/chat.css 6'];
-const ALLOW_RAW_COLOUR: string[] = [
-  'apps/shared/library.css #fff',
-  'apps/shared/library.css rgba(255,255,255,0.92)',
-  'styles/ad-manager.css #fff',
-  'styles/base.css #fff',
-  'styles/base.css rgba(2,27,67,0.08)',
-  'styles/base.css rgba(2,27,67,0.24)',
-  'styles/base.css rgba(2,27,67,0.3)',
-  'styles/base.css rgba(24,137,255,0.2)',
-  'styles/base.css rgba(24,137,255,0.42)',
-  'styles/base.css rgba(255,255,255,0.55)',
-  'styles/base.css rgba(255,255,255,0.7)',
-  'styles/base.css rgba(255,255,255,0.92)',
-  'styles/chat.css #b9c0ce',
-  'styles/chat.css #fff',
-  'styles/chat.css #fff0',
-  'styles/chat.css rgba(2,27,67,0.04)',
-  'styles/chat.css rgba(245,158,11,0.5)',
-  'styles/chat.css rgba(255,248,232,0.72)',
-  'styles/chat.css rgba(255,255,255,0.7)',
-  'styles/chat.css rgba(255,255,255,0.75)',
-  'styles/chat.css rgba(255,255,255,0.85)',
-  'styles/chat.css rgba(255,255,255,0.92)',
-  'styles/command.css #fff',
-  'styles/guide.css #000',
-  'styles/home.css #fff',
-  'styles/palette.css #fff',
-  'styles/palette.css rgba(2,27,67,0.16)',
-  'styles/palette.css rgba(255,255,255,0.85)',
-  'styles/search-select.css #fff',
-  'styles/sections.css #fff',
-  'styles/shell.css #000',
-  'styles/shell.css #f1eee8',
-  'styles/shell.css #fff',
-  'styles/shell.css rgba(2,27,67,0.16)',
-  'styles/shell.css rgba(255,255,255,0.8)',
-  'styles/todo-panel.css #fff',
-  'styles/todo-panel.css rgba(11,92,181,0.2)',
-  'styles/todo-panel.css rgba(2,27,67,0.16)',
-  'styles/todo-panel.css rgba(255,255,255,0.7)',
-  'styles/tour.css #fff',
-  'styles/tour.css rgba(2,27,67,0.45)',
-  'styles/viewer.css #fff',
-  'styles/viewer.css rgba(2,27,67,0.16)',
-];
-const ALLOW_DUPLICATE_CLASS: string[] = [
-  '.drawer-scroll: styles/drawers.css, styles/shell.css',
-  '.home-scroll: styles/home.css, styles/shell.css',
-  '.jump: styles/base.css, styles/shell.css',
-  '.thread: styles/chat.css, styles/shell.css',
-];
-const ALLOW_UNUSED_CLASS: string[] = [];
-const ALLOW_LAZY_ONLY_CLASS: string[] = [];
-const ALLOW_PLAIN_CHECKBOX: string[] = [];
+// Today's remaining offenders ("file value": count). Lower or delete an entry when you fix it. ------------
+const ALLOW_FONT_SIZE: Allow = {
+  'styles/ad-manager.css 20px': 1,
+  'styles/home.css 22px': 1,
+  'styles/palette.css 11px': 1,
+  'styles/palette.css 16px': 1,
+  'styles/shell.css 10px': 3,
+  'styles/shell.css 11px': 3,
+  'styles/summary.css 16px': 1,
+};
+const ALLOW_RADIUS: Allow = {
+  'styles/ad-manager.css 4px': 1,
+  'styles/chat.css 2px': 1,
+  'styles/chat.css 4px': 1,
+  'styles/command.css 3px': 2,
+  'styles/drawers.css 2px': 1,
+  'styles/shell.css 3px': 2,
+  'styles/summary.css 4px': 1,
+  'styles/todo-panel.css 4px': 1,
+  'styles/viewer.css 2px': 1,
+};
+const ALLOW_Z_INDEX: Allow = {
+  'styles/chat.css 6': 1,
+};
+const ALLOW_RAW_COLOUR: Allow = {
+  'apps/shared/library.css #fff': 4,
+  'apps/shared/library.css rgba(255,255,255,0.92)': 2,
+  'styles/ad-manager.css #fff': 2,
+  'styles/base.css #fff': 9,
+  'styles/base.css rgba(2,27,67,0.08)': 1,
+  'styles/base.css rgba(2,27,67,0.24)': 1,
+  'styles/base.css rgba(2,27,67,0.3)': 1,
+  'styles/base.css rgba(24,137,255,0.2)': 1,
+  'styles/base.css rgba(24,137,255,0.42)': 1,
+  'styles/base.css rgba(255,255,255,0.55)': 1,
+  'styles/base.css rgba(255,255,255,0.7)': 2,
+  'styles/base.css rgba(255,255,255,0.92)': 2,
+  'styles/chat.css #b9c0ce': 1,
+  'styles/chat.css #fff': 6,
+  'styles/chat.css #fff0': 1,
+  'styles/chat.css rgba(2,27,67,0.04)': 1,
+  'styles/chat.css rgba(245,158,11,0.5)': 1,
+  'styles/chat.css rgba(255,248,232,0.72)': 1,
+  'styles/chat.css rgba(255,255,255,0.7)': 1,
+  'styles/chat.css rgba(255,255,255,0.75)': 1,
+  'styles/chat.css rgba(255,255,255,0.85)': 1,
+  'styles/chat.css rgba(255,255,255,0.92)': 1,
+  'styles/command.css #fff': 2,
+  'styles/guide.css #000': 1,
+  'styles/home.css #fff': 1,
+  'styles/palette.css #fff': 1,
+  'styles/palette.css rgba(2,27,67,0.16)': 1,
+  'styles/palette.css rgba(255,255,255,0.85)': 1,
+  'styles/search-select.css #fff': 1,
+  'styles/sections.css #fff': 1,
+  'styles/shell.css #000': 2,
+  'styles/shell.css #f1eee8': 2,
+  'styles/shell.css #fff': 3,
+  'styles/shell.css rgba(2,27,67,0.16)': 1,
+  'styles/shell.css rgba(255,255,255,0.8)': 2,
+  'styles/todo-panel.css #fff': 2,
+  'styles/todo-panel.css rgba(11,92,181,0.2)': 1,
+  'styles/todo-panel.css rgba(2,27,67,0.16)': 1,
+  'styles/todo-panel.css rgba(255,255,255,0.7)': 1,
+  'styles/tour.css #fff': 2,
+  'styles/tour.css rgba(2,27,67,0.45)': 2,
+  'styles/viewer.css #fff': 2,
+  'styles/viewer.css rgba(2,27,67,0.16)': 1,
+};
+const ALLOW_DUPLICATE_CLASS: Allow = {
+  '.drawer-scroll: styles/drawers.css, styles/shell.css': 1,
+  '.home-scroll: styles/home.css, styles/shell.css': 1,
+  '.jump: styles/base.css, styles/shell.css': 1,
+  '.thread: styles/chat.css, styles/shell.css': 1,
+};
+const ALLOW_UNUSED_CLASS: Allow = {};
+const ALLOW_LAZY_ONLY_CLASS: Allow = {
+  // apps/shared/parts.tsx is eager but holds the library parts too; the scan is per file, so these are
+  // flagged. `.lib-held` is being fixed by the Undo line work.
+  '.docs': 1,
+  '.lib-actions': 1,
+  '.lib-actions-row': 1,
+  '.lib-client': 1,
+  '.lib-delete-gap': 1,
+  '.lib-empty': 1,
+  '.lib-held': 1,
+  '.lib-list': 1,
+  '.lib-search': 1,
+  '.lib-selbar': 1,
+  '.lib-selcount': 1,
+  '.lib-tools': 1,
+  '.lib-view': 1,
+  '.lib-view-gap': 1,
+};
+const ALLOW_PLAIN_CHECKBOX: Allow = {};

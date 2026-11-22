@@ -88,6 +88,84 @@ The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 
 - **Page tabs** (`SheetTabs`, plan 2026-11-20-settings-tabs). The tool tabs' row, shared: `ToolTabs` wraps it, and Settings uses it as a `nav` named "Settings sections" (General, Claude, Skill levels, Health, About). Same look, keys and rules; labels only, no icons. A tab that holds nothing for this person is hidden, and a row of one shows nothing. Settings starts at the gutter like the title above it: the row sits in `.page-tabs` (12px above, `--sheet-gutter` sides) over a `.page.settings` column (max 600px, left-aligned, `--sheet-gutter` sides) so the tabs line up with the text below; the row sizes to its buttons (`width: fit-content`), since `.seg` is a flex row that would otherwise stretch. A problem that must show from any tab is an 8px `.health-dot[data-state="problem"]` after the label, with the problem in the tab's spoken name; never `.count`, which means "waiting". The sheet bar keeps the page's name ("Settings") with the tab's name as hidden text. Each tab's sections keep their own `h2`; none repeats the tab's name. A tab change starts the page at the top.
 - **Chip** `.chip`: 12/500, padding 2px 9px, tray fill. **Count** `.count`: 12/600, line-height 18.
 
+## Actions: where they go, what they look like, what they're called
+
+(Plan 2026-11-22-ux-consistency, decisions 8 to 20; Ian, 2026-11-22: "the button placements should be
+consistent".) These rules answer the same questions for every tool. A new tool follows them; an exception is
+named here or it isn't one.
+
+1. **A row click opens what the row names and never creates anything.** Chat, skill, project and Home card
+   rows open their thing; a to-do's title opens it in the to-do panel (Home's Favourite to-dos too). One
+   named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
+   opens it large. Project Files has no pane, so its row opens the file.
+2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
+   remove (bin, or X for a chip) at the very edge. At most three icons. Where the row's main action is an icon
+   (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.
+3. **One icon, one verb.**
+
+   | Icon | Means only |
+   |---|---|
+   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip out of a set. Never ends work |
+   | `end` | End chat: ends a chat session (Open chat rows, the chat's top bar). Not a square, so it can't be read as Stop |
+   | `bin` | delete |
+   | `edit` (pencil) | edit |
+   | `more` (three dots) | opens a menu, nothing else |
+   | `star` | favourite |
+   | `chat` | start or open a chat |
+   | `chevron` | disclose, step, or go back |
+   | `wide` | full width |
+   | `expand` | open full screen |
+   | `plus` | new or add |
+
+4. **One safety net per kind of action.**
+
+   | Kind | Pattern |
+   |---|---|
+   | Easily put back (remove a file from a to-do or project, clear, star) | do it at once; a polite status line says what happened; focus moves to the next row |
+   | Recoverable delete or tick (to-do, file, chat to the Bin, Mark as done) | do it at once and show the **Undo line** (`UndoLine`): 10 s, a countdown bar, a quiet small Undo; the clock stops while pointed at or focused and restarts in full on leaving. As a row in place of the removed drawer row, or a strip at the top of the sheet when no row is in view (viewer, grid, details pane). Focus moves to Undo only after a keyboard press; after a pointer press it goes to the neighbouring row, so the hold sends on time. Nothing is sent until the time runs out; closing the app sends at once. The host keeps one always-mounted `role="status"` line that announces it |
+   | Stops running work, or throws away typing | the inline confirm strip (`Confirm`): a question naming the consequence, the specific verb, the safe option focused, Esc keeps |
+   | Permanent or structural (delete or move a project, apply a change to a live ad account) | a panel that spells out what goes with it; typing the name only for a permanent deletion |
+
+5. **Red marks the point of no return.** A button that leads to an Undo or a confirm is neutral (a bin icon
+   or a standard button), the to-do panel's Delete included. The button that commits something with no Undo
+   is danger. A constructive step that can't be undone ("Apply now") stays primary behind its confirm.
+6. **Button groups**: primary first on the left, then the alternatives, Cancel last. **Panel footers** (the
+   to-do panel, any later panel) are the one named layout: item actions on the left (Start a chat, Mark as
+   done, Delete), mode actions on the right (Edit while reading; Save and Cancel while editing).
+7. **New and Add** are primary with `plus`, at the right end of the row they act on, never in a dock header:
+   the Chats and To-dos drawers' 32px primary `+` icon button ("New chat", "Add a to-do"), "New project" on
+   the Projects tools row, "Add a to-do" on a project's tabs row.
+8. **Edit**: a pencil icon in a row; a labelled "Edit" with the pencil at the right end of the header row on a
+   page (a project); in the to-do panel it lives in the footer (rule 6).
+9. **Unsaved changes**: every form asks "Discard your changes?" on Cancel, Esc, Back and close once anything
+   has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused).
+10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
+11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
+    {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron.
+12. **Busy** buttons are `aria-disabled`, never `disabled`, so focus never drops to the page.
+
+### Words
+
+| Word | Use for | Not |
+|---|---|---|
+| Delete | the item leaves its list (with Undo, or to the Bin) | |
+| Remove | taken out of a set; it still exists | Unlink |
+| Archive / Unarchive | hidden, kept | |
+| Close | put a surface away | Dismiss (for pickers) |
+| End chat | stop a chat session | Close chat |
+| Hide / Show | fold in place | |
+| Dismiss | put a message away | |
+| Cancel | leave without doing it | |
+| Clear filters | a button, everywhere | Show all projects, a Clear link |
+| Mark as done | complete a to-do | Mark done |
+| New … / Add … | new: a top-level thing; add: into a list or parent | |
+| Save | always | Save changes |
+| Favourite | the star, card titles ("Favourite to-dos"), hints ("Favourite a to-do to keep it here") | Pinned, Star a… |
+| All {things} | back to a list | |
+| Try again | always a standard button | a link |
+
+No button ends in an ellipsis: the confirm that follows already says there's another step.
+
 ## Report tables and reordering (Ad Manager deep dive)
 
 - **Task run line** (Ad Manager task cards and the Daily standup, `RunLine` in `Board.tsx`): 12px iron under the description, only once the task has run from Cortex: "Last run Today, 21:46" ("Yesterday, …", "3 Nov, …", with the year when not this year). While the run's chat is live: a `.dot` (`working` or `asking`) and 600 navy words "Running" or "Needs your answer", then "· started …", and Run becomes a plain "Open chat" for that chat. The status is spoken from a visually hidden `role="status"` that is always in the page and names the task ("Spend check: Running"). Times live in this browser's localStorage by account and task (`task-runs.ts`).
@@ -311,7 +389,7 @@ For showing one file large without leaving where the person is. Any part of the 
 `dispatch({ type: 'open-viewer', viewer: { item, place?, openIn? } })`; the chat's Files panel uses it
 for its **Open** button (named "Open <title>"). It is a glass drawer from the right over a veil, up to
 1040px wide by default, leaving the rail and an edge of the page in view (full width under 640px). It
-can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 20px grab strip centred on its
+can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 24px grab strip centred on its
 left edge (`ResizeHandle`, a focusable `separator` "Resize viewer"; arrows 32px, Shift 128px, Home/End;
 double-click resets; `aria-valuetext` in pixels and a hidden key hint) from 1040px up to the window less 94px, shown only with at least 64px to grow; a click with no drag saves nothing; the width remembered in the shell state
 (`viewerWidth`). Its grip is one 4×48px bar, radius 2, in the gap beside the drawer: `--grey-dot` at

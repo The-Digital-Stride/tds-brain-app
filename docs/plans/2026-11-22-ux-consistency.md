@@ -238,4 +238,12 @@ lists are set in each builder's brief from the review's file:line evidence.
 
 ## Review outcomes
 
-(filled as each release lands)
+### Release 1 (commit 0d0a5fe + fixes)
+- UI/accessibility reviewer: 1 nit confirmed (doc said 20px resize strip) → fixed.
+- Correctness/code-quality reviewer: 3 confirmed in the guard test → fixed by a Sonnet fixer: allowlists carry
+  counts (repeats now fail); `rules()` skips statement at-rules and keeps `top` inside `@layer` (proved with
+  inline samples); eager code is found by following imports from `main.tsx`. `.lib-held` (lazy-only, used by
+  the eager file Undo) handed to builder 2C.
+- Carried to Release 3: 13 `.lib-*`/`.docs` classes used in the eagerly imported `apps/shared/parts.tsx` but
+  defined only in lazy `library.css` (allowlisted). Resolve by moving the shared library pieces' styles to the
+  eager patterns layer or splitting `parts.tsx`.

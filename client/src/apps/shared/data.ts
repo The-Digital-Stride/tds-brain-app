@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LibraryItem, LibraryKind, LibraryScope } from '../../../../shared/contract.ts';
 import { api } from '../../api.ts';
 import { useProjectChoice } from '../../state/client-choice.ts';
@@ -160,70 +160,19 @@ export function useLibraryData<S extends LibraryState>(
 }
 
 /**
- * Keeps the panel's item and the open file honest as the listing refreshes: a changed file is
+ * Keeps the panel's item honest as the listing refreshes: a changed file is
  * swapped for its new details, and one that has gone is dropped.
  */
 export function useKeepCurrent<S extends LibraryState>(store: LibraryStore<S>, data: LibraryData) {
   const { items, status } = data;
   useEffect(() => {
     if (status !== 'ready') return;
-    const { current, viewing } = store.get();
+    const { current } = store.get();
     const patch: Partial<LibraryState> = {};
     if (current) {
       const fresh = items.find((i) => i.id === current.id) ?? null;
       if (fresh !== current) patch.current = fresh;
     }
-    if (viewing) {
-      const fresh = items.find((i) => i.id === viewing.id) ?? null;
-      if (fresh !== viewing) patch.viewing = fresh;
-    }
-    if (patch.current !== undefined || patch.viewing !== undefined) store.set(patch as Partial<S>);
+    if (patch.current !== undefined) store.set(patch as Partial<S>);
   }, [items, status, store]);
-}
-
-/** The element that scrolls the sheet, found from anything inside it. */
-function scrollerOf(root: RefObject<HTMLElement | null>): HTMLElement | null {
-  return root.current?.closest<HTMLElement>('.sheet-scroll') ?? null;
-}
-
-/**
- * Opening a file swaps the list for the viewer. Going back puts the list's scroll position and the
- * focus (on that item's open button) where they were. The list stays mounted but hidden, so
- * nothing else about it is lost.
- */
-export function useViewerReturn<S extends LibraryState>(
-  store: LibraryStore<S>,
-  root: RefObject<HTMLElement | null>,
-  fallback: RefObject<HTMLElement | null>,
-) {
-  const { viewing } = useLibrary(store);
-  const saved = useRef(0);
-  const lastId = useRef<string | null>(null);
-
-  // The list is still on screen when the store changes, so the position is read here, not after.
-  useEffect(() => {
-    let was = store.get().viewing;
-    return store.subscribe(() => {
-      const now = store.get().viewing;
-      if (now && !was) saved.current = scrollerOf(root)?.scrollTop ?? 0;
-      was = now;
-    });
-  }, [store, root]);
-
-  useLayoutEffect(() => {
-    if (viewing) {
-      lastId.current = viewing.id;
-      return;
-    }
-    const id = lastId.current;
-    if (!id) return;
-    lastId.current = null;
-    const bar = scrollerOf(root);
-    if (bar) bar.scrollTop = saved.current;
-    const button = [...(root.current?.querySelectorAll<HTMLElement>('[data-open-id]') ?? [])].find(
-      (el) => el.dataset.openId === id,
-    );
-    button?.focus({ preventScroll: true });
-    if (!button || document.activeElement !== button) fallback.current?.focus({ preventScroll: true });
-  }, [viewing, root, fallback]);
 }

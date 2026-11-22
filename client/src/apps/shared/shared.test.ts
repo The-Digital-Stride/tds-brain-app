@@ -107,7 +107,7 @@ describe('createLibraryStore', () => {
   beforeEach(() => clientChoice.set(''));
 
   const make = () =>
-    createLibraryStore<S>(() => ({ scope: 'a', query: '', current: null, viewing: null, ticked: new Set() }));
+    createLibraryStore<S>(() => ({ scope: 'a', query: '', current: null, ticked: new Set() }));
 
   it('ticks and unticks, and tells whoever is listening', () => {
     const store = make();
@@ -123,19 +123,19 @@ describe('createLibraryStore', () => {
     expect(heard).toHaveBeenCalledTimes(2);
   });
 
-  it('moving to another library drops the chosen item, the open file and the ticks, and nothing else', () => {
+  it('moving to another library drops the chosen item and the ticks, and nothing else', () => {
     const store = make();
-    store.set({ current: item(), viewing: item(), query: 'van' });
+    store.set({ current: item(), query: 'van' });
     store.toggleTick('x');
     store.set({ scope: 'a' });
     expect(store.get().current).not.toBeNull();
     store.set({ scope: 'b' });
-    expect(store.get()).toMatchObject({ scope: 'b', current: null, viewing: null, query: 'van' });
+    expect(store.get()).toMatchObject({ scope: 'b', current: null, query: 'van' });
     expect(store.get().ticked.size).toBe(0);
   });
 
   describe('openItem', () => {
-    it('selects the item in its library in one update, viewing it when it can be viewed', () => {
+    it('selects the item in its library in one update (the drawer, not the app, shows the file)', () => {
       const store = make();
       store.set({ scope: 'a', query: 'van' });
       const heard = vi.fn();
@@ -143,25 +143,24 @@ describe('createLibraryStore', () => {
       const picture = item({ view: 'image' });
       store.openItem('b', picture);
       expect(heard).toHaveBeenCalledTimes(1);
-      expect(store.get()).toMatchObject({ scope: 'b', current: picture, viewing: picture, query: '' });
+      expect(store.get()).toMatchObject({ scope: 'b', current: picture, query: '' });
+      expect('viewing' in store.get()).toBe(false);
       expect(clientChoice.get()).toBe('b');
     });
 
-    it('only selects an item the app cannot open', () => {
+    it('selects an item the viewer cannot show too', () => {
       const store = make();
       const file = doc({ view: null });
       store.openItem('a', file);
-      expect(store.get()).toMatchObject({ current: file, viewing: null });
+      expect(store.get()).toMatchObject({ current: file });
     });
 
-    it('keeps the ticks when the library does not change, and clears an earlier open file', () => {
+    it('keeps the ticks when the library does not change', () => {
       const store = make();
       store.toggleTick('x');
-      store.set({ viewing: item() });
       const file = doc({ view: null });
       store.openItem('a', file);
       expect([...store.get().ticked]).toEqual(['x']);
-      expect(store.get().viewing).toBeNull();
     });
 
     it('also clears a format filter the app has, so the item is in the list', () => {
@@ -174,7 +173,6 @@ describe('createLibraryStore', () => {
         query: '',
         format: 'all',
         current: null,
-        viewing: null,
         ticked: new Set(),
       }));
       store.set({ format: 'pdf', query: 'x' });
@@ -199,15 +197,15 @@ describe('createLibraryStore', () => {
     expect(make().get().scope).toBe('client:acme');
   });
 
-  it('an app moved from elsewhere drops its chosen item, open file and ticks, keeps its search, and says so', () => {
+  it('an app moved from elsewhere drops its chosen item and ticks, keeps its search, and says so', () => {
     const images = make();
     const docs = make();
-    docs.set({ current: item(), viewing: item(), query: 'van' });
+    docs.set({ current: item(), query: 'van' });
     docs.toggleTick('x');
     const heard = vi.fn();
     docs.subscribe(heard);
     images.set({ scope: 'client:acme' });
-    expect(docs.get()).toMatchObject({ scope: 'client:acme', current: null, viewing: null, query: 'van' });
+    expect(docs.get()).toMatchObject({ scope: 'client:acme', current: null, query: 'van' });
     expect(docs.get().ticked.size).toBe(0);
     expect(heard).toHaveBeenCalledTimes(1);
   });
@@ -218,21 +216,19 @@ describe('createLibraryStore', () => {
     expect(docs.get().scope).toBe('client:northwind');
   });
 
-  it('choosing the client already on screen keeps what is picked and open', () => {
+  it('choosing the client already on screen keeps what is picked', () => {
     const docs = createLibraryStore<S>(() => ({
       scope: '',
       query: '',
       current: null,
-      viewing: null,
       ticked: new Set(),
     }));
     // Nothing chosen yet: the screen fell back to the last client and says so.
     docs.settle('client:northwind');
-    docs.set({ current: item(), viewing: item() });
+    docs.set({ current: item() });
     docs.toggleTick('x');
     clientChoice.set('client:northwind');
     expect(docs.get().current).not.toBeNull();
-    expect(docs.get().viewing).not.toBeNull();
     expect([...docs.get().ticked]).toEqual(['x']);
   });
 

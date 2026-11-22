@@ -11,8 +11,6 @@ export interface LibraryState {
   scope: string;
   /** The item shown in the panel. Held whole, so the panel needs no listing of its own. */
   current: LibraryItem | null;
-  /** The file open in the sheet in place of the list, or null while the list shows. */
-  viewing: LibraryItem | null;
   /** The items ticked for a bulk action. */
   ticked: ReadonlySet<string>;
   /** This app's own project filter (a ProjectKey), '' or absent for none. The app-wide picker's project overrides it. */
@@ -58,7 +56,6 @@ export function createLibraryStore<S extends LibraryState>(initial: () => S): Li
     ...state,
     scope,
     current: null,
-    viewing: null,
     ticked: new Set<string>(),
   });
   const set = (patch: Partial<S>) => {
@@ -91,7 +88,6 @@ export function createLibraryStore<S extends LibraryState>(initial: () => S): Li
       set({
         scope,
         current: item,
-        viewing: item.view !== null ? item : null,
         ...cleared,
       } as unknown as Partial<S>);
     },

@@ -3,8 +3,3 @@
  * rows, the picture box and the grid, the selection bar, the panel) is `../shared/library.css`.
  */
 
-/* A list row's picture: a small 3:2 box beside the name. */
-.lib-row .img-thumb {
-  flex: none;
-  width: 48px;
-}

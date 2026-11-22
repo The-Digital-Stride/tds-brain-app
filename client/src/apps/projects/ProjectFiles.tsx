@@ -8,10 +8,10 @@ import {
 import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
+import { useShell } from '../../shell/ShellProvider.tsx';
+import { FORMAT_ICONS } from '../documents/icons.ts';
 import { useLoaded } from '../shared/data.ts';
-import { ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
-import { Viewer } from '../shared/Viewer.tsx';
 import { useProjectChange } from './useChange.ts';
 
 const KINDS: { kind: LibraryKind; title: string }[] = [
@@ -34,19 +34,27 @@ function FileRow({
   onView: () => void;
   onUnlink: () => void;
 }) {
+  // The whole row opens the file in the viewer drawer, as a row does in Documents and Images.
   return (
     <li className="line lib-row proj-file">
-      <Thumb item={item} width={96} iconSize={18} icon={item.kind === 'image' ? 'image' : 'doc'} />
-      <span className="line-text">
-        <span className="line-title" title={item.name}>
-          {item.title || item.name}
+      <button type="button" className="lib-open" onClick={onView}>
+        {item.kind === 'image' ? (
+          <Thumb item={item} width={96} iconSize={18} />
+        ) : (
+          <span className="doc-glyph">
+            <Icon name={FORMAT_ICONS[item.format ?? 'doc']} size={18} />
+          </span>
+        )}
+        <span className="line-text">
+          <span className="line-title" title={item.name}>
+            {item.title || item.name}
+          </span>
+          <span className="line-meta">
+            {item.group}
+            {linked ? ' · linked' : ''}
+          </span>
         </span>
-        <span className="line-meta">
-          {item.group}
-          {linked ? ' · linked' : ''}
-        </span>
-      </span>
-      <ViewButton title={item.title || item.name} onView={item.view ? onView : null} />
+      </button>
       {linked && canUnlink ? (
         <button
           type="button"
@@ -341,7 +349,7 @@ export function ProjectFiles({
   linking: boolean;
   onLinking: (open: boolean) => void;
 }) {
-  const [viewing, setViewing] = useState<LibraryItem | null>(null);
+  const { dispatch } = useShell();
   const [message, setMessage] = useState('');
   const [done, setDone] = useState('');
   // Opening the picker clears the "Linked N files." line.
@@ -349,9 +357,27 @@ export function ProjectFiles({
     if (linking) setDone('');
   }, [linking]);
 
-  if (viewing) {
-    return <Viewer item={viewing} name={viewing.name} onBack={() => setViewing(null)} />;
-  }
+  // A file opens at once in the viewer drawer over the right of the page, like a to-do's or a chat's
+  // files. Its library (the place line and "Open in Documents") is filled in when the lookup answers,
+  // and only while that file is still open; if the lookup fails the file just shows without them.
+  const view = async (item: LibraryItem) => {
+    dispatch({ type: 'open-viewer', viewer: { item } });
+    try {
+      const found = (await api.libraryItems([item.id])).files[0];
+      if (!found) return;
+      dispatch({
+        type: 'update-viewer',
+        viewer: {
+          item: found.item,
+          place: found.scope.name,
+          openIn: { app: found.item.kind === 'image' ? 'images' : 'documents', scope: found.scope.id },
+        },
+      });
+    } catch {
+      // Shown without its library's name.
+    }
+  };
+
   return (
     <>
       {message ? (
@@ -380,7 +406,7 @@ export function ProjectFiles({
             kind={k.kind}
             title={k.title}
             canChange={canChange}
-            onView={setViewing}
+            onView={(item) => void view(item)}
             onChanged={setMessage}
           />
         ))}

@@ -8,37 +8,6 @@ import { filterOptions, useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { useCopy } from './copy.ts';
 import { FIRST_SHOWN } from './library.ts';
-import { type LibraryState, type LibraryStore, useLibrary } from './store.ts';
-
-/**
- * The sheet bar's buttons: Back while a file is open in place of the list. The details toggle is
- * `SheetBar`'s own (from the app's `panelLabel`), so it always sits at the top right.
- */
-export function LibraryBar<S extends LibraryState>({
-  store,
-  back,
-}: {
-  store: LibraryStore<S>;
-  /** "Back to Images". */
-  back: string;
-}) {
-  const { viewing } = useLibrary(store);
-  return (
-    <>
-      {viewing ? (
-        <button
-          type="button"
-          className="btn"
-          data-variant="quiet"
-          data-size="small"
-          onClick={() => store.set({ viewing: null } as Partial<S>)}
-        >
-          {back}
-        </button>
-      ) : null}
-    </>
-  );
-}
 
 const ALL_PROJECTS = 'all';
 

@@ -70,6 +70,21 @@ describe('shellReducer', () => {
     expect(shellReducer(docked, { type: 'close-viewer' })).toBe(docked);
   });
 
+  it('update-viewer fills in the file shown, and only while that same file is still shown', () => {
+    const a = { item: { id: 'a' } as LibraryItem };
+    const fuller = { item: { id: 'a', modified: 'later' } as LibraryItem, place: 'Acme' };
+    const shown = shellReducer(base, { type: 'open-viewer', viewer: a });
+    expect(shellReducer(shown, { type: 'update-viewer', viewer: fuller }).viewer).toBe(fuller);
+    // Closed meanwhile: stays closed.
+    expect(shellReducer(base, { type: 'update-viewer', viewer: fuller })).toBe(base);
+    // Another file opened meanwhile: that one stays.
+    const other = shellReducer(base, { type: 'open-viewer', viewer: { item: { id: 'b' } as LibraryItem } });
+    expect(shellReducer(other, { type: 'update-viewer', viewer: fuller })).toBe(other);
+    // A page shown: left alone.
+    const page = shellReducer(base, { type: 'open-viewer', viewer: { kind: 'page', chat: 'c', key: 'k' } });
+    expect(shellReducer(page, { type: 'update-viewer', viewer: fuller })).toBe(page);
+  });
+
   it('changing tab clears the chosen file', () => {
     const shown = shellReducer(base, { type: 'show-chat-file', chat: 'c1', key: 'a.md' });
     expect(shellReducer(shown, { type: 'set-panel-tab', tab: 'details' }).panelFile).toBeNull();

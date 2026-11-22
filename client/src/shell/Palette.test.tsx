@@ -688,7 +688,7 @@ describe('global search', () => {
     expect(labelsOf()).toEqual(['Check the monthly reports', 'Monthly reports check', ...REPORT_HELP]);
   });
 
-  it('opens a file in its app: the folder, the item chosen and the viewer if it can be viewed', async () => {
+  it('opens a file in its app (the folder and the item chosen) and shows it in the viewer drawer', async () => {
     const report = doc({ id: 'client:northwind.d1', title: 'Board report', view: 'text' });
     api.librarySearch.mockImplementation(async (_q: string, kind: string) =>
       kind === 'document'
@@ -704,8 +704,10 @@ describe('global search', () => {
     fireEvent.change(input(), { target: { value: 'board' } });
     fireEvent.click(await screen.findByRole('option', { name: /Board report/ }, { timeout: 2000 }));
     await screen.findByRole('heading', { level: 1, name: 'Documents' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report, viewing: report });
+    expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report });
+    const viewer = await screen.findByRole('dialog', { name: 'Board report' });
+    expect(within(viewer).getByText((SCOPES[2] as LibraryScope).name)).toBeTruthy();
+    await waitFor(() => expect(within(viewer).getByText('Hello')).toBeTruthy());
   });
 
   it('opening a file closes the open drawer, even from inside its own app, and focus goes to the app', async () => {
@@ -735,7 +737,9 @@ describe('global search', () => {
     expect(drawer.hasAttribute('inert')).toBe(true);
     expect(todos.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).not.toBe(todos);
-    expect(document.getElementById('main')?.contains(document.activeElement)).toBe(true);
+    // The file opens in the viewer drawer, which takes focus at its heading.
+    const viewer = await screen.findByRole('dialog', { name: 'Board report' });
+    await waitFor(() => expect(viewer.contains(document.activeElement)).toBe(true));
   });
 
   describe('tooltips', () => {

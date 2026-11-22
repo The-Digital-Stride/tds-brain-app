@@ -49,7 +49,29 @@ straight into `clients/the-digital-stride/projects/<project>/`, and archived int
       if (parts.includes('call-notes') || parts.includes('notes') || inProject) files.push(f);
 ```
 
+## Edit 3: an internal meeting's client is the-digital-stride
+
+Without this, a meeting under the top-level `projects/` or `projects-archive/` has no client, so a
+search with `--client the-digital-stride` finds the file but never matches its date or title.
+
+### Current passage
+
+```js
+  const client = rel.startsWith('clients' + path.sep) ? rel.split(path.sep)[1] : '';
+```
+
+### Proposed replacement
+
+```js
+  // Internal meetings in the top-level projects/ or projects-archive/ belong to the internal client.
+  const top = rel.split(path.sep)[0];
+  const client = rel.startsWith('clients' + path.sep)
+    ? rel.split(path.sep)[1]
+    : top === 'projects' || top === 'projects-archive' ? 'the-digital-stride' : '';
+```
+
 ### Check after applying
 
 `node tools/find-call-note.cjs --client the-digital-stride --date 2026-11-20 --json` runs without an
-error.
+error, and an internal meeting filed under `projects/<project>/` on that date comes back as
+`same-meeting` when its title is given with `--title`.

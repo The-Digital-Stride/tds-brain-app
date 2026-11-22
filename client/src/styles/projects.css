@@ -450,6 +450,9 @@
   font-size: 13px;
   color: var(--ink-soft);
 }
+.proj-checklist > li {
+  overflow-wrap: anywhere;
+}
 .proj-checklist > li + li {
   margin-top: 2px;
 }

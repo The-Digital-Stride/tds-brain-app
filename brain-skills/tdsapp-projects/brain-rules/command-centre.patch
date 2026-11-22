@@ -1,7 +1,6 @@
-diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
---- a/lib/todo-parser.cjs	2026-10-27 17:44:35
-+++ b/lib/todo-parser.cjs	2026-11-22 10:45:05
-@@ -98,7 +98,11 @@
+--- a/lib/todo-parser.cjs
++++ b/lib/todo-parser.cjs
+@@ -98,7 +98,21 @@
   * Returns [{ text, dispatchable: true }, ...] up to `limit`.
   */
  function parseSectionTodos(name, section, limit = Infinity) {
@@ -10,11 +9,21 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
 +}
 +
 +// Same rules, for any todo.md path (card projects keep theirs in their own folder).
++// A card project's todo.md is only read or ticked when it is a plain file whose folder really sits
++// inside the brain: a shared link could otherwise point a tick at a file elsewhere on this Mac.
++function plainFileInBrain(file) {
++  try {
++    if (!fs.lstatSync(file).isFile()) return false;
++    const root = fs.realpathSync(BRAIN_ROOT) + path.sep;
++    return fs.realpathSync(path.dirname(file)).startsWith(root);
++  } catch { return false; }
++}
++
 +function parseSectionTodosAt(file, section, limit = Infinity) {
    if (!fs.existsSync(file)) return [];
    const content = fs.readFileSync(file, 'utf8');
    const lines = content.split(/\r?\n/);
-@@ -166,6 +170,10 @@
+@@ -166,6 +180,10 @@
        if (t) return t;
      }
    }
@@ -25,7 +34,7 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
    return name.split(/[-_]+/).filter(Boolean)
      .map(w => TITLE_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))
      .join(' ');
-@@ -206,12 +214,8 @@
+@@ -206,12 +224,8 @@
  function getMiscTodos() {
    if (!fs.existsSync(TODO_DIR)) return [];
  
@@ -40,7 +49,7 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
      .map(e => {
        const abs = path.join(TODO_DIR, e.name);
        const stat = fs.statSync(abs);
-@@ -233,6 +237,8 @@
+@@ -233,6 +247,8 @@
          source: frontmatter.source || null,
          assignee: frontmatter.assignee || null,
          project: frontmatter.project || null,
@@ -49,7 +58,7 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
          body: body.trim(),
          file: e.name,
          mtime: stat.mtime.toISOString(),
-@@ -240,19 +246,31 @@
+@@ -240,19 +256,31 @@
      })
      .filter(Boolean);
  
@@ -90,7 +99,7 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
  // ---- Projects list -------------------------------------------------------
  
  /**
-@@ -270,8 +288,11 @@
+@@ -270,8 +298,11 @@
  function getProjectsList() {
    if (!fs.existsSync(PROJECTS_DIR)) return [];
  
@@ -103,15 +112,19 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
      .map(e => {
        const dir = path.join(PROJECTS_DIR, e.name);
        let mostRecent = 0;
-@@ -311,6 +332,211 @@
-   return out;
- }
- 
+@@ -307,11 +338,220 @@
+     if (!b.lastTouched) return -1;
+     return b.lastTouched.localeCompare(a.lastTouched);
+   });
++
++  return out;
++}
++
 +// ---- Card projects (clients/<c>/projects/<slug>/project.md) --------------
 +//
 +// Projects made in TDS Cortex live inside the client folder. They are read by
 +// their own function so getProjectsList() (which Today reads too) stays as is.
-+
+ 
 +const CLIENTS_DIR = path.join(BRAIN_ROOT, 'clients');
 +const TDS_CLIENT = 'the-digital-stride';
 +
@@ -135,16 +148,17 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
 +    }
 +    if (inline) return out; // a plain scalar, not a list
 +    for (let j = i + 1; j < closeIdx; j++) {
-+      const li = lines[j].match(/^\s+-\s*(.*?)\s*$/);
++      // Items may be indented or at column 0, as the app's frontmatter reader allows.
++      const li = lines[j].match(/^\s*-\s+(.*?)\s*$/);
 +      if (!li) { if (lines[j].trim() && !/^\s*#/.test(lines[j])) break; continue; }
 +      const t = unquote(li[1]);
 +      if (t) out.push(t);
 +    }
 +    return out;
 +  }
-+  return out;
-+}
-+
+   return out;
+ }
+ 
 +function unquote(v) {
 +  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) return v.slice(1, -1);
 +  return v;
@@ -224,7 +238,9 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
 +        movedFrom: parseFrontmatterList(c.content, 'moved_from'),
 +        status: c.fm.status || null,
 +        linkedTodos: [],
-+        checklist: parseSectionTodosAt(path.join(BRAIN_ROOT, folder, 'todo.md'), 'Active'),
++        checklist: plainFileInBrain(path.join(BRAIN_ROOT, folder, 'todo.md'))
++          ? parseSectionTodosAt(path.join(BRAIN_ROOT, folder, 'todo.md'), 'Active')
++          : [],
 +      };
 +    });
 +  if (!cards.length) return cards;
@@ -313,9 +329,11 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
 +}
 +
  module.exports = {
++  plainFileInBrain,
    parseFrontmatter,
    getProjectTodos,
-@@ -320,6 +546,9 @@
+   getProjectBacklogCount,
+@@ -320,6 +560,9 @@
    getProjectDetail,
    getMiscTodos,
    getProjectsList,
@@ -325,9 +343,8 @@ diff -ru a/lib/todo-parser.cjs b/lib/todo-parser.cjs
    // Paths exported for tests / debugging.
    _paths: { BRAIN_ROOT, PROJECTS_DIR, TODO_DIR },
  };
-diff -ru a/public/css/cc.css b/public/css/cc.css
---- a/public/css/cc.css	2026-11-04 13:24:23
-+++ b/public/css/cc.css	2026-11-22 10:45:50
+--- a/public/css/cc.css
++++ b/public/css/cc.css
 @@ -473,6 +473,8 @@
  
  /* project card: creator line + per-project actions footer */
@@ -337,9 +354,15 @@ diff -ru a/public/css/cc.css b/public/css/cc.css
  .cc-project-foot {
    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
-diff -ru a/public/js/cc.js b/public/js/cc.js
---- a/public/js/cc.js	2026-11-17 13:06:14
-+++ b/public/js/cc.js	2026-11-22 10:45:43
+@@ -1194,3 +1196,6 @@
+ /* Ads approvals: the last action's result, when its proposal has left the open list. */
+ .cc-appr-last { margin: 10px 0; }
+ .cc-appr-last-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
++/* Card-project rows: long titles wrap, a long assignee name is cut short (legacy rows unchanged). */
++.cc-card-project .cc-todo .txt { min-width: 0; overflow-wrap: anywhere; }
++.cc-card-project .cc-todo .who { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+--- a/public/js/cc.js
++++ b/public/js/cc.js
 @@ -90,15 +90,19 @@
    // ---- projects ----
    async function loadProjects() {
@@ -365,7 +388,7 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
      } catch (e) { $('cc-projects').innerHTML = '<p class="cc-empty">Could not load projects.</p>'; }
    }
  
-@@ -198,14 +202,81 @@
+@@ -198,14 +202,83 @@
      return card;
    }
  
@@ -373,7 +396,7 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
 +  // the cards above. Its to-dos are todo/ files that name it in `project:` (ticked
 +  // like any loose to-do) plus any items in its own todo.md. No Archive here: Cortex owns that.
 +  function cardProjectCard(c) {
-+    const card = el('div', 'cc-item');
++    const card = el('div', 'cc-item cc-card-project');
 +    tagScope(card, 'card', 'project:' + c.key, `The "${c.title}" project card`,
 +      'public/js/cc.js cardProjectCard() + SECTION:projects; data from /api/projects cardProjects (server.cjs + lib/todo-parser.cjs)');
 +    const title = el('div', 'title'); title.textContent = c.title || c.key;
@@ -408,6 +431,8 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
 +        setTimeout(refresh, 900);
 +      };
 +      const run = el('button', 'run'); run.textContent = '▷'; run.title = 'Start a session for this';
++      run.setAttribute('aria-label', 'Start a session for ' + label);
++      cb.setAttribute('aria-label', 'Tick off ' + label);
 +      run.onclick = (e) => { e.stopPropagation(); dispatch(runArgs); };
 +      const txt = el('span', 'txt'); txt.textContent = label;
 +      r.append(cb, run, txt);
@@ -449,7 +474,7 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
      const form = el('span', 'cc-proj-add-form'); form.hidden = true;
      const inp = el('input'); inp.type = 'text'; inp.placeholder = 'What needs doing?'; inp.maxLength = 200;
      const save = el('button', 'cc-proj-save'); save.type = 'button'; save.textContent = 'Add';
-@@ -217,12 +288,14 @@
+@@ -217,12 +290,14 @@
        const text = inp.value.trim();
        if (!text) { inp.focus(); return; }
        save.disabled = true;
@@ -465,7 +490,7 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
      };
      save.onclick = submit;
      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') closeForm(); });
-@@ -230,7 +303,7 @@
+@@ -230,7 +305,7 @@
      addWrap.append(addBtn, form);
      foot.append(addWrap);
  
@@ -474,7 +499,7 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
        const arch = el('button', 'cc-proj-link cc-proj-archive'); arch.type = 'button'; arch.textContent = 'Archive';
        arch.title = 'Move this project out of the Projects column (into projects-archive/)';
        arch.onclick = async () => {
-@@ -1249,7 +1322,7 @@
+@@ -1249,7 +1324,7 @@
      };
      paintTitle();
      tdTitle.append(txt);
@@ -483,9 +508,8 @@ diff -ru a/public/js/cc.js b/public/js/cc.js
      if (bits.length) { const m = el('div', 'meta'); m.textContent = bits.join('  ·  '); tdTitle.append(m); }
  
      // Edit the wording inline: the title becomes an input and the long
-diff -ru a/server.cjs b/server.cjs
---- a/server.cjs	2026-11-17 13:06:14
-+++ b/server.cjs	2026-11-22 10:45:21
+--- a/server.cjs
++++ b/server.cjs
 @@ -301,7 +301,20 @@
        allDone: projectAllDone(p.name),
        createdBy: projectCreator(p.name),
@@ -548,7 +572,7 @@ diff -ru a/server.cjs b/server.cjs
    } else if (project) {
      prompt = `Pick up this todo for the ${project} project: "${todoText}". `
        + `The brain root is your working directory. Read projects/${project}/README.md `
-@@ -1492,12 +1524,17 @@
+@@ -1492,13 +1524,19 @@
  app.post('/api/projects/tick', express.json({ limit: '8kb' }), (req, res) => {
    const project = String((req.body && req.body.project) || '');
    const text = String((req.body && req.body.text) || '');
@@ -566,9 +590,11 @@ diff -ru a/server.cjs b/server.cjs
 +    ? path.join(BRAIN_ROOT, card.folder, 'todo.md')
 +    : path.join(BRAIN_ROOT, 'projects', project, 'todo.md');
    if (!fs.existsSync(file)) return res.status(404).json({ error: 'no todo.md for ' + project });
++  if (card && !todoParser.plainFileInBrain(file)) return res.status(400).json({ error: 'todo.md for ' + project + ' is not a plain file in the brain' });
    try {
      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-@@ -1525,12 +1562,18 @@
+     const idx = lines.findIndex(l => {
+@@ -1525,12 +1563,18 @@
    }
    const src = path.join(BRAIN_ROOT, 'projects', project);
    if (!fs.existsSync(src)) return res.status(404).json({ error: 'no such project' });
@@ -590,21 +616,21 @@ diff -ru a/server.cjs b/server.cjs
      fs.renameSync(src, dest);
      res.json({ ok: true, project, archived: path.relative(BRAIN_ROOT, dest) });
    } catch (err) {
-@@ -1591,6 +1634,13 @@
+@@ -1590,6 +1634,13 @@
+   if (!title) return res.status(400).json({ error: 'title is required' });
    const due = String((req.body && req.body.due) || '');
    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: 'due must be YYYY-MM-DD' });
- 
++
 +  // Optional: put the to-do in a card project. Only a key the server's own scan knows.
 +  let card = null;
 +  if (req.body && req.body.project !== undefined && req.body.project !== null && req.body.project !== '') {
 +    card = typeof req.body.project === 'string' ? findCardProject(req.body.project) : null;
 +    if (!card) return res.status(400).json({ error: 'unknown project' });
 +  }
-+
+ 
    // Assignee slug, if the caller picked one on the add form. Empty → fall back
    // to this machine's git user (below), matching "todos belong to the capturer".
-   let assignee = String((req.body && req.body.assignee) || '').toLowerCase()
-@@ -1621,6 +1671,7 @@
+@@ -1621,6 +1672,7 @@
      if (assignee) fm.push('assignee: ' + assignee);
      fm.push('title: ' + title, 'created: ' + today);
      if (due) fm.push('due: ' + due);

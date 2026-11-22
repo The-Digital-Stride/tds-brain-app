@@ -120,4 +120,17 @@ Ian chose to let the `team` role change projects, as the projects plan said ("an
 
 ## Review outcomes
 
-(filled at the end)
+| Lens | Model | Confirmed | Dropped | Outcome |
+|---|---|---|---|---|
+| Overseer pre-review | fable | 2 blocking, 10 should, 4 nice | 0 | all folded into the plan before building |
+| Correctness | opus | 1 should, 1 nit | 0 | call-note client for top-level projects (edit 3); column-0 `moved_from` items |
+| Security | opus | 1 consider | 0 | card checklists read and ticked only when `todo.md` is a plain file inside the brain |
+| UI | sonnet | 4 consider | 0 | 3 fixed (row wrapping, accessible names, checklist wrapping); focus after a reload left as before, same as legacy cards |
+
+Lead's browser check (preview on 3878, signed in as a team-role person): New project and Tidy up show; the
+Old checklist card lists the two open `## Active` items. The Workbench patch was applied to a copy of the
+live Workbench: identical to the built copy, and the legacy `getProjectsList()`/Today output unchanged on
+the real brain.
+
+Known limit: someone not in roles.json now sees Cortex's change buttons (the skill no longer limits roles),
+but the script refuses them for shared projects, as before.

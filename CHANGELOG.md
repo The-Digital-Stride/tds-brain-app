@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.62.0 — 2026-11-22
+
+- **feat**: show the app version and an update button at the foot of the rail
+
 ## v0.61.4 — 2026-11-22
 
 - **fix**: documents and images always open in the viewer drawer

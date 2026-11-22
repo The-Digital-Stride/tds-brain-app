@@ -10,8 +10,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  renameSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';

@@ -22,7 +22,7 @@ const APP_WORDS = { documents: 'Open in Documents', images: 'Open in Images' } a
  * heading takes focus when it opens, and closing it puts focus back on whatever opened it.
  */
 export function FileViewer() {
-  const { state, dispatch, modes } = useShell();
+  const { state, dispatch } = useShell();
   const { viewerOpener } = useDesk();
   const { libraryVersion, openView, deleteFile } = useStore();
   const request = state.viewer;
@@ -69,7 +69,11 @@ export function FileViewer() {
         const now = latest.current;
         if (!live || !fresh || now === null || now.kind === 'page' || now.item.id !== fresh.id) return;
         if (now.item.modified !== fresh.modified)
-          dispatch({ type: 'update-viewer', viewer: { ...now, item: fresh } });
+          // The opener's say on deleting stands (Ad Manager opens its reports without a bin).
+          dispatch({
+            type: 'update-viewer',
+            viewer: { ...now, item: { ...fresh, canDelete: now.item.canDelete } },
+          });
       })
       .catch(() => {
         // Offline or gone: the copy on screen stays; a delete closes the drawer by its own route.
@@ -119,7 +123,8 @@ export function FileViewer() {
               dispatch({ type: 'close-viewer' });
               openLibraryItem('documents', file.scope.id, file.item);
               openView('app:documents');
-              if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+              // The app shows the file in its details panel, so the panel opens on it.
+              dispatch({ type: 'set-panel', open: true });
             }}
           />
         </ViewerDrawer>
@@ -141,8 +146,8 @@ export function FileViewer() {
     dispatch({ type: 'close-viewer' });
     openLibraryItem(openIn.app, openIn.scope, item);
     openView(`app:${openIn.app}`);
-    // A floating panel would cover the app's own viewer, so it closes; a docked one stays.
-    if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+    // The app shows the file in its details panel (preview, facts, Open), so the panel opens on it.
+    dispatch({ type: 'set-panel', open: true });
   };
 
   return (

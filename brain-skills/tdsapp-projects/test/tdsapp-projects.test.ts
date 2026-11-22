@@ -1595,6 +1595,16 @@ describe('archive, unarchive and delete', () => {
     expect(existsSync(abs('projects-archive/portal/project.md'))).toBe(true);
   });
 
+  it('refuses to archive a client-folder project while a skill names it (0.3.2: every shared project)', () => {
+    put('.claude/skills/site-sync/SKILL.md', `Writes to ${LIVE}/status.md every day.\n`);
+    const v = sha(`${LIVE}/project.md`);
+    const r = act('archive', 'acme/website', { expect: v });
+    expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+    expect(r.reply.message).toContain('.claude/skills/site-sync/SKILL.md');
+    rmSync(abs('.claude/skills/site-sync'), { recursive: true });
+    expect(act('archive', 'acme/website', { expect: v }).reply).toMatchObject({ ok: true });
+  });
+
   it("doesn't count the save-location scan's findings list as a file that writes the folder", () => {
     put('projects/portal/project.md', '---\nv: 1\ntitle: Portal\nstatus: active\n---\n');
     put('tools/save-location-baseline.json', '{"paths": ["projects/portal/notes/old.md"]}\n');

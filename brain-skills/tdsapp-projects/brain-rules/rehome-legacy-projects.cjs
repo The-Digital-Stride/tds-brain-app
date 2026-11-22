@@ -76,6 +76,7 @@ const SOURCE = `added from ${VIA}`;
 const TODO_SCRIPT = '.claude/skills/tdsapp-todo/scripts/tdsapp-todo.cjs';
 const WORKBENCH_FILE = 'tools/members/command-centre/lib/todo-parser.cjs';
 const WORKBENCH_MARKER = 'cardProjectsV2';
+const IGNORE_LINE = '/projects/ai-search-outreach/';
 const TITLE_MAX = 200;
 const BODY_MAX = 8000;
 const NOTE_PREFIX = 'Moved to to-dos on ';
@@ -460,6 +461,16 @@ function plan(brain, opts) {
     try { wb = fs.readFileSync(abs(brain, WORKBENCH_FILE), 'utf8'); } catch { /* refused below */ }
     if (!wb.includes(WORKBENCH_MARKER)) {
       refusals.push(`the Workbench v2 patch isn't in place (${WORKBENCH_FILE} has no ${WORKBENCH_MARKER})`);
+    }
+  }
+
+  // Edit H: the root .gitignore keeps the private files left at the old AI Search Outreach path out of
+  // the sync's `git add -A`. A file read only; nothing here runs git.
+  {
+    let ignore = '';
+    try { ignore = fs.readFileSync(abs(brain, '.gitignore'), 'utf8'); } catch { /* refused below */ }
+    if (!ignore.split(/\r?\n/).some((l) => l.trim() === IGNORE_LINE)) {
+      refusals.push(`the root .gitignore has no ${IGNORE_LINE} line (rehome-rules.md edit H): apply it first`);
     }
   }
 

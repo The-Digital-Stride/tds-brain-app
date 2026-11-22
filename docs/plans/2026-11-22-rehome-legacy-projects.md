@@ -85,10 +85,10 @@ Revised after the overseer's pre-review (4 blocking, 8 should, 5 nice; all taken
 
 1. **Two syncs, in this order.**
    - Sync 1 (safe on its own): the Workbench v2 patch (decision 4), `tdsapp-projects` 0.3.2
-     (decision 5) and the rules text (decision 6, `rehome-rules.md` edits A–G and I).
-   - Sync 2, at a quiet time, only after Ian has seen the dry run and said yes: the root `.gitignore` gains
-     `/projects/ai-search-outreach/` and `/projects-archive/ai-search-outreach/` (edit H, in the same sync
-     as the move so nothing new is ignored in between), then the move, rewrites and to-dos (decision 2).
+     (decision 5) and the rules text that is true either way (decision 6, `rehome-rules.md` edits D–G and I).
+   - Sync 2, at a quiet time, only after Ian has seen the dry run and said yes: edits A–C (the folders
+     have moved) and H (the root `.gitignore` rule; the script refuses without it), then the move,
+     rewrites and to-dos (decision 2).
    - Plain: every Mac has the new Workbench and the safety rules before any folder moves.
 2. **One-off script `brain-rules/rehome-legacy-projects.cjs`, dry run by default, `--apply` to write.** Never runs git.
    Every step resumes rather than refuses, so a second run after a failure finishes the job without doubling anything.
@@ -137,7 +137,7 @@ Revised after the overseer's pre-review (4 blocking, 8 should, 5 nice; all taken
        - inside moved folders: `call-notes/`, `notes/`, `benchmarks/`, `output/`, `graph.js` and `project.md`;
        - the Steve to-do and `tools/save-location-baseline.json` (both describe the four files at their old path).
      - `brainmap/scripts/open.cjs:12` `path.join(ROOT, 'projects', 'brain-map')` is a listed code edit.
-   - **Steve's to-do** (assignee `steve-blassberg`, from `roster`): once your Mac has synced, move your own `inbox/` and `shortlists/` from `projects/ai-search-outreach/` into `clients/the-digital-stride/projects/ai-search-outreach/`, then delete the old folder.
+   - **Steve's to-do** (assignee `steve-blassberg`, from `roster`): once his Mac has synced, move his private files (`inbox/`, `shortlists/`, prospect screenshots, approval lists) into the same folders under `clients/the-digital-stride/projects/ai-search-outreach/`. Leave the four shared files, and keep the old folder while they are in it.
    - Plain: one careful script moves everything, shows exactly what it will do first, and can be rerun safely.
 3. **Cortex.** No code change. Keys and bare labels resolve as before. Until Steve moves his files, the leftover folder shows Cortex's one "same name" note.
 4. **Workbench v2 patch** (on top of v1, recorded as `brain-rules/command-centre-v2.patch`).
@@ -192,6 +192,10 @@ Revised after the overseer's pre-review (4 blocking, 8 should, 5 nice; all taken
 | Overseer pre-review (fable) | 4 blocking, 8 should, 5 nice | All taken into the decisions above |
 | Lead check | Archive button never drawn (flag read after the cards were drawn); bold marks and backticks in titles | Fixed: flag set before drawing; titles are plain words, the item as written goes in the details |
 | Correctness and data integrity (opus) | 2 should, 3 consider, 2 nits | "Created by" would credit the mover (git sees a moved folder as added): the old folder's first author now comes first, proved in a scratch repo. Steve's to-do would have deleted private files and four shared ones: rewritten to move only private files and leave the four. Rerun counts `todo/deleted/`. Decision Bench path code: edit I. Edit H moved to sync 2. gm step 5 wording and the archive refusal wording fixed |
+
+Overseer sign-off (fable): two blockers, both fixed: the script now refuses without edit H, and edits
+A–C moved to sync 2 (they say the folders have moved), with edit B forbidding deletion of the shared AI
+Search Outreach files. Signed off on those fixes.
 
 Rehearsal on a fresh copy of the brain (no git, private folders left out), with sync 1 applied:
 - **Dry run:** 108 actions, no refusals.

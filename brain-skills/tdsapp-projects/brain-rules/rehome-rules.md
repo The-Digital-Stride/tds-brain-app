@@ -1,16 +1,16 @@
 # Brain edits: the old project folders move into `clients/`
 
-Plan: `docs/plans/2026-11-22-rehome-legacy-projects.md`, decision 6. Edits A to G and I are part of
+Plan: `docs/plans/2026-11-22-rehome-legacy-projects.md`, decision 6. Edits D to G and I are part of
 sync 1: apply them, with `tdsapp-projects` 0.3.2 and the Workbench v2 patch, before the move itself
-runs. Edit H goes in sync 2, straight before the move script, so it reaches every Mac in the same
-sync as the move (applied earlier, anything new saved in the old folder before the move would never
-be shared). They are
+runs. Edits A, B, C and H go in sync 2, straight before the move script, so they reach every Mac in
+the same sync as the move: A to C say the folders have moved, and H, applied earlier, would stop
+anything new saved in the old folder from being shared. The move script refuses to run without H. They are
 file writes only: nothing runs git in the brain.
 
 Each passage below was read from the brain on 2026-11-22. If a passage no longer matches, stop and
 re-read it before changing anything.
 
-## Edit A: `.claude/rules/save-locations.md`, the internal project row
+## Edit A: `.claude/rules/save-locations.md`, the internal project row (sync 2)
 
 ### Current passage
 
@@ -24,7 +24,7 @@ re-read it before changing anything.
 | A file for an internal TDS project | `clients/the-digital-stride/projects/<project>/`. The older internal folders in `projects/` moved there in November 2026: never make a new one in `projects/` |
 ```
 
-## Edit B: `projects/AGENTS.md`, the whole file
+## Edit B: `projects/AGENTS.md`, the whole file (sync 2)
 
 ### Proposed replacement
 
@@ -40,10 +40,15 @@ A folder that still turns up here on one Mac is a leftover of files git doesn't 
 `node_modules/` or private working files). Move anything you still need into the project's folder
 under `clients/`, then delete the leftover. Never add files to it.
 
+**Never delete `projects/ai-search-outreach/`, or any file git shares in it.** Four of its files are
+still shared on purpose until Steve decides what happens to them
+(`todo/20261118-ask-steve-about-untracking-four-ai-search-outreach-files.md`); deleting them removes
+them from everyone's Mac.
+
 Archive and delete a project only with the `tdsapp-projects` skill, never by hand.
 ````
 
-## Edit C: `projects/README.md`, the whole file
+## Edit C: `projects/README.md`, the whole file (sync 2)
 
 ### Proposed replacement
 

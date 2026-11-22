@@ -488,6 +488,11 @@ describe('preflight refusals', () => {
     expect(run(['--skip-workbench-check']).exit).toBe(0);
   });
 
+  it('the root .gitignore lacks the AI Search Outreach rule (edit H)', () => {
+    put('.gitignore', '# GDPR rule in projects/ai-blueprint/intake-process.md\n');
+    refuses(/no \/projects\/ai-search-outreach\/ line/);
+  });
+
   it('a live source has no card', () => {
     rmSync(abs('projects/client-portal/project.md'));
     refuses(/projects\/client-portal has no project\.md card/);

@@ -428,10 +428,16 @@ describe('Palette', () => {
     expect(options().find((o) => o.textContent?.includes('Monthly'))?.textContent).toContain('Acme Heating');
   });
 
-  it('shows the T, C, S, H key hints', async () => {
+  it('shows the T, C, S, H key hints (S only for owners and scouts)', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     await openPalette();
     expect(document.querySelectorAll('.palette kbd')).toHaveLength(4);
+    cleanup();
+    api.bootstrap.mockResolvedValue(boot);
+    await renderHome();
+    await openPalette();
+    expect(document.querySelectorAll('.palette kbd')).toHaveLength(3);
   });
 
   it('drops the key hints when single-key shortcuts are off', async () => {
@@ -476,6 +482,7 @@ describe('global search', () => {
   });
 
   it('lists Go to, To-dos, Open chats and Skills with nothing typed, apps in Go to', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'scout' } });
     await renderHome();
     await openPalette();
     expect(groupTitles()).toEqual(['Go to', 'To-dos', 'Open chats', 'Skills']);

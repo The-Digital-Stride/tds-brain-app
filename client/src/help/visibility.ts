@@ -7,3 +7,11 @@ import type { Role } from '../../../shared/contract.ts';
 export function helpVisible(_role: Role): boolean {
   return true;
 }
+
+/**
+ * Who has the Skills drawer (the rail item, the `s` key and "Go to Skills"): owners and scouts only
+ * (Ian, 2026-11-22). Everyone else still starts skills from Home, the search and chat.
+ */
+export function skillsMenuVisible(role: Role): boolean {
+  return role === 'owner' || role === 'scout';
+}

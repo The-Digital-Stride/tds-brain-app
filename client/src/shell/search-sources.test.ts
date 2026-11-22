@@ -387,6 +387,15 @@ describe('Go to: Help', () => {
   });
 });
 
+describe('Go to: Skills', () => {
+  const goLabels = (c: SearchContext) => labels(source('go').idle?.(c) ?? []);
+
+  it('is listed by default, and left out for someone the Skills drawer is not for', () => {
+    expect(goLabels(ctx())).toContain('Skills');
+    expect(goLabels(ctx({ skillsHidden: true }))).not.toContain('Skills');
+  });
+});
+
 describe('Go to: Cortex Guide', () => {
   const goLabels = (c: SearchContext) => labels(source('go').idle?.(c) ?? []);
 

@@ -705,6 +705,7 @@ describe('Home', () => {
   });
 
   it('"All to-dos", "All chats" and "All skills" open their drawers', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     const drawer = () => document.getElementById('drawer') as HTMLElement;
     expect(drawer().hasAttribute('inert')).toBe(true);
@@ -718,5 +719,11 @@ describe('Home', () => {
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Chats' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'All skills' }));
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Skills' })).toBeTruthy());
+  });
+
+  it('has no "All skills" for someone the Skills drawer is not for (team)', async () => {
+    await renderHome();
+    expect(screen.queryByRole('button', { name: 'All skills' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'All chats' })).toBeTruthy();
   });
 });

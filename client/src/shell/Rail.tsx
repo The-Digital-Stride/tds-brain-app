@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { Attention } from '../../../shared/contract.ts';
-import { helpVisible } from '../help/visibility.ts';
+import { helpVisible, skillsMenuVisible } from '../help/visibility.ts';
 import { mostUrgent } from '../state/chats.ts';
 import { RAIL_NAMES_FROM } from '../state/shell.ts';
 import { newToYou } from '../state/todo-new.ts';
@@ -245,15 +245,6 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           keys={shortcut('t')}
           onClick={() => toggle('todos')}
         />
-        <Item
-          choose={choose}
-          icon="skills"
-          label="Skills"
-          wide={showsNames}
-          drawer={drawer('skills')}
-          keys={shortcut('s')}
-          onClick={() => toggle('skills')}
-        />
 
         {sections.map((sec) => {
           const n = sectionBadge(sec, snap);
@@ -297,6 +288,18 @@ export function Rail({ inert = false }: { inert?: boolean }) {
 
         <span className="rail-spacer" />
 
+        {/* Owners and scouts only (`skillsMenuVisible`); kept at the foot, above Help. */}
+        {skillsMenuVisible(role) ? (
+          <Item
+            choose={choose}
+            icon="skills"
+            label="Skills"
+            wide={showsNames}
+            drawer={drawer('skills')}
+            keys={shortcut('s')}
+            onClick={() => toggle('skills')}
+          />
+        ) : null}
         {helpVisible(role) ? (
           <Item
             choose={choose}

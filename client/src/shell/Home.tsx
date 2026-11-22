@@ -10,6 +10,7 @@ import {
 import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
+import { skillsMenuVisible } from '../help/visibility.ts';
 import { chatForTodo } from '../state/attention.ts';
 import {
   clientForProject,
@@ -605,15 +606,17 @@ export function Home() {
             <section className="card" aria-labelledby="home-skills">
               <div className="card-head">
                 <h2 id="home-skills">{skillsTitle}</h2>
-                <button
-                  type="button"
-                  className="btn"
-                  data-variant="quiet"
-                  data-size="small"
-                  onClick={() => openDrawer('skills')}
-                >
-                  All skills
-                </button>
+                {skillsMenuVisible(boot?.identity.role ?? 'unknown') ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="quiet"
+                    data-size="small"
+                    onClick={() => openDrawer('skills')}
+                  >
+                    All skills
+                  </button>
+                ) : null}
               </div>
               {skillRows.length === 0 ? (
                 <p className="card-note">Star a skill to keep it here.</p>

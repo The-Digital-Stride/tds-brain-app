@@ -13,6 +13,7 @@ export const keyAction: KeyAction = (
     state,
     panelFloating = false,
     helpVisible = false,
+    skillsHidden = false,
     sectionKeys,
     chatDrawer = false,
     chatDraft = false,
@@ -66,5 +67,6 @@ export const keyAction: KeyAction = (
   const section = sectionKeys?.[key];
   if (section) return { type: 'toggle-section', section };
   const drawer = LETTER_DRAWERS[key];
+  if (drawer === 'skills' && skillsHidden) return null;
   return drawer ? { type: 'toggle-drawer', drawer } : null;
 };

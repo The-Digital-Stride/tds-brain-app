@@ -527,7 +527,15 @@ describe('New to you', () => {
     const group = screen.getByRole('heading', { name: /New to you/ }).closest('section') as HTMLElement;
     expect(within(group).getByText('Fresh from Ben', { exact: false })).toBeTruthy();
     expect(screen.getAllByText('Fresh from Ben', { exact: false })).toHaveLength(1);
-    expect(within(group).getByText('from Ben, yesterday')).toBeTruthy();
+    expect(within(group).getByText('From Ben, yesterday')).toBeTruthy();
+  });
+
+  it('separates the details with " · ", due before from', () => {
+    setStore([passed]);
+    render(<TodosDrawer />);
+    const meta = screen.getAllByText('From Ben, yesterday')[0]?.closest('.todo-meta') as HTMLElement;
+    expect(meta.querySelectorAll('.todo-sep')).toHaveLength(1);
+    expect(meta.textContent).toMatch(/^Due .+ · From Ben, yesterday$/);
   });
 
   it('has no group for seen, own or old handovers', () => {
@@ -594,7 +602,7 @@ describe('New to you', () => {
   it('says "git history" for a handover found there', () => {
     setStore([todo('h.md', 'Old news', { handover: handover({ source: 'history', via: null }) })]);
     render(<TodosDrawer />);
-    expect(screen.getByText('from Ben (git history)')).toBeTruthy();
+    expect(screen.getByText('From Ben (git history)')).toBeTruthy();
   });
 });
 

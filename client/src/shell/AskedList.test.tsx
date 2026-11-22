@@ -77,7 +77,7 @@ describe('AskedList', () => {
       }),
     );
     const metas = Array.from(document.querySelectorAll('.todo-meta')).map((e) => e.textContent ?? '');
-    expect(metas[0]).toMatch(/^With Ben since 13 Nov, /);
+    expect(metas[0]).toMatch(/^With Ben since 13 Nov · Due/);
     expect(metas[1]).toBe('Done by Ben, 14 Nov');
   });
 

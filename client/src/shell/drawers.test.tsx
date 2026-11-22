@@ -237,7 +237,7 @@ describe('To-dos drawer', () => {
     render(<TodosDrawer />);
     const go = screen.getByRole('button', { name: 'Start a chat on this: Renew contract' });
     const row = go.closest('li')?.textContent ?? '';
-    expect(row).toContain('overdue by');
+    expect(row).toContain('Overdue by');
     expect(row).toContain('Acme Heating');
     // The row itself is not a button: only its own buttons act.
     expect(screen.queryByRole('button', { name: /Acme Heating/ })).toBeNull();
@@ -246,8 +246,11 @@ describe('To-dos drawer', () => {
       .split(' ')
       .map((id) => document.getElementById(id)?.textContent ?? '')
       .join(' ');
-    expect(said).toContain('overdue by');
+    expect(said).toContain('Overdue by');
     expect(said).toContain('Acme Heating');
+    // The buttons are the last thing on the bottom line, and the place describes the chat button.
+    const end = go.closest('.todo-end');
+    expect(end?.lastElementChild?.classList.contains('todo-btns')).toBe(true);
   });
 
   it('keeps the line about other people, and the old group of to-dos open to anyone', () => {

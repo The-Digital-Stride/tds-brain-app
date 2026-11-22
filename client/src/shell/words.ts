@@ -158,6 +158,9 @@ function handoverName(h: NonNullable<TodoItem['handover']>): string {
   return h.byName?.trim() || (h.by ? slugWords(h.by) : '') || 'someone';
 }
 
+/** Upper-cases the first letter: the details line's parts each start with a capital. */
+export const cap = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** Handovers older than this show no "from" in the row (decision 11). */
 export const HANDOVER_ROW_DAYS = 14;
 

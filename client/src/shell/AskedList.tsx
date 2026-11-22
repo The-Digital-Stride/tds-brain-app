@@ -3,14 +3,14 @@ import { ASKED_DONE_DAYS, type AskedTodo, type AskedTodoList } from '../../../sh
 import { dueInWords, isOverdue } from '../format.ts';
 import { Fold } from './Fold.tsx';
 import { ProjectChip } from './ProjectChip.tsx';
-import { askedMeta } from './words.ts';
+import { askedMeta, cap } from './words.ts';
 
 /** How the separate "asked of others" request is going. */
 export type AskedState = 'loading' | 'loaded' | 'failed';
 
 /** Where an asked to-do belongs, as its row shows it: a project chip that filters by it, else plain words. */
 export interface AskedPlace {
-  chip: { key: string; label: string } | null;
+  chip: { key: string; label: string; short?: string } | null;
   places: string[];
 }
 
@@ -52,22 +52,29 @@ function AskedRow({
       </div>
       <div className="todo-foot">
         <span className="line-meta todo-meta">
-          {askedMeta(todo)}
+          <span className="todo-meta-item">{askedMeta(todo)}</span>
           {due && todo.state === 'waiting' ? (
-            <>
-              {', '}
+            <span className="todo-meta-item">
+              <span className="todo-sep"> · </span>
               <span
                 className={todo.state === 'waiting' && todo.due && isOverdue(todo.due) ? 'late' : undefined}
               >
-                {due}
+                {cap(due)}
               </span>
-            </>
+            </span>
           ) : null}
-          {places.map((text) => (
-            <span key={text}>, {text}</span>
-          ))}
-          {chip && onProject ? <ProjectChip label={chip.label} onPick={() => onProject(chip.key)} /> : null}
         </span>
+        {chip || places.length > 0 ? (
+          <div className="todo-end">
+            <span className="todo-where">
+              {chip && onProject ? (
+                <ProjectChip label={chip.label} short={chip.short} onPick={() => onProject(chip.key)} />
+              ) : (
+                <span className="line-meta todo-where-text">{places.join(' · ')}</span>
+              )}
+            </span>
+          </div>
+        ) : null}
       </div>
     </li>
   );

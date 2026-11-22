@@ -74,9 +74,8 @@
 .ss-opt-label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* A long name wraps in the list rather than being cut off. */
+  overflow-wrap: anywhere;
 }
 /* biome-ignore lint/style/noDescendingSpecificity: an option's icon is never the chevron. */
 .ss-opt svg {

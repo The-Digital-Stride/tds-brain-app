@@ -95,7 +95,7 @@ describe('library search sources', () => {
     const res = await imagesSearch.searchAsync?.('logo', new AbortController().signal);
     const actions = { openLibraryItem: vi.fn() } as unknown as SearchActions;
     res?.hits[0]?.run(actions);
-    expect(actions.openLibraryItem).toHaveBeenCalledWith('images', 'client:acme', logo);
+    expect(actions.openLibraryItem).toHaveBeenCalledWith('images', 'client:acme', logo, acme.name);
   });
 
   it('openLibraryItem routes to the right app store', () => {
@@ -103,9 +103,9 @@ describe('library search sources', () => {
     const report = doc({ view: null });
     // The chosen client is shared, so each app is checked on its own.
     openLibraryItem('images', 'client:acme', logo);
-    expect(imagesStore.get()).toMatchObject({ scope: 'client:acme', current: logo, viewing: logo });
+    expect(imagesStore.get()).toMatchObject({ scope: 'client:acme', current: logo });
     openLibraryItem('documents', 'client:northwind', report);
-    expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report, viewing: null });
+    expect(docsStore.get()).toMatchObject({ scope: 'client:northwind', current: report });
   });
 
   it('openLibraryItem ignores an app it does not know', () => {

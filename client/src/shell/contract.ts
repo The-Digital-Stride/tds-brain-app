@@ -544,8 +544,11 @@ export interface SearchActions {
   revealTodo: (todo: TodoItem) => void;
   /** Shows Home with this client chosen. */
   chooseClient: (slug: string) => void;
-  /** Opens a library app (`app:<appId>`) on `scope` with `item` selected (and viewed when it can be). */
-  openLibraryItem: (appId: string, scope: string, item: LibraryItem) => void;
+  /**
+   * Opens a library app (`app:<appId>`) on `scope` with `item` selected, and the file in the viewer
+   * drawer. `place` is the library's name, shown under the file's.
+   */
+  openLibraryItem: (appId: string, scope: string, item: LibraryItem, place?: string) => void;
   /** Projects R1 (decision 14): sets the app-wide picker to this project (and so its client) and shows Home. */
   filterToProject?: (key: string) => void;
 }

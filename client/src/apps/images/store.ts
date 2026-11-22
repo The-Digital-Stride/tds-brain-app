@@ -14,7 +14,6 @@ const initial = (): ImagesState => ({
   query: '',
   layout: 'grid',
   current: null,
-  viewing: null,
   ticked: new Set(),
 });
 

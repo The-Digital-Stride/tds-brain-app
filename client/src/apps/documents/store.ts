@@ -18,7 +18,6 @@ const initial = (): DocsState => ({
   sort: 'newest',
   layout: 'list',
   current: null,
-  viewing: null,
   ticked: new Set(),
 });
 

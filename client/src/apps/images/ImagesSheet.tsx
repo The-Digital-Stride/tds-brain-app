@@ -4,12 +4,11 @@ import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { useCopy } from '../shared/copy.ts';
-import { useKeepCurrent, useLibraryData, useViewerReturn } from '../shared/data.ts';
+import { useKeepCurrent, useLibraryData } from '../shared/data.ts';
 import { groupItems } from '../shared/library.ts';
 import {
   DeleteButton,
   FolderCard,
-  LibraryBar,
   LibraryNotice,
   LibraryTools,
   neighbourId,
@@ -18,7 +17,6 @@ import {
   ViewButton,
 } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
-import { Viewer } from '../shared/Viewer.tsx';
 import { selectionWords } from '../shared/words.ts';
 import { chatDraft, countWords, filterImages, metaWords, summaryWords, tileWords } from './library.ts';
 import { imagesStore, useImages } from './store.ts';
@@ -27,11 +25,6 @@ const LAYOUTS: { value: 'grid' | 'list'; label: string }[] = [
   { value: 'grid', label: 'Grid' },
   { value: 'list', label: 'List' },
 ];
-
-/** The buttons in the sheet bar: Back while a picture is open, and the details button. */
-export function ImagesBar() {
-  return <LibraryBar store={imagesStore} back="Back to Images" />;
-}
 
 function Item({
   image,
@@ -121,8 +114,7 @@ export function ImagesSheet() {
   const summary = useRef<HTMLParagraphElement>(null);
   const data = useLibraryData(imagesStore, 'image');
   useKeepCurrent(imagesStore, data);
-  useViewerReturn(imagesStore, root, summary);
-  const focusAfterDelete = useDeleteFocus(root, summary, s.viewing !== null);
+  const focusAfterDelete = useDeleteFocus(root, summary, false);
 
   // A file being deleted is out of the list at once, even if a refresh still carries it.
   const items = useMemo(
@@ -142,7 +134,13 @@ export function ImagesSheet() {
     if (!state.panelOpen) dispatch({ type: 'set-panel', open: true });
   };
 
-  // Delete with an Undo; the viewer closes and focus goes to the next file shown (found by id).
+  // A file opens in the viewer drawer over the right of the page, the same everywhere in the app.
+  const view = (image: LibraryItem) => {
+    imagesStore.set({ current: image });
+    dispatch({ type: 'open-viewer', viewer: { item: image, place: data.scopeName || undefined } });
+  };
+
+  // Delete with an Undo; focus goes to the next file shown (found by id).
   const remove = (image: LibraryItem) => {
     const next = neighbourId(
       groups.flatMap((g) => g.items.map((i) => i.id)),
@@ -151,7 +149,6 @@ export function ImagesSheet() {
     deleteFile(image, image.name);
     imagesStore.set({
       ...(s.current?.id === image.id ? { current: null } : {}),
-      ...(s.viewing?.id === image.id ? { viewing: null } : {}),
     });
     focusAfterDelete(next);
   };
@@ -163,15 +160,7 @@ export function ImagesSheet() {
       data-layout={s.layout}
       data-picking={picked.length > 0 ? 'true' : undefined}
     >
-      {s.viewing ? (
-        <Viewer
-          item={s.viewing}
-          onBack={() => imagesStore.set({ viewing: null })}
-          name={s.viewing.name}
-          onDelete={() => remove(s.viewing as LibraryItem)}
-        />
-      ) : null}
-      <div className="lib-main" hidden={s.viewing !== null}>
+      <div className="lib-main">
         <LibraryTools
           id="imgs"
           scopes={data.scopes}
@@ -223,7 +212,7 @@ export function ImagesSheet() {
                     current={s.current?.id === image.id}
                     ticked={s.ticked.has(image.id)}
                     onOpen={() => open(image)}
-                    onView={() => imagesStore.set({ current: image, viewing: image })}
+                    onView={() => view(image)}
                     onDelete={() => remove(image)}
                     reserveBin={reserveBin}
                   />

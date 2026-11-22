@@ -28,6 +28,7 @@ const api = vi.hoisted(() => ({
   tidy: vi.fn(),
   applyTidy: vi.fn(),
   librarySearch: vi.fn(),
+  libraryItems: vi.fn(),
 }));
 vi.mock('../../api.ts', () => ({
   api,
@@ -394,5 +395,53 @@ describe('Add a card when the Account Owner is dropped', () => {
     await addCard(card({ slug: 'bare', title: 'Bare', owner: 'simon' }));
     await screen.findByRole('heading', { name: 'Bare' });
     expect(screen.queryByText(/it was left blank/)).toBeNull();
+  });
+});
+
+describe('the Files tab', () => {
+  const doc = {
+    id: 'tds.abc',
+    kind: 'document',
+    name: 'plan.docx',
+    title: 'Agency Brian - building the TDS Google Ads Manager, a very long name',
+    path: 'clients/the-digital-stride/projects/site/plan.docx',
+    format: 'doc',
+    group: 'Projects',
+    view: 'html',
+    thumb: false,
+    modified: 1,
+  };
+
+  async function openFiles() {
+    api.projectFiles.mockImplementation(async (_key: string, kind: string) =>
+      kind === 'document' ? { items: [doc], hidden: 0 } : { items: [], hidden: 0 },
+    );
+    await show(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Files/ }));
+    return screen.findByRole('button', { name: /Agency Brian/ });
+  }
+
+  it('opens a document in the viewer drawer, with its library, and stays on the Files tab', async () => {
+    api.libraryItems.mockResolvedValue({
+      files: [{ item: doc, scope: { id: 'tds', name: 'The Digital Stride' } }],
+    });
+    fireEvent.click(await openFiles());
+    await waitFor(() =>
+      expect(shell.dispatch).toHaveBeenCalledWith({
+        type: 'open-viewer',
+        viewer: { item: doc, place: 'The Digital Stride', openIn: { app: 'documents', scope: 'tds' } },
+      }),
+    );
+    expect(api.libraryItems).toHaveBeenCalledWith(['tds.abc']);
+    expect(screen.getByRole('button', { name: /Agency Brian/ })).toBeTruthy();
+  });
+
+  it('still opens the file when its library cannot be looked up', async () => {
+    api.libraryItems.mockRejectedValue(new Error('offline'));
+    fireEvent.click(await openFiles());
+    await waitFor(() =>
+      expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-viewer', viewer: { item: doc } }),
+    );
   });
 });

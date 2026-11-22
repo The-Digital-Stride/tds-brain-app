@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { ROUTES } from '../../../shared/contract.ts';
+import { api } from '../api.ts';
 import { DeleteButton } from '../apps/shared/parts.tsx';
 import { openLibraryItem } from '../apps/shared/search.ts';
 import { FileStage } from '../apps/shared/Viewer.tsx';
@@ -44,6 +45,39 @@ export function FileViewer() {
   useEffect(() => {
     if (shownId !== null) heading.current?.focus({ preventScroll: true });
   }, [shownId]);
+
+  // A file that changes while it is open (Claude edited it) is swapped for its newer copy, so a page,
+  // PDF or picture reloads; text refetches by itself. Whoever opened it (a project, a to-do, a tool,
+  // the search), the drawer keeps it current. Checked only when the library changes after opening.
+  const latest = useRef(request);
+  latest.current = request;
+  const fileId = request !== null && request.kind !== 'page' ? request.item.id : null;
+  const seen = useRef<{ id: string | null; version: number }>({ id: null, version: 0 });
+  useEffect(() => {
+    if (fileId === null) return;
+    if (seen.current.id !== fileId) {
+      seen.current = { id: fileId, version: libraryVersion };
+      return;
+    }
+    if (seen.current.version === libraryVersion) return;
+    seen.current.version = libraryVersion;
+    let live = true;
+    api
+      .libraryItems([fileId])
+      .then(({ files }) => {
+        const fresh = files[0]?.item;
+        const now = latest.current;
+        if (!live || !fresh || now === null || now.kind === 'page' || now.item.id !== fresh.id) return;
+        if (now.item.modified !== fresh.modified)
+          dispatch({ type: 'open-viewer', viewer: { ...now, item: fresh } });
+      })
+      .catch(() => {
+        // Offline or gone: the copy on screen stays; a delete closes the drawer by its own route.
+      });
+    return () => {
+      live = false;
+    };
+  }, [fileId, libraryVersion, dispatch]);
 
   // On close, back to the opener while it is still on the page; failing that, the sheet.
   useEffect(() => {

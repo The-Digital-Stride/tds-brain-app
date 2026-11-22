@@ -74,7 +74,7 @@ export function librarySearchSource(o: LibrarySearchSourceOptions): SearchSource
           hint: scope.kind === 'personal' ? 'My personal files' : scope.name,
           icon: o.icon,
           detail: fileDetail(item, scope, o.typeWords),
-          run: (actions) => actions.openLibraryItem(o.appId, scope.id, item),
+          run: (actions) => actions.openLibraryItem(o.appId, scope.id, item, scope.name),
         })),
         total: res.total,
         partial: res.partial,

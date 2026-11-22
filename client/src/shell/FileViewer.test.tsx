@@ -5,12 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../shared/contract.ts';
 import type { ViewerRequest } from './contract.ts';
 
-const h = vi.hoisted(() => ({ openView: vi.fn(), openLibraryItem: vi.fn() }));
-const api = vi.hoisted(() => ({ libraryText: vi.fn() }));
+const h = vi.hoisted(() => ({ openView: vi.fn(), openLibraryItem: vi.fn(), libraryVersion: 0 }));
+const api = vi.hoisted(() => ({ libraryText: vi.fn(), libraryItems: vi.fn() }));
 vi.mock('../api.ts', () => ({ api }));
 vi.mock('../store.tsx', () => ({
   useToolSnapshot: () => ({ ads: null }),
-  useStore: () => ({ libraryVersion: 0, openView: h.openView, view: 'chat', activeChat: { kind: 'none' } }),
+  useStore: () => ({
+    libraryVersion: h.libraryVersion,
+    openView: h.openView,
+    view: 'chat',
+    activeChat: { kind: 'none' },
+  }),
 }));
 vi.mock('../apps/shared/search.ts', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -89,6 +94,8 @@ beforeEach(() => {
   api.libraryText.mockResolvedValue({ text: 'Body text', truncated: false });
   h.openView.mockReset();
   h.openLibraryItem.mockReset();
+  h.libraryVersion = 0;
+  api.libraryItems.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -194,5 +201,44 @@ describe('the file viewer', () => {
     const frame = screen.getByTitle('Report');
     expect(frame.tagName).toBe('IFRAME');
     expect(frame.getAttribute('src')).toContain('#navpanes=0&view=FitH');
+  });
+
+  it('swaps in a newer copy of the open file when the library changes, wherever it was opened from', async () => {
+    const pageItem = item({ id: 'p2', view: 'page', ext: 'html', title: 'Explainer' });
+    const view = renderViewer({ ask: { item: pageItem, place: 'Acme Heating' } });
+    openIt();
+    // Opening it asks nothing more of the server.
+    expect(api.libraryItems).not.toHaveBeenCalled();
+    const frame = screen.getByTitle('Explainer');
+    const newer = { ...pageItem, modified: '2026-11-20T10:00:00.000Z' };
+    api.libraryItems.mockResolvedValue({
+      files: [{ item: newer, scope: { id: 'client:acme', name: 'Acme Heating' } }],
+    });
+    h.libraryVersion = 1;
+    view.rerender(
+      <ShellProvider>
+        <Opener ask={{ item: pageItem, place: 'Acme Heating' }} />
+        <FileViewer />
+      </ShellProvider>,
+    );
+    await waitFor(() => expect(screen.getByTitle('Explainer')).not.toBe(frame));
+    expect(api.libraryItems).toHaveBeenCalledWith(['p2']);
+    // Still the same drawer, place line and all.
+    expect(within(screen.getByRole('dialog', { name: 'Explainer' })).getByText('Acme Heating')).toBeTruthy();
+  });
+
+  it('keeps the copy on screen when the newer one cannot be fetched', async () => {
+    const view = renderViewer();
+    openIt();
+    api.libraryItems.mockRejectedValue(new Error('offline'));
+    h.libraryVersion = 1;
+    view.rerender(
+      <ShellProvider>
+        <Opener />
+        <FileViewer />
+      </ShellProvider>,
+    );
+    await waitFor(() => expect(api.libraryItems).toHaveBeenCalled());
+    expect(screen.getByRole('dialog', { name: 'Audit' })).toBeTruthy();
   });
 });

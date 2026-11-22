@@ -6,17 +6,17 @@ import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
 import { chatDraft, typeWords } from './library.ts';
-import { docsStore, useDocs } from './store.ts';
+import { useDocs } from './store.ts';
 
 /** The right panel for the Documents app: the chosen document and the facts the file itself holds. */
 export function DocumentsPanel() {
   const { current: doc } = useDocs();
   const { newChat, hiddenFileIds } = useStore();
   const { dispatch, modes } = useShell();
-  // A floating panel would hide the file it opens, so it closes; a docked one stays.
+  // The file opens in the viewer drawer. A floating panel would sit under it, so it closes; a docked one stays.
   const open = (item: LibraryItem) => {
-    docsStore.set({ viewing: item });
     if (modes.panelOverlays) dispatch({ type: 'set-panel', open: false });
+    dispatch({ type: 'open-viewer', viewer: { item } });
   };
   if (!doc || hiddenFileIds.has(doc.id))
     return <p className="dock-empty">Choose a document to see its details.</p>;

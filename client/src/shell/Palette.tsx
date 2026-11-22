@@ -180,7 +180,7 @@ function PaletteDialog() {
     chooseClient: (slug) => {
       newChat({ client: slug });
     },
-    openLibraryItem: (appId, scope, item) => {
+    openLibraryItem: (appId, scope, item, place) => {
       // A file gets the room an app gets (see ShellProvider), even when its app is already showing.
       if (state.drawer) dispatch({ type: 'close-drawer' });
       // Focus goes to the sheet as the palette shuts (not to body, nor to a closing drawer's rail
@@ -188,6 +188,8 @@ function PaletteDialog() {
       restoreTo.current = document.getElementById('main');
       openLibraryItem(appId, scope, item);
       openView(`app:${appId}`);
+      // The file itself opens in the viewer drawer, as files do everywhere in the app.
+      dispatch({ type: 'open-viewer', viewer: { item, place } });
     },
     openTool: (sectionId, toolId, arg) => {
       // The sheet takes focus as the palette shuts, as for a library item.

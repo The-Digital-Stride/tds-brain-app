@@ -7,6 +7,7 @@
 import { promises as fs } from 'node:fs';
 import { parseProjectKey } from '../../shared/projects.ts';
 import {
+  INTERNAL_CLIENT,
   PROJECTS_SCRIPT_TIMEOUT_MS,
   type ProjectAction,
   type ProjectKey,
@@ -94,10 +95,21 @@ const MOVE_FILES_MAX = 50;
 const MOVE_PATH_MAX = 1024;
 /**
  * The hidden folder a delete renames a project to (the script's DELETING), beside it in a folder
- * projects live in: `.tdsapp-projects-<the key's slug>-<12 hex>.deleting~`.
+ * projects live in: `.tdsapp-projects-<the key's slug>-<12 hex>.deleting~`. Groups: the parent
+ * folder, the slug.
  */
 const LEFT_BEHIND =
-  /^(?:clients\/[a-z0-9]+(?:-[a-z0-9]+)*\/|personal\/)?projects(?:-archive)?\/\.tdsapp-projects-([a-z0-9]+(?:-[a-z0-9]+)*)-[0-9a-f]{12}\.deleting~$/;
+  /^((?:clients\/[a-z0-9]+(?:-[a-z0-9]+)*\/|personal\/)?projects(?:-archive)?)\/\.tdsapp-projects-([a-z0-9]+(?:-[a-z0-9]+)*)-[0-9a-f]{12}\.deleting~$/;
+
+/**
+ * The folders a key's live or archive folder sits in (the script's locationsOf, less the read-only
+ * archived-client one): the hidden folder a delete leaves behind is only ever in one of them.
+ */
+function deleteParentsOf(key: { client: string; slug: string }): string[] {
+  if (key.client === 'personal') return ['personal/projects', 'personal/projects-archive'];
+  const own = [`clients/${key.client}/projects`, `clients/${key.client}/projects-archive`];
+  return key.client === INTERNAL_CLIENT ? [...own, 'projects', 'projects-archive'] : own;
+}
 
 export async function findProjectsSkill(
   root: string,
@@ -218,13 +230,16 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
       if ((action as { check?: true }).check !== true) {
         if (reply.leftBehind === undefined) return { key, version: '' };
         const left = reply.leftBehind;
-        const slug = parseProjectKey(key)?.slug;
+        const parsed = parseProjectKey(key);
+        const m = typeof left === 'string' ? LEFT_BEHIND.exec(left) : null;
         if (
           action.kind !== 'delete' ||
-          !slug ||
+          !parsed ||
           typeof left !== 'string' ||
           left.length > MOVE_PATH_MAX ||
-          LEFT_BEHIND.exec(left)?.[1] !== slug
+          !m ||
+          m[2] !== parsed.slug ||
+          !deleteParentsOf(parsed).includes(m[1] as string)
         )
           return internal;
         return { key, version: '', leftBehind: left };

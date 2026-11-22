@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  INTERNAL_CLIENT,
   PROJECTS_ARCHIVE_CAPABILITY,
   PROJECTS_CAPABILITY,
   PROJECTS_MOVE_CAPABILITY,
@@ -435,11 +436,33 @@ describe('archive, unarchive and delete (archive plan)', () => {
       version: '',
       leftBehind: LEFT,
     });
+    // Its own live folder's parent, and the legacy ones for a The Digital Stride key.
+    for (const [key, left] of [
+      [KEY, 'clients/acme/projects/.tdsapp-projects-site-0123456789ab.deleting~'],
+      [`${INTERNAL_CLIENT}/site`, 'projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+      [
+        `${INTERNAL_CLIENT}/site`,
+        `clients/${INTERNAL_CLIENT}/projects/.tdsapp-projects-site-0123456789ab.deleting~`,
+      ],
+      ['personal/site', 'personal/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+    ] as const) {
+      const c = brain();
+      const r = createProjectsSkillRunner(c.root, { env: c.env(reply({ key, leftBehind: left })) });
+      expect(await r.run({ kind: 'delete', key, filesExpect: 'd'.repeat(64) }), left).toEqual({
+        key,
+        version: '',
+        leftBehind: left,
+      });
+    }
     for (const [kind, left] of [
       ['archive', LEFT],
       ['delete', 'clients/acme/projects-archive/site'],
       ['delete', 'clients/acme/projects-archive/.tdsapp-projects-other-0123456789ab.deleting~'],
       ['delete', '../outside/.tdsapp-projects-site-0123456789ab.deleting~'],
+      // The right slug in another client's, someone's personal or the legacy folders: never its own.
+      ['delete', 'clients/skyseal/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 'personal/projects/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 'projects-archive/.tdsapp-projects-site-0123456789ab.deleting~'],
       ['delete', 5],
     ] as const) {
       const c = brain();

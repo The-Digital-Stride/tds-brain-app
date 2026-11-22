@@ -37,6 +37,10 @@ import { useProjectChange } from './useChange.ts';
 /** Form order, so the first invalid field gets focus. Ids match `id(name)` below. */
 const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brief', 'team'] as const;
 
+/** Shown after Add a card when the Account Owner we sent didn't stick. */
+export const OWNER_DROPPED =
+  "Saved. Only the brain's Owner can set the Account Owner on an existing folder, so it was left blank.";
+
 type Mode = 'create' | 'edit' | 'card';
 
 const KINDS = [
@@ -103,8 +107,8 @@ export function ProjectForm({
   canMove?: MoveState;
   /** Leaves the form for the move screen. */
   onMove?: () => void;
-  /** The new project's key after a create; null otherwise. */
-  onDone: (key: string | null) => void;
+  /** The new project's key after a create (null otherwise), and a line to show when a save left something out. */
+  onDone: (key: string | null, notice?: string) => void;
   onCancel: () => void;
 }) {
   const change = useProjectChange();
@@ -230,8 +234,11 @@ export function ProjectForm({
       return;
     }
     setBusy(false);
-    if (res.ok) onDone(key);
-    else setFailure({ code: res.code, message: res.message });
+    if (res.ok) {
+      const kept = mode === 'card' && card ? res.list.projects.find((c) => c.key === card.key) : undefined;
+      const dropped = mode === 'card' && v.owner !== '' && kept !== undefined && !kept.owner;
+      onDone(key, dropped ? OWNER_DROPPED : undefined);
+    } else setFailure({ code: res.code, message: res.message });
   };
 
   const heading =

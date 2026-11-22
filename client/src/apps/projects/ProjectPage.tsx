@@ -274,27 +274,29 @@ function Overview({
               : ''}
           </span>
           {removal.on ? (
-            <button
-              type="button"
-              className="btn"
-              data-size="small"
-              disabled={removal.busy}
-              onClick={removal.unarchive}
-            >
-              Unarchive
-            </button>
-          ) : null}
-          {removal.on && removal.pre?.allowed && !removal.panel ? (
-            <button
-              type="button"
-              className="btn"
-              data-size="small"
-              data-variant="danger"
-              data-focus="delete"
-              onClick={() => removal.setPanel('delete')}
-            >
-              Delete…
-            </button>
+            <span className="proj-banner-actions">
+              <button
+                type="button"
+                className="btn"
+                data-size="small"
+                disabled={removal.busy}
+                onClick={removal.unarchive}
+              >
+                Unarchive
+              </button>
+              {removal.pre?.allowed && !removal.panel ? (
+                <button
+                  type="button"
+                  className="btn"
+                  data-size="small"
+                  data-variant="danger"
+                  data-focus="delete"
+                  onClick={() => removal.setPanel('delete')}
+                >
+                  Delete…
+                </button>
+              ) : null}
+            </span>
           ) : null}
         </div>
       ) : null}

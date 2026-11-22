@@ -1318,22 +1318,80 @@ function pathsShownAs(ctx, rel) {
     const live = liveFolderFor(pick.rel);
     if (live) out.push(`${live}/${inside.rest}`);
   }
-  if (pick.card === 'plain') {
-    let movedFrom;
-    try {
-      const parts = cardParts(decodeFile(fs.readFileSync(path.join(pick.abs, PROJECT_CARD_FILE))).text);
-      movedFrom = parts ? cardValues(parts.entries).moved_from : undefined;
-    } catch {
-      movedFrom = undefined;
-    }
-    const olds = Array.isArray(movedFrom) ? movedFrom : typeof movedFrom === 'string' && movedFrom !== '' ? [movedFrom] : [];
+  const olds = movedFromOf(pick);
+  if (olds.length > 0) {
+    let holders = null;
     for (const old of olds) {
       const oldKey = parseKey(old);
       if (!oldKey || readFolderOf(ctx, oldKey)) continue;
+      // The app shows the old folder under the lowest key whose card holds the old key (movedFolderPath).
+      if (holders === null) holders = movedFromHolders(ctx);
+      if (holders.get(old) !== `${inside.key.client}/${inside.key.slug}`) continue;
       out.push(`${movedFromFolder(oldKey)}/${inside.rest}`);
     }
   }
   return out.filter(p => p !== rel);
+}
+
+// The moved_from keys on a folder's plain card; none when it has no plain card or can't be read.
+function movedFromOf(f) {
+  if (f.card !== 'plain') return [];
+  let movedFrom;
+  try {
+    const parts = cardParts(decodeFile(fs.readFileSync(path.join(f.abs, PROJECT_CARD_FILE))).text);
+    movedFrom = parts ? cardValues(parts.entries).moved_from : undefined;
+  } catch {
+    return [];
+  }
+  if (Array.isArray(movedFrom)) return movedFrom.filter(k => typeof k === 'string');
+  return typeof movedFrom === 'string' && movedFrom !== '' ? [movedFrom] : [];
+}
+
+// Every project folder base the app lists (server/brain/projects.ts walk), brain-relative, with the
+// client its keys go under.
+function projectBases(ctx) {
+  const dirsIn = rel => {
+    try {
+      return fs.readdirSync(path.join(ctx.root, ...rel.split('/')), { withFileTypes: true })
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => e.name);
+    } catch {
+      return [];
+    }
+  };
+  const bases = [
+    { rel: 'projects', client: INTERNAL_CLIENT },
+    { rel: 'projects-archive', client: INTERNAL_CLIENT },
+    { rel: 'personal/projects', client: 'personal' },
+    { rel: 'personal/projects-archive', client: 'personal' },
+  ];
+  for (const c of dirsIn('clients')) {
+    if (c.startsWith('_')) continue;
+    bases.push({ rel: `clients/${c}/projects`, client: c }, { rel: `clients/${c}/projects-archive`, client: c });
+  }
+  for (const c of dirsIn('clients/_archive')) bases.push({ rel: `clients/_archive/${c}/projects`, client: c });
+  return bases.map(b => ({ ...b, names: dirsIn(b.rel) }));
+}
+
+// For each old key on any project's moved_from, the lowest key holding it (as movedFolderPath picks).
+function movedFromHolders(ctx) {
+  const keys = new Set();
+  for (const b of projectBases(ctx)) {
+    for (const name of b.names) {
+      const key = `${b.client}/${name}`;
+      if (parseKey(key)) keys.add(key);
+    }
+  }
+  const holders = new Map();
+  for (const key of keys) {
+    const pick = readFolderOf(ctx, parseKey(key));
+    if (!pick) continue;
+    for (const old of movedFromOf(pick)) {
+      const best = holders.get(old);
+      if (best === undefined || key < best) holders.set(old, key);
+    }
+  }
+  return holders;
 }
 
 function unlink(input, ctx) {
@@ -1712,13 +1770,32 @@ function memberNamed(root, slug) {
 }
 
 // Who may delete (decision 5, overseer S1), decided here alone: a personal project, the person; a
-// leftover, anyone on the team; a card with an Account Owner, that person or the brain's Owner (role
-// `owner`); a card-less or owner-less project, or an unreadable card, the brain's Owner.
-function deleteRule(ctx, loc, bytes, who) {
+// leftover holding only git-ignored files (nothing it holds ever synced), anyone on the team; a
+// leftover holding anything git would sync (a teammate's work may be in it), as its archived twin's
+// card says; a card with an Account Owner, that person or the brain's Owner (role `owner`); a
+// card-less or owner-less project or twin, or an unreadable card, the brain's Owner.
+function deleteRule(ctx, loc, bytes, who, files, ignored) {
   if (loc.space === 'personal') return { allowed: true, allowedWho: 'only you' };
-  if (loc.leftover) return { allowed: who.known, allowedWho: 'anyone on the team' };
+  if (loc.leftover) {
+    if (files.every(f => ignored.has(`${loc.rel}/${f}`))) return { allowed: who.known, allowedWho: 'anyone on the team' };
+    return ownerRule(ctx, cardOwner(twinCardValues(ctx, loc)), who);
+  }
   const parts = bytes ? cardParts(decodeFile(bytes).text) : null;
   return ownerRule(ctx, cardOwner(parts ? cardValues(parts.entries) : null), who);
+}
+
+// The card values of a leftover's archived twin (the first archive folder for its key with a plain
+// card), or null when there is none or it can't be read.
+function twinCardValues(ctx, loc) {
+  const twin = foldersOf(ctx, parseKey(loc.key)).found.find(f => f.archived && f.card === 'plain');
+  if (!twin) return null;
+  try {
+    requireRealPath(ctx, twin.abs, twin.rel);
+    const parts = cardParts(decodeFile(fs.readFileSync(path.join(twin.abs, PROJECT_CARD_FILE))).text);
+    return parts ? cardValues(parts.entries) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Security review: a personal project's folder is archived, unarchived or deleted only when git
@@ -1833,7 +1910,7 @@ function removeAction(kind, input, ctx) {
   // The fingerprint last, right before the write.
   const bytes = removeCard(loc, opts.expect, kind !== 'delete' && !opts.check);
   let rule;
-  if (kind === 'delete') rule = deleteRule(ctx, loc, bytes, who);
+  if (kind === 'delete') rule = deleteRule(ctx, loc, bytes, who, files, ignored);
   else if (loc.space === 'personal') rule = { allowed: true, allowedWho: 'only you' };
   else rule = { allowed: who.known, allowedWho: 'anyone on the team' };
 

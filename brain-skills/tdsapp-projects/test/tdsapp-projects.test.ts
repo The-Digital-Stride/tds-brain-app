@@ -26,6 +26,7 @@ import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
 import {
   archivedFolderPath,
   LINKED_FILE_ROOTS,
+  movedFolderPath,
   parseLinkedFiles,
   splitLinkedFiles,
 } from '../../../shared/projects.ts';
@@ -1829,9 +1830,22 @@ describe('archive, unarchive and delete', () => {
         exit: 2,
         error: 'exists',
       });
-      // The leftover itself: anyone on the team may delete it.
+      // It holds a file git would sync (a teammate's work may be in it), so only the archived twin's
+      // Account Owner or the brain's Owner may delete it.
       const c = checkOf('delete', 'acme/website', { leftover: true });
-      expect(c).toMatchObject({ from: LIVE, to: null, allowed: true, fileCount: 1 });
+      expect(c).toMatchObject({
+        from: LIVE,
+        to: null,
+        allowed: false,
+        allowedWho: "Tess Team (the Account Owner) or the brain's Owner",
+        fileCount: 1,
+      });
+      expect(refusal(act('delete', 'acme/website', { leftover: true, filesExpect: c.filesVersion }))).toEqual(
+        { exit: 2, error: 'not-allowed' },
+      );
+      expect(existsSync(abs(`${LIVE}/stray.txt`))).toBe(true);
+      as('tess@example.test');
+      expect(checkOf('delete', 'acme/website', { leftover: true })).toMatchObject({ allowed: true });
       expect(
         act('delete', 'acme/website', { leftover: true, filesExpect: c.filesVersion }).reply,
       ).toMatchObject({
@@ -1847,6 +1861,32 @@ describe('archive, unarchive and delete', () => {
         exit: 2,
         error: 'bad-request',
       });
+    });
+
+    it('lets anyone on the team delete a leftover beside a carded archive when git ignores all it holds', () => {
+      archiveIt();
+      put(`${LIVE}/.DS_Store`, 'finder');
+      put(`${LIVE}/cut.mov`, 'video');
+      const c = checkOf('delete', 'acme/website', { leftover: true });
+      expect(c).toMatchObject({ from: LIVE, allowed: true, allowedWho: 'anyone on the team', fileCount: 2 });
+      expect(
+        act('delete', 'acme/website', { leftover: true, filesExpect: c.filesVersion }).reply,
+      ).toMatchObject({ ok: true });
+      expect(existsSync(abs(LIVE))).toBe(false);
+      expect(existsSync(abs(`${ARCHIVED}/project.md`))).toBe(true);
+    });
+
+    it("leaves a leftover holding synced files beside an owner-less archive to the brain's Owner", () => {
+      archiveIt();
+      put(`${ARCHIVED}/project.md`, OWNED.replace('owner: tess-team\n', ''));
+      put(`${LIVE}/stray.txt`, 'left on this Mac');
+      as('tess@example.test');
+      expect(checkOf('delete', 'acme/website', { leftover: true })).toMatchObject({
+        allowed: false,
+        allowedWho: "the brain's Owner",
+      });
+      as('olive@example.test');
+      expect(checkOf('delete', 'acme/website', { leftover: true })).toMatchObject({ allowed: true });
     });
 
     it('treats a card-less folder holding only git-ignored files as a leftover', () => {
@@ -2087,6 +2127,40 @@ describe('security and correctness review', () => {
       });
       expect(r.reply).toMatchObject({ ok: true });
       expect(linked()).toEqual(['clients/acme/files/quote.pdf']);
+    });
+
+    it('unlinks an old-folder link only by the path the app shows when two projects moved from that key', () => {
+      const OLD = 'clients/acme/projects/a';
+      put(`${OLD}/a.md`, 'a');
+      expect(
+        act('link', 'acme/website', { path: `${OLD}/a.md`, expect: sha(`${LIVE}/project.md`) }).exit,
+      ).toBe(0);
+      rmSync(abs(OLD), { recursive: true });
+      const moved = (title: string) => `---\nv: 1\ntitle: ${title}\nmoved_from:\n  - "acme/a"\n---\n`;
+      for (const slug of ['b', 'c']) {
+        put(`clients/acme/projects/${slug}/project.md`, moved(slug));
+        put(`clients/acme/projects/${slug}/a.md`, slug);
+      }
+      // The app shows the old path under the lowest key holding it: acme/b.
+      const cards = ['b', 'c'].map((slug) => ({
+        key: `acme/${slug}` as const,
+        folder: `clients/acme/projects/${slug}`,
+        movedFrom: ['acme/a' as const],
+      }));
+      expect(movedFolderPath(`${OLD}/a.md`, cards)).toBe('clients/acme/projects/b/a.md');
+      const before = read(`${LIVE}/project.md`);
+      const c = act('unlink', 'acme/website', {
+        path: 'clients/acme/projects/c/a.md',
+        expect: sha(`${LIVE}/project.md`),
+      });
+      expect(c.reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toBe(before);
+      const b = act('unlink', 'acme/website', {
+        path: 'clients/acme/projects/b/a.md',
+        expect: sha(`${LIVE}/project.md`),
+      });
+      expect(b.reply).toMatchObject({ ok: true });
+      expect(linked()).not.toContain(`${OLD}/a.md`);
     });
 
     it('never maps a path into a folder the key does not read, and links files in projects-archive/', () => {

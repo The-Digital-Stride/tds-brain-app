@@ -44,8 +44,10 @@ once across all four. Any other client: its `projects/`, its `projects-archive/`
 
 A folder with no card that a sync left behind is a **leftover**, not a project: one whose key also
 has an archived folder with a card (the archive wins), or a shared one holding nothing but files git
-ignores (such as `.DS_Store`). The key reads the other folder; anyone on the team can delete a
-leftover.
+ignores (such as `.DS_Store`). The key reads the other folder. Anyone on the team can delete a
+leftover holding only files git ignores; one holding anything git would sync (a teammate's work may
+be in it) is deleted as its archived project would be: its Account Owner or the brain's Owner, or
+the brain's Owner alone when that card has no Account Owner.
 
 ## The card
 
@@ -208,9 +210,10 @@ echo '{"key":"acme/website","expect":"<sha-256 of project.md>","check":true}' \
   `tools/` names it (the refusal lists them), because that skill would make it again.
 - **Delete** can't be undone from here. Files that synced can be got back from the brain's git
   history by someone technical; `localOnlyCount` files can't. Who may: your own personal project,
-  you; a leftover, anyone on the team; a shared project with an Account Owner, that person or the
-  brain's Owner (role `owner` in `.team-config/roles.json`); one with no card or no Account Owner,
-  the brain's Owner. Who you are comes from this Mac's git identity, never from what you send.
+  you; a leftover holding only git-ignored files, anyone on the team; a shared project with an
+  Account Owner, that person or the brain's Owner (role `owner` in `.team-config/roles.json`); one
+  with no card or no Account Owner, the brain's Owner. A leftover holding a file git would sync goes
+  by its archived project's card, as that project would. Who you are comes from this Mac's git identity, never from what you send.
   Send `leftover: true` to delete the leftover folder for a key rather than the project it reads.
 - Delete first renames the folder to a hidden `.tdsapp-projects-<project>-<code>.deleting~` folder
   beside it (git ignores names ending in `~`, so the team never sees half a project), then removes

@@ -134,7 +134,14 @@ export function ProjectsSheet() {
         me={me}
         canMove={moveState(card, list)}
         onMove={() => go({ is: 'move', key: card.key }, 'move')}
-        onDone={() => toProject(card.key)}
+        onDone={(_key, words) => {
+          toProject(card.key);
+          if (words) {
+            setNotice(words);
+            setAnnounce('');
+            setTimeout(() => setAnnounce(words), 50);
+          }
+        }}
         onCancel={() => toProject(card.key)}
       />
     );
@@ -159,25 +166,28 @@ export function ProjectsSheet() {
     );
   } else if (screen.is === 'project' && card) {
     body = (
-      <ProjectPage
-        card={card}
-        list={list}
-        tab={screen.tab}
-        onTab={(tab) => toTab(card.key, tab)}
-        onBack={toList}
-        onEdit={() => go({ is: 'edit', key: card.key }, 'edit')}
-        onMove={() => go({ is: 'move', key: card.key }, 'move')}
-        onAddCard={() => go({ is: 'card', key: card.key }, 'addcard')}
-        onRemoved={(words) => {
-          setNotice(words);
-          setAnnounce('');
-          setTimeout(() => setAnnounce(words), 50);
-          toList();
-        }}
-        team={team}
-        clients={clients}
-        me={me}
-      />
+      <>
+        {notice ? <p className="proj-banner">{notice}</p> : null}
+        <ProjectPage
+          card={card}
+          list={list}
+          tab={screen.tab}
+          onTab={(tab) => toTab(card.key, tab)}
+          onBack={toList}
+          onEdit={() => go({ is: 'edit', key: card.key }, 'edit')}
+          onMove={() => go({ is: 'move', key: card.key }, 'move')}
+          onAddCard={() => go({ is: 'card', key: card.key }, 'addcard')}
+          onRemoved={(words) => {
+            setNotice(words);
+            setAnnounce('');
+            setTimeout(() => setAnnounce(words), 50);
+            toList();
+          }}
+          team={team}
+          clients={clients}
+          me={me}
+        />
+      </>
     );
   } else {
     body = (

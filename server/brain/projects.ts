@@ -29,6 +29,8 @@ import {
   INTERNAL_CLIENT,
   type Light,
   PROJECT_CARD_FILE,
+  PROJECT_CHECKLIST_ITEM_MAX,
+  PROJECT_CHECKLIST_MAX,
   PROJECT_MOVED_FROM_MAX,
   PROJECT_TITLE_MAX,
   PROJECTS_ARCHIVE_CAPABILITY,
@@ -355,6 +357,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
     }
   }
   const checklist = (await lstat(join(folderAbs, 'todo.md')))?.isFile() ? `${loc.folder}/todo.md` : null;
+  const checklistOpen = checklist === null ? null : await readChecklistOpen(join(folderAbs, 'todo.md'));
   const links = parseLinkedFiles(body).filter((p) => loc.space === 'personal' || !p.startsWith('personal/'));
   // Move plan decision 4: the keys it had before, well-formed, never its own, the newest MAX.
   const movedFrom = [
@@ -393,8 +396,40 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
     openTodos: 0,
     teamFromTodos: [],
     checklist,
+    ...(checklistOpen !== null ? { checklistOpen } : {}),
     ...(movedFrom.length > 0 ? { movedFrom } : {}),
   };
+}
+
+/** A checklist bigger than this is left unread: its items aren't shown. */
+const CHECKLIST_READ_MAX = 256 * 1024;
+
+/**
+ * Brain compat decision 10: the unticked items under a legacy `todo.md`'s `## Active` heading, read the
+ * way the Workbench reads them (`tools/members/command-centre/lib/todo-parser.cjs`). Unreadable → [].
+ */
+async function readChecklistOpen(path: string): Promise<string[]> {
+  try {
+    if (((await lstat(path))?.size ?? 0) > CHECKLIST_READ_MAX) return [];
+    const lines = (await fs.readFile(path, 'utf8')).split(/\r?\n/);
+    const items: string[] = [];
+    let inActive = false;
+    for (const line of lines) {
+      if (/^##\s+Active\s*$/i.test(line)) {
+        inActive = true;
+        continue;
+      }
+      if (inActive && /^#{1,2}\s+/.test(line)) break;
+      if (!inActive) continue;
+      const m = /^\s*-\s*\[\s\]\s*(.+?)\s*$/.exec(line);
+      if (!m?.[1]) continue;
+      items.push(m[1].slice(0, PROJECT_CHECKLIST_ITEM_MAX));
+      if (items.length >= PROJECT_CHECKLIST_MAX) break;
+    }
+    return items;
+  } catch {
+    return [];
+  }
 }
 
 async function walk(root: string, git: NonNullable<ProjectsOptions['git']>): Promise<Walk> {

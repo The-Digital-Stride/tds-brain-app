@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.3): make and change project cards (`project.md`) the way TDS Cortex does,
+// tdsapp-projects.cjs (v0.3.1): make and change project cards (`project.md`) the way TDS Cortex does,
 // move a project to another client, and archive, unarchive or delete one. The plans are the app
 // repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
 // docs/plans/2026-11-21-project-move.md and docs/plans/2026-11-21-project-archive-delete.md; the
@@ -88,7 +88,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.3';
+const SCRIPT_VERSION = '0.3.1';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -386,6 +386,24 @@ function requireTeam(who) {
 // The brain's Owner: role `owner` in roles.json.
 function isBrainOwner(who) {
   return who.known && who.role === 'owner';
+}
+
+// The people who run the brain: role `owner` or `scout` in roles.json.
+function isOwnerOrScout(who) {
+  return who.known && (who.role === 'owner' || who.role === 'scout');
+}
+
+// Brain compat decision 13 (Ian, 2026-11-22): who may change a shared card's Account Owner. The
+// Account Owner (either slug form), or anyone with role owner or scout; on a card with none, an owner
+// or scout. Deleting keeps ownerRule.
+function ownerChangeRule(ctx, owner, who) {
+  if (owner !== null) {
+    return {
+      allowed: isOwnerOrScout(who) || isPerson(who, owner),
+      allowedWho: `${memberNamed(ctx.root, owner) || owner} (the Account Owner), an owner or a scout`,
+    };
+  }
+  return { allowed: isOwnerOrScout(who), allowedWho: 'an owner or a scout' };
 }
 
 // Whether `who` is the team member a slug names, in either slug form (as personOf takes them).
@@ -1178,10 +1196,10 @@ function card(input, ctx) {
   const abs = path.join(loc.abs, PROJECT_CARD_FILE);
   if (lstatOrNull(abs)) throw refuse('exists', `${loc.key} already has a card`);
   if (values.title === undefined) values.title = defaultTitle(loc.abs, loc.slug);
-  // Security review: a card-less shared folder has no Account Owner, so only the brain's Owner may
-  // name one. Anyone else's card is written without it (not refused), and the reply says so.
+  // Security review: a card-less shared folder has no Account Owner, so only an owner or a scout may
+  // name one (decision 13). Anyone else's card is written without it (not refused), and the reply says so.
   let ownerDropped = false;
-  if (loc.space !== 'personal' && typeof values.owner === 'string' && !isBrainOwner(who)) {
+  if (loc.space !== 'personal' && typeof values.owner === 'string' && !isOwnerOrScout(who)) {
     delete values.owner;
     ownerDropped = true;
   }
@@ -1206,13 +1224,13 @@ function edit(input, ctx) {
   const cardFile = openCard(ctx, loc, expect);
   const current = cardValues(cardFile.parts.entries);
   checkMerged(Object.assign({}, current, values));
-  // Security review: changing (or clearing) a shared card's Account Owner is for the Account Owner or
-  // the brain's Owner, since the Account Owner may delete it. The same value sent back always passes
-  // (older apps send every field).
+  // Security review: changing (or clearing) a shared card's Account Owner is for the Account Owner, an
+  // owner or a scout (decision 13), since the Account Owner may delete it. The same value sent back
+  // always passes (older apps send every field).
   if (loc.space !== 'personal' && values.owner !== undefined) {
     const owner = cardOwner(current);
     if (values.owner !== owner) {
-      const rule = ownerRule(ctx, owner, who);
+      const rule = ownerChangeRule(ctx, owner, who);
       if (!rule.allowed) throw refuse('not-allowed', `Only ${rule.allowedWho} can change the Account Owner.`);
     }
   }
@@ -1657,6 +1675,9 @@ const REFERENCE_EXTENSIONS = new Set(['md', 'json', 'cjs', 'js', 'yaml', 'yml'])
 const REFERENCE_SKIP_DIRS = new Set(['.git', 'node_modules', 'z-logs', 'z-backup']);
 // What a skill or tool could be written in, for the legacy archive refusal.
 const NAMING_EXTENSIONS = new Set([...REFERENCE_EXTENSIONS, 'mjs', 'ts', 'sh', 'py', 'txt']);
+// Brain files that list paths without ever writing them, so they never block an archive.
+// save-location-baseline.json is the save-location scan's list of findings it already knew about.
+const NOT_WRITERS = new Set(['tools/save-location-baseline.json']);
 const REMOVE_VERBS = { archive: 'archived', unarchive: 'unarchived', delete: 'deleted' };
 
 // Whether `text` names brain path `p` on path boundaries (decision 8): after it a `/`, `)`, `>`, white
@@ -1872,7 +1893,9 @@ function removeAction(kind, input, ctx) {
   const parent = to === null ? null : removeParent(ctx, to, dev);
   // A skill or tool that writes to an older projects/ folder would make it again (overseer S4).
   if (kind === 'archive' && loc.space === 'legacy') {
-    const naming = filesNaming(ctx, loc.rel, ['.claude/skills', 'tools'], NAMING_EXTENSIONS, null, false);
+    const naming = filesNaming(ctx, loc.rel, ['.claude/skills', 'tools'], NAMING_EXTENSIONS, null, false).filter(
+      (f) => !NOT_WRITERS.has(f),
+    );
     if (naming.length > 0) {
       throw refuse('not-allowed', `${listed(naming)} ${naming.length === 1 ? 'names' : 'name'} ${loc.rel} and would make it again, so it can't be archived yet: change ${naming.length === 1 ? 'that file' : 'those files'} first`);
     }

@@ -93,6 +93,13 @@ describe('suggestTidy: the real label set', () => {
     });
   });
 
+  it('optional-project-key, the newer template wording, is a placeholder too: clear', () => {
+    expect(row('optional-project-key', [todo('optional-project-key')]).suggestion).toEqual({
+      do: 'clear',
+      why: 'placeholder',
+    });
+  });
+
   it('a legacy slug links to its project', () => {
     expect(row('client-portal', [todo('client-portal')]).suggestion).toEqual({
       do: 'link',

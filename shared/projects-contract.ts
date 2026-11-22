@@ -170,6 +170,12 @@ export interface ProjectCard {
    */
   checklist: string | null;
   /**
+   * Brain compat decision 10: the unticked `- [ ]` items in that checklist's `## Active` section (the ones
+   * the Workbench shows), at most PROJECT_CHECKLIST_MAX, each at most PROJECT_CHECKLIST_ITEM_MAX
+   * characters. Shown, never counted. Absent when there's no checklist, and from older readers.
+   */
+  checklistOpen?: string[];
+  /**
    * Move plan decision 4: keys this project had before it was moved (frontmatter `moved_from:`, oldest
    * first, at most PROJECT_MOVED_FROM_MAX). Old keys resolve here (decision 5). Absent from older readers.
    */
@@ -311,6 +317,10 @@ export const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
 export const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
 /** At most this many old keys are kept in `moved_from:`; the oldest drop off. */
 export const PROJECT_MOVED_FROM_MAX = 10;
+/** Most open items read from a legacy `todo.md` checklist (brain compat decision 10). */
+export const PROJECT_CHECKLIST_MAX = 20;
+/** Longest checklist item kept, in characters. */
+export const PROJECT_CHECKLIST_ITEM_MAX = 200;
 
 /** What a move would do, for the confirm panel (`check: true`). Paths are brain-relative. */
 export interface ProjectMoveCheck {
@@ -626,7 +636,7 @@ export type TidySuggestion =
  *   a to-do whose `client:` already names a DIFFERENT client is left out of the row and listed apart).
  * - near spelling → merge only on a plural (`s`/`es`), hyphen difference, or edit distance 1 with
  *   both labels at least 6 characters. Never for short labels (`os`).
- * - the template placeholder `optional-project-slug` → clear.
+ * - the template placeholders `optional-project-slug` and `optional-project-key` → clear.
  * - otherwise → new project under the to-do's `client:`, else INTERNAL_CLIENT (never personal for a
  *   TDS to-do), or skip.
  */

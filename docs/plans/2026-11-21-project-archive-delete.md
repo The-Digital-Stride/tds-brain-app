@@ -148,4 +148,18 @@ project for good by deleting it, with a warning that names everything that goes 
 
 ## Review outcomes
 
-(to fill)
+- Overseer pre-review: B1 leftovers, B2 unarchive never creates a client, B3 hidden `.deleting~` rename and honest
+  local-only counts; S1–S9 taken; chats cut by Ian. Decision 13 (hide archived) added mid-review.
+- Build: skill builder found 3 cases where the server walk and the script disagreed on a key's folder; server
+  aligned to the script, one test per case.
+- Security review: (1) owner-claim bypass (edit owner → archive → delete) — fixed by the overseer's rule: only the
+  current Account Owner or role `owner` changes `owner`; `card` drops `owner` for others (`ownerDropped`, shown in
+  the app). (2) Personal folder with tracked files — refused. Confirmed with probes.
+- Correctness review: links into archived folders couldn't be unlinked; a part-failed delete dropped to-do choices
+  (now `leftBehind`); a stale to-do blocked confirm (now dropped). All fixed. Fix-round review: unlink double-move
+  edge and `leftBehind` parent check — fixed.
+- UI review: focus lost on close, ungrouped radios, unexplained disabled Delete, help lines dropped — fixed. Browser
+  check: legend on the panel edge and Unarchive mid-row — fixed.
+- Overseer sign-off blocker: leftover delete by anyone only when every file is git-ignored — fixed (0d52bac). Signed off.
+- Left open: deleting a move leftover via `leftover: true` (UI never sends it); client-name capitals in place text.
+- Before the first archive: brain rules applied, every Mac updated (decision 13).

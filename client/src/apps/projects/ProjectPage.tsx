@@ -41,6 +41,8 @@ interface Removal {
   pre: ProjectRemoveCheck | null;
   panel: 'archive' | 'delete' | null;
   setPanel: (p: 'archive' | 'delete' | null) => void;
+  /** Close the panel and put focus back on the button that opened it. */
+  cancel: () => void;
   me: string;
   busy: boolean;
   problem: string;
@@ -62,6 +64,8 @@ function useRemoval(
   const [panel, setPanel] = useState<'archive' | 'delete' | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
+  // Which `data-focus` element gets focus once the next render has put it back on the page.
+  const [focusOn, setFocusOn] = useState<string | null>(null);
   const expect = card.card === 'ok' ? card.version : undefined;
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a different project, state or card version needs a fresh check.
   useEffect(() => {
@@ -87,6 +91,17 @@ function useRemoval(
     };
   }, [card.key, card.archived, card.version, live, on]);
 
+  useEffect(() => {
+    if (!focusOn) return;
+    document.querySelector<HTMLElement>(`[data-focus="${focusOn}"]`)?.focus();
+    setFocusOn(null);
+  }, [focusOn]);
+
+  const cancel = () => {
+    setFocusOn(panel);
+    setPanel(null);
+  };
+
   const unarchive = async () => {
     if (busy) return;
     setBusy(true);
@@ -107,6 +122,7 @@ function useRemoval(
           filesExpect: c.check.filesVersion,
         });
         setNote('Unarchived. It is back in the Projects list.');
+        setFocusOn('title');
         apply(res.list);
       }
     } catch (err) {
@@ -117,14 +133,21 @@ function useRemoval(
 
   const onDone = (res: ProjectRemoveResult, mode: 'archive' | 'delete') => {
     setPanel(null);
-    if (mode === 'delete') onRemoved(resultWords(`Deleted ${card.title}.`, res));
-    else
+    if (mode === 'delete') {
+      const gone = `Deleted ${card.title}.`;
+      const left = res.leftBehind
+        ? ` Some of its files couldn't be removed and are hidden in ${res.leftBehind} on this Mac.`
+        : '';
+      onRemoved(`${resultWords(gone, res)}${left}`);
+    } else {
       setNote(
         resultWords('Archived. It has left the Projects list and sits under the Archived filter.', res),
       );
+      setFocusOn('note');
+    }
   };
 
-  return { on, pre, panel, setPanel, me, busy, problem, unarchive: () => void unarchive(), onDone };
+  return { on, pre, panel, setPanel, cancel, me, busy, problem, unarchive: () => void unarchive(), onDone };
 }
 
 function Light({ light }: { light: ProjectCard['health'] }) {
@@ -238,7 +261,7 @@ function Overview({
           card={card}
           mode={removal.panel}
           me={removal.me}
-          onCancel={() => removal.setPanel(null)}
+          onCancel={removal.cancel}
           onDone={(res) => removal.onDone(res, removal.panel ?? 'archive')}
         />
       ) : null}
@@ -483,7 +506,9 @@ export function ProjectPage({
         <button type="button" className="btn" data-size="small" onClick={onBack}>
           All projects
         </button>
-        <h2 className="proj-title">{card.title}</h2>
+        <h2 className="proj-title" data-focus="title" tabIndex={-1}>
+          {card.title}
+        </h2>
         {editable ? (
           <button type="button" className="btn" data-size="small" data-focus="edit" onClick={onEdit}>
             Edit
@@ -496,7 +521,7 @@ export function ProjectPage({
         </p>
       ) : null}
       {note ? (
-        <p className="proj-banner" role="status">
+        <p className="proj-banner" role="status" data-focus="note" tabIndex={-1}>
           {note}
         </p>
       ) : null}

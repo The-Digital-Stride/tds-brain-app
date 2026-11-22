@@ -445,6 +445,11 @@ export interface ProjectRemoveResult {
   /** To-do changes that worked, and the ids of those that didn't (the folder change happened, or threw). */
   todosChanged: number;
   todosFailed: string[];
+  /**
+   * Correctness review: delete only. The project is gone (renamed out of sight) but removing the hidden
+   * folder failed part-way; it stays on this Mac, git-ignored. Brain-relative path. To-do choices still apply.
+   */
+  leftBehind?: string;
 }
 
 export type ProjectsErrorCode =

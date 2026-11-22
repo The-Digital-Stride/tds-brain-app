@@ -109,10 +109,10 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | Action | Fields | What it does |
 |---|---|---|
 | `create` | `space` (`"client"` or `"personal"`), `client` (for a client project), `slug`, `fields` (with `title`) | Makes the folder and its card. `slug` is the folder name: lower-case letters, numbers and single dashes, at most 60. Refused with `exists` if the name is used anywhere the key could point, archives included. |
-| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. |
-| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. |
+| `card` | `key`, `fields` | Adds a card to a project folder that has none (such as one in `projects/`), titled from its `README.md` heading unless you send a title. Changes nothing else in the folder. Only the brain's Owner can name an Account Owner here: anyone else's card is written without one, and the reply adds `"ownerDropped":true`. |
+| `edit` | `key`, `fields`, `expect` | Changes only the fields you send; `null` clears one. `brief` replaces the brief and keeps the linked files. Changing or clearing a shared project's `owner` is for its Account Owner or the brain's Owner (on a card with none, the brain's Owner only); sending the same `owner` back is always fine. |
 | `link` | `key`, `path`, `expect` | Adds a file from the brain to `## Linked files`. `path` is from the brain folder, such as `clients/skyseal/files/Brief.pdf`. Already linked: nothing is written. |
-| `unlink` | `key`, `path`, `expect` | Takes that file's line out, and the section once it's empty. The file itself stays where it is. |
+| `unlink` | `key`, `path`, `expect` | Takes that file's line out, and the section once it's empty. The file itself stays where it is. A line pointing into a project's folder from before it was archived or moved is taken out by the path TDS Cortex shows for it now. |
 | `move` | `key`, `client`, `expect`, optional `dropPersonal: true`, optional `check: true`, optional `filesExpect` | Moves the project's folder to `clients/<client>/projects/` under the same folder name and answers the new key. Works on client projects and personal ones, never into your personal space. See "Moving a project" below. |
 | `archive` | `key`, `expect` (when it has a card), optional `check: true`, optional `filesExpect` | Moves a live project's folder to the `projects-archive/` folder beside it. Same key, same folder name. See "Archiving and deleting a project" below. |
 | `unarchive` | as `archive` | Moves an archived project back to its live folder. |
@@ -214,10 +214,12 @@ echo '{"key":"acme/website","expect":"<sha-256 of project.md>","check":true}' \
   Send `leftover: true` to delete the leftover folder for a key rather than the project it reads.
 - Delete first renames the folder to a hidden `.tdsapp-projects-<project>-<code>.deleting~` folder
   beside it (git ignores names ending in `~`, so the team never sees half a project), then removes
-  it. If the remove fails, the reply is `internal` and names that folder; it's on this Mac only, and
-  the next run of the script for a project there removes it.
+  it. If the remove fails part-way, the project is still deleted: the reply adds `leftBehind`, that
+  folder's path. It's on this Mac only, and the next run of the script for a project there removes it.
 - Refused as for `move`: a folder holding a link, its own `.git`, a hard-linked file or anything that
   isn't a plain file or folder, more than 5,000 entries, or parts on another disk.
+- A personal project is never archived, unarchived or deleted while git tracks any file in its folder
+  (the change would sync to the team), or when git can't tell.
 - To-dos aren't changed by the script: TDS Cortex asks about each open one and uses tdsapp-todo.
 
 ## How it writes files

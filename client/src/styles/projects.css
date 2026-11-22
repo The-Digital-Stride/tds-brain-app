@@ -317,7 +317,11 @@
   padding: 0;
   list-style: none;
 }
-.proj-remove-todo {
+.proj-remove-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -325,7 +329,10 @@
   gap: 4px 12px;
 }
 .proj-remove-title {
+  float: left;
   min-width: 0;
+  padding: 0;
+  margin-right: 12px;
   overflow-wrap: anywhere;
 }
 .proj-remove-opts {

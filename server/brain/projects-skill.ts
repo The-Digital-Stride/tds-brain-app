@@ -41,6 +41,11 @@ export interface ProjectsSkillResult {
   check?: ProjectMoveCheck;
   /** An archive, unarchive or delete check's answer. */
   removeCheck?: ProjectRemoveCheck;
+  /**
+   * Delete only: the project is gone, but its hidden `.deleting~` folder couldn't be removed
+   * (brain-relative; on this Mac only, git-ignored). The to-do choices still apply.
+   */
+  leftBehind?: string;
 }
 
 export interface ProjectsSkillRunner {
@@ -87,6 +92,12 @@ const REFERENCES_MAX = 20;
 /** A move check lists at most this many files (contract ProjectMoveCheck). */
 const MOVE_FILES_MAX = 50;
 const MOVE_PATH_MAX = 1024;
+/**
+ * The hidden folder a delete renames a project to (the script's DELETING), beside it in a folder
+ * projects live in: `.tdsapp-projects-<the key's slug>-<12 hex>.deleting~`.
+ */
+const LEFT_BEHIND =
+  /^(?:clients\/[a-z0-9]+(?:-[a-z0-9]+)*\/|personal\/)?projects(?:-archive)?\/\.tdsapp-projects-([a-z0-9]+(?:-[a-z0-9]+)*)-[0-9a-f]{12}\.deleting~$/;
 
 export async function findProjectsSkill(
   root: string,
@@ -204,7 +215,20 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
       if (reply.key !== undefined && reply.key !== (action as { key: ProjectKey }).key) return internal;
       if (reply.version !== undefined && reply.version !== '' && !isVersion(reply.version)) return internal;
       const key = (action as { key: ProjectKey }).key;
-      if ((action as { check?: true }).check !== true) return { key, version: '' };
+      if ((action as { check?: true }).check !== true) {
+        if (reply.leftBehind === undefined) return { key, version: '' };
+        const left = reply.leftBehind;
+        const slug = parseProjectKey(key)?.slug;
+        if (
+          action.kind !== 'delete' ||
+          !slug ||
+          typeof left !== 'string' ||
+          left.length > MOVE_PATH_MAX ||
+          LEFT_BEHIND.exec(left)?.[1] !== slug
+        )
+          return internal;
+        return { key, version: '', leftBehind: left };
+      }
       const removeCheck = removeCheckOf(reply.check, key);
       return removeCheck ? { key, version: '', removeCheck } : internal;
     }

@@ -426,6 +426,31 @@ describe('archive, unarchive and delete (archive plan)', () => {
     }
   });
 
+  it('passes on a delete that left its hidden folder behind, and nothing else like it', async () => {
+    const LEFT = 'clients/acme/projects-archive/.tdsapp-projects-site-0123456789ab.deleting~';
+    const b = brain();
+    const runner = createProjectsSkillRunner(b.root, { env: b.env(reply({ leftBehind: LEFT })) });
+    expect(await runner.run({ kind: 'delete', key: KEY, filesExpect: 'd'.repeat(64) })).toEqual({
+      key: KEY,
+      version: '',
+      leftBehind: LEFT,
+    });
+    for (const [kind, left] of [
+      ['archive', LEFT],
+      ['delete', 'clients/acme/projects-archive/site'],
+      ['delete', 'clients/acme/projects-archive/.tdsapp-projects-other-0123456789ab.deleting~'],
+      ['delete', '../outside/.tdsapp-projects-site-0123456789ab.deleting~'],
+      ['delete', 5],
+    ] as const) {
+      const c = brain();
+      const r = createProjectsSkillRunner(c.root, { env: c.env(reply({ leftBehind: left })) });
+      expect(
+        (await errorOf(r.run({ kind, key: KEY, filesExpect: 'd'.repeat(64) })))?.code,
+        String(left),
+      ).toBe('internal');
+    }
+  });
+
   it("shows the script's refusal reason and says when the files changed", async () => {
     const refused = brain();
     const runner = createProjectsSkillRunner(refused.root, {

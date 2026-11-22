@@ -1036,15 +1036,13 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       }));
       return { check: r.removeCheck, todos: rows, doneTodos: (await linked(true)).length };
     }
+    // Correctness review: a to-do that is no longer an open linked one (a teammate ticked or
+    // unlinked it since the check) is dropped, never a reason to refuse: counted neither way.
     const byId = new Map(pool.map((t) => [`${t.scope}:${t.id}`, t]));
-    if (choices.some((c) => !byId.has(`${c.scope}:${c.id}`))) {
-      throw new ProjectsError(
-        'bad-request',
-        "A to-do on the list isn't linked to this project any more. Check again.",
-      );
-    }
+    const applying = acting.filter((c) => byId.has(`${c.scope}:${c.id}`));
+    let leftBehind: string | undefined;
     try {
-      await opts.skill.run(base);
+      leftBehind = (await opts.skill.run(base)).leftBehind;
     } finally {
       changed();
     }
@@ -1061,7 +1059,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     const by = { name: identity.name, slug: identity.slug };
     let todosChanged = 0;
     const todosFailed: string[] = [];
-    for (const c of acting) {
+    for (const c of applying) {
       const t = byId.get(`${c.scope}:${c.id}`) as TodoRec;
       try {
         await opts.todoSkill.run(
@@ -1085,8 +1083,14 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
         todosFailed.push(t.id);
       }
     }
-    if (acting.length > 0) changed();
-    return { list: await list(identity), key: req.key, todosChanged, todosFailed };
+    if (applying.length > 0) changed();
+    return {
+      list: await list(identity),
+      key: req.key,
+      todosChanged,
+      todosFailed,
+      ...(kind === 'delete' && leftBehind !== undefined ? { leftBehind } : {}),
+    };
   };
 
   const applyTidy = async (apply: TidyApply, identity: Identity): Promise<TidyList> => {

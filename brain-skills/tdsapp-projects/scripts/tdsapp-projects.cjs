@@ -126,8 +126,8 @@ const SERVICE_ITEM_MAX = 40;
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
 const DOCUMENT_EXTENSIONS = ['pdf', 'md', 'txt', 'docx', 'html', 'htm', 'csv', 'xlsx', 'pptx'];
 const LIBRARY_EXTENSIONS = [...IMAGE_EXTENSIONS, ...DOCUMENT_EXTENSIONS];
-// Mirrors LINKED_FILE_ROOTS in shared/projects.ts.
-const LINK_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/'];
+// Mirrors LINKED_FILE_ROOTS in shared/projects.ts (a test checks they match).
+const LINK_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/', 'projects-archive/'];
 
 const INPUT_MAX = 262144;
 const PATH_MAX = 1024;
@@ -381,6 +381,35 @@ function requireTeam(who) {
   if (!who.known) {
     throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can change shared projects');
   }
+}
+
+// The brain's Owner: role `owner` in roles.json.
+function isBrainOwner(who) {
+  return who.known && who.role === 'owner';
+}
+
+// Whether `who` is the team member a slug names, in either slug form (as personOf takes them).
+function isPerson(who, slug) {
+  if (!who.known || typeof slug !== 'string' || slug === '') return false;
+  return memberSlug(who.member.name) === slug || workbenchSlug(who.member.name) === slug;
+}
+
+// A card's Account Owner as a slug, or null when it has none (or one no rule can match).
+function cardOwner(values) {
+  const owner = values ? values.owner : undefined;
+  return typeof owner === 'string' && isSlug(owner) ? owner : null;
+}
+
+// Security review: who may change a shared card's Account Owner. The Account Owner (either slug
+// form) or the brain's Owner; on a card with none, the brain's Owner only.
+function ownerRule(ctx, owner, who) {
+  if (owner !== null) {
+    return {
+      allowed: isBrainOwner(who) || isPerson(who, owner),
+      allowedWho: `${memberNamed(ctx.root, owner) || owner} (the Account Owner) or the brain's Owner`,
+    };
+  }
+  return { allowed: isBrainOwner(who), allowedWho: "the brain's Owner" };
 }
 
 // ---- where a project lives -----------------------------------------------------------------------------
@@ -995,9 +1024,9 @@ function linkPathOf(input) {
   const rel = input.path;
   if (typeof rel !== 'string' || rel === '') throw refuse('bad-request', 'path is required');
   if (rel.length > PATH_MAX) throw refuse('bad-request', `path is too long (over ${PATH_MAX} characters)`);
-  const minParts = rel.startsWith('clients/') || rel.startsWith('projects/') ? 3 : 2;
+  const minParts = rel.startsWith('clients/') || rel.startsWith('projects/') || rel.startsWith('projects-archive/') ? 3 : 2;
   if (resolveLinkPath(rel) !== rel || rel.split('/').length < minParts) {
-    throw refuse('bad-request', 'path must be a file under clients/<client>/, projects/<project>/, templates/ or personal/');
+    throw refuse('bad-request', 'path must be a file under clients/<client>/, projects/<project>/, projects-archive/<project>/, templates/ or personal/');
   }
   return rel;
 }
@@ -1149,6 +1178,13 @@ function card(input, ctx) {
   const abs = path.join(loc.abs, PROJECT_CARD_FILE);
   if (lstatOrNull(abs)) throw refuse('exists', `${loc.key} already has a card`);
   if (values.title === undefined) values.title = defaultTitle(loc.abs, loc.slug);
+  // Security review: a card-less shared folder has no Account Owner, so only the brain's Owner may
+  // name one. Anyone else's card is written without it (not refused), and the reply says so.
+  let ownerDropped = false;
+  if (loc.space !== 'personal' && typeof values.owner === 'string' && !isBrainOwner(who)) {
+    delete values.owner;
+    ownerDropped = true;
+  }
   let version;
   try {
     version = createCard(abs, newCardEntries(values, loc.client, ukDate(ctx.now), who), brief);
@@ -1156,7 +1192,7 @@ function card(input, ctx) {
     if (errCode(err) === 'EEXIST') throw refuse('exists', `${loc.key} already has a card`);
     throw err;
   }
-  return { ok: true, action: 'card', key: loc.key, version };
+  return { ok: true, action: 'card', key: loc.key, version, ...(ownerDropped ? { ownerDropped: true } : {}) };
 }
 
 // edit, link and unlink: who, what and where are checked first; the card is read and compared with
@@ -1170,6 +1206,16 @@ function edit(input, ctx) {
   const cardFile = openCard(ctx, loc, expect);
   const current = cardValues(cardFile.parts.entries);
   checkMerged(Object.assign({}, current, values));
+  // Security review: changing (or clearing) a shared card's Account Owner is for the Account Owner or
+  // the brain's Owner, since the Account Owner may delete it. The same value sent back always passes
+  // (older apps send every field).
+  if (loc.space !== 'personal' && values.owner !== undefined) {
+    const owner = cardOwner(current);
+    if (values.owner !== owner) {
+      const rule = ownerRule(ctx, owner, who);
+      if (!rule.allowed) throw refuse('not-allowed', `Only ${rule.allowedWho} can change the Account Owner.`);
+    }
+  }
   let entries = cardFile.parts.entries;
   for (const [key, value] of Object.entries(values)) entries = setEntry(entries, key, renderField(key, value));
   const body = brief === undefined ? cardFile.parts.body : bodyWithBrief(cardFile.parts.body, brief);
@@ -1234,17 +1280,74 @@ function link(input, ctx) {
   return { ok: true, action: 'link', key: loc.key, version };
 }
 
+// A brain path inside a folder a key may name: that folder, its key and the path within it; or null.
+const IN_PROJECT_FOLDER = /^(clients\/_archive\/([^/]+)\/projects\/([^/]+)|clients\/([^/]+)\/projects(?:-archive)?\/([^/]+)|personal\/projects(?:-archive)?\/([^/]+)|projects(?:-archive)?\/([^/]+))\/(.+)$/;
+function projectFolderOf(rel) {
+  const m = IN_PROJECT_FOLDER.exec(rel);
+  if (!m) return null;
+  let key;
+  if (m[2] !== undefined) key = `${m[2]}/${m[3]}`;
+  else if (m[4] !== undefined) key = `${m[4]}/${m[5]}`;
+  else if (m[6] !== undefined) key = `personal/${m[6]}`;
+  else key = `${INTERNAL_CLIENT}/${m[7]}`;
+  const parsed = parseKey(key);
+  return parsed ? { folder: m[1], key: parsed, rest: m[8] } : null;
+}
+
+// The folder a key reads (as locate, without refusing): the first one there that isn't a leftover.
+function readFolderOf(ctx, key) {
+  return foldersOf(ctx, key).found.find(f => !f.leftover) || null;
+}
+
+// The live folder a moved-from key named (liveFolderOf in shared/projects.ts).
+function movedFromFolder(key) {
+  return key.client === 'personal' ? `personal/projects/${key.slug}` : `clients/${key.client}/projects/${key.slug}`;
+}
+
+// Correctness review: the other card paths the app shows as brain path `rel`, mirroring
+// archivedFolderPath and movedFolderPath in shared/projects.ts. A link into an archived project's
+// live folder reads as into its archive folder, and one into a moved project's old folder (under an
+// old key no folder holds now) as into its folder now; so unlink takes out the line the person saw.
+function pathsShownAs(ctx, rel) {
+  const inside = projectFolderOf(rel);
+  if (!inside) return [];
+  const pick = readFolderOf(ctx, inside.key);
+  if (!pick || pick.rel !== inside.folder) return [];
+  const out = [];
+  if (pick.archived) {
+    const live = liveFolderFor(pick.rel);
+    if (live) out.push(`${live}/${inside.rest}`);
+  }
+  if (pick.card === 'plain') {
+    let movedFrom;
+    try {
+      const parts = cardParts(decodeFile(fs.readFileSync(path.join(pick.abs, PROJECT_CARD_FILE))).text);
+      movedFrom = parts ? cardValues(parts.entries).moved_from : undefined;
+    } catch {
+      movedFrom = undefined;
+    }
+    const olds = Array.isArray(movedFrom) ? movedFrom : typeof movedFrom === 'string' && movedFrom !== '' ? [movedFrom] : [];
+    for (const old of olds) {
+      const oldKey = parseKey(old);
+      if (!oldKey || readFolderOf(ctx, oldKey)) continue;
+      out.push(`${movedFromFolder(oldKey)}/${inside.rest}`);
+    }
+  }
+  return out.filter(p => p !== rel);
+}
+
 function unlink(input, ctx) {
   const loc = locate(ctx, input.key);
   const expect = expectOf(input, true);
   const rel = linkPathOf(input);
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
+  const shownAs = new Set([rel, ...pathsShownAs(ctx, rel)]);
   const cardFile = openCard(ctx, loc, expect);
   const lines = cardFile.parts.body;
   const range = linkedRange(lines);
   const hits = new Set();
-  if (range) for (let i = range[0] + 1; i < range[1]; i++) if (linkOf(lines[i]) === rel) hits.add(i);
+  if (range) for (let i = range[0] + 1; i < range[1]; i++) if (shownAs.has(linkOf(lines[i]))) hits.add(i);
   if (hits.size === 0) return { ok: true, action: 'unlink', key: loc.key, version: sha256(cardFile.bytes) };
   const version = writeCard(cardFile, joinCard(cardFile.parts.entries, withoutLines(lines, range, hits)));
   return { ok: true, action: 'unlink', key: loc.key, version };
@@ -1614,18 +1717,23 @@ function memberNamed(root, slug) {
 function deleteRule(ctx, loc, bytes, who) {
   if (loc.space === 'personal') return { allowed: true, allowedWho: 'only you' };
   if (loc.leftover) return { allowed: who.known, allowedWho: 'anyone on the team' };
-  const brainOwner = who.known && who.role === 'owner';
   const parts = bytes ? cardParts(decodeFile(bytes).text) : null;
-  const owner = parts ? cardValues(parts.entries).owner : undefined;
-  if (typeof owner === 'string' && isSlug(owner)) {
-    const name = who.known ? who.member.name : '';
-    const isOwner = who.known && (memberSlug(name) === owner || workbenchSlug(name) === owner);
-    return {
-      allowed: brainOwner || isOwner,
-      allowedWho: `${memberNamed(ctx.root, owner) || owner} (the Account Owner) or the brain's Owner`,
-    };
+  return ownerRule(ctx, cardOwner(parts ? cardValues(parts.entries) : null), who);
+}
+
+// Security review: a personal project's folder is archived, unarchived or deleted only when git
+// tracks nothing in it (else the change would sync to the team). Allowed when the brain isn't a
+// git repository; refused when git can't tell.
+function requireUntracked(ctx, rel, verb) {
+  const repo = brainRepo(ctx);
+  if (repo === 'none') return;
+  const unchecked = () => refuse('not-allowed', "git couldn't check that this project stays on this Mac");
+  if (repo === null) throw unchecked();
+  const out = gitInBrain(ctx, ['ls-files', '-z', '--', rel]);
+  if (!out || out.status !== 0) throw unchecked();
+  if ((out.stdout || '') !== '') {
+    throw refuse('not-allowed', `git already syncs files in ${rel} to the team, so it can't be ${verb} here`);
   }
-  return { allowed: brainOwner, allowedWho: "the brain's Owner" };
 }
 
 // The folder a project would go to is checked as move's: its parent is a real folder or will be made
@@ -1692,7 +1800,10 @@ function removeAction(kind, input, ctx) {
       throw refuse('not-allowed', `${listed(naming)} ${naming.length === 1 ? 'names' : 'name'} ${loc.rel} and would make it again, so it can't be archived yet: change ${naming.length === 1 ? 'that file' : 'those files'} first`);
     }
   }
-  if (loc.space === 'personal') requirePrivate(ctx, `${to === null ? loc.rel : to}/${PROJECT_CARD_FILE}`);
+  if (loc.space === 'personal') {
+    requirePrivate(ctx, `${to === null ? loc.rel : to}/${PROJECT_CARD_FILE}`);
+    requireUntracked(ctx, loc.rel, verb);
+  }
 
   const sizes = new Map();
   const files = walkFolder(loc, dev, verb, sizes);
@@ -1781,9 +1892,9 @@ function removeAction(kind, input, ctx) {
     }
     syncDir(fromParent);
     try { removeTree(ctx, hidden.abs); } catch { /* checked next */ }
-    if (lstatOrNull(hidden.abs)) {
-      throw refuse('internal', `${loc.key} is deleted, but some of its files couldn't be removed: they're in ${hidden.rel}, on this Mac only (git ignores it), and the next change to a project there tries again`);
-    }
+    // The project is gone either way: what's left is out of sight, on this Mac only (git ignores
+    // it), and the next call for a project there tries again. The caller still applies its to-dos.
+    if (lstatOrNull(hidden.abs)) return { ok: true, action: kind, key: loc.key, version: '', leftBehind: hidden.rel };
     return { ok: true, action: kind, key: loc.key, version: '' };
   }
 
@@ -1915,4 +2026,5 @@ module.exports = {
   INTERNAL_PRECEDENCE,
   PROJECT_CARD_FILE,
   LIMITS,
+  LINK_ROOTS,
 };

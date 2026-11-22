@@ -131,9 +131,10 @@ export function RemovePanel({
         setProblem(refusalWords(err.code, err.message));
         // A stale check (someone changed the folder): check again so the panel tells the truth.
         const code: string = err.code;
-        if (code === 'changed' || code === 'exists') {
+        if (code === 'changed' || code === 'exists' || code === 'bad-request') {
           setAnswer(null);
           void runCheck();
+          if (code === 'bad-request') setProblem('Something changed, so the list has been checked again.');
         }
       } else setProblem(errorWords('internal'));
     }
@@ -216,21 +217,22 @@ export function RemovePanel({
             <ul className="proj-remove-todos">
               {open.map((t) => (
                 <li key={t.id} className="proj-remove-todo">
-                  <span className="proj-remove-title">{t.title}</span>
-                  <span className="proj-remove-opts">
-                    {options.map((o) => (
-                      <label key={o.value} className="proj-remove-opt">
-                        <input
-                          type="radio"
-                          name={`${base}-${t.id}`}
-                          checked={choice[t.id] === o.value}
-                          onChange={() => setChoice((c) => ({ ...c, [t.id]: o.value }))}
-                          aria-label={`${o.text}: ${t.title}`}
-                        />
-                        {o.text}
-                      </label>
-                    ))}
-                  </span>
+                  <fieldset className="proj-remove-group">
+                    <legend className="proj-remove-title">{t.title}</legend>
+                    <span className="proj-remove-opts">
+                      {options.map((o) => (
+                        <label key={o.value} className="proj-remove-opt">
+                          <input
+                            type="radio"
+                            name={`${base}-${t.id}`}
+                            checked={choice[t.id] === o.value}
+                            onChange={() => setChoice((c) => ({ ...c, [t.id]: o.value }))}
+                          />
+                          {o.text}
+                        </label>
+                      ))}
+                    </span>
+                  </fieldset>
                 </li>
               ))}
             </ul>
@@ -257,7 +259,9 @@ export function RemovePanel({
         {check && !deleting && !allowed ? <p>{notAllowedWords('archive', check.allowedWho)}</p> : null}
         {check && deleting && allowed ? (
           <div className="proj-field">
-            <label htmlFor={`${base}-type`}>Type the project name to delete it</label>
+            <label id={`${base}-type-label`} htmlFor={`${base}-type`}>
+              Type the project name to delete it
+            </label>
             <input
               id={`${base}-type`}
               className="field"
@@ -276,6 +280,7 @@ export function RemovePanel({
             className="btn"
             data-variant={deleting ? 'danger' : 'primary'}
             disabled={busy || (deleting && !matches)}
+            aria-describedby={deleting && !matches ? `${base}-type-label` : undefined}
             onClick={() => void confirm()}
           >
             {label}

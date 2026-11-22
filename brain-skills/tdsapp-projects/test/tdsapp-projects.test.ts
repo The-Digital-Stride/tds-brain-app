@@ -23,7 +23,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
-import { parseLinkedFiles, splitLinkedFiles } from '../../../shared/projects.ts';
+import {
+  archivedFolderPath,
+  LINKED_FILE_ROOTS,
+  parseLinkedFiles,
+  splitLinkedFiles,
+} from '../../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
   INTERNAL_PRECEDENCE,
@@ -72,6 +77,7 @@ interface ProjectsModule {
   INTERNAL_PRECEDENCE: string[];
   PROJECT_CARD_FILE: string;
   LIMITS: Record<string, number>;
+  LINK_ROOTS: string[];
 }
 
 const require = createRequire(import.meta.url);
@@ -731,6 +737,7 @@ describe('constants', () => {
     expect(projects.INTERNAL_CLIENT).toBe(INTERNAL_CLIENT);
     expect(projects.INTERNAL_PRECEDENCE).toEqual([...INTERNAL_PRECEDENCE]);
     expect(projects.PROJECT_CARD_FILE).toBe(PROJECT_CARD_FILE);
+    expect(projects.LINK_ROOTS).toEqual([...LINKED_FILE_ROOTS]);
     expect(projects.LIMITS).toEqual({
       PROJECT_SLUG_MAX,
       PROJECT_KEY_SEGMENT_MAX,
@@ -1756,7 +1763,7 @@ describe('archive, unarchive and delete', () => {
       expect(git(['check-ignore', `clients/acme/projects-archive/${name}`]).trim()).not.toBe('');
     });
 
-    it('answers internal, naming the hidden folder, when the remove fails; the next call sweeps it', () => {
+    it('answers ok with leftBehind, naming the hidden folder, when the remove fails; the next call sweeps it', () => {
       archiveIt();
       as('tess@example.test');
       const r = del(
@@ -1768,10 +1775,19 @@ describe('archive, unarchive and delete', () => {
           },
         },
       );
-      expect(refusal(r)).toEqual({ exit: 1, error: 'internal' });
       const left = hiddenIn('clients/acme/projects-archive');
       expect(left).toHaveLength(1);
-      expect(r.reply.message).toContain(`clients/acme/projects-archive/${left[0]}`);
+      // The project is gone (out of sight, git-ignored), so the caller still applies its to-dos.
+      expect(r).toEqual({
+        exit: 0,
+        reply: {
+          ok: true,
+          action: 'delete',
+          key: 'acme/website',
+          version: '',
+          leftBehind: `clients/acme/projects-archive/${left[0]}`,
+        },
+      });
       expect(existsSync(abs(ARCHIVED))).toBe(false);
       // Any later call on a project there sweeps it; other hidden things stay.
       put('clients/acme/projects-archive/.keep~', 'mine');
@@ -1916,5 +1932,193 @@ describe('brain rules for archive and delete', () => {
     expect(rule('save-locations.md')).toContain('projects-archive/');
     expect(rule('save-locations-cjs.md')).toMatch(/CLIENT_ROOT_ALLOWED/);
     expect(rule('save-locations-cjs.md')).toContain("'projects-archive'");
+  });
+});
+
+describe('security and correctness review', () => {
+  const OWNED =
+    '---\nv: 1\ntitle: Website rebuild\nclient: acme\nstatus: active\nowner: tess-team\n---\n\nThe brief.\n';
+  const LIVE = 'clients/acme/projects/website';
+  const as = (email: string) => git(['config', 'user.email', email]);
+  const act = (kind: string, key: string, extra: Record<string, unknown> = {}) =>
+    call(kind, { kind, key, ...extra });
+  const editOwner = (owner: string | null, extra: Record<string, unknown> = {}) =>
+    act('edit', 'acme/website', { fields: { owner, ...extra }, expect: sha(`${LIVE}/project.md`) });
+
+  beforeEach(() => {
+    writeFileSync(join(root, '.gitignore'), 'personal/\n*~\n');
+    put(`${LIVE}/project.md`, OWNED);
+  });
+
+  describe("who may change a shared card's Account Owner", () => {
+    it('refuses a teammate claiming the Account Owner, so they can never go on to delete it', () => {
+      const r = editOwner('sam-example');
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(r.reply.message).toBe(
+        "Only Tess Team (the Account Owner) or the brain's Owner can change the Account Owner.",
+      );
+      expect(read(`${LIVE}/project.md`)).toBe(OWNED);
+      expect(refusal(editOwner(null))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(read(`${LIVE}/project.md`)).toBe(OWNED);
+      // The rest of the old bypass: anyone on the team may archive, but the delete stays Tess's.
+      expect(act('archive', 'acme/website', { expect: sha(`${LIVE}/project.md`) }).exit).toBe(0);
+      const c = act('delete', 'acme/website', { check: true });
+      expect(c.reply.check).toMatchObject({ allowed: false });
+      const filesExpect = (c.reply.check as { filesVersion: string }).filesVersion;
+      expect(refusal(act('delete', 'acme/website', { filesExpect }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      expect(existsSync(abs('clients/acme/projects-archive/website/project.md'))).toBe(true);
+    });
+
+    it('always lets the same Account Owner be sent back, as older apps do with every field', () => {
+      expect(editOwner('tess-team', { status: 'on-hold' }).reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\nstatus: on-hold\nowner: tess-team\n');
+      put(`${LIVE}/project.md`, OWNED.replace('owner: tess-team\n', ''));
+      expect(editOwner(null, { health: 'green' }).reply).toMatchObject({ ok: true });
+    });
+
+    it('lets the Account Owner hand over, and the brain Owner change or clear it', () => {
+      as('tess@example.test');
+      expect(editOwner('sam-example').reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\nowner: sam-example\n');
+      as('olive@example.test');
+      expect(editOwner('tess-team').reply).toMatchObject({ ok: true });
+      expect(editOwner(null).reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).not.toContain('owner:');
+    });
+
+    it("leaves naming an Account Owner on a card with none to the brain's Owner", () => {
+      put(`${LIVE}/project.md`, OWNED.replace('owner: tess-team\n', ''));
+      as('tess@example.test');
+      const r = editOwner('tess-team');
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(r.reply.message).toBe("Only the brain's Owner can change the Account Owner.");
+      expect(read(`${LIVE}/project.md`)).not.toContain('owner:');
+      as('olive@example.test');
+      expect(editOwner('tess-team').reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\nowner: tess-team\n');
+    });
+
+    it("writes a card-less folder's card without an Account Owner unless the brain's Owner names one", () => {
+      mkdirSync(abs('clients/acme/projects/bare'), { recursive: true });
+      const r = act('card', 'acme/bare', { fields: { owner: 'sam-example', health: 'green' } });
+      expect(r.reply).toMatchObject({ ok: true, key: 'acme/bare', ownerDropped: true });
+      expect(r.reply.version).toBe(sha('clients/acme/projects/bare/project.md'));
+      expect(read('clients/acme/projects/bare/project.md')).not.toContain('owner:');
+      expect(read('clients/acme/projects/bare/project.md')).toContain('\nhealth: green\n');
+      mkdirSync(abs('clients/acme/projects/bare-two'), { recursive: true });
+      as('olive@example.test');
+      const kept = act('card', 'acme/bare-two', { fields: { owner: 'sam-example' } });
+      expect(kept.reply).toMatchObject({ ok: true });
+      expect(kept.reply).not.toHaveProperty('ownerDropped');
+      expect(read('clients/acme/projects/bare-two/project.md')).toContain('\nowner: sam-example\n');
+    });
+  });
+
+  describe('personal projects git tracks', () => {
+    const JEV = 'personal/projects/jev';
+    beforeEach(() => put(`${JEV}/project.md`, '---\nv: 1\ntitle: Jev\nstatus: active\n---\n'));
+
+    it('refuses to archive, unarchive or delete one while git tracks a file in it', () => {
+      // Not the card (that is checked already): any other file in the folder.
+      put(`${JEV}/notes.md`, 'synced by mistake');
+      git(['add', '-f', `${JEV}/notes.md`]);
+      for (const kind of ['archive', 'delete']) {
+        const r = act(kind, 'personal/jev', { check: true });
+        expect(refusal(r), kind).toEqual({ exit: 2, error: 'not-allowed' });
+        expect(r.reply.message, kind).toContain(`git already syncs files in ${JEV}`);
+      }
+      expect(existsSync(abs(`${JEV}/project.md`))).toBe(true);
+      git(['rm', '-q', '--cached', `${JEV}/notes.md`]);
+      expect(act('archive', 'personal/jev', { expect: sha(`${JEV}/project.md`) }).exit).toBe(0);
+      git(['add', '-f', 'personal/projects-archive/jev/notes.md']);
+      const r = act('unarchive', 'personal/jev', {
+        expect: sha('personal/projects-archive/jev/project.md'),
+      });
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs('personal/projects-archive/jev/project.md'))).toBe(true);
+    });
+
+    it("refuses when git can't tell, and allows it when the brain isn't a git repository", () => {
+      writeFileSync(join(root, '.git', 'index'), 'not an index');
+      const r = act('archive', 'personal/jev', { check: true });
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(r.reply.message).toContain("git couldn't check");
+      rmSync(join(root, '.git'), { recursive: true, force: true });
+      expect(act('archive', 'personal/jev', { expect: sha(`${JEV}/project.md`) }).exit).toBe(0);
+      expect(existsSync(abs('personal/projects-archive/jev/project.md'))).toBe(true);
+    });
+  });
+
+  describe('links into archived and moved folders', () => {
+    const BRAND = 'clients/acme/projects/brand';
+    const BRAND_CARD = '---\nv: 1\ntitle: Brand\nclient: acme\nstatus: active\n---\n';
+    const linked = () => parseLinkedFiles(parseFrontmatter(read(`${LIVE}/project.md`)).body);
+    beforeEach(() => {
+      put(`${BRAND}/project.md`, BRAND_CARD);
+      put(`${BRAND}/logo.png`, 'png');
+      put('clients/acme/files/quote.pdf', 'pdf');
+      for (const p of [`${BRAND}/logo.png`, 'clients/acme/files/quote.pdf']) {
+        expect(act('link', 'acme/website', { path: p, expect: sha(`${LIVE}/project.md`) }).exit).toBe(0);
+      }
+    });
+
+    it('unlinks a link into a project archived since, by the path the app shows', () => {
+      expect(act('archive', 'acme/brand', { expect: sha(`${BRAND}/project.md`) }).exit).toBe(0);
+      const shown = archivedFolderPath(`${BRAND}/logo.png`, [
+        { folder: 'clients/acme/projects-archive/brand', archived: true },
+        { folder: LIVE, archived: false },
+      ]);
+      expect(shown).toBe('clients/acme/projects-archive/brand/logo.png');
+      const r = act('unlink', 'acme/website', { path: shown, expect: sha(`${LIVE}/project.md`) });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(linked()).toEqual(['clients/acme/files/quote.pdf']);
+    });
+
+    it('unlinks a link into a project moved since, by the path the app shows', () => {
+      expect(
+        act('move', 'acme/brand', { client: 'skyseal', expect: sha(`${BRAND}/project.md`) }).reply,
+      ).toMatchObject({ ok: true, key: 'skyseal/brand' });
+      const r = act('unlink', 'acme/website', {
+        path: 'clients/skyseal/projects/brand/logo.png',
+        expect: sha(`${LIVE}/project.md`),
+      });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(linked()).toEqual(['clients/acme/files/quote.pdf']);
+    });
+
+    it('never maps a path into a folder the key does not read, and links files in projects-archive/', () => {
+      expect(act('archive', 'acme/brand', { expect: sha(`${BRAND}/project.md`) }).exit).toBe(0);
+      // Someone remade the live folder with a card: links into it are its own again.
+      put(`${BRAND}/project.md`, BRAND_CARD);
+      const before = read(`${LIVE}/project.md`);
+      const r = act('unlink', 'acme/website', {
+        path: 'clients/acme/projects-archive/brand/logo.png',
+        expect: sha(`${LIVE}/project.md`),
+      });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(read(`${LIVE}/project.md`)).toBe(before);
+      put('projects-archive/old/spec.md', 'spec');
+      expect(
+        act('link', 'acme/website', {
+          path: 'projects-archive/old/spec.md',
+          expect: sha(`${LIVE}/project.md`),
+        }).exit,
+      ).toBe(0);
+      expect(linked()).toContain('projects-archive/old/spec.md');
+    });
+  });
+
+  it("refuses to archive what is already archived, and to unarchive what isn't", () => {
+    expect(act('archive', 'acme/website', { expect: sha(`${LIVE}/project.md`) }).exit).toBe(0);
+    const again = act('archive', 'acme/website', { check: true });
+    expect(refusal(again)).toEqual({ exit: 2, error: 'bad-request' });
+    expect(again.reply.message).toBe('acme/website is already archived');
+    put(`${LIVE.replace('website', 'live')}/project.md`, OWNED);
+    const live = act('unarchive', 'acme/live', { check: true });
+    expect(refusal(live)).toEqual({ exit: 2, error: 'bad-request' });
+    expect(live.reply.message).toBe("acme/live isn't archived");
   });
 });

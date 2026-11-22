@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectRemoveCheck, ProjectRemoveCheckResponse } from '../../../../shared/projects-contract.ts';
 import { card, projectList } from './testing.ts';
@@ -184,6 +184,9 @@ describe('buttons on a project page', () => {
         expect.objectContaining({ action: 'unarchive', key: OLD.key, filesExpect: 'fv1' }),
       ),
     );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Old job' })),
+    );
   });
 });
 
@@ -201,9 +204,13 @@ describe('the archive panel', () => {
     expect(await screen.findByText('These files point into this folder:')).toBeTruthy();
     expect(screen.getByText('clients/skyseal/notes.md')).toBeTruthy();
     expect(screen.getByText('3 finished to-dos stay as they are.')).toBeTruthy();
-    const keep = screen.getByRole('radio', { name: 'Keep open: My to-do' }) as HTMLInputElement;
+    const keep = within(screen.getByRole('group', { name: 'My to-do' })).getByRole('radio', {
+      name: 'Keep open',
+    }) as HTMLInputElement;
     expect(keep.checked).toBe(true);
-    fireEvent.click(screen.getByRole('radio', { name: 'Mark done: Loose to-do' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Loose to-do' })).getByRole('radio', { name: 'Mark done' }),
+    );
     api.removeProject.mockResolvedValue({
       list: projectList([{ ...LIVE, archived: true }], { canArchive: true }),
       key: LIVE.key,
@@ -225,6 +232,9 @@ describe('the archive panel', () => {
     );
     expect(await screen.findByText(/Archived\. It has left the Projects list/)).toBeTruthy();
     expect(await screen.findByText(/This project is archived/)).toBeTruthy();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByText(/Archived\. It has left the Projects list/)),
+    );
   });
 
   it('cancels with Escape and puts focus on Cancel', async () => {
@@ -235,6 +245,9 @@ describe('the archive panel', () => {
     expect(document.activeElement).toBe(cancel);
     fireEvent.keyDown(cancel, { key: 'Escape' });
     expect(screen.queryByRole('group', { name: /Archive Sky site/ })).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Archive Sky site' })),
+    );
     expect(api.removeProject).not.toHaveBeenCalled();
   });
 });
@@ -259,12 +272,15 @@ describe('the delete panel', () => {
     expect(screen.getByText('These links will break:')).toBeTruthy();
     expect(screen.getByText('Chats are kept.')).toBeTruthy();
     expect(screen.getByText(/go to the deleted folder and can be brought back/)).toBeTruthy();
-    const on = (n: string) => (screen.getByRole('radio', { name: n }) as HTMLInputElement).checked;
-    expect(on('Delete: My to-do')).toBe(true);
-    expect(on('Delete: Loose to-do')).toBe(true);
-    expect(on('Keep, unlinked: Their to-do')).toBe(true);
+    const on = (todo: string, n: string) =>
+      (within(screen.getByRole('group', { name: todo })).getByRole('radio', { name: n }) as HTMLInputElement)
+        .checked;
+    expect(on('My to-do', 'Delete')).toBe(true);
+    expect(on('Loose to-do', 'Delete')).toBe(true);
+    expect(on('Their to-do', 'Keep, unlinked')).toBe(true);
     const del = screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement;
     expect(del.disabled).toBe(true);
+    expect(del.getAttribute('aria-describedby')).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
     const box = screen.getByLabelText('Type the project name to delete it');
     fireEvent.change(box, { target: { value: 'old' } });
@@ -304,6 +320,37 @@ describe('the delete panel', () => {
     const cancel = await screen.findByRole('button', { name: 'Cancel' });
     fireEvent.keyDown(cancel, { key: 'Escape' });
     expect(screen.queryByLabelText('Type the project name to delete it')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete…' })));
     expect(api.removeProject).not.toHaveBeenCalled();
+  });
+
+  it('mentions files left behind after a delete', async () => {
+    await open();
+    fireEvent.change(await screen.findByLabelText('Type the project name to delete it'), {
+      target: { value: 'Old job' },
+    });
+    api.removeProject.mockResolvedValue({
+      list: projectList([LIVE], { canArchive: true }),
+      key: OLD.key,
+      todosChanged: 0,
+      todosFailed: [],
+      leftBehind: '.trash/old',
+    });
+    press('Delete');
+    expect(
+      await screen.findByText(/couldn't be removed and are hidden in \.trash\/old on this Mac/),
+    ).toBeTruthy();
+  });
+
+  it('checks again when a listed to-do changed', async () => {
+    await open({}, { todos: TODOS.slice(0, 1) });
+    fireEvent.change(await screen.findByLabelText('Type the project name to delete it'), {
+      target: { value: 'Old job' },
+    });
+    api.removeProject.mockRejectedValueOnce(new ApiFailure('bad-request', 'A to-do changed.', 400));
+    const calls = api.checkProjectRemove.mock.calls.length;
+    press('Delete');
+    expect(await screen.findByText('Something changed, so the list has been checked again.')).toBeTruthy();
+    await waitFor(() => expect(api.checkProjectRemove.mock.calls.length).toBeGreaterThan(calls));
   });
 });

@@ -92,6 +92,8 @@ interface Fakes {
   moved: [string, string][];
   /** The script's refusal of archive, unarchive or delete. */
   removeFail: ProjectsErrorCode | null;
+  /** A delete whose hidden folder the script couldn't remove: its answer's `leftBehind`. */
+  leftBehind: string | null;
 }
 let fakes: Fakes;
 
@@ -114,6 +116,7 @@ function service(
     moveFail: null,
     moved: [],
     removeFail: null,
+    leftBehind: null,
   };
   const skill: ProjectsSkillRunner = {
     async run(action) {
@@ -195,6 +198,9 @@ function service(
           renameSync(abs(live), abs(arch));
         } else if (action.kind === 'unarchive') renameSync(abs(arch), abs(live));
         else rmSync(abs(client === 'personal' || existsSync(abs(arch)) ? arch : live), { recursive: true });
+        if (action.kind === 'delete' && fakes.leftBehind) {
+          return { key: action.key, version: '', leftBehind: fakes.leftBehind };
+        }
         return { key: action.key, version: '' };
       }
       return { key: 'key' in action ? action.key : '', version: 'v'.repeat(64) };
@@ -1370,7 +1376,7 @@ describe('archive, unarchive and delete', () => {
     expect(byKey(r.list.projects, 'acme/site')).toBeUndefined();
   });
 
-  it('rejects a choice that does not fit the action, or is not linked, before touching the folder', async () => {
+  it('rejects a choice that does not fit the action before touching the folder', async () => {
     const s = removing();
     const mine = { id: 'mine.md', scope: 'tds' as const, version: sha('todo/mine.md') };
     for (const [action, todos] of [
@@ -1385,9 +1391,6 @@ describe('archive, unarchive and delete', () => {
           { ...mine, do: 'keep' },
         ],
       ],
-      ['archive', [{ id: 'elsewhere.md', scope: 'tds', version: V, do: 'done' }]],
-      ['archive', [{ id: 'q.md', scope: 'personal', version: V, do: 'done' }]],
-      ['archive', [{ id: 'finished.md', scope: 'tds', version: V, do: 'done' }]],
     ] as const) {
       expect(
         await codeOf(s.remove({ key: 'acme/site', action, todos: [...todos] } as never, ME)),
@@ -1398,6 +1401,93 @@ describe('archive, unarchive and delete', () => {
     expect(await codeOf(s.remove({ key: 'nope', action: 'archive' } as never, ME))).toBe('bad-request');
     expect(fakes.skillRuns.filter((a) => !('check' in a))).toEqual([]);
     expect(existsSync(abs('clients/acme/projects/site/project.md'))).toBe(true);
+  });
+
+  it('drops a choice for a to-do no longer open and linked, counting it neither way', async () => {
+    const s = removing();
+    // A teammate ticked simon.md between the check and the confirm; the others were never listed.
+    rmSync(abs('todo/simon.md'));
+    put('todo/done/simon.md', todoText({ assignee: 'simon-jones', project: 'acme/site', client: 'acme' }));
+    const r = (await s.remove(
+      {
+        key: 'acme/site',
+        action: 'archive',
+        todos: [
+          { id: 'mine.md', scope: 'tds', version: sha('todo/mine.md'), do: 'done' },
+          { id: 'simon.md', scope: 'tds', version: V, do: 'done' },
+          { id: 'elsewhere.md', scope: 'tds', version: V, do: 'done' },
+          { id: 'q.md', scope: 'personal', version: V, do: 'done' },
+          { id: 'finished.md', scope: 'tds', version: V, do: 'done' },
+        ],
+      },
+      ME,
+    )) as ProjectRemoveResult;
+    expect(existsSync(abs('clients/acme/projects-archive/site'))).toBe(true);
+    expect(fakes.todoRuns).toEqual([
+      { kind: 'tick', id: 'mine.md', scope: 'tds', expect: sha('todo/mine.md') },
+    ]);
+    expect(r).toMatchObject({ key: 'acme/site', todosChanged: 1, todosFailed: [] });
+    expect(r).not.toHaveProperty('leftBehind');
+  });
+
+  it('applies the to-do choices and answers leftBehind when the deleted folder was only partly removed', async () => {
+    const s = removing();
+    fakes.leftBehind = 'clients/acme/projects/.tdsapp-projects-site-0123456789ab.deleting~';
+    const r = (await s.remove(
+      {
+        key: 'acme/site',
+        action: 'delete',
+        filesExpect: V,
+        todos: [{ id: 'mine.md', scope: 'tds', version: sha('todo/mine.md'), do: 'delete' }],
+      },
+      ME,
+    )) as ProjectRemoveResult;
+    expect(fakes.todoRuns).toEqual([
+      { kind: 'delete', id: 'mine.md', scope: 'tds', expect: expect.any(String) },
+    ]);
+    expect(r).toMatchObject({
+      key: 'acme/site',
+      todosChanged: 1,
+      todosFailed: [],
+      leftBehind: 'clients/acme/projects/.tdsapp-projects-site-0123456789ab.deleting~',
+    });
+    expect(byKey(r.list.projects, 'acme/site')).toBeUndefined();
+  });
+
+  it('refuses unlink choices without the to-do project capability, before touching the folder', async () => {
+    const s = removing();
+    fakes.todoCaps = [];
+    const unlink = {
+      id: 'simon.md',
+      scope: 'tds' as const,
+      version: sha('todo/simon.md'),
+      do: 'unlink' as const,
+    };
+    const err = await s
+      .remove({ key: 'acme/site', action: 'delete', filesExpect: V, todos: [unlink] }, ME)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(ProjectsError);
+    expect(err).toMatchObject({
+      code: 'not-allowed',
+      message: "Update the brain's skills to unlink to-dos.",
+    });
+    expect(fakes.skillRuns).toEqual([]);
+    expect(fakes.todoRuns).toEqual([]);
+    expect(existsSync(abs('clients/acme/projects/site/project.md'))).toBe(true);
+    // Deleting a to-do needs no such capability.
+    const r = (await s.remove(
+      {
+        key: 'acme/site',
+        action: 'delete',
+        filesExpect: V,
+        todos: [{ ...unlink, do: 'delete' }],
+      },
+      ME,
+    )) as ProjectRemoveResult;
+    expect(r).toMatchObject({ todosChanged: 1, todosFailed: [] });
   });
 
   it('collects to-dos that fail as ids and still answers (the folder change happened)', async () => {

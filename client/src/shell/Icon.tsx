@@ -110,6 +110,8 @@ const PATHS: Record<IconName, ReactNode> = {
   wide: <path d="M3 10h14M6 7l-3 3 3 3M14 7l3 3-3 3" />,
   // A paper plane: Send's, paired with Stop's square.
   send: <path d="M17 3 3 8.5l5.5 2.5L11 17zM17 3l-8.5 8" />,
+  refresh: <path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3h-3" />,
+  update: <path d="M10 3.5v8.5M6.5 8.5 10 12l3.5-3.5M4 15.5h12" />,
 };
 
 /** Decorative: always hidden from assistive tech. The control around it carries the name. */

@@ -10,6 +10,7 @@ import { APPS } from './apps.ts';
 import type { DrawerName, IconName } from './contract.ts';
 import { DOCK_IDS } from './Dock.tsx';
 import { Icon } from './Icon.tsx';
+import { RailUpdate } from './RailUpdate.tsx';
 import { createRailHover, type RailHover } from './rail-hover.ts';
 import { useDesk, useShell } from './ShellProvider.tsx';
 import { SyncStamp } from './SyncStamp.tsx';
@@ -341,6 +342,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
             </span>
           ) : null}
         </button>
+        <RailUpdate wide={showsNames} pinned={wide} />
         <SyncStamp wide={showsNames} />
       </nav>
     </div>

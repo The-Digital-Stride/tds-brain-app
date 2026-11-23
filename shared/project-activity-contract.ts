@@ -10,8 +10,8 @@ import type { ProjectKey } from './projects-contract.ts';
 // ─── The seen store (app data folder) ────────────────────────────────────────────────────────────
 
 export const PROJECT_SEEN_FILE = 'project-seen.json';
-/** Projects remembered; the oldest `at` is dropped past this. */
-export const PROJECT_SEEN_MAX = 500;
+/** Projects remembered; the oldest `at` is dropped past this (overseer nice: keep the file small). */
+export const PROJECT_SEEN_MAX = 200;
 /** Paths or ids kept per list in one snapshot; a bigger list is cut (newest kept) and marked `cut`. */
 export const PROJECT_SEEN_LIST_MAX = 500;
 
@@ -22,12 +22,16 @@ export const PROJECT_SEEN_LIST_MAX = 500;
 export interface ProjectSeen {
   /** ISO time they last looked. */
   at: string;
+  /** The project's folder when the snapshot was taken. A different folder now (a move) counts as a first visit. */
+  folder: string;
   /** Open to-do keys (ProjectTodoRow.key) in the project then. */
   todos: string[];
   /** The card's `links` then. */
   links: string[];
-  /** Brain paths of the project's files (ProjectFilesResponse items) then. */
+  /** The project's files then, as paths RELATIVE to the project folder (so a move can't list every file as new). */
   files: string[];
+  /** Titles of the open to-dos then, by key, so a to-do that's gone can still be named (dropped when unknown). */
+  todoTitles?: Record<string, string>;
   /** True when a list was cut at PROJECT_SEEN_LIST_MAX (then "added" from that list is not shown). */
   cut?: true;
 }
@@ -53,6 +57,15 @@ export type ActivityKind =
   | 'file-added' // a new file in the project folder
   | 'link-added'; // a new line in the card's Linked files (call notes, data pulls, ad files…)
 
+/**
+ * Overseer rulings (pre-review, 2026-11-23):
+ * - Update rows say who and what kind only ("Sam Taylor added a note", "… added a call", "Health changed",
+ *   any other kind: "… added an update"). NEVER the summary or an email subject.
+ * - The person's own changes are left out where the data says who (an update's `by`, a to-do's done stamp).
+ * - Personal to-dos follow the To-dos tab: the person's OWN personal to-dos show in a shared project, to them only.
+ * - A to-do that's gone and whose title isn't known is skipped (no blank rows).
+ * - Files are nameless (no git for uncommitted or personal files).
+ */
 export interface ActivityItem {
   kind: ActivityKind;
   /** One line of plain text, e.g. "Sam Taylor added a note", "To-do done: Send the quote". */
@@ -84,6 +97,12 @@ export interface ComingUpItem {
  */
 export interface ProjectActivityResponse {
   since: string | null;
+  /**
+   * Overseer blocker 1: the server keeps the snapshot of exactly what this read saw, under this token (in memory,
+   * one per project and person, replaced by the next read, gone after ACTIVITY_TOKEN_TTL_MS or a restart). The app
+   * sends it back on `projectSeen`, so only what was shown gets marked seen. Null for an archived project.
+   */
+  token: string | null;
   /** Newest first where `at` is known; items without `at` after those, in kind order. At most ACTIVITY_MAX. */
   items: ActivityItem[];
   /** How many more there were beyond ACTIVITY_MAX. */
@@ -92,13 +111,19 @@ export interface ProjectActivityResponse {
   comingUp: ComingUpItem[];
 }
 
+/** How long a read's snapshot is held for its `projectSeen`. */
+export const ACTIVITY_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
 /**
- * `POST ROUTES.projectSeen` `{ key }` → 204. Saves this person's snapshot of the project as it is now. The app
- * sends it when the person leaves the project page (or switches project), never on open, so what was shown is
- * what gets marked seen. Unknown or archived key → 404 / no-op as the plan says.
+ * `POST ROUTES.projectSeen` `{ key, token }` → 204. Commits the snapshot held for that read (never "the project
+ * as it is now"). The app sends it when the person leaves the project page or switches project, and ONLY if the
+ * "Since you last looked" card was actually on screen (the Overview tab was shown with the card rendered). An
+ * unknown, expired or superseded token, or an unknown key, → 204 and nothing saved (it will simply show again).
+ * Extra fields → 400.
  */
 export interface ProjectSeenRequest {
   key: ProjectKey;
+  token: string;
 }
 
 // ROUTES additions (shared/contract.ts): projectActivity: '/api/projects/activity' (GET),

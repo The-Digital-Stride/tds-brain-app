@@ -40,6 +40,9 @@ join "Coming up" in phase 4.
    the open to-do keys, the card's links and the project's file paths (`ProjectSeen`, `project-seen.json` in the
    app data folder; capped like `chat-places.json`). "Since you last looked" compares now with that snapshot.
    This works the same for personal projects (not in git) and needs no git parsing. Git is used for nothing new.
+   **Departs from parent decision 28's "from git history"** (overseer upheld: works for personal projects and
+   tells "new to me" from "edited"; risks: per Mac, no backfill). In-folder paths are stored relative to the
+   project folder and the folder itself is kept, so a moved project counts as a first visit. Capped at 200 projects.
    Plain: the app remembers what the project looked like last time you opened it, on your Mac only.
 2. **What counts as a change.**
    - Updates log entries (phase 2) with `at` after `since`: notes and calls as `update`, automatic entries as
@@ -49,16 +52,23 @@ join "Coming up" in phase 4.
    - Links now but not in the snapshot → `link-added` (call notes, data pulls, ad files filed for the project).
    - Files now but not in the snapshot → `file-added`. A path both linked and in the folder shows once, as a file.
    - Removed links and files are not listed (quiet by design; the Files tab is the truth).
-   Plain: new notes, to-dos opened or closed, and new files are listed; nothing is listed twice.
+   - Update rows say who and what kind only, never the summary or an email subject; unknown kinds read
+     "added an update". The person's own changes are left out where the data says who. A gone to-do whose
+     title isn't known is skipped. Files are nameless.
+   Plain: new notes, to-dos opened or closed, and new files are listed; nothing is listed twice, and your own
+   changes aren't listed back to you.
 3. **First visit.** With no snapshot, `since` is null and the card says "Changes will show here from your next
    visit." (no backfill).
    Plain: the first time you open a project it starts keeping track.
-4. **Marking seen.** The app posts `projectSeen` when the person leaves the project page or switches project,
-   never on open, so the list stays put while they read it. A crash or quit just means it shows again next time.
-   Plain: the list doesn't vanish the moment you open the page.
+4. **Marking seen (overseer blocker 1).** The activity read returns a `token`; the server holds exactly that
+   read's snapshot. The app posts `projectSeen {key, token}` when the person leaves the project page or switches
+   project, and only if the "Since you last looked" card was on screen. Something that synced in while the page
+   was open stays unseen. No "Mark as seen" button (overseer). A crash or quit just shows it again next time.
+   Plain: only what you actually saw is ticked off.
 5. **Coming up.** Open project to-dos due within 14 days or overdue (overdue first, then soonest), and the
-   project's `end` date when within 14 days or past while the project is still open. Stage end dates don't exist
-   (stages have no dates), so they're left out; meetings arrive in phase 4.
+   project's `end` date when within 14 days or past while the project is still open. **Departs from parent 28:**
+   stage end dates don't exist (stages are names only; dates would need a card format change), so they're left
+   out (overseer upheld); meetings arrive in phase 4.
    Plain: what's due soon on this project, at a glance.
 6. **Where it shows.** Two cards at the top of the Overview tab: "Since you last looked" (up to 20 items, newest
    first, each a link: a to-do opens in the to-do panel, a file opens in its viewer, an update goes to the
@@ -66,19 +76,24 @@ join "Coming up" in phase 4.
    per `docs/design-system.md`. The Overview tab shows a `dot` when there's anything new. Archived projects show
    neither card.
    Plain: open a project and the top of its Overview tells you what's new and what's next.
-7. **Privacy.** Personal to-dos and personal files only ever show in personal projects (the existing project
-   readers already scope them). The snapshot holds keys and paths only, never text.
-   Plain: nothing private shows in a shared project, and the remembered list holds no content.
+7. **Privacy (overseer blocker 2).** To-dos follow the To-dos tab exactly: a person's own personal to-dos show
+   in a shared project to them only (`server/brain/projects.ts:773`); nobody else's ever do. The snapshot holds
+   keys, paths and to-do titles on this Mac only, never note text. Update rows never show a summary or email
+   subject, so nothing that bypassed the email rule can surface here.
+   Plain: the list agrees with the To-dos tab, and nothing private reaches anyone else.
 8. **Backward compatibility.** New routes and a new app-data file only; no brain or script changes. An older app
    ignores `project-seen.json`.
    Plain: nothing changes in the brain, so every Mac keeps working.
 
-### Open questions for the overseer
+### Overseer pre-review (2026-11-23)
 
-- Decision 4: is "mark seen on leaving" right, or should there be a visible "Mark as seen" too?
-- Decision 6: should the Projects list also show a "changed since you looked" marker per project (cheap: compare
-  `lastChanged.at` with `since`), or keep that for later?
-- Decision 2: should `file-added` say who added it (one `git log -1` per new file, capped), or stay nameless?
+Blockers folded in: 1 (seen commits the shown read's snapshot via a token, only if the card was on screen;
+decision 4) and 2 (personal to-dos follow the To-dos tab; decision 7). Rulings: snapshot upheld over git (a);
+mark on leaving, no button; no Projects-list marker yet (lastChanged would disagree with the page; later, from
+the same read); files nameless (b); stage end date dropped (c); update rows never show summaries or subjects,
+unknown kinds "added an update" (d); two Sonnet builders fine with correctness review on Opus (e). Should items
+folded in: leave out your own changes, skip nameless gone to-dos, relative paths + move = first visit, cap 200.
+The email exception for phase 1's "save without asking" is already in the project-chat line (phase 2).
 
 ## Contract
 
@@ -100,9 +115,9 @@ join "Coming up" in phase 4.
 | Test file | Proves | Owner |
 |---|---|---|
 | `server/store/project-seen.test.ts` | set/get, queued writes, bad read never wipes, cap at PROJECT_SEEN_MAX (oldest dropped), list cap marks `cut` | A |
-| `server/brain/project-activity.test.ts` | first visit → since null, no items; to-do added / done / gone; link and file added; a path both linked and a file shows once; updates after `since` only, auto entries as `status`; ordering and ACTIVITY_MAX/`more`; coming up (overdue first, 14 days, end date, done project none); archived → empty; personal items never in a shared project | A |
-| `server/http/projects-routes.test.ts` | both routes through the real gate; seen body refuses extra fields; unknown key 404 | A |
-| `client/src/apps/projects/ProjectActivity.test.tsx` | renders both cards; first-visit line; links open the right place; seen posted on leaving, not on open; Overview dot | B |
+| `server/brain/project-activity.test.ts` | first visit → since null, no items; to-do added / done / gone (gone with no known title skipped); link and file added; a path both linked and a file shows once; updates after `since` only, auto entries as `status`, rows never contain the summary, unknown kinds "added an update"; own changes left out; ordering and ACTIVITY_MAX/`more`; coming up (overdue first, 14 days, end date, done project none); archived → empty, token null; own personal to-dos shown, others' never; moved project (folder differs) → first visit; token: commit saves the READ's snapshot not the current state, a superseded/expired/unknown token saves nothing | A |
+| `server/http/projects-routes.test.ts` | both routes through the real gate; seen body refuses extra fields; unknown key → 204 nothing saved | A |
+| `client/src/apps/projects/ProjectActivity.test.tsx` | renders both cards; first-visit line; links open the right place; seen posted with the token on leaving, not on open, and not when the card was never shown; Overview dot | B |
 
 ## Gates
 

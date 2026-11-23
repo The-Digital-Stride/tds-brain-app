@@ -10,7 +10,9 @@ vi.mock('../store.tsx', () => ({
 }));
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
+const { ToolTabs } = await import('./ToolTabs.tsx');
 
+const Empty = () => null;
 let api: ShellApi;
 function Probe() {
   api = useShell();
@@ -123,5 +125,46 @@ describe('ShellProvider: the right panel holds unsaved work', () => {
     act(() => api.dispatch({ type: 'close-todo' }));
     expect(api.state.todoPanel?.ask).toEqual({ type: 'close-todo' });
     expect(api.panelHold).toEqual({ dirty: false, asking: false });
+  });
+
+  it('a guarded choice made while the panel is shut opens it, so the question is in view', () => {
+    mount();
+    dirty(true);
+    expect(api.state.panelOpen).toBe(false);
+    const run = vi.fn();
+    act(() => api.guardPanel(run));
+    expect(run).not.toHaveBeenCalled();
+    expect(api.state.panelOpen).toBe(true);
+    expect(api.panelHold.asking).toBe(true);
+  });
+
+  it('a tool tab goes through the hold: it asks, and Discard opens the tool', () => {
+    const openTool = vi.fn();
+    store.current = { ...store.current, openTool, ads: null, adsDue: null };
+    const tool = (id: string) => ({
+      id,
+      title: `Tool ${id}`,
+      icon: 'chart' as const,
+      summary: id,
+      group: 'Ads',
+      Sheet: Empty,
+      search: null,
+      visible: () => true,
+    });
+    const first = tool('a');
+    const tools = [first, tool('b')];
+    render(
+      <ShellProvider>
+        <Probe />
+        <ToolTabs section={{ id: 'workbench', title: 'Workbench', icon: 'workbench', tools }} tool={first} />
+      </ShellProvider>,
+    );
+    openPanel();
+    dirty(true);
+    act(() => (document.querySelectorAll('.tool-tabs button')[1] as HTMLElement).click());
+    expect(openTool).not.toHaveBeenCalled();
+    expect(api.panelHold.asking).toBe(true);
+    act(() => api.dispatch({ type: 'discard-panel' }));
+    expect(openTool).toHaveBeenCalledWith('workbench', 'b');
   });
 });

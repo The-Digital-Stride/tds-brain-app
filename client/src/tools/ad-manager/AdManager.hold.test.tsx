@@ -275,6 +275,18 @@ describe('Ads proposal panel: choosing another proposal from the table', () => {
     press('Discard changes');
     expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
   });
+
+  it('Previous on the first proposal asks nothing and keeps the note held', async () => {
+    await mountSheet();
+    fireEvent.change(noteBox(), { target: { value: 'Mine' } });
+    const nav = () => within(screen.getByRole('navigation', { name: 'Proposals' }));
+    fireEvent.click(nav().getByRole('button', { name: 'Previous proposal' }));
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+    // The note still counts as unsaved: the next real step asks.
+    fireEvent.click(nav().getByRole('button', { name: 'Next proposal' }));
+    expect(screen.getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
+    expect(noteBox().value).toBe('Mine');
+  });
 });
 
 describe('Rate calls panel', () => {

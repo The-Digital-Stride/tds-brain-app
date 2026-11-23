@@ -508,6 +508,8 @@ export function ProposalPanel() {
   };
   // Typed text is lost when the next proposal replaces this one, so a step with text in the boxes asks first.
   const step = (by: -1 | 1) => {
+    // At either end the button is aria-disabled but still pressable: nothing to step to, so nothing to ask.
+    if (!order[at + by]) return;
     if (dirty) setAskStep(by);
     else go(by);
   };

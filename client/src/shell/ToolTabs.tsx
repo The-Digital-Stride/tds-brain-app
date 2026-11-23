@@ -1,5 +1,6 @@
 import { useStore, useToolSnapshot } from '../store.tsx';
 import { SheetTabs } from './SheetTabs.tsx';
+import { useGuardPanel } from './ShellProvider.tsx';
 import { visibleTools } from './sections.ts';
 import type { SectionSlot, ToolSlot } from './sections-contract.ts';
 import type { SheetTabItem } from './settings-tabs.ts';
@@ -18,6 +19,8 @@ export function tabGroupFor(tool: ToolSlot, tools: ToolSlot[]): ToolSlot[] {
  */
 export function ToolTabs({ section, tool }: { section: SectionSlot; tool: ToolSlot }) {
   const { openTool } = useStore();
+  // Another tool replaces the right panel, so typed work there asks first (Actions rule 9).
+  const guardPanel = useGuardPanel();
   const snap = useToolSnapshot();
   const tabs = tabGroupFor(tool, visibleTools(section, snap));
   if (tabs.length < 2) return null;
@@ -32,7 +35,7 @@ export function ToolTabs({ section, tool }: { section: SectionSlot; tool: ToolSl
       label={`${tool.group} tools`}
       items={items}
       current={tool.id}
-      onChoose={(id) => openTool(section.id, id)}
+      onChoose={(id) => guardPanel(() => openTool(section.id, id))}
     />
   );
 }

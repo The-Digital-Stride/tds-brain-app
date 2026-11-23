@@ -62,6 +62,13 @@ interface Desk extends Omit<Layout, 'modes'> {
 const ShellContext = createContext<ShellApi | null>(null);
 const DeskContext = createContext<Desk | null>(null);
 
+/** The panel hold's guard, or a plain run outside a ShellProvider (pieces tested on their own). */
+export function useGuardPanel(): (run: () => void) => void {
+  const s = useContext(ShellContext);
+  return s ? s.guardPanel : runNow;
+}
+const runNow = (run: () => void) => run();
+
 export function useShell(): ShellApi {
   const s = useContext(ShellContext);
   if (!s) throw new Error('useShell must be used inside ShellProvider');
@@ -425,9 +432,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         return;
       }
       heldRun.current = run;
+      // A resize can shut the panel past the hold; the question lives in the panel, so bring it into view.
+      if (!stateRef.current.panelOpen) dispatch({ type: 'set-panel', open: true });
       setHold({ dirty: true, asking: true });
     },
-    [setHold],
+    [setHold, dispatch],
   );
 
   const { modes } = layout;

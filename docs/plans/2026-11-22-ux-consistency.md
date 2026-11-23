@@ -275,3 +275,35 @@ lists are set in each builder's brief from the review's file:line evidence.
   shown as info and not announced; "All tidy" not announced) and 6 nits (duplicate assertion, stale doc class
   names, guard comment, dead `:has` rule, loosened test, RemovePanel closable while deleting) → fixed by the
   lead. Found on the way: ShowMore's hidden noun lost its space in the accessible name ("Show fewerrows").
+
+### Release 4 (commits 4201467, a7ca702)
+- Every sheet sits in one named layer (`tokens, primitives, patterns, features, tools`); `primitives.css` and
+  `settings.css` split out; 21 sheets locked to tokens for font size, radius and z-index (later 23, with
+  `base.css` and `todo-panel.css`).
+- Intended size moves (decision 22): rail and badge labels 10–11px → 11.5px, narrow Home greeting 22 → 18px,
+  palette input 16 → 15px, 2–4px radii → 5px, tour cards 260 → 240ms and title 16 → 15px.
+- Caught by the pixel comparison and fixed before commit: the viewer header lost its grid (9% of pixels), and
+  the approval card's see-through amber turned solid (`--amber-glass`).
+
+### Final critique (commits 06eb164, d577a3d, 4fad82c, f824eb4)
+- Design and UX expert (Fable): NOT YET with 6 blockers → all fixed. Working dots were red (now blue); Ads
+  panels threw away typing (now a panel hold asks on step, close, another proposal and another account);
+  busy buttons used `disabled` (now `aria-disabled`); New project and Link files lacked the plus; the drawer's
+  Clear was a link; older doc sections contradicted the Actions rules. Second look: one blocker (rule 6 promised a
+  pinned footer the screens didn't have) → Rate calls footer pinned and the rule narrowed.
+- Open items ruled acceptable and written into the rules: Ads stepper in the panel body (rule 11 exception),
+  the Settings tab dot (now with a tooltip), RemovePanel's own confirm (rule 4's reference build), Send
+  `disabled` while empty (rule 12).
+- Known limit: leaving a sheet by the rail or search doesn't ask for sheet or right-panel forms (Ads, project
+  forms). Follow-up.
+- Follow-ups the expert accepted: one file language for to-dos and projects; "Health: amber" wording; star and
+  chat on project to-do rows; the chat drawer header on `.panel-head`.
+- Code-quality reviewer (Opus): no blockers; 3 should and 2 nits → fixed. The token sweep had moved seven
+  colours slightly (new exact tokens put them back); the guard missed `rem` sizes and two clean sheets; stale
+  comments; the viewer header gap now 8px again.
+- Found on the way: `closeChat.test.tsx` failed about one run in three because events went to the previous
+  test's stream; it now waits for its own.
+- Correctness reviewer on the fix round (Opus): 2 should and 1 consider, all confirmed and fixed with a failing test
+  first. Previous at the first proposal asked, and Discard then dropped the hold while the note stayed; the Ads
+  tool tabs swapped the panel past the hold; after a resize shut the panel, a guarded choice asked inside the
+  hidden panel (it now opens it). Both holds at once, Esc, busy buttons and the dirty bookkeeping held up.

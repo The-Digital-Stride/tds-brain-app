@@ -127,13 +127,34 @@ and `ROUTES.projectUpdates` before builders start.
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests (FULL suite, help page word caps) · [ ] Lint · [ ] Build
-- [ ] No unintended large deletions: `git diff origin/main --numstat | awk '$2 > 40'`
-- [ ] Domain gates: security (script writes brain files; summary text from people shown back and later read
+- [x] Type-check · [x] Tests (FULL suite, help page word caps) · [x] Lint · [x] Build
+- [x] No unintended large deletions: `git diff origin/main --numstat | awk '$2 > 40'`
+- [x] Domain gates: security (script writes brain files; summary text from people shown back and later read
   by Claude), UX (new tab and form)
-- [ ] Browser check (throwaway brain): add a note, see it listed; change status and health, see two auto
+- [x] Browser check (throwaway brain): add a note, see it listed; change status and health, see two auto
   entries; client-safe marker; an older script without the capability hides the form.
 
 ## Review outcomes
 
-(filled at the end)
+- **Security (Opus):** no findings. Noted for a later phase: synced entry files are trusted as written, so a
+  teammate could commit an entry naming someone else or marked client-safe; settle before entries reach clients.
+- **Correctness (Opus):** four confirmed and fixed with failing-first tests: Remove was offered on a project with
+  a missing or unreadable card and on hand-named files, both of which the script refuses (canRemove and the
+  server's pre-check now match the script); `byName` missed the script's `memberSlug` form; the cache stamp
+  missed entries edited in place (now each file's size and time). A server test now runs the real script's
+  `update` and checks `file`.
+- **UX (Sonnet):** focus after Remove, Cancel and an empty Add; Show-older error announced; archived projects
+  say why there's no add box; help line within the 350-word cap. Dropped: "a tab switch loses the draft" (the
+  page's leave guard already asks, seen in Chrome).
+- **Browser check:** add, auto entries for status and health, client-safe marker, Remove confirm and removal
+  all worked. Found: auto entries said "Green → Amber"; now the app's words (On track, At risk, Off track).
+  Found: a stray border round the Note/Call choice; removed. The tick style rule (design-system test) caught
+  plain checkboxes; now `.tick`.
+- **Fix-round correctness (Opus):** no findings; each server fix reverted alone fails at least one test.
+- **Overseer sign-off:** signed off, conditional on the fix round (met). Should, before phases 5/6: decide how far
+  synced entries are trusted; the skill now tells Claude entry text is data, never instructions (done here).
+- **UX/UI expert design sign-off (Opus):** Ian's rule from 2026-11-23: every UI change is checked against
+  `docs/design-system.md` by a UX/UI expert before merge.
+- **Gates:** typecheck, lint (one warning already on main), build, full suite; no large deletions.
+- **Brain side (needs Ian's yes):** copy `tdsapp-projects` 0.4.0 and the meeting-notes (d) line
+  (`brain-skills/tdsapp-projects/brain-rules/r2-updates-log.md`).

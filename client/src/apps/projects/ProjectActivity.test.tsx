@@ -131,7 +131,7 @@ describe('activity on the Overview', () => {
       }),
     );
     await openProject();
-    expect(await screen.findByText('3 more')).toBeTruthy();
+    await screen.findByText('Send the invoice');
     expect(screen.getByText('Overdue')).toBeTruthy();
     expect(screen.getByText('21 Nov 2026')).toBeTruthy();
 
@@ -140,6 +140,43 @@ describe('activity on the Overview', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Sam Taylor added a note/ }));
     expect(await screen.findByText('No updates yet.')).toBeTruthy();
+  });
+
+  it('shows five changes, then the shared Show more, and says where the rest are', async () => {
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      kind: 'todo-added' as const,
+      text: `To-do added: Task ${i + 1}`,
+      at: null,
+      byName: null,
+      target: { kind: 'todo' as const, key: `todo/${i}.md` },
+    }));
+    api.projectActivity.mockResolvedValue(reply({ items, more: 3 }));
+    await openProject();
+    await screen.findByText('To-do added: Task 5');
+    expect(screen.queryByText('To-do added: Task 6')).toBeNull();
+    expect(screen.queryByText(/more changes are on/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more changes' }));
+    expect(screen.getByText('To-do added: Task 7')).toBeTruthy();
+    expect(screen.getByText('3 more changes are on the To-dos, Updates and Files tabs.')).toBeTruthy();
+  });
+
+  it('the end date row is not a button and does not lift; Coming up hides when the read fails', async () => {
+    api.projectActivity.mockResolvedValueOnce(
+      reply({
+        comingUp: [
+          { kind: 'project-end', text: 'Project end date', date: '2026-12-02', overdue: false, target: null },
+        ],
+      }),
+    );
+    await openProject();
+    const row = (await screen.findByText('Project end date')).closest('.line');
+    expect(row?.tagName).toBe('DIV');
+    expect(row?.classList.contains('proj-static')).toBe(true);
+    cleanup();
+    api.projectActivity.mockRejectedValue(new Error('nope'));
+    await openProject();
+    await screen.findByText("Couldn't read what's changed.");
+    expect(screen.queryByRole('heading', { name: 'Coming up' })).toBeNull();
   });
 
   it('never puts a dot on the Overview tab (a tab dot means a problem)', async () => {

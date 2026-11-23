@@ -70,11 +70,11 @@ join "Coming up" in phase 4.
    stage end dates don't exist (stages are names only; dates would need a card format change), so they're left
    out (overseer upheld); meetings arrive in phase 4.
    Plain: what's due soon on this project, at a glance.
-6. **Where it shows.** Two cards at the top of the Overview tab: "Since you last looked" (up to 20 items, newest
-   first, each a link: a to-do opens in the to-do panel, a file opens in its viewer, an update goes to the
-   Updates tab; "N more" when cut) and "Coming up". Built from `.tray` / `.card` / `.line` rows and `StateNote`
-   per `docs/design-system.md`. The Overview tab shows a `dot` when there's anything new. Archived projects show
-   neither card.
+6. **Where it shows.** Two cards at the top of the Overview tab: "Since you last looked" (five rows, then the shared
+   "Show N more changes", up to 20, newest first, each a link: a to-do opens in the to-do panel, a file opens in
+   its viewer, an update goes to the Updates tab) and "Coming up". Built from `.tray` / `.card` / `.line` rows and
+   `StateNote` per `docs/design-system.md`. No dot on the Overview tab (a tab dot means a problem; design
+   sign-off). Archived projects show neither card.
    Plain: open a project and the top of its Overview tells you what's new and what's next.
 7. **Privacy (overseer blocker 2).** To-dos follow the To-dos tab exactly: a person's own personal to-dos show
    in a shared project to them only (`server/brain/projects.ts:773`); nobody else's ever do. The snapshot holds

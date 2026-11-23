@@ -6,10 +6,14 @@ import type {
 } from '../../../../shared/project-activity-contract.ts';
 import type { ProjectKey } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { ShowMore } from '../../shell/ShowMore.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { dateWords } from './logic.ts';
 import { whenWords } from './ProjectUpdates.tsx';
+
+/** Rows shown before "Show N more changes", as Home's cards (design system: shared ShowMore). */
+const SINCE_ROWS = 5;
 
 export interface ActivityState {
   data: ProjectActivityResponse | null;
@@ -69,16 +73,18 @@ export function useProjectActivity(key: ProjectKey, enabled: boolean): ActivityS
   return { data, error, markShown, retry };
 }
 
-/** The tab dot: there is something new since the person last looked. */
-export const hasNews = (a: ActivityState): boolean => (a.data?.items.length ?? 0) > 0;
-
 function SinceLine({ item, onOpen }: { item: ActivityItem; onOpen: () => void }) {
   // The name is left out when the row already starts with it ("Alex Morgan added a call").
   const name = item.byName && !item.text.startsWith(item.byName) ? item.byName : '';
   const bits = [item.at ? whenWords(item.at) : '', name].filter(Boolean);
   return (
     <li>
-      <button type="button" className="line proj-activity-row" onClick={onOpen}>
+      <button
+        type="button"
+        className="line"
+        onClick={onOpen}
+        aria-haspopup={item.target.kind === 'todo' ? 'dialog' : undefined}
+      >
         <span className="line-text">
           <span className="line-title">{item.text}</span>
           {bits.length > 0 ? <span className="line-meta">{bits.join(' · ')}</span> : null}
@@ -104,6 +110,7 @@ export function ProjectActivity({
   const shell = useContext(ShellContext);
   const dispatch = shell?.dispatch ?? (() => {});
   const [message, setMessage] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const { data, error, markShown, retry } = activity;
   const sinceShown = data !== null;
   useEffect(() => {
@@ -148,20 +155,36 @@ export function ProjectActivity({
         ) : !data ? (
           <StateNote kind="loading" />
         ) : data.since === null ? (
-          <p className="proj-note">Changes will show here from your next visit.</p>
+          <StateNote kind="empty">Changes will show here from your next visit.</StateNote>
         ) : data.items.length === 0 ? (
           <StateNote kind="empty">Nothing new since you last looked.</StateNote>
         ) : (
-          <ul className="lib-list">
-            {data.items.map((item, i) => (
-              // Items can repeat, so the position keeps keys unique.
-              // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
-              <SinceLine key={i} item={item} onOpen={() => open(item.target)} />
-            ))}
-            {data.more > 0 ? (
-              <li className="proj-note">{data.more === 1 ? '1 more' : `${data.more} more`}</li>
+          <>
+            <ul className="lib-list">
+              {(showAll ? data.items : data.items.slice(0, SINCE_ROWS)).map((item, i) => (
+                // Items can repeat, so the position keeps keys unique.
+                // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                <SinceLine key={i} item={item} onOpen={() => open(item.target)} />
+              ))}
+            </ul>
+            {data.items.length > SINCE_ROWS ? (
+              <div className="proj-more">
+                <ShowMore
+                  expanded={showAll}
+                  count={data.items.length - SINCE_ROWS}
+                  noun={{ one: 'change', many: 'changes' }}
+                  wording="more"
+                  onToggle={() => setShowAll((v) => !v)}
+                />
+              </div>
             ) : null}
-          </ul>
+            {showAll && data.more > 0 ? (
+              <p className="hint proj-more">
+                {data.more === 1 ? '1 more change' : `${data.more} more changes`} are on the To-dos, Updates
+                and Files tabs.
+              </p>
+            ) : null}
+          </>
         )}
         {message ? (
           <p className="proj-note" role="status">
@@ -170,23 +193,25 @@ export function ProjectActivity({
         ) : null}
       </section>
 
-      <section className="card proj-card" aria-labelledby="proj-coming">
-        <div className="card-head">
-          <h3 id="proj-coming">Coming up</h3>
-        </div>
-        {error ? null : !data ? (
-          <StateNote kind="loading" />
-        ) : data.comingUp.length === 0 ? (
-          <StateNote kind="empty">Nothing due in the next two weeks.</StateNote>
-        ) : (
-          <ul className="lib-list">
-            {data.comingUp.map((c, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
-              <ComingLine key={i} item={c} onOpen={openTodo} />
-            ))}
-          </ul>
-        )}
-      </section>
+      {error ? null : (
+        <section className="card proj-card" aria-labelledby="proj-coming">
+          <div className="card-head">
+            <h3 id="proj-coming">Coming up</h3>
+          </div>
+          {!data ? (
+            <StateNote kind="loading" />
+          ) : data.comingUp.length === 0 ? (
+            <StateNote kind="empty">Nothing due in the next two weeks.</StateNote>
+          ) : (
+            <ul className="lib-list">
+              {data.comingUp.map((c, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                <ComingLine key={i} item={c} onOpen={openTodo} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </>
   );
 }
@@ -198,18 +223,22 @@ function ComingLine({ item, onOpen }: { item: ComingUpItem; onOpen: (key: string
         <span className="line-title">{item.text}</span>
         <span className="line-meta">{dateWords(item.date)}</span>
       </span>
-      {item.overdue ? <span className="chip proj-overdue">Overdue</span> : null}
+      {item.overdue ? (
+        <span className="badge" data-tone="warn">
+          Overdue
+        </span>
+      ) : null}
     </>
   );
   const target = item.target;
   return (
     <li>
       {target ? (
-        <button type="button" className="line proj-activity-row" onClick={() => onOpen(target.key)}>
+        <button type="button" className="line" aria-haspopup="dialog" onClick={() => onOpen(target.key)}>
           {body}
         </button>
       ) : (
-        <div className="line">{body}</div>
+        <div className="line proj-static">{body}</div>
       )}
     </li>
   );

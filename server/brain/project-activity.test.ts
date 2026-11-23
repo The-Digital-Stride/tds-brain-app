@@ -203,7 +203,7 @@ describe('project activity', () => {
     expect(r.items.map((i) => i.text)).toEqual([
       'New file: both.md',
       'New file: new.pdf',
-      'Linked: 2026-11-21.md',
+      'Linked file: 2026-11-21.md',
     ]);
     expect(r.items[1]?.target).toEqual({ kind: 'file', path: `${FOLDER}/sub/new.pdf` });
   });
@@ -213,7 +213,7 @@ describe('project activity', () => {
       card: card({ links: ['clients/acme/notes/call.md'] }),
       files: [`${FOLDER}/old.md`, 'clients/acme/notes/call.md'],
     });
-    expect(await texts(s)).toEqual(['Linked: call.md']);
+    expect(await texts(s)).toEqual(['Linked file: call.md']);
   });
 
   it('file paths are relative to the folder, so a file outside it keeps its full path', async () => {

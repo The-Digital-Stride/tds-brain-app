@@ -275,7 +275,7 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
           if (!seenLinks.has(path) && !(filePaths.has(path) && path.startsWith(prefix)))
             found.push({
               kind: 'link-added',
-              text: `Linked: ${baseName(path)}`,
+              text: `Linked file: ${baseName(path)}`,
               at: null,
               byName: null,
               target: { kind: 'file', path },

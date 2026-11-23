@@ -46,3 +46,19 @@ Ian's answers: all five; merge and push when reviewed; no explainer.
   to-do row buttons; chat drawer header structure.
 
 ## Review outcomes
+
+### Build and review (commits 5f4a93a, 8ebdca9, d2414c0, dcddcf1)
+- Builder A (Opus): leave guard in the store (`leave`, `setLeaveGuard`) registered by the shell (`guardLeave`);
+  sheet hold (`useSheetHold`) for the project form; order to-do → right panel → sheet, one question at a time.
+  27 tests (17 shell, 10 whole-app). The lead added the Projects search hit while Projects shows (it replaced the
+  page past the guard).
+- Builder B (Sonnet): decisions 2–5. The lead switched the To-dos drawer to the shared `TodoChatButton` so there
+  is one copy.
+- Correctness reviewer (Opus): 1 should (project rows offered star and chat on others' to-dos, and such a chat
+  can't be sent: the server links only my to-dos) → buttons only on my to-dos. 1 nit accepted: reopening the
+  Ads account already shown from the palette asks once (the store can't see the Ads account).
+- UI/accessibility reviewer (Sonnet): 1 should (help still said "link") → fixed.
+- Accepted: after Keep, a Projects search hit made from another page leaves the request pending, so Projects
+  opens on that project next time.
+- Browser: Projects list ("Health: on track"), project To-dos (star on hover, chat), Files ("Add files", X on
+  added files only).

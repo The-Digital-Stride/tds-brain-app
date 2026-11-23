@@ -58,4 +58,13 @@ describe('chat project helpers', () => {
     const both = [...clients, { slug: 'north', name: 'Northwind' }];
     expect(chatPlaceWords('acme', 'acme/site', both, moved)).toBe('Northwind · Site');
   });
+
+  it("keeps my own live project when a teammate's moved card lists the same key", () => {
+    const list = [
+      { key: 'north/site', slug: 'site', title: 'North site', client: 'north', movedFrom: ['personal/site'] },
+      { key: 'personal/site', slug: 'site', title: 'My site', client: null },
+    ];
+    const both = [...clients, { slug: 'north', name: 'Northwind' }];
+    expect(chatPlaceWords(null, 'personal/site', both, list)).toBe('My site');
+  });
 });

@@ -1,4 +1,4 @@
-import { matchedKey } from '../../../shared/projects.ts';
+import { matchedKey, movedKey } from '../../../shared/projects.ts';
 import type { ProjectCard, ProjectKey } from '../../../shared/projects-contract.ts';
 import { placeName } from '../shell/words.ts';
 
@@ -58,10 +58,11 @@ export function chatPlaceWords(
       })[]
     | undefined,
 ): string {
-  // A project that moved since the chat was saved is found by its old key, and shown under its client now.
-  const card = project
-    ? cards?.find((c) => c.key === project || (c.movedFrom ?? []).includes(project))
-    : undefined;
+  // A live project at the key always wins (as on the server); else one that moved away from it since the chat was
+  // saved, shown under its client now. `movedKey` keeps a teammate's moved card off my own personal key.
+  const exact = project ? cards?.find((c) => c.key === project) : undefined;
+  const moved = project && !exact && cards ? movedKey(project, [...cards]) : null;
+  const card = exact ?? (moved ? cards?.find((c) => c.key === moved) : undefined);
   const now = card && card.key !== project && card.client !== undefined ? card.client : client;
   const clientName = now ? placeName(now, clients) : '';
   const title = card ? card.title || card.slug : '';

@@ -572,11 +572,14 @@ describe('a chat started on a to-do (A19)', () => {
   });
 
   it('is kept when a chat that went to sleep is woken, and its saved kind stays', async () => {
-    const fx = setup();
+    // Saved as personal; the to-do is a TDS one, so its scope must not overwrite the saved kind.
+    const chatKinds = createChatKindStore(null);
+    await chatKinds.set('old-1', 'personal');
+    const fx = setup(undefined, { chatKinds });
     fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
     const s = await mgr.start({ resume: 'old-1', todoId: '20261111-mine.md' });
     expect(s.todoId).toBe('20261111-mine.md');
-    expect(s.kind).toBe('tds');
+    expect(s.kind).toBe('personal');
   });
 
   it('is dropped, never refused, on resume when the to-do has gone', async () => {

@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.64.3 — 2026-11-23
+
+- **fix**: a message sent in a chat that went to sleep reopens it
+- **fix**: a woken chat keeps its client and to-do; /clear works after a restart
+
 ## v0.64.2 — 2026-11-23
 
 - **fix**: proposal panel's Previous/Next stay fixed above the proposal

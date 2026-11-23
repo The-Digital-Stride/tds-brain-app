@@ -3125,22 +3125,33 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         title = pastTitle(past, 'Earlier chat');
         // Read here, in the awaited part: never between the re-check below and `live.set`.
         kind = await chatKinds.kindOf(resume).catch(() => 'tds' as const);
-        // The saved place, also read here; it never refuses (the request's client and project are ignored).
+        // The saved place, also read here; it never refuses.
         ({ client, project } = await restorePlace(resume));
-      } else {
+      }
+      // On resume the saved place wins. Only when nothing was saved (a chat from before places were saved) does a
+      // woken chat keep the client and project the page sends (it sends what it had); one that has gone since is
+      // dropped, never refused: the person's message must still get through. A new chat's are checked strictly.
+      if (!(resume && (client !== null || project !== null))) {
         if (req.client !== undefined && req.client !== null) {
           const slug = req.client;
           const known = typeof slug === 'string' && (await opts.brain.clients()).some((c) => c.slug === slug);
-          if (!known)
+          if (known) client = slug;
+          else if (!resume)
             throw new SessionError('bad-request', 'That client is not in the brain. Pick one from the list.');
-          client = slug;
         }
         if (req.project !== undefined && req.project !== null) {
-          ({ client, project } = await checkProject(req.project, client));
+          if (!resume) ({ client, project } = await checkProject(req.project, client));
+          else {
+            try {
+              ({ client, project } = await checkProject(req.project, client));
+            } catch {
+              // Gone, archived or another client's: the woken chat carries on without it.
+            }
+          }
         }
       }
       let todoId: string | null = null;
-      if (!resume && req.todoId !== undefined && req.todoId !== null) {
+      if (req.todoId !== undefined && req.todoId !== null) {
         const id: unknown = req.todoId;
         let listed: string | null = null;
         if (typeof id === 'string') {
@@ -3149,9 +3160,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           // Sessions store the `key`: a bare id for TDS (as before), `personal/<id>` for personal.
           const found = [...list.mine, ...list.open].find((t) => t.key === id);
           listed = found?.key ?? null;
-          if (found) kind = found.scope;
+          // A reopened chat keeps the kind saved for it.
+          if (found && !resume) kind = found.scope;
         }
-        if (!listed) throw new SessionError('bad-request', 'That to-do is not on your list any more.');
+        if (!listed && !resume)
+          throw new SessionError('bad-request', 'That to-do is not on your list any more.');
         todoId = listed;
       }
       // A personal project's chat is personal, whatever else it was started from or saved as.

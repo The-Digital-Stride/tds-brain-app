@@ -507,6 +507,16 @@ function messageOf(err: unknown): string {
   return err instanceof ApiFailure ? err.message : 'Something went wrong. Please try again.';
 }
 
+/** True when a send was refused because its chat has ended, not for some other reason. */
+async function chatHasEnded(id: string, err: unknown): Promise<boolean> {
+  if (!(err instanceof ApiFailure)) return false;
+  if (err.code === 'session-closed') return true;
+  // `not-found` also covers a file that has gone: the chat has ended only if the server no longer has it open.
+  if (err.code !== 'not-found') return false;
+  const list = await api.sessions().catch(() => null);
+  return list !== null && !list.live.some((s) => s.id === id);
+}
+
 let newChatKey = 0;
 function freshNewChat(
   draft = '',
@@ -599,6 +609,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
+  // What each chat needs to wake up (its Claude session id, client and to-do), kept after it leaves the open list.
+  const wakeInfo = useRef(
+    new Map<
+      string,
+      { sdk: string | null; client: string | null; todoId: string | null; project: ProjectKey | null }
+    >(),
+  );
+  useEffect(() => {
+    for (const s of sessions?.live ?? [])
+      wakeInfo.current.set(s.id, {
+        sdk: s.sdkSessionId,
+        client: s.client,
+        todoId: s.todoId,
+        project: s.project ?? null,
+      });
+  }, [sessions]);
   const serverStartedAt = useRef<string | null>(null);
 
   const failGate = useCallback((err: unknown) => {
@@ -853,8 +879,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.close(id);
       } catch (err) {
-        setActionError(messageOf(err));
-        return false;
+        // A chat that went to sleep before the app restarted is unknown to the server now: it is closed already.
+        const gone = err instanceof ApiFailure && (err.code === 'not-found' || err.code === 'session-closed');
+        if (!gone) {
+          setActionError(messageOf(err));
+          return false;
+        }
       }
       setActionError(null);
       setCloseRequest(null);
@@ -1043,6 +1073,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [loadSessions, openChat],
   );
 
+  /**
+   * Sends into a chat that has ended (idle for 30 minutes, or the app restarted) by reopening it from its history
+   * with the message, in the same place on screen, so the person never has to paste it again. When another tab has
+   * reopened it already, the message goes to that one. False when there is nothing to reopen it from.
+   */
+  const wakeAndSend = useCallback(
+    async (endedId: string, body: string, attachments: string[]): Promise<boolean> => {
+      const info = wakeInfo.current.get(endedId);
+      const sdk = chatsRef.current[endedId]?.sdkSessionId ?? info?.sdk ?? null;
+      // A chat being deleted must not come back.
+      if (!sdk || hiddenChatRef.current.has(sdk)) return false;
+      let id: string;
+      try {
+        // Its client and to-do go with it, so Claude still knows who the chat is for.
+        const { session } = await api.startSession({
+          resume: sdk,
+          prompt: body,
+          ...(info?.client ? { client: info.client } : {}),
+          ...(info?.todoId ? { todoId: info.todoId } : {}),
+          ...(info?.project ? { project: info.project } : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
+        });
+        id = session.id;
+      } catch (err) {
+        if (!(err instanceof ApiFailure && err.code === 'already-open')) throw err;
+        const open = (await api.sessions()).live.find((s) => s.sdkSessionId === sdk);
+        if (!open) throw err;
+        await api.sendMessage(open.id, body, attachments);
+        id = open.id;
+      }
+      void loadSessions();
+      // Only if the person is still on the ended chat: never pull them back from somewhere else.
+      setActiveChat((cur) =>
+        cur.kind === 'live' && cur.sessionId === endedId ? { kind: 'live', sessionId: id } : cur,
+      );
+      setDrawerChat((d) => (d === endedId ? id : d));
+      return true;
+    },
+    [loadSessions],
+  );
+
   const send = useCallback(
     async (text: string, client: string | null, attachments: string[] = [], project?: ProjectKey | null) => {
       const body = text.trim();
@@ -1081,7 +1152,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void loadSessions();
           setActiveChat({ kind: 'live', sessionId: session.id });
         } else {
-          await api.sendMessage(activeChat.sessionId, body, attachments);
+          const id = activeChat.sessionId;
+          const woken =
+            chatsRef.current[id]?.sessionState === 'closed' && (await wakeAndSend(id, body, attachments));
+          if (!woken) {
+            try {
+              await api.sendMessage(id, body, attachments);
+            } catch (err) {
+              // The page may not know yet that the chat has ended (the app restarted, or the stream was away).
+              if (!(await chatHasEnded(id, err)) || !(await wakeAndSend(id, body, attachments))) throw err;
+            }
+          }
         }
         setActionError(null);
         return true;
@@ -1092,7 +1173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [activeChat, boot, todos, loadSessions, loadTodos, keepStars],
+    [activeChat, boot, todos, loadSessions, loadTodos, keepStars, wakeAndSend],
   );
 
   const askPage = useCallback(async (sessionId: string, key: string, req: PageAskRequest) => {

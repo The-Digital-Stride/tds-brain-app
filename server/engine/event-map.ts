@@ -181,9 +181,31 @@ export function createEventMapper(): EventMapper {
     return was ? [{ type: 'compaction', phase: 'ended' }] : [];
   }
 
+  /**
+   * A hook in Claude Code (for example the cache-tax mod, when the chat's cache has gone cold) can drop the
+   * person's message before Claude sees it. Claude Code says so with `prompt_submit_outcome.prompt_kept: false`.
+   * Without this the chat just went from working to ready with no reply (Ian, 2026-11-23).
+   */
+  function mapInformational(msg: RawMessage): ChatEvent[] {
+    if (parentOf(msg) !== null) return [];
+    const outcome = isRec(msg.prompt_submit_outcome) ? msg.prompt_submit_outcome : null;
+    if (!outcome || outcome.prompt_kept !== false) return [];
+    const why = (str(outcome.reason) ?? '').replace(/\s+/g, ' ').trim();
+    const said = why ? ` It said: "${why.length > 500 ? `${why.slice(0, 499)}…` : why}"` : '';
+    return [
+      {
+        type: 'notice',
+        level: 'warning',
+        text: `This message wasn't sent, so Claude hasn't seen it. A check in Claude Code held it back.${said}`,
+        resend: true,
+      },
+    ];
+  }
+
   function mapSystem(msg: RawMessage, deniedByPerson: ReadonlySet<string> | undefined): ChatEvent[] {
     if (msg.subtype === 'permission_denied') return mapDenied(msg, deniedByPerson);
     if (msg.subtype === 'status' || msg.subtype === 'compact_boundary') return mapCompaction(msg);
+    if (msg.subtype === 'informational') return mapInformational(msg);
     if (msg.subtype !== 'init') return [];
     const sdkSessionId = str(msg.session_id);
     if (!sdkSessionId) return [];

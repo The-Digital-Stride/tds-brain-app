@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
+import { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   chatFileFor,
   findPathMentions,
@@ -8,11 +8,13 @@ import {
 } from '../../../shared/chat-files.ts';
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
+import { api } from '../api.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { type ActivityEntry, currentStep, toBlocks } from '../state/blocks.ts';
 import type { ChatItem, ChildItem, ToolItem } from '../state/chat-reducer.ts';
 import { reportTitle, STEP_WORDS } from '../state/steps.ts';
+import { useStore } from '../store.tsx';
 import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
 
@@ -168,7 +170,43 @@ function itemKey(item: ChatItem): string {
     : `${item.kind}-${item.id}`;
 }
 
-function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
+/**
+ * A message a hook in Claude Code held back (the cache-tax mod does this once when a chat's cache has gone cold).
+ * Send again sends exactly what went the first time, files included, so nothing has to be pasted again.
+ */
+function HeldNotice({ text, sessionId, canResend }: { text: string; sessionId: string; canResend: boolean }) {
+  const { run, requestComposerFocus } = useStore();
+  const [busy, setBusy] = useState(false);
+  const noteId = useId();
+  return (
+    // Advice, not an emergency: a status, so a screen reader says the message didn't go.
+    <div className="notice" data-shape="box" data-level="warn" role="status">
+      <span id={noteId}>{text}</span>
+      {canResend ? (
+        <button
+          type="button"
+          className="btn"
+          data-size="small"
+          // aria-disabled, never disabled, so focus stays on the button while it works (design system).
+          aria-disabled={busy}
+          aria-describedby={noteId}
+          onClick={async () => {
+            if (busy) return;
+            setBusy(true);
+            // On success the chat starts working, the button goes and the message box takes focus; on failure
+            // the error shows and the button stays.
+            if (await run(() => api.resend(sessionId))) requestComposerFocus();
+            else setBusy(false);
+          }}
+        >
+          Send again
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function Row({ item, sessionId, resendId }: { item: ChatItem; sessionId: string; resendId?: string | null }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -190,6 +228,8 @@ function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
     case 'question':
       return item.outcome === null ? null : <QuestionCard item={item} sessionId={sessionId} />;
     case 'notice':
+      if (item.resend)
+        return <HeldNotice text={item.text} sessionId={sessionId} canResend={item.id === resendId} />;
       return (
         <div
           className="notice"
@@ -265,6 +305,17 @@ export function Transcript({
     };
   }, [files, pages, brainRoot, onFile, onPage]);
   const blocks = useMemo(() => toBlocks(items), [items]);
+  // Send again only on the newest held message, while it is still the last thing said and Claude is free.
+  const resendId = useMemo(() => {
+    if (sessionState !== 'idle') return null;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it?.kind === 'notice' && it.resend) return it.id;
+      // A reply, a newer message or the server's "Sent again." note: nothing is held any more.
+      if (it?.kind === 'user' || it?.kind === 'assistant' || it?.kind === 'notice') return null;
+    }
+    return null;
+  }, [items, sessionState]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
   const scroller = useRef<HTMLDivElement>(null);
@@ -296,7 +347,7 @@ export function Transcript({
                 waiting={sessionState === 'waiting'}
               />
             ) : (
-              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} />
+              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} resendId={resendId} />
             ),
           )}
         </div>

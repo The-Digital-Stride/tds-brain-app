@@ -312,6 +312,11 @@ export interface SessionManager extends LevelSessionApi {
   replyPermission(id: string, reply: PermissionReply): Promise<void>;
   replyQuestion(id: string, reply: QuestionReply): Promise<void>;
   interrupt(id: string): Promise<void>;
+  /**
+   * Sends again the message a hook in Claude Code held back (see `ROUTES.sessionResend`). Throws SessionError:
+   * busy | bad-request (nothing held) | session-closed | not-found.
+   */
+  resend?(id: string): Promise<void>;
   close(id: string): Promise<void>;
   /**
    * Marks a live chat TDS or Personal and saves it (at once when the engine's id is known, else when
@@ -802,6 +807,12 @@ interface Session {
   mapper: EventMapper;
   query: EngineQuery | null;
   input: InputQueue | null;
+  /** The text last handed to Claude Code for a turn, exactly as sent (notes and nudges included). */
+  lastPushed: string | null;
+  /** That text, when a hook in Claude Code dropped it before Claude saw it: what Send again sends. */
+  heldMessage: string | null;
+  /** What the last turn was asked with, so Send again can work out its level again (levels on). */
+  lastAsk: { text: string; files: readonly StagedFile[]; skill: string | null } | null;
   pump: Promise<void> | null;
   pending: Map<string, Pending>;
   /** Tool calls refused on a card (or by the app), so the engine's later denial is not shown twice. */
@@ -1233,6 +1244,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       mapper: createEventMapper(),
       query: null,
       input: null,
+      lastPushed: null,
+      heldMessage: null,
+      lastAsk: null,
       pump: null,
       pending: new Map(),
       deniedTools: new Set(),
@@ -1595,8 +1609,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     for (const event of s.mapper.map(raw, {
       interrupted: s.interruptRequested,
       deniedByPerson: s.deniedTools,
-    }))
+    })) {
+      // A hook dropped the message just sent: keep it, so Send again sends exactly that.
+      if (event.type === 'notice' && event.resend) s.heldMessage = s.lastPushed;
       emit(s, event);
+    }
     s.files?.observe(raw);
     notifyHelpers(s.helperList.observe(raw));
     observeContext(s, raw);
@@ -2242,6 +2259,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.interruptRequested = false;
     s.turnSent = false;
     s.pendingOffer = null;
+    // A newer message replaces one a hook held back: Send again no longer applies.
+    s.heldMessage = null;
     s.helpersRunning.clear();
     s.helpersStarted = 0;
     s.helperList.clear();
@@ -2279,9 +2298,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const kitFirst = kit !== null && s.kitFirst;
     if (kit) s.kitFirst = false;
     const message = withPageNote(withAttachmentNote(text, files), pageNote);
+    s.lastAsk = { text, files, skill };
     if (!levels) {
       if (kitFirst) settleKit(s, typed, pickText(text, files), null);
       s.turnSent = true;
+      s.lastPushed = message;
       s.input?.push(message);
       return;
     }
@@ -2446,6 +2467,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     files: readonly StagedFile[],
     skill: string | null,
     kitFirst = false,
+    /** Send again: push exactly this (as Claude Code was first handed it), with no new nudge. */
+    pushAs: string | null = null,
   ): void {
     const input = s.input;
     const q = s.query;
@@ -2461,6 +2484,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         // Decision 11: the message a helpers pick was made for, once, at Standard or above.
         // Never for a /skill: Claude Code would file the nudge inside the skill's arguments.
         nudge =
+          pushAs === null &&
           levelMode === 'auto' &&
           !skill &&
           s.pick !== before &&
@@ -2468,7 +2492,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
         // Decision 10: what this turn wants, for "the lower level has been wanted N turns running".
         const wanted = levelMode === 'auto' ? tierOfModel(resolved.choice.model) : null;
-        s.wantedTiers = wanted ? [...s.wantedTiers, wanted].slice(-WANTED_TURNS_KEPT) : [];
+        // Send again is the same message: it replaces that message's entry rather than counting twice.
+        const counted = pushAs === null ? s.wantedTiers : s.wantedTiers.slice(0, -1);
+        s.wantedTiers = wanted ? [...counted, wanted].slice(-WANTED_TURNS_KEPT) : [];
         const explicit = levelMode !== 'auto' || resolved.level.source.kind === 'chat';
         let level = resolved.level;
         if (q && s.query === q) {
@@ -2504,7 +2530,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         }
         s.turnSent = true;
         if (nudge) s.nudged = true;
-        input.push(nudge ? withHelpersNudge(message) : message);
+        s.lastPushed = pushAs ?? (nudge ? withHelpersNudge(message) : message);
+        input.push(s.lastPushed);
       });
   }
 
@@ -3373,6 +3400,38 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (!s.turnSent) return;
       const q = s.query;
       if (q) await q.interrupt().catch(() => {});
+    },
+
+    async resend(id) {
+      const s = getLive(id);
+      if (s.turnRunning) throw new SessionError('busy', BUSY_MESSAGE);
+      if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
+      const message = s.heldMessage;
+      // The message is already on screen, so nothing new goes in the transcript: the chat just starts working.
+      if (message === null || !s.input || !s.query) {
+        throw new SessionError(
+          'bad-request',
+          'There is no held message to send again. Type it in the box instead.',
+        );
+      }
+      clearIdle(s);
+      s.heldMessage = null;
+      s.turnRunning = true;
+      s.interruptRequested = false;
+      s.pendingOffer = null;
+      setState(s, 'working');
+      // Marks the held message as sent, so no page offers Send again for it after this (even on replay).
+      emit(s, { type: 'notice', level: 'info', text: 'Sent again.' });
+      const ask = s.lastAsk;
+      if (levels && ask) {
+        // The level may have changed since (picked on the line, or a /skill's level reset): work it out again.
+        s.turnSent = false;
+        sendWhenLevelled(s, ask.text, ask.text, ask.files, ask.skill, false, message);
+        return;
+      }
+      s.turnSent = true;
+      s.lastPushed = message;
+      s.input.push(message);
     },
 
     async close(id) {

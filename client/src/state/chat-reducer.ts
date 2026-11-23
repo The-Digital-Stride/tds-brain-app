@@ -66,6 +66,8 @@ export interface NoticeItem {
   id: string;
   level: 'info' | 'warning' | 'error';
   text: string;
+  /** Claude Code held the message before this back: the transcript offers Send again. */
+  resend?: true;
 }
 
 export interface TurnEndItem {
@@ -375,7 +377,13 @@ function applyEvent(state: ChatState, seqNo: number, event: ChatEvent, at: strin
     case 'notice':
       next.items = [
         ...state.items,
-        { kind: 'notice', id: `notice-${seqNo}`, level: event.level, text: event.text },
+        {
+          kind: 'notice',
+          id: `notice-${seqNo}`,
+          level: event.level,
+          text: event.text,
+          ...(event.resend ? { resend: true as const } : {}),
+        },
       ];
       return next;
     case 'files':

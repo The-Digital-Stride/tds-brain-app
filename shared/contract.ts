@@ -1446,7 +1446,17 @@ export type ChatEvent =
       durationMs: number | null;
       errorText: string | null;
     }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
+  | {
+      type: 'notice';
+      level: 'info' | 'warning' | 'error';
+      text: string;
+      /**
+       * A hook in Claude Code dropped the person's last message before Claude saw it (the cache-tax mod does this
+       * once when a chat's cache has gone cold). The page offers Send again (`ROUTES.sessionResend`). Absent
+       * otherwise; an older page ignores it and shows the text.
+       */
+      resend?: true;
+    }
   /**
    * Context management (plan 2026-11-14-context-management, decisions 1–7). Sent only on streams
    * opened with `context=1` (see `ROUTES.stream`), for the same reason as `files`. The server keeps
@@ -1987,6 +1997,14 @@ export const ROUTES = {
   sessionPermission: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permission`,
   sessionAnswer: (id: string) => `/api/sessions/${encodeURIComponent(id)}/answer`,
   sessionInterrupt: (id: string) => `/api/sessions/${encodeURIComponent(id)}/interrupt`,
+  /**
+   * `POST {}` → `{ ok: true }`: sends again the message a hook in Claude Code held back (a `notice` with `resend`),
+   * exactly as it went the first time, files included. `busy` while a turn runs; `bad-request` when nothing is held
+   * (it was sent again already, or a newer message replaced it); `session-closed` / `not-found` as for messages.
+   * On success the stream gets an `info` notice "Sent again." (after it, no page offers Send again for that message),
+   * and with levels on, the level is worked out again first, as for a new message.
+   */
+  sessionResend: (id: string) => `/api/sessions/${encodeURIComponent(id)}/resend`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
   /**
    * `DELETE`: moves an earlier chat's history (Claude Code's `<id>.jsonl` and its `<id>/` folder) to the macOS

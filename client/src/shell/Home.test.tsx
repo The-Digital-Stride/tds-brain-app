@@ -682,6 +682,21 @@ describe('Home', () => {
     expect(await card1.findByRole('button', { name: 'Show 1 more to-do' })).toBeTruthy();
   });
 
+  it('keeps focus in the card when the last favourite to-do is taken off it', async () => {
+    const only = todo('m0.md', 'Only favourite', null);
+    api.todos.mockResolvedValue({ ...todoList, mine: [only] });
+    api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteTodos: [only.key] } });
+    api.updatePrefs.mockResolvedValue({ ...boot.prefs, favouriteTodos: [] });
+    await renderHome();
+    const star = await card('Favourite to-dos').findByRole('button', { name: 'Favourite: Only favourite' });
+    star.focus();
+    fireEvent.click(star);
+    await card('Favourite to-dos').findByText('Favourite a to-do to keep it here.', { exact: false });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Favourite to-dos' })),
+    );
+  });
+
   it('lists a pinned chat that is not open, and opens it from earlier chats', async () => {
     const sid = '33333333-3333-4333-8333-333333333333';
     api.sessions.mockResolvedValue({

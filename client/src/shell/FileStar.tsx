@@ -3,13 +3,13 @@ import { useStore } from '../store.tsx';
 import { NO_FAVOURITES, StarButton } from './StarButton.tsx';
 
 /** The star on a file (plan 2026-11-15-home-pinned-cards): starred files are "Favourite files" on Home. */
-export function FileStar({ item }: { item: LibraryItem }) {
+export function FileStar({ item, name }: { item: LibraryItem; name?: string }) {
   const { boot, toggleFavouriteFile } = useStore();
   const favs = boot?.prefs.favouriteFiles ?? NO_FAVOURITES;
   return (
     <StarButton
       id={item.id}
-      title={item.title}
+      title={name ?? item.title}
       on={favs.includes(item.id)}
       onPress={(id) => void toggleFavouriteFile(id)}
     />

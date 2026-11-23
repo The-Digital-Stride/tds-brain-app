@@ -294,7 +294,7 @@ export function DetailActions({
         <button type="button" className="btn" data-variant={onOpen ? undefined : 'primary'} onClick={onAsk}>
           Ask Claude about it
         </button>
-        <FileStar item={item} />
+        <FileStar item={item} name={name} />
         {onDelete ? <DeleteButton item={item} name={name} onDelete={onDelete} /> : null}
       </div>
       <div className="lib-actions-row">

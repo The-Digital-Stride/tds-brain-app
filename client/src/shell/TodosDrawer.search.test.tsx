@@ -467,6 +467,23 @@ describe('revealTodo (from the global search)', () => {
     expect(fakeShell.state.todoPanel).toMatchObject({ key: 'b.md', mode: 'read' });
   });
 
+  it('keeps the Working on project when the revealed to-do is in it, and clears it when it is not', async () => {
+    const { projectChoice } = await import('../state/client-choice.ts');
+    const inside = todo('in.md', 'Inside', { projectMatch: { how: 'key', key: 'acme/site' } });
+    const outside = todo('out.md', 'Outside', { projectMatch: { how: 'key', key: 'acme/other' } });
+    setStore([inside, outside]);
+    projectChoice.set('acme/site');
+    ask(inside);
+    const { rerender } = render(<TodosDrawer />);
+    expect(projectChoice.get().project).toBe('acme/site');
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'in.md', mode: 'read' });
+    ask(outside, 2);
+    rerender(<TodosDrawer />);
+    expect(projectChoice.get().project).toBe('');
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'out.md', mode: 'read' });
+    projectChoice.set('');
+  });
+
   it('opens a group the person closed by hand when the same to-do is revealed again', () => {
     const late = todo('l.md', 'Late thing', { due: '2000-01-01' });
     const target = todo('n.md', 'Undated thing', { due: null });

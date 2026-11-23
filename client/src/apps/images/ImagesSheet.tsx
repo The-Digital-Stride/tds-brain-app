@@ -91,7 +91,7 @@ function Item({
           <span className="line-meta">{layout === 'list' ? metaWords(image) : tileWords(image)}</span>
         </span>
       </button>
-      <FileStar item={image} />
+      <FileStar item={image} name={image.name} />
       <ViewButton title={image.name} onView={image.view ? onView : null} />
       {layout === 'list' ? (
         <DeleteButton

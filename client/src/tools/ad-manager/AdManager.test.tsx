@@ -310,6 +310,13 @@ describe('panel', () => {
     expect(screen.getByText('Effect of Add negatives')).toBeTruthy();
   });
 
+  it('puts away a panel left open when the sheet comes up with no proposal chosen', () => {
+    api.adsApprovals.mockReturnValue(new Promise(() => {}));
+    shell.state.panelOpen = true;
+    mount();
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: false });
+  });
+
   it("doesn't show the first proposal as chosen while the panel is shut", async () => {
     shell.state.panelOpen = false;
     await ready();

@@ -20,7 +20,13 @@ import {
   useProjects,
 } from '../state/projects.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
-import { EMPTY_FILTER, filterActive, filterAsked, filterTodos } from '../state/todo-filter.ts';
+import {
+  EMPTY_FILTER,
+  filterActive,
+  filterAsked,
+  filterTodos,
+  todoProjectKey,
+} from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, useStore } from '../store.tsx';
@@ -501,14 +507,17 @@ export function TodosDrawer() {
     if (!reveal || !todos) return;
     const key = reveal.todo.key;
     clearReveal();
-    const inMine = todos.mine.some((t) => t.key === key);
+    const mineItem = todos.mine.find((t) => t.key === key);
+    const inMine = mineItem !== undefined;
+    const item = mineItem ?? todos.open.find((t) => t.key === key);
     // A to-do that has gone since it was found has nothing to show.
-    if (!inMine && !todos.open.some((t) => t.key === key)) return;
+    if (!item) return;
     setVisitSeen(new Set());
     setTabState(inMine ? 'mine' : 'open');
     setFilter(EMPTY_FILTER);
-    // The to-do must show: a project held by the picker would hide it.
-    if (pickedProject) setChoice({ client: pickedClient, project: '' });
+    // The to-do must show: a project held by the picker would hide it, but one it is in keeps the choice.
+    if (pickedProject && todoProjectKey(item) !== pickedProject)
+      setChoice({ client: pickedClient, project: '' });
     setRevealed({ key, n: reveal.n });
     // The to-do opens in the panel, read first; closing it puts the keyboard back on the row.
     setMessage('');

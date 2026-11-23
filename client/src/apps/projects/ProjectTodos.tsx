@@ -53,6 +53,8 @@ export function ProjectTodos({
   const canAdd = todos?.canProject === true && !card.archived;
 
   const close = () => {
+    setTitle('');
+    setStage('');
     onAdding(false);
     setMessage('');
     setAsking(false);

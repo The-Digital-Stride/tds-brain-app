@@ -221,6 +221,9 @@ describe('the To-dos tab (fix 2)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
       expect(screen.queryByLabelText('To-do')).toBeNull();
+      // Reopened, the form starts empty: the discarded typing is gone.
+      fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('');
     });
 
     it('keeps the typing on Esc', async () => {

@@ -468,7 +468,7 @@ export function Home() {
                   ))}
               </section>
             ) : null}
-            <section className="card" aria-labelledby="home-todos" ref={todoCard}>
+            <section className="card" aria-labelledby="home-todos" ref={todoCard} tabIndex={-1}>
               <div className="card-head">
                 <h2 id="home-todos">Favourite to-dos</h2>
                 {todos ? <span className="count">{pinnedTodoRows.length}</span> : null}
@@ -538,7 +538,7 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-chats" ref={chatCard}>
+            <section className="card" aria-labelledby="home-chats" ref={chatCard} tabIndex={-1}>
               <div className="card-head">
                 <h2 id="home-chats">Favourite chats</h2>
                 <button
@@ -599,7 +599,7 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-files" ref={fileCard}>
+            <section className="card" aria-labelledby="home-files" ref={fileCard} tabIndex={-1}>
               <div className="card-head">
                 <h2 id="home-files">Favourite files</h2>
                 <button
@@ -656,7 +656,7 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-skills" ref={skillCard}>
+            <section className="card" aria-labelledby="home-skills" ref={skillCard} tabIndex={-1}>
               <div className="card-head">
                 <h2 id="home-skills">{skillsTitle}</h2>
                 {skillsMenuVisible(boot?.identity.role ?? 'unknown') ? (

@@ -408,6 +408,14 @@ store factory for state the sheet and the panel share, plus `library.css`. A new
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples
 list the real files the server finds; nothing is sample data.
 
+`LibraryBrowser` (`client/src/apps/shared/LibraryBrowser.tsx`) is the whole body of a library page: type filter with counts, sort,
+layout, summary, folder cards, star, delete with Undo and the selection bar. Documents and Images are this one component, each
+passing a `KindSpec` from its own `kind.tsx` (type options, search, sort, summary words, the row and tile), so a new place that
+lists files uses it too rather than drawing look-alike rows. State comes in through `view` and `onView` (an app store, or a plain
+`useState`); loading and what a press does stay with the host. Optional: `lead` (a control before the app's own), `nested` (inside
+another card, no page padding), `bin={false}`, `takeOut` (a remove action in the bin's place), `note` (extra meta words),
+`pickers` (whose library and which project; left out, neither control shows) and `onOpen` (left out, no Open button and no gap).
+
 | App | What is its own |
 |---|---|
 | `client/src/apps/images` | Grid or list. Tiles: padding 8px, radius 10, 2px apart, picture box 3:2 with a hairline edge, the picture contained at its own proportions. No picture (or one that fails to load): the standard tile, the `image` line icon centred in the same box. Meta: the dimensions, else the size. |

@@ -260,7 +260,13 @@ const CHANGES = [
 
 describe('a file row', () => {
   it('opens the file in Documents, chosen there with its details panel open', async () => {
-    const doc = { id: 'd1', kind: 'document', path: 'clients/acme/brief.pdf', name: 'brief.pdf', title: 'Brief' };
+    const doc = {
+      id: 'd1',
+      kind: 'document',
+      path: 'clients/acme/brief.pdf',
+      name: 'brief.pdf',
+      title: 'Brief',
+    };
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
@@ -292,13 +298,21 @@ describe('a file row', () => {
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
-          { kind: 'file-added', text: 'New file: Gone', at: null, byName: null, target: { kind: 'file', path: 'x.pdf' } },
+          {
+            kind: 'file-added',
+            text: 'New file: Gone',
+            at: null,
+            byName: null,
+            target: { kind: 'file', path: 'x.pdf' },
+          },
         ] as never,
       }),
     );
     await openProject();
     fireEvent.click(await screen.findByRole('button', { name: /New file: Gone/ }));
-    expect(await screen.findByText("That file can't be opened from here. Look for it under Files.")).toBeTruthy();
+    expect(
+      await screen.findByText("That file can't be opened from here. Look for it under Files."),
+    ).toBeTruthy();
     expect(store.openView).not.toHaveBeenCalled();
   });
 });

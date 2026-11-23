@@ -13,6 +13,11 @@
     min-height: 100%;
     padding: var(--sp-12) var(--sheet-gutter) var(--sp-16);
   }
+  /* Inside another card (a project's Files tab): the card has the padding. */
+  .lib[data-nested="true"] {
+    min-height: 0;
+    padding: 0;
+  }
   /* File names are shown as written: Inter would otherwise turn the x in "1200x628" into a ×. */
   .lib .line-title,
   .lib-name {
@@ -147,6 +152,28 @@
     background: var(--surface);
     color: var(--iron);
   }
+  /* A document row reads like a line in a table: what it is, then when it last changed (Documents and a project's Files tab). */
+  .doc-col {
+    flex: none;
+    overflow: hidden;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .doc-date {
+    width: 80px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  /* On a narrow sheet the date goes: the order still shows what is newest, and the panel has it. */
+  @container (max-width: 480px) {
+    .doc-date {
+      display: none;
+    }
+  }
+
   /* Rows: the tray's own (Home's hover and pressed states apply). */
   .lib .lib-row {
     position: relative;

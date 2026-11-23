@@ -215,8 +215,8 @@ describe('the design system guard: scales', () => {
   });
 
   // Sheets swept onto the tokens in Release 4 (plan 2026-11-22-ux-consistency, decision 24): a raw size here,
-  // even one on the scale, fails. tokens.css defines the scales, and apps/images/images.css has no declarations
-  // of its own to lock, so neither is listed.
+  // even one on the scale, fails. tokens.css defines the scales, and apps/images/images.css and
+  // apps/documents/documents.css have no sizes of their own to lock, so none of them is listed.
   const LOCKED = [
     'styles/base.css',
     'styles/todo-panel.css',
@@ -229,7 +229,6 @@ describe('the design system guard: scales', () => {
     'styles/command.css',
     'styles/summary.css',
     'apps/shared/library.css',
-    'apps/documents/documents.css',
     'styles/chat.css',
     'styles/shell.css',
     'styles/drawers.css',

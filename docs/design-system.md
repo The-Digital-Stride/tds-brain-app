@@ -152,7 +152,11 @@ named here or it isn't one.
    rows open their thing; a to-do's title opens it in the to-do panel (Home's Favourite to-dos too). A row
    naming something this person can't open there goes to the tab that lists it instead, with focus on that tab
    (a project's activity rows: a teammate's to-do opens the To-dos tab, a note the Updates tab); a finished
-   to-do they can't open is plain text (`.line.proj-static`, no lift). One
+   to-do they can't open is plain text (`.line.proj-static`, no lift). A file row there opens the file in
+   Documents or Images, chosen, with its details panel open. "Since you last looked" keeps its rows until the
+   person presses its quiet small Clear (spoken "Clear Since you last looked"; the head's `.count` is every
+   change it clears, shown or not): it acts at once with no Undo, then one status line and focus on the card's
+   heading, or on Clear when the read was too old and nothing was cleared. One
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
    opens it large. Project Files has no pane, so its row opens the file.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
@@ -407,6 +411,15 @@ then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples
 list the real files the server finds; nothing is sample data.
+
+`LibraryBrowser` (`client/src/apps/shared/LibraryBrowser.tsx`) is the whole body of a library page: type filter with counts, sort,
+layout, summary, folder cards, star, delete with Undo and the selection bar. Documents and Images are this one component, each
+passing a `KindSpec` from its own `kind.tsx` (type options, search, sort, summary words, the row and tile), so a new place that
+lists files uses it too rather than drawing look-alike rows. State comes in through `view` and `onView` (an app store, or a plain
+`useState`); loading and what a press does stay with the host. Optional: `lead` (a control drawn first in the tools row, before search, so it is first in Tab order too; a
+project's Files tab puts its Documents/Images switch there), `nested` (inside
+another card, no page padding), `bin={false}`, `takeOut` (a remove action in the bin's place), `note` (extra meta words),
+`pickers` (whose library and which project; left out, neither control shows) and `onOpen` (left out, no Open button and no gap).
 
 | App | What is its own |
 |---|---|

@@ -71,7 +71,7 @@ export function ProjectFilter({
   );
 }
 
-/** The first row of a library sheet: whose library, a search, then the app's own control. */
+/** The first row of a library sheet: whose library (when `onScope` is given), a search, then the app's own control. */
 export function LibraryTools({
   id,
   scopes,
@@ -83,13 +83,15 @@ export function LibraryTools({
   placeholder,
   project,
   onProject,
+  lead,
   children,
 }: {
   /** Prefix for the field ids, e.g. "imgs". */
   id: string;
-  scopes: LibraryScope[];
-  scope: string;
-  onScope: (scope: string) => void;
+  /** Whose library: the picker is drawn only when `onScope` is given. */
+  scopes?: LibraryScope[];
+  scope?: string;
+  onScope?: (scope: string) => void;
   query: string;
   onQuery: (query: string) => void;
   searchLabel: string;
@@ -97,6 +99,8 @@ export function LibraryTools({
   /** This app's own project filter (a ProjectKey, '' for none). Shown when `onProject` is given. */
   project?: string;
   onProject?: (key: string) => void;
+  /** A control drawn first in the row, before the pickers and search (a project's Documents/Images switch). */
+  lead?: ReactNode;
   children?: ReactNode;
 }) {
   // A client's library is found by the client's codes and other names too ("UC"), as in every client picker.
@@ -112,25 +116,31 @@ export function LibraryTools({
     group,
     ...termsFor(s),
   });
+  const scopeList = scopes ?? [];
   const options = [
-    ...scopes.filter((s) => s.kind === 'personal').map(option('Mine')),
-    ...scopes.filter((s) => s.kind === 'client').map(option('Clients')),
-    ...scopes.filter((s) => s.kind === 'shared').map(option('Shared')),
+    ...scopeList.filter((s) => s.kind === 'personal').map(option('Mine')),
+    ...scopeList.filter((s) => s.kind === 'client').map(option('Clients')),
+    ...scopeList.filter((s) => s.kind === 'shared').map(option('Shared')),
   ];
   return (
     <div className="lib-tools">
-      <label className="visually-hidden" htmlFor={`${id}-scope`}>
-        Library
-      </label>
-      <SearchSelect
-        id={`${id}-scope`}
-        className="lib-client"
-        value={scope}
-        options={options}
-        recentKey="library"
-        disabled={scopes.length === 0}
-        onChange={onScope}
-      />
+      {lead}
+      {onScope ? (
+        <>
+          <label className="visually-hidden" htmlFor={`${id}-scope`}>
+            Library
+          </label>
+          <SearchSelect
+            id={`${id}-scope`}
+            className="lib-client"
+            value={scope ?? ''}
+            options={options}
+            recentKey="library"
+            disabled={scopeList.length === 0}
+            onChange={onScope}
+          />
+        </>
+      ) : null}
       {onProject ? <ProjectFilter id={`${id}-project`} value={project ?? ''} onChange={onProject} /> : null}
       <div className="lib-search">
         <Icon name="search" size={16} />

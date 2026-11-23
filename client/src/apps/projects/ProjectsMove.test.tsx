@@ -280,9 +280,12 @@ describe('the move screen', () => {
     expect(api.moveProject.mock.calls[0]?.[0]).toMatchObject({ filesExpect: FILES });
     // The sheet sets the words a moment later, so a repeat of the same words is still read out.
     await waitFor(() =>
-      expect(screen.getByRole('status', { name: '' }).textContent).toBe(
-        'Moved to Acme Heating. 3 to-dos moved with it.',
-      ),
+      // The Overview's own status line is in the page too, so find the one holding these words.
+      expect(
+        screen
+          .getAllByRole('status', { name: '' })
+          .some((s) => s.textContent === 'Moved to Acme Heating. 3 to-dos moved with it.'),
+      ).toBe(true),
     );
     expect(projectChoice.get().project).toBe('acme/site');
   });

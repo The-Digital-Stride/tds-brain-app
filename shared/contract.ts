@@ -1973,6 +1973,8 @@ export const ROUTES = {
   projectSeen: '/api/projects/seen',
   /** Claude artifacts in projects (decision 8). `POST` JSON ProjectArtifactRequest → ProjectArtifactResponse (shared/projects-contract.ts). */
   projectArtifact: '/api/projects/artifact',
+  /** R2 phase 4. `GET ?key=<ProjectKey>` → ProjectMeetingsResponse (shared/project-meetings-contract.ts). This Mac's own calendar only. */
+  projectMeetings: '/api/projects/meetings',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

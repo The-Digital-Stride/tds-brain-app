@@ -13,7 +13,7 @@ reviewed: 2026-11-23
 
 ## What it does
 
-Projects shows the work the team does for each client. Each project has a page with its brief, team, to-dos and files.
+Projects shows the team's work for each client: each project's brief, team, to-dos and files.
 
 ## Why it helps
 
@@ -24,19 +24,20 @@ Projects shows the work the team does for each client. Each project has a page w
 
 1. Open Projects from the rail.
 2. Choose **Mine** for your projects, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what is new, what is due soon and the team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images with the same search, filters and layouts as Documents. **Add files** adds some from the library; the cross takes one off.
-4. Press **New project** to add one, or **Edit** to change one. **Add to team** keeps a person marked "from to-dos".
+3. Open a project. **Overview** shows what's new, what's due and the team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images, with the same filters as Documents. **Add files** adds some from the library; the cross takes one off.
+4. **New project** adds one; **Edit** changes one. **Add to team** keeps a person marked "from to-dos".
 5. **New chat for this project** starts a chat whose files are saved in the project, under **Files**.
-6. To move a project to another client, press **Move**.
+6. **Move** moves a project to another client.
 7. When a project is finished, press **Archive** and choose what happens to each open to-do.
-8. To see archived projects, set the status filter to **Archived**. Open one and press **Unarchive** to bring it back.
+8. Archived projects are under the **Archived** status filter. **Unarchive** brings one back.
 9. On a tidy-up notice, press **Tidy up** and review each label.
 10. To remove an archived project, press **Delete** and type its name.
 
 ## Good to know
 
 - **Since you last looked** keeps its changes until you press **Clear**.
-- A project without a card is read-only. Press **Add a card** to fix that.
+- **Meetings** shows your last and next meeting, from your calendar via /gm, on your Mac only. **File the notes** starts a chat to file them.
+- A project without a card is read-only until you press **Add a card**.
 - Anyone who can edit a project can archive it. Only its Account Owner or the brain's Owner can delete it.
 - Anyone on the team can edit shared projects. Only the Account Owner, an owner or a scout can change the Account Owner.
 - Personal projects are only yours, and a move can't take a project back to personal.

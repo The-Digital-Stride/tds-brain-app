@@ -96,6 +96,7 @@ import {
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
+import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import { UPDATE_SUMMARY_MAX } from '../../shared/project-updates-contract.ts';
 import {
   PROJECT_BRIEF_MAX,
@@ -184,6 +185,7 @@ export interface RouteContext {
     projectSeen?: (key: ProjectKey, token: string, identity: Identity) => Promise<void>;
     /** Claude artifacts in projects (decision 8): "Add a claude.ai page". Absent: the route says it isn't there. */
     projectArtifact?: ProjectArtifactService;
+    projectMeetings?: (key: ProjectKey) => Promise<ProjectMeetingsResponse>;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -1415,6 +1417,20 @@ async function projectsRoute(
     return;
   }
 
+  if (path === ROUTES.projectMeetings) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const read = ctx.brain.projectMeetings;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain, key));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's meetings");
+    }
+    return;
+  }
+
   if (path === ROUTES.projectSeen) {
     if (method !== 'POST') throw methodNotAllowed();
     const body = await readJson(req);
@@ -2532,6 +2548,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectActivity ||
     path === ROUTES.projectSeen ||
     path === ROUTES.projectArtifact ||
+    path === ROUTES.projectMeetings ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

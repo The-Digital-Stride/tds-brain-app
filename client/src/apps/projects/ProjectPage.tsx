@@ -30,6 +30,7 @@ import {
 } from './logic.ts';
 import { type ActivityState, ProjectActivity, useProjectActivity } from './ProjectActivity.tsx';
 import { ProjectFiles } from './ProjectFiles.tsx';
+import { type MeetingsState, ProjectMeetings, useProjectMeetings } from './ProjectMeetings.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
 import { ProjectUpdates } from './ProjectUpdates.tsx';
 import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
@@ -240,6 +241,7 @@ function Overview({
   canMove,
   removal,
   activity,
+  meetings,
   onUpdates,
   onTodos,
   onAddCard,
@@ -252,6 +254,7 @@ function Overview({
   canMove: MoveState;
   removal: Removal;
   activity: ActivityState;
+  meetings: MeetingsState;
   onUpdates: () => void;
   onTodos: () => void;
   onAddCard: () => void;
@@ -345,6 +348,8 @@ function Overview({
             key={card.key}
             projectKey={card.key}
             activity={activity}
+            meetings={meetings}
+            between={<ProjectMeetings card={card} clients={clients} meetings={meetings} />}
             onUpdates={onUpdates}
             onTodos={onTodos}
           />
@@ -535,6 +540,8 @@ export function ProjectPage({
   const projectTodos = useProjectTodos(card.key, card.openTodos);
   // Read once per project; it says what was seen when the person leaves (see useProjectActivity).
   const activity = useProjectActivity(card.key, !card.archived);
+  // Read once per project too: the Meetings card and Coming up share it.
+  const meetings = useProjectMeetings(card.key, !card.archived);
   // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
   // And Add a claude.ai page, offered only where the server says so (live project with a card, not legacy).
@@ -717,6 +724,7 @@ export function ProjectPage({
             canMove={moveState(card, list)}
             removal={removal}
             activity={activity}
+            meetings={meetings}
             onUpdates={() => chooseTabFromRow('updates')}
             onTodos={() => chooseTabFromRow('todos')}
             onAddCard={onAddCard}

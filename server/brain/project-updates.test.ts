@@ -281,6 +281,44 @@ describe('canAdd and canRemove', () => {
     const r = await setup({ cards: [card({ card: 'none' })] }).svc.read(KEY, null, me());
     expect(r.canAdd).toBe(false);
   });
+
+  it('nothing is removable while the card is missing or unreadable (the script would refuse)', async () => {
+    seed();
+    for (const state of ['none', 'unreadable'] as const) {
+      const r = await setup({ cards: [card({ card: state })] }).svc.read(KEY, null, me('owner'));
+      expect(r.canAdd).toBe(false);
+      expect(r.updates.some((u) => u.canRemove)).toBe(false);
+    }
+  });
+
+  it('a hand-made entry whose name the script would refuse is listed but not removable', async () => {
+    put(`${FOLDER}/updates/call-with-alex.md`, entry(t(5), 'sam-example', 'call', 'Hand made'));
+    const r = await setup().svc.read(KEY, null, me());
+    const hand = r.updates.find((u) => u.path.endsWith('call-with-alex.md'));
+    expect(hand?.summary).toBe('Hand made');
+    expect(hand?.canRemove).toBe(false);
+  });
+});
+
+describe('names and freshness', () => {
+  it('names a person whose slug the script wrote differently from the to-do slug', async () => {
+    put(
+      '.team-config/roles.json',
+      JSON.stringify({ members: [{ name: "Mary O'Brien", email: 'm@x.test' }] }),
+    );
+    add('2026-11-21T10:00:00Z', entry('2026-11-21T10:00:00Z', 'mary-obrien'), FOLDER, 'mob111');
+    const r = await setup().svc.read(KEY, null, me());
+    expect(r.updates[0]?.byName).toBe("Mary O'Brien");
+  });
+
+  it('sees an entry edited in place, so its version matches the file', async () => {
+    const at = '2026-11-21T10:00:00Z';
+    add(at, entry(at, 'sam-example', 'note', 'First words'));
+    const s = setup();
+    expect((await s.svc.read(KEY, null, me())).updates[0]?.summary).toBe('First words');
+    add(at, entry(at, 'sam-example', 'note', 'Second, longer words'));
+    expect((await s.svc.read(KEY, null, me())).updates[0]?.summary).toBe('Second, longer words');
+  });
 });
 
 describe('changing the log', () => {
@@ -292,16 +330,22 @@ describe('changing the log', () => {
       run: async (a) => {
         ran.push(a);
         return a.kind === 'update'
-          ? { key: KEY, version: 'f'.repeat(64), file: `${FOLDER}/updates/x.md` }
+          ? {
+              key: KEY,
+              version: 'f'.repeat(64),
+              file: `${FOLDER}/updates/2026-11-21-1000-sam-example-abc123.md`,
+            }
           : { key: KEY, version: 'f'.repeat(64) };
       },
     });
     const a = { kind: 'update', key: KEY, entry: entryAction } as const;
-    expect(await svc.change(a, me())).toEqual({ file: `${FOLDER}/updates/x.md` });
+    expect(await svc.change(a, me())).toEqual({
+      file: `${FOLDER}/updates/2026-11-21-1000-sam-example-abc123.md`,
+    });
     const rm = {
       kind: 'update-remove',
       key: KEY,
-      file: `${FOLDER}/updates/x.md`,
+      file: `${FOLDER}/updates/2026-11-21-1000-sam-example-abc123.md`,
       expect: 'a'.repeat(64),
     } as const;
     expect(await svc.change(rm, me())).toEqual({});
@@ -321,6 +365,18 @@ describe('changing the log', () => {
       await expect(s.svc.change(a, me())).rejects.toMatchObject({ code });
       expect(s.runs).toEqual([]);
     }
+  });
+
+  it('refuses removing from a card-less folder or a name the script would refuse', async () => {
+    const rm = (file: string) => ({ kind: 'update-remove', key: KEY, file, expect: 'a'.repeat(64) }) as const;
+    const ok = `${FOLDER}/updates/2026-11-21-1000-sam-example-abc123.md`;
+    const noCard = setup({ cards: [card({ card: 'unreadable' })] });
+    await expect(noCard.svc.change(rm(ok), me())).rejects.toMatchObject({ code: 'not-allowed' });
+    const s = setup();
+    await expect(s.svc.change(rm(`${FOLDER}/updates/call-with-alex.md`), me())).rejects.toMatchObject({
+      code: 'bad-request',
+    });
+    expect([...noCard.runs, ...s.runs]).toEqual([]);
   });
 
   it('refuses removing a file outside this project updates folder', async () => {

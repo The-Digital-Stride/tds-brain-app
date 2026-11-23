@@ -14,6 +14,7 @@ import {
   type ProjectUpdateItem,
   type ProjectUpdateRemoveAction,
   type ProjectUpdatesResponse,
+  UPDATE_FILE_PATTERN,
   UPDATE_SUMMARY_MAX,
   UPDATES_DIR,
   UPDATES_PAGE,
@@ -30,6 +31,7 @@ import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter
 import { hasConflict, type ProjectsIndex } from './projects.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
 import { readTeam } from './todos.ts';
+import { memberSlug } from './util.ts';
 
 export interface ProjectUpdatesOptions {
   index: () => Promise<ProjectsIndex>;
@@ -199,10 +201,22 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
   const listing = async (card: ProjectCard, index: ProjectsIndex): Promise<Listing> => {
     const folders = [{ folder: card.folder, old: false }];
     for (const f of await oldFolders(card, index)) folders.push({ folder: f, old: true });
+    // The folder's own stats change on add and remove; each file's size and time catch an entry edited in place.
     const stamps = await Promise.all(
       folders.map(async (f) => {
-        const st = await lstat(join(root, ...f.folder.split('/'), UPDATES_DIR));
-        return `${f.folder}:${st ? `${st.ino}:${st.mtimeMs}:${st.isDirectory()}` : 'none'}`;
+        const dir = join(root, ...f.folder.split('/'), UPDATES_DIR);
+        const st = await lstat(dir);
+        if (!st?.isDirectory()) return `${f.folder}:${st ? 'other' : 'none'}`;
+        const names = (await fs.readdir(dir).catch(() => [] as string[]))
+          .filter((n) => n.endsWith('.md'))
+          .sort();
+        const files = await Promise.all(
+          names.map(async (n) => {
+            const fst = await lstat(join(dir, n));
+            return fst ? `${n}=${fst.size}@${fst.mtimeMs}` : `${n}=gone`;
+          }),
+        );
+        return `${f.folder}:${st.ino}:${st.mtimeMs}:${files.join(',')}`;
       }),
     );
     const stamp = stamps.join('|');
@@ -230,8 +244,15 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
       if (at === -1) throw new ProjectsError('bad-request', BAD);
       start = at + 1;
     }
-    const roster = new Map((await readTeam(root).catch(() => [])).map((m) => [m.slug, m.name]));
-    const live = !card.archived;
+    // The script writes `by` as memberSlug(name); the to-do roster uses another slug form. Know both.
+    const roster = new Map<string, string>();
+    for (const m of await readTeam(root).catch(() => [])) {
+      roster.set(m.slug, m.name);
+      const alt = memberSlug(m.name);
+      if (alt && !roster.has(alt)) roster.set(alt, m.name);
+    }
+    // The script refuses both changes without a live, readable card.
+    const live = !card.archived && card.card === 'ok';
     const page = all.entries.slice(start, start + UPDATES_PAGE);
     const updates: ProjectUpdateItem[] = page.map(({ item }) => {
       const author = item.by === identity.slug || (card.space === 'personal' && item.by === 'me');
@@ -240,14 +261,20 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
         ...item,
         byName: roster.get(item.by) ?? item.by,
         canRemove:
-          hasCap && allowed && live && !item.fromOldFolder && MANUAL_KINDS.includes(item.kind) && mayRemove,
+          hasCap &&
+          allowed &&
+          live &&
+          !item.fromOldFolder &&
+          MANUAL_KINDS.includes(item.kind) &&
+          UPDATE_FILE_PATTERN.test(item.path.slice(item.path.lastIndexOf('/') + 1)) &&
+          mayRemove,
       };
     });
     return {
       updates,
       more: start + UPDATES_PAGE < all.entries.length,
       unreadable: all.unreadable,
-      canAdd: hasCap && allowed && live && card.card === 'ok',
+      canAdd: hasCap && allowed && live,
     };
   };
 
@@ -275,8 +302,7 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
         !action.file.startsWith(prefix) ||
         name === '' ||
         name.includes('/') ||
-        name.startsWith('.') ||
-        !name.endsWith('.md') ||
+        !UPDATE_FILE_PATTERN.test(name) ||
         typeof action.expect !== 'string' ||
         !VERSION.test(action.expect)
       )
@@ -285,10 +311,10 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     if (!(await mayChange(identity))) throw new ProjectsError('not-allowed', NOT_ALLOWED);
     if (!(await capable())) throw new ProjectsError('not-allowed', NEEDS_SKILLS);
     if (card.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
-    if (action.kind === 'update' && card.card !== 'ok')
+    if (card.card !== 'ok')
       throw new ProjectsError(
         'not-allowed',
-        "This project has no readable card yet, so it can't take updates.",
+        "This project has no readable card yet, so its updates can't be changed.",
       );
     const result = await opts.skill.run(action);
     return result.file !== undefined ? { file: result.file } : {};

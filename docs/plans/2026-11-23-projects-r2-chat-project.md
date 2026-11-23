@@ -172,5 +172,10 @@ needs, reserved names, and the optional fields added to `StartSessionRequest`, `
   without asking; it shows on the project's Files tab; Chats rows read "Acme Heating · Winter boiler campaign";
   a plain Acme Heating chat asked "Which project is this note of next steps for?" with both projects first;
   a chat ended and reopened from Earlier kept its client and project.
+- **Overseer sign-off:** signed off, no blockers. Two follow-ups done before merging: a woken chat never saves the
+  page's place over one that couldn't be read (`nothingSaved`, with a test); and a `/tds-doc` document in a
+  project chat (throwaway brain with the real tds-doc skill and template) was saved as
+  `clients/acme-heating/projects/boiler-campaign/boiler-campaign-summary.html` and `.pdf`, not in `reports/`.
+  Watch: the which-project ask may come too often in client chats; soften to once per chat if Ian finds it so.
 - **Not done here:** the brain-side wording (`brain-skills/tdsapp-projects/brain-rules/r2-chat-project.md`)
   waits for Ian's yes.

@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.67.1 — 2026-11-23
+
+- **fix**: activity rows only open a to-do the panel can show; the panel stops waiting for one that never arrives
+- **fix**: an activity row that switches tab puts focus on that tab; the rule written into the design system
+- **fix**: the panel also gives up when the to-do list never loaded
+
 ## v0.67.0 — 2026-11-23
 
 - **feat**: what changed since you last looked, and what's coming up

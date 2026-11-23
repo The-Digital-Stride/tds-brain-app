@@ -2398,7 +2398,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         s.turnSkillOwn = resolved.level.source.kind === 'skill-own';
         // Decision 10: what this turn wants, for "the lower level has been wanted N turns running".
         const wanted = levelMode === 'auto' ? tierOfModel(resolved.choice.model) : null;
-        s.wantedTiers = wanted ? [...s.wantedTiers, wanted].slice(-WANTED_TURNS_KEPT) : [];
+        // Send again is the same message: it replaces that message's entry rather than counting twice.
+        const counted = pushAs === null ? s.wantedTiers : s.wantedTiers.slice(0, -1);
+        s.wantedTiers = wanted ? [...counted, wanted].slice(-WANTED_TURNS_KEPT) : [];
         const explicit = levelMode !== 'auto' || resolved.level.source.kind === 'chat';
         let level = resolved.level;
         if (q && s.query === q) {

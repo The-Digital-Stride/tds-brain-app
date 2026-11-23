@@ -9,7 +9,13 @@ import { FORMAT_ICONS } from './icons.ts';
 import { countWords, filterDocs, metaWords, sortDocs, summaryWords } from './library.ts';
 
 function metaLine({ item, note }: ItemProps): string {
-  const words = validArtifact(item.artifact) ? `${metaWords(item)}, from claude.ai` : metaWords(item);
+  // A link card is a shortcut, not a page worth a size (UX review): say what it is.
+  const artifact = validArtifact(item.artifact);
+  const words = !artifact
+    ? metaWords(item)
+    : artifact.kind === 'link'
+      ? 'Link to a claude.ai page'
+      : `${metaWords(item)}, from claude.ai`;
   return note ? `${words} · ${note}` : words;
 }
 

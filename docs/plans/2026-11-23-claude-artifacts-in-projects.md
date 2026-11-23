@@ -148,7 +148,7 @@ project's Files tab, opened in the same viewer, with a way back to the original 
    file field (P3). `POST ROUTES.projectArtifact(key)` (JSON) refuses archived, no-card and legacy projects, trims the
    address and drops its query and fragment, checks it with `isArtifactUrl`, checks the title, builds the target
    `<card folder>/files/<slug from the title>.html` on the server only, and runs `add-artifact` (a link card). A bad
-   address gets a plain message: "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu." The
+   address gets a plain message: "That isn't a link to a claude.ai page. Open the page on claude.ai, press Share and copy its link." The
    server never fetches claude.ai.
    Plain: paste the link and give it a name, and it's in the project straight away; Claude can add a copy later.
 

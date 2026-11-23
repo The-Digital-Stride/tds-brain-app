@@ -1081,6 +1081,7 @@ main { width: 100%; max-width: 32rem; background: var(--card); border: 1px solid
 h1 { margin: 0 0 8px; font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; }
 p { margin: 0 0 16px; overflow-wrap: anywhere; }
 .muted { color: var(--muted); }
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .button { display: inline-block; padding: 12px 20px; border-radius: 8px; background: var(--btn); color: var(--btn-text); font-weight: 600; text-decoration: none; }
 .button:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
 .added { margin: 16px 0 0; font-size: 0.875rem; }
@@ -1089,8 +1090,8 @@ p { margin: 0 0 16px; overflow-wrap: anywhere; }
 <body>
 <main>
 <h1>${t}</h1>
-${description ? `<p>${escapeHtml(description)}</p>\n` : ''}<p class="muted">This is a link to a page on claude.ai. Open it there to see it.</p>
-<p><a class="button" href="${meta.url}" target="_blank" rel="noopener noreferrer">Open on claude.ai</a></p>
+${description ? `<p>${escapeHtml(description)}</p>\n` : ''}<p class="muted">This page lives on claude.ai. Use the button to open it in a new tab.</p>
+<p><a class="button" href="${meta.url}" target="_blank" rel="noopener noreferrer">Open on claude.ai<span class="hidden"> (opens in a new tab)</span></a></p>
 <p class="added muted">Added ${longDate(meta.copied)}</p>
 </main>
 </body>

@@ -116,7 +116,9 @@ beforeAll(async () => {
       key: 'skyseal/web',
       list: { projects: CARDS, canChange: state.canChange } as unknown as ProjectList,
     }),
-    removeProject: async () => ({ list: { projects: CARDS, canChange: state.canChange } as unknown as ProjectList }),
+    removeProject: async () => ({
+      list: { projects: CARDS, canChange: state.canChange } as unknown as ProjectList,
+    }),
   };
   app = createAppServer({
     port: PORT,
@@ -249,7 +251,8 @@ describe('POST /api/projects/artifact', () => {
         expect(r.status, c.input).toBe(400);
         expect(r.json.error).toEqual({
           code: 'bad-request',
-          message: "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu.",
+          message:
+            "That isn't a link to a claude.ai page. Open the page on claude.ai, press Share and copy its link.",
         });
         expect(seen.added).toEqual([]);
       } else {

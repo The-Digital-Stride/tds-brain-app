@@ -6,7 +6,8 @@ import { Confirm } from '../../shell/Confirm.tsx';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
 
-const BAD_LINK = "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu.";
+const BAD_LINK =
+  "That isn't a link to a claude.ai page. Open the page on claude.ai, press Share and copy its link.";
 
 /**
  * "Add a claude.ai page": paste an artifact's link and name it. The server files it in the project as a card that
@@ -128,7 +129,7 @@ export function AddArtifactForm({
         />
       ) : null}
       <div className="form-field">
-        <label htmlFor={linkId}>Link</label>
+        <label htmlFor={linkId}>claude.ai link</label>
         <input
           ref={linkRef}
           id={linkId}

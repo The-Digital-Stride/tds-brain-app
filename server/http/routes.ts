@@ -1174,7 +1174,8 @@ function projectsFailure(err: unknown, ctx: RouteContext, what: string): HttpErr
   return new HttpError(500, 'internal', PROJECTS_INTERNAL);
 }
 
-const ARTIFACT_BAD_ADDRESS = "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu.";
+const ARTIFACT_BAD_ADDRESS =
+  "That isn't a link to a claude.ai page. Open the page on claude.ai, press Share and copy its link.";
 const ARTIFACT_BAD_TITLE = 'Give the page a name of up to 200 characters.';
 const ARTIFACT_BAD_DESCRIPTION = 'The description can be up to 300 characters.';
 const ARTIFACT_NOT_ALLOWED = "Adding a claude.ai page isn't available to you in the app yet.";

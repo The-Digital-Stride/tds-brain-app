@@ -96,9 +96,9 @@ describe('Add a claude.ai page', () => {
     await openFiles(SKY, { canAddArtifact: true });
     fireEvent.click(await screen.findByRole('button', { name: ADD }));
     expect(screen.getByRole('form', { name: ADD })).toBeTruthy();
-    expect(screen.getByLabelText('Link')).toBeTruthy();
+    expect(screen.getByLabelText('claude.ai link')).toBeTruthy();
     expect(screen.getByLabelText('Name')).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByLabelText('Link'));
+    expect(document.activeElement).toBe(screen.getByLabelText('claude.ai link'));
   });
 
   it('asks for both fields before it sends anything', async () => {
@@ -106,7 +106,7 @@ describe('Add a claude.ai page', () => {
     fireEvent.click(await screen.findByRole('button', { name: ADD }));
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getByText('Paste the artifact link first.')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Link'), {
+    fireEvent.change(screen.getByLabelText('claude.ai link'), {
       target: { value: 'https://claude.ai/artifact/AbC123' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
@@ -117,11 +117,13 @@ describe('Add a claude.ai page', () => {
   it("gives the app's own message for a link without https:// (the browser's check never takes over)", async () => {
     await openFiles(SKY, { canAddArtifact: true });
     fireEvent.click(await screen.findByRole('button', { name: ADD }));
-    fireEvent.change(screen.getByLabelText('Link'), { target: { value: 'claude.ai/artifact/AbC123' } });
+    fireEvent.change(screen.getByLabelText('claude.ai link'), {
+      target: { value: 'claude.ai/artifact/AbC123' },
+    });
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    expect(screen.getByText(/isn't a claude\.ai artifact link/)).toBeTruthy();
-    expect(screen.getByLabelText('Link').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText(/isn't a link to a claude\.ai page/)).toBeTruthy();
+    expect(screen.getByLabelText('claude.ai link').getAttribute('aria-invalid')).toBe('true');
     expect(api.projectArtifact).not.toHaveBeenCalled();
   });
 
@@ -132,7 +134,7 @@ describe('Add a claude.ai page', () => {
     });
     await openFiles(SKY, { canAddArtifact: true });
     fireEvent.click(await screen.findByRole('button', { name: ADD }));
-    fireEvent.change(screen.getByLabelText('Link'), {
+    fireEvent.change(screen.getByLabelText('claude.ai link'), {
       target: { value: ' https://claude.ai/artifact/AbC123 ' },
     });
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Q4 plan' } });
@@ -153,19 +155,19 @@ describe('Add a claude.ai page', () => {
     api.projectArtifact.mockRejectedValue(
       new ApiFailure(
         'bad-request',
-        "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu.",
+        "That isn't a link to a claude.ai page. Open the page on claude.ai, press Share and copy its link.",
         400,
       ),
     );
     await openFiles(SKY, { canAddArtifact: true });
     fireEvent.click(await screen.findByRole('button', { name: ADD }));
-    fireEvent.change(screen.getByLabelText('Link'), {
+    fireEvent.change(screen.getByLabelText('claude.ai link'), {
       target: { value: 'https://claude.ai/artifact/AbC123' },
     });
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Thing' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    const message = await screen.findByText(/isn't a claude\.ai artifact link/);
-    const link = screen.getByLabelText('Link');
+    const message = await screen.findByText(/isn't a link to a claude\.ai page/);
+    const link = screen.getByLabelText('claude.ai link');
     expect(link.getAttribute('aria-invalid')).toBe('true');
     expect(link.getAttribute('aria-describedby')).toBe(message.id);
     expect(document.activeElement).toBe(link);

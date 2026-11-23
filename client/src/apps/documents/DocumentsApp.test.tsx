@@ -307,6 +307,21 @@ describe('a claude.ai artifact among the documents', () => {
     expect(screen.getByRole('button', { name: /^Explainer/ }).textContent).not.toContain('claude.ai');
   });
 
+  it('calls a link card a link in the row, not a page with a size (UX review)', async () => {
+    const card = {
+      ...artifactPage,
+      id: 'client:acme.d7',
+      title: 'Budget sheet',
+      artifact: { ...artifactPage.artifact!, kind: 'link' as const },
+    } as typeof page;
+    api.library.mockImplementation(async (scope: string) => listing(scope, [page, card], ['Plans']));
+    render(<DocumentsSheet />);
+    await screen.findByRole('button', { name: /^Budget sheet/ });
+    const row = screen.getByRole('button', { name: /^Budget sheet/ }).textContent ?? '';
+    expect(row).toContain('Link to a claude.ai page');
+    expect(row).not.toContain('KB');
+  });
+
   it('gives the panel one Source row, and none for an ordinary page', () => {
     docsStore.set({ current: artifactPage });
     const { unmount } = render(<DocumentsPanel />);

@@ -1399,9 +1399,9 @@ describe('add-artifact', () => {
     expect(out).not.toMatch(/<script/i);
     expect(out).not.toContain('<b>');
     expect(out).toContain(
-      `<a class="button" href="${URL}" target="_blank" rel="noopener noreferrer">Open on claude.ai</a>`,
+      `<a class="button" href="${URL}" target="_blank" rel="noopener noreferrer">Open on claude.ai<span class="hidden"> (opens in a new tab)</span></a>`,
     );
-    expect(out).toContain('This is a link to a page on claude.ai. Open it there to see it.');
+    expect(out).toContain('This page lives on claude.ai. Use the button to open it in a new tab.');
     expect(out).toContain('Added 20 November 2026');
     expect(out).toContain('prefers-color-scheme: dark');
     expect(out.match(/https?:\/\/[^\s"'<>)]+/g)?.filter((u) => u !== URL)).toEqual([]);

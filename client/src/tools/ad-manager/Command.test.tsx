@@ -45,6 +45,14 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
 const { CommandSheet } = await import('./CommandSheet.tsx');
 const { adStore } = await import('./store.ts');
 const { taskRuns } = await import('./task-runs.ts');
+const { useAdsPreload } = await import('./use-ads-preload.ts');
+const { commandSearch } = await import('./command-search.ts');
+
+/** The shell's start-up board load, mounted on its own as App.tsx does (no Ads tool open). */
+function Preload() {
+  useAdsPreload();
+  return null;
+}
 
 type Health = AdsBoard['health'];
 type Card = AdsBoard['cards'][number];
@@ -324,7 +332,7 @@ describe('no due reminders', () => {
     await mount();
     for (const t of ['Title d-spend', 'Title w-terms', 'Title m-audit', 'Daily standup']) {
       const li = screen.getAllByText(t)[0]?.closest('li') as HTMLElement;
-      expect(li.textContent).not.toMatch(/\b(Due|Overdue)\b/);
+      expect(li.textContent).not.toMatch(/Due|Overdue/);
       expect(li.querySelector('.badge')).toBeNull();
     }
   });
@@ -472,6 +480,48 @@ describe('running a task', () => {
     await mount({ cards: CARDS.map((c) => ({ ...c, lastRun: null })) });
     fireEvent.click(await runBtn('Title w-terms'));
     await waitFor(() => expect(api.adsTaskRun).toHaveBeenCalledWith({ account: key, task: 'w-terms' }));
+  });
+});
+
+describe('the start-up board load, for search', () => {
+  const searchFor = (q: string) =>
+    commandSearch.search?.(q, { ads: store.ads } as never).hits.map((h) => h.label);
+
+  it('loads the saved account at start-up, so search finds a task before any Ads tool opens', async () => {
+    current = makeBoard();
+    render(<Preload />);
+    await waitFor(() => expect(searchFor('d-spend')).toContain('Title d-spend'));
+    expect(api.adsBoard).toHaveBeenCalledWith(key);
+    expect(adStore.get().account).toBe(key);
+  });
+
+  it('with nothing saved, starts from the first account with proposals waiting, as the tools do', async () => {
+    store.boot.prefs = { adsAccount: null };
+    store.ads = { ...(store.ads as object), clients: [{ slug: key, name: key, waiting: 2 }] };
+    current = makeBoard();
+    render(<Preload />);
+    await waitFor(() => expect(api.adsBoard).toHaveBeenCalledWith(key));
+  });
+
+  it('reloads the board when the Ads summary changes, with no tool open', async () => {
+    current = makeBoard();
+    const view = render(<Preload />);
+    await waitFor(() => expect(api.adsBoard).toHaveBeenCalledTimes(1));
+    store.ads = { ...(store.ads as object), waiting: 1 };
+    view.rerender(<Preload />);
+    await waitFor(() => expect(api.adsBoard).toHaveBeenCalledTimes(2));
+  });
+
+  it('loads nothing when Ads is not available or no account was used before', async () => {
+    store.ads = { ...(store.ads as object), visible: false };
+    render(<Preload />);
+    store.boot.prefs = { adsAccount: null };
+    cleanup();
+    adStore.reset();
+    store.ads = { ...(store.ads as object), visible: true };
+    render(<Preload />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.adsBoard).not.toHaveBeenCalled();
   });
 });
 

@@ -23,6 +23,11 @@ vi.mock('../api.ts', () => ({
 const apps = vi.hoisted(() => [] as AppSlot[]);
 vi.mock('./apps.ts', () => ({ APPS: apps }));
 
+// The Ads start-up board load (for ⌘K search) is mounted by the shell; its own behaviour is tested in
+// tools/ad-manager/Command.test.tsx, so here it is only checked to be switched on.
+const preloadHook = vi.hoisted(() => vi.fn());
+vi.mock('../tools/ad-manager/use-ads-preload.ts', () => ({ useAdsPreload: preloadHook }));
+
 class FakeEventSource {
   static last: FakeEventSource | null = null;
   static CLOSED = 2;
@@ -169,6 +174,12 @@ describe('the rail', () => {
     const toggle = railButton('Show names');
     expect(toggle.closest('.rail-brand')).toBeTruthy();
     expect(toggle.textContent).toBe('');
+  });
+
+  it('mounts the Ads start-up board load, so search finds Ads tasks before any Ads tool opens', async () => {
+    render(<App />);
+    await screen.findByRole('navigation', { name: /./ });
+    expect(preloadHook).toHaveBeenCalled();
   });
 
   it('shows no Apps group while there are no apps', async () => {

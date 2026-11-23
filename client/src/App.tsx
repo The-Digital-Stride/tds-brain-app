@@ -30,6 +30,7 @@ import { ToolTabs, tabGroupFor } from './shell/ToolTabs.tsx';
 import { Tooltips } from './shell/Tooltips.tsx';
 import { initialChatState, pendingCard } from './state/chat-reducer.ts';
 import { StoreProvider, useStore, useToolSnapshot } from './store.tsx';
+import { useAdsPreload } from './tools/ad-manager/use-ads-preload.ts';
 import { Tour, useTourOpen } from './tour/index.ts';
 
 /** Says what changed, for screen readers. Nothing visible. */
@@ -156,6 +157,8 @@ function SheetContent() {
 function Shell() {
   // The tour's card is the only thing in reach while it shows.
   const touring = useTourOpen();
+  // Loads the Ads board at start-up, so ⌘K search finds Ads tasks and tables before any Ads tool opens.
+  useAdsPreload();
   const { boot, view } = useStore();
   const snap = useToolSnapshot();
   const { state, dispatch, modes } = useShell();

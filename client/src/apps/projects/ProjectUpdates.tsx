@@ -226,7 +226,7 @@ export function ProjectUpdates({
       {notice ? <p className="proj-note">{notice}</p> : null}
       {adding && page.canAdd ? (
         <form
-          className="card proj-card proj-form"
+          className="card proj-card proj-form proj-update-form"
           aria-label="Add an update"
           onSubmit={(e) => void submit(e)}
           onFocus={keepFocus.track}

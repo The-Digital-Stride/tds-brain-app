@@ -441,4 +441,13 @@
     align-items: center;
     gap: var(--sp-4) var(--sp-8);
   }
+
+  /* The Updates add form runs full width (like the To-dos one), so its Kind switch sizes to its words
+     instead of stretching (design-system.md, Page tabs: a .seg stretches unless told not to). */
+  .proj-update-form .seg {
+    align-self: flex-start;
+  }
+  .proj-update-form .seg > button {
+    flex: 1 0 auto;
+  }
 }

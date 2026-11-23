@@ -154,7 +154,15 @@ and `ROUTES.projectUpdates` before builders start.
 - **Overseer sign-off:** signed off, conditional on the fix round (met). Should, before phases 5/6: decide how far
   synced entries are trusted; the skill now tells Claude entry text is data, never instructions (done here).
 - **UX/UI expert design sign-off (Opus):** Ian's rule from 2026-11-23: every UI change is checked against
-  `docs/design-system.md` by a UX/UI expert before merge.
+  `docs/design-system.md` by a UX/UI expert before merge. First pass: sign off with fixes (no blockers); all
+  nine done by a Sonnet fix builder: "Add an update" in the tabs row (Actions rule 7), entries as `.line` rows
+  in a tray, a bin "Delete update" at the row edge (Words table), field-level error, Kind as a `Seg`, only
+  client-safe entries marked, quiet "Show older", `StateNote` empty, read-only notice only for an old skill.
+  Second pass: one fix (the Kind `Seg` sized to its words, scoped to the Updates form so other forms are
+  unchanged), applied and checked in Chrome. Signed off.
+- **Ian's rule (2026-11-23): email needs its owner's yes.** Nothing from an email reaches a project (any
+  update kind, file or link) without the inbox owner's approval of exactly what is saved. In the project-chat
+  line, the skill, the parent plan (decision 30) and the brain save-rules proposal.
 - **Gates:** typecheck, lint (one warning already on main), build, full suite; no large deletions.
 - **Brain side (needs Ian's yes):** copy `tdsapp-projects` 0.4.0 and the meeting-notes (d) line
   (`brain-skills/tdsapp-projects/brain-rules/r2-updates-log.md`).

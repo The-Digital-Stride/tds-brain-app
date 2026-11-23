@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import {
   LIBRARY_SEARCH_QUERY,
   type LibraryItem,
@@ -292,6 +292,15 @@ function Files({
   const kind: LibraryKind = chosen ?? (onlyImages ? 'image' : 'document');
   const now = KINDS.find((k) => k.kind === kind) ?? KINDS[0];
   const loaded = loads[kind];
+  // The library's folder groups ("Projects", "Reports") say little inside one project, so files are grouped by
+  // where they sit in it: the project's own folder, its subfolders, then the files added from the library.
+  const inProject = useMemo(
+    () => (loaded.data?.items ?? []).map((item) => ({ ...item, group: placeIn(card, item.path) })),
+    [loaded.data, card],
+  );
+  // Actions get the file as the server sent it, never the regrouped copy.
+  const original = (item: LibraryItem) => loaded.data?.items.find((i) => i.id === item.id) ?? item;
+
   if (!now) return null;
 
   const unlink = async (item: LibraryItem): Promise<boolean> => {
@@ -303,20 +312,26 @@ function Files({
     return res.ok;
   };
 
+  // Its own wrapper: the tools row gives every switch a fixed width, too narrow for "Documents, 12".
   const kindSeg = (
-    <Seg
-      label="Kind"
-      value={kind}
-      options={KINDS.map((k) => {
-        const l = loads[k.kind];
-        return { value: k.kind, label: l.status === 'ready' ? `${k.word}, ${l.data.items.length}` : k.word };
-      })}
-      onChange={(next) => {
-        setChosen(next);
-        // A type like "PDFs" means nothing for images, and the search starts afresh for the other kind.
-        setView((v) => ({ ...v, format: 'all' }));
-      }}
-    />
+    <div className="proj-kind">
+      <Seg
+        label="Kind"
+        value={kind}
+        options={KINDS.map((k) => {
+          const l = loads[k.kind];
+          return {
+            value: k.kind,
+            label: l.status === 'ready' ? `${k.word}, ${l.data.items.length}` : k.word,
+          };
+        })}
+        onChange={(next) => {
+          setChosen(next);
+          // A type like "PDFs" means nothing for images, and the search starts afresh for the other kind.
+          setView((v) => ({ ...v, format: 'all' }));
+        }}
+      />
+    </div>
   );
 
   return (
@@ -329,7 +344,7 @@ function Files({
         status: loaded.status,
         message: loaded.message,
         retry: loaded.retry,
-        items: loaded.data?.items ?? [],
+        items: inProject,
         order: [],
         truncated: false,
         hiddenLinks: loaded.data?.hidden ?? 0,
@@ -339,20 +354,29 @@ function Files({
       bin={false}
       empty={`No ${now.word.toLowerCase()} in this project yet.`}
       // A file opens in the viewer drawer, which has "Open in Documents/Images"; no row stays selected.
-      onChoose={onView}
+      onChoose={(item) => onView(original(item))}
       takeOut={(item) =>
         canChange && card.links.includes(item.path)
           ? {
               label: `Remove ${item.title || item.name} from this project`,
               tip: 'Remove from this project. The file stays in the library.',
               busy,
-              run: () => unlink(item),
+              run: () => unlink(original(item)),
             }
           : null
       }
-      note={(item) => (card.links.includes(item.path) ? 'added from the library' : undefined)}
     />
   );
+}
+
+/** Where a file sits in a project, as its group heading. */
+export function placeIn(card: Pick<ProjectCard, 'folder' | 'links'>, path: string): string {
+  if (card.links.includes(path)) return 'Added from the library';
+  const inside = path.startsWith(`${card.folder}/`) ? path.slice(card.folder.length + 1) : '';
+  const parts = inside.split('/');
+  if (parts.length < 2) return 'In the project folder';
+  const name = (parts[0] ?? '').replace(/[-_]+/g, ' ');
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /** The project's images and documents (in its folder, or linked), with Add files and Remove. */

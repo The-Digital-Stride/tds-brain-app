@@ -29,6 +29,7 @@
   /* The project tabs, with Add files at the right end when the Files tab is open. */
   .proj-tabrow {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-8);
   }
@@ -453,5 +454,18 @@
   }
   .proj-update-form .seg > button {
     flex: 1 0 auto;
+  }
+  /* Files tab: the Documents/Images switch leads the tools row at its own width (the row fixes other switches at
+   132px). */
+  .lib-tools > .proj-kind {
+    flex: none;
+    order: -1;
+  }
+  .lib-tools > .proj-kind .seg {
+    width: auto;
+    margin-left: 0;
+  }
+  .lib-tools > .proj-kind .seg > * {
+    white-space: nowrap;
   }
 }

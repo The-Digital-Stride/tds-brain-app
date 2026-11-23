@@ -25,7 +25,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({ useShell: () => shell }));
 const change = vi.hoisted(() => vi.fn());
 vi.mock('./useChange.ts', () => ({ useProjectChange: () => change }));
 
-const { ProjectFiles } = await import('./ProjectFiles.tsx');
+const { ProjectFiles, placeIn } = await import('./ProjectFiles.tsx');
 const { docsStore } = await import('../documents/store.ts');
 const { imagesStore } = await import('../images/store.ts');
 
@@ -129,7 +129,7 @@ describe('the Files tab, in the shared library browser', () => {
     answer([PLAN, BRIEF], []);
     change.mockResolvedValue({ ok: true, list: { projects: [] } });
     show({ links: [PLAN.path] });
-    await screen.findByText(/added from the library/);
+    await screen.findByText('Added from the library');
     expect(screen.queryByRole('button', { name: /^Remove brief\.pdf/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove plan.docx from this project' }));
     await waitFor(() =>
@@ -154,7 +154,7 @@ describe('the Files tab, in the shared library browser', () => {
   it('gives people who cannot change the project no remove button', async () => {
     answer([PLAN], []);
     show({ links: [PLAN.path] }, false);
-    await screen.findByText(/added from the library/);
+    await screen.findByText('Added from the library');
     expect(screen.queryByRole('button', { name: /Remove plan\.docx/ })).toBeNull();
   });
 
@@ -181,5 +181,15 @@ describe('the Files tab, in the shared library browser', () => {
     expect(docsStore.get()).toEqual(docs);
     expect(imagesStore.get()).toEqual(imgs);
     expect(within(document.body).queryAllByRole('searchbox').length).toBeGreaterThan(0);
+  });
+});
+
+describe('placeIn: a file is grouped by where it sits in the project', () => {
+  const at = { folder: 'clients/acme/projects/boiler', links: ['clients/acme/reports/q3.pdf'] };
+  it('names the subfolder, the project folder itself, or the library for a linked file', () => {
+    expect(placeIn(at, 'clients/acme/projects/boiler/brief.pdf')).toBe('In the project folder');
+    expect(placeIn(at, 'clients/acme/projects/boiler/design_files/logo.png')).toBe('Design files');
+    expect(placeIn(at, 'clients/acme/projects/boiler/files/a/b.pdf')).toBe('Files');
+    expect(placeIn(at, 'clients/acme/reports/q3.pdf')).toBe('Added from the library');
   });
 });

@@ -106,7 +106,7 @@ export function RemovePanel({
   }, []);
 
   const confirm = async () => {
-    if (busy || !answer) return;
+    if (busy || !answer || (deleting && !matches)) return;
     setBusy(true);
     setProblem('');
     try {
@@ -149,31 +149,32 @@ export function RemovePanel({
   const options: { value: Do; text: string }[] = deleting
     ? [
         { value: 'delete', text: 'Delete' },
-        { value: 'unlink', text: 'Keep, unlinked' },
+        { value: 'unlink', text: 'Keep the to-do, remove it from the project' },
       ]
     : [
-        { value: 'done', text: 'Mark done' },
+        { value: 'done', text: 'Mark as done' },
         { value: 'keep', text: 'Keep open' },
       ];
 
   return (
     <fieldset
-      className="proj-ask proj-move-ask proj-remove-ask"
+      className="confirm proj-remove-ask"
       aria-describedby={`${base}-desc`}
       data-danger={deleting || undefined}
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return;
         e.preventDefault();
         e.stopPropagation();
-        onCancel();
+        // While the request runs nothing closes, as in every Confirm.
+        if (!busy) onCancel();
       }}
     >
-      <legend className="proj-ask-q">
+      <legend className="proj-remove-q">
         {deleting ? `Delete ${card.title} for good?` : `Archive ${card.title}?`}
       </legend>
       <div className="proj-move-text" id={`${base}-desc`}>
         {problem ? (
-          <p className="proj-error" role="alert">
+          <p className="error" role="alert">
             {problem}
           </p>
         ) : null}
@@ -224,6 +225,7 @@ export function RemovePanel({
                         <label key={o.value} className="proj-remove-opt">
                           <input
                             type="radio"
+                            className="tick"
                             name={`${base}-${t.id}`}
                             checked={choice[t.id] === o.value}
                             onChange={() => setChoice((c) => ({ ...c, [t.id]: o.value }))}
@@ -258,7 +260,7 @@ export function RemovePanel({
         {check && deleting && !allowed ? <p>{notAllowedWords('delete', check.allowedWho)}</p> : null}
         {check && !deleting && !allowed ? <p>{notAllowedWords('archive', check.allowedWho)}</p> : null}
         {check && deleting && allowed ? (
-          <div className="proj-field">
+          <div className="form-field">
             <label id={`${base}-type-label`} htmlFor={`${base}-type`}>
               Type the project name to delete it
             </label>
@@ -279,14 +281,22 @@ export function RemovePanel({
             type="button"
             className="btn"
             data-variant={deleting ? 'danger' : 'primary'}
-            disabled={busy || (deleting && !matches)}
+            aria-disabled={busy || (deleting && !matches) || undefined}
             aria-describedby={deleting && !matches ? `${base}-type-label` : undefined}
             onClick={() => void confirm()}
           >
             {label}
           </button>
         ) : null}
-        <button type="button" className="btn" ref={cancelBtn} onClick={onCancel}>
+        <button
+          type="button"
+          className="btn"
+          ref={cancelBtn}
+          aria-disabled={busy || undefined}
+          onClick={() => {
+            if (!busy) onCancel();
+          }}
+        >
           Cancel
         </button>
       </div>

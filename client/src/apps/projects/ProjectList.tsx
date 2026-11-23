@@ -8,7 +8,6 @@ import {
   type Filters,
   filterProjects,
   groupProjects,
-  LIGHT_WORDS,
   NO_FILTERS,
   needsCard,
   ownersIn,
@@ -61,13 +60,10 @@ function Row({ card, onOpen }: { card: ProjectCard; onOpen: () => void }) {
   return (
     <li className="line proj-row">
       <button type="button" className="proj-open" data-focus={`proj:${card.key}`} onClick={onOpen}>
-        <span className="health-dot" data-state={dot} aria-hidden="true" />
+        <span className="dot" data-state={dot} aria-hidden="true" />
         <span className="line-text">
           <span className="line-title">{card.title}</span>
           <span className="line-meta">{rowMeta(card)}</span>
-        </span>
-        <span className="visually-hidden">
-          {card.health ? `. Health: ${LIGHT_WORDS[card.health].toLowerCase()}` : '. No health light set'}
         </span>
       </button>
     </li>
@@ -105,7 +101,7 @@ export function ProjectListView({
   return (
     <>
       {cardless > 0 ? (
-        <div className="proj-banner">
+        <div className="notice" data-level="info" data-shape="box">
           <span>
             {cardless} project{cardless === 1 ? ' needs' : 's need'} a card
           </span>
@@ -175,8 +171,8 @@ export function ProjectListView({
       ) : shown.length === 0 ? (
         <p className="proj-note">
           No projects match these filters.{' '}
-          <button type="button" className="link-btn" onClick={() => setFilters(NO_FILTERS)}>
-            Show all projects
+          <button type="button" className="btn" data-size="small" onClick={() => setFilters(NO_FILTERS)}>
+            Clear filters
           </button>
           {archivedCount > 0 && filters.status !== ARCHIVED ? (
             <>

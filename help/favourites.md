@@ -13,7 +13,7 @@ reviewed: 2026-11-15
 
 ## What it does
 
-A star marks something as a favourite. A starred chat, to-do or skill goes into a **Favourites** section at the top of its list. A starred file shows on Home under **Pinned files**. Starred to-dos and chats also appear on Home. See [Pinned to-dos, chats and files](help:pinned).
+A star marks something as a favourite. A starred chat, to-do or skill goes into a **Favourites** section at the top of its list. A starred file shows on Home under **Favourite files**. Starred to-dos and chats also appear on Home. See [Favourite to-dos, chats and files](help:pinned).
 
 ## Why it helps
 

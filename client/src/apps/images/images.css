@@ -1,5 +1,6 @@
-/*
+@layer features {
+  /*
  * The example Images app: only what is particular to pictures. The rest (tools, tray and cards,
  * rows, the picture box and the grid, the selection bar, the panel) is `../shared/library.css`.
  */
-
+}

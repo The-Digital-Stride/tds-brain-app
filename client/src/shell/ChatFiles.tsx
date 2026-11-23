@@ -11,6 +11,7 @@ import type { IconName } from './contract.ts';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { StateNote } from './StateNote.tsx';
 import { whenWords } from './words.ts';
 
 /** The strongest thing that happened to a file, in words, strongest first. */
@@ -101,18 +102,13 @@ function Changes({ sessionId, file }: { sessionId: string; file: ChatFile }) {
       {open ? (
         <div id={panelId}>
           {loaded.status === 'loading' ? (
-            <p className="lib-note" role="status">
-              Loading…
-            </p>
+            <StateNote kind="loading" />
           ) : loaded.status === 'failed' ? (
-            <div className="lib-failed" role="alert">
-              <p>{loaded.message}</p>
-              <button type="button" className="btn" onClick={loaded.retry}>
-                Try again
-              </button>
-            </div>
+            <StateNote kind="error" onRetry={loaded.retry}>
+              {loaded.message}
+            </StateNote>
           ) : data === null ? (
-            <p className="lib-note">The changes are no longer available.</p>
+            <StateNote kind="empty">The changes are no longer available.</StateNote>
           ) : (
             <div className="files-change-list">
               {[...data.changes].reverse().map((c, i) => (
@@ -121,13 +117,15 @@ function Changes({ sessionId, file }: { sessionId: string; file: ChatFile }) {
                 <div className="files-change" key={data.changes.length - i}>
                   {c.at ? <p className="files-change-when">{whenWords(c.at)}</p> : null}
                   <ChangeView change={c.change} />
-                  {c.cut ? <p className="lib-note">This change was too long to show in full.</p> : null}
+                  {c.cut ? (
+                    <StateNote kind="empty">This change was too long to show in full.</StateNote>
+                  ) : null}
                   {c.hiddenChars ? (
-                    <p className="lib-note">Hidden characters are shown as ⟨U+…⟩ markers.</p>
+                    <StateNote kind="empty">Hidden characters are shown as ⟨U+…⟩ markers.</StateNote>
                   ) : null}
                 </div>
               ))}
-              {data.truncated ? <p className="lib-note">Older changes are not shown.</p> : null}
+              {data.truncated ? <StateNote kind="empty">Older changes are not shown.</StateNote> : null}
             </div>
           )}
         </div>
@@ -202,7 +200,7 @@ function Preview({
 
   let body: ReactNode = null;
   if (!item) {
-    body = <p className="lib-note">No longer there</p>;
+    body = <StateNote kind="empty">No longer there</StateNote>;
   } else if (item.view === 'text') {
     body = (
       <div className="card files-body">
@@ -216,7 +214,7 @@ function Preview({
       </div>
     );
   } else if (item.view === null) {
-    body = <p className="lib-note">This type can't be shown here.</p>;
+    body = <StateNote kind="empty">This type can't be shown here.</StateNote>;
   }
 
   const download = item ? (

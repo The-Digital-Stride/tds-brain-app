@@ -263,6 +263,33 @@ describe('store.holdTodo (undo)', () => {
     expect(store?.todos?.mine[0]?.title).toBe('after tick');
   });
 
+  // New with the shared Undo line (plan 2026-11-22-ux-consistency, decision 12): a held to-do pauses like a file.
+  it('pausing holds the clock; resuming runs the full time again', async () => {
+    vi.useFakeTimers();
+    await start();
+    api.completeTodo.mockResolvedValue(list('after tick'));
+    act(() =>
+      store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Marked as done', action: null }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS - 1000);
+    });
+    act(() => store?.pauseHeld('a.md'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS * 5);
+    });
+    expect(api.completeTodo).not.toHaveBeenCalled();
+    act(() => store?.resumeHeld('a.md'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TODO_UNDO_MS - 1);
+    });
+    expect(api.completeTodo).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(api.completeTodo).toHaveBeenCalledExactlyOnceWith('a.md');
+  });
+
   it('undo cancels a held change, so nothing is sent', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await start();

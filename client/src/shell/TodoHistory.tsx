@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TeamMember, TodoHistoryResponse } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
 import { Fold } from './Fold.tsx';
+import { StateNote } from './StateNote.tsx';
 import { actorName, eventWords, shortDayTime } from './words.ts';
 
 type Load =
@@ -29,7 +30,7 @@ export function TodoHistory({ todoKey, team }: { todoKey: string; team: readonly
 
   const announce =
     load.kind === 'loading'
-      ? 'Loading the history.'
+      ? 'Loading…'
       : load.kind === 'failed'
         ? "Couldn't load the history."
         : load.kind === 'loaded' && load.res.status === 'ok'
@@ -49,11 +50,16 @@ export function TodoHistory({ todoKey, team }: { todoKey: string; team: readonly
         <p className="visually-hidden" role="status">
           {announce}
         </p>
-        {load.kind === 'loading' ? <p className="todo-note">Loading the history.</p> : null}
+        {load.kind === 'loading' ? (
+          // The hidden status line above says it once; this is the sighted copy.
+          <div aria-hidden="true">
+            <StateNote kind="loading" />
+          </div>
+        ) : null}
         {load.kind === 'failed' ? (
           <p className="todo-note">
             Couldn't load the history.{' '}
-            <button type="button" className="link-btn" onClick={() => void fetchIt()}>
+            <button type="button" className="btn" data-size="small" onClick={() => void fetchIt()}>
               Try again
             </button>
           </p>

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import {
   LIBRARY_SEARCH_QUERY,
   type LibraryItem,
@@ -9,6 +9,7 @@ import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects
 import { api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { FORMAT_ICONS } from '../documents/icons.ts';
 import { useLoaded } from '../shared/data.ts';
 import { Thumb } from '../shared/Thumb.tsx';
@@ -34,10 +35,11 @@ function FileRow({
   onView: () => void;
   onUnlink: () => void;
 }) {
-  // The whole row opens the file in the viewer drawer, as a row does in Documents and Images.
+  // The whole row opens the file in the viewer drawer. Documents rows select instead; a project's file rows open,
+  // deliberately: linking and removing are the only things to do here, and they have their own buttons.
   return (
     <li className="line lib-row proj-file">
-      <button type="button" className="lib-open" onClick={onView}>
+      <button type="button" className="lib-open" data-file={item.id} onClick={onView}>
         {item.kind === 'image' ? (
           <Thumb item={item} width={96} iconSize={18} />
         ) : (
@@ -60,11 +62,11 @@ function FileRow({
           type="button"
           className="btn"
           data-size="small"
-          disabled={busy}
-          aria-label={`Unlink ${item.title || item.name}`}
-          onClick={onUnlink}
+          aria-disabled={busy || undefined}
+          aria-label={`Remove ${item.title || item.name} from this project`}
+          onClick={busy ? undefined : onUnlink}
         >
-          Unlink
+          Remove
         </button>
       ) : null}
     </li>
@@ -101,6 +103,7 @@ function Picker({
 
   const search = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const q = term.trim();
     if (q.length < LIBRARY_SEARCH_QUERY.min) {
       setMessage(`Type at least ${LIBRARY_SEARCH_QUERY.min} letters.`);
@@ -134,7 +137,7 @@ function Picker({
     let expect = card.version;
     let done = 0;
     for (const h of todo) {
-      setProgress(`Linking ${done + 1} of ${todo.length}…`);
+      setProgress(`Linking ${done + 1} of ${todo.length}`);
       const res = await change({ kind: 'link', key: card.key, path: h.item.path, expect });
       if (!res.ok) {
         // Keep what's still to do chosen, so another press finishes the job.
@@ -172,22 +175,28 @@ function Picker({
           // biome-ignore lint/a11y/noAutofocus: the person just pressed Link files.
           autoFocus
         />
-        <button type="submit" className="btn" disabled={busy}>
+        <button type="submit" className="btn" aria-disabled={busy || undefined}>
           Search
         </button>
-        <button type="button" className="btn" data-variant="quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn"
+          data-variant="quiet"
+          aria-disabled={busy || undefined}
+          onClick={busy ? undefined : onClose}
+        >
           Close
         </button>
       </form>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}
       <p className="visually-hidden" role="status">
         {progress}
       </p>
-      {hits && hits.length === 0 ? <p className="proj-note">No files found.</p> : null}
+      {hits && hits.length === 0 ? <StateNote kind="empty">No files found.</StateNote> : null}
       {hits && hits.length > 0 ? (
         <ul className="lib-list proj-pick-list" aria-label="Files found">
           {hits.map((h) => {
@@ -199,6 +208,7 @@ function Picker({
                 <input
                   id={boxId}
                   type="checkbox"
+                  className="tick"
                   checked={why === 'Already linked' || on}
                   disabled={busy || why !== null || (!on && count >= room)}
                   onChange={() => toggle(h)}
@@ -224,8 +234,8 @@ function Picker({
                   type="button"
                   className="icon-btn"
                   aria-label={`Remove ${h.item.title || h.item.name} from the chosen files`}
-                  disabled={busy}
-                  onClick={() => toggle(h)}
+                  aria-disabled={busy || undefined}
+                  onClick={() => !busy && toggle(h)}
                 >
                   <Icon name="close" size={14} />
                 </button>
@@ -238,8 +248,8 @@ function Picker({
               className="btn"
               data-variant="primary"
               data-size="small"
-              disabled={busy}
-              onClick={() => void linkChosen()}
+              aria-disabled={busy || undefined}
+              onClick={() => !busy && void linkChosen()}
             >
               {progress || (count > 1 ? `Link ${count} files` : 'Link file')}
             </button>
@@ -248,8 +258,8 @@ function Picker({
               className="btn"
               data-size="small"
               data-variant="quiet"
-              disabled={busy}
-              onClick={() => setPicked(new Map())}
+              aria-disabled={busy || undefined}
+              onClick={() => !busy && setPicked(new Map())}
             >
               Clear
             </button>
@@ -267,6 +277,7 @@ function Kind({
   canChange,
   onView,
   onChanged,
+  onUnlinked,
 }: {
   card: ProjectCard;
   kind: LibraryKind;
@@ -274,16 +285,38 @@ function Kind({
   canChange: boolean;
   onView: (item: LibraryItem) => void;
   onChanged: (message: string) => void;
+  onUnlinked: (name: string) => void;
 }) {
   const change = useProjectChange({ reloadOnChanged: true });
   const [busy, setBusy] = useState(false);
   const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
 
+  // After a removal the row may be gone and the Remove button always is: focus goes to the next row's open button,
+  // else the previous, else the Link files button, once the list has reloaded.
+  const focusId = useRef<string | null>(null);
+  const items = loaded.status === 'ready' ? loaded.data.items : null;
+  useEffect(() => {
+    if (focusId.current === null || !items) return;
+    const wanted = focusId.current;
+    focusId.current = null;
+    const target =
+      (wanted ? document.querySelector<HTMLElement>(`[data-file="${CSS.escape(wanted)}"]`) : null) ??
+      document.querySelector<HTMLElement>('[data-focus="linkfiles"]');
+    target?.focus({ preventScroll: true });
+  }, [items]);
+
   const unlink = async (item: LibraryItem) => {
+    const list = items ?? [];
+    const at = list.findIndex((i) => i.id === item.id);
+    const neighbour = list[at + 1] ?? list[at - 1];
     setBusy(true);
     const res = await change({ kind: 'unlink', key: card.key, path: item.path, expect: card.version });
     setBusy(false);
     onChanged(res.ok ? '' : res.message);
+    if (res.ok) {
+      focusId.current = neighbour?.id ?? '';
+      onUnlinked(item.title || item.name);
+    }
   };
 
   return (
@@ -292,23 +325,16 @@ function Kind({
         <h3>{title}</h3>
         {loaded.status === 'ready' ? <span className="count">{loaded.data.items.length}</span> : null}
       </div>
-      {loaded.status === 'loading' ? (
-        <p className="proj-note" role="status">
-          Loading…
-        </p>
-      ) : null}
+      {loaded.status === 'loading' ? <StateNote kind="loading" /> : null}
       {loaded.status === 'failed' ? (
-        <p className="proj-note" role="alert">
-          {loaded.message}{' '}
-          <button type="button" className="btn" data-size="small" onClick={loaded.retry}>
-            Try again
-          </button>
-        </p>
+        <StateNote kind="error" onRetry={loaded.retry}>
+          {loaded.message}
+        </StateNote>
       ) : null}
       {loaded.status === 'ready' ? (
         <>
           {loaded.data.items.length === 0 ? (
-            <p className="proj-note">No {title.toLowerCase()} in this project yet.</p>
+            <StateNote kind="empty">No {title.toLowerCase()} in this project yet.</StateNote>
           ) : (
             <ul className="lib-list">
               {loaded.data.items.map((item) => (
@@ -336,7 +362,7 @@ function Kind({
   );
 }
 
-/** The project's images and documents (in its folder, or linked), with Link files and Unlink. */
+/** The project's images and documents (in its folder, or linked), with Link files and Remove. */
 export function ProjectFiles({
   card,
   canChange,
@@ -381,7 +407,7 @@ export function ProjectFiles({
   return (
     <>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}
@@ -408,6 +434,7 @@ export function ProjectFiles({
             canChange={canChange}
             onView={(item) => void view(item)}
             onChanged={setMessage}
+            onUnlinked={(name) => setDone(`${name} removed from this project.`)}
           />
         ))}
       </div>

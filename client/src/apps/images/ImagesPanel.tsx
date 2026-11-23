@@ -2,16 +2,16 @@ import type { LibraryItem } from '../../../../shared/contract.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { pictureWords } from '../shared/library.ts';
-import { DetailActions } from '../shared/parts.tsx';
+import { DetailActions, focusLibrarySummary } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
 import { chatDraft } from './library.ts';
-import { useImages } from './store.ts';
+import { imagesStore, useImages } from './store.ts';
 
 /** The right panel for the Images app: the chosen image and the facts the file itself holds. */
 export function ImagesPanel() {
   const { current: image } = useImages();
-  const { newChat, hiddenFileIds } = useStore();
+  const { newChat, deleteFile, hiddenFileIds } = useStore();
   const { dispatch, modes } = useShell();
   // The file opens in the viewer drawer. A floating panel would sit under it, so it closes; a docked one stays.
   const open = (item: LibraryItem) => {
@@ -30,8 +30,14 @@ export function ImagesPanel() {
       <h3 className="lib-name">{image.name}</h3>
       <DetailActions
         item={image}
+        name={image.name}
         onAsk={() => newChat({ draft: chatDraft([image]) })}
         onOpen={image.view ? () => open(image) : null}
+        onDelete={() => {
+          deleteFile(image, image.name);
+          imagesStore.set({ current: null });
+          focusLibrarySummary();
+        }}
       />
       <dl className="kv">
         <dt>Type</dt>

@@ -1051,7 +1051,7 @@ export interface AppPrefs {
   favouriteTodos?: string[];
   /**
    * Starred files (plan 2026-11-15-home-pinned-cards): `LibraryItem.id`s in the order they were starred, at most
-   * FAVOURITE_FILES_MAX, each at most FILE_ID_MAX characters. Shown on Home as "Pinned files". An id is stable for a
+   * FAVOURITE_FILES_MAX, each at most FILE_ID_MAX characters. Shown on Home as "Favourite files". An id is stable for a
    * path, so a pin follows the file across re-listings. Kept only here, never in the brain. This server always
    * sends it; optional because an older server sends none, which reads as [].
    */

@@ -52,7 +52,13 @@ vi.mock('../../api.ts', () => ({
 }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: shell.state, dispatch: shell.dispatch, modes: {} }),
+  useShell: () => ({
+    state: shell.state,
+    dispatch: shell.dispatch,
+    modes: {},
+    panelHold: { dirty: false, asking: false },
+    guardPanel: (run: () => void) => run(),
+  }),
 }));
 
 const { adStore } = await import('./store.ts');
@@ -188,10 +194,11 @@ describe('Ads Account Summary', () => {
       await screen.findByText('Conv. value');
     };
 
-    it('starts at 30 days with a labelled radio group, dates in words and the change', async () => {
+    it('starts at 30 days with a labelled Seg, dates in words and the change', async () => {
       await open();
-      const group = screen.getByRole('group', { name: 'Show the last' });
-      expect((within(group).getByRole('radio', { name: '30 days' }) as HTMLInputElement).checked).toBe(true);
+      // The period is a Seg now (a radiogroup of buttons), not radio inputs (UX consistency, release 2B).
+      const group = screen.getByRole('radiogroup', { name: 'Show the last' });
+      expect(within(group).getByRole('radio', { name: '30 days' }).getAttribute('aria-checked')).toBe('true');
       expect(screen.getByText(/Last 30 days, 10 Oct to 8 Nov, against the 30 days before/)).toBeTruthy();
       expect(screen.getByText('+12% vs £36,120')).toBeTruthy();
       // The fixed tag goes while the strip shows.
@@ -232,7 +239,9 @@ describe('Ads Account Summary', () => {
         screen.getByText(/search terms with no conversions in the last 30 days \(Google basis\)/),
       ).toBeTruthy();
       expect(screen.getByText(/Google basis: as Google Ads reports them/)).toBeTruthy();
-      const facts = screen.getByRole('group', { name: 'Show the last' }).closest('section') as HTMLElement;
+      const facts = screen
+        .getByRole('radiogroup', { name: 'Show the last' })
+        .closest('section') as HTMLElement;
       expect(within(facts).queryByText('Wasted spend', { selector: 'dt' })).toBeNull();
     });
   });
@@ -314,11 +323,11 @@ describe('deep dive tables', () => {
     await ready();
     const alpha = screen.getByRole('region', { name: 'Alpha' });
     expect(within(alpha).getAllByRole('row')).toHaveLength(6);
-    const more = within(alpha).getByRole('button', { name: 'Show all 8' });
+    const more = within(alpha).getByRole('button', { name: 'Show all 8 rows' });
     expect(more.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(more);
     expect(within(alpha).getAllByRole('row')).toHaveLength(9);
-    expect(within(alpha).getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe(
+    expect(within(alpha).getByRole('button', { name: 'Show fewer rows' }).getAttribute('aria-expanded')).toBe(
       'true',
     );
     expect(

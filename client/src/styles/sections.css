@@ -1,54 +1,56 @@
-/* Section drawers (Workbench): tool rows are the shared .line rows with a leading icon. */
-.section-row > .icon {
-  flex: none;
-  color: var(--iron);
-}
-/* The open tool: white and lifted like every drawer's current row (aria-current="page"; base.css marks "true"). */
-.section-row[aria-current="page"] {
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.section-row[aria-current="page"] .line-title {
-  font-weight: 600;
-}
-.section-row[aria-current="page"] > .icon {
-  color: var(--navy);
-}
-.section-row .count {
-  flex: none;
-}
+@layer features {
+  /* Section drawers (Workbench): tool rows are the shared .line rows with a leading icon. */
+  .section-row > .icon {
+    flex: none;
+    color: var(--iron);
+  }
+  /* The open tool: white and lifted like every drawer's current row (aria-current="page"; base.css marks "true"). */
+  .section-row[aria-current="page"] {
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+  }
+  .section-row[aria-current="page"] .line-title {
+    font-weight: 600;
+  }
+  .section-row[aria-current="page"] > .icon {
+    color: var(--navy);
+  }
+  .section-row .count {
+    flex: none;
+  }
 
-/* A row note ("3 due"): text, not a count badge; never wraps or squeezes the title. */
-.section-row .section-note {
-  flex: none;
-  white-space: nowrap;
-}
+  /* A row note ("3 due"): text, not a count badge; never wraps or squeezes the title. */
+  .section-row .section-note {
+    flex: none;
+    white-space: nowrap;
+  }
 
-/* Tool tabs under the sheet bar: the .seg look on a row of page buttons. Sizes to its words, scrolls sideways when narrow. */
-.tool-tabs {
-  flex: none;
-  align-self: flex-start;
-  max-width: calc(100% - 32px);
-  margin: 12px 16px 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-/* Inside a .lib the sheet already supplies the gutter and the first-row gap. */
-/* Tabs inside a sheet's padded body (the project page wraps them in a row with its action) sit on the gutter. */
-.lib > .tool-tabs,
-.lib > .proj-tabrow > .tool-tabs {
-  margin: 0;
-  max-width: 100%;
-}
-.tool-tabs > button {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.tool-tabs .tool-tab-note {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--iron);
+  /* Tool tabs under the sheet bar: the .seg look on a row of page buttons. Sizes to its words, scrolls sideways when narrow. */
+  .tool-tabs {
+    flex: none;
+    align-self: flex-start;
+    max-width: calc(100% - 32px);
+    margin: var(--sp-12) var(--sp-16) 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  /* Inside a .lib the sheet already supplies the gutter and the first-row gap. */
+  /* Tabs inside a sheet's padded body (the project page wraps them in a row with its action) sit on the gutter. */
+  .lib > .tool-tabs,
+  .lib > .proj-tabrow > .tool-tabs {
+    margin: 0;
+    max-width: 100%;
+  }
+  .tool-tabs > button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    white-space: nowrap;
+  }
+  .tool-tabs .tool-tab-note {
+    font-size: var(--fs-small);
+    font-weight: 500;
+    color: var(--iron);
+  }
 }

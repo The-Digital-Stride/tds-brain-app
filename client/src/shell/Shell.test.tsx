@@ -251,10 +251,10 @@ describe('the left dock', () => {
     openWithClick(chats);
     expect(chats.getAttribute('aria-expanded')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close chat' }));
-    const keep = screen.getByRole('button', { name: 'Keep open' });
+    fireEvent.click(screen.getByRole('button', { name: 'End chat' }));
+    const keep = screen.getByRole('button', { name: 'Keep chat' });
     press('Escape', keep);
-    expect(screen.queryByText(/Close anyway/)).toBeNull();
+    expect(screen.queryByText(/End this chat\?/)).toBeNull();
     expect(chats.getAttribute('aria-expanded')).toBe('true');
     expect(api.close).not.toHaveBeenCalled();
 

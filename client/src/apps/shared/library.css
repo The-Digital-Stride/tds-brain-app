@@ -1,527 +1,349 @@
-/*
+@layer features {
+  /*
  * What every library app on the sheet shares (docs/design-system.md, "Apps on the sheet"): the
  * tools rows, the recessed tray holding one raised white card per folder, rows inside a card, the
  * frosted bar for ticked items and the details panel. An app's own stylesheet adds only what is
  * particular to its items.
  */
-.lib {
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 100%;
-  padding: 12px var(--sheet-gutter) 16px;
-}
-/* File names are shown as written: Inter would otherwise turn the x in "1200x628" into a ×. */
-.lib .line-title,
-.lib-name {
-  font-feature-settings: "calt" 0;
-}
+  .lib {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    min-height: 100%;
+    padding: var(--sp-12) var(--sheet-gutter) var(--sp-16);
+  }
+  /* File names are shown as written: Inter would otherwise turn the x in "1200x628" into a ×. */
+  .lib .line-title,
+  .lib-name {
+    font-feature-settings: "calt" 0;
+  }
 
-/* The sheet's body while a file is open in its place is hidden, not removed, so the list keeps its place. */
-.lib-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: 8px;
-  min-width: 0;
-}
-.lib-main[hidden] {
-  display: none;
-}
+  /* The sheet's body while a file is open in its place is hidden, not removed, so the list keeps its place. */
+  .lib-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: var(--sp-8);
+    min-width: 0;
+  }
+  .lib-main[hidden] {
+    display: none;
+  }
+  .lib-summary {
+    margin: 0 0 0 auto;
+    font: 400 var(--fs-small) / 1.45 var(--body);
+    color: var(--iron);
+    white-space: nowrap;
+  }
+  /* The tray: one column of folder cards --------------------------------------------------------- */
+  .lib .lib-tray {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+  }
+  .lib .card-head {
+    padding-bottom: var(--sp-4);
+  }
+  .lib .card-head h3 {
+    margin: 0;
+    font: 600 var(--fs-body) / 1.25 var(--head);
+  }
 
-/* Tools: scope, search, the app's own control; then the filter and the summary ----------------- */
-.lib-tools,
-.lib-filter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.lib-client {
-  flex: none;
-  width: 220px;
-  max-width: 100%;
-  min-width: 180px;
-}
-.lib-client .field {
-  font-weight: 600;
-}
-.lib-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1 1 200px;
-  max-width: 340px;
-}
-.lib-search > .icon {
-  position: absolute;
-  left: 10px;
-  pointer-events: none;
-  color: var(--iron);
-}
-.lib-search .field {
-  padding-left: 32px;
-}
-.lib-tools .seg {
-  flex: none;
-  width: 132px;
-  margin-left: auto;
-}
-.lib-filter .seg {
-  flex: 1 1 300px;
-  max-width: 560px;
-}
-/* An app with two switches keeps them together on the right. */
-.lib-tools .seg + .seg {
-  margin-left: 0;
-}
-.lib-summary {
-  margin: 0 0 0 auto;
-  font: 400 12px / 1.45 var(--body);
-  color: var(--iron);
-  white-space: nowrap;
-}
-/* In the tools row the summary takes the free space, so the layout control sits against it. */
-.lib-tools .lib-summary + .seg {
-  margin-left: 0;
-}
-.lib-empty {
-  margin: 0;
-  padding: 24px 0;
-  color: var(--iron);
-}
-.lib-failed {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
-}
-.lib-failed p {
-  margin: 0;
-  color: var(--iron);
-}
-/* A quiet line: a cap that was hit, or a file cut short. */
-.lib-note {
-  margin: 0;
-  padding: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-
-/* The tray: one column of folder cards --------------------------------------------------------- */
-.lib .lib-tray {
-  grid-template-columns: minmax(0, 1fr);
-  margin-top: 0;
-}
-.lib .card-head {
-  padding-bottom: 4px;
-}
-.lib .card-head h3 {
-  margin: 0;
-  font: 600 14px / 1.25 var(--head);
-}
-.lib-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-/* An app's own layout rule for the list must carry `:not([hidden])`, or it outranks this and Hide does nothing. */
-.lib-list[hidden] {
-  display: none;
-}
-
-/* Items ------------------------------------------------------------------------------------------ */
-.lib-open {
-  appearance: none;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.lib-tick {
-  position: relative;
-  z-index: 1;
-  margin: 0;
-}
-/* The whole item answers a click, not only the inner button: the button's hit area fills the item. */
-.lib-open::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-/* Open on the item itself: at the end of a row, on the top right corner of a tile's picture. It shows on
-   hover, on keyboard focus, on the chosen item, and always where nothing hovers. */
-.lib-view {
-  position: relative;
-  z-index: 1;
-  flex: none;
-  opacity: 0;
-  transition: opacity 120ms var(--ease);
-}
-/* The same room at the end of every row, button or not, so the columns line up. */
-.lib-row .lib-view,
-.lib-view-gap {
-  flex: none;
-  width: 56px;
-}
-.img-tile .lib-view-gap {
-  display: none;
-}
-.img-tile .lib-view {
-  position: absolute;
-  top: 11px;
-  right: 11px;
-}
-.lib-list > [data-current="true"] .lib-view,
-.lib-list > li:hover .lib-view,
-.lib-list > li:focus-within .lib-view {
-  opacity: 1;
-}
-@media (hover: none) {
-  .lib-view {
+  /* Items ------------------------------------------------------------------------------------------ */
+  .lib-open {
+    appearance: none;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-6);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .lib-tick {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+  }
+  /* The whole item answers a click, not only the inner button: the button's hit area fills the item. */
+  .lib-open::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .img-tile .lib-view-gap {
+    display: none;
+  }
+  .img-tile .lib-view {
+    position: absolute;
+    top: 11px;
+    right: 11px;
+  }
+  .lib-list > [data-current="true"] .lib-view,
+  .lib-list > li:hover .lib-view,
+  .lib-list > li:focus-within .lib-view {
     opacity: 1;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lib-view {
-    transition: none;
+  @media (hover: none) {
+    .lib-view {
+      opacity: 1;
+    }
   }
-}
-/* Delete: the bin after Open on a row, on the bottom corner of a tile's picture. It shows with Open. */
-.lib-delete {
-  position: relative;
-  z-index: 1;
-  flex: none;
-  opacity: 0;
-  transition: opacity 120ms var(--ease);
-}
-/* A tile's picture is a positioned box of its own, so the bin sits on its corner and never on the name. */
-.lib-tile-pic {
-  position: relative;
-  margin-bottom: 6px;
-}
-.img-tile .lib-delete {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  background: rgba(255, 255, 255, 0.92);
-}
-/* A row without a bin keeps the bin's room, so the rows of a list line up. */
-.lib-delete-gap {
-  flex: none;
-  width: 28px;
-}
-.lib-list > [data-current="true"] .lib-delete,
-.lib-list > li:hover .lib-delete,
-.lib-list > li:focus-within .lib-delete,
-.lib-delete:focus-visible {
-  opacity: 1;
-}
-@media (hover: none) {
+  @media (prefers-reduced-motion: reduce) {
+    .lib-view {
+      transition: none;
+    }
+  }
+  /* Delete: the bin after Open on a row, on the bottom corner of a tile's picture. It shows with Open. */
   .lib-delete {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease);
+  }
+  /* A tile's picture is a positioned box of its own, so the bin sits on its corner and never on the name. */
+  .lib-tile-pic {
+    position: relative;
+    margin-bottom: var(--sp-6);
+  }
+  .img-tile .lib-delete,
+  .img-tile .star-btn:not([aria-pressed="true"]) {
+    background: var(--glass-92);
+  }
+  .img-tile .lib-delete {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+  }
+  .lib-list > [data-current="true"] .lib-delete,
+  .lib-list > li:hover .lib-delete,
+  .lib-list > li:focus-within .lib-delete,
+  .lib-delete:focus-visible {
     opacity: 1;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lib-delete {
-    transition: none;
+  @media (hover: none) {
+    .lib-delete {
+      opacity: 1;
+    }
   }
-}
-/* The viewer's own bar: the bin at the right, above the file. */
-.lib-viewer-bar {
-  display: flex;
-  justify-content: flex-end;
-  padding-bottom: 8px;
-}
-.lib-held {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-/* Shared by Documents and a project's Files tab. */
-/* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
-.doc-glyph {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--iron);
-}
-/* Rows: the tray's own (Home's hover and pressed states apply). */
-.lib .lib-row {
-  position: relative;
-  gap: 10px;
-  padding: 5px 8px;
-}
-.lib-row .lib-open {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-/* The current item is a layer of its own: the wash fill, raised one step, and a heavier name. */
-.lib .lib-list > [data-current="true"] {
-  background: var(--wash);
-  box-shadow: var(--lift-1);
-}
-.lib .lib-list > [data-current="true"]:hover {
-  background: var(--wash-strong);
-  box-shadow: var(--lift-1);
-}
-/* Pressed is the tray fill with no shadow, on the current item too. */
-.lib .lib-list > [data-current="true"]:active {
-  background: var(--tray);
-  box-shadow: none;
-  transform: none;
-}
-.lib [data-current="true"] .line-title {
-  font-weight: 600;
-}
+  @media (prefers-reduced-motion: reduce) {
+    .lib-delete {
+      transition: none;
+    }
+  }
+  /* Shared by Documents and a project's Files tab. */
+  /* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
+  .doc-glyph {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-6);
+    background: var(--surface);
+    color: var(--iron);
+  }
+  /* Rows: the tray's own (Home's hover and pressed states apply). */
+  .lib .lib-row {
+    position: relative;
+    gap: var(--sp-10);
+    padding: 5px var(--sp-8);
+  }
+  .lib-row .lib-open {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+  }
+  /* The current item is a layer of its own: the wash fill, raised one step, and a heavier name. */
+  .lib .lib-list > [data-current="true"] {
+    background: var(--wash);
+    box-shadow: var(--lift-1);
+  }
+  .lib .lib-list > [data-current="true"]:hover {
+    background: var(--wash-strong);
+    box-shadow: var(--lift-1);
+  }
+  /* Pressed is the tray fill with no shadow, on the current item too. */
+  .lib .lib-list > [data-current="true"]:active {
+    background: var(--tray);
+    box-shadow: none;
+    transform: none;
+  }
+  .lib [data-current="true"] .line-title {
+    font-weight: 600;
+  }
 
-/* The bar for ticked items: frosted, floating over the bottom of the sheet ------------------------ */
-.lib-selbar {
-  position: sticky;
-  bottom: 12px;
-  z-index: 2;
-  align-self: center;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  /* Pinned to the bottom of the sheet, however short the list is. */
-  margin-top: auto;
-  padding: 6px 6px 6px 14px;
-  border-radius: 14px;
-  box-shadow: var(--lift-2);
-}
-.lib-selcount {
-  margin-right: 6px;
-  font-size: 13px;
-  font-weight: 600;
-}
+  /* The details panel: a preview on a white card, then plain rows ----------------------------------- */
+  .lib-detail {
+    display: grid;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-4);
+  }
+  .lib-preview {
+    padding: var(--sp-8);
+    border-radius: var(--r-14);
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+  }
+  .lib-name {
+    margin: 0;
+    padding: 0 var(--sp-4);
+    font: 600 var(--fs-body) / 1.3 var(--head);
+    overflow-wrap: anywhere;
+  }
+  .lib-detail .kv {
+    padding: 0 var(--sp-4);
+  }
 
-/* The details panel: a preview on a white card, then plain rows ----------------------------------- */
-.lib-detail {
-  display: grid;
-  gap: 8px;
-  padding: 0 4px;
-}
-.lib-preview {
-  padding: 8px;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.lib-name {
-  margin: 0;
-  padding: 0 4px;
-  font: 600 14px / 1.3 var(--head);
-  overflow-wrap: anywhere;
-}
-.lib-file {
-  margin: -6px 0 0;
-  padding: 0 4px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-  overflow-wrap: anywhere;
-}
-/* Two rows on purpose: the actions on the file, then the two file utilities (Download, Copy file path). */
-.lib-actions {
-  display: grid;
-  gap: 6px;
-  padding: 0 4px;
-}
-.lib-actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.lib-detail .kv {
-  padding: 0 4px;
-}
+  /* The viewer: a file open on the sheet in place of the list ---------------------------------------- */
 
-/* The viewer: a file open on the sheet in place of the list ---------------------------------------- */
-.lib-viewer {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: 8px;
-  min-width: 0;
-}
-.lib-viewer:focus {
-  outline: none;
-}
-/* The viewer sits on the tray like the lists do: one white card, whatever the file. */
-.lib-stage {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  margin-top: 0;
-}
-/* A picture sits flat on the white card with a hairline edge and no shadow. */
-.tray .lib-pic {
-  display: grid;
-  place-items: center;
-  min-height: 160px;
-  padding: 8px;
-}
-.lib-viewer-image {
-  display: block;
-  max-width: 100%;
-  max-height: calc(100dvh - 150px);
-  object-fit: contain;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-}
-.tray .lib-doc {
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 20px 24px;
-}
-.lib-text {
-  margin: 0;
-  font: 400 14px / 1.6 var(--body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.tray .lib-page {
-  flex: 1;
-  display: flex;
-  padding: 6px;
-}
-.lib-frame {
-  flex: 1;
-  width: 100%;
-  min-height: 420px;
-  border: 0;
-  border-radius: 10px;
-  background: #fff;
-}
-/* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
-.tray .lib-pdf {
-  padding: 0;
-  overflow: hidden;
-}
-.lib-pdf .lib-frame {
-  border-radius: 0;
-}
-
-/*
+  /* The viewer sits on the tray like the lists do: one white card, whatever the file. */
+  .lib-stage {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    margin-top: 0;
+  }
+  /*
  * Pictures and the grid (Images, and Documents where Quick Look can draw them) -------------------
  * The picture sits flat in its box, contained at its own proportions, with a hairline edge and no
  * shadow. The box is 3:2 unless the app sets `--thumb-ratio` (a page is 3:4). Where there is no
  * picture the standard tile fills the same box: the app's icon, centred.
  */
-.img-thumb {
-  position: relative;
-  display: grid;
-  place-items: center;
-  aspect-ratio: var(--thumb-ratio, 3 / 2);
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--iron);
-}
-.img-thumb > img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-/* A list row's picture: a small 3:2 box beside the name (Images and a project's Files tab). */
-.lib-row .img-thumb {
-  flex: none;
-  width: 48px;
-}
-.lib[data-layout="grid"] .lib-list:not([hidden]) {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 2px;
-}
-.lib[data-layout="list"] .lib-list:not([hidden]) {
-  display: grid;
-  gap: 2px;
-}
-.img-tile {
-  position: relative;
-  padding: 8px;
-  border-radius: 10px;
-  transition:
-    box-shadow 120ms var(--ease),
-    transform 120ms var(--ease),
-    background-color 120ms var(--ease);
-}
-/* A tile rises off the card on hover, as a row does. */
-.img-tile:hover {
-  z-index: 1;
-  background: #fff;
-  box-shadow: var(--lift-1);
-  transform: translateY(-1px);
-}
-.img-tile:active {
-  background: var(--tray);
-  box-shadow: none;
-  transform: none;
-}
-.img-tile .lib-open {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-}
-/* Up to two lines, so names that differ only at the end (the size) stay readable. */
-.lib .img-tile .line-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  font-size: 13px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-/* The tick sits on the picture's corner; it shows on hover, on focus, once ticked, or while picking. */
-.img-tile .lib-tick {
-  position: absolute;
-  top: 11px;
-  left: 11px;
-  z-index: 1;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.92);
-  opacity: 0;
-  transition: opacity 120ms var(--ease);
-}
-.img-tile:hover .lib-tick,
-.img-tile:focus-within .lib-tick,
-.img-tile[data-ticked="true"] .lib-tick,
-.lib[data-picking="true"] .img-tile .lib-tick {
-  opacity: 1;
-}
-@media (hover: none) {
-  .img-tile .lib-tick {
-    opacity: 1;
+  .img-thumb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: var(--thumb-ratio, 3 / 2);
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-6);
+    background: var(--surface);
+    color: var(--iron);
   }
-}
-@media (prefers-reduced-motion: reduce) {
+  .img-thumb > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* A list row's picture: a small 3:2 box beside the name (Images and a project's Files tab). */
+  .lib-row .img-thumb {
+    flex: none;
+    width: 48px;
+  }
+  .lib[data-layout="grid"] .lib-list:not([hidden]) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: var(--sp-2);
+  }
+  .lib[data-layout="list"] .lib-list:not([hidden]) {
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .img-tile {
+    position: relative;
+    padding: var(--sp-8);
+    border-radius: var(--r-10);
+    transition:
+      box-shadow var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease),
+      background-color var(--t-fast) var(--ease);
+  }
+  /* A tile rises off the card on hover, as a row does. */
   .img-tile:hover {
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+    transform: translateY(-1px);
+  }
+  .img-tile:active {
+    background: var(--tray);
+    box-shadow: none;
     transform: none;
   }
-  .img-tile,
+  .img-tile .lib-open {
+    display: grid;
+    gap: var(--sp-6);
+    width: 100%;
+  }
+  /* Up to two lines, so names that differ only at the end (the size) stay readable. */
+  .lib .img-tile .line-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: var(--fs-control);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  /* The tick sits on the picture's corner; it shows on hover, on focus, once ticked, or while picking. */
   .img-tile .lib-tick {
-    transition: none;
+    position: absolute;
+    top: 11px;
+    left: 11px;
+    z-index: 1;
+    border-radius: var(--r-6);
+    background: var(--glass-92);
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease);
+  }
+  .img-tile:hover .lib-tick,
+  .img-tile:focus-within .lib-tick,
+  .img-tile[data-ticked="true"] .lib-tick,
+  .lib[data-picking="true"] .img-tile .lib-tick {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .img-tile .lib-tick {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .img-tile:hover {
+      transform: none;
+    }
+    .img-tile,
+    .img-tile .lib-tick {
+      transition: none;
+    }
+  }
+
+  /* Favourite: the star before Open on a row, on the tile's top edge left of Open. Like Open and the bin it shows on
+   hover, on focus and on the chosen item (a favourite always shows), and always where nothing hovers.
+   Rows get the hover rule from drawers.css (.line .star-btn). */
+  .lib-row .star-btn {
+    position: relative;
+    z-index: 1;
+    flex: none;
+  }
+  .img-tile .star-btn {
+    position: absolute;
+    z-index: 1;
+    top: 9px;
+    right: 70px;
+  }
+  @media (hover: hover) {
+    .img-tile .star-btn[aria-pressed="false"] {
+      opacity: 0;
+      transition: opacity var(--t-fast) var(--ease);
+    }
+    .img-tile:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
+      opacity: 1;
+    }
+    .lib-list > [data-current="true"] .star-btn[aria-pressed] {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .img-tile .star-btn {
+      transition: none;
+    }
   }
 }

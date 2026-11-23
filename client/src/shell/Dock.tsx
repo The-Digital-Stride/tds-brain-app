@@ -71,7 +71,7 @@ export function Dock({ side, open, label, overlay, onClose, actions, children }:
         inert={!open}
         aria-hidden={open ? undefined : true}
       >
-        <header className="dock-head">
+        <header className="panel-head">
           <h2 ref={heading} tabIndex={-1}>
             {label}
           </h2>

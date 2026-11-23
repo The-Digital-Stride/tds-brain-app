@@ -25,10 +25,12 @@ import { todoChatClient } from '../state/client-choice.ts';
 import { todoPlaceParts, useProjects } from '../state/projects.ts';
 import { type ChangeTodosResult, useStore } from '../store.tsx';
 import { isFaithful, setTask } from '../todo-doc/index.ts';
+import { Confirm } from './Confirm.tsx';
 import type { TodoPanelMode } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton } from './StarButton.tsx';
 import TodoDetailsEditor from './TodoDetailsEditor.tsx';
 import { TodoFiles } from './TodoFiles.tsx';
 import {
@@ -82,7 +84,7 @@ export interface TodoPanelProps {
   /** Add form: start in this project (the drawer's project filter). */
   startProject?: string;
   onEdit: (todo: TodoItem) => void;
-  /** Back to reading, dropping the draft. Never asks: the person pressed Cancel. */
+  /** Back to reading, dropping the draft. The panel asks first when anything changed. */
   onCancelEdit: () => void;
   onSave: (todo: TodoItem, actions: TodoAction[]) => Promise<ChangeTodosResult>;
   /** A tick box pressed while reading: the whole new details, sent as one change. True when it was saved. */
@@ -113,11 +115,12 @@ export default function TodoPanel(props: TodoPanelProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
-  const keepButton = useRef<HTMLButtonElement>(null);
 
   const [addDirty, setAddDirty] = useState(false);
   // Older servers send no `canProject`: the Project and Stage fields stay hidden.
-  const canProject = useStore().todos?.canProject === true;
+  const { todos: todoData, boot, toggleFavouriteTodo } = useStore();
+  const canProject = todoData?.canProject === true;
+  const favouriteTodos = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
 
   const draft = props.draft;
   // With canAttach the panel works on the details part only: the Files section is its own block.
@@ -138,9 +141,6 @@ export default function TodoPanel(props: TodoPanelProps) {
   }, [dirty, dispatch]);
 
   const ask = panel?.ask ?? null;
-  useEffect(() => {
-    if (ask) keepButton.current?.focus();
-  }, [ask]);
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
   const key = todo?.key ?? asked?.key ?? '';
@@ -202,10 +202,18 @@ export default function TodoPanel(props: TodoPanelProps) {
           close();
         }}
       >
-        <header className="todo-head">
+        <header className="panel-head todo-head">
           <h2 id={headId} ref={heading} tabIndex={-1}>
             {title}
           </h2>
+          {todo !== null && mode !== 'add' ? (
+            <StarButton
+              id={todo.key}
+              title={todo.title}
+              on={favouriteTodos.includes(todo.key)}
+              onPress={(id) => void toggleFavouriteTodo(id)}
+            />
+          ) : null}
           {mode === 'add' ? null : (
             <>
               <button
@@ -241,35 +249,16 @@ export default function TodoPanel(props: TodoPanelProps) {
           </button>
         </header>
         {ask ? (
-          <fieldset
-            className="todo-ask"
-            onKeyDown={(e) => {
-              if (e.key !== 'Escape') return;
-              e.preventDefault();
-              e.stopPropagation();
-              dispatch({ type: 'keep-todo' });
-            }}
-          >
-            <legend className="todo-ask-q">Discard your changes?</legend>
-            <button
-              type="button"
-              className="btn"
-              data-variant="danger"
-              data-size="small"
-              onClick={() => dispatch({ type: 'discard-todo' })}
-            >
-              Discard changes
-            </button>
-            <button
-              type="button"
-              className="btn"
-              data-size="small"
-              ref={keepButton}
-              onClick={() => dispatch({ type: 'keep-todo' })}
-            >
-              Keep editing
-            </button>
-          </fieldset>
+          <Confirm
+            label="Discard your changes"
+            text="Discard your changes?"
+            action="Discard changes"
+            safe="Keep editing"
+            variant="danger"
+            busy={false}
+            onConfirm={() => dispatch({ type: 'discard-todo' })}
+            onCancel={() => dispatch({ type: 'keep-todo' })}
+          />
         ) : null}
         {/* One status line for every view, so "Added." and the like are announced across view changes. */}
         <Status message={message} isError={isError} />
@@ -494,17 +483,26 @@ function ReadView({
             {chat.has ? 'Open chat' : 'Start a chat'}
           </button>
           {p.canEdit || p.canTick ? (
-            <button type="button" className="btn" disabled={p.busy} onClick={() => p.onDone(todo)}>
+            <button
+              type="button"
+              className="btn"
+              aria-disabled={p.busy || undefined}
+              onClick={() => {
+                if (!p.busy) p.onDone(todo);
+              }}
+            >
               Mark as done
             </button>
           ) : null}
+          {/* Delete is a standard button: it has an Undo, so it isn't red (rule 5). */}
           {p.canEdit ? (
             <button
               type="button"
               className="btn"
-              data-variant="danger"
-              disabled={p.busy}
-              onClick={() => p.onDelete(todo)}
+              aria-disabled={p.busy || undefined}
+              onClick={() => {
+                if (!p.busy) p.onDelete(todo);
+              }}
             >
               Delete
             </button>
@@ -616,14 +614,11 @@ function EditView({
   titleInput: React.RefObject<HTMLInputElement | null>;
 }) {
   const uid = useId();
+  const { dispatch } = useShell();
   const chat = useChat(todo);
   const [askDrop, setAskDrop] = useState(false);
-  const dropButton = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   const { list: projectList } = useProjects();
-  useEffect(() => {
-    if (askDrop) dropButton.current?.focus();
-  }, [askDrop]);
   const { draft, setDraft, me, team } = p;
   const set = (patch: Partial<EditDraft>) => setDraft((d) => ({ ...d, ...patch }));
   // Giving a personal to-do to someone else makes it a TDS one: they can't see a personal file.
@@ -696,7 +691,7 @@ function EditView({
       <div className="todo-body">
         <div className="todo-main-col">
           {handover ? <p className="todo-note todo-handover">{handover}</p> : null}
-          <div className="todo-field">
+          <div className="form-field">
             <label htmlFor={`${uid}-title`}>Title</label>
             <input
               id={`${uid}-title`}
@@ -707,8 +702,8 @@ function EditView({
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
-          <div className="todo-field">
-            <span className="todo-label" id={`${uid}-details-label`}>
+          <div className="form-field">
+            <span className="label" id={`${uid}-details-label`}>
               Details
             </span>
             {detailsEditable ? (
@@ -727,13 +722,13 @@ function EditView({
                   label="Details"
                   describedBy={`${uid}-long`}
                 />
-                <p className="todo-note" id={`${uid}-long`}>
+                <p className="hint" id={`${uid}-long`}>
                   {detailsNote}
                 </p>
               </>
             )}
             {overLimit ? (
-              <p className="todo-note" id={`${uid}-over`} role="alert">
+              <p className="error" id={`${uid}-over`} role="alert">
                 These details are longer than {TODO_DETAILS_MAX.toLocaleString('en-GB')} characters, so they
                 can't be saved here. Shorten them, or change them in a chat.
               </p>
@@ -741,7 +736,7 @@ function EditView({
           </div>
         </div>
         <div className="todo-side-edit">
-          <div className="todo-field">
+          <div className="form-field">
             <label htmlFor={`${uid}-due`}>Due date</label>
             <div className="todo-inline">
               <input
@@ -762,7 +757,7 @@ function EditView({
               </button>
             </div>
           </div>
-          <div className="todo-field">
+          <div className="form-field">
             <label htmlFor={`${uid}-who`}>Assigned to</label>
             <Assignee
               id={`${uid}-who`}
@@ -785,8 +780,8 @@ function EditView({
             />
           ) : null}
           {switchable ? (
-            <div className="todo-field">
-              <span className="todo-label">Where it's kept</span>
+            <div className="form-field">
+              <span className="label">Where it's kept</span>
               <Seg<TodoScope>
                 label="Where this to-do is kept"
                 value={draft.scope}
@@ -797,7 +792,7 @@ function EditView({
                 ]}
               />
               {warnPersonal ? (
-                <p className="todo-note" id={`${uid}-personal`}>
+                <p className="hint" id={`${uid}-personal`}>
                   {PERSONAL_WARNING}
                 </p>
               ) : null}
@@ -806,30 +801,15 @@ function EditView({
         </div>
       </div>
       {askDrop ? (
-        <fieldset
-          className="todo-ask"
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.preventDefault();
-            e.stopPropagation();
-            closeAsk();
-          }}
-        >
-          <legend className="todo-ask-q">{dropProjectQuestion(privateName)}</legend>
-          <button
-            type="button"
-            className="btn"
-            data-variant="primary"
-            data-size="small"
-            ref={dropButton}
-            onClick={() => save(true)}
-          >
-            Move to the team
-          </button>
-          <button type="button" className="btn" data-size="small" onClick={closeAsk}>
-            Cancel
-          </button>
-        </fieldset>
+        <Confirm
+          label="Move to the team"
+          text={dropProjectQuestion(privateName)}
+          action="Move to the team"
+          variant="primary"
+          busy={false}
+          onConfirm={() => save(true)}
+          onCancel={closeAsk}
+        />
       ) : null}
       {draft.theirs ? (
         <p className="todo-note" id={`${uid}-conflict`} ref={conflictRef}>
@@ -844,18 +824,21 @@ function EditView({
           <button
             type="button"
             className="btn"
-            disabled={p.busy || dirty}
+            aria-disabled={p.busy || dirty || undefined}
             aria-describedby={dirty ? `${uid}-dirty` : undefined}
-            onClick={() => p.onDone(todo)}
+            onClick={() => {
+              if (!p.busy && !dirty) p.onDone(todo);
+            }}
           >
             Mark as done
           </button>
           <button
             type="button"
             className="btn"
-            data-variant="danger"
-            disabled={p.busy}
-            onClick={() => p.onDelete(todo)}
+            aria-disabled={p.busy || undefined}
+            onClick={() => {
+              if (!p.busy) p.onDelete(todo);
+            }}
           >
             Delete
           </button>
@@ -875,7 +858,16 @@ function EditView({
           >
             Save
           </button>
-          <button type="button" className="btn" onClick={p.onCancelEdit}>
+          {/* Anything changed asks "Discard your changes?" in the strip under the header; nothing changed just leaves. */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              dirty
+                ? dispatch({ type: 'ask-todo', after: { type: 'set-todo-mode', mode: 'read' } })
+                : p.onCancelEdit()
+            }
+          >
             Cancel
           </button>
         </div>

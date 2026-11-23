@@ -5,6 +5,7 @@ import type {
   ProjectMoveResult,
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
 import { useProjects } from '../../state/projects.ts';
@@ -98,7 +99,6 @@ export function MoveScreen({
   const [answer, setAnswer] = useState<ProjectMoveCheckResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
-  const cancelBtn = useRef<HTMLButtonElement>(null);
   const continueBtn = useRef<HTMLButtonElement>(null);
   // Set when a refusal drops the check, so focus lands on Continue rather than nowhere.
   const dropped = useRef(false);
@@ -112,8 +112,7 @@ export function MoveScreen({
   const target = clients.find((c) => c.slug === client) ?? null;
 
   useEffect(() => {
-    if (answer) cancelBtn.current?.focus();
-    else if (dropped.current) {
+    if (!answer && dropped.current) {
       dropped.current = false;
       continueBtn.current?.focus();
     }
@@ -185,40 +184,27 @@ export function MoveScreen({
         <h2 className="proj-title">Move {card.title}</h2>
       </div>
       {problem ? (
-        <p className="proj-banner" data-level="error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {problem}
         </p>
       ) : null}
       {answer && target ? (
-        <fieldset
-          className="proj-ask proj-move-ask"
-          aria-describedby={`${base}-desc`}
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.preventDefault();
-            e.stopPropagation();
-            onCancel();
-          }}
-        >
-          <legend className="proj-ask-q">{question}</legend>
-          <div className="proj-move-text" id={`${base}-desc`}>
-            <ConfirmText card={card} clients={clients} target={target} answer={answer} />
-          </div>
-          <div className="proj-buttons">
-            <button
-              type="button"
-              className="btn"
-              data-variant="primary"
-              aria-disabled={busy || undefined}
-              onClick={() => void move()}
-            >
-              Move to {target.name}
-            </button>
-            <button type="button" className="btn" ref={cancelBtn} onClick={onCancel}>
-              Cancel
-            </button>
-          </div>
-        </fieldset>
+        <Confirm
+          label={question}
+          text={
+            <>
+              <strong className="proj-move-q">{question}</strong>
+              <span className="proj-move-text">
+                <ConfirmText card={card} clients={clients} target={target} answer={answer} />
+              </span>
+            </>
+          }
+          action={`Move to ${target.name}`}
+          variant="primary"
+          busy={busy}
+          onConfirm={() => void move()}
+          onCancel={onCancel}
+        />
       ) : (
         // biome-ignore lint/a11y/noStaticElementInteractions: only listens for Esc bubbling from its own buttons and fields.
         <section
@@ -231,7 +217,7 @@ export function MoveScreen({
             onCancel();
           }}
         >
-          <div className="proj-field">
+          <div className="form-field">
             <label htmlFor={`${base}-to`}>Move to</label>
             <SearchSelect
               id={`${base}-to`}
@@ -245,7 +231,7 @@ export function MoveScreen({
               placeholder="Choose a client"
               aria-describedby={`${base}-hint`}
             />
-            <p className="proj-hint" id={`${base}-hint`}>
+            <p className="hint" id={`${base}-hint`}>
               The folder name, {card.slug}, stays the same.
             </p>
           </div>

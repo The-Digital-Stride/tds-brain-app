@@ -7,6 +7,7 @@ import type {
   ProjectRemoveResult,
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
+import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -154,7 +155,7 @@ function Light({ light }: { light: ProjectCard['health'] }) {
   if (!light) return <>Not set</>;
   return (
     <span className="proj-light">
-      <span className="health-dot" data-state={dotState(light)} aria-hidden="true" />
+      <span className="dot" data-state={dotState(light)} aria-hidden="true" />
       {LIGHT_WORDS[light]}
     </span>
   );
@@ -208,9 +209,9 @@ function Team({
                 type="button"
                 className="btn"
                 data-size="small"
-                disabled={busy !== null}
+                aria-disabled={busy !== null || undefined}
                 aria-label={`Add ${personName(r.person, team)} to the team`}
-                onClick={() => void add(r.person)}
+                onClick={() => busy === null && void add(r.person)}
               >
                 Add to team
               </button>
@@ -219,7 +220,7 @@ function Team({
         ))}
       </ul>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}
@@ -266,7 +267,7 @@ function Overview({
         />
       ) : null}
       {card.archived ? (
-        <div className="proj-banner" role="status">
+        <div className="notice" data-level="info" data-shape="box" role="status">
           <span>
             This project is archived, so it can't be changed.
             {removal.on && removal.pre && !removal.pre.allowed
@@ -274,13 +275,13 @@ function Overview({
               : ''}
           </span>
           {removal.on ? (
-            <span className="proj-banner-actions">
+            <span className="notice-actions">
               <button
                 type="button"
                 className="btn"
                 data-size="small"
-                disabled={removal.busy}
-                onClick={removal.unarchive}
+                aria-disabled={removal.busy || undefined}
+                onClick={removal.busy ? undefined : removal.unarchive}
               >
                 Unarchive
               </button>
@@ -289,11 +290,10 @@ function Overview({
                   type="button"
                   className="btn"
                   data-size="small"
-                  data-variant="danger"
                   data-focus="delete"
                   onClick={() => removal.setPanel('delete')}
                 >
-                  Delete…
+                  Delete
                 </button>
               ) : null}
             </span>
@@ -301,12 +301,12 @@ function Overview({
         </div>
       ) : null}
       {removal.problem ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {removal.problem}
         </p>
       ) : null}
       {card.card === 'none' ? (
-        <div className="proj-banner">
+        <div className="notice" data-level="info" data-shape="box">
           <span>This project has no card yet, so its details can't be edited.</span>
           {canChange && !card.archived ? (
             <button type="button" className="btn" data-size="small" data-focus="addcard" onClick={onAddCard}>
@@ -316,7 +316,7 @@ function Overview({
         </div>
       ) : null}
       {card.card === 'unreadable' ? (
-        <div className="proj-banner" data-level="warning" role="alert">
+        <div className="notice" data-level="warn" data-shape="box" role="alert">
           <span>
             This project's card can't be read, so it can't be edited. You can add a new card, or ask someone
             to fix the file.
@@ -344,7 +344,7 @@ function Overview({
                   aria-label={`Move ${card.title} to another client`}
                   onClick={onMove}
                 >
-                  Move…
+                  Move
                 </button>
               ) : null}
             </dd>
@@ -361,7 +361,7 @@ function Overview({
                     aria-label={`Archive ${card.title}`}
                     onClick={() => removal.setPanel('archive')}
                   >
-                    Archive…
+                    Archive
                   </button>
                   {removal.pre?.empty ? (
                     <button
@@ -372,7 +372,7 @@ function Overview({
                       aria-label={`Delete ${card.title}`}
                       onClick={() => removal.setPanel('delete')}
                     >
-                      Delete…
+                      Delete
                     </button>
                   ) : null}
                 </>
@@ -521,30 +521,51 @@ export function ProjectPage({
   return (
     <>
       <div className="proj-head">
-        <button type="button" className="btn" data-size="small" onClick={onBack}>
+        <button
+          type="button"
+          className="btn proj-back"
+          data-variant="quiet"
+          data-size="small"
+          onClick={onBack}
+        >
+          <Icon name="chevron" size={14} />
           All projects
         </button>
         <h2 className="proj-title" data-focus="title" tabIndex={-1}>
           {card.title}
         </h2>
         {editable ? (
-          <button type="button" className="btn" data-size="small" data-focus="edit" onClick={onEdit}>
+          <button
+            type="button"
+            className="btn proj-head-end"
+            data-size="small"
+            data-focus="edit"
+            onClick={onEdit}
+          >
+            <Icon name="edit" size={14} />
             Edit
           </button>
         ) : null}
       </div>
       {!canChange ? (
-        <p className="proj-banner" role="status">
+        <p className="notice" data-level="info" data-shape="box" role="status">
           {READ_ONLY_NOTICE}
         </p>
       ) : null}
       {note ? (
-        <p className="proj-banner" role="status" data-focus="note" tabIndex={-1}>
+        <p
+          className="notice"
+          data-level="info"
+          data-shape="box"
+          role="status"
+          data-focus="note"
+          tabIndex={-1}
+        >
           {note}
         </p>
       ) : null}
       {list.duplicates.some((d) => d.endsWith(`/${card.slug}`)) ? (
-        <p className="proj-banner" role="status">
+        <p className="notice" data-level="info" data-shape="box" role="status">
           Another folder has the same name as this project and is hidden: {list.duplicates.join(', ')}.
         </p>
       ) : null}
@@ -563,10 +584,12 @@ export function ProjectPage({
           <button
             type="button"
             className="btn"
+            data-variant="primary"
             data-size="small"
             onClick={() => setAdding(true)}
-            disabled={adding}
+            aria-disabled={adding || undefined}
           >
+            <Icon name="plus" size={14} />
             Add a to-do
           </button>
         ) : null}
@@ -574,10 +597,13 @@ export function ProjectPage({
           <button
             type="button"
             className="btn"
+            data-variant="primary"
             data-size="small"
+            data-focus="linkfiles"
             onClick={() => setLinking(true)}
-            disabled={linking}
+            aria-disabled={linking || undefined}
           >
+            <Icon name="plus" size={14} />
             Link files
           </button>
         ) : null}

@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { AccountHead, FactTiles, goToClose, MonthlyClose, NeedsYou, Proposals } from './Approvals.tsx';
 import { identityLine } from './ProposalPanel.tsx';
@@ -11,6 +13,18 @@ export function AdManagerSheet() {
   const { ads } = useStore();
   const s = useAd();
   useAdsAccount();
+  const { state, dispatch } = useShell();
+
+  // The right panel opens when a proposal is chosen (Details, a row), not on arrival with nothing to show. A panel
+  // left open from another visit is put away once, when this sheet comes up with no proposal chosen; the sheet
+  // bar's toggle still opens it whenever the person wants.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current) return;
+    arrived.current = true;
+    if (state.panelOpen && !findProposal(s.approvals, s.selected))
+      dispatch({ type: 'set-panel', open: false });
+  }, [state.panelOpen, s.approvals, s.selected, dispatch]);
 
   // The panel shows a proposal as soon as there is one waiting for this account.
   useEffect(() => {
@@ -36,17 +50,21 @@ export function AdManagerSheet() {
 
   return (
     <div className="am">
-      {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
+      {mismatch ? (
+        <p className="notice" data-level="info" data-shape="box">
+          {identityLine(ads?.me?.name)}
+        </p>
+      ) : null}
       {s.loadError ? (
-        <p className="am-line" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {s.loadError}
         </p>
       ) : null}
-      {!s.accounts && !s.loadError ? <p className="card-note">Loading</p> : null}
-      {s.accounts && s.accounts.length === 0 ? <p className="card-note">No accounts found.</p> : null}
+      {!s.accounts && !s.loadError ? <StateNote kind="loading" /> : null}
+      {s.accounts && s.accounts.length === 0 ? <StateNote kind="empty">No accounts found.</StateNote> : null}
 
       {s.boardError ? (
-        <p className="am-line" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {s.boardError}
         </p>
       ) : null}
@@ -60,13 +78,13 @@ export function AdManagerSheet() {
           </div>
           {client ? (
             client.mine ? null : (
-              <p className="am-line">
+              <p className="notice" data-level="info" data-shape="box">
                 {client.name}'s proposals are reviewed by{' '}
                 {personName(client.reviewer || client.owner, s.approvals?.people) || 'someone else'}.
               </p>
             )
           ) : (
-            <p className="am-line">
+            <p className="notice" data-level="info" data-shape="box">
               {account.name} is not on the supervised ads-manager yet, so it has no proposals.
             </p>
           )}

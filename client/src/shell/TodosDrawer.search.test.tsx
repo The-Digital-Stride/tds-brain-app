@@ -197,14 +197,17 @@ describe('quick add', () => {
     expect(toggle.getAttribute('data-on')).toBe('true');
   });
 
+  const submitButton = () =>
+    within(screen.getByRole('form', { name: 'Add a to-do' })).getByRole('button', { name: 'Add a to-do' });
+
   it('describes the Add button with the personal warning while it shows', async () => {
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
     await openAdd();
-    expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBeNull();
+    expect(submitButton().getAttribute('aria-describedby')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     const warning = screen.getByText(/Personal to-dos stay on this Mac/);
-    expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBe(warning.id);
+    expect(submitButton().getAttribute('aria-describedby')).toBe(warning.id);
   });
 
   it('More options moves focus to the first field it reveals', async () => {
@@ -334,7 +337,11 @@ describe('the + button', () => {
     todo('a.md', 'Renew contract', { client: 'acme' }),
     todo('b.md', 'Ring Bob', { client: 'bolt' }),
   ];
-  const add = () => screen.getByRole('button', { name: 'Add a to-do' });
+  // The opener; the form's own submit shares its name while the form is open.
+  const add = () =>
+    screen
+      .getAllByRole('button', { name: 'Add a to-do' })
+      .find((b) => b.hasAttribute('aria-expanded')) as HTMLElement;
   const row = () => document.querySelector('.todo-filters') as HTMLElement;
   const tabs = () => screen.getByRole('radiogroup', { name: 'Which to-dos' });
 
@@ -463,6 +470,23 @@ describe('revealTodo (from the global search)', () => {
     rerender(<TodosDrawer />);
     expect((screen.getByRole('combobox', { name: 'Client' }) as HTMLInputElement).value).toBe('All clients');
     expect(fakeShell.state.todoPanel).toMatchObject({ key: 'b.md', mode: 'read' });
+  });
+
+  it('keeps the Working on project when the revealed to-do is in it, and clears it when it is not', async () => {
+    const { projectChoice } = await import('../state/client-choice.ts');
+    const inside = todo('in.md', 'Inside', { projectMatch: { how: 'key', key: 'acme/site' } });
+    const outside = todo('out.md', 'Outside', { projectMatch: { how: 'key', key: 'acme/other' } });
+    setStore([inside, outside]);
+    projectChoice.set('acme/site');
+    ask(inside);
+    const { rerender } = render(<TodosDrawer />);
+    expect(projectChoice.get().project).toBe('acme/site');
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'in.md', mode: 'read' });
+    ask(outside, 2);
+    rerender(<TodosDrawer />);
+    expect(projectChoice.get().project).toBe('');
+    expect(fakeShell.state.todoPanel).toMatchObject({ key: 'out.md', mode: 'read' });
+    projectChoice.set('');
   });
 
   it('opens a group the person closed by hand when the same to-do is revealed again', () => {

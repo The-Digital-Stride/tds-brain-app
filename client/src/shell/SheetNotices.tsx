@@ -27,7 +27,7 @@ export function SheetNotices(_: SheetNoticesProps) {
       {/* A page that is already out of date only offers Reload. */}
       {outdated ? null : <UpdateBanner />}
       {outdated ? (
-        <div className="update-banner">
+        <div className="notice" data-shape="strip" data-level="info">
           <span>{UPDATE_TEXT}</span>
           <button
             type="button"
@@ -41,12 +41,12 @@ export function SheetNotices(_: SheetNoticesProps) {
         </div>
       ) : null}
       {streamUp || restarting ? null : (
-        <div className="offline-banner" role="status">
+        <div className="notice" data-shape="strip" data-level="warn" role="status">
           Lost touch with TDS Cortex. Trying to reconnect.
         </div>
       )}
       {actionError ? (
-        <div className="error-banner" role="alert">
+        <div className="notice sheet-error" data-shape="box" data-level="error" role="alert">
           <span>{actionError}</span>
           <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={clearError}>
             Dismiss
@@ -55,7 +55,8 @@ export function SheetNotices(_: SheetNoticesProps) {
       ) : null}
       <FileDeleteNotice />
       {notice ? (
-        // A deleted file's note is spoken by the status line in FileDeleteNotice (always on the page).
+        // A deleted file's note is spoken by the status line in FileDeleteNotice (always on the page), and a
+        // deleted chat's by the Chats drawer's, where the delete was started.
         <p
           className="closed-note"
           role={notice === fileNotice ? undefined : 'status'}

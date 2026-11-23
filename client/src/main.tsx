@@ -7,6 +7,7 @@ import '@fontsource/poppins/latin-500.css';
 import '@fontsource/poppins/latin-600.css';
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/primitives.css';
 import './styles/shell.css';
 import './styles/drawers.css';
 import './styles/sections.css';
@@ -14,11 +15,14 @@ import './styles/home.css';
 import './styles/palette.css';
 import './styles/search-select.css';
 import './styles/chat.css';
+import './styles/settings.css';
 import './styles/viewer.css';
 import './styles/todo-panel.css';
 import './styles/help.css';
 import './styles/guide.css';
 import './styles/tour.css';
+import './styles/patterns.css';
+import './styles/library-shared.css';
 
 const root = document.getElementById('root');
 if (root) {

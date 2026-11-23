@@ -23,7 +23,7 @@ The file viewer opens a document, picture or PDF in a wide panel that slides ove
 
 ## How to use it
 
-1. On Home, click a file in the **Pinned files** card. In a chat's Files tab, click the file, then press **Open**.
+1. On Home, click a file in the **Favourite files** card. In a chat's Files tab, click the file, then press **Open**.
 2. Read it. The name is at the top, with where it lives under it.
 3. Press **Open in Documents** (or **Open in Images**) to carry on in that app.
 4. Press **Download** to save a copy.
@@ -36,9 +36,9 @@ The file viewer opens a document, picture or PDF in a wide panel that slides ove
 
 - The screen behind the viewer is paused until you close it.
 - Pictures, PDFs, text, Markdown and web pages open inside the app. Word, spreadsheet and slide files don't. They say "This type can't be shown here. Download it to open it."
-- A starred file appears on Home under **Pinned files**. See [Favourites](help:favourites).
+- A starred file appears on Home under **Favourite files**. See [Favourites](help:favourites).
 - You only see files your role lets you see.
 
 ## Try this
 
-Star a file you open often, then find it under **Pinned files** on Home.
+Star a file you open often, then find it under **Favourite files** on Home.

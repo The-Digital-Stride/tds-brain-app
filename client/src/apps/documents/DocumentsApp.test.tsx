@@ -294,6 +294,29 @@ describe('opening a document from the panel', () => {
   });
 });
 
+describe('the details pane actions (UX consistency, release 2B)', () => {
+  it('has the bin after the star, only where canDelete is true, and deletes through the same hold', () => {
+    docsStore.set({ current: { ...audit, canDelete: true } });
+    render(<DocumentsPanel />);
+    const row = screen.getByRole('button', { name: 'Ask Claude about it' }).parentElement as HTMLElement;
+    const names = within(row)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    // Open isn't offered for a file that can't be shown; Ask, the star, then the bin.
+    expect(names).toEqual([
+      'Ask Claude about it',
+      'Favourite: Google Ads audit',
+      'Delete file: Google Ads audit',
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete file: Google Ads audit' }));
+    expect(store.deleteFile).toHaveBeenCalledWith(expect.objectContaining({ id: audit.id }));
+    cleanup();
+    docsStore.set({ current: { ...audit, canDelete: false } });
+    render(<DocumentsPanel />);
+    expect(screen.queryByRole('button', { name: /^Delete file/ })).toBeNull();
+  });
+});
+
 describe('deleting a document', () => {
   it('shows a bin only where canDelete is true, and holds the delete when it is pressed', async () => {
     api.library.mockImplementation(async (scope: string) =>

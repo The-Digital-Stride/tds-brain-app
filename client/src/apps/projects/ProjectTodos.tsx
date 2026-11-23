@@ -1,6 +1,7 @@
 import { type FormEvent, useId, useMemo, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -35,6 +36,8 @@ export function ProjectTodos({
   const [stage, setStage] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // Cancel with a title typed asks first (design system, Actions rule 9).
+  const [asking, setAsking] = useState(false);
   const titleId = useId();
   const stageId = useId();
 
@@ -46,8 +49,21 @@ export function ProjectTodos({
   };
   const canAdd = todos?.canProject === true && !card.archived;
 
+  const close = () => {
+    setTitle('');
+    setStage('');
+    onAdding(false);
+    setMessage('');
+    setAsking(false);
+  };
+  const cancel = () => {
+    if (title.trim() || stage) setAsking(true);
+    else close();
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const text = title.trim();
     if (!text) {
       setMessage('Give the to-do a title.');
@@ -73,6 +89,7 @@ export function ProjectTodos({
     }
     setTitle('');
     setStage('');
+    setAsking(false);
     onAdding(false);
     void refresh();
     void reload();
@@ -82,8 +99,31 @@ export function ProjectTodos({
     <>
       {canAdd ? null : <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>}
       {adding && canAdd ? (
-        <form className="card proj-card proj-form" onSubmit={(e) => void submit(e)} aria-label="Add a to-do">
-          <div className="proj-field">
+        <form
+          className="card proj-card proj-form"
+          onSubmit={(e) => void submit(e)}
+          aria-label="Add a to-do"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || (!title.trim() && !stage)) return;
+            // Typed work: Esc asks, and asking again keeps it.
+            e.preventDefault();
+            e.stopPropagation();
+            setAsking(!asking);
+          }}
+        >
+          {asking ? (
+            <Confirm
+              label="Discard your changes"
+              text="Discard your changes?"
+              action="Discard changes"
+              safe="Keep editing"
+              variant="danger"
+              busy={false}
+              onConfirm={close}
+              onCancel={() => setAsking(false)}
+            />
+          ) : null}
+          <div className="form-field">
             <label htmlFor={titleId}>To-do</label>
             <input
               id={titleId}
@@ -96,7 +136,7 @@ export function ProjectTodos({
             />
           </div>
           {card.stages.length > 0 ? (
-            <div className="proj-field">
+            <div className="form-field">
               <label htmlFor={stageId}>Stage</label>
               <select id={stageId} className="field" value={stage} onChange={(e) => setStage(e.target.value)}>
                 <option value="">No stage</option>
@@ -109,22 +149,15 @@ export function ProjectTodos({
             </div>
           ) : null}
           {message ? (
-            <p className="proj-error" role="alert">
+            <p className="error" role="alert">
               {message}
             </p>
           ) : null}
           <div className="proj-buttons">
-            <button type="submit" className="btn" data-variant="primary" disabled={busy}>
-              Add to-do
+            <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
+              Add a to-do
             </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                onAdding(false);
-                setMessage('');
-              }}
-            >
+            <button type="button" className="btn" onClick={cancel}>
               Cancel
             </button>
           </div>
@@ -177,7 +210,13 @@ function TodoText({ t, team }: { t: ProjectTodoRow; team: readonly TeamMember[] 
     <span className="line-text">
       <span className="line-title">{t.title}</span>
       <span className="line-meta">
-        {t.assignee ? personName(t.assignee, team) : 'Open to anyone'}
+        {t.mine
+          ? t.assignee
+            ? personName(t.assignee, team)
+            : 'Open to anyone'
+          : t.assignee
+            ? `Assigned to ${personName(t.assignee, team)}`
+            : 'Not assigned'}
         {t.due ? ` · due ${dateWords(t.due)}` : ''}
       </span>
     </span>

@@ -108,7 +108,7 @@ export class ApiFailure extends Error {
   }
 }
 
-/** `keepalive` lets a request finish after the page closes (used to send held to-do changes). */
+/** `keepalive` lets a request finish after the page closes (used to send held to-dos, files and chat deletes). */
 export interface SendOptions {
   keepalive?: boolean;
   /** Aborts the request (the global search drops a search the person has typed past). */
@@ -285,7 +285,14 @@ export const api = {
   /** Asks Claude, in that chat, to change a page or turn it into a TDS-branded document. */
   askPage: (sessionId: string, key: string, req: PageAskRequest) =>
     request<OkResponse>('POST', ROUTES.chatPageAsk(sessionId, key), req),
-  deletePastChat: (id: string) => request<Record<string, never>>('DELETE', ROUTES.pastSession(id)),
+  /**
+   * Moves an earlier chat to the Mac's Bin. Always `keepalive`: the delete is held for its Undo time first,
+   * and closing the page sends it at once, so it must be able to finish while the page goes.
+   */
+  deletePastChat: (id: string) =>
+    request<Record<string, never>>('DELETE', ROUTES.pastSession(id), undefined, undefined, {
+      keepalive: true,
+    }),
   setChatKind: (id: string, kind: ChatKind) =>
     request<StartSessionResponse>('POST', ROUTES.sessionKind(id), { kind } satisfies SetChatKindRequest),
   /**

@@ -3,6 +3,7 @@ import { ASKED_DONE_DAYS, type AskedTodo, type AskedTodoList } from '../../../sh
 import { dueInWords, isOverdue } from '../format.ts';
 import { Fold } from './Fold.tsx';
 import { ProjectChip } from './ProjectChip.tsx';
+import { StateNote } from './StateNote.tsx';
 import { askedMeta, cap } from './words.ts';
 
 /** How the separate "asked of others" request is going. */
@@ -132,12 +133,12 @@ export function AskedList({
         {state === 'failed' ? (
           <p className="dock-empty asked-retry" role="status">
             Couldn't load these.{' '}
-            <button type="button" className="link-btn" onClick={onRetry}>
+            <button type="button" className="btn" data-size="small" onClick={onRetry}>
               Try again
             </button>
           </p>
         ) : (
-          <p className="dock-empty">Loading what you've asked of others.</p>
+          <StateNote kind="loading" />
         )}
       </>
     );
@@ -168,7 +169,7 @@ export function AskedList({
       {state === 'failed' ? (
         <p className="todo-note asked-retry" role="status">
           Couldn't refresh this list.{' '}
-          <button type="button" className="link-btn" onClick={onRetry}>
+          <button type="button" className="btn" data-size="small" onClick={onRetry}>
             Try again
           </button>
         </p>

@@ -309,7 +309,7 @@ export function SearchSelect({
             // biome-ignore lint/a11y/noStaticElementInteractions: the list only keeps focus on the combobox; the keyboard works through the input
             <div
               ref={popRef}
-              className="ss-pop"
+              className="popover ss-pop"
               style={{
                 left: at.left,
                 width: at.width,
@@ -331,7 +331,7 @@ export function SearchSelect({
                         id={optionId(r)}
                         role="option"
                         aria-selected={isActive}
-                        className="ss-opt"
+                        className="menu-row ss-opt"
                         data-active={isActive ? 'true' : undefined}
                         onClick={() => pick(r.option)}
                       >

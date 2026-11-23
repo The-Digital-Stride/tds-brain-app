@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   attentionFor,
   type ClientGuessResponse,
@@ -11,14 +11,7 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { skillsMenuVisible } from '../help/visibility.ts';
-import { chatForTodo } from '../state/attention.ts';
-import {
-  clientForProject,
-  clientSlugOf,
-  projectChoice,
-  todoChatClient,
-  useProjectChoice,
-} from '../state/client-choice.ts';
+import { clientForProject, clientSlugOf, projectChoice, useProjectChoice } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
 import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos } from '../state/home-pins.ts';
@@ -31,9 +24,12 @@ import type { DrawerName } from './contract.ts';
 import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { ShowMore } from './ShowMore.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { clientOptions } from './search-select.ts';
 import { WhatsNewCard } from './WhatsNewCard.tsx';
-import { placeName, STATE_WORDS, starterSkills, todoChatDraft, whenWords } from './words.ts';
+import { placeName, STATE_WORDS, starterSkills, whenWords } from './words.ts';
 
 /** Meta line parts, e.g. "overdue by 2 days", "Acme Heating". Joined with ", " in the text; only the overdue part is late. */
 function metaParts(
@@ -113,6 +109,11 @@ export function Home() {
     libraryVersion,
     ads,
     openTool,
+    revealTodo,
+    toggleFavouriteTodo,
+    toggleFavouriteChat,
+    toggleFavouriteFile,
+    togglePin,
   } = useStore();
   const { dispatch } = useShell();
   const clients = boot?.clients ?? [];
@@ -199,6 +200,16 @@ export function Home() {
     };
   }, [fileKey, libraryVersion]);
 
+  // Each card's star keeps focus when its row moves or goes (a favourite taken off leaves the card).
+  const todoCard = useRef<HTMLElement>(null);
+  const chatCard = useRef<HTMLElement>(null);
+  const fileCard = useRef<HTMLElement>(null);
+  const skillCard = useRef<HTMLElement>(null);
+  const todoStar = useStarFocus(todoCard, boot?.prefs.favouriteTodos ?? NO_FAVOURITES);
+  const chatStar = useStarFocus(chatCard, boot?.prefs.favouriteChats ?? NO_FAVOURITES);
+  const fileStar = useStarFocus(fileCard, boot?.prefs.favouriteFiles ?? NO_FAVOURITES);
+  const skillStar = useStarFocus(skillCard, boot?.prefs.pins ?? NO_FAVOURITES);
+
   if (!boot) return null;
 
   const today = todayIso();
@@ -223,20 +234,32 @@ export function Home() {
         openIn: { app: f.item.kind === 'image' ? 'images' : 'documents', scope: f.scope.id },
       },
     });
+  const chatStarFor = (chat: { sdkSessionId: string | null; title?: string | null }) => (
+    <StarButton
+      id={chat.sdkSessionId ?? ''}
+      title={chat.title || 'New chat'}
+      on={true}
+      onPress={(id, button) => {
+        // A favourite chat always has its id; the guard is for the type's sake.
+        if (!id) return;
+        chatStar(id, button);
+        void toggleFavouriteChat(id);
+      }}
+    />
+  );
   const openDrawer = (drawer: DrawerName) => dispatch({ type: 'open-drawer', drawer });
   const clientName = (slug: string | null) => (slug ? placeName(slug, clients) : null);
 
   const openTodo = (todo: TodoItem) => {
     // Opening a to-do someone passed to you counts as seeing it.
     if (isNewToYou(todo, boot.identity.slug, boot.prefs.todoSeen ?? {}, new Date())) markTodosSeen([todo]);
-    const chat = chatForTodo(todo.key, live);
-    if (chat) openChat(chat.id);
-    else {
-      const client = todoChatClient(todo, clients);
-      newChat({ draft: todoChatDraft(todo), todoId: todo.key, ...(client !== undefined ? { client } : {}) });
-    }
+    // A row opens the to-do in the to-do panel (read first), as search does; it never starts a chat. The chat
+    // button inside the panel does that.
+    openDrawer('todos');
+    revealTodo(todo);
   };
 
+  const favouriteSkills = new Set(boot.prefs.pins ?? []);
   const { pinned, often } = starterSkills(boot);
   const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Favourite skills';
   const skillRows: SkillInfo[] = (pinned.length > 0 ? pinned : often).slice(0, 5);
@@ -262,7 +285,7 @@ export function Home() {
           {activeChat.kind === 'new' ? (
             <div className="home-composer">
               {activeChat.skill ? (
-                <div className="home-skill">
+                <div className="notice home-skill" data-shape="box" data-level="info">
                   <strong>{activeChat.skill.title}</strong>
                   {activeChat.skill.description ? <span>{activeChat.skill.description}</span> : null}
                   {activeChat.skill.argumentHint ? (
@@ -447,9 +470,9 @@ export function Home() {
                   ))}
               </section>
             ) : null}
-            <section className="card" aria-labelledby="home-todos">
+            <section className="card" aria-labelledby="home-todos" ref={todoCard} tabIndex={-1}>
               <div className="card-head">
-                <h2 id="home-todos">Pinned to-dos</h2>
+                <h2 id="home-todos">Favourite to-dos</h2>
                 {todos ? <span className="count">{pinnedTodoRows.length}</span> : null}
                 <button
                   type="button"
@@ -462,35 +485,51 @@ export function Home() {
                 </button>
               </div>
               {!todos ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedTodoRows.length === 0 ? (
-                <p className="card-note">
-                  {project ? 'No pinned to-dos in this project.' : 'Star a to-do to keep it here.'}
-                </p>
+                <StateNote kind="empty">
+                  {project ? 'No favourite to-dos in this project.' : 'Favourite a to-do to keep it here.'}
+                </StateNote>
               ) : (
                 <>
-                  {pinnedTodoRows.slice(0, rowsShown('todos')).map((t) => (
-                    <button key={t.key} type="button" className="line" onClick={() => openTodo(t)}>
-                      <span className="line-text">
-                        <span className="line-title">{t.title}</span>
-                        <span className="line-meta">
-                          {metaParts(
-                            t,
-                            today,
-                            clientName,
-                            todoProjectKey(t)
-                              ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
-                              : null,
-                          ).map((part, i) => (
-                            <span key={part.text}>
-                              {i > 0 ? ', ' : ''}
-                              <span className={part.late ? 'late' : undefined}>{part.text}</span>
-                            </span>
-                          ))}
+                  <ul className="drawer-list">
+                    {pinnedTodoRows.slice(0, rowsShown('todos')).map((t) => (
+                      <HomeRow
+                        key={t.key}
+                        onOpen={() => openTodo(t)}
+                        star={
+                          <StarButton
+                            id={t.key}
+                            title={t.title}
+                            on={true}
+                            onPress={(id, button) => {
+                              todoStar(id, button);
+                              void toggleFavouriteTodo(id);
+                            }}
+                          />
+                        }
+                      >
+                        <span className="line-text">
+                          <span className="line-title">{t.title}</span>
+                          <span className="line-meta">
+                            {metaParts(
+                              t,
+                              today,
+                              clientName,
+                              todoProjectKey(t)
+                                ? (todoPlaceParts(t, projectList?.projects, clients)[0] ?? null)
+                                : null,
+                            ).map((part, i) => (
+                              <span key={part.text}>
+                                {i > 0 ? ', ' : ''}
+                                <span className={part.late ? 'late' : undefined}>{part.text}</span>
+                              </span>
+                            ))}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  ))}
+                      </HomeRow>
+                    ))}
+                  </ul>
                   <MoreLink
                     total={pinnedTodoRows.length}
                     noun={['to-do', 'to-dos']}
@@ -501,9 +540,9 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-chats">
+            <section className="card" aria-labelledby="home-chats" ref={chatCard} tabIndex={-1}>
               <div className="card-head">
-                <h2 id="home-chats">Pinned chats</h2>
+                <h2 id="home-chats">Favourite chats</h2>
                 <button
                   type="button"
                   className="btn"
@@ -515,43 +554,43 @@ export function Home() {
                 </button>
               </div>
               {!sessions ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedChatRows.length === 0 ? (
-                <p className="card-note">Star a chat to keep it here.</p>
+                <StateNote kind="empty">Favourite a chat to keep it here.</StateNote>
               ) : (
                 <>
-                  {pinnedChatRows.slice(0, rowsShown('chats')).map((row) =>
-                    row.kind === 'live' ? (
-                      <button
-                        key={row.chat.sdkSessionId}
-                        type="button"
-                        className="line"
-                        onClick={() => openChat(row.chat.id)}
-                      >
-                        <span
-                          className="dot"
-                          data-attention={attentionFor(row.chat.state) ?? undefined}
-                          aria-hidden="true"
-                        />
-                        <span className="line-text">
-                          <span className="line-title">{row.chat.title}</span>
-                          <span className="line-meta">{STATE_WORDS[row.chat.state]}</span>
-                        </span>
-                      </button>
-                    ) : (
-                      <button
-                        key={row.chat.sdkSessionId}
-                        type="button"
-                        className="line"
-                        onClick={() => void openPast(row.chat.sdkSessionId)}
-                      >
-                        <span className="line-text">
-                          <span className="line-title">{row.chat.title || 'New chat'}</span>
-                          <span className="line-meta">{whenWords(row.chat.lastModified)}</span>
-                        </span>
-                      </button>
-                    ),
-                  )}
+                  <ul className="drawer-list">
+                    {pinnedChatRows.slice(0, rowsShown('chats')).map((row) =>
+                      row.kind === 'live' ? (
+                        <HomeRow
+                          key={row.chat.sdkSessionId}
+                          onOpen={() => openChat(row.chat.id)}
+                          star={chatStarFor(row.chat)}
+                        >
+                          <span
+                            className="dot"
+                            data-attention={attentionFor(row.chat.state) ?? undefined}
+                            aria-hidden="true"
+                          />
+                          <span className="line-text">
+                            <span className="line-title">{row.chat.title}</span>
+                            <span className="line-meta">{STATE_WORDS[row.chat.state]}</span>
+                          </span>
+                        </HomeRow>
+                      ) : (
+                        <HomeRow
+                          key={row.chat.sdkSessionId}
+                          onOpen={() => void openPast(row.chat.sdkSessionId)}
+                          star={chatStarFor(row.chat)}
+                        >
+                          <span className="line-text">
+                            <span className="line-title">{row.chat.title || 'New chat'}</span>
+                            <span className="line-meta">{whenWords(row.chat.lastModified)}</span>
+                          </span>
+                        </HomeRow>
+                      ),
+                    )}
+                  </ul>
                   <MoreLink
                     total={pinnedChatRows.length}
                     noun={['chat', 'chats']}
@@ -562,9 +601,9 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-files">
+            <section className="card" aria-labelledby="home-files" ref={fileCard} tabIndex={-1}>
               <div className="card-head">
-                <h2 id="home-files">Pinned files</h2>
+                <h2 id="home-files">Favourite files</h2>
                 <button
                   type="button"
                   className="btn"
@@ -576,23 +615,39 @@ export function Home() {
                 </button>
               </div>
               {pinnedFiles === null && filesFailed ? (
-                <p className="card-note">Couldn't load your pinned files.</p>
+                <StateNote kind="error">Couldn't load your favourite files.</StateNote>
               ) : pinnedFiles === null ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedFileRows.length === 0 ? (
-                <p className="card-note">
-                  {project ? 'No pinned files in this project.' : 'Star a file to keep it here.'}
-                </p>
+                <StateNote kind="empty">
+                  {project ? 'No favourite files in this project.' : 'Favourite a file to keep it here.'}
+                </StateNote>
               ) : (
                 <>
-                  {pinnedFileRows.slice(0, rowsShown('files')).map((f) => (
-                    <button key={f.item.id} type="button" className="line" onClick={() => openFile(f)}>
-                      <span className="line-text">
-                        <span className="line-title">{f.item.title}</span>
-                        <span className="line-meta">{f.scope.name}</span>
-                      </span>
-                    </button>
-                  ))}
+                  <ul className="drawer-list">
+                    {pinnedFileRows.slice(0, rowsShown('files')).map((f) => (
+                      <HomeRow
+                        key={f.item.id}
+                        onOpen={() => openFile(f)}
+                        star={
+                          <StarButton
+                            id={f.item.id}
+                            title={f.item.title}
+                            on={true}
+                            onPress={(id, button) => {
+                              fileStar(id, button);
+                              void toggleFavouriteFile(id);
+                            }}
+                          />
+                        }
+                      >
+                        <span className="line-text">
+                          <span className="line-title">{f.item.title}</span>
+                          <span className="line-meta">{f.scope.name}</span>
+                        </span>
+                      </HomeRow>
+                    ))}
+                  </ul>
                   <MoreLink
                     total={pinnedFileRows.length}
                     noun={['file', 'files']}
@@ -603,7 +658,7 @@ export function Home() {
               )}
             </section>
 
-            <section className="card" aria-labelledby="home-skills">
+            <section className="card" aria-labelledby="home-skills" ref={skillCard} tabIndex={-1}>
               <div className="card-head">
                 <h2 id="home-skills">{skillsTitle}</h2>
                 {skillsMenuVisible(boot?.identity.role ?? 'unknown') ? (
@@ -619,15 +674,31 @@ export function Home() {
                 ) : null}
               </div>
               {skillRows.length === 0 ? (
-                <p className="card-note">Star a skill to keep it here.</p>
+                <StateNote kind="empty">Favourite a skill to keep it here.</StateNote>
               ) : (
-                skillRows.map((s) => (
-                  <button key={s.name} type="button" className="line" onClick={() => startSkill(s)}>
-                    <span className="line-text">
-                      <span className="line-title">{s.title}</span>
-                    </span>
-                  </button>
-                ))
+                <ul className="drawer-list">
+                  {skillRows.map((s) => (
+                    <HomeRow
+                      key={s.name}
+                      onOpen={() => startSkill(s)}
+                      star={
+                        <StarButton
+                          id={s.name}
+                          title={s.title}
+                          on={favouriteSkills.has(s.name)}
+                          onPress={(id, button) => {
+                            skillStar(id, button);
+                            void togglePin(id);
+                          }}
+                        />
+                      }
+                    >
+                      <span className="line-text">
+                        <span className="line-title">{s.title}</span>
+                      </span>
+                    </HomeRow>
+                  ))}
+                </ul>
               )}
             </section>
           </div>
@@ -638,6 +709,21 @@ export function Home() {
 }
 
 type PinnedCard = 'todos' | 'chats' | 'files';
+
+/**
+ * A Home card row: the open button and the star sit side by side (a button can't hold a button), so the
+ * whole row still looks and lifts as one, as in the drawers. The star is the row's trailing edge (rule 2).
+ */
+function HomeRow({ onOpen, star, children }: { onOpen: () => void; star: ReactNode; children: ReactNode }) {
+  return (
+    <li className="line">
+      <button type="button" className="line-main" onClick={onOpen}>
+        {children}
+      </button>
+      {star}
+    </li>
+  );
+}
 
 /**
  * "Show N more" under a pinned card that holds more than it shows: expands the card in place, then reads
@@ -655,29 +741,23 @@ function MoreLink({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const wrap = useRef<HTMLSpanElement>(null);
   const hidden = total - PINNED_ROWS;
   if (hidden <= 0) return null;
   return (
-    <button
-      type="button"
-      className="btn"
-      data-variant="quiet"
-      data-size="small"
-      aria-expanded={expanded}
-      onClick={(e) => {
-        const button = e.currentTarget;
-        onToggle();
-        // Folding a long card back removes rows above the button: keep it in view.
-        if (expanded) requestAnimationFrame(() => button.scrollIntoView?.({ block: 'nearest' }));
-      }}
-    >
-      {expanded ? (
-        <>
-          Show fewer<span className="visually-hidden"> {noun[1]}</span>
-        </>
-      ) : (
-        `Show ${hidden} more ${hidden === 1 ? noun[0] : noun[1]}`
-      )}
-    </button>
+    <span ref={wrap}>
+      <ShowMore
+        expanded={expanded}
+        count={hidden}
+        noun={{ one: noun[0], many: noun[1] }}
+        wording="more"
+        onToggle={() => {
+          onToggle();
+          // Folding a long card back removes rows above the button: keep it in view.
+          const button = wrap.current?.querySelector('button');
+          if (expanded) requestAnimationFrame(() => button?.scrollIntoView?.({ block: 'nearest' }));
+        }}
+      />
+    </span>
   );
 }

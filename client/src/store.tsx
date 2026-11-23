@@ -15,6 +15,7 @@ import type {
   Bootstrap,
   ChatKind,
   LibraryItem,
+  PastSession,
   SequencedEvent,
   SessionList,
   SkillInfo,
@@ -39,6 +40,7 @@ import { ApiFailure, api, streamUrl } from './api.ts';
 import { toolView } from './shell/sections.ts';
 import type { ToolSnapshot } from './shell/sections-contract.ts';
 import { type SettingsTab, settingsTabForFocus } from './shell/settings-tabs.ts';
+import { UNDO_MS } from './shell/UndoLine.tsx';
 import { type ChatAction, type ChatState, chatReducer, initialChatState } from './state/chat-reducer.ts';
 import { needsCloseConfirm } from './state/close.ts';
 import { type FavouriteField, useFavouriteList } from './state/favourite-list.ts';
@@ -67,7 +69,7 @@ export type UploadTodoFileResult =
   | { ok: false; error: { code: string; message: string }; todos?: TodoList };
 
 /**
- * A library file being deleted: held for TODO_UNDO_MS (Undo works), then sent. It leaves every list, the
+ * A library file being deleted: held for UNDO_MS (Undo works), then sent. It leaves every list, the
  * starred files and Home from the moment it is held, and stays out until the delete fails or Undo is pressed.
  */
 export interface HeldFile {
@@ -89,10 +91,132 @@ function fileDeleteMessage(err: unknown): string {
 /** How long a deleted file stays out of the lists after the server confirms (a refresh may still carry it). */
 const FILE_GONE_MS = 60_000;
 
-/** How long a held to-do change waits, with an Undo button, before it is sent. */
-export const TODO_UNDO_MS = 10_000;
+/** How long a held to-do change waits, with an Undo button, before it is sent: the one `UNDO_MS` (kept by this name for older callers). */
+export const TODO_UNDO_MS = UNDO_MS;
 /** After one library file delete, presses on another bin are ignored for this long (a double-click, a held Enter). */
 export const FILE_DELETE_GUARD_MS = 600;
+
+/**
+ * An earlier chat being deleted: held for UNDO_MS (Undo works), then sent. It leaves the past list everywhere
+ * (Chats, Home, search) from the moment it is held, and stays out until the delete fails or Undo is pressed.
+ */
+export interface HeldChatDelete {
+  sdkSessionId: string;
+  title: string;
+  /** 'waiting': Undo works. 'sending': its time is up and the request is queued or on its way. */
+  phase: 'waiting' | 'sending';
+  /** The row as it was, so the Chats drawer can keep the Undo line in its place. */
+  session: PastSession;
+}
+
+/** One held item: 'waiting' (Undo works) until its time is up, then 'queued' behind any item still being sent. */
+interface HeldEntry<T> {
+  item: T;
+  timer: ReturnType<typeof setTimeout> | null;
+  state: 'waiting' | 'queued';
+}
+
+export interface HeldQueue<T> {
+  /** Starts the clock. `replace` swaps a waiting item for this one; false when nothing was held. */
+  hold: (id: string, item: T, opts?: { replace?: boolean }) => boolean;
+  /** Drops a waiting item before it is sent; false once it is queued (too late). */
+  undo: (id: string) => boolean;
+  /** Stops a waiting item's clock. */
+  pause: (id: string) => void;
+  /** Starts a paused item's clock again from the full UNDO_MS. */
+  resume: (id: string) => void;
+  has: (id: string) => boolean;
+  /** Closing the page: sends everything not yet started, at once, with keepalive. */
+  flush: () => void;
+}
+
+/**
+ * The one held queue behind every Undo line (to-dos, files, earlier chats; plan 2026-11-22-ux-consistency,
+ * decision 12 and R5). Nothing is sent until an item's time is up; then it joins a queue that sends one at a
+ * time, so lists come back in the order the changes were made and a second failure never races the first.
+ * An item leaves `entries` only when its request starts (or on Undo), so each item is sent exactly once:
+ * by its turn in the queue or by `flush`, whichever comes first.
+ */
+export function createHeldQueue<T>(opts: {
+  send: (item: T, sendOpts?: { keepalive: true }) => Promise<unknown>;
+  /** The time ran out: the item is queued and Undo no longer works. */
+  onQueued: (id: string, item: T) => void;
+}): HeldQueue<T> {
+  const entries = new Map<string, HeldEntry<T>>();
+  let chain: Promise<unknown> = Promise.resolve();
+  const arm = (id: string, entry: HeldEntry<T>) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.state = 'queued';
+      opts.onQueued(id, entry.item);
+      chain = chain
+        .then(() => {
+          // Closing the page may already have sent it.
+          if (entries.get(id) !== entry) return;
+          entries.delete(id);
+          return opts.send(entry.item);
+        })
+        // A send that throws must not stop the items queued behind it.
+        .catch(() => undefined);
+    }, UNDO_MS);
+  };
+  return {
+    hold(id, item, holdOpts) {
+      const existing = entries.get(id);
+      if (existing) {
+        // Already on its way, or held and not to be replaced.
+        if (!holdOpts?.replace || existing.state !== 'waiting') return false;
+        if (existing.timer) clearTimeout(existing.timer);
+      }
+      const entry: HeldEntry<T> = { item, timer: null, state: 'waiting' };
+      entries.set(id, entry);
+      arm(id, entry);
+      return true;
+    },
+    undo(id) {
+      const entry = entries.get(id);
+      if (entry?.state !== 'waiting') return false;
+      if (entry.timer) clearTimeout(entry.timer);
+      entries.delete(id);
+      return true;
+    },
+    pause(id) {
+      const entry = entries.get(id);
+      if (entry?.state !== 'waiting' || !entry.timer) return;
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    },
+    resume(id) {
+      const entry = entries.get(id);
+      if (entry?.state !== 'waiting' || entry.timer) return;
+      arm(id, entry);
+    },
+    has: (id) => entries.has(id),
+    flush() {
+      for (const [id, entry] of entries) {
+        if (entry.timer) clearTimeout(entry.timer);
+        entries.delete(id);
+        void opts.send(entry.item, { keepalive: true });
+      }
+    },
+  };
+}
+
+/** A held queue for the provider's lifetime; it always calls the latest `send` and `onQueued`. */
+function useHeldQueue<T>(
+  send: (item: T, sendOpts?: { keepalive: true }) => Promise<unknown>,
+  onQueued: (id: string, item: T) => void,
+): HeldQueue<T> {
+  const latest = useRef({ send, onQueued });
+  latest.current = { send, onQueued };
+  const [queue] = useState(() =>
+    createHeldQueue<T>({
+      send: (item, sendOpts) => latest.current.send(item, sendOpts),
+      onQueued: (id, item) => latest.current.onQueued(id, item),
+    }),
+  );
+  return queue;
+}
 
 /**
  * A to-do change waiting to be sent, so it can be undone. Nothing has been written to the brain yet:
@@ -239,12 +363,16 @@ export interface Store {
   /** To-do changes waiting out their undo time, oldest first. */
   heldTodos: HeldTodo[];
   /**
-   * Holds a change for TODO_UNDO_MS, then sends it (a failure shows in `actionError`). Closing the page
+   * Holds a change for UNDO_MS, then sends it (a failure shows in `actionError`). Closing the page
    * sends every held change at once, so nothing is lost.
    */
   holdTodo: (held: HeldTodo) => void;
   /** Drops a held change before it is sent. Nothing reaches the brain. */
   undoHeld: (todoId: string) => void;
+  /** Stops a held change's Undo clock while the pointer or focus is on its line. */
+  pauseHeld: (todoId: string) => void;
+  /** Starts a held change's Undo time again from the full length when the pointer and focus have left. */
+  resumeHeld: (todoId: string) => void;
   /** Library files held for a delete or being sent, in the order they were deleted. */
   heldFiles: HeldFile[];
   /** Every id in `heldFiles`, plus files whose delete just went through: lists leave these out. */
@@ -253,7 +381,7 @@ export interface Store {
   fileDeleteBusy: boolean;
   /**
    * Deletes a library file with an Undo: it leaves the lists, the starred files and Home at once and
-   * nothing is sent for TODO_UNDO_MS. On success `notice` says so; on failure it comes back and `actionError`
+   * nothing is sent for UNDO_MS. On success `notice` says so; on failure it comes back and `actionError`
    * says why. Closing the page sends it at once.
    */
   deleteFile: (item: Pick<LibraryItem, 'id' | 'title' | 'version'>, name?: string) => void;
@@ -269,14 +397,28 @@ export interface Store {
   /** True while the full-screen brain folder page is open from Settings or the brain problem screen. */
   setupOpen: boolean;
   setSetupOpen: (open: boolean) => void;
-  /** The chat whose inline "Close anyway?" is showing in the header, if any. */
+  /** The chat whose inline "End this chat?" question is showing in the header, if any. */
   closeRequest: string | null;
   cancelClose: () => void;
   /** Closes at once when idle; otherwise switches to the chat and asks first. */
   requestClose: (id: string) => void;
   closeChat: (id: string) => Promise<boolean>;
-  /** Moves an earlier chat to the Bin. True when done; a failure shows in `actionError`. */
-  deletePastChat: (sdkSessionId: string) => Promise<boolean>;
+  /** Earlier chats held for a delete or being sent, in the order they were deleted. */
+  heldChats: HeldChatDelete[];
+  /**
+   * Deletes an earlier chat (to the Mac's Bin) with an Undo: it leaves the past list everywhere at once and
+   * nothing is sent for UNDO_MS. On success `notice` and `chatNotice` say so; on failure it comes back,
+   * `actionError` says why and `chatNotice` says it couldn't be deleted. Closing the page sends it at once.
+   */
+  holdDeletePastChat: (sdkSessionId: string, title: string) => void;
+  /** Brings a held chat back before anything is sent. */
+  undoDeletePastChat: (sdkSessionId: string) => void;
+  /** Stops the Undo clock while the pointer or focus is on the held line. */
+  pauseChatDelete: (sdkSessionId: string) => void;
+  /** Starts the Undo time again from the full length when the pointer and focus have left the held line. */
+  resumeChatDelete: (sdkSessionId: string) => void;
+  /** The result of the last earlier-chat delete, for the Chats drawer's always-mounted status line. */
+  chatNotice: string | null;
   /** Marks an open chat TDS or personal; the list updates at once, and a failure shows in `actionError`. */
   setChatKind: (id: string, kind: ChatKind) => Promise<void>;
   /**
@@ -291,7 +433,7 @@ export interface Store {
   toggleFavouriteTodo: (key: string) => Promise<void>;
   /**
    * Stars or unstars a library file by its `LibraryItem.id` (kept in prefs, never in the brain). The same rules as
-   * `toggleFavouriteChat`. Starred files are "Pinned files" on Home.
+   * `toggleFavouriteChat`. Starred files are "Favourite files" on Home.
    */
   toggleFavouriteFile: (id: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */
@@ -398,6 +540,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
+  // Earlier chats held for a delete (or just deleted): `openPast` leaves them alone. Set below, once known.
+  const hiddenChatRef = useRef<ReadonlySet<string>>(new Set());
+  /**
+   * Shows a brief `notice` for `ms`. `part` names the always-mounted status line that speaks it instead (a file
+   * delete's, an earlier chat delete's); the other parts are cleared, because the one shared timer that would
+   * have cleared them is replaced here.
+   */
+  const showNotice = useCallback((text: string, ms: number, part?: 'file' | 'chat') => {
+    setNotice(text);
+    setFileNotice(part === 'file' ? text : null);
+    setChatNotice(part === 'chat' ? text : null);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => {
+      setNotice(null);
+      setFileNotice(null);
+      setChatNotice(null);
+    }, ms);
+  }, []);
   const activeRef = useRef(activeChat);
   activeRef.current = activeChat;
   const sessionsRef = useRef(sessions);
@@ -640,14 +801,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // From the drawer (/clear) there is no Home box to focus: the drawer hands focus back as it goes.
         if (drawerRef.current !== id) requestFocus();
       }
-      setNotice("Chat closed. It's under Earlier in Chats if you want it back.");
-      // The shared notice timer is replaced below, and it was the one that would clear the file notice.
-      setFileNotice(null);
-      if (noticeTimer.current) clearTimeout(noticeTimer.current);
-      noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+      showNotice("Chat closed. It's under Earlier in Chats if you want it back.", 6000);
       return true;
     },
-    [loadSessions, requestFocus],
+    [loadSessions, requestFocus, showNotice],
   );
 
   // Favourites (chats and to-dos): one save engine per list, in `state/favourite-list.ts`.
@@ -691,26 +848,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toggleFavouriteTodo = todoFavourites.toggle;
   const toggleFavouriteFile = fileFavourites.toggle;
   const renameFavouriteTodo = todoFavourites.rename;
-
-  const deletePastChat = useCallback(
-    async (sdkSessionId: string) => {
-      try {
-        await api.deletePastChat(sdkSessionId);
-      } catch (err) {
-        setActionError(messageOf(err));
-        return false;
-      }
-      setActionError(null);
-      void loadSessions();
-      setNotice('Chat moved to the Bin. You can put it back from there.');
-      // The shared notice timer is replaced below, and it was the one that would clear the file notice.
-      setFileNotice(null);
-      if (noticeTimer.current) clearTimeout(noticeTimer.current);
-      noticeTimer.current = setTimeout(() => setNotice(null), 6000);
-      return true;
-    },
-    [loadSessions],
-  );
 
   const setChatKind = useCallback(
     async (id: string, kind: ChatKind) => {
@@ -791,6 +928,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const openPast = useCallback(
     async (sdkSessionId: string, opts?: { in?: ChatPlace }): Promise<boolean> => {
+      // A chat being deleted is out of every list; a stale press (or search result) must not bring it back.
+      if (hiddenChatRef.current.has(sdkSessionId)) return false;
       try {
         const { session } = await api.startSession({ resume: sdkSessionId });
         void loadSessions();
@@ -1099,17 +1238,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const [heldTodos, setHeldTodos] = useState<HeldTodo[]>([]);
-  // A held change is 'waiting' (Undo works) until its time is up, then 'queued' behind any change still
-  // being sent. It leaves this map only when its request starts, so closing the page sends it either way.
-  type HeldEntry = {
-    held: HeldTodo;
-    timer: ReturnType<typeof setTimeout> | null;
-    state: 'waiting' | 'queued';
-  };
-  const heldEntries = useRef(new Map<string, HeldEntry>());
-  const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
 
-  /** Starts the request for a held change. The caller has already taken it out of `heldEntries`. */
+  /** Starts the request for a held change. The queue has already taken it out of its entries. */
   const sendHeld = useCallback(async (held: HeldTodo, opts?: { keepalive: true }) => {
     const send = () =>
       held.kind === 'tick' || held.action === null
@@ -1135,185 +1265,175 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setHeldTodos((list) => list.filter((h) => h.todoId !== held.todoId));
     }
   }, []);
+  const todoQueue = useHeldQueue<HeldTodo>(sendHeld, (id) =>
+    setHeldTodos((list) => list.map((h) => (h.todoId === id ? { ...h, sending: true } : h))),
+  );
 
   const holdTodo = useCallback(
     (held: HeldTodo) => {
-      const entries = heldEntries.current;
-      const existing = entries.get(held.todoId);
-      // Already on its way: too late to replace it.
-      if (existing && existing.state !== 'waiting') return;
-      if (existing?.timer) clearTimeout(existing.timer);
-      const entry: HeldEntry = { held, timer: null, state: 'waiting' };
-      entry.timer = setTimeout(() => {
-        entry.timer = null;
-        entry.state = 'queued';
-        setHeldTodos((list) => list.map((h) => (h.todoId === held.todoId ? { ...h, sending: true } : h)));
-        // One at a time, so the lists come back in the order the changes were made.
-        const next = sendQueue.current.then(() => {
-          // Closing the page may already have sent it.
-          if (entries.get(held.todoId) !== entry) return;
-          entries.delete(held.todoId);
-          return sendHeld(held);
-        });
-        sendQueue.current = next;
-      }, TODO_UNDO_MS);
-      entries.set(held.todoId, entry);
+      // A change still waiting is replaced; one already on its way can't be.
+      if (!todoQueue.hold(held.todoId, held, { replace: true })) return;
       setHeldTodos((list) => [...list.filter((h) => h.todoId !== held.todoId), held]);
     },
-    [sendHeld],
+    [todoQueue],
   );
 
-  const undoHeld = useCallback((todoId: string) => {
-    const entries = heldEntries.current;
-    const entry = entries.get(todoId);
-    // Only while the time is still running: once a change is on its way, Undo can't stop it.
-    if (entry?.state !== 'waiting') return;
-    if (entry.timer) clearTimeout(entry.timer);
-    entries.delete(todoId);
-    setHeldTodos((list) => list.filter((h) => h.todoId !== todoId));
-  }, []);
-
-  // Closing or leaving the page: start everything not yet sent, at once, so no change is lost.
-  useEffect(() => {
-    const flush = () => {
-      const entries = heldEntries.current;
-      for (const [id, entry] of entries) {
-        if (entry.timer) clearTimeout(entry.timer);
-        entries.delete(id);
-        void sendHeld(entry.held, { keepalive: true });
-      }
-    };
-    window.addEventListener('pagehide', flush);
-    return () => window.removeEventListener('pagehide', flush);
-  }, [sendHeld]);
-
-  // Library deletes: held like to-do changes. `fileRows` is what the screens see; `fileEntries` holds the timers.
-  const [fileRows, setFileRows] = useState<(HeldFile & { gone?: true })[]>([]);
-  type FileEntry = {
-    item: Pick<LibraryItem, 'id' | 'version'> & { name: string };
-    timer: ReturnType<typeof setTimeout> | null;
-    state: 'waiting' | 'queued';
-  };
-  const fileEntries = useRef(new Map<string, FileEntry>());
-  const fileQueue = useRef<Promise<unknown>>(Promise.resolve());
-
-  const sendFile = useCallback(async (item: FileEntry['item'], opts?: { keepalive: true }) => {
-    setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, phase: 'sending' } : r)));
-    try {
-      await api.deleteLibraryFile(item.id, item.version, opts);
-    } catch (err) {
-      // It comes back, with the reason. (On pagehide nothing can be shown: the file simply stays.)
-      setFileRows((rows) => rows.filter((r) => r.id !== item.id));
-      setActionError(fileDeleteMessage(err));
-      return;
-    }
-    setActionError(null);
-    // The server has already dropped the star; do the same here so the saved list matches.
-    setBoot((b) => {
-      const favs = b?.prefs.favouriteFiles;
-      return b && favs?.includes(item.id)
-        ? { ...b, prefs: { ...b.prefs, favouriteFiles: favs.filter((f) => f !== item.id) } }
-        : b;
-    });
-    const deleted = filesDeletedNotice(item.name);
-    setNotice(deleted);
-    setFileNotice(deleted);
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => {
-      setNotice(null);
-      setFileNotice(null);
-    }, 8000);
-    // A list that was already loading may still carry it, so it stays out for a while.
-    setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, gone: true } : r)));
-    setTimeout(() => setFileRows((rows) => rows.filter((r) => !(r.id === item.id && r.gone))), FILE_GONE_MS);
-  }, []);
-
-  // Starts the Undo clock for a held file; when it runs out the request joins the queue.
-  const armFile = useCallback(
-    (entry: FileEntry) => {
-      const entries = fileEntries.current;
-      const { item } = entry;
-      entry.timer = setTimeout(() => {
-        entry.timer = null;
-        entry.state = 'queued';
-        setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, phase: 'sending' } : r)));
-        // One at a time, so a second failure never races the first.
-        const next = fileQueue.current.then(() => {
-          // Closing the page may already have sent it.
-          if (entries.get(item.id) !== entry) return;
-          entries.delete(item.id);
-          return sendFile(item);
-        });
-        fileQueue.current = next;
-      }, TODO_UNDO_MS);
+  const undoHeld = useCallback(
+    (todoId: string) => {
+      // Only while the time is still running: once a change is on its way, Undo can't stop it.
+      if (!todoQueue.undo(todoId)) return;
+      setHeldTodos((list) => list.filter((h) => h.todoId !== todoId));
     },
-    [sendFile],
+    [todoQueue],
+  );
+  const pauseHeld = useCallback((todoId: string) => todoQueue.pause(todoId), [todoQueue]);
+  const resumeHeld = useCallback((todoId: string) => todoQueue.resume(todoId), [todoQueue]);
+
+  // Library deletes: held like to-do changes. `fileRows` is what the screens see; the queue holds the timers.
+  const [fileRows, setFileRows] = useState<(HeldFile & { gone?: true })[]>([]);
+  type FileItem = Pick<LibraryItem, 'id' | 'version'> & { name: string };
+
+  const sendFile = useCallback(
+    async (item: FileItem, opts?: { keepalive: true }) => {
+      setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, phase: 'sending' } : r)));
+      try {
+        await api.deleteLibraryFile(item.id, item.version, opts);
+      } catch (err) {
+        // It comes back, with the reason. (On pagehide nothing can be shown: the file simply stays.)
+        setFileRows((rows) => rows.filter((r) => r.id !== item.id));
+        setActionError(fileDeleteMessage(err));
+        return;
+      }
+      setActionError(null);
+      // The server has already dropped the star; do the same here so the saved list matches.
+      setBoot((b) => {
+        const favs = b?.prefs.favouriteFiles;
+        return b && favs?.includes(item.id)
+          ? { ...b, prefs: { ...b.prefs, favouriteFiles: favs.filter((f) => f !== item.id) } }
+          : b;
+      });
+      showNotice(filesDeletedNotice(item.name), 8000, 'file');
+      // A list that was already loading may still carry it, so it stays out for a while.
+      setFileRows((rows) => rows.map((r) => (r.id === item.id ? { ...r, gone: true } : r)));
+      setTimeout(
+        () => setFileRows((rows) => rows.filter((r) => !(r.id === item.id && r.gone))),
+        FILE_GONE_MS,
+      );
+    },
+    [showNotice],
+  );
+  const fileQueue = useHeldQueue<FileItem>(sendFile, (id) =>
+    setFileRows((rows) => rows.map((r) => (r.id === id ? { ...r, phase: 'sending' } : r))),
   );
 
   const lastFileDelete = useRef(Number.NEGATIVE_INFINITY);
   const deleteFile = useCallback(
     (item: Pick<LibraryItem, 'id' | 'title' | 'version'>, name?: string) => {
-      const entries = fileEntries.current;
-      if (entries.has(item.id)) return;
+      if (fileQueue.has(item.id)) return;
       // A delete just now slides the next file's bin under the pointer (or keeps Enter on a bin): a
       // second press that quick was aimed at the first file, not this one (overseer, 2026-11-15).
       const now = Date.now();
       if (now - lastFileDelete.current < FILE_DELETE_GUARD_MS) return;
       lastFileDelete.current = now;
       const shown = name ?? item.title;
-      const entry: FileEntry = {
-        item: { id: item.id, version: item.version, name: shown },
-        timer: null,
-        state: 'waiting',
-      };
-      entries.set(item.id, entry);
-      armFile(entry);
+      fileQueue.hold(item.id, { id: item.id, version: item.version, name: shown });
       setFileRows((rows) => [
         ...rows.filter((r) => r.id !== item.id),
         { id: item.id, title: shown, phase: 'waiting' },
       ]);
     },
-    [armFile],
+    [fileQueue],
   );
-
-  const pauseFileDelete = useCallback((id: string) => {
-    const entry = fileEntries.current.get(id);
-    if (entry?.state !== 'waiting' || !entry.timer) return;
-    clearTimeout(entry.timer);
-    entry.timer = null;
-  }, []);
-
-  const resumeFileDelete = useCallback(
+  const pauseFileDelete = useCallback((id: string) => fileQueue.pause(id), [fileQueue]);
+  const resumeFileDelete = useCallback((id: string) => fileQueue.resume(id), [fileQueue]);
+  const undoDeleteFile = useCallback(
     (id: string) => {
-      const entry = fileEntries.current.get(id);
-      if (entry?.state !== 'waiting' || entry.timer) return;
-      armFile(entry);
+      // Once it is on its way Undo can't stop it.
+      if (!fileQueue.undo(id)) return;
+      setFileRows((rows) => rows.filter((r) => r.id !== id));
     },
-    [armFile],
+    [fileQueue],
   );
 
-  const undoDeleteFile = useCallback((id: string) => {
-    const entries = fileEntries.current;
-    const entry = entries.get(id);
-    // Once it is on its way Undo can't stop it.
-    if (entry?.state !== 'waiting') return;
-    if (entry.timer) clearTimeout(entry.timer);
-    entries.delete(id);
-    setFileRows((rows) => rows.filter((r) => r.id !== id));
-  }, []);
+  // Earlier chat deletes: held like files (plan 2026-11-22-ux-consistency, R2). `chatRows` is what the screens see.
+  const [chatRows, setChatRows] = useState<(HeldChatDelete & { gone?: true })[]>([]);
+  const sendChat = useCallback(
+    async (held: HeldChatDelete) => {
+      const id = held.sdkSessionId;
+      setChatRows((rows) => rows.map((r) => (r.sdkSessionId === id ? { ...r, phase: 'sending' } : r)));
+      try {
+        // Always keepalive (api.ts), so a delete already on its way finishes if the page closes.
+        await api.deletePastChat(id);
+      } catch (err) {
+        // It comes back in every list, with the reason. (On pagehide nothing can be shown: the chat stays.)
+        setChatRows((rows) => rows.filter((r) => r.sdkSessionId !== id));
+        setActionError(messageOf(err));
+        setChatNotice(`“${held.title}” couldn't be deleted.`);
+        return;
+      }
+      setActionError(null);
+      showNotice(`“${held.title}” moved to the Bin. You can put it back from there.`, 6000, 'chat');
+      // Out of the list we have at once; it stays hidden until the reload after this success has landed.
+      setSessions((s) => (s ? { ...s, past: s.past.filter((p) => p.sdkSessionId !== id) } : s));
+      setChatRows((rows) => rows.map((r) => (r.sdkSessionId === id ? { ...r, gone: true } : r)));
+      await loadSessions();
+      setChatRows((rows) => rows.filter((r) => !(r.sdkSessionId === id && r.gone)));
+    },
+    [loadSessions, showNotice],
+  );
+  const chatQueue = useHeldQueue<HeldChatDelete>(sendChat, (id) =>
+    setChatRows((rows) => rows.map((r) => (r.sdkSessionId === id ? { ...r, phase: 'sending' } : r))),
+  );
 
+  const lastChatDelete = useRef(Number.NEGATIVE_INFINITY);
+  const holdDeletePastChat = useCallback(
+    (sdkSessionId: string, title: string) => {
+      if (chatQueue.has(sdkSessionId)) return;
+      // As for files: a second bin press that quick was aimed at the chat just deleted.
+      const now = Date.now();
+      if (now - lastChatDelete.current < FILE_DELETE_GUARD_MS) return;
+      const session = sessionsRef.current?.past.find((p) => p.sdkSessionId === sdkSessionId);
+      if (!session) return;
+      lastChatDelete.current = now;
+      const held: HeldChatDelete = { sdkSessionId, title, phase: 'waiting', session };
+      chatQueue.hold(sdkSessionId, held);
+      setChatNotice(null);
+      setChatRows((rows) => [...rows.filter((r) => r.sdkSessionId !== sdkSessionId), held]);
+    },
+    [chatQueue],
+  );
+  const undoDeletePastChat = useCallback(
+    (sdkSessionId: string) => {
+      if (!chatQueue.undo(sdkSessionId)) return;
+      setChatRows((rows) => rows.filter((r) => r.sdkSessionId !== sdkSessionId));
+    },
+    [chatQueue],
+  );
+  const pauseChatDelete = useCallback((id: string) => chatQueue.pause(id), [chatQueue]);
+  const resumeChatDelete = useCallback((id: string) => chatQueue.resume(id), [chatQueue]);
+
+  // Closing or leaving the page: start everything not yet sent, at once, so no change is lost.
   useEffect(() => {
     const flush = () => {
-      const entries = fileEntries.current;
-      for (const [id, entry] of entries) {
-        if (entry.timer) clearTimeout(entry.timer);
-        entries.delete(id);
-        void sendFile(entry.item, { keepalive: true });
-      }
+      todoQueue.flush();
+      fileQueue.flush();
+      chatQueue.flush();
     };
     window.addEventListener('pagehide', flush);
     return () => window.removeEventListener('pagehide', flush);
-  }, [sendFile]);
+  }, [todoQueue, fileQueue, chatQueue]);
+
+  const heldChats = useMemo(() => chatRows.filter((r) => !r.gone), [chatRows]);
+  const hiddenChatIds = useMemo<ReadonlySet<string>>(
+    () => new Set(chatRows.map((r) => r.sdkSessionId)),
+    [chatRows],
+  );
+  hiddenChatRef.current = hiddenChatIds;
+  // Every screen reads the same list (the Chats drawer, Home, search): a chat being deleted is not in it.
+  const shownSessions = useMemo(() => {
+    if (!sessions?.past.some((p) => hiddenChatIds.has(p.sdkSessionId))) return sessions;
+    return { ...sessions, past: sessions.past.filter((p) => !hiddenChatIds.has(p.sdkSessionId)) };
+  }, [sessions, hiddenChatIds]);
 
   const heldFiles = useMemo(() => fileRows.filter((r) => !r.gone), [fileRows]);
   const hiddenFileIds = useMemo<ReadonlySet<string>>(() => new Set(fileRows.map((r) => r.id)), [fileRows]);
@@ -1330,7 +1450,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       gate,
       boot: shownBoot,
       todos,
-      sessions,
+      sessions: shownSessions,
       view,
       activeChat,
       chats,
@@ -1369,6 +1489,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       heldTodos,
       holdTodo,
       undoHeld,
+      pauseHeld,
+      resumeHeld,
       heldFiles,
       hiddenFileIds,
       fileDeleteBusy,
@@ -1394,7 +1516,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelClose: () => setCloseRequest(null),
       requestClose,
       closeChat,
-      deletePastChat,
+      heldChats,
+      holdDeletePastChat,
+      undoDeletePastChat,
+      pauseChatDelete,
+      resumeChatDelete,
+      chatNotice,
       setChatKind,
       toggleFavouriteChat,
       toggleFavouriteTodo,
@@ -1408,7 +1535,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       boot,
       shownBoot,
       todos,
-      sessions,
+      shownSessions,
       view,
       activeChat,
       chats,
@@ -1446,6 +1573,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       heldTodos,
       holdTodo,
       undoHeld,
+      pauseHeld,
+      resumeHeld,
       heldFiles,
       hiddenFileIds,
       fileDeleteBusy,
@@ -1469,7 +1598,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       closeRequest,
       requestClose,
       closeChat,
-      deletePastChat,
+      heldChats,
+      holdDeletePastChat,
+      undoDeletePastChat,
+      pauseChatDelete,
+      resumeChatDelete,
+      chatNotice,
       setChatKind,
       toggleFavouriteChat,
       toggleFavouriteTodo,

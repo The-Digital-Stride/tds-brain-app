@@ -9,6 +9,7 @@ import { FileStar } from './FileStar.tsx';
 import { Icon } from './Icon.tsx';
 import { PageStage } from './PageStage.tsx';
 import { useDesk, useShell } from './ShellProvider.tsx';
+import { StateNote } from './StateNote.tsx';
 import { ViewerDrawer } from './ViewerDrawer.tsx';
 
 const APP_WORDS = { documents: 'Open in Documents', images: 'Open in Images' } as const;
@@ -155,7 +156,7 @@ export function FileViewer() {
       {/* A pointer shortcut only: Esc and the close button do the same. */}
       <div className="viewer-veil" aria-hidden="true" onClick={close} />
       <ViewerDrawer role="dialog" aria-modal="true" aria-labelledby={headingId}>
-        <header className="viewer-head">
+        <header className="panel-head viewer-head">
           <div className="viewer-name">
             <h2 id={headingId} ref={heading} tabIndex={-1}>
               {item.title}
@@ -187,7 +188,7 @@ export function FileViewer() {
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus to scroll. */}
         <section className="viewer-body" aria-label={`Contents of ${item.title}`} tabIndex={0}>
           {item.view === null ? (
-            <p className="lib-note">This type can't be shown here. Download it to open it.</p>
+            <StateNote kind="empty">This type can't be shown here. Download it to open it.</StateNote>
           ) : (
             <FileStage key={item.id} item={item} version={String(libraryVersion)} />
           )}

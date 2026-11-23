@@ -227,8 +227,9 @@ describe('the tidy-up', () => {
   it('Skip skips the label; a no-match row cannot be approved; Change picks a project', async () => {
     await open();
     const second = screen.getByRole('listitem', { name: 'Label misc' });
-    expect((within(second).getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(
-      true,
+    // Not-allowed buttons are aria-disabled, never disabled (design system, Actions rule 12).
+    expect(within(second).getByRole('button', { name: 'Approve' }).getAttribute('aria-disabled')).toBe(
+      'true',
     );
     fireEvent.click(within(second).getByRole('button', { name: 'Change' }));
     fireEvent.change(within(second).getByLabelText('Use this instead'), { target: { value: SKY.key } });

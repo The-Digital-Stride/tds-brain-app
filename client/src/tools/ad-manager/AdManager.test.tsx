@@ -60,7 +60,13 @@ vi.mock('../../api.ts', () => ({
 }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: shell.state, dispatch: shell.dispatch, modes: {} }),
+  useShell: () => ({
+    state: shell.state,
+    dispatch: shell.dispatch,
+    modes: {},
+    panelHold: { dirty: false, asking: false },
+    guardPanel: (run: () => void) => run(),
+  }),
 }));
 
 const { AdManagerSheet } = await import('./AdManagerSheet.tsx');
@@ -295,6 +301,47 @@ describe('panel', () => {
     );
   });
 
+  it('asks "Discard your changes?" when stepping with a typed note, and keeps the note on Keep editing', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    const box = screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Too high for March' } });
+    const nav = screen.getByRole('navigation', { name: 'Proposals' });
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next proposal' }));
+    const ask = screen.getByRole('group', { name: 'Discard your changes' });
+    expect(ask.textContent).toContain('Discard your changes?');
+    expect(screen.getByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+    const keep = within(ask).getByRole('button', { name: 'Keep editing' });
+    expect(document.activeElement).toBe(keep);
+    fireEvent.click(keep);
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+    expect((screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement).value).toBe('Too high for March');
+    expect(screen.getByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+  });
+
+  it('Discard changes steps on and drops the note; a clean panel steps with no question', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    fireEvent.change(screen.getByLabelText(/Reason or note/), { target: { value: 'Draft' } });
+    const nav = screen.getByRole('navigation', { name: 'Proposals' });
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next proposal' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Discard your changes' })).getByRole('button', {
+        name: 'Discard changes',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+    expect((screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement).value).toBe('');
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Proposals' })).getByRole('button', {
+        name: 'Previous proposal',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+  });
+
   it('names the reviewer from the roster when the skill sends people, and keeps the slug otherwise', async () => {
     api.adsApprovals.mockResolvedValue({ ...approvals([p1, p2]), people: { sam: 'Sam Smith' } });
     await ready();
@@ -308,6 +355,13 @@ describe('panel', () => {
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
     expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
     expect(screen.getByText('Effect of Add negatives')).toBeTruthy();
+  });
+
+  it('puts away a panel left open when the sheet comes up with no proposal chosen', () => {
+    api.adsApprovals.mockReturnValue(new Promise(() => {}));
+    shell.state.panelOpen = true;
+    mount();
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: false });
   });
 
   it("doesn't show the first proposal as chosen while the panel is shut", async () => {
@@ -521,7 +575,7 @@ describe('panel', () => {
         { name: 'Apply now' },
       ),
     );
-    const busy = await screen.findByRole('button', { name: 'Applying…' });
+    const busy = await screen.findByRole('button', { name: 'Applying' });
     expect(busy.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(busy);
     expect(api.adsChange).toHaveBeenCalledTimes(1);
@@ -714,7 +768,7 @@ describe('Ads Manager page', () => {
     withMonth([p1]);
     api.adsChange.mockResolvedValue({ ok: true });
     await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign off the report…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign off the report' }));
     fireEvent.change(screen.getByLabelText('Sign-off note (optional)'), { target: { value: 'Read it' } });
     const group = screen.getByRole('group', { name: 'Sign off the report' });
     expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
@@ -927,8 +981,8 @@ describe('Release 2: Earlier months', () => {
     expect(screen.getByText('Changed after sign-off, sign again')).toBeTruthy();
     expect(screen.getByText('Month-to-date draft')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Open draft PDF' }).length).toBeGreaterThanOrEqual(4);
-    // Sign off… only where the bridge says canSign.
-    expect(screen.getAllByRole('button', { name: /^Sign off…/ })).toHaveLength(2);
+    // Sign off only where the bridge says canSign.
+    expect(screen.getAllByRole('button', { name: /^Sign off: / })).toHaveLength(2);
   });
 
   it('signs a late month through the same confirm step', async () => {
@@ -936,7 +990,7 @@ describe('Release 2: Earlier months', () => {
     api.adsChange.mockResolvedValue({ ok: true });
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: /Earlier months/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Sign off…: August/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Sign off: August/ }));
     const group = screen.getByRole('group', { name: 'Sign off the report' });
     expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
     expect(within(group).getByText(/Sign off the August report for Acme Heating/)).toBeTruthy();

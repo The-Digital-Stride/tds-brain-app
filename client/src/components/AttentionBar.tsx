@@ -7,7 +7,10 @@ const STOPPED: Partial<Record<SessionState, string>> = {
   closed: 'This chat has ended. Start a new chat to carry on.',
 };
 
-/** Thin coloured rule above the message box: ready (green), working (red), needs your answer (amber). */
+/** The dot's state for each attention: working is blue, never red (red is for problems). */
+const DOT_STATE = { ready: 'ok', working: 'working', asking: 'asking' } as const;
+
+/** Thin coloured rule above the message box: ready (green), working (blue), needs your answer (amber). */
 export function AttentionBar({
   state,
   step,
@@ -34,7 +37,7 @@ export function AttentionBar({
   if (!attention) {
     const text = STOPPED[state];
     return text ? (
-      <div className="notice" data-level="error">
+      <div className="notice" data-shape="box" data-level="error">
         {text}
       </div>
     ) : null;
@@ -51,7 +54,7 @@ export function AttentionBar({
             <path d="M13.8 2.2v3.2h-3.2" />
           </svg>
         ) : (
-          <span className="attn-dot" data-attention={attention} aria-hidden="true" />
+          <span className="dot" data-state={DOT_STATE[attention]} aria-hidden="true" />
         )}
         <span className="attn-label">
           {label}

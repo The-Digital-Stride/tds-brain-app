@@ -29,7 +29,7 @@ Ads Command Centre is for running a client's Google Ads account. The top panel s
 5. Press **Run**. The chat opens over the page, and **Hide chat** takes you back. The card says **Running**.
 6. A card shows when it last ran. After a stopped run, **Last good run** opens the last one that finished.
 7. On the Daily standup card, press **Rate calls** to score each call it made.
-8. Press **All accounts' standups…** to see each client's latest standup, worst first. Press a client to switch to it.
+8. Press **All accounts' standups** to see each client's latest standup, worst first. Press a client to switch to it.
 9. A task that saved a report shows **Open result** on its card, when the app saw the report being saved.
 
 ## Good to know

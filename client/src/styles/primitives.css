@@ -1,0 +1,107 @@
+/*
+ * Primitives, second half: small pieces every layer uses, moved out of the feature sheets so a feature never has to
+ * load first (docs/design-system.md, "CSS layers"). base.css holds the type, buttons and fields.
+ */
+@layer primitives {
+  /* The tray: recessed, holding raised cards. */
+  .tray {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-6);
+    margin-top: 20px;
+    padding: var(--sp-6);
+    border-radius: var(--r-18);
+    background: var(--tray);
+    box-shadow: var(--recess);
+  }
+  @container (max-width: 460px) {
+    .tray {
+      grid-template-columns: 1fr;
+    }
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .card-head h2 {
+    font-size: var(--fs-body);
+  }
+  .card-head .btn {
+    margin-left: auto;
+  }
+  /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
+  .kv {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    margin: 0;
+    font-size: var(--fs-control);
+  }
+  .kv dt,
+  .kv dd {
+    margin: 0;
+    padding: var(--sp-6) 0;
+    border-top: 1px solid var(--line);
+  }
+  .kv > :nth-child(-n + 2) {
+    border-top: 0;
+  }
+  .kv dt {
+    padding-right: var(--sp-12);
+    color: var(--iron);
+  }
+  .kv dd {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .kv .kv-wide {
+    grid-column: 1 / -1;
+  }
+  .kv dd.kv-wide {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .kv-note {
+    display: block;
+    margin-top: var(--sp-2);
+    font-size: var(--fs-small);
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  /* The spinner on whole-app states and busy attachments. */
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--line-strong);
+    border-top-color: var(--navy);
+    animation: spin 0.9s linear infinite;
+  }
+  .link-btn {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--blue-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  /* Only for text inside a sentence, so it behaves like a link. */
+  .link-btn:hover {
+    text-decoration-thickness: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

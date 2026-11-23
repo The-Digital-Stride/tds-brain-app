@@ -1,116 +1,204 @@
 /*
+ * The cascade layers, weakest first (docs/design-system.md, "CSS layers"). Declared here because this is the first
+ * sheet the app imports; every other sheet wraps its rules in one of these. A rule in a later layer beats an earlier
+ * one whatever its specificity.
+ */
+@layer tokens, primitives, patterns, features, tools;
+
+@layer tokens {
+  /*
  * Design tokens. Light only for now (dark mode is a follow-up).
  * Brand and layer values come from the approved shell prototype (docs/shell-prototype.html).
  */
-:root {
-  color-scheme: light;
+  :root {
+    color-scheme: light;
 
-  /* Brand */
-  --navy: #021b43;
-  --blue: #1889ff;
-  /* The blue for text and focus rings: 6.5:1 on white, where --blue is only 3.3:1. */
-  --blue-ink: #0b5cb5;
-  --paper: #faf8f4;
-  --iron: #525252;
-  --wash: #e7f1fe;
-  /* Wash under the pointer: a switched-on or open button. Blue-ink on it is 5.26:1. */
-  --wash-strong: #d9e8fc;
-  /* Primary under the pointer: 1.63:1 against navy, where paper text stays 9.79:1. */
-  --navy-hover: #213f73;
-  /* Icon, seg and rail text: a step softer than navy. */
-  --ink-soft: #33456a;
-  /* Ink tints for flat buttons and rows: rest (quiet button, seg track), hover, pressed. */
-  --tint-1: rgba(2, 27, 67, 0.07);
-  --tint-2: rgba(2, 27, 67, 0.11);
-  --tint-3: rgba(2, 27, 67, 0.15);
-  /* A switch that is off and an idle status dot. */
-  --grey-dot: #8a94a6;
+    /* Brand */
+    --navy: #021b43;
+    --blue: #1889ff;
+    /* The blue for text and focus rings: 6.5:1 on white, where --blue is only 3.3:1. */
+    --blue-ink: #0b5cb5;
+    --paper: #faf8f4;
+    --iron: #525252;
+    --wash: #e7f1fe;
+    /* Wash under the pointer: a switched-on or open button. Blue-ink on it is 5.26:1. */
+    --wash-strong: #d9e8fc;
+    /* Primary under the pointer: 1.63:1 against navy, where paper text stays 9.79:1. */
+    --navy-hover: #213f73;
+    /* Icon, seg and rail text: a step softer than navy. */
+    --ink-soft: #33456a;
+    /* Ink tints for flat buttons and rows: rest (quiet button, seg track), hover, pressed. */
+    --tint-1: rgba(2, 27, 67, 0.07);
+    --tint-2: rgba(2, 27, 67, 0.11);
+    --tint-3: rgba(2, 27, 67, 0.15);
+    /* A switch that is off and an idle status dot. */
+    --grey-dot: #8a94a6;
 
-  /* The one left/right edge of every main sheet (docs/design-system.md, "Alignment"). */
-  --sheet-gutter: 16px;
+    /* The one left/right edge of every main sheet (docs/design-system.md, "Alignment"). */
+    --sheet-gutter: 16px;
 
-  /* Layers, back to front: desk, tray, glass, sheet */
-  --desk: #e9e5dd;
-  --tray: #f3f0ea;
-  --line: rgba(2, 27, 67, 0.09);
-  --line-strong: rgba(2, 27, 67, 0.16);
-  --glass: rgba(255, 255, 255, 0.46);
-  /* Glass that carries text: keeps text at 4.5:1 or better over the darkest desk tint. */
-  --glass-strong: rgba(255, 255, 255, 0.78);
-  --glass-edge: rgba(255, 255, 255, 0.8);
-  /* Used instead of glass where blur is missing or less transparency is asked for. */
-  --glass-solid: #f6f4f0;
-  /*
+    /* Layers, back to front: desk, tray, glass, sheet */
+    --desk: #e9e5dd;
+    --tray: #f3f0ea;
+    --line: rgba(2, 27, 67, 0.09);
+    --line-strong: rgba(2, 27, 67, 0.16);
+    --glass: rgba(255, 255, 255, 0.46);
+    /* Glass that carries text: keeps text at 4.5:1 or better over the darkest desk tint. */
+    --glass-strong: rgba(255, 255, 255, 0.78);
+    --glass-edge: rgba(255, 255, 255, 0.8);
+    /* Used instead of glass where blur is missing or less transparency is asked for. */
+    --glass-solid: #f6f4f0;
+    /*
    * Height. One light, one formula, even steps: each step up is 6px higher, so its shadow drops 6px
    * further, spreads 16px wider and is a little darker. Anything one step above the surface it sits
    * on casts --lift-1, whatever it is: the sheet on the desk, a card in the tray, a row you hover.
    */
-  /* Touching the surface: a switch's knob, a chosen segment, a plain button under the pointer. */
-  --lift-0: 0 1px 2px rgba(2, 27, 67, 0.1);
-  /* One step up: the sheet, rail and drawers; cards; a hovered or current row, tile or rail item. */
-  --lift-1: 0 1px 2px rgba(2, 27, 67, 0.06), 0 6px 16px rgba(2, 27, 67, 0.06);
-  /* Two steps up: things that float over the sheet: menus, the selection bar, a floating composer. */
-  --lift-2: 0 1px 2px rgba(2, 27, 67, 0.06), 0 12px 32px rgba(2, 27, 67, 0.1);
-  /* Three steps up: what sits over everything: the palette, the answer box, a floating drawer. */
-  --lift-3: 0 1px 2px rgba(2, 27, 67, 0.06), 0 18px 48px rgba(2, 27, 67, 0.14);
-  /* One step down: the tray, pressed into the sheet. */
-  --recess: inset 0 1px 2px rgba(2, 27, 67, 0.06);
-  /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */
-  --tick-edge: #7c8aa5;
+    /* Touching the surface: a switch's knob, a chosen segment, a plain button under the pointer. */
+    --lift-0: 0 1px 2px rgba(2, 27, 67, 0.1);
+    /* One step up: the sheet, rail and drawers; cards; a hovered or current row, tile or rail item. */
+    --lift-1: 0 1px 2px rgba(2, 27, 67, 0.06), 0 6px 16px rgba(2, 27, 67, 0.06);
+    /* Two steps up: things that float over the sheet: menus, the selection bar, a floating composer. */
+    --lift-2: 0 1px 2px rgba(2, 27, 67, 0.06), 0 12px 32px rgba(2, 27, 67, 0.1);
+    /* Three steps up: what sits over everything: the palette, the answer box, a floating drawer. */
+    --lift-3: 0 1px 2px rgba(2, 27, 67, 0.06), 0 18px 48px rgba(2, 27, 67, 0.14);
+    /* One step down: the tray, pressed into the sheet. */
+    --recess: inset 0 1px 2px rgba(2, 27, 67, 0.06);
+    /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */
+    --tick-edge: #7c8aa5;
 
-  /* Type */
-  --head: "Poppins", -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --body: "Inter Variable", "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    /* Type */
+    --head: "Poppins", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter Variable", "Inter", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Motion */
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --t: 240ms;
+    /* Motion */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --t: 240ms;
 
-  /* Text, fields, focus */
-  --text: var(--navy);
-  /* Field borders must reach 3:1 on white. */
-  --field-edge: #857d70;
-  --on-accent: #ffffff;
-  --focus: var(--blue-ink);
-  --shadow: var(--lift-1);
+    /*
+     * Scales (docs/design-system.md): defined here, used sheet by sheet. A token holds a value the screens
+     * already showed, so swapping a typed value for it changes nothing; the few deliberate exceptions (the tour's
+     * 240ms and 15px title) are listed in the design system's tokens note.
+     */
+    /* Spacing */
+    --sp-2: 2px;
+    --sp-4: 4px;
+    --sp-6: 6px;
+    --sp-8: 8px;
+    --sp-10: 10px;
+    --sp-12: 12px;
+    --sp-16: 16px;
+    --sp-24: 24px;
+    --sp-32: 32px;
+    /* Radii (5 ticks, 6 and 8 small pieces, 9 buttons and fields, 10 cards, 12 pop-ups, 14 big cards, 16 glass, 18 largest) */
+    --r-5: 5px;
+    --r-6: 6px;
+    --r-8: 8px;
+    --r-9: 9px;
+    --r-10: 10px;
+    --r-12: 12px;
+    --r-14: 14px;
+    --r-16: 16px;
+    --r-18: 18px;
+    /* Type sizes: the seven sizes, plus the mono size */
+    --fs-caption: 11.5px;
+    --fs-small: 12px;
+    --fs-mono: 12.5px;
+    --fs-control: 13px;
+    --fs-body: 14px;
+    --fs-reading: 15px;
+    --fs-title: 18px;
+    --fs-display: 26px;
+    /* Layers (z-index), top first. Values from -1 to 3 only order things inside one component. */
+    --z-tour: 200;
+    --z-tooltip: 80;
+    --z-palette: 70;
+    --z-skip: 60;
+    --z-viewer: 50;
+    --z-popover: 45;
+    --z-floating-panel: 45;
+    --z-dock: 41;
+    --z-veil: 40;
+    --z-hover-rail: 39;
+    --z-docked-panel: 8;
+    --z-rail: 5;
+    /* Motion: the two common durations (120ms is typed 32 times, 160ms ten) */
+    --t-fast: 120ms;
+    --t-mid: 160ms;
+    /* A white surface (the sheet, a card, a field) and the dim over the sheet behind a panel or the palette */
+    --surface: #fff;
+    --veil: rgba(2, 27, 67, 0.16);
+    /* The heavier dim behind the tour spotlight. */
+    --veil-heavy: rgba(2, 27, 67, 0.45);
+    /* White at 70% (a tick's fill and centre) and at 92% (a bar or overlay that mostly hides what is behind). */
+    --glass-70: rgba(255, 255, 255, 0.7);
+    --glass-92: rgba(255, 255, 255, 0.92);
+    /* The in-between whites some surfaces had before the token sweep: 85 (a code box, a palette hover), 80 (a rail hover), 75 (a field on the approval card). */
+    --glass-85: rgba(255, 255, 255, 0.85);
+    --glass-80: rgba(255, 255, 255, 0.8);
+    --glass-75: rgba(255, 255, 255, 0.75);
+    /* Ink at 4% (a gap in a diff) and a pale grey (the record dot). */
+    --tint-04: rgba(2, 27, 67, 0.04);
+    --grey-record: #b9c0ce;
 
-  /* Amber, for "needs you" surfaces */
-  --amber-bg: #fff4db;
-  --amber-edge: #d99a00;
-  --amber-text: #3d2a00;
+    /* Text, fields, focus */
+    --text: var(--navy);
+    /* Field borders must reach 3:1 on white. */
+    --field-edge: #857d70;
+    --on-accent: #ffffff;
+    --focus: var(--blue-ink);
+    --shadow: var(--lift-1);
 
-  /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
-  --attn-ready: #22c55e;
-  --attn-working: #dc2626;
-  --attn-asking: #f59e0b;
-  /* Deeper shades for dots, edges and the message box border, which must reach 3:1 on white. */
-  --attn-ready-edge: #16a34a;
-  --attn-asking-edge: #d97706;
-  --attn-working-edge: #dc2626;
-  --attn-asking-pulse: #b45309;
+    /* Amber, for "needs you" surfaces */
+    --amber-bg: #fff4db;
+    --amber-glass: rgba(255, 248, 232, 0.72); /* the answer box's see-through amber */
+    --amber-edge: #d99a00;
+    --amber-text: #3d2a00;
 
-  --danger: #a4261b;
-  --danger-hover: #861e15;
-  --danger-wash: #fdeceb;
-  /* Danger wash when pressed. */
-  --danger-wash-strong: #f9d9d6;
-  --ok: #17673a;
-  --ok-wash: #e6f4ea;
+    /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
+    --attn-ready: #22c55e;
+    --attn-working: var(--state-working);
+    --attn-asking: #f59e0b;
+    /* Deeper shades for dots, edges and the message box border, which must reach 3:1 on white. */
+    --attn-ready-edge: #16a34a;
+    --attn-asking-edge: #d97706;
+    --attn-working-edge: var(--state-working);
+    --attn-asking-pulse: #b45309;
 
-  /*
+    --danger: #a4261b;
+    --danger-hover: #861e15;
+    --danger-wash: #fdeceb;
+    /* Danger wash when pressed. */
+    --danger-wash-strong: #f9d9d6;
+    --ok: #17673a;
+    --ok-wash: #e6f4ea;
+
+    /*
+   * State colours for the `.dot` pattern (patterns.css): each 3:1 or better on white, used beside a visible word.
+   * Red is `bad` only; `working` is blue, and --attn-working and --attn-working-edge point here so every working surface is blue.
+   * ok 5.02:1, warn 5.02:1, bad 7.31:1, idle 3.48:1, working 4.24:1, asking 3.19:1.
+   */
+    --state-ok: #15803d;
+    --state-warn: #b45309;
+    --state-bad: #a4261b;
+    --state-idle: #7c8aa5;
+    --state-working: #1a7be0;
+    --state-asking: #d97706;
+
+    /*
    * Category colours: soft fills for "kind of thing", never "state" (status keeps green, amber, red and blue).
    * Navy, #525252 and #33456a text pass WCAG AA on every one. Named by hue; tools alias them by meaning.
    */
-  --cat-rose: #fecbd8;
-  --cat-yellow: #fef08a;
-  --cat-aqua: #bef9f1;
-  --cat-sky: #bceefe;
-  --cat-iris: #d2d3ff;
-  --cat-mauve: #e3d2e8;
-  /* Ads task types */
-  --type-report: var(--cat-aqua);
-  --type-insight: var(--cat-yellow);
-  --type-action: var(--cat-rose);
-  --type-standup: var(--cat-iris);
+    --cat-rose: #fecbd8;
+    --cat-yellow: #fef08a;
+    --cat-aqua: #bef9f1;
+    --cat-sky: #bceefe;
+    --cat-iris: #d2d3ff;
+    --cat-mauve: #e3d2e8;
+    /* Ads task types */
+    --type-report: var(--cat-aqua);
+    --type-insight: var(--cat-yellow);
+    --type-action: var(--cat-rose);
+    --type-standup: var(--cat-iris);
+  }
 }

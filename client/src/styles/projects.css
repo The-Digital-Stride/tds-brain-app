@@ -1,458 +1,388 @@
-/* The Projects app (client/src/apps/projects). Built from the shared pieces: .lib layout, .tray and .card,
+@layer features {
+  /* The Projects app (client/src/apps/projects). Built from the shared pieces: .lib layout, .tray and .card,
    .line rows, .kv, .field, .btn. Only what they do not cover is here. */
 
-.proj-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.proj-head > .btn[data-variant="primary"] {
-  margin-left: auto;
-}
-.proj-title {
-  margin: 0;
-  font: 600 14px / 1.25 var(--head);
-  color: var(--navy);
-}
+  .proj-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .proj-head > .btn[data-variant="primary"],
+  .proj-head > .proj-head-end {
+    margin-left: auto;
+  }
+  /* Back to the list ("All projects"): the shared chevron points down, so it turns to point left. */
+  .proj-back .icon {
+    transform: rotate(90deg);
+  }
+  .proj-title {
+    margin: 0;
+    font: 600 var(--fs-body) / 1.25 var(--head);
+    color: var(--navy);
+  }
 
-/* The project tabs, with Link files at the right end when the Files tab is open. */
-.proj-tabrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.proj-tabrow > .btn {
-  margin-left: auto;
-}
+  /* The project tabs, with Link files at the right end when the Files tab is open. */
+  .proj-tabrow {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .proj-tabrow > .btn {
+    margin-left: auto;
+  }
 
-.proj-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.proj-tools .seg {
-  flex: none;
-  white-space: nowrap;
-}
-.proj-tools .seg button {
-  white-space: nowrap;
-  /* Each option sizes to its words: equal shares (flex: 1 from base.css) let "All projects" spill past its
+  .proj-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .proj-tools .seg {
+    flex: none;
+    white-space: nowrap;
+  }
+  .proj-tools .seg button {
+    white-space: nowrap;
+    /* Each option sizes to its words: equal shares (flex: 1 from base.css) let "All projects" spill past its
      background and focus ring beside the shorter "Mine". */
-  flex: 1 0 auto;
-}
-.proj-filter .field {
-  width: auto;
-  max-width: 200px;
-}
+    flex: 1 0 auto;
+  }
+  .proj-filter .field {
+    width: auto;
+    max-width: 200px;
+  }
 
-/* A line of words in the sheet: a note, or the quiet message under a list. */
-.proj-note {
-  margin: 0;
-  padding: 4px 8px;
-  font-size: 13px;
-  color: var(--iron);
-}
-.lib > .proj-note {
-  padding-inline: 0;
-}
-.card > .proj-note {
-  padding-bottom: 8px;
-}
+  /* A line of words in the sheet: a note, or the quiet message under a list. */
+  .proj-note {
+    margin: 0;
+    padding: var(--sp-4) var(--sp-8);
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .lib > .proj-note {
+    padding-inline: 0;
+  }
+  .card > .proj-note {
+    padding-bottom: var(--sp-8);
+  }
 
-/* Notices: the same amber and wash lines the rest of the app uses, inside the sheet. */
-.proj-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--wash);
-  color: var(--navy);
-  font-size: 13px;
-}
-.proj-banner[data-level="warning"] {
-  border-color: var(--amber-edge);
-  background: var(--amber-bg);
-  color: var(--amber-text);
-}
-.proj-banner[data-level="error"] {
-  border-color: var(--danger);
-  background: var(--danger-wash);
-  color: var(--danger);
-}
-.proj-banner > .btn,
-.proj-banner-actions {
-  margin-left: auto;
-}
-.proj-banner-actions {
-  display: inline-flex;
-  gap: 8px;
-}
+  /* Rows */
+  .proj-row {
+    padding: 0;
+  }
+  .proj-open {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: var(--sp-10);
+    min-width: 0;
+    padding: var(--sp-6) var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .proj-light {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+  }
+  .proj-card {
+    padding: var(--sp-12) var(--sp-8) var(--sp-8);
+  }
+  .proj-card .kv {
+    padding: 0 var(--sp-8);
+  }
+  .proj-brief {
+    margin: 0;
+    padding: 0 var(--sp-8) var(--sp-8);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .proj-team {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .proj-team .line {
+    padding: var(--sp-4) var(--sp-8);
+  }
+  .proj-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+  }
+  .proj-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .proj-todo,
+  .proj-file {
+    padding: var(--sp-4) var(--sp-8);
+  }
+  /* A teammate's row isn't a button: give its text the button's padding so the titles line up. */
+  .proj-todo > .line-text {
+    padding: var(--sp-6) var(--sp-8);
+  }
+  .proj-search {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-8) var(--sp-8);
+  }
+  .proj-search .field {
+    flex: 1 1 220px;
+  }
 
-.proj-error {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--danger);
-}
-.proj-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--iron);
-}
+  /* Forms */
+  .proj-form-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    max-width: 680px;
+  }
+  .proj-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-12);
+    padding: var(--sp-12);
+  }
+  .proj-area {
+    height: auto;
+    min-height: 64px;
+    padding: var(--sp-8) var(--sp-10);
+    resize: vertical;
+  }
+  .proj-pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--sp-12);
+  }
+  .proj-checks {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--sp-4) var(--sp-16);
+  }
+  .proj-checks > legend {
+    width: 100%;
+  }
+  .proj-check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-height: 24px;
+    font-size: var(--fs-control);
+  }
+  .proj-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+  .proj-form .proj-buttons {
+    padding-top: var(--sp-4);
+  }
 
-/* Rows */
-.proj-row {
-  padding: 0;
-}
-.proj-open {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  gap: 10px;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.proj-light {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.proj-card {
-  padding: 12px 8px 8px;
-}
-.proj-card .kv {
-  padding: 0 8px;
-}
-.proj-brief {
-  margin: 0;
-  padding: 0 8px 8px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.proj-team {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.proj-team .line {
-  padding: 4px 8px;
-}
-.proj-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.proj-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.proj-todo,
-.proj-file {
-  padding: 4px 8px;
-}
-/* A teammate's row isn't a button: give its text the button's padding so the titles line up. */
-.proj-todo > .line-text {
-  padding: 6px 8px;
-}
-.proj-search {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 8px 8px;
-}
-.proj-search .field {
-  flex: 1 1 220px;
-}
+  /* Tidy-up */
+  .proj-tidy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .proj-tidy-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+  }
+  .proj-tidy-row .card-head {
+    padding-bottom: 0;
+  }
+  .proj-suggest {
+    margin: 0;
+    padding: 0 var(--sp-8);
+    font-weight: 500;
+  }
+  .proj-tidy-todos,
+  .proj-conflicts ul {
+    margin: 0;
+    padding: 0 var(--sp-8) 0 26px;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .proj-conflicts {
+    padding: 0 var(--sp-8);
+  }
+  .proj-tidy-row .proj-buttons,
+  .proj-tidy-row .form-field {
+    padding: 0 var(--sp-8);
+  }
 
-/* Forms */
-.proj-form-page {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 680px;
-}
-.proj-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-}
-.proj-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.proj-field > label,
-.proj-field > legend,
-.proj-label {
-  padding: 0;
-  font: 600 12px / 1.4 var(--body);
-  color: var(--iron);
-}
-.proj-field .field {
-  width: 100%;
-}
-.proj-area {
-  height: auto;
-  min-height: 64px;
-  padding: 8px 10px;
-  resize: vertical;
-}
-.proj-pair {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-.proj-checks {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-}
-.proj-checks > legend {
-  width: 100%;
-}
-.proj-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  font-size: 13px;
-}
-.proj-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.proj-form .proj-buttons {
-  padding-top: 4px;
-}
+  /* The move confirm (shell/Confirm): the question on its own line above the explanation, buttons below. */
+  .confirm > span:has(> .proj-move-q) {
+    flex-basis: 100%;
+  }
+  .proj-move-q {
+    display: block;
+    font: 600 var(--fs-control) / 1.3 var(--head);
+    color: var(--navy);
+  }
+  /* The archive and delete confirm keeps its own body (radio choices, a typed name), so it is a plain `.confirm` box. */
+  .proj-remove-ask {
+    display: block;
+    margin: 0;
+    border: 0;
+  }
+  .proj-remove-q {
+    float: left;
+    width: 100%;
+    margin: 0 0 var(--sp-4);
+    padding: 0;
+    font: 600 var(--fs-control) / 1.3 var(--head);
+    color: var(--navy);
+  }
 
-/* Tidy-up */
-.proj-tidy {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.proj-tidy-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.proj-tidy-row .card-head {
-  padding-bottom: 0;
-}
-.proj-suggest {
-  margin: 0;
-  padding: 0 8px;
-  font-weight: 500;
-}
-.proj-tidy-todos,
-.proj-conflicts ul {
-  margin: 0;
-  padding: 0 8px 0 26px;
-  font-size: 12px;
-  color: var(--iron);
-}
-.proj-conflicts {
-  padding: 0 8px;
-}
-.proj-tidy-row .proj-buttons,
-.proj-tidy-row .proj-field {
-  padding: 0 8px;
-}
+  /* Archive and delete confirm: to-do choices, one row each; the warning in the error colour. */
+  .proj-remove-todos {
+    display: grid;
+    gap: var(--sp-6);
+    margin: 0 0 var(--sp-8);
+    padding: 0;
+    list-style: none;
+  }
+  .proj-remove-group {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4) var(--sp-12);
+  }
+  .proj-remove-title {
+    float: left;
+    min-width: 0;
+    padding: 0;
+    margin-right: var(--sp-12);
+    overflow-wrap: anywhere;
+  }
+  .proj-remove-opts {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--sp-4) var(--sp-12);
+  }
+  .proj-remove-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-size: var(--fs-control);
+  }
+  .proj-remove-warn {
+    font-weight: 600;
+  }
+  .proj-remove-ask .form-field {
+    margin-top: var(--sp-8);
+  }
 
-/* "Discard your changes?" strip (the to-do panel's .todo-ask, in the sheet). */
-.proj-ask {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--tint-1);
-}
-.proj-ask-q {
-  float: left;
-  margin-right: 4px;
-  padding: 0;
-  font: 600 13px / 1.3 var(--head);
-  color: var(--navy);
-}
+  /* Read-only client on the edit form, with Move… beside it */
+  .proj-static {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8) var(--sp-12);
+    font-size: var(--fs-body);
+    color: var(--navy);
+  }
+  .proj-move-btn {
+    margin-left: var(--sp-12);
+  }
+  .proj-move-text {
+    display: block;
+    margin: var(--sp-4) 0 var(--sp-10);
+    font-size: var(--fs-control);
+    line-height: 1.45;
+    color: var(--navy);
+  }
+  .proj-move-text p {
+    margin: 0 0 var(--sp-6);
+  }
+  .proj-move-files {
+    margin: 0 0 var(--sp-6);
+    padding-left: 18px;
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
 
-/* The move confirm: the question on its own line above the explanation. */
-.proj-move-ask .proj-ask-q {
-  float: none;
-  flex-basis: 100%;
-}
-.proj-remove-ask .proj-ask-q {
-  float: left;
-  width: 100%;
-  margin: 0 0 4px;
-}
-.proj-move-ask > p,
-.proj-move-ask > ul {
-  flex-basis: 100%;
-  margin: 0;
-}
+  /* Link files: tick several search results, then link them in one go. */
+  .proj-pick-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: grid;
+    gap: var(--sp-8);
+    margin: var(--sp-8) var(--sp-8) 0;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+  }
+  .proj-pick-chosen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-4) var(--sp-12);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-control);
+  }
+  .proj-pick-chosen li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+  }
+  .proj-pick-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .proj-pick {
+    align-items: center;
+    gap: var(--sp-10);
+    padding: var(--sp-4) var(--sp-8);
+  }
+  .proj-pick > input {
+    flex: none;
+  }
+  .proj-pick > label {
+    cursor: pointer;
+  }
+  .proj-pick > input:disabled + label {
+    cursor: default;
+  }
+  .proj-pick-why {
+    flex: none;
+  }
 
-/* Archive and delete confirm: to-do choices, one row each; the warning in the error colour. */
-.proj-remove-todos {
-  display: grid;
-  gap: 6px;
-  margin: 0 0 8px;
-  padding: 0;
-  list-style: none;
-}
-.proj-remove-group {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-}
-.proj-remove-title {
-  float: left;
-  min-width: 0;
-  padding: 0;
-  margin-right: 12px;
-  overflow-wrap: anywhere;
-}
-.proj-remove-opts {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}
-.proj-remove-opt {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-}
-.proj-remove-warn {
-  font-weight: 600;
-}
-.proj-remove-ask .proj-field {
-  margin-top: 8px;
-}
-
-/* Read-only client on the edit form, with Move… beside it */
-.proj-static {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  font-size: 14px;
-  color: var(--navy);
-}
-.proj-move-btn {
-  margin-left: 12px;
-}
-.proj-move-ask {
-  display: block;
-}
-.proj-move-text {
-  margin: 4px 0 10px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--navy);
-}
-.proj-move-text p {
-  margin: 0 0 6px;
-}
-.proj-move-files {
-  margin: 0 0 6px;
-  padding-left: 18px;
-  font-size: 12px;
-  color: var(--iron);
-}
-
-/* Link files: tick several search results, then link them in one go. */
-.proj-pick-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: grid;
-  gap: 8px;
-  margin: 8px 8px 0;
-  padding: 10px 12px;
-  border-radius: 9px;
-  background: var(--tint-1);
-}
-.proj-pick-chosen {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-.proj-pick-chosen li {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-.proj-pick-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.proj-pick {
-  align-items: center;
-  gap: 10px;
-  padding: 4px 8px;
-}
-.proj-pick > input {
-  flex: none;
-}
-.proj-pick > label {
-  cursor: pointer;
-}
-.proj-pick > input:disabled + label {
-  cursor: default;
-}
-.proj-pick-why {
-  flex: none;
-}
-
-/* Open items from a legacy todo.md checklist: read-only, quiet, the same size as the note above. */
-.proj-checklist {
-  margin: 0;
-  padding: 0 8px 8px 28px;
-  font-size: 13px;
-  color: var(--ink-soft);
-}
-.proj-checklist > li {
-  overflow-wrap: anywhere;
-}
-.proj-checklist > li + li {
-  margin-top: 2px;
+  /* Open items from a legacy todo.md checklist: read-only, quiet, the same size as the note above. */
+  .proj-checklist {
+    margin: 0;
+    padding: 0 var(--sp-8) var(--sp-8) 28px;
+    font-size: var(--fs-control);
+    color: var(--ink-soft);
+  }
+  .proj-checklist > li {
+    overflow-wrap: anywhere;
+  }
+  .proj-checklist > li + li {
+    margin-top: var(--sp-2);
+  }
 }

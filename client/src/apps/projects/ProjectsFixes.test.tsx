@@ -74,7 +74,7 @@ describe('the form after a "changed" refusal (fix 1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Sky site 2' } });
     api.changeProject.mockRejectedValue(new ApiFailure('changed' as never, 'x', 409));
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     const reload = await screen.findByRole('button', { name: 'Reload' });
     const latest = card({
       slug: 'site',
@@ -98,7 +98,7 @@ describe('the form after a "changed" refusal (fix 1)', () => {
     expect(screen.getByRole('radio', { name: 'On hold' }).getAttribute('aria-checked')).toBe('true');
     // Saving now sends only my change, against the new version.
     api.changeProject.mockResolvedValue(projectList([latest]));
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenLastCalledWith({
         kind: 'edit',
@@ -125,7 +125,7 @@ describe('a refresh while editing (fix-round review)', () => {
     });
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Sky site 2' } });
     api.changeProject.mockResolvedValue(projectList([SKY]));
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenLastCalledWith({
         kind: 'edit',
@@ -184,10 +184,65 @@ describe('the To-dos tab (fix 2)', () => {
     expect(screen.getByRole('button', { name: 'To-dos, 3 waiting' })).toBeTruthy();
     const heads = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads).toEqual(['Discovery', 'Build', 'No stage']);
-    expect(screen.getByText('Simon')).toBeTruthy();
+    // A to-do that isn't mine says who it is assigned to (UX consistency, release 2B).
+    expect(screen.getByText('Assigned to Simon')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Simon two/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Mine one/ }));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'a', mode: 'read' });
+  });
+
+  describe('the add form asks before throwing away typing (UX consistency, release 2B)', () => {
+    const openForm = async () => {
+      api.projectTodos.mockResolvedValue(rows);
+      await show(projectList([SKY]));
+      fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+      await screen.findByText('Simon two');
+      fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    };
+
+    it('closes at once on Cancel while nothing is typed', async () => {
+      await openForm();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByLabelText('To-do')).toBeNull();
+      expect(screen.queryByText('Discard your changes?')).toBeNull();
+    });
+
+    it('asks on Cancel once a title is typed, with Keep editing focused', async () => {
+      await openForm();
+      fireEvent.change(screen.getByLabelText('To-do'), { target: { value: 'Half a thought' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.getByText('Discard your changes?')).toBeTruthy();
+      await waitFor(() =>
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep editing' })),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Half a thought');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      expect(screen.queryByLabelText('To-do')).toBeNull();
+      // Reopened, the form starts empty: the discarded typing is gone.
+      fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('');
+    });
+
+    it('keeps the typing on Esc', async () => {
+      await openForm();
+      const field = screen.getByLabelText('To-do');
+      fireEvent.change(field, { target: { value: 'Keep me' } });
+      fireEvent.keyDown(field, { key: 'Escape' });
+      expect(screen.getByText('Discard your changes?')).toBeTruthy();
+      // Esc again, from the strip, keeps editing.
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Keep editing' }), { key: 'Escape' });
+      expect(screen.queryByText('Discard your changes?')).toBeNull();
+      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Keep me');
+    });
+
+    it('submits with "Add a to-do"', async () => {
+      await openForm();
+      const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
+      expect(within(form).getByRole('button', { name: 'Add a to-do' }).getAttribute('type')).toBe('submit');
+    });
   });
 
   it('refreshes after Add a to-do', async () => {
@@ -201,8 +256,9 @@ describe('the To-dos tab (fix 2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
     fireEvent.change(screen.getByLabelText('To-do'), { target: { value: 'New thing' } });
     const before = api.projectTodos.mock.calls.length;
+    const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add to-do' }));
+      fireEvent.click(within(form).getByRole('button', { name: 'Add a to-do' }));
     });
     await waitFor(() => expect(api.projectTodos.mock.calls.length).toBeGreaterThan(before));
   });
@@ -311,7 +367,7 @@ describe('the form rules (fix 5)', () => {
     expect((screen.getByLabelText('Billable') as HTMLInputElement).checked).toBe(false);
     api.changeProject.mockResolvedValue(projectList([c]));
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Sky site 3' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenCalledWith({
         kind: 'edit',
@@ -337,7 +393,7 @@ describe('the form rules (fix 5)', () => {
   it('focuses the first invalid field', async () => {
     await edit();
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Title')));
     expect(screen.getByLabelText('Title').getAttribute('aria-invalid')).toBe('true');
   });

@@ -34,7 +34,13 @@ const api = vi.hoisted(() => ({
 vi.mock('../../api.ts', () => ({ api, ApiFailure: class extends Error {} }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: { panelOpen: false }, dispatch: shell.dispatch, modes: {} }),
+  useShell: () => ({
+    state: { panelOpen: false },
+    dispatch: shell.dispatch,
+    modes: {},
+    panelHold: { dirty: false, asking: false },
+    guardPanel: (run: () => void) => run(),
+  }),
 }));
 
 const { CommandSheet } = await import('./CommandSheet.tsx');
@@ -265,8 +271,8 @@ describe('account data panel', () => {
     expect(head.closest('section')?.getAttribute('data-tone')).toBe('bad');
     expect(screen.getByRole('heading', { name: /Search/ })).toBeTruthy();
     expect(screen.getByRole('heading', { name: /Deep dive/ })).toBeTruthy();
-    expect(document.querySelector('.cc-group .cc-dot[data-s="bad"]')).toBeTruthy();
-    expect(document.querySelector('.cc-group .cc-dot[data-s="warn"]')).toBeTruthy();
+    expect(document.querySelector('.cc-group .dot[data-state="bad"]')).toBeTruthy();
+    expect(document.querySelector('.cc-group .dot[data-state="warn"]')).toBeTruthy();
     expect(screen.getByText('missing')).toBeTruthy();
   });
 
@@ -571,11 +577,11 @@ describe("Release 2: all accounts' standups", () => {
     { key: 'none', name: 'None Co', hasStandup: false, verdict: null, stale: false },
     { key: key, name: 'Acme Heating', hasStandup: true, verdict: VERDICT, stale: false },
   ];
-  const button = () => screen.getByRole('button', { name: "All accounts' standups…" });
+  const button = () => screen.getByRole('button', { name: "All accounts' standups" });
 
   it('has no button without the feature', async () => {
     await mount();
-    expect(screen.queryByRole('button', { name: "All accounts' standups…" })).toBeNull();
+    expect(screen.queryByRole('button', { name: "All accounts' standups" })).toBeNull();
   });
 
   it('opens a dialog, reads the list, words every row and marks the current account', async () => {

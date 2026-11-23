@@ -529,7 +529,7 @@ describe('Tokens saved', () => {
   it('says it is loading the token figures while it waits', async () => {
     st.usageSavings.mockReturnValue(new Promise(() => {}));
     render(<SettingsView tab="claude" />);
-    const el = await screen.findByText('Loading the token figures.');
+    const el = await screen.findByText('Loading…');
     expect(el.getAttribute('role')).toBe('status');
   });
   it('says so when the figures cannot be loaded', async () => {
@@ -557,7 +557,7 @@ describe('help links', () => {
     render(<AllTabs />);
     for (const [page, size] of pages) {
       const b = screen.getByRole('button', { name: `Help: ${page}` });
-      expect(b.getAttribute('data-size')).toBe(size === 28 ? '28' : null);
+      expect(b.getAttribute('data-size')).toBe(size === 28 ? 'small' : null);
     }
     expect(screen.getByRole('button', { name: 'Help: health' })).toBeTruthy();
   });

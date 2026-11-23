@@ -1,8 +1,10 @@
-import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useId, useLayoutEffect, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
+import { UndoLine } from '../../shell/UndoLine.tsx';
 import { clearPickedProject, useProjectChoice } from '../../state/client-choice.ts';
 import { filterOptions, useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -28,6 +30,7 @@ export function ProjectFilter({
   const clients = useStore().boot?.clients ?? [];
   const picked = useProjectChoice();
   const cards = list?.projects ?? [];
+  const pickedTitle = cards.find((c) => c.key === picked)?.title;
   if (cards.length === 0 && !picked) return null;
   const options = [{ value: ALL_PROJECTS, label: 'All projects' }, ...filterOptions(cards, clients)];
   return (
@@ -53,8 +56,14 @@ export function ProjectFilter({
       {picked ? (
         <span id={`${id}-why`} className="lib-project-why">
           Set by Working on (Home) ·{' '}
-          <button type="button" className="link-btn" onClick={clearPickedProject}>
-            Clear
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            onClick={clearPickedProject}
+          >
+            {pickedTitle ? `Clear ${pickedTitle}` : 'Clear project'}
           </button>
         </span>
       ) : null}
@@ -256,17 +265,24 @@ export function ViewButton({ title, onView }: { title: string; onView: (() => vo
 }
 
 /**
- * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can) or
- * ask Claude about it; then download it or copy where it is. Open is the main action when it is there.
+ * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can), ask
+ * Claude about it, favourite it, delete it (design system, Actions rule 10); then download it or copy where
+ * it is. Open is the main action when it is there. The bin shows only where the server says the person may
+ * delete the file.
  */
 export function DetailActions({
   item,
+  name = item.title,
   onAsk,
   onOpen,
+  onDelete,
 }: {
   item: LibraryItem;
+  /** The name the person sees on the file (an image's file name, a document's title). */
+  name?: string;
   onAsk: () => void;
   onOpen?: (() => void) | null;
+  onDelete?: () => void;
 }) {
   const { said, copy } = useCopy();
   return (
@@ -280,7 +296,8 @@ export function DetailActions({
         <button type="button" className="btn" data-variant={onOpen ? undefined : 'primary'} onClick={onAsk}>
           Ask Claude about it
         </button>
-        <FileStar item={item} />
+        <FileStar item={item} name={name} />
+        {onDelete ? <DeleteButton item={item} name={name} onDelete={onDelete} /> : null}
       </div>
       <div className="lib-actions-row">
         {/* The server sends it as an attachment, so the browser saves it and the app stays put. */}
@@ -316,24 +333,15 @@ export function LibraryNotice({
   /** Shown when ready with nothing in it; omit when there are items. */
   empty?: string;
 }) {
-  if (status === 'loading') {
-    return (
-      <p className="lib-empty" role="status">
-        Loading…
-      </p>
-    );
-  }
+  if (status === 'loading') return <StateNote kind="loading" />;
   if (status === 'failed') {
     return (
-      <div className="lib-failed" role="alert">
-        <p>{message}</p>
-        <button type="button" className="btn" onClick={retry}>
-          Try again
-        </button>
-      </div>
+      <StateNote kind="error" onRetry={retry}>
+        {message}
+      </StateNote>
     );
   }
-  return empty ? <p className="lib-empty">{empty}</p> : null;
+  return empty ? <StateNote kind="empty">{empty}</StateNote> : null;
 }
 
 /**
@@ -374,8 +382,8 @@ export function DeleteButton({
 }
 
 /**
- * Files waiting out their Undo time: one line each, with an Undo button. Nothing has been sent yet. The clock
- * stops while the pointer or focus is on a line, so Undo can be reached. A visually hidden status line is
+ * Files waiting out their Undo time: one Undo line (`UndoLine`, a strip) each. Nothing has been sent yet. The
+ * clock stops while the pointer or focus is on a line, so Undo can be reached. A visually hidden status line is
  * always on the page, so a screen reader announces the delete, and later the result, as the text changes.
  */
 export function FileDeleteNotice() {
@@ -391,11 +399,14 @@ export function FileDeleteNotice() {
         {spoken}
       </p>
       {waiting.length === 0 ? null : (
-        <div className="lib-held">
+        // Styled in drawers.css (eager): this shows on any sheet, before any library screen has loaded.
+        <div className="undo-strips">
           {waiting.map((f) => (
-            <HeldLine
+            <UndoLine
               key={f.id}
-              title={f.title}
+              as="strip"
+              text={`${f.title} deleted.`}
+              undoLabel={`Undo deleting ${f.title}`}
               onPause={() => pauseFileDelete(f.id)}
               onResume={() => resumeFileDelete(f.id)}
               onUndo={() => undoDeleteFile(f.id)}
@@ -404,6 +415,13 @@ export function FileDeleteNotice() {
         </div>
       )}
     </>
+  );
+}
+
+/** After a file is deleted from the details pane there is no row to land on: focus goes to the list's summary line. */
+export function focusLibrarySummary() {
+  queueMicrotask(() =>
+    document.querySelector<HTMLElement>('[data-lib-summary]')?.focus({ preventScroll: true }),
   );
 }
 
@@ -436,53 +454,4 @@ export function useDeleteFocus(
     setWant(null);
   }, [want, waiting, root, fallback]);
   return (id) => setWant({ id });
-}
-
-/**
- * One held file's line. The pointer and focus each hold the clock on their own: it resumes only when
- * both have left, so a mouse passing over while focus sits on Undo can't restart it (re-review 2026-11-15).
- */
-function HeldLine({
-  title,
-  onPause,
-  onResume,
-  onUndo,
-}: {
-  title: string;
-  onPause: () => void;
-  onResume: () => void;
-  onUndo: () => void;
-}) {
-  const on = useRef({ pointer: false, focus: false });
-  const set = (which: 'pointer' | 'focus', value: boolean) => {
-    const was = on.current.pointer || on.current.focus;
-    on.current = { ...on.current, [which]: value };
-    const now = on.current.pointer || on.current.focus;
-    if (now && !was) onPause();
-    if (!now && was) onResume();
-  };
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: only pauses the Undo clock; the button inside is the control
-    <div
-      className="update-banner"
-      onMouseEnter={() => set('pointer', true)}
-      onMouseLeave={() => set('pointer', false)}
-      onFocus={() => set('focus', true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) set('focus', false);
-      }}
-    >
-      <span>{title} deleted.</span>
-      <button
-        type="button"
-        className="btn"
-        data-variant="quiet"
-        data-size="small"
-        aria-label={`Undo deleting ${title}`}
-        onClick={onUndo}
-      >
-        Undo
-      </button>
-    </div>
-  );
 }

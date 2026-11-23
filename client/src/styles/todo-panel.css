@@ -1,666 +1,629 @@
-/*
+@layer features {
+  /*
  * todo-panel.css: the to-do panel (`client/src/shell/TodoPanel.tsx`), a wide glass panel that slides out of the
  * To-dos drawer's right edge to read, edit and add a to-do. It sits in the desk (`#todo-panel-slot`, App.tsx) so it
  * can use the desk's measures, but outside the docks, which clip what is inside them. Look: the file viewer's
  * glass, radius, lift and `viewer-in` motion (viewer.css). Plan: docs/plans/2026-11-16-todo-panel.md.
  */
 
-/* Over the desk, but nothing in it takes the pointer except its own parts. */
-.todo-layer {
-  /* The drawer's right edge: desk padding, rail, the gap, the 316px drawer, and a gap of air. */
-  --todo-left: calc(var(--desk-pad) + var(--rail-w) + var(--gap) + 316px + var(--gap));
-  position: fixed;
-  inset: 0;
-  z-index: 8;
-  pointer-events: none;
-}
-.todo-layer > * {
-  pointer-events: auto;
-}
-/* The drawer floats (narrow window, dock layers 40 and 41): the panel is above it, and the veil above the sheet. */
-.todo-layer[data-overlay="true"] {
-  z-index: 45;
-}
-/* Docked: the veil covers only the sheet, so the drawer stays in reach. */
-.todo-veil {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: var(--todo-left);
-  background: rgba(2, 27, 67, 0.16);
-  animation: viewer-fade 160ms var(--ease);
-}
-.todo-panel {
-  position: absolute;
-  top: var(--desk-pad);
-  bottom: var(--desk-pad);
-  left: var(--todo-left);
-  width: min(760px, calc(100vw - var(--todo-left) - var(--desk-pad)));
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  box-shadow: var(--lift-3);
-  animation: todo-in var(--t) var(--ease);
-  container: todo-panel / inline-size;
-}
-/* The drawer floats (narrow window): the panel covers it and the sheet, full width less the pad. */
-.todo-layer[data-overlay="true"] .todo-veil {
-  left: 0;
-}
-.todo-layer[data-overlay="true"] .todo-panel {
-  left: var(--desk-pad);
-  right: var(--desk-pad);
-  width: auto;
-}
-/* Out of the drawer: from its edge on the left, the viewer's own comes in from the right. */
-@keyframes todo-in {
-  from {
-    opacity: 0;
-    transform: translateX(-24px);
+  /* Over the desk, but nothing in it takes the pointer except its own parts. */
+  .todo-layer {
+    /* The drawer's right edge: desk padding, rail, the gap, the 316px drawer, and a gap of air. */
+    --todo-left: calc(var(--desk-pad) + var(--rail-w) + var(--gap) + 316px + var(--gap));
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-docked-panel);
+    pointer-events: none;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .todo-veil,
+  .todo-layer > * {
+    pointer-events: auto;
+  }
+  /* The drawer floats (narrow window, dock layers 40 and 41): the panel is above it, and the veil above the sheet. */
+  .todo-layer[data-overlay="true"] {
+    z-index: var(--z-floating-panel);
+  }
+  /* Docked: the veil covers only the sheet, so the drawer stays in reach. */
+  .todo-veil {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: var(--todo-left);
+    background: var(--veil);
+    animation: viewer-fade var(--t-mid) var(--ease);
+  }
   .todo-panel {
-    animation: none;
+    position: absolute;
+    top: var(--desk-pad);
+    bottom: var(--desk-pad);
+    left: var(--todo-left);
+    width: min(760px, calc(100vw - var(--todo-left) - var(--desk-pad)));
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--r-16);
+    box-shadow: var(--lift-3);
+    animation: todo-in var(--t) var(--ease);
+    container: todo-panel / inline-size;
   }
-}
+  /* The drawer floats (narrow window): the panel covers it and the sheet, full width less the pad. */
+  .todo-layer[data-overlay="true"] .todo-veil {
+    left: 0;
+  }
+  .todo-layer[data-overlay="true"] .todo-panel {
+    left: var(--desk-pad);
+    right: var(--desk-pad);
+    width: auto;
+  }
+  /* Out of the drawer: from its edge on the left, the viewer's own comes in from the right. */
+  @keyframes todo-in {
+    from {
+      opacity: 0;
+      transform: translateX(-24px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .todo-veil,
+    .todo-panel {
+      animation: none;
+    }
+  }
 
-/* The header band: the title, previous and next, then close at the top right. */
-.todo-head {
-  flex: none;
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  min-height: 47px;
-  padding: 8px 10px 8px 18px;
-}
-.todo-head h2 {
-  flex: 1;
-  min-width: 0;
-  /* Centres a one-line title on the 28px buttons; the buttons stay at the top when it wraps. */
-  margin: 4px 8px 0 0;
-  font: 600 14px / 1.3 var(--head);
-  overflow-wrap: anywhere;
-}
-.todo-head .icon-btn {
-  align-self: start;
-}
-/* The heading takes focus only so the reader starts there; it needs no ring. */
-.todo-head h2:focus {
-  outline: none;
-}
-.todo-head .icon-btn[aria-disabled="true"] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  /* The header band: the title, previous and next, then close at the top right. */
+  .panel-head.todo-head {
+    align-items: flex-start;
+    gap: var(--sp-4);
+    padding-block: var(--sp-8);
+  }
+  .todo-head .icon-btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-/* "Discard your changes?": a quiet strip under the header, with the two ways out. */
-.todo-ask {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0 12px 6px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 9px;
-  background: var(--tint-1);
-}
-.todo-ask-q {
-  float: left;
-  margin-right: 8px;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--navy);
-}
+  /* "Discard your changes?" and the other questions in the panel: the shared Confirm strip, inset to the panel. */
+  .todo-panel .confirm {
+    flex: none;
+    margin: 0 var(--sp-12) var(--sp-6);
+  }
 
-/* The body: details as the main column, the facts (or the other fields) in a side strip. */
-.todo-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  align-items: start;
-  gap: 18px;
-  padding: 4px 18px 14px;
-}
-.todo-edit-form {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.todo-add-body {
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-}
-.todo-main-col,
-.todo-side-edit {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-/* Narrow panel: the strip goes under the details. Measured on the panel, not the window. */
-@container todo-panel (max-width: 639px) {
+  /* The body: details as the main column, the facts (or the other fields) in a side strip. */
   .todo-body {
-    grid-template-columns: minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    align-items: start;
+    gap: 18px;
+    padding: var(--sp-4) 18px 14px;
   }
-}
-.todo-empty {
-  margin: 0;
-  font-size: 13px;
-  color: var(--iron);
-}
+  .todo-edit-form {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .todo-add-body {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  .todo-main-col,
+  .todo-side-edit {
+    display: grid;
+    gap: var(--sp-10);
+    min-width: 0;
+  }
+  /* Narrow panel: the strip goes under the details. Measured on the panel, not the window. */
+  @container todo-panel (max-width: 639px) {
+    .todo-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .todo-empty {
+    margin: 0;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
 
-/* Files linked to a to-do: a list under the details (plan 2026-11-16-todo-attachments). */
-.todo-files {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-.todo-files-head {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
-.todo-files-list,
-.todo-picker-list {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.todo-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-}
-.todo-file > svg,
-.todo-picker-list svg {
-  flex: none;
-  color: var(--iron);
-}
-.todo-file-open,
-.todo-file-name,
-.todo-picker-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: left;
-}
-.todo-file-open {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--navy);
-  text-decoration: underline;
-  cursor: pointer;
-}
-.todo-file-note {
-  font-size: 12px;
-  color: var(--iron);
-}
-.todo-file .icon-btn {
-  margin-left: auto;
-}
-.todo-addfile,
-.todo-picker {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
-.todo-addfile-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.todo-addfile .todo-ask {
-  margin: 0;
-}
-.todo-picker {
-  justify-self: stretch;
-  justify-items: stretch;
-  padding: 10px 12px;
-  border-radius: 9px;
-  background: var(--tint-1);
-}
-.todo-picker-results .todo-note {
-  padding: 0;
-}
-.todo-picker-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.todo-picker-list label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-}
+  /* Files linked to a to-do: a list under the details (plan 2026-11-16-todo-attachments). */
+  .todo-files {
+    display: grid;
+    gap: var(--sp-8);
+    min-width: 0;
+  }
+  .todo-files-head {
+    margin: 0;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .todo-files-list,
+  .todo-picker-list {
+    display: grid;
+    gap: var(--sp-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .todo-file {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-width: 0;
+    font-size: var(--fs-control);
+  }
+  .todo-file > svg,
+  .todo-picker-list svg {
+    flex: none;
+    color: var(--iron);
+  }
+  .todo-file-name,
+  .todo-picker-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+  .todo-file-note {
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .todo-file .icon-btn {
+    margin-left: auto;
+  }
+  .todo-addfile,
+  .todo-picker {
+    display: grid;
+    gap: var(--sp-8);
+    justify-items: start;
+  }
+  .todo-addfile-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
+  }
+  .todo-addfile .confirm {
+    margin: 0;
+  }
+  .todo-picker {
+    justify-self: stretch;
+    justify-items: stretch;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+  }
+  .todo-picker-results .todo-note {
+    padding: 0;
+  }
+  .todo-picker-list li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .todo-picker-list label {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    min-width: 0;
+    font-size: var(--fs-control);
+  }
 
-.todo-facts {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 9px;
-  background: var(--tint-1);
-  font-size: 13px;
-}
-.todo-facts dt {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
-.todo-facts dd {
-  margin: 1px 0 0;
-  overflow-wrap: anywhere;
-}
-.todo-facts .late {
-  color: var(--danger);
-}
+  .todo-facts {
+    display: grid;
+    gap: var(--sp-10);
+    margin: 0;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+    font-size: var(--fs-control);
+  }
+  .todo-facts dt {
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .todo-facts dd {
+    margin: 1px 0 0;
+    overflow-wrap: anywhere;
+  }
+  .todo-facts .late {
+    color: var(--danger);
+  }
 
-.todo-status {
-  flex: none;
-  margin: 0;
-  padding: 0 18px 6px;
-}
-.todo-status:empty {
-  padding: 0;
-}
+  .todo-panel .todo-status {
+    flex: none;
+    margin: 0;
+    padding: 0 18px var(--sp-6);
+  }
+  .todo-panel .todo-status:empty {
+    padding: 0;
+  }
 
-/* The footer: what can be done on the left, Edit or Save and Cancel on the right. Scoped to the panel: the drawer's
+  /* The footer: what can be done on the left, Edit or Save and Cancel on the right. Scoped to the panel: the drawer's
    to-do rows use .todo-foot too (drawers.css), and this file loads later, so a bare rule laid this padding on them. */
-.todo-panel .todo-foot {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  padding: 10px 18px 14px;
-}
-.todo-foot-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.todo-foot-note {
-  flex-basis: 100%;
-  padding: 0;
-}
-.todo-open {
-  appearance: none;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-weight: 500;
-  width: 100%;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-.todo-open:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.todo[data-panel-open="true"] {
-  background: var(--tint-1);
-}
+  .todo-panel .todo-foot {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-8) var(--sp-12);
+    padding: var(--sp-10) 18px 14px;
+  }
+  .todo-foot-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .todo-foot-note {
+    flex-basis: 100%;
+    padding: 0;
+  }
+  .todo-open {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 500;
+    width: 100%;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+  .todo-open:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .todo[data-panel-open="true"] {
+    background: var(--tint-1);
+  }
 
-/* The details, one look for reading and editing. */
-.todo-details {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.todo-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  /* Stays at the top of the body while long details scroll; white under the tint so text never shows through. */
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: linear-gradient(var(--tint-1), var(--tint-1)), #fff;
-}
-fieldset.todo-link {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.todo-link .field {
-  flex: 1;
-  min-width: 160px;
-}
-.todo-link .todo-note {
-  flex-basis: 100%;
-  padding: 0;
-}
-.todo-prose-box {
-  min-width: 0;
-}
-.todo-details[data-editable="true"] .todo-prose-box {
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: #fff;
-  border: 1px solid var(--field-edge);
-}
-.todo-prose {
-  min-height: 7lh;
-  font: 400 14px / 1.55 var(--body);
-  overflow-wrap: anywhere;
-}
-.todo-details[data-editable="false"] .todo-prose {
-  min-height: 0;
-}
-.todo-prose:focus {
-  outline: none;
-}
-/* The box takes the focus ring the fields have, since the editor inside it has none. */
-.todo-prose-box:has(.todo-prose:focus-visible) {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.todo-prose > * + * {
-  margin-top: 8px;
-}
-.todo-prose p {
-  margin: 0;
-}
-.todo-prose > * + p {
-  margin-top: 8px;
-}
-.todo-prose h1,
-.todo-prose h2,
-.todo-prose h3 {
-  margin: 14px 0 0;
-  font-family: var(--head);
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--navy);
-}
-.todo-prose h1 {
-  font-size: 18px;
-}
-.todo-prose h2 {
-  font-size: 15px;
-}
-.todo-prose h3 {
-  font-size: 14px;
-}
-.todo-prose > :first-child {
-  margin-top: 0;
-}
-.todo-prose ul,
-.todo-prose ol {
-  margin: 0;
-  padding-left: 22px;
-}
-.todo-prose li + li {
-  margin-top: 3px;
-}
-.todo-prose li > p {
-  display: inline;
-}
-.todo-prose ul[data-type="taskList"] {
-  padding-left: 0;
-  list-style: none;
-}
-.todo-prose ul[data-type="taskList"] ul[data-type="taskList"] {
-  padding-left: 22px;
-}
-.todo-prose li[data-checked] {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.todo-prose li[data-checked] > label {
-  flex: none;
-  display: inline-flex;
-  padding-top: 0.2em;
-}
-.todo-prose li[data-checked] > div {
-  flex: 1;
-  min-width: 0;
-}
-.todo-prose li[data-checked][data-checked="true"] > div {
-  color: var(--iron);
-  text-decoration: line-through;
-}
-/* The app's tick (base.css `.tick`): the editor makes the boxes itself, so they can't take the class. */
-.todo-prose input[type="checkbox"] {
-  appearance: none;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  border: 1.5px solid var(--tick-edge);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.7) center / 14px 14px no-repeat;
-  cursor: pointer;
-  vertical-align: middle;
-}
-.todo-prose input[type="checkbox"]:checked {
-  border-color: var(--navy);
-  background-color: var(--navy);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.6 2.6L11 4.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-}
-.todo-prose input[type="checkbox"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-/* A tick is being saved: it shows at once, and the boxes wait (still focusable) until it is done. */
-.todo-details[data-pending="true"] .todo-prose input[type="checkbox"] {
-  opacity: 0.6;
-  cursor: progress;
-}
-.todo-prose a {
-  color: var(--blue-ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-/* A link to a Brain file (or any address that isn't the web or email): plain text, with a dotted line to say a
+  /* The details, one look for reading and editing. */
+  .todo-details {
+    display: grid;
+    gap: var(--sp-6);
+    min-width: 0;
+  }
+  .todo-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    padding: var(--sp-2);
+    border-radius: var(--r-9);
+    /* Stays at the top of the body while long details scroll; white under the tint so text never shows through. */
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(var(--tint-1), var(--tint-1)), var(--surface);
+  }
+  fieldset.todo-link {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-6);
+  }
+  .todo-link .field {
+    flex: 1;
+    min-width: 160px;
+  }
+  .todo-link .todo-note {
+    flex-basis: 100%;
+    padding: 0;
+  }
+  .todo-prose-box {
+    min-width: 0;
+  }
+  .todo-details[data-editable="true"] .todo-prose-box {
+    padding: var(--sp-8) var(--sp-10);
+    border-radius: var(--r-9);
+    background: var(--surface);
+    border: 1px solid var(--field-edge);
+  }
+  .todo-prose {
+    min-height: 7lh;
+    font: 400 var(--fs-body) / 1.55 var(--body);
+    overflow-wrap: anywhere;
+  }
+  .todo-details[data-editable="false"] .todo-prose {
+    min-height: 0;
+  }
+  .todo-prose:focus {
+    outline: none;
+  }
+  /* The box takes the focus ring the fields have, since the editor inside it has none. */
+  .todo-prose-box:has(.todo-prose:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .todo-prose > * + * {
+    margin-top: var(--sp-8);
+  }
+  .todo-prose p {
+    margin: 0;
+  }
+  .todo-prose > * + p {
+    margin-top: var(--sp-8);
+  }
+  .todo-prose h1,
+  .todo-prose h2,
+  .todo-prose h3 {
+    margin: 14px 0 0;
+    font-family: var(--head);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--navy);
+  }
+  .todo-prose h1 {
+    font-size: var(--fs-title);
+  }
+  .todo-prose h2 {
+    font-size: var(--fs-reading);
+  }
+  .todo-prose h3 {
+    font-size: var(--fs-body);
+  }
+  .todo-prose > :first-child {
+    margin-top: 0;
+  }
+  .todo-prose ul,
+  .todo-prose ol {
+    margin: 0;
+    padding-left: 22px;
+  }
+  .todo-prose li + li {
+    margin-top: 3px;
+  }
+  .todo-prose li > p {
+    display: inline;
+  }
+  .todo-prose ul[data-type="taskList"] {
+    padding-left: 0;
+    list-style: none;
+  }
+  .todo-prose ul[data-type="taskList"] ul[data-type="taskList"] {
+    padding-left: 22px;
+  }
+  .todo-prose li[data-checked] {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-8);
+  }
+  .todo-prose li[data-checked] > label {
+    flex: none;
+    display: inline-flex;
+    padding-top: 0.2em;
+  }
+  .todo-prose li[data-checked] > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .todo-prose li[data-checked][data-checked="true"] > div {
+    color: var(--iron);
+    text-decoration: line-through;
+  }
+  /* The app's tick (base.css `.tick`): the editor makes the boxes itself, so they can't take the class. */
+  .todo-prose input[type="checkbox"] {
+    appearance: none;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: 1.5px solid var(--tick-edge);
+    border-radius: var(--r-5);
+    background: var(--glass-70) center / 14px 14px no-repeat;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .todo-prose input[type="checkbox"]:checked {
+    border-color: var(--navy);
+    background-color: var(--navy);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.6 2.6L11 4.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .todo-prose input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* A tick is being saved: it shows at once, and the boxes wait (still focusable) until it is done. */
+  .todo-details[data-pending="true"] .todo-prose input[type="checkbox"] {
+    opacity: 0.6;
+    cursor: progress;
+  }
+  .todo-prose a {
+    color: var(--blue-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  /* A link to a Brain file (or any address that isn't the web or email): plain text, with a dotted line to say a
    reference is there. Its address shows on hover. */
-.todo-prose [data-todo-link] {
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-/* A link that isn't safe to open stays in the text, plain. */
-.todo-prose a:not([href]) {
-  color: inherit;
-  text-decoration: none;
-}
-.todo-prose code {
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: var(--tint-1);
-  font: 400 12.5px / 1 var(--mono);
-}
-/* A part the editor doesn't offer (a table, a code block, a quote): shown, never edited. */
-.todo-prose .todo-kept {
-  position: relative;
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: var(--tint-1);
-  font-size: 13px;
-  overflow-x: auto;
-}
-.todo-prose .todo-kept {
-  /* Not `anywhere`, which would let a narrow column shrink to one letter: the block scrolls sideways instead. */
-  overflow-wrap: normal;
-}
-.todo-prose .todo-kept table {
-  border-collapse: collapse;
-  font-size: 12.5px;
-}
-.todo-prose .todo-kept table code {
-  overflow-wrap: break-word;
-}
-.todo-prose .todo-kept th,
-.todo-prose .todo-kept td {
-  min-width: 9ch;
-  padding: 3px 8px;
-  text-align: left;
-  vertical-align: top;
-}
-.todo-prose .todo-kept th {
-  font-weight: 600;
-}
-.todo-prose .todo-kept pre {
-  margin: 0;
-  font: 400 12.5px / 1.5 var(--mono);
-  white-space: pre-wrap;
-}
-.todo-prose .todo-kept blockquote {
-  margin: 0;
-  color: var(--ink-soft);
-}
-/* "Edit this part in a chat": real text under the block, shown while editing, linked by aria-describedby. */
-.todo-prose .todo-kept-hint {
-  display: none;
-  margin: 6px 0 0;
-  padding: 0;
-}
-.todo-details[data-editable="true"] .todo-prose .todo-kept-hint {
-  display: block;
-}
-.todo-prose .todo-kept:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.todo-prose ::selection {
-  background: rgba(11, 92, 181, 0.2);
-}
+  .todo-prose [data-todo-link] {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+  }
+  /* A link that isn't safe to open stays in the text, plain. */
+  .todo-prose a:not([href]) {
+    color: inherit;
+    text-decoration: none;
+  }
+  .todo-prose code {
+    padding: 1px var(--sp-4);
+    border-radius: var(--r-5);
+    background: var(--tint-1);
+    font: 400 var(--fs-mono) / 1 var(--mono);
+  }
+  /* A part the editor doesn't offer (a table, a code block, a quote): shown, never edited. */
+  .todo-prose .todo-kept {
+    position: relative;
+    margin: var(--sp-8) 0 0;
+    padding: var(--sp-8) var(--sp-10);
+    border-radius: var(--r-9);
+    background: var(--tint-1);
+    font-size: var(--fs-control);
+    overflow-x: auto;
+  }
+  .todo-prose .todo-kept {
+    /* Not `anywhere`, which would let a narrow column shrink to one letter: the block scrolls sideways instead. */
+    overflow-wrap: normal;
+  }
+  .todo-prose .todo-kept table {
+    border-collapse: collapse;
+    font-size: var(--fs-mono);
+  }
+  .todo-prose .todo-kept table code {
+    overflow-wrap: break-word;
+  }
+  .todo-prose .todo-kept th,
+  .todo-prose .todo-kept td {
+    min-width: 9ch;
+    padding: 3px var(--sp-8);
+    text-align: left;
+    vertical-align: top;
+  }
+  .todo-prose .todo-kept th {
+    font-weight: 600;
+  }
+  .todo-prose .todo-kept pre {
+    margin: 0;
+    font: 400 var(--fs-mono) / 1.5 var(--mono);
+    white-space: pre-wrap;
+  }
+  .todo-prose .todo-kept blockquote {
+    margin: 0;
+    color: var(--ink-soft);
+  }
+  /* "Edit this part in a chat": real text under the block, shown while editing, linked by aria-describedby. */
+  .todo-prose .todo-kept-hint {
+    display: none;
+    margin: var(--sp-6) 0 0;
+    padding: 0;
+  }
+  .todo-details[data-editable="true"] .todo-prose .todo-kept-hint {
+    display: block;
+  }
+  .todo-prose .todo-kept:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .todo-prose ::selection {
+    background: rgba(11, 92, 181, 0.2);
+  }
 
-/*
+  /*
  * The editor's own base rules, copied from `@tiptap/core`'s style.ts. The editor is told not to inject them
  * (`injectCSS: false`) because an injected <style> tag is blocked by the app's content security policy.
  */
-/* biome-ignore-start lint/style/noDescendingSpecificity: copied verbatim from @tiptap/core, so it keeps its order and !important. */
-/* biome-ignore-start lint/complexity/noImportantStyles: copied verbatim from @tiptap/core, so it keeps its order and !important. */
-.todo-prose {
-  position: relative;
-  word-wrap: break-word;
-  white-space: break-spaces;
-  font-variant-ligatures: none;
-  font-feature-settings: "liga" 0;
-}
-.todo-prose [contenteditable="false"] {
-  white-space: normal;
-}
-.todo-prose [contenteditable="false"] [contenteditable="true"] {
-  white-space: pre-wrap;
-}
-.todo-prose pre {
-  white-space: pre-wrap;
-}
-.todo-prose img.ProseMirror-separator {
-  display: inline !important;
-  border: none !important;
-  margin: 0 !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-.todo-prose .ProseMirror-gapcursor {
-  display: none;
-  pointer-events: none;
-  position: absolute;
-  margin: 0;
-}
-.todo-prose .ProseMirror-gapcursor::after {
-  content: "";
-  display: block;
-  position: absolute;
-  top: -2px;
-  width: 20px;
-  border-top: 1px solid var(--navy);
-  animation: todo-cursor-blink 1.1s steps(2, start) infinite;
-}
-@keyframes todo-cursor-blink {
-  to {
-    visibility: hidden;
+  /* biome-ignore-start lint/style/noDescendingSpecificity: copied verbatim from @tiptap/core, so it keeps its order and !important. */
+  /* biome-ignore-start lint/complexity/noImportantStyles: copied verbatim from @tiptap/core, so it keeps its order and !important. */
+  .todo-prose {
+    position: relative;
+    word-wrap: break-word;
+    white-space: break-spaces;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0;
   }
-}
-.todo-prose.ProseMirror-focused .ProseMirror-gapcursor {
-  display: block;
-}
-.todo-prose.ProseMirror-hideselection *::selection {
-  background: transparent;
-}
-.todo-prose.ProseMirror-hideselection * {
-  caret-color: transparent;
-}
-.todo-prose .ProseMirror-selectednode {
-  outline: 2px solid var(--focus);
-}
-@media (prefers-reduced-motion: reduce) {
+  .todo-prose [contenteditable="false"] {
+    white-space: normal;
+  }
+  .todo-prose [contenteditable="false"] [contenteditable="true"] {
+    white-space: pre-wrap;
+  }
+  .todo-prose pre {
+    white-space: pre-wrap;
+  }
+  .todo-prose img.ProseMirror-separator {
+    display: inline !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  .todo-prose .ProseMirror-gapcursor {
+    display: none;
+    pointer-events: none;
+    position: absolute;
+    margin: 0;
+  }
   .todo-prose .ProseMirror-gapcursor::after {
-    animation: none;
+    content: "";
+    display: block;
+    position: absolute;
+    top: -2px;
+    width: 20px;
+    border-top: 1px solid var(--navy);
+    animation: todo-cursor-blink 1.1s steps(2, start) infinite;
   }
-}
-/* biome-ignore-end lint/complexity/noImportantStyles: end of the TipTap block. */
-/* biome-ignore-end lint/style/noDescendingSpecificity: end of the TipTap block. */
+  @keyframes todo-cursor-blink {
+    to {
+      visibility: hidden;
+    }
+  }
+  .todo-prose.ProseMirror-focused .ProseMirror-gapcursor {
+    display: block;
+  }
+  .todo-prose.ProseMirror-hideselection *::selection {
+    background: transparent;
+  }
+  .todo-prose.ProseMirror-hideselection * {
+    caret-color: transparent;
+  }
+  .todo-prose .ProseMirror-selectednode {
+    outline: 2px solid var(--focus);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .todo-prose .ProseMirror-gapcursor::after {
+      animation: none;
+    }
+  }
+  /* biome-ignore-end lint/complexity/noImportantStyles: end of the TipTap block. */
+  /* biome-ignore-end lint/style/noDescendingSpecificity: end of the TipTap block. */
 
-/* History: a quiet list under the details, newest first. */
-.todo-history {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-}
-.todo-history-list {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.todo-history-when {
-  color: var(--iron);
-  font-variant-numeric: tabular-nums;
-}
+  /* History: a quiet list under the details, newest first. */
+  .todo-history {
+    display: grid;
+    gap: var(--sp-6);
+    font-size: var(--fs-control);
+  }
+  .todo-history-list {
+    display: grid;
+    gap: var(--sp-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .todo-history-when {
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
 
-/* Other lines under a to-do's Files heading, shown as quiet plain text. */
-.todo-files-extras {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-  color: var(--iron);
-  overflow-wrap: anywhere;
-}
-.todo-picker-chosen {
-  display: grid;
-  gap: 4px;
-}
-/* biome-ignore lint/style/noDescendingSpecificity: the chosen-files list is outside the editor. */
-.todo-picker-chosen li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  /* Other lines under a to-do's Files heading, shown as quiet plain text. */
+  .todo-files-extras {
+    display: grid;
+    gap: var(--sp-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-control);
+    color: var(--iron);
+    overflow-wrap: anywhere;
+  }
+  .todo-picker-chosen {
+    display: grid;
+    gap: var(--sp-4);
+  }
+  /* biome-ignore lint/style/noDescendingSpecificity: the chosen-files list is outside the editor. */
+  .todo-picker-chosen li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    font-size: var(--fs-control);
+  }
+
+  /* Centres a one-line title on the 28px buttons; the buttons stay at the top when it wraps. */
+  .panel-head.todo-head > h2 {
+    margin: var(--sp-4) var(--sp-8) 0 0;
+  }
 }

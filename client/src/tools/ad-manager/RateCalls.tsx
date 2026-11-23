@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ADS_NOTE_MAX } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
+import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useAd } from './store.ts';
 import type { StandupBrief } from './types.ts';
+import { useUnsavedWork } from './unsaved.ts';
 import { actionLabel, adsErrorText } from './words.ts';
 
 type Rating = { score: string; note: string };
+
+/** What is rated or noted, as text, so "changed since the last save" is one comparison. `scoredOnly`: what Save sends. */
+const signature = (ratings: Record<number, Rating>, scoredOnly: boolean): string =>
+  JSON.stringify(
+    Object.entries(ratings)
+      .filter(([, x]) => (scoredOnly ? x.score : x.score || x.note.trim()))
+      .map(([i, x]) => [i, x.score, x.note.trim()]),
+  );
 
 /** Rate the latest standup brief's per-campaign calls, 1 to 5 and a note (the Workbench's "Rate calls"). Shown in Ads Command Centre's side panel. */
 export function RateCalls() {
@@ -15,6 +27,11 @@ export function RateCalls() {
   const [ratings, setRatings] = useState<Record<number, Rating>>({});
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // What the last complete save held: ratings and notes past it are unsaved work.
+  const [savedSig, setSavedSig] = useState('[]');
+  const { dispatch, panelHold } = useShell();
+  const now = signature(ratings, false);
+  useUnsavedWork(now !== '[]' && now !== savedSig, () => setRatings({}));
 
   useEffect(() => {
     if (!account) return;
@@ -37,15 +54,22 @@ export function RateCalls() {
   if (brief === undefined)
     return (
       <div className="am-panel">
-        <p className="card-note">Loading</p>
+        <StateNote kind="loading" />
       </div>
     );
   const recs = brief?.recommendations ?? [];
   if (recs.length === 0)
     return (
       <div className="am-panel">
-        <h3 className="am-title">Rate the standup calls</h3>
-        <p className="am-line">{error ?? 'No standup calls to rate yet. Run the Daily standup first.'}</p>
+        {error ? (
+          <p className="notice" data-level="error" data-shape="box" role="alert">
+            {error}
+          </p>
+        ) : (
+          <p className="notice" data-level="info" data-shape="box">
+            No standup calls to rate yet. Run the Daily standup first.
+          </p>
+        )}
       </div>
     );
   const set = (i: number, patch: Partial<Rating>) =>
@@ -78,15 +102,27 @@ export function RateCalls() {
       }
     }
     setSaving(false);
+    if (ok === todo.length) setSavedSig(signature(ratings, true));
     setResult(`Saved ${ok} of ${todo.length} rating${todo.length === 1 ? '' : 's'}.`);
   };
   return (
     <div className="am-panel">
-      <h3 className="am-title">Rate the standup calls</h3>
       <p className="am-sub">
         From the brief dated {brief?.date}. 5 means you did exactly this, 1 means you did nothing like it. The
         notes matter most.
       </p>
+      {panelHold.asking ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => dispatch({ type: 'discard-panel' })}
+          onCancel={() => dispatch({ type: 'keep-panel' })}
+        />
+      ) : null}
       <ul className="am-rate">
         {recs.map((r, i) => (
           <li key={`${r.campaign}-${r.action_category}`}>
@@ -95,8 +131,8 @@ export function RateCalls() {
             </p>
             {r.reason ? <p className="am-sub">{r.reason}</p> : null}
             <div className="am-actions">
-              <label className="am-field am-score">
-                <span>Rating for {r.campaign}</span>
+              <label className="form-field am-score">
+                <span className="label">Rating for {r.campaign}</span>
                 <select
                   className="field"
                   value={ratings[i]?.score ?? ''}
@@ -110,8 +146,8 @@ export function RateCalls() {
                   ))}
                 </select>
               </label>
-              <label className="am-field am-grow">
-                <span>Note for {r.campaign} (optional)</span>
+              <label className="form-field am-grow">
+                <span className="label">Note for {r.campaign} (optional)</span>
                 <input
                   className="field"
                   maxLength={ADS_NOTE_MAX}
@@ -123,7 +159,8 @@ export function RateCalls() {
           </li>
         ))}
       </ul>
-      <div className="am-actions">
+      {/* Panel footer (design system, Actions rule 6): ratings are only kept when Save is pressed. */}
+      <div className="am-foot">
         <button
           type="button"
           className="btn"
@@ -132,14 +169,14 @@ export function RateCalls() {
           aria-disabled={saving || undefined}
           onClick={() => void save()}
         >
-          {saving ? 'Saving…' : 'Save ratings'}
+          {saving ? 'Saving' : 'Save'}
         </button>
+        {result ? <span className="am-sub">{result}</span> : null}
       </div>
       {/* One status region, always mounted, so the result is announced when it arrives. */}
       <p className="visually-hidden" role="status">
         {result ?? ''}
       </p>
-      {result ? <p className="am-line">{result}</p> : null}
     </div>
   );
 }

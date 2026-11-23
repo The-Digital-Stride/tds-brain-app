@@ -7,14 +7,17 @@ import {
   type ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Fold } from '../../shell/Fold.tsx';
+import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { StatusBadge } from './Approvals.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
-import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
+import { useUnsavedWork } from './unsaved.ts';
 import { adsErrorText, isWaiting, personName, proposalFacts } from './words.ts';
 
 type Ask = 'approve' | 'reject' | 'apply' | null;
@@ -76,7 +79,16 @@ function LastResult() {
   );
 }
 
-function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary }) {
+function Actions({
+  client,
+  p,
+  onDirty,
+}: {
+  client: ClientApprovals;
+  p: ProposalSummary;
+  /** Tells the panel whether anything is typed, so stepping to another proposal can ask first. */
+  onDirty: (dirty: boolean) => void;
+}) {
   const { ads } = useStore();
   const { busy, unknownApply, approvals } = useAd();
   const run = useAdsRunner();
@@ -90,12 +102,28 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   const decidedBox = useRef<HTMLInputElement>(null);
   const key = proposalKey(client.slug, p.id);
   useRestoreFocus(ask, () => document.querySelector<HTMLElement>('.am-title'));
+  const typed = note.trim() !== '' || who.trim() !== '' || decided.trim() !== '';
+  useEffect(() => {
+    onDirty(typed);
+    return () => onDirty(false);
+  }, [typed, onDirty]);
+  // The shell holds a close, or another proposal, until this is answered; Discard empties the boxes.
+  useUnsavedWork(typed, () => {
+    setNote('');
+    setWho('');
+    setDecided('');
+  });
   const f = p.flags;
   const canDraft = (ads?.features ?? []).includes(ADS_DRAFT_CHANGE_CAPABILITY);
   const isBusy = busy !== null;
   const inflight = f.inflight === true || unknownApply.includes(key);
 
-  if (ads && ads.sameIdentity === false) return <p className="am-line">{identityLine(ads.me?.name)}</p>;
+  if (ads && ads.sameIdentity === false)
+    return (
+      <p className="notice" data-level="info" data-shape="box">
+        {identityLine(ads.me?.name)}
+      </p>
+    );
 
   const base = { client: client.slug, id: p.id };
   const need = (value: string, box: { current: { focus: () => void } | null }, text: string): boolean => {
@@ -207,7 +235,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   return (
     <div className="am-act">
       {inflight ? (
-        <div className="am-line">
+        <div className="notice" data-level="warn" data-shape="box">
           <p>{ADS_ERROR_MESSAGES['unknown-outcome']}</p>
           <button type="button" className="btn" data-size="small" onClick={() => void clearInflight()}>
             I've checked the account
@@ -215,8 +243,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </div>
       ) : null}
       {f.canDecide ? (
-        <label className="am-field">
-          <span>Reason or note (needed to reject or request changes)</span>
+        <label className="form-field">
+          <span className="label">Reason or note (needed to reject or request changes)</span>
           <textarea
             ref={noteBox}
             className="field"
@@ -230,8 +258,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {f.canRecordDecision ? (
-        <label className="am-field">
-          <span>What was decided</span>
+        <label className="form-field">
+          <span className="label">What was decided</span>
           <input
             ref={decidedBox}
             className="field"
@@ -244,8 +272,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {f.canRecordClientApproval ? (
-        <label className="am-field">
-          <span>Who at the client said yes, and how</span>
+        <label className="form-field">
+          <span className="label">Who at the client said yes, and how</span>
           <input
             ref={whoBox}
             className="field"
@@ -259,7 +287,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {hint ? (
-        <p className="am-hint" id={hintId} role="alert">
+        <p className="error" id={hintId} role="alert">
           {hint}
         </p>
       ) : null}
@@ -366,7 +394,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
             data-am-opener="apply"
             onClick={press(() => setAsk('apply'))}
           >
-            {applying ? 'Applying…' : 'Apply now'}
+            {applying ? 'Applying' : 'Apply now'}
           </button>
         ) : null}
         {f.canRecordDecision ? (
@@ -409,12 +437,12 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         ) : null}
       </div>
       {busy ? (
-        <p className="am-line">
+        <p className="notice" data-level="info" data-shape="box">
           {applying ? 'Applying to Google Ads. This can take a few minutes. Please wait.' : 'Working…'}
         </p>
       ) : null}
       {!anyAction ? (
-        <p className="am-line">
+        <p className="notice" data-level="info" data-shape="box">
           {client.mine
             ? 'Nothing to do here from Cortex. It was applied by hand or by a script.'
             : `Waiting for ${personName(client.reviewer || client.owner, approvals?.people) || 'the reviewer'}.`}
@@ -427,6 +455,9 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
   const { approvals, selected, full, last, busy, focusTitle } = useAd();
+  const { dispatch, panelHold } = useShell();
+  const [dirty, setDirty] = useState(false);
+  const [askStep, setAskStep] = useState<-1 | 1 | null>(null);
   const found = findProposal(approvals, selected);
   const key = found ? proposalKey(found.client.slug, found.proposal.id) : '';
   // After a decision the next proposal replaces this one and the button that was pressed is gone: the heading
@@ -471,9 +502,16 @@ export function ProposalPanel() {
   // Previous and Next follow the page's order: waiting for a decision, then approved and ready to apply.
   const order = [...client.open.filter(isWaiting), ...client.open.filter((x) => !isWaiting(x))];
   const at = order.findIndex((x) => x.id === p.id);
-  const step = (by: -1 | 1) => {
+  const go = (by: -1 | 1) => {
     const to = order[at + by];
     if (to) adStore.set({ selected: { client: client.slug, id: to.id }, panelMode: 'proposal' });
+  };
+  // Typed text is lost when the next proposal replaces this one, so a step with text in the boxes asks first.
+  const step = (by: -1 | 1) => {
+    // At either end the button is aria-disabled but still pressable: nothing to step to, so nothing to ask.
+    if (!order[at + by]) return;
+    if (dirty) setAskStep(by);
+    else go(by);
   };
   const text = full[key];
   const facts = proposalFacts(text ?? p, undefined, approvals?.people);
@@ -491,35 +529,58 @@ export function ProposalPanel() {
       {region}
       {order.length > 1 && at >= 0 ? (
         <nav className="am-step" aria-label="Proposals">
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            aria-disabled={at === 0 || undefined}
-            aria-label="Previous proposal"
-            onClick={() => step(-1)}
-          >
-            Previous
-          </button>
           <span className="am-sub" aria-hidden="true">
             {at + 1} of {order.length}
           </span>
           <span className="visually-hidden" aria-live="polite">
             {`Proposal ${at + 1} of ${order.length}, ${p.fm.title}`}
           </span>
+          {/* Up and down icon buttons, as the to-do panel steps (design system, Actions rule 11). */}
           <button
             type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            aria-disabled={at === order.length - 1 || undefined}
+            className="icon-btn"
+            aria-label="Previous proposal"
+            data-tip="Previous proposal"
+            aria-disabled={at === 0 || undefined}
+            onClick={() => step(-1)}
+          >
+            <Icon name="up" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
             aria-label="Next proposal"
+            data-tip="Next proposal"
+            aria-disabled={at === order.length - 1 || undefined}
             onClick={() => step(1)}
           >
-            Next
+            <Icon name="chevron" size={18} />
           </button>
         </nav>
+      ) : null}
+      {/* One strip for both: a step from this panel, or what the shell held back (a close, another proposal). */}
+      {askStep !== null || panelHold.asking ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => {
+            const by = askStep;
+            setAskStep(null);
+            if (panelHold.asking) dispatch({ type: 'discard-panel' });
+            else if (by !== null) {
+              setDirty(false);
+              go(by);
+            }
+          }}
+          onCancel={() => {
+            setAskStep(null);
+            if (panelHold.asking) dispatch({ type: 'keep-panel' });
+          }}
+        />
       ) : null}
       <h3 className="am-title" tabIndex={-1}>
         {p.fm.title}
@@ -535,9 +596,9 @@ export function ProposalPanel() {
         ))}
       </dl>
       <Fold key={`${key}-text`} title="Full proposal text" defaultOpen={false} onToggle={loadText}>
-        {text ? <pre className="am-body">{text.body}</pre> : <p className="card-note">Loading</p>}
+        {text ? <pre className="am-body">{text.body}</pre> : <StateNote kind="loading" />}
       </Fold>
-      <Actions key={key} client={client} p={p} />
+      <Actions key={key} client={client} p={p} onDirty={setDirty} />
       <LastResult />
     </div>
   );

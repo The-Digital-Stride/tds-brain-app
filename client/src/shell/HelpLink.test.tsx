@@ -35,7 +35,7 @@ describe('HelpLink', () => {
     const { rerender } = render(<HelpLink page="todos" />);
     expect(screen.getByRole('button').getAttribute('data-size')).toBeNull();
     rerender(<HelpLink page="todos" size={28} />);
-    expect(screen.getByRole('button').getAttribute('data-size')).toBe('28');
+    expect(screen.getByRole('button').getAttribute('data-size')).toBe('small');
   });
 
   it.each(['team', 'scout', 'unknown'])('is shown for %s', (role) => {

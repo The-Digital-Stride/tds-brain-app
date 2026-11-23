@@ -6,11 +6,11 @@ import type {
   ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { useAdsRunner } from './actions.ts';
-import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { needsYou } from './logic.ts';
 import { OpenFile } from './OpenFile.tsx';
@@ -129,51 +129,51 @@ export function FactTiles({ client }: { client: ClientApprovals }) {
   const ms = m ? monthStatus(m, people) : null;
   return (
     <ul className="am-facts" aria-label="Where this account stands">
-      <li className="am-fact" data-tone={waiting.length > 0 ? 'waiting' : undefined}>
-        <span className="am-fact-l">Waiting for a decision</span>
-        <span className="am-fact-v">{waiting.length}</span>
-        <span className="am-fact-d">
+      <li className="stat" data-tone={waiting.length > 0 ? 'waiting' : undefined}>
+        <span className="stat-label">Waiting for a decision</span>
+        <span className="stat-value">{waiting.length}</span>
+        <span className="stat-change">
           {firstExpiry ? `first expires ${dateWords(firstExpiry, now)}` : 'Nothing waiting'}
         </span>
       </li>
-      <li className="am-fact">
-        <span className="am-fact-l">Approved, ready to apply</span>
-        <span className="am-fact-v">{approved.length}</span>
-        <span className="am-fact-d">
+      <li className="stat">
+        <span className="stat-label">Approved, ready to apply</span>
+        <span className="stat-value">{approved.length}</span>
+        <span className="stat-change">
           {dryRuns > 0 ? `${dryRuns} dry ${dryRuns === 1 ? 'run' : 'runs'} passed` : ' '}
         </span>
       </li>
-      <li className="am-fact">
-        <span className="am-fact-l">Latest weekly pack</span>
+      <li className="stat">
+        <span className="stat-label">Latest weekly pack</span>
         {pack ? (
           <>
-            <span className="am-fact-v">
+            <span className="stat-value">
               {pack.act} act · {pack.watch} watch
             </span>
-            <span className="am-fact-d">
+            <span className="stat-change">
               {dateWords(pack.date, now) || pack.date}
               {pack.provisional ? ', provisional' : ''}
             </span>
           </>
         ) : (
           <>
-            <span className="am-fact-v">None yet</span>
-            <span className="am-fact-d">&nbsp;</span>
+            <span className="stat-value">None yet</span>
+            <span className="stat-change">&nbsp;</span>
           </>
         )}
       </li>
-      <li className="am-fact">
+      <li className="stat">
         {m ? (
-          <button type="button" className="am-fact-jump" title="Go to monthly close" onClick={goToClose}>
-            <span className="am-fact-l">Monthly close</span>
-            <span className="am-fact-v">{m.monthName || m.month}</span>
-            <span className="am-fact-d">{ms?.text}</span>
+          <button type="button" className="stat-jump" onClick={goToClose}>
+            <span className="stat-label">Monthly close</span>
+            <span className="stat-value">{m.monthName || m.month}</span>
+            <span className="stat-change">{ms?.text}</span>
           </button>
         ) : (
           <>
-            <span className="am-fact-l">Monthly close</span>
-            <span className="am-fact-v">None yet</span>
-            <span className="am-fact-d">&nbsp;</span>
+            <span className="stat-label">Monthly close</span>
+            <span className="stat-value">None yet</span>
+            <span className="stat-change">&nbsp;</span>
           </>
         )}
       </li>
@@ -278,8 +278,8 @@ function SignOff({
   if (ask)
     return (
       <div className="am-sign">
-        <label className="am-field am-grow">
-          <span>Sign-off note (optional)</span>
+        <label className="form-field am-grow">
+          <span className="label">Sign-off note (optional)</span>
           <input className="field" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
         <Confirm
@@ -318,10 +318,10 @@ function SignOff({
     >
       {earlier ? (
         <>
-          Sign off…<span className="visually-hidden">{`: ${m.monthName || m.month}`}</span>
+          Sign off<span className="visually-hidden">{`: ${m.monthName || m.month}`}</span>
         </>
       ) : (
-        'Sign off the report…'
+        'Sign off the report'
       )}
     </button>
   );
@@ -348,7 +348,7 @@ function EarlierMonths({ client }: { client: ClientApprovals }) {
                 {pdf ? (
                   <OpenFile path={pdf} label={m.files.pdf ? 'Open final PDF' : 'Open draft PDF'} />
                 ) : null}
-                {m.files.close ? <OpenFile path={m.files.close} label="Close notes" /> : null}
+                {m.files.close ? <OpenFile path={m.files.close} label="Open close notes" /> : null}
                 {m.files.email ? <OpenFile path={m.files.email} label="Email draft" /> : null}
               </div>
               <SignOff client={client} month={m} earlier />
@@ -391,7 +391,7 @@ export function MonthlyClose({ client }: { client: ClientApprovals }) {
             ) : m.files.draftPdf ? (
               <OpenFile path={m.files.draftPdf} label="Open draft PDF" />
             ) : null}
-            {m.files.close ? <OpenFile path={m.files.close} label="Close notes" /> : null}
+            {m.files.close ? <OpenFile path={m.files.close} label="Open close notes" /> : null}
             {m.files.email ? <OpenFile path={m.files.email} label="Email draft" /> : null}
           </div>
         </>
@@ -438,7 +438,7 @@ function ProposalsTable({
 }) {
   const people = useAd().approvals?.people;
   const { selected } = useAd();
-  const { state, dispatch } = useShell();
+  const { state, dispatch, guardPanel } = useShell();
   const now = new Date();
   if (rows.length === 0)
     return <p className="card-note">{mode === 'waiting' ? 'Nothing waiting.' : 'Nothing approved yet.'}</p>;
@@ -503,14 +503,19 @@ function ProposalsTable({
                     aria-pressed={current}
                     aria-label={`Details: ${p.fm.title}`}
                     onClick={() => {
-                      // A shut panel takes focus to its heading as it opens (and gives it back here on close); an open
-                      // one doesn't move, so focus goes to the new proposal's title.
-                      adStore.set({
-                        selected: { client: client.slug, id: p.id },
-                        panelMode: 'proposal',
-                        focusTitle: state.panelOpen,
-                      });
-                      dispatch({ type: 'set-panel', open: true });
+                      const open = () => {
+                        // A shut panel takes focus to its heading as it opens (and gives it back here on close); an open
+                        // one doesn't move, so focus goes to the new proposal's title.
+                        adStore.set({
+                          selected: { client: client.slug, id: p.id },
+                          panelMode: 'proposal',
+                          focusTitle: state.panelOpen,
+                        });
+                        dispatch({ type: 'set-panel', open: true });
+                      };
+                      // Another proposal replaces typed work in the panel, so the panel asks first.
+                      if (current) open();
+                      else guardPanel(open);
                     }}
                   >
                     Details

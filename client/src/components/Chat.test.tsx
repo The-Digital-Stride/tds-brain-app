@@ -189,7 +189,7 @@ describe('the sheet bar', () => {
     expect(heading.getAttribute('title')).toBe('T');
     // No client: no chip (the panel's Details says "No client").
     expect(screen.queryByText('No client')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Close chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'End chat' })).toBeTruthy();
     const toggle = screen.getByRole('button', { name: 'Files and details' });
     expect(toggle.getAttribute('aria-controls')).toBe('panel');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
@@ -242,7 +242,7 @@ describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'T' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
     expect(screen.queryByRole('button', { name: /Search or jump to/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Close chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'End chat' })).toBeNull();
     expect(screen.getByRole('region', { name: 'T' })).toBeTruthy();
   });
   it('Esc hides it, but never while a message is half-typed in it', () => {

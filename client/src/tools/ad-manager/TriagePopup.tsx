@@ -1,6 +1,8 @@
 import { type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AdsTriageRow } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { selectAccount } from './store.ts';
 import { actionLabel, adsErrorText, dateWords, daysFromNow, relativeWords, triageWords } from './words.ts';
@@ -12,7 +14,7 @@ const verdictWhen = (d: string) => {
 };
 
 /**
- * "All accounts' standups…" (Release 2, decision 1): every account's latest standup verdict, worst first, read each
+ * "All accounts' standups" (Release 2, decision 1): every account's latest standup verdict, worst first, read each
  * time it opens. Non-modal and anchored under its button: Esc or a click outside closes it, focus goes to its close
  * button and comes back to the opener. Choosing a row switches the shared account and closes it.
  */
@@ -26,6 +28,7 @@ export function TriagePopup({
   onClose: () => void;
 }) {
   const { updatePrefs } = useStore();
+  const { guardPanel } = useShell();
   const [rows, setRows] = useState<AdsTriageRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -75,15 +78,17 @@ export function TriagePopup({
   }, [close, openerRef]);
 
   const choose = (key: string) => {
-    if (key !== account) {
-      selectAccount(key);
-      void updatePrefs({ adsAccount: key });
-    }
+    // Another account empties the panel, so typed work in it is asked about first.
+    if (key !== account)
+      guardPanel(() => {
+        selectAccount(key);
+        void updatePrefs({ adsAccount: key });
+      });
     close();
   };
 
   return (
-    <div className="cc-triage" role="dialog" aria-labelledby={head} ref={box}>
+    <div className="popover" role="dialog" aria-labelledby={head} ref={box}>
       <div className="cc-triage-head">
         <h4 id={head}>All accounts' standups</h4>
         <button
@@ -99,27 +104,20 @@ export function TriagePopup({
       </div>
       <p className="am-sub cc-triage-hint">Worst first. Choose an account to open it.</p>
       {error ? (
-        <div className="cc-triage-note">
-          <p className="am-hint" role="alert">
-            {error}
-          </p>
-          <button type="button" className="btn" data-size="small" onClick={() => setAttempt((n) => n + 1)}>
-            Try again
-          </button>
-        </div>
+        <StateNote kind="error" onRetry={() => setAttempt((n) => n + 1)}>
+          {error}
+        </StateNote>
       ) : rows === null ? (
-        <p className="cc-triage-note" role="status">
-          Loading…
-        </p>
+        <StateNote kind="loading" />
       ) : rows.length === 0 ? (
-        <p className="cc-triage-note">No accounts to show.</p>
+        <StateNote kind="empty">No accounts to show.</StateNote>
       ) : (
         <ul className="cc-triage-list">
           {rows.map((r) => (
             <li key={r.key}>
               <button
                 type="button"
-                className="cc-triage-row"
+                className="menu-row"
                 aria-current={r.key === account ? 'true' : undefined}
                 onClick={() => choose(r.key)}
               >

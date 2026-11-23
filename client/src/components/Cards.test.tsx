@@ -66,6 +66,23 @@ describe('PermissionCard', () => {
     );
   });
 
+  it('stays pressable-looking but inert while an answer is in flight (aria-disabled, not disabled)', async () => {
+    api.answerPermission.mockReturnValueOnce(new Promise(() => {}));
+    render(<PermissionCard item={perm()} sessionId="s1" />);
+    const allow = screen.getByRole('button', { name: 'Allow' }) as HTMLButtonElement;
+    fireEvent.click(allow);
+    await waitFor(() => expect(allow.getAttribute('aria-disabled')).toBe('true'));
+    expect(allow.disabled).toBe(false);
+    for (const name of ['Allow for this chat', "Don't allow"]) {
+      const b = screen.getByRole('button', { name }) as HTMLButtonElement;
+      expect(b.getAttribute('aria-disabled')).toBe('true');
+      expect(b.disabled).toBe(false);
+      fireEvent.click(b);
+    }
+    fireEvent.click(allow);
+    expect(api.answerPermission).toHaveBeenCalledTimes(1);
+  });
+
   it('sends focus to the message box after an answer, unless told what to do instead', async () => {
     const { unmount } = render(<PermissionCard item={perm()} sessionId="s1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
@@ -357,6 +374,7 @@ describe('QuestionCard', () => {
     render(<QuestionCard item={question()} sessionId="s1" />);
     const send = screen.getByRole('button', { name: 'Send answer' }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
+    expect(send.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: /New call/ }));
     fireEvent.change(screen.getByLabelText('Or type your own answer'), { target: { value: 'Neither' } });
     fireEvent.click(send);
@@ -366,5 +384,18 @@ describe('QuestionCard', () => {
         answers: { 'Which call?': 'Neither' },
       }),
     );
+  });
+
+  it('Send answer is aria-disabled while sending, and a second press does nothing', async () => {
+    api.answerQuestion.mockReturnValueOnce(new Promise(() => {}));
+    render(<QuestionCard item={question()} sessionId="s1" />);
+    fireEvent.click(screen.getByRole('radio', { name: /New call/ }));
+    const send = screen.getByRole('button', { name: 'Send answer' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    await waitFor(() => expect(send.getAttribute('aria-disabled')).toBe('true'));
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(api.answerQuestion).toHaveBeenCalledTimes(1);
   });
 });

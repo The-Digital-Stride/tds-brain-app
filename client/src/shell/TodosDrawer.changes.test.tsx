@@ -69,6 +69,8 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
     heldTodos,
     holdTodo,
     undoHeld,
+    pauseHeld: vi.fn(),
+    resumeHeld: vi.fn(),
     completeTodo: vi.fn(),
     newChat: vi.fn(),
     openChat: vi.fn(),
@@ -290,7 +292,8 @@ describe('To-dos drawer, changing to-dos', () => {
   it('deletes without a second question, held with an Undo and nothing sent yet', async () => {
     render(<TodosDrawer />);
     await openEdit('Renew contract');
-    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBe('danger');
+    // Delete has an Undo, so it is a standard button, not red (design-system.md rule 5).
+    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(holdTodo).toHaveBeenCalled());
     expect(holdTodo).toHaveBeenCalledWith({
@@ -325,14 +328,17 @@ describe('To-dos drawer, changing to-dos', () => {
     render(<TodosDrawer />);
     await openEdit('Renew contract');
     type('Title', 'Renew it');
-    const done = screen.getByRole('button', { name: 'Mark as done' }) as HTMLButtonElement;
-    expect(done.disabled).toBe(true);
+    // Busy and held-back buttons are aria-disabled, never disabled (rule 12).
+    const done = screen.getByRole('button', { name: 'Mark as done' });
+    expect(done.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText('Save or cancel your changes before marking it as done.')).toBeTruthy();
     type('Title', 'Renew contract');
-    expect(done.disabled).toBe(false);
+    expect(done.getAttribute('aria-disabled')).toBeNull();
   });
 
-  it('shows a held to-do struck through with Undo, and Undo puts it back', () => {
+  // A held row is the shared Undo line now (plan 2026-11-22-ux-consistency, decision 12): a sentence saying what
+  // happened in place of the struck-through title and its label.
+  it('shows a held to-do as an Undo line, and Undo puts it back', () => {
     const held: HeldTodo = {
       todoId: 't1.md',
       title: 'Renew contract',
@@ -343,13 +349,15 @@ describe('To-dos drawer, changing to-dos', () => {
     setStore('on', undefined, [held]);
     render(<TodosDrawer />);
     expect(screen.queryByRole('button', { name: 'Edit "Renew contract"' })).toBeNull();
-    expect(screen.getByText('Renew contract').className).toContain('todo-gone');
+    const line = screen.getByText('"Renew contract" deleted.').closest('li') as HTMLElement;
+    expect(line.classList.contains('undo-line')).toBe(true);
+    expect(line.querySelector('.undo-line-bar')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Undo deleting "Renew contract"' }));
     expect(undoHeld).toHaveBeenCalledWith('t1.md');
     expect(screen.getByText('Undone.')).toBeTruthy();
   });
 
-  it('does not strike through a passed-on to-do', () => {
+  it('says who a held to-do was passed to', () => {
     setStore('on', undefined, [
       {
         todoId: 't1.md',
@@ -360,8 +368,7 @@ describe('To-dos drawer, changing to-dos', () => {
       },
     ]);
     render(<TodosDrawer />);
-    expect(screen.getByText('Renew contract').className).not.toContain('todo-gone');
-    expect(screen.getByText('Passed to Ben McAdam')).toBeTruthy();
+    expect(screen.getByText('"Renew contract" passed to Ben McAdam.')).toBeTruthy();
   });
 
   it('does not hold the pass-on when the title or date part of the save fails', async () => {
@@ -542,7 +549,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
   });
 
-  it('Cancel after a conflict closes the editor and the row shows the fresh title', async () => {
+  it('Cancel after a conflict asks, and on Discard closes the editor and the row shows the fresh title', async () => {
     const fresh = list('on', [todo({ title: 'Theirs', version: 'v7' })]);
     changeTodos.mockImplementationOnce(async () => {
       store.current.todos = fresh;
@@ -554,6 +561,11 @@ describe('To-dos drawer, conflict check and open adds', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await screen.findByText(/Your changes are still here/);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    // Cancel asks first now (rule 9); do what the real shell does on Discard: drop the dirt, then go on.
+    expect(screen.getByText('Discard your changes?')).toBeTruthy();
+    const after = fakeShell.state.todoPanel?.ask;
+    fakeShell.dispatch({ type: 'set-todo-dirty', dirty: false });
+    if (after) fakeShell.dispatch(after);
     view.rerender(<TodosDrawer />);
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Edit "Theirs"' })).toBeTruthy();

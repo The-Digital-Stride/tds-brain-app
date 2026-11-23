@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { attentionFor, type LiveSession, type PastSession } from '../../../shared/contract.ts';
 import { favouritesFirst, isFavourite, splitFavourites } from '../state/chat-favourites.ts';
 import { type ChatKindFilter, filterChats, kindOf } from '../state/chat-filter.ts';
@@ -12,6 +12,8 @@ import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
+import { pressedByKeyboard, UndoLine } from './UndoLine.tsx';
 import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
 type OnStar = (sdkSessionId: string, button: HTMLElement) => void;
@@ -58,18 +60,19 @@ function OpenRow({
       {chat.sdkSessionId ? (
         <StarButton id={chat.sdkSessionId} title={title} on={favourite} onPress={onStar} />
       ) : null}
+      {/* End chat has its own icon: X only ever puts a surface away (design system, Actions rule 3). */}
       <button
         type="button"
         className="icon-btn"
-        aria-label={`Close chat: ${title}`}
-        data-tip="Close chat"
+        aria-label={`End chat: ${title}`}
+        data-tip="End chat"
         onClick={() => {
+          // A working chat asks first (`requestClose`); its question shows on the sheet, which a floating drawer hides.
           requestClose(chat.id);
-          // The "Close anyway?" question shows on the sheet, which a floating drawer hides.
           if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
         }}
       >
-        <Icon name="close" size={16} />
+        <Icon name="end" size={16} />
       </button>
     </li>
   );
@@ -78,16 +81,14 @@ function OpenRow({
 function PastRow({
   chat,
   showKind,
-  busy,
-  onAsk,
+  onDelete,
   favourite,
   onStar,
 }: {
   chat: PastSession;
   showKind: boolean;
-  /** A delete is running: no second question until it ends. */
-  busy: boolean;
-  onAsk: () => void;
+  /** The bin: the row gives way to its Undo line at once (no question first). */
+  onDelete: () => void;
   favourite: boolean;
   onStar: OnStar;
 }) {
@@ -99,6 +100,7 @@ function PastRow({
       <button
         type="button"
         className="line-main"
+        data-past-open={chat.sdkSessionId}
         onClick={() => {
           void openPast(chat.sdkSessionId);
           if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
@@ -119,8 +121,7 @@ function PastRow({
         aria-label={`Delete chat: ${title}`}
         data-tip="Delete chat"
         data-past-id={chat.sdkSessionId}
-        disabled={busy}
-        onClick={onAsk}
+        onClick={onDelete}
       >
         <Icon name="bin" size={16} />
       </button>
@@ -129,30 +130,49 @@ function PastRow({
 }
 
 export function ChatsDrawer() {
-  const { sessions, boot, deletePastChat, toggleFavouriteChat } = useStore();
+  const {
+    sessions,
+    boot,
+    toggleFavouriteChat,
+    newChat,
+    heldChats,
+    holdDeletePastChat,
+    undoDeletePastChat,
+    pauseChatDelete,
+    resumeChatDelete,
+  } = useStore();
+  const { dispatch, modes } = useShell();
   // One shared empty list, so a server that sends none doesn't look like a change on every render.
   const favs = boot?.prefs.favouriteChats ?? NO_FAVOURITES;
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
-  // Where focus goes once the question closes or the list reloads: the row's bin button, or the next one.
-  // `next` is the row after it in the list as shown (or before it, at the end), recorded when Delete is pressed.
-  const refocus = useRef<{ id: string; next: string | null; afterReload?: boolean } | null>(null);
-  const seen = useRef(sessions);
-  useEffect(() => {
-    const want = refocus.current;
-    if (!want || confirmId) return;
-    // After a delete, wait for the reload: the row is still there until the list changes.
-    if (want.afterReload && sessions === seen.current) return;
-    refocus.current = null;
+  // The held chat whose Undo takes focus: only after a keyboard press (plan 2026-11-22-ux-consistency, R1).
+  const [focusUndo, setFocusUndo] = useState<string | null>(null);
+  // Where focus goes next: a row's bin (after Undo) or a row's open button (after a pointer delete), else the list.
+  const [want, setWant] = useState<{ id: string | null; to: 'bin' | 'open' } | null>(null);
+  useLayoutEffect(() => {
+    if (!want) return;
+    setWant(null);
+    const attr = want.to === 'bin' ? 'pastId' : 'pastOpen';
     // Rows in a folded group stay in the page but hidden, and can't take focus.
-    const bins = Array.from(body.current?.querySelectorAll<HTMLElement>('[data-past-id]') ?? []).filter(
-      (b) => !b.closest('[hidden]'),
-    );
-    const byId = (id: string | null) => (id ? bins.find((b) => b.dataset.pastId === id) : undefined);
-    const target = byId(want.id) ?? byId(want.next);
-    (target ?? body.current)?.focus();
-  }, [sessions, confirmId]);
+    const target = want.id
+      ? Array.from(
+          body.current?.querySelectorAll<HTMLElement>(
+            want.to === 'bin' ? '[data-past-id]' : '[data-past-open]',
+          ) ?? [],
+        ).find((b) => b.dataset[attr] === want.id && !b.closest('[hidden]'))
+      : undefined;
+    (target ?? body.current)?.focus({ preventScroll: true });
+  }, [want]);
+  // A held line that loses its Undo (its time is up) or goes: if the keyboard was on it, keep it in the drawer.
+  const heldCount = heldChats.length;
+  const sendingCount = heldChats.filter((h) => h.phase === 'sending').length;
+  const lastHeld = useRef({ heldCount, sendingCount });
+  useEffect(() => {
+    const was = lastHeld.current;
+    lastHeld.current = { heldCount, sendingCount };
+    if (heldCount >= was.heldCount && sendingCount <= was.sendingCount) return;
+    if (document.activeElement === null || document.activeElement === document.body) body.current?.focus();
+  }, [heldCount, sendingCount]);
 
   // Focus follows a chat whose star moved it (`useStarFocus`).
   const rememberStar = useStarFocus(body, favs);
@@ -171,114 +191,129 @@ export function ChatsDrawer() {
 
   const [tab, setTab] = useState<ChatsTab>('open');
   const [kind, setKind] = useState<ChatKindFilter>('all');
-  if (!sessions) return <p className="dock-empty">Loading your chats.</p>;
+  // Always on the page while the drawer is, so a screen reader hears the delete. The result is announced by
+  // the sheet's notice line (SheetNotices), which stays mounted even if this drawer is closed mid-hold.
+  const waiting = heldChats.filter((h) => h.phase === 'waiting');
+  const status = (
+    <p className="visually-hidden" role="status" data-testid="chat-delete-status">
+      {waiting.length > 0
+        ? waiting
+            .map((h) => `“${h.title}” moved to the Bin. It leaves the terminal too. Undo is in its place.`)
+            .join(' ')
+        : ''}
+    </p>
+  );
+  if (!sessions)
+    return (
+      <>
+        {status}
+        <StateNote kind="loading" />
+      </>
+    );
+  // The store leaves held chats out of every list; here each keeps its place as its Undo line.
+  const heldById = new Map(heldChats.map((h) => [h.sdkSessionId, h]));
+  const pastAll =
+    heldChats.length === 0
+      ? sessions.past
+      : [
+          ...sessions.past.filter((p) => !heldById.has(p.sdkSessionId)),
+          ...heldChats.map((h) => h.session),
+        ].sort((a, b) => b.lastModified.localeCompare(a.lastModified));
   // Favourites first; within each part, needs an answer first, then working, ready, stopped (`sortChats`).
   const open = favouritesFirst(sortChats(sessions.live), favs);
   // The switch shows once any chat is personal (or while a kind is picked); hidden, it counts as All.
   const showKind =
     kind !== 'all' ||
     sessions.live.some((c) => kindOf(c) === 'personal') ||
-    sessions.past.some((c) => kindOf(c) === 'personal');
+    pastAll.some((c) => kindOf(c) === 'personal');
   const active: ChatKindFilter = showKind ? kind : 'all';
   const shownOpen = filterChats(open, active);
-  const shownPast = filterChats(sessions.past, active);
+  const shownPast = filterChats(pastAll, active);
   const kindWord = active === 'personal' ? 'personal' : 'TDS';
   const { favourites: favPast, rest: restPast } = splitFavourites(shownPast, favs);
   const pastGroups = groupChatsByDay(restPast, new Date());
   const pastOrder = [...favPast, ...pastGroups.flatMap((g) => g.items)].map((s) => s.sdkSessionId);
+  /** The row after `id` in the list as shown (or before it, at the end), skipping other held lines. */
   const neighbour = (id: string): string | null => {
-    const at = pastOrder.indexOf(id);
-    return pastOrder[at + 1] ?? pastOrder[at - 1] ?? null;
+    const order = pastOrder.filter((x) => x === id || !heldById.has(x));
+    const at = order.indexOf(id);
+    return order[at + 1] ?? order[at - 1] ?? null;
   };
-  const pastItem = (s: PastSession): ReactNode =>
-    confirmId === s.sdkSessionId ? (
-      <li className="line line-confirm" key={s.sdkSessionId}>
-        <div className="line-text">
-          <span className="line-title">{s.title || 'New chat'}</span>
-          <fieldset
-            className="close-confirm"
-            aria-label="Delete this chat"
-            aria-describedby={`delete-q-${s.sdkSessionId}`}
-            onKeyDown={(e) => {
-              if (e.key !== 'Escape') return;
-              // Always handled here, so the shell's Esc never closes the drawer mid-question or
-              // mid-delete; while the delete runs it does nothing.
-              e.preventDefault();
-              e.stopPropagation();
-              if (busyId) return;
-              refocus.current = { id: s.sdkSessionId, next: null };
-              setConfirmId(null);
-            }}
-          >
-            <span id={`delete-q-${s.sdkSessionId}`}>
-              Move this chat to the Bin? It also leaves Claude Code in the terminal.
-            </span>
-            <button
-              type="button"
-              className="btn"
-              data-variant="danger"
-              data-size="small"
-              // aria-disabled, not disabled: a disabled button loses focus to the page, and Esc
-              // would then miss this question and close the drawer mid-delete.
-              aria-disabled={busyId !== null || undefined}
-              onClick={() => {
-                if (busyId) return;
-                setBusyId(s.sdkSessionId);
-                void deletePastChat(s.sdkSessionId).then((ok) => {
-                  seen.current = sessions;
-                  refocus.current = {
-                    id: s.sdkSessionId,
-                    next: neighbour(s.sdkSessionId),
-                    afterReload: ok,
-                  };
-                  setBusyId(null);
-                  // Failed: the row comes back (the error shows). Done: the list reloads without it.
-                  setConfirmId(null);
-                });
-              }}
-            >
-              Delete chat
-            </button>
-            <button
-              type="button"
-              className="btn"
-              data-size="small"
-              // biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared.
-              autoFocus
-              aria-disabled={busyId !== null || undefined}
-              onClick={() => {
-                if (busyId) return;
-                refocus.current = { id: s.sdkSessionId, next: null };
-                setConfirmId(null);
-              }}
-            >
-              Keep chat
-            </button>
-          </fieldset>
-        </div>
-      </li>
-    ) : (
+  const remove = (s: PastSession) => {
+    const title = s.title || 'New chat';
+    const next = neighbour(s.sdkSessionId);
+    const keyboard = pressedByKeyboard();
+    holdDeletePastChat(s.sdkSessionId, title);
+    // A keyboard press puts focus on Undo (which holds the clock). A pointer press moves it to the next row, so
+    // nothing holds the clock and the delete is sent on time (R1).
+    if (keyboard) setFocusUndo(s.sdkSessionId);
+    else {
+      setFocusUndo(null);
+      setWant({ id: next, to: 'open' });
+    }
+  };
+  const pastItem = (s: PastSession): ReactNode => {
+    const held = heldById.get(s.sdkSessionId);
+    if (held) {
+      const id = held.sdkSessionId;
+      return (
+        <UndoLine
+          key={id}
+          as="row"
+          text={`“${held.title}” moved to the Bin. It leaves the terminal too.`}
+          undoLabel={`Undo deleting “${held.title}”`}
+          sending={held.phase === 'sending'}
+          focusOnMount={focusUndo === id}
+          onPause={() => pauseChatDelete(id)}
+          onResume={() => resumeChatDelete(id)}
+          onUndo={() => {
+            undoDeletePastChat(id);
+            setFocusUndo(null);
+            // Back on the row's own bin, where the person was.
+            setWant({ id, to: 'bin' });
+          }}
+        />
+      );
+    }
+    return (
       <PastRow
         key={s.sdkSessionId}
         chat={s}
         showKind={active === 'all'}
-        busy={busyId !== null}
-        onAsk={() => setConfirmId(s.sdkSessionId)}
+        onDelete={() => remove(s)}
         favourite={isFavourite(s, favs)}
         onStar={onStar}
       />
     );
+  };
   return (
     <div className="drawer-body" ref={body} tabIndex={-1}>
-      <Seg
-        label="Which chats"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: 'open', label: `Open, ${open.length}` },
-          { value: 'earlier', label: 'Earlier' },
-        ]}
-      />
+      {status}
+      {/* New chat ends the row it acts on, like the To-dos drawer's + (design system, Actions rule 7). */}
+      <div className="chats-switch">
+        <Seg
+          label="Which chats"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'open', label: `Open, ${open.length}` },
+            { value: 'earlier', label: 'Earlier' },
+          ]}
+        />
+        <button
+          type="button"
+          className="icon-btn"
+          data-variant="primary"
+          aria-label="New chat"
+          onClick={() => {
+            newChat();
+            // A floating drawer closes once a choice is made; a pushing one stays.
+            if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
+          }}
+        >
+          <Icon name="plus" size={18} />
+        </button>
+      </div>
       {showKind ? (
         // Straight in the body like the tab switch above, so both are the same width.
         <Seg<ChatKindFilter>
@@ -312,7 +347,7 @@ export function ChatsDrawer() {
             ))}
           </ul>
         )
-      ) : sessions.past.length === 0 ? (
+      ) : pastAll.length === 0 ? (
         <p className="dock-empty">No earlier chats yet.</p>
       ) : shownPast.length === 0 ? (
         <p className="dock-empty">No earlier {kindWord} chats.</p>

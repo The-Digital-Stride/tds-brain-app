@@ -48,7 +48,7 @@ export function OpenFile({ path, label, name }: { path: string; label: string; n
         {download ? `Download ${label.toLowerCase()}` : label}
       </button>
       {error ? (
-        <span className="am-hint" role="alert">
+        <span className="error" role="alert">
           {' '}
           {error}
         </span>

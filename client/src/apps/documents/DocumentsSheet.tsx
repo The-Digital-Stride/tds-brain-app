@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { DocFormat, LibraryItem } from '../../../../shared/contract.ts';
+import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
@@ -79,6 +80,7 @@ function Tile({
           <span className="line-meta">{metaWords(doc)}</span>
         </span>
       </button>
+      <FileStar item={doc} />
       <ViewButton title={doc.title} onView={doc.view ? onView : null} />
     </li>
   );
@@ -126,6 +128,7 @@ function Row({
           {dateWords(doc.modified)}
         </span>
       </button>
+      <FileStar item={doc} />
       <ViewButton title={doc.title} onView={doc.view ? onView : null} />
       <DeleteButton item={doc} onDelete={onDelete} className="lib-delete" reserve={reserveBin} />
     </li>
@@ -213,7 +216,7 @@ export function DocumentsSheet() {
             options={formats}
             onChange={(format) => docsStore.set({ format })}
           />
-          <p className="lib-summary" role="status" ref={summary} tabIndex={-1}>
+          <p className="lib-summary" data-lib-summary role="status" ref={summary} tabIndex={-1}>
             {ready ? summaryWords(shown) : ''}
           </p>
         </div>

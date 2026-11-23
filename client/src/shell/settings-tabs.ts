@@ -51,8 +51,8 @@ export interface SheetTabItem {
   count?: number;
   /** Small text after the label when there is no count. */
   note?: string | null;
-  /** A status dot after the label (`.health-dot[data-state]`), for a problem that must show from any tab. */
-  dot?: 'problem' | null;
+  /** A status dot after the label (`.dot[data-state="bad"]`), for a problem that must show from any tab. */
+  dot?: 'bad' | null;
   /** The spoken name when it differs from `label` ("Health, 1 thing needs attention"). */
   spoken?: string;
 }

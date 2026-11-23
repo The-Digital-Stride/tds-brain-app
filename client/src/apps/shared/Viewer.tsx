@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type LibraryItem, ROUTES } from '../../../../shared/contract.ts';
 import { api } from '../../api.ts';
 import { Markdown } from '../../markdown.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useFrameGuard } from '../../shell/useFrameGuard.ts';
 import { useStore } from '../../store.tsx';
 import { useLoaded } from './data.ts';
@@ -23,21 +24,12 @@ export function TextBody({ item, version }: { item: LibraryItem; version?: strin
   const text = useLoaded(`${item.id}|${item.modified}`, version ? versionNumber(version) : 0, () =>
     api.libraryText(item.id),
   );
-  if (text.status === 'loading') {
-    return (
-      <p className="lib-note" role="status">
-        Loading…
-      </p>
-    );
-  }
+  if (text.status === 'loading') return <StateNote kind="loading" />;
   if (text.status === 'failed') {
     return (
-      <div className="lib-failed" role="alert">
-        <p>{text.message}</p>
-        <button type="button" className="btn" onClick={text.retry}>
-          Try again
-        </button>
-      </div>
+      <StateNote kind="error" onRetry={text.retry}>
+        {text.message}
+      </StateNote>
     );
   }
   return (
@@ -57,7 +49,7 @@ export function TextBody({ item, version }: { item: LibraryItem; version?: strin
 export function PictureBody({ item }: { item: LibraryItem }) {
   // The parent keys this on the file's version and the library's, so a failure is not remembered for ever.
   const [failed, setFailed] = useState(false);
-  if (failed) return <p className="lib-note">This picture could not be shown.</p>;
+  if (failed) return <StateNote kind="error">This picture could not be shown.</StateNote>;
   return (
     <img
       className="lib-viewer-image"
@@ -121,7 +113,7 @@ export function FileStage({ item, version }: { item: LibraryItem; version?: stri
         {item.view === 'page' ? (
           <div className="card lib-page">
             {stopped ? (
-              <div className="notice" data-level="warning">
+              <div className="notice" data-level="warn" data-shape="box">
                 <p>This page tried to move the viewer to another site, so it was stopped.</p>
                 <button
                   type="button"

@@ -163,15 +163,16 @@ export function rowMeta(card: ProjectCard): string {
   const bits = [card.archived ? 'Archived' : STATUS_WORDS[statusOf(card)]];
   if (card.end) bits.push(`ends ${dateWords(card.end)}`);
   bits.push(todoWords(card.openTodos).toLowerCase());
+  bits.push(card.health ? `Health: ${LIGHT_WORDS[card.health].toLowerCase()}` : 'No health light');
   return bits.join(' · ');
 }
 
-/** The health light's colour as the app's `.health-dot` state. */
-export function dotState(light: Light | null): 'ok' | 'note' | 'problem' | undefined {
+/** The health light's colour as the app's `.dot` state (red is a problem; no light is idle). */
+export function dotState(light: Light | null): 'ok' | 'warn' | 'bad' | 'idle' {
   if (light === 'green') return 'ok';
-  if (light === 'amber') return 'note';
-  if (light === 'red') return 'problem';
-  return undefined;
+  if (light === 'amber') return 'warn';
+  if (light === 'red') return 'bad';
+  return 'idle';
 }
 
 /** True when the card can be edited: a real card, not archived. */

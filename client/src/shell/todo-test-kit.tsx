@@ -31,6 +31,9 @@ export const fakeShell = {
   },
 };
 
+/** The to-do tests never hold the right panel. */
+const noHold = { dirty: false, asking: false };
+
 /** The fake `useShell`. */
 export function useFakeShell(): ShellApi {
   const state = useSyncExternalStore(
@@ -40,7 +43,7 @@ export function useFakeShell(): ShellApi {
     },
     () => current,
   );
-  return { state, dispatch: fakeShell.dispatch, modes };
+  return { state, dispatch: fakeShell.dispatch, modes, panelHold: noHold, guardPanel: (run) => run() };
 }
 
 /**

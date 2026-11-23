@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { VersionNotes } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
 import { Fold } from '../shell/Fold.tsx';
+import { StateNote } from '../shell/StateNote.tsx';
 
 /** The commit types the version hook records, in plain words. Anything else shows no label. */
 const KIND_WORDS: Record<string, string> = {
@@ -47,7 +48,7 @@ export function VersionHistory({ current }: { current: string }) {
     };
   }, []);
 
-  if (state.kind === 'loading') return <p className="setting-help">Loading the version history.</p>;
+  if (state.kind === 'loading') return <StateNote kind="loading" />;
   if (state.kind === 'failed') return <p className="setting-help">The version history couldn't be loaded.</p>;
   if (state.versions.length === 0) return <p className="setting-help">No versions recorded yet.</p>;
   const shown = all ? state.versions : state.versions.slice(0, VERSIONS_SHOWN);

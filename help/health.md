@@ -33,7 +33,7 @@ The **Health** tab in Settings has a heading, **How TDS Cortex is running**. Und
 Each line means this:
 
 - **Connection:** Cortex is live-linked to your Mac, so changes show as they happen.
-- **Brain folder:** the Brain was found. **Change…** lets you pick another folder.
+- **Brain folder:** the Brain was found. **Change** lets you pick another folder.
 - **Claude Code:** Claude is ready to start chats.
 - **Brain sync:** the Brain updated in the last 5 minutes. After that, it shows as stale.
 - **To-dos and chats:** the lists have loaded.

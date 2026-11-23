@@ -13,6 +13,7 @@ import {
 } from '../../../shared/contract.ts';
 import { api, discardUpload, uploadFile } from '../api.ts';
 import { useStore } from '../store.tsx';
+import { Confirm } from './Confirm.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
 
@@ -163,7 +164,7 @@ export function TodoFiles(props: TodoFilesProps) {
               <li key={a.path} className="todo-file">
                 <Icon name={a.kind === 'image' ? 'image' : 'doc'} size={16} />
                 {openable ? (
-                  <button type="button" className="todo-file-open" onClick={() => void open(a)}>
+                  <button type="button" className="btn" data-size="small" onClick={() => void open(a)}>
                     {a.name}
                   </button>
                 ) : (
@@ -238,7 +239,6 @@ function AddFile({
   // One ask per panel for each kind: agreeing to link a personal file isn't agreeing to upload to one.
   const warnedUpload = useRef(false);
   const warnedPick = useRef(false);
-  const uid = useId();
   const scope = todo.scope === 'personal' ? { scope: 'personal' as const } : {};
 
   /** Focus goes to Add a file, or to the Files heading when that button isn't shown. */
@@ -468,37 +468,27 @@ function AddFile({
         </div>
       ) : null}
       {step === 'confirm' ? (
-        <fieldset className="todo-ask">
-          <legend className="todo-ask-q" id={`${uid}-warn`}>
-            {pendingPicks.length > 0 ? PERSONAL_PICK_WARNING : PERSONAL_UPLOAD_WARNING}
-          </legend>
-          <button
-            type="button"
-            className="btn"
-            data-variant="primary"
-            data-size="small"
-            // biome-ignore lint/a11y/noAutofocus: the question has just appeared; the answer is next.
-            autoFocus
-            onClick={() => {
-              const files = pending;
-              const picks = pendingPicks;
-              if (files.length > 0) warnedUpload.current = true;
-              if (picks.length > 0) warnedPick.current = true;
-              const problems = pendingProblems;
-              setPending([]);
-              setPendingPicks([]);
-              setPendingProblems([]);
-              setStep('closed');
-              if (picks.length > 0) void attach(picks);
-              else void upload(files, problems);
-            }}
-          >
-            Continue
-          </button>
-          <button type="button" className="btn" data-size="small" onClick={close}>
-            Cancel
-          </button>
-        </fieldset>
+        <Confirm
+          label="Add personal files"
+          text={pendingPicks.length > 0 ? PERSONAL_PICK_WARNING : PERSONAL_UPLOAD_WARNING}
+          action="Continue"
+          variant="primary"
+          busy={false}
+          onConfirm={() => {
+            const files = pending;
+            const picks = pendingPicks;
+            if (files.length > 0) warnedUpload.current = true;
+            if (picks.length > 0) warnedPick.current = true;
+            const problems = pendingProblems;
+            setPending([]);
+            setPendingPicks([]);
+            setPendingProblems([]);
+            setStep('closed');
+            if (picks.length > 0) void attach(picks);
+            else void upload(files, problems);
+          }}
+          onCancel={close}
+        />
       ) : null}
       {step === 'library' ? (
         <LibraryPicker
@@ -574,7 +564,7 @@ function LibraryPicker({
 
   return (
     <form className="todo-picker" onSubmit={submit} aria-label="Add files from the library">
-      <label htmlFor={`${uid}-q`} className="todo-label">
+      <label htmlFor={`${uid}-q`} className="label">
         Search the library
       </label>
       <input
@@ -601,7 +591,7 @@ function LibraryPicker({
       </div>
       {picked.size > 0 ? (
         <div className="todo-picker-chosen">
-          <span className="todo-label">Chosen:</span>
+          <span className="label">Chosen:</span>
           <ul className="todo-picker-list" aria-label="Chosen files">
             {[...picked.values()].map((h) => (
               <li key={h.item.path}>
@@ -629,6 +619,7 @@ function LibraryPicker({
                 <input
                   id={id}
                   type="checkbox"
+                  className="tick"
                   checked={already || picked.has(h.item.path)}
                   disabled={already || (!picked.has(h.item.path) && picked.size >= room)}
                   onChange={() => toggle(h)}
@@ -653,8 +644,8 @@ function LibraryPicker({
         >
           {picked.size > 1 ? `Add ${picked.size} files` : 'Add file'}
         </button>
-        <button type="button" className="btn" data-size="small" onClick={onCancel}>
-          Cancel
+        <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onCancel}>
+          Close
         </button>
       </div>
     </form>

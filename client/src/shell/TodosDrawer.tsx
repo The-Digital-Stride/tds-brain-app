@@ -20,10 +20,16 @@ import {
   useProjects,
 } from '../state/projects.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
-import { EMPTY_FILTER, filterActive, filterAsked, filterTodos } from '../state/todo-filter.ts';
+import {
+  EMPTY_FILTER,
+  filterActive,
+  filterAsked,
+  filterTodos,
+  todoProjectKey,
+} from '../state/todo-filter.ts';
 import { groupTodos } from '../state/todo-groups.ts';
 import { newToYou } from '../state/todo-new.ts';
-import { type ChangeTodosResult, type HeldTodo, TODO_UNDO_MS, useStore } from '../store.tsx';
+import { type ChangeTodosResult, type HeldTodo, useStore } from '../store.tsx';
 import { AskedList, type AskedState, askedOrder } from './AskedList.tsx';
 import type { TodoFilter, TodoPanelState } from './contract.ts';
 import { Fold } from './Fold.tsx';
@@ -33,8 +39,10 @@ import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
+import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
 import { cap, handoverMeta, todoChatDraft } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
@@ -44,13 +52,13 @@ type Tab = 'mine' | 'open' | 'asked';
 
 /** What a row needs to open the panel: set by the drawer for every to-do (reading needs no permission). */
 interface RowControls {
-  /** May edit (changes are on): the row's button says Edit; otherwise Options (read, and tick it off). */
+  /** May edit (changes are on): the row has an Edit button. Without it the title opens the read view. */
   canEdit: boolean;
   /** The keys of the open panel, to mark its row. */
   openKey: string | null;
   busy: boolean;
   open: (todo: TodoItem, mode: 'read' | 'edit') => void;
-  /** Whether the person may do anything but read (change or tick off): shows the Edit / Options button. */
+  /** Whether the person may do anything but read (change or tick off); with `canEdit`, shows the Edit button. */
   actionable: boolean;
 }
 
@@ -111,41 +119,37 @@ const UNDO_VERB: Record<HeldTodo['kind'], string> = {
   assignee: 'passing on',
 };
 
-/** A to-do whose tick, delete or pass-on is waiting out its undo time. Nothing is in the brain yet. */
-function HeldRow({ held, focus, onUndo }: { held: HeldTodo; focus: boolean; onUndo: () => void }) {
-  const undo = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    // preventScroll: a mouse tick shouldn't jump the list.
-    if (focus) undo.current?.focus({ preventScroll: true });
-  }, [focus]);
-  const gone = held.kind !== 'assignee';
+/** "Marked as done" → "marked as done": the label follows the title in the Undo line's sentence. */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
+ * A to-do whose tick, delete or pass-on is waiting out its undo time: the shared Undo line in its place. Nothing
+ * is in the brain yet. `focus` only after a keyboard press (plan 2026-11-22-ux-consistency, R1).
+ */
+function HeldRow({
+  held,
+  focus,
+  onUndo,
+  onPause,
+  onResume,
+}: {
+  held: HeldTodo;
+  focus: boolean;
+  onUndo: () => void;
+  onPause: () => void;
+  onResume: () => void;
+}) {
   return (
-    <li className="todo todo-held" data-held={held.kind}>
-      <span className="line-text">
-        <span className={gone ? 'line-title todo-gone' : 'line-title'}>{held.title}</span>{' '}
-        <span className="line-meta">{held.label}</span>
-      </span>
-      {held.sending ? (
-        <span className="todo-sending">Sending…</span>
-      ) : (
-        <button
-          type="button"
-          className="btn todo-undo"
-          ref={undo}
-          aria-label={`Undo ${UNDO_VERB[held.kind]} "${held.title}"`}
-          onClick={onUndo}
-        >
-          Undo
-        </button>
-      )}
-      {held.sending ? null : (
-        <span
-          className="todo-countdown"
-          aria-hidden="true"
-          style={{ animationDuration: `${TODO_UNDO_MS}ms` }}
-        />
-      )}
-    </li>
+    <UndoLine
+      as="row"
+      text={`"${held.title}" ${lowerFirst(held.label)}.`}
+      undoLabel={`Undo ${UNDO_VERB[held.kind]} "${held.title}"`}
+      sending={held.sending === true}
+      focusOnMount={focus}
+      onUndo={onUndo}
+      onPause={onPause}
+      onResume={onResume}
+    />
   );
 }
 
@@ -293,20 +297,24 @@ function TodoRow({
               on={favourite}
               onPress={(_, button) => onStar(todo, button)}
             />
-            {controls.actionable ? (
+            {/* Edit only: someone who may only tick it off opens it from the title (three dots only ever open a
+                menu, design system Actions rule 3). */}
+            {controls.actionable && controls.canEdit ? (
               <button
                 type="button"
                 className="icon-btn todo-edit"
                 data-edit-for={todo.key}
-                aria-label={controls.canEdit ? `Edit "${todo.title}"` : `Options for "${todo.title}"`}
-                data-tip={controls.canEdit ? 'Edit' : 'Options'}
-                disabled={controls.busy}
+                aria-label={`Edit "${todo.title}"`}
+                data-tip="Edit"
+                // aria-disabled, not disabled: a disabled button drops focus to the page (Actions rule 12).
+                aria-disabled={controls.busy || undefined}
                 onClick={() => {
+                  if (controls.busy) return;
                   onOpened(todo);
-                  controls.open(todo, controls.canEdit ? 'edit' : 'read');
+                  controls.open(todo, 'edit');
                 }}
               >
-                <Icon name={controls.canEdit ? 'edit' : 'more'} size={16} />
+                <Icon name="edit" size={16} />
               </button>
             ) : null}
             <button
@@ -395,6 +403,8 @@ export function TodosDrawer() {
     heldTodos,
     holdTodo,
     undoHeld,
+    pauseHeld,
+    resumeHeld,
     markTodosSeen,
     reveal,
     clearReveal,
@@ -406,7 +416,10 @@ export function TodosDrawer() {
   /** Clears the app-wide picker's project (keeping its client): what the drawer's "Clear" and "Clear filters" do. */
   const clearPicked = () => setChoice({ client: pickedClient, project: '' });
   const favs = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
+  // The held to-do whose Undo takes focus: only after a keyboard press. After a pointer press focus goes to the
+  // neighbouring row's title (`afterHold`), so nothing holds the clock and the change is sent on time.
   const [focusUndo, setFocusUndo] = useState<string | null>(null);
+  const afterHold = useRef<{ id: string; next: string | null } | null>(null);
   // The to-do the status line's "You can undo this" is about, so it can be cleared once that's sent.
   const [undoMessageFor, setUndoMessageFor] = useState<string | null>(null);
   const [tab, setTabState] = useState<Tab>('mine');
@@ -495,14 +508,17 @@ export function TodosDrawer() {
     if (!reveal || !todos) return;
     const key = reveal.todo.key;
     clearReveal();
-    const inMine = todos.mine.some((t) => t.key === key);
+    const mineItem = todos.mine.find((t) => t.key === key);
+    const inMine = mineItem !== undefined;
+    const item = mineItem ?? todos.open.find((t) => t.key === key);
     // A to-do that has gone since it was found has nothing to show.
-    if (!inMine && !todos.open.some((t) => t.key === key)) return;
+    if (!item) return;
     setVisitSeen(new Set());
     setTabState(inMine ? 'mine' : 'open');
     setFilter(EMPTY_FILTER);
-    // The to-do must show: a project held by the picker would hide it.
-    if (pickedProject) setChoice({ client: pickedClient, project: '' });
+    // The to-do must show: a project held by the picker would hide it, but one it is in keeps the choice.
+    if (pickedProject && todoProjectKey(item) !== pickedProject)
+      setChoice({ client: pickedClient, project: '' });
     setRevealed({ key, n: reveal.n });
     // The to-do opens in the panel, read first; closing it puts the keyboard back on the row.
     setMessage('');
@@ -512,7 +528,16 @@ export function TodosDrawer() {
   // After the panel closes, put the keyboard back on the row's title button (or the Add button).
   useEffect(() => {
     if (refocus === null) return;
-    if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
+    const after = afterHold.current;
+    if (after !== null && after.id === refocus) {
+      // Held after a pointer press: the neighbouring row's title, else the list (a row in a closed group can't
+      // take focus).
+      afterHold.current = null;
+      const next = after.next
+        ? document.querySelector<HTMLElement>(`[data-panel-for="${CSS.escape(after.next)}"]`)
+        : null;
+      (next && !next.closest('[hidden]') ? next : scrollRef.current)?.focus({ preventScroll: true });
+    } else if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
     else {
       const id = CSS.escape(refocus);
       const row =
@@ -557,7 +582,7 @@ export function TodosDrawer() {
     if (was !== undefined && !skip && focusUndo !== was) setRefocus(was);
   }, [openKey, focusUndo]);
 
-  if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
+  if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';
@@ -686,14 +711,28 @@ export function TodosDrawer() {
     (filter ?? scrollRef.current)?.focus();
   };
 
+  /** Holds a change from the panel (which closes first; its close puts focus where `afterHold` says). */
   const hold = (held: HeldTodo) => {
+    const keyboard = pressedByKeyboard();
+    const id = held.todoId;
+    const shownOrder = [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+      .map((t) => t.key)
+      .filter((k) => k === id || !heldById.has(k));
+    const at = shownOrder.indexOf(id);
     holdTodo(held);
-    setFocusUndo(held.todoId);
-    setMessage(`${held.label}. You can undo this for ${TODO_UNDO_MS / 1000} seconds.`);
-    setUndoMessageFor(held.todoId);
+    if (keyboard) {
+      afterHold.current = null;
+      setFocusUndo(id);
+    } else {
+      afterHold.current = { id, next: at === -1 ? null : (shownOrder[at + 1] ?? shownOrder[at - 1] ?? null) };
+      setFocusUndo(null);
+    }
+    setMessage(`${held.label}. You can undo this for ${UNDO_MS / 1000} seconds.`);
+    setUndoMessageFor(id);
   };
   const undo = (held: HeldTodo) => {
     undoHeld(held.todoId);
+    afterHold.current = null;
     setFocusUndo(null);
     setMessage('Undone.');
     setRefocus(held.todoId);
@@ -915,7 +954,14 @@ export function TodosDrawer() {
   const row = (t: TodoItem, isFresh: boolean) => {
     const held = heldById.get(t.key);
     return held ? (
-      <HeldRow key={t.key} held={held} focus={focusUndo === t.key} onUndo={() => undo(held)} />
+      <HeldRow
+        key={t.key}
+        held={held}
+        focus={focusUndo === t.key}
+        onUndo={() => undo(held)}
+        onPause={() => pauseHeld(held.todoId)}
+        onResume={() => resumeHeld(held.todoId)}
+      />
     ) : (
       <TodoRow
         key={t.key}
@@ -1060,7 +1106,9 @@ export function TodosDrawer() {
               Set by Working on (Home) ·{' '}
               <button
                 type="button"
-                className="link-btn"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
                 onClick={() => {
                   clearPicked();
                   // The button goes with the reason: the keyboard moves to the Project select, now free.

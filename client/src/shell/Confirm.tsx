@@ -1,10 +1,11 @@
 import { type ReactNode, useId } from 'react';
 
-/** The inline "are you sure" step (design system: `fieldset.close-confirm`): Cancel has focus, Esc cancels. */
+/** The inline "are you sure" step (design system, Shared pieces): the safe option has focus, Esc picks it. */
 export function Confirm({
   label,
   text,
   action,
+  safe = 'Cancel',
   variant,
   busy,
   onConfirm,
@@ -14,6 +15,8 @@ export function Confirm({
   label: string;
   text: ReactNode;
   action: string;
+  /** The safe option: "Keep editing", "Keep chat" when protecting work; "Cancel" for a constructive step. */
+  safe?: string;
   variant: 'primary' | 'danger';
   busy: boolean;
   onConfirm: () => void;
@@ -22,7 +25,7 @@ export function Confirm({
   const textId = useId();
   return (
     <fieldset
-      className="close-confirm am-confirm"
+      className="confirm"
       aria-label={label}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
@@ -57,7 +60,7 @@ export function Confirm({
           if (!busy) onCancel();
         }}
       >
-        Cancel
+        {safe}
       </button>
     </fieldset>
   );

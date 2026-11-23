@@ -11,7 +11,7 @@ Sentence case everywhere: no capitals-only labels, no letter-spacing. WCAG 2.2 A
 non-text 3:1, targets at least 24×24 CSS px (a smaller visual box is fine when its clickable area,
 including label or padding, reaches 24px), visible focus on everything.
 
-## Type (seven sizes: 11.5, 12, 13, 14, 15, 18, 26)
+## Type (seven sizes: 11.5, 12, 13, 14, 15, 18, 26, plus 12.5 for mono)
 
 | Role | Font | px / weight / line-height | Colour |
 |---|---|---|---|
@@ -29,11 +29,51 @@ including label or padding, reaches 24px), visible focus on everything.
 | Code | `--mono` | 12.5 (inline 0.88em) | navy |
 | `kbd` | `--body` | 11.5 / 500 | iron |
 
+13.5 is used in one place only: a background helper's report card (see Thread content). Nothing else is off this list; `client/src/styles/design-system.test.ts` fails for a new size.
+
 ## Spacing, radii, widths
 
-- Spacing steps: 4, 6, 8, 12, 16, 24, 32. Old tokens map `--s1`→8, `--s2`→12, `--s3`→16, `--s4`→24, `--s5`→32.
-- Radii: 6, 9, 10, 14, 18.
+- Spacing steps: 2, 4, 6, 8, 10, 12, 16, 24, 32.
+- Radii: 5, 6, 8, 9, 10, 12, 14, 16, 18 (5 ticks, 6 and 8 small pieces, 9 buttons and fields, 10 cards and tiles, 12 pop-ups, 14 big cards and your message, 16 the glass layers, 18 the largest surfaces).
 - Column widths: reading 680px, settings 600px, Home 880px.
+- Each step is a token in `styles/tokens.css` (`--sp-2` … `--sp-32`, `--r-5` … `--r-18`, `--fs-*` for the type sizes, see "Tokens for the scales"). Every sheet uses the tokens; the guard fails a typed size, radius or layer in a locked sheet.
+
+## CSS layers and files
+
+Every stylesheet is wrapped in one cascade layer. The order is declared once, at the top of `styles/tokens.css` (the first sheet `main.tsx` imports): `@layer tokens, primitives, patterns, features, tools;`. A rule in a later layer beats an earlier layer's rule whatever its specificity, and an unlayered rule would beat all of them, so nothing is left unlayered except the `@font-face` blocks (Fontsource's CSS and the Inter face in `base.css`, which only declare fonts). `@media`, `@supports`, `@container` and `@keyframes` blocks sit inside their layer. `!important` reverses the order across layers (an earlier layer's `!important` wins), which only `todo-panel.css` uses.
+
+| Layer | What goes in it | Files |
+|---|---|---|
+| `tokens` | custom properties only | `tokens.css` |
+| `primitives` | one element each: type, buttons, fields, ticks, `.seg`, `.fold`, `.line`; and the small shared pieces `.tray`, `.card-head`, `.kv`, `.spinner`, `.link-btn` | `base.css`, `primitives.css` |
+| `patterns` | composed pieces that exist once: notice, dot, form field, popover, menu row, stat, panel head, confirm, the Setting row, the library parts the eager shell draws | `patterns.css`, `library-shared.css` |
+| `features` | one screen or area: shell, drawers, sections (Workbench rows and tool tabs), Home, palette, search-select, chat, Settings, viewer, to-do panel, help, guide, tour, the library, Images, Documents, Projects | `shell.css`, `drawers.css`, `sections.css`, `home.css`, `palette.css`, `search-select.css`, `chat.css`, `settings.css`, `viewer.css`, `todo-panel.css`, `help.css`, `guide.css`, `tour.css`, `apps/shared/library.css`, `apps/images/images.css`, `apps/documents/documents.css`, `projects.css` |
+| `tools` | a tool's own look (lazy) | `ad-manager.css`, `command.css`, `summary.css` |
+
+The eager sheets load in this order (`main.tsx`): tokens, base, primitives, shell, drawers, sections, home, palette, search-select, chat, settings, viewer, todo-panel, help, guide, tour, patterns, library-shared. The lazy ones (`ui.ts` of each app or tool) are library, images, projects, documents, ad-manager, command, summary. Inside one layer, order still decides ties.
+
+Rules of thumb that follow:
+
+- A feature restyles a primitive or pattern by setting a property on its own class. It always wins, so it must not hide a state the primitive handles: restate the hover, pressed or disabled look beside it (`.skill-more:hover` does this for the icon button's hover colour) or leave that property out.
+- A rule that is only here to be overridden by a later layer is dead: delete it (the viewer header's old grid and the sheet error notice's margin were removed this way, because the shared rule had always won).
+- A new shared piece goes in `primitives.css` (one element) or `patterns.css` (a composition), never in a feature file. The guard (`design-system.test.ts`) fails for a sheet with rules outside a named layer.
+
+## Tokens for the scales
+
+All in `styles/tokens.css`. Every stylesheet uses them; a raw size, radius or layer in a locked sheet fails the guard (`design-system.test.ts`). Where a token holds a value that sat between two scale steps, it has its own name (`--glass-75`, `--glass-80`, `--glass-85`, `--tint-04`, `--grey-record`), so swapping a typed value for its token changes nothing. Two deliberate moves off the old values (plan decision 22): the tour's timing is 240ms and its title is 15px.
+
+| Group | Tokens |
+|---|---|
+| Spacing | `--sp-2`, `--sp-4`, `--sp-6`, `--sp-8`, `--sp-10`, `--sp-12`, `--sp-16`, `--sp-24`, `--sp-32` |
+| Radii | `--r-5`, `--r-6`, `--r-8`, `--r-9`, `--r-10`, `--r-12`, `--r-14`, `--r-16`, `--r-18` |
+| Type sizes | `--fs-caption` 11.5, `--fs-small` 12, `--fs-mono` 12.5, `--fs-control` 13, `--fs-body` 14, `--fs-reading` 15, `--fs-title` 18, `--fs-display` 26 |
+| Layers | `--z-tour` 200, `--z-tooltip` 80, `--z-palette` 70, `--z-skip` 60, `--z-viewer` 50, `--z-popover` 45, `--z-floating-panel` 45, `--z-dock` 41, `--z-veil` 40, `--z-hover-rail` 39, `--z-docked-panel` 8, `--z-rail` 5 |
+| Motion | `--t-fast` 120ms, `--t-mid` 160ms (`--t` 240ms stays) |
+| Surfaces | `--surface` `#fff`, `--veil` `rgba(2, 27, 67, 0.16)` (the dim behind the to-do panel, the palette and a floating drawer) |
+
+## Layers (z-index)
+
+Named by `--z-*` (see above). The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 60, viewer 50, pop-up 45 (`.popover`: the search-select list, the level menu, the triage pop-up), floating to-do panel 45, floating dock 41, veil 40, hover rail 39, docked to-do panel 8, rail and chat drawer 5. Values from -1 to 3 only order things inside one component. The rule: a pop-up sits above the layer that hosts it. `design-system.test.ts` fails for a value outside this list.
 
 ## Dimensions
 
@@ -43,13 +83,13 @@ including label or padding, reaches 24px), visible focus on everything.
 - A drawer's search or filter (the Skills search, the To-dos switch and client picker) sits on the drawer's own glass between the header and the list (`.drawer-tools`, padding 0 10px 8px); only the list scrolls (`.drawer-scroll`). Nothing in a drawer has a backing of its own (Ian, 2026-11-11: a whiter strip behind the search was "not good").
 - The To-dos drawer has no search row: "/" and Search or jump to search everything, and choosing a to-do there opens this drawer on it (its tab, filters cleared, its group open, its row focused). The add button shows whenever the person can add. With a filter (the kind switch, the client picker) it is a 32px `+` primary icon button (`icon-btn` `data-variant="primary"`, "Add a to-do") at the right end of the filter row (`.todo-filters`): with both filters the switch has the first line and the picker and `+` share the second, never wrapping. With no filter, the row holds only a labelled primary small `btn` with a `+` and "Add a to-do", right-aligned so it lines up with that `+` (the tabs row has no room for an icon at 316px: "Open to anyone, N" truncates).
 - The Chats drawer's kind switch (All / TDS / Personal, "Which kind of chat") sits straight in the drawer body under the Open / Earlier switch, with no `.drawer-tools` wrapper, because that body is already padded and the two switches must be the same width. It shows only once a chat is Personal (or while a kind is picked). A personal chat's meta ends ", personal" with no lock, because a personal chat is only sorted apart and isn't private (personal to-dos keep the lock). This chat → Details has a "Kind" row, a TDS / Personal `Seg` with a `kv-note` that says what it does.
-- Earlier chat rows have a trailing 28px `icon-btn` with the `bin` icon ("Delete chat: {title}"), the same place and size as an Open row's Close. Pressing it swaps the row for an inline `fieldset.close-confirm`: the title stays, the question is linked with `aria-describedby`, there's a small danger "Delete chat" and "Keep chat" (focused), and Esc keeps the chat. While a delete runs the two buttons are `aria-disabled`, never `disabled`, because a disabled button drops focus to the page. The other bins are disabled.
-- To-do rows are not buttons (Ian, 2026-11-14: clicking anywhere on one started a chat, which surprised). The row's title is a real button that opens the to-do in the to-do panel (plan 2026-11-16-todo-panel; `.todo-open`, for everyone, whether or not changes are on, so reading needs no permission). It looks like text (inherits colour and font, underlined on hover) and has `aria-haspopup="dialog"`. The title (14/500, clamped to two lines, `.todo-title-text`) runs the row's full width; below it are the details line, then a bottom line with the place (a project chip, or plain `.todo-where-text`, ellipsised) on the left and the buttons (`.todo-btns`) always bottom right. With no place and short details the buttons share the details line; otherwise they wrap below (Ian, 2026-11-14: buttons beside the title made titles wrap early; 2026-11-22: the row was clumsy). The buttons run star, Edit (when changes are on: opens the panel already editing) or Options (when the person may only tick things off: opens it reading), then a blue chat button `icon-btn.todo-go` with the `chat` icon (the speech bubble Chats has on the rail; Ian, 2026-11-14: an arrow didn't say chat), always shown and always last, labelled "Start a chat on this: {title}" or "Open chat: {title}". The row takes a light hover background but doesn't lift; the row open in the panel keeps `--tint-1` (`data-panel-open`). Nothing edits inside a row any more. Chat and skill rows stay whole-row buttons, because opening the thing a row names is what a click is expected to do; a to-do row's click made something new.
-- **The to-do panel** (`TodoPanel`, `styles/todo-panel.css`; plan 2026-11-16-todo-panel). A wide panel that slides out from the To-dos drawer's right edge to read, edit and add a to-do, because the 316px drawer is too narrow for details. It uses the file viewer's glass, 16px radius, `--lift-3` and `viewer-in` motion (none under reduced motion), up to 760px wide, kept inside the window. It sits in the desk (`#todo-panel-slot`, mounted by `TodosDrawer`) because `.dock` clips its content; its open state (`todoPanel`: key, mode read / edit / add, unsaved changes, order) lives in the shell like the viewer. `role="dialog"`: with the drawer docked it is non-modal (the sheet is `inert` under a veil, the drawer and rail stay live); when the drawer floats (`modes.drawerOverlays`) it covers the drawer and the sheet at full width less the 12px pad, `aria-modal`, and the rest of the desk is `inert`. Header band: the title (14/600, as the viewer's) with previous and next `icon-btn`s (up and down, tooltips "Previous to-do (P)" / "Next to-do (N)", `aria-disabled` at the ends: the standard 0.5 and not-allowed) and close, all pinned to the top so a wrapped title doesn't push them down. It slides out of the drawer: from 24px to the left (`todo-in`), none under reduced motion. When the drawer floats the layer is z-index 45, above the dock's 40 and 41. Body: the details as the main column; a side strip (`.todo-facts`, a `--tint-1` fill, no edge) with due, assigned to, kept as, for, handed over and chat (worded as a fact: "Has a chat", never "Open chat", which would look like a button; labels 12/600), which drops under the details below 640px of panel width (a container query). Footer: Start a chat or Open chat (primary while reading), Mark as done and Delete (danger) on the left; Edit on the right while reading, Save (primary) and Cancel while editing. Read-only people see no Edit or Delete. The status line and errors show in the panel, as the drawer may be under it: one `role="status"` at panel level, under the header, so it is announced across read, edit and add.
+- Earlier chat rows have a trailing 28px `icon-btn` with the `bin` icon ("Delete chat: {title}"), the same place and size as an Open row's End chat button. Pressing it moves the chat to the Bin at once and swaps the row for the Undo line ("“{title}” moved to the Bin. It leaves the terminal too."; Actions rule 4). Nothing is sent until the Undo time runs out.
+- To-do rows are not buttons (Ian, 2026-11-14: clicking anywhere on one started a chat, which surprised). The row's title is a real button that opens the to-do in the to-do panel (plan 2026-11-16-todo-panel; `.todo-open`, for everyone, whether or not changes are on, so reading needs no permission). It looks like text (inherits colour and font, underlined on hover) and has `aria-haspopup="dialog"`. The title (14/500, clamped to two lines, `.todo-title-text`) runs the row's full width; below it are the details line, then a bottom line with the place (a project chip, or plain `.todo-where-text`, ellipsised) on the left and the buttons (`.todo-btns`) always bottom right. With no place and short details the buttons share the details line; otherwise they wrap below (Ian, 2026-11-14: buttons beside the title made titles wrap early; 2026-11-22: the row was clumsy). The buttons run star, Edit (when changes are on: opens the panel already editing; when the person may only tick things off there is no Edit, and the title opens the panel reading), then a blue chat button `icon-btn.todo-go` with the `chat` icon (the speech bubble Chats has on the rail; Ian, 2026-11-14: an arrow didn't say chat), always shown and always last, labelled "Start a chat on this: {title}" or "Open chat: {title}". The row takes a light hover background but doesn't lift; the row open in the panel keeps `--tint-1` (`data-panel-open`). Nothing edits inside a row any more. Chat and skill rows stay whole-row buttons, because opening the thing a row names is what a click is expected to do; a to-do row's click made something new.
+- **The to-do panel** (`TodoPanel`, `styles/todo-panel.css`; plan 2026-11-16-todo-panel). A wide panel that slides out from the To-dos drawer's right edge to read, edit and add a to-do, because the 316px drawer is too narrow for details. It uses the file viewer's glass, 16px radius, `--lift-3` and `viewer-in` motion (none under reduced motion), up to 760px wide, kept inside the window. It sits in the desk (`#todo-panel-slot`, mounted by `TodosDrawer`) because `.dock` clips its content; its open state (`todoPanel`: key, mode read / edit / add, unsaved changes, order) lives in the shell like the viewer. `role="dialog"`: with the drawer docked it is non-modal (the sheet is `inert` under a veil, the drawer and rail stay live); when the drawer floats (`modes.drawerOverlays`) it covers the drawer and the sheet at full width less the 12px pad, `aria-modal`, and the rest of the desk is `inert`. Header band: the title (14/600, as the viewer's) with previous and next `icon-btn`s (up and down, tooltips "Previous to-do (P)" / "Next to-do (N)", `aria-disabled` at the ends: the standard 0.5 and not-allowed) and close, all pinned to the top so a wrapped title doesn't push them down. It slides out of the drawer: from 24px to the left (`todo-in`), none under reduced motion. When the drawer floats the layer is z-index 45, above the dock's 40 and 41. Body: the details as the main column; a side strip (`.todo-facts`, a `--tint-1` fill, no edge) with due, assigned to, kept as, for, handed over and chat (worded as a fact: "Has a chat", never "Open chat", which would look like a button; labels 12/600), which drops under the details below 640px of panel width (a container query). Footer: Start a chat or Open chat (primary while reading), Mark as done and Delete (standard: it leads to an Undo, Actions rule 5) on the left; Edit on the right while reading, Save (primary) and Cancel while editing. Read-only people see no Edit or Delete. The status line and errors show in the panel, as the drawer may be under it: one `role="status"` at panel level, under the header, so it is announced across read, edit and add.
   - **The details**: one Tiptap document for reading and editing, so what is read is what is edited (`TodoDetailsEditor`, `.todo-prose`). The editing toolbar is seven `icon-btn`s with tooltips: Heading (one toggle: level 2, keeps an existing level), Body text, Bullet list, Numbered list, Tick list, Bold, Link; pressed is the standard wash and blue ink (a `--tint-1` fill on the `--tint-1` toolbar was invisible), never a ring. Link asks for the address in a small inline field (Apply, Cancel; Esc closes only the field), never a browser prompt, and accepts only http, https and mailto. The toolbar is one tab stop with arrow keys, Home and End moving along it, and it sticks to the top of the body while long details scroll. The details box draws the standard focus ring when the editor has focus (`:has(.todo-prose:focus-visible)`). Tick boxes use the app's `.tick` look and are pressable while reading and save at once; when they can't be pressed they are `disabled`, and each is named by its item's text. A part the editor doesn't offer (a table, a code block, a quote) is a `.todo-kept` block: a quiet `--tint-1` fill, read-only, focusable, with "Edit this part in a chat." as a real `.todo-note` line under it while editing (linked by `aria-describedby`); a wide table scrolls sideways. Tiptap's injected style is off (`injectCSS: false`, the app's CSP blocks it); its base rules live in `todo-panel.css`. The editor's text is always saved back as markdown.
   - **Unsaved changes**: Esc (also from inside the editor), the close button, the veil, previous, next, Start or Open chat, a drawer swap, a new page and a search that reopens the to-do in another mode ask "Discard your changes?" in a quiet `--tint-1` strip under the header (Discard changes danger, Keep editing focused; Esc keeps editing). The Add form's Esc and Cancel ask too once a title is typed. Cancel and Save don't ask. Save is `aria-disabled` while busy, never `disabled`, so focus stays in the panel. Mark as done and Delete close the panel at once and focus the row's Undo.
   - **Focus**: the heading takes focus when it opens (the title while editing or adding); closing returns it to the row's title button. `E` edits, Cmd/Ctrl+Enter saves, `P` / `N` step through the drawer's order (held rows skipped), Esc closes it before the drawer.
-- Favourites (plan 2026-11-14-chat-favourites): one word and one icon wherever something can be kept at the top of its list. Skills have it too (Ian, 2026-11-14), replacing the pin: a "Favourites" section above "Used often" in the Skills drawer, and Home's card says "Favourite skills". Home's other cards are "Pinned to-dos", "Pinned chats" and "Pinned files" (plan 2026-11-15-home-pinned-cards): the starred ones only, five rows each, then a quiet "Show N more {to-do/to-dos}" button (singular for one) that expands the card in place and turns into "Show fewer" (`aria-expanded`, hidden noun for screen readers, not saved); it used to open the drawer, which did nothing visible when that drawer was already open. Each card head has its "All …" button, Pinned files included ("All files" opens Documents). Files have the same star (`FileStar`), last in the file viewer's actions and in the first row of `DetailActions`, saved by library id in prefs' `favouriteFiles`. Their list is still saved as the prefs' `pins`, so older versions of the app agree. A chat row with a lasting id has a 28px `icon-btn.star-btn` with the `star` icon, left of Close or the bin, `aria-pressed`, labelled "Favourite: {title}" (the label never changes; the pressed state says whether it is on). The star is outlined when off and filled when on; like every unstarred star, an unstarred chat's star shows only on the row under the pointer or the keyboard (always on touch). Open lists favourites first; Earlier has a "Favourites" section at the top. After a press, focus follows the chat to its new place, and the Earlier section it moves to opens. To-dos (plan 2026-11-14-todo-favourites) work the same way: every to-do row (not one waiting out its Undo, not one being edited) has the star, before Edit and the chat button, shown whether or not changes are on, since it changes no to-do; starred to-dos sit only in a "Favourites" section above "New to you" and the date sections, on each tab, keeping a new one's dot. Favourites and the section under it ("New to you", else the top date section) start open, and a star press opens the section the to-do moves to. The shared pieces are `StarButton` and `useStarFocus` in `client/src/shell/StarButton.tsx`.
+- Favourites (plan 2026-11-14-chat-favourites): one word and one icon wherever something can be kept at the top of its list. Skills have it too (Ian, 2026-11-14), replacing the pin: a "Favourites" section above "Used often" in the Skills drawer, and Home's card says "Favourite skills". Home's other cards are "Favourite to-dos", "Favourite chats" and "Favourite files" (plan 2026-11-15-home-pinned-cards): the starred ones only, five rows each, then a quiet "Show N more {to-do/to-dos}" button (singular for one) that expands the card in place and turns into "Show fewer" (`aria-expanded`, hidden noun for screen readers, not saved); it used to open the drawer, which did nothing visible when that drawer was already open. Each card head has its "All …" button, Favourite files included ("All files" opens Documents). Files have the same star (`FileStar`), last in the file viewer's actions and in the first row of `DetailActions`, saved by library id in prefs' `favouriteFiles`. Their list is still saved as the prefs' `pins`, so older versions of the app agree. A chat row with a lasting id has a 28px `icon-btn.star-btn` with the `star` icon, left of End chat or the bin, `aria-pressed`, labelled "Favourite: {title}" (the label never changes; the pressed state says whether it is on). The star is outlined when off and filled when on; like every unstarred star, an unstarred chat's star shows only on the row under the pointer or the keyboard (always on touch). Open lists favourites first; Earlier has a "Favourites" section at the top. After a press, focus follows the chat to its new place, and the Earlier section it moves to opens. To-dos (plan 2026-11-14-todo-favourites) work the same way: every to-do row (not one waiting out its Undo, not one being edited) has the star, before Edit and the chat button, shown whether or not changes are on, since it changes no to-do; starred to-dos sit only in a "Favourites" section above "New to you" and the date sections, on each tab, keeping a new one's dot. Favourites and the section under it ("New to you", else the top date section) start open, and a star press opens the section the to-do moves to. The shared pieces are `StarButton` and `useStarFocus` in `client/src/shell/StarButton.tsx`.
 - A skill row shows its title and one clipped line of description. A chevron (28px, right when closed, down when open) opens the full text; clicking the title still starts the skill. The star shows on the row under the pointer or the keyboard; a favourite keeps its star. The star sits left of the chevron, so the chevron is always at the row's right edge.
 - Tray: gap and padding 6px. Card: padding 12px 6px 6px (its heading row is inset 8px so text lines up with the rows).
 - Home: top padding 32px; greeting margin 0 0 4px; summary line 14px, margin 0 0 18px.
@@ -57,16 +97,35 @@ including label or padding, reaches 24px), visible focus on everything.
 - Thread: column gap 12px; paragraph margin 0 0 12px.
 - Drawer sections: header 32px; a `--line` hairline and 12px of space above every section but the first; rows 6px apart; only the top section starts open, except that a Favourites section and the section under it both start open, so starring never hides today's items. A section can carry one action (`Fold`'s `action` slot): a quiet small `.btn` on the right of the heading line, outside the toggle button (nested buttons are invalid). The unread dot hangs in the row's left padding so titles share one left edge.
 
+## Shared pieces
+
+Each piece below exists once; tools compose it and never restyle it. Built in the UX consistency programme (plan 2026-11-22-ux-consistency, decision 21). The "Not" column lists the old builds that were swapped for each piece; use the piece.
+
+| Need | Use | Not |
+|---|---|---|
+| Warning, error, info or success box | `.notice` with `data-level="info\|warn\|error\|ok"` and `data-shape="box\|strip"` (`patterns.css`). A box is a 10px-radius card line; a strip is a full-width band (`--sheet-gutter` inset, bottom hairline). Buttons placed in it go to the end of the line; wrap two in `.notice-actions`. Error and warn use `--danger` / `--amber-*` on their washes. The rules need `data-shape`, so the old chat `.notice` is unaffected | `.proj-banner`, `.error-banner`, `.update-banner`, `.offline-banner`, `.health-summary`, `.am-line`, `.home-skill`; `data-level="warning"` (it is `warn`) |
+| "Are you sure?" strip | `Confirm` (`shell/Confirm.tsx`): `label`, `text`, `action`, optional `safe` (default "Cancel"; "Keep editing" or "Keep chat" when protecting work), `variant`, `busy`. The safe option has focus, Esc picks it, busy uses `aria-disabled`. Class `confirm` | a hand-written confirm strip, `.todo-ask`, `.proj-ask`, `.am-confirm` |
+| Status dot | `.dot` with `data-state="ok\|warn\|bad\|idle\|working\|asking"` (colours `--state-*`, each 3:1 or better on white). **Always beside a visible word**, or inside a labelled control whose name says it (a Settings tab's dot: "Health, 1 thing needs attention"). Red is `bad` only: running work is `working` (blue), never red | `.attn-dot`, `.health-dot`, `.cc-dot`; red for "running" (`--attn-working-edge` now points at the working blue) |
+| Form field | `.form-field` (label above, 4px gap) holding a `.label`, the control (`.field`, `textarea.field`), then `.hint` (12px, iron) and `.error` (12px, danger). Mark a bad control `aria-invalid="true"` (danger border) and link its message with `aria-describedby`. `:disabled` is styled once | `.todo-field`, `.proj-field`, `.am-field`, `.note-field` |
+| Hint or meta text | `.hint` (12px) and `.note` (13px) | one-off 12/13px text classes |
+| Pop-up list or menu | `.popover` (layer 45, radius 12, `--lift-2`) holding `.menu-row`s (hover `--tint-1`, `aria-current="true"` ring) | `.ss-pop`, `.cc-triage`, `.level-menu` and their rows |
+| Headline figure | `.stat` with `.stat-label`, `.stat-value` (18px), `.stat-change` (`data-tone="good\|bad"`), inside a `.card` | `.am-fact`, `.sm-fact` |
+| "Show N more / Show all N / Show fewer" | `ShowMore` (`shell/ShowMore.tsx`): `expanded`, `count`, `noun {one, many}`, `wording "more\|all"`, `onToggle`. A quiet small button with `aria-expanded`; "Show fewer" keeps the noun for screen readers | the three hand-built buttons (Home's `MoreLink`, `FolderCard`, `AmTable`) |
+| Panel header band | `.panel-head`: 47px high, padding `0 10px 1px 16px` (the 16px is `--sheet-gutter`, the sheet bar's and the viewer's inset; the dock used 14 and the to-do panel 18), contents centred, `h2` 14/600 | the five header builds with insets of 14, 16 and 18px |
+| Empty, loading, error line | `StateNote` (`shell/StateNote.tsx`): `kind`, children ("Loading…" is the default), `onRetry` adds a standard "Try again" button. One size: 12px, the `.hint` look | `LibraryNotice`, 12/13/14px variants, "Loading" without the ellipsis |
+| Undo line | `UndoLine` (`shell/UndoLine.tsx`; contract in `docs/plans/2026-11-22-ux-consistency-contract.ts`; styles `.undo-line*` in `patterns.css`): `as="row"` in place of a drawer row, or `as="strip"` at the top of the sheet. Ten seconds, a countdown bar, a quiet small Undo (Actions rule 4) | a hand-built "Undone" or "Removed" line |
+| Copy to clipboard | `useCopy` (`shell/useCopy.ts`): `{ said, copy }`; `said` is "Copied" or "Could not copy" for two seconds | `apps/shared/copy.ts` (kept as a re-export) |
+
 ## Controls
 
 - **Buttons: one language** (Ian, 2026-11-13: "every button should be a button, not text. Unless within inline text"). Six kinds, each with one meaning:
   - **Primary** `.btn[data-variant="primary"]`: navy, paper text. The action the area exists for; one per area (an edit form's Save, a confirm step's "Mark as done", New chat, Send, Update and restart).
-  - **Standard** `.btn` (no variant): white, 1px `--line-strong` edge, `--lift-0`, navy text. Every other option: Cancel, Keep open, Not now, Don't allow, Copy path, Try again.
+  - **Standard** `.btn` (no variant): white, 1px `--line-strong` edge, `--lift-0`, navy text. Every other option: Cancel, Keep chat, Keep editing, Not now, Don't allow, Copy path, Try again.
   - **Quiet** `[data-variant="quiet"]`: `--tint-1` fill, navy text, no edge. Minor and "see all" actions: Later, Reload, Dismiss, Back, Clear date, All chats, Mark all as seen, Show older versions, More options.
-  - **Danger** `[data-variant="danger"]`: standard with `--danger` text. Removes something or ends work that can't be got back: Delete, the "Close chat" confirm.
+  - **Danger** `[data-variant="danger"]`: standard with `--danger` text. Removes something or ends work that can't be got back: Delete, the "End chat" confirm.
   - **Send and Stop** (Ian, 2026-11-14): Send is primary (navy, for consistency: Ian tried green and kept navy) with the `send` paper-plane icon. While Claude works on a reply it becomes Stop, `.btn[data-variant="stop"]`, filled `--danger` red with the `stop` square, used nowhere else, in the same place (the same button, so focus stays on it). The second click of a double-click is ignored (`detail >= 2`), so a double-click on Send can't stop the reply it just sent; a keyboard press always works. Pressing it says "Stopping" to screen readers, and when the reply ends focus on it moves to the message box (the Send it turns back into is disabled). White on the red is 7.3:1. Stop lives only here, not in the chat's top bar.
   - **Icon** `.icon-btn`: 32px, radius 9 (28px inside rows), always with an `aria-label`. Bare, `--ink-soft`, for utilities (close, toggle, star, attach, edit, more): the icon is the shape. `data-variant="primary"` (navy fill, paper icon) only for the one icon button that creates the main thing in its area, such as the To-dos `+`.
-  - **Tooltips (the standard, Ian, 2026-11-14): every button that shows only an icon has one.** The shared layer (`client/src/shell/Tooltips.tsx`, mounted once in `App.tsx`) shows a navy name, 12px, under the button (to the right of the rail's icons), drawn into the body so no drawer clips it, kept 8px inside the window and flipped above when there is no room below. It shows the button's `aria-label` for any `.icon-btn` or `.chip-remove`, or `data-tip` on anything. A tall edge handle sets `data-tip-side="left"` to have it beside the handle, centred on it (the viewer's resize grip; Ian, 2026-11-15: under a full-height strip it showed at the top of the window). When the label carries a title ("Favourite: {title}", "Close chat: {title}"), set `data-tip` to the short name ("Favourite", "Close chat"); otherwise the label is the tooltip. It appears after 350ms of pointing (at once while another is showing), at once for a button reached from the keyboard, never for touch or a click's focus. It stays while pointed at, for 150ms after the pointer leaves, and Escape puts it away (WCAG 1.4.13). Pressing the button, scrolling the page or the list it is in (not another scroller, such as a chat streaming a reply) or resizing puts it away too; a button that changes its name or moves takes the tooltip with it. A button whose words show (`.btn-label`) gets none; give it `data-tip` too if a narrow layout hides those words, and the tooltip shows only then. It is `aria-hidden`: the button's own name already says it. Never use the native `title` on an icon button: it draws a second, browser tooltip. `client/src/shell/icon-buttons.test.ts` fails on an icon-only button that would have no tooltip, or that has a `title`.
+  - **Tooltips (the standard, Ian, 2026-11-14): every button that shows only an icon has one.** The shared layer (`client/src/shell/Tooltips.tsx`, mounted once in `App.tsx`) shows a navy name, 12px, under the button (to the right of the rail's icons), drawn into the body so no drawer clips it, kept 8px inside the window and flipped above when there is no room below. It shows the button's `aria-label` for any `.icon-btn` or `.chip-remove`, or `data-tip` on anything. A tall edge handle sets `data-tip-side="left"` to have it beside the handle, centred on it (the viewer's resize grip; Ian, 2026-11-15: under a full-height strip it showed at the top of the window). When the label carries a title ("Favourite: {title}", "End chat: {title}"), set `data-tip` to the short name ("Favourite", "End chat"); otherwise the label is the tooltip. It appears after 350ms of pointing (at once while another is showing), at once for a button reached from the keyboard, never for touch or a click's focus. It stays while pointed at, for 150ms after the pointer leaves, and Escape puts it away (WCAG 1.4.13). Pressing the button, scrolling the page or the list it is in (not another scroller, such as a chat streaming a reply) or resizing puts it away too; a button that changes its name or moves takes the tooltip with it. A button whose words show (`.btn-label`) gets none; give it `data-tip` too if a narrow layout hides those words, and the tooltip shows only then. It is `aria-hidden`: the button's own name already says it. Never use the native `title` on an icon button: it draws a second, browser tooltip. `client/src/shell/icon-buttons.test.ts` fails on an icon-only button that would have no tooltip, or that has a `title`.
   - **Link** `.link-btn` or `a`: blue-ink, underlined. Only inside a sentence ("…in Settings.").
   - Sizes: 32px by default (header bands, forms, cards, sheets); `data-size="small"` 28px for a button on a line with text (card head, Fold action, notice strips, inline confirms, the selection bar, inside rows). No other heights.
   - Colour meanings: navy "do it", white "another option", grey "minor", red "careful" (and, filled, the message box's Stop), light blue (wash + blue-ink) only "switched on" or "open", underlined blue only a link in a sentence.
@@ -79,8 +138,101 @@ including label or padding, reaches 24px), visible focus on everything.
 - **Seg**: options 28px, 3px padding, 3px gap between options (so a hovered or focused one never touches its neighbour), radius 10 / 8, 13px.
 - **Rail hover** (plan 2026-11-20-rail-hover-tool-tabs, decision 1; ported from the portal's decision 34, Ian, 2026-11-20). With the rail at icons only and a pointer that hovers, resting on the rail for 200ms (or tabbing into it) slides it out to 212px with names, counts and the full sync line, over the drawer and sheet on the same glass with `--lift-2`. Nothing else moves: `.railslot` keeps 60px in the row, and its hover zone reaches over the desk's 12px gutter. It shuts 150ms after the pointer leaves, when focus leaves, on Esc, when an item is chosen, and at once when anything modal opens; it sits at z-index 39, under every veil. It is not a setting: the toggle and `[` still pin names. No rail tooltips while it is out. Focus handed back to a rail button by a closing drawer, or a click's focus, doesn't open it. Width and shadow ease over 160ms; none under reduced motion.
 - **Tool tabs** (`ToolTabs`, decision 2). When a tool's group has two or more tools this person can see, a row of tabs sits between the sheet bar and the page: a `nav` named "{group} tools" of buttons with the `.seg` look, the current one `aria-current="page"`. Labels are `ToolSlot.tabLabel` (Ads: Manager, Command Centre, Account Summary), with the drawer row's numbers. Not the `Seg` component, which is a radio group: these are page links. The row scrolls sideways rather than clip. The sheet bar title is then "Workbench · {group}", the tool's name kept as hidden text for screen readers. The chosen account and an open run chat stay across a switch.
-- **Page tabs** (`SheetTabs`, plan 2026-11-20-settings-tabs). The tool tabs' row, shared: `ToolTabs` wraps it, and Settings uses it as a `nav` named "Settings sections" (General, Claude, Skill levels, Health, About). Same look, keys and rules; labels only, no icons. A tab that holds nothing for this person is hidden, and a row of one shows nothing. Settings starts at the gutter like the title above it: the row sits in `.page-tabs` (12px above, `--sheet-gutter` sides) over a `.page.settings` column (max 600px, left-aligned, `--sheet-gutter` sides) so the tabs line up with the text below; the row sizes to its buttons (`width: fit-content`), since `.seg` is a flex row that would otherwise stretch. A problem that must show from any tab is an 8px `.health-dot[data-state="problem"]` after the label, with the problem in the tab's spoken name; never `.count`, which means "waiting". The sheet bar keeps the page's name ("Settings") with the tab's name as hidden text. Each tab's sections keep their own `h2`; none repeats the tab's name. A tab change starts the page at the top.
+- **Page tabs** (`SheetTabs`, plan 2026-11-20-settings-tabs). The tool tabs' row, shared: `ToolTabs` wraps it, and Settings uses it as a `nav` named "Settings sections" (General, Claude, Skill levels, Health, About). Same look, keys and rules; labels only, no icons. A tab that holds nothing for this person is hidden, and a row of one shows nothing. Settings starts at the gutter like the title above it: the row sits in `.page-tabs` (12px above, `--sheet-gutter` sides) over a `.page.settings` column (max 600px, left-aligned, `--sheet-gutter` sides) so the tabs line up with the text below; the row sizes to its buttons (`width: fit-content`), since `.seg` is a flex row that would otherwise stretch. A problem that must show from any tab is an 8px `.dot[data-state="bad"]` after the label, with the problem in the tab's spoken name; never `.count`, which means "waiting". The sheet bar keeps the page's name ("Settings") with the tab's name as hidden text. Each tab's sections keep their own `h2`; none repeats the tab's name. A tab change starts the page at the top.
 - **Chip** `.chip`: 12/500, padding 2px 9px, tray fill. **Count** `.count`: 12/600, line-height 18.
+
+## Actions: where they go, what they look like, what they're called
+
+(Plan 2026-11-22-ux-consistency, decisions 8 to 20; Ian, 2026-11-22: "the button placements should be
+consistent".) These rules answer the same questions for every tool. A new tool follows them; an exception is
+named here or it isn't one.
+
+1. **A row click opens what the row names and never creates anything.** Chat, skill, project and Home card
+   rows open their thing; a to-do's title opens it in the to-do panel (Home's Favourite to-dos too). One
+   named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
+   opens it large. Project Files has no pane, so its row opens the file.
+2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
+   remove (bin, or X for a chip) at the very edge. At most three icons. Where the row's main action is an icon
+   (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.
+3. **One icon, one verb.**
+
+   | Icon | Means only |
+   |---|---|
+   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip out of a set. Never ends work |
+   | `end` | End chat: ends a chat session (Open chat rows, the chat's top bar). Not a square, so it can't be read as Stop |
+   | `bin` | delete |
+   | `edit` (pencil) | edit |
+   | `more` (three dots) | opens a menu, nothing else |
+   | `star` | favourite |
+   | `chat` | start or open a chat |
+   | `chevron` | disclose, step, or go back |
+   | `wide` | full width |
+   | `expand` | open full screen |
+   | `plus` | new or add |
+
+4. **One safety net per kind of action.**
+
+   | Kind | Pattern |
+   |---|---|
+   | Easily put back (remove a file from a to-do or project, clear, star) | do it at once; a polite status line says what happened; focus moves to the next row |
+   | Recoverable delete or tick (to-do, file, chat to the Bin, Mark as done) | do it at once and show the **Undo line** (`UndoLine`): 10 s, a countdown bar, a quiet small Undo; the clock stops while pointed at or focused and restarts in full on leaving. As a row in place of the removed drawer row, or a strip at the top of the sheet when no row is in view (viewer, grid, details pane). Focus moves to Undo only after a keyboard press; after a pointer press it goes to the neighbouring row, so the hold sends on time. Nothing is sent until the time runs out; closing the app sends at once. The host keeps one always-mounted `role="status"` line that announces it |
+   | Stops running work, or throws away typing | the inline confirm strip (`Confirm`): a question naming the consequence, the specific verb, the safe option focused, Esc keeps |
+   | Permanent or structural (delete or move a project, apply a change to a live ad account) | a panel that spells out what goes with it; typing the name only for a permanent deletion. Reference build: `apps/projects/RemovePanel.tsx` |
+
+5. **Red marks the point of no return.** A button that leads to an Undo or a confirm is neutral (a bin icon
+   or a standard button), the to-do panel's Delete included. The button that commits something with no Undo
+   is danger. A constructive step that can't be undone ("Apply now") stays primary behind its confirm.
+6. **Button groups**: primary first on the left, then the alternatives, Cancel last. **Panel footers** (the
+   to-do panel, any later panel) are the one named layout: item actions on the left (Start a chat, Mark as
+   done, Delete), mode actions on the right (Edit while reading; Save and Cancel while editing). A
+   form-only panel (the to-do Add form, Rate calls) has no item actions: it uses button-group order, primary
+   first and Cancel last. A long one (Rate calls) pins its footer to the foot of the panel's scroller
+   (`.am-foot`, sticky) so Save stays in view; a short one (the to-do Add form) keeps its buttons under its
+   fields.
+7. **New and Add** are primary with `plus`, at the right end of the row they act on, never in a dock header:
+   the Chats and To-dos drawers' 32px primary `+` icon button ("New chat", "Add a to-do"), "New project" on
+   the Projects tools row, "Add a to-do" on a project's tabs row, "Link files" on a project's Files tab. One
+   named exception: "Add a file" inside the to-do panel is standard, because the panel's primary is its own
+   footer action and one area has one primary.
+8. **Edit**: a pencil icon in a row; a labelled "Edit" with the pencil at the right end of the header row on a
+   page (a project); in the to-do panel it lives in the footer (rule 6).
+9. **Unsaved changes**: every form asks "Discard your changes?" on Cancel, Esc, Back and close once anything
+   has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused). The
+   to-do panel asks through the shell's to-do hold; the right panel (Ads proposal note, Rate calls) through
+   the panel hold (`set-panel-dirty`, `guardPanel`), on close, on choosing another item and on stepping.
+   Known limit: leaving the sheet by the rail or search isn't guarded for sheet and right-panel forms (Ads,
+   project forms); only the to-do panel's hold covers that. A guard there is a follow-up.
+10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
+11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
+    {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron. One named
+    exception: the Ads proposal stepper sits at the top right of the panel body, because the dock header has
+    no slot for it. It uses the same icons and has no P and N keys.
+12. **Busy** buttons are `aria-disabled`, never `disabled`, so focus never drops to the page. A control with
+    nothing to act on yet may be `disabled` (Send while the box is empty); a busy control never is.
+
+### Words
+
+| Word | Use for | Not |
+|---|---|---|
+| Delete | the item leaves its list (with Undo, or to the Bin) | |
+| Remove | taken out of a set; it still exists | Unlink |
+| Archive / Unarchive | hidden, kept | |
+| Close | put a surface away | Dismiss (for pickers) |
+| End chat | stop a chat session | Close chat |
+| Hide / Show | fold in place | |
+| Dismiss | put a message away | |
+| Cancel | leave without doing it | |
+| Clear filters | a button, everywhere | Show all projects, a Clear link |
+| Clear {project} | undo a picked project (the libraries, the To-dos drawer), next to Clear filters | |
+| Hide chat | the X on the chat drawer (the chat keeps running) | |
+| Mark as done | complete a to-do | Mark done |
+| New … / Add … | new: a top-level thing; add: into a list or parent | |
+| Save | always | Save changes |
+| Favourite | the star, card titles ("Favourite to-dos"), hints ("Favourite a to-do to keep it here") | Pinned, Star a… |
+| All {things} | back to a list | |
+| Try again | always a standard button | a link |
+
+No button ends in an ellipsis: the confirm that follows already says there's another step.
 
 ## Report tables and reordering (Ad Manager deep dive)
 
@@ -112,7 +264,7 @@ Every main sheet's header, toolbars, tab switches, action buttons and plain text
 
 - **Update line** (`UpdateBanner`, top of the sheet, above the other notices): "TDS Brain x.y.z is
   available." with a quiet "What's new" (owners and scouts; a chevron shows it open), a primary small "Update and
-  restart" and a quiet "Later". Open chats get the in-place `fieldset.close-confirm` before anything restarts. Only
+  restart" and a quiet "Later". Open chats get the in-place `Confirm` before anything restarts. Only
   one version line shows at a time: once the page is out of date, the Reload line replaces it.
 
 ## Thread content
@@ -239,7 +391,7 @@ Every app declares `search` (global search); a new list or inventory is searchab
 
 Those pieces are already assembled in `client/src/apps/shared`: `LibraryTools` (the "Library" picker
 with Mine and Clients groups (a Shared group exists for agency folders but is unused today), search, the app's own controls, together on the right), `FolderCard` (first 60 items,
-then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline Open), `LibraryBar` (Back, details), `DetailActions`,
+then a quiet small `btn` "Show all N"), `SelectionBar`, `ViewButton` (the inline Open), `DetailActions`,
 `LibraryNotice` (loading, failed with "Try again", empty), `Thumb`, `Viewer`, the data hooks and a
 store factory for state the sheet and the panel share, plus `library.css`. A new app writes its row
 or tile, its panel body and a short stylesheet for what is particular to its items. Both examples
@@ -285,11 +437,10 @@ empty slot (`.lib-delete-gap`), as Open does. It is labelled "Delete file: <name
 shows (an image's file name, a document's title), with the tooltip "Delete file". While a delete is being
 sent it is `aria-disabled`, never `disabled`, and does nothing, so focus stays. Pressing it takes the file
 out of every list at once and shows a held line at the top of the page (`FileDeleteNotice`, an
-`.update-banner` "<name> deleted." with Undo) for 10 seconds; the clock stops while the pointer or focus
+`UndoLine` strip "<name> deleted." with Undo) for 10 seconds; the clock stops while the pointer or focus
 is on that line. One visually hidden `role="status"` line stays on the page and says "<name> deleted.
 Undo is at the top of the page.", then the result ("<name> deleted. To get it back within 30 days, ask
-Claude."), so a screen reader announces both. The open file's viewer carries the same bin in
-`.lib-viewer-bar`, right aligned above the file, and the file viewer drawer has it among its actions.
+Claude."), so a screen reader announces both. The file viewer drawer has the same bin among its actions.
 
 Opening a file ("Open" on the item or in the panel, or a file chosen in Search or jump to) swaps the sheet's list for the viewer and adds a quiet small
 "Back to ..." button to the sheet bar. When the panel floats, Open also closes it, and the viewer takes
@@ -306,7 +457,7 @@ For showing one file large without leaving where the person is. Any part of the 
 `dispatch({ type: 'open-viewer', viewer: { item, place?, openIn? } })`; the chat's Files panel uses it
 for its **Open** button (named "Open <title>"). It is a glass drawer from the right over a veil, up to
 1040px wide by default, leaving the rail and an edge of the page in view (full width under 640px). It
-can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 20px grab strip centred on its
+can be made wider (Ian, 2026-11-15: a landscape A4 deck ran off the right): a 24px grab strip centred on its
 left edge (`ResizeHandle`, a focusable `separator` "Resize viewer"; arrows 32px, Shift 128px, Home/End;
 double-click resets; `aria-valuetext` in pixels and a hidden key hint) from 1040px up to the window less 94px, shown only with at least 64px to grow; a click with no drag saves nothing; the width remembered in the shell state
 (`viewerWidth`). Its grip is one 4×48px bar, radius 2, in the gap beside the drawer: `--grey-dot` at
@@ -365,14 +516,6 @@ Six soft fills for "kind of thing" (a task type, a tag), so a colour never has t
 - Navy, `#525252` and `#33456a` text pass WCAG AA on every fill (checked 2026-11-18 and 19). Only about six soft
   colours stay clearly apart for people with colour blindness once the status colours are left out, so there are
   six, not eight.
-
-## Old tokens being retired
-
-`--s1`…`--s5`, `--radius`, `--radius-sm`, `--card`, `--rule`, `--rule-strong`, `--accent`, `--accent-ink`,
-`--accent-wash`, `--ink`, `--text-soft`, `--font`. Swap: `--rule-strong`→`--line-strong`, `--rule`→`--line`,
-`--accent` and `--accent-ink`→`--blue-ink`, `--accent-wash`→`--wash`, `--card`→`#fff`,
-`--text-soft`→`--iron`, `--radius`→`14px`, `--radius-sm`→`10px`, spacing as mapped above. They stay
-defined in `tokens.css` as aliases until no file uses them; the lead removes them last.
 
 ## Tokens saved (Settings)
 

@@ -1,17 +1,17 @@
 import type { LibraryItem } from '../../../../shared/contract.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
-import { DetailActions } from '../shared/parts.tsx';
+import { DetailActions, focusLibrarySummary } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
 import { FORMAT_ICONS } from './icons.ts';
 import { chatDraft, typeWords } from './library.ts';
-import { useDocs } from './store.ts';
+import { docsStore, useDocs } from './store.ts';
 
 /** The right panel for the Documents app: the chosen document and the facts the file itself holds. */
 export function DocumentsPanel() {
   const { current: doc } = useDocs();
-  const { newChat, hiddenFileIds } = useStore();
+  const { newChat, deleteFile, hiddenFileIds } = useStore();
   const { dispatch, modes } = useShell();
   // The file opens in the viewer drawer. A floating panel would sit under it, so it closes; a docked one stays.
   const open = (item: LibraryItem) => {
@@ -38,6 +38,11 @@ export function DocumentsPanel() {
         item={doc}
         onAsk={() => newChat({ draft: chatDraft([doc]) })}
         onOpen={doc.view ? () => open(doc) : null}
+        onDelete={() => {
+          deleteFile(doc);
+          docsStore.set({ current: null });
+          focusLibrarySummary();
+        }}
       />
       <dl className="kv">
         <dt>Type</dt>

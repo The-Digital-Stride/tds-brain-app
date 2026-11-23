@@ -1,15 +1,3 @@
-/*
- * base.css: type, buttons, fields and the shared pieces every layer composes.
- * Owned by the shell (wave 1). Drawers, Home, the palette and the chat use these classes rather
- * than restyling them; see docs/plans/2026-11-11-shell-layers.md, decision 15.
- */
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
 /* Inter, latin only (the rest of the package's subsets are never loaded or shipped). */
 @font-face {
   font-family: "Inter Variable";
@@ -22,755 +10,768 @@
     U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
-/* Scrollbars: a thumb and no track, so a scroller shows no patch on glass or on white. */
-:root {
-  scrollbar-color: var(--tick-edge) transparent;
-}
+@layer primitives {
+  /*
+ * base.css: type, buttons, fields and the shared pieces every layer composes.
+ * Owned by the shell (wave 1). Drawers, Home, the palette and the chat use these classes rather
+ * than restyling them; see docs/plans/2026-11-11-shell-layers.md, decision 15.
+ */
 
-/* Layer 0, the desk: a tinted surface so the glass above has something to pick up. */
-body {
-  margin: 0;
-  color: var(--text);
-  font: 14px / 1.5 var(--body);
-  -webkit-font-smoothing: antialiased;
-  background:
-    radial-gradient(620px 760px at 0% 0%, rgba(24, 137, 255, 0.42), transparent 66%),
-    radial-gradient(520px 620px at 8% 100%, rgba(2, 27, 67, 0.3), transparent 64%),
-    radial-gradient(760px 560px at 104% 108%, rgba(2, 27, 67, 0.24), transparent 60%),
-    radial-gradient(560px 420px at 100% -6%, rgba(24, 137, 255, 0.2), transparent 62%), var(--desk);
-  background-attachment: fixed;
-}
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 
-h1,
-h2,
-h3 {
-  margin: 0;
-  font-family: var(--head);
-  font-weight: 600;
-  line-height: 1.25;
-}
-h1 {
-  font-size: 18px;
-}
-h2 {
-  font-size: 15px;
-}
-h3 {
-  font-size: 14px;
-}
-p {
-  margin: 0;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  /* Scrollbars: a thumb and no track, so a scroller shows no patch on glass or on white. */
+  :root {
+    scrollbar-color: var(--tick-edge) transparent;
+  }
 
-button {
-  font: inherit;
-  color: inherit;
-}
+  /* Layer 0, the desk: a tinted surface so the glass above has something to pick up. */
+  body {
+    margin: 0;
+    color: var(--text);
+    font: var(--fs-body) / 1.5 var(--body);
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(620px 760px at 0% 0%, rgba(24, 137, 255, 0.42), transparent 66%),
+      radial-gradient(520px 620px at 8% 100%, rgba(2, 27, 67, 0.3), transparent 64%),
+      radial-gradient(760px 560px at 104% 108%, rgba(2, 27, 67, 0.24), transparent 60%),
+      radial-gradient(560px 420px at 100% -6%, rgba(24, 137, 255, 0.2), transparent 62%), var(--desk);
+    background-attachment: fixed;
+  }
 
-a {
-  color: var(--blue-ink);
-  text-underline-offset: 2px;
-}
-a:hover {
-  text-decoration-thickness: 2px;
-}
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-family: var(--head);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 {
+    font-size: var(--fs-title);
+  }
+  h2 {
+    font-size: var(--fs-reading);
+  }
+  h3 {
+    font-size: var(--fs-body);
+  }
+  p {
+    margin: 0;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
+  button {
+    font: inherit;
+    color: inherit;
+  }
 
-kbd {
-  font: 500 11.5px / 1.5 var(--body);
-  background: #fff;
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  padding: 0 5px;
-  color: var(--iron);
-}
+  a {
+    color: var(--blue-ink);
+    text-underline-offset: 2px;
+  }
+  a:hover {
+    text-decoration-thickness: 2px;
+  }
 
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
 
-.skip-link {
-  position: absolute;
-  left: 8px;
-  top: -100px;
-  z-index: 60;
-  background: #fff;
-  color: var(--text);
-  padding: 8px 12px;
-  border-radius: 10px;
-  box-shadow: var(--lift-2);
-}
-.skip-link:focus {
-  top: 8px;
-}
+  kbd {
+    font: 500 var(--fs-caption) / 1.5 var(--body);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--r-5);
+    padding: 0 5px;
+    color: var(--iron);
+  }
 
-.lede {
-  color: var(--iron);
-}
-.meta {
-  color: var(--iron);
-  font-size: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}
-.meta .overdue {
-  color: var(--danger);
-  font-weight: 600;
-}
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
 
-/* A page of settings or app content inside a sheet. */
-.page {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 24px 28px 32px;
-  display: grid;
-  gap: 16px;
-}
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -100px;
+    z-index: var(--z-skip);
+    background: var(--surface);
+    color: var(--text);
+    padding: var(--sp-8) var(--sp-12);
+    border-radius: var(--r-10);
+    box-shadow: var(--lift-2);
+  }
+  .skip-link:focus {
+    top: 8px;
+  }
 
-/*
+  .lede {
+    color: var(--iron);
+  }
+  .meta {
+    color: var(--iron);
+    font-size: var(--fs-small);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-4) var(--sp-12);
+  }
+  .meta .overdue {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  /* A page of settings or app content inside a sheet. */
+  .page {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--sp-24) 28px var(--sp-32);
+    display: grid;
+    gap: var(--sp-16);
+  }
+
+  /*
  * Interaction states (docs/design-system.md): hover lifts towards you, pressed settles, current is
  * always distinct from hover. Under reduced motion nothing moves; surfaces and shadows still change.
  */
-.btn,
-.icon-btn,
-.jump,
-.seg > button,
-.fold-head > button,
-.line,
-.todo {
-  transition:
-    background-color 120ms var(--ease),
-    box-shadow 120ms var(--ease),
-    transform 120ms var(--ease);
-}
+  .btn,
+  .icon-btn,
+  .jump,
+  .seg > button,
+  .fold-head > button,
+  .line,
+  .todo {
+    transition:
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
+  }
 
-/*
+  /*
  * Buttons: one language (docs/plans/2026-11-13-button-language.md).
  * `.btn` is standard (white, raised) by default; `data-variant` primary (navy), quiet (flat tint) or danger
  * (red text), and the message box's stop (filled red); `data-size` small. Raised kinds lift on hover, flat kinds darken. Hover and press never apply
  * to a disabled or aria-disabled button. -------------------------------------------------------- */
-.btn {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-  cursor: pointer;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 9px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  box-shadow: var(--lift-0);
-  color: var(--navy);
-  text-align: center;
-  white-space: nowrap;
-}
-a.btn,
-a.btn:hover {
-  text-decoration: none;
-}
-.btn:where(:not(:disabled, [aria-disabled="true"])):hover {
-  box-shadow: var(--lift-1);
-}
-.btn:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--tray);
-  box-shadow: none;
-}
-.btn[data-variant="primary"] {
-  background: var(--navy);
-  border-color: transparent;
-  box-shadow: none;
-  color: var(--paper);
-}
-.btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--navy-hover);
-  box-shadow: var(--lift-1);
-}
-.btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--navy);
-  box-shadow: none;
-}
-.btn[data-variant="quiet"] {
-  background: var(--tint-1);
-  border-color: transparent;
-  box-shadow: none;
-}
-.btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--tint-2);
-  box-shadow: none;
-}
-.btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--tint-3);
-}
-.btn[data-variant="danger"] {
-  color: var(--danger);
-}
-.btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--danger-wash);
-}
-.btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--danger-wash-strong);
-}
-/* The message box's Stop (Ian, 2026-11-14): filled red, in Send's place while Claude works. White on it is 7.3:1. */
-.btn[data-variant="stop"] {
-  border-color: transparent;
-  box-shadow: none;
-  background: var(--danger);
-  color: var(--on-accent);
-}
-.btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--danger-hover);
-  box-shadow: var(--lift-1);
-}
-.btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):active {
-  box-shadow: none;
-}
-.btn[data-size="small"] {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-}
+  .btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-6);
+    font: inherit;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    height: 32px;
+    padding: 0 var(--sp-12);
+    border-radius: var(--r-9);
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    box-shadow: var(--lift-0);
+    color: var(--navy);
+    text-align: center;
+    white-space: nowrap;
+  }
+  a.btn,
+  a.btn:hover {
+    text-decoration: none;
+  }
+  .btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+    box-shadow: var(--lift-1);
+  }
+  .btn:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tray);
+    box-shadow: none;
+  }
+  .btn[data-variant="primary"] {
+    background: var(--navy);
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--paper);
+  }
+  .btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--navy-hover);
+    box-shadow: var(--lift-1);
+  }
+  .btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--navy);
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"] {
+    background: var(--tint-1);
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--tint-2);
+    box-shadow: none;
+  }
+  .btn[data-variant="quiet"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tint-3);
+  }
+  .btn[data-variant="danger"] {
+    color: var(--danger);
+  }
+  .btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--danger-wash);
+  }
+  .btn[data-variant="danger"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--danger-wash-strong);
+  }
+  /* The message box's Stop (Ian, 2026-11-14): filled red, in Send's place while Claude works. White on it is 7.3:1. */
+  .btn[data-variant="stop"] {
+    border-color: transparent;
+    box-shadow: none;
+    background: var(--danger);
+    color: var(--on-accent);
+  }
+  .btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--danger-hover);
+    box-shadow: var(--lift-1);
+  }
+  .btn[data-variant="stop"]:where(:not(:disabled, [aria-disabled="true"])):active {
+    box-shadow: none;
+  }
+  .btn[data-size="small"] {
+    height: 28px;
+    padding: 0 var(--sp-10);
+    font-size: var(--fs-small);
+  }
 
-/*
+  /*
  * A square icon button. Give it an aria-label. Bare by default, for utilities (close, toggle, star, attach,
  * edit, more); `data-variant="primary"` fills it navy for the one icon button that creates or starts the
  * main thing in its area (the To-dos +).
  */
-.icon-btn {
-  appearance: none;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 9px;
-  background: none;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-/* Inside a row, a step smaller. */
-.line .icon-btn,
-.todo .icon-btn {
-  width: 28px;
-  height: 28px;
-}
-.icon-btn:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--tint-2);
-  color: var(--navy);
-}
-.icon-btn:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--tint-3);
-}
-.icon-btn[data-variant="primary"] {
-  background: var(--navy);
-  color: var(--paper);
-}
-.icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-  background: var(--navy-hover);
-  color: var(--paper);
-  box-shadow: var(--lift-1);
-}
-.icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
-  background: var(--navy);
-  box-shadow: none;
-}
-
-/* Disabled, by the attribute or by aria: one look, and no reaction. */
-.btn:is(:disabled, [aria-disabled="true"]),
-.icon-btn:is(:disabled, [aria-disabled="true"]) {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* Raised kinds rise 1px on hover and settle flat when pressed. Under reduced motion they only change shadow. */
-@media (prefers-reduced-motion: no-preference) {
-  .btn:where(:not([data-variant="quiet"])):where(:not(:disabled, [aria-disabled="true"])):hover,
+  .icon-btn {
+    appearance: none;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-9);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  /* Small (data-size="small"), and inside a row: a step smaller, 28px. */
+  .icon-btn[data-size="small"],
+  .line .icon-btn,
+  .todo .icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+  .icon-btn:where(:not(:disabled, [aria-disabled="true"])):hover {
+    background: var(--tint-2);
+    color: var(--navy);
+  }
+  .icon-btn:where(:not(:disabled, [aria-disabled="true"])):active {
+    background: var(--tint-3);
+  }
+  .icon-btn[data-variant="primary"] {
+    background: var(--navy);
+    color: var(--paper);
+  }
   .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
-    transform: translateY(-1px);
+    background: var(--navy-hover);
+    color: var(--paper);
+    box-shadow: var(--lift-1);
   }
-  .btn:where(:not(:disabled, [aria-disabled="true"])):active,
   .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
-    transform: none;
+    background: var(--navy);
+    box-shadow: none;
   }
-}
-/* With no movement, a white button's hover is only a shadow swap: a fill step keeps it visible. */
-@media (prefers-reduced-motion: reduce) {
-  .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):hover {
-    background: var(--glass-solid);
-  }
-  .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):active {
-    background: var(--tray);
-  }
-}
 
-/*
+  /* Disabled, by the attribute or by aria: one look, and no reaction. */
+  .btn:is(:disabled, [aria-disabled="true"]),
+  .icon-btn:is(:disabled, [aria-disabled="true"]) {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* Raised kinds rise 1px on hover and settle flat when pressed. Under reduced motion they only change shadow. */
+  @media (prefers-reduced-motion: no-preference) {
+    .btn:where(:not([data-variant="quiet"])):where(:not(:disabled, [aria-disabled="true"])):hover,
+    .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):hover {
+      transform: translateY(-1px);
+    }
+    .btn:where(:not(:disabled, [aria-disabled="true"])):active,
+    .icon-btn[data-variant="primary"]:where(:not(:disabled, [aria-disabled="true"])):active {
+      transform: none;
+    }
+  }
+  /* With no movement, a white button's hover is only a shadow swap: a fill step keeps it visible. */
+  @media (prefers-reduced-motion: reduce) {
+    .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):hover {
+      background: var(--glass-solid);
+    }
+    .btn:not([data-variant]):where(:not(:disabled, [aria-disabled="true"])):active {
+      background: var(--tray);
+    }
+  }
+
+  /*
  * Toggled or open (`aria-pressed`, `data-on`, `aria-expanded`): wash with blue ink, on primary and icon
  * buttons only. A quiet button would vanish (a grey tint on wash is about 1.01:1), so a button that shows
  * open by a chevron (`data-chevron`) opts out and turns the chevron instead. After hover, so order wins.
  */
-.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
-  [data-chevron]
-),
-.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]) {
-  background: var(--wash);
-  color: var(--blue-ink);
-  box-shadow: none;
-  transform: none;
-}
-.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
-  [data-chevron]
-):where(:not(:disabled, [aria-disabled="true"])):hover,
-.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
-  :not(:disabled, [aria-disabled="true"])
-):hover {
-  background: var(--wash-strong);
-  color: var(--blue-ink);
-  box-shadow: none;
-  transform: none;
-}
-/* Pressing an "on" button steps back from the hover shade, so the click still shows. */
-.btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
-  [data-chevron]
-):where(:not(:disabled, [aria-disabled="true"])):active,
-.icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
-  :not(:disabled, [aria-disabled="true"])
-):active {
-  background: var(--wash);
-}
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ),
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]) {
+    background: var(--wash);
+    color: var(--blue-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ):where(:not(:disabled, [aria-disabled="true"])):hover,
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+    :not(:disabled, [aria-disabled="true"])
+  ):hover {
+    background: var(--wash-strong);
+    color: var(--blue-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  /* Pressing an "on" button steps back from the hover shade, so the click still shows. */
+  .btn[data-variant="primary"]:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not(
+    [data-chevron]
+  ):where(:not(:disabled, [aria-disabled="true"])):active,
+  .icon-btn:is([aria-pressed="true"], [data-on="true"], [aria-expanded="true"]):not([data-chevron]):where(
+    :not(:disabled, [aria-disabled="true"])
+  ):active {
+    background: var(--wash);
+  }
 
-.field {
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  background: #fff;
-  border: 1px solid var(--field-edge);
-  border-radius: 9px;
-  height: 32px;
-  padding: 0 10px;
-  width: 100%;
-}
-/* A native select keeps a short fixed list: our chevron (the `chevron` icon path) in place of the browser's. */
-select.field {
-  appearance: none;
-  padding-right: 34px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2333456a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 16px;
-}
-select.field:disabled {
-  opacity: 0.5;
-}
-.field::placeholder {
-  color: var(--iron);
-}
+  .field {
+    font: inherit;
+    font-size: var(--fs-control);
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--field-edge);
+    border-radius: var(--r-9);
+    height: 32px;
+    padding: 0 var(--sp-10);
+    width: 100%;
+  }
+  /* A native select keeps a short fixed list: our chevron (the `chevron` icon path) in place of the browser's. */
+  select.field {
+    appearance: none;
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2333456a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px;
+  }
+  .field::placeholder {
+    color: var(--iron);
+  }
 
-/* Tick: a checkbox or radio, 18px. Wrap a lone one in `label.tick-hit` for a 24px target. ------ */
-.tick {
-  appearance: none;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  border: 1.5px solid var(--tick-edge);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.7) center / 14px 14px no-repeat;
-  cursor: pointer;
-  vertical-align: middle;
-}
-.tick[type="radio"] {
-  border-radius: 50%;
-}
-.tick[type="checkbox"]:checked {
-  border-color: var(--navy);
-  background-color: var(--navy);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.6 2.6L11 4.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-}
-.tick[type="radio"]:checked {
-  border-color: var(--navy);
-  background: radial-gradient(circle, var(--navy) 0 4px, rgba(255, 255, 255, 0.7) 4.5px);
-}
-.tick:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.tick-hit {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin: -3px;
-  cursor: pointer;
-}
+  /* Tick: a checkbox or radio, 18px. Wrap a lone one in `label.tick-hit` for a 24px target. ------ */
+  .tick {
+    appearance: none;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: 1.5px solid var(--tick-edge);
+    border-radius: var(--r-5);
+    background: var(--glass-70) center / 14px 14px no-repeat;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .tick[type="radio"] {
+    border-radius: 50%;
+  }
+  .tick[type="checkbox"]:checked {
+    border-color: var(--navy);
+    background-color: var(--navy);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.4l2.6 2.6L11 4.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .tick[type="radio"]:checked {
+    border-color: var(--navy);
+    background: radial-gradient(circle, var(--navy) 0 4px, var(--glass-70) 4.5px);
+  }
+  .tick:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tick-hit {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin: -3px;
+    cursor: pointer;
+  }
 
-/* Switch: an on/off setting that applies at once (`input[type=checkbox][role=switch]`). */
-.switch {
-  appearance: none;
-  position: relative;
-  flex: none;
-  width: 30px;
-  height: 18px;
-  margin: 0;
-  border-radius: 999px;
-  background: var(--grey-dot);
-  cursor: pointer;
-  transition: background-color 120ms var(--ease);
-}
-.switch::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--lift-0);
-  transition: transform 120ms var(--ease);
-}
-.switch:checked {
-  background: var(--navy);
-}
-.switch:checked::before {
-  transform: translateX(12px);
-}
-.switch:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  /* Switch: an on/off setting that applies at once (`input[type=checkbox][role=switch]`). */
+  .switch {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 30px;
+    height: 18px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--grey-dot);
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+  .switch::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--lift-0);
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .switch:checked {
+    background: var(--navy);
+  }
+  .switch:checked::before {
+    transform: translateX(12px);
+  }
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-/* Small pieces ---------------------------------------------------------------------------- */
+  /* Small pieces ---------------------------------------------------------------------------- */
 
-/* A label pill, e.g. the client on a chat. */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--tray);
-  color: var(--navy);
-  white-space: nowrap;
-}
+  /* A label pill, e.g. the client on a chat. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    font-size: var(--fs-small);
+    font-weight: 500;
+    padding: var(--sp-2) 9px;
+    border-radius: 999px;
+    background: var(--tray);
+    color: var(--navy);
+    white-space: nowrap;
+  }
 
-/* A number pill: open chats, to-dos in a group. */
-.count {
-  display: inline-block;
-  min-width: 18px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(2, 27, 67, 0.08);
-  color: var(--navy);
-}
+  /* A number pill: open chats, to-dos in a group. */
+  .count {
+    display: inline-block;
+    min-width: 18px;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    padding: 0 var(--sp-6);
+    border-radius: 999px;
+    background: rgba(2, 27, 67, 0.08);
+    color: var(--navy);
+  }
 
-/* A status dot. `data-attention` ready, working or asking; none is grey. Always beside words. */
-.dot {
-  display: inline-block;
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--grey-dot);
-}
-.dot[data-attention="ready"] {
-  background: var(--attn-ready-edge);
-}
-.dot[data-attention="working"] {
-  background: var(--attn-working-edge);
-}
-.dot[data-attention="asking"] {
-  background: var(--attn-asking-edge);
-}
-/* Status dots that stand for urgency (Needs you, Worth a look): amber for watch, red for act. */
-.dot[data-tone] {
-  background: var(--amber-edge);
-}
-.dot[data-tone="bad"] {
-  background: var(--danger);
-}
-/* The word beside the dot, so urgency isn't shown by colour alone. Both colours are AA on a card. */
-.status-tag {
-  flex: none;
-  min-width: 44px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--amber-text);
-}
-.status-tag[data-tone="bad"] {
-  color: var(--danger);
-}
+  /* A status dot. `data-attention` ready, working or asking; none is grey. Always beside words. */
+  .dot {
+    display: inline-block;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--grey-dot);
+  }
+  .dot[data-attention="ready"] {
+    background: var(--attn-ready-edge);
+  }
+  .dot[data-attention="working"] {
+    background: var(--attn-working-edge);
+  }
+  .dot[data-attention="asking"] {
+    background: var(--attn-asking-edge);
+  }
+  /* Status dots that stand for urgency (Needs you, Worth a look): amber for watch, red for act. */
+  .dot[data-tone] {
+    /* The deeper amber: --amber-edge is under 3:1 on white. */
+    background: var(--attn-asking-edge);
+  }
+  .dot[data-tone="bad"] {
+    background: var(--danger);
+  }
+  /* The word beside the dot, so urgency isn't shown by colour alone. Both colours are AA on a card. */
+  .status-tag {
+    flex: none;
+    min-width: 44px;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--amber-text);
+  }
+  .status-tag[data-tone="bad"] {
+    color: var(--danger);
+  }
 
-/* A word badge, e.g. "Still being tested". `data-tone` waiting or draft for amber. */
-.badge {
-  display: inline-block;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--wash);
-  color: var(--blue-ink);
-  vertical-align: middle;
-}
-.badge[data-tone="waiting"],
-.badge[data-tone="draft"] {
-  background: var(--amber-bg);
-  color: var(--amber-text);
-  border: 1px solid var(--amber-edge);
-}
-.badge[data-tone="ok"] {
-  background: var(--ok-wash);
-  color: var(--ok);
-}
-.badge[data-tone="bad"] {
-  background: var(--danger-wash);
-  color: var(--danger);
-  border: 1px solid var(--danger);
-}
-.badge[data-tone="muted"] {
-  background: #fff;
-  color: var(--ink-soft);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-}
+  /* A word badge, e.g. "Still being tested". `data-tone` waiting or draft for amber. */
+  .badge {
+    display: inline-block;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    padding: 1px var(--sp-8);
+    border-radius: 999px;
+    background: var(--wash);
+    color: var(--blue-ink);
+    vertical-align: middle;
+  }
+  .badge[data-tone="waiting"],
+  .badge[data-tone="draft"] {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    border: 1px solid var(--amber-edge);
+  }
+  .badge[data-tone="ok"] {
+    background: var(--ok-wash);
+    color: var(--ok);
+  }
+  .badge[data-tone="bad"] {
+    background: var(--danger-wash);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .badge[data-tone="muted"] {
+    background: var(--surface);
+    color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
 
-/* Segmented choice (the Seg component). */
-.seg {
-  display: flex;
-  gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--tint-1);
-}
-.seg > button {
-  flex: 1;
-  min-width: 0;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-.seg > button:hover {
-  background: rgba(255, 255, 255, 0.55);
-}
-.seg > button[aria-checked="true"],
-.seg > button[aria-current="page"] {
-  background: #fff;
-  color: var(--navy);
-  font-weight: 600;
-  box-shadow: var(--lift-0);
-}
-.seg > button:focus-visible {
-  outline-offset: -2px;
-}
+  /* Segmented choice (the Seg component). */
+  .seg {
+    display: flex;
+    gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
+    padding: 3px;
+    border-radius: var(--r-10);
+    background: var(--tint-1);
+  }
+  .seg > button {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    font-size: var(--fs-control);
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .seg > button:hover {
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .seg > button[aria-checked="true"],
+  .seg > button[aria-current="page"] {
+    background: var(--surface);
+    color: var(--navy);
+    font-weight: 600;
+    box-shadow: var(--lift-0);
+  }
+  .seg > button:focus-visible {
+    outline-offset: -2px;
+  }
 
-/* Expanding section (the Fold component). */
-.fold {
-  margin-bottom: 4px;
-}
-.fold-head {
-  font: inherit;
-}
-.fold-head > button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 30px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-.fold-head > button:hover {
-  background: var(--tint-2);
-}
-.fold-head > button:active {
-  background: var(--tint-3);
-}
-/* A button that shows open or closed by a chevron inside it (`data-chevron`) turns it the same way. */
-.fold-head .icon,
-.btn[data-chevron] .icon,
-.icon-btn[data-chevron] .icon {
-  transition: transform 160ms;
-}
-.fold-head > button[aria-expanded="false"] .icon,
-.btn[data-chevron][aria-expanded="false"] .icon,
-.icon-btn[data-chevron][aria-expanded="false"] .icon {
-  transform: rotate(-90deg);
-}
-.fold-title {
-  flex: 1;
-  min-width: 0;
-}
-.fold-rows {
-  display: grid;
-  gap: 2px;
-}
-.fold-rows[hidden] {
-  display: none;
-}
+  /* Expanding section (the Fold component). */
+  .fold {
+    margin-bottom: var(--sp-4);
+  }
+  .fold-head {
+    font: inherit;
+  }
+  .fold-head > button {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+    width: 100%;
+    min-height: 30px;
+    padding: 0 var(--sp-8);
+    border: 0;
+    border-radius: var(--r-8);
+    background: none;
+    font-size: var(--fs-control);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .fold-head > button:hover {
+    background: var(--tint-2);
+  }
+  .fold-head > button:active {
+    background: var(--tint-3);
+  }
+  /* A button that shows open or closed by a chevron inside it (`data-chevron`) turns it the same way. */
+  .fold-head .icon,
+  .btn[data-chevron] .icon,
+  .icon-btn[data-chevron] .icon {
+    transition: transform var(--t-mid);
+  }
+  .fold-head > button[aria-expanded="false"] .icon,
+  .btn[data-chevron][aria-expanded="false"] .icon,
+  .icon-btn[data-chevron][aria-expanded="false"] .icon {
+    transform: rotate(-90deg);
+  }
+  .fold-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .fold-rows {
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .fold-rows[hidden] {
+    display: none;
+  }
 
-/*
+  /*
  * List rows. `.line` is a plain row (a chat, a skill); `.todo` has a tick column. Either can be the
  * button itself or a container holding buttons. Inside: `.line-text` > `.line-title` + `.line-meta`.
  * `aria-current="true"` or `data-current` marks the one on the sheet.
  */
-.line,
-.todo {
-  width: 100%;
-  min-width: 0;
-  padding: 7px 8px;
-  border-radius: 10px;
-  text-align: left;
-  color: inherit;
-}
-.line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.todo {
-  display: grid;
-  /* No tick box: a to-do is finished from inside it, so the title gets the whole width. */
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-}
-button.line,
-button.todo {
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.line:hover {
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--lift-1);
-  transform: translateY(-1px);
-}
-.line:active {
-  transform: none;
-}
-/* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
-.todo:hover {
-  background: rgba(255, 255, 255, 0.92);
-}
-.line[aria-current="true"],
-.line[data-current="true"],
-.todo[aria-current="true"],
-.todo[data-current="true"] {
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.line-text {
-  flex: 1;
-  min-width: 0;
-}
-.line-title {
-  display: block;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-/* The current row is told apart by weight as well as by its surface. */
-.line[aria-current="true"] .line-title,
-.line[data-current="true"] .line-title,
-.todo[aria-current="true"] .line-title,
-.todo[data-current="true"] .line-title {
-  font-weight: 600;
-}
-.line-meta {
-  display: block;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.line-meta::first-letter {
-  text-transform: uppercase;
-}
-.todo .late {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-/* Surfaces ----------------------------------------------------------------------------------- */
-
-/* Frosted glass: the rail, docks and overlays. Text-bearing, so it uses the strong tint. */
-.glass {
-  background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(22px) saturate(1.5);
-  backdrop-filter: blur(22px) saturate(1.5);
-  border: 1px solid var(--glass-edge);
-  box-shadow: var(--lift-1);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass {
-    background: var(--glass-solid);
+  .line,
+  .todo {
+    width: 100%;
+    min-width: 0;
+    padding: 7px var(--sp-8);
+    border-radius: var(--r-10);
+    text-align: left;
+    color: inherit;
   }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .glass {
-    background: var(--glass-solid);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  .line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
   }
-}
-
-/* A raised white card. */
-.card {
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: var(--lift-1);
-  padding: 12px 6px 6px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fold-head .icon,
-  .btn[data-chevron] .icon,
-  .icon-btn[data-chevron] .icon,
-  .switch,
-  .switch::before {
-    transition: none;
+  .todo {
+    display: grid;
+    /* No tick box: a to-do is finished from inside it, so the title gets the whole width. */
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--sp-10);
+    align-items: start;
+  }
+  button.line,
+  button.todo {
+    border: 0;
+    background: none;
+    cursor: pointer;
   }
   .line:hover {
+    background: var(--glass-92);
+    box-shadow: var(--lift-1);
+    transform: translateY(-1px);
+  }
+  .line:active {
     transform: none;
+  }
+  /* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
+  .todo:hover {
+    background: var(--glass-92);
+  }
+  .line[aria-current="true"],
+  .line[data-current="true"],
+  .todo[aria-current="true"],
+  .todo[data-current="true"] {
+    background: var(--surface);
+    box-shadow: var(--lift-1);
+  }
+  .line-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .line-title {
+    display: block;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  /* The current row is told apart by weight as well as by its surface. */
+  .line[aria-current="true"] .line-title,
+  .line[data-current="true"] .line-title,
+  .todo[aria-current="true"] .line-title,
+  .todo[data-current="true"] .line-title {
+    font-weight: 600;
+  }
+  .line-meta {
+    display: block;
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .line-meta::first-letter {
+    text-transform: uppercase;
+  }
+  .todo .late {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  /* Surfaces ----------------------------------------------------------------------------------- */
+
+  /* Frosted glass: the rail, docks and overlays. Text-bearing, so it uses the strong tint. */
+  .glass {
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--lift-1);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: var(--glass-solid);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background: var(--glass-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* A raised white card. */
+  .card {
+    background: var(--surface);
+    border-radius: var(--r-14);
+    box-shadow: var(--lift-1);
+    padding: var(--sp-12) var(--sp-6) var(--sp-6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fold-head .icon,
+    .btn[data-chevron] .icon,
+    .icon-btn[data-chevron] .icon,
+    .switch,
+    .switch::before {
+      transition: none;
+    }
+    .line:hover {
+      transform: none;
+    }
   }
 }

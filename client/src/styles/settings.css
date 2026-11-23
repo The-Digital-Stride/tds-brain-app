@@ -1,0 +1,186 @@
+/*
+ * Settings: plain content and hairline rows, no cards. The tab row, the About list, What's changed, Health, Profile
+ * and the Skill levels list. Split from chat.css; the rows themselves (.setting) are a pattern in patterns.css.
+ */
+@layer features {
+  /* Settings: plain content and hairline rows, no cards ----------------------------------------- */
+  .page.settings {
+    max-width: 600px;
+    margin-left: 0;
+    padding: var(--sp-24) var(--sheet-gutter) var(--sp-32);
+    gap: var(--sp-24);
+  }
+  /* The tab row starts on the sheet gutter, like the title above it, sized to its buttons. */
+  .page-tabs {
+    flex: none;
+    margin: var(--sp-12) 0 0;
+    padding: 0 var(--sheet-gutter);
+    width: 100%;
+  }
+  .page-tabs > .tool-tabs {
+    margin: 0;
+    max-width: 100%;
+    width: fit-content;
+  }
+  .page-tabs + .sheet-scroll .page.settings {
+    padding-top: var(--sp-8);
+  }
+  .settings h2 {
+    margin-bottom: var(--sp-4);
+    font-size: var(--fs-body);
+  }
+  .settings h3.setting-label {
+    margin-top: var(--sp-16); /* spacing step: sub-blocks in a section */
+  }
+  .about-code {
+    font-family: var(--mono);
+    font-size: var(--fs-mono);
+    font-weight: 400;
+  }
+  /* Settings → What's changed: one fold per version, newest first. */
+  .version-list {
+    margin: var(--sp-8) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .version-list > li + li {
+    border-top: 1px solid var(--line);
+  }
+  .version-more {
+    margin-top: var(--sp-8);
+  }
+  .version-list .fold {
+    margin: var(--sp-4) 0;
+  }
+  /* Lined up under the version's title: the fold button's 8px padding, 14px chevron and 8px gap. */
+  .version-changes {
+    margin: var(--sp-2) 0 var(--sp-10);
+    padding-left: 48px;
+    list-style: disc;
+    font-size: var(--fs-control);
+    line-height: 1.5;
+  }
+  .version-kind {
+    font-weight: 600;
+  }
+  /* Settings health panel: a summary line, then one row per check. The dot always sits beside words. */
+  .health-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .health-check {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr);
+    gap: var(--sp-10);
+    padding: var(--sp-8) 0;
+  }
+  .health-check + .health-check {
+    border-top: 1px solid var(--line);
+  }
+  .health-label {
+    font-size: var(--fs-control);
+    font-weight: 600;
+  }
+  .health-tag {
+    margin-left: var(--sp-8);
+    padding: 0 var(--sp-6);
+    border-radius: 999px;
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    background: var(--wash);
+    color: var(--iron);
+  }
+  .health-tag[data-state="problem"] {
+    background: var(--danger-wash);
+    color: var(--danger);
+  }
+  .health-tag[data-state="note"] {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+  }
+  .health-text {
+    margin-top: 1px;
+    font-size: var(--fs-mono);
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .health-check[data-state="problem"] .health-text {
+    color: var(--danger);
+  }
+  .health-detail {
+    display: block;
+    margin-top: var(--sp-2);
+    overflow-wrap: anywhere;
+    color: var(--iron);
+  }
+  .health-check > .dot {
+    /* Centred on the label's line. */
+    margin-top: var(--sp-6);
+  }
+  /* Profile: the person's departments as chips, wrapping. */
+  .dept-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .kv-quiet {
+    font-weight: 400;
+    color: var(--iron);
+  }
+  /* A sentence or two, so it reads as prose rather than a bold value. */
+  .kv dd.profile-owns {
+    font-weight: 400;
+    line-height: 1.5;
+  }
+  .health-check .btn {
+    margin-top: var(--sp-6);
+  }
+  /* Settings: how the model is chosen, and the Skill levels list. */
+  .setting.level-mode .seg {
+    flex-wrap: wrap;
+  }
+  .levels-search {
+    margin: var(--sp-8) 0;
+  }
+  .levels-search .field {
+    width: 100%;
+    max-width: 320px;
+  }
+  .levels-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .levels-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-6) var(--sp-16);
+    padding: var(--sp-8) 0;
+  }
+  .levels-row + .levels-row {
+    border-top: 1px solid var(--line);
+  }
+  .levels-who {
+    display: grid;
+    min-width: 0;
+  }
+  .levels-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .levels-actions .field {
+    width: 140px;
+  }
+  @media (max-width: 599px) {
+    .page.settings {
+      padding: var(--sp-16) var(--sheet-gutter);
+    }
+  }
+}

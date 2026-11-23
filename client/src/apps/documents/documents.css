@@ -1,31 +1,33 @@
-/*
+@layer features {
+  /*
  * The Documents app: only what is particular to documents. The rest (tools, tray and cards, rows,
  * the inline Open, the panel) is `../shared/library.css`. Documents have no ticks: one at a time. A row reads like a line in a table: what
  * it is on the left, then when it last changed.
  */
-/* The columns on the right line up from row to row and from card to card. */
-.doc-col {
-  flex: none;
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.doc-date {
-  width: 80px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* On a narrow sheet the date goes: the order still shows what is newest, and the panel has it. */
-@container (max-width: 480px) {
-  .doc-date {
-    display: none;
+  /* The columns on the right line up from row to row and from card to card. */
+  .doc-col {
+    flex: none;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
-}
+  .doc-date {
+    width: 80px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  /* On a narrow sheet the date goes: the order still shows what is newest, and the panel has it. */
+  @container (max-width: 480px) {
+    .doc-date {
+      display: none;
+    }
+  }
 
-/* The panel's page is square when there is a picture, so a portrait page shows at a readable size. */
-.doc-preview .img-thumb:not([data-plain="true"]) {
-  --thumb-ratio: 1 / 1;
+  /* The panel's page is square when there is a picture, so a portrait page shows at a readable size. */
+  .doc-preview .img-thumb:not([data-plain="true"]) {
+    --thumb-ratio: 1 / 1;
+  }
 }

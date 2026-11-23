@@ -1,370 +1,373 @@
-/*
+@layer features {
+  /*
  * viewer.css: the file viewer (`client/src/shell/FileViewer.tsx`), a wide glass drawer that slides
  * over the desk from the right to show one file large, over a veil. It sits outside the desk, so
  * it repeats the desk's spacing here and styles the file's stage itself (the library apps' own
  * styles load only with those apps).
  */
 
-.viewer-layer {
-  --viewer-pad: 12px;
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-}
-.viewer-veil {
-  position: absolute;
-  inset: 0;
-  background: rgba(2, 27, 67, 0.16);
-  animation: viewer-fade 160ms var(--ease);
-}
-/* Wide enough to read a page, leaving the rail and an edge of the chat in view behind the veil. */
-.viewer-drawer {
-  position: absolute;
-  top: var(--viewer-pad);
-  bottom: var(--viewer-pad);
-  right: var(--viewer-pad);
-  width: min(1040px, calc(100vw - 2 * var(--viewer-pad) - 70px));
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  box-shadow: var(--lift-3);
-  animation: viewer-in var(--t) var(--ease);
-}
-@media (max-width: 640px) {
-  .viewer-drawer {
-    width: calc(100vw - 2 * var(--viewer-pad));
+  .viewer-layer {
+    --viewer-pad: 12px;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
   }
-}
+  .viewer-veil {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 27, 67, 0.16);
+    animation: viewer-fade 160ms var(--ease);
+  }
+  /* Wide enough to read a page, leaving the rail and an edge of the chat in view behind the veil. */
+  .viewer-drawer {
+    position: absolute;
+    top: var(--viewer-pad);
+    bottom: var(--viewer-pad);
+    right: var(--viewer-pad);
+    width: min(1040px, calc(100vw - 2 * var(--viewer-pad) - 70px));
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    box-shadow: var(--lift-3);
+    animation: viewer-in var(--t) var(--ease);
+  }
+  @media (max-width: 640px) {
+    .viewer-drawer {
+      width: calc(100vw - 2 * var(--viewer-pad));
+    }
+  }
 
-/* The handle on the drawer's left edge (`ResizeHandle.tsx`): an 8px strip to grab, a line on hover or
+  /* The handle on the drawer's left edge (`ResizeHandle.tsx`): an 8px strip to grab, a line on hover or
    focus. The width is set inline and never animated, so dragging follows the pointer at once. */
-.viewer-resize {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  /* A 24px grab strip centred on the drawer's edge (WCAG 2.5.8 target size). */
-  left: -12px;
-  width: 24px;
-  z-index: 1;
-  cursor: col-resize;
-  touch-action: none;
-}
-/*
+  .viewer-resize {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    /* A 24px grab strip centred on the drawer's edge (WCAG 2.5.8 target size). */
+    left: -12px;
+    width: 24px;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  /*
  * The grip: one short rounded bar in the gap beside the drawer, like a sheet's handle. A plain grey at
  * rest (no edge or shadow); hover and dragging deepen its fill only, as every quiet control does
  * (design system: no borders, rings or coloured edges to show state).
  */
-.viewer-resize::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 5px;
-  width: 4px;
-  height: 48px;
-  border-radius: 2px;
-  transform: translateY(-50%);
-  background: var(--grey-dot);
-  transition: background-color var(--t) var(--ease);
-}
-.viewer-resize:hover::before,
-.viewer-resize:focus-visible::before {
-  background: var(--ink-soft);
-}
-body.viewer-resizing .viewer-resize::before {
-  background: var(--navy);
-}
-@media (prefers-reduced-motion: reduce) {
   .viewer-resize::before {
-    transition: none;
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 5px;
+    width: 4px;
+    height: 48px;
+    border-radius: 2px;
+    transform: translateY(-50%);
+    background: var(--grey-dot);
+    transition: background-color var(--t) var(--ease);
   }
-}
-/* The app's own focus ring (base.css), drawn inside the strip so it isn't clipped. */
-.viewer-resize:focus-visible {
-  outline-offset: -2px;
-  border-radius: 6px;
-}
-/* While dragging: no text selecting, and the page frame lets the pointer through to the handle. */
-body.viewer-resizing {
-  user-select: none;
-  cursor: col-resize;
-}
-body.viewer-resizing iframe {
-  pointer-events: none;
-}
+  .viewer-resize:hover::before,
+  .viewer-resize:focus-visible::before {
+    background: var(--ink-soft);
+  }
+  body.viewer-resizing .viewer-resize::before {
+    background: var(--navy);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .viewer-resize::before {
+      transition: none;
+    }
+  }
+  /* The app's own focus ring (base.css), drawn inside the strip so it isn't clipped. */
+  .viewer-resize:focus-visible {
+    outline-offset: -2px;
+    border-radius: 6px;
+  }
+  /* While dragging: no text selecting, and the page frame lets the pointer through to the handle. */
+  body.viewer-resizing {
+    user-select: none;
+    cursor: col-resize;
+  }
+  body.viewer-resizing iframe {
+    pointer-events: none;
+  }
 
-/* The header band: name and place, the actions, then close at the top right. On a narrow drawer
-   the actions take a second line and close stays top right. */
-.viewer-head {
-  flex: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: "name actions close";
-  align-items: center;
-  gap: 6px 8px;
-  min-height: 47px;
-  padding: 8px 10px 8px 16px;
-}
-.viewer-name {
-  grid-area: name;
-  min-width: 0;
-}
-.viewer-name h2 {
-  margin: 0;
-  font: 600 14px / 1.3 var(--head);
-  overflow-wrap: anywhere;
-}
-/* The heading takes focus only so the reader starts there; it needs no ring. */
-.viewer-name h2:focus {
-  outline: none;
-}
-.viewer-place {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--iron);
-}
-.viewer-actions {
-  grid-area: actions;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.viewer-close {
-  grid-area: close;
-  align-self: start;
-}
-@media (max-width: 640px) {
+  /* The header band: name and place, the actions, then close at the top right. On a narrow drawer
+     the actions take a second line and close stays top right. Built on `.panel-head` (patterns.css); this
+     feature layer swaps its flex row for the grid. */
   .viewer-head {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "name close"
-      "actions actions";
+    flex: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "name actions close";
+    align-items: center;
+    gap: 6px 8px;
+    min-height: 47px;
+    padding: 8px 10px 8px 16px;
   }
-}
+  @media (max-width: 640px) {
+    .viewer-head {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "name close"
+        "actions actions";
+    }
+  }
+  .viewer-name {
+    grid-area: name;
+    min-width: 0;
+  }
+  .viewer-name h2 {
+    margin: 0;
+    font: 600 14px / 1.3 var(--head);
+    overflow-wrap: anywhere;
+  }
+  /* The heading takes focus only so the reader starts there; it needs no ring. */
+  .viewer-name h2:focus {
+    outline: none;
+  }
+  .viewer-place {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .viewer-actions {
+    grid-area: actions;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .viewer-close {
+    grid-area: close;
+    align-self: start;
+  }
 
-/* The file: one white card on the tray, filling the drawer; only the body scrolls. */
-.viewer-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  padding: 0 12px 12px;
-}
-.viewer-body:focus-visible,
-.viewer-body :focus-visible {
-  outline-offset: -2px;
-}
-.viewer-body .lib-stage {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  margin-top: 0;
-}
-/* The file stage: what a file open on a sheet, in the viewer or in the chat's Files panel shows.
+  /* The file: one white card on the tray, filling the drawer; only the body scrolls. */
+  .viewer-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    padding: 0 12px 12px;
+  }
+  .viewer-body:focus-visible,
+  .viewer-body :focus-visible {
+    outline-offset: -2px;
+  }
+  .viewer-body .lib-stage {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    margin-top: 0;
+  }
+  /* The file stage: what a file open on a sheet, in the viewer or in the chat's Files panel shows.
    Eager on purpose: the viewer and the Files panel open before any library app has loaded. */
-/* A quiet line: a cap that was hit, or a file cut short. */
-.lib-note {
-  margin: 0;
-  padding: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.viewer-body .lib-note {
-  padding: 0 4px;
-}
-.viewer-body .lib-note:empty {
-  display: none;
-}
-.lib-file {
-  margin: -6px 0 0;
-  padding: 0 4px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-  overflow-wrap: anywhere;
-}
-/* A picture sits flat on the white card with a hairline edge and no shadow. */
-.tray .lib-pic,
-.viewer-body .lib-pic {
-  display: grid;
-  place-items: center;
-  min-height: 160px;
-  padding: 8px;
-}
-.lib-viewer-image {
-  display: block;
-  max-width: 100%;
-  max-height: calc(100dvh - 150px);
-  object-fit: contain;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-}
-/* The viewer has no sheet header above the picture, so it gets 30px more. */
-.viewer-body .lib-viewer-image {
-  max-height: calc(100dvh - 120px);
-}
-.tray .lib-doc,
-.viewer-body .lib-doc {
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 20px 24px;
-}
-.lib-text {
-  margin: 0;
-  font: 400 14px / 1.6 var(--body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.tray .lib-page,
-.viewer-body .lib-page {
-  flex: 1;
-  display: flex;
-  padding: 6px;
-}
-.lib-frame {
-  flex: 1;
-  width: 100%;
-  min-height: 420px;
-  border: 0;
-  border-radius: 10px;
-  background: #fff;
-}
-/* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
-.tray .lib-pdf,
-.viewer-body .lib-pdf {
-  padding: 0;
-  overflow: hidden;
-}
-.lib-pdf .lib-frame {
-  border-radius: 0;
-}
-
-@keyframes viewer-in {
-  from {
-    opacity: 0;
-    transform: translateX(24px);
+  /* A quiet line: a cap that was hit, or a file cut short. */
+  .lib-note {
+    margin: 0;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
   }
-}
-@keyframes viewer-fade {
-  from {
-    opacity: 0;
+  .viewer-body .lib-note {
+    padding: 0 4px;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .viewer-veil,
-  .viewer-drawer {
-    animation: none;
+  .viewer-body .lib-note:empty {
+    display: none;
   }
-}
+  .lib-file {
+    margin: -6px 0 0;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+    overflow-wrap: anywhere;
+  }
+  /* A picture sits flat on the white card with a hairline edge and no shadow. */
+  .tray .lib-pic,
+  .viewer-body .lib-pic {
+    display: grid;
+    place-items: center;
+    min-height: 160px;
+    padding: 8px;
+  }
+  .lib-viewer-image {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100dvh - 150px);
+    object-fit: contain;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+  }
+  /* The viewer has no sheet header above the picture, so it gets 30px more. */
+  .viewer-body .lib-viewer-image {
+    max-height: calc(100dvh - 120px);
+  }
+  .tray .lib-doc,
+  .viewer-body .lib-doc {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 20px 24px;
+  }
+  .lib-text {
+    margin: 0;
+    font: 400 14px / 1.6 var(--body);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .tray .lib-page,
+  .viewer-body .lib-page {
+    flex: 1;
+    display: flex;
+    padding: 6px;
+  }
+  .lib-frame {
+    flex: 1;
+    width: 100%;
+    min-height: 420px;
+    border: 0;
+    border-radius: 10px;
+    background: #fff;
+  }
+  /* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
+  .tray .lib-pdf,
+  .viewer-body .lib-pdf {
+    padding: 0;
+    overflow: hidden;
+  }
+  .lib-pdf .lib-frame {
+    border-radius: 0;
+  }
 
-/* A page Claude published (`PageStage`): the frame fills the body, the ask form sits at the foot. */
-.page-body {
-  overflow: hidden;
-}
-.page-versions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--iron);
-}
-.page-versions .field {
-  width: auto;
-  min-width: 140px;
-}
-.page-body .notice {
-  flex: none;
-  margin: 0;
-}
-.page-frame {
-  flex: 1;
-  min-height: 240px;
-  width: 100%;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: #fff;
-}
-.page-ask {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--line-strong);
-}
-.page-ask-state {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.page-ask-line {
-  margin: 0;
-  font-size: 13px;
-}
+  @keyframes viewer-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+  }
+  @keyframes viewer-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .viewer-veil,
+    .viewer-drawer {
+      animation: none;
+    }
+  }
 
-/* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
+  /* A page Claude published (`PageStage`): the frame fills the body, the ask form sits at the foot. */
+  .page-body {
+    overflow: hidden;
+  }
+  .page-versions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .page-versions .field {
+    width: auto;
+    min-width: 140px;
+  }
+  .page-body .notice {
+    flex: none;
+    margin: 0;
+  }
+  .page-frame {
+    flex: 1;
+    min-height: 240px;
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: #fff;
+  }
+  .page-ask {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--line-strong);
+  }
+  .page-ask-state {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .page-ask-line {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  /* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
    usable beside it. It sits inside the sheet, so a pushing panel stays in view and the sheet's inert rules apply. */
-.chat-drawer {
-  /* The viewer's gap (set on .viewer-layer, which this isn't inside), so both drawers sit alike. */
-  --viewer-pad: 12px;
-  position: absolute;
-  top: var(--viewer-pad);
-  bottom: var(--viewer-pad);
-  right: var(--viewer-pad);
-  z-index: 5;
-  width: min(520px, calc(100% - 2 * var(--viewer-pad)));
-  max-width: calc(100% - 2 * var(--viewer-pad));
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  box-shadow: var(--lift-3);
-  animation: viewer-in var(--t) var(--ease);
-}
-.chat-drawer > .chat {
-  flex: 1;
-  min-height: 0;
-  height: auto;
-}
-.chat-drawer-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 10px 8px 16px;
-}
-.chat-drawer-name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.chat-drawer-name h2 {
-  margin: 0;
-  font: 600 14px / 1.3 var(--head);
-  color: var(--navy);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* "Send or remove the attached files first": its own line under the header, empty (and no height) otherwise. */
-.chat-drawer-note {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 12px;
-  color: var(--iron);
-}
-.chat-drawer-note:empty {
-  display: none;
-}
-@media (prefers-reduced-motion: reduce) {
   .chat-drawer {
-    animation: none;
+    /* The viewer's gap (set on .viewer-layer, which this isn't inside), so both drawers sit alike. */
+    --viewer-pad: 12px;
+    position: absolute;
+    top: var(--viewer-pad);
+    bottom: var(--viewer-pad);
+    right: var(--viewer-pad);
+    z-index: 5;
+    width: min(520px, calc(100% - 2 * var(--viewer-pad)));
+    max-width: calc(100% - 2 * var(--viewer-pad));
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    box-shadow: var(--lift-3);
+    animation: viewer-in var(--t) var(--ease);
+  }
+  .chat-drawer > .chat {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+  .chat-drawer-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 10px 8px 16px;
+  }
+  .chat-drawer-name {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-drawer-name h2 {
+    margin: 0;
+    font: 600 14px / 1.3 var(--head);
+    color: var(--navy);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* "Send or remove the attached files first": its own line under the header, empty (and no height) otherwise. */
+  .chat-drawer-note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .chat-drawer-note:empty {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-drawer {
+      animation: none;
+    }
   }
 }

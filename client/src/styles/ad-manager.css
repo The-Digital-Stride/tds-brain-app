@@ -1,568 +1,570 @@
-/*
+@layer tools {
+  /*
  * Ad Manager (plan 2026-11-16-workbench-ad-manager). Cards sit in the design system's tray; everything else
  * (buttons, badges, chips, key/value lists, folds) is the shared look. Only what is particular to this screen is here.
  */
-.am {
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px var(--sheet-gutter) 24px;
-}
-/* Tabs sit straight above the sheet body: the gap under them is the control-row gap. */
-.tool-tabs + .sheet-scroll > .am {
-  padding-top: 8px;
-}
-.am .tray {
-  margin-top: 8px;
-}
-.am-tray[data-cols="1"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-.am-tray[data-cols="2"] {
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-}
-/* The cadence cards (what I run on an account): four across, two on a mid-width sheet, one when narrow. */
-.am-tray[data-cols="cadence"] {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-/* The deep-dive report tables: two across so their columns have room, one when narrow. */
-.am-tray[data-cols="tables"] {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-@container (max-width: 860px) {
+  .am {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px var(--sheet-gutter) 24px;
+  }
+  /* Tabs sit straight above the sheet body: the gap under them is the control-row gap. */
+  .tool-tabs + .sheet-scroll > .am {
+    padding-top: 8px;
+  }
+  .am .tray {
+    margin-top: 8px;
+  }
+  .am-tray[data-cols="1"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .am-tray[data-cols="2"] {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+  /* The cadence cards (what I run on an account): four across, two on a mid-width sheet, one when narrow. */
   .am-tray[data-cols="cadence"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  /* The deep-dive report tables: two across so their columns have room, one when narrow. */
+  .am-tray[data-cols="tables"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-/* One column from 940px down; the full-width toggle has nothing to do there. */
-@container (max-width: 940px) {
-  .am-tray[data-cols="tables"] {
-    grid-template-columns: minmax(0, 1fr);
+  @container (max-width: 860px) {
+    .am-tray[data-cols="cadence"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
-  .am-wide-btn {
-    display: none;
+  /* One column from 940px down; the full-width toggle has nothing to do there. */
+  @container (max-width: 940px) {
+    .am-tray[data-cols="tables"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .am-wide-btn {
+      display: none;
+    }
   }
-}
-@container (max-width: 460px) {
-  .am-tray[data-cols="cadence"] {
-    grid-template-columns: minmax(0, 1fr);
+  @container (max-width: 460px) {
+    .am-tray[data-cols="cadence"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
-}
-.am-h {
-  margin: 20px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-.am-h-text {
-  display: inline;
-  margin: 0;
-  font: inherit;
-}
-.am-h .sm-missing {
-  margin: 4px 0 0;
-  font-weight: 400;
-}
+  .am-h {
+    margin: 20px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .am-h-text {
+    display: inline;
+    margin: 0;
+    font: inherit;
+  }
+  .am-h .sm-missing {
+    margin: 4px 0 0;
+    font-weight: 400;
+  }
 
-.am-hrow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  margin: 20px 0 0;
-}
-.am-account {
-  width: 240px;
-  max-width: 100%;
-}
-.am-dim {
-  color: var(--iron);
-  font-size: 12px;
-  font-weight: 400;
-}
-.am-sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--iron);
-}
-.am-block {
-  display: block;
-}
-.am-nowrap {
-  white-space: nowrap;
-}
-.am-camp {
-  margin: 4px 0 0;
-  font-size: 13px;
-  font-weight: 600;
-}
+  .am-hrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+    margin: 20px 0 0;
+  }
+  .am-account {
+    width: 240px;
+    max-width: 100%;
+  }
+  .am-dim {
+    color: var(--iron);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .am-sub {
+    margin: 0;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .am-block {
+    display: block;
+  }
+  .am-nowrap {
+    white-space: nowrap;
+  }
+  .am-camp {
+    margin: 4px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
 
-.am-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
-}
-/* A panel's footer: the primary action on the left, then what happened. */
-.am-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.am-grow {
-  flex: 1 1 180px;
-}
+  .am-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  /* A panel's footer: the primary action on the left, then what happened. */
+  .am-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .am-grow {
+    flex: 1 1 180px;
+  }
 
-/* Tables: scroll sideways inside their card rather than widening the sheet. */
-.am-scroll {
-  overflow-x: auto;
-  padding: 0 8px 4px;
-}
-.am-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.am-table th {
-  padding: 6px 10px 6px 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-  text-align: left;
-  border-bottom: 1.5px solid var(--navy);
-  white-space: nowrap;
-}
-.am-table td {
-  position: relative;
-  padding: 8px 10px 8px 0;
-  vertical-align: top;
-  border-top: 1px solid var(--line);
-}
-/* A small button in a row sits on the row's text line, not 4px below it. */
-.am-table td > .btn[data-size="small"] {
-  margin-block: -4px;
-}
-.am-table tr[data-current] td {
-  background: var(--tint-1);
-}
-.am-table tbody tr:first-child td {
-  border-top: 0;
-}
-.am-table [data-num] {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.am-table .am-wide {
-  min-width: 220px;
-}
-.am-sort {
-  all: unset;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 0 6px;
-  margin: 0 -6px;
-  cursor: pointer;
-  font: inherit;
-  border-radius: 6px;
-  transition: background-color 120ms var(--ease);
-}
-.am-sort:hover {
-  background: var(--tint-2);
-}
-.am-sort:active {
-  background: var(--tint-3);
-}
-.am-sort:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.am-sort-icon {
-  display: inline-flex;
-}
-.am-sort-icon[data-dir="up"] .icon {
-  transform: rotate(180deg);
-}
-
-/* Proposal ids and file paths: the app's monospace, a touch smaller than the text around them. */
-.am code,
-.am-panel code {
-  font-family: var(--mono);
-  font-size: 0.88em;
-}
-/* Key/value lists and notes in a card line up with the card's heading. */
-.am .card > .kv {
-  padding-inline: 8px;
-}
-/* A narrow sheet drops the proposals' ID, Type and Section (all in the panel) so Status and Details stay in view. */
-@container (max-width: 760px) {
-  .am-table [data-minor] {
-    display: none;
+  /* Tables: scroll sideways inside their card rather than widening the sheet. */
+  .am-scroll {
+    overflow-x: auto;
+    padding: 0 8px 4px;
+  }
+  .am-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .am-table th {
+    padding: 6px 10px 6px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+    text-align: left;
+    border-bottom: 1.5px solid var(--navy);
+    white-space: nowrap;
+  }
+  .am-table td {
+    position: relative;
+    padding: 8px 10px 8px 0;
+    vertical-align: top;
+    border-top: 1px solid var(--line);
+  }
+  /* A small button in a row sits on the row's text line, not 4px below it. */
+  .am-table td > .btn[data-size="small"] {
+    margin-block: -4px;
+  }
+  .am-table tr[data-current] td {
+    background: var(--tint-1);
+  }
+  .am-table tbody tr:first-child td {
+    border-top: 0;
+  }
+  .am-table [data-num] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .am-table .am-wide {
-    min-width: 160px;
+    min-width: 220px;
   }
-}
+  .am-sort {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+    padding: 0 6px;
+    margin: 0 -6px;
+    cursor: pointer;
+    font: inherit;
+    border-radius: 6px;
+    transition: background-color 120ms var(--ease);
+  }
+  .am-sort:hover {
+    background: var(--tint-2);
+  }
+  .am-sort:active {
+    background: var(--tint-3);
+  }
+  .am-sort:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .am-sort-icon {
+    display: inline-flex;
+  }
+  .am-sort-icon[data-dir="up"] .icon {
+    transform: rotate(180deg);
+  }
 
-.am-opts {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0 8px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-.am-opts p {
-  margin: 0 0 4px;
-}
+  /* Proposal ids and file paths: the app's monospace, a touch smaller than the text around them. */
+  .am code,
+  .am-panel code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+  }
+  /* Key/value lists and notes in a card line up with the card's heading. */
+  .am .card > .kv {
+    padding-inline: 8px;
+  }
+  /* A narrow sheet drops the proposals' ID, Type and Section (all in the panel) so Status and Details stay in view. */
+  @container (max-width: 760px) {
+    .am-table [data-minor] {
+      display: none;
+    }
+    .am-table .am-wide {
+      min-width: 160px;
+    }
+  }
 
-/* Cadence cards. */
-.am-tasks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.am-task {
-  padding: 8px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-.am-task:first-child {
-  border-top: 0;
-}
-.am-task .btn {
-  margin-top: 6px;
-}
-/* When a task last ran (from this app), and a status dot with words while its chat is running. */
-.am-run {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--iron);
-  font-variant-numeric: tabular-nums;
-}
-.am-run-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--navy);
-  font-weight: 600;
-}
-.card > .am-run {
-  padding: 0 8px;
-}
+  .am-opts {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .am-opts p {
+    margin: 0 0 4px;
+  }
 
-/* The panel. */
-.am-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 0 8px 16px;
-}
-.am-title {
-  margin: 0;
-  font-size: 14px;
-}
-/* Previous / Next through the account's open proposals: the count, then up and down icon buttons, above the title. */
-.am-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.am-step .am-sub {
-  margin: 0 auto 0 0;
-}
-.am-kvrow {
-  display: contents;
-}
-.am-kvrow dd[data-warn] {
-  color: var(--danger);
-}
-.am-body,
-.am-output {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--tray);
-  font-size: 12.5px;
-}
-.am-act {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.am-last {
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-}
-.am-last p {
-  margin: 0 0 6px;
-}
-.am-rate {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.am-score .field {
-  width: 120px;
-}
+  /* Cadence cards. */
+  .am-tasks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .am-task {
+    padding: 8px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .am-task:first-child {
+    border-top: 0;
+  }
+  .am-task .btn {
+    margin-top: 6px;
+  }
+  /* When a task last ran (from this app), and a status dot with words while its chat is running. */
+  .am-run {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
+  .am-run-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--navy);
+    font-weight: 600;
+  }
+  .card > .am-run {
+    padding: 0 8px;
+  }
 
-/* Deep-dive cards: grip, title and meta line, badge, full-width toggle. ------------------------------ */
-.am-th {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 0 4px 8px 2px;
-}
-.am-th-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.am-th h3 {
-  margin: 0;
-  font-size: 14px;
-  line-height: 28px;
-}
-.am-th-badge {
-  margin-top: 4px;
-}
-.am-th .icon-btn {
-  flex: none;
-}
-.am-deep[data-wide="true"],
-.am-drop[data-wide="true"] {
-  grid-column: 1 / -1;
-}
-.am-deep[data-dragging="true"] {
-  display: none;
-}
-/* Where the card in the air would land. */
-.am-drop {
-  box-sizing: border-box;
-  border-radius: 14px;
-  background: var(--tint-1);
-  border: 1.5px dashed var(--line-strong);
-}
-/* The grip and the full-width toggle show on the card under the pointer or the keyboard (always on touch);
+  /* The panel. */
+  .am-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 8px 16px;
+  }
+  .am-title {
+    margin: 0;
+    font-size: 14px;
+  }
+  /* Previous / Next through the account's open proposals: the count, then up and down icon buttons, above the title. */
+  .am-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .am-step .am-sub {
+    margin: 0 auto 0 0;
+  }
+  .am-kvrow {
+    display: contents;
+  }
+  .am-kvrow dd[data-warn] {
+    color: var(--danger);
+  }
+  .am-body,
+  .am-output {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--tray);
+    font-size: 12.5px;
+  }
+  .am-act {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .am-last {
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .am-last p {
+    margin: 0 0 6px;
+  }
+  .am-rate {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .am-score .field {
+    width: 120px;
+  }
+
+  /* Deep-dive cards: grip, title and meta line, badge, full-width toggle. ------------------------------ */
+  .am-th {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 0 4px 8px 2px;
+  }
+  .am-th-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .am-th h3 {
+    margin: 0;
+    font-size: 14px;
+    line-height: 28px;
+  }
+  .am-th-badge {
+    margin-top: 4px;
+  }
+  .am-th .icon-btn {
+    flex: none;
+  }
+  .am-deep[data-wide="true"],
+  .am-drop[data-wide="true"] {
+    grid-column: 1 / -1;
+  }
+  .am-deep[data-dragging="true"] {
+    display: none;
+  }
+  /* Where the card in the air would land. */
+  .am-drop {
+    box-sizing: border-box;
+    border-radius: 14px;
+    background: var(--tint-1);
+    border: 1.5px dashed var(--line-strong);
+  }
+  /* The grip and the full-width toggle show on the card under the pointer or the keyboard (always on touch);
    a full-width card keeps its toggle lit. */
-@media (hover: hover) {
-  .am-deep .am-grip,
-  .am-deep .am-wide-btn[aria-pressed="false"] {
-    opacity: 0;
+  @media (hover: hover) {
+    .am-deep .am-grip,
+    .am-deep .am-wide-btn[aria-pressed="false"] {
+      opacity: 0;
+    }
+    .am-deep:is(:hover, :focus-within) .am-grip,
+    .am-deep:is(:hover, :focus-within) .am-wide-btn {
+      opacity: 1;
+    }
   }
-  .am-deep:is(:hover, :focus-within) .am-grip,
-  .am-deep:is(:hover, :focus-within) .am-wide-btn {
-    opacity: 1;
+  @media (prefers-reduced-motion: no-preference) {
+    .am-deep .am-grip,
+    .am-deep .am-wide-btn {
+      transition: opacity 0.12s;
+    }
   }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .am-deep .am-grip,
-  .am-deep .am-wide-btn {
-    transition: opacity 0.12s;
+  .am-grip {
+    cursor: grab;
   }
-}
-.am-grip {
-  cursor: grab;
-}
-.am-deep[draggable="true"] {
-  cursor: grabbing;
-}
+  .am-deep[draggable="true"] {
+    cursor: grabbing;
+  }
 
-/* The report table: figures, flags, the Spend bar, "Show all", a first column that stays put. */
-.am-val {
-  position: relative;
-}
-.am-val[data-zero="true"] {
-  color: var(--iron);
-}
-/* Low ROAS and Quality Score: red and bold, and the words ", low" for those who can't see colour. */
-.am-val[data-low="true"] {
-  color: var(--danger);
-  font-weight: 600;
-}
-.am-bar {
-  position: absolute;
-  top: 3px;
-  right: 10px;
-  bottom: 3px;
-  max-width: calc(100% - 10px);
-  border-radius: 4px;
-  background: var(--wash);
-}
-.am-more {
-  padding: 4px 8px 4px;
-}
-.am-deep .am-table th:first-child,
-.am-deep .am-table td:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: #fff;
-}
+  /* The report table: figures, flags, the Spend bar, "Show all", a first column that stays put. */
+  .am-val {
+    position: relative;
+  }
+  .am-val[data-zero="true"] {
+    color: var(--iron);
+  }
+  /* Low ROAS and Quality Score: red and bold, and the words ", low" for those who can't see colour. */
+  .am-val[data-low="true"] {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .am-bar {
+    position: absolute;
+    top: 3px;
+    right: 10px;
+    bottom: 3px;
+    max-width: calc(100% - 10px);
+    border-radius: 4px;
+    background: var(--wash);
+  }
+  .am-more {
+    padding: 4px 8px 4px;
+  }
+  .am-deep .am-table th:first-child,
+  .am-deep .am-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+  }
 
-/* Ads Manager page (plan 2026-11-19-ads-workbench-sections, decision 5): account head, fact tiles, Needs you,
+  /* Ads Manager page (plan 2026-11-19-ads-workbench-sections, decision 5): account head, fact tiles, Needs you,
    proposals cards and the Monthly close card. ------------------------------------------------------------ */
-.am-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-}
-.am-head h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-.am-facts {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-@container (max-width: 760px) {
-  .am-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .am-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
   }
-}
-@container (max-width: 400px) {
-  .am-facts {
-    grid-template-columns: minmax(0, 1fr);
+  .am-head h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
   }
-}
-.am-facts .stat[data-tone="waiting"] {
-  background: var(--amber-bg);
-}
-.am-facts .stat:has(.stat-jump) {
-  padding: 0;
-}
-.stat-jump {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.stat-jump:hover {
-  background: var(--wash);
-}
-.stat-jump:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-/* Needs you: one line per thing, a status dot, the words, one button. */
-.am-needs-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px;
-}
-.am-needs-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-}
-.am-needs-list li + li {
-  border-top: 1px solid var(--line);
-}
-.am-need-text {
-  flex: 1;
-  min-width: 0;
-}
-.am-need-text p {
-  margin: 0;
-}
-.am-need-sub {
-  font-size: 12px;
-  color: var(--iron);
-}
-/* A proposal's title with its campaign underneath; a date with its words underneath. */
-.am-title-cell {
-  min-width: 200px;
-}
-.am-subline {
-  display: block;
-  font-size: 12px;
-  color: var(--iron);
-}
-/* Monthly close. */
-.am-close .am-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 8px 8px;
-}
-.am-close > .btn,
-.am-close > .am-sign {
-  margin: 0 8px 8px;
-}
-.am-close > .btn {
-  align-self: flex-start;
-}
-.am-close .am-sign {
-  display: grid;
-  gap: 8px;
-}
-/* The jump to Monthly close outlines the card for 1.6 s (FLASH_MS in Approvals.tsx). */
-.am-close {
-  scroll-margin-top: 12px;
-}
-.am-flash {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-@media (prefers-reduced-motion: no-preference) {
+  .am-facts {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @container (max-width: 760px) {
+    .am-facts {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @container (max-width: 400px) {
+    .am-facts {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .am-facts .stat[data-tone="waiting"] {
+    background: var(--amber-bg);
+  }
+  .am-facts .stat:has(.stat-jump) {
+    padding: 0;
+  }
+  .stat-jump {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .stat-jump:hover {
+    background: var(--wash);
+  }
+  .stat-jump:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* Needs you: one line per thing, a status dot, the words, one button. */
+  .am-needs-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 8px;
+  }
+  .am-needs-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+  }
+  .am-needs-list li + li {
+    border-top: 1px solid var(--line);
+  }
+  .am-need-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .am-need-text p {
+    margin: 0;
+  }
+  .am-need-sub {
+    font-size: 12px;
+    color: var(--iron);
+  }
+  /* A proposal's title with its campaign underneath; a date with its words underneath. */
+  .am-title-cell {
+    min-width: 200px;
+  }
+  .am-subline {
+    display: block;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  /* Monthly close. */
+  .am-close .am-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 8px 8px;
+  }
+  .am-close > .btn,
+  .am-close > .am-sign {
+    margin: 0 8px 8px;
+  }
+  .am-close > .btn {
+    align-self: flex-start;
+  }
+  .am-close .am-sign {
+    display: grid;
+    gap: 8px;
+  }
+  /* The jump to Monthly close outlines the card for 1.6 s (FLASH_MS in Approvals.tsx). */
   .am-close {
-    transition: outline-color 0.3s;
+    scroll-margin-top: 12px;
   }
-}
-/* Release 2: Earlier months under Monthly close. */
-.am-close .fold {
-  margin: 0 8px 8px;
-}
-.am-earlier {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.am-earlier-item {
-  display: grid;
-  gap: 6px;
-  justify-items: start;
-}
-.am-earlier-head {
-  margin: 0;
-}
-.am-earlier .am-links {
-  padding: 0;
-}
-.am-earlier .am-sign {
-  margin: 0;
+  .am-flash {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .am-close {
+      transition: outline-color 0.3s;
+    }
+  }
+  /* Release 2: Earlier months under Monthly close. */
+  .am-close .fold {
+    margin: 0 8px 8px;
+  }
+  .am-earlier {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .am-earlier-item {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+  }
+  .am-earlier-head {
+    margin: 0;
+  }
+  .am-earlier .am-links {
+    padding: 0;
+  }
+  .am-earlier .am-sign {
+    margin: 0;
+  }
 }

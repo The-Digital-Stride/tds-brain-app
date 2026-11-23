@@ -1,101 +1,100 @@
-/* SearchSelect (plan 2026-11-14-client-picker): a .field with our chevron, and a list drawn into the body. */
-.ss {
-  position: relative;
-  display: block;
-  min-width: 0;
-}
-.ss-input {
-  padding-right: 34px;
-  text-overflow: ellipsis;
-}
-.ss-input:disabled {
-  opacity: 0.5;
-}
-.ss-chevron {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  display: flex;
-  transform: translateY(-50%);
-  color: var(--ink-soft);
-  pointer-events: none;
-}
-.ss-chevron svg {
-  transition: transform 160ms var(--ease);
-}
-/* Points up while the list is open, so the box shows its state. */
-.ss-input[aria-expanded="true"] + .ss-chevron svg {
-  transform: rotate(180deg);
-}
-.ss-input:disabled + .ss-chevron {
-  opacity: 0.5;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer features {
+  /* SearchSelect (plan 2026-11-14-client-picker): a .field with our chevron, and a list drawn into the body. */
+  .ss {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .ss-input {
+    padding-right: 34px;
+    text-overflow: ellipsis;
+  }
+  .ss-chevron {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    display: flex;
+    transform: translateY(-50%);
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
   .ss-chevron svg {
-    transition: none;
+    transition: transform 160ms var(--ease);
   }
-}
-/* Above the floating dock (41) and drawers, below the viewer (50), palette (70) and tooltips (80). */
-.popover.ss-pop {
-  position: fixed;
-  display: flex;
-  flex-direction: column;
-  padding: 6px 0;
-}
-.ss-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-.ss-grp {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-  padding: 8px 16px 4px;
-}
-.menu-row.ss-opt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: auto;
-  min-height: 32px;
-  margin: 0 6px;
-  padding: 6px 10px;
-  font-size: 13px;
-  color: var(--navy);
-}
-.ss-opt-label {
-  flex: 1;
-  min-width: 0;
-  /* A long name wraps in the list rather than being cut off. */
-  overflow-wrap: anywhere;
-}
-/* biome-ignore lint/style/noDescendingSpecificity: an option's icon is never the chevron. */
-.ss-opt svg {
-  flex: none;
-  color: var(--navy);
-}
-.ss-opt mark {
-  background: none;
-  color: inherit;
-  font-weight: 600;
-}
-/* The active row is the keyboard's place, so it is ringed as the palette's is (design-system.md, Rings).
+  /* Points up while the list is open, so the box shows its state. */
+  .ss-input[aria-expanded="true"] + .ss-chevron svg {
+    transform: rotate(180deg);
+  }
+  .ss-input:disabled + .ss-chevron {
+    opacity: 0.5;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ss-chevron svg {
+      transition: none;
+    }
+  }
+  /* Above the floating dock (41) and drawers, below the viewer (50), palette (70) and tooltips (80). */
+  .popover.ss-pop {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    padding: 6px 0;
+  }
+  .ss-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .ss-grp {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+    padding: 8px 16px 4px;
+  }
+  .menu-row.ss-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    min-height: 32px;
+    margin: 0 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--navy);
+  }
+  .ss-opt-label {
+    flex: 1;
+    min-width: 0;
+    /* A long name wraps in the list rather than being cut off. */
+    overflow-wrap: anywhere;
+  }
+  /* biome-ignore lint/style/noDescendingSpecificity: an option's icon is never the chevron. */
+  .ss-opt svg {
+    flex: none;
+    color: var(--navy);
+  }
+  .ss-opt mark {
+    background: none;
+    color: inherit;
+    font-weight: 600;
+  }
+  /* The active row is the keyboard's place, so it is ringed as the palette's is (design-system.md, Rings).
    `.menu-row` rings aria-current; a listbox option marks its place with aria-selected, so it is ringed here. */
-.ss-opt[aria-selected="true"] {
-  background: var(--tint-1);
-  box-shadow: inset 0 0 0 1.5px var(--blue-ink);
-}
-/* Windows High Contrast drops fills and shadows: keep the keyboard's place and the list's edge visible. */
-@media (forced-colors: active) {
   .ss-opt[aria-selected="true"] {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
+    background: var(--tint-1);
+    box-shadow: inset 0 0 0 1.5px var(--blue-ink);
   }
-}
-.ss-empty {
-  margin: 0;
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--iron);
+  /* Windows High Contrast drops fills and shadows: keep the keyboard's place and the list's edge visible. */
+  @media (forced-colors: active) {
+    .ss-opt[aria-selected="true"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+  .ss-empty {
+    margin: 0;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--iron);
+  }
 }

@@ -1,1486 +1,1228 @@
-/*
+@layer features {
+  /*
  * chat.css: the chat sheet (bar extras, thread, floater, answer box, message box), the "This chat"
- * panel's body, Settings, and the whole-app states (loading, sign-in and boot problems).
+ * panel's body, and the whole-app states (loading, sign-in and boot problems). Settings is in settings.css.
  * Sizes follow docs/design-system.md. Status dots and edges on white use the deeper
  * `--attn-*-edge` shades (3:1 or better).
  */
 
-/* The chat sheet ------------------------------------------------------------------------------ */
-.chat {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-/* A size container, so the answer box can be held to half the sheet's height. */
-.chat-live {
-  container-type: size;
-  position: relative;
-}
+  /* The chat sheet ------------------------------------------------------------------------------ */
+  .chat {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* A size container, so the answer box can be held to half the sheet's height. */
+  .chat-live {
+    container-type: size;
+    position: relative;
+  }
 
-/* The thread: one centred reading column ------------------------------------------------------ */
-.thread {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 24px 28px;
-}
-.thread-col {
-  max-width: 680px;
-  margin: 0 auto;
-  display: grid;
-  /* One column that never grows past the sheet: without minmax(0, …) the implicit `auto`
+  /* The thread: one centred reading column ------------------------------------------------------ */
+  .thread {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px 28px;
+  }
+  .thread-col {
+    max-width: 680px;
+    margin: 0 auto;
+    display: grid;
+    /* One column that never grows past the sheet: without minmax(0, …) the implicit `auto`
      column widens to the longest code line or table, and every message overflows with it. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-.thread-empty {
-  margin-top: 32px;
-  justify-items: center;
-  text-align: center;
-  gap: 6px;
-}
-.thread-empty h2 {
-  font-size: 18px;
-}
-.thread-empty .lede {
-  font-size: 14px;
-  color: var(--iron);
-}
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .thread-empty {
+    margin-top: 32px;
+    justify-items: center;
+    text-align: center;
+    gap: 6px;
+  }
+  .thread-empty h2 {
+    font-size: 18px;
+  }
+  .thread-empty .lede {
+    font-size: 14px;
+    color: var(--iron);
+  }
 
-/* Your message: a soft bubble. Claude's reply: plain text on the sheet. */
-.msg-user {
-  justify-self: end;
-  max-width: min(85%, 560px);
-  margin-left: 32px;
-  padding: 8px 12px;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--wash);
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.msg-assistant {
-  max-width: 100%;
-  font-size: 15px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
+  /* Your message: a soft bubble. Claude's reply: plain text on the sheet. */
+  .msg-user {
+    justify-self: end;
+    max-width: min(85%, 560px);
+    margin-left: 32px;
+    padding: 8px 12px;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--wash);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .msg-assistant {
+    max-width: 100%;
+    font-size: 15px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
 
-.markdown > :first-child {
-  margin-top: 0;
-}
-.markdown > :last-child {
-  margin-bottom: 0;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown pre,
-.markdown table,
-.markdown blockquote {
-  margin: 0 0 12px;
-}
-.markdown ul,
-.markdown ol {
-  padding-left: 20px;
-}
-.markdown h1,
-.markdown h2,
-.markdown h3,
-.markdown h4 {
-  margin: 16px 0 6px;
-  font-family: var(--head);
-  font-weight: 600;
-  line-height: 1.3;
-}
-.markdown h1,
-.markdown h2 {
-  font-size: var(--md-h2, 18px);
-}
-.markdown h3 {
-  font-size: var(--md-h3, 15px);
-}
-.markdown h4 {
-  font-size: 14px;
-}
-.markdown a {
-  color: var(--blue-ink);
-}
-.markdown a:hover {
-  text-decoration-thickness: 2px;
-  text-underline-offset: 2px;
-}
-/* A file the chat reported: link colour with a small file icon before it. It opens in the panel. */
-.markdown a[href^="#chat-file="]::before {
-  content: "";
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  margin-right: 3px;
-  vertical-align: -2px;
-  background: currentColor;
-  -webkit-mask: var(--file-icon) center / contain no-repeat;
-  mask: var(--file-icon) center / contain no-repeat;
-}
-.markdown a[href^="#chat-file="] {
-  --file-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h7l3.5 3.5V16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM12 3v3.5h3.5'/%3E%3C/svg%3E");
-}
-.markdown code {
-  font-family: var(--mono);
-  font-size: 0.88em;
-  background: var(--tray);
-  padding: 1px 5px;
-  border-radius: 6px;
-}
-.markdown pre {
-  background: var(--tray);
-  border-radius: 10px;
-  padding: 10px 12px;
-  overflow-x: auto;
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.markdown pre code {
-  background: none;
-  padding: 0;
-  font-size: inherit;
-}
-.markdown a[href^="#chat-file="] code {
-  color: inherit;
-}
-.markdown table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.markdown th,
-.markdown td {
-  padding: 8px 10px 8px 0;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--line);
-}
-.markdown th {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-  border-bottom: 1.5px solid var(--navy);
-}
-.markdown blockquote {
-  border-left: 2px solid var(--line-strong);
-  padding-left: 12px;
-  font-size: 13px;
-  color: var(--iron);
-}
-.markdown img {
-  max-width: 100%;
-  height: auto;
-}
+  .markdown > :first-child {
+    margin-top: 0;
+  }
+  .markdown > :last-child {
+    margin-bottom: 0;
+  }
+  .markdown p,
+  .markdown ul,
+  .markdown ol,
+  .markdown pre,
+  .markdown table,
+  .markdown blockquote {
+    margin: 0 0 12px;
+  }
+  .markdown ul,
+  .markdown ol {
+    padding-left: 20px;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3,
+  .markdown h4 {
+    margin: 16px 0 6px;
+    font-family: var(--head);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .markdown h1,
+  .markdown h2 {
+    font-size: var(--md-h2, 18px);
+  }
+  .markdown h3 {
+    font-size: var(--md-h3, 15px);
+  }
+  .markdown h4 {
+    font-size: 14px;
+  }
+  .markdown a {
+    color: var(--blue-ink);
+  }
+  .markdown a:hover {
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+  /* A file the chat reported: link colour with a small file icon before it. It opens in the panel. */
+  .markdown a[href^="#chat-file="]::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 3px;
+    vertical-align: -2px;
+    background: currentColor;
+    -webkit-mask: var(--file-icon) center / contain no-repeat;
+    mask: var(--file-icon) center / contain no-repeat;
+  }
+  .markdown a[href^="#chat-file="] {
+    --file-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h7l3.5 3.5V16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM12 3v3.5h3.5'/%3E%3C/svg%3E");
+  }
+  .markdown code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--tray);
+    padding: 1px 5px;
+    border-radius: 6px;
+  }
+  .markdown pre {
+    background: var(--tray);
+    border-radius: 10px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .markdown pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .markdown a[href^="#chat-file="] code {
+    color: inherit;
+  }
+  .markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .markdown th,
+  .markdown td {
+    padding: 8px 10px 8px 0;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  .markdown th {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+    border-bottom: 1.5px solid var(--navy);
+  }
+  .markdown blockquote {
+    border-left: 2px solid var(--line-strong);
+    padding-left: 12px;
+    font-size: 13px;
+    color: var(--iron);
+  }
+  .markdown img {
+    max-width: 100%;
+    height: auto;
+  }
 
-/* "What Claude did": the steps under a reply, folded away. */
-.activity {
-  font-size: 13px;
-  color: var(--iron);
-}
-.activity summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 4px;
-  border-radius: 9px;
-  cursor: pointer;
-  list-style: none;
-  transition: background-color 120ms var(--ease);
-}
-.activity summary:hover {
-  background: var(--tint-2);
-  color: var(--navy);
-}
-.activity summary:active {
-  background: var(--tint-3);
-}
-.activity summary::-webkit-details-marker {
-  display: none;
-}
-.activity summary .icon {
-  transform: rotate(-90deg);
-  transition: transform 120ms var(--ease);
-}
-.activity[open] > summary .icon {
-  transform: none;
-}
-.activity[data-running="true"] > summary {
-  color: var(--blue-ink);
-}
-.activity-steps,
-.activity-steps ul {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0 0 0 12px;
-  border-left: 2px solid var(--line-strong);
-  display: grid;
-  gap: 4px;
-}
-.activity-steps {
-  margin-left: 10px;
-}
-/* A grid item grows to fit its widest content: without this a report's wide table pushes its card
+  /* "What Claude did": the steps under a reply, folded away. */
+  .activity {
+    font-size: 13px;
+    color: var(--iron);
+  }
+  .activity summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px 3px 4px;
+    border-radius: 9px;
+    cursor: pointer;
+    list-style: none;
+    transition: background-color 120ms var(--ease);
+  }
+  .activity summary:hover {
+    background: var(--tint-2);
+    color: var(--navy);
+  }
+  .activity summary:active {
+    background: var(--tint-3);
+  }
+  .activity summary::-webkit-details-marker {
+    display: none;
+  }
+  .activity summary .icon {
+    transform: rotate(-90deg);
+    transition: transform 120ms var(--ease);
+  }
+  .activity[open] > summary .icon {
+    transform: none;
+  }
+  .activity[data-running="true"] > summary {
+    color: var(--blue-ink);
+  }
+  .activity-steps,
+  .activity-steps ul {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0 0 0 12px;
+    border-left: 2px solid var(--line-strong);
+    display: grid;
+    gap: 4px;
+  }
+  .activity-steps {
+    margin-left: 10px;
+  }
+  /* A grid item grows to fit its widest content: without this a report's wide table pushes its card
    out of the panel instead of scrolling inside it. */
-.activity-steps > li {
-  min-width: 0;
-}
-.activity .tool-status[data-status="failed"] {
-  color: var(--danger);
-}
-/* The thread's "What Claude did" sits on its own faint panel, so Claude's working reads apart from
+  .activity-steps > li {
+    min-width: 0;
+  }
+  .activity .tool-status[data-status="failed"] {
+    color: var(--danger);
+  }
+  /* The thread's "What Claude did" sits on its own faint panel, so Claude's working reads apart from
    its answers and your messages: as wide as its line when shut, the column's width when open. */
-.step-fold {
-  background: var(--tint-1);
-  border-radius: 12px;
-  padding: 3px;
-  width: fit-content;
-  max-width: 100%;
-}
-.step-fold[open] {
-  width: auto;
-  padding-bottom: 10px;
-}
-/* While Claude works the line names each step in turn: a full-width panel doesn't jump with it. */
-.step-fold[data-running="true"] {
-  width: auto;
-}
-/* A helper's report: its own fold inside, opening to the report on a white card. */
-.activity-report > details[open] > summary .icon {
-  transform: none;
-}
-.activity-report-body {
-  margin: 4px 8px 4px 0;
-  padding: 10px 12px;
-  background: #fff;
-  border-radius: 10px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--navy);
-  /* Not `anywhere`: that lets a table squeeze a short column ("HIGH") letter by letter. */
-  overflow-wrap: break-word;
-  /* Its headings stay below the answer's (18px), to suit the card's 13.5px text. */
-  --md-h2: 15px;
-  --md-h3: 14px;
-}
-/* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
-.activity-note {
-  line-height: 1.5;
-  color: var(--iron);
-  border-left: 2px solid var(--line-strong);
-  padding-left: 8px;
-  margin: 2px 0;
-}
-/* A bullet list Claude wrote in a note or a helper's text keeps its markdown look, not the steps'. */
-.activity-steps .markdown ul,
-.activity-steps .markdown ol {
-  list-style: revert;
-  display: block;
-  border-left: 0;
-  padding: 0 0 0 20px;
-}
-.activity-note .markdown > :not(:last-child) {
-  margin-bottom: 6px;
-}
-.helper-text {
-  border-left: 2px solid var(--line-strong);
-  padding-left: 8px;
-  margin: 4px 0;
-  color: var(--iron);
-}
+  .step-fold {
+    background: var(--tint-1);
+    border-radius: 12px;
+    padding: 3px;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .step-fold[open] {
+    width: auto;
+    padding-bottom: 10px;
+  }
+  /* While Claude works the line names each step in turn: a full-width panel doesn't jump with it. */
+  .step-fold[data-running="true"] {
+    width: auto;
+  }
+  /* A helper's report: its own fold inside, opening to the report on a white card. */
+  .activity-report > details[open] > summary .icon {
+    transform: none;
+  }
+  .activity-report-body {
+    margin: 4px 8px 4px 0;
+    padding: 10px 12px;
+    background: #fff;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--navy);
+    /* Not `anywhere`: that lets a table squeeze a short column ("HIGH") letter by letter. */
+    overflow-wrap: break-word;
+    /* Its headings stay below the answer's (18px), to suit the card's 13.5px text. */
+    --md-h2: 15px;
+    --md-h3: 14px;
+  }
+  /* A note Claude wrote between steps, in its place among them: a side note's rule, as `.helper-text`. */
+  .activity-note {
+    line-height: 1.5;
+    color: var(--iron);
+    border-left: 2px solid var(--line-strong);
+    padding-left: 8px;
+    margin: 2px 0;
+  }
+  /* A bullet list Claude wrote in a note or a helper's text keeps its markdown look, not the steps'. */
+  .activity-steps .markdown ul,
+  .activity-steps .markdown ol {
+    list-style: revert;
+    display: block;
+    border-left: 0;
+    padding: 0 0 0 20px;
+  }
+  .activity-note .markdown > :not(:last-child) {
+    margin-bottom: 6px;
+  }
+  .helper-text {
+    border-left: 2px solid var(--line-strong);
+    padding-left: 8px;
+    margin: 4px 0;
+    color: var(--iron);
+  }
 
-/* Where earlier messages were summarised: a quiet notice, not a warning. */
-.notice[data-shape][data-kind="summary"] {
-  background: var(--tint-1);
-  border-style: dashed;
-  color: var(--iron);
-  text-align: center;
-}
-/* An answered card, kept in the thread as the record. */
-.record {
-  font-size: 13px;
-  color: var(--iron);
-}
-.record::before {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 8px;
-  background: #b9c0ce;
-}
+  /* Where earlier messages were summarised: a quiet notice, not a warning. */
+  .notice[data-shape][data-kind="summary"] {
+    background: var(--tint-1);
+    border-style: dashed;
+    color: var(--iron);
+    text-align: center;
+  }
+  /* An answered card, kept in the thread as the record. */
+  .record {
+    font-size: 13px;
+    color: var(--iron);
+  }
+  .record::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background: #b9c0ce;
+  }
 
-/* The floater: under the thread, never over it ------------------------------------------------ */
-.floater {
-  position: relative;
-  z-index: 1;
-  flex: none;
-  padding: 8px 28px 14px;
-  background: #fff;
-}
-/* The thread fades into the floater rather than meeting it at a hard edge. */
-.floater::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -20px;
-  height: 20px;
-  background: linear-gradient(#fff0, #fff);
-  pointer-events: none;
-}
-.floater-col {
-  max-width: 680px;
-  margin: 0 auto;
-  display: grid;
-  /* Same as .thread-col: a long unbroken string in a card must not widen the answer box. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-}
+  /* The floater: under the thread, never over it ------------------------------------------------ */
+  .floater {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    padding: 8px 28px 14px;
+    background: #fff;
+  }
+  /* The thread fades into the floater rather than meeting it at a hard edge. */
+  .floater::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -20px;
+    height: 20px;
+    background: linear-gradient(#fff0, #fff);
+    pointer-events: none;
+  }
+  .floater-col {
+    max-width: 680px;
+    margin: 0 auto;
+    display: grid;
+    /* Same as .thread-col: a long unbroken string in a card must not widen the answer box. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
 
-/* The answer box: ONE amber-glass surface; nothing inside has a box of its own. ------------- */
-.pending {
-  max-height: 50cqb;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid rgba(245, 158, 11, 0.5);
-  border-radius: 14px;
-  background: rgba(255, 248, 232, 0.72);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow: var(--lift-3);
-}
-/* The focus ring belongs to the surface, outside the scroller, so it is never cut off. */
-.pending:has(> :focus-visible) {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.pending > :focus,
-.pending > :focus-visible {
-  outline: none;
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* The answer box: ONE amber-glass surface; nothing inside has a box of its own. ------------- */
   .pending {
-    background: var(--amber-bg);
+    max-height: 50cqb;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border-radius: 14px;
+    background: rgba(255, 248, 232, 0.72);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    backdrop-filter: blur(20px) saturate(1.6);
+    box-shadow: var(--lift-3);
   }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .pending {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background: var(--amber-bg);
-  }
-}
-
-.approval,
-.question-card {
-  padding: 12px 14px;
-  color: var(--navy);
-}
-.approval-tag,
-.question-card .q-header {
-  display: block;
-  margin-bottom: 2px;
-  font-family: var(--body);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
-.approval-title,
-.question-card legend {
-  font-family: var(--head);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--navy);
-  overflow-wrap: anywhere;
-}
-.approval-detail {
-  max-height: 160px;
-  overflow: auto;
-  margin-top: 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.7);
-}
-.approval-detail pre {
-  margin: 0;
-  padding: 8px 10px;
-  font: 12.5px / 1.5 var(--mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* The change a Write or Edit will make: one closed line (the chat's `.activity` fold) that opens
-   to one row per line, − removed and + added. ------------------------------------------------ */
-.change-fold,
-.change-empty {
-  margin: 8px 0 0;
-}
-.change-key {
-  margin: 4px 0 0;
-  font-size: 12px;
-}
-/* Never taller than a quarter of the chat, so the buttons stay in view on a laptop. */
-.approval-detail.approval-change {
-  max-height: min(280px, 25cqb);
-  margin-top: 6px;
-}
-.approval-change pre {
-  padding: 6px 0;
-}
-.diff-part + .diff-part {
-  margin-top: 8px;
-}
-.diff-part-head {
-  margin: 0;
-  padding: 6px 10px 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
-/* The sign sits in its own column, so a long line wraps under its text, not under the sign. */
-.diff-line {
-  position: relative;
-  display: block;
-  min-height: 1.5em;
-  padding: 0 10px 0 26px;
-}
-.diff-sign {
-  position: absolute;
-  left: 10px;
-  font-weight: 700;
-}
-.diff-line[data-kind="removed"] {
-  background: var(--danger-wash);
-}
-.diff-line[data-kind="removed"] .diff-sign {
-  color: var(--danger);
-}
-.diff-line[data-kind="added"] {
-  background: var(--ok-wash);
-}
-.diff-line[data-kind="added"] .diff-sign {
-  color: var(--ok);
-}
-/* A new or replacing file: every line is new, so no sign column. */
-.diff-line[data-kind="plain"] {
-  padding-left: 10px;
-}
-.diff-gap {
-  display: block;
-  margin: 2px 0;
-  padding: 1px 10px 1px 26px;
-  font: 12px / 1.5 var(--body);
-  color: var(--iron);
-  background: rgba(2, 27, 67, 0.04);
-}
-
-.approval-warning {
-  margin: 8px 0 0;
-  font-size: 13px;
-}
-.approval-warning strong {
-  color: var(--danger);
-}
-.form-field.approval-note {
-  margin-top: 10px;
-}
-.own-answer > span {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
-.pending .field {
-  background: rgba(255, 255, 255, 0.75);
-}
-
-/* Allow first, then Allow for this chat, then Don't allow: one row. */
-.answer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.approval .why {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--iron);
-}
-
-/* Question card: a small form of flat option rows */
-.question-card {
-  display: grid;
-  gap: 12px;
-}
-.question-card fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.question-card legend {
-  padding: 0;
-  margin-bottom: 6px;
-}
-.question-card .meta {
-  font-size: 12px;
-  color: var(--iron);
-}
-.question-card .answer-actions {
-  margin-top: 0;
-}
-.question-card .opt {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 7px 8px;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-  transition:
-    background-color 120ms var(--ease),
-    box-shadow 120ms var(--ease),
-    transform 120ms var(--ease);
-}
-.question-card .opt:hover {
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--lift-1);
-  transform: translateY(-1px);
-}
-.question-card .opt:active {
-  transform: none;
-}
-.question-card .opt:has(input:checked) {
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.question-card .opt input {
-  margin: 1px 0 0;
-}
-.question-card .opt-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-}
-.question-card .opt-desc {
-  display: block;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.own-answer {
-  display: grid;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-/* The status line above the message box ------------------------------------------------------- */
-.attn-bar {
-  padding: 0 4px;
-}
-.attn-text {
-  font-size: 12px;
-  color: var(--iron);
-}
-.attn-label {
-  font-weight: 600;
-  color: var(--navy);
-}
-.attn-text .dot {
-  margin: 0 8px 0 2px;
-}
-.attn-spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 6px;
-  vertical-align: -1px;
-  stroke: var(--state-working);
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transform-origin: center;
-  transform-box: fill-box;
-  animation: attn-spin 1.1s linear infinite;
-}
-@keyframes attn-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* The message box (Composer), on Home and in a chat ------------------------------------------- */
-.composer {
-  display: grid;
-  gap: 6px;
-  padding: 10px 10px 8px 14px;
-  /* --field-edge reaches 3:1 on white (WCAG 1.4.11); --line-strong did not. */
-  border: 1.5px solid var(--field-edge);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: var(--lift-1);
-}
-.floater .composer {
-  box-shadow: var(--lift-2);
-}
-/* The box's border carries the chat's state. Same width in every state, no fill. */
-.composer[data-attention="ready"] {
-  border-color: var(--attn-ready-edge);
-}
-.composer[data-attention="working"] {
-  border-color: var(--attn-working-edge);
-}
-.composer[data-attention="asking"] {
-  border-color: var(--attn-asking-edge);
-  animation: attn-pulse 2s ease-in-out infinite;
-}
-@keyframes attn-pulse {
-  0%,
-  100% {
-    border-color: var(--attn-asking-edge);
-  }
-  50% {
-    border-color: var(--attn-asking-pulse);
-  }
-}
-.composer-input {
-  display: block;
-  width: 100%;
-  min-height: 40px;
-  max-height: 200px;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  color: var(--navy);
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  resize: none;
-  field-sizing: content;
-}
-.floater .composer-input {
-  min-height: 22px;
-}
-.composer-input::placeholder {
-  color: var(--iron);
-}
-.composer-input[aria-disabled="true"] {
-  color: var(--iron);
-}
-/* Where :has() works the ring goes round the whole box; elsewhere it stays on the text area. */
-@supports selector(:has(*)) {
-  .composer-input:focus-visible {
-    outline: none;
-  }
-  .composer:has(> .composer-input:focus-visible) {
+  /* The focus ring belongs to the surface, outside the scroller, so it is never cut off. */
+  .pending:has(> :focus-visible) {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-}
-.composer-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.composer-hint {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--iron);
-}
-.composer-foot .btn {
-  margin-left: auto;
-}
-/* Home's Working on and Chat for: their own row inside the box, under a hairline, above the attach and Send row.
-   Side by side when there is room, stacked on a narrow sheet. */
-.composer-scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-/* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
-.engine-line {
-  margin: -4px 0 0;
-  padding: 0 16px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 8px;
-}
-.engine-text {
-  overflow-wrap: anywhere;
-}
-/* The chosen skill: the shared chip, in wash and blue ink, with a small remove button. */
-.chip-row .chip {
-  background: var(--wash);
-  color: var(--blue-ink);
-  padding-right: 3px;
-}
-.chip-remove {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-}
-/* A 24px hit area round the 20px visible button, so the chip doesn't grow. */
-.chip-remove::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: 999px;
-}
-.chip-remove:hover {
-  background: var(--tint-2);
-}
-.chip-remove:active {
-  background: var(--tint-3);
-}
-
-/* Attached files ------------------------------------------------------------------------------ */
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-.file-chip {
-  max-width: min(260px, 100%);
-  padding-left: 7px;
-  background: var(--tray);
-  color: var(--navy);
-  border: 1px solid var(--line);
-}
-.chip-row .file-chip {
-  background: var(--tray);
-  color: var(--navy);
-}
-.file-chip > svg {
-  flex: none;
-}
-.file-name {
-  display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
-/* A long name is cut in the middle: the start shrinks, the end stays. */
-.file-name-start {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.file-name-end {
-  flex: none;
-}
-.file-note {
-  flex: none;
-  color: var(--iron);
-  font-weight: 400;
-}
-.file-note[data-error="true"] {
-  color: var(--danger);
-}
-.file-chip[data-status="error"] {
-  background: var(--danger-wash);
-  border-color: var(--danger);
-}
-.file-spinner {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border-width: 2px;
-}
-.file-chip:not(:has(.chip-remove)) {
-  padding-right: 9px;
-}
-/* The full reason for a refused file, one line each under the chips. */
-.attach-problem {
-  margin: 0;
-  font-size: 12px;
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-.sent-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  white-space: normal;
-}
-.msg-user > span + .sent-files {
-  margin-top: 8px;
-}
-.msg-user .file-chip {
-  background: var(--on-accent);
-}
-.attach-btn {
-  margin-left: -6px;
-}
-.composer-hint[data-wait="true"] {
-  color: var(--navy);
-  font-weight: 500;
-}
-/* Files are being dragged over the target: a dashed ring on a veil, and a note on a card. */
-[data-drop="true"] {
-  position: relative;
-}
-.composer[data-drop="true"] {
-  border-style: dashed;
-  border-color: var(--blue-ink);
-}
-.chat-live[data-drop="true"]::before,
-.composer[data-drop="true"]::before {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border: 2px dashed var(--blue-ink);
-  border-radius: 14px;
-  background: var(--glass-strong);
-  backdrop-filter: blur(3px);
-  pointer-events: none;
-  z-index: 5;
-}
-.chat-live[data-drop="true"]::after,
-.composer[data-drop="true"]::after {
-  content: "Drop files to attach";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 8px 16px;
-  border-radius: 10px;
-  background: var(--on-accent);
-  box-shadow: var(--lift-1);
-  color: var(--blue-ink);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 6;
-}
-@media (prefers-reduced-transparency: reduce) {
-  .chat-live[data-drop="true"]::before,
-  .composer[data-drop="true"]::before {
-    background: var(--glass-solid);
-    backdrop-filter: none;
+  .pending > :focus,
+  .pending > :focus-visible {
+    outline: none;
   }
-}
-
-/* The "This chat" panel (Inspector) ----------------------------------------------------------- */
-.inspector {
-  display: grid;
-  gap: 8px;
-}
-.inspector > .seg {
-  margin: 0 4px;
-}
-
-/* Key/value lists (the panel's Details, Settings' About): hairline rows. */
-.kv {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  margin: 0;
-  font-size: 13px;
-}
-.kv dt,
-.kv dd {
-  margin: 0;
-  padding: 6px 0;
-  border-top: 1px solid var(--line);
-}
-.kv > :nth-child(-n + 2) {
-  border-top: 0;
-}
-.kv dt {
-  padding-right: 12px;
-  color: var(--iron);
-}
-.kv dd {
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.kv .kv-wide {
-  grid-column: 1 / -1;
-}
-.kv dd.kv-wide {
-  border-top: 0;
-  padding-top: 0;
-}
-.inspector .kv {
-  padding: 0 8px;
-}
-.kv-note {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.terminal-cmd {
-  display: block;
-  margin-bottom: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid var(--line-strong);
-  font: 400 12.5px / 1.5 var(--mono);
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-
-/* Settings: plain content and hairline rows, no cards ----------------------------------------- */
-.page.settings {
-  max-width: 600px;
-  margin-left: 0;
-  padding: 24px var(--sheet-gutter) 32px;
-  gap: 24px;
-}
-/* The tab row starts on the sheet gutter, like the title above it, sized to its buttons. */
-.page-tabs {
-  flex: none;
-  margin: 12px 0 0;
-  padding: 0 var(--sheet-gutter);
-  width: 100%;
-}
-.page-tabs > .tool-tabs {
-  margin: 0;
-  max-width: 100%;
-  width: fit-content;
-}
-.page-tabs + .sheet-scroll .page.settings {
-  padding-top: 8px;
-}
-.settings h2 {
-  margin-bottom: 4px;
-  font-size: 14px;
-}
-.setting {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 10px 0;
-}
-.setting .field {
-  width: 220px;
-  max-width: 100%;
-}
-.setting + .setting {
-  border-top: 1px solid var(--line);
-}
-.setting-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-}
-.settings h3.setting-label {
-  margin-top: 16px; /* spacing step: sub-blocks in a section */
-}
-.setting-help {
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.about-code {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  font-weight: 400;
-}
-/* Settings → What's changed: one fold per version, newest first. */
-.version-list {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.version-list > li + li {
-  border-top: 1px solid var(--line);
-}
-.version-more {
-  margin-top: 8px;
-}
-.version-list .fold {
-  margin: 4px 0;
-}
-/* Lined up under the version's title: the fold button's 8px padding, 14px chevron and 8px gap. */
-.version-changes {
-  margin: 2px 0 10px;
-  padding-left: 48px;
-  list-style: disc;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.version-kind {
-  font-weight: 600;
-}
-.problem-list {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--danger);
-}
-
-/* Settings health panel: a summary line, then one row per check. The dot always sits beside words. */
-.health-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.health-check {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  gap: 10px;
-  padding: 8px 0;
-}
-.health-check + .health-check {
-  border-top: 1px solid var(--line);
-}
-.health-label {
-  font-size: 13px;
-  font-weight: 600;
-}
-.health-tag {
-  margin-left: 8px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: var(--wash);
-  color: var(--iron);
-}
-.health-tag[data-state="problem"] {
-  background: var(--danger-wash);
-  color: var(--danger);
-}
-.health-tag[data-state="note"] {
-  background: var(--amber-bg);
-  color: var(--amber-text);
-}
-.health-text {
-  margin-top: 1px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.health-check[data-state="problem"] .health-text {
-  color: var(--danger);
-}
-.health-detail {
-  display: block;
-  margin-top: 2px;
-  overflow-wrap: anywhere;
-  color: var(--iron);
-}
-.health-check > .dot {
-  /* Centred on the label's line. */
-  margin-top: 6px;
-}
-
-/* Profile: the person's departments as chips, wrapping. */
-.dept-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.kv-quiet {
-  font-weight: 400;
-  color: var(--iron);
-}
-/* A sentence or two, so it reads as prose rather than a bold value. */
-.kv dd.profile-owns {
-  font-weight: 400;
-  line-height: 1.5;
-}
-
-/* Whole-app states: one raised card on the desk ----------------------------------------------- */
-.gate {
-  min-height: 100%;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-}
-.gate-card {
-  width: min(520px, 100%);
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-  border-radius: 18px;
-  box-shadow: var(--lift-2);
-}
-.gate-card h1 {
-  font-size: 18px;
-}
-.gate .problem-list {
-  color: var(--navy);
-}
-.spinner {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid var(--line-strong);
-  border-top-color: var(--navy);
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .pending {
+      background: var(--amber-bg);
+    }
   }
-}
+  @media (prefers-reduced-transparency: reduce) {
+    .pending {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background: var(--amber-bg);
+    }
+  }
 
-/* The client chip in the chat's bar. */
-.chat-live .sheet-bar .chip {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+  .approval,
+  .question-card {
+    padding: 12px 14px;
+    color: var(--navy);
+  }
+  .approval-tag,
+  .question-card .q-header {
+    display: block;
+    margin-bottom: 2px;
+    font-family: var(--body);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .approval-title,
+  .question-card legend {
+    font-family: var(--head);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--navy);
+    overflow-wrap: anywhere;
+  }
+  .approval-detail {
+    max-height: 160px;
+    overflow: auto;
+    margin-top: 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .approval-detail pre {
+    margin: 0;
+    padding: 8px 10px;
+    font: 12.5px / 1.5 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 
-/* Narrow sheets and windows ------------------------------------------------------------------- */
-@media (max-width: 599px) {
-  .thread {
-    padding: 16px;
+  /* The change a Write or Edit will make: one closed line (the chat's `.activity` fold) that opens
+   to one row per line, − removed and + added. ------------------------------------------------ */
+  .change-fold,
+  .change-empty {
+    margin: 8px 0 0;
   }
-  .floater {
-    padding: 8px 16px 12px;
+  .change-key {
+    margin: 4px 0 0;
+    font-size: 12px;
   }
-  .msg-user {
-    margin-left: 16px;
+  /* Never taller than a quarter of the chat, so the buttons stay in view on a laptop. */
+  .approval-detail.approval-change {
+    max-height: min(280px, 25cqb);
+    margin-top: 6px;
   }
-  .page.settings {
-    padding: 16px var(--sheet-gutter);
+  .approval-change pre {
+    padding: 6px 0;
   }
-}
+  .diff-part + .diff-part {
+    margin-top: 8px;
+  }
+  .diff-part-head {
+    margin: 0;
+    padding: 6px 10px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+  }
+  /* The sign sits in its own column, so a long line wraps under its text, not under the sign. */
+  .diff-line {
+    position: relative;
+    display: block;
+    min-height: 1.5em;
+    padding: 0 10px 0 26px;
+  }
+  .diff-sign {
+    position: absolute;
+    left: 10px;
+    font-weight: 700;
+  }
+  .diff-line[data-kind="removed"] {
+    background: var(--danger-wash);
+  }
+  .diff-line[data-kind="removed"] .diff-sign {
+    color: var(--danger);
+  }
+  .diff-line[data-kind="added"] {
+    background: var(--ok-wash);
+  }
+  .diff-line[data-kind="added"] .diff-sign {
+    color: var(--ok);
+  }
+  /* A new or replacing file: every line is new, so no sign column. */
+  .diff-line[data-kind="plain"] {
+    padding-left: 10px;
+  }
+  .diff-gap {
+    display: block;
+    margin: 2px 0;
+    padding: 1px 10px 1px 26px;
+    font: 12px / 1.5 var(--body);
+    color: var(--iron);
+    background: rgba(2, 27, 67, 0.04);
+  }
 
-/* Less motion: nothing spins, pulses or lifts. */
-@media (prefers-reduced-motion: reduce) {
-  .spinner,
-  .file-spinner,
-  .attn-spinner,
-  .composer[data-attention] {
-    animation: none;
+  .approval-warning {
+    margin: 8px 0 0;
+    font-size: 13px;
   }
-  .question-card .opt,
+  .approval-warning strong {
+    color: var(--danger);
+  }
+  .form-field.approval-note {
+    margin-top: 10px;
+  }
+  .own-answer > span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .pending .field:not(:disabled) {
+    background: rgba(255, 255, 255, 0.75);
+  }
+
+  /* Allow first, then Allow for this chat, then Don't allow: one row. */
+  .answer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .approval .why {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--iron);
+  }
+
+  /* Question card: a small form of flat option rows */
+  .question-card {
+    display: grid;
+    gap: 12px;
+  }
+  .question-card fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .question-card legend {
+    padding: 0;
+    margin-bottom: 6px;
+  }
+  .question-card .meta {
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .question-card .answer-actions {
+    margin-top: 0;
+  }
+  .question-card .opt {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 7px 8px;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    transition:
+      background-color 120ms var(--ease),
+      box-shadow 120ms var(--ease),
+      transform 120ms var(--ease);
+  }
   .question-card .opt:hover {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--lift-1);
+    transform: translateY(-1px);
+  }
+  .question-card .opt:active {
     transform: none;
   }
-  .question-card .opt,
-  .activity summary,
-  .activity summary .icon {
-    transition: none;
+  .question-card .opt:has(input:checked) {
+    background: #fff;
+    box-shadow: var(--lift-1);
   }
-}
+  .question-card .opt input {
+    margin: 1px 0 0;
+  }
+  .question-card .opt-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .question-card .opt-desc {
+    display: block;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .own-answer {
+    display: grid;
+    gap: 4px;
+    margin-top: 6px;
+  }
 
-/* The brain folder page ------------------------------------------------------------------------ */
-.setup {
-  width: min(600px, 100%);
-}
-.setup h1:focus {
-  outline: none;
-}
-.setup h2 {
-  font-size: 14px;
-}
-.setup-section,
-.setup-form {
-  display: grid;
-  gap: 8px;
-}
-.setup-form label {
-  font-weight: 600;
-  font-size: 13px;
-}
-.setup-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-.setup-candidate {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.setup-path {
-  overflow-wrap: anywhere;
-}
-.setup-current {
-  font-weight: 600;
-  color: var(--blue-ink);
-}
-.setup-warning {
-  color: var(--navy);
-  font-weight: 600;
-}
-.setup-error {
-  color: var(--danger);
-  font-weight: 600;
-}
-.setup-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.setup-status:empty {
-  display: none;
-}
-.health-check .btn {
-  margin-top: 6px;
-}
+  /* The status line above the message box ------------------------------------------------------- */
+  .attn-bar {
+    padding: 0 4px;
+  }
+  .attn-text {
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .attn-label {
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .attn-text .dot {
+    margin: 0 8px 0 2px;
+  }
+  .attn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    stroke: var(--state-working);
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: attn-spin 1.1s linear infinite;
+  }
+  @keyframes attn-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
-/* The Files tab of the "This chat" panel ------------------------------------------------------- */
-.files {
-  display: grid;
-  gap: 4px;
-}
-.files-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-  padding: 7px 8px;
-  border-radius: 10px;
-  color: inherit;
-  text-decoration: none;
-}
-/* biome-ignore lint/style/noDescendingSpecificity: a file row is never inside an activity report's summary. */
-.files-row .icon {
-  flex: none;
-  color: var(--iron);
-}
-.files > div > .fold {
-  margin-bottom: 8px;
-}
-.files-preview {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 0 4px;
-}
-.files-preview > .btn {
-  justify-self: start;
-}
-.files-back {
-  display: inline-flex;
-  transform: rotate(90deg);
-}
-.files-title {
-  margin: 4px 0 0;
-  font: 600 15px / 1.3 var(--head);
-  overflow-wrap: anywhere;
-}
-.files-title:focus {
-  outline: none;
-}
-.files-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-/* The panel is narrow: tables and code scroll sideways instead of widening it. */
-.files-body {
-  min-width: 0;
-  padding: 12px;
-  overflow-x: auto;
-}
-.files-body .markdown pre,
-.files-body .markdown table,
-.files-body .lib-text {
-  max-width: 100%;
-  overflow-x: auto;
-}
-.files-body .lib-viewer-image {
-  max-height: 60dvh;
-}
-.files-changes,
-.files-change-list {
-  display: grid;
-  gap: 8px;
-}
-.files-changes > .btn {
-  justify-self: start;
-}
-.files-change-when {
-  margin: 0;
-  font-size: 12px;
-  color: var(--iron);
-}
+  /* The message box (Composer), on Home and in a chat ------------------------------------------- */
+  .composer {
+    display: grid;
+    gap: 6px;
+    padding: 10px 10px 8px 14px;
+    /* --field-edge reaches 3:1 on white (WCAG 1.4.11); --line-strong did not. */
+    border: 1.5px solid var(--field-edge);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: var(--lift-1);
+  }
+  .floater .composer {
+    box-shadow: var(--lift-2);
+  }
+  /* The box's border carries the chat's state. Same width in every state, no fill. */
+  .composer[data-attention="ready"] {
+    border-color: var(--attn-ready-edge);
+  }
+  .composer[data-attention="working"] {
+    border-color: var(--attn-working-edge);
+  }
+  .composer[data-attention="asking"] {
+    border-color: var(--attn-asking-edge);
+    animation: attn-pulse 2s ease-in-out infinite;
+  }
+  @keyframes attn-pulse {
+    0%,
+    100% {
+      border-color: var(--attn-asking-edge);
+    }
+    50% {
+      border-color: var(--attn-asking-pulse);
+    }
+  }
+  .composer-input {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    max-height: 200px;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    color: var(--navy);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    field-sizing: content;
+  }
+  .floater .composer-input {
+    min-height: 22px;
+  }
+  .composer-input::placeholder {
+    color: var(--iron);
+  }
+  .composer-input[aria-disabled="true"] {
+    color: var(--iron);
+  }
+  /* Where :has() works the ring goes round the whole box; elsewhere it stays on the text area. */
+  @supports selector(:has(*)) {
+    .composer-input:focus-visible {
+      outline: none;
+    }
+    .composer:has(> .composer-input:focus-visible) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+  }
+  .composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .composer-hint {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .composer-foot .btn {
+    margin-left: auto;
+  }
+  /* Home's Working on and Chat for: their own row inside the box, under a hairline, above the attach and Send row.
+   Side by side when there is room, stacked on a narrow sheet. */
+  .composer-scope {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  /* The model and effort, under a chat's message box: row-meta type, lined up with the typed text. */
+  .engine-line {
+    margin: -4px 0 0;
+    padding: 0 16px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+  }
+  .engine-text {
+    overflow-wrap: anywhere;
+  }
+  /* The chosen skill: the shared chip, in wash and blue ink, with a small remove button. */
+  .chip-row .chip {
+    background: var(--wash);
+    color: var(--blue-ink);
+    padding-right: 3px;
+  }
+  .chip-remove {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  /* A 24px hit area round the 20px visible button, so the chip doesn't grow. */
+  .chip-remove::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 999px;
+  }
+  .chip-remove:hover {
+    background: var(--tint-2);
+  }
+  .chip-remove:active {
+    background: var(--tint-3);
+  }
 
-.files-url {
-  overflow-wrap: anywhere;
-}
-.files-url::first-letter {
-  text-transform: none;
-}
-.files-row .line-title {
-  overflow-wrap: anywhere;
-}
+  /* Attached files ------------------------------------------------------------------------------ */
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+  .file-chip {
+    max-width: min(260px, 100%);
+    padding-left: 7px;
+    background: var(--tray);
+    color: var(--navy);
+    border: 1px solid var(--line);
+  }
+  .chip-row .file-chip {
+    background: var(--tray);
+    color: var(--navy);
+  }
+  .file-chip > svg {
+    flex: none;
+  }
+  .file-name {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* A long name is cut in the middle: the start shrinks, the end stays. */
+  .file-name-start {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-name-end {
+    flex: none;
+  }
+  .file-note {
+    flex: none;
+    color: var(--iron);
+    font-weight: 400;
+  }
+  .file-note[data-error="true"] {
+    color: var(--danger);
+  }
+  .file-chip[data-status="error"] {
+    background: var(--danger-wash);
+    border-color: var(--danger);
+  }
+  /* Its size is the .spinner's (20px): that rule has always overridden a 12px set here. */
+  .file-spinner {
+    flex: none;
+    border-width: 2px;
+  }
+  .file-chip:not(:has(.chip-remove)) {
+    padding-right: 9px;
+  }
+  /* The full reason for a refused file, one line each under the chips. */
+  .attach-problem {
+    margin: 0;
+    font-size: 12px;
+    color: var(--danger);
+    overflow-wrap: anywhere;
+  }
+  .sent-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    white-space: normal;
+  }
+  .msg-user > span + .sent-files {
+    margin-top: 8px;
+  }
+  .msg-user .file-chip {
+    background: var(--on-accent);
+  }
+  .attach-btn {
+    margin-left: -6px;
+  }
+  .composer-hint[data-wait="true"] {
+    color: var(--navy);
+    font-weight: 500;
+  }
+  /* Files are being dragged over the target: a dashed ring on a veil, and a note on a card. */
+  [data-drop="true"] {
+    position: relative;
+  }
+  .composer[data-drop="true"] {
+    border-style: dashed;
+    border-color: var(--blue-ink);
+  }
+  .chat-live[data-drop="true"]::before,
+  .composer[data-drop="true"]::before {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border: 2px dashed var(--blue-ink);
+    border-radius: 14px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(3px);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .chat-live[data-drop="true"]::after,
+  .composer[data-drop="true"]::after {
+    content: "Drop files to attach";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 8px 16px;
+    border-radius: 10px;
+    background: var(--on-accent);
+    box-shadow: var(--lift-1);
+    color: var(--blue-ink);
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 6;
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .chat-live[data-drop="true"]::before,
+    .composer[data-drop="true"]::before {
+      background: var(--glass-solid);
+      backdrop-filter: none;
+    }
+  }
 
-/* Levels: the line under the message box in automatic mode, its "Why?" and menu, and the team-level offer. */
-.level-line {
-  margin: -4px 0 0;
-}
-.level-line .level-row {
-  margin: 0;
-}
-.level-why {
-  margin: 2px 0 0;
-  padding: 0 16px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.popover.level-menu {
-  margin: 4px 16px 0;
-  display: grid;
-  gap: 2px;
-}
-.level-menu[hidden],
-.level-why[hidden] {
-  display: none;
-}
-.level-option-name {
-  font-size: 13px;
-  font-weight: 600;
-}
-.level-option-blurb {
-  font-size: 12px;
-  color: var(--iron);
-}
-.notice[data-shape].level-offer {
-  margin: 4px 16px 0;
-}
-.level-offer-text {
-  margin: 0;
-  flex: 1 1 220px;
-  overflow-wrap: anywhere;
-}
+  /* The "This chat" panel (Inspector) ----------------------------------------------------------- */
+  .inspector {
+    display: grid;
+    gap: 8px;
+  }
+  .inspector > .seg {
+    margin: 0 4px;
+  }
 
-/* Settings: how the model is chosen, and the Skill levels list. */
-.setting.level-mode .seg {
-  flex-wrap: wrap;
-}
-.levels-search {
-  margin: 8px 0;
-}
-.levels-search .field {
-  width: 100%;
-  max-width: 320px;
-}
-.levels-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.levels-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 16px;
-  padding: 8px 0;
-}
-.levels-row + .levels-row {
-  border-top: 1px solid var(--line);
-}
-.levels-who {
-  display: grid;
-  min-width: 0;
-}
-.levels-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.levels-actions .field {
-  width: 140px;
-}
+  /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
+  .inspector .kv {
+    padding: 0 8px;
+  }
+  .terminal-cmd {
+    display: block;
+    margin-bottom: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--line-strong);
+    font: 400 12.5px / 1.5 var(--mono);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .problem-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--danger);
+  }
 
-/* Context meter: how full the chat is, under the message box. Words carry the band, colour only backs them up. */
-.context-foot {
-  margin: -4px 0 0;
-  padding: 0 16px;
-}
-.context-meter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--iron);
-}
-.context-meter-bar {
-  flex: 0 0 64px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--tint-2);
-  overflow: hidden;
-}
-.context-meter-fill {
-  display: block;
-  height: 100%;
-  background: var(--grey-dot);
-}
-.context-meter[data-band="warn"] .context-meter-fill {
-  background: var(--attn-asking-edge);
-}
-.context-meter[data-band="full"] {
-  color: var(--danger);
-}
-.context-meter[data-band="full"] .context-meter-fill {
-  background: var(--danger);
-}
+  /* Whole-app states: one raised card on the desk ----------------------------------------------- */
+  .gate {
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+  .gate-card {
+    width: min(520px, 100%);
+    display: grid;
+    gap: 12px;
+    padding: 24px;
+    border-radius: 18px;
+    box-shadow: var(--lift-2);
+  }
+  .gate-card h1 {
+    font-size: 18px;
+  }
+  .gate .problem-list {
+    color: var(--navy);
+  }
 
-/* Inspector > Context */
-.context-items {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-}
-.context-item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0 8px;
-}
-.context-items .context-tokens {
-  color: var(--iron);
-  font-variant-numeric: tabular-nums;
-}
-.context-items .context-advice {
-  grid-column: 1 / -1;
-  font-size: 12px;
-  color: var(--iron);
+  /* The client chip in the chat's bar. */
+  .chat-live .sheet-bar .chip {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Narrow sheets and windows ------------------------------------------------------------------- */
+  @media (max-width: 599px) {
+    .thread {
+      padding: 16px;
+    }
+    .floater {
+      padding: 8px 16px 12px;
+    }
+    .msg-user {
+      margin-left: 16px;
+    }
+  }
+
+  /* Less motion: nothing spins, pulses or lifts. */
+  @media (prefers-reduced-motion: reduce) {
+    .file-spinner,
+    .attn-spinner,
+    .composer[data-attention] {
+      animation: none;
+    }
+    .question-card .opt,
+    .question-card .opt:hover {
+      transform: none;
+    }
+    .question-card .opt,
+    .activity summary,
+    .activity summary .icon {
+      transition: none;
+    }
+  }
+
+  /* The brain folder page ------------------------------------------------------------------------ */
+  .setup {
+    width: min(600px, 100%);
+  }
+  .setup h1:focus {
+    outline: none;
+  }
+  .setup h2 {
+    font-size: 14px;
+  }
+  .setup-section,
+  .setup-form {
+    display: grid;
+    gap: 8px;
+  }
+  .setup-form label {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .setup-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .setup-candidate {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .setup-path {
+    overflow-wrap: anywhere;
+  }
+  .setup-current {
+    font-weight: 600;
+    color: var(--blue-ink);
+  }
+  .setup-warning {
+    color: var(--navy);
+    font-weight: 600;
+  }
+  .setup-error {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .setup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .setup-status:empty {
+    display: none;
+  }
+
+  /* The Files tab of the "This chat" panel ------------------------------------------------------- */
+  .files {
+    display: grid;
+    gap: 4px;
+  }
+  .files-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+  }
+  /* biome-ignore lint/style/noDescendingSpecificity: a file row is never inside an activity report's summary. */
+  .files-row .icon {
+    flex: none;
+    color: var(--iron);
+  }
+  .files > div > .fold {
+    margin-bottom: 8px;
+  }
+  .files-preview {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 4px;
+  }
+  .files-preview > .btn {
+    justify-self: start;
+  }
+  .files-back {
+    display: inline-flex;
+    transform: rotate(90deg);
+  }
+  .files-title {
+    margin: 4px 0 0;
+    font: 600 15px / 1.3 var(--head);
+    overflow-wrap: anywhere;
+  }
+  .files-title:focus {
+    outline: none;
+  }
+  .files-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* The panel is narrow: tables and code scroll sideways instead of widening it. */
+  .files-body {
+    min-width: 0;
+    padding: 12px;
+    overflow-x: auto;
+  }
+  .files-body .markdown pre,
+  .files-body .markdown table,
+  .files-body .lib-text {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .files-body .lib-viewer-image {
+    max-height: 60dvh;
+  }
+  .files-changes,
+  .files-change-list {
+    display: grid;
+    gap: 8px;
+  }
+  .files-changes > .btn {
+    justify-self: start;
+  }
+  .files-change-when {
+    margin: 0;
+    font-size: 12px;
+    color: var(--iron);
+  }
+
+  .files-url {
+    overflow-wrap: anywhere;
+  }
+  .files-url::first-letter {
+    text-transform: none;
+  }
+  .files-row .line-title {
+    overflow-wrap: anywhere;
+  }
+
+  /* Levels: the line under the message box in automatic mode, its "Why?" and menu, and the team-level offer. */
+  .level-line {
+    margin: -4px 0 0;
+  }
+  .level-line .level-row {
+    margin: 0;
+  }
+  .level-why {
+    margin: 2px 0 0;
+    padding: 0 16px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .popover.level-menu {
+    margin: 4px 16px 0;
+    display: grid;
+    gap: 2px;
+  }
+  .level-menu[hidden],
+  .level-why[hidden] {
+    display: none;
+  }
+  .level-option-name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .level-option-blurb {
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .notice[data-shape].level-offer {
+    margin: 4px 16px 0;
+  }
+  .level-offer-text {
+    margin: 0;
+    flex: 1 1 220px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Context meter: how full the chat is, under the message box. Words carry the band, colour only backs them up. */
+  .context-foot {
+    margin: -4px 0 0;
+    padding: 0 16px;
+  }
+  .context-meter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--iron);
+  }
+  .context-meter-bar {
+    flex: 0 0 64px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--tint-2);
+    overflow: hidden;
+  }
+  .context-meter-fill {
+    display: block;
+    height: 100%;
+    background: var(--grey-dot);
+  }
+  .context-meter[data-band="warn"] .context-meter-fill {
+    background: var(--attn-asking-edge);
+  }
+  .context-meter[data-band="full"] {
+    color: var(--danger);
+  }
+  .context-meter[data-band="full"] .context-meter-fill {
+    background: var(--danger);
+  }
+
+  /* Inspector > Context */
+  .context-items {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+    font-size: 13px;
+  }
+  .context-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 8px;
+  }
+  .context-items .context-tokens {
+    color: var(--iron);
+    font-variant-numeric: tabular-nums;
+  }
+  .context-items .context-advice {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: var(--iron);
+  }
 }

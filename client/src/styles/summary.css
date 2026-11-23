@@ -1,67 +1,69 @@
-/* Ads Account Summary (plan 2026-11-19-ads-workbench-sections, decision 8). Deep-dive table rules stay in ad-manager.css. */
-.sm .sm-period {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--iron);
-}
-.sm .sm-worth ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-.sm .sm-worth li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-.sm .sm-worth li p {
-  flex: 1 1 240px;
-  margin: 0;
-}
-/* A heading that "Worth a look" has just moved focus to: shown, since a click can't be told from a key here. */
-.sm .am-t-h:focus {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-/* Totals strip: Release 2, shown only when the board carries `totalRanges`. */
-.sm .sm-totals {
-  margin-top: 12px;
-}
-.sm .sm-totals .card-head {
-  flex-wrap: wrap;
-}
-.sm .sm-switch {
-  margin: 0 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  font-size: 13px;
-  color: var(--iron);
-}
-.sm .sm-switch .seg > button {
-  /* "30 days" stays on one line; the Seg sizes to its words. */
-  flex: none;
-  white-space: nowrap;
-}
-.sm .sm-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0 8px 8px;
-}
-.sm .sm-wasted {
-  margin: 0;
-  padding: 8px 8px 4px;
-  border-top: 1px solid var(--line);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .sm {
-    scroll-behavior: smooth;
+@layer tools {
+  /* Ads Account Summary (plan 2026-11-19-ads-workbench-sections, decision 8). Deep-dive table rules stay in ad-manager.css. */
+  .sm .sm-period {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--iron);
+  }
+  .sm .sm-worth ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .sm .sm-worth li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .sm .sm-worth li p {
+    flex: 1 1 240px;
+    margin: 0;
+  }
+  /* A heading that "Worth a look" has just moved focus to: shown, since a click can't be told from a key here. */
+  .sm .am-t-h:focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Totals strip: Release 2, shown only when the board carries `totalRanges`. */
+  .sm .sm-totals {
+    margin-top: 12px;
+  }
+  .sm .sm-totals .card-head {
+    flex-wrap: wrap;
+  }
+  .sm .sm-switch {
+    margin: 0 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    font-size: 13px;
+    color: var(--iron);
+  }
+  .sm .sm-switch .seg > button {
+    /* "30 days" stays on one line; the Seg sizes to its words. */
+    flex: none;
+    white-space: nowrap;
+  }
+  .sm .sm-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0 8px 8px;
+  }
+  .sm .sm-wasted {
+    margin: 0;
+    padding: 8px 8px 4px;
+    border-top: 1px solid var(--line);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .sm {
+      scroll-behavior: smooth;
+    }
   }
 }

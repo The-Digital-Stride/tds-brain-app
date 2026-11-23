@@ -36,10 +36,44 @@ including label or padding, reaches 24px), visible focus on everything.
 - Spacing steps: 2, 4, 6, 8, 10, 12, 16, 24, 32.
 - Radii: 5, 6, 8, 9, 10, 12, 14, 16, 18 (5 ticks, 6 and 8 small pieces, 9 buttons and fields, 10 cards and tiles, 12 pop-ups, 14 big cards and your message, 16 the glass layers, 18 the largest surfaces).
 - Column widths: reading 680px, settings 600px, Home 880px.
+- Each step is a token in `styles/tokens.css` (`--sp-2` … `--sp-32`, `--r-5` … `--r-18`, `--fs-*` for the type sizes, see "Tokens for the scales"). New code uses the token; the old typed values are swapped sheet by sheet.
+
+## CSS layers and files
+
+Every stylesheet is wrapped in one cascade layer. The order is declared once, at the top of `styles/tokens.css` (the first sheet `main.tsx` imports): `@layer tokens, primitives, patterns, features, tools;`. A rule in a later layer beats an earlier layer's rule whatever its specificity, and an unlayered rule would beat all of them, so nothing is left unlayered except the `@font-face` blocks (Fontsource's CSS and the Inter face in `base.css`, which only declare fonts). `@media`, `@supports`, `@container` and `@keyframes` blocks sit inside their layer. `!important` reverses the order across layers (an earlier layer's `!important` wins), which only `todo-panel.css` uses.
+
+| Layer | What goes in it | Files |
+|---|---|---|
+| `tokens` | custom properties only | `tokens.css` |
+| `primitives` | one element each: type, buttons, fields, ticks, `.seg`, `.fold`, `.line`; and the small shared pieces `.tray`, `.card-head`, `.kv`, `.spinner`, `.link-btn` | `base.css`, `primitives.css` |
+| `patterns` | composed pieces that exist once: notice, dot, form field, popover, menu row, stat, panel head, confirm, the Setting row, the library parts the eager shell draws | `patterns.css`, `library-shared.css` |
+| `features` | one screen or area: shell, drawers, sections (Workbench rows and tool tabs), Home, palette, search-select, chat, Settings, viewer, to-do panel, help, guide, tour, the library, Images, Documents, Projects | `shell.css`, `drawers.css`, `sections.css`, `home.css`, `palette.css`, `search-select.css`, `chat.css`, `settings.css`, `viewer.css`, `todo-panel.css`, `help.css`, `guide.css`, `tour.css`, `apps/shared/library.css`, `apps/images/images.css`, `apps/documents/documents.css`, `projects.css` |
+| `tools` | a tool's own look (lazy) | `ad-manager.css`, `command.css`, `summary.css` |
+
+The eager sheets load in this order (`main.tsx`): tokens, base, primitives, shell, drawers, sections, home, palette, search-select, chat, settings, viewer, todo-panel, help, guide, tour, patterns, library-shared. The lazy ones (`ui.ts` of each app or tool) are library, images, projects, documents, ad-manager, command, summary. Inside one layer, order still decides ties.
+
+Rules of thumb that follow:
+
+- A feature restyles a primitive or pattern by setting a property on its own class. It always wins, so it must not hide a state the primitive handles: restate the hover, pressed or disabled look beside it (`.skill-more:hover` does this for the icon button's hover colour) or leave that property out.
+- A rule that is only here to be overridden by a later layer is dead: delete it (the viewer header's old grid and the sheet error notice's margin were removed this way, because the shared rule had always won).
+- A new shared piece goes in `primitives.css` (one element) or `patterns.css` (a composition), never in a feature file. The guard (`design-system.test.ts`) fails for a sheet with rules outside a named layer.
+
+## Tokens for the scales
+
+All in `styles/tokens.css`. Defined in Release 4 step A and used inside `primitives.css` and `patterns.css`; the rest of the sheets move over in step B.
+
+| Group | Tokens |
+|---|---|
+| Spacing | `--sp-2`, `--sp-4`, `--sp-6`, `--sp-8`, `--sp-10`, `--sp-12`, `--sp-16`, `--sp-24`, `--sp-32` |
+| Radii | `--r-5`, `--r-6`, `--r-8`, `--r-9`, `--r-10`, `--r-12`, `--r-14`, `--r-16`, `--r-18` |
+| Type sizes | `--fs-caption` 11.5, `--fs-small` 12, `--fs-mono` 12.5, `--fs-control` 13, `--fs-body` 14, `--fs-reading` 15, `--fs-title` 18, `--fs-display` 26 |
+| Layers | `--z-tour` 200, `--z-tooltip` 80, `--z-palette` 70, `--z-skip` 60, `--z-viewer` 50, `--z-popover` 45, `--z-floating-panel` 45, `--z-dock` 41, `--z-veil` 40, `--z-hover-rail` 39, `--z-docked-panel` 8, `--z-rail` 5 |
+| Motion | `--t-fast` 120ms, `--t-mid` 160ms (`--t` 240ms stays) |
+| Surfaces | `--surface` `#fff`, `--veil` `rgba(2, 27, 67, 0.16)` (the dim behind the to-do panel, the palette and a floating drawer) |
 
 ## Layers (z-index)
 
-The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 60, viewer 50, pop-up 45 (`.popover`: the search-select list, the level menu, the triage pop-up), floating to-do panel 45, floating dock 41, veil 40, hover rail 39, docked to-do panel 8, rail and chat drawer 5. Values from -1 to 3 only order things inside one component. The rule: a pop-up sits above the layer that hosts it. `design-system.test.ts` fails for a value outside this list.
+Named by `--z-*` (see above). The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 60, viewer 50, pop-up 45 (`.popover`: the search-select list, the level menu, the triage pop-up), floating to-do panel 45, floating dock 41, veil 40, hover rail 39, docked to-do panel 8, rail and chat drawer 5. Values from -1 to 3 only order things inside one component. The rule: a pop-up sits above the layer that hosts it. `design-system.test.ts` fails for a value outside this list.
 
 ## Dimensions
 

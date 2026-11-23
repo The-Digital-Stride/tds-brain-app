@@ -165,6 +165,48 @@ describe('the design system guard: the scanner', () => {
   });
 });
 
+describe('the design system guard: layers', () => {
+  const LAYER_NAMES = ['tokens', 'primitives', 'patterns', 'features', 'tools'];
+
+  it('tokens.css, the first sheet main.tsx imports, declares the layer order', () => {
+    const first = [...read(join(SRC, 'main.tsx')).matchAll(/import '\.\/([^']+\.css)'/g)].map(
+      (m) => m[1] as string,
+    )[0] as string;
+    expect(first).toBe('styles/tokens.css');
+    expect(
+      stripComments(read(join(SRC, first)))
+        .trim()
+        .startsWith(`@layer ${LAYER_NAMES.join(', ')};`),
+    ).toBe(true);
+  });
+
+  it('every stylesheet keeps its rules in one named layer (only @font-face may sit outside)', () => {
+    const found: string[] = [];
+    for (const file of cssFiles) {
+      let css = stripComments(read(file));
+      css = css.replace(/@layer [a-z, ]+;/, '');
+      // Top-level blocks: scan by depth.
+      const heads: string[] = [];
+      let depth = 0;
+      let start = 0;
+      for (let i = 0; i < css.length; i++) {
+        if (css[i] === '{') {
+          if (depth === 0) heads.push(css.slice(start, i).trim());
+          depth++;
+        } else if (css[i] === '}' && --depth === 0) start = i + 1;
+      }
+      for (const head of heads) {
+        const layer = head.match(/^@layer (\w+)$/)?.[1];
+        if (!(layer && LAYER_NAMES.includes(layer)) && head !== '@font-face')
+          found.push(`${rel(file)} ${head}`);
+      }
+      if (!heads.some((h) => h.startsWith('@layer ')) && css.trim() !== '')
+        found.push(`${rel(file)} has no layer`);
+    }
+    check('unlayered rules', found, {});
+  });
+});
+
 describe('the design system guard: scales', () => {
   it('finds the stylesheets and declarations (so the scan itself still works)', () => {
     expect(cssFiles.length).toBeGreaterThan(15);

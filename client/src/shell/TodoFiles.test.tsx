@@ -546,8 +546,10 @@ describe('rejected files, progress and extras', () => {
     await openFirst();
     addFile();
     pickFiles([file('a.pdf'), file('b.pdf')]);
-    // Generous wait: two uploads in sequence are slow when the whole suite runs at once.
-    await waitFor(() => expect(uploadTodoFile).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    // Generous wait: two uploads in sequence are slow when the whole suite runs at once. Wait for both lines, not
+    // just the second call: each call records its line only after an awaited act, so under load the call count
+    // reaches 2 before the second line is in.
+    await waitFor(() => expect(seen).toHaveLength(2), { timeout: 5000 });
     expect(seen).toEqual(['Adding 1 of 2…', 'Adding 2 of 2…']);
   });
 

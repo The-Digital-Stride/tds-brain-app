@@ -331,6 +331,9 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
   );
 }
 
+/** How long the panel waits for a to-do it was opened on to reach the drawer's lists before it closes. */
+export const PANEL_WAIT_MS = 4000;
+
 /** What `PanelHost` adds to the panel's own props: where it is open and what the drawer holds for it. */
 type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'mode' | 'dirtyAsk' | 'order'> & {
   panel: TodoPanelState;
@@ -352,12 +355,21 @@ function PanelHost({ panel, todo, asked, order, ...rest }: HostProps) {
     dispatch({ type: 'set-todo-order', order });
   }, [orderKey, dispatch]);
   // A to-do that has gone since it was opened (passed on, done by someone else) closes the panel; one that
-  // has not shown up in the list yet (just added) is waited for.
+  // has not shown up in the list yet (just added) is waited for, but only for PANEL_WAIT_MS: a key that never
+  // shows up (a teammate's to-do, one already done) would otherwise leave an empty panel over a locked sheet.
   const seen = useRef<string | null>(null);
   useEffect(() => {
     if (panel.key === null) return;
-    if (todo || asked) seen.current = panel.key;
-    else if (seen.current === panel.key) dispatch({ type: 'close-todo', force: true });
+    if (todo || asked) {
+      seen.current = panel.key;
+      return;
+    }
+    if (seen.current === panel.key) {
+      dispatch({ type: 'close-todo', force: true });
+      return;
+    }
+    const giveUp = setTimeout(() => dispatch({ type: 'close-todo', force: true }), PANEL_WAIT_MS);
+    return () => clearTimeout(giveUp);
   }, [panel.key, todo, asked, dispatch]);
   if (panel.mode !== 'add' && !todo && !asked) return null;
   const node = (
@@ -557,6 +569,15 @@ export function TodosDrawer() {
     leavingForSettings.current = false;
     if (was !== undefined && !skip && focusUndo !== was) setRefocus(was);
   }, [openKey, focusUndo]);
+
+  // With no list (still loading, or the load failed) PanelHost isn't mounted, so its give-up timer can't run: a
+  // panel opened from elsewhere (a project's To-dos tab) would leave the sheet locked under nothing. Same limit here.
+  const waitingKey = !todos && panel && panel.mode !== 'add' ? panel.key : null;
+  useEffect(() => {
+    if (waitingKey === null) return;
+    const giveUp = setTimeout(() => shellDispatch({ type: 'close-todo', force: true }), PANEL_WAIT_MS);
+    return () => clearTimeout(giveUp);
+  }, [waitingKey, shellDispatch]);
 
   if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];

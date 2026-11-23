@@ -241,6 +241,7 @@ function Overview({
   removal,
   activity,
   onUpdates,
+  onTodos,
   onAddCard,
   onMove,
 }: {
@@ -252,6 +253,7 @@ function Overview({
   removal: Removal;
   activity: ActivityState;
   onUpdates: () => void;
+  onTodos: () => void;
   onAddCard: () => void;
   onMove: () => void;
 }) {
@@ -339,7 +341,13 @@ function Overview({
 
       <div className="tray lib-tray">
         {card.archived ? null : (
-          <ProjectActivity key={card.key} projectKey={card.key} activity={activity} onUpdates={onUpdates} />
+          <ProjectActivity
+            key={card.key}
+            projectKey={card.key}
+            activity={activity}
+            onUpdates={onUpdates}
+            onTodos={onTodos}
+          />
         )}
         <section className="card proj-card" aria-label="Details">
           <dl className="kv">
@@ -549,6 +557,21 @@ export function ProjectPage({
     else go();
   };
   const chooseTab = (next: ProjectTab) => held(() => onTab(next));
+  // A row on the Overview that switches tab removes itself, so focus would fall to the page: it goes to the tab
+  // that is now current instead (design review), and only once the switch really happened (the leave guard may ask).
+  const [focusTab, setFocusTab] = useState(false);
+  const chooseTabFromRow = (next: ProjectTab) =>
+    held(() => {
+      onTab(next);
+      setFocusTab(true);
+    });
+  useEffect(() => {
+    if (!focusTab) return;
+    setFocusTab(false);
+    document
+      .querySelector<HTMLElement>('nav[aria-label="Project sections"] button[aria-current="page"]')
+      ?.focus();
+  }, [focusTab]);
   return (
     <>
       <div className="proj-head">
@@ -678,7 +701,8 @@ export function ProjectPage({
             canMove={moveState(card, list)}
             removal={removal}
             activity={activity}
-            onUpdates={() => chooseTab('updates')}
+            onUpdates={() => chooseTabFromRow('updates')}
+            onTodos={() => chooseTabFromRow('todos')}
             onAddCard={onAddCard}
             onMove={onMove}
           />

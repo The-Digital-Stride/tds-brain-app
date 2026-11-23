@@ -27,7 +27,7 @@ vi.mock('./TodoDetailsEditor.tsx', async () => ({
 vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')).todoDocFake);
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
-const { TodosDrawer } = await import('./TodosDrawer.tsx');
+const { TodosDrawer, PANEL_WAIT_MS } = await import('./TodosDrawer.tsx');
 
 let api: ShellApi;
 function Probe() {
@@ -214,6 +214,45 @@ describe('opening and reading', () => {
     fireEvent.click(screen.getByRole('button', { name: 'First' }));
     await dialog();
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
+  });
+});
+
+describe('a to-do the drawer never gets', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('closes the panel after PANEL_WAIT_MS, so no empty panel is left over a locked sheet', () => {
+    vi.useFakeTimers();
+    mount();
+    // A teammate's to-do (not on this person's lists): the panel can't show it.
+    act(() => api.dispatch({ type: 'open-todo', key: 'someone-elses.md', mode: 'read' }));
+    expect(api.state.todoPanel?.key).toBe('someone-elses.md');
+    act(() => vi.advanceTimersByTime(PANEL_WAIT_MS - 1));
+    expect(api.state.todoPanel).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(api.state.todoPanel).toBeNull();
+  });
+
+  it('also gives up when the to-do list never loaded (the panel was opened from a project page)', () => {
+    vi.useFakeTimers();
+    const s0 = store.current as { todos: TodoList | null };
+    store.current = { ...s0, todos: null };
+    mount();
+    act(() => api.dispatch({ type: 'open-todo', key: 'a.md', mode: 'read' }));
+    expect(api.state.todoPanel?.key).toBe('a.md');
+    act(() => vi.advanceTimersByTime(PANEL_WAIT_MS));
+    expect(api.state.todoPanel).toBeNull();
+  });
+
+  it('still waits for one that shows up in time (just added) and keeps it open', () => {
+    vi.useFakeTimers();
+    const view = mount();
+    act(() => api.dispatch({ type: 'open-todo', key: 'new.md', mode: 'read' }));
+    act(() => vi.advanceTimersByTime(PANEL_WAIT_MS / 2));
+    const s = store.current as { todos: TodoList };
+    store.current = { ...s, todos: { ...s.todos, mine: [...s.todos.mine, todo('new.md', 'Just added')] } };
+    reload(view);
+    act(() => vi.advanceTimersByTime(PANEL_WAIT_MS * 2));
+    expect(api.state.todoPanel?.key).toBe('new.md');
   });
 });
 

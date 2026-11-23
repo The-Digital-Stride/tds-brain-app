@@ -75,10 +75,7 @@ export interface ActivityItem {
   /** Team display name when known, else null. */
   byName: string | null;
   /** What it opens: a to-do key, a brain path, or the Updates tab. */
-  target:
-    | { kind: 'todo'; key: string }
-    | { kind: 'file'; path: string }
-    | { kind: 'updates' };
+  target: { kind: 'todo'; key: string } | { kind: 'file'; path: string } | { kind: 'updates' };
 }
 
 export interface ComingUpItem {

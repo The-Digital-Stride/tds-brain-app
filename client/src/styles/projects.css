@@ -99,6 +99,13 @@
   .proj-card {
     padding: var(--sp-12) var(--sp-8) var(--sp-8);
   }
+  /* "Overdue" beside a due date: the warn pairing the badges use. */
+  .chip.proj-overdue {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    border: 1px solid var(--amber-edge);
+    font-weight: 600;
+  }
   .proj-card .kv {
     padding: 0 var(--sp-8);
   }

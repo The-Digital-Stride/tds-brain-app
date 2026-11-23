@@ -14,6 +14,7 @@ import type { CompactionEvent, ContextEvent } from './context-contract.ts';
 import { chatContextPath } from './context-contract.ts';
 import type { AppState } from './install-contract.ts';
 import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
+import type { ArtifactSource } from './pages.ts';
 import type { ChatPage } from './pages-contract.ts';
 import type { ProjectUpdatesResponse } from './project-updates-contract.ts';
 import type {
@@ -963,6 +964,11 @@ export interface LibraryItem {
    * folder or by link. Filled when serving, never cached with the item. Absent from older servers = [].
    */
   projects?: ProjectKey[];
+  /**
+   * Claude artifacts in projects (decision 4): set on an `.html`/`.htm` file whose head carries a valid
+   * `tds-artifact-source` tag. Absent, never null, otherwise and from older servers.
+   */
+  artifact?: ArtifactSource;
 }
 
 export interface LibraryListing {
@@ -1965,6 +1971,8 @@ export const ROUTES = {
   projectActivity: '/api/projects/activity',
   /** R2 phase 3. `POST {key}` → 204: saves this person's "last looked" snapshot in the app data folder. */
   projectSeen: '/api/projects/seen',
+  /** Claude artifacts in projects (decision 8). `POST` JSON ProjectArtifactRequest → ProjectArtifactResponse (shared/projects-contract.ts). */
+  projectArtifact: '/api/projects/artifact',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

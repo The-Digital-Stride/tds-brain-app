@@ -1,6 +1,7 @@
 import type { LibraryItem } from '../../../../shared/contract.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
+import { artifactWords, validArtifact } from '../shared/artifact-words.ts';
 import { DetailActions, focusLibrarySummary } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
 import { dateWords, sizeWords } from '../shared/words.ts';
@@ -21,6 +22,7 @@ export function DocumentsPanel() {
   if (!doc || hiddenFileIds.has(doc.id))
     return <p className="dock-empty">Choose a document to see its details.</p>;
 
+  const artifact = validArtifact(doc.artifact);
   return (
     <div className="lib-detail">
       <div className="lib-preview doc-preview">
@@ -53,6 +55,12 @@ export function DocumentsPanel() {
         <dd>{doc.group}</dd>
         <dt>Changed</dt>
         <dd>{dateWords(doc.modified)}</dd>
+        {artifact ? (
+          <>
+            <dt>From claude.ai</dt>
+            <dd>{artifactWords(artifact)}</dd>
+          </>
+        ) : null}
         <dt className="kv-wide">File path</dt>
         <dd className="kv-wide">
           <code className="terminal-cmd">{doc.path}</code>

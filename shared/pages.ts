@@ -19,6 +19,91 @@ export function isArtifactUrl(url: string): boolean {
   return typeof url === 'string' && ARTIFACT_URL.test(url);
 }
 
+/** How much of an HTML file's start is read for the tags (plan 2026-11-23-claude-artifacts-in-projects, decision 3). */
+export const ARTIFACT_HEAD_BYTES = 64 * 1024;
+
+/** The `<meta name>` values (decision 2). */
+export const ARTIFACT_META = {
+  source: 'tds-artifact-source',
+  copied: 'tds-artifact-copied',
+  kind: 'tds-artifact-kind',
+  live: 'tds-artifact-live',
+} as const;
+
+/** What a page says about the claude.ai artifact it came from. */
+export interface ArtifactSource {
+  /** Passes `isArtifactUrl`; nothing else is ever returned. */
+  url: string;
+  /** `YYYY-MM-DD`, or null when missing or not a real date. */
+  copied: string | null;
+  /** `copy`: the artifact's own page. `link`: a link card. Missing or unknown reads as `copy`. */
+  kind: 'copy' | 'link';
+  /** True when `tds-artifact-live` is `partial`: some parts only work on claude.ai. */
+  partial: boolean;
+}
+
+function metaTag(name: string, content: string): string {
+  return `<meta name="${name}" content="${content}">\n`;
+}
+
+/**
+ * The exact block the skill writes at `linkScriptOffset(html)`, and the only form the reader accepts.
+ * `url` already passes `isArtifactUrl`; `copied` is YYYY-MM-DD. The skill's `.cjs` copy must match byte for byte.
+ */
+export function artifactMetaBlock(meta: {
+  url: string;
+  copied: string;
+  kind: 'copy' | 'link';
+  partial: boolean;
+}): string {
+  return (
+    metaTag(ARTIFACT_META.source, meta.url) +
+    metaTag(ARTIFACT_META.copied, meta.copied) +
+    metaTag(ARTIFACT_META.kind, meta.kind) +
+    (meta.partial ? metaTag(ARTIFACT_META.live, 'partial') : '')
+  );
+}
+
+/** Trim, drop any query or fragment, then `isArtifactUrl`. The clean address, or null. */
+export function cleanArtifactUrl(input: string): string | null {
+  if (typeof input !== 'string') return null;
+  const cut = input.trim().split(/[?#]/, 1)[0] ?? '';
+  return isArtifactUrl(cut) ? cut : null;
+}
+
+const META_TAG_SOURCE = new RegExp(`<meta name="${ARTIFACT_META.source}" content="([^"<>]*)">\\n`);
+const META_FOLLOWING = new RegExp(
+  `^(?:<meta name="${ARTIFACT_META.copied}" content="([^"<>]*)">\\n)?` +
+    `(?:<meta name="${ARTIFACT_META.kind}" content="([^"<>]*)">\\n)?` +
+    `(?:<meta name="${ARTIFACT_META.live}" content="([^"<>]*)">\\n)?`,
+);
+
+function realDate(s: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d ? s : null;
+}
+
+/** Pure. Null unless a valid `tds-artifact-source` is found in the first ARTIFACT_HEAD_BYTES of `head`. */
+export function artifactSource(head: string): ArtifactSource | null {
+  if (typeof head !== 'string') return null;
+  const text = head.slice(0, ARTIFACT_HEAD_BYTES);
+  const first = META_TAG_SOURCE.exec(text);
+  if (!first) return null;
+  const url = first[1] ?? '';
+  if (!isArtifactUrl(url)) return null;
+  const rest = META_FOLLOWING.exec(text.slice(first.index + first[0].length));
+  const copied = rest?.[1] === undefined ? null : realDate(rest[1]);
+  return {
+    url,
+    copied,
+    kind: rest?.[2] === 'link' ? 'link' : 'copy',
+    partial: rest?.[3] === 'partial',
+  };
+}
+
 function hasControl(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);

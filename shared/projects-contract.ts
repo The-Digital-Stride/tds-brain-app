@@ -223,6 +223,28 @@ export interface ProjectList {
   canArchive?: boolean;
   /** Move plan B1: card-less folders left behind by a move (their key is in a live card's movedFrom). Not in `projects`. */
   leftovers?: string[];
+  /**
+   * Claude artifacts in projects (decision 8): "Add a claude.ai page" is offered. True only when changes would be
+   * allowed (`canChange`), `tdsapp-files` reports 'files-artifact-v1' and this person may add files. Absent = false.
+   */
+  canAddArtifact?: boolean;
+}
+
+/** `POST ROUTES.projectArtifact` (decision 8). JSON only; the server builds the target path and files a link card. */
+export interface ProjectArtifactRequest {
+  key: ProjectKey;
+  /** A claude.ai artifact address; query and fragment are dropped. */
+  url: string;
+  /** 1-200 characters, no control characters. */
+  title: string;
+  /** At most 300 characters. */
+  description?: string;
+}
+
+export interface ProjectArtifactResponse {
+  /** Brain-relative path the skill saved it at (a number added when the name was taken). */
+  path: string;
+  kind: 'copy' | 'link';
 }
 
 // ─── Changing (decisions 8, 9) ─────────────────────────────────────────────────────────────────────

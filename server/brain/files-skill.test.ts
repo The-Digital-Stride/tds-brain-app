@@ -11,10 +11,12 @@ import {
 import {
   createFilesSkillRunner,
   FILES_ADD_CAPABILITY,
+  FILES_ARTIFACT_CAPABILITY,
   FILES_SCRIPT,
   findFilesScript,
   findFilesSkill,
   hasAddCapability,
+  hasArtifactCapability,
 } from './files-skill.ts';
 import { createBrainReaders } from './index.ts';
 import { idFor } from './library.ts';
@@ -383,5 +385,69 @@ describe('add (release 3, files-add-v1)', () => {
     };
     const u = setup({ capabilities: caps });
     expect(await hasAddCapability(createFilesSkillRunner(u.root, { env: u.env }))).toBe(true);
+  });
+});
+
+describe('add-artifact (claude artifacts in projects, files-artifact-v1)', () => {
+  it('sends url, path, title and the app, and resolves to the saved path and kind', async () => {
+    const t = setup({
+      'add-artifact': {
+        exit: 0,
+        out: JSON.stringify({
+          ok: true,
+          action: 'add-artifact',
+          path: 'personal/projects/x/files/a (2).html',
+          kind: 'link',
+        }),
+      },
+    });
+    const runner = createFilesSkillRunner(t.root, { env: t.env });
+    const saved = await runner.addArtifact({
+      url: 'https://claude.ai/artifact/AbC123',
+      path: 'personal/projects/x/files/a.html',
+      title: 'A page',
+      description: 'About it',
+      by: { slug: 'sam', name: 'Sam Lee' },
+    });
+    expect(saved).toEqual({ path: 'personal/projects/x/files/a (2).html', kind: 'link' });
+    const [call] = t.calls();
+    expect(call?.argv).toEqual(['add-artifact']);
+    expect(JSON.parse(call?.stdin ?? '{}')).toEqual({
+      url: 'https://claude.ai/artifact/AbC123',
+      path: 'personal/projects/x/files/a.html',
+      title: 'A page',
+      description: 'About it',
+      via: 'TDS Cortex',
+      by_name: 'Sam Lee',
+    });
+  });
+
+  it('is internal for a reply without a path or kind, and maps refusals', async () => {
+    const t = setup({ 'add-artifact': { exit: 0, out: '{"ok":true,"path":"p/a.html"}' } });
+    const input = { url: 'https://claude.ai/artifact/a', path: 'p/a.html', title: 'T' };
+    expect((await codeOf(createFilesSkillRunner(t.root, { env: t.env }).addArtifact(input)))?.code).toBe(
+      'internal',
+    );
+    const r = setup({ 'add-artifact': { exit: 2, out: '{"ok":false,"code":"exists","error":"x"}' } });
+    expect((await codeOf(createFilesSkillRunner(r.root, { env: r.env }).addArtifact(input)))?.code).toBe(
+      'exists',
+    );
+  });
+
+  it('reports the feature only when the script lists it', async () => {
+    const t = setup();
+    expect(await hasArtifactCapability(createFilesSkillRunner(t.root, { env: t.env }))).toBe(false);
+    const caps = {
+      exit: 0,
+      out: JSON.stringify({
+        ok: true,
+        action: 'capabilities',
+        version: '4',
+        features: [FILES_ARTIFACT_CAPABILITY],
+      }),
+    };
+    const u = setup({ capabilities: caps });
+    expect(await hasArtifactCapability(createFilesSkillRunner(u.root, { env: u.env }))).toBe(true);
+    expect(FILES_ARTIFACT_CAPABILITY).toBe('files-artifact-v1');
   });
 });

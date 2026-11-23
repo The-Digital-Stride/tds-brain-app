@@ -284,6 +284,41 @@ describe('DocumentsPanel', () => {
   });
 });
 
+describe('a claude.ai artifact among the documents', () => {
+  const artifactPage = {
+    ...page,
+    id: 'client:acme.d6',
+    title: 'Campaign page',
+    artifact: {
+      url: 'https://claude.ai/artifact/AbC123',
+      copied: '2026-11-23',
+      kind: 'copy',
+      partial: false,
+    },
+  } as typeof page;
+
+  it('says "from claude.ai" in the row, and only for an artifact', async () => {
+    api.library.mockImplementation(async (scope: string) => listing(scope, [page, artifactPage], ['Plans']));
+    render(<DocumentsSheet />);
+    await card('Plans');
+    expect(screen.getByRole('button', { name: /^Campaign page/ }).textContent).toContain(
+      'HTML page, 840 KB, from claude.ai',
+    );
+    expect(screen.getByRole('button', { name: /^Explainer/ }).textContent).not.toContain('claude.ai');
+  });
+
+  it('gives the panel one From claude.ai row, and none for an ordinary page', () => {
+    docsStore.set({ current: artifactPage });
+    const { unmount } = render(<DocumentsPanel />);
+    expect(screen.getByText('From claude.ai')).toBeTruthy();
+    expect(screen.getByText('Copied from claude.ai on 23 November 2026')).toBeTruthy();
+    unmount();
+    docsStore.set({ current: page });
+    render(<DocumentsPanel />);
+    expect(screen.queryByText('From claude.ai')).toBeNull();
+  });
+});
+
 describe('opening a document from the panel', () => {
   it('Open shows it in the viewer drawer, and a floating panel closes so it is not under the drawer', async () => {
     docsStore.set({ current: plan });

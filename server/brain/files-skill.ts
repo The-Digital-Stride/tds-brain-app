@@ -40,6 +40,12 @@ export const ADD_TIMEOUT_MS = 60_000;
  */
 export const FILES_ADD_CAPABILITY = 'files-add-v1';
 
+/**
+ * The script's `capabilities` feature for `add-artifact` (tdsapp-files v0.4, plan
+ * 2026-11-23-claude-artifacts-in-projects, decision 7). The app offers "Add a claude.ai page" only when it is listed.
+ */
+export const FILES_ARTIFACT_CAPABILITY = 'files-artifact-v1';
+
 export type FilesSkillOptions = ScriptOptions;
 
 /** The skill's name (for the roles check) and its script's real path, null if unusable; null when the folder is missing. */
@@ -53,7 +59,7 @@ export async function findFilesScript(root: string): Promise<string | null> {
 }
 
 /** The command line is fixed here: nothing from a request ever becomes part of it. */
-const COMMAND = { delete: 'delete', purge: 'purge', add: 'add' } as const;
+const COMMAND = { delete: 'delete', purge: 'purge', add: 'add', addArtifact: 'add-artifact' } as const;
 
 /** What a person's delete says, with the tool name and who it is for. `path` is relative to the brain root. */
 export interface FilesDeleteRequest {
@@ -72,7 +78,24 @@ export interface FilesAddRequest {
   by?: { slug: string; name: string };
 }
 
+/**
+ * What "Add a claude.ai page" asks the script to save (`add-artifact` without `source`: a link card).
+ * `path` is the brain-relative `.html` destination the server built.
+ */
+export interface FilesAddArtifactRequest {
+  url: string;
+  path: string;
+  title: string;
+  description?: string;
+  by?: { slug: string; name: string };
+}
+
 export interface FilesSkillRunner {
+  /**
+   * Files a claude.ai artifact as a link card (v0.4 `add-artifact`). Resolves to the path the script saved it at
+   * and its kind; rejects with FilesChangeError (`internal` for a reply without both).
+   */
+  addArtifact(request: FilesAddArtifactRequest): Promise<{ path: string; kind: 'copy' | 'link' }>;
   /**
    * Copies a file into the brain (v0.2 `add`). Resolves to the path the script saved it at, as it
    * replied; rejects with FilesChangeError (`internal` for a reply without a path).
@@ -161,6 +184,25 @@ export function createFilesSkillRunner(root: string, options: FilesSkillOptions 
         if (typeof reply.path !== 'string' || reply.path === '') throw new FilesChangeError('internal');
         return reply.path;
       }),
+    addArtifact: (request) =>
+      queue(async () => {
+        const input = {
+          url: request.url,
+          path: request.path,
+          title: request.title,
+          ...(request.description !== undefined ? { description: request.description } : {}),
+          via: APP_VIA,
+          ...(request.by ? { by_name: request.by.name } : {}),
+        };
+        const reply = await run(COMMAND.addArtifact, input, options.timeoutMs ?? ADD_TIMEOUT_MS);
+        if (
+          typeof reply.path !== 'string' ||
+          reply.path === '' ||
+          (reply.kind !== 'copy' && reply.kind !== 'link')
+        )
+          throw new FilesChangeError('internal');
+        return { path: reply.path, kind: reply.kind };
+      }),
     purge: () =>
       queue(async () => {
         const input: FilesPurgeInput = { via: APP_VIA };
@@ -179,4 +221,11 @@ export async function hasDeleteCapability(runner: Pick<FilesSkillRunner, 'capabi
 /** True when the script is there and reports `add`. The caller checks the skill's `roles:`. */
 export async function hasAddCapability(runner: Pick<FilesSkillRunner, 'capabilities'>): Promise<boolean> {
   return (await runner.capabilities()).includes(FILES_ADD_CAPABILITY);
+}
+
+/** True when the script is there and reports `add-artifact`. The caller checks the skill's `roles:`. */
+export async function hasArtifactCapability(
+  runner: Pick<FilesSkillRunner, 'capabilities'>,
+): Promise<boolean> {
+  return (await runner.capabilities()).includes(FILES_ARTIFACT_CAPABILITY);
 }

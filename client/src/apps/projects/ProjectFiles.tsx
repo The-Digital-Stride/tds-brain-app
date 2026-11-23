@@ -18,6 +18,7 @@ import { DOCUMENTS } from '../documents/kind.tsx';
 import { IMAGES } from '../images/kind.tsx';
 import { useLoaded } from '../shared/data.ts';
 import { type KindSpec, LibraryBrowser, type View } from '../shared/LibraryBrowser.tsx';
+import { AddArtifactForm } from './AddArtifactForm.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
 
@@ -259,12 +260,15 @@ function stamp(text: string): number {
 /** The project's files: Documents or Images (a Seg), with the Documents and Images apps' own filters and layout. */
 function Files({
   card,
+  reloads,
   canChange,
   onView,
   onChanged,
   onUnlinked,
 }: {
   card: ProjectCard;
+  /** Changes when something was added from outside the list, so it reloads. */
+  reloads: number;
   canChange: boolean;
   onView: (item: LibraryItem) => void;
   onChanged: (message: string) => void;
@@ -278,7 +282,7 @@ function Files({
   const [chosen, setChosen] = useState<LibraryKind | null>(null);
 
   // One load per kind, so the Seg can show both counts. A change to the card or the library refreshes quietly.
-  const refresh = stamp(`${card.version}|${libraryVersion}`);
+  const refresh = stamp(`${card.version}|${libraryVersion}|${reloads}`);
   const docs = useLoaded(`${card.key}|document`, refresh, () => api.projectFiles(card.key, 'document'));
   const images = useLoaded(`${card.key}|image`, refresh, () => api.projectFiles(card.key, 'image'));
   const loads = { document: docs, image: images };
@@ -376,6 +380,10 @@ function Files({
   );
 }
 
+/** Back on the page's "Add a claude.ai page" button once the form has gone from the page. */
+const focusAddArtifact = () =>
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-focus="addartifact"]')?.focus());
+
 const IN_FOLDER = 'In the project folder';
 const FROM_LIBRARY = 'From the library';
 
@@ -385,6 +393,8 @@ export function placeIn(card: Pick<ProjectCard, 'folder' | 'links'>, path: strin
   const inside = path.startsWith(`${card.folder}/`) ? path.slice(card.folder.length + 1) : '';
   const parts = inside.split('/');
   if (parts.length < 2) return IN_FOLDER;
+  // A project's own files/ and images/ folders hold what was added to it: not a heading of their own.
+  if (parts.length === 2 && (parts[0] === 'files' || parts[0] === 'images')) return IN_FOLDER;
   const name = (parts[0] ?? '').replace(/[-_]+/g, ' ');
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
@@ -395,16 +405,23 @@ export function ProjectFiles({
   canChange,
   linking,
   onLinking,
+  addingArtifact = false,
+  onAddingArtifact,
 }: {
   card: ProjectCard;
   canChange: boolean;
   /** Whether the picker is open. The page owns it: its Add files button sits in the tabs row. */
   linking: boolean;
   onLinking: (open: boolean) => void;
+  /** Whether the "Add a claude.ai page" form is open. The page owns it, like `linking`. */
+  addingArtifact?: boolean;
+  onAddingArtifact?: (open: boolean) => void;
 }) {
   const { dispatch } = useShell();
   const [message, setMessage] = useState('');
   const [done, setDone] = useState('');
+  // Bumped when a page is added, so the lists reload to show it.
+  const [reloads, setReloads] = useState(0);
   // Opening the picker clears the "Added N files." line.
   useEffect(() => {
     if (linking) setDone('');
@@ -453,8 +470,26 @@ export function ProjectFiles({
           />
         </div>
       ) : null}
+      {addingArtifact && canChange ? (
+        <div className="tray lib-tray">
+          <AddArtifactForm
+            card={card}
+            onClose={() => {
+              onAddingArtifact?.(false);
+              focusAddArtifact();
+            }}
+            onAdded={(name) => {
+              onAddingArtifact?.(false);
+              setDone(`Added “${name}” to the project.`);
+              setReloads((n) => n + 1);
+              focusAddArtifact();
+            }}
+          />
+        </div>
+      ) : null}
       <Files
         card={card}
+        reloads={reloads}
         canChange={canChange}
         onView={(item) => void view(item)}
         onChanged={setMessage}

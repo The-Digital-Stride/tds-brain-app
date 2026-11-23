@@ -94,6 +94,7 @@ import {
   type SkillLevels,
 } from '../../shared/levels-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
+import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import { UPDATE_SUMMARY_MAX } from '../../shared/project-updates-contract.ts';
 import {
@@ -108,8 +109,10 @@ import {
   PROJECT_TITLE_MAX,
   PROJECTS_ERROR_STATUS,
   type ProjectAction,
+  type ProjectArtifactRequest,
   type ProjectFields,
   type ProjectKey,
+  type ProjectList,
   type ProjectMoveRequest,
   type ProjectRemoveRequest,
   ProjectsError,
@@ -127,6 +130,12 @@ import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { classify } from '../brain/library-rules.ts';
+import {
+  artifactRefusal,
+  cleanArtifactDescription,
+  cleanArtifactTitle,
+  type ProjectArtifactService,
+} from '../brain/project-artifact.ts';
 import { PROJECTS_SKILL } from '../brain/projects-skill.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
@@ -173,6 +182,8 @@ export interface RouteContext {
     /** Projects R2 phase 3: activity on the project home, and committing what was seen. Beside the contract like `ads`. */
     projectActivity?: (key: ProjectKey, identity: Identity) => Promise<ProjectActivityResponse>;
     projectSeen?: (key: ProjectKey, token: string, identity: Identity) => Promise<void>;
+    /** Claude artifacts in projects (decision 8): "Add a claude.ai page". Absent: the route says it isn't there. */
+    projectArtifact?: ProjectArtifactService;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -1161,6 +1172,45 @@ function projectsFailure(err: unknown, ctx: RouteContext, what: string): HttpErr
   return new HttpError(500, 'internal', PROJECTS_INTERNAL);
 }
 
+const ARTIFACT_BAD_ADDRESS = "That isn't a claude.ai artifact link. Copy it from the artifact's Share menu.";
+const ARTIFACT_BAD_TITLE = 'Give the page a name of up to 200 characters.';
+const ARTIFACT_BAD_DESCRIPTION = 'The description can be up to 300 characters.';
+const ARTIFACT_NOT_ALLOWED = "Adding a claude.ai page isn't available to you in the app yet.";
+const ARTIFACT_REFUSALS = {
+  'no-card': 'This project needs a card before pages can be added to it.',
+  archived: "Pages can't be added to an archived project.",
+  legacy: "Pages can't be added to this older project from the app yet.",
+} as const;
+
+/**
+ * `POST ROUTES.projectArtifact`: exactly `key`, `url` and `title`, with `description` optional. The address is
+ * cleaned (trimmed, query and fragment dropped) and must be a claude.ai artifact link; no path ever comes from the browser.
+ */
+export function parseProjectArtifact(body: unknown): ProjectArtifactRequest {
+  if (!isRec(body)) throw projectBad();
+  onlyKeys(body, ['key', 'url', 'title', 'description'], ['key', 'url', 'title']);
+  if (!isProjectKey(body.key) || typeof body.url !== 'string' || typeof body.title !== 'string')
+    throw projectBad();
+  const url = cleanArtifactUrl(body.url);
+  if (url === null) throw new HttpError(400, 'bad-request', ARTIFACT_BAD_ADDRESS);
+  const title = cleanArtifactTitle(body.title);
+  if (title === null) throw new HttpError(400, 'bad-request', ARTIFACT_BAD_TITLE);
+  let description: string | undefined;
+  if (body.description !== undefined) {
+    const d = cleanArtifactDescription(body.description);
+    if (d === null) throw new HttpError(400, 'bad-request', ARTIFACT_BAD_DESCRIPTION);
+    if (d !== '') description = d;
+  }
+  return { key: body.key, url, title, ...(description !== undefined ? { description } : {}) };
+}
+
+/** Sets `canAddArtifact` (true only; absent otherwise) on a list the route sends: changes allowed and the files skill can add pages. */
+async function withArtifactFlag(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
+  const service = ctx.brain.projectArtifact;
+  if (!service || !list || list.canChange !== true) return list;
+  return (await safe(service.canAdd(who), false)) ? { ...list, canAddArtifact: true } : list;
+}
+
 /** The six projects routes. Every one has already passed the security gate. */
 async function projectsRoute(
   req: IncomingMessage,
@@ -1178,7 +1228,8 @@ async function projectsRoute(
     const list = ctx.brain.projects;
     if (!list) throw missing();
     try {
-      sendJson(res, 200, await list.call(ctx.brain, await identity()));
+      const who = await identity();
+      sendJson(res, 200, await withArtifactFlag(ctx, await list.call(ctx.brain, who), who));
     } catch (err) {
       throw projectsFailure(err, ctx, 'Reading the projects');
     }
@@ -1198,9 +1249,49 @@ async function projectsRoute(
     try {
       const list = await change.call(ctx.brain, action, who);
       ctx.log(`Changed a project (${action.kind}).`);
-      sendJson(res, 200, list);
+      sendJson(res, 200, await withArtifactFlag(ctx, list, who));
     } catch (err) {
       throw projectsFailure(err, ctx, 'A project change');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectArtifact) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    const add = parseProjectArtifact(body);
+    const list = ctx.brain.projects;
+    const service = ctx.brain.projectArtifact;
+    if (!list || !service) throw missing();
+    // The same roles check as any project change; then the files skill's own (inside `add`).
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    try {
+      const projects = await list.call(ctx.brain, who);
+      const card = projects.projects.find((c) => c.key === add.key);
+      if (!card) throw new HttpError(404, 'not-found', PROJECTS_NOT_THERE);
+      const refusal = artifactRefusal(card);
+      if (refusal) throw new HttpError(403, 'not-allowed', ARTIFACT_REFUSALS[refusal]);
+      if (projects.canChange !== true || !(await safe(service.canAdd(who), false)))
+        throw new HttpError(403, 'not-allowed', ARTIFACT_NOT_ALLOWED);
+      const saved = await service.add(
+        card,
+        {
+          url: add.url,
+          title: add.title,
+          ...(add.description !== undefined ? { description: add.description } : {}),
+        },
+        who,
+      );
+      ctx.log('Added a claude.ai page to a project.');
+      sendJson(res, 200, saved);
+    } catch (err) {
+      if (err instanceof FilesChangeError) {
+        const code = err.code === 'exists' ? 'changed' : err.code;
+        throw new HttpError(FILES_CHANGE_STATUS[err.code], code, err.message);
+      }
+      throw projectsFailure(err, ctx, 'Adding a claude.ai page');
     }
     return;
   }
@@ -1223,7 +1314,11 @@ async function projectsRoute(
     try {
       const answer = await run.call(ctx.brain, move, who, { todos: repoint });
       ctx.log(move.check ? 'Checked a project move.' : 'Moved a project to another client.');
-      sendJson(res, 200, answer);
+      sendJson(
+        res,
+        200,
+        'list' in answer ? { ...answer, list: await withArtifactFlag(ctx, answer.list, who) } : answer,
+      );
     } catch (err) {
       throw projectsFailure(err, ctx, move.check ? 'A project move check' : 'A project move');
     }
@@ -1250,7 +1345,11 @@ async function projectsRoute(
     try {
       const answer = await run.call(ctx.brain, change, who, { todos: mayTodos });
       ctx.log(`${what} was done.`);
-      sendJson(res, 200, answer);
+      sendJson(
+        res,
+        200,
+        'list' in answer ? { ...answer, list: await withArtifactFlag(ctx, answer.list, who) } : answer,
+      );
     } catch (err) {
       throw projectsFailure(err, ctx, what);
     }
@@ -2432,6 +2531,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectUpdates ||
     path === ROUTES.projectActivity ||
     path === ROUTES.projectSeen ||
+    path === ROUTES.projectArtifact ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

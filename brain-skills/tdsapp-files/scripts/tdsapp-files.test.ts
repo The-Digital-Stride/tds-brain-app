@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { versionOf as libraryVersionOf } from '../../../server/brain/library.ts';
 import { classify, isNeverListed as libraryNeverListed } from '../../../server/brain/library-rules.ts';
 import { memberSlug as appMemberSlug } from '../../../server/brain/util.ts';
+import { ARTIFACT_URL_CASES } from '../../../shared/artifact-url-cases.ts';
 import { MAX_UPLOAD_BYTES, TODO_UPLOAD_TYPES } from '../../../shared/contract.ts';
 import {
   ACTION_LOG_DIR,
@@ -50,6 +51,7 @@ interface Ctx {
 interface FilesModule {
   run(action: string, input: unknown, ctx: Ctx): { exit: number; reply: Reply };
   memberSlug(name: string): string;
+  cleanArtifactUrl(input: unknown): string | null;
   isNeverListed(rel: string): boolean;
   versionOf(bytes: number, mtimeMs: number): string;
   PURGE_AFTER_DAYS: number;
@@ -891,10 +893,10 @@ describe('command line', () => {
     expect(r.json).toEqual({
       ok: true,
       action: 'capabilities',
-      version: '0.3',
-      features: [FILES_CAPABILITY, 'files-add-v1'],
+      version: '0.4',
+      features: [FILES_CAPABILITY, 'files-add-v1', 'files-artifact-v1'],
     });
-    expect(files.SCRIPT_VERSION).toBe('0.3');
+    expect(files.SCRIPT_VERSION).toBe('0.4');
   });
 
   it('deletes with exit 0 and refuses with exit 2', () => {
@@ -1297,5 +1299,202 @@ describe('add', () => {
     const again = cli('add', JSON.stringify({ source: source('a.pdf'), path: 'clients/acme/images/a.pdf' }));
     expect(again.code).toBe(2);
     expect(again.json.code).toBe('not-allowed');
+  });
+});
+
+// ---- add-artifact (v0.4, docs/plans/2026-11-23-claude-artifacts-in-projects.md, decisions 2, 6, 7) ----
+
+describe('add-artifact', () => {
+  const URL = 'https://claude.ai/artifact/AbC-123';
+  const DIR = 'clients/acme/projects/site/files';
+  const BLOCK = (kind = 'copy', extra = '') =>
+    `<meta name="tds-artifact-source" content="${URL}">\n<meta name="tds-artifact-copied" content="2026-11-20">\n<meta name="tds-artifact-kind" content="${kind}">\n${extra}`;
+  function source(name: string, content: string | Buffer = '<!doctype html><html></html>') {
+    const p = join(outside, name);
+    writeFileSync(p, content);
+    return p;
+  }
+  function art(path: string, extra: Record<string, unknown> = {}) {
+    return call('add-artifact', { url: URL, path, copied: '2026-11-20', ...extra });
+  }
+  const read = (rel: string) => readFileSync(abs(rel), 'utf8');
+
+  beforeEach(() => {
+    mkdirSync(abs('clients/acme/projects/site'), { recursive: true });
+    put('clients/acme/profile.md', 'profile');
+  });
+
+  it('writes the block once, straight after a doctype', () => {
+    const r = art(`${DIR}/page.html`, {
+      source: source('a.html', '<!doctype html>\n<html><head></head></html>'),
+    });
+    expect(r).toEqual({
+      exit: 0,
+      reply: { ok: true, action: 'add-artifact', path: `${DIR}/page.html`, kind: 'copy' },
+    });
+    const out = read(`${DIR}/page.html`);
+    expect(out).toBe(`<!doctype html>${BLOCK()}\n<html><head></head></html>`);
+    expect(out.split('tds-artifact-source').length).toBe(2);
+    expect(logLines()[0]).toMatchObject({ action: 'add', scope: 'client', path: `${DIR}/page.html` });
+  });
+
+  it('writes it at the start without a doctype, and the live tag only when partial', () => {
+    art(`${DIR}/p.html`, { source: source('b.html', '<p>hi</p>'), partial: true });
+    expect(read(`${DIR}/p.html`)).toBe(
+      `${BLOCK('copy', '<meta name="tds-artifact-live" content="partial">\n')}<p>hi</p>`,
+    );
+  });
+
+  it('writes it after a BOM, and after comments before the doctype', () => {
+    art(`${DIR}/bom.html`, { source: source('c.html', '\uFEFF<p>x</p>') });
+    expect(read(`${DIR}/bom.html`)).toBe(`\uFEFF${BLOCK()}<p>x</p>`);
+    art(`${DIR}/c.html`, { source: source('d.html', '<!-- hi -->\n<!DOCTYPE html><p>x</p>') });
+    expect(read(`${DIR}/c.html`)).toBe(`<!-- hi -->\n<!DOCTYPE html>${BLOCK()}<p>x</p>`);
+  });
+
+  it('keeps the source bytes (non-UTF-8 included) and accepts a .htm source', () => {
+    const bytes = Buffer.concat([Buffer.from('<p>'), Buffer.from([0xe9, 0xff]), Buffer.from('</p>')]);
+    const r = art(`${DIR}/legacy.html`, { source: source('e.htm', bytes) });
+    expect(r.exit).toBe(0);
+    const out = readFileSync(abs(`${DIR}/legacy.html`));
+    expect(out.subarray(out.length - bytes.length).equals(bytes)).toBe(true);
+  });
+
+  it('refuses UTF-16, over 5 MB, a bad extension and a source inside the brain', () => {
+    expectRefused(
+      art(`${DIR}/u.html`, { source: source('u.html', Buffer.from([0xff, 0xfe, 0x3c, 0x00])) }),
+      'bad-request',
+    );
+    expectRefused(
+      art(`${DIR}/u.html`, { source: source('u2.html', Buffer.from([0xfe, 0xff, 0x00, 0x3c])) }),
+      'bad-request',
+    );
+    expectRefused(
+      art(`${DIR}/big.html`, { source: source('big.html', Buffer.alloc(5 * 1024 * 1024 + 1, 0x61)) }),
+      'bad-request',
+    );
+    expectRefused(art(`${DIR}/x.html`, { source: source('x.txt', 'hi') }), 'bad-request');
+    put('clients/acme/inside.html', '<p>');
+    expectRefused(art(`${DIR}/x.html`, { source: abs('clients/acme/inside.html') }), 'not-allowed');
+    expect(has(`${DIR}/x.html`)).toBe(false);
+  });
+
+  it('files a link card without a source: escaped, no script, one external address', () => {
+    const r = art(`${DIR}/card.html`, {
+      title: 'Q4 <b>"plan"</b> & more',
+      description: "Notes <script>alert(1)</script> it's",
+    });
+    expect(r.reply).toEqual({ ok: true, action: 'add-artifact', path: `${DIR}/card.html`, kind: 'link' });
+    const out = read(`${DIR}/card.html`);
+    expect(out.startsWith(`<!doctype html>\n${BLOCK('link')}`)).toBe(true);
+    expect(out).toContain('<title>Q4 &lt;b&gt;&quot;plan&quot;&lt;/b&gt; &amp; more</title>');
+    expect(out).not.toMatch(/<script/i);
+    expect(out).not.toContain('<b>');
+    expect(out).toContain(
+      `<a class="button" href="${URL}" target="_blank" rel="noopener noreferrer">Open on claude.ai</a>`,
+    );
+    expect(out).toContain('This is a link to a page on claude.ai. Open it there to see it.');
+    expect(out).toContain('Added 20 November 2026');
+    expect(out).toContain('prefers-color-scheme: dark');
+    expect(out.match(/https?:\/\/[^\s"'<>)]+/g)?.filter((u) => u !== URL)).toEqual([]);
+  });
+
+  it('defaults copied to today (local date)', () => {
+    const r = call('add-artifact', { url: URL, path: `${DIR}/t.html`, title: 'T' });
+    expect(r.exit).toBe(0);
+    const d = T0;
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    expect(read(`${DIR}/t.html`)).toContain(`name="tds-artifact-copied" content="${today}"`);
+  });
+
+  it('checks the title, description, partial and copied', () => {
+    expectRefused(art(`${DIR}/n.html`), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: '' }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'x'.repeat(201) }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'a\nb' }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'ok', description: 'x'.repeat(301) }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'ok', partial: true }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'ok', copied: '2026-02-30' }), 'bad-request');
+    expectRefused(art(`${DIR}/n.html`, { title: 'ok', copied: '23/11/2026' }), 'bad-request');
+    expect(has(`${DIR}/n.html`)).toBe(false);
+  });
+
+  it('cleans the address and refuses anything else', () => {
+    const ok = call('add-artifact', {
+      url: `  ${URL}/?x=1#frag `,
+      path: `${DIR}/q.html`,
+      title: 'T',
+      copied: '2026-11-20',
+    });
+    expect(ok.exit).toBe(0);
+    expect(read(`${DIR}/q.html`)).toContain(`content="${URL}/">`);
+    for (const bad of [
+      'http://claude.ai/artifact/abc',
+      'https://claude.ai.evil.test/artifact/abc',
+      'https://claude.ai/artifact/',
+      'https://claude.ai/chat/abc',
+      'https://claude.ai/artifact/abc/def',
+      'https://user@claude.ai/artifact/abc',
+      `https://claude.ai/artifact/${'a'.repeat(65)}`,
+      'javascript:alert(1)',
+      '',
+    ]) {
+      expectRefused(call('add-artifact', { url: bad, path: `${DIR}/r.html`, title: 'T' }), 'bad-request');
+    }
+    expect(files.cleanArtifactUrl('https://claude.ai/code/artifact/0a-1')).toBe(
+      'https://claude.ai/code/artifact/0a-1',
+    );
+  });
+
+  it('cleans addresses exactly as the shared reader does (one table for both copies)', () => {
+    for (const c of ARTIFACT_URL_CASES) expect(files.cleanArtifactUrl(c.input), c.input).toBe(c.clean);
+  });
+
+  it('allows only the two files/ shapes', () => {
+    mkdirSync(abs('personal/projects/mine'), { recursive: true });
+    writeFileSync(join(root, '.gitignore'), 'personal/*\n');
+    expect(art('personal/projects/mine/files/p.html', { title: 'T' }).exit).toBe(0);
+    expect(logLines()).toEqual([]);
+    for (const bad of [
+      'clients/acme/files/x.html',
+      'projects/site/files/x.html',
+      'clients/acme/projects/site/x.html',
+      'clients/acme/projects/site/files/deep/x.html',
+      'clients/acme/projects/site/images/x.html',
+      'personal/projects/mine/x.html',
+      'personal/files/x.html',
+      `${DIR}/x.htm`,
+      `${DIR}/x.pdf`,
+      `${DIR}/x`,
+      `${DIR}/a\u0001.html`,
+      `${DIR}/../x.html`,
+    ]) {
+      expect(art(bad, { title: 'T' }).exit, bad).toBe(2);
+    }
+  });
+
+  it('needs the project folder to exist, and makes files/', () => {
+    expectRefused(art('clients/acme/projects/nope/files/x.html', { title: 'T' }), 'not-found');
+    expect(has('clients/acme/projects/site/files')).toBe(false);
+    expect(art(`${DIR}/x.html`, { title: 'T' }).exit).toBe(0);
+    expect(has(DIR)).toBe(true);
+  });
+
+  it('never overwrites: a taken name gets (2)', () => {
+    put(`${DIR}/page.html`, 'mine');
+    const r = art(`${DIR}/page.html`, { title: 'T' });
+    expect(r.reply.path).toBe(`${DIR}/page (2).html`);
+    expect(read(`${DIR}/page.html`)).toBe('mine');
+    expect(readdirSync(abs(DIR)).filter((n) => n.includes('.tmp'))).toEqual([]);
+  });
+
+  it('refuses protected names and non-team people', () => {
+    expectRefused(art(`${DIR}/README.md`, { title: 'T' }), 'not-allowed');
+    setEmail('stranger@example.test');
+    expectRefused(art(`${DIR}/x.html`, { title: 'T' }), 'not-allowed');
+  });
+
+  it('leaves add alone: the old target rule still applies', () => {
+    expectRefused(call('add', { source: source('z.html', '<p>'), path: `${DIR}/z.html` }), 'not-allowed');
   });
 });

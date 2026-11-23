@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { ClientInfo, LibraryItem, Role } from '../../shared/contract.ts';
+import { ARTIFACT_HEAD_BYTES, artifactMetaBlock, artifactSource } from '../../shared/pages.ts';
 import { LEGACY_PROJECTS_SCOPE, type ProjectCard } from '../../shared/projects-contract.ts';
 import { listClients } from './clients.ts';
 import { createBrainReaders } from './index.ts';
@@ -1281,6 +1282,175 @@ describe('projects in the library (projects R1, decisions 7 and 27)', () => {
       ]);
       const archived = card({ folder: 'projects-archive/done', archived: true, links: [] });
       expect(await l.projectFiles(archived, 'document')).toEqual({ items: [], hidden: 0 });
+    });
+  });
+});
+
+describe('claude artifacts in the library (plan 2026-11-23-claude-artifacts-in-projects, decision 4)', () => {
+  const URL = 'https://claude.ai/artifact/AbC123';
+  const tagged = (extra = '') =>
+    `<!doctype html>\n${artifactMetaBlock({ url: URL, copied: '2026-11-23', kind: 'copy', partial: false })}<html><head><title>T</title></head><body>${extra}</body></html>`;
+  const setup = () => {
+    const root = tempDir();
+    put(root, 'clients/acme/profile.md', '# Acme');
+    return root;
+  };
+  const items = async (root: string, over: Partial<LibraryOptions> = {}) =>
+    (await lib(root, over).list('client:acme'))?.items ?? [];
+
+  it('adds `artifact` to html and htm files that carry the tags, and to nothing else', async () => {
+    const root = setup();
+    put(root, 'clients/acme/projects/site/files/page.html', tagged());
+    put(root, 'clients/acme/projects/site/files/old.htm', tagged());
+    put(root, 'clients/acme/projects/site/files/plain.html', '<!doctype html><title>x</title>');
+    put(root, 'clients/acme/projects/site/files/note.md', `# Note\n${tagged()}`);
+    const by = byPath(await items(root));
+    const base = 'clients/acme/projects/site/files/';
+    expect(by.get(`${base}page.html`)?.artifact).toEqual({
+      url: URL,
+      copied: '2026-11-23',
+      kind: 'copy',
+      partial: false,
+    });
+    expect(by.get(`${base}old.htm`)?.artifact?.url).toBe(URL);
+    expect('artifact' in (by.get(`${base}plain.html`) ?? {})).toBe(false);
+    expect('artifact' in (by.get(`${base}note.md`) ?? {})).toBe(false);
+  });
+
+  it('leaves it off a page over PAGE_MAX_BYTES, and ignores tags past the head limit', async () => {
+    const root = setup();
+    put(root, 'clients/acme/projects/site/files/huge.html', tagged('x'.repeat(5 * 1024 * 1024)));
+    put(
+      root,
+      'clients/acme/projects/site/files/late.html',
+      `<!doctype html><!-- ${'x'.repeat(ARTIFACT_HEAD_BYTES)} -->\n${tagged()}`,
+    );
+    for (const i of await items(root)) expect('artifact' in i).toBe(false);
+  });
+
+  it('leaves it off when the file cannot be read', async () => {
+    const root = setup();
+    put(root, 'clients/acme/projects/site/files/a.html', tagged());
+    const lister = lib(root);
+    // an unreadable file is listed but gets no artifact: a symbolic link is refused by the capped read
+    rmSync(join(root, 'clients/acme/projects/site/files/a.html'));
+    symlinkSync('/nonexistent', join(root, 'clients/acme/projects/site/files/a.html'));
+    const listing = await lister.list('client:acme');
+    for (const i of listing?.items ?? []) expect('artifact' in i).toBe(false);
+  });
+
+  it('reads the head again only when the file changes', async () => {
+    const root = setup();
+    const dataDir = tempDir();
+    const rel = 'clients/acme/projects/site/files/page.html';
+    put(root, rel, tagged());
+    const first = await items(root, { dataDir });
+    expect(first.find((i) => i.path === rel)?.artifact?.url).toBe(URL);
+    await new Promise((r) => setTimeout(r, 50));
+    // the saved value is used while the version matches: change it on disk-store only
+    const metaFile = join(dataDir, 'library-meta.json');
+    const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    meta.entries[rel].artifact.copied = '2020-01-01';
+    writeFileSync(metaFile, JSON.stringify(meta));
+    const cached = await items(root, { dataDir });
+    expect(cached.find((i) => i.path === rel)?.artifact?.copied).toBe('2020-01-01');
+    // a changed file (new size) is read again
+    put(root, rel, tagged('<p>more</p>'));
+    const reread = await items(root, { dataDir });
+    expect(reread.find((i) => i.path === rel)?.artifact?.copied).toBe('2026-11-23');
+  });
+
+  it('refuses a saved artifact whose address is not a claude.ai one', async () => {
+    const root = setup();
+    const dataDir = tempDir();
+    const rel = 'clients/acme/projects/site/files/page.html';
+    put(root, rel, tagged());
+    await items(root, { dataDir });
+    await new Promise((r) => setTimeout(r, 50));
+    const metaFile = join(dataDir, 'library-meta.json');
+    const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    meta.entries[rel].artifact.url = 'https://evil.example/x';
+    writeFileSync(metaFile, JSON.stringify(meta));
+    const got = await items(root, { dataDir });
+    expect('artifact' in (got.find((i) => i.path === rel) ?? {})).toBe(false);
+  });
+
+  describe('writer and reader agree: the real tdsapp-files add-artifact script', () => {
+    const SCRIPT = join(process.cwd(), 'brain-skills/tdsapp-files/scripts/tdsapp-files.cjs');
+    const run = (brain: string, home: string, input: object) => {
+      const r = spawnSync(process.execPath, [SCRIPT, 'add-artifact'], {
+        input: JSON.stringify(input),
+        cwd: brain,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: brain },
+      });
+      return {
+        status: r.status,
+        reply: JSON.parse(r.stdout.split('\n').filter(Boolean)[0] ?? '{}'),
+        err: r.stderr,
+      };
+    };
+    const gitBrain = () => {
+      const brain = tempDir();
+      const home = tempDir();
+      const g = (args: string[]) =>
+        execFileSync('git', args, {
+          cwd: brain,
+          env: { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' },
+        });
+      g(['init', '-q']);
+      g(['config', 'user.email', 'olive@example.test']);
+      mkdirSync(join(brain, '.team-config'));
+      writeFileSync(
+        join(brain, '.team-config', 'roles.json'),
+        JSON.stringify({ members: [{ name: 'Olive Owner', email: 'olive@example.test', role: 'owner' }] }),
+      );
+      put(brain, 'clients/acme/profile.md', '# Acme');
+      mkdirSync(join(brain, 'clients/acme/projects/site'), { recursive: true });
+      return { brain, home };
+    };
+
+    it('a copy and a link card, as the script writes them, read back through artifactSource and the library', async () => {
+      const { brain, home } = gitBrain();
+      const src = join(tempDir(), 'page.html');
+      writeFileSync(src, '<!doctype html><html><head><title>Mine</title></head><body>hi</body></html>');
+      const copy = run(brain, home, {
+        url: `${URL}?utm=1#x`,
+        path: 'clients/acme/projects/site/files/mine.html',
+        source: src,
+        partial: true,
+        copied: '2026-11-23',
+      });
+      expect(copy.reply, copy.err).toMatchObject({ ok: true, kind: 'copy' });
+      const card = run(brain, home, {
+        url: URL,
+        path: 'clients/acme/projects/site/files/card.html',
+        title: 'A <b>card</b>',
+        copied: '2026-11-22',
+      });
+      expect(card.reply, card.err).toMatchObject({ ok: true, kind: 'link' });
+
+      const copyText = readFileSync(join(brain, copy.reply.path), 'utf8');
+      const cardText = readFileSync(join(brain, card.reply.path), 'utf8');
+      // byte-identical block
+      const block = artifactMetaBlock({ url: URL, copied: '2026-11-23', kind: 'copy', partial: true });
+      expect(copyText.startsWith(`<!doctype html>${block}`) || copyText.includes(block)).toBe(true);
+      expect(artifactSource(copyText)).toEqual({
+        url: URL,
+        copied: '2026-11-23',
+        kind: 'copy',
+        partial: true,
+      });
+      expect(artifactSource(cardText)).toEqual({
+        url: URL,
+        copied: '2026-11-22',
+        kind: 'link',
+        partial: false,
+      });
+
+      const got = byPath(await items(brain));
+      expect(got.get(copy.reply.path)?.artifact?.kind).toBe('copy');
+      expect(got.get(card.reply.path)?.artifact?.kind).toBe('link');
     });
   });
 });

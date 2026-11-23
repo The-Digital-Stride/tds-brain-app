@@ -154,6 +154,10 @@
     overflow-y: auto;
     padding: 0 var(--sp-12) var(--sp-12);
   }
+  .viewer-body > .notice {
+    flex: none;
+    margin: 0;
+  }
   .viewer-body:focus-visible,
   .viewer-body :focus-visible {
     outline-offset: -2px;

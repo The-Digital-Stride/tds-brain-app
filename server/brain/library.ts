@@ -25,6 +25,12 @@ import type {
 import { LIBRARY_SEARCH_MAX } from '../../shared/contract.ts';
 import { PROTECTED_CLIENT_FILES, PROTECTED_NAMES } from '../../shared/files-contract.ts';
 import {
+  ARTIFACT_HEAD_BYTES,
+  type ArtifactSource,
+  artifactSource,
+  isArtifactUrl,
+} from '../../shared/pages.ts';
+import {
   LEGACY_PROJECTS_SCOPE,
   type ProjectCard,
   type ProjectFilesResponse,
@@ -216,6 +222,22 @@ interface MetaEntry {
   width: number | null;
   height: number | null;
   title: string | null;
+  /** html/htm only: the claude.ai artifact the file says it came from (decision 4). Null when it says none. */
+  artifact?: ArtifactSource | null;
+}
+
+/** An `.html`/`.htm` file small enough to open as a page: its head is read for the artifact tags. */
+function readsArtifact(ext: string, bytes: number): boolean {
+  return (ext === 'html' || ext === 'htm') && bytes <= PAGE_MAX_BYTES;
+}
+
+/** A stored artifact value, checked again on load: the same rules as `artifactSource`, or null. */
+function cleanArtifact(raw: unknown): ArtifactSource | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  if (typeof a.url !== 'string' || !isArtifactUrl(a.url)) return null;
+  const copied = typeof a.copied === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(a.copied) ? a.copied : null;
+  return { url: a.url, copied, kind: a.kind === 'link' ? 'link' : 'copy', partial: a.partial === true };
 }
 
 interface Found {
@@ -465,6 +487,7 @@ function cleanMeta(raw: unknown): Map<string, MetaEntry> {
       width: num(e.width),
       height: num(e.height),
       title: typeof e.title === 'string' ? e.title.slice(0, 200) : null,
+      ...(e.artifact !== undefined ? { artifact: cleanArtifact(e.artifact) } : {}),
     });
   }
   return out;
@@ -710,7 +733,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
   }
 
   async function describe(f: Found, store: Map<string, MetaEntry>): Promise<boolean> {
-    const needsMeta = f.cls.kind === 'image' || f.ext === 'md';
+    const needsMeta = f.cls.kind === 'image' || f.ext === 'md' || readsArtifact(f.ext, f.bytes);
     if (!needsMeta) return false;
     const version = versionOf(f.bytes, f.mtimeMs);
     const known = store.get(f.rel);
@@ -720,9 +743,13 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     if (f.cls.kind === 'image') {
       const size = await imageSize(abs, f.ext, f.bytes);
       if (size) [entry.width, entry.height] = size;
-    } else {
+    } else if (f.ext === 'md') {
       const read = await readCapped(abs, TITLE_BYTES);
       if (read) entry.title = markdownTitle(read.data.toString('utf8'));
+    } else {
+      // A read error leaves `artifact` null (and so off the item); the file is read again only when its version changes.
+      const read = await readCapped(abs, ARTIFACT_HEAD_BYTES);
+      entry.artifact = read ? artifactSource(read.data.toString('utf8')) : null;
     }
     store.set(f.rel, entry);
     return true;
@@ -750,6 +777,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
       thumb,
       view: viewFor(f.cls, f.ext, f.bytes),
       version: versionOf(f.bytes, f.mtimeMs),
+      ...(m?.artifact && readsArtifact(f.ext, f.bytes) ? { artifact: m.artifact } : {}),
     };
   }
 

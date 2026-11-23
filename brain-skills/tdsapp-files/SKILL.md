@@ -1,8 +1,8 @@
 ---
 name: tdsapp-files
 description: Delete an image or document from the library the way TDS Cortex does, put a deleted file back, see what's been deleted, or add a new file to a client's (or your personal) Files or Images folder - through one small script that moves a deleted file into tdsapp-deleted/, keeps it for 30 days, then erases it, copies an added file in without overwriting anything, and writes every client delete, put-back, erase and add to a team log. USE WHEN someone says "delete that file", "delete the old logo from Acme's folder", "put back the file I deleted", "restore the report I deleted yesterday", "what was deleted?", "who deleted that file?", "save this PDF to Acme's files", "add this image to the client's images", or asks to bin a client file or a template. Deletes: only client files (anyone on the team) and templates (the owner only). Not for to-dos (use tdsapp-todo). TDS Cortex also runs this script for its bin buttons, its daily clear-out and its to-do uploads.
-version: 0.3
-last_updated: 2026-11-21
+version: 0.4
+last_updated: 2026-11-23
 roles: owner, scout
 maturity: draft
 members: false
@@ -55,7 +55,8 @@ echo '{"path":"clients/acme/brand/old-logo.png"}' \
 | `list-deleted` | none | Lists what's waiting in `tdsapp-deleted/`, newest first: path, who, when, when it will be erased, its `holding` id, and `changed_after_deletion` when the file's size no longer matches the record. |
 | `purge` | optional `via` | Erases every holding folder more than 30 days old and logs each file erased. |
 | `add` | `source`, `path`; optional `via`, `by_name` | Copies the file at `source` (a full path outside the brain) to `path`, such as `clients/acme/files/quote.pdf`. Replies with the `path` it was saved at, which has a number added when the name was taken. Logs client adds only. |
-| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.2","features":["files-delete-v1","files-add-v1"]}` |
+| `add-artifact` | `url`, `path`; optional `source`, `title`, `description`, `partial`, `copied`, `via`, `by_name` | Files a claude.ai artifact in a project: `path` is exactly `clients/<client>/projects/<project>/files/<name>.html` or `personal/projects/<project>/files/<name>.html` (the project folder must already exist). With `source` (a full path to an `.html` or `.htm` file outside the brain, at most 5 MB, not UTF-16) it saves a copy with the artifact's address written into it; without, it saves a link card and needs a `title`. Never overwrites (a number is added). Replies `{"ok":true,"action":"add-artifact","path":…,"kind":"copy"|"link"}`. |
+| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.4","features":["files-delete-v1","files-add-v1","files-artifact-v1"]}` |
 
 `via` names the tool (such as `TDS Cortex`); it's `tdsapp-files skill` when not sent. `expect` is
 the library's version of the file (`<bytes>-<modified time in ms>`): if the file has changed since,
@@ -85,6 +86,21 @@ sentence what happened, or why it didn't.
 
 Never move, copy or erase anything in `tdsapp-deleted/` by hand, and never edit `record.json` or the
 log.
+
+### From Claude Code
+
+When someone in Claude Code asks to save a claude.ai artifact into a project (they give its
+`https://claude.ai/artifact/…` or `https://claude.ai/code/artifact/…` address):
+
+1. Read it with the Artifact tool's `read` action, or use the published local file if there is one.
+2. **Copy it** (pass the page as `source`) only when the read says all three: no runtime
+   capabilities, no artifact type, and no published files besides the page itself. Add `partial`
+   when some parts only work on claude.ai.
+3. **Otherwise run without `source`**: it files a link card (give a `title`, and a `description` if
+   useful) that opens the artifact on claude.ai. Don't save a copy that would be broken.
+4. A Claude Docs document may instead be exported to PDF or Markdown and added with `add`.
+
+Tell the person the path it was saved at and whether it's a copy or a link.
 
 ## What it refuses
 
@@ -143,3 +159,9 @@ Its log lines use the new action `add`, with `holding` empty; readers that only 
 restore and purge skip them. An older script answers `add` with `unknown action`, which is why the
 app checks `capabilities` for `files-add-v1` before it offers an upload. Added files are ordinary
 library files, so older apps list and open them as before.
+
+Version 0.4 only adds `add-artifact`; every other action works exactly as in 0.3. It logs client
+adds as `add`, like `add` does, so readers need no change. An older script answers `add-artifact`
+with `unknown action`, which is why the app checks `capabilities` for `files-artifact-v1` first.
+The saved files are ordinary `.html` library files with a few `tds-artifact-*` meta tags, so older
+apps list and open them as before.

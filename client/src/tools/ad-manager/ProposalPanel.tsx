@@ -8,6 +8,7 @@ import {
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { Fold } from '../../shell/Fold.tsx';
+import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { StatusBadge } from './Approvals.tsx';
@@ -366,7 +367,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
             data-am-opener="apply"
             onClick={press(() => setAsk('apply'))}
           >
-            {applying ? 'Applying…' : 'Apply now'}
+            {applying ? 'Applying' : 'Apply now'}
           </button>
         ) : null}
         {f.canRecordDecision ? (
@@ -491,33 +492,32 @@ export function ProposalPanel() {
       {region}
       {order.length > 1 && at >= 0 ? (
         <nav className="am-step" aria-label="Proposals">
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            aria-disabled={at === 0 || undefined}
-            aria-label="Previous proposal"
-            onClick={() => step(-1)}
-          >
-            Previous
-          </button>
           <span className="am-sub" aria-hidden="true">
             {at + 1} of {order.length}
           </span>
           <span className="visually-hidden" aria-live="polite">
             {`Proposal ${at + 1} of ${order.length}, ${p.fm.title}`}
           </span>
+          {/* Up and down icon buttons, as the to-do panel steps (design system, Actions rule 11). */}
           <button
             type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            aria-disabled={at === order.length - 1 || undefined}
+            className="icon-btn"
+            aria-label="Previous proposal"
+            data-tip="Previous proposal"
+            aria-disabled={at === 0 || undefined}
+            onClick={() => step(-1)}
+          >
+            <Icon name="up" size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
             aria-label="Next proposal"
+            data-tip="Next proposal"
+            aria-disabled={at === order.length - 1 || undefined}
             onClick={() => step(1)}
           >
-            Next
+            <Icon name="chevron" size={18} />
           </button>
         </nav>
       ) : null}

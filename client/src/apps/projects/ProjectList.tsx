@@ -171,8 +171,8 @@ export function ProjectListView({
       ) : shown.length === 0 ? (
         <p className="proj-note">
           No projects match these filters.{' '}
-          <button type="button" className="link-btn" onClick={() => setFilters(NO_FILTERS)}>
-            Show all projects
+          <button type="button" className="btn" data-size="small" onClick={() => setFilters(NO_FILTERS)}>
+            Clear filters
           </button>
           {archivedCount > 0 && filters.status !== ARCHIVED ? (
             <>

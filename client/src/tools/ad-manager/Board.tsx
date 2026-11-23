@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { ADS_TRIAGE_CAPABILITY, type AdsBoard, type AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { useCopy } from '../../apps/shared/copy.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import type { DueState, FileDot, Readiness } from './ads-tools-contract.ts';
@@ -124,7 +125,7 @@ function RunInfo({
     if (!opened) setGone(true);
   };
   const link = (sdk: string, at: string) => (
-    <button type="button" className="cc-link" onClick={() => void open(sdk)}>
+    <button type="button" className="link-btn" onClick={() => void open(sdk)}>
       {lastRunText(at)}
       <span className="visually-hidden">: open the chat for {title}</span>
     </button>
@@ -254,7 +255,7 @@ function RunButton({
       aria-disabled={disabled || undefined}
       onClick={onRun}
     >
-      {starting ? 'Starting…' : 'Run'}
+      {starting ? 'Starting' : 'Run'}
       <span className="visually-hidden">: {title}</span>
     </button>
   );
@@ -272,7 +273,9 @@ function fileNote(f: HealthFile): string {
 
 function CopyPrompts({ board }: { board: AdsBoard }) {
   const prompts = readSetupPrompts(board);
-  const [copied, setCopied] = useState<string | null>(null);
+  // The shared copy helper: it says "Copied" or "Could not copy" for two seconds.
+  const { said, copy: copyText } = useCopy();
+  const [which, setWhich] = useState<string | null>(null);
   const options: { id: 'discover' | 'sheet' | 'proxy'; title: string; text: string }[] = [
     {
       id: 'discover',
@@ -293,12 +296,8 @@ function CopyPrompts({ board }: { board: AdsBoard }) {
   const copy = async (id: 'discover' | 'sheet' | 'proxy') => {
     const text = prompts[id];
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(id);
-    } catch {
-      setCopied(null);
-    }
+    setWhich(id);
+    await copyText(text);
   };
   return (
     <ul className="am-opts">
@@ -315,13 +314,13 @@ function CopyPrompts({ board }: { board: AdsBoard }) {
             disabled={!prompts[o.id]}
             onClick={() => void copy(o.id)}
           >
-            {copied === o.id ? 'Copied' : 'Copy prompt'}
+            {which === o.id && said ? said : 'Copy prompt'}
             <span className="visually-hidden">: {o.title}</span>
           </button>
         </li>
       ))}
       <li aria-live="polite" className="am-sub">
-        {copied ? 'Copied. Paste it into a Claude chat in your Brain.' : ''}
+        {said === 'Copied' ? 'Copied. Paste it into a Claude chat in your Brain.' : (said ?? '')}
       </li>
     </ul>
   );
@@ -668,7 +667,7 @@ function StandupCard({
                 aria-expanded={triage}
                 onClick={() => setTriage((o) => !o)}
               >
-                All accounts' standups…
+                All accounts' standups
               </button>
               {triage ? (
                 <TriagePopup account={board.key} openerRef={triageBtn} onClose={() => setTriage(false)} />

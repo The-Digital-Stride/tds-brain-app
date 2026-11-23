@@ -41,12 +41,12 @@ export function CommandSheet() {
       />
       {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
       {s.loadError ? (
-        <p className="am-line" role="alert">
+        <p className="am-line" data-level="error" role="alert">
           {s.loadError}
         </p>
       ) : null}
       {s.boardError ? (
-        <p className="am-line" role="alert">
+        <p className="am-line" data-level="error" role="alert">
           {s.boardError}
         </p>
       ) : null}

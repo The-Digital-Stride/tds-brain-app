@@ -29,6 +29,7 @@ import type { TodoPanelMode } from './contract.ts';
 import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton } from './StarButton.tsx';
 import TodoDetailsEditor from './TodoDetailsEditor.tsx';
 import { TodoFiles } from './TodoFiles.tsx';
 import {
@@ -82,7 +83,7 @@ export interface TodoPanelProps {
   /** Add form: start in this project (the drawer's project filter). */
   startProject?: string;
   onEdit: (todo: TodoItem) => void;
-  /** Back to reading, dropping the draft. Never asks: the person pressed Cancel. */
+  /** Back to reading, dropping the draft. The panel asks first when anything changed. */
   onCancelEdit: () => void;
   onSave: (todo: TodoItem, actions: TodoAction[]) => Promise<ChangeTodosResult>;
   /** A tick box pressed while reading: the whole new details, sent as one change. True when it was saved. */
@@ -117,7 +118,9 @@ export default function TodoPanel(props: TodoPanelProps) {
 
   const [addDirty, setAddDirty] = useState(false);
   // Older servers send no `canProject`: the Project and Stage fields stay hidden.
-  const canProject = useStore().todos?.canProject === true;
+  const { todos: todoData, boot, toggleFavouriteTodo } = useStore();
+  const canProject = todoData?.canProject === true;
+  const favouriteTodos = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
 
   const draft = props.draft;
   // With canAttach the panel works on the details part only: the Files section is its own block.
@@ -206,6 +209,14 @@ export default function TodoPanel(props: TodoPanelProps) {
           <h2 id={headId} ref={heading} tabIndex={-1}>
             {title}
           </h2>
+          {todo !== null && mode !== 'add' ? (
+            <StarButton
+              id={todo.key}
+              title={todo.title}
+              on={favouriteTodos.includes(todo.key)}
+              onPress={(id) => void toggleFavouriteTodo(id)}
+            />
+          ) : null}
           {mode === 'add' ? null : (
             <>
               <button
@@ -494,17 +505,26 @@ function ReadView({
             {chat.has ? 'Open chat' : 'Start a chat'}
           </button>
           {p.canEdit || p.canTick ? (
-            <button type="button" className="btn" disabled={p.busy} onClick={() => p.onDone(todo)}>
+            <button
+              type="button"
+              className="btn"
+              aria-disabled={p.busy || undefined}
+              onClick={() => {
+                if (!p.busy) p.onDone(todo);
+              }}
+            >
               Mark as done
             </button>
           ) : null}
+          {/* Delete is a standard button: it has an Undo, so it isn't red (rule 5). */}
           {p.canEdit ? (
             <button
               type="button"
               className="btn"
-              data-variant="danger"
-              disabled={p.busy}
-              onClick={() => p.onDelete(todo)}
+              aria-disabled={p.busy || undefined}
+              onClick={() => {
+                if (!p.busy) p.onDelete(todo);
+              }}
             >
               Delete
             </button>
@@ -616,6 +636,7 @@ function EditView({
   titleInput: React.RefObject<HTMLInputElement | null>;
 }) {
   const uid = useId();
+  const { dispatch } = useShell();
   const chat = useChat(todo);
   const [askDrop, setAskDrop] = useState(false);
   // The safe answer gets focus when the question opens.
@@ -844,18 +865,21 @@ function EditView({
           <button
             type="button"
             className="btn"
-            disabled={p.busy || dirty}
+            aria-disabled={p.busy || dirty || undefined}
             aria-describedby={dirty ? `${uid}-dirty` : undefined}
-            onClick={() => p.onDone(todo)}
+            onClick={() => {
+              if (!p.busy && !dirty) p.onDone(todo);
+            }}
           >
             Mark as done
           </button>
           <button
             type="button"
             className="btn"
-            data-variant="danger"
-            disabled={p.busy}
-            onClick={() => p.onDelete(todo)}
+            aria-disabled={p.busy || undefined}
+            onClick={() => {
+              if (!p.busy) p.onDelete(todo);
+            }}
           >
             Delete
           </button>
@@ -875,7 +899,16 @@ function EditView({
           >
             Save
           </button>
-          <button type="button" className="btn" onClick={p.onCancelEdit}>
+          {/* Anything changed asks "Discard your changes?" in the strip under the header; nothing changed just leaves. */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              dirty
+                ? dispatch({ type: 'ask-todo', after: { type: 'set-todo-mode', mode: 'read' } })
+                : p.onCancelEdit()
+            }
+          >
             Cancel
           </button>
         </div>

@@ -201,10 +201,12 @@ describe('quick add', () => {
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
     await openAdd();
-    expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add to-do' }).getAttribute('aria-describedby')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     const warning = screen.getByText(/Personal to-dos stay on this Mac/);
-    expect(screen.getByRole('button', { name: 'Add' }).getAttribute('aria-describedby')).toBe(warning.id);
+    expect(screen.getByRole('button', { name: 'Add to-do' }).getAttribute('aria-describedby')).toBe(
+      warning.id,
+    );
   });
 
   it('More options moves focus to the first field it reveals', async () => {

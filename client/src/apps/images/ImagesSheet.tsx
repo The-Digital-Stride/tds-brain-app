@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { LibraryItem } from '../../../../shared/contract.ts';
+import { FileStar } from '../../shell/FileStar.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
@@ -90,6 +91,7 @@ function Item({
           <span className="line-meta">{layout === 'list' ? metaWords(image) : tileWords(image)}</span>
         </span>
       </button>
+      <FileStar item={image} />
       <ViewButton title={image.name} onView={image.view ? onView : null} />
       {layout === 'list' ? (
         <DeleteButton
@@ -173,7 +175,7 @@ export function ImagesSheet() {
           searchLabel="Search images"
           placeholder="Search by name or folder"
         >
-          <p className="lib-summary" role="status" ref={summary} tabIndex={-1}>
+          <p className="lib-summary" data-lib-summary role="status" ref={summary} tabIndex={-1}>
             {ready ? summaryWords(shown) : ''}
           </p>
           <Seg

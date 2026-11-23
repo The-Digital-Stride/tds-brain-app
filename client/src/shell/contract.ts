@@ -350,7 +350,7 @@ export interface DockProps {
 /**
  * `client/src/shell/SheetBar.tsx`. The bar across the top of every sheet. Renders the page's one
  * `h1` (`title`), an optional lead-in before it ("Chats" for a chat), whatever `children` the sheet
- * adds on the right (chip, Stop, panel toggle, Close chat), and last the "Search or jump to"
+ * adds on the right (chip, Stop, panel toggle, End chat), and last the "Search or jump to"
  * button that opens the palette.
  */
 export interface SheetBarProps {

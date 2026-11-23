@@ -144,6 +144,15 @@ async function renderHome() {
   return box;
 }
 const card = (name: string) => within(screen.getByRole('region', { name }));
+/**
+ * A favourite to-do's row opens the to-do panel (decision 9); a chat starts from the panel's own button. This
+ * clicks the row, then that button (Start a chat, or Open chat when the to-do already has one).
+ */
+const startChatFromPanel = async (title: RegExp) => {
+  fireEvent.click(await card('Favourite to-dos').findByRole('button', { name: title }));
+  const panel = await screen.findByRole('dialog');
+  fireEvent.click(within(panel).getByRole('button', { name: /^(Start a chat|Open chat)$/ }));
+};
 
 beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -177,7 +186,7 @@ describe('Home', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     await screen.findByText('One to-do is overdue, one is due today and one chat is waiting for you.');
 
-    const needs = card('Pinned to-dos');
+    const needs = card('Favourite to-dos');
     expect(needs.getByText('2')).toBeTruthy();
     expect(needs.getByText('Write the call tracking case')).toBeTruthy();
     expect(needs.getByText('overdue by 2 days').className).toBe('late');
@@ -187,7 +196,7 @@ describe('Home', () => {
     expect(needs.queryByText('Plan the quarter')).toBeNull();
     expect(needs.queryByRole('checkbox')).toBeNull();
 
-    const chats = card('Pinned chats');
+    const chats = card('Favourite chats');
     expect(chats.getByText('Monthly reports check')).toBeTruthy();
     expect(chats.getByText('Needs your answer')).toBeTruthy();
     expect(chats.getByText('Working')).toBeTruthy();
@@ -209,11 +218,11 @@ describe('Home', () => {
       prefs: { ...boot.prefs, pins: [], favouriteTodos: [], favouriteChats: [] },
     });
     await renderHome();
-    expect(await screen.findByText('Star a to-do to keep it here.')).toBeTruthy();
-    expect(screen.getByText('Star a chat to keep it here.')).toBeTruthy();
-    expect(await screen.findByText('Star a file to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Favourite a to-do to keep it here.')).toBeTruthy();
+    expect(screen.getByText('Favourite a chat to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Favourite a file to keep it here.')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Favourite skills' })).toBeTruthy();
-    expect(screen.getByText('Star a skill to keep it here.')).toBeTruthy();
+    expect(screen.getByText('Favourite a skill to keep it here.')).toBeTruthy();
     expect(screen.getByText('Nothing is waiting for you.')).toBeTruthy();
   });
 
@@ -232,8 +241,8 @@ describe('Home', () => {
     api.todos.mockReturnValue(new Promise(() => {}));
     api.sessions.mockReturnValue(new Promise(() => {}));
     await renderHome();
-    expect(card('Pinned to-dos').getByText('Loading')).toBeTruthy();
-    expect(card('Pinned chats').getByText('Loading')).toBeTruthy();
+    expect(card('Favourite to-dos').getByText('Loading')).toBeTruthy();
+    expect(card('Favourite chats').getByText('Loading')).toBeTruthy();
   });
 
   const typeAndSend = (box: HTMLElement, value: string) => {
@@ -482,21 +491,13 @@ describe('Home', () => {
       const box = await renderHome();
       typeAndSend(box, 'Old message');
       await waitFor(() => expect(api.clientGuess).toHaveBeenCalled());
-      fireEvent.click(
-        await card('Pinned to-dos').findByRole('button', { name: /Check the monthly reports/ }),
-      );
-      await waitFor(() =>
-        expect(
-          (screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value,
-        ).toContain('Check the monthly reports'),
-      );
+      // Another new chat (a favourite skill starts one): the pending guess must be dropped.
+      fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
+      await screen.findByText('Meeting notes', { selector: 'strong' });
       finish(kind === 'ask' ? { kind: 'ask', options: [] } : { kind: 'sure', client: 'acme', how: 'named' });
       await new Promise((r) => setTimeout(r, 20));
       expect(api.startSession).not.toHaveBeenCalled();
       expect(screen.queryByRole('group', { name: 'Which client is this for?' })).toBeNull();
-      expect(
-        (screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value,
-      ).toContain('Check the monthly reports');
       expect(select().disabled).toBe(false);
       cleanup();
       vi.clearAllMocks();
@@ -538,9 +539,9 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Acme thing/ }));
+    await startChatFromPanel(/^Acme thing/);
     await waitFor(() => expect(select().value).toBe('Acme Heating'));
-    fireEvent.click(card('Pinned to-dos').getByRole('button', { name: /My own thing/ }));
+    await startChatFromPanel(/^My own thing/);
     await waitFor(() => expect(select().value).toBe('No client'));
     // Sending a chat whose client arrived with it counts as preset, not chosen by hand.
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -552,7 +553,7 @@ describe('Home', () => {
   it("a to-do's client beats Working on's, and isn't credited to it", async () => {
     api.todos.mockResolvedValue({ ...todoList, mine: [todo('t-a.md', 'Acme thing', dayOffset(0), 'acme')] });
     await renderHome();
-    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Acme thing/ }));
+    await startChatFromPanel(/^Acme thing/);
     await waitFor(() => expect(select().value).toBe('Acme Heating'));
     act(() => projectChoice.set('northwind/site'));
     expect(select().value).toBe('Acme Heating');
@@ -581,9 +582,9 @@ describe('Home', () => {
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
-  it('starts a chat from a to-do row and keeps the to-do link', async () => {
+  it("starts a chat from a to-do's panel and keeps the to-do link", async () => {
     const box = (await renderHome()) as HTMLTextAreaElement;
-    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Check the monthly reports/ }));
+    await startChatFromPanel(/^Check the monthly reports/);
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
         'Help me with this to-do: todo/t-today.md (Check the monthly reports)',
@@ -610,22 +611,20 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Pinned to-dos').findByRole('button', { name: /Fresh from Ben/ }));
+    fireEvent.click(await card('Favourite to-dos').findByRole('button', { name: /^Fresh from Ben/ }));
     await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ todoSeen: { 't-new.md': at } }));
   });
 
   it('opens the live chat for a to-do that already has one', async () => {
     await renderHome();
-    fireEvent.click(
-      await card('Pinned to-dos').findByRole('button', { name: /Write the call tracking case/ }),
-    );
+    await startChatFromPanel(/^Write the call tracking case/);
     await screen.findByRole('heading', { level: 1, name: 'Call tracking case' });
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
   it('opens a chat from the Pinned chats card', async () => {
     await renderHome();
-    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /Monthly reports check/ }));
+    fireEvent.click(await card('Favourite chats').findByRole('button', { name: /^Monthly reports check/ }));
     await screen.findByRole('heading', { level: 1, name: 'Monthly reports check' });
   });
 
@@ -637,12 +636,12 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteFiles: ['f1', 'f2'] } });
     api.libraryItems.mockResolvedValue({ files: [file('f2', 'Newer plan'), file('f1', 'Older plan')] });
     await renderHome();
-    const files = card('Pinned files');
+    const files = card('Favourite files');
     await files.findByText('Newer plan');
-    const rows = files.getAllByRole('button').filter((b) => b.classList.contains('line'));
+    const rows = files.getAllByRole('listitem');
     expect(api.libraryItems).toHaveBeenCalledWith(['f2', 'f1']);
     expect(rows.map((r) => r.textContent)).toEqual(['Newer planAcme Heating', 'Older planAcme Heating']);
-    fireEvent.click(rows[0] as HTMLElement);
+    fireEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: /^Newer plan/ }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Newer plan' })).toBeTruthy();
   });
 
@@ -654,7 +653,7 @@ describe('Home', () => {
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Pinned to-dos');
+    const card1 = card('Favourite to-dos');
     await card1.findByText('To-do 4');
     expect(card1.queryByText('To-do 5')).toBeNull();
     const more = card1.getByRole('button', { name: 'Show 2 more to-dos' });
@@ -679,7 +678,7 @@ describe('Home', () => {
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Pinned to-dos');
+    const card1 = card('Favourite to-dos');
     expect(await card1.findByRole('button', { name: 'Show 1 more to-do' })).toBeTruthy();
   });
 
@@ -694,7 +693,7 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteChats: [sid] } });
     api.startSession.mockResolvedValue({ session: chat('r1', 'Last week plan', 'working') });
     await renderHome();
-    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /Last week plan/ }));
+    fireEvent.click(await card('Favourite chats').findByRole('button', { name: /^Last week plan/ }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith({ resume: sid }));
   });
 

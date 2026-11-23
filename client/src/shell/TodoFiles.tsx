@@ -659,8 +659,8 @@ function LibraryPicker({
         >
           {picked.size > 1 ? `Add ${picked.size} files` : 'Add file'}
         </button>
-        <button type="button" className="btn" data-size="small" onClick={onCancel}>
-          Cancel
+        <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onCancel}>
+          Close
         </button>
       </div>
     </form>

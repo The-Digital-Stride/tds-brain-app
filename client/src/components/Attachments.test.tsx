@@ -374,11 +374,12 @@ describe('while a message is being sent', () => {
     return { d, box };
   }
 
-  it('the attach button is disabled and the chip cannot be removed', async () => {
+  it('the attach button is aria-disabled and the chip cannot be removed', async () => {
     await sendingWithFile();
-    expect(
-      (screen.getByRole('button', { name: 'Attach files, up to 10' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    // Busy controls are aria-disabled, never disabled, so focus never drops to the page (rule 12).
+    expect(screen.getByRole('button', { name: 'Attach files, up to 10' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
     expect(screen.queryByRole('button', { name: 'Remove report.pdf' })).toBeNull();
     expect(screen.getByText('report.pdf')).toBeTruthy();
   });

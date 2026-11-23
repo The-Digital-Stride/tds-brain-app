@@ -17,7 +17,7 @@
   position: relative;
 }
 
-/* "Close anyway?" replaces Stop and Close chat in the bar while it shows. */
+/* "End this chat?" replaces Stop and End chat in the bar while it shows. */
 .close-confirm {
   border: 0;
   margin: 0;
@@ -670,7 +670,8 @@
   display: grid;
   gap: 6px;
   padding: 10px 10px 8px 14px;
-  border: 1.5px solid var(--line-strong);
+  /* --field-edge reaches 3:1 on white (WCAG 1.4.11); --line-strong did not. */
+  border: 1.5px solid var(--field-edge);
   border-radius: 14px;
   background: #fff;
   box-shadow: var(--lift-1);

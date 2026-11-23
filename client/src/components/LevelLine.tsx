@@ -150,7 +150,7 @@ export function LevelOffer({
             {LEVEL_TIERS[t].label}
           </button>
         ))}
-        <button type="button" className="btn" data-size="small" onClick={onDismiss}>
+        <button type="button" className="btn" data-variant="quiet" data-size="small" onClick={onDismiss}>
           Dismiss
         </button>
       </span>

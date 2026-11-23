@@ -28,19 +28,19 @@ describe('needsCloseConfirm', () => {
   });
   it('names helpers that are still working', () => {
     expect(closeConfirmText('working', 2)).toBe(
-      'Claude and 2 helpers are still working. Closing stops them all. Close anyway?',
+      'End this chat? Claude and 2 helpers are still working. Ending stops them all.',
     );
     expect(closeConfirmText('working', 1)).toBe(
-      'Claude and 1 helper are still working. Closing stops them all. Close anyway?',
+      'End this chat? Claude and 1 helper are still working. Ending stops them all.',
     );
     expect(closeConfirmText('waiting', 2)).toBe(
-      'Claude is waiting for your answer and 2 helpers are still working. Closing stops them all. Close anyway?',
+      'End this chat? Claude is waiting for your answer and 2 helpers are still working. Ending stops them all.',
     );
     expect(closeConfirmText('waiting', 1)).toContain('and 1 helper is still working');
   });
   it('is unchanged with no helpers working', () => {
-    expect(closeConfirmText('working', 0)).toBe('Claude is still working. Close anyway?');
-    expect(closeConfirmText('waiting')).toBe('Claude is waiting for your answer. Close anyway?');
-    expect(closeConfirmText('idle', 0)).toBe('Close this chat?');
+    expect(closeConfirmText('working', 0)).toBe('End this chat? Claude is still working on a reply.');
+    expect(closeConfirmText('waiting')).toBe('End this chat? Claude is waiting for your answer.');
+    expect(closeConfirmText('idle', 0)).toBe('End this chat?');
   });
 });

@@ -12,7 +12,7 @@ const verdictWhen = (d: string) => {
 };
 
 /**
- * "All accounts' standups…" (Release 2, decision 1): every account's latest standup verdict, worst first, read each
+ * "All accounts' standups" (Release 2, decision 1): every account's latest standup verdict, worst first, read each
  * time it opens. Non-modal and anchored under its button: Esc or a click outside closes it, focus goes to its close
  * button and comes back to the opener. Choosing a row switches the shared account and closes it.
  */

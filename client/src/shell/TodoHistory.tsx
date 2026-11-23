@@ -53,7 +53,7 @@ export function TodoHistory({ todoKey, team }: { todoKey: string; team: readonly
         {load.kind === 'failed' ? (
           <p className="todo-note">
             Couldn't load the history.{' '}
-            <button type="button" className="link-btn" onClick={() => void fetchIt()}>
+            <button type="button" className="btn" data-size="small" onClick={() => void fetchIt()}>
               Try again
             </button>
           </p>

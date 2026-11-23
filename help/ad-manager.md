@@ -36,10 +36,10 @@ Only owners and scouts can use them. Ask one if you need access.
 1. Open **Workbench** on the rail, then open **Ads** and choose **Ads Manager**.
 2. Pick a client in **Account**. A number in brackets shows how many proposals wait for you.
 3. Read **Needs you**. Each line has one button: open the report, go to the Ads Command Centre, or go to the monthly close.
-4. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel. **Previous** and **Next** move between proposals.
+4. Under **Waiting for a decision**, press **Details** on a proposal. Its facts open in the panel. The up and down arrows above it move between proposals.
 5. Choose **Approve**, **Request changes** or **Reject**. Rejecting and requesting changes both need a note.
 6. For an approved change, try **Dry run** first. It checks everything and changes nothing. Then press **Apply now** to make it live.
-7. At **Monthly close**, read the draft PDF, then press **Sign off the report…**. **Earlier months** holds past reports.
+7. At **Monthly close**, read the draft PDF, then press **Sign off the report**. **Earlier months** holds past reports.
 8. After a decision made elsewhere, write it down and press **Record decision**. **Record and draft the change** also has Claude draft the change.
 
 ## Good to know
@@ -47,7 +47,7 @@ Only owners and scouts can use them. Ask one if you need access.
 - Cortex asks you to confirm approving, rejecting, applying and signing off a report.
 - If Cortex can't tell whether an apply reached Google Ads, it says so and stops. Check the account, then press **I've checked the account**.
 - The newest buttons need the updated Ads skill in the Brain.
-- **Recent decisions** covers the last 14 days.
+- **Recent decisions** covers 14 days.
 
 ## Try this
 

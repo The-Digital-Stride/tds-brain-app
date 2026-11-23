@@ -8,6 +8,7 @@ import type {
   TidySuggestion,
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
+import { Icon } from '../../shell/Icon.tsx';
 import { projectText, useProjects } from '../../state/projects.ts';
 import { errorWords, joinWords, personName, slugFromTitle } from './logic.ts';
 
@@ -176,10 +177,10 @@ function Row({
                 className="btn"
                 data-variant="primary"
                 data-size="small"
-                disabled={busy || picked() === null}
+                aria-disabled={busy || picked() === null || undefined}
                 onClick={() => {
                   const s = picked();
-                  if (s) onApply({ label: row.label, do: 'approve', suggestion: s });
+                  if (s && !busy) onApply({ label: row.label, do: 'approve', suggestion: s });
                 }}
               >
                 Apply
@@ -197,8 +198,12 @@ function Row({
                     className="btn"
                     data-variant="primary"
                     data-size="small"
-                    disabled={busy || row.suggestion.do === 'skip'}
-                    onClick={() => onApply({ label: row.label, do: 'approve', suggestion: row.suggestion })}
+                    aria-disabled={busy || row.suggestion.do === 'skip' || undefined}
+                    onClick={() =>
+                      !busy &&
+                      row.suggestion.do !== 'skip' &&
+                      onApply({ label: row.label, do: 'approve', suggestion: row.suggestion })
+                    }
                   >
                     Approve
                   </button>
@@ -206,8 +211,8 @@ function Row({
                     type="button"
                     className="btn"
                     data-size="small"
-                    disabled={busy}
-                    onClick={() => setChanging(true)}
+                    aria-disabled={busy || undefined}
+                    onClick={() => !busy && setChanging(true)}
                   >
                     Change
                   </button>
@@ -218,8 +223,8 @@ function Row({
                 className="btn"
                 data-variant="quiet"
                 data-size="small"
-                disabled={busy}
-                onClick={() => onApply({ label: row.label, do: 'skip' })}
+                aria-disabled={busy || undefined}
+                onClick={() => !busy && onApply({ label: row.label, do: 'skip' })}
               >
                 Skip
               </button>
@@ -302,7 +307,9 @@ export function TidyScreen({
     focusAt.current = null;
     const rows = list$.current?.querySelectorAll<HTMLElement>(':scope > li') ?? [];
     const target = rows[Math.min(at, rows.length - 1)];
-    const button = target?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+    const button = target?.querySelector<HTMLButtonElement>(
+      'button:not(:disabled):not([aria-disabled="true"])',
+    );
     if (button) button.focus();
     else heading.current?.focus();
   }, [tidy]);
@@ -310,7 +317,14 @@ export function TidyScreen({
   return (
     <>
       <div className="proj-head">
-        <button type="button" className="btn" data-size="small" onClick={onBack}>
+        <button
+          type="button"
+          className="btn proj-back"
+          data-variant="quiet"
+          data-size="small"
+          onClick={onBack}
+        >
+          <Icon name="chevron" size={14} />
           All projects
         </button>
         <h2 className="proj-title" ref={heading} tabIndex={-1}>
@@ -380,9 +394,9 @@ export function TidyScreen({
                     type="button"
                     className="btn"
                     data-size="small"
-                    disabled={busy}
+                    aria-disabled={busy || undefined}
                     aria-label={`Bring back ${label}`}
-                    onClick={() => void apply({ label, do: 'unskip' })}
+                    onClick={() => !busy && void apply({ label, do: 'unskip' })}
                   >
                     Bring back
                   </button>

@@ -397,7 +397,7 @@ export interface Store {
   /** True while the full-screen brain folder page is open from Settings or the brain problem screen. */
   setupOpen: boolean;
   setSetupOpen: (open: boolean) => void;
-  /** The chat whose inline "Close anyway?" is showing in the header, if any. */
+  /** The chat whose inline "End this chat?" question is showing in the header, if any. */
   closeRequest: string | null;
   cancelClose: () => void;
   /** Closes at once when idle; otherwise switches to the chat and asks first. */
@@ -433,7 +433,7 @@ export interface Store {
   toggleFavouriteTodo: (key: string) => Promise<void>;
   /**
    * Stars or unstars a library file by its `LibraryItem.id` (kept in prefs, never in the brain). The same rules as
-   * `toggleFavouriteChat`. Starred files are "Pinned files" on Home.
+   * `toggleFavouriteChat`. Starred files are "Favourite files" on Home.
    */
   toggleFavouriteFile: (id: string) => Promise<void>;
   /** A brief plain line shown after a chat is closed. */

@@ -54,7 +54,13 @@ export function ProjectFilter({
       {picked ? (
         <span id={`${id}-why`} className="lib-project-why">
           Set by Working on (Home) ·{' '}
-          <button type="button" className="link-btn" onClick={clearPickedProject}>
+          <button
+            type="button"
+            className="btn"
+            data-variant="quiet"
+            data-size="small"
+            onClick={clearPickedProject}
+          >
             Clear
           </button>
         </span>
@@ -257,17 +263,24 @@ export function ViewButton({ title, onView }: { title: string; onView: (() => vo
 }
 
 /**
- * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can) or
- * ask Claude about it; then download it or copy where it is. Open is the main action when it is there.
+ * The panel's actions for the chosen item, on two rows on purpose: open it here (when the app can), ask
+ * Claude about it, favourite it, delete it (design system, Actions rule 10); then download it or copy where
+ * it is. Open is the main action when it is there. The bin shows only where the server says the person may
+ * delete the file.
  */
 export function DetailActions({
   item,
+  name = item.title,
   onAsk,
   onOpen,
+  onDelete,
 }: {
   item: LibraryItem;
+  /** The name the person sees on the file (an image's file name, a document's title). */
+  name?: string;
   onAsk: () => void;
   onOpen?: (() => void) | null;
+  onDelete?: () => void;
 }) {
   const { said, copy } = useCopy();
   return (
@@ -282,6 +295,7 @@ export function DetailActions({
           Ask Claude about it
         </button>
         <FileStar item={item} />
+        {onDelete ? <DeleteButton item={item} name={name} onDelete={onDelete} /> : null}
       </div>
       <div className="lib-actions-row">
         {/* The server sends it as an attachment, so the browser saves it and the app stays put. */}
@@ -408,6 +422,13 @@ export function FileDeleteNotice() {
         </div>
       )}
     </>
+  );
+}
+
+/** After a file is deleted from the details pane there is no row to land on: focus goes to the list's summary line. */
+export function focusLibrarySummary() {
+  queueMicrotask(() =>
+    document.querySelector<HTMLElement>('[data-lib-summary]')?.focus({ preventScroll: true }),
   );
 }
 

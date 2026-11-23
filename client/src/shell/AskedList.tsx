@@ -132,7 +132,7 @@ export function AskedList({
         {state === 'failed' ? (
           <p className="dock-empty asked-retry" role="status">
             Couldn't load these.{' '}
-            <button type="button" className="link-btn" onClick={onRetry}>
+            <button type="button" className="btn" data-size="small" onClick={onRetry}>
               Try again
             </button>
           </p>
@@ -168,7 +168,7 @@ export function AskedList({
       {state === 'failed' ? (
         <p className="todo-note asked-retry" role="status">
           Couldn't refresh this list.{' '}
-          <button type="button" className="link-btn" onClick={onRetry}>
+          <button type="button" className="btn" data-size="small" onClick={onRetry}>
             Try again
           </button>
         </p>

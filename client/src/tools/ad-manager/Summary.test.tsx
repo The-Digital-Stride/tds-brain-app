@@ -188,10 +188,11 @@ describe('Ads Account Summary', () => {
       await screen.findByText('Conv. value');
     };
 
-    it('starts at 30 days with a labelled radio group, dates in words and the change', async () => {
+    it('starts at 30 days with a labelled Seg, dates in words and the change', async () => {
       await open();
-      const group = screen.getByRole('group', { name: 'Show the last' });
-      expect((within(group).getByRole('radio', { name: '30 days' }) as HTMLInputElement).checked).toBe(true);
+      // The period is a Seg now (a radiogroup of buttons), not radio inputs (UX consistency, release 2B).
+      const group = screen.getByRole('radiogroup', { name: 'Show the last' });
+      expect(within(group).getByRole('radio', { name: '30 days' }).getAttribute('aria-checked')).toBe('true');
       expect(screen.getByText(/Last 30 days, 10 Oct to 8 Nov, against the 30 days before/)).toBeTruthy();
       expect(screen.getByText('+12% vs £36,120')).toBeTruthy();
       // The fixed tag goes while the strip shows.
@@ -232,7 +233,9 @@ describe('Ads Account Summary', () => {
         screen.getByText(/search terms with no conversions in the last 30 days \(Google basis\)/),
       ).toBeTruthy();
       expect(screen.getByText(/Google basis: as Google Ads reports them/)).toBeTruthy();
-      const facts = screen.getByRole('group', { name: 'Show the last' }).closest('section') as HTMLElement;
+      const facts = screen
+        .getByRole('radiogroup', { name: 'Show the last' })
+        .closest('section') as HTMLElement;
       expect(within(facts).queryByText('Wasted spend', { selector: 'dt' })).toBeNull();
     });
   });

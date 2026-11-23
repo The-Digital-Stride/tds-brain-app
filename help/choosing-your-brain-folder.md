@@ -23,7 +23,7 @@ Cortex needs the folder where you keep your copy of the Agency Brain. A screen c
 
 ## How to use it
 
-1. If Cortex can't find the Brain, it shows this screen by itself. You can also press **Change…** next to **Brain folder** on the **Health** tab in Settings.
+1. If Cortex can't find the Brain, it shows this screen by itself. You can also press **Change** next to **Brain folder** on the **Health** tab in Settings.
 2. Look under **Found on this Mac**. The one in use says **In use now**.
 3. Press **Use this folder and restart** next to the right one. (A copy you started by hand says **Use this folder**.)
 4. If it isn't listed, paste the path into **Folder path**. In Finder, select the folder and press Option-Command-C to copy its path.

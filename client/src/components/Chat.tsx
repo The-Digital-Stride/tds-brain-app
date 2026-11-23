@@ -202,7 +202,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
         data-tip="Open full screen"
         onClick={toFullScreen}
       >
-        <Icon name="wide" />
+        <Icon name="expand" />
       </button>
       <button
         type="button"
@@ -235,7 +235,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
           {confirming ? (
             <fieldset
               className="close-confirm"
-              aria-label="Close this chat"
+              aria-label="End this chat"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   // Handled here, so the shell's Esc doesn't also close a drawer.
@@ -252,22 +252,23 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
                 data-size="small"
                 onClick={() => void closeChat(sessionId)}
               >
-                Close chat
+                End chat
               </button>
               {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
               <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
-                Keep open
+                Keep chat
               </button>
             </fieldset>
           ) : (
             <button
               type="button"
               className="icon-btn"
-              aria-label="Close chat"
+              aria-label="End chat"
+              data-tip="End chat"
               ref={closeButton}
               onClick={() => requestClose(sessionId)}
             >
-              <Icon name="close" />
+              <Icon name="end" />
             </button>
           )}
         </SheetBar>

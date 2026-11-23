@@ -193,6 +193,7 @@ export function ProjectForm({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const found = validate(v, mode);
     setErrors(found);
     setFailure(null);
@@ -255,6 +256,37 @@ export function ProjectForm({
       <div className="proj-head">
         <h2 className="proj-title">{heading}</h2>
       </div>
+      {asking ? (
+        <fieldset
+          className="proj-ask"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            setAsking('');
+          }}
+        >
+          <legend className="proj-ask-q">Discard your changes?</legend>
+          <button
+            type="button"
+            className="btn"
+            data-variant="danger"
+            data-size="small"
+            onClick={() => (asking === 'move' ? onMove?.() : onCancel())}
+          >
+            Discard changes
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            ref={keepEditing}
+            onClick={() => setAsking('')}
+          >
+            Keep editing
+          </button>
+        </fieldset>
+      ) : null}
       {reloaded ? (
         <p className="proj-banner" data-level="warning" role="status">
           {reloaded}
@@ -304,7 +336,7 @@ export function ProjectForm({
                   aria-describedby={`${id('client-now')} ${id('client-hint')}`}
                   onClick={startMove}
                 >
-                  Move…
+                  Move
                 </button>
               ) : null}
             </div>
@@ -591,44 +623,13 @@ export function ProjectForm({
       </section>
 
       <div className="proj-buttons">
-        <button type="submit" className="btn" data-variant="primary" disabled={busy}>
-          {mode === 'create' ? 'Create project' : mode === 'card' ? 'Add card' : 'Save changes'}
+        <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
+          {mode === 'create' ? 'Create project' : mode === 'card' ? 'Add card' : 'Save'}
         </button>
         <button type="button" className="btn" onClick={cancel}>
           Cancel
         </button>
       </div>
-      {asking ? (
-        <fieldset
-          className="proj-ask"
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.preventDefault();
-            e.stopPropagation();
-            setAsking('');
-          }}
-        >
-          <legend className="proj-ask-q">Discard your changes?</legend>
-          <button
-            type="button"
-            className="btn"
-            data-variant="danger"
-            data-size="small"
-            onClick={() => (asking === 'move' ? onMove?.() : onCancel())}
-          >
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            ref={keepEditing}
-            onClick={() => setAsking('')}
-          >
-            Keep editing
-          </button>
-        </fieldset>
-      ) : null}
     </form>
   );
 }

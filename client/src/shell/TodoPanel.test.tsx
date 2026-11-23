@@ -245,15 +245,57 @@ describe('editing and saving', () => {
     ]);
   });
 
-  it('Cancel goes back to reading without asking, dropping the changes', async () => {
+  it('Cancel with changes asks "Discard your changes?"; Discard goes back to reading and drops them', async () => {
     mount();
     await open('First');
     edit();
     type('Title', 'Nope');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    // Standard 9: Cancel asks once anything has changed (it used to leave without asking).
+    expect(screen.queryByText('Discard your changes?')).not.toBeNull();
+    expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'edit' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(screen.queryByText('Discard your changes?')).toBeNull();
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
     expect(changeTodos).not.toHaveBeenCalled();
+  });
+
+  it('Keep editing after Cancel keeps the draft', async () => {
+    mount();
+    await open('First');
+    edit();
+    type('Title', 'Nope');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'edit' });
+    expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Nope');
+  });
+
+  it('Cancel with nothing changed just leaves, without asking', async () => {
+    mount();
+    await open('First');
+    edit();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Discard your changes?')).toBeNull();
+    expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
+  });
+
+  it('Delete is a standard button (it has an Undo), and the header runs star, previous, next, close', async () => {
+    mount();
+    const panel = await open('Second');
+    expect(within(panel).getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBeNull();
+    const head = panel.querySelector('.todo-head') as HTMLElement;
+    const labels = [...head.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(['Favourite: Second', 'Previous to-do', 'Next to-do', 'Close to-do']);
+  });
+
+  it('the header star toggles the to-do as a favourite', async () => {
+    mount();
+    const panel = await open('Second');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Favourite: Second' }));
+    expect(
+      (store.current as { toggleFavouriteTodo: ReturnType<typeof vi.fn> }).toggleFavouriteTodo,
+    ).toHaveBeenCalledWith('b.md');
   });
 
   it('Ctrl+Enter saves', async () => {
@@ -610,11 +652,11 @@ describe('nothing is lost without asking', () => {
     expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Changed');
   });
 
-  it('Cancel (set-todo-mode) is never held back', async () => {
+  it('Cancel asks first when dirty (it is held like any other way out)', async () => {
     await dirty();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(asked()).toBe(false);
-    expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
+    expect(asked()).toBe(true);
+    expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'edit' });
   });
 
   it('Esc pressed inside the details editor asks when dirty, and closes when clean', async () => {

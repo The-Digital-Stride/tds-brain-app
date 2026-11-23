@@ -383,10 +383,14 @@ export function AddTodoForm({
           type="submit"
           className="btn"
           data-variant="primary"
-          disabled={busy || title.trim() === '' || overLimit}
+          aria-disabled={busy || title.trim() === '' || overLimit || undefined}
           aria-describedby={personal ? `${uid}-personal` : undefined}
+          onClick={(e) => {
+            // aria-disabled keeps focus on the button, so the press itself must do nothing.
+            if (busy || title.trim() === '' || overLimit) e.preventDefault();
+          }}
         >
-          Add
+          Add to-do
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel

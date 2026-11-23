@@ -175,9 +175,7 @@ describe('holdDeletePastChat', () => {
   });
 
   it('brings the chat back with the reason when the delete fails, and says it could not be deleted', async () => {
-    api.deletePastChat.mockRejectedValue(
-      new FakeFailure('That chat is open. Close it first, then delete it.'),
-    );
+    api.deletePastChat.mockRejectedValue(new FakeFailure('That chat is open. End it first, then delete it.'));
     await start();
     act(() => current?.holdDeletePastChat('p1', 'Chat p1'));
     await wait(UNDO_MS);

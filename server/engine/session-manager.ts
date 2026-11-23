@@ -1494,7 +1494,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         emit(s, {
           type: 'notice',
           level: 'warning',
-          text: 'This chat is using an API key or a cloud account, not your Claude sign-in, so it may be charged separately. Close this chat and tell whoever looks after the brain.',
+          text: 'This chat is using an API key or a cloud account, not your Claude sign-in, so it may be charged separately. End this chat and tell whoever looks after the brain.',
         });
       }
     }
@@ -3189,7 +3189,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       // Re-check synchronously: other requests may have run while we awaited. A chat that is still closing
       // counts as open, because its engine may still be writing the file.
       if ([...live.values()].some((s) => s.sdkSessionId === sdkSessionId)) {
-        throw new SessionError('already-open', 'That chat is open. Close it first, then delete it.');
+        throw new SessionError('already-open', 'That chat is open. End it first, then delete it.');
       }
       if ([...closingSessions].some((s) => s.sdkSessionId === sdkSessionId)) {
         throw new SessionError('already-open', 'That chat is still closing. Try again in a moment.');

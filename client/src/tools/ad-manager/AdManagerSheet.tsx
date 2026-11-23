@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { AccountHead, FactTiles, goToClose, MonthlyClose, NeedsYou, Proposals } from './Approvals.tsx';
 import { identityLine } from './ProposalPanel.tsx';
@@ -11,6 +12,18 @@ export function AdManagerSheet() {
   const { ads } = useStore();
   const s = useAd();
   useAdsAccount();
+  const { state, dispatch } = useShell();
+
+  // The right panel opens when a proposal is chosen (Details, a row), not on arrival with nothing to show. A panel
+  // left open from another visit is put away once, when this sheet comes up with no proposal chosen; the sheet
+  // bar's toggle still opens it whenever the person wants.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current) return;
+    arrived.current = true;
+    if (state.panelOpen && !findProposal(s.approvals, s.selected))
+      dispatch({ type: 'set-panel', open: false });
+  }, [state.panelOpen, s.approvals, s.selected, dispatch]);
 
   // The panel shows a proposal as soon as there is one waiting for this account.
   useEffect(() => {
@@ -38,7 +51,7 @@ export function AdManagerSheet() {
     <div className="am">
       {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
       {s.loadError ? (
-        <p className="am-line" role="alert">
+        <p className="am-line" data-level="error" role="alert">
           {s.loadError}
         </p>
       ) : null}
@@ -46,7 +59,7 @@ export function AdManagerSheet() {
       {s.accounts && s.accounts.length === 0 ? <p className="card-note">No accounts found.</p> : null}
 
       {s.boardError ? (
-        <p className="am-line" role="alert">
+        <p className="am-line" data-level="error" role="alert">
           {s.boardError}
         </p>
       ) : null}

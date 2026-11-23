@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
 import { useShell } from '../../shell/ShellProvider.tsx';
@@ -35,6 +35,12 @@ export function ProjectTodos({
   const [stage, setStage] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // Cancel with a title typed asks first (design system, Actions rule 9).
+  const [asking, setAsking] = useState(false);
+  const keepEditing = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (asking) keepEditing.current?.focus();
+  }, [asking]);
   const titleId = useId();
   const stageId = useId();
 
@@ -46,8 +52,19 @@ export function ProjectTodos({
   };
   const canAdd = todos?.canProject === true && !card.archived;
 
+  const close = () => {
+    onAdding(false);
+    setMessage('');
+    setAsking(false);
+  };
+  const cancel = () => {
+    if (title.trim() || stage) setAsking(true);
+    else close();
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const text = title.trim();
     if (!text) {
       setMessage('Give the to-do a title.');
@@ -73,6 +90,7 @@ export function ProjectTodos({
     }
     setTitle('');
     setStage('');
+    setAsking(false);
     onAdding(false);
     void refresh();
     void reload();
@@ -82,7 +100,35 @@ export function ProjectTodos({
     <>
       {canAdd ? null : <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>}
       {adding && canAdd ? (
-        <form className="card proj-card proj-form" onSubmit={(e) => void submit(e)} aria-label="Add a to-do">
+        <form
+          className="card proj-card proj-form"
+          onSubmit={(e) => void submit(e)}
+          aria-label="Add a to-do"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || (!title.trim() && !stage)) return;
+            // Typed work: Esc asks, and asking again keeps it.
+            e.preventDefault();
+            e.stopPropagation();
+            setAsking(!asking);
+          }}
+        >
+          {asking ? (
+            <fieldset className="proj-ask">
+              <legend className="proj-ask-q">Discard your changes?</legend>
+              <button type="button" className="btn" data-variant="danger" data-size="small" onClick={close}>
+                Discard changes
+              </button>
+              <button
+                type="button"
+                className="btn"
+                data-size="small"
+                ref={keepEditing}
+                onClick={() => setAsking(false)}
+              >
+                Keep editing
+              </button>
+            </fieldset>
+          ) : null}
           <div className="proj-field">
             <label htmlFor={titleId}>To-do</label>
             <input
@@ -114,17 +160,10 @@ export function ProjectTodos({
             </p>
           ) : null}
           <div className="proj-buttons">
-            <button type="submit" className="btn" data-variant="primary" disabled={busy}>
+            <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
               Add to-do
             </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                onAdding(false);
-                setMessage('');
-              }}
-            >
+            <button type="button" className="btn" onClick={cancel}>
               Cancel
             </button>
           </div>
@@ -177,7 +216,13 @@ function TodoText({ t, team }: { t: ProjectTodoRow; team: readonly TeamMember[] 
     <span className="line-text">
       <span className="line-title">{t.title}</span>
       <span className="line-meta">
-        {t.assignee ? personName(t.assignee, team) : 'Open to anyone'}
+        {t.mine
+          ? t.assignee
+            ? personName(t.assignee, team)
+            : 'Open to anyone'
+          : t.assignee
+            ? `Assigned to ${personName(t.assignee, team)}`
+            : 'Not assigned'}
         {t.due ? ` · due ${dateWords(t.due)}` : ''}
       </span>
     </span>

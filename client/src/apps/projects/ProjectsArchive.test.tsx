@@ -123,7 +123,7 @@ describe('the Projects list and archived projects', () => {
 });
 
 describe('buttons on a project page', () => {
-  it('offers Archive… on a live project when the brain can archive', async () => {
+  it('offers Archive on a live project when the brain can archive', async () => {
     await show(projectList([LIVE], { canArchive: true }));
     press(/Sky site/);
     expect(await screen.findByRole('button', { name: 'Archive Sky site' })).toBeTruthy();
@@ -137,21 +137,21 @@ describe('buttons on a project page', () => {
     expect(api.checkProjectRemove).not.toHaveBeenCalled();
   });
 
-  it('adds Delete… when the live project is empty', async () => {
+  it('adds Delete when the live project is empty', async () => {
     api.checkProjectRemove.mockResolvedValue(answer({ empty: true }));
     await show(projectList([LIVE], { canArchive: true }));
     press(/Sky site/);
     expect(await screen.findByRole('button', { name: 'Delete Sky site' })).toBeTruthy();
   });
 
-  it('shows the banner, Unarchive and Delete… on an archived page when allowed', async () => {
+  it('shows the banner, Unarchive and Delete on an archived page when allowed', async () => {
     api.checkProjectRemove.mockResolvedValue(answer({ allowed: true }));
     await show(projectList([OLD], { canArchive: true }));
     press('1 archived');
     press(/Old job/);
     expect(screen.getByText(/This project is archived/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unarchive' })).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Delete…' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Delete' })).toBeTruthy();
   });
 
   it('says who can delete when this person may not', async () => {
@@ -160,7 +160,7 @@ describe('buttons on a project page', () => {
     press('1 archived');
     press(/Old job/);
     expect(await screen.findByText(/Only Ian Hancock can delete this project/)).toBeTruthy();
-    expect(btn('Delete…')).toBeNull();
+    expect(btn('Delete')).toBeNull();
   });
 
   it('unarchives after a check, and shows a refusal as it comes', async () => {
@@ -209,7 +209,7 @@ describe('the archive panel', () => {
     }) as HTMLInputElement;
     expect(keep.checked).toBe(true);
     fireEvent.click(
-      within(screen.getByRole('group', { name: 'Loose to-do' })).getByRole('radio', { name: 'Mark done' }),
+      within(screen.getByRole('group', { name: 'Loose to-do' })).getByRole('radio', { name: 'Mark as done' }),
     );
     api.removeProject.mockResolvedValue({
       list: projectList([{ ...LIVE, archived: true }], { canArchive: true }),
@@ -261,8 +261,8 @@ describe('the delete panel', () => {
     await show(projectList([OLD], { canArchive: true }));
     press('1 archived');
     press(/Old job/);
-    await screen.findByRole('button', { name: 'Delete…' });
-    press('Delete…');
+    await screen.findByRole('button', { name: 'Delete' });
+    press('Delete');
   }
 
   it('states what is lost, defaults the to-dos, and needs the title typed', async () => {
@@ -278,15 +278,16 @@ describe('the delete panel', () => {
     expect(on('My to-do', 'Delete')).toBe(true);
     expect(on('Loose to-do', 'Delete')).toBe(true);
     expect(on('Their to-do', 'Keep, unlinked')).toBe(true);
-    const del = screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement;
-    expect(del.disabled).toBe(true);
+    const del = screen.getByRole('button', { name: 'Delete' });
+    // aria-disabled, never disabled, until the title is typed (Actions rule 12).
+    expect(del.getAttribute('aria-disabled')).toBe('true');
     expect(del.getAttribute('aria-describedby')).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
     const box = screen.getByLabelText('Type the project name to delete it');
     fireEvent.change(box, { target: { value: 'old' } });
-    expect(del.disabled).toBe(true);
+    expect(del.getAttribute('aria-disabled')).toBe('true');
     fireEvent.change(box, { target: { value: '  OLD JOB ' } });
-    expect(del.disabled).toBe(false);
+    expect(del.getAttribute('aria-disabled')).toBeNull();
   });
 
   it('deletes, names to-dos that failed, and returns to the list', async () => {
@@ -320,7 +321,7 @@ describe('the delete panel', () => {
     const cancel = await screen.findByRole('button', { name: 'Cancel' });
     fireEvent.keyDown(cancel, { key: 'Escape' });
     expect(screen.queryByLabelText('Type the project name to delete it')).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete…' })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete' })));
     expect(api.removeProject).not.toHaveBeenCalled();
   });
 

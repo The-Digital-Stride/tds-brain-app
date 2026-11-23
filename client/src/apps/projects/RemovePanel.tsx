@@ -106,7 +106,7 @@ export function RemovePanel({
   }, []);
 
   const confirm = async () => {
-    if (busy || !answer) return;
+    if (busy || !answer || (deleting && !matches)) return;
     setBusy(true);
     setProblem('');
     try {
@@ -152,7 +152,7 @@ export function RemovePanel({
         { value: 'unlink', text: 'Keep, unlinked' },
       ]
     : [
-        { value: 'done', text: 'Mark done' },
+        { value: 'done', text: 'Mark as done' },
         { value: 'keep', text: 'Keep open' },
       ];
 
@@ -280,7 +280,7 @@ export function RemovePanel({
             type="button"
             className="btn"
             data-variant={deleting ? 'danger' : 'primary'}
-            disabled={busy || (deleting && !matches)}
+            aria-disabled={busy || (deleting && !matches) || undefined}
             aria-describedby={deleting && !matches ? `${base}-type-label` : undefined}
             onClick={() => void confirm()}
           >

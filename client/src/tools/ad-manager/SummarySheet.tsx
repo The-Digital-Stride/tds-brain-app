@@ -5,6 +5,7 @@ import {
   type AdsTotals,
   type AdsTotalsDays,
 } from '../../../../shared/ads-contract.ts';
+import { Seg } from '../../shell/Seg.tsx';
 import { AccountHead } from './Approvals.tsx';
 import { DeepDive } from './DeepDive.tsx';
 import { worthALook } from './logic.ts';
@@ -46,21 +47,16 @@ function TotalsStrip({ totals, currency }: { totals: AdsTotals; currency: string
     <section className="card sm-totals" aria-labelledby="sm-totals-h">
       <div className="card-head">
         <h3 id="sm-totals-h">Headline figures</h3>
-        <fieldset className="sm-switch">
-          <legend>Show the last</legend>
-          {ADS_TOTALS_DAYS.map((d) => (
-            <label key={d} className="sm-switch-opt">
-              <input
-                type="radio"
-                className="tick"
-                name={name}
-                checked={days === d}
-                onChange={() => setDays(d)}
-              />
-              {d} days
-            </label>
-          ))}
-        </fieldset>
+        <div className="sm-switch">
+          <span id={`${name}-label`}>Show the last</span>
+          <Seg
+            label="Show the last"
+            labelledBy={`${name}-label`}
+            value={String(days)}
+            options={ADS_TOTALS_DAYS.map((d) => ({ value: String(d), label: `${d} days` }))}
+            onChange={(v) => setDays(Number(v) as AdsTotalsDays)}
+          />
+        </div>
       </div>
       {range ? (
         <>
@@ -147,7 +143,7 @@ export function SummarySheet() {
         {board && !totals ? <span className="sm-period">Last 30 days</span> : null}
       </AccountHead>
       {s.boardError ? (
-        <p className="am-line" role="alert">
+        <p className="am-line" data-level="error" role="alert">
           {s.boardError}
         </p>
       ) : null}

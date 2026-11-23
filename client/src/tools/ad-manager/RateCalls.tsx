@@ -44,7 +44,6 @@ export function RateCalls() {
   if (recs.length === 0)
     return (
       <div className="am-panel">
-        <h3 className="am-title">Rate the standup calls</h3>
         <p className="am-line">{error ?? 'No standup calls to rate yet. Run the Daily standup first.'}</p>
       </div>
     );
@@ -82,7 +81,6 @@ export function RateCalls() {
   };
   return (
     <div className="am-panel">
-      <h3 className="am-title">Rate the standup calls</h3>
       <p className="am-sub">
         From the brief dated {brief?.date}. 5 means you did exactly this, 1 means you did nothing like it. The
         notes matter most.
@@ -123,7 +121,8 @@ export function RateCalls() {
           </li>
         ))}
       </ul>
-      <div className="am-actions">
+      {/* Panel footer (design system, Actions rule 6): ratings are only kept when Save is pressed. */}
+      <div className="am-foot">
         <button
           type="button"
           className="btn"
@@ -132,14 +131,14 @@ export function RateCalls() {
           aria-disabled={saving || undefined}
           onClick={() => void save()}
         >
-          {saving ? 'Saving…' : 'Save ratings'}
+          {saving ? 'Saving' : 'Save'}
         </button>
+        {result ? <span className="am-sub">{result}</span> : null}
       </div>
       {/* One status region, always mounted, so the result is announced when it arrives. */}
       <p className="visually-hidden" role="status">
         {result ?? ''}
       </p>
-      {result ? <p className="am-line">{result}</p> : null}
     </div>
   );
 }

@@ -35,7 +35,7 @@ function FileRow({
   onUnlink: () => void;
 }) {
   // The whole row opens the file in the viewer drawer. Documents rows select instead; a project's file rows open,
-  // deliberately: linking and unlinking are the only things to do here, and they have their own buttons.
+  // deliberately: linking and removing are the only things to do here, and they have their own buttons.
   return (
     <li className="line lib-row proj-file">
       <button type="button" className="lib-open" data-file={item.id} onClick={onView}>
@@ -61,11 +61,11 @@ function FileRow({
           type="button"
           className="btn"
           data-size="small"
-          disabled={busy}
-          aria-label={`Unlink ${item.title || item.name}`}
-          onClick={onUnlink}
+          aria-disabled={busy || undefined}
+          aria-label={`Remove ${item.title || item.name} from this project`}
+          onClick={busy ? undefined : onUnlink}
         >
-          Unlink
+          Remove
         </button>
       ) : null}
     </li>
@@ -102,6 +102,7 @@ function Picker({
 
   const search = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const q = term.trim();
     if (q.length < LIBRARY_SEARCH_QUERY.min) {
       setMessage(`Type at least ${LIBRARY_SEARCH_QUERY.min} letters.`);
@@ -135,7 +136,7 @@ function Picker({
     let expect = card.version;
     let done = 0;
     for (const h of todo) {
-      setProgress(`Linking ${done + 1} of ${todo.length}…`);
+      setProgress(`Linking ${done + 1} of ${todo.length}`);
       const res = await change({ kind: 'link', key: card.key, path: h.item.path, expect });
       if (!res.ok) {
         // Keep what's still to do chosen, so another press finishes the job.
@@ -173,10 +174,16 @@ function Picker({
           // biome-ignore lint/a11y/noAutofocus: the person just pressed Link files.
           autoFocus
         />
-        <button type="submit" className="btn" disabled={busy}>
+        <button type="submit" className="btn" aria-disabled={busy || undefined}>
           Search
         </button>
-        <button type="button" className="btn" data-variant="quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn"
+          data-variant="quiet"
+          aria-disabled={busy || undefined}
+          onClick={busy ? undefined : onClose}
+        >
           Close
         </button>
       </form>
@@ -226,8 +233,8 @@ function Picker({
                   type="button"
                   className="icon-btn"
                   aria-label={`Remove ${h.item.title || h.item.name} from the chosen files`}
-                  disabled={busy}
-                  onClick={() => toggle(h)}
+                  aria-disabled={busy || undefined}
+                  onClick={() => !busy && toggle(h)}
                 >
                   <Icon name="close" size={14} />
                 </button>
@@ -240,8 +247,8 @@ function Picker({
               className="btn"
               data-variant="primary"
               data-size="small"
-              disabled={busy}
-              onClick={() => void linkChosen()}
+              aria-disabled={busy || undefined}
+              onClick={() => !busy && void linkChosen()}
             >
               {progress || (count > 1 ? `Link ${count} files` : 'Link file')}
             </button>
@@ -250,8 +257,8 @@ function Picker({
               className="btn"
               data-size="small"
               data-variant="quiet"
-              disabled={busy}
-              onClick={() => setPicked(new Map())}
+              aria-disabled={busy || undefined}
+              onClick={() => !busy && setPicked(new Map())}
             >
               Clear
             </button>
@@ -283,7 +290,7 @@ function Kind({
   const [busy, setBusy] = useState(false);
   const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
 
-  // After an unlink the row may be gone and the Unlink button always is: focus goes to the next row's open button,
+  // After a removal the row may be gone and the Remove button always is: focus goes to the next row's open button,
   // else the previous, else the Link files button, once the list has reloaded.
   const focusId = useRef<string | null>(null);
   const items = loaded.status === 'ready' ? loaded.data.items : null;
@@ -361,7 +368,7 @@ function Kind({
   );
 }
 
-/** The project's images and documents (in its folder, or linked), with Link files and Unlink. */
+/** The project's images and documents (in its folder, or linked), with Link files and Remove. */
 export function ProjectFiles({
   card,
   canChange,

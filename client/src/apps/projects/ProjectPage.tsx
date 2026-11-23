@@ -7,6 +7,7 @@ import type {
   ProjectRemoveResult,
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
+import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -208,9 +209,9 @@ function Team({
                 type="button"
                 className="btn"
                 data-size="small"
-                disabled={busy !== null}
+                aria-disabled={busy !== null || undefined}
                 aria-label={`Add ${personName(r.person, team)} to the team`}
-                onClick={() => void add(r.person)}
+                onClick={() => busy === null && void add(r.person)}
               >
                 Add to team
               </button>
@@ -279,8 +280,8 @@ function Overview({
                 type="button"
                 className="btn"
                 data-size="small"
-                disabled={removal.busy}
-                onClick={removal.unarchive}
+                aria-disabled={removal.busy || undefined}
+                onClick={removal.busy ? undefined : removal.unarchive}
               >
                 Unarchive
               </button>
@@ -292,7 +293,7 @@ function Overview({
                   data-focus="delete"
                   onClick={() => removal.setPanel('delete')}
                 >
-                  Delete…
+                  Delete
                 </button>
               ) : null}
             </span>
@@ -343,7 +344,7 @@ function Overview({
                   aria-label={`Move ${card.title} to another client`}
                   onClick={onMove}
                 >
-                  Move…
+                  Move
                 </button>
               ) : null}
             </dd>
@@ -360,7 +361,7 @@ function Overview({
                     aria-label={`Archive ${card.title}`}
                     onClick={() => removal.setPanel('archive')}
                   >
-                    Archive…
+                    Archive
                   </button>
                   {removal.pre?.empty ? (
                     <button
@@ -371,7 +372,7 @@ function Overview({
                       aria-label={`Delete ${card.title}`}
                       onClick={() => removal.setPanel('delete')}
                     >
-                      Delete…
+                      Delete
                     </button>
                   ) : null}
                 </>
@@ -520,14 +521,28 @@ export function ProjectPage({
   return (
     <>
       <div className="proj-head">
-        <button type="button" className="btn" data-size="small" onClick={onBack}>
+        <button
+          type="button"
+          className="btn proj-back"
+          data-variant="quiet"
+          data-size="small"
+          onClick={onBack}
+        >
+          <Icon name="chevron" size={14} />
           All projects
         </button>
         <h2 className="proj-title" data-focus="title" tabIndex={-1}>
           {card.title}
         </h2>
         {editable ? (
-          <button type="button" className="btn" data-size="small" data-focus="edit" onClick={onEdit}>
+          <button
+            type="button"
+            className="btn proj-head-end"
+            data-size="small"
+            data-focus="edit"
+            onClick={onEdit}
+          >
+            <Icon name="edit" size={14} />
             Edit
           </button>
         ) : null}
@@ -562,10 +577,12 @@ export function ProjectPage({
           <button
             type="button"
             className="btn"
+            data-variant="primary"
             data-size="small"
             onClick={() => setAdding(true)}
-            disabled={adding}
+            aria-disabled={adding || undefined}
           >
+            <Icon name="plus" size={14} />
             Add a to-do
           </button>
         ) : null}
@@ -576,7 +593,7 @@ export function ProjectPage({
             data-size="small"
             data-focus="linkfiles"
             onClick={() => setLinking(true)}
-            disabled={linking}
+            aria-disabled={linking || undefined}
           >
             Link files
           </button>

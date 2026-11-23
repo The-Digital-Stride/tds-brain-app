@@ -61,7 +61,7 @@ function HealthList({ checks }: { checks: HealthCheck[] }) {
                   aria-label="Change brain folder"
                   onClick={() => setSetupOpen(true)}
                 >
-                  Change…
+                  Change
                 </button>
               )}
             </div>

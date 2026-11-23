@@ -83,7 +83,7 @@ export function RailUpdate({ wide, pinned }: { wide: boolean; pinned: boolean })
         data-tip={tip}
         onClick={() => openSettings('about')}
       >
-        {retry ? 'Try again…' : 'Update…'}
+        {retry ? 'Try again' : 'Update'}
       </button>
     );
   } else if (ready) {

@@ -354,7 +354,7 @@ const ALLOW_RADIUS: Allow = {
   'styles/ad-manager.css 4px': 1,
   'styles/chat.css 2px': 1,
   'styles/chat.css 4px': 1,
-  'styles/command.css 3px': 2,
+  'styles/command.css 3px': 1,
   'styles/drawers.css 2px': 1,
   'styles/shell.css 3px': 2,
   'styles/summary.css 4px': 1,

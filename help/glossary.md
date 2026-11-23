@@ -61,11 +61,11 @@ The rail is the strip of buttons down the side of Cortex. It opens drawers and p
 
 ### Home
 
-Home is the first screen. It has the message box and your pinned cards.
+Home is the first screen. It has the message box and your favourite cards.
 
 ### pin
 
-Starred to-dos, chats and files also show on Home, under headings that start with Pinned.
+Starred to-dos, chats and files also show on Home, under headings that start with Favourite.
 
 ### favourite
 

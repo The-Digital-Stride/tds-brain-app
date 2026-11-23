@@ -112,20 +112,20 @@ describe('the create form: who is it for', () => {
 });
 
 describe('the edit form: client is read-only', () => {
-  it('shows the client and Move… when the brain can move projects', async () => {
+  it('shows the client and Move when the brain can move projects', async () => {
     await show(projectList([SKY], { canMove: true }));
     open(/Sky site/);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByText('Skyseal')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Client' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Move…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move' })).toBeTruthy();
   });
 
   it('says to update the skills without canMove', async () => {
     await show(projectList([SKY]));
     open(/Sky site/);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.queryByRole('button', { name: 'Move…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move' })).toBeNull();
     expect(screen.getByText("Update the brain's skills to move projects.")).toBeTruthy();
   });
 
@@ -134,7 +134,7 @@ describe('the edit form: client is read-only', () => {
     await show(projectList([legacy, MINE], { canMove: true }));
     open(/Old one/);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.queryByRole('button', { name: 'Move…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move' })).toBeNull();
     expect(
       screen.getByText("This project is in the old projects folder, so it can't be moved."),
     ).toBeTruthy();
@@ -144,7 +144,7 @@ describe('the edit form: client is read-only', () => {
     open(/Taxes/);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByText('Just me')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Move…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move' })).toBeTruthy();
   });
 
   it('asks before leaving a changed form for the move screen', async () => {
@@ -152,7 +152,7 @@ describe('the edit form: client is read-only', () => {
     open(/Sky site/);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Sky site 2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Move…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
     expect(screen.getByText('Discard your changes?')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(screen.getByRole('heading', { name: 'Move Sky site' })).toBeTruthy();
@@ -160,7 +160,7 @@ describe('the edit form: client is read-only', () => {
 });
 
 describe('the Overview Client row', () => {
-  it('has a Move… button only when the project can move', async () => {
+  it('has a Move button only when the project can move', async () => {
     await show(projectList([SKY], { canMove: true }));
     open(/Sky site/);
     expect(screen.getByRole('button', { name: /Move Sky site to another client/ })).toBeTruthy();

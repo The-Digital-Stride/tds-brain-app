@@ -571,11 +571,11 @@ describe("Release 2: all accounts' standups", () => {
     { key: 'none', name: 'None Co', hasStandup: false, verdict: null, stale: false },
     { key: key, name: 'Acme Heating', hasStandup: true, verdict: VERDICT, stale: false },
   ];
-  const button = () => screen.getByRole('button', { name: "All accounts' standups…" });
+  const button = () => screen.getByRole('button', { name: "All accounts' standups" });
 
   it('has no button without the feature', async () => {
     await mount();
-    expect(screen.queryByRole('button', { name: "All accounts' standups…" })).toBeNull();
+    expect(screen.queryByRole('button', { name: "All accounts' standups" })).toBeNull();
   });
 
   it('opens a dialog, reads the list, words every row and marks the current account', async () => {

@@ -36,26 +36,12 @@
 }
 .sm .sm-switch {
   margin: 0 0 0 auto;
-  padding: 0;
-  border: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
   font-size: 13px;
-}
-.sm .sm-switch legend {
-  float: left;
-  padding: 0;
-  margin-right: 12px;
   color: var(--iron);
-}
-.sm .sm-switch-opt {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  cursor: pointer;
 }
 .sm .sm-facts {
   display: grid;

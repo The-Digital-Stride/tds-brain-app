@@ -521,7 +521,7 @@ describe('panel', () => {
         { name: 'Apply now' },
       ),
     );
-    const busy = await screen.findByRole('button', { name: 'Applying…' });
+    const busy = await screen.findByRole('button', { name: 'Applying' });
     expect(busy.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(busy);
     expect(api.adsChange).toHaveBeenCalledTimes(1);
@@ -714,7 +714,7 @@ describe('Ads Manager page', () => {
     withMonth([p1]);
     api.adsChange.mockResolvedValue({ ok: true });
     await ready();
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign off the report…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign off the report' }));
     fireEvent.change(screen.getByLabelText('Sign-off note (optional)'), { target: { value: 'Read it' } });
     const group = screen.getByRole('group', { name: 'Sign off the report' });
     expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
@@ -927,8 +927,8 @@ describe('Release 2: Earlier months', () => {
     expect(screen.getByText('Changed after sign-off, sign again')).toBeTruthy();
     expect(screen.getByText('Month-to-date draft')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Open draft PDF' }).length).toBeGreaterThanOrEqual(4);
-    // Sign off… only where the bridge says canSign.
-    expect(screen.getAllByRole('button', { name: /^Sign off…/ })).toHaveLength(2);
+    // Sign off only where the bridge says canSign.
+    expect(screen.getAllByRole('button', { name: /^Sign off: / })).toHaveLength(2);
   });
 
   it('signs a late month through the same confirm step', async () => {
@@ -936,7 +936,7 @@ describe('Release 2: Earlier months', () => {
     api.adsChange.mockResolvedValue({ ok: true });
     await ready();
     fireEvent.click(await screen.findByRole('button', { name: /Earlier months/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Sign off…: August/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Sign off: August/ }));
     const group = screen.getByRole('group', { name: 'Sign off the report' });
     expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Cancel' }));
     expect(within(group).getByText(/Sign off the August report for Acme Heating/)).toBeTruthy();

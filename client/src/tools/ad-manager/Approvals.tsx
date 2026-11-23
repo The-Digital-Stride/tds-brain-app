@@ -318,10 +318,10 @@ function SignOff({
     >
       {earlier ? (
         <>
-          Sign off…<span className="visually-hidden">{`: ${m.monthName || m.month}`}</span>
+          Sign off<span className="visually-hidden">{`: ${m.monthName || m.month}`}</span>
         </>
       ) : (
-        'Sign off the report…'
+        'Sign off the report'
       )}
     </button>
   );
@@ -348,7 +348,7 @@ function EarlierMonths({ client }: { client: ClientApprovals }) {
                 {pdf ? (
                   <OpenFile path={pdf} label={m.files.pdf ? 'Open final PDF' : 'Open draft PDF'} />
                 ) : null}
-                {m.files.close ? <OpenFile path={m.files.close} label="Close notes" /> : null}
+                {m.files.close ? <OpenFile path={m.files.close} label="Open close notes" /> : null}
                 {m.files.email ? <OpenFile path={m.files.email} label="Email draft" /> : null}
               </div>
               <SignOff client={client} month={m} earlier />
@@ -391,7 +391,7 @@ export function MonthlyClose({ client }: { client: ClientApprovals }) {
             ) : m.files.draftPdf ? (
               <OpenFile path={m.files.draftPdf} label="Open draft PDF" />
             ) : null}
-            {m.files.close ? <OpenFile path={m.files.close} label="Close notes" /> : null}
+            {m.files.close ? <OpenFile path={m.files.close} label="Open close notes" /> : null}
             {m.files.email ? <OpenFile path={m.files.email} label="Email draft" /> : null}
           </div>
         </>

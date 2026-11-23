@@ -188,11 +188,14 @@
   position: relative;
   margin-bottom: 6px;
 }
+.img-tile .lib-delete,
+.img-tile .star-btn {
+  background: rgba(255, 255, 255, 0.92);
+}
 .img-tile .lib-delete {
   position: absolute;
   right: 3px;
   bottom: 3px;
-  background: rgba(255, 255, 255, 0.92);
 }
 /* A row without a bin keeps the bin's room, so the rows of a list line up. */
 .lib-delete-gap {
@@ -425,6 +428,38 @@
   }
   .img-tile,
   .img-tile .lib-tick {
+    transition: none;
+  }
+}
+
+/* Favourite: the star before Open on a row, on the tile's top edge left of Open. Like Open and the bin it shows on
+   hover, on focus and on the chosen item (a favourite always shows), and always where nothing hovers.
+   Rows get the hover rule from drawers.css (.line .star-btn). */
+.lib-row .star-btn {
+  position: relative;
+  z-index: 1;
+  flex: none;
+}
+.img-tile .star-btn {
+  position: absolute;
+  z-index: 1;
+  top: 9px;
+  right: 70px;
+}
+@media (hover: hover) {
+  .img-tile .star-btn[aria-pressed="false"] {
+    opacity: 0;
+    transition: opacity 120ms var(--ease);
+  }
+  .img-tile:is(:hover, :focus-within) .star-btn[aria-pressed="false"] {
+    opacity: 1;
+  }
+  .lib-list > [data-current="true"] .star-btn[aria-pressed] {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .img-tile .star-btn {
     transition: none;
   }
 }

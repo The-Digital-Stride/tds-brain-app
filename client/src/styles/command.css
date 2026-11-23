@@ -247,32 +247,12 @@
   color: var(--danger);
 }
 
-/* A run time that opens that run's chat. */
-.cc-link {
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  color: var(--blue-ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.cc-link:hover {
-  color: var(--navy);
-}
-.cc-link:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
 /* A default badge on a category fill: a 1px edge in blue-ink keeps it readable (AA) against the colour. */
 .cc-task .badge:not([data-tone]) {
   box-shadow: inset 0 0 0 1px var(--blue-ink);
 }
 
-/* "All accounts' standups…": a non-modal pop-up anchored under its button (Release 2). */
+/* "All accounts' standups": a non-modal pop-up anchored under its button (Release 2). */
 .cc-triage-wrap {
   position: relative;
   display: inline-block;
@@ -368,4 +348,9 @@
 /* A teammate's (or own) saved result, beside the run line. */
 .cc-result {
   margin-top: 2px;
+}
+
+/* "Running" must not look like a problem: the shared working dot is red, so it is blue here. */
+.am-run-state .dot[data-attention="working"] {
+  background: var(--blue-ink);
 }

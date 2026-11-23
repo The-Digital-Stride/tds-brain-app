@@ -292,7 +292,8 @@ describe('To-dos drawer, changing to-dos', () => {
   it('deletes without a second question, held with an Undo and nothing sent yet', async () => {
     render(<TodosDrawer />);
     await openEdit('Renew contract');
-    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBe('danger');
+    // Delete has an Undo, so it is a standard button, not red (design-system.md rule 5).
+    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(holdTodo).toHaveBeenCalled());
     expect(holdTodo).toHaveBeenCalledWith({
@@ -327,11 +328,12 @@ describe('To-dos drawer, changing to-dos', () => {
     render(<TodosDrawer />);
     await openEdit('Renew contract');
     type('Title', 'Renew it');
-    const done = screen.getByRole('button', { name: 'Mark as done' }) as HTMLButtonElement;
-    expect(done.disabled).toBe(true);
+    // Busy and held-back buttons are aria-disabled, never disabled (rule 12).
+    const done = screen.getByRole('button', { name: 'Mark as done' });
+    expect(done.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByText('Save or cancel your changes before marking it as done.')).toBeTruthy();
     type('Title', 'Renew contract');
-    expect(done.disabled).toBe(false);
+    expect(done.getAttribute('aria-disabled')).toBeNull();
   });
 
   // A held row is the shared Undo line now (plan 2026-11-22-ux-consistency, decision 12): a sentence saying what
@@ -547,7 +549,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Mine');
   });
 
-  it('Cancel after a conflict closes the editor and the row shows the fresh title', async () => {
+  it('Cancel after a conflict asks, and on Discard closes the editor and the row shows the fresh title', async () => {
     const fresh = list('on', [todo({ title: 'Theirs', version: 'v7' })]);
     changeTodos.mockImplementationOnce(async () => {
       store.current.todos = fresh;
@@ -559,6 +561,11 @@ describe('To-dos drawer, conflict check and open adds', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await screen.findByText(/Your changes are still here/);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    // Cancel asks first now (rule 9); do what the real shell does on Discard: drop the dirt, then go on.
+    expect(screen.getByText('Discard your changes?')).toBeTruthy();
+    const after = fakeShell.state.todoPanel?.ask;
+    fakeShell.dispatch({ type: 'set-todo-dirty', dirty: false });
+    if (after) fakeShell.dispatch(after);
     view.rerender(<TodosDrawer />);
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Edit "Theirs"' })).toBeTruthy();

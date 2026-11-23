@@ -312,6 +312,16 @@ describe('in the chat drawer (plan 2026-11-16-run-chat-drawer)', () => {
     expect(h.expandChatDrawer).toHaveBeenCalledTimes(1);
   });
 
+  it('the drawer header is the shared panel head, with its title, chip and both buttons', () => {
+    h.chat = chatState('idle');
+    const { container } = render(drawer());
+    const head = container.querySelector('header');
+    expect(head?.classList.contains('panel-head')).toBe(true);
+    expect(head?.querySelector('h2')).toBeTruthy();
+    const names = Array.from(head?.querySelectorAll('button') ?? []).map((b) => b.getAttribute('aria-label'));
+    expect(names).toEqual(['Open full screen', 'Hide chat']);
+  });
+
   it('Hide chat and Open full screen ask the store', () => {
     h.chat = chatState('working');
     render(drawer());

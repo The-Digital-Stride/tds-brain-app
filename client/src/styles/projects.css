@@ -22,7 +22,7 @@
     color: var(--navy);
   }
 
-  /* The project tabs, with Link files at the right end when the Files tab is open. */
+  /* The project tabs, with Add files at the right end when the Files tab is open. */
   .proj-tabrow {
     display: flex;
     align-items: center;
@@ -129,6 +129,11 @@
   /* A teammate's row isn't a button: give its text the button's padding so the titles line up. */
   .proj-todo > .line-text {
     padding: var(--sp-6) var(--sp-8);
+  }
+  /* The drawer's buttons sit on the row's lower line; here the row is one line, so they centre. */
+  .proj-todo .todo-btns {
+    margin: 0;
+    align-items: center;
   }
   .proj-search {
     display: flex;
@@ -323,7 +328,7 @@
     color: var(--iron);
   }
 
-  /* Link files: tick several search results, then link them in one go. */
+  /* Add files: tick several search results, then add them in one go. */
   .proj-pick-bar {
     position: sticky;
     bottom: 0;

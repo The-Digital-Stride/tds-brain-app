@@ -43,7 +43,15 @@ export function useFakeShell(): ShellApi {
     },
     () => current,
   );
-  return { state, dispatch: fakeShell.dispatch, modes, panelHold: noHold, guardPanel: (run) => run() };
+  return {
+    state,
+    dispatch: fakeShell.dispatch,
+    modes,
+    panelHold: noHold,
+    guardPanel: (run) => run(),
+    sheetHold: noHold,
+    guardLeave: (go) => go(),
+  };
 }
 
 /**

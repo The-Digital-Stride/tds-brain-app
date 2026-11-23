@@ -32,7 +32,7 @@ export const STATUSES = Object.keys(STATUS_WORDS) as ProjectStatus[];
 /** The status filter's extra choice: only archived projects. */
 export const ARCHIVED = 'archived';
 
-export const LIGHT_WORDS: Record<Light, string> = { green: 'Green', amber: 'Amber', red: 'Red' };
+export const LIGHT_WORDS: Record<Light, string> = { green: 'On track', amber: 'At risk', red: 'Off track' };
 
 export const SERVICE_WORDS: Record<string, string> = {
   ppc: 'PPC',

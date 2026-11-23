@@ -9,6 +9,7 @@ import { Confirm } from '../../shell/Confirm.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
+import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { projectsStore, useProjects } from '../../state/projects.ts';
 import {
   changedFields,
@@ -170,8 +171,21 @@ export function ProjectForm({
   };
 
   const dirty = JSON.stringify(v) !== initial.current;
-  const cancel = () => (dirty ? setAsking('cancel') : onCancel());
-  const startMove = () => (dirty ? setAsking('move') : onMove?.());
+  // A page change (the rail, search, Home) while there are changes is held by the shell, and this form asks: the
+  // strip's third reason, 'leave' (plan 2026-11-23-ux-follow-ups, decision 1). The hold is cleared on unmount.
+  const leave = useSheetHold(dirty);
+  // One strip: the last thing asked for decides what Discard does.
+  const reason = leave.asking ? 'leave' : asking;
+  const cancel = () => {
+    if (leave.asking) leave.keep();
+    if (dirty) setAsking('cancel');
+    else onCancel();
+  };
+  const startMove = () => {
+    if (leave.asking) leave.keep();
+    if (dirty) setAsking('move');
+    else onMove?.();
+  };
 
   const setKind = (kind: FormValues['kind'], confirmed = false) => {
     if (kind === v.kind) return;
@@ -252,16 +266,26 @@ export function ProjectForm({
       <div className="proj-head">
         <h2 className="proj-title">{heading}</h2>
       </div>
-      {asking ? (
+      {reason ? (
         <Confirm
+          // A new reason is a new question: Keep editing takes focus again.
+          key={reason}
           label="Discard your changes"
           text="Discard your changes?"
           action="Discard changes"
           safe="Keep editing"
           variant="danger"
           busy={false}
-          onConfirm={() => (asking === 'move' ? onMove?.() : onCancel())}
-          onCancel={() => setAsking('')}
+          onConfirm={() => {
+            setAsking('');
+            if (reason === 'leave') leave.discard();
+            else if (reason === 'move') onMove?.();
+            else onCancel();
+          }}
+          onCancel={() => {
+            if (leave.asking) leave.keep();
+            setAsking('');
+          }}
         />
       ) : null}
       {reloaded ? (

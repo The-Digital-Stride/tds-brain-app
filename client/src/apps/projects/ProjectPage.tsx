@@ -509,7 +509,7 @@ export function ProjectPage({
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
   const projectTodos = useProjectTodos(card.key, card.openTodos);
-  // Link files sits at the right end of the tabs row, so the picker's state lives here.
+  // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
@@ -604,7 +604,7 @@ export function ProjectPage({
             aria-disabled={linking || undefined}
           >
             <Icon name="plus" size={14} />
-            Link files
+            Add files
           </button>
         ) : null}
       </div>

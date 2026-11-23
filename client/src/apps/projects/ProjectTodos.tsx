@@ -1,8 +1,10 @@
-import { type FormEvent, useId, useMemo, useState } from 'react';
+import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
+import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
@@ -29,7 +31,7 @@ export function ProjectTodos({
   adding: boolean;
   onAdding: (open: boolean) => void;
 }) {
-  const { todos, changeTodos } = useStore();
+  const { todos, changeTodos, boot, toggleFavouriteTodo } = useStore();
   const { dispatch } = useShell();
   const { refresh } = useProjects();
   const [title, setTitle] = useState('');
@@ -40,6 +42,15 @@ export function ProjectTodos({
   const [asking, setAsking] = useState(false);
   const titleId = useId();
   const stageId = useId();
+
+  // The same star as the To-dos drawer's rows; focus follows a to-do whose star moved it.
+  const favs = boot?.prefs?.favouriteTodos ?? NO_FAVOURITES;
+  const trayRef = useRef<HTMLDivElement>(null);
+  const rememberStar = useStarFocus(trayRef, favs);
+  const star = (key: string, button: HTMLElement) => {
+    rememberStar(key, button);
+    void toggleFavouriteTodo(key);
+  };
 
   const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
   // The to-do panel belongs to the To-dos drawer, so open the drawer first.
@@ -177,7 +188,7 @@ export function ProjectTodos({
       ) : groups.length === 0 ? (
         <p className="proj-note">No open to-dos in this project.</p>
       ) : (
-        <div className="tray lib-tray">
+        <div className="tray lib-tray" ref={trayRef} tabIndex={-1}>
           {groups.map((g) => (
             <section className="card proj-card" key={g.stage || 'none'} aria-label={g.title}>
               <div className="card-head">
@@ -194,6 +205,23 @@ export function ProjectTodos({
                     ) : (
                       <TodoText t={t} team={team} />
                     )}
+                    {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). */}
+                    <div className="todo-btns">
+                      <StarButton
+                        id={t.key}
+                        title={t.title}
+                        on={favs.includes(t.key)}
+                        onPress={(_, button) => star(t.key, button)}
+                      />
+                      <TodoChatButton
+                        todo={{
+                          key: t.key,
+                          path: t.scope === 'personal' ? `personal/todo/${t.id}` : `todo/${t.id}`,
+                          title: t.title,
+                          client: card.client,
+                        }}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>

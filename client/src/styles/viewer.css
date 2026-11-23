@@ -333,12 +333,9 @@
     min-height: 0;
     height: auto;
   }
+  /* The band is the shared `.panel-head`; this only lets the "send the files first" note take its own line. */
   .chat-drawer-head {
-    display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: var(--sp-4);
-    padding: var(--sp-10) var(--sp-10) var(--sp-8) var(--sp-16);
   }
   .chat-drawer-name {
     flex: 1;

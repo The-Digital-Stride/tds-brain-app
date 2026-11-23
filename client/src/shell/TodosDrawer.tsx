@@ -11,7 +11,7 @@ import {
 import { api } from '../api.ts';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
-import { setChoice, todoChatClient, useClientChoice, useProjectChoice } from '../state/client-choice.ts';
+import { setChoice, useClientChoice, useProjectChoice } from '../state/client-choice.ts';
 import {
   filterOptions,
   labelForKey,
@@ -40,10 +40,11 @@ import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
+import { TodoChatButton } from './TodoChatButton.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
-import { cap, handoverMeta, todoChatDraft } from './words.ts';
+import { cap, handoverMeta } from './words.ts';
 
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
@@ -180,8 +181,7 @@ function TodoRow({
   favourite: boolean;
   onStar: (todo: TodoItem, button: HTMLElement) => void;
 }) {
-  const { boot, newChat, sessions, activeChat, openChat, view } = useStore();
-  const { state: shellState, dispatch, modes } = useShell();
+  const { boot, sessions, activeChat, view } = useStore();
   // The chat button is named by its action and title; "New to you" and the details line describe it, so a keyboard or
   // screen-reader user who lands on it hears them too.
   const newId = useId();
@@ -213,20 +213,6 @@ function TodoRow({
   const describedBy = [fresh ? newId : '', parts.length > 0 ? metaId : '', hasWhere ? whereId : '']
     .filter(Boolean)
     .join(' ');
-
-  const choose = () => {
-    // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
-    if (shellState.todoPanel?.dirty) return dispatch({ type: 'close-todo' });
-    onOpened(todo);
-    if (chat) openChat(chat.id);
-    else {
-      const client = todoChatClient(todo, boot?.clients ?? []);
-      newChat({ draft: todoChatDraft(todo), todoId: todo.key, ...(client !== undefined ? { client } : {}) });
-    }
-    // The panel (if one is open) makes way for the chat.
-    if (shellState.todoPanel) dispatch({ type: 'close-todo', force: true });
-    if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
-  };
 
   return (
     <li
@@ -317,17 +303,7 @@ function TodoRow({
                 <Icon name="edit" size={16} />
               </button>
             ) : null}
-            <button
-              type="button"
-              className="icon-btn todo-go"
-              data-todo-open={todo.key}
-              aria-label={`${chat ? 'Open chat' : 'Start a chat on this'}: ${todo.title}`}
-              data-tip={chat ? 'Open chat' : 'Start a chat'}
-              aria-describedby={describedBy || undefined}
-              onClick={choose}
-            >
-              <Icon name="chat" size={16} />
-            </button>
+            <TodoChatButton todo={todo} onOpened={() => onOpened(todo)} describedBy={describedBy} />
           </div>
         </div>
       </div>

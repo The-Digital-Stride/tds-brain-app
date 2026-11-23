@@ -7,7 +7,14 @@ import { card, projectList } from './testing.ts';
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   changeTodos: vi.fn(),
-  boot: { identity: { slug: 'me' }, clients: [] as { slug: string; name: string }[] },
+  toggleFavouriteTodo: vi.fn(),
+  openChat: vi.fn(),
+  sessions: null as unknown,
+  boot: {
+    identity: { slug: 'me' },
+    clients: [] as { slug: string; name: string }[],
+    prefs: { favouriteTodos: [] as string[] },
+  },
   todos: {
     mine: [],
     open: [],
@@ -41,7 +48,13 @@ vi.mock('../../api.ts', () => ({
   },
 }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
-vi.mock('../../shell/ShellProvider.tsx', () => ({ useShell: () => ({ dispatch: shell.dispatch }) }));
+vi.mock('../../shell/ShellProvider.tsx', () => ({
+  useShell: () => ({
+    dispatch: shell.dispatch,
+    state: { todoPanel: null },
+    modes: { drawerOverlays: false },
+  }),
+}));
 
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
@@ -186,9 +199,30 @@ describe('the To-dos tab (fix 2)', () => {
     expect(heads).toEqual(['Discovery', 'Build', 'No stage']);
     // A to-do that isn't mine says who it is assigned to (UX consistency, release 2B).
     expect(screen.getByText('Assigned to Simon')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Simon two/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Mine one/ }));
+    expect(screen.queryByRole('button', { name: /^Simon two/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Mine one/ }));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'a', mode: 'read' });
+  });
+
+  it("gives every to-do the drawer's star and chat buttons, and the star toggles the favourite", async () => {
+    api.projectTodos.mockResolvedValue(rows);
+    await show(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    await screen.findByText('Simon two');
+    const star = screen.getByRole('button', { name: 'Favourite: Simon two' });
+    expect(star.getAttribute('aria-pressed')).toBe('false');
+    expect(star.getAttribute('data-tip')).toBe('Favourite');
+    // Star, then the chat button, as in a drawer row.
+    const chat = screen.getByRole('button', { name: 'Start a chat on this: Simon two' });
+    expect(chat.getAttribute('data-tip')).toBe('Start a chat');
+    expect(star.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(star);
+    expect(store.toggleFavouriteTodo).toHaveBeenCalledWith('b');
+    fireEvent.click(chat);
+    expect(store.newChat).toHaveBeenCalledWith(
+      expect.objectContaining({ todoId: 'b', draft: expect.stringContaining('todo/b') }),
+    );
   });
 
   describe('the add form asks before throwing away typing (UX consistency, release 2B)', () => {
@@ -360,6 +394,21 @@ describe('the form rules (fix 5)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     return c;
   };
+
+  it('words the lights On track, At risk and Off track in the page and the form', async () => {
+    await show(
+      projectList([card({ slug: 'site', title: 'Sky site', owner: 'me', health: 'amber', comms: 'red' })]),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    expect(screen.getByText('At risk')).toBeTruthy();
+    expect(screen.getByText('Off track')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    // Health and Client comms each offer the three words; the amber one is chosen for Health.
+    expect(screen.getAllByRole('radio', { name: 'On track' })).toHaveLength(2);
+    expect(screen.getAllByRole('radio', { name: 'Off track' })).toHaveLength(2);
+    expect(screen.getAllByRole('radio', { name: 'At risk' })[0]?.getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('radio', { name: 'Amber' })).toBeNull();
+  });
 
   it('shows Not set for a card with no kind, and does not save billable when untouched', async () => {
     const c = await edit({ kind: null, billable: null, budgetHours: null });

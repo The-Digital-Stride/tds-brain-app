@@ -274,6 +274,12 @@ function chatsReducer(chats: Chats, action: ChatsAction): Chats {
 /** Where a chat opens: the chat screen (the default) or the right-hand drawer over a tool. */
 export type ChatPlace = 'sheet' | 'drawer';
 
+/**
+ * Asked before a page change a person makes (plan 2026-11-23-ux-follow-ups, decision 1): runs `go` now, or later, or
+ * never, once any unsaved work has been asked about. The shell registers its `guardLeave` (`ShellProvider`).
+ */
+export type LeaveGuard = (go: () => void) => void;
+
 export interface Store {
   gate: Gate;
   boot: Bootstrap | null;
@@ -465,6 +471,12 @@ export interface Store {
   openSettings: (tab?: SettingsTab, focusId?: string) => void;
   /** Runs a chat action (answer, stop) and reports a failure in plain words. */
   run: (action: () => Promise<unknown>) => Promise<boolean>;
+  /**
+   * Registers the guard every page change a person makes passes through (`openView`, `openSettings`, `newChat`,
+   * `openChat` on the sheet, `expandChatDrawer`, `requestClose` when it switches, `openTool`); null removes it. Without
+   * one (outside the shell), page changes happen at once.
+   */
+  setLeaveGuard: (guard: LeaveGuard | null) => void;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -767,20 +779,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const openView = useCallback((v: View) => setView(v), []);
-  const openSettings = useCallback((tab?: SettingsTab, focusId?: string) => {
-    if (tab) setSettingsTab(tab);
-    if (focusId) setSettingsFocus(focusId);
-    setView('settings');
+  // The leave guard (plan 2026-11-23-ux-follow-ups, decision 1). Every page change a person makes goes through
+  // `leave`, so typed work in a form that the change would unmount is asked about first. Boot and restore never set
+  // the view, so they don't pass here. The shell registers the guard; `viewRef` is read so a click on the page
+  // already shown runs at once (nothing unmounts).
+  const leaveGuard = useRef<LeaveGuard | null>(null);
+  const setLeaveGuard = useCallback((guard: LeaveGuard | null) => {
+    leaveGuard.current = guard;
+  }, []);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  /** Runs `go`, a change to page `next`, through the leave guard. `refills`: it changes the page even when `next` is the page shown. */
+  const leave = useCallback((next: View, go: () => void, refills = false) => {
+    const guard = leaveGuard.current;
+    if (!guard || (next === viewRef.current && !refills)) go();
+    else guard(go);
   }, []);
 
+  const openView = useCallback((v: View) => leave(v, () => setView(v)), [leave]);
+  const openSettings = useCallback(
+    (tab?: SettingsTab, focusId?: string) =>
+      leave('settings', () => {
+        if (tab) setSettingsTab(tab);
+        if (focusId) setSettingsFocus(focusId);
+        setView('settings');
+      }),
+    [leave],
+  );
+
   const newChat = useCallback(
-    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null; client?: string | null }) => {
-      setActiveChat(freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null, opts?.client));
-      setView('chat');
-      setActionError(null);
-    },
-    [],
+    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null; client?: string | null }) =>
+      leave('chat', () => {
+        setActiveChat(
+          freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null, opts?.client),
+        );
+        setView('chat');
+        setActionError(null);
+      }),
+    [leave],
   );
 
   const closeChat = useCallback(
@@ -874,14 +910,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ? mine.sessionState
           : sessionsRef.current?.live.find((c) => c.id === id)?.state;
       if (state && needsCloseConfirm(state)) {
-        setActiveChat({ kind: 'live', sessionId: id });
-        setView('chat');
-        setCloseRequest(id);
+        leave('chat', () => {
+          setActiveChat({ kind: 'live', sessionId: id });
+          setView('chat');
+          setCloseRequest(id);
+        });
       } else {
         void closeChat(id);
       }
     },
-    [closeChat],
+    [closeChat, leave],
   );
 
   const startSkill = useCallback(
@@ -893,25 +931,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const openChat = useCallback(
     (sessionId: string, opts?: { in?: ChatPlace }) => {
-      setActiveChat({ kind: 'live', sessionId });
-      setActionError(null);
-      setCloseRequest(null);
       if (opts?.in === 'drawer') {
-        // The tool stays on the sheet; the drawer's message box takes focus.
+        // The tool stays on the sheet (no page change); the drawer's message box takes focus.
+        setActiveChat({ kind: 'live', sessionId });
+        setActionError(null);
+        setCloseRequest(null);
         setDrawerChat(sessionId);
         requestFocus();
         return;
       }
-      setDrawerChat(null);
-      setView('chat');
+      leave('chat', () => {
+        setActiveChat({ kind: 'live', sessionId });
+        setActionError(null);
+        setCloseRequest(null);
+        setDrawerChat(null);
+        setView('chat');
+      });
     },
-    [requestFocus],
+    [requestFocus, leave],
   );
   const hideChatDrawer = useCallback(() => setDrawerChat(null), []);
-  const expandChatDrawer = useCallback(() => {
-    setDrawerChat(null);
-    setView('chat');
-  }, []);
+  const expandChatDrawer = useCallback(
+    () =>
+      leave('chat', () => {
+        setDrawerChat(null);
+        setView('chat');
+      }),
+    [leave],
+  );
   // The drawer goes with its chat and with the tool: any other active chat or any non-tool view clears it.
   useEffect(() => {
     if (drawerChat === null) return;
@@ -1042,16 +1089,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Opening a tool remembers it for its section. A failed save is quiet: it only costs the memory.
   const openTool = useCallback(
     (sectionId: string, toolId: string, arg?: string) => {
-      setToolArg(arg ?? null);
-      setView(toolView(sectionId, toolId));
-      const last = boot?.prefs.lastTool ?? {};
-      if (last[sectionId] === toolId) return;
-      void api
-        .updatePrefs({ lastTool: { ...last, [sectionId]: toolId } })
-        .then((prefs) => setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b)))
-        .catch(() => {});
+      const next = toolView(sectionId, toolId);
+      // An `arg` (an account) fills the tool afresh even when it is the one shown.
+      leave(
+        next,
+        () => {
+          setToolArg(arg ?? null);
+          setView(next);
+          const last = boot?.prefs.lastTool ?? {};
+          if (last[sectionId] === toolId) return;
+          void api
+            .updatePrefs({ lastTool: { ...last, [sectionId]: toolId } })
+            .then((prefs) => setBoot((b) => (b ? { ...b, prefs: keepStars(prefs) } : b)))
+            .catch(() => {});
+        },
+        arg !== undefined,
+      );
     },
-    [boot, keepStars],
+    [boot, keepStars, leave],
   );
   const clearToolArg = useCallback(() => setToolArg(null), []);
 
@@ -1529,6 +1584,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notice,
       fileNotice,
       run,
+      setLeaveGuard,
     }),
     [
       gate,
@@ -1611,6 +1667,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notice,
       fileNotice,
       run,
+      setLeaveGuard,
     ],
   );
 

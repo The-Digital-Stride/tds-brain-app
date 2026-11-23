@@ -191,7 +191,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
   };
 
   const drawerHead = (
-    <header className="chat-drawer-head">
+    <header className="panel-head chat-drawer-head">
       <div className="chat-drawer-name">
         <h2 id={headingId}>{title}</h2>
         {clientName ? <span className="chip">{clientName}</span> : null}

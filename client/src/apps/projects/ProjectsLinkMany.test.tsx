@@ -83,8 +83,8 @@ async function openPicker(project = SKY) {
   await screen.findByText(/of \d+ project/);
   fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Files' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Link files' }));
-  fireEvent.change(screen.getByRole('searchbox', { name: 'Search files to link' }), {
+  fireEvent.click(await screen.findByRole('button', { name: 'Add files' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search files to add' }), {
     target: { value: 'sky' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
@@ -95,14 +95,14 @@ async function openPicker(project = SKY) {
 const answered = (version: string) =>
   projectList([card({ slug: 'site', title: 'Sky site', owner: 'me', version })]);
 
-describe('Link files: several at once', () => {
+describe('Add files: several at once', () => {
   it('links every ticked file in one go, each building on the card the last one wrote', async () => {
     await openPicker();
     api.changeProject.mockResolvedValueOnce(answered('v2')).mockResolvedValueOnce(answered('v3'));
     fireEvent.click(box('a'));
     fireEvent.click(box('b'));
-    fireEvent.click(screen.getByRole('button', { name: 'Link 2 files' }));
-    await screen.findByText('Linked 2 files.');
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 files' }));
+    await screen.findByText('Added 2 files.');
     expect(api.changeProject.mock.calls.map((c) => c[0])).toEqual([
       { kind: 'link', key: SKY.key, path: 'clients/skyseal/a.md', expect: 'v1' },
       { kind: 'link', key: SKY.key, path: 'clients/skyseal/b.md', expect: 'v2' },
@@ -124,9 +124,9 @@ describe('Link files: several at once', () => {
       );
     fireEvent.click(box('a'));
     fireEvent.click(box('b'));
-    fireEvent.click(screen.getByRole('button', { name: 'Link 2 files' }));
-    await screen.findByText(/^Linked 1 of 2\./);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Link file' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 files' }));
+    await screen.findByText(/^Added 1 of 2\./);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add file' })).toBeTruthy());
     expect(screen.getByRole('list', { name: 'Chosen files' }).textContent).toContain('b.md');
   });
 
@@ -138,14 +138,14 @@ describe('Link files: several at once', () => {
       total: 1,
       partial: false,
     }));
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search files to link' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search files to add' }), {
       target: { value: 'dee' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     fireEvent.click(await screen.findByRole('checkbox', { name: /^d\.md/ }));
     api.changeProject.mockResolvedValueOnce(answered('v2')).mockResolvedValueOnce(answered('v3'));
-    fireEvent.click(screen.getByRole('button', { name: 'Link 2 files' }));
-    await screen.findByText('Linked 2 files.');
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 files' }));
+    await screen.findByText('Added 2 files.');
     expect(api.changeProject.mock.calls.map((c) => c[0].path)).toEqual([
       'clients/skyseal/a.md',
       'clients/skyseal/d.md',
@@ -158,6 +158,46 @@ describe('Link files: several at once', () => {
     fireEvent.click(box('a'));
     expect((box('b') as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(box('b'));
-    expect(screen.getByRole('button', { name: 'Link file' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add file' })).toBeTruthy();
+  });
+});
+
+describe('a file row on the Files tab', () => {
+  const item = {
+    id: 'tds.f1',
+    kind: 'document',
+    name: 'plan.docx',
+    title: 'Launch plan',
+    path: 'clients/skyseal/projects/site/plan.docx',
+    format: 'doc',
+    group: 'Projects',
+    view: 'html',
+    thumb: false,
+    modified: 1,
+  };
+
+  it('has an X icon button named for the file, with a tooltip, and focus moves on after removal', async () => {
+    const linked = card({ slug: 'site', title: 'Sky site', owner: 'me', links: [item.path] });
+    api.projectFiles.mockImplementation(async (_k: string, kind: string) =>
+      kind === 'document' ? { items: [item], hidden: 0 } : { items: [], hidden: 0 },
+    );
+    const list = projectList([linked]);
+    api.projects.mockResolvedValue(list);
+    projectsStore.apply(list);
+    render(<ProjectsSheet />);
+    await screen.findByText(/of \d+ project/);
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }));
+    const remove = await screen.findByRole('button', { name: 'Remove Launch plan from this project' });
+    expect(remove.className).toBe('icon-btn');
+    expect(remove.getAttribute('data-tip')).toBe('Remove from this project. The file stays in the library.');
+    expect(remove.textContent).toBe('');
+    api.changeProject.mockResolvedValueOnce(
+      projectList([card({ slug: 'site', title: 'Sky site', owner: 'me', version: 'v2', links: [] })]),
+    );
+    api.projectFiles.mockImplementation(async () => ({ items: [], hidden: 0 }));
+    fireEvent.click(remove);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Remove Launch plan/ })).toBeNull());
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-focus')).toBe('linkfiles'));
   });
 });

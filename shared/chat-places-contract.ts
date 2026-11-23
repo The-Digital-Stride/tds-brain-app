@@ -41,7 +41,14 @@ export interface ChatScopeStore {
 // ─── What Claude is told (decisions 4–6) ──────────────────────────────────────────────────────────
 
 /** Names Claude must never use inside a project folder (the brain's save rules, row "A project card"). */
-export const PROJECT_RESERVED_NAMES = ['project.md', 'retainer.md', 'summary.md', 'updates/', 'months/', 'reports/'] as const;
+export const PROJECT_RESERVED_NAMES = [
+  'project.md',
+  'retainer.md',
+  'summary.md',
+  'updates/',
+  'months/',
+  'reports/',
+] as const;
 
 /** A project title as it goes into Claude's instructions: newlines and backticks removed, at most this long. */
 export const PROMPT_TITLE_MAX = 80;

@@ -1,0 +1,241 @@
+<title>Projects Release 2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --paper: #ffffff;
+  --ink: #1c2330;
+  --muted: #5b6677;
+  --line: #d5dbe4;
+  --accent: #2c55c9;
+  --accent-soft: #e6ecfb;
+  --r2: #0f8a7a;
+  --r2-soft: #def3ef;
+  --green: #1d8a4e;
+  --amber: #b77a00;
+  --red: #c23a3a;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-head: ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+    --accent: #86a5ff; --accent-soft: #232f4a; --r2: #4fd1bd; --r2-soft: #17342f;
+    --green: #4cc683; --amber: #e8b444; --red: #f07a7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --paper: #1a2029; --ink: #e8ecf2; --muted: #a2adbd; --line: #2f3845;
+  --accent: #86a5ff; --accent-soft: #232f4a; --r2: #4fd1bd; --r2-soft: #17342f;
+  --green: #4cc683; --amber: #e8b444; --red: #f07a7a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font); margin: 0; }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 34px; }
+h1, h2 { font-family: var(--font-head); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; }
+h2 { font-size: 22px; line-height: 1.25; }
+h3 { font-size: 16px; margin: 0; }
+p { margin: 0; max-width: 65ch; }
+.lead { font-size: 18px; color: var(--muted); }
+header { display: grid; gap: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--r2); font-weight: 600; }
+section.folder { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 0 12px 12px 12px;
+  padding: 22px 20px 20px; display: grid; gap: 14px; margin-top: 18px; min-width: 0; }
+section.folder > .tab { position: absolute; top: -27px; left: -1px; background: var(--paper); border: 1px solid var(--line);
+  border-bottom: none; border-radius: 8px 8px 0 0; padding: 4px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
+  letter-spacing: .04em; }
+figure { margin: 0; display: grid; gap: 8px; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 65ch; }
+svg { display: block; max-width: 100%; height: auto; }
+svg text { font-family: var(--font); fill: currentColor; }
+code { font-family: var(--mono); font-size: .9em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+ul.plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 65ch; }
+.grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; font-size: 14px; }
+.card p { font-size: 14px; }
+.card .when { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.card.now { border-color: var(--r2); background: var(--r2-soft); }
+.card.now .when { color: var(--r2); }
+.card.risk { border-left: 4px solid var(--amber); }
+.tag { justify-self: start; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--r2); color: var(--paper); }
+.tag.next { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+.good { color: var(--green); font-weight: 600; }
+.play { justify-self: start; font: inherit; font-size: 14px; border: 1px solid var(--accent); color: var(--accent);
+  background: transparent; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+.play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { font-size: 14px; color: var(--muted); }
+.fill-paper { fill: var(--paper); }
+.fill-soft { fill: var(--accent-soft); }
+.fill-r2 { fill: var(--r2-soft); }
+
+/* The document travels once, then rests in the folder and on the Files tab. Without the .run class the final state shows. */
+.doc { opacity: 0; }
+.run .doc { animation: travel 3.6s ease-in-out forwards; }
+.run .infolder { animation: appear1 3.6s linear both; }
+.run .onfiles { animation: appear2 3.6s linear both; }
+@keyframes travel {
+  0% { opacity: 1; transform: translateX(0); }
+  55% { opacity: 1; transform: translateX(150px); }
+  62%, 100% { opacity: 0; transform: translateX(150px); }
+}
+@keyframes appear1 { 0%, 55% { opacity: 0; } 65%, 100% { opacity: 1; } }
+@keyframes appear2 { 0%, 78% { opacity: 0; } 90%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .run .doc, .run .infolder, .run .onfiles { animation: none; }
+  .doc { opacity: 0; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Plan for the TDS Brain app · 23 November 2026</span>
+    <h1>Projects Release 2</h1>
+    <p class="lead">Release 1 gave every project its own folder. Release 2 makes the rest of the app use it. First, chats learn which project they are for. After that come update logs, activity, meetings, emails and a weekly round-up.</p>
+  </header>
+
+  <section class="folder" aria-labelledby="s1">
+    <span class="tab">The problem</span>
+    <h2 id="s1">Today a chat forgets the project</h2>
+    <figure>
+      <svg viewBox="0 0 520 210" role="img" aria-label="Today a chat for a project saves its document in the client's reports folder. The project's Files tab stays empty because the document is not in the project folder.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        </defs>
+        <rect x="10" y="70" width="120" height="70" rx="10" class="fill-soft" stroke="var(--accent)"/>
+        <text x="70" y="100" text-anchor="middle" font-size="14" font-weight="600">Chat</text>
+        <text x="70" y="120" text-anchor="middle" font-size="12" opacity=".75">"for project X"</text>
+
+        <rect x="200" y="20" width="150" height="56" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".5"/>
+        <text x="275" y="44" text-anchor="middle" font-size="13" font-weight="600">Client's reports</text>
+        <text x="275" y="62" text-anchor="middle" font-size="11" opacity=".75">clients/…/reports/</text>
+
+        <rect x="200" y="134" width="150" height="56" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".5" stroke-dasharray="5 4"/>
+        <text x="275" y="158" text-anchor="middle" font-size="13" font-weight="600">Project X folder</text>
+        <text x="275" y="176" text-anchor="middle" font-size="11" opacity=".75">stays empty</text>
+
+        <rect x="400" y="134" width="110" height="56" rx="8" class="fill-paper" stroke="var(--red)" stroke-dasharray="5 4"/>
+        <text x="455" y="158" text-anchor="middle" font-size="13" font-weight="600">Files tab</text>
+        <text x="455" y="176" text-anchor="middle" font-size="11" fill="var(--red)" style="fill: var(--red)">nothing here</text>
+
+        <path d="M130 95 L196 55" fill="none" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
+        <text x="150" y="62" font-size="12" opacity=".85">saves a document</text>
+        <path d="M130 118 L196 158" fill="none" stroke="var(--red)" stroke-width="2" stroke-dasharray="5 4"/>
+        <text x="140" y="154" font-size="12" style="fill: var(--red)">never told</text>
+        <path d="M350 162 H396" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="2" marker-end="url(#ar)"/>
+      </svg>
+      <figcaption>A chat remembers its client but not its project. So Claude offers the client's reports folder, and the document never reaches the project's Files tab.</figcaption>
+    </figure>
+  </section>
+
+  <section class="folder" aria-labelledby="s2">
+    <span class="tab">Phase 1 · building now</span>
+    <h2 id="s2">The chat knows its project, and Claude saves there</h2>
+    <figure id="flow">
+      <svg viewBox="0 0 520 220" role="img" aria-label="With phase 1, a document made in a project chat travels into the project folder and then shows on the project's Files tab.">
+        <rect x="10" y="70" width="120" height="70" rx="10" class="fill-soft" stroke="var(--accent)"/>
+        <text x="70" y="100" text-anchor="middle" font-size="14" font-weight="600">Chat</text>
+        <text x="70" y="120" text-anchor="middle" font-size="12" opacity=".75">knows project X</text>
+
+        <rect x="200" y="30" width="150" height="160" rx="10" class="fill-r2" stroke="var(--r2)" stroke-width="2"/>
+        <text x="275" y="56" text-anchor="middle" font-size="13" font-weight="600">Project X folder</text>
+        <g class="infolder">
+          <rect x="245" y="90" width="60" height="76" rx="5" class="fill-paper" stroke="currentColor"/>
+          <path d="M255 110 H295 M255 124 H295 M255 138 H285" stroke="currentColor" stroke-opacity=".5" stroke-width="2"/>
+        </g>
+
+        <rect x="400" y="60" width="110" height="100" rx="8" class="fill-paper" stroke="currentColor" stroke-opacity=".5"/>
+        <text x="455" y="84" text-anchor="middle" font-size="13" font-weight="600">Files tab</text>
+        <g class="onfiles">
+          <rect x="412" y="98" width="86" height="26" rx="5" class="fill-r2" stroke="var(--r2)"/>
+          <text x="455" y="115" text-anchor="middle" font-size="12">New page</text>
+        </g>
+        <text x="455" y="146" text-anchor="middle" font-size="11" opacity=".75">for project X</text>
+
+        <path d="M130 105 H196" fill="none" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
+        <text x="163" y="96" text-anchor="middle" font-size="11">saves in</text>
+        <path d="M350 105 H396" fill="none" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
+        <text x="373" y="96" text-anchor="middle" font-size="11">shows on</text>
+
+        <g class="doc">
+          <rect x="95" y="78" width="40" height="54" rx="4" class="fill-paper" stroke="var(--r2)" stroke-width="2"/>
+          <path d="M103 96 H127 M103 106 H127 M103 116 H119" stroke="var(--r2)" stroke-width="2"/>
+        </g>
+      </svg>
+      <figcaption>Press play to watch one document make the trip. The picture above shows where it ends up.</figcaption>
+      <button class="play" id="play-flow" type="button">Play</button>
+    </figure>
+
+    <div class="grid">
+      <div class="card now">
+        <span class="when">Step 1 · where it comes from</span>
+        <p>The project is picked up from one of three places:</p>
+        <ul class="plain">
+          <li><b>Working on</b> on the Home screen.</li>
+          <li>A <b>to-do</b> that sits in a project.</li>
+          <li>The new <b>New chat for this project</b> button on the project page.</li>
+        </ul>
+      </div>
+      <div class="card now">
+        <span class="when">Step 2 · the app checks</span>
+        <p>The app looks the project up itself. If it is unknown, archived (put away) or belongs to another client, the chat will not start. Then the app remembers the project for that chat, <b>even when you reopen it from History</b>.</p>
+      </div>
+      <div class="card now">
+        <span class="when">Step 3 · Claude is told</span>
+        <p>Claude is told the project's folder and to save what it makes there, without asking. It also tells you where each file went.</p>
+      </div>
+    </div>
+
+    <h3>What still goes somewhere else</h3>
+    <div class="grid">
+      <div class="card"><b>Private details</b><p>Names, emails and phone numbers stay on this Mac and are never linked to a shared project.</p></div>
+      <div class="card"><b>Call notes</b><p>Saved by the meeting-notes skill, then linked to the project.</p></div>
+      <div class="card"><b>To-dos</b><p>Saved by the to-do skill, with the project filled in.</p></div>
+      <div class="card"><b>Data pulls and ad-platform files</b><p>Saved where the brain's rules say, then linked to the project.</p></div>
+    </div>
+    <p><b>A client chat with no project?</b> If you name a project, Claude uses it. If the client has open projects and you don't, Claude asks which one the work is for. If the client has none, nothing changes. To switch project, start a new chat.</p>
+  </section>
+
+  <section class="folder" aria-labelledby="s3">
+    <span class="tab">The road ahead</span>
+    <h2 id="s3">Five more steps, one at a time</h2>
+    <div class="grid">
+      <div class="card now"><span class="tag">building now</span><span class="when">Phase 1</span><h3>Chats know their project</h3><p>Files made in a project chat land in the project.</p></div>
+      <div class="card"><span class="tag next">next</span><span class="when">Phase 2</span><h3>Updates log</h3><p>A running diary for each project. One small file per entry, so two people never clash. Each is marked team-only or fine for the client.</p></div>
+      <div class="card"><span class="tag next">next</span><span class="when">Phase 3</span><h3>Since you last looked</h3><p>Open a project and see what changed since your last visit, plus what is coming up. Your last visit is kept on your own Mac.</p></div>
+      <div class="card"><span class="tag next">next</span><span class="when">Phase 4</span><h3>Your meetings</h3><p>Your last and next meeting show on the project page, for you only. Filing the notes then shares them.</p></div>
+      <div class="card"><span class="tag next">next</span><span class="when">Phase 5</span><h3>Email entries</h3><p>Claude drafts a short summary of an email thread. It is saved only after the inbox's owner has read it and said yes.</p></div>
+      <div class="card"><span class="tag next">next</span><span class="when">Phase 6</span><h3>Weekly round-up</h3><p>On Mondays the Account Owner can get a short "where we are" for each project. It reads shared files only, and nothing is saved until they click.</p></div>
+    </div>
+  </section>
+
+  <section class="folder" aria-labelledby="s4">
+    <span class="tab">Taking care</span>
+    <h2 id="s4">Where the risky steps are</h2>
+    <div class="grid">
+      <div class="card risk"><h3>The app picks the folder</h3><p>The chat only sends a project name. The app finds the folder itself, so a made-up request can't point Claude at the wrong place.</p></div>
+      <div class="card risk"><h3>Private data never gets shared</h3><p>Anything with names, emails or phone numbers stays out of project folders. Nothing from private areas is linked to a shared project.</p></div>
+      <div class="card risk"><h3>Reopening an old chat must never break</h3><p>If the saved project is missing or something fails, the chat still opens, just as it does today.</p></div>
+      <div class="card risk"><h3>Claude asks rather than guesses</h3><p>A wrong guess would quietly file a document in the wrong project. So Claude asks which project when it isn't sure.</p></div>
+      <div class="card risk"><h3>Nothing is shared by surprise</h3><p>Emails and round-ups are saved only after a person has seen them and said yes.</p></div>
+    </div>
+    <p class="note">Brain rule changes are prepared as files first and copied into the brain only when Ian says yes.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('play-flow');
+  var box = document.getElementById('flow');
+  if (!btn || !box) return;
+  btn.addEventListener('click', function () {
+    box.classList.remove('run');
+    void box.offsetWidth;
+    box.classList.add('run');
+    btn.textContent = 'Replay';
+  });
+})();
+</script>

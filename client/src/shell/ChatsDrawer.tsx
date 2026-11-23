@@ -3,7 +3,9 @@ import { attentionFor, type LiveSession, type PastSession } from '../../../share
 import { favouritesFirst, isFavourite, splitFavourites } from '../state/chat-favourites.ts';
 import { type ChatKindFilter, filterChats, kindOf } from '../state/chat-filter.ts';
 import { groupChatsByDay } from '../state/chat-groups.ts';
+import { chatPlaceWords } from '../state/chat-project.ts';
 import { sortChats } from '../state/chats.ts';
+import { useProjects } from '../state/projects.ts';
 import { useStore } from '../store.tsx';
 import type { ChatsTab } from './contract.ts';
 import { Fold } from './Fold.tsx';
@@ -14,7 +16,7 @@ import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
 import { pressedByKeyboard, UndoLine } from './UndoLine.tsx';
-import { placeName, STATE_WORDS, whenWords } from './words.ts';
+import { STATE_WORDS, whenWords } from './words.ts';
 
 type OnStar = (sdkSessionId: string, button: HTMLElement) => void;
 
@@ -34,7 +36,8 @@ function OpenRow({
   const current = view === 'chat' && activeChat.kind === 'live' && activeChat.sessionId === chat.id;
   const title = chat.title || 'New chat';
   const busyHelpers = helpersWorking(chat);
-  const clientName = chat.client ? placeName(chat.client, boot?.clients ?? []) : null;
+  const { list: projectList } = useProjects();
+  const place = chatPlaceWords(chat.client, chat.project, boot?.clients ?? [], projectList?.projects);
   return (
     <li className="line" aria-current={current ? 'true' : undefined}>
       <button
@@ -50,7 +53,7 @@ function OpenRow({
           <span className="line-title">{title}</span>
           <span className="line-meta">
             {STATE_WORDS[chat.state].toLowerCase()}
-            {clientName ? `, ${clientName}` : ''}
+            {place ? `, ${place}` : ''}
             {/* No lock, unlike a personal to-do: a personal chat is only sorted apart, not kept private. */}
             {showKind && kindOf(chat) === 'personal' ? ', personal' : ''}
             {busyHelpers > 0 ? `, ${helperCount(busyHelpers)} working` : ''}
@@ -92,8 +95,10 @@ function PastRow({
   favourite: boolean;
   onStar: OnStar;
 }) {
-  const { openPast } = useStore();
+  const { openPast, boot } = useStore();
   const { dispatch, modes } = useShell();
+  const { list: projectList } = useProjects();
+  const place = chatPlaceWords(chat.client, chat.project, boot?.clients ?? [], projectList?.projects);
   const title = chat.title || 'New chat';
   return (
     <li className="line">
@@ -110,6 +115,7 @@ function PastRow({
           <span className="line-title">{title}</span>
           <span className="line-meta">
             {whenWords(chat.lastModified)}
+            {place ? `, ${place}` : ''}
             {showKind && kindOf(chat) === 'personal' ? ', personal' : ''}
           </span>
         </span>

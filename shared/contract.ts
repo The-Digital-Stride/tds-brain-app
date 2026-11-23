@@ -17,6 +17,7 @@ import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './l
 import type { ChatPage } from './pages-contract.ts';
 import type {
   ProjectAction,
+  ProjectCard,
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
@@ -832,6 +833,11 @@ export interface BrainReaders {
    * (shared/projects-contract.ts) with a plain UK-English message.
    */
   projects?(identity: Identity): Promise<ProjectList>;
+  /**
+   * Projects R2 phase 1: the projects index (every card, and a key lookup that follows moved keys), so the session
+   * manager can check a chat's project and find its folder. Optional so older test fakes still satisfy the type.
+   */
+  projectsIndex?(): Promise<{ cards: ProjectCard[]; byKey(key: ProjectKey): ProjectCard | null }>;
   changeProject?(action: ProjectAction, identity: Identity): Promise<ProjectList>;
   /**
    * Move plan (2026-11-21-project-move): a check (`check: true`) or a move. `todos: false` leaves the
@@ -1241,6 +1247,11 @@ export interface LiveSession {
   /** Fixed when the chat is created; it cannot change mid-chat. */
   client: string | null;
   /**
+   * The project this chat is for (Projects R2 phase 1, shared/chat-places-contract.ts), or null. Fixed when
+   * the chat is created, and kept for a chat reopened from History. Absent from older servers: treat as null.
+   */
+  project?: ProjectKey | null;
+  /**
    * The to-do this chat was started on (a `TodoItem.id`), or null. Fixed when the chat is created.
    * Kept only while the chat is open: a chat reopened from History has null.
    */
@@ -1300,6 +1311,10 @@ export interface PastSession {
   lastModified: string;
   /** What the app saved for this chat; 'tds' when nothing was saved. */
   kind: ChatKind;
+  /** The client saved for this chat (chat-places.json), or null. Absent from older servers: unknown. */
+  client?: string | null;
+  /** The project saved for this chat, as saved (it may since have moved), or null. Absent: unknown. */
+  project?: ProjectKey | null;
 }
 
 /**
@@ -1630,6 +1645,9 @@ export interface Bootstrap {
  *   first message. `resume` must be in the brain's own session list and not already live
  *   (else `not-found` / `already-open`).
  * - `client` must be a slug from `Bootstrap.clients` (else `bad-request`). Ignored on resume.
+ * - `project` (Projects R2 phase 1, shared/chat-places-contract.ts) must be a live project in the projects
+ *   index (else `bad-request`); for a client project `client` may be omitted, and a different one is
+ *   `bad-request`. Ignored on resume: the chat's saved client and project are used instead.
  * - A prompt that begins `/name` for a role-restricted skill is refused with `not-allowed`.
  */
 export interface StartSessionRequest {
@@ -1641,6 +1659,8 @@ export interface StartSessionRequest {
    * else `bad-request`. Ignored when `resume` is set.
    */
   todoId?: string | null;
+  /** The project this chat is for (a ProjectKey), or null. See above. */
+  project?: ProjectKey | null;
   /** Upload ids from `POST /api/uploads`, at most MAX_ATTACHMENTS. With attachments, `prompt` may be empty. */
   attachments?: string[];
 }

@@ -10,6 +10,7 @@ import { ApiFailure, api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
+import { projectChatPlace } from '../../state/chat-project.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import {
@@ -465,7 +466,12 @@ function Overview({
               type="button"
               className="btn"
               data-size="small"
-              onClick={() => newChat({ draft: `Show me the checklist in ${card.checklist}` })}
+              onClick={() =>
+                newChat({
+                  draft: `Show me the checklist in ${card.checklist}`,
+                  ...(card.archived ? {} : projectChatPlace(card, clients)),
+                })
+              }
             >
               Ask Claude about the checklist
             </button>
@@ -514,7 +520,7 @@ export function ProjectPage({
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
-  const { todos } = useStore();
+  const { todos, newChat } = useStore();
   const canAddTodo = todos?.canProject === true && !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
@@ -544,6 +550,18 @@ export function ProjectPage({
         <h2 className="proj-title" data-focus="title" tabIndex={-1}>
           {card.title}
         </h2>
+        {!card.archived ? (
+          <button
+            type="button"
+            className={editable ? 'btn' : 'btn proj-head-end'}
+            data-size="small"
+            data-focus="chat"
+            onClick={() => newChat(projectChatPlace(card, clients))}
+          >
+            <Icon name="chat" size={14} />
+            New chat for this project
+          </button>
+        ) : null}
         {editable ? (
           <button
             type="button"

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { request } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -56,12 +58,14 @@ import {
 import {
   checkRequest,
   cookieValueFor,
+  createAuthCodes,
   PAGE_CSP,
   PAGE_PREVIEW_CSP,
   PDF_CSP,
   SECURITY_HEADERS,
   sessionSetCookie,
 } from './security.ts';
+import { createAppServer } from './server.ts';
 
 const tempDirs: string[] = [];
 const stagings: UploadStaging[] = [];
@@ -112,6 +116,18 @@ describe('parseStartRequest', () => {
       expect(() => parseStartRequest({ prompt: 'hi', attachments }), JSON.stringify(attachments)).toThrow(
         HttpError,
       );
+    }
+  });
+
+  it('passes a project through, and null clears it (Projects R2 phase 1)', () => {
+    expect(parseStartRequest({ prompt: 'hi', client: 'acme', project: 'acme/web' })).toEqual({
+      prompt: 'hi',
+      client: 'acme',
+      project: 'acme/web',
+    });
+    expect(parseStartRequest({ prompt: 'hi', project: null })).toEqual({ prompt: 'hi', project: null });
+    for (const project of [42, true, ['acme/web'], { key: 'acme/web' }]) {
+      expect(() => parseStartRequest({ prompt: 'hi', project })).toThrow(HttpError);
     }
   });
 
@@ -3312,5 +3328,114 @@ describe('parseTodoAction: release 3 shapes', () => {
     ]) {
       expect(() => parseTodoAction(body), JSON.stringify(body)).toThrow();
     }
+  });
+});
+
+// Sent over real HTTP to the real server, so the request passes the real security gate (checkRequest) and the
+// real body reader first: route tests that skipped the gate once let a 415-on-every-request bug through.
+describe('POST /api/sessions with a project, through the real gate (Projects R2 phase 1)', () => {
+  const PORT = 45923;
+  const TOKEN = 'launch-token-chat-project';
+  const COOKIE = `${sessionCookieName(PORT)}=${cookieValueFor(TOKEN)}`;
+
+  async function withServer(
+    run: (post: (body: unknown) => Promise<{ status: number; json: unknown }>) => Promise<void>,
+  ) {
+    const started: unknown[] = [];
+    const app = createAppServer({
+      port: PORT,
+      clientDir: '/nonexistent',
+      launchToken: TOKEN,
+      authCodes: createAuthCodes(TOKEN),
+      appVersion: '0',
+      underService: false,
+      brain: { watch: () => () => {} } as never,
+      store: {} as never,
+      sessions: {
+        onChange: () => () => {},
+        start: async (req: unknown) => {
+          started.push(req);
+          if ((req as { project?: unknown }).project === 'acme/gone')
+            throw new SessionError(
+              'bad-request',
+              "That project isn't open any more. Pick another from Working on.",
+            );
+          return { id: 'chat-1' };
+        },
+      } as never,
+      thumbs: {} as never,
+      uploads: {} as never,
+      engineHealth: () => ({}) as never,
+      appState: { kind: 'ready' },
+      setup: {} as never,
+    });
+    await new Promise<void>((done) => app.server.listen(0, '127.0.0.1', done));
+    const port = (app.server.address() as AddressInfo).port;
+    const post = (body: unknown) =>
+      new Promise<{ status: number; json: unknown }>((resolve, reject) => {
+        const req = request(
+          {
+            host: '127.0.0.1',
+            port,
+            path: ROUTES.sessions,
+            method: 'POST',
+            headers: {
+              host: `127.0.0.1:${PORT}`,
+              cookie: COOKIE,
+              origin: `http://127.0.0.1:${PORT}`,
+              'content-type': 'application/json',
+            },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (c: Buffer) => chunks.push(c));
+            res.on('end', () => {
+              let json: unknown = null;
+              try {
+                json = JSON.parse(Buffer.concat(chunks).toString());
+              } catch {}
+              resolve({ status: res.statusCode ?? 0, json });
+            });
+          },
+        );
+        req.on('error', reject);
+        req.end(JSON.stringify(body));
+      });
+    try {
+      await run(post);
+    } finally {
+      app.stop();
+      await new Promise((done) => app.server.close(done));
+    }
+    return started;
+  }
+
+  it('hands the project to the session manager, and answers its refusal as 400', async () => {
+    let started: unknown[] = [];
+    started = await withServer(async (post) => {
+      const ok = await post({ prompt: 'hi', client: 'acme', project: 'acme/web' });
+      expect(ok.status).toBe(200);
+      const gone = await post({ prompt: 'hi', project: 'acme/gone' });
+      expect(gone.status).toBe(400);
+      expect(gone.json).toEqual({
+        error: {
+          code: 'bad-request',
+          message: "That project isn't open any more. Pick another from Working on.",
+        },
+      });
+    });
+    expect(started).toEqual([
+      { prompt: 'hi', client: 'acme', project: 'acme/web' },
+      { prompt: 'hi', project: 'acme/gone' },
+    ]);
+  });
+
+  it('refuses a project of the wrong type with 400, before the session manager sees it', async () => {
+    const started = await withServer(async (post) => {
+      const bad = await post({ prompt: 'hi', project: 42 });
+      expect(bad.status).toBe(400);
+      expect((bad.json as { error: { code: string } }).error.code).toBe('bad-request');
+    });
+    expect(started).toEqual([]);
   });
 });

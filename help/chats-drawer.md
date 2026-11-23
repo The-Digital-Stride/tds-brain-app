@@ -34,6 +34,7 @@ Once you have a personal chat, a second switch appears. It filters by **All**, *
 
 ## Good to know
 
+- Each chat shows its client and project under its title, such as Acme Heating · Site rebuild. The list isn't narrowed by **Working on** yet, so every chat is always shown.
 - You can have up to four chats open at once. If you start a fifth, the one you left longest is closed. If all four are busy, wait or close one.
 - Close a chat before you delete it.
 - Deleting an earlier chat moves it to the Bin on your Mac. You can put it back from there.

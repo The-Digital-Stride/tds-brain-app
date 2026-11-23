@@ -11,6 +11,7 @@ import { api } from '../api.ts';
 import { Composer } from '../components/Composer.tsx';
 import { dueInWords, isOverdue, todayIso } from '../format.ts';
 import { skillsMenuVisible } from '../help/visibility.ts';
+import { projectIfClientMatches } from '../state/chat-project.ts';
 import { clientForProject, clientSlugOf, projectChoice, useProjectChoice } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
@@ -159,10 +160,20 @@ export function Home() {
     activeChat.kind === 'new' && activeChat.client !== undefined
       ? (activeChat.client ?? NONE)
       : (fromProject ?? AUTO);
+  // The project this chat is for: the one it was opened with (to-do, project page), else Working on's. It goes
+  // with the chat only while the final client is still that project's own (plan decision 2).
+  const presetProject = activeChat.kind === 'new' ? (activeChat.project ?? null) : null;
+  const candidateProject = presetProject ?? (project || null);
+  const projectFor = (client: string | null) =>
+    projectIfClientMatches(candidateProject, projectList?.projects, clients, client);
+  const presetCard = presetProject ? projectList?.projects.find((p) => p.key === presetProject) : undefined;
   const byHand = activeChat.kind === 'new' && picked?.key === activeChat.key;
   const choice = byHand ? (picked?.value ?? initial) : initial;
   const presetByChat = activeChat.kind === 'new' && activeChat.client !== undefined;
   // Said only when the project set it: not a hand pick, nor a to-do's or the palette's client that matches.
+  // A preset project is shown as text while it will still be sent (Chat for hasn't been hand-picked away from it).
+  const showPreset =
+    presetProject !== null && choice !== AUTO && projectFor(choice === NONE ? null : choice) !== null;
   const setByProject = !byHand && !presetByChat && fromProject !== null;
   // Counted in the app's own data folder so we can see how often people are asked; never in the way.
   const report = (outcome: ClientPickReported) =>
@@ -342,6 +353,11 @@ export function Home() {
                         </span>
                       ) : null}
                     </span>
+                    {showPreset ? (
+                      <span className="line-meta" data-testid="home-project">
+                        Project: {presetCard?.title || presetProject}
+                      </span>
+                    ) : null}
                   </>
                 }
                 onSend={async (text, uploadIds) => {
@@ -352,7 +368,10 @@ export function Home() {
                     report(
                       activeChat.kind === 'new' && picked?.key === activeChat.key ? 'by-hand' : 'preset',
                     );
-                    return send(text, choice === NONE ? null : choice, uploadIds);
+                    {
+                      const client = choice === NONE ? null : choice;
+                      return send(text, client, uploadIds, projectFor(client));
+                    }
                   }
                   // The skill's name alone is not something to read a client from.
                   const name = activeChat.skill ? `/${activeChat.skill.name}` : null;
@@ -362,7 +381,7 @@ export function Home() {
                       : text;
                   if (message.trim() === '') {
                     report('skill-only');
-                    return send(text, null, uploadIds);
+                    return send(text, null, uploadIds, projectFor(null));
                   }
                   setBusy(true);
                   try {
@@ -388,8 +407,8 @@ export function Home() {
                     clearTimeout(timer);
                     setStatus('');
                     if (guess?.kind === 'sure' && listed(guess.client))
-                      return await send(text, guess.client, uploadIds);
-                    if (guess?.kind === 'none') return await send(text, null, uploadIds);
+                      return await send(text, guess.client, uploadIds, projectFor(guess.client));
+                    if (guess?.kind === 'none') return await send(text, null, uploadIds, projectFor(null));
                     const options =
                       guess?.kind === 'ask' && Array.isArray(guess.options) ? guess.options : [];
                     return await new Promise<boolean>((resolve) => {
@@ -415,7 +434,7 @@ export function Home() {
                                 ? 'ask-suggested'
                                 : 'ask-other',
                           );
-                          resolve(send(text, slug, uploadIds));
+                          resolve(send(text, slug, uploadIds, projectFor(slug)));
                         },
                       });
                     });

@@ -247,6 +247,7 @@ export function ProjectTodos({
                             path: t.scope === 'personal' ? `personal/todo/${t.id}` : `todo/${t.id}`,
                             title: t.title,
                             client: card.client,
+                            project: card.archived ? null : card.key,
                           }}
                         />
                       </div>

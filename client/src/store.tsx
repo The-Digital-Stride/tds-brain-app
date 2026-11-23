@@ -36,6 +36,7 @@ import {
 import { FILES_CHANGE_MESSAGES, filesDeletedNotice } from '../../shared/files-contract.ts';
 import type { LevelTier, SkillLevels } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
+import type { ProjectKey } from '../../shared/projects-contract.ts';
 import { ApiFailure, api, streamUrl } from './api.ts';
 import { toolView } from './shell/sections.ts';
 import type { ToolSnapshot } from './shell/sections-contract.ts';
@@ -253,6 +254,8 @@ export interface NewChat {
   todoId: string | null;
   /** A client this chat was opened with (palette, to-do): a slug, or null for no client. Absent = work it out. */
   client?: string | null;
+  /** The project this chat was opened for (to-do, project page): a ProjectKey, or null. Absent = none. */
+  project?: ProjectKey | null;
 }
 export interface LiveChat {
   kind: 'live';
@@ -301,6 +304,7 @@ export interface Store {
     skill?: SkillInfo | null;
     todoId?: string | null;
     client?: string | null;
+    project?: ProjectKey | null;
   }) => void;
   startSkill: (skill: SkillInfo) => void;
   /** Shows a live chat: on the chat screen, or with `in: 'drawer'` in the right-hand drawer over the tool on the sheet. */
@@ -340,7 +344,13 @@ export interface Store {
   adsDue: number | null;
   setAdsDue: (n: number | null) => void;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
-  send: (text: string, client: string | null, attachments?: string[]) => Promise<boolean>;
+  send: (
+    text: string,
+    client: string | null,
+    attachments?: string[],
+    /** The project to send with a new chat (Home works it out); a to-do chat's own project is dropped with its link. */
+    project?: ProjectKey | null,
+  ) => Promise<boolean>;
   /** Asks Claude, in `sessionId`, to change a page or brand it. Returns null when sent, else the plain reason it wasn't. */
   askPage: (sessionId: string, key: string, req: PageAskRequest) => Promise<string | null>;
   updatePrefs: (patch: Partial<AppPrefs>) => Promise<void>;
@@ -503,11 +513,18 @@ function freshNewChat(
   skill: SkillInfo | null = null,
   todoId: string | null = null,
   client?: string | null,
+  project?: ProjectKey | null,
 ): NewChat {
   newChatKey += 1;
-  return client === undefined
-    ? { kind: 'new', key: newChatKey, draft, skill, todoId }
-    : { kind: 'new', key: newChatKey, draft, skill, todoId, client };
+  return {
+    kind: 'new',
+    key: newChatKey,
+    draft,
+    skill,
+    todoId,
+    ...(client === undefined ? {} : { client }),
+    ...(project ? { project } : {}),
+  };
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -808,10 +825,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const newChat = useCallback(
-    (opts?: { draft?: string; skill?: SkillInfo | null; todoId?: string | null; client?: string | null }) =>
+    (opts?: {
+      draft?: string;
+      skill?: SkillInfo | null;
+      todoId?: string | null;
+      client?: string | null;
+      project?: ProjectKey | null;
+    }) =>
       leave('chat', () => {
         setActiveChat(
-          freshNewChat(opts?.draft ?? '', opts?.skill ?? null, opts?.todoId ?? null, opts?.client),
+          freshNewChat(
+            opts?.draft ?? '',
+            opts?.skill ?? null,
+            opts?.todoId ?? null,
+            opts?.client,
+            opts?.project,
+          ),
         );
         setView('chat');
         setActionError(null);
@@ -1015,7 +1044,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const send = useCallback(
-    async (text: string, client: string | null, attachments: string[] = []) => {
+    async (text: string, client: string | null, attachments: string[] = [], project?: ProjectKey | null) => {
       const body = text.trim();
       // A message may be files only.
       if (!body && attachments.length === 0) return false;
@@ -1034,9 +1063,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ? `personal/todo/${link.slice('personal/'.length)}`
               : `todo/${link}`;
           const todoId = link && body.includes(path) ? link : null;
+          // The to-do's project goes with its link: a message that no longer names the to-do isn't about it.
+          const sendProject = link && !todoId && project === activeChat.project ? null : project;
           const { session } = await api.startSession({
             prompt: body,
             client,
+            ...(sendProject ? { project: sendProject } : {}),
             ...(todoId ? { todoId } : {}),
             ...files,
           });

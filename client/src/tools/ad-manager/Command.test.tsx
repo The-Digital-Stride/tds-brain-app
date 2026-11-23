@@ -14,7 +14,6 @@ const store = vi.hoisted(() => ({
   toolArg: null as string | null,
   clearToolArg: vi.fn(),
   updatePrefs: vi.fn(async () => {}),
-  setAdsDue: vi.fn(),
   startChat: vi.fn(async () => 'chat-1' as string | null),
   openChat: vi.fn(),
   openPast: vi.fn(async () => true),
@@ -46,13 +45,6 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
 const { CommandSheet } = await import('./CommandSheet.tsx');
 const { adStore } = await import('./store.ts');
 const { taskRuns } = await import('./task-runs.ts');
-const { useAdsDue } = await import('./use-ads-due.ts');
-
-/** The shell's always-on hook for the drawer's "N due" note, mounted beside the sheet as App.tsx does. */
-function DueHook() {
-  useAdsDue();
-  return null;
-}
 
 type Health = AdsBoard['health'];
 type Card = AdsBoard['cards'][number];
@@ -133,12 +125,7 @@ const live = (...s: object[]) => {
 
 async function mount(over: Partial<AdsBoard> = {}) {
   current = makeBoard(over);
-  render(
-    <>
-      <DueHook />
-      <CommandSheet />
-    </>,
-  );
+  render(<CommandSheet />);
   await screen.findByRole('heading', { name: /What I run on/ });
 }
 
@@ -329,16 +316,17 @@ describe('the standup card', () => {
   });
 });
 
-describe('due badges', () => {
-  it('says Due, Overdue N days and Due on a date', async () => {
+describe('no due reminders', () => {
+  it('never says Due or Overdue: the tasks are optional checks', async () => {
     taskRuns.record(key, 'd-spend', null, new Date(2026, 10, 17, 9));
     taskRuns.record(key, 'w-terms', null, new Date(2026, 10, 1, 9));
     taskRuns.record(key, 'm-audit', null, new Date(2026, 10, 3, 9));
     await mount();
-    const of = (t: string) => (screen.getByText(t).closest('li') as HTMLElement).textContent ?? '';
-    expect(of('Title d-spend')).toContain('Due');
-    expect(of('Title w-terms')).toContain('Overdue 11 days');
-    expect(of('Title m-audit')).toContain('Due Tue 1 Dec');
+    for (const t of ['Title d-spend', 'Title w-terms', 'Title m-audit', 'Daily standup']) {
+      const li = screen.getAllByText(t)[0]?.closest('li') as HTMLElement;
+      expect(li.textContent).not.toMatch(/\b(Due|Overdue)\b/);
+      expect(li.querySelector('.badge')).toBeNull();
+    }
   });
 });
 
@@ -445,14 +433,12 @@ describe('running a task', () => {
     expect(within(li).getByRole('status').textContent).toBe('');
   });
 
-  it('a standup verdict on file with no run record never says "Never run here", and counts for due', async () => {
+  it('a standup verdict on file with no run record never says "Never run here"', async () => {
     const today = new Date();
     const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     await mount({ standup: { ...makeBoard().standup, verdict: { ...VERDICT, date: ymd } } });
     const li = (await runBtn('Daily standup')).closest('li') as HTMLElement;
     expect(within(li).queryByText('Never run here')).toBeNull();
-    // Today's verdict: not due.
-    expect(within(li).queryByText(/^Due/)).toBeNull();
   });
 
   it("shows a teammate's run from the brain with their first name, mine without a name", async () => {
@@ -486,71 +472,6 @@ describe('running a task', () => {
     await mount({ cards: CARDS.map((c) => ({ ...c, lastRun: null })) });
     fireEvent.click(await runBtn('Title w-terms'));
     await waitFor(() => expect(api.adsTaskRun).toHaveBeenCalledWith({ account: key, task: 'w-terms' }));
-  });
-});
-
-describe('the due count for the menu', () => {
-  it('is worked out at start-up from the saved account, before any Ads tool opens', async () => {
-    current = makeBoard();
-    render(<DueHook />);
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
-    expect(api.adsBoard).toHaveBeenCalledWith(key);
-    expect(adStore.get().account).toBe(key);
-  });
-
-  it('with nothing saved, starts from the first account with proposals waiting, as the tools do', async () => {
-    store.boot.prefs = { adsAccount: null };
-    store.ads = { ...(store.ads as object), clients: [{ slug: key, name: key, waiting: 2 }] };
-    current = makeBoard();
-    render(<DueHook />);
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
-    expect(api.adsBoard).toHaveBeenCalledWith(key);
-  });
-
-  it('reloads the board when the Ads summary changes, with no tool open', async () => {
-    current = makeBoard();
-    const view = render(<DueHook />);
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
-    expect(api.adsBoard).toHaveBeenCalledTimes(1);
-    store.ads = { ...(store.ads as object), waiting: 1 };
-    view.rerender(<DueHook />);
-    await waitFor(() => expect(api.adsBoard).toHaveBeenCalledTimes(2));
-  });
-
-  it('stays hidden at start-up when Ads is not available or no account was used before', async () => {
-    store.ads = { ...(store.ads as object), visible: false };
-    render(<DueHook />);
-    store.boot.prefs = { adsAccount: null };
-    cleanup();
-    adStore.reset();
-    store.ads = { ...(store.ads as object), visible: true };
-    render(<DueHook />);
-    await new Promise((r) => setTimeout(r, 20));
-    expect(api.adsBoard).not.toHaveBeenCalled();
-    expect(store.setAdsDue).not.toHaveBeenCalledWith(expect.any(Number));
-  });
-
-  it('is cleared on an account change, then set once the board arrives, counting the standup', async () => {
-    await mount();
-    expect(store.setAdsDue).toHaveBeenCalledWith(null);
-    // The daily card has never run, and the standup's newest verdict is from 2026-11-18: both are due.
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(2));
-  });
-
-  it('leaves the standup out until it is set up, and counts it again after a run today', async () => {
-    await mount({
-      standup: { hasStandup: false, verdict: null, enabledCampaigns: [], prompt: '', actionLabels: {} },
-    });
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(1));
-    cleanup();
-    store.setAdsDue.mockClear();
-    adStore.reset();
-    key = `acct${++n}`;
-    store.boot.prefs = { adsAccount: key };
-    await mount({
-      standup: { ...makeBoard().standup, lastRun: { at: new Date().toISOString(), by: 'x', byName: 'X' } },
-    });
-    await waitFor(() => expect(store.setAdsDue).toHaveBeenLastCalledWith(1));
   });
 });
 

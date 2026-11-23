@@ -18,7 +18,6 @@ vi.mock('../api.ts', () => ({
   streamUrl: () => '/api/stream',
   ApiFailure: class extends Error {},
 }));
-vi.mock('../tools/ad-manager/use-ads-due.ts', () => ({ useAdsDue: () => {} }));
 
 interface StoreCalls {
   openView: (v: string) => void;

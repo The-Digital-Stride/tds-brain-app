@@ -13,11 +13,6 @@ import type { AppSlot, IconName } from './contract.ts';
 export interface ToolSnapshot {
   /** null until loaded (or when the server has no ads routes): every ads tool counts as not visible. */
   ads: AdsSummary | null;
-  /**
-   * The current Ads account's due-or-overdue task count, or null until a board loads. Optional, so a snapshot built
-   * as `{ ads }` (tests) still type-checks.
-   */
-  adsDue?: number | null;
 }
 
 /** A tool in a section. Everything an app has (Sheet, BarActions, Panel, search), plus the drawer row. */
@@ -33,7 +28,7 @@ export interface ToolSlot extends AppSlot {
   /** A count for the drawer row and the rail item (summed per section), or 0 for none. */
   badge?: (snap: ToolSnapshot) => number;
   /**
-   * A short line shown as text on the drawer row, not a waiting count (e.g. "3 due"), or null for none. Never summed
+   * A short line shown as text on the drawer row, not a waiting count, or null for none. Never summed
    * into the rail or a folded group's count.
    */
   rowNote?: (snap: ToolSnapshot) => string | null;

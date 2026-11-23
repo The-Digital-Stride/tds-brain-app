@@ -204,7 +204,7 @@
     font-weight: 600;
     margin-right: var(--sp-2);
   }
-  .cc-due {
+  .cc-stopped {
     display: inline-flex;
   }
   .cc-actions {

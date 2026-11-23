@@ -23,11 +23,6 @@ vi.mock('../api.ts', () => ({
 const apps = vi.hoisted(() => [] as AppSlot[]);
 vi.mock('./apps.ts', () => ({ APPS: apps }));
 
-// The Workbench drawer's "N due" hook (Ads Release 3) is mounted by the shell; its own behaviour is tested in
-// tools/ad-manager/Command.test.tsx, so here it is only checked to be switched on.
-const dueHook = vi.hoisted(() => vi.fn());
-vi.mock('../tools/ad-manager/use-ads-due.ts', () => ({ useAdsDue: dueHook }));
-
 class FakeEventSource {
   static last: FakeEventSource | null = null;
   static CLOSED = 2;
@@ -174,12 +169,6 @@ describe('the rail', () => {
     const toggle = railButton('Show names');
     expect(toggle.closest('.rail-brand')).toBeTruthy();
     expect(toggle.textContent).toBe('');
-  });
-
-  it("mounts the Ads due-count hook, so the Workbench menu's note is worked out from start-up", async () => {
-    render(<App />);
-    await screen.findByRole('navigation', { name: /./ });
-    expect(dueHook).toHaveBeenCalled();
   });
 
   it('shows no Apps group while there are no apps', async () => {

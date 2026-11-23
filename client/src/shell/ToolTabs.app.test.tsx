@@ -24,7 +24,6 @@ vi.mock('../api.ts', () => ({
 }));
 const summary = vi.hoisted(() => ({ loadAdsSummary: vi.fn() }));
 vi.mock('../tools/ad-manager/summary.ts', () => summary);
-vi.mock('../tools/ad-manager/use-ads-due.ts', () => ({ useAdsDue: () => {} }));
 
 class FakeEventSource {
   static CLOSED = 2;

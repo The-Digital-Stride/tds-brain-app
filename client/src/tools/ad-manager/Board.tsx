@@ -5,9 +5,9 @@ import { useCopy } from '../../apps/shared/copy.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
-import type { DueState, FileDot, Readiness } from './ads-tools-contract.ts';
+import type { FileDot, Readiness } from './ads-tools-contract.ts';
 import { useRestoreFocus } from './focus.ts';
-import { dueState, readiness } from './logic.ts';
+import { readiness } from './logic.ts';
 import { OpenFile } from './OpenFile.tsx';
 import { adStore, loadBoard, useAd } from './store.ts';
 import { TriagePopup } from './TriagePopup.tsx';
@@ -33,8 +33,6 @@ const KEY_NOTES: [Kind, string][] = [
 ];
 /** The Daily standup's id in the run record (task card ids are words, so this can't clash). */
 const STANDUP_TASK = 'standup:daily';
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Tells the brain about a run, when the skill shares runs (its board carries `lastRun`). */
 function shareRun(board: AdsBoard, task: string) {
@@ -48,17 +46,6 @@ function useTaskRun(client: string, task: string) {
   const run = runs[runKey(client, task)];
   const lastTurn = run?.chat ? sessions?.live?.find((l) => l.id === run.chat)?.lastTurn : undefined;
   return { run, status: runStatus(run, sessions?.live), lastTurn };
-}
-
-/** "Due", "Overdue 3 days" or "Due Mon 1 Dec", as the badge's words and tone. */
-function dueBadge(d: DueState): { text: string; tone: 'info' | 'bad' | 'muted' } | null {
-  if (!d) return null;
-  if (d.kind === 'due') return { text: 'Due', tone: 'info' };
-  if (d.kind === 'overdue')
-    return { text: `Overdue ${d.days} ${d.days === 1 ? 'day' : 'days'}`, tone: 'bad' };
-  const [y, m, day] = d.on.split('-').map(Number) as [number, number, number];
-  const date = new Date(y, m - 1, day);
-  return { text: `Due ${DAYS[date.getDay()]} ${day} ${MONTHS[m - 1]}`, tone: 'muted' };
 }
 
 /** "Today, 09:30" reads as "today, 09:30" after a word. */
@@ -77,7 +64,7 @@ const fetchWords = (iso: string) => {
 };
 
 /**
- * What a card says about its last run, and the badge for "due" or "stopped". The status is spoken from a hidden
+ * What a card says about its last run, and a "Stopped" badge when my newest run stopped or failed. The status is spoken from a hidden
  * region that is always in the page (one added already holding text is often not announced).
  * - Running or waiting: the live state and when it started.
  * - My newest run stopped or failed: "Stopped today, 09:30" and "Last good run <link>" to the last one that finished.
@@ -88,19 +75,17 @@ function RunInfo({
   client,
   task,
   title,
-  cadence,
   shared,
   onFile = null,
 }: {
   client: string;
   task: string;
   title: string;
-  cadence: AdsBoard['cards'][number]['cadence'] | null;
   /** The brain's latest run by anyone (`lastRun`), when the skill shares runs. */
   shared?: AdsTaskRun | null;
   /**
    * The date of the newest result on file when no run record exists (a standup verdict made outside the app):
-   * the task has run, so it counts for "due" and the card never says "Never run here".
+   * the task has run, so the card never says "Never run here".
    */
   onFile?: string | null;
 }) {
@@ -116,8 +101,6 @@ function RunInfo({
   const brainAt = (local as { brainAt?: string } | undefined)?.brainAt;
   const result =
     !words && shared?.result && run && (run.at === shared.at || brainAt === shared.at) ? shared.result : null;
-  const due =
-    stopped || words ? null : dueBadge(cadence ? dueState(cadence, run?.at ?? onFile, new Date()) : null);
 
   const open = async (sdk: string) => {
     setGone(false);
@@ -185,17 +168,11 @@ function RunInfo({
       <span role="status" className="visually-hidden">
         {words ? `${title}: ${words}` : ''}
       </span>
-      {due || stopped ? (
-        <span className="cc-due">
-          {stopped ? (
-            <span className="badge" data-tone="bad">
-              Stopped
-            </span>
-          ) : due ? (
-            <span className="badge" data-tone={due.tone}>
-              {due.text}
-            </span>
-          ) : null}
+      {stopped ? (
+        <span className="cc-stopped">
+          <span className="badge" data-tone="bad">
+            Stopped
+          </span>
         </span>
       ) : null}
       {line ? <p className="am-run">{line}</p> : null}
@@ -499,13 +476,7 @@ function TaskCard({
       </p>
       <h4 className="am-camp">{card.title}</h4>
       <p className="am-sub">{card.description}</p>
-      <RunInfo
-        client={board.key}
-        task={card.id}
-        title={card.title}
-        cadence={card.cadence}
-        shared={card.lastRun}
-      />
+      <RunInfo client={board.key} task={card.id} title={card.title} shared={card.lastRun} />
       <RunButton
         client={board.key}
         task={card.id}
@@ -603,7 +574,6 @@ function StandupCard({
           client={board.key}
           task={STANDUP_TASK}
           title="Daily standup"
-          cadence="daily"
           shared={s.lastRun}
           onFile={v?.date ?? null}
         />

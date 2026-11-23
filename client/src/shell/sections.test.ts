@@ -66,8 +66,6 @@ describe('the rail', () => {
 
   it('counts the visible tools badges, and W only while visible', () => {
     expect(sectionBadge(workbench, { ads: ads({ waiting: 4 }) })).toBe(4);
-    // Due tasks are a note on the drawer row, never part of the rail's waiting count.
-    expect(sectionBadge(workbench, { ads: ads({ waiting: 4 }), adsDue: 9 })).toBe(4);
     expect(sectionBadge(workbench, { ads: null })).toBe(0);
     expect(sectionKeys({ ads: null })).toEqual({});
     expect(sectionKeys({ ads: ads() })).toEqual({ w: 'workbench' });
@@ -98,14 +96,12 @@ describe('tool views', () => {
 
   it('each Ads tool shows a note and count as it should', () => {
     const [manager, command, summary] = workbench.tools;
-    const snap = { ads: ads({ waiting: 2 }), adsDue: 3 };
+    const snap = { ads: ads({ waiting: 2 }) };
     expect(manager?.badge?.(snap)).toBe(2);
     expect(manager?.rowNote?.(snap) ?? null).toBeNull();
     expect(command?.badge?.(snap)).toBe(0);
-    expect(command?.rowNote?.(snap)).toBe('3 due');
-    expect(command?.rowNote?.({ ads: ads(), adsDue: 0 })).toBeNull();
-    expect(command?.rowNote?.({ ads: ads(), adsDue: null })).toBeNull();
-    expect(command?.rowNote?.({ ads: ads() })).toBeNull();
+    // Command Centre's tasks are optional checks: no "due" note on its row.
+    expect(command?.rowNote).toBeUndefined();
     expect(summary?.badge).toBeUndefined();
     expect(summary?.rowNote).toBeUndefined();
   });

@@ -5,8 +5,9 @@ import { commandSearch } from './command-search.ts';
 
 /**
  * Ads Command Centre: running the account, with the original brain board's layout (plan
- * 2026-11-19-ads-workbench-sections, decisions 3 and 6). The rail count stays "proposals waiting", so `badge` is 0:
- * the due tasks show as text on the drawer row (`rowNote`) instead. Rate calls opens in its side panel (decision 6a).
+ * 2026-11-19-ads-workbench-sections, decisions 3 and 6). The rail count stays "proposals waiting", so `badge` is 0.
+ * Its tasks are optional checks, so there is no "due" note or badge (removed 2026-11-23). Rate calls opens in its
+ * side panel (decision 6a).
  */
 const ui = () => import('./ui.ts');
 
@@ -25,5 +26,4 @@ export const adsCommandTool: ToolSlot = {
   search: commandSearch,
   visible: (snap) => snap.ads?.visible === true,
   badge: () => 0,
-  rowNote: (snap) => (snap.adsDue && snap.adsDue > 0 ? `${snap.adsDue} due` : null),
 };

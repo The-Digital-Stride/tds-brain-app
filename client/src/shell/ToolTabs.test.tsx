@@ -6,7 +6,7 @@ import type { SectionSlot, ToolSlot } from './sections-contract.ts';
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads, adsDue: store.current.adsDue }),
+  useToolSnapshot: () => ({ ads: store.current.ads }),
 }));
 const { ToolTabs } = await import('./ToolTabs.tsx');
 
@@ -29,8 +29,8 @@ const sec = (tools: ToolSlot[]): SectionSlot => ({
   tools,
 });
 const openTool = vi.fn();
-function setup(tools: ToolSlot[], current: ToolSlot, adsDue: number | null = null) {
-  store.current = { ads: null, adsDue, openTool, view: `tool:workbench/${current.id}` };
+function setup(tools: ToolSlot[], current: ToolSlot) {
+  store.current = { ads: null, openTool, view: `tool:workbench/${current.id}` };
   const section = sec(tools);
   return render(<ToolTabs section={section} tool={current} />);
 }

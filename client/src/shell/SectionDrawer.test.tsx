@@ -11,7 +11,7 @@ const shell = vi.hoisted(() => ({
 }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads, adsDue: store.current.adsDue }),
+  useToolSnapshot: () => ({ ads: store.current.ads }),
 }));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: shell.state, dispatch: shell.dispatch }),
@@ -198,13 +198,6 @@ describe('SectionDrawer', () => {
     expect(within(a).getByText('3 due')).toBeTruthy();
     expect(a.querySelector('.count')).toBeNull();
     expect(screen.getByRole('button', { name: /Tool b/ }).textContent).not.toContain('due');
-  });
-
-  it('reads the due count from the snapshot for a rowNote', () => {
-    setup([tool('a', { rowNote: (snap) => (snap.adsDue ? `${snap.adsDue} due` : null) })]);
-    (store.current as { adsDue?: number }).adsDue = 5;
-    render(<SectionDrawer />);
-    expect(screen.getByText('5 due')).toBeTruthy();
   });
 
   it('has a search row only above 8 tools', () => {

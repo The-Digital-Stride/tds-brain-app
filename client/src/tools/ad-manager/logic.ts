@@ -1,12 +1,10 @@
 /**
- * Pure rules for the Ads section (plan 2026-11-19-ads-workbench-sections, decisions 5, 6 and 8): account data
- * readiness, when a task is due, what needs the person on Ads Manager, and what is worth a look on the summary.
+ * Pure rules for the Ads section (plan 2026-11-19-ads-workbench-sections, decisions 5 and 8): account data
+ * readiness, what needs the person on Ads Manager, and what is worth a look on the summary.
  * Types are in `ads-tools-contract.ts`. No React, no clock, no storage: the caller passes `now`.
  */
 import type { AdsBoard, AdsHealthFile, AdsMonthly } from '../../../../shared/ads-contract.ts';
 import type {
-  DueState,
-  DueStateFn,
   FileDot,
   NeedsYouFn,
   NeedsYouItem,
@@ -76,90 +74,6 @@ export const readiness: ReadinessFn = (health) => {
   };
   return out;
 };
-
-// ---------- Due state ----------
-
-/** Whole local calendar days from the first to the second date (the clock time is ignored). */
-const dayNumber = (d: Date) => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
-
-const ymd = (y: number, m: number, d: number) =>
-  `${String(y).padStart(4, '0')}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-
-/** A bare `YYYY-MM-DD` is a local day (`new Date` would read it as UTC midnight); anything else is an instant. */
-function parseRun(at: string): Date | null {
-  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(at);
-  const d = bare ? new Date(Number(bare[1]), Number(bare[2]) - 1, Number(bare[3])) : new Date(at);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** The first day of the month (or quarter) after the one `last` falls in. */
-function nextPeriodStart(last: Date, monthsPer: 1 | 3): Date {
-  const first = last.getMonth() - (last.getMonth() % monthsPer);
-  return new Date(last.getFullYear(), first + monthsPer, 1);
-}
-
-/** Days from `due` to `today`, as a due state: due from the date, overdue from `overdueAfter` days later. */
-function afterDue(sinceDue: number, overdueAfter: number | null): DueState {
-  if (overdueAfter !== null && sinceDue >= overdueAfter) return { kind: 'overdue', days: sinceDue };
-  return { kind: 'due' };
-}
-
-/**
- * When a task is due (decision 6). Local calendar days, thresholds inclusive; `days` on `overdue` counts from the
- * due date. Daily: due a day after the last run. Weekly: due at 7 days, overdue at 14. Fortnightly: due at 14,
- * overdue at 28. Monthly: due on the 1st after the last run, overdue 7 days later, `upcoming` before. Quarterly:
- * due on the next quarter's first day, `upcoming` before, never overdue (the plan sets no overdue point).
- * A last run in the future or unreadable gives null; never run (null) is due only for daily, and never overdue.
- */
-export const dueState: DueStateFn = (cadence, lastRunAt, now) => {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (lastRunAt === null) return cadence === 'daily' ? { kind: 'due' } : null;
-  const last = parseRun(lastRunAt);
-  if (!last) return null;
-  const since = dayNumber(today) - dayNumber(last);
-  if (since < 0) return null;
-  switch (cadence) {
-    case 'daily':
-      return since >= 1 ? { kind: 'due' } : null;
-    case 'weekly':
-      return since >= 7 ? afterDue(since - 7, 7) : null;
-    case 'fortnightly':
-      return since >= 14 ? afterDue(since - 14, 14) : null;
-    case 'monthly':
-    case 'quarterly': {
-      const due = nextPeriodStart(last, cadence === 'monthly' ? 1 : 3);
-      const sinceDue = dayNumber(today) - dayNumber(due);
-      if (sinceDue < 0)
-        return { kind: 'upcoming', on: ymd(due.getFullYear(), due.getMonth(), due.getDate()) };
-      return afterDue(sinceDue, cadence === 'monthly' ? 7 : null);
-    }
-    default:
-      return null;
-  }
-};
-
-/**
- * How many of a board's cards are due or overdue today (the drawer's "N due"). `localRunAt` is a run recorded in this
- * browser; the newer of it and the brain's `lastRun` counts.
- */
-export function dueCount(
-  cards: AdsBoard['cards'],
-  now: Date,
-  localRunAt?: (card: AdsBoard['cards'][number]) => string | null | undefined,
-  standup?: { sharedAt: string | null | undefined; localAt: string | null | undefined } | null,
-): number {
-  const newer = (shared: string | null | undefined, local: string | null | undefined) =>
-    shared && local ? (Date.parse(local) > Date.parse(shared) ? local : shared) : (local ?? shared ?? null);
-  let n = 0;
-  const count = (cadence: string, at: string | null) => {
-    const s = dueState(cadence as Parameters<typeof dueState>[0], at, now);
-    if (s && (s.kind === 'due' || s.kind === 'overdue')) n++;
-  };
-  for (const c of cards) count(c.cadence, newer(c.lastRun?.at ?? null, localRunAt?.(c) ?? null));
-  // The Daily standup card is set up separately from `cards`, and is due on the daily rule.
-  if (standup) count('daily', newer(standup.sharedAt, standup.localAt));
-  return n;
-}
 
 // ---------- Needs you ----------
 

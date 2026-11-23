@@ -6,7 +6,7 @@ import type { ShellApi } from './contract.ts';
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: store.current.adsDue ?? null }),
+  useToolSnapshot: () => ({ ads: store.current.ads ?? null }),
 }));
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');

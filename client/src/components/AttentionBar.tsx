@@ -4,8 +4,11 @@ import { formatElapsed, initialSince } from '../state/attention.ts';
 
 const STOPPED: Partial<Record<SessionState, string>> = {
   error: 'This chat stopped because of a problem. You can try sending a message again.',
-  closed: 'This chat has ended. Start a new chat to carry on.',
+  closed: 'This chat went to sleep. Send a message to wake it up where you left off.',
 };
+
+/** A chat that went to sleep is not a problem: the next message reopens it. */
+const STOPPED_LEVEL: Partial<Record<SessionState, 'error' | 'info'>> = { closed: 'info' };
 
 /** The dot's state for each attention: working is blue, never red (red is for problems). */
 const DOT_STATE = { ready: 'ok', working: 'working', asking: 'asking' } as const;
@@ -37,7 +40,7 @@ export function AttentionBar({
   if (!attention) {
     const text = STOPPED[state];
     return text ? (
-      <div className="notice" data-shape="box" data-level="error">
+      <div className="notice" data-shape="box" data-level={STOPPED_LEVEL[state] ?? 'error'}>
         {text}
       </div>
     ) : null;

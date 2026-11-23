@@ -2,24 +2,43 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const api = vi.hoisted(() => ({
-  bootstrap: vi.fn(),
-  todos: vi.fn(),
-  sessions: vi.fn(),
-  // The rail's last-sync stamp asks for this.
-  sync: vi.fn(async () => ({ lastSync: null })),
-  startSession: vi.fn(),
-  sendMessage: vi.fn(),
-  updatePrefs: vi.fn(),
-}));
-vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
+const { api, ApiFailure } = vi.hoisted(() => {
+  class ApiFailure extends Error {
+    readonly code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+    get notSignedIn() {
+      return false;
+    }
+  }
+  return {
+    ApiFailure,
+    api: {
+      bootstrap: vi.fn(),
+      todos: vi.fn(),
+      sessions: vi.fn(),
+      // The rail's last-sync stamp asks for this.
+      sync: vi.fn(async () => ({ lastSync: null })),
+      startSession: vi.fn(),
+      sendMessage: vi.fn(),
+      updatePrefs: vi.fn(),
+    },
+  };
+});
+vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure }));
 
 class FakeEventSource {
+  static last: FakeEventSource | null = null;
   readyState = 1;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   static CLOSED = 2;
+  constructor() {
+    FakeEventSource.last = this;
+  }
   addEventListener() {}
   close() {}
 }
@@ -110,5 +129,107 @@ describe('send with files', () => {
     await go('  ', []);
     await waitFor(() => expect(results).toEqual([false]));
     expect(api.startSession).not.toHaveBeenCalled();
+  });
+});
+
+const liveS1 = {
+  id: 's1',
+  sdkSessionId: 'sdk-1',
+  title: 'Report check',
+  client: null,
+  todoId: null,
+  state: 'idle',
+  startedAt: '',
+  lastActivityAt: '',
+};
+
+/** Tells the open page that chat s1 has ended, as the server's stream does. */
+function endS1() {
+  const es = FakeEventSource.last;
+  if (!es?.onmessage) throw new Error('no stream');
+  es.onmessage({
+    data: JSON.stringify({
+      kind: 'chat',
+      sessionId: 's1',
+      item: { seq: 1, at: '2026-11-23T10:00:00Z', event: { type: 'state', state: 'closed' } },
+    }),
+  });
+}
+
+describe('send into a chat that has ended', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    // The first list has the chat open; every later one shows it gone.
+    api.sessions.mockResolvedValueOnce({ live: [liveS1], past: [] });
+  });
+
+  it('reopens a chat the page knows has ended, with the message and files', async () => {
+    render(
+      <StoreProvider>
+        <Probe text=" carry on " ids={['u1']} />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(sessionStorage.getItem('tds-brain-open-chat')).toBe('s1'));
+    await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    await act(async () => {});
+    await act(async () => endS1());
+    fireEvent.click(await screen.findByText('go'));
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({
+        resume: 'sdk-1',
+        prompt: 'carry on',
+        attachments: ['u1'],
+      }),
+    );
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    await waitFor(() => expect(results).toEqual([true]));
+    // The page follows the reopened chat.
+    await waitFor(() => expect(sessionStorage.getItem('tds-brain-open-chat')).toBe('s9'));
+  });
+
+  it('reopens a chat the server has lost when the page had not heard (the app restarted)', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('not-found', 'That chat could not be found.'));
+    await go('carry on', []);
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({ resume: 'sdk-1', prompt: 'carry on' }),
+    );
+    expect(api.sendMessage).toHaveBeenCalledWith('s1', 'carry on', []);
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('reopens a chat refused as closed', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    await go('carry on', []);
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({ resume: 'sdk-1', prompt: 'carry on' }),
+    );
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('sends to the copy another tab has already reopened', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    api.startSession.mockRejectedValueOnce(new ApiFailure('already-open', 'That chat is already open.'));
+    await go('carry on', []);
+    // The lookup after already-open finds the other tab's copy.
+    api.sessions.mockResolvedValue({ live: [{ ...liveS1, id: 's7' }], past: [] });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenLastCalledWith('s7', 'carry on', []));
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('does not reopen when not-found is about something else and the chat is still open', async () => {
+    api.sessions.mockReset();
+    api.sessions.mockResolvedValue({ live: [liveS1], past: [] });
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('not-found', 'That file could not be found.'));
+    await go('carry on', ['u1']);
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('leaves a chat being deleted alone', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    api.startSession.mockRejectedValueOnce(new ApiFailure('already-open', 'That chat is being deleted.'));
+    await go('carry on', []);
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
   });
 });

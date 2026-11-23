@@ -247,3 +247,17 @@ lists are set in each builder's brief from the review's file:line evidence.
 - Carried to Release 3: 13 `.lib-*`/`.docs` classes used in the eagerly imported `apps/shared/parts.tsx` but
   defined only in lazy `library.css` (allowlisted). Resolve by moving the shared library pieces' styles to the
   eager patterns layer or splitting `parts.tsx`.
+
+### Release 2 (commits 3f7b33e, 4252be2, 927a2c3, e287bd4, 299c75b)
+- 2C (Undo) reviewed separately: UndoLine left a hold paused when it unmounted while pointed at → fixed with an
+  unmount resume and two tests.
+- UI/accessibility reviewer: 2 confirmed (project Edit not at the right end; back chevron pointing down) →
+  fixed by the lead.
+- Correctness/code-quality reviewer: 5 confirmed, each proven by a failing test (Home reveal cleared Working
+  on; discarded project to-do typing came back; focus lost after unfavouriting the last Home row; no test for
+  the Ads panel staying shut; image star named differently from its row) → fixed by a Sonnet fixer, each new
+  test fails without its fix.
+- Lead browser check: Ads summary period Seg wrapped "30 days" onto two lines → fixed.
+- Carried to Release 3: ProposalPanel stepper in the header band (needs a shell header slot; P/N keys);
+  RemovePanel "Keep, unlinked" wording; Documents/Images "Clear" label; `--attn-working-edge` red (dot
+  vocabulary); Composer Send `disabled` while empty (not busy, so allowed by rule 12).

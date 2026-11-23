@@ -230,15 +230,27 @@ async function openApp(page: Page, name: 'Documents' | 'Images'): Promise<void> 
   await page.locator('.lib-list').first().waitFor();
 }
 
-/** Waits until every picture on the page has loaded. */
+/** Waits until every picture in view has loaded (a lazy one out of view never loads, and isn't in the shot). */
 async function thumbsLoaded(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => [...document.images].every((i) => i.complete && i.naturalWidth > 0),
-    null,
-    {
-      timeout: 15000,
-    },
-  );
+  try {
+    await page.waitForFunction(
+      () =>
+        [...document.images].every((i) => {
+          const r = i.getBoundingClientRect();
+          const inView = r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
+          return !inView || (i.complete && i.naturalWidth > 0);
+        }),
+      null,
+      {
+        timeout: 15000,
+      },
+    );
+  } catch (err) {
+    const broken = await page.evaluate(() =>
+      [...document.images].filter((i) => !(i.complete && i.naturalWidth > 0)).map((i) => i.src),
+    );
+    throw new Error(`Pictures that never loaded: ${broken.join(', ')}`, { cause: err });
+  }
   await sleep(500);
 }
 

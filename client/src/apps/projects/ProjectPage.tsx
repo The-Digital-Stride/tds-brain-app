@@ -241,6 +241,7 @@ function Overview({
   removal,
   activity,
   onUpdates,
+  onTodos,
   onAddCard,
   onMove,
 }: {
@@ -252,6 +253,7 @@ function Overview({
   removal: Removal;
   activity: ActivityState;
   onUpdates: () => void;
+  onTodos: () => void;
   onAddCard: () => void;
   onMove: () => void;
 }) {
@@ -339,7 +341,13 @@ function Overview({
 
       <div className="tray lib-tray">
         {card.archived ? null : (
-          <ProjectActivity key={card.key} projectKey={card.key} activity={activity} onUpdates={onUpdates} />
+          <ProjectActivity
+            key={card.key}
+            projectKey={card.key}
+            activity={activity}
+            onUpdates={onUpdates}
+            onTodos={onTodos}
+          />
         )}
         <section className="card proj-card" aria-label="Details">
           <dl className="kv">
@@ -679,6 +687,7 @@ export function ProjectPage({
             removal={removal}
             activity={activity}
             onUpdates={() => chooseTab('updates')}
+            onTodos={() => chooseTab('todos')}
             onAddCard={onAddCard}
             onMove={onMove}
           />

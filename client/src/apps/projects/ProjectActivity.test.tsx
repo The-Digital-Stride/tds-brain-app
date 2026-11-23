@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ProjectActivityResponse } from '../../../../shared/project-activity-contract.ts';
 import { card, projectList } from './testing.ts';
 
@@ -13,7 +13,13 @@ const store = vi.hoisted(() => ({
     clients: [] as { slug: string; name: string }[],
     prefs: { favouriteTodos: [] as string[] },
   },
-  todos: { mine: [], open: [], othersCount: 0, team: [{ slug: 'me', name: 'Me' }], canProject: true },
+  todos: {
+    mine: [] as { key: string }[],
+    open: [] as { key: string }[],
+    othersCount: 0,
+    team: [{ slug: 'me', name: 'Me' }],
+    canProject: true,
+  },
 }));
 const dispatch = vi.hoisted(() => vi.fn());
 const api = vi.hoisted(() => ({
@@ -100,6 +106,10 @@ describe('activity on the Overview', () => {
   });
 
   it('opens a to-do in the panel and an update on the Updates tab', async () => {
+    store.todos.mine = [{ key: 'todo/a.md' }];
+    onTestFinished(() => {
+      store.todos.mine = [];
+    });
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
@@ -140,6 +150,52 @@ describe('activity on the Overview', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Sam Taylor added a note/ }));
     expect(await screen.findByText('No updates yet.')).toBeTruthy();
+  });
+
+  it("a teammate's to-do goes to the To-dos tab, never the panel; a finished one not on my lists is plain text", async () => {
+    api.projectActivity.mockResolvedValue(
+      reply({
+        items: [
+          {
+            kind: 'todo-added',
+            text: 'To-do added: Book the photographer',
+            at: null,
+            byName: null,
+            target: { kind: 'todo', key: 'todo/theirs.md' },
+          },
+          {
+            kind: 'todo-closed',
+            text: 'To-do done: Send the quote',
+            at: '2026-11-22T10:00:00Z',
+            byName: 'Sam Taylor',
+            target: { kind: 'todo', key: 'todo/done.md' },
+          },
+        ],
+        comingUp: [
+          {
+            kind: 'todo-due',
+            text: 'Book the photographer',
+            date: '2026-11-27',
+            overdue: false,
+            target: { kind: 'todo', key: 'todo/theirs.md' },
+          },
+        ],
+      }),
+    );
+    await openProject();
+    const done = (await screen.findByText('To-do done: Send the quote')).closest('.line');
+    expect(done?.tagName).toBe('DIV');
+    expect(done?.classList.contains('proj-static')).toBe(true);
+
+    const coming = screen.getByRole('button', { name: /^Book the photographer/ });
+    expect(coming.getAttribute('aria-haspopup')).toBeNull();
+    const added = screen.getByRole('button', { name: /To-do added: Book the photographer/ });
+    expect(added.getAttribute('aria-haspopup')).toBeNull();
+    fireEvent.click(added);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^To-dos/ }).getAttribute('aria-current')).toBeTruthy(),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-todo' }));
   });
 
   it('shows five changes, then the shared Show more, and says where the rest are', async () => {

@@ -9,6 +9,7 @@ import { api } from '../../api.ts';
 import { ShowMore } from '../../shell/ShowMore.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
+import { useStore } from '../../store.tsx';
 import { dateWords } from './logic.ts';
 import { whenWords } from './ProjectUpdates.tsx';
 
@@ -73,40 +74,56 @@ export function useProjectActivity(key: ProjectKey, enabled: boolean): ActivityS
   return { data, error, markShown, retry };
 }
 
-function SinceLine({ item, onOpen }: { item: ActivityItem; onOpen: () => void }) {
+/**
+ * What a row does when pressed: open the to-do panel (only for a to-do on this person's lists, the only ones the
+ * panel can show), switch tab, open a file, or nothing (a finished to-do that isn't on their lists).
+ */
+type RowAction = { panel: boolean; run: () => void } | null;
+
+function SinceLine({ item, action }: { item: ActivityItem; action: RowAction }) {
   // The name is left out when the row already starts with it ("Alex Morgan added a call").
   const name = item.byName && !item.text.startsWith(item.byName) ? item.byName : '';
   const bits = [item.at ? whenWords(item.at) : '', name].filter(Boolean);
+  const text = (
+    <span className="line-text">
+      <span className="line-title">{item.text}</span>
+      {bits.length > 0 ? <span className="line-meta">{bits.join(' · ')}</span> : null}
+    </span>
+  );
   return (
     <li>
-      <button
-        type="button"
-        className="line"
-        onClick={onOpen}
-        aria-haspopup={item.target.kind === 'todo' ? 'dialog' : undefined}
-      >
-        <span className="line-text">
-          <span className="line-title">{item.text}</span>
-          {bits.length > 0 ? <span className="line-meta">{bits.join(' · ')}</span> : null}
-        </span>
-      </button>
+      {action ? (
+        <button
+          type="button"
+          className="line"
+          onClick={action.run}
+          aria-haspopup={action.panel ? 'dialog' : undefined}
+        >
+          {text}
+        </button>
+      ) : (
+        <div className="line proj-static">{text}</div>
+      )}
     </li>
   );
 }
 
 /**
  * The two cards at the top of a project's Overview: "Since you last looked" and "Coming up".
- * `onUpdates` switches to the Updates tab.
+ * `onUpdates` and `onTodos` switch to the Updates and To-dos tabs.
  */
 export function ProjectActivity({
   projectKey,
   activity,
   onUpdates,
+  onTodos,
 }: {
   projectKey: ProjectKey;
   activity: ActivityState;
   onUpdates: () => void;
+  onTodos: () => void;
 }) {
+  const { todos } = useStore();
   const shell = useContext(ShellContext);
   const dispatch = shell?.dispatch ?? (() => {});
   const [message, setMessage] = useState('');
@@ -136,10 +153,21 @@ export function ProjectActivity({
       setMessage("That file can't be opened from here. Look for it under Files.");
     }
   };
-  const open = (t: ActivityItem['target']) => {
-    if (t.kind === 'todo') openTodo(t.key);
-    else if (t.kind === 'file') void openFile(t.path);
-    else onUpdates();
+  // The panel can only show a to-do on this person's lists (a teammate's, or a finished one, would leave an
+  // empty panel over a locked page). A teammate's open to-do is listed on the To-dos tab instead.
+  const onMyLists = (key: string) =>
+    todos !== null && (todos.mine.some((t) => t.key === key) || todos.open.some((t) => t.key === key));
+  const todoAction = (key: string, stillOpen: boolean): RowAction =>
+    onMyLists(key)
+      ? { panel: true, run: () => openTodo(key) }
+      : stillOpen
+        ? { panel: false, run: onTodos }
+        : null;
+  const sinceAction = (item: ActivityItem): RowAction => {
+    const t = item.target;
+    if (t.kind === 'todo') return todoAction(t.key, item.kind !== 'todo-closed');
+    if (t.kind === 'file') return { panel: false, run: () => void openFile(t.path) };
+    return { panel: false, run: onUpdates };
   };
 
   return (
@@ -164,7 +192,7 @@ export function ProjectActivity({
               {(showAll ? data.items : data.items.slice(0, SINCE_ROWS)).map((item, i) => (
                 // Items can repeat, so the position keeps keys unique.
                 // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
-                <SinceLine key={i} item={item} onOpen={() => open(item.target)} />
+                <SinceLine key={i} item={item} action={sinceAction(item)} />
               ))}
             </ul>
             {data.items.length > SINCE_ROWS ? (
@@ -206,7 +234,7 @@ export function ProjectActivity({
             <ul className="lib-list">
               {data.comingUp.map((c, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
-                <ComingLine key={i} item={c} onOpen={openTodo} />
+                <ComingLine key={i} item={c} action={c.target ? todoAction(c.target.key, true) : null} />
               ))}
             </ul>
           )}
@@ -216,7 +244,7 @@ export function ProjectActivity({
   );
 }
 
-function ComingLine({ item, onOpen }: { item: ComingUpItem; onOpen: (key: string) => void }) {
+function ComingLine({ item, action }: { item: ComingUpItem; action: RowAction }) {
   const body = (
     <>
       <span className="line-text">
@@ -230,11 +258,15 @@ function ComingLine({ item, onOpen }: { item: ComingUpItem; onOpen: (key: string
       ) : null}
     </>
   );
-  const target = item.target;
   return (
     <li>
-      {target ? (
-        <button type="button" className="line" aria-haspopup="dialog" onClick={() => onOpen(target.key)}>
+      {action ? (
+        <button
+          type="button"
+          className="line"
+          aria-haspopup={action.panel ? 'dialog' : undefined}
+          onClick={action.run}
+        >
           {body}
         </button>
       ) : (

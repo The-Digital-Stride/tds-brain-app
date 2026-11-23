@@ -324,6 +324,17 @@
     margin-top: var(--sp-8);
   }
 
+  /* "Notes filed" text with its Open notes button, on the Meetings card */
+  .proj-notes {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  /* The meeting's text keeps a readable width; its action wraps under it when narrow. */
+  .proj-meeting > .line-text {
+    flex: 1 1 220px;
+  }
+
   /* Read-only client on the edit form, with Move… beside it */
   .proj-static {
     display: flex;

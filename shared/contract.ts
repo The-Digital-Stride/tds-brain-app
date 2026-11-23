@@ -1965,6 +1965,8 @@ export const ROUTES = {
   projectActivity: '/api/projects/activity',
   /** R2 phase 3. `POST {key}` → 204: saves this person's "last looked" snapshot in the app data folder. */
   projectSeen: '/api/projects/seen',
+  /** R2 phase 4. `GET ?key=<ProjectKey>` → ProjectMeetingsResponse (shared/project-meetings-contract.ts). This Mac's own calendar only. */
+  projectMeetings: '/api/projects/meetings',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

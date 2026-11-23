@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.69.0 — 2026-11-23
+
+- **feat**: meetings on the project home, from your own calendar
+- **fix**: read a client's Website line written as a bullet
+- **fix**: tighten meeting matching after review
+
 ## v0.68.1 — 2026-11-23
 
 - **refactor**: remove due reminders from Ads Command Centre

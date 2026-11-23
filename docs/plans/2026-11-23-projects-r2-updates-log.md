@@ -39,11 +39,17 @@ the status, health or Account Owner changes. It is the base that phase 3 (activi
    layout. `by` comes from this Mac's identity and `at` from its clock, never from the request. The random
    six-character suffix means two people (or one person's two Macs) never write the same file, so sync never
    clashes. Kinds people can add: `note` and `call`. Archived projects refuse; personal projects are allowed
-   (their folder never syncs); card-less folders are allowed. Capability `projects-updates-v1`.
+   (their folder never syncs; `by: me` when there's no team slug). **A folder with no readable card refuses**
+   (overseer blocker 1): a card-less folder may be a moved or archived project's leftover, and an entry there
+   would make git keep it and turn it into a ghost project that wins `byKey`. `updates/` as a link refuses.
+   Capability `projects-updates-v1`.
    Plain: anyone on the team can add a dated note to a project, and two people adding at once never collide.
-2. **Entries are append-only in phase 2.** No edit or delete. A mistake is fixed by adding a correction.
-   (Overseer to rule; see the open question below.)
-   Plain: the log is a record; nothing in it changes behind anyone's back.
+2. **No editing; removal allowed (overseer ruling a).** A new `update-remove` action removes one `note` or
+   `call` entry: its author, the brain's Owner or a scout; never auto entries or later kinds. It checks the
+   entry's hash (`expect`). A wrongly ticked "fine for the client" can't be fixed by a correction, and later
+   phases show those to clients. The confirm says a shared entry stays in the brain's history and a personal
+   one is gone for good. The `tdsapp-files` protected rule is untouched.
+   Plain: you can take back your own entry, but nobody rewrites the log.
 3. **Internal unless marked.** Each entry has `client_safe` (default false). The add form says "Fine to share
    with the client" as a checkbox, off by default. Only client-safe entries may ever appear in client-facing
    reports (later phases).
@@ -51,14 +57,18 @@ the status, health or Account Owner changes. It is the base that phase 3 (activi
 4. **Automatic entries on `edit`.** When an edit changes the status, the health light or the Account Owner,
    the script writes one entry per change after the card is written (`AUTO_UPDATE_FIELDS`, wording fixed in the
    contract). They are internal. A failure writing one never undoes the card change; the reply says
-   `updatesFailed: true` and the app shows a notice. Comms light, dates and the rest do not log.
+   `updatesFailed: true` and the app says the change was saved but its log entry wasn't. Each auto entry also
+   carries flat `change`, `from`, `to` keys (raw values), so later phases read facts, not wording. The same
+   value sent back writes nothing (older apps send every field). Comms light, dates and the rest do not log.
    Plain: the important changes are written into the log for you.
 5. **Reading.** New `server/brain/project-updates.ts` lists `updates/*.md` for a project (live or archived;
-   archived read-only), parses each with the flat frontmatter reader, sorts newest first, pages by
+   archived read-only) **plus, read-only and marked, entries in its `moved_from` folders and any leftover
+   folder at its key** (blocker 1: a note added by someone who hadn't synced a move never vanishes), parses each with the flat frontmatter reader, sorts newest first, pages by
    `UPDATES_PAGE` with `before`, counts unreadable files, and fills `byName` from the team roster. A new
    `GET ROUTES.projectUpdates` returns `ProjectUpdatesResponse`. Cached with the projects index and dropped
-   by the existing watcher (`projects.changed(path)`). `canAdd` = capability present, project live, and the
-   person may change projects.
+   by the existing watcher (`projects.changed(path)`). `canAdd` = capability present, project live with a card,
+   and the person may change projects. Each item has `canRemove` and its file `version`. `kind` is read as
+   plain text so a newer kind never breaks an older app. An unknown `before` answers `bad-request`.
    Plain: the app reads the log straight from the project folder, so teammates' entries appear after a sync.
 6. **An Updates tab on the project page**, after To-dos and before Files. Newest first: who, when (UK date and
    time), a small kind label (Note, Call, Status, Account Owner; later kinds shown as their name), an
@@ -67,22 +77,27 @@ the status, health or Account Owner changes. It is the base that phase 3 (activi
    checkbox, Add) uses `useSheetHold`, reuses Fold/btn/notice per `docs/design-system.md`, and is hidden when
    `canAdd` is false (with the existing read-only notice explaining why when the script is out of date).
    Plain: open a project, read its diary, and add to it in one place.
-7. **Claude can add one.** The skill's SKILL.md documents `update`. The phase 1 project-chat instruction gains
-   one sentence: "When the user asks you to log progress on this project, or after you file a call note for it,
-   offer to add a short update with the tdsapp-projects skill's `update` action, marked internal unless the
-   user says it's fine for the client." Brain-side: a one-line meeting-notes edit prepared in
-   `brain-skills/tdsapp-projects/brain-rules/r2-updates-log.md` for Ian's yes.
-   Plain: after a call, Claude can offer to note it in the project's diary.
+7. **Claude can add one (overseer ruling e).** The skill's SKILL.md documents `update` and `update-remove`.
+   The phase 1 project-chat instruction's "Never create or use … inside the project folder." sentence is
+   extended with: "Add a project update only with the tdsapp-projects skill's `update` action, marked internal
+   unless the user says it's fine for the client." No separate offer sentence: the after-call offer lives only
+   in the meeting-notes edit (`brain-skills/tdsapp-projects/brain-rules/r2-updates-log.md`, for Ian's yes), so
+   Claude never offers twice.
+   Plain: after a call, Claude can offer to note it in the project's diary, once.
 8. **Backward compatibility.** Older apps ignore `updates/` (already hidden). An older script (0.3.x) answers
    no `projects-updates-v1`: the tab still lists any entries but can't add, with the usual "update the brain's
    skills" notice. A new script with an older app: `edit` still answers the same shape (the extra
    `updatesFailed` field is optional); auto entries just appear in the folder.
    Plain: every Mac keeps working whichever version it has, and nothing breaks before everyone updates.
 
-### Open question for the overseer
+### Overseer pre-review (2026-11-23)
 
-- Decision 2: append-only, or let the author delete (or edit) their own `note`/`call` entry within a short
-  window? Delete would need a script action and the protected-name rule loosened for that one case.
+Blocker 1 (entries stranded by a move or archive) folded into decisions 1 and 5. Rulings: (a) removal, no edit
+(decision 2); (b) auto fields and "card change stands" upheld (decision 4); (c) phase 5 email and phase 6 digest
+fit this layout with no format change, given `kind` as text, the flat `change/from/to` keys and the remove
+action; (d) Opus for the script justified, and it owns `update-remove` and the card rule; (e) extend the
+existing sentence instead of a new one (decision 7). Should items folded in: flat keys, `kind` as text, `by: me`,
+`updates/` link refused, same-value-no-entry test, unknown `before` refused.
 
 ## Contract
 
@@ -104,11 +119,11 @@ and `ROUTES.projectUpdates` before builders start.
 
 | Test file | Proves | Owner |
 |---|---|---|
-| `brain-skills/tdsapp-projects/test/tdsapp-projects.test.ts` | `update` writes the reserved layout with `by`/`at` from identity/clock; name matches `UPDATE_FILE_PATTERN`; clash retried; archived refused; empty/over-long/other kinds refused; personal and card-less allowed; `edit` writes one auto entry per changed status/health/owner with the fixed wording, none for other fields; auto-entry failure keeps the card change and answers `updatesFailed`; capability listed | A |
-| `server/brain/project-updates.test.ts` | newest-first order and tie-break; paging with `before`; unreadable counted; unknown kinds kept; `byName`; archived read-only; `canAdd` rules | B |
+| `brain-skills/tdsapp-projects/test/tdsapp-projects.test.ts` | `update` writes the reserved layout with `by`/`at` from identity/clock (`me` for a personal project with no slug); name matches `UPDATE_FILE_PATTERN`; clash retried; archived and card-less refused; `updates/` link refused; empty/over-long/other kinds refused; personal allowed; `update-remove` by author / Owner / scout, refused for others, for auto entries, outside `updates/`, and on a hash mismatch; `edit` writes one auto entry per changed status/health/owner with the fixed wording and `change/from/to`, none for other fields and none when a value is sent back unchanged; auto-entry failure keeps the card change and answers `updatesFailed`; capability listed | A |
+| `server/brain/project-updates.test.ts` | newest-first order and tie-break; paging with `before`, unknown `before` refused; unreadable counted; unknown kinds kept as text; `byName`; archived read-only; entries in a `moved_from` folder and a leftover folder listed read-only and marked; `canAdd` and `canRemove` rules | B |
 | `server/http/routes.test.ts` | the GET route through the real gate; `update` action shape accepted by `projectsChange`, extra fields refused | B |
-| `server/engine/session-manager.test.ts` | the decision 7 sentence is in a project chat's instructions | B |
-| `client/src/apps/projects/ProjectUpdates.test.tsx` | list renders entries with markers; add form sends the action; form hidden when `canAdd` false; Show older pages | C |
+| `server/engine/session-manager.test.ts` | the decision 7 sentence is in a project chat's instructions (shared and personal variants) | B |
+| `client/src/apps/projects/ProjectUpdates.test.tsx` | list renders entries with markers (incl. "from the old folder"); add form sends the action; form hidden when `canAdd` false; Remove only where `canRemove`, with a confirm whose wording differs for personal projects; Show older pages; `updatesFailed` notice on an edit | C |
 
 ## Gates
 

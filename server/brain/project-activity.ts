@@ -247,9 +247,12 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
       for (const c of closed) if (c) found.push(c);
 
       const seenFiles = new Set(before.files);
+      // The Files read also lists linked files kept outside the folder: those are links, not new files.
+      const linkSet = new Set(nowLinks);
+      const isOutsideLink = (path: string) => !path.startsWith(prefix) && linkSet.has(path);
       if (!cutList(before.files)) {
         for (const [rel, path] of fileMap)
-          if (!seenFiles.has(rel))
+          if (!seenFiles.has(rel) && !isOutsideLink(path))
             found.push({
               kind: 'file-added',
               text: `New file: ${baseName(path)}`,
@@ -261,8 +264,9 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
       const seenLinks = new Set(before.links);
       const filePaths = new Set(fileMap.values());
       if (!cutList(before.links)) {
+        // A path linked AND inside the folder shows once, as a file.
         for (const path of nowLinks)
-          if (!seenLinks.has(path) && !filePaths.has(path))
+          if (!seenLinks.has(path) && !(filePaths.has(path) && path.startsWith(prefix)))
             found.push({
               kind: 'link-added',
               text: `Linked: ${baseName(path)}`,

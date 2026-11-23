@@ -73,7 +73,9 @@ export function useProjectActivity(key: ProjectKey, enabled: boolean): ActivityS
 export const hasNews = (a: ActivityState): boolean => (a.data?.items.length ?? 0) > 0;
 
 function SinceLine({ item, onOpen }: { item: ActivityItem; onOpen: () => void }) {
-  const bits = [item.at ? whenWords(item.at) : '', item.byName ?? ''].filter(Boolean);
+  // The name is left out when the row already starts with it ("Alex Morgan added a call").
+  const name = item.byName && !item.text.startsWith(item.byName) ? item.byName : '';
+  const bits = [item.at ? whenWords(item.at) : '', name].filter(Boolean);
   return (
     <li>
       <button type="button" className="line proj-activity-row" onClick={onOpen}>

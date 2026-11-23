@@ -190,6 +190,14 @@ describe('project activity', () => {
     expect(r.items[1]?.target).toEqual({ kind: 'file', path: `${FOLDER}/sub/new.pdf` });
   });
 
+  it('a linked file kept outside the folder reads as Linked, though the Files read lists it too', async () => {
+    const s = setup(seed({ files: ['old.md'] }), {
+      card: card({ links: ['clients/acme/notes/call.md'] }),
+      files: [`${FOLDER}/old.md`, 'clients/acme/notes/call.md'],
+    });
+    expect(await texts(s)).toEqual(['Linked: call.md']);
+  });
+
   it('file paths are relative to the folder, so a file outside it keeps its full path', async () => {
     const s = setup(seed({ files: ['brief.md', 'clients/acme/shared/x.md'] }), {
       files: [`${FOLDER}/brief.md`, 'clients/acme/shared/x.md'],

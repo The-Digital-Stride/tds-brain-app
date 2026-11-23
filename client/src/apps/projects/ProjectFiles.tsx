@@ -7,13 +7,16 @@ import {
 } from '../../../../shared/contract.ts';
 import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
+import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { FORMAT_ICONS } from '../documents/icons.ts';
 import { useLoaded } from '../shared/data.ts';
 import { Thumb } from '../shared/Thumb.tsx';
 import { useProjectChange } from './useChange.ts';
+import { useKeepFocus } from './useKeepFocus.ts';
 
 const KINDS: { kind: LibraryKind; title: string }[] = [
   { kind: 'image', title: 'Images' },
@@ -53,7 +56,7 @@ function FileRow({
           </span>
           <span className="line-meta">
             {item.group}
-            {linked ? ' · added' : ''}
+            {linked ? ' · added from the library' : ''}
           </span>
         </span>
       </button>
@@ -158,9 +161,27 @@ function Picker({
 
   const chosen = [...picked.values()];
   const count = chosen.length;
+  // Chosen files are unsaved work: leaving the page or switching tab asks first (Actions rule 9).
+  const leave = useSheetHold(count > 0);
+  const keepFocus = useKeepFocus();
 
   return (
-    <section className="card proj-card" aria-label="Add files">
+    <section className="card proj-card" aria-label="Add files" onFocus={keepFocus.track}>
+      {leave.asking ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={leave.discard}
+          onCancel={() => {
+            leave.keep();
+            keepFocus.restore();
+          }}
+        />
+      ) : null}
       <form className="proj-search" onSubmit={(e) => void search(e)} aria-label="Search files to add">
         <label htmlFor={id} className="visually-hidden">
           Search files to add

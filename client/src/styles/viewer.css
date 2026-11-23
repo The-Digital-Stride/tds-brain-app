@@ -336,6 +336,8 @@
   /* The band is the shared `.panel-head`; this only lets the "send the files first" note take its own line. */
   .chat-drawer-head {
     flex-wrap: wrap;
+    /* Fixed padding, so the buttons stay put when the note wraps onto a second line (47px at rest, as before). */
+    padding-block: calc(var(--sp-6) + 1px) var(--sp-8);
   }
   .chat-drawer-name {
     flex: 1;

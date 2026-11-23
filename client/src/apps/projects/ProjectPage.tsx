@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type {
   ProjectCard,
@@ -9,6 +9,7 @@ import type {
 import { ApiFailure, api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
+import { ShellContext } from '../../shell/shell-context.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import {
@@ -517,7 +518,15 @@ export function ProjectPage({
   const canAddTodo = todos?.canProject === true && !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
+    if (tab !== 'todos') setAdding(false);
   }, [tab]);
+  // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
+  // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
+  const shell = useContext(ShellContext);
+  const chooseTab = (next: ProjectTab) => {
+    if (shell?.sheetHold.dirty) shell.guardLeave(() => onTab(next));
+    else onTab(next);
+  };
   return (
     <>
       <div className="proj-head">
@@ -573,7 +582,7 @@ export function ProjectPage({
         <SheetTabs
           label="Project sections"
           current={tab}
-          onChoose={(id) => onTab(id as ProjectTab)}
+          onChoose={(id) => chooseTab(id as ProjectTab)}
           items={[
             { id: 'overview', label: 'Overview', dot: null },
             { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },

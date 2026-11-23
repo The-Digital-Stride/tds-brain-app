@@ -230,7 +230,7 @@ describe('the move screen', () => {
     ).toBeTruthy();
     expect(within(ask).getByText(/You can't make it personal again/)).toBeTruthy();
     expect(
-      within(ask).getByText(/1 linked personal file from outside this project will be unlinked/),
+      within(ask).getByText(/1 personal file added from outside this project will be removed from it/),
     ).toBeTruthy();
     expect(within(ask).getByText(/Ask the team to sync first/)).toBeTruthy();
     expect(document.activeElement).toBe(within(ask).getByRole('button', { name: 'Cancel' }));

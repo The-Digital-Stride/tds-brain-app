@@ -163,7 +163,7 @@ export function rowMeta(card: ProjectCard): string {
   const bits = [card.archived ? 'Archived' : STATUS_WORDS[statusOf(card)]];
   if (card.end) bits.push(`ends ${dateWords(card.end)}`);
   bits.push(todoWords(card.openTodos).toLowerCase());
-  bits.push(card.health ? `Health: ${LIGHT_WORDS[card.health].toLowerCase()}` : 'No health light');
+  bits.push(card.health ? `Health: ${LIGHT_WORDS[card.health].toLowerCase()}` : 'Health: not set');
   return bits.join(' · ');
 }
 

@@ -152,13 +152,13 @@ named here or it isn't one.
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
    opens it large. Project Files has no pane, so its row opens the file.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
-   remove (bin, or X for a chip) at the very edge. At most three icons. Where the row's main action is an icon
+   remove (bin, or X for a chip or a file added to a to-do or project) at the very edge. At most three icons. Where the row's main action is an icon
    (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.
 3. **One icon, one verb.**
 
    | Icon | Means only |
    |---|---|
-   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip out of a set. Never ends work |
+   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip, or a file added to a to-do or project, out of a set. Never ends work |
    | `end` | End chat: ends a chat session (Open chat rows, the chat's top bar). Not a square, so it can't be read as Stop |
    | `bin` | delete |
    | `edit` (pencil) | edit |

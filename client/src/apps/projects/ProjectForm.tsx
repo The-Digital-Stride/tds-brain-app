@@ -35,6 +35,7 @@ import {
   valuesFromCard,
 } from './logic.ts';
 import { useProjectChange } from './useChange.ts';
+import { useKeepFocus } from './useKeepFocus.ts';
 
 /** Form order, so the first invalid field gets focus. Ids match `id(name)` below. */
 const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brief', 'team'] as const;
@@ -174,6 +175,8 @@ export function ProjectForm({
   // A page change (the rail, search, Home) while there are changes is held by the shell, and this form asks: the
   // strip's third reason, 'leave' (plan 2026-11-23-ux-follow-ups, decision 1). The hold is cleared on unmount.
   const leave = useSheetHold(dirty);
+  // Keep editing gives focus back to the field that had it before the question (the strip takes it while it shows).
+  const keepFocus = useKeepFocus();
   // One strip: the last thing asked for decides what Discard does.
   const reason = leave.asking ? 'leave' : asking;
   const cancel = () => {
@@ -262,7 +265,13 @@ export function ProjectForm({
   const clientName = clients.find((c) => c.slug === card?.client)?.name ?? card?.client ?? '';
 
   return (
-    <form className="proj-form-page" onSubmit={(e) => void submit(e)} noValidate aria-label={heading}>
+    <form
+      className="proj-form-page"
+      onSubmit={(e) => void submit(e)}
+      onFocus={keepFocus.track}
+      noValidate
+      aria-label={heading}
+    >
       <div className="proj-head">
         <h2 className="proj-title">{heading}</h2>
       </div>
@@ -285,6 +294,7 @@ export function ProjectForm({
           onCancel={() => {
             if (leave.asking) leave.keep();
             setAsking('');
+            keepFocus.restore();
           }}
         />
       ) : null}

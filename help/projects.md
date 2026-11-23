@@ -24,7 +24,7 @@ Projects shows the work the team does for each client. Each project has a page w
 
 1. Open Projects from the rail.
 2. Choose **Mine** to see only your projects. Use the filters for status, Account Owner and service.
-3. Open a project. **Overview** shows the details and team. **To-dos** shows what is open. **Files** shows images and documents. Press **Add files** to add several at once.
+3. Open a project. **Overview** shows the details and team. **To-dos** shows what is open. **Files** shows images and documents. **Add files** adds them from the library; the cross takes one off again.
 4. Press **New project** to add one. Press **Edit**, at the right of the project's name, to change one. Press **Add to team** beside a person marked "from to-dos" to keep them on the team.
 5. To move a project to another client, press **Move**.
 6. When a project is finished, press **Archive** on its Overview. Choose what happens to each open to-do, then press **Archive**.
@@ -35,7 +35,6 @@ Projects shows the work the team does for each client. Each project has a page w
 ## Good to know
 
 - A project without a card is read-only. Press **Add a card** to fix that.
-- Archived projects stay out of the list and pickers.
 - Anyone who can edit a project can archive it. Only its Account Owner or the brain's Owner can delete it.
 - Anyone on the team can create, edit and rename shared projects. Only the Account Owner, an owner or a scout can change the Account Owner.
 - Personal projects are only yours, and a move can't take a project back to personal.

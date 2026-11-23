@@ -150,4 +150,27 @@ needs, reserved names, and the optional fields added to `StartSessionRequest`, `
 
 ## Review outcomes
 
-(filled at the end)
+- **Overseer pre-review:** 4 blockers, all fixed in the plan before building: `parseStartRequest` dropped
+  `project` (B1); "save everything there" clashed with the brain's skill paths and private data (B2, verbatim
+  wording fixed in decision 4); project page and to-do panel entry points were missing (B3); resume must never
+  refuse (B4). Rulings: decision 9 upheld (no client-guess extension), restoring the client on resume is right,
+  Chats drawer narrowing deferred, Builder A on Opus justified.
+- **Builder gaps closed by the lead:** the projects index wasn't exposed to the session manager
+  (`BrainReaders.projectsIndex`); to-do chats from the project's own To-dos tab carried no project.
+- **Merge with main (v0.64.3, wake-ended-chat):** a woken chat now sends its project too; the saved place wins,
+  else the page's client/project are kept when valid and dropped (never refused) when not.
+- **Correctness review:** 1 should-fix confirmed and fixed: an older chat woken with a place never saved it (the
+  session id doesn't change on resume, so the save on `init` didn't run). 1 consider fixed: Chats labels didn't
+  follow a moved project. Test gaps closed for the wake path and moved labels; the project page buttons and the
+  to-do-wins-over-Working-on path are covered by the browser check only.
+- **Security review:** no findings (folder always from the index; titles cleaned everywhere they enter
+  Claude's instructions; private-data sentences present for shared projects; store bounded and never wiped).
+- **UX review:** 3 findings fixed (help `reviewed` dates, Projects help names the new button, New chat and Edit
+  sit together at the end of the header).
+- **Browser check (throwaway copy of the demo brain, real Claude):** New chat for this project → Home shows
+  "Project: Winter boiler campaign"; Claude saved the brief in `clients/acme-heating/projects/boiler-campaign/`
+  without asking; it shows on the project's Files tab; Chats rows read "Acme Heating · Winter boiler campaign";
+  a plain Acme Heating chat asked "Which project is this note of next steps for?" with both projects first;
+  a chat ended and reopened from Earlier kept its client and project.
+- **Not done here:** the brain-side wording (`brain-skills/tdsapp-projects/brain-rules/r2-chat-project.md`)
+  waits for Ian's yes.

@@ -94,6 +94,7 @@ import {
   type SkillLevels,
 } from '../../shared/levels-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
+import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import { UPDATE_SUMMARY_MAX } from '../../shared/project-updates-contract.ts';
 import {
   PROJECT_BRIEF_MAX,
@@ -108,6 +109,7 @@ import {
   PROJECTS_ERROR_STATUS,
   type ProjectAction,
   type ProjectFields,
+  type ProjectKey,
   type ProjectMoveRequest,
   type ProjectRemoveRequest,
   ProjectsError,
@@ -166,7 +168,12 @@ import { type AppEventHub, openStream } from './stream.ts';
 
 export interface RouteContext {
   /** `ads`: Ad Manager's bridge (the real brain always has one; older test fakes don't). Read per request. */
-  brain: BrainReaders & { ads?: AdsService };
+  brain: BrainReaders & {
+    ads?: AdsService;
+    /** Projects R2 phase 3: activity on the project home, and committing what was seen. Beside the contract like `ads`. */
+    projectActivity?: (key: ProjectKey, identity: Identity) => Promise<ProjectActivityResponse>;
+    projectSeen?: (key: ProjectKey, token: string, identity: Identity) => Promise<void>;
+  };
   store: AppStore;
   sessions: SessionManager;
   hub: AppEventHub;
@@ -840,6 +847,9 @@ const PROJECT_NAME_MAX = 120;
 
 const PROJECTS_NOT_ALLOWED = "Changing projects isn't available to you in the app yet.";
 
+/** A token is 32 hex characters; anything much longer is refused outright. */
+const ACTIVITY_TOKEN_MAX = 200;
+
 const projectBad = () => new HttpError(400, 'bad-request', PROJECTS_BAD_REQUEST);
 
 /** A key, checked as the contract says: the pattern, and each side at most PROJECT_KEY_SEGMENT_MAX. */
@@ -1289,6 +1299,45 @@ async function projectsRoute(
     } catch (err) {
       throw projectsFailure(err, ctx, "Reading a project's to-dos");
     }
+    return;
+  }
+
+  if (path === ROUTES.projectActivity) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const read = ctx.brain.projectActivity;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain, key, await identity()));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's activity");
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectSeen) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const body = await readJson(req);
+    // Exactly { key, token }: any other field is refused.
+    if (
+      !isRec(body) ||
+      Object.keys(body).some((k) => k !== 'key' && k !== 'token') ||
+      !isProjectKey(body.key) ||
+      typeof body.token !== 'string' ||
+      body.token === '' ||
+      body.token.length > ACTIVITY_TOKEN_MAX
+    )
+      throw projectBad();
+    const seen = ctx.brain.projectSeen;
+    if (!seen) throw missing();
+    try {
+      await seen.call(ctx.brain, body.key, body.token, await identity());
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'Saving what was seen');
+    }
+    res.writeHead(204, { 'Cache-Control': 'no-store' });
+    res.end();
     return;
   }
 
@@ -2381,6 +2430,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
     path === ROUTES.projectUpdates ||
+    path === ROUTES.projectActivity ||
+    path === ROUTES.projectSeen ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

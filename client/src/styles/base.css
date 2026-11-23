@@ -544,7 +544,8 @@
     vertical-align: middle;
   }
   .badge[data-tone="waiting"],
-  .badge[data-tone="draft"] {
+  .badge[data-tone="draft"],
+  .badge[data-tone="warn"] {
     background: var(--amber-bg);
     color: var(--amber-text);
     border: 1px solid var(--amber-edge);

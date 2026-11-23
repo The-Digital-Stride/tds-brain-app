@@ -1,6 +1,7 @@
 import type { BrainReaders, Identity } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
 import { LEGACY_PROJECTS_SCOPE, ProjectsError } from '../../shared/projects-contract.ts';
+import { createProjectSeenStore } from '../store/project-seen.ts';
 import { type AdsService, type AdsServiceOptions, createAdsService } from './ads-skill.ts';
 import { listClients } from './clients.ts';
 import {
@@ -12,6 +13,7 @@ import {
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
+import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
 import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
@@ -22,8 +24,9 @@ import { createAskedTodos } from './todo-asked.ts';
 import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
 import { createTodoTimeline } from './todo-timeline.ts';
-import { changeTodo, completeTodo, listTodos, uploadTodoFile } from './todos.ts';
+import { changeTodo, completeTodo, listTodos, readTeam, uploadTodoFile } from './todos.ts';
 import { readUsage } from './usage.ts';
+import { memberSlug } from './util.ts';
 import { watchBrain } from './watch.ts';
 
 export interface BrainDeps {
@@ -62,7 +65,12 @@ const DELETE_ACCESS_MS = 10_000;
  * contract so they need nothing new.
  */
 export type SearchableBrain = BrainReaders &
-  Required<Pick<BrainReaders, 'librarySearch'>> & { ads?: AdsService };
+  Required<Pick<BrainReaders, 'librarySearch'>> & {
+    ads?: AdsService;
+    /** Projects R2 phase 3: activity on the project home. Beside the contract like `ads`; the real brain always has them. */
+    projectActivity?: ProjectActivityService['read'];
+    projectSeen?: ProjectActivityService['seen'];
+  };
 
 export function createBrainReaders(
   root: string,
@@ -118,6 +126,32 @@ export function createBrainReaders(
     skill: projectsSkill,
     mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
   });
+  // Activity on the project home: reuses the To-dos, Files and Updates reads; the snapshot lives in the data folder.
+  const projectActivity = createProjectActivity({
+    index: () => projects.index(),
+    todos: (key, identity) => projects.projectTodos(key, identity),
+    files: async (card) => {
+      const [images, documents] = await Promise.all([
+        library.projectFiles(card, 'image'),
+        library.projectFiles(card, 'document'),
+      ]);
+      return { items: [...images.items, ...documents.items], hidden: images.hidden + documents.hidden };
+    },
+    updates: (key, identity) => projectUpdates.read(key, null, identity),
+    done: (id) => readDoneInfo(root, id),
+    roster: async () => {
+      // The script writes `by` as memberSlug(name); the to-do roster uses another slug form. Know both.
+      const roster = new Map<string, string>();
+      for (const m of await readTeam(root).catch(() => [])) {
+        roster.set(m.slug, m.name);
+        const alt = memberSlug(m.name);
+        if (alt && !roster.has(alt)) roster.set(alt, m.name);
+      }
+      return roster;
+    },
+    store: createProjectSeenStore(deps.dataDir ?? null),
+    now,
+  });
   const library = createLibrary(root, {
     projects: () => projects.index(),
     clients: () => listClients(root),
@@ -139,6 +173,8 @@ export function createBrainReaders(
   return {
     root,
     ads,
+    projectActivity: projectActivity.read,
+    projectSeen: projectActivity.seen,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),

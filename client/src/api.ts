@@ -72,6 +72,7 @@ import type {
   TurnLevel,
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
+import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import type {
   ProjectAction,
@@ -268,6 +269,11 @@ export const api = {
       'GET',
       `${ROUTES.projectUpdates}?key=${encodeURIComponent(key)}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
     ),
+  /** Projects R2 phase 3: what changed since this person last looked, and what is due soon. */
+  projectActivity: (key: ProjectKey) =>
+    request<ProjectActivityResponse>('GET', `${ROUTES.projectActivity}?key=${encodeURIComponent(key)}`),
+  /** Commits the snapshot a projectActivity read held (by its token). Answers 204. */
+  projectSeen: (req: ProjectSeenRequest) => request<void>('POST', ROUTES.projectSeen, req),
   projectTodos: (key: ProjectKey) =>
     request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),
   tidy: () => request<TidyList>('GET', ROUTES.projectsTidy),

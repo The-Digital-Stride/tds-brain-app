@@ -28,6 +28,7 @@ import {
   statusOf,
   teamRows,
 } from './logic.ts';
+import { type ActivityState, ProjectActivity, useProjectActivity } from './ProjectActivity.tsx';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
 import { ProjectUpdates } from './ProjectUpdates.tsx';
@@ -238,6 +239,8 @@ function Overview({
   canChange,
   canMove,
   removal,
+  activity,
+  onUpdates,
   onAddCard,
   onMove,
 }: {
@@ -247,6 +250,8 @@ function Overview({
   canChange: boolean;
   canMove: MoveState;
   removal: Removal;
+  activity: ActivityState;
+  onUpdates: () => void;
   onAddCard: () => void;
   onMove: () => void;
 }) {
@@ -333,6 +338,9 @@ function Overview({
       ) : null}
 
       <div className="tray lib-tray">
+        {card.archived ? null : (
+          <ProjectActivity key={card.key} projectKey={card.key} activity={activity} onUpdates={onUpdates} />
+        )}
         <section className="card proj-card" aria-label="Details">
           <dl className="kv">
             <dt>Client</dt>
@@ -517,6 +525,8 @@ export function ProjectPage({
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
   const projectTodos = useProjectTodos(card.key, card.openTodos);
+  // Read once per project; it says what was seen when the person leaves (see useProjectActivity).
+  const activity = useProjectActivity(card.key, !card.archived);
   // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
@@ -608,7 +618,9 @@ export function ProjectPage({
           current={tab}
           onChoose={(id) => chooseTab(id as ProjectTab)}
           items={[
-            { id: 'overview', label: 'Overview', dot: null },
+            // No tab dot for news: a tab's dot means a problem (design-system Page tabs), and a project opens
+            // on its Overview, where "Since you last looked" already sits.
+            { id: 'overview', label: 'Overview' },
             { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
             { id: 'updates', label: 'Updates' },
             { id: 'files', label: 'Files' },
@@ -665,6 +677,8 @@ export function ProjectPage({
             canChange={canChange}
             canMove={moveState(card, list)}
             removal={removal}
+            activity={activity}
+            onUpdates={() => chooseTab('updates')}
             onAddCard={onAddCard}
             onMove={onMove}
           />

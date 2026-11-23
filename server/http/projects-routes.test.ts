@@ -11,6 +11,7 @@ import {
   type TodoAction,
   type TodoList,
 } from '../../shared/contract.ts';
+import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import {
   type ProjectAction,
@@ -66,6 +67,8 @@ const seen = {
   todoChanges: [] as TodoAction[],
   projectTodos: [] as [string, string][],
   updates: [] as [string, string | null, string][],
+  activity: [] as [string, string][],
+  marked: [] as [string, string, string][],
   access: [] as string[],
   moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
   removes: [] as { req: ProjectRemoveRequest; by: string; todos: boolean | undefined }[],
@@ -93,6 +96,14 @@ const PROJECT_TODOS = {
   ],
   count: 1,
 } satisfies ProjectTodosResponse;
+
+const ACTIVITY = {
+  since: '2026-11-20T09:00:00.000Z',
+  token: 'abc123',
+  items: [],
+  more: 0,
+  comingUp: [],
+} satisfies ProjectActivityResponse;
 
 const UPDATES = { updates: [], more: false, unreadable: 0, canAdd: true } satisfies ProjectUpdatesResponse;
 
@@ -193,6 +204,23 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get projectActivity() {
+      return state.has
+        ? async (key: string, by: Identity) => {
+            maybeFail();
+            seen.activity.push([key, by.slug]);
+            return ACTIVITY;
+          }
+        : undefined;
+    },
+    get projectSeen() {
+      return state.has
+        ? async (key: string, token: string, by: Identity) => {
+            maybeFail();
+            seen.marked.push([key, token, by.slug]);
+          }
+        : undefined;
+    },
     get tidy() {
       return state.has
         ? async () => {
@@ -250,6 +278,8 @@ beforeEach(() => {
   seen.todoChanges.length = 0;
   seen.projectTodos.length = 0;
   seen.updates.length = 0;
+  seen.activity.length = 0;
+  seen.marked.length = 0;
   seen.access.length = 0;
   seen.moves.length = 0;
   seen.removes.length = 0;
@@ -338,6 +368,7 @@ describe('the security gate', () => {
       filesPath(KEY, 'image'),
       `${ROUTES.projectTodos}?key=${KEY}`,
       `${ROUTES.projectUpdates}?key=${KEY}`,
+      `${ROUTES.projectActivity}?key=${KEY}`,
       ROUTES.projectsTidy,
     ]) {
       expect((await send(path)).status, path).toBe(401);
@@ -389,6 +420,83 @@ describe('the security gate', () => {
       body: {},
     });
     expect(todo.status).toBe(415);
+  });
+});
+
+describe('GET /api/projects/activity and POST /api/projects/seen', () => {
+  const path = (q: string) => `${ROUTES.projectActivity}?${q}`;
+
+  it('answers the brain reading with who asked', async () => {
+    const r = await get(path(`key=${KEY}`));
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual(ACTIVITY);
+    expect(seen.activity).toEqual([[KEY, 'sam-example']]);
+  });
+
+  it('refuses a bad key, a POST, and a missing service', async () => {
+    for (const q of ['', 'key=Bad%20Key']) expect((await get(path(q))).status, q).toBe(400);
+    expect((await post(ROUTES.projectActivity, {})).status).toBe(405);
+    expect(seen.activity).toEqual([]);
+    state.has = false;
+    expect((await get(path(`key=${KEY}`))).status).toBe(404);
+  });
+
+  it('seen needs the session, the app origin and JSON, like every change', async () => {
+    const body = { key: KEY, token: 'abc123' };
+    const noCookie = await send(ROUTES.projectSeen, {
+      method: 'POST',
+      headers: { origin: `http://${HOST}`, 'content-type': 'application/json' },
+      body,
+    });
+    expect(noCookie.status).toBe(401);
+    const evil = await send(ROUTES.projectSeen, {
+      method: 'POST',
+      headers: { cookie: COOKIE, origin: 'https://evil.example', 'content-type': 'application/json' },
+      body,
+    });
+    expect(evil.status).toBe(403);
+    const form = await send(ROUTES.projectSeen, {
+      method: 'POST',
+      headers: { cookie: COOKIE, origin: `http://${HOST}`, 'content-type': 'text/plain' },
+      body,
+    });
+    expect(form.status).toBe(415);
+    expect(seen.marked).toEqual([]);
+  });
+
+  it('seen answers 204 and passes key, token and who', async () => {
+    const r = await post(ROUTES.projectSeen, { key: KEY, token: 'abc123' });
+    expect(r.status).toBe(204);
+    expect(seen.marked).toEqual([[KEY, 'abc123', 'sam-example']]);
+  });
+
+  it('seen refuses extra fields, a bad key, a missing or long token, a GET and a missing service', async () => {
+    for (const body of [
+      { key: KEY, token: 'abc123', extra: 1 },
+      { key: 'Bad Key', token: 'abc123' },
+      { key: KEY },
+      { key: KEY, token: '' },
+      { key: KEY, token: 5 },
+      { key: KEY, token: 'x'.repeat(201) },
+      [],
+      null,
+    ]) {
+      const r = await post(ROUTES.projectSeen, body);
+      expect(r.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(seen.marked).toEqual([]);
+    expect((await get(ROUTES.projectSeen)).status).toBe(405);
+    state.has = false;
+    expect((await post(ROUTES.projectSeen, { key: KEY, token: 'abc123' })).status).toBe(404);
+  });
+
+  it('an unknown project or token is still 204 (the brain decides nothing is saved)', async () => {
+    expect((await post(ROUTES.projectSeen, { key: 'nobody/nothing', token: 'old' })).status).toBe(204);
+  });
+
+  it('answers a ProjectsError with its status', async () => {
+    state.fail = new ProjectsError('not-found', 'That project is gone.');
+    expect((await get(path(`key=${KEY}`))).status).toBe(404);
   });
 });
 

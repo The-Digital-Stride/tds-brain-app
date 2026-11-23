@@ -21,6 +21,8 @@ const store = vi.hoisted(() => ({
 }));
 const api = vi.hoisted(() => ({
   projects: vi.fn(),
+  projectActivity: vi.fn(async () => ({ since: null, token: null, items: [], more: 0, comingUp: [] })),
+  projectSeen: vi.fn(async () => undefined),
   changeProject: vi.fn(),
   projectFiles: vi.fn(),
   tidy: vi.fn(),

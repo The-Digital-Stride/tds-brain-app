@@ -1961,6 +1961,10 @@ export const ROUTES = {
   projectTodos: '/api/projects/todos',
   /** R2 phase 2. `GET ?key=<ProjectKey>[&before=<path>]` → ProjectUpdatesResponse (shared/project-updates-contract.ts). */
   projectUpdates: '/api/projects/updates',
+  /** R2 phase 3. `GET ?key=<ProjectKey>` → ProjectActivityResponse (shared/project-activity-contract.ts). */
+  projectActivity: '/api/projects/activity',
+  /** R2 phase 3. `POST {key}` → 204: saves this person's "last looked" snapshot in the app data folder. */
+  projectSeen: '/api/projects/seen',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

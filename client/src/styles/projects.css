@@ -99,6 +99,10 @@
   .proj-card {
     padding: var(--sp-12) var(--sp-8) var(--sp-8);
   }
+  /* "Show N more changes" and the note under it, lined up with the rows' text. */
+  .proj-more {
+    padding: var(--sp-4) var(--sp-8) 0;
+  }
   .proj-card .kv {
     padding: 0 var(--sp-8);
   }
@@ -423,7 +427,8 @@
   .line.proj-update {
     align-items: flex-start;
   }
-  .line.proj-update:hover {
+  .line.proj-update:hover,
+  .line.proj-static:hover {
     background: var(--glass-92);
     box-shadow: none;
     transform: none;

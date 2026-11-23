@@ -1629,7 +1629,8 @@ export interface Bootstrap {
  *   `user-message` / `assistant-message` events and leaves it `idle`; the engine starts on the
  *   first message. `resume` must be in the brain's own session list and not already live
  *   (else `not-found` / `already-open`).
- * - `client` must be a slug from `Bootstrap.clients` (else `bad-request`). Ignored on resume.
+ * - `client` must be a slug from `Bootstrap.clients` (else `bad-request`). On resume (a chat woken after it went
+ *   to sleep) it is kept when still known and dropped when not, never refused.
  * - A prompt that begins `/name` for a role-restricted skill is refused with `not-allowed`.
  */
 export interface StartSessionRequest {
@@ -1638,7 +1639,7 @@ export interface StartSessionRequest {
   resume?: string | null;
   /**
    * The to-do this chat is about. Must be an id in the person's current `TodoList` (mine or open),
-   * else `bad-request`. Ignored when `resume` is set.
+   * else `bad-request`. With `resume`, kept when still listed and dropped when not, never refused.
    */
   todoId?: string | null;
   /** Upload ids from `POST /api/uploads`, at most MAX_ATTACHMENTS. With attachments, `prompt` may be empty. */

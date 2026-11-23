@@ -35,6 +35,7 @@ Once you have a personal chat, a second switch appears. It filters by **All**, *
 ## Good to know
 
 - You can have up to four chats open at once. If you start a fifth, the one you left longest is closed. If all four are busy, wait or close one.
+- A chat you haven't used for 30 minutes goes to sleep, and so does every open chat when the app updates. Send a message in it as usual: it wakes up where you left off, with your message, and goes back under **Open**.
 - Close a chat before you delete it.
 - Deleting an earlier chat moves it to the Bin on your Mac. You can put it back from there.
 - If Claude hands parts of a job to helpers, they're listed under that chat.

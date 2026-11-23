@@ -23,7 +23,6 @@ import { Transcript } from './Transcript.tsx';
 const REASONS = {
   working: 'Claude is working. You can stop it with the Stop button.',
   waiting: 'Claude is waiting for your answer above.',
-  closed: 'This chat has ended. Start a new chat to carry on.',
 } as const;
 
 const NO_PAGES: ChatPage[] = [];
@@ -179,7 +178,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
   let reason: string | null = null;
   if (card !== null || state === 'waiting') reason = REASONS.waiting;
   else if (state === 'working' || state === 'starting') reason = REASONS.working;
-  else if (state === 'closed') reason = REASONS.closed;
+  // A chat that has ended is not blocked: the next message reopens it (store `send`).
   const working = state === 'working' || state === 'starting';
   const step = currentStep(chat.items.filter((i) => i.kind === 'tool'));
   const clientName = live?.client ? placeName(live.client, clients) : null;
@@ -309,7 +308,6 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
             focusSignal={composerFocus}
             attention={attentionFor(state)}
             dropZone={column}
-            attachDisabled={state === 'closed'}
             onStop={working && !confirming ? () => void run(() => api.interrupt(sessionId)) : undefined}
             onSend={async (text, uploadIds) => {
               if (isClearCommand(text)) {

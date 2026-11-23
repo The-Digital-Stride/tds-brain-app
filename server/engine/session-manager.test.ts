@@ -511,6 +511,17 @@ describe('a new chat', () => {
     await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
   });
 
+  it('keeps the client of a chat woken after it went to sleep, so Claude still gets the client line', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', prompt: 'carry on', client: 'urban-cooling' });
+    await flush();
+    expect(s.client).toBe('urban-cooling');
+    expect(fx.queries[0]?.options.resume).toBe('old-1');
+    const sp = fx.queries[0]?.options.systemPrompt as { append?: string };
+    expect(sp.append).toContain('clients/urban-cooling/');
+  });
+
   it('refuses when Claude Code is not installed', async () => {
     setup(undefined, { claudePath: null });
     await expectCode(mgr.start({ prompt: 'hi' }), 'engine-missing');
@@ -560,10 +571,21 @@ describe('a chat started on a to-do (A19)', () => {
     expect((await mgr.list()).live).toHaveLength(0);
   });
 
-  it('is ignored (null) when reopening a past chat', async () => {
-    const fx = setup();
+  it('is kept when a chat that went to sleep is woken, and its saved kind stays', async () => {
+    // Saved as personal; the to-do is a TDS one, so its scope must not overwrite the saved kind.
+    const chatKinds = createChatKindStore(null);
+    await chatKinds.set('old-1', 'personal');
+    const fx = setup(undefined, { chatKinds });
     fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
     const s = await mgr.start({ resume: 'old-1', todoId: '20261111-mine.md' });
+    expect(s.todoId).toBe('20261111-mine.md');
+    expect(s.kind).toBe('personal');
+  });
+
+  it('is dropped, never refused, on resume when the to-do has gone', async () => {
+    const fx = setup();
+    fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', todoId: 'gone.md' });
     expect(s.todoId).toBeNull();
   });
 });
@@ -1260,10 +1282,11 @@ describe('reopening a past chat (A4)', () => {
         parent_tool_use_id: 'agent',
       },
     ];
-    const s = await mgr.start({ resume: 'old-1', client: 'urban-cooling' });
+    const s = await mgr.start({ resume: 'old-1', client: 'nobody-we-know' });
     expect(s.sdkSessionId).toBe('old-1');
     expect(s.state).toBe('idle');
     expect(s.title).toBe('Earlier chat about PPC');
+    // A client that is not in the brain is dropped on resume, not refused.
     expect(s.client).toBeNull();
     expect(fx.queries).toHaveLength(0);
     const ev = events(mgr, s.id);

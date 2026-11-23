@@ -2,24 +2,44 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const api = vi.hoisted(() => ({
-  bootstrap: vi.fn(),
-  todos: vi.fn(),
-  sessions: vi.fn(),
-  // The rail's last-sync stamp asks for this.
-  sync: vi.fn(async () => ({ lastSync: null })),
-  startSession: vi.fn(),
-  sendMessage: vi.fn(),
-  updatePrefs: vi.fn(),
-}));
-vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure: class extends Error {} }));
+const { api, ApiFailure } = vi.hoisted(() => {
+  class ApiFailure extends Error {
+    readonly code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+    get notSignedIn() {
+      return false;
+    }
+  }
+  return {
+    ApiFailure,
+    api: {
+      bootstrap: vi.fn(),
+      todos: vi.fn(),
+      sessions: vi.fn(),
+      // The rail's last-sync stamp asks for this.
+      sync: vi.fn(async () => ({ lastSync: null })),
+      startSession: vi.fn(),
+      sendMessage: vi.fn(),
+      updatePrefs: vi.fn(),
+      close: vi.fn(),
+    },
+  };
+});
+vi.mock('./api.ts', () => ({ api, streamUrl: () => '/api/stream', ApiFailure }));
 
 class FakeEventSource {
+  static last: FakeEventSource | null = null;
   readyState = 1;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   static CLOSED = 2;
+  constructor() {
+    FakeEventSource.last = this;
+  }
   addEventListener() {}
   close() {}
 }
@@ -110,5 +130,224 @@ describe('send with files', () => {
     await go('  ', []);
     await waitFor(() => expect(results).toEqual([false]));
     expect(api.startSession).not.toHaveBeenCalled();
+  });
+});
+
+const liveS1 = {
+  id: 's1',
+  sdkSessionId: 'sdk-1',
+  title: 'Report check',
+  client: null,
+  todoId: null,
+  state: 'idle',
+  startedAt: '',
+  lastActivityAt: '',
+};
+
+/** Tells the open page that chat s1 has ended, as the server's stream does. */
+function endS1() {
+  const es = FakeEventSource.last;
+  if (!es?.onmessage) throw new Error('no stream');
+  es.onmessage({
+    data: JSON.stringify({
+      kind: 'chat',
+      sessionId: 's1',
+      item: { seq: 1, at: '2026-11-23T10:00:00Z', event: { type: 'state', state: 'closed' } },
+    }),
+  });
+}
+
+describe('send into a chat that has ended', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    // The first list has the chat open; every later one shows it gone.
+    api.sessions.mockResolvedValueOnce({ live: [liveS1], past: [] });
+  });
+
+  it('reopens a chat the page knows has ended, with the message and files', async () => {
+    render(
+      <StoreProvider>
+        <Probe text=" carry on " ids={['u1']} />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(sessionStorage.getItem('tds-brain-open-chat')).toBe('s1'));
+    await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+    await act(async () => {});
+    await act(async () => endS1());
+    fireEvent.click(await screen.findByText('go'));
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({
+        resume: 'sdk-1',
+        prompt: 'carry on',
+        attachments: ['u1'],
+      }),
+    );
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    await waitFor(() => expect(results).toEqual([true]));
+    // The page follows the reopened chat.
+    await waitFor(() => expect(sessionStorage.getItem('tds-brain-open-chat')).toBe('s9'));
+  });
+
+  it('reopens a chat the server has lost when the page had not heard (the app restarted)', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('not-found', 'That chat could not be found.'));
+    await go('carry on', []);
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({ resume: 'sdk-1', prompt: 'carry on' }),
+    );
+    expect(api.sendMessage).toHaveBeenCalledWith('s1', 'carry on', []);
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('reopens a chat refused as closed', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    await go('carry on', []);
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({ resume: 'sdk-1', prompt: 'carry on' }),
+    );
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('sends to the copy another tab has already reopened', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    api.startSession.mockRejectedValueOnce(new ApiFailure('already-open', 'That chat is already open.'));
+    await go('carry on', []);
+    // The lookup after already-open finds the other tab's copy.
+    api.sessions.mockResolvedValue({ live: [{ ...liveS1, id: 's7' }], past: [] });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenLastCalledWith('s7', 'carry on', []));
+    await waitFor(() => expect(results).toEqual([true]));
+  });
+
+  it('does not reopen when not-found is about something else and the chat is still open', async () => {
+    api.sessions.mockReset();
+    api.sessions.mockResolvedValue({ live: [liveS1], past: [] });
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('not-found', 'That file could not be found.'));
+    await go('carry on', ['u1']);
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('leaves a chat being deleted alone', async () => {
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+    api.startSession.mockRejectedValueOnce(new ApiFailure('already-open', 'That chat is being deleted.'));
+    await go('carry on', []);
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Drives the store the way the screens do, and shows where the person is. */
+function Driver() {
+  const store = useStore();
+  const active = store.activeChat.kind === 'live' ? store.activeChat.sessionId : 'new';
+  return (
+    <div>
+      <p data-testid="where">{`${active}|${store.chatDrawer ?? '-'}`}</p>
+      <button
+        type="button"
+        onClick={() => void store.send('carry on', null, []).then((ok) => results.push(ok))}
+      >
+        send
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          store.openView('tool:ads/manager');
+          store.openChat('s1', { in: 'drawer' });
+        }}
+      >
+        drawer
+      </button>
+      <button type="button" onClick={() => store.openChat('s2')}>
+        other
+      </button>
+      <button type="button" onClick={() => store.holdDeletePastChat('sdk-1', 'Report check')}>
+        delete
+      </button>
+      <button type="button" onClick={() => void store.closeChat('s1').then((ok) => results.push(ok))}>
+        clear
+      </button>
+    </div>
+  );
+}
+
+async function drive() {
+  render(
+    <StoreProvider>
+      <Driver />
+    </StoreProvider>,
+  );
+  await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+  await act(async () => {});
+}
+const where = () => screen.getByTestId('where').textContent;
+
+describe('waking a chat: where the person ends up, and what goes with it', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    api.sessions.mockResolvedValueOnce({
+      live: [{ ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md' }],
+      past: [],
+    });
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+  });
+
+  it('takes the chat’s client and to-do with it', async () => {
+    await drive();
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({
+        resume: 'sdk-1',
+        prompt: 'carry on',
+        client: 'urban-cooling',
+        todoId: '20261111-mine.md',
+      }),
+    );
+  });
+
+  it('stays in the drawer, which follows the woken chat', async () => {
+    await drive();
+    fireEvent.click(screen.getByText('drawer'));
+    await waitFor(() => expect(where()).toBe('s1|s1'));
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(where()).toBe('s9|s9'));
+    expect(results).toEqual([true]);
+  });
+
+  it('never pulls the person back to the chat if they moved on while it woke', async () => {
+    let finish: (v: unknown) => void = () => {};
+    api.startSession.mockReturnValueOnce(new Promise((r) => (finish = r)));
+    await drive();
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('other'));
+    await act(async () => finish({ session: { id: 's9' } }));
+    await waitFor(() => expect(results).toEqual([true]));
+    expect(where()).toBe('s2|-');
+  });
+
+  it('does not bring back a chat that is being deleted', async () => {
+    // The ended chat is listed under Earlier, where the person presses delete.
+    api.sessions.mockReset();
+    api.sessions.mockResolvedValue({
+      live: [liveS1],
+      past: [{ sdkSessionId: 'sdk-1', title: 'Report check', lastModified: '', kind: 'tds' }],
+    });
+    await drive();
+    fireEvent.click(screen.getByText('delete'));
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('/clear in a chat the server no longer knows', () => {
+  it('starts afresh instead of showing an error', async () => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    api.sessions.mockResolvedValueOnce({ live: [liveS1], past: [] });
+    api.close.mockRejectedValueOnce(new ApiFailure('not-found', 'That chat could not be found.'));
+    await drive();
+    fireEvent.click(screen.getByText('clear'));
+    await waitFor(() => expect(results).toEqual([true]));
+    expect(where()).toBe('new|-');
   });
 });

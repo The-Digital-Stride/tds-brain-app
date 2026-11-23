@@ -40,7 +40,7 @@ export interface ComposerProps {
    * column. The box marks it `data-drop` while files are dragged over.
    */
   dropZone?: RefObject<HTMLElement | null>;
-  /** True when files can't be attached (a chat that has ended). */
+  /** True when files can't be attached (the page viewer's box). */
   attachDisabled?: boolean;
   autoFocus: boolean;
   /** Changes when focus should come back here (after an approval or answer). */

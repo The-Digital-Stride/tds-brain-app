@@ -2,6 +2,12 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.65.1 — 2026-11-23
+
+- **fix**: a message Claude Code held back shows why, with Send again
+- **fix**: Send again re-levels in auto mode, is marked sent, and is accessible
+- **fix**: a message sent again counts once towards the kept-model turns
+
 ## v0.65.0 — 2026-11-23
 
 - **feat**: chats remember their project and Claude files its work there

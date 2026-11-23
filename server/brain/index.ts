@@ -12,6 +12,7 @@ import {
 import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
+import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
 import { listSkills, skillAccess } from './skills.ts';
@@ -86,8 +87,19 @@ export function createBrainReaders(
   // One runner per brain, so to-do changes run one at a time.
   const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   // The projects service reads the brain itself; its writes (and the tidy-up's to-do changes) are scripts'.
+  const projectsSkill = createProjectsSkillRunner(root, deps.projectsSkill);
+  // `edit` can answer `updatesFailed` (an auto log entry wasn't written); the service drops the script's answer,
+  // so it is kept here, keyed by the action object the service passes on (Projects R2 phase 2).
+  const editAnswers = new WeakMap<object, { updatesFailed?: true }>();
   const projects = createProjects(root, {
-    skill: createProjectsSkillRunner(root, deps.projectsSkill),
+    skill: {
+      capabilities: () => projectsSkill.capabilities(),
+      run: async (action) => {
+        const result = await projectsSkill.run(action);
+        if (result.updatesFailed) editAnswers.set(action, { updatesFailed: true });
+        return result;
+      },
+    },
     todoSkill,
     clients: () => listClients(root),
     dataDir: deps.dataDir ?? null,
@@ -100,6 +112,11 @@ export function createBrainReaders(
       library.changed(from);
       library.changed(to);
     },
+  });
+  const projectUpdates = createProjectUpdates(root, {
+    index: () => projects.index(),
+    skill: projectsSkill,
+    mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
   });
   const library = createLibrary(root, {
     projects: () => projects.index(),
@@ -171,11 +188,20 @@ export function createBrainReaders(
     projects: (identity) => projects.list(identity),
     projectsIndex: () => projects.index(),
     changeProject: async (action, identity) => {
+      if (action.kind === 'update' || action.kind === 'update-remove') {
+        try {
+          const answer = await projectUpdates.change(action, identity);
+          return { ...(await projects.list(identity)), ...answer };
+        } finally {
+          projects.changed();
+        }
+      }
       const list = await projects.change(action, identity);
       // A card or its links changed: files listed in any scope may now belong elsewhere.
       projects.changed();
-      return list;
+      return { ...list, ...editAnswers.get(action) };
     },
+    projectUpdates: (key, before, identity) => projectUpdates.read(key, before, identity),
     // The service drops its own caches after a move; onMoved (above) drops the library's.
     moveProject: (req, identity, opts) => projects.move(req, identity, opts),
     removeProject: (req, identity, opts) => projects.remove(req, identity, opts),

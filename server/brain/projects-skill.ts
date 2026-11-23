@@ -5,6 +5,7 @@
  * per brain, so changes run one at a time, in the order asked.
  */
 import { promises as fs } from 'node:fs';
+import { UPDATE_FILE_PATTERN, UPDATES_DIR } from '../../shared/project-updates-contract.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
@@ -47,6 +48,10 @@ export interface ProjectsSkillResult {
    * (brain-relative; on this Mac only, git-ignored). The to-do choices still apply.
    */
   leftBehind?: string;
+  /** `update` only: the new entry's brain-relative path (contract ProjectUpdateAction). */
+  file?: string;
+  /** `edit` only: the card change was saved but an automatic updates-log entry wasn't (decision 4). */
+  updatesFailed?: true;
 }
 
 export interface ProjectsSkillRunner {
@@ -87,7 +92,11 @@ const COMMAND = {
   archive: 'archive',
   unarchive: 'unarchive',
   delete: 'delete',
+  update: 'update',
+  'update-remove': 'update-remove',
 } as const;
+/** An entry's brain-relative path: `<folder>/updates/<name>.md`, the name as UPDATE_FILE_PATTERN has it. */
+const UPDATE_FILE = new RegExp(`^(?:[^/]+/)+${UPDATES_DIR}/${UPDATE_FILE_PATTERN.source.slice(1)}`);
 const REMOVE_KINDS: readonly string[] = ['archive', 'unarchive', 'delete'];
 const REFERENCES_MAX = 20;
 /** A move check lists at most this many files (contract ProjectMoveCheck). */
@@ -253,6 +262,21 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
       !/^[0-9a-f]{64}$/.test(reply.version)
     )
       return internal;
+    if (action.kind === 'update') {
+      // The entry's path is inside this project's own updates/ folder, named as the contract says.
+      const file = reply.file;
+      if (
+        typeof file !== 'string' ||
+        file.length > MOVE_PATH_MAX ||
+        reply.key !== action.key ||
+        !UPDATE_FILE.test(file) ||
+        file.split('/').includes('..')
+      )
+        return internal;
+      return { key: reply.key, version: reply.version, file };
+    }
+    if (action.kind === 'edit' && reply.updatesFailed === true)
+      return { key: reply.key, version: reply.version, updatesFailed: true };
     if (action.kind !== 'move') return { key: reply.key, version: reply.version };
     // A move answers the new key, which is always `<client>/<the same slug>`.
     const slug = parseProjectKey(action.key)?.slug;

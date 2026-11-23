@@ -30,11 +30,12 @@ import {
 } from './logic.ts';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
+import { ProjectUpdates } from './ProjectUpdates.tsx';
 import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useProjectTodos } from './useProjectTodos.ts';
 
-export type ProjectTab = 'overview' | 'todos' | 'files';
+export type ProjectTab = 'overview' | 'todos' | 'updates' | 'files';
 
 /** What the Overview needs to archive, unarchive and delete this project. */
 interface Removal {
@@ -482,7 +483,7 @@ function Overview({
   );
 }
 
-/** One project: its title and tabs (Overview, To-dos, Files). */
+/** One project: its title and tabs (Overview, To-dos, Updates, Files). */
 export function ProjectPage({
   card,
   list,
@@ -605,6 +606,7 @@ export function ProjectPage({
           items={[
             { id: 'overview', label: 'Overview', dot: null },
             { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
+            { id: 'updates', label: 'Updates' },
             { id: 'files', label: 'Files' },
           ]}
         />
@@ -661,6 +663,7 @@ export function ProjectPage({
             onAdding={setAdding}
           />
         ) : null}
+        {tab === 'updates' ? <ProjectUpdates card={card} canChange={canChange} /> : null}
         {tab === 'files' ? (
           <ProjectFiles card={card} canChange={editable} linking={linking} onLinking={setLinking} />
         ) : null}

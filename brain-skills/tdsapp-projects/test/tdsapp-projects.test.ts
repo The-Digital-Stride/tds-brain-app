@@ -24,6 +24,12 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
 import {
+  PROJECTS_UPDATES_CAPABILITY,
+  UPDATE_FILE_PATTERN,
+  UPDATE_SUMMARY_MAX,
+  UPDATES_DIR,
+} from '../../../shared/project-updates-contract.ts';
+import {
   archivedFolderPath,
   LINKED_FILE_ROOTS,
   movedFolderPath,
@@ -66,6 +72,8 @@ interface Ctx {
   renameDir?: (from: string, to: string) => void;
   /** Test only: stands in for the recursive remove of a deleted project's hidden folder. */
   removeDir?: (dir: string) => void;
+  /** Test only: stands in for an update file name's random six characters. */
+  updateSuffix?: () => string;
 }
 interface ProjectsModule {
   run(action: string, input: unknown, ctx: Ctx): { exit: number; reply: Reply };
@@ -73,6 +81,10 @@ interface ProjectsModule {
   PROJECTS_CAPABILITY: string;
   PROJECTS_MOVE_CAPABILITY: string;
   PROJECTS_ARCHIVE_CAPABILITY: string;
+  PROJECTS_UPDATES_CAPABILITY: string;
+  UPDATES_DIR: string;
+  UPDATE_FILE_PATTERN: RegExp;
+  UPDATE_SUMMARY_MAX: number;
   PROJECT_MOVED_FROM_MAX: number;
   INTERNAL_CLIENT: string;
   INTERNAL_PRECEDENCE: string[];
@@ -680,7 +692,12 @@ describe('capabilities and the command line', () => {
         ok: true,
         action: 'capabilities',
         version: projects.SCRIPT_VERSION,
-        features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY],
+        features: [
+          PROJECTS_CAPABILITY,
+          PROJECTS_MOVE_CAPABILITY,
+          PROJECTS_ARCHIVE_CAPABILITY,
+          PROJECTS_UPDATES_CAPABILITY,
+        ],
       },
     });
   });
@@ -735,6 +752,10 @@ describe('constants', () => {
     expect(projects.PROJECTS_CAPABILITY).toBe(PROJECTS_CAPABILITY);
     expect(projects.PROJECTS_MOVE_CAPABILITY).toBe(PROJECTS_MOVE_CAPABILITY);
     expect(projects.PROJECTS_ARCHIVE_CAPABILITY).toBe(PROJECTS_ARCHIVE_CAPABILITY);
+    expect(projects.PROJECTS_UPDATES_CAPABILITY).toBe(PROJECTS_UPDATES_CAPABILITY);
+    expect(projects.UPDATES_DIR).toBe(UPDATES_DIR);
+    expect(projects.UPDATE_FILE_PATTERN.source).toBe(UPDATE_FILE_PATTERN.source);
+    expect(projects.UPDATE_SUMMARY_MAX).toBe(UPDATE_SUMMARY_MAX);
     expect(projects.PROJECT_MOVED_FROM_MAX).toBe(PROJECT_MOVED_FROM_MAX);
     expect(projects.INTERNAL_CLIENT).toBe(INTERNAL_CLIENT);
     expect(projects.INTERNAL_PRECEDENCE).toEqual([...INTERNAL_PRECEDENCE]);
@@ -1253,6 +1274,7 @@ describe('move', () => {
       PROJECTS_CAPABILITY,
       PROJECTS_MOVE_CAPABILITY,
       PROJECTS_ARCHIVE_CAPABILITY,
+      PROJECTS_UPDATES_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),
@@ -2235,5 +2257,482 @@ describe('security and correctness review', () => {
     const live = act('unarchive', 'acme/live', { check: true });
     expect(refusal(live)).toEqual({ exit: 2, error: 'bad-request' });
     expect(live.reply.message).toBe("acme/live isn't archived");
+  });
+});
+
+// Projects R2 phase 2 (docs/plans/2026-11-23-projects-r2-updates-log.md): the updates log. `update`
+// and `update-remove` (script 0.4), and the automatic entries `edit` writes.
+describe('updates log', () => {
+  const LIVE = 'clients/acme/projects/website';
+  const UPDATES = `${LIVE}/updates`;
+  const CARD_TEXT =
+    '---\nv: 1\ntitle: Website rebuild\nclient: acme\nstatus: active\nhealth: green\nowner: tess-team\n---\n\nThe brief.\n';
+  const as = (email: string) => git(['config', 'user.email', email]);
+  const runAt = (action: string, input: Record<string, unknown>, extra: Partial<Ctx> = {}) =>
+    projects.run(action, { kind: action, ...input }, { root, home, now: T0, ...extra });
+  const add = (
+    entry: Record<string, unknown> = { kind: 'note', summary: 'Sent the quote.', clientSafe: false },
+    key = 'acme/website',
+    extra: Partial<Ctx> = {},
+  ) => runAt('update', { key, entry }, extra);
+  const entries = (dir = UPDATES) => (existsSync(abs(dir)) ? readdirSync(abs(dir)).sort() : []);
+  const fm = (rel: string) => parseFrontmatter(read(rel));
+  const remove = (file: string, expectHash = sha(file), key = 'acme/website') =>
+    runAt('update-remove', { key, file, expect: expectHash });
+  const editCard = (fields: Record<string, unknown>, extra: Partial<Ctx> = {}) =>
+    runAt('edit', { key: 'acme/website', fields, expect: sha(`${LIVE}/project.md`) }, extra);
+
+  beforeEach(() => {
+    writeFileSync(join(root, '.gitignore'), 'personal/\n*~\n');
+    put(`${LIVE}/project.md`, CARD_TEXT);
+  });
+
+  describe('update', () => {
+    it('writes one entry in the reserved layout, with who and when from this Mac, never the request', () => {
+      const r = runAt('update', {
+        key: 'acme/website',
+        by: 'olive-owner',
+        at: '2020-01-01T00:00:00Z',
+        entry: {
+          kind: 'call',
+          summary: '  Call with Alex:\r\nbudget agreed.  \n',
+          clientSafe: true,
+          by: 'olive-owner',
+          at: '2020-01-01T00:00:00Z',
+        },
+      });
+      expect(r.exit).toBe(0);
+      const names = entries();
+      expect(names).toHaveLength(1);
+      const name = names[0] as string;
+      expect(name).toMatch(UPDATE_FILE_PATTERN);
+      expect(name).toMatch(/^2026-11-20-1020-sam-example-[a-z0-9]{6}\.md$/);
+      expect(r.reply).toEqual({
+        ok: true,
+        action: 'update',
+        key: 'acme/website',
+        version: sha(`${LIVE}/project.md`),
+        file: `${UPDATES}/${name}`,
+      });
+      expect(read(`${UPDATES}/${name}`)).toBe(
+        '---\nv: 1\nkind: call\nby: sam-example\nat: 2026-11-20T10:20:30Z\nclient_safe: true\n---\n\nCall with Alex:\nbudget agreed.\n',
+      );
+      expect(fm(`${UPDATES}/${name}`).data).toEqual({
+        v: '1',
+        kind: 'call',
+        by: 'sam-example',
+        at: '2026-11-20T10:20:30Z',
+        client_safe: 'true',
+      });
+      expect(read(`${LIVE}/project.md`)).toBe(CARD_TEXT);
+    });
+
+    it('names the file by the UK date and time of `at` (BST in summer), and writes client_safe false', () => {
+      const r = add(undefined, 'acme/website', { now: new Date('2026-07-01T23:30:00.000Z') });
+      expect(r.exit).toBe(0);
+      const name = entries()[0] as string;
+      expect(name).toMatch(/^2026-07-02-0030-sam-example-[a-z0-9]{6}\.md$/);
+      expect(fm(`${UPDATES}/${name}`).data).toMatchObject({
+        kind: 'note',
+        at: '2026-07-01T23:30:00Z',
+        client_safe: 'false',
+      });
+      expect(fm(`${UPDATES}/${name}`).body).toBe('\nSent the quote.\n');
+    });
+
+    it('retries a name that already exists with a new suffix, never overwriting', () => {
+      put(`${UPDATES}/2026-11-20-1020-sam-example-aaaaaa.md`, 'theirs');
+      const suffixes = ['aaaaaa', 'bbbbbb'];
+      const r = add(undefined, 'acme/website', { updateSuffix: () => suffixes.shift() as string });
+      expect(r.reply).toMatchObject({ ok: true, file: `${UPDATES}/2026-11-20-1020-sam-example-bbbbbb.md` });
+      expect(read(`${UPDATES}/2026-11-20-1020-sam-example-aaaaaa.md`)).toBe('theirs');
+      // Every try clashing is an internal failure, and still overwrites nothing.
+      const stuck = add(undefined, 'acme/website', { updateSuffix: () => 'aaaaaa' });
+      expect(refusal(stuck)).toEqual({ exit: 1, error: 'internal' });
+      expect(read(`${UPDATES}/2026-11-20-1020-sam-example-aaaaaa.md`)).toBe('theirs');
+      expect(entries().filter((n) => !n.endsWith('.md'))).toEqual([]);
+    });
+
+    it('allows a personal project, writing by: me when this Mac has no team slug', () => {
+      put('personal/projects/jev/project.md', '---\nv: 1\ntitle: Jev\nstatus: active\n---\n');
+      expect(add(undefined, 'personal/jev').reply).toMatchObject({ ok: true });
+      expect(entries('personal/projects/jev/updates')[0]).toMatch(/-sam-example-[a-z0-9]{6}\.md$/);
+      as('stranger@example.test');
+      const r = add({ kind: 'note', summary: 'Mine.', clientSafe: false }, 'personal/jev');
+      expect(r.reply).toMatchObject({ ok: true });
+      const mine = String(r.reply.file);
+      expect(mine).toMatch(/^personal\/projects\/jev\/updates\/2026-11-20-1020-me-[a-z0-9]{6}\.md$/);
+      expect(fm(mine).data.by).toBe('me');
+      // Someone not on the team can't add to a shared project.
+      expect(refusal(add())).toEqual({ exit: 2, error: 'not-allowed' });
+      // A personal project git wouldn't ignore is refused, as every personal write is.
+      writeFileSync(join(root, '.gitignore'), '*~\n');
+      expect(refusal(add(undefined, 'personal/jev'))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(entries('personal/projects/jev/updates')).toHaveLength(2);
+    });
+
+    it('refuses an archived project, a folder with no card or an unreadable one, and an unknown key', () => {
+      put('clients/acme/projects-archive/old/project.md', '---\nv: 1\ntitle: Old\nstatus: done\n---\n');
+      expect(refusal(add(undefined, 'acme/old'))).toEqual({ exit: 2, error: 'not-allowed' });
+      mkdirSync(abs('clients/acme/projects/bare'), { recursive: true });
+      put('clients/acme/projects/bare/notes.md', 'notes');
+      expect(refusal(add(undefined, 'acme/bare'))).toEqual({ exit: 2, error: 'not-allowed' });
+      put(
+        'clients/acme/projects/merge/project.md',
+        '---\n<<<<<<< HEAD\ntitle: A\n=======\ntitle: B\n>>>>>>> x\n---\n',
+      );
+      expect(refusal(add(undefined, 'acme/merge'))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(refusal(add(undefined, 'acme/nothing'))).toEqual({ exit: 2, error: 'not-found' });
+      for (const dir of [
+        'clients/acme/projects-archive/old',
+        'clients/acme/projects/bare',
+        'clients/acme/projects/merge',
+      ]) {
+        expect(existsSync(abs(`${dir}/updates`)), dir).toBe(false);
+      }
+    });
+
+    it('refuses an updates folder that is a link or not a folder', () => {
+      mkdirSync(abs('clients/acme/elsewhere'), { recursive: true });
+      symlinkSync(abs('clients/acme/elsewhere'), abs(UPDATES));
+      expect(refusal(add())).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(readdirSync(abs('clients/acme/elsewhere'))).toEqual([]);
+      rmSync(abs(UPDATES));
+      put(UPDATES, 'a file');
+      expect(refusal(add())).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(read(UPDATES)).toBe('a file');
+    });
+
+    it('refuses an empty or over-long summary, and any kind but note or call', () => {
+      const bad = [
+        undefined,
+        null,
+        'note',
+        { kind: 'note', summary: '   \n ', clientSafe: false },
+        { kind: 'note', summary: 'x'.repeat(UPDATE_SUMMARY_MAX + 1), clientSafe: false },
+        { kind: 'note', summary: 42, clientSafe: false },
+        { kind: 'note', summary: 'Hi', clientSafe: 'yes' },
+        { kind: 'note', summary: 'Hi' },
+        { kind: 'status', summary: 'Status: Active → Done.', clientSafe: false },
+        { kind: 'owner', summary: 'Hi', clientSafe: false },
+        { kind: 'email', summary: 'Hi', clientSafe: false },
+        { summary: 'Hi', clientSafe: false },
+        { kind: 'note', summary: 'a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> x\n', clientSafe: false },
+        { kind: 'note', summary: 'nul\u0000inside', clientSafe: false },
+      ];
+      for (const entry of bad) {
+        const r = runAt('update', { key: 'acme/website', entry });
+        expect(refusal(r), JSON.stringify(entry)).toEqual({ exit: 2, error: 'bad-request' });
+      }
+      expect(entries()).toEqual([]);
+      // Exactly the limit, after trimming, is fine.
+      const r = add({ kind: 'note', summary: ` ${'x'.repeat(UPDATE_SUMMARY_MAX)} `, clientSafe: false });
+      expect(r.reply).toMatchObject({ ok: true });
+    });
+  });
+
+  describe('update-remove', () => {
+    // An entry file as another Mac would have written it.
+    const entry = (by: string, kind = 'note', name = `2026-11-19-0900-${by}-abc123.md`) => {
+      const rel = `${UPDATES}/${name}`;
+      put(
+        rel,
+        `---\nv: 1\nkind: ${kind}\nby: ${by}\nat: 2026-11-19T09:00:00Z\nclient_safe: false\n---\n\nHello.\n`,
+      );
+      return rel;
+    };
+
+    it('lets the author remove their own note, answering the card version', () => {
+      const r = add();
+      const file = String(r.reply.file);
+      expect(remove(file)).toEqual({
+        exit: 0,
+        reply: { ok: true, action: 'update-remove', key: 'acme/website', version: sha(`${LIVE}/project.md`) },
+      });
+      expect(existsSync(abs(file))).toBe(false);
+      expect(read(`${LIVE}/project.md`)).toBe(CARD_TEXT);
+    });
+
+    it("lets the brain's Owner and a scout remove anyone's note or call, and nobody else", () => {
+      const tess = entry('tess-team');
+      const call2 = entry('tess-team', 'call', '2026-11-19-0901-tess-team-def456.md');
+      as('terry@example.test');
+      const r = remove(tess);
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs(tess))).toBe(true);
+      as('olive@example.test');
+      expect(remove(tess).reply).toMatchObject({ ok: true });
+      as('sam@example.test');
+      expect(remove(call2).reply).toMatchObject({ ok: true });
+      as('tess@example.test');
+      const own = entry('tess-team', 'note', '2026-11-19-0902-tess-team-ghi789.md');
+      expect(remove(own).reply).toMatchObject({ ok: true });
+      // Someone not on the team can't remove even their own from a shared project.
+      as('stranger@example.test');
+      const theirs = entry('stranger');
+      expect(refusal(remove(theirs))).toEqual({ exit: 2, error: 'not-allowed' });
+    });
+
+    it('never removes an automatic entry or a later kind, even for the Owner', () => {
+      as('olive@example.test');
+      for (const [kind, name] of [
+        ['status', '2026-11-19-0900-olive-owner-aaa111.md'],
+        ['owner', '2026-11-19-0900-olive-owner-aaa222.md'],
+        ['email', '2026-11-19-0900-olive-owner-aaa333.md'],
+        ['digest', '2026-11-19-0900-olive-owner-aaa444.md'],
+      ] as const) {
+        const file = entry('olive-owner', kind, name);
+        expect(refusal(remove(file)), kind).toEqual({ exit: 2, error: 'not-allowed' });
+        expect(existsSync(abs(file))).toBe(true);
+      }
+      put(`${UPDATES}/2026-11-19-0900-olive-owner-bad000.md`, 'no frontmatter');
+      expect(refusal(remove(`${UPDATES}/2026-11-19-0900-olive-owner-bad000.md`))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+    });
+
+    it('refuses with changed when the entry differs from the one read, and needs expect', () => {
+      const file = entry('sam-example');
+      expect(refusal(remove(file, 'a'.repeat(64)))).toEqual({ exit: 2, error: 'changed' });
+      expect(refusal(runAt('update-remove', { key: 'acme/website', file }))).toEqual({
+        exit: 2,
+        error: 'bad-request',
+      });
+      expect(existsSync(abs(file))).toBe(true);
+    });
+
+    it("refuses anything but a file in this project's own updates folder", () => {
+      const file = entry('sam-example');
+      put('clients/acme/projects/other/project.md', CARD_TEXT);
+      const otherFile = `clients/acme/projects/other/updates/2026-11-19-0900-sam-example-abc123.md`;
+      put(otherFile, read(file));
+      put(`${UPDATES}/notes.md`, 'x');
+      const h = sha(file);
+      for (const bad of [
+        `${LIVE}/project.md`,
+        otherFile,
+        `${UPDATES}/notes.md`,
+        `${UPDATES}/../updates/2026-11-19-0900-sam-example-abc123.md`,
+        `${UPDATES}/sub/2026-11-19-0900-sam-example-abc123.md`,
+        `/${file}`,
+        file.toUpperCase(),
+        '',
+        42,
+      ]) {
+        expect(
+          refusal(runAt('update-remove', { key: 'acme/website', file: bad, expect: h })),
+          String(bad),
+        ).toEqual({
+          exit: 2,
+          error: 'bad-request',
+        });
+      }
+      expect(refusal(remove(`${UPDATES}/2026-11-19-0900-sam-example-zzz999.md`, h))).toEqual({
+        exit: 2,
+        error: 'not-found',
+      });
+      expect(existsSync(abs(file))).toBe(true);
+      expect(existsSync(abs(otherFile))).toBe(true);
+    });
+
+    it('refuses an entry that is a link, an updates folder that is a link, and an archived project', () => {
+      put('clients/acme/target.md', '---\nv: 1\nkind: note\nby: sam-example\n---\n\nx\n');
+      mkdirSync(abs(UPDATES), { recursive: true });
+      const linkName = `${UPDATES}/2026-11-19-0900-sam-example-lnk111.md`;
+      symlinkSync(abs('clients/acme/target.md'), abs(linkName));
+      expect(refusal(remove(linkName, sha('clients/acme/target.md')))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      expect(existsSync(abs('clients/acme/target.md'))).toBe(true);
+      rmSync(abs(UPDATES), { recursive: true });
+      mkdirSync(abs('clients/acme/elsewhere'), { recursive: true });
+      put('clients/acme/elsewhere/2026-11-19-0900-sam-example-abc123.md', 'x');
+      symlinkSync(abs('clients/acme/elsewhere'), abs(UPDATES));
+      expect(
+        refusal(
+          remove(
+            `${UPDATES}/2026-11-19-0900-sam-example-abc123.md`,
+            sha('clients/acme/elsewhere/2026-11-19-0900-sam-example-abc123.md'),
+          ),
+        ),
+      ).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs('clients/acme/elsewhere/2026-11-19-0900-sam-example-abc123.md'))).toBe(true);
+      // Archived: read only.
+      put('clients/acme/projects-archive/old/project.md', '---\nv: 1\ntitle: Old\nstatus: done\n---\n');
+      const old = 'clients/acme/projects-archive/old/updates/2026-11-19-0900-sam-example-abc123.md';
+      put(
+        old,
+        '---\nv: 1\nkind: note\nby: sam-example\nat: 2026-11-19T09:00:00Z\nclient_safe: false\n---\n\nx\n',
+      );
+      expect(refusal(remove(old, sha(old), 'acme/old'))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs(old))).toBe(true);
+    });
+
+    it("lets a personal project's entries by me be removed", () => {
+      put('personal/projects/jev/project.md', '---\nv: 1\ntitle: Jev\nstatus: active\n---\n');
+      as('stranger@example.test');
+      const file = String(add(undefined, 'personal/jev').reply.file);
+      expect(remove(file, sha(file), 'personal/jev').reply).toMatchObject({
+        ok: true,
+        action: 'update-remove',
+      });
+      expect(existsSync(abs(file))).toBe(false);
+    });
+  });
+
+  describe('automatic entries on edit', () => {
+    const autoEntries = () =>
+      entries().map((n) => {
+        const f = fm(`${UPDATES}/${n}`);
+        return { ...f.data, body: f.body } as Record<string, unknown>;
+      });
+
+    it('writes one internal entry per changed status, health and Account Owner, with the fixed wording and facts', () => {
+      const r = editCard({ status: 'on-hold', health: 'amber', owner: 'olive-owner', title: 'Relaunch' });
+      expect(r).toEqual({
+        exit: 0,
+        reply: { ok: true, action: 'edit', key: 'acme/website', version: sha(`${LIVE}/project.md`) },
+      });
+      const names = entries();
+      expect(names).toHaveLength(3);
+      for (const n of names) expect(n).toMatch(/^2026-11-20-1020-sam-example-[a-z0-9]{6}\.md$/);
+      const got = autoEntries().sort((a, b) => String(a.change).localeCompare(String(b.change)));
+      const base = { v: '1', by: 'sam-example', at: '2026-11-20T10:20:30Z', client_safe: 'false' };
+      expect(got).toEqual([
+        {
+          ...base,
+          kind: 'status',
+          change: 'health',
+          from: 'green',
+          to: 'amber',
+          body: '\nHealth: Green → Amber.\n',
+        },
+        {
+          ...base,
+          kind: 'owner',
+          change: 'owner',
+          from: 'tess-team',
+          to: 'olive-owner',
+          body: '\nAccount Owner: Tess Team → Olive Owner.\n',
+        },
+        {
+          ...base,
+          kind: 'status',
+          change: 'status',
+          from: 'active',
+          to: 'on-hold',
+          body: '\nStatus: Active → On hold.\n',
+        },
+      ]);
+      expect(read(`${UPDATES}/${names[0]}`)).toMatch(
+        /^---\nv: 1\nkind: (status|owner)\nby: sam-example\nat: 2026-11-20T10:20:30Z\nclient_safe: false\nchange: \w+\nfrom: [a-z-]+\nto: [a-z-]+\n---\n\n.+\n$/,
+      );
+    });
+
+    it('writes "not set" and "nobody" for cleared values, with empty raw values', () => {
+      expect(editCard({ health: null, owner: null }).reply).toMatchObject({ ok: true });
+      const got = autoEntries().sort((a, b) => String(a.change).localeCompare(String(b.change)));
+      expect(got.map((e) => [e.change, e.from, e.to, e.body])).toEqual([
+        ['health', 'green', '', '\nHealth: Green → not set.\n'],
+        ['owner', 'tess-team', '', '\nAccount Owner: Tess Team → nobody.\n'],
+      ]);
+      for (const n of entries()) expect(read(`${UPDATES}/${n}`)).toContain('\nto: ""\n');
+      rmSync(abs(UPDATES), { recursive: true });
+      expect(editCard({ health: 'red', status: 'done' }).reply).toMatchObject({ ok: true });
+      const again = autoEntries().sort((a, b) => String(a.change).localeCompare(String(b.change)));
+      expect(again.map((e) => [e.change, e.from, e.to, e.body])).toEqual([
+        ['health', '', 'red', '\nHealth: not set → Red.\n'],
+        ['status', 'active', 'done', '\nStatus: Active → Done.\n'],
+      ]);
+    });
+
+    it('writes nothing when the values are sent back unchanged, or for other fields', () => {
+      const r = editCard({
+        status: 'active',
+        health: 'green',
+        owner: 'tess-team',
+        comms: 'red',
+        start: '2026-11-01',
+        title: 'Same project',
+        brief: 'New brief.',
+      });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(r.reply.updatesFailed).toBeUndefined();
+      expect(existsSync(abs(UPDATES))).toBe(false);
+      // A card with no status line yet gains one: that is a change.
+      put(`${LIVE}/project.md`, CARD_TEXT.replace('status: active\n', ''));
+      expect(editCard({ status: 'planned' }).reply).toMatchObject({ ok: true });
+      expect(autoEntries().map((e) => e.body)).toEqual(['\nStatus: not set → Planned.\n']);
+    });
+
+    it('keeps the card change when an entry cannot be written, answering updatesFailed', () => {
+      put(UPDATES, 'a file');
+      const r = editCard({ status: 'done' });
+      expect(r).toEqual({
+        exit: 0,
+        reply: {
+          ok: true,
+          action: 'edit',
+          key: 'acme/website',
+          version: sha(`${LIVE}/project.md`),
+          updatesFailed: true,
+        },
+      });
+      expect(read(`${LIVE}/project.md`)).toContain('\nstatus: done\n');
+      rmSync(abs(UPDATES));
+      mkdirSync(abs('clients/acme/elsewhere'), { recursive: true });
+      symlinkSync(abs('clients/acme/elsewhere'), abs(UPDATES));
+      const r2 = editCard({ status: 'active' });
+      expect(r2.reply).toMatchObject({ ok: true, updatesFailed: true });
+      expect(read(`${LIVE}/project.md`)).toContain('\nstatus: active\n');
+      expect(readdirSync(abs('clients/acme/elsewhere'))).toEqual([]);
+    });
+
+    it('writes them for a personal project too', () => {
+      put('personal/projects/jev/project.md', '---\nv: 1\ntitle: Jev\nstatus: active\n---\n');
+      as('stranger@example.test');
+      const r = runAt('edit', {
+        key: 'personal/jev',
+        fields: { status: 'on-hold' },
+        expect: sha('personal/projects/jev/project.md'),
+      });
+      expect(r.reply).toMatchObject({ ok: true });
+      expect(r.reply.updatesFailed).toBeUndefined();
+      const names = entries('personal/projects/jev/updates');
+      expect(names).toHaveLength(1);
+      expect(names[0]).toMatch(/^2026-11-20-1020-me-[a-z0-9]{6}\.md$/);
+      expect(fm(`personal/projects/jev/updates/${names[0]}`).data).toMatchObject({
+        kind: 'status',
+        by: 'me',
+        change: 'status',
+        from: 'active',
+        to: 'on-hold',
+      });
+    });
+  });
+
+  it('runs update from the command line', () => {
+    const out = spawnSync(process.execPath, [SCRIPT, 'update'], {
+      input: JSON.stringify({
+        kind: 'update',
+        key: 'acme/website',
+        entry: { kind: 'note', summary: 'From the shell.', clientSafe: false },
+      }),
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    expect(out.status).toBe(0);
+    const reply = JSON.parse(out.stdout);
+    expect(reply).toMatchObject({ ok: true, action: 'update', key: 'acme/website' });
+    expect(read(reply.file)).toContain('\n\nFrom the shell.\n');
+  });
+
+  it('is documented in the skill file', () => {
+    const skill = readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8');
+    expect(skill).toContain('| `update` |');
+    expect(skill).toContain('| `update-remove` |');
+    expect(skill).toContain(PROJECTS_UPDATES_CAPABILITY);
   });
 });

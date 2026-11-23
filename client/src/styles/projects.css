@@ -408,3 +408,27 @@
     margin-top: var(--sp-2);
   }
 }
+
+@layer features {
+  /* Updates tab */
+  .proj-updates {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .proj-update {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-8);
+    padding: var(--sp-12);
+  }
+  .proj-update-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4) var(--sp-8);
+  }
+}

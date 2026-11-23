@@ -72,6 +72,7 @@ import type {
   TurnLevel,
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
+import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import type {
   ProjectAction,
   ProjectFilesResponse,
@@ -261,6 +262,11 @@ export const api = {
     request<ProjectFilesResponse>(
       'GET',
       `${ROUTES.projectFiles}?key=${encodeURIComponent(key)}&kind=${encodeURIComponent(kind)}`,
+    ),
+  projectUpdates: (key: ProjectKey, before?: string) =>
+    request<ProjectUpdatesResponse>(
+      'GET',
+      `${ROUTES.projectUpdates}?key=${encodeURIComponent(key)}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
     ),
   projectTodos: (key: ProjectKey) =>
     request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),

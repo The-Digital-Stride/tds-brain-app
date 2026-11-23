@@ -2,6 +2,26 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.63.0 — 2026-11-23
+
+- **fix**: release 1 of UX consistency - shared file-stage styles, one small size, health in words, drift guard
+- **fix**: drift guard counts repeats, reads @layer, finds eager code by imports; design system Actions section
+- **feat**: one Undo line for to-dos, files and chats; deleting a chat can be undone
+- **fix**: an Undo line that goes away while held restarts the clock, so the hold still sends
+- **feat**: release 2 of UX consistency - one action standard across the app
+- **fix**: project Edit at the right, back chevron points left, Ads period options stay on one line
+- **fix**: keep Working on when a Home to-do opens, clear discarded typing, keep focus on a Home card after unfavouriting
+- **refactor**: shared pieces built once - notice, dot, form field, popover, stat, panel head, Confirm, ShowMore, StateNote, useCopy
+- **refactor**: every copy swapped to the shared pieces; old classes deleted
+- **fix**: release 3 review - update buttons stay together, Ads load errors are errors, high-contrast marks
+- **refactor**: CSS layers, scale tokens, primitives.css and settings.css
+- **refactor**: every size, radius, layer, timing and colour from tokens; guard locked
+- **fix**: final critique - working is blue, Ads stepping asks before discarding, busy buttons stay focusable
+- **feat**: the Ads panel asks before discarding typed work
+- **fix**: pin the Rate calls footer so Save stays in view; doc matches the screens
+- **fix**: the panel hold covers tool tabs, a shut panel and the first proposal
+- **fix**: the pinned Rate calls footer is solid and covers the panel's bottom padding
+
 ## v0.62.0 — 2026-11-22
 
 - **feat**: show the app version and an update button at the foot of the rail

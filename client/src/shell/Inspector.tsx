@@ -132,7 +132,7 @@ export function Inspector() {
   return (
     // The Show switch sits in the panel's fixed band, like a drawer's filters; only what it shows scrolls.
     <div className="drawer-split">
-      <div className="drawer-tools inspector-tools">
+      <div className="drawer-tools">
         <Seg
           label="Show"
           value={state.panelTab}

@@ -107,6 +107,16 @@ describe('the "This chat" panel', () => {
     expect(screen.queryByText('No steps yet.')).toBeNull();
   });
 
+  it('keeps the Show switch in the fixed band above what it shows, so it never scrolls away', () => {
+    renderPanel();
+    const band = screen.getByRole('radiogroup', { name: 'Show' }).closest('.drawer-tools') as HTMLElement;
+    expect(band).not.toBeNull();
+    const list = band.parentElement?.querySelector(':scope > .drawer-scroll') as HTMLElement;
+    expect(list).not.toBeNull();
+    expect(list.contains(band)).toBe(false);
+    expect(band.parentElement?.classList.contains('drawer-split')).toBe(true);
+  });
+
   it('switches between Files and Details', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));

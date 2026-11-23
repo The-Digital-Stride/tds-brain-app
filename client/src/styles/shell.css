@@ -614,7 +614,9 @@
     position: sticky;
     /* A sticky box stops at the scroller's padding edge, so lift it back over the top padding. */
     top: calc(-1 * var(--edge-pt, 0px));
-    z-index: 3;
+    /* Over the rows (a lifted Home row is at 1). A sticky band of the content's own at 2 (the discard strip) comes
+     later, so it covers the shadow and meets the edge itself. */
+    z-index: 2;
     display: block;
     height: 8px;
     margin: 0 calc(-1 * var(--edge-px, 0px)) -8px;

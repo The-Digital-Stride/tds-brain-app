@@ -898,11 +898,6 @@
     display: grid;
     gap: var(--sp-8);
   }
-  .inspector-tools > .seg {
-    flex: 1;
-    margin: 0 var(--sp-4);
-  }
-
   /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
   .inspector .kv {
     padding: 0 var(--sp-8);

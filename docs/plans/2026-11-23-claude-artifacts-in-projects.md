@@ -1,7 +1,7 @@
 # claude.ai artifacts in projects
 
-Date: 2026-11-23 · Size: L · Branch: `claude-artifacts-in-projects` · Explainer: no (Ian) · Status: planned,
-overseer pre-review folded in (revision 2), not built
+Date: 2026-11-23 · Size: L · Branch: `claude-artifacts-in-projects` · Explainer: no (Ian) · Status: built and signed off
+(2026-11-23)
 
 ## Objective
 
@@ -213,4 +213,24 @@ legacy guards), S5 (writer-reader test): folded into decisions 7, 8 and Tests. N
 
 ## Review outcomes
 
-<Filled at step 10.>
+Built by three Sonnet builders (A shared + server, B `tdsapp-files` 0.4, C client); the lead wired
+`projectArtifact` into `server/brain/index.ts`, shared the address table with the skill's tests, and merged `main`
+(meetings) with both sides kept.
+
+- **Correctness (Opus):** 2 confirmed, fixed. The Add form had no `noValidate`, so a link without `https://` got the
+  browser's pop-up instead of the app's message (test added, failed first). No test covered `canAddArtifact` on the
+  change, move and archive answers (three tests added; a mutation check proved the move test catches a dropped flag).
+  Confirmed sound: the shared block and the `.cjs` copy are byte-identical; `writeNew` is a pure extraction of `add`.
+- **Security gate (Opus):** pass. One low, fixed: `add-artifact` now refuses a project folder without a plain
+  `project.md` card (test added, failed first).
+- **UX/UI gate (Sonnet, from screenshots):** no blockers. Fixed: a link card's row says "Link to a claude.ai page"
+  (no size); the form label is "claude.ai link" and the error says where to find it; the card link has a hidden
+  "(opens in a new tab)"; the panel row is "Source". Lead's own browser check also fixed the two tab-row buttons
+  spreading apart (`.proj-tabrow > .btn + .btn`). Dark card checked.
+- **Overseer sign-off (Fable):** SIGN-OFF, no blockers. Follow-up taken: an html entry saved with no `artifact` field
+  (by an older version) is read again once (test added, failed without the fix).
+- Browser check on a demo brain (port 3117) with the real skill scripts: copy and card filed, listed, opened; Open on
+  claude.ai link correct; bad link refused inline; a link with `?x=1` filed clean; a repeated name numbered, not
+  overwritten; no console errors.
+
+Still open for Phase 2: P1 (headless `Artifact` read, for "Refresh copy") and P3 (HTML download from claude.ai).

@@ -1360,6 +1360,21 @@ describe('claude artifacts in the library (plan 2026-11-23-claude-artifacts-in-p
     expect(reread.find((i) => i.path === rel)?.artifact?.copied).toBe('2026-11-23');
   });
 
+  it('reads the head again when a saved html entry has no artifact field (saved by an older version)', async () => {
+    const root = setup();
+    const dataDir = tempDir();
+    const rel = 'clients/acme/projects/site/files/page.html';
+    put(root, rel, tagged());
+    await items(root, { dataDir });
+    await new Promise((r) => setTimeout(r, 50));
+    const metaFile = join(dataDir, 'library-meta.json');
+    const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    delete meta.entries[rel].artifact;
+    writeFileSync(metaFile, JSON.stringify(meta));
+    const got = await items(root, { dataDir });
+    expect(got.find((i) => i.path === rel)?.artifact?.url).toBe(URL);
+  });
+
   it('refuses a saved artifact whose address is not a claude.ai one', async () => {
     const root = setup();
     const dataDir = tempDir();

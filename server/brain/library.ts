@@ -737,7 +737,10 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     if (!needsMeta) return false;
     const version = versionOf(f.bytes, f.mtimeMs);
     const known = store.get(f.rel);
-    if (known && known.version === version) return false;
+    // An html entry with no `artifact` at all was saved by a version that never read the tags (null means
+    // "read, none"), so it is read once more (overseer sign-off follow-up).
+    const unread = readsArtifact(f.ext, f.bytes) && known?.artifact === undefined;
+    if (known && known.version === version && !unread) return false;
     const abs = join(root, ...f.rel.split('/'));
     const entry: MetaEntry = { version, width: null, height: null, title: null };
     if (f.cls.kind === 'image') {

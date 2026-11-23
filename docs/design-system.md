@@ -120,7 +120,7 @@ Each piece below exists once; tools compose it and never restyle it. Built in th
 
 - **Buttons: one language** (Ian, 2026-11-13: "every button should be a button, not text. Unless within inline text"). Six kinds, each with one meaning:
   - **Primary** `.btn[data-variant="primary"]`: navy, paper text. The action the area exists for; one per area (an edit form's Save, a confirm step's "Mark as done", New chat, Send, Update and restart).
-  - **Standard** `.btn` (no variant): white, 1px `--line-strong` edge, `--lift-0`, navy text. Every other option: Cancel, Keep open, Not now, Don't allow, Copy path, Try again.
+  - **Standard** `.btn` (no variant): white, 1px `--line-strong` edge, `--lift-0`, navy text. Every other option: Cancel, Keep chat, Keep editing, Not now, Don't allow, Copy path, Try again.
   - **Quiet** `[data-variant="quiet"]`: `--tint-1` fill, navy text, no edge. Minor and "see all" actions: Later, Reload, Dismiss, Back, Clear date, All chats, Mark all as seen, Show older versions, More options.
   - **Danger** `[data-variant="danger"]`: standard with `--danger` text. Removes something or ends work that can't be got back: Delete, the "End chat" confirm.
   - **Send and Stop** (Ian, 2026-11-14): Send is primary (navy, for consistency: Ian tried green and kept navy) with the `send` paper-plane icon. While Claude works on a reply it becomes Stop, `.btn[data-variant="stop"]`, filled `--danger` red with the `stop` square, used nowhere else, in the same place (the same button, so focus stays on it). The second click of a double-click is ignored (`detail >= 2`), so a double-click on Send can't stop the reply it just sent; a keyboard press always works. Pressing it says "Stopping" to screen readers, and when the reply ends focus on it moves to the message box (the Send it turns back into is disabled). White on the red is 7.3:1. Stop lives only here, not in the chat's top bar.
@@ -186,16 +186,22 @@ named here or it isn't one.
    to-do panel, any later panel) are the one named layout: item actions on the left (Start a chat, Mark as
    done, Delete), mode actions on the right (Edit while reading; Save and Cancel while editing). A
    form-only panel (the to-do Add form, Rate calls) has no item actions: it uses button-group order, primary
-   first and Cancel last, and its footer is pinned to the foot of the panel.
+   first and Cancel last. A long one (Rate calls) pins its footer to the foot of the panel's scroller
+   (`.am-foot`, sticky) so Save stays in view; a short one (the to-do Add form) keeps its buttons under its
+   fields.
 7. **New and Add** are primary with `plus`, at the right end of the row they act on, never in a dock header:
    the Chats and To-dos drawers' 32px primary `+` icon button ("New chat", "Add a to-do"), "New project" on
-   the Projects tools row, "Add a to-do" on a project's tabs row.
+   the Projects tools row, "Add a to-do" on a project's tabs row, "Link files" on a project's Files tab. One
+   named exception: "Add a file" inside the to-do panel is standard, because the panel's primary is its own
+   footer action and one area has one primary.
 8. **Edit**: a pencil icon in a row; a labelled "Edit" with the pencil at the right end of the header row on a
    page (a project); in the to-do panel it lives in the footer (rule 6).
 9. **Unsaved changes**: every form asks "Discard your changes?" on Cancel, Esc, Back and close once anything
    has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused). The
    to-do panel asks through the shell's to-do hold; the right panel (Ads proposal note, Rate calls) through
    the panel hold (`set-panel-dirty`, `guardPanel`), on close, on choosing another item and on stepping.
+   Known limit: leaving the sheet by the rail or search isn't guarded for sheet and right-panel forms (Ads,
+   project forms); only the to-do panel's hold covers that. A guard there is a follow-up.
 10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
 11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
     {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron. One named

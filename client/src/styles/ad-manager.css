@@ -105,14 +105,20 @@
     align-items: flex-end;
     gap: var(--sp-8);
   }
-  /* A panel's footer: the primary action on the left, then what happened. */
+  /* A panel's footer: the primary action on the left, then what happened. Pinned to the foot of the
+     panel's scroller, so Save stays in view on a long form (Actions rule 6). */
   .am-foot {
+    position: sticky;
+    bottom: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-8) var(--sp-12);
-    padding-top: var(--sp-10);
+    padding-block: var(--sp-10);
     border-top: 1px solid var(--line);
+    background: var(--glass-92);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
   .am-grow {
     flex: 1 1 180px;

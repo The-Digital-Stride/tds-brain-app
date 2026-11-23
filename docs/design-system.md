@@ -193,7 +193,9 @@ named here or it isn't one.
 8. **Edit**: a pencil icon in a row; a labelled "Edit" with the pencil at the right end of the header row on a
    page (a project); in the to-do panel it lives in the footer (rule 6).
 9. **Unsaved changes**: every form asks "Discard your changes?" on Cancel, Esc, Back and close once anything
-   has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused).
+   has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused). The
+   to-do panel asks through the shell's to-do hold; the right panel (Ads proposal note, Rate calls) through
+   the panel hold (`set-panel-dirty`, `guardPanel`), on close, on choosing another item and on stepping.
 10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
 11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
     {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron. One named

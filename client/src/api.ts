@@ -286,6 +286,8 @@ export const api = {
   answerQuestion: (id: string, reply: QuestionReply) =>
     request<OkResponse>('POST', ROUTES.sessionAnswer(id), reply),
   interrupt: (id: string) => request<OkResponse>('POST', ROUTES.sessionInterrupt(id), {}),
+  /** Sends again a message a hook in Claude Code held back. */
+  resend: (id: string) => request<OkResponse>('POST', ROUTES.sessionResend(id), {}),
   close: (id: string) => request<OkResponse>('POST', ROUTES.sessionClose(id), {}),
   /** Moves an earlier chat's history to the macOS Bin (the server refuses an open chat). */
   /** Asks Claude, in that chat, to change a page or turn it into a TDS-branded document. */

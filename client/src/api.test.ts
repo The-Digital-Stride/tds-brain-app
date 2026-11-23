@@ -270,3 +270,37 @@ describe('api.chatContext', () => {
     expect(init.credentials).toBe('same-origin');
   });
 });
+
+describe('api.resend', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('sends a POST that passes the server request check and reaches the resend route', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}'));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.resend('s 1');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/sessions/s%201/resend');
+    expect(init.method).toBe('POST');
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const decision = checkRequest(
+      {
+        method: 'POST',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+});

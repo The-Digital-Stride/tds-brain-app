@@ -89,7 +89,8 @@ function hostOf(url: string): string | null {
  * frontmatter line. Lower case, `www.` stripped; null when neither is there or it isn't a web address.
  */
 export function websiteDomain(profile: string): string | null {
-  const bold = /^\s*\*\*Website:\*\*[ \t]*(\S+)/im.exec(profile);
+  // As the brain writes it: usually a bullet (`- **Website:** https://…`), sometimes a bare line.
+  const bold = /^\s*(?:[-*+][ \t]+)?\*\*Website:\*\*[ \t]*(\S+)/im.exec(profile);
   if (bold) return hostOf((bold[1] as string).replace(/^[<(]|[>)]$/g, ''));
   const fm = /^website:[ \t]*["']?([^\s"']+)/im.exec(profile);
   return fm ? hostOf(fm[1] as string) : null;

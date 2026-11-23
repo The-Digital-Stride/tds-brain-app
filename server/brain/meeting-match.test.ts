@@ -60,6 +60,9 @@ describe('domainOf and websiteDomain', () => {
       'acmeheating.co.uk',
     );
     expect(websiteDomain('---\nclient: X\nwebsite: "http://x.com"\n---\n')).toBe('x.com');
+    // The brain's own profiles write it as a bullet.
+    expect(websiteDomain('# Kinedo\n\n- **Website:** https://www.kinedo.co.uk\n')).toBe('kinedo.co.uk');
+    expect(websiteDomain('- **Website:** https://bookvault.app — **always without www**\n')).toBe('bookvault.app');
     expect(websiteDomain('**Website:** not a url')).toBeNull();
     expect(websiteDomain('nothing')).toBeNull();
   });

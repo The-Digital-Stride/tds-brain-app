@@ -119,8 +119,9 @@ export const ACTIVITY_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * `POST ROUTES.projectSeen` `{ key, token }` → 204. Commits the snapshot held for that read (never "the project
- * as it is now"). The app sends it when the person leaves the project page or switches project, and ONLY if the
- * "Since you last looked" card was actually on screen (the Overview tab was shown with the card rendered). An
+ * as it is now"). The app sends it when the person presses Clear on the "Since you last looked" card, then reads
+ * again (plan 2026-11-23-project-files-library-view, decision 6). An EMPTY card (first visit, or nothing new) is
+ * also sent when the person leaves the page or switches project, and ONLY if it was actually on screen. An
  * unknown, expired or superseded token, or an unknown key, → 204 and nothing saved (it will simply show again).
  * Extra fields → 400.
  */

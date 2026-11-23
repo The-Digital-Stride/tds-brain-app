@@ -85,6 +85,9 @@ export function createLibraryStore<S extends LibraryState>(initial: () => S): Li
       const base = initial() as unknown as Record<string, unknown>;
       const cleared: Record<string, unknown> = {};
       for (const key of ['query', 'format']) if (key in base) cleared[key] = base[key];
+      // The app's own project filter goes too unless the item is in that project, or the list would leave it out.
+      const projects: readonly string[] = item.projects ?? [];
+      if (state.project && !projects.includes(state.project)) cleared.project = '';
       set({
         scope,
         current: item,

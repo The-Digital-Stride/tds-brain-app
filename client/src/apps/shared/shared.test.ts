@@ -179,6 +179,16 @@ describe('createLibraryStore', () => {
       store.openItem('a', doc());
       expect(store.get()).toMatchObject({ format: 'all', query: '' });
     });
+
+    it("drops the app's project filter when the item isn't in that project, and keeps it when it is", () => {
+      const store = make();
+      store.set({ project: 'clients/acme/projects/site' });
+      store.openItem('a', doc({ projects: ['clients/acme/projects/other'] as never }));
+      expect(store.get().project).toBe('');
+      store.set({ project: 'clients/acme/projects/site' });
+      store.openItem('a', doc({ projects: ['clients/acme/projects/site'] as never }));
+      expect(store.get().project).toBe('clients/acme/projects/site');
+    });
   });
 
   it('reset goes back to the start', () => {

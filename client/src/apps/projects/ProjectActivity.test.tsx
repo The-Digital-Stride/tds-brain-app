@@ -7,6 +7,7 @@ import { card, projectList } from './testing.ts';
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   changeTodos: vi.fn(),
+  openView: vi.fn(),
   toggleFavouriteTodo: vi.fn(),
   boot: {
     identity: { slug: 'me' },
@@ -30,7 +31,10 @@ const api = vi.hoisted(() => ({
   projectUpdates: vi.fn(),
   projectActivity: vi.fn(),
   projectSeen: vi.fn(),
+  libraryItems: vi.fn(),
 }));
+const openLibraryItem = vi.hoisted(() => vi.fn());
+vi.mock('../shared/search.ts', () => ({ openLibraryItem }));
 vi.mock('../../api.ts', () => ({
   api,
   ApiFailure: class ApiFailure extends Error {
@@ -241,6 +245,116 @@ describe('activity on the Overview', () => {
     await openProject();
     await screen.findByText('Nothing new since you last looked.');
     expect(screen.getByRole('button', { name: /^Overview/ }).querySelector('.dot')).toBeNull();
+  });
+});
+
+const CHANGES = [
+  {
+    kind: 'todo-added' as const,
+    text: 'To-do added: Book the photographer',
+    at: null,
+    byName: null,
+    target: { kind: 'todo' as const, key: 'todo/theirs.md' },
+  },
+];
+
+describe('a file row', () => {
+  it('opens the file in Documents, chosen there with its details panel open', async () => {
+    const doc = { id: 'd1', kind: 'document', path: 'clients/acme/brief.pdf', name: 'brief.pdf', title: 'Brief' };
+    api.projectActivity.mockResolvedValue(
+      reply({
+        items: [
+          {
+            kind: 'file-added',
+            text: 'New file: Brief',
+            at: null,
+            byName: null,
+            target: { kind: 'file', path: doc.path },
+          },
+        ] as never,
+      }),
+    );
+    api.projectFiles.mockImplementation(async (_key: string, kind: string) => ({
+      items: kind === 'document' ? [doc] : [],
+      hidden: 0,
+    }));
+    api.libraryItems.mockResolvedValue({ files: [{ item: doc, scope: { id: 'acme', name: 'Acme' } }] });
+    await openProject();
+    fireEvent.click(await screen.findByRole('button', { name: /New file: Brief/ }));
+    await waitFor(() => expect(store.openView).toHaveBeenCalledWith('app:documents'));
+    expect(api.libraryItems).toHaveBeenCalledWith(['d1']);
+    expect(openLibraryItem).toHaveBeenCalledWith('documents', 'acme', doc);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-viewer' }));
+  });
+
+  it("says where to look when the file isn't in the project's files any more", async () => {
+    api.projectActivity.mockResolvedValue(
+      reply({
+        items: [
+          { kind: 'file-added', text: 'New file: Gone', at: null, byName: null, target: { kind: 'file', path: 'x.pdf' } },
+        ] as never,
+      }),
+    );
+    await openProject();
+    fireEvent.click(await screen.findByRole('button', { name: /New file: Gone/ }));
+    expect(await screen.findByText("That file can't be opened from here. Look for it under Files.")).toBeTruthy();
+    expect(store.openView).not.toHaveBeenCalled();
+  });
+});
+
+describe('Clear', () => {
+  it('keeps listed changes when the person leaves: nothing is marked seen', async () => {
+    api.projectActivity.mockResolvedValue(reply({ items: CHANGES }));
+    await openProject();
+    await screen.findByText('To-do added: Book the photographer');
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.projectSeen).not.toHaveBeenCalled();
+  });
+
+  it('marks the list seen, reads again quietly, says so and puts focus on the heading', async () => {
+    api.projectActivity
+      .mockResolvedValueOnce(reply({ items: CHANGES, more: 2 }))
+      .mockResolvedValueOnce(reply({ since: '2026-11-23T09:00:00Z', token: 'tok-2' }));
+    await openProject();
+    await screen.findByText('To-do added: Book the photographer');
+    const head = screen.getByRole('heading', { name: 'Since you last looked' }).closest('.card-head');
+    expect(head?.querySelector('.count')?.textContent).toBe('3');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByText('Cleared. New changes will show here.')).toBeTruthy();
+    expect(api.projectSeen).toHaveBeenCalledWith({ key: SKY.key, token: 'tok-1' });
+    expect(screen.getByText('Nothing new since you last looked.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Since you last looked' })),
+    );
+    // Leaving now marks the empty card seen with the fresh read's token, as on any empty visit.
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    await waitFor(() => expect(api.projectSeen).toHaveBeenLastCalledWith({ key: SKY.key, token: 'tok-2' }));
+  });
+
+  it('an expired read clears nothing, shows the fresh list and never posts again', async () => {
+    api.projectActivity
+      .mockResolvedValueOnce(reply({ items: CHANGES }))
+      .mockResolvedValueOnce(reply({ token: 'tok-2', items: CHANGES }));
+    await openProject();
+    await screen.findByText('To-do added: Book the photographer');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByText('This list was out of date, so nothing was cleared.')).toBeTruthy();
+    expect(api.projectSeen).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear' })));
+  });
+
+  it('says so when clearing fails, and keeps the list', async () => {
+    api.projectActivity.mockResolvedValue(reply({ items: CHANGES }));
+    api.projectSeen.mockRejectedValue(new Error('down'));
+    await openProject();
+    await screen.findByText('To-do added: Book the photographer');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByText("Couldn't clear the list. Try again.")).toBeTruthy();
+    expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
   });
 });
 

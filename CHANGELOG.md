@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.64.1 — 2026-11-23
+
+- **fix**: filters stay fixed in every drawer; hard cut with a lift on scroll, no fade
+- **fix**: panel switch matches drawer inset; content's own sticky bands cover the edge shadow
+
 ## v0.64.0 — 2026-11-23
 
 - **feat**: leaving a page asks before discarding typed work; one file language; health words

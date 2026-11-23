@@ -17,20 +17,6 @@
   position: relative;
 }
 
-/* "End this chat?" replaces Stop and End chat in the bar while it shows. */
-.close-confirm {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
 /* The thread: one centred reading column ------------------------------------------------------ */
 .thread {
   flex: 1;
@@ -310,26 +296,8 @@
   color: var(--iron);
 }
 
-.notice {
-  border-radius: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.notice[data-level="warning"] {
-  border-color: var(--amber-edge);
-  background: var(--amber-bg);
-  color: var(--amber-text);
-}
-.notice[data-level="error"] {
-  border-color: var(--danger);
-  background: var(--danger-wash);
-  color: var(--danger);
-}
 /* Where earlier messages were summarised: a quiet notice, not a warning. */
-.notice[data-kind="summary"] {
+.notice[data-shape][data-kind="summary"] {
   background: var(--tint-1);
   border-style: dashed;
   color: var(--iron);
@@ -521,12 +489,9 @@
 .approval-warning strong {
   color: var(--danger);
 }
-.note-field {
-  display: grid;
-  gap: 4px;
+.form-field.approval-note {
   margin-top: 10px;
 }
-.note-field > span,
 .own-answer > span {
   font-size: 12px;
   font-weight: 600;
@@ -631,19 +596,8 @@
   font-weight: 600;
   color: var(--navy);
 }
-.attn-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.attn-text .dot {
   margin: 0 8px 0 2px;
-  background: var(--attn-ready-edge);
-}
-.attn-dot[data-attention="working"] {
-  background: var(--attn-working-edge);
-}
-.attn-dot[data-attention="asking"] {
-  background: var(--attn-asking-edge);
 }
 .attn-spinner {
   display: inline-block;
@@ -651,7 +605,7 @@
   height: 12px;
   margin-right: 6px;
   vertical-align: -1px;
-  stroke: var(--attn-working-edge);
+  stroke: var(--state-working);
   stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1092,25 +1046,6 @@
 }
 
 /* Settings health panel: a summary line, then one row per check. The dot always sits beside words. */
-.health-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  font-size: 14px;
-  font-weight: 600;
-}
-.health-summary[data-state="ok"] {
-  border-color: var(--attn-ready-edge);
-}
-.health-summary[data-state="problem"] {
-  border-color: var(--danger);
-  background: var(--danger-wash);
-  color: var(--danger);
-}
 .health-list {
   margin: 0;
   padding: 0;
@@ -1161,32 +1096,9 @@
   overflow-wrap: anywhere;
   color: var(--iron);
 }
-.health-dot {
-  display: inline-block;
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--grey-dot);
-}
-.health-dot[data-state="ok"] {
-  background: var(--attn-ready-edge);
-}
-.health-dot[data-state="problem"] {
-  background: var(--danger);
-}
-.health-dot[data-state="note"] {
-  background: var(--attn-asking-edge);
-}
-.health-check > .health-dot {
+.health-check > .dot {
   /* Centred on the label's line. */
   margin-top: 6px;
-}
-/* High contrast modes drop background colours: draw the dot's edge so it still shows. */
-@media (forced-colors: active) {
-  .health-dot {
-    border: 1px solid CanvasText;
-  }
 }
 
 /* Profile: the person's departments as chips, wrapping. */
@@ -1448,34 +1360,14 @@
   line-height: 1.45;
   color: var(--iron);
 }
-.level-menu {
+.popover.level-menu {
   margin: 4px 16px 0;
-  padding: 4px;
   display: grid;
   gap: 2px;
-  border-radius: 10px;
-  background: var(--tint-1);
 }
 .level-menu[hidden],
 .level-why[hidden] {
   display: none;
-}
-.level-option {
-  display: grid;
-  gap: 1px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  text-align: left;
-  color: var(--text);
-  cursor: pointer;
-}
-.level-option:hover {
-  background: var(--tint-1);
-}
-.level-option[aria-current="true"] {
-  background: var(--wash);
 }
 .level-option-name {
   font-size: 13px;
@@ -1485,22 +1377,13 @@
   font-size: 12px;
   color: var(--iron);
 }
-.level-offer {
+.notice[data-shape].level-offer {
   margin: 4px 16px 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
 }
 .level-offer-text {
   margin: 0;
   flex: 1 1 220px;
   overflow-wrap: anywhere;
-}
-.level-offer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 /* Settings: how the model is chosen, and the Skill levels list. */

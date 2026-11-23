@@ -191,13 +191,18 @@ function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
       return item.outcome === null ? null : <QuestionCard item={item} sessionId={sessionId} />;
     case 'notice':
       return (
-        <div className="notice" data-level={item.level} role={item.level === 'error' ? 'alert' : undefined}>
+        <div
+          className="notice"
+          data-shape="box"
+          data-level={item.level === 'warning' ? 'warn' : item.level}
+          role={item.level === 'error' ? 'alert' : undefined}
+        >
           {item.text}
         </div>
       );
     case 'summary':
       return (
-        <div className="notice" data-kind="summary">
+        <div className="notice" data-shape="box" data-kind="summary">
           {item.text}
         </div>
       );
@@ -205,7 +210,7 @@ function Row({ item, sessionId }: { item: ChatItem; sessionId: string }) {
       if (item.interrupted) return <p className="record">You stopped Claude.</p>;
       if (!item.ok)
         return (
-          <div className="notice" data-level="error" role="alert">
+          <div className="notice" data-shape="box" data-level="error" role="alert">
             Claude could not finish that.{item.errorText ? ` ${item.errorText}` : ''}
           </div>
         );

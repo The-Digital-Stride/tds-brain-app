@@ -12,6 +12,7 @@ import { Icon } from './Icon.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { pressedByKeyboard, UndoLine } from './UndoLine.tsx';
 import { placeName, STATE_WORDS, whenWords } from './words.ts';
 
@@ -206,7 +207,7 @@ export function ChatsDrawer() {
     return (
       <>
         {status}
-        <p className="dock-empty">Loading your chats.</p>
+        <StateNote kind="loading" />
       </>
     );
   // The store leaves held chats out of every list; here each keeps its place as its Undo line.

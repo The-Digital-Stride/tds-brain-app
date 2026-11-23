@@ -25,7 +25,7 @@ export function SettingsSheet() {
   const summary = checks ? healthSummary(checks) : null;
   const items = visibleSettingsTabs(tabCtx).map((t) =>
     t.id === 'health' && summary?.state === 'problem'
-      ? { id: t.id, label: t.label, dot: 'problem' as const, spoken: `${t.label}, ${summary.text}` }
+      ? { id: t.id, label: t.label, dot: 'bad' as const, spoken: `${t.label}, ${summary.text}` }
       : { id: t.id, label: t.label },
   );
   const title = items.find((t) => t.id === tab)?.label ?? '';

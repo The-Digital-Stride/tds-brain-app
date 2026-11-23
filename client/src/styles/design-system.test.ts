@@ -342,13 +342,11 @@ describe('the design system guard: markup', () => {
 
 // Today's remaining offenders ("file value": count). Lower or delete an entry when you fix it. ------------
 const ALLOW_FONT_SIZE: Allow = {
-  'styles/ad-manager.css 20px': 1,
   'styles/home.css 22px': 1,
   'styles/palette.css 11px': 1,
   'styles/palette.css 16px': 1,
   'styles/shell.css 10px': 3,
   'styles/shell.css 11px': 3,
-  'styles/summary.css 16px': 1,
 };
 const ALLOW_RADIUS: Allow = {
   'styles/ad-manager.css 4px': 1,
@@ -367,7 +365,7 @@ const ALLOW_Z_INDEX: Allow = {
 const ALLOW_RAW_COLOUR: Allow = {
   'apps/shared/library.css #fff': 4,
   'apps/shared/library.css rgba(255,255,255,0.92)': 2,
-  'styles/ad-manager.css #fff': 2,
+  'styles/ad-manager.css #fff': 1,
   'styles/base.css #fff': 9,
   'styles/base.css rgba(2,27,67,0.08)': 1,
   'styles/base.css rgba(2,27,67,0.24)': 1,
@@ -378,7 +376,7 @@ const ALLOW_RAW_COLOUR: Allow = {
   'styles/base.css rgba(255,255,255,0.7)': 2,
   'styles/base.css rgba(255,255,255,0.92)': 2,
   'styles/chat.css #b9c0ce': 1,
-  'styles/chat.css #fff': 6,
+  'styles/chat.css #fff': 5,
   'styles/chat.css #fff0': 1,
   'styles/chat.css rgba(2,27,67,0.04)': 1,
   'styles/chat.css rgba(245,158,11,0.5)': 1,
@@ -387,13 +385,12 @@ const ALLOW_RAW_COLOUR: Allow = {
   'styles/chat.css rgba(255,255,255,0.75)': 1,
   'styles/chat.css rgba(255,255,255,0.85)': 1,
   'styles/chat.css rgba(255,255,255,0.92)': 1,
-  'styles/command.css #fff': 2,
+  'styles/command.css #fff': 1,
   'styles/guide.css #000': 1,
   'styles/home.css #fff': 1,
   'styles/palette.css #fff': 1,
   'styles/palette.css rgba(2,27,67,0.16)': 1,
   'styles/palette.css rgba(255,255,255,0.85)': 1,
-  'styles/search-select.css #fff': 1,
   'styles/sections.css #fff': 1,
   'styles/shell.css #000': 2,
   'styles/shell.css #f1eee8': 2,
@@ -417,32 +414,10 @@ const ALLOW_DUPLICATE_CLASS: Allow = {
 };
 const ALLOW_UNUSED_CLASS: Allow = {
   // Built in R3, swapped next: patterns.css classes no caller uses yet. Each entry goes when its swap lands.
-  'styles/patterns.css .form-field': 3,
-  'styles/patterns.css .menu-row': 4,
-  'styles/patterns.css .panel-head': 3,
-  'styles/patterns.css .popover': 2,
-  'styles/patterns.css .stat': 1,
-  'styles/patterns.css .stat-change': 3,
-  'styles/patterns.css .stat-label': 1,
-  'styles/patterns.css .stat-value': 1,
   // Confirm moved to shell/ and takes `.confirm` (patterns.css); the swap deletes the old class.
-  'styles/ad-manager.css .am-confirm': 1,
 };
 const ALLOW_LAZY_ONLY_CLASS: Allow = {
   // apps/shared/parts.tsx is eager but holds the library parts too; the scan is per file, so these are
   // flagged.
-  '.docs': 1,
-  '.lib-actions': 1,
-  '.lib-actions-row': 1,
-  '.lib-client': 1,
-  '.lib-delete-gap': 1,
-  '.lib-empty': 1,
-  '.lib-list': 1,
-  '.lib-search': 1,
-  '.lib-selbar': 1,
-  '.lib-selcount': 1,
-  '.lib-tools': 1,
-  '.lib-view': 1,
-  '.lib-view-gap': 1,
 };
 const ALLOW_PLAIN_CHECKBOX: Allow = {};

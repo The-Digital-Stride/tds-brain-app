@@ -3,6 +3,7 @@ import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
 import { engineLine } from '../format.ts';
+import { Confirm } from '../shell/Confirm.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
@@ -233,32 +234,16 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
           {/* With no client the chip is left out; the panel's Details says so. */}
           {clientName ? <span className="chip">{clientName}</span> : null}
           {confirming ? (
-            <fieldset
-              className="close-confirm"
-              aria-label="End this chat"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  // Handled here, so the shell's Esc doesn't also close a drawer.
-                  e.preventDefault();
-                  cancelClose();
-                }
-              }}
-            >
-              <span>{closeConfirmText(state, helpersWorking)}</span>
-              <button
-                type="button"
-                className="btn"
-                data-variant="danger"
-                data-size="small"
-                onClick={() => void closeChat(sessionId)}
-              >
-                End chat
-              </button>
-              {/* biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared. */}
-              <button type="button" className="btn" data-size="small" autoFocus onClick={cancelClose}>
-                Keep chat
-              </button>
-            </fieldset>
+            <Confirm
+              label="End this chat"
+              text={closeConfirmText(state, helpersWorking)}
+              action="End chat"
+              safe="Keep chat"
+              variant="danger"
+              busy={false}
+              onConfirm={() => void closeChat(sessionId)}
+              onCancel={cancelClose}
+            />
           ) : (
             <button
               type="button"

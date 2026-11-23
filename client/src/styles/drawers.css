@@ -254,11 +254,6 @@
 .todo-actions .todo-more {
   margin-left: auto;
 }
-.todo-field > .todo-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--iron);
-}
 /* "New to you": a red dot before the row (Ian, 2026-11-13), and a quiet line to clear them all. */
 .todo-new,
 .rail-pip[data-new="true"] {
@@ -285,27 +280,6 @@
   min-width: 0;
 }
 
-.todo-field {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.todo-field > label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--navy);
-}
-.todo-field textarea.field {
-  height: auto;
-  min-height: 96px;
-  padding: 8px 10px;
-  line-height: 1.45;
-  resize: vertical;
-}
-.todo-field textarea.field[readonly] {
-  background: var(--tray);
-  color: var(--iron);
-}
 .todo-inline {
   display: flex;
   align-items: center;
@@ -419,9 +393,6 @@
   color: var(--iron);
 }
 
-.todo-field .todo-note {
-  padding: 0;
-}
 .todo-status {
   flex: none;
   margin: 0;

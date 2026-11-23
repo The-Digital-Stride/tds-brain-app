@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '../../shell/Icon.tsx';
+import { ShowMore } from '../../shell/ShowMore.tsx';
 import type { Table } from './types.ts';
 import { fmt, isLow, isQuietZero, moneyDigits, sortRows } from './words.ts';
 
@@ -102,16 +103,13 @@ export function AmTable({ t, currency }: { t: Table; currency: string }) {
       </div>
       {rows.length > TABLE_ROWS ? (
         <div className="am-more">
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            aria-expanded={all}
-            onClick={() => setAll((a) => !a)}
-          >
-            {all ? 'Show fewer' : `Show all ${rows.length}`}
-          </button>
+          <ShowMore
+            expanded={all}
+            count={rows.length}
+            noun={{ one: 'row', many: 'rows' }}
+            wording="all"
+            onToggle={() => setAll((a) => !a)}
+          />
         </div>
       ) : null}
     </>

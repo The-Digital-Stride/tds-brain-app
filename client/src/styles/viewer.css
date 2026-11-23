@@ -164,17 +164,6 @@ body.viewer-resizing iframe {
 }
 /* The file stage: what a file open on a sheet, in the viewer or in the chat's Files panel shows.
    Eager on purpose: the viewer and the Files panel open before any library app has loaded. */
-.lib-failed {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
-}
-.lib-failed p {
-  margin: 0;
-  color: var(--iron);
-}
 /* A quiet line: a cap that was hit, or a file cut short. */
 .lib-note {
   margin: 0;

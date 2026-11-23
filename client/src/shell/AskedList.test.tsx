@@ -83,7 +83,7 @@ describe('AskedList', () => {
 
   it('says the loading and failure lines as a status', () => {
     const { unmount } = view(null, 'loading');
-    expect(screen.getByText("Loading what you've asked of others.")).toBeTruthy();
+    expect(screen.getByText('Loading…')).toBeTruthy();
     unmount();
     view(null, 'failed');
     expect(screen.getByText(/Couldn't load these/).getAttribute('role')).toBe('status');

@@ -529,7 +529,7 @@ describe('Tokens saved', () => {
   it('says it is loading the token figures while it waits', async () => {
     st.usageSavings.mockReturnValue(new Promise(() => {}));
     render(<SettingsView tab="claude" />);
-    const el = await screen.findByText('Loading the token figures.');
+    const el = await screen.findByText('Loading…');
     expect(el.getAttribute('role')).toBe('status');
   });
   it('says so when the figures cannot be loaded', async () => {

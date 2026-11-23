@@ -214,14 +214,14 @@ describe('Settings tabs, in the real app', () => {
       expect(b.getAttribute('aria-label')).toMatch(/^Health, .*need.*attention/);
       return b;
     });
-    expect(health.querySelector('.health-dot[data-state="problem"]')).toBeTruthy();
+    expect(health.querySelector('.dot[data-state="bad"]')).toBeTruthy();
     expect(health.querySelector('.count')).toBeNull();
     const calls = api.sync.mock.calls.length;
     fireEvent.click(tab('Claude'));
     await screen.findByRole('heading', { name: 'Claude in chats' });
     fireEvent.click(tab('About'));
     await screen.findByRole('heading', { name: /^About TDS Cortex/ });
-    expect(tab('Health').querySelector('.health-dot[data-state="problem"]')).toBeTruthy();
+    expect(tab('Health').querySelector('.dot[data-state="bad"]')).toBeTruthy();
     expect(api.sync.mock.calls.length).toBe(calls);
   });
 

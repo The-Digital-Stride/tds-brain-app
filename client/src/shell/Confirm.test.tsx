@@ -39,7 +39,7 @@ describe('Confirm', () => {
     setup();
     const group = screen.getByRole('group', { name: 'Delete project' });
     expect(group.className).toContain('confirm');
-    expect(group.className).toContain('close-confirm');
+    expect(group.className).toContain('confirm');
     const action = screen.getByRole('button', { name: 'Delete project' });
     expect(document.getElementById(action.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
       'Delete this project?',

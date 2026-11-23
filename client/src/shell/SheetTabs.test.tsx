@@ -9,7 +9,7 @@ afterEach(cleanup);
 const items: SheetTabItem[] = [
   { id: 'a', label: 'Alpha', count: 3 },
   { id: 'b', label: 'Beta', note: '2 due' },
-  { id: 'c', label: 'Health', dot: 'problem', spoken: 'Health, 1 thing needs attention: Brain sync.' },
+  { id: 'c', label: 'Health', dot: 'bad', spoken: 'Health, 1 thing needs attention: Brain sync.' },
   { id: 'd', label: 'Delta' },
 ];
 
@@ -28,7 +28,7 @@ describe('SheetTabs', () => {
     ).toBe('3');
     expect(screen.getByRole('button', { name: 'Beta, 2 due' }).textContent).toBe('Beta2 due');
     const health = screen.getByRole('button', { name: 'Health, 1 thing needs attention: Brain sync.' });
-    expect(health.querySelector('.health-dot')?.getAttribute('data-state')).toBe('problem');
+    expect(health.querySelector('.dot')?.getAttribute('data-state')).toBe('bad');
   });
 
   it('chooses another tab on press, but not the current one', () => {

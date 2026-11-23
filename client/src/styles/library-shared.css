@@ -1,0 +1,123 @@
+/*
+ * The library pieces that `apps/shared/parts.tsx` draws and that load with the app, not with a library sheet:
+ * the tools row, the folder list, the Open and bin places, the ticked-items bar and the detail actions. Moved
+ * here from `library.css` (lazy) so the eager code never relies on a lazy sheet for them. Imported beside
+ * patterns.css in main.tsx. The rest of the library (tray, rows, tiles, viewer) stays in `apps/shared/library.css`.
+ */
+/* Tools: scope, search, the app's own control; then the filter and the summary ----------------- */
+.lib-tools,
+.lib-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lib-client {
+  flex: none;
+  width: 220px;
+  max-width: 100%;
+  min-width: 180px;
+}
+.lib-client .field {
+  font-weight: 600;
+}
+.lib-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 200px;
+  max-width: 340px;
+}
+.lib-search > .icon {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+  color: var(--iron);
+}
+.lib-search .field {
+  padding-left: 32px;
+}
+.lib-tools .seg {
+  flex: none;
+  width: 132px;
+  margin-left: auto;
+}
+.lib-filter .seg {
+  flex: 1 1 300px;
+  max-width: 560px;
+}
+/* An app with two switches keeps them together on the right. */
+.lib-tools .seg + .seg {
+  margin-left: 0;
+}
+/* In the tools row the summary takes the free space, so the layout control sits against it. */
+.lib-tools .lib-summary + .seg {
+  margin-left: 0;
+}
+.lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* An app's own layout rule for the list must carry `:not([hidden])`, or it outranks this and Hide does nothing. */
+.lib-list[hidden] {
+  display: none;
+}
+/* Open on the item itself: at the end of a row, on the top right corner of a tile's picture. It shows on
+   hover, on keyboard focus, on the chosen item, and always where nothing hovers. */
+.lib-view {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+/* The same room at the end of every row, button or not, so the columns line up. */
+.lib-row .lib-view,
+.lib-view-gap {
+  flex: none;
+  width: 56px;
+}
+/* A row without a bin keeps the bin's room, so the rows of a list line up. */
+.lib-delete-gap {
+  flex: none;
+  width: 28px;
+}
+
+/* The bar for ticked items: frosted, floating over the bottom of the sheet ------------------------ */
+.lib-selbar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  /* Pinned to the bottom of the sheet, however short the list is. */
+  margin-top: auto;
+  padding: 6px 6px 6px 14px;
+  border-radius: 14px;
+  box-shadow: var(--lift-2);
+}
+.lib-selcount {
+  margin-right: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Two rows on purpose: the actions on the file, then the two file utilities (Download, Copy file path). */
+.lib-actions {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+.lib-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Documents' grid tile is a page: portrait, so a PDF's first page or a slide fills it without a band. */
+.docs .img-tile {
+  --thumb-ratio: 3 / 4;
+}

@@ -6,6 +6,7 @@ import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { starterSkills } from './words.ts';
 
 function SkillRow({
@@ -117,7 +118,7 @@ export function SkillsDrawer() {
     return all.filter((s) => `${s.title} ${s.name} ${s.description}`.toLowerCase().includes(q));
   }, [all, query]);
 
-  if (!boot) return <p className="dock-empty">Loading your skills.</p>;
+  if (!boot) return <StateNote kind="loading" />;
   const { pinned, often } = starterSkills(boot);
   const list = (items: SkillInfo[]) => (
     <ul className="drawer-list">

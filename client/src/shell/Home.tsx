@@ -24,7 +24,9 @@ import type { DrawerName } from './contract.ts';
 import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
+import { ShowMore } from './ShowMore.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { clientOptions } from './search-select.ts';
 import { WhatsNewCard } from './WhatsNewCard.tsx';
 import { placeName, STATE_WORDS, starterSkills, whenWords } from './words.ts';
@@ -283,7 +285,7 @@ export function Home() {
           {activeChat.kind === 'new' ? (
             <div className="home-composer">
               {activeChat.skill ? (
-                <div className="home-skill">
+                <div className="notice home-skill" data-shape="box" data-level="info">
                   <strong>{activeChat.skill.title}</strong>
                   {activeChat.skill.description ? <span>{activeChat.skill.description}</span> : null}
                   {activeChat.skill.argumentHint ? (
@@ -483,11 +485,11 @@ export function Home() {
                 </button>
               </div>
               {!todos ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedTodoRows.length === 0 ? (
-                <p className="card-note">
+                <StateNote kind="empty">
                   {project ? 'No favourite to-dos in this project.' : 'Favourite a to-do to keep it here.'}
-                </p>
+                </StateNote>
               ) : (
                 <>
                   <ul className="drawer-list">
@@ -552,9 +554,9 @@ export function Home() {
                 </button>
               </div>
               {!sessions ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedChatRows.length === 0 ? (
-                <p className="card-note">Favourite a chat to keep it here.</p>
+                <StateNote kind="empty">Favourite a chat to keep it here.</StateNote>
               ) : (
                 <>
                   <ul className="drawer-list">
@@ -613,13 +615,13 @@ export function Home() {
                 </button>
               </div>
               {pinnedFiles === null && filesFailed ? (
-                <p className="card-note">Couldn't load your favourite files.</p>
+                <StateNote kind="error">Couldn't load your favourite files.</StateNote>
               ) : pinnedFiles === null ? (
-                <p className="card-note">Loading</p>
+                <StateNote kind="loading" />
               ) : pinnedFileRows.length === 0 ? (
-                <p className="card-note">
+                <StateNote kind="empty">
                   {project ? 'No favourite files in this project.' : 'Favourite a file to keep it here.'}
-                </p>
+                </StateNote>
               ) : (
                 <>
                   <ul className="drawer-list">
@@ -672,7 +674,7 @@ export function Home() {
                 ) : null}
               </div>
               {skillRows.length === 0 ? (
-                <p className="card-note">Favourite a skill to keep it here.</p>
+                <StateNote kind="empty">Favourite a skill to keep it here.</StateNote>
               ) : (
                 <ul className="drawer-list">
                   {skillRows.map((s) => (
@@ -739,29 +741,23 @@ function MoreLink({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const wrap = useRef<HTMLSpanElement>(null);
   const hidden = total - PINNED_ROWS;
   if (hidden <= 0) return null;
   return (
-    <button
-      type="button"
-      className="btn"
-      data-variant="quiet"
-      data-size="small"
-      aria-expanded={expanded}
-      onClick={(e) => {
-        const button = e.currentTarget;
-        onToggle();
-        // Folding a long card back removes rows above the button: keep it in view.
-        if (expanded) requestAnimationFrame(() => button.scrollIntoView?.({ block: 'nearest' }));
-      }}
-    >
-      {expanded ? (
-        <>
-          Show fewer<span className="visually-hidden"> {noun[1]}</span>
-        </>
-      ) : (
-        `Show ${hidden} more ${hidden === 1 ? noun[0] : noun[1]}`
-      )}
-    </button>
+    <span ref={wrap}>
+      <ShowMore
+        expanded={expanded}
+        count={hidden}
+        noun={{ one: noun[0], many: noun[1] }}
+        wording="more"
+        onToggle={() => {
+          onToggle();
+          // Folding a long card back removes rows above the button: keep it in view.
+          const button = wrap.current?.querySelector('button');
+          if (expanded) requestAnimationFrame(() => button?.scrollIntoView?.({ block: 'nearest' }));
+        }}
+      />
+    </span>
   );
 }

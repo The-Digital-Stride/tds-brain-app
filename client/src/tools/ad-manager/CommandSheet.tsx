@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { AccountHead } from './Approvals.tsx';
 import { Cadence, ReadinessPanel, TypeKey } from './Board.tsx';
@@ -39,20 +40,28 @@ export function CommandSheet() {
         reviewer={reviewer || undefined}
         currency={acct?.currency}
       />
-      {mismatch ? <p className="am-line">{identityLine(ads?.me?.name)}</p> : null}
+      {mismatch ? (
+        <p className="notice" data-level="info" data-shape="box">
+          {identityLine(ads?.me?.name)}
+        </p>
+      ) : null}
       {s.loadError ? (
-        <p className="am-line" data-level="error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {s.loadError}
         </p>
       ) : null}
       {s.boardError ? (
-        <p className="am-line" data-level="error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {s.boardError}
         </p>
       ) : null}
-      {started ? <p className="am-line">{started}</p> : null}
-      {!s.accounts && !s.loadError ? <p className="card-note">Loading</p> : null}
-      {s.accounts && s.accounts.length === 0 ? <p className="card-note">No accounts found.</p> : null}
+      {started ? (
+        <p className="notice" data-level="info" data-shape="box">
+          {started}
+        </p>
+      ) : null}
+      {!s.accounts && !s.loadError ? <StateNote kind="loading" /> : null}
+      {s.accounts && s.accounts.length === 0 ? <StateNote kind="empty">No accounts found.</StateNote> : null}
       {board && acct ? (
         <>
           <ReadinessPanel board={board} />
@@ -68,7 +77,7 @@ export function CommandSheet() {
           <Cadence board={board} name={name} canAct={!mismatch} onStarted={setStarted} />
         </>
       ) : account && !s.boardError ? (
-        <p className="card-note">Loading the board</p>
+        <StateNote kind="loading" />
       ) : null}
     </div>
   );

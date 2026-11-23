@@ -6,6 +6,7 @@ import {
   type AdsTotalsDays,
 } from '../../../../shared/ads-contract.ts';
 import { Seg } from '../../shell/Seg.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { AccountHead } from './Approvals.tsx';
 import { DeepDive } from './DeepDive.tsx';
 import { worthALook } from './logic.ts';
@@ -78,14 +79,12 @@ function TotalsStrip({ totals, currency }: { totals: AdsTotals; currency: string
                 currency,
               );
               return (
-                <div className="sm-fact" key={f.key}>
-                  <dt>{f.label}</dt>
-                  <dd>
-                    {totalsValue(f.key, range.current[f.key], currency)}
-                    <small data-tone={change.tone === 'neutral' ? undefined : change.tone}>
-                      {change.text}
-                      {change.hidden ? <span className="visually-hidden">{change.hidden}</span> : null}
-                    </small>
+                <div className="stat" key={f.key}>
+                  <dt className="stat-label">{f.label}</dt>
+                  <dd className="stat-value">{totalsValue(f.key, range.current[f.key], currency)}</dd>
+                  <dd className="stat-change" data-tone={change.tone === 'neutral' ? undefined : change.tone}>
+                    {change.text}
+                    {change.hidden ? <span className="visually-hidden">{change.hidden}</span> : null}
                   </dd>
                 </div>
               );
@@ -93,7 +92,7 @@ function TotalsStrip({ totals, currency }: { totals: AdsTotals; currency: string
           </dl>
         </>
       ) : (
-        <p className="card-note">No daily figures for this account yet.</p>
+        <StateNote kind="empty">No daily figures for this account yet.</StateNote>
       )}
       {wasted !== null ? (
         <p className="sm-wasted">
@@ -143,7 +142,7 @@ export function SummarySheet() {
         {board && !totals ? <span className="sm-period">Last 30 days</span> : null}
       </AccountHead>
       {s.boardError ? (
-        <p className="am-line" data-level="error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {s.boardError}
         </p>
       ) : null}
@@ -159,7 +158,7 @@ export function SummarySheet() {
                 {worth.length > 0 ? <span className="count">{worth.length}</span> : null}
               </div>
               {worth.length === 0 ? (
-                <p className="card-note">Nothing stands out in the tables right now.</p>
+                <StateNote kind="empty">Nothing stands out in the tables right now.</StateNote>
               ) : (
                 <ul>
                   {worth.map((w) => (
@@ -191,7 +190,7 @@ export function SummarySheet() {
           />
         </>
       ) : account && !s.boardError ? (
-        <p className="card-note">Loading the board</p>
+        <StateNote kind="loading" />
       ) : null}
     </div>
   );

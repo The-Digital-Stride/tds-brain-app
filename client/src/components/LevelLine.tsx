@@ -81,7 +81,7 @@ export function LevelLine({
       </p>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group. */}
       <div
-        className="level-menu"
+        className="popover level-menu"
         id={menuId}
         hidden={!menu}
         role="group"
@@ -97,7 +97,7 @@ export function LevelLine({
           <button
             key={t}
             type="button"
-            className="level-option"
+            className="menu-row"
             aria-current={level.tier === t ? 'true' : undefined}
             onClick={() => {
               onPick(t);
@@ -111,7 +111,7 @@ export function LevelLine({
         {level.source.kind === 'chat' ? (
           <button
             type="button"
-            className="level-option"
+            className="menu-row"
             onClick={() => {
               onPick(null);
               closeMenu();
@@ -142,9 +142,15 @@ export function LevelOffer({
   const used = usedTier ? ` This chat used ${LEVEL_TIERS[usedTier].label}.` : '';
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
-    <div className="notice level-offer" role="group" aria-label={`Team level for /${skill}`}>
+    <div
+      className="notice level-offer"
+      data-shape="box"
+      data-level="info"
+      role="group"
+      aria-label={`Team level for /${skill}`}
+    >
       <p className="level-offer-text">{`Set a team level for /${skill}?${used}`}</p>
-      <span className="level-offer-actions">
+      <span className="notice-actions">
         {LEVEL_TIERS_ORDER.map((t) => (
           <button key={t} type="button" className="btn" data-size="small" onClick={() => onSet(t)}>
             {LEVEL_TIERS[t].label}

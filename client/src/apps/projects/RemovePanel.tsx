@@ -149,7 +149,7 @@ export function RemovePanel({
   const options: { value: Do; text: string }[] = deleting
     ? [
         { value: 'delete', text: 'Delete' },
-        { value: 'unlink', text: 'Keep, unlinked' },
+        { value: 'unlink', text: 'Keep the to-do, remove it from the project' },
       ]
     : [
         { value: 'done', text: 'Mark as done' },
@@ -158,7 +158,7 @@ export function RemovePanel({
 
   return (
     <fieldset
-      className="proj-ask proj-move-ask proj-remove-ask"
+      className="confirm proj-remove-ask"
       aria-describedby={`${base}-desc`}
       data-danger={deleting || undefined}
       onKeyDown={(e) => {
@@ -168,12 +168,12 @@ export function RemovePanel({
         onCancel();
       }}
     >
-      <legend className="proj-ask-q">
+      <legend className="proj-remove-q">
         {deleting ? `Delete ${card.title} for good?` : `Archive ${card.title}?`}
       </legend>
       <div className="proj-move-text" id={`${base}-desc`}>
         {problem ? (
-          <p className="proj-error" role="alert">
+          <p className="error" role="alert">
             {problem}
           </p>
         ) : null}
@@ -259,7 +259,7 @@ export function RemovePanel({
         {check && deleting && !allowed ? <p>{notAllowedWords('delete', check.allowedWho)}</p> : null}
         {check && !deleting && !allowed ? <p>{notAllowedWords('archive', check.allowedWho)}</p> : null}
         {check && deleting && allowed ? (
-          <div className="proj-field">
+          <div className="form-field">
             <label id={`${base}-type-label`} htmlFor={`${base}-type`}>
               Type the project name to delete it
             </label>

@@ -167,7 +167,11 @@ export function ProjectsSheet() {
   } else if (screen.is === 'project' && card) {
     body = (
       <>
-        {notice ? <p className="proj-banner">{notice}</p> : null}
+        {notice ? (
+          <p className="notice" data-level="info" data-shape="box">
+            {notice}
+          </p>
+        ) : null}
         <ProjectPage
           card={card}
           list={list}
@@ -194,13 +198,17 @@ export function ProjectsSheet() {
       <>
         <h2 className="visually-hidden">Projects</h2>
         {!canChange ? (
-          <p className="proj-banner" role="status">
+          <p className="notice" data-level="info" data-shape="box" role="status">
             {READ_ONLY_NOTICE}
           </p>
         ) : null}
-        {notice ? <p className="proj-banner">{notice}</p> : null}
+        {notice ? (
+          <p className="notice" data-level="info" data-shape="box">
+            {notice}
+          </p>
+        ) : null}
         {list.looseLabels > 0 ? (
-          <div className="proj-banner">
+          <div className="notice" data-level="info" data-shape="box">
             <span>
               {list.looseLabels} old project label{list.looseLabels === 1 ? '' : 's'} on your to-dos could be
               tidied up.
@@ -219,13 +227,13 @@ export function ProjectsSheet() {
           </div>
         ) : null}
         {list.duplicates.length > 0 ? (
-          <p className="proj-banner" role="status">
+          <p className="notice" data-level="info" data-shape="box" role="status">
             Some folders share a name with another project, so only one is shown: {list.duplicates.join(', ')}
             .
           </p>
         ) : null}
         {(list.leftovers ?? []).length > 0 ? (
-          <p className="proj-banner" role="status">
+          <p className="notice" data-level="info" data-shape="box" role="status">
             These folders were left behind when a project moved or was archived, so they're hidden. Anything
             still in them stays only on this Mac: {(list.leftovers ?? []).join(', ')}.
           </p>

@@ -1,6 +1,7 @@
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useId, useMemo, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -37,10 +38,6 @@ export function ProjectTodos({
   const [message, setMessage] = useState('');
   // Cancel with a title typed asks first (design system, Actions rule 9).
   const [asking, setAsking] = useState(false);
-  const keepEditing = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (asking) keepEditing.current?.focus();
-  }, [asking]);
   const titleId = useId();
   const stageId = useId();
 
@@ -115,23 +112,18 @@ export function ProjectTodos({
           }}
         >
           {asking ? (
-            <fieldset className="proj-ask">
-              <legend className="proj-ask-q">Discard your changes?</legend>
-              <button type="button" className="btn" data-variant="danger" data-size="small" onClick={close}>
-                Discard changes
-              </button>
-              <button
-                type="button"
-                className="btn"
-                data-size="small"
-                ref={keepEditing}
-                onClick={() => setAsking(false)}
-              >
-                Keep editing
-              </button>
-            </fieldset>
+            <Confirm
+              label="Discard your changes"
+              text="Discard your changes?"
+              action="Discard changes"
+              safe="Keep editing"
+              variant="danger"
+              busy={false}
+              onConfirm={close}
+              onCancel={() => setAsking(false)}
+            />
           ) : null}
-          <div className="proj-field">
+          <div className="form-field">
             <label htmlFor={titleId}>To-do</label>
             <input
               id={titleId}
@@ -144,7 +136,7 @@ export function ProjectTodos({
             />
           </div>
           {card.stages.length > 0 ? (
-            <div className="proj-field">
+            <div className="form-field">
               <label htmlFor={stageId}>Stage</label>
               <select id={stageId} className="field" value={stage} onChange={(e) => setStage(e.target.value)}>
                 <option value="">No stage</option>
@@ -157,7 +149,7 @@ export function ProjectTodos({
             </div>
           ) : null}
           {message ? (
-            <p className="proj-error" role="alert">
+            <p className="error" role="alert">
               {message}
             </p>
           ) : null}

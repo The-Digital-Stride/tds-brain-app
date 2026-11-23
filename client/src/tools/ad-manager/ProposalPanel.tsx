@@ -7,13 +7,14 @@ import {
   type ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Fold } from '../../shell/Fold.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { StatusBadge } from './Approvals.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
-import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
 import { adsErrorText, isWaiting, personName, proposalFacts } from './words.ts';
@@ -96,7 +97,12 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   const isBusy = busy !== null;
   const inflight = f.inflight === true || unknownApply.includes(key);
 
-  if (ads && ads.sameIdentity === false) return <p className="am-line">{identityLine(ads.me?.name)}</p>;
+  if (ads && ads.sameIdentity === false)
+    return (
+      <p className="notice" data-level="info" data-shape="box">
+        {identityLine(ads.me?.name)}
+      </p>
+    );
 
   const base = { client: client.slug, id: p.id };
   const need = (value: string, box: { current: { focus: () => void } | null }, text: string): boolean => {
@@ -208,7 +214,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   return (
     <div className="am-act">
       {inflight ? (
-        <div className="am-line">
+        <div className="notice" data-level="warn" data-shape="box">
           <p>{ADS_ERROR_MESSAGES['unknown-outcome']}</p>
           <button type="button" className="btn" data-size="small" onClick={() => void clearInflight()}>
             I've checked the account
@@ -216,8 +222,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </div>
       ) : null}
       {f.canDecide ? (
-        <label className="am-field">
-          <span>Reason or note (needed to reject or request changes)</span>
+        <label className="form-field">
+          <span className="label">Reason or note (needed to reject or request changes)</span>
           <textarea
             ref={noteBox}
             className="field"
@@ -231,8 +237,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {f.canRecordDecision ? (
-        <label className="am-field">
-          <span>What was decided</span>
+        <label className="form-field">
+          <span className="label">What was decided</span>
           <input
             ref={decidedBox}
             className="field"
@@ -245,8 +251,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {f.canRecordClientApproval ? (
-        <label className="am-field">
-          <span>Who at the client said yes, and how</span>
+        <label className="form-field">
+          <span className="label">Who at the client said yes, and how</span>
           <input
             ref={whoBox}
             className="field"
@@ -260,7 +266,7 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         </label>
       ) : null}
       {hint ? (
-        <p className="am-hint" id={hintId} role="alert">
+        <p className="error" id={hintId} role="alert">
           {hint}
         </p>
       ) : null}
@@ -410,12 +416,12 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
         ) : null}
       </div>
       {busy ? (
-        <p className="am-line">
+        <p className="notice" data-level="info" data-shape="box">
           {applying ? 'Applying to Google Ads. This can take a few minutes. Please wait.' : 'Working…'}
         </p>
       ) : null}
       {!anyAction ? (
-        <p className="am-line">
+        <p className="notice" data-level="info" data-shape="box">
           {client.mine
             ? 'Nothing to do here from Cortex. It was applied by hand or by a script.'
             : `Waiting for ${personName(client.reviewer || client.owner, approvals?.people) || 'the reviewer'}.`}
@@ -535,7 +541,7 @@ export function ProposalPanel() {
         ))}
       </dl>
       <Fold key={`${key}-text`} title="Full proposal text" defaultOpen={false} onToggle={loadText}>
-        {text ? <pre className="am-body">{text.body}</pre> : <p className="card-note">Loading</p>}
+        {text ? <pre className="am-body">{text.body}</pre> : <StateNote kind="loading" />}
       </Fold>
       <Actions key={key} client={client} p={p} />
       <LastResult />

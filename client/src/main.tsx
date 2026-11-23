@@ -20,6 +20,7 @@ import './styles/help.css';
 import './styles/guide.css';
 import './styles/tour.css';
 import './styles/patterns.css';
+import './styles/library-shared.css';
 
 const root = document.getElementById('root');
 if (root) {

@@ -223,8 +223,8 @@ export function PermissionCard({ item, sessionId, onAnswered }: CardProps<Permis
           {item.warning}
         </p>
       ) : null}
-      <label className="note-field">
-        <span>If you say no, tell Claude why (optional)</span>
+      <label className="form-field approval-note">
+        <span className="label">If you say no, tell Claude why (optional)</span>
         <input
           className="field"
           value={note}

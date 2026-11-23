@@ -89,7 +89,7 @@ export function ProjectFields({
   const stageKnown = stage === '' || stages.includes(stage);
   return (
     <>
-      <div className="todo-field">
+      <div className="form-field">
         <label htmlFor={`${id}-project`}>Project</label>
         <SearchSelect
           id={`${id}-project`}
@@ -100,7 +100,7 @@ export function ProjectFields({
         />
       </div>
       {project && (stages.length > 0 || stage !== '') ? (
-        <div className="todo-field">
+        <div className="form-field">
           <label htmlFor={`${id}-stage`}>Stage</label>
           <select
             id={`${id}-stage`}
@@ -260,7 +260,7 @@ export function AddTodoForm({
 
   return (
     <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label="Add a to-do">
-      <div className="todo-field">
+      <div className="form-field">
         <label htmlFor={`${uid}-title`} className={full ? undefined : 'visually-hidden'}>
           What needs doing?
         </label>
@@ -322,7 +322,7 @@ export function AddTodoForm({
         </p>
       ) : null}
       {showDate ? (
-        <div className="todo-field">
+        <div className="form-field">
           <label htmlFor={`${uid}-due`}>Due date (optional)</label>
           <input
             id={`${uid}-due`}
@@ -335,7 +335,7 @@ export function AddTodoForm({
         </div>
       ) : null}
       {showWho ? (
-        <div className="todo-field">
+        <div className="form-field">
           <label htmlFor={`${uid}-who`}>Assigned to</label>
           <Assignee
             id={`${uid}-who`}
@@ -361,8 +361,8 @@ export function AddTodoForm({
         />
       ) : null}
       {canAttach ? (
-        <div className="todo-field">
-          <span className="todo-label">Details (optional)</span>
+        <div className="form-field">
+          <span className="label">Details (optional)</span>
           <TodoDetailsEditor
             markdown={details}
             editable
@@ -371,7 +371,7 @@ export function AddTodoForm({
             describedBy={overLimit ? `${uid}-over` : undefined}
           />
           {overLimit ? (
-            <p className="todo-note" id={`${uid}-over`} role="alert">
+            <p className="error" id={`${uid}-over`} role="alert">
               These details are longer than {TODO_DETAILS_MAX.toLocaleString('en-GB')} characters, so they
               can't be saved. Shorten them.
             </p>

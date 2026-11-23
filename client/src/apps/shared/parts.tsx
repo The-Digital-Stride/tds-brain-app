@@ -3,6 +3,7 @@ import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { UndoLine } from '../../shell/UndoLine.tsx';
 import { clearPickedProject, useProjectChoice } from '../../state/client-choice.ts';
 import { filterOptions, useProjects } from '../../state/projects.ts';
@@ -29,6 +30,7 @@ export function ProjectFilter({
   const clients = useStore().boot?.clients ?? [];
   const picked = useProjectChoice();
   const cards = list?.projects ?? [];
+  const pickedTitle = cards.find((c) => c.key === picked)?.title;
   if (cards.length === 0 && !picked) return null;
   const options = [{ value: ALL_PROJECTS, label: 'All projects' }, ...filterOptions(cards, clients)];
   return (
@@ -61,7 +63,7 @@ export function ProjectFilter({
             data-size="small"
             onClick={clearPickedProject}
           >
-            Clear
+            {pickedTitle ? `Clear ${pickedTitle}` : 'Clear project'}
           </button>
         </span>
       ) : null}
@@ -331,24 +333,15 @@ export function LibraryNotice({
   /** Shown when ready with nothing in it; omit when there are items. */
   empty?: string;
 }) {
-  if (status === 'loading') {
-    return (
-      <p className="lib-empty" role="status">
-        Loading…
-      </p>
-    );
-  }
+  if (status === 'loading') return <StateNote kind="loading" />;
   if (status === 'failed') {
     return (
-      <div className="lib-failed" role="alert">
-        <p>{message}</p>
-        <button type="button" className="btn" onClick={retry}>
-          Try again
-        </button>
-      </div>
+      <StateNote kind="error" onRetry={retry}>
+        {message}
+      </StateNote>
     );
   }
-  return empty ? <p className="lib-empty">{empty}</p> : null;
+  return empty ? <StateNote kind="empty">{empty}</StateNote> : null;
 }
 
 /**

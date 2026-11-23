@@ -60,7 +60,7 @@ function Row({ card, onOpen }: { card: ProjectCard; onOpen: () => void }) {
   return (
     <li className="line proj-row">
       <button type="button" className="proj-open" data-focus={`proj:${card.key}`} onClick={onOpen}>
-        <span className="health-dot" data-state={dot} aria-hidden="true" />
+        <span className="dot" data-state={dot} aria-hidden="true" />
         <span className="line-text">
           <span className="line-title">{card.title}</span>
           <span className="line-meta">{rowMeta(card)}</span>
@@ -101,7 +101,7 @@ export function ProjectListView({
   return (
     <>
       {cardless > 0 ? (
-        <div className="proj-banner">
+        <div className="notice" data-level="info" data-shape="box">
           <span>
             {cardless} project{cardless === 1 ? ' needs' : 's need'} a card
           </span>

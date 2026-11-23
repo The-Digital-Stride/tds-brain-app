@@ -265,8 +265,8 @@ describe('account data panel', () => {
     expect(head.closest('section')?.getAttribute('data-tone')).toBe('bad');
     expect(screen.getByRole('heading', { name: /Search/ })).toBeTruthy();
     expect(screen.getByRole('heading', { name: /Deep dive/ })).toBeTruthy();
-    expect(document.querySelector('.cc-group .cc-dot[data-s="bad"]')).toBeTruthy();
-    expect(document.querySelector('.cc-group .cc-dot[data-s="warn"]')).toBeTruthy();
+    expect(document.querySelector('.cc-group .dot[data-state="bad"]')).toBeTruthy();
+    expect(document.querySelector('.cc-group .dot[data-state="warn"]')).toBeTruthy();
     expect(screen.getByText('missing')).toBeTruthy();
   });
 

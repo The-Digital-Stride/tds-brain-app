@@ -11,6 +11,8 @@ import { usePageLinks } from '../apps/shared/usePageLinks.ts';
 import { Composer } from '../components/Composer.tsx';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
+import { StateNote } from './StateNote.tsx';
+import { useCopy } from './useCopy.ts';
 import { useFrameGuard } from './useFrameGuard.ts';
 
 /** What the form area at the foot of the page viewer says and allows (plan decision 6). */
@@ -117,7 +119,7 @@ export function PageStage({
   const following = shown !== null && shown === newest;
 
   const [announce, setAnnounce] = useState('');
-  const [copied, setCopied] = useState(false);
+  const { said: copySaid, copy: copyText } = useCopy();
   const [failure, setFailure] = useState<string | null>(null);
   // Messages are read once, then cleared.
   useEffect(() => {
@@ -125,11 +127,15 @@ export function PageStage({
     const t = setTimeout(() => setAnnounce(''), 4000);
     return () => clearTimeout(t);
   }, [announce]);
+  // The copy button's result: said aloud once, or the way to copy it by hand.
   useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(t);
-  }, [copied]);
+    if (copySaid === 'Copied') {
+      setFailure(null);
+      setAnnounce('Link copied');
+    } else if (copySaid) {
+      setFailure("Couldn't copy the link. Select it on claude.ai and copy it from there.");
+    }
+  }, [copySaid]);
 
   // Claude wrote the page while the newest is shown: the frame reloads (frameId) and a polite line says so.
   const lastMark = useRef<string>(mark);
@@ -178,7 +184,7 @@ export function PageStage({
   if (!page || !shown) {
     return (
       <>
-        <header className="viewer-head">
+        <header className="panel-head viewer-head">
           <div className="viewer-name">
             <h2 id={headingId} ref={headingRef} tabIndex={-1}>
               Page
@@ -189,7 +195,7 @@ export function PageStage({
           </button>
         </header>
         <div className="viewer-body">
-          <p className="lib-note">This page is no longer available.</p>
+          <StateNote kind="empty">This page is no longer available.</StateNote>
         </div>
       </>
     );
@@ -231,16 +237,8 @@ export function PageStage({
     setDownloading(false);
   };
 
-  const copy = async () => {
-    if (!page.url) return;
-    try {
-      await navigator.clipboard.writeText(page.url);
-      setFailure(null);
-      setCopied(true);
-      setAnnounce('Link copied');
-    } catch {
-      setFailure("Couldn't copy the link. Select it on claude.ai and copy it from there.");
-    }
+  const copy = () => {
+    if (page.url) void copyText(page.url);
   };
 
   const goToChat = () => {
@@ -281,7 +279,7 @@ export function PageStage({
 
   return (
     <>
-      <header className="viewer-head">
+      <header className="panel-head viewer-head">
         <div className="viewer-name">
           <h2 id={headingId} ref={headingRef} tabIndex={-1}>
             {page.title}
@@ -305,8 +303,8 @@ export function PageStage({
                 Open on claude.ai
                 <span className="visually-hidden"> (opens in a new tab)</span>
               </a>
-              <button type="button" className="btn" onClick={() => void copy()}>
-                {copied ? 'Copied' : 'Copy link'}
+              <button type="button" className="btn" onClick={copy}>
+                {copySaid === 'Copied' ? 'Copied' : 'Copy link'}
               </button>
             </>
           ) : null}
@@ -335,23 +333,27 @@ export function PageStage({
             </select>
           </label>
         ) : null}
-        {draftWorking ? <p className="notice">Claude is still working on this page.</p> : null}
+        {draftWorking ? (
+          <p className="notice" data-shape="box" data-level="info">
+            Claude is still working on this page.
+          </p>
+        ) : null}
         {page.live ? (
-          <p className="notice" data-level="warning">
+          <p className="notice" data-shape="box" data-level="warn">
             Some parts of this page only work on claude.ai.
           </p>
         ) : null}
         {page.multiFile ? (
-          <p className="notice" data-level="warning">
+          <p className="notice" data-shape="box" data-level="warn">
             Some files this page uses aren't shown here.
           </p>
         ) : null}
         {!shown.hasCopy ? (
-          <p className="notice">
+          <p className="notice" data-shape="box" data-level="info">
             This version isn't kept in the app.{page.url ? ' Open it on claude.ai.' : ''}
           </p>
         ) : frameStopped ? (
-          <div className="notice" data-level="warning">
+          <div className="notice" data-shape="box" data-level="warn">
             <p>This page tried to move the viewer to another site, so it was stopped.</p>
             <button type="button" className="btn" onClick={() => setReloads((n) => n + 1)}>
               Show the page again
@@ -416,7 +418,7 @@ export function PageStage({
           />
         ) : null}
         {failure ? (
-          <p className="notice" data-level="error" role="alert">
+          <p className="notice" data-shape="box" data-level="error" role="alert">
             {failure}
           </p>
         ) : null}

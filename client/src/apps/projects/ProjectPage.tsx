@@ -155,7 +155,7 @@ function Light({ light }: { light: ProjectCard['health'] }) {
   if (!light) return <>Not set</>;
   return (
     <span className="proj-light">
-      <span className="health-dot" data-state={dotState(light)} aria-hidden="true" />
+      <span className="dot" data-state={dotState(light)} aria-hidden="true" />
       {LIGHT_WORDS[light]}
     </span>
   );
@@ -220,7 +220,7 @@ function Team({
         ))}
       </ul>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}
@@ -267,7 +267,7 @@ function Overview({
         />
       ) : null}
       {card.archived ? (
-        <div className="proj-banner" role="status">
+        <div className="notice" data-level="info" data-shape="box" role="status">
           <span>
             This project is archived, so it can't be changed.
             {removal.on && removal.pre && !removal.pre.allowed
@@ -275,7 +275,7 @@ function Overview({
               : ''}
           </span>
           {removal.on ? (
-            <span className="proj-banner-actions">
+            <span className="notice-actions">
               <button
                 type="button"
                 className="btn"
@@ -301,12 +301,12 @@ function Overview({
         </div>
       ) : null}
       {removal.problem ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {removal.problem}
         </p>
       ) : null}
       {card.card === 'none' ? (
-        <div className="proj-banner">
+        <div className="notice" data-level="info" data-shape="box">
           <span>This project has no card yet, so its details can't be edited.</span>
           {canChange && !card.archived ? (
             <button type="button" className="btn" data-size="small" data-focus="addcard" onClick={onAddCard}>
@@ -316,7 +316,7 @@ function Overview({
         </div>
       ) : null}
       {card.card === 'unreadable' ? (
-        <div className="proj-banner" data-level="warning" role="alert">
+        <div className="notice" data-level="warn" data-shape="box" role="alert">
           <span>
             This project's card can't be read, so it can't be edited. You can add a new card, or ask someone
             to fix the file.
@@ -548,17 +548,24 @@ export function ProjectPage({
         ) : null}
       </div>
       {!canChange ? (
-        <p className="proj-banner" role="status">
+        <p className="notice" data-level="info" data-shape="box" role="status">
           {READ_ONLY_NOTICE}
         </p>
       ) : null}
       {note ? (
-        <p className="proj-banner" role="status" data-focus="note" tabIndex={-1}>
+        <p
+          className="notice"
+          data-level="info"
+          data-shape="box"
+          role="status"
+          data-focus="note"
+          tabIndex={-1}
+        >
           {note}
         </p>
       ) : null}
       {list.duplicates.some((d) => d.endsWith(`/${card.slug}`)) ? (
-        <p className="proj-banner" role="status">
+        <p className="notice" data-level="info" data-shape="box" role="status">
           Another folder has the same name as this project and is hidden: {list.duplicates.join(', ')}.
         </p>
       ) : null}

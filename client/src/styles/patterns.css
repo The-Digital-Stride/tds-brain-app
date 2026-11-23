@@ -160,6 +160,10 @@ textarea.field {
     border-color: CanvasText;
   }
 }
+/* StateNote: an error line is in the error colour, like every error. */
+.hint[data-kind="error"] {
+  color: var(--danger);
+}
 .menu-row {
   display: grid;
   gap: 1px;
@@ -242,6 +246,15 @@ textarea.field {
 
 /* Confirm (shell/Confirm.tsx): the inline "are you sure" strip, as Ad Manager's look. ------------------- */
 .confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  font-size: 13px;
+  font-weight: 500;
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--tint-1);

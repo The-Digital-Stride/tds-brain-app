@@ -241,8 +241,8 @@ describe('Home', () => {
     api.todos.mockReturnValue(new Promise(() => {}));
     api.sessions.mockReturnValue(new Promise(() => {}));
     await renderHome();
-    expect(card('Favourite to-dos').getByText('Loading')).toBeTruthy();
-    expect(card('Favourite chats').getByText('Loading')).toBeTruthy();
+    expect(card('Favourite to-dos').getByText('Loading…')).toBeTruthy();
+    expect(card('Favourite chats').getByText('Loading…')).toBeTruthy();
   });
 
   const typeAndSend = (box: HTMLElement, value: string) => {

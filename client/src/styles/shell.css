@@ -327,10 +327,10 @@
   display: none;
 }
 /* An update is ready: the button ends the version line; the in-place question about open chats wraps below. */
-.rail-update > .close-confirm {
+.rail-update > .confirm {
   flex-basis: 100%;
 }
-.rail-update > .close-confirm {
+.rail-update > .confirm {
   font-size: 12px;
   gap: 6px;
 }
@@ -492,23 +492,10 @@
 .dock[data-side="right"] .dock-panel {
   width: 332px;
 }
-.dock-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* The header band: 48px with the glass edge, on the same line as the sheet bar. */
-  min-height: 47px;
-  padding: 0 10px 1px 14px;
-}
-.dock-head h2 {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-}
-/* The heading takes focus only so the reader starts there; it needs no ring. */
-.dock-head h2:focus {
-  outline: none;
+/* The viewer's header keeps its grid (name, actions, close; viewer.css) inside the shared panel-head band. */
+.panel-head.viewer-head {
+  display: grid;
+  padding-block: 8px;
 }
 .dock-body {
   flex: 1;
@@ -676,49 +663,15 @@
 }
 
 /* Lines any sheet can show (SheetNotices) */
-.offline-banner {
-  flex: none;
-  padding: 8px 16px;
-  background: var(--amber-bg);
-  color: var(--amber-text);
-  border-bottom: 1px solid var(--amber-edge);
-  font-size: 13px;
-}
-.update-banner {
-  flex: none;
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 16px;
-  background: var(--wash);
-  color: var(--navy);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-.update-banner[data-wrap] {
-  flex-wrap: wrap;
-}
-.update-banner .close-confirm {
-  color: var(--navy);
-}
 .update-notes {
   flex-basis: 100%;
   margin: 0;
   padding-left: 18px;
 }
-.error-banner {
+/* The last action's error is a boxed notice, centred in the reading column. */
+.sheet-error {
   flex: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
   margin: 8px 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--danger);
-  background: var(--danger-wash);
-  color: var(--danger);
-  border-radius: 10px;
   max-width: 680px;
   width: calc(100% - 32px);
   align-self: center;

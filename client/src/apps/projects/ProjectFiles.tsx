@@ -9,6 +9,7 @@ import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects
 import { api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { FORMAT_ICONS } from '../documents/icons.ts';
 import { useLoaded } from '../shared/data.ts';
 import { Thumb } from '../shared/Thumb.tsx';
@@ -188,14 +189,14 @@ function Picker({
         </button>
       </form>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}
       <p className="visually-hidden" role="status">
         {progress}
       </p>
-      {hits && hits.length === 0 ? <p className="proj-note">No files found.</p> : null}
+      {hits && hits.length === 0 ? <StateNote kind="empty">No files found.</StateNote> : null}
       {hits && hits.length > 0 ? (
         <ul className="lib-list proj-pick-list" aria-label="Files found">
           {hits.map((h) => {
@@ -324,23 +325,16 @@ function Kind({
         <h3>{title}</h3>
         {loaded.status === 'ready' ? <span className="count">{loaded.data.items.length}</span> : null}
       </div>
-      {loaded.status === 'loading' ? (
-        <p className="proj-note" role="status">
-          Loading…
-        </p>
-      ) : null}
+      {loaded.status === 'loading' ? <StateNote kind="loading" /> : null}
       {loaded.status === 'failed' ? (
-        <p className="proj-note" role="alert">
-          {loaded.message}{' '}
-          <button type="button" className="btn" data-size="small" onClick={loaded.retry}>
-            Try again
-          </button>
-        </p>
+        <StateNote kind="error" onRetry={loaded.retry}>
+          {loaded.message}
+        </StateNote>
       ) : null}
       {loaded.status === 'ready' ? (
         <>
           {loaded.data.items.length === 0 ? (
-            <p className="proj-note">No {title.toLowerCase()} in this project yet.</p>
+            <StateNote kind="empty">No {title.toLowerCase()} in this project yet.</StateNote>
           ) : (
             <ul className="lib-list">
               {loaded.data.items.map((item) => (
@@ -413,7 +407,7 @@ export function ProjectFiles({
   return (
     <>
       {message ? (
-        <p className="proj-error" role="alert">
+        <p className="notice" data-level="error" data-shape="box" role="alert">
           {message}
         </p>
       ) : null}

@@ -27,6 +27,7 @@ import { HelpLink } from '../shell/HelpLink.tsx';
 import { APPROVALS_SHORT } from '../shell/Inspector.tsx';
 import { Seg } from '../shell/Seg.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
+import { StateNote } from '../shell/StateNote.tsx';
 import type { SettingsTab } from '../shell/settings-tabs.ts';
 import { phaseText, UpdateAction } from '../shell/UpdateBanner.tsx';
 import { syncWords } from '../shell/words.ts';
@@ -61,11 +62,7 @@ function TokensSavedSection() {
         <h2 id="saved-h">Tokens saved</h2>
         <HelpLink page="tokens-saved" />
       </div>
-      {state.kind === 'loading' ? (
-        <p className="setting-help" role="status">
-          Loading the token figures.
-        </p>
-      ) : null}
+      {state.kind === 'loading' ? <StateNote kind="loading" /> : null}
       <p className="setting-help">
         Tokens are the small pieces of text Claude reads and writes. Fewer tokens means faster, cheaper chats.
       </p>

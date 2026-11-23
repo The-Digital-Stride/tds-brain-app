@@ -9,6 +9,7 @@ import type {
 } from '../../../../shared/projects-contract.ts';
 import { ApiFailure, api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { projectText, useProjects } from '../../state/projects.ts';
 import { errorWords, joinWords, personName, slugFromTitle } from './logic.ts';
 
@@ -124,7 +125,7 @@ function Row({
       </ul>
       {row.conflicts.length > 0 ? (
         <div className="proj-conflicts">
-          <p className="proj-hint">Left alone, because they already belong to a different client:</p>
+          <p className="hint">Left alone, because they already belong to a different client:</p>
           <ul>
             {row.conflicts.map((c) => (
               <li key={`${c.scope}:${c.id}`}>
@@ -135,7 +136,7 @@ function Row({
         </div>
       ) : null}
       {changing ? (
-        <div className="proj-field">
+        <div className="form-field">
           <label htmlFor={selectId}>Use this instead</label>
           <select id={selectId} className="field" value={choice} onChange={(e) => setChoice(e.target.value)}>
             <option value="">Choose…</option>
@@ -345,20 +346,10 @@ export function TidyScreen({
           {status}
         </p>
       ) : null}
-      {message ? (
-        <p className="proj-error" role="alert">
-          {message}
-        </p>
-      ) : null}
-      {tidy === null && !message ? (
-        <p className="proj-note" role="status">
-          Loading…
-        </p>
-      ) : null}
+      {message ? <StateNote kind="error">{message}</StateNote> : null}
+      {tidy === null && !message ? <StateNote kind="loading" /> : null}
       {tidy && tidy.rows.length === 0 ? (
-        <p className="proj-note" role="status">
-          All tidy. There are no old labels left.
-        </p>
+        <StateNote kind="empty">All tidy. There are no old labels left.</StateNote>
       ) : null}
       {tidy && tidy.rows.length > 0 ? (
         <ul className="proj-tidy" ref={list$}>

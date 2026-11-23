@@ -167,12 +167,12 @@ export function rowMeta(card: ProjectCard): string {
   return bits.join(' · ');
 }
 
-/** The health light's colour as the app's `.health-dot` state. */
-export function dotState(light: Light | null): 'ok' | 'note' | 'problem' | undefined {
+/** The health light's colour as the app's `.dot` state (red is a problem; no light is idle). */
+export function dotState(light: Light | null): 'ok' | 'warn' | 'bad' | 'idle' {
   if (light === 'green') return 'ok';
-  if (light === 'amber') return 'note';
-  if (light === 'red') return 'problem';
-  return undefined;
+  if (light === 'amber') return 'warn';
+  if (light === 'red') return 'bad';
+  return 'idle';
 }
 
 /** True when the card can be edited: a real card, not archived. */

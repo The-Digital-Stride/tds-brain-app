@@ -27,7 +27,7 @@ export function SheetTabs({ label, items, current, onChoose, className = 'tool-t
             {t.label}
             {count > 0 ? <span className="count">{count}</span> : null}
             {note ? <span className="tool-tab-note">{note}</span> : null}
-            {t.dot ? <span className="health-dot" data-state={t.dot} aria-hidden="true" /> : null}
+            {t.dot ? <span className="dot" data-state={t.dot} aria-hidden="true" /> : null}
           </button>
         );
       })}

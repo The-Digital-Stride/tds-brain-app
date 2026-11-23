@@ -6,11 +6,11 @@ import type {
   ProposalSummary,
 } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import { useAdsRunner } from './actions.ts';
-import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { needsYou } from './logic.ts';
 import { OpenFile } from './OpenFile.tsx';
@@ -129,51 +129,51 @@ export function FactTiles({ client }: { client: ClientApprovals }) {
   const ms = m ? monthStatus(m, people) : null;
   return (
     <ul className="am-facts" aria-label="Where this account stands">
-      <li className="am-fact" data-tone={waiting.length > 0 ? 'waiting' : undefined}>
-        <span className="am-fact-l">Waiting for a decision</span>
-        <span className="am-fact-v">{waiting.length}</span>
-        <span className="am-fact-d">
+      <li className="stat" data-tone={waiting.length > 0 ? 'waiting' : undefined}>
+        <span className="stat-label">Waiting for a decision</span>
+        <span className="stat-value">{waiting.length}</span>
+        <span className="stat-change">
           {firstExpiry ? `first expires ${dateWords(firstExpiry, now)}` : 'Nothing waiting'}
         </span>
       </li>
-      <li className="am-fact">
-        <span className="am-fact-l">Approved, ready to apply</span>
-        <span className="am-fact-v">{approved.length}</span>
-        <span className="am-fact-d">
+      <li className="stat">
+        <span className="stat-label">Approved, ready to apply</span>
+        <span className="stat-value">{approved.length}</span>
+        <span className="stat-change">
           {dryRuns > 0 ? `${dryRuns} dry ${dryRuns === 1 ? 'run' : 'runs'} passed` : ' '}
         </span>
       </li>
-      <li className="am-fact">
-        <span className="am-fact-l">Latest weekly pack</span>
+      <li className="stat">
+        <span className="stat-label">Latest weekly pack</span>
         {pack ? (
           <>
-            <span className="am-fact-v">
+            <span className="stat-value">
               {pack.act} act · {pack.watch} watch
             </span>
-            <span className="am-fact-d">
+            <span className="stat-change">
               {dateWords(pack.date, now) || pack.date}
               {pack.provisional ? ', provisional' : ''}
             </span>
           </>
         ) : (
           <>
-            <span className="am-fact-v">None yet</span>
-            <span className="am-fact-d">&nbsp;</span>
+            <span className="stat-value">None yet</span>
+            <span className="stat-change">&nbsp;</span>
           </>
         )}
       </li>
-      <li className="am-fact">
+      <li className="stat">
         {m ? (
-          <button type="button" className="am-fact-jump" onClick={goToClose}>
-            <span className="am-fact-l">Monthly close</span>
-            <span className="am-fact-v">{m.monthName || m.month}</span>
-            <span className="am-fact-d">{ms?.text}</span>
+          <button type="button" className="stat-jump" onClick={goToClose}>
+            <span className="stat-label">Monthly close</span>
+            <span className="stat-value">{m.monthName || m.month}</span>
+            <span className="stat-change">{ms?.text}</span>
           </button>
         ) : (
           <>
-            <span className="am-fact-l">Monthly close</span>
-            <span className="am-fact-v">None yet</span>
-            <span className="am-fact-d">&nbsp;</span>
+            <span className="stat-label">Monthly close</span>
+            <span className="stat-value">None yet</span>
+            <span className="stat-change">&nbsp;</span>
           </>
         )}
       </li>
@@ -278,8 +278,8 @@ function SignOff({
   if (ask)
     return (
       <div className="am-sign">
-        <label className="am-field am-grow">
-          <span>Sign-off note (optional)</span>
+        <label className="form-field am-grow">
+          <span className="label">Sign-off note (optional)</span>
           <input className="field" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
         <Confirm

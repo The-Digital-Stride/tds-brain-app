@@ -39,6 +39,7 @@ import { SearchSelect } from './SearchSelect.tsx';
 import { Seg } from './Seg.tsx';
 import { useShell } from './ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
+import { StateNote } from './StateNote.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
@@ -581,7 +582,7 @@ export function TodosDrawer() {
     if (was !== undefined && !skip && focusUndo !== was) setRefocus(was);
   }, [openKey, focusUndo]);
 
-  if (!todos) return <p className="dock-empty">Loading your to-dos.</p>;
+  if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';
   const canChange = todos.changes === 'on';

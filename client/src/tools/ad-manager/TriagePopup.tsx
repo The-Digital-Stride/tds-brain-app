@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AdsTriageRow } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { selectAccount } from './store.ts';
 import { actionLabel, adsErrorText, dateWords, daysFromNow, relativeWords, triageWords } from './words.ts';
@@ -83,7 +84,7 @@ export function TriagePopup({
   };
 
   return (
-    <div className="cc-triage" role="dialog" aria-labelledby={head} ref={box}>
+    <div className="popover" role="dialog" aria-labelledby={head} ref={box}>
       <div className="cc-triage-head">
         <h4 id={head}>All accounts' standups</h4>
         <button
@@ -99,27 +100,20 @@ export function TriagePopup({
       </div>
       <p className="am-sub cc-triage-hint">Worst first. Choose an account to open it.</p>
       {error ? (
-        <div className="cc-triage-note">
-          <p className="am-hint" role="alert">
-            {error}
-          </p>
-          <button type="button" className="btn" data-size="small" onClick={() => setAttempt((n) => n + 1)}>
-            Try again
-          </button>
-        </div>
+        <StateNote kind="error" onRetry={() => setAttempt((n) => n + 1)}>
+          {error}
+        </StateNote>
       ) : rows === null ? (
-        <p className="cc-triage-note" role="status">
-          Loading…
-        </p>
+        <StateNote kind="loading" />
       ) : rows.length === 0 ? (
-        <p className="cc-triage-note">No accounts to show.</p>
+        <StateNote kind="empty">No accounts to show.</StateNote>
       ) : (
         <ul className="cc-triage-list">
           {rows.map((r) => (
             <li key={r.key}>
               <button
                 type="button"
-                className="cc-triage-row"
+                className="menu-row"
                 aria-current={r.key === account ? 'true' : undefined}
                 onClick={() => choose(r.key)}
               >

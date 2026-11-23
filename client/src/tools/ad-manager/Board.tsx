@@ -2,10 +2,10 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { ADS_TRIAGE_CAPABILITY, type AdsBoard, type AdsTaskRun } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
 import { useCopy } from '../../apps/shared/copy.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { useStore } from '../../store.tsx';
 import type { DueState, FileDot, Readiness } from './ads-tools-contract.ts';
-import { Confirm } from './Confirm.tsx';
 import { useRestoreFocus } from './focus.ts';
 import { dueState, readiness } from './logic.ts';
 import { OpenFile } from './OpenFile.tsx';
@@ -136,7 +136,7 @@ function RunInfo({
     line = (
       <>
         <span className="am-run-state" aria-hidden="true">
-          <span className="dot" data-attention={status === 'running' ? 'working' : 'asking'} />
+          <span className="dot" data-state={status === 'running' ? 'working' : 'asking'} />
           {words}
         </span>
         <span aria-hidden="true"> · </span>
@@ -205,7 +205,7 @@ function RunInfo({
         </span>
       ) : null}
       {gone ? (
-        <p className="am-hint" role="alert">
+        <p className="error" role="alert">
           That chat can't be opened any more.
         </p>
       ) : null}
@@ -399,7 +399,7 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
   return (
     <section className="cc-ready" data-tone={r.tone} aria-labelledby="cc-ready-h">
       <div className="cc-ready-head">
-        <span className="cc-dot" data-s={r.tone} aria-hidden="true" />
+        <span className="dot" data-state={r.tone} aria-hidden="true" />
         <h2 id="cc-ready-h" ref={head} tabIndex={-1}>
           {title}
         </h2>
@@ -420,7 +420,7 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
         {r.groups.map((g) => (
           <div key={g.group} className="cc-group">
             <h3 className="cc-group-h">
-              <span className="cc-dot" data-s={g.required === 0 ? 'na' : g.tone} aria-hidden="true" />
+              <span className="dot" data-state={g.required === 0 ? 'idle' : g.tone} aria-hidden="true" />
               {g.label}
               <span className="am-sub cc-count">
                 {g.required === 0 ? 'Not needed' : `${g.ready} of ${g.required} ready`}
@@ -430,7 +430,7 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
               <ul>
                 {g.files.map(({ file, dot }) => (
                   <li key={file.file}>
-                    <span className="cc-dot" data-s={dot} aria-hidden="true" />
+                    <span className="dot" data-state={dot === 'na' ? 'idle' : dot} aria-hidden="true" />
                     <span className="cc-file">
                       {file.file}
                       <span className="visually-hidden">, {DOT_WORDS[dot]}</span>
@@ -446,9 +446,9 @@ export function ReadinessPanel({ board }: { board: AdsBoard }) {
       {open ? (
         <>
           <p className="am-sub cc-key" aria-hidden="true">
-            Key: <span className="cc-dot" data-s="ok" /> ready · <span className="cc-dot" data-s="na" /> not
-            needed · <span className="cc-dot" data-s="warn" /> stale or wrong shape ·{' '}
-            <span className="cc-dot" data-s="bad" /> missing. Reading from <code>{h.dir}</code>
+            Key: <span className="dot" data-state="ok" /> ready · <span className="dot" data-state="idle" />{' '}
+            not needed · <span className="dot" data-state="warn" /> stale or wrong shape ·{' '}
+            <span className="dot" data-state="bad" /> missing. Reading from <code>{h.dir}</code>
           </p>
           {anyBad ? <CopyPrompts board={board} /> : null}
         </>
@@ -677,7 +677,7 @@ function StandupCard({
         </span>
       )}
       {error ? (
-        <p className="am-hint" role="alert">
+        <p className="error" role="alert">
           {error}
         </p>
       ) : null}

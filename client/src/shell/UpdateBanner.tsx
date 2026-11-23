@@ -5,6 +5,7 @@ import {
   type UpdateStatus,
 } from '../../../shared/update-contract.ts';
 import { type UpdateActions, type UpdateView, useUpdate } from '../state/update.ts';
+import { Confirm } from './Confirm.tsx';
 import { Icon } from './Icon.tsx';
 
 const PHASE_TEXT: Partial<Record<UpdatePhase, string>> = {
@@ -71,43 +72,21 @@ export function UpdateAction({
   }, [confirming]);
   if (confirming) {
     return (
-      <fieldset
-        className="close-confirm"
-        aria-label="Update and restart"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            // Handled here, so the shell's Esc doesn't also close a drawer.
-            e.preventDefault();
-            setConfirming(false);
-          }
+      <Confirm
+        label="Update and restart"
+        text={`Updating restarts TDS Cortex and closes ${chatsWords(openChats)}.`}
+        action="Update now"
+        safe="Not now"
+        variant="primary"
+        busy={false}
+        onConfirm={() => {
+          wasConfirming.current = false;
+          setConfirming(false);
+          void update.start();
+          onMoved?.();
         }}
-      >
-        <span>Updating restarts TDS Cortex and closes {chatsWords(openChats)}.</span>
-        <button
-          type="button"
-          className="btn"
-          data-variant="primary"
-          data-size="small"
-          onClick={() => {
-            wasConfirming.current = false;
-            setConfirming(false);
-            void update.start();
-            onMoved?.();
-          }}
-        >
-          Update now
-        </button>
-        <button
-          type="button"
-          className="btn"
-          data-size="small"
-          // biome-ignore lint/a11y/noAutofocus: focus moves here because the question just appeared.
-          autoFocus
-          onClick={() => setConfirming(false)}
-        >
-          Not now
-        </button>
-      </fieldset>
+        onCancel={() => setConfirming(false)}
+      />
     );
   }
   return (
@@ -168,7 +147,7 @@ export function UpdateBanner() {
     return (
       <>
         {announcer}
-        <div className="update-banner">
+        <div className="notice" data-shape="strip" data-level="info">
           <span ref={textRef} tabIndex={-1}>
             {running}
           </span>
@@ -193,7 +172,7 @@ export function UpdateBanner() {
   return (
     <>
       {announcer}
-      <div className="update-banner" data-wrap>
+      <div className="notice" data-shape="strip" data-level="info">
         <span ref={textRef} tabIndex={-1}>
           {text}
         </span>

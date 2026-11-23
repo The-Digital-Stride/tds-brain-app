@@ -21,6 +21,9 @@ function OwnHealth() {
   return <HealthList checks={healthChecks({ boot, streamUp, lists, lastSync, now })} />;
 }
 
+/** A check's state as the shared dot's state: red is for problems only. */
+const DOT_STATE = { ok: 'ok', problem: 'bad', note: 'warn', checking: 'idle' } as const;
+
 function HealthList({ checks }: { checks: HealthCheck[] }) {
   const { setSetupOpen } = useStore();
   const summary = healthSummary(checks);
@@ -30,14 +33,19 @@ function HealthList({ checks }: { checks: HealthCheck[] }) {
         <h2 id="health-h">How TDS Cortex is running</h2>
         <HelpLink page="health" />
       </div>
-      <p className="health-summary" data-state={summary.state} role="status">
-        <span className="health-dot" data-state={summary.state} aria-hidden="true" />
+      <p
+        className="notice"
+        data-shape="box"
+        data-level={summary.state === 'problem' ? 'error' : summary.state === 'ok' ? 'ok' : 'info'}
+        role="status"
+      >
+        <span className="dot" data-state={DOT_STATE[summary.state]} aria-hidden="true" />
         {summary.text}
       </p>
       <ul className="health-list">
         {checks.map((c) => (
           <li key={c.id} className="health-check" data-state={c.state}>
-            <span className="health-dot" data-state={c.state} aria-hidden="true" />
+            <span className="dot" data-state={DOT_STATE[c.state]} aria-hidden="true" />
             <div>
               <p className="health-label">
                 {c.label}

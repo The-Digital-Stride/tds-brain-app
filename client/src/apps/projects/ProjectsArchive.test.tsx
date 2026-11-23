@@ -277,7 +277,7 @@ describe('the delete panel', () => {
         .checked;
     expect(on('My to-do', 'Delete')).toBe(true);
     expect(on('Loose to-do', 'Delete')).toBe(true);
-    expect(on('Their to-do', 'Keep, unlinked')).toBe(true);
+    expect(on('Their to-do', 'Keep the to-do, remove it from the project')).toBe(true);
     const del = screen.getByRole('button', { name: 'Delete' });
     // aria-disabled, never disabled, until the title is typed (Actions rule 12).
     expect(del.getAttribute('aria-disabled')).toBe('true');

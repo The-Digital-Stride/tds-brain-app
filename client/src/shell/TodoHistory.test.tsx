@@ -112,7 +112,7 @@ describe('TodoHistory', () => {
     apiMock.todoHistory.mockReturnValueOnce(new Promise((r) => (resolve = r)));
     show();
     const status = () => screen.getByRole('status').textContent;
-    await waitFor(() => expect(status()).toBe('Loading the history.'));
+    await waitFor(() => expect(status()).toBe('Loading…'));
     resolve(reply({ events: [ev('done'), ev('retitled', { from: 'a', to: 'b' })] }));
     await waitFor(() => expect(status()).toBe('2 changes.'));
     cleanup();

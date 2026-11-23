@@ -25,7 +25,7 @@ export function Confirm({
   const textId = useId();
   return (
     <fieldset
-      className="confirm close-confirm"
+      className="confirm"
       aria-label={label}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {

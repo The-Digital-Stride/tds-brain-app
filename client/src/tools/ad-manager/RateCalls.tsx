@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ADS_NOTE_MAX } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { StateNote } from '../../shell/StateNote.tsx';
 import { useAd } from './store.ts';
 import type { StandupBrief } from './types.ts';
 import { actionLabel, adsErrorText } from './words.ts';
@@ -37,14 +38,16 @@ export function RateCalls() {
   if (brief === undefined)
     return (
       <div className="am-panel">
-        <p className="card-note">Loading</p>
+        <StateNote kind="loading" />
       </div>
     );
   const recs = brief?.recommendations ?? [];
   if (recs.length === 0)
     return (
       <div className="am-panel">
-        <p className="am-line">{error ?? 'No standup calls to rate yet. Run the Daily standup first.'}</p>
+        <p className="notice" data-level="info" data-shape="box">
+          {error ?? 'No standup calls to rate yet. Run the Daily standup first.'}
+        </p>
       </div>
     );
   const set = (i: number, patch: Partial<Rating>) =>
@@ -93,8 +96,8 @@ export function RateCalls() {
             </p>
             {r.reason ? <p className="am-sub">{r.reason}</p> : null}
             <div className="am-actions">
-              <label className="am-field am-score">
-                <span>Rating for {r.campaign}</span>
+              <label className="form-field am-score">
+                <span className="label">Rating for {r.campaign}</span>
                 <select
                   className="field"
                   value={ratings[i]?.score ?? ''}
@@ -108,8 +111,8 @@ export function RateCalls() {
                   ))}
                 </select>
               </label>
-              <label className="am-field am-grow">
-                <span>Note for {r.campaign} (optional)</span>
+              <label className="form-field am-grow">
+                <span className="label">Note for {r.campaign} (optional)</span>
                 <input
                   className="field"
                   maxLength={ADS_NOTE_MAX}

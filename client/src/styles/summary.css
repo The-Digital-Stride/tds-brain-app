@@ -55,32 +55,6 @@
   margin: 0;
   padding: 0 8px 8px;
 }
-.sm .sm-fact {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--tint-1);
-}
-.sm .sm-fact dt {
-  font-size: 12px;
-  color: var(--iron);
-}
-.sm .sm-fact dd {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.sm .sm-fact dd small {
-  display: block;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--iron);
-}
-.sm .sm-fact dd small[data-tone="good"] {
-  color: var(--ok);
-}
-.sm .sm-fact dd small[data-tone="bad"] {
-  color: var(--danger);
-}
 .sm .sm-wasted {
   margin: 0;
   padding: 8px 8px 4px;

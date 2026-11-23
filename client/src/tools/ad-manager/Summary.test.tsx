@@ -317,13 +317,15 @@ describe('deep dive tables', () => {
     await ready();
     const alpha = screen.getByRole('region', { name: 'Alpha' });
     expect(within(alpha).getAllByRole('row')).toHaveLength(6);
-    const more = within(alpha).getByRole('button', { name: 'Show all 8' });
+    const more = within(alpha).getByRole('button', { name: 'Show all 8 rows' });
     expect(more.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(more);
     expect(within(alpha).getAllByRole('row')).toHaveLength(9);
-    expect(within(alpha).getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    );
+    expect(
+      within(alpha)
+        .getByRole('button', { name: /^Show fewer/ })
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
     expect(
       within(screen.getByRole('region', { name: 'Beta' })).queryByRole('button', { name: /Show/ }),
     ).toBeNull();

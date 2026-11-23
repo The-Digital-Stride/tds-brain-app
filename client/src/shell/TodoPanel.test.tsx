@@ -904,7 +904,7 @@ describe('asked of others', () => {
     const retry = await screen.findByRole('button', { name: 'Try again' });
     apiMock.askedTodos.mockReturnValueOnce(new Promise(() => {}));
     fireEvent.click(retry);
-    await screen.findByText("Loading what you've asked of others.");
+    await screen.findByText('Loading…');
   });
 
   it('closes History and fetches afresh for the next to-do', async () => {

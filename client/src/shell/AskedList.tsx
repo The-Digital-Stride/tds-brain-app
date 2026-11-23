@@ -3,6 +3,7 @@ import { ASKED_DONE_DAYS, type AskedTodo, type AskedTodoList } from '../../../sh
 import { dueInWords, isOverdue } from '../format.ts';
 import { Fold } from './Fold.tsx';
 import { ProjectChip } from './ProjectChip.tsx';
+import { StateNote } from './StateNote.tsx';
 import { askedMeta, cap } from './words.ts';
 
 /** How the separate "asked of others" request is going. */
@@ -137,7 +138,7 @@ export function AskedList({
             </button>
           </p>
         ) : (
-          <p className="dock-empty">Loading what you've asked of others.</p>
+          <StateNote kind="loading" />
         )}
       </>
     );

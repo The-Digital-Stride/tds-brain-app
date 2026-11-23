@@ -1,10 +1,11 @@
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import {
   PROJECT_SLUG_MAX,
   PROJECT_TITLE_MAX,
   type ProjectCard,
 } from '../../../../shared/projects-contract.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
@@ -69,16 +70,16 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="proj-field">
+    <div className="form-field">
       <label htmlFor={id}>{label}</label>
       {children}
       {hint ? (
-        <p className="proj-hint" id={`${id}-hint`}>
+        <p className="hint" id={`${id}-hint`}>
           {hint}
         </p>
       ) : null}
       {error ? (
-        <p className="proj-error" id={`${id}-err`} role="alert">
+        <p className="error" id={`${id}-err`} role="alert">
           {error}
         </p>
       ) : null}
@@ -126,7 +127,6 @@ export function ProjectForm({
   const [reloaded, setReloaded] = useState('');
   const initial = useRef(JSON.stringify(v));
   const seen = useRef<ProjectCard | null>(card);
-  const keepEditing = useRef<HTMLButtonElement>(null);
   const base = useId();
   const id = (n: string) => `${base}-${n}`;
   const set = (patch: Partial<FormValues>) => setV((x) => ({ ...x, ...patch }));
@@ -145,10 +145,6 @@ export function ProjectForm({
     return [...slugs].sort((a, b) => personName(a, team).localeCompare(personName(b, team), 'en-GB'));
   }, [team, v.team, v.owner, card]);
   const services = useMemo(() => [...new Set([...KNOWN_SERVICES, ...v.service])], [v.service]);
-
-  useEffect(() => {
-    if (asking) keepEditing.current?.focus();
-  }, [asking]);
 
   // After a "changed" refusal: take the latest card, keep what this person typed, and say what a teammate changed.
   const reload = async () => {
@@ -257,43 +253,24 @@ export function ProjectForm({
         <h2 className="proj-title">{heading}</h2>
       </div>
       {asking ? (
-        <fieldset
-          className="proj-ask"
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.preventDefault();
-            e.stopPropagation();
-            setAsking('');
-          }}
-        >
-          <legend className="proj-ask-q">Discard your changes?</legend>
-          <button
-            type="button"
-            className="btn"
-            data-variant="danger"
-            data-size="small"
-            onClick={() => (asking === 'move' ? onMove?.() : onCancel())}
-          >
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-size="small"
-            ref={keepEditing}
-            onClick={() => setAsking('')}
-          >
-            Keep editing
-          </button>
-        </fieldset>
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => (asking === 'move' ? onMove?.() : onCancel())}
+          onCancel={() => setAsking('')}
+        />
       ) : null}
       {reloaded ? (
-        <p className="proj-banner" data-level="warning" role="status">
+        <p className="notice" data-level="warn" data-shape="box" role="status">
           {reloaded}
         </p>
       ) : null}
       {failure ? (
-        <div className="proj-banner" data-level="error" role="alert">
+        <div className="notice" data-level="error" data-shape="box" role="alert">
           <span>{failure.message}</span>
           {failure.code === 'changed' ? (
             <button type="button" className="btn" data-size="small" onClick={() => void reload()}>
@@ -322,8 +299,8 @@ export function ProjectForm({
         </Field>
 
         {mode === 'edit' && card ? (
-          <div className="proj-field">
-            <span className="proj-label" id={id('client-label')}>
+          <div className="form-field">
+            <span className="label" id={id('client-label')}>
               Client
             </span>
             <div className="proj-static">
@@ -340,7 +317,7 @@ export function ProjectForm({
                 </button>
               ) : null}
             </div>
-            <p className="proj-hint" id={id('client-hint')}>
+            <p className="hint" id={id('client-hint')}>
               {canMove === 'yes'
                 ? card.space === 'personal'
                   ? 'Only you can see it. You can move it to a client.'
@@ -356,8 +333,8 @@ export function ProjectForm({
 
         {mode === 'create' ? (
           <>
-            <div className="proj-field">
-              <span className="proj-label" id={id('who-label')}>
+            <div className="form-field">
+              <span className="label" id={id('who-label')}>
                 Who is it for
               </span>
               <Seg
@@ -377,7 +354,7 @@ export function ProjectForm({
                 }}
               />
               {justMe ? (
-                <p className="proj-hint">Only you can see it. You can move it to a client later.</p>
+                <p className="hint">Only you can see it. You can move it to a client later.</p>
               ) : null}
             </div>
             {justMe ? null : (
@@ -415,8 +392,8 @@ export function ProjectForm({
           </>
         ) : null}
 
-        <div className="proj-field">
-          <span className="proj-label" id={id('kind-label')}>
+        <div className="form-field">
+          <span className="label" id={id('kind-label')}>
             Kind
           </span>
           <Seg
@@ -427,7 +404,7 @@ export function ProjectForm({
             onChange={(kind) => setKind(kind)}
           />
           {dropEnd ? (
-            <div className="proj-banner" data-level="warning" role="alert">
+            <div className="notice" data-level="warn" data-shape="box" role="alert">
               <span>
                 Ongoing projects have no end date, so the end date ({dateWords(v.end)}) will be removed.
               </span>
@@ -445,13 +422,13 @@ export function ProjectForm({
             </div>
           ) : null}
           {kindNote ? (
-            <p className="proj-hint" role="status">
+            <p className="hint" role="status">
               {kindNote}
             </p>
           ) : null}
         </div>
-        <div className="proj-field">
-          <span className="proj-label" id={id('status-label')}>
+        <div className="form-field">
+          <span className="label" id={id('status-label')}>
             Status
           </span>
           <Seg
@@ -462,8 +439,8 @@ export function ProjectForm({
             onChange={(status) => set({ status })}
           />
         </div>
-        <div className="proj-field">
-          <span className="proj-label" id={id('health-label')}>
+        <div className="form-field">
+          <span className="label" id={id('health-label')}>
             Health
           </span>
           <Seg
@@ -474,8 +451,8 @@ export function ProjectForm({
             onChange={(health) => set({ health })}
           />
         </div>
-        <div className="proj-field">
-          <span className="proj-label" id={id('comms-label')}>
+        <div className="form-field">
+          <span className="label" id={id('comms-label')}>
             Client comms
           </span>
           <Seg
@@ -504,7 +481,7 @@ export function ProjectForm({
             ))}
           </select>
         </Field>
-        <fieldset className="proj-field proj-checks" id={id('team')} tabIndex={-1}>
+        <fieldset className="form-field proj-checks" id={id('team')} tabIndex={-1}>
           <legend>Team</legend>
           {people.map((p) => (
             <label key={p} className="proj-check">
@@ -520,12 +497,12 @@ export function ProjectForm({
             </label>
           ))}
           {errors.team ? (
-            <p className="proj-error" role="alert">
+            <p className="error" role="alert">
               {errors.team}
             </p>
           ) : null}
         </fieldset>
-        <fieldset className="proj-field proj-checks">
+        <fieldset className="form-field proj-checks">
           <legend>Service</legend>
           {services.map((s) => (
             <label key={s} className="proj-check">

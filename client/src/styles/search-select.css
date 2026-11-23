@@ -36,16 +36,10 @@
   }
 }
 /* Above the floating dock (41) and drawers, below the viewer (50), palette (70) and tooltips (80). */
-.ss-pop {
+.popover.ss-pop {
   position: fixed;
-  z-index: 45;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--lift-2);
   padding: 6px 0;
 }
 .ss-list {
@@ -59,17 +53,16 @@
   color: var(--iron);
   padding: 8px 16px 4px;
 }
-.ss-opt {
+.menu-row.ss-opt {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: auto;
   min-height: 32px;
   margin: 0 6px;
   padding: 6px 10px;
-  border-radius: 8px;
   font-size: 13px;
   color: var(--navy);
-  cursor: pointer;
 }
 .ss-opt-label {
   flex: 1;
@@ -87,10 +80,8 @@
   color: inherit;
   font-weight: 600;
 }
-.ss-opt:hover {
-  background: var(--tint-1);
-}
-/* The active row is the keyboard's place, so it is ringed as the palette's is (design-system.md, Rings). */
+/* The active row is the keyboard's place, so it is ringed as the palette's is (design-system.md, Rings).
+   `.menu-row` rings aria-current; a listbox option marks its place with aria-selected, so it is ringed here. */
 .ss-opt[aria-selected="true"] {
   background: var(--tint-1);
   box-shadow: inset 0 0 0 1.5px var(--blue-ink);
@@ -100,9 +91,6 @@
   .ss-opt[aria-selected="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
-  }
-  .ss-pop {
-    border-color: CanvasText;
   }
 }
 .ss-empty {

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { LibraryItem } from '../../../../shared/contract.ts';
-import { clientChoice, NO_CLIENT } from '../../state/client-choice.ts';
+import { clientChoice, NO_CLIENT, projectChoice } from '../../state/client-choice.ts';
 
 /** What every library app keeps: whose library, the item in the panel, the file open, the items ticked. */
 export interface LibraryState {
@@ -88,6 +88,9 @@ export function createLibraryStore<S extends LibraryState>(initial: () => S): Li
       // The app's own project filter goes too unless the item is in that project, or the list would leave it out.
       const projects: readonly string[] = item.projects ?? [];
       if (state.project && !projects.includes(state.project)) cleared.project = '';
+      // Home's "Working on" project outranks the app's own filter, so it goes too (its client stays).
+      const picked = projectChoice.get().project;
+      if (picked && !projects.includes(picked)) projectChoice.set('');
       set({
         scope,
         current: item,

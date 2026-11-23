@@ -298,6 +298,13 @@ function Files({
     () => (loaded.data?.items ?? []).map((item) => ({ ...item, group: placeIn(card, item.path) })),
     [loaded.data, card],
   );
+  // A fixed order, whatever the sort: the project folder, its subfolders A to Z, then the library.
+  const order = useMemo(() => {
+    const sub = [...new Set(inProject.map((i) => i.group))]
+      .filter((g) => g !== IN_FOLDER && g !== FROM_LIBRARY)
+      .sort((a, b) => a.localeCompare(b));
+    return [IN_FOLDER, ...sub, FROM_LIBRARY];
+  }, [inProject]);
   // Actions get the file as the server sent it, never the regrouped copy.
   const original = (item: LibraryItem) => loaded.data?.items.find((i) => i.id === item.id) ?? item;
 
@@ -345,7 +352,7 @@ function Files({
         message: loaded.message,
         retry: loaded.retry,
         items: inProject,
-        order: [],
+        order,
         truncated: false,
         hiddenLinks: loaded.data?.hidden ?? 0,
       }}
@@ -369,12 +376,15 @@ function Files({
   );
 }
 
+const IN_FOLDER = 'In the project folder';
+const FROM_LIBRARY = 'From the library';
+
 /** Where a file sits in a project, as its group heading. */
 export function placeIn(card: Pick<ProjectCard, 'folder' | 'links'>, path: string): string {
-  if (card.links.includes(path)) return 'Added from the library';
+  if (card.links.includes(path)) return FROM_LIBRARY;
   const inside = path.startsWith(`${card.folder}/`) ? path.slice(card.folder.length + 1) : '';
   const parts = inside.split('/');
-  if (parts.length < 2) return 'In the project folder';
+  if (parts.length < 2) return IN_FOLDER;
   const name = (parts[0] ?? '').replace(/[-_]+/g, ' ');
   return name.charAt(0).toUpperCase() + name.slice(1);
 }

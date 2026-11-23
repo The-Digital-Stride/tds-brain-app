@@ -455,17 +455,18 @@
   .proj-update-form .seg > button {
     flex: 1 0 auto;
   }
-  /* Files tab: the Documents/Images switch leads the tools row at its own width (the row fixes other switches at
-   132px). */
+  /* Files tab: the Documents/Images switch leads the tools row (LibraryTools `lead`) at its own width; the row
+   fixes other switches at 132px. */
   .lib-tools > .proj-kind {
     flex: none;
-    order: -1;
   }
   .lib-tools > .proj-kind .seg {
     width: auto;
     margin-left: 0;
   }
+  /* Each option as wide as its words: the shared Seg splits the width evenly, which clips "Documents, 12". */
   .lib-tools > .proj-kind .seg > * {
+    flex: 0 0 auto;
     white-space: nowrap;
   }
 }

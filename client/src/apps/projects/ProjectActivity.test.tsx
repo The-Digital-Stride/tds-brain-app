@@ -335,11 +335,11 @@ describe('Clear', () => {
     await screen.findByText('To-do added: Book the photographer');
     const head = screen.getByRole('heading', { name: 'Since you last looked' }).closest('.card-head');
     expect(head?.querySelector('.count')?.textContent).toBe('3');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText('Cleared. New changes will show here.')).toBeTruthy();
     expect(api.projectSeen).toHaveBeenCalledWith({ key: SKY.key, token: 'tok-1' });
-    expect(screen.getByText('Nothing new since you last looked.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    expect(screen.queryByText('Nothing new since you last looked.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear Since you last looked' })).toBeNull();
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Since you last looked' })),
     );
@@ -354,11 +354,34 @@ describe('Clear', () => {
       .mockResolvedValueOnce(reply({ token: 'tok-2', items: CHANGES }));
     await openProject();
     await screen.findByText('To-do added: Book the photographer');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText('This list was out of date, so nothing was cleared.')).toBeTruthy();
     expect(api.projectSeen).toHaveBeenCalledTimes(1);
     expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear' })));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Clear Since you last looked' }),
+      ),
+    );
+    // The fresh list still has rows, so leaving marks nothing either.
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.projectSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press while clearing posts nothing more', async () => {
+    let finish: () => void = () => {};
+    api.projectActivity.mockResolvedValueOnce(reply({ items: CHANGES }));
+    api.projectSeen.mockReturnValueOnce(new Promise<void>((r) => (finish = r)));
+    await openProject();
+    await screen.findByText('To-do added: Book the photographer');
+    const clear = screen.getByRole('button', { name: 'Clear Since you last looked' });
+    fireEvent.click(clear);
+    await waitFor(() => expect(clear.getAttribute('aria-disabled')).toBe('true'));
+    fireEvent.click(clear);
+    finish();
+    await screen.findByText(/Cleared|out of date/);
+    expect(api.projectSeen).toHaveBeenCalledTimes(1);
   });
 
   it('says so when clearing fails, and keeps the list', async () => {
@@ -366,7 +389,7 @@ describe('Clear', () => {
     api.projectSeen.mockRejectedValue(new Error('down'));
     await openProject();
     await screen.findByText('To-do added: Book the photographer');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText("Couldn't clear the list. Try again.")).toBeTruthy();
     expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
   });

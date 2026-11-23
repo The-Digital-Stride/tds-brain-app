@@ -83,6 +83,7 @@ export function LibraryTools({
   placeholder,
   project,
   onProject,
+  lead,
   children,
 }: {
   /** Prefix for the field ids, e.g. "imgs". */
@@ -98,6 +99,8 @@ export function LibraryTools({
   /** This app's own project filter (a ProjectKey, '' for none). Shown when `onProject` is given. */
   project?: string;
   onProject?: (key: string) => void;
+  /** A control drawn first in the row, before the pickers and search (a project's Documents/Images switch). */
+  lead?: ReactNode;
   children?: ReactNode;
 }) {
   // A client's library is found by the client's codes and other names too ("UC"), as in every client picker.
@@ -121,6 +124,7 @@ export function LibraryTools({
   ];
   return (
     <div className="lib-tools">
+      {lead}
       {onScope ? (
         <>
           <label className="visually-hidden" htmlFor={`${id}-scope`}>

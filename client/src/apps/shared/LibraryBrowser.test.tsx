@@ -173,7 +173,9 @@ describe('LibraryBrowser', () => {
         note={(i) => (i.id === 'x.a' ? 'from the library' : undefined)}
       />,
     );
-    expect(screen.getByText('Lead here')).toBeTruthy();
+    // First in the row and in Tab order, before the search field.
+    const tools = container.querySelector('.lib-tools');
+    expect(tools?.firstElementChild?.textContent).toBe('Lead here');
     expect(container.querySelector('.lib')?.getAttribute('data-nested')).toBe('true');
     const row = open('x.a');
     expect(within(row).getByText(/from the library/)).toBeTruthy();

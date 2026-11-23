@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { clientChoice, NO_CLIENT } from '../../state/client-choice.ts';
+import { clientChoice, NO_CLIENT, projectChoice } from '../../state/client-choice.ts';
 import { groupItems, pickScope, pictureWords } from './library.ts';
 import { createLibraryStore, type LibraryState } from './store.ts';
 import { doc, item, SCOPES } from './testing.ts';
@@ -188,6 +188,15 @@ describe('createLibraryStore', () => {
       store.set({ project: 'clients/acme/projects/site' });
       store.openItem('a', doc({ projects: ['clients/acme/projects/site'] as never }));
       expect(store.get().project).toBe('clients/acme/projects/site');
+    });
+
+    it("clears Home's Working on project when the item isn't in it, so the list can show the item", () => {
+      const store = make();
+      projectChoice.set('acme/site' as never);
+      store.openItem('client:acme', doc({ projects: ['acme/site'] as never }));
+      expect(projectChoice.get().project).toBe('acme/site');
+      store.openItem('client:acme', doc({ projects: ['acme/other'] as never }));
+      expect(projectChoice.get().project).toBe('');
     });
   });
 

@@ -259,8 +259,8 @@ export function LibraryBrowser({
           onProject={pickers?.onProject}
           searchLabel={spec.words.searchLabel}
           placeholder={spec.words.placeholder}
+          lead={lead}
         >
-          {lead}
           {spec.sorts ? (
             <Seg
               label="Sort"

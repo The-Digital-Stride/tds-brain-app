@@ -258,6 +258,7 @@ export function ProjectActivity({
               className="btn"
               data-variant="quiet"
               data-size="small"
+              aria-label="Clear Since you last looked"
               aria-disabled={clearing || undefined}
               onClick={() => void onClear()}
             >
@@ -274,7 +275,10 @@ export function ProjectActivity({
         ) : data.since === null ? (
           <StateNote kind="empty">Changes will show here from your next visit.</StateNote>
         ) : data.items.length === 0 ? (
-          <StateNote kind="empty">Nothing new since you last looked.</StateNote>
+          // Just after Clear the status line below says it; one note, not two.
+          message ? null : (
+            <StateNote kind="empty">Nothing new since you last looked.</StateNote>
+          )
         ) : (
           <>
             <ul className="lib-list">

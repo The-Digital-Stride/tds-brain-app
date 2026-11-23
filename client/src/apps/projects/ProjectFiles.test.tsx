@@ -129,7 +129,7 @@ describe('the Files tab, in the shared library browser', () => {
     answer([PLAN, BRIEF], []);
     change.mockResolvedValue({ ok: true, list: { projects: [] } });
     show({ links: [PLAN.path] });
-    await screen.findByText('Added from the library');
+    await screen.findByText('From the library');
     expect(screen.queryByRole('button', { name: /^Remove brief\.pdf/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove plan.docx from this project' }));
     await waitFor(() =>
@@ -154,7 +154,7 @@ describe('the Files tab, in the shared library browser', () => {
   it('gives people who cannot change the project no remove button', async () => {
     answer([PLAN], []);
     show({ links: [PLAN.path] }, false);
-    await screen.findByText('Added from the library');
+    await screen.findByText('From the library');
     expect(screen.queryByRole('button', { name: /Remove plan\.docx/ })).toBeNull();
   });
 
@@ -184,12 +184,37 @@ describe('the Files tab, in the shared library browser', () => {
   });
 });
 
+describe('group order on the Files tab', () => {
+  it('keeps the project folder, its subfolders, then the library, whatever the sort', async () => {
+    const linked = file('q3.pdf', {
+      path: 'clients/skyseal/reports/q3.pdf',
+      modified: '2026-11-20T10:00:00Z',
+    });
+    const sub = file('draft.docx', {
+      path: 'clients/skyseal/projects/site/zz_drafts/draft.docx',
+      modified: '2026-11-10T10:00:00Z',
+    });
+    answer([PLAN, linked, sub], []);
+    show({ slug: 'site', links: [linked.path] });
+    await screen.findByText('From the library');
+    const heads = () =>
+      [...document.querySelectorAll('.lib h2, .lib h3')]
+        .map((h) => h.textContent ?? '')
+        .filter((t) =>
+          ['In the project folder', 'Zz drafts', 'From the library'].some((g) => t.startsWith(g)),
+        );
+    expect(heads()).toEqual(['In the project folder', 'Zz drafts', 'From the library']);
+    fireEvent.click(screen.getByRole('radio', { name: 'A to Z' }));
+    expect(heads()).toEqual(['In the project folder', 'Zz drafts', 'From the library']);
+  });
+});
+
 describe('placeIn: a file is grouped by where it sits in the project', () => {
   const at = { folder: 'clients/acme/projects/boiler', links: ['clients/acme/reports/q3.pdf'] };
   it('names the subfolder, the project folder itself, or the library for a linked file', () => {
     expect(placeIn(at, 'clients/acme/projects/boiler/brief.pdf')).toBe('In the project folder');
     expect(placeIn(at, 'clients/acme/projects/boiler/design_files/logo.png')).toBe('Design files');
     expect(placeIn(at, 'clients/acme/projects/boiler/files/a/b.pdf')).toBe('Files');
-    expect(placeIn(at, 'clients/acme/reports/q3.pdf')).toBe('Added from the library');
+    expect(placeIn(at, 'clients/acme/reports/q3.pdf')).toBe('From the library');
   });
 });

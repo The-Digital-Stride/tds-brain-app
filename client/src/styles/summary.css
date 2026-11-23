@@ -43,6 +43,11 @@
   font-size: 13px;
   color: var(--iron);
 }
+.sm .sm-switch .seg > button {
+  /* "30 days" stays on one line; the Seg sizes to its words. */
+  flex: none;
+  white-space: nowrap;
+}
 .sm .sm-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

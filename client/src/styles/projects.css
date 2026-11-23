@@ -7,8 +7,13 @@
   align-items: center;
   gap: 8px;
 }
-.proj-head > .btn[data-variant="primary"] {
+.proj-head > .btn[data-variant="primary"],
+.proj-head > .proj-head-end {
   margin-left: auto;
+}
+/* Back to the list ("All projects"): the shared chevron points down, so it turns to point left. */
+.proj-back .icon {
+  transform: rotate(90deg);
 }
 .proj-title {
   margin: 0;

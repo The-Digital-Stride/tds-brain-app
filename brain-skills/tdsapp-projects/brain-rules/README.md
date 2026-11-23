@@ -91,3 +91,9 @@ Item 17 replaces the note above: the Workbench's Archive now refuses a clash ins
 `r2-chat-project.md`: one edit to `.claude/rules/save-locations.md` and one to
 `.claude/skills/tds-doc/SKILL.md`, so sessions outside TDS Cortex also file a project's work in its
 folder. Apply only with Ian's yes, after the app version with "New chat for this project" is installed.
+
+## Release 2, phase 4: meetings and call notes
+
+`r2-meetings.md`: three edits to `.claude/skills/meeting-notes/SKILL.md` (call notes record their project as
+`project:`) and one to `.claude/skills/gm/SKILL.md` (the meeting list holds the next 14 days). Copy straight after
+the merge (Ian's standing yes, 2026-11-23); the checks are in the file.

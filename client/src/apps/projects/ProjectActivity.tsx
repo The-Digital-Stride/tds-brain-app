@@ -1,8 +1,9 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import type {
-  ActivityItem,
-  ComingUpItem,
-  ProjectActivityResponse,
+import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  type ActivityItem,
+  COMING_UP_DAYS,
+  type ComingUpItem,
+  type ProjectActivityResponse,
 } from '../../../../shared/project-activity-contract.ts';
 import type { ProjectKey } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
@@ -12,6 +13,7 @@ import { ShellContext } from '../../shell/shell-context.ts';
 import { useStore } from '../../store.tsx';
 import { openLibraryItem } from '../shared/search.ts';
 import { dateWords } from './logic.ts';
+import { type MeetingsState, meetingDate } from './ProjectMeetings.tsx';
 import { whenWords } from './ProjectUpdates.tsx';
 
 /** Rows shown before "Show N more changes", as Home's cards (design system: shared ShowMore). */
@@ -152,11 +154,17 @@ function SinceLine({ item, action }: { item: ActivityItem; action: RowAction }) 
 export function ProjectActivity({
   projectKey,
   activity,
+  meetings,
+  between,
   onUpdates,
   onTodos,
 }: {
   projectKey: ProjectKey;
   activity: ActivityState;
+  /** The next meeting joins Coming up when it starts within COMING_UP_DAYS. Read once, shared with the Meetings card. */
+  meetings?: MeetingsState;
+  /** The Meetings card: it sits between the two cards. */
+  between?: ReactNode;
   onUpdates: () => void;
   onTodos: () => void;
 }) {
@@ -180,6 +188,7 @@ export function ProjectActivity({
     ((focusTo === 'clear' ? clearButton.current : null) ?? heading.current)?.focus();
     setFocusTo(null);
   }, [focusTo]);
+  const coming = comingRows(data?.comingUp ?? [], meetings?.data?.next ?? null);
   const listed = data !== null && data.since !== null && data.items.length > 0;
 
   // Clear acts at once, with no Undo (design system Actions rule 4): the changes are still on their tabs.
@@ -317,6 +326,8 @@ export function ProjectActivity({
         </p>
       </section>
 
+      {between}
+
       {error ? null : (
         <section className="card proj-card" aria-labelledby="proj-coming">
           <div className="card-head">
@@ -324,13 +335,17 @@ export function ProjectActivity({
           </div>
           {!data ? (
             <StateNote kind="loading" />
-          ) : data.comingUp.length === 0 ? (
+          ) : coming.length === 0 ? (
             <StateNote kind="empty">Nothing due in the next two weeks.</StateNote>
           ) : (
             <ul className="lib-list">
-              {data.comingUp.map((c, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
-                <ComingLine key={i} item={c} action={c.target ? todoAction(c.target.key, true) : null} />
+              {coming.map((c, i) => (
+                <ComingLine
+                  // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                  key={i}
+                  item={c}
+                  action={'target' in c && c.target ? todoAction(c.target.key, true) : null}
+                />
               ))}
             </ul>
           )}
@@ -340,7 +355,21 @@ export function ProjectActivity({
   );
 }
 
-function ComingLine({ item, action }: { item: ComingUpItem; action: RowAction }) {
+/** A meeting in the Coming up list: a plain line, never a link. */
+type ComingRow = ComingUpItem | { text: string; date: string; overdue: false };
+
+/** Coming up with the next meeting merged in, in date order (a meeting goes after to-dos on the same day). */
+function comingRows(items: ComingUpItem[], next: { title: string; start: string } | null): ComingRow[] {
+  if (!next) return items;
+  const at = new Date(next.start).getTime();
+  const now = Date.now();
+  if (Number.isNaN(at) || at < now || at > now + COMING_UP_DAYS * 24 * 60 * 60 * 1000) return items;
+  const row: ComingRow = { text: `Meeting: ${next.title}`, date: meetingDate(next.start), overdue: false };
+  const i = items.findIndex((c) => c.date > row.date);
+  return i === -1 ? [...items, row] : [...items.slice(0, i), row, ...items.slice(i)];
+}
+
+function ComingLine({ item, action }: { item: ComingRow; action: RowAction }) {
   const body = (
     <>
       <span className="line-text">

@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   projects: vi.fn(),
   projectActivity: vi.fn(async () => ({ since: null, token: null, items: [], more: 0, comingUp: [] })),
   projectSeen: vi.fn(async () => undefined),
+  projectMeetings: vi.fn(async () => ({ cache: 'none', checked: null, last: null, next: null })),
   changeProject: vi.fn(),
   projectFiles: vi.fn(),
   tidy: vi.fn(),

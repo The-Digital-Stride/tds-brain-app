@@ -332,7 +332,8 @@ export interface Store {
   startChat: (
     prompt: string,
     client: string | null,
-    opts: { open: boolean; in?: ChatPlace },
+    /** `project`: the chat's project (phase 1), e.g. "File the notes" on a project's Meetings card. */
+    opts: { open: boolean; in?: ChatPlace; project?: ProjectKey | null },
   ) => Promise<string | null>;
   /** The ads summary: loaded after boot and on `ads-changed`; null until then or when the server has none. */
   ads: AdsSummary | null;
@@ -1052,9 +1053,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const startChat = useCallback(
-    async (prompt: string, client: string | null, opts: { open: boolean; in?: ChatPlace }) => {
+    async (
+      prompt: string,
+      client: string | null,
+      opts: { open: boolean; in?: ChatPlace; project?: ProjectKey | null },
+    ) => {
       try {
-        const { session } = await api.startSession({ prompt, client });
+        const { session } = await api.startSession({
+          prompt,
+          client,
+          ...(opts.project ? { project: opts.project } : {}),
+        });
         void loadSessions();
         if (opts.open) openChat(session.id, { in: opts.in ?? 'sheet' });
         return session.id;

@@ -1,6 +1,8 @@
 import type { BrainReaders, Identity } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
+import { MEETINGS_MERGE_EVERY_MS } from '../../shared/project-meetings-contract.ts';
 import { LEGACY_PROJECTS_SCOPE, ProjectsError } from '../../shared/projects-contract.ts';
+import { createMeetingHistoryStore } from '../store/meeting-history.ts';
 import { createProjectSeenStore } from '../store/project-seen.ts';
 import { type AdsService, type AdsServiceOptions, createAdsService } from './ads-skill.ts';
 import { listClients } from './clients.ts';
@@ -14,6 +16,7 @@ import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
 import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
+import { createProjectMeetings, type ProjectMeetingsService } from './project-meetings.ts';
 import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
@@ -70,6 +73,8 @@ export type SearchableBrain = BrainReaders &
     /** Projects R2 phase 3: activity on the project home. Beside the contract like `ads`; the real brain always has them. */
     projectActivity?: ProjectActivityService['read'];
     projectSeen?: ProjectActivityService['seen'];
+    /** Projects R2 phase 4: this Mac's own meetings for a project (the cache /gm writes, read only). */
+    projectMeetings?: ProjectMeetingsService['read'];
   };
 
 export function createBrainReaders(
@@ -152,6 +157,21 @@ export function createBrainReaders(
     store: createProjectSeenStore(deps.dataDir ?? null),
     now,
   });
+  // Meetings on the project home: the /gm cache (read only, only when git ignores it) plus a small private history.
+  const projectMeetings = createProjectMeetings({
+    root,
+    index: () => projects.index(),
+    clients: () => listClients(root),
+    store: createMeetingHistoryStore(deps.dataDir ?? null),
+    selfEmail: async () => (await readIdentity(root, run)).email,
+    ignored: deps.libraryIgnored,
+    now,
+  });
+  // Keep ended meetings: once at start-up, then every 30 minutes (no watcher on briefing/). Cleared by the stop
+  // function `watch` returns, which the server calls when it stops.
+  void projectMeetings.merge();
+  const mergeTimer = setInterval(() => void projectMeetings.merge(), MEETINGS_MERGE_EVERY_MS);
+  mergeTimer.unref();
   const library = createLibrary(root, {
     projects: () => projects.index(),
     clients: () => listClients(root),
@@ -175,6 +195,7 @@ export function createBrainReaders(
     ads,
     projectActivity: projectActivity.read,
     projectSeen: projectActivity.seen,
+    projectMeetings: projectMeetings.read,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),
@@ -282,13 +303,18 @@ export function createBrainReaders(
       }
     },
     sync: () => syncReader.read(),
-    watch: (onChange) =>
-      watchBrain(root, onChange, {
+    watch: (onChange) => {
+      const stop = watchBrain(root, onChange, {
         onLibraryChange: (rel, folder) => library.changed(rel, folder),
         onProjectsChange: (rel) => projects.changed(rel ?? undefined),
         onLibraryLive: (folder, on) => library.setLive(folder, on),
         onAdsChange: () => ads.changed(),
-      }),
+      });
+      return () => {
+        clearInterval(mergeTimer);
+        stop();
+      };
+    },
   };
 }
 

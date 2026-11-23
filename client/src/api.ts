@@ -73,6 +73,7 @@ import type {
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
+import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import type {
   ProjectAction,
@@ -274,6 +275,9 @@ export const api = {
     request<ProjectActivityResponse>('GET', `${ROUTES.projectActivity}?key=${encodeURIComponent(key)}`),
   /** Commits the snapshot a projectActivity read held (by its token). Answers 204. */
   projectSeen: (req: ProjectSeenRequest) => request<void>('POST', ROUTES.projectSeen, req),
+  /** Projects R2 phase 4: this person's last and next meeting for the project, from their own calendar. */
+  projectMeetings: (key: ProjectKey) =>
+    request<ProjectMeetingsResponse>('GET', `${ROUTES.projectMeetings}?key=${encodeURIComponent(key)}`),
   projectTodos: (key: ProjectKey) =>
     request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),
   tidy: () => request<TidyList>('GET', ROUTES.projectsTidy),

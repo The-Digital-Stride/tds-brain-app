@@ -24,7 +24,7 @@ Projects shows the work the team does for each client. Each project has a page w
 
 1. Open Projects from the rail.
 2. Choose **Mine** for your projects, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what is new, what is due soon and the team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images with the same search, filters and layouts as Documents. **Add files** adds some from the library; the cross takes one off.
+3. Open a project. **Overview** shows what is new, what is due soon and the team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images. **Add files** adds some from the library; the cross takes one off.
 4. Press **New project** to add one, or **Edit** to change one. **Add to team** keeps a person marked "from to-dos".
 5. **New chat for this project** starts a chat whose files are saved in the project, under **Files**.
 6. To move a project to another client, press **Move**.
@@ -36,13 +36,13 @@ Projects shows the work the team does for each client. Each project has a page w
 ## Good to know
 
 - **Since you last looked** keeps its changes until you press **Clear**.
+- **Meetings** shows your last and next meeting for the project, read from your own calendar through /gm. They stay on your Mac. Press **File the notes** to start a chat that files them.
 - A project without a card is read-only. Press **Add a card** to fix that.
 - Anyone who can edit a project can archive it. Only its Account Owner or the brain's Owner can delete it.
-- Anyone on the team can edit shared projects. Only the Account Owner, an owner or a scout can change the Account Owner.
+- Only the Account Owner, an owner or a scout can change the Account Owner.
 - Personal projects are only yours, and a move can't take a project back to personal.
-- Delete is final for files only on this Mac. Deleted to-dos can be brought back; chats are kept.
+- Deleted to-dos can be brought back; chats are kept.
 - Tidy-up changes teammates' to-dos, so one person runs it.
-- Update Cortex on every Mac before archiving.
 - Old brain skills make Projects read-only.
 
 ## Try this

@@ -32,6 +32,7 @@ const api = vi.hoisted(() => ({
   projectActivity: vi.fn(),
   projectSeen: vi.fn(),
   libraryItems: vi.fn(),
+  projectMeetings: vi.fn(),
 }));
 const openLibraryItem = vi.hoisted(() => vi.fn());
 vi.mock('../shared/search.ts', () => ({ openLibraryItem }));
@@ -73,6 +74,7 @@ beforeEach(() => {
   api.projectUpdates.mockResolvedValue({ updates: [], more: false, unreadable: 0, canAdd: true });
   api.projectActivity.mockResolvedValue(reply());
   api.projectSeen.mockResolvedValue(undefined);
+  api.projectMeetings.mockResolvedValue({ cache: 'none', checked: null, last: null, next: null });
 });
 afterEach(() => {
   cleanup();
@@ -447,5 +449,45 @@ describe('marking it seen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
     await new Promise((r) => setTimeout(r, 20));
     expect(api.projectSeen).not.toHaveBeenCalled();
+  });
+});
+
+describe('next meeting in Coming up', () => {
+  const inDays = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const next = (days: number) => ({
+    id: 'm1',
+    title: 'Design review',
+    start: inDays(days).toISOString(),
+    end: null,
+    people: [],
+    others: 0,
+    match: 'title',
+    notes: null,
+  });
+
+  it('joins the list within 14 days, in date order, as a plain line', async () => {
+    api.projectActivity.mockResolvedValue(
+      reply({
+        comingUp: [
+          { kind: 'todo-due', text: 'Early to-do', date: ymd(inDays(1)), overdue: false, target: null },
+          { kind: 'todo-due', text: 'Late to-do', date: ymd(inDays(10)), overdue: false, target: null },
+        ],
+      }),
+    );
+    api.projectMeetings.mockResolvedValue({ cache: 'fresh', checked: null, last: null, next: next(5) });
+    await openProject();
+    const meeting = await screen.findByText('Meeting: Design review');
+    const rows = screen.getAllByText(/to-do$|^Meeting: /).map((e) => e.textContent);
+    expect(rows).toEqual(['Early to-do', 'Meeting: Design review', 'Late to-do']);
+    expect(meeting.closest('button')).toBeNull();
+  });
+
+  it('is left out beyond 14 days', async () => {
+    api.projectMeetings.mockResolvedValue({ cache: 'fresh', checked: null, last: null, next: next(20) });
+    await openProject();
+    await screen.findByText('Nothing due in the next two weeks.');
+    expect(screen.queryByText('Meeting: Design review')).toBeNull();
   });
 });

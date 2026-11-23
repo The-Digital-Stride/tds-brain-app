@@ -12,6 +12,7 @@ import {
   type TodoList,
 } from '../../shared/contract.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
+import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import {
   type ProjectAction,
@@ -68,6 +69,7 @@ const seen = {
   projectTodos: [] as [string, string][],
   updates: [] as [string, string | null, string][],
   activity: [] as [string, string][],
+  meetings: [] as string[],
   marked: [] as [string, string, string][],
   access: [] as string[],
   moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
@@ -104,6 +106,13 @@ const ACTIVITY = {
   more: 0,
   comingUp: [],
 } satisfies ProjectActivityResponse;
+
+const MEETINGS = {
+  cache: 'fresh',
+  checked: '2026-11-23T08:00:00.000Z',
+  last: null,
+  next: null,
+} satisfies ProjectMeetingsResponse;
 
 const UPDATES = { updates: [], more: false, unreadable: 0, canAdd: true } satisfies ProjectUpdatesResponse;
 
@@ -213,6 +222,15 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get projectMeetings() {
+      return state.has
+        ? async (key: string) => {
+            maybeFail();
+            seen.meetings.push(key);
+            return MEETINGS;
+          }
+        : undefined;
+    },
     get projectSeen() {
       return state.has
         ? async (key: string, token: string, by: Identity) => {
@@ -279,6 +297,7 @@ beforeEach(() => {
   seen.projectTodos.length = 0;
   seen.updates.length = 0;
   seen.activity.length = 0;
+  seen.meetings.length = 0;
   seen.marked.length = 0;
   seen.access.length = 0;
   seen.moves.length = 0;
@@ -369,6 +388,7 @@ describe('the security gate', () => {
       `${ROUTES.projectTodos}?key=${KEY}`,
       `${ROUTES.projectUpdates}?key=${KEY}`,
       `${ROUTES.projectActivity}?key=${KEY}`,
+      `${ROUTES.projectMeetings}?key=${KEY}`,
       ROUTES.projectsTidy,
     ]) {
       expect((await send(path)).status, path).toBe(401);
@@ -420,6 +440,35 @@ describe('the security gate', () => {
       body: {},
     });
     expect(todo.status).toBe(415);
+  });
+});
+
+describe('GET /api/projects/meetings', () => {
+  const path = (q: string) => `${ROUTES.projectMeetings}?${q}`;
+
+  it("answers this Mac's meetings for the project, through the real gate", async () => {
+    const r = await get(path(`key=${KEY}`));
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual(MEETINGS);
+    expect(seen.meetings).toEqual([KEY]);
+  });
+
+  it('refuses no session, a bad key, a POST, and a missing service', async () => {
+    const bare = await send(path(`key=${KEY}`));
+    expect(bare.status).toBe(401);
+    for (const q of ['', 'key=Bad%20Key']) expect((await get(path(q))).status, q).toBe(400);
+    expect((await post(ROUTES.projectMeetings, {})).status).toBe(405);
+    expect(seen.meetings).toEqual([]);
+    state.has = false;
+    expect((await get(path(`key=${KEY}`))).status).toBe(404);
+  });
+
+  it('answers an unknown project as the activity route does', async () => {
+    state.fail = new ProjectsError('not-found', 'gone');
+    const r = await get(path(`key=${KEY}`));
+    const same = await get(`${ROUTES.projectActivity}?key=${KEY}`);
+    expect(r.status).toBe(same.status);
+    expect(r.status).toBe(404);
   });
 });
 

@@ -50,6 +50,10 @@ class FakeEventSource {
 const { App } = await import('../App.tsx');
 const { adStore } = await import('../tools/ad-manager/store.ts');
 const { projectsStore } = await import('../state/projects.ts');
+// The Ads and Projects screens load on demand. Load them once here, so the first test doesn't spend its one-second
+// findBy waits on the import when the machine is busy (it failed about one run in fifteen under load).
+await import('../tools/ad-manager/ui.ts');
+await import('../apps/projects/ui.ts');
 
 const boot = {
   appVersion: '0',

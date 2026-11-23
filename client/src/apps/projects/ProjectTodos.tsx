@@ -205,23 +205,26 @@ export function ProjectTodos({
                     ) : (
                       <TodoText t={t} team={team} />
                     )}
-                    {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). */}
-                    <div className="todo-btns">
-                      <StarButton
-                        id={t.key}
-                        title={t.title}
-                        on={favs.includes(t.key)}
-                        onPress={(_, button) => star(t.key, button)}
-                      />
-                      <TodoChatButton
-                        todo={{
-                          key: t.key,
-                          path: t.scope === 'personal' ? `personal/todo/${t.id}` : `todo/${t.id}`,
-                          title: t.title,
-                          client: card.client,
-                        }}
-                      />
-                    </div>
+                    {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). Only on my
+                        to-dos: the server links a chat only to a to-do on my lists, and Home lists only those stars. */}
+                    {t.mine ? (
+                      <div className="todo-btns">
+                        <StarButton
+                          id={t.key}
+                          title={t.title}
+                          on={favs.includes(t.key)}
+                          onPress={(_, button) => star(t.key, button)}
+                        />
+                        <TodoChatButton
+                          todo={{
+                            key: t.key,
+                            path: t.scope === 'personal' ? `personal/todo/${t.id}` : `todo/${t.id}`,
+                            title: t.title,
+                            client: card.client,
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>

@@ -204,25 +204,28 @@ describe('the To-dos tab (fix 2)', () => {
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'a', mode: 'read' });
   });
 
-  it("gives every to-do the drawer's star and chat buttons, and the star toggles the favourite", async () => {
+  it("gives my to-dos the drawer's star and chat buttons; others' to-dos have neither", async () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
     fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
     await screen.findByText('Simon two');
-    const star = screen.getByRole('button', { name: 'Favourite: Simon two' });
+    const star = screen.getByRole('button', { name: 'Favourite: Mine one' });
     expect(star.getAttribute('aria-pressed')).toBe('false');
     expect(star.getAttribute('data-tip')).toBe('Favourite');
     // Star, then the chat button, as in a drawer row.
-    const chat = screen.getByRole('button', { name: 'Start a chat on this: Simon two' });
+    const chat = screen.getByRole('button', { name: 'Start a chat on this: Mine one' });
     expect(chat.getAttribute('data-tip')).toBe('Start a chat');
     expect(star.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(star);
-    expect(store.toggleFavouriteTodo).toHaveBeenCalledWith('b');
+    expect(store.toggleFavouriteTodo).toHaveBeenCalledWith('a');
     fireEvent.click(chat);
     expect(store.newChat).toHaveBeenCalledWith(
-      expect.objectContaining({ todoId: 'b', draft: expect.stringContaining('todo/b') }),
+      expect.objectContaining({ todoId: 'a', draft: expect.stringContaining('todo/a') }),
     );
+    // Not on my lists: the server won't link a chat to it and Home wouldn't show the star.
+    expect(screen.queryByRole('button', { name: /Simon two$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /: Loose$/ })).toBeNull();
   });
 
   describe('the add form asks before throwing away typing (UX consistency, release 2B)', () => {

@@ -540,12 +540,12 @@ export function parseAttachments(value: unknown): string[] {
 
 /**
  * `POST /api/sessions`: each field is checked for type here; the session manager checks the values
- * (the client and the to-do must be in the brain, the past chat must exist).
+ * (the client, the to-do and the project must be in the brain, the past chat must exist).
  */
 export function parseStartRequest(body: unknown): StartSessionRequest {
   if (!isRec(body)) throw new HttpError(400, 'bad-request', 'That request was not understood.');
   const out: StartSessionRequest = {};
-  for (const key of ['prompt', 'client', 'resume', 'todoId'] as const) {
+  for (const key of ['prompt', 'client', 'resume', 'todoId', 'project'] as const) {
     if (!(key in body)) continue;
     const value = body[key];
     if (value === null) {

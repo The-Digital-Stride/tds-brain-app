@@ -1,5 +1,8 @@
+import type { ProjectKey, TodoProjectMatch } from '../../../shared/projects-contract.ts';
 import { chatForTodo } from '../state/attention.ts';
+import { todoChatProject } from '../state/chat-project.ts';
 import { todoChatClient } from '../state/client-choice.ts';
+import { useProjects } from '../state/projects.ts';
 import { useStore } from '../store.tsx';
 import { Icon } from './Icon.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -11,6 +14,10 @@ export interface ChatTodo {
   path: string;
   title: string;
   client: string | null;
+  /** Where its project (if any) was matched; read for the chat's project. */
+  projectMatch?: TodoProjectMatch;
+  /** The project already known (a row on that project's own page, live cards only); wins over `projectMatch`. */
+  project?: ProjectKey | null;
 }
 
 /**
@@ -29,6 +36,7 @@ export function TodoChatButton({
 }) {
   const { boot, newChat, sessions, openChat } = useStore();
   const { state: shellState, dispatch, modes } = useShell();
+  const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   const choose = () => {
     // The panel holds unsaved changes: it asks first, and the chat waits for the answer.
@@ -37,10 +45,12 @@ export function TodoChatButton({
     if (chat) openChat(chat.id);
     else {
       const client = todoChatClient(todo, boot?.clients ?? []);
+      const project = todo.project ?? todoChatProject(todo, projectList?.projects);
       newChat({
         draft: todoChatDraft(todo as Parameters<typeof todoChatDraft>[0]),
         todoId: todo.key,
         ...(client !== undefined ? { client } : {}),
+        ...(project ? { project } : {}),
       });
     }
     // The panel (if one is open) makes way for the chat.

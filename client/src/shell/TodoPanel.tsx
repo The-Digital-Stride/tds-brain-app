@@ -21,6 +21,7 @@ import {
 import { splitTodoFiles, todoFileExtras } from '../../../shared/todo-files.ts';
 import { dueInWords, isOverdue } from '../format.ts';
 import { chatForTodo } from '../state/attention.ts';
+import { todoChatProject } from '../state/chat-project.ts';
 import { todoChatClient } from '../state/client-choice.ts';
 import { todoPlaceParts, useProjects } from '../state/projects.ts';
 import { type ChangeTodosResult, useStore } from '../store.tsx';
@@ -382,6 +383,7 @@ function Facts({
 function useChat(todo: TodoItem) {
   const { boot, newChat, openChat, sessions } = useStore();
   const { state, dispatch, modes } = useShell();
+  const { list: projectList } = useProjects();
   const chat = sessions ? chatForTodo(todo.key, sessions.live) : null;
   return {
     has: chat !== null,
@@ -391,10 +393,12 @@ function useChat(todo: TodoItem) {
       if (chat) openChat(chat.id);
       else {
         const client = todoChatClient(todo, boot?.clients ?? []);
+        const project = todoChatProject(todo, projectList?.projects);
         newChat({
           draft: todoChatDraft(todo),
           todoId: todo.key,
           ...(client !== undefined ? { client } : {}),
+          ...(project ? { project } : {}),
         });
       }
       dispatch({ type: 'close-todo', force: true });

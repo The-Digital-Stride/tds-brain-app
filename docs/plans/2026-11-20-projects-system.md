@@ -304,6 +304,12 @@ re-filing anything, and so that Cortex can later replace Monday as the team's pr
     "Open in Gmail" works only for the inbox owner, and others see "In <name>'s inbox".
     Plain: the team sees what an email said and who was on it, but only once its owner has okayed the
     whole entry.
+    **User decision (fixed, Ian, 2026-11-23): every route, not just email entries.** Nothing from an email
+    (text, summary, quotes, attachments) goes into a project in any form (an `email` entry, a `note` or
+    `call` update, a file in the project folder, or a `link`) without the inbox owner's approval of exactly
+    what is saved. Enforced from phase 2 in the project-chat instructions (`server/engine/session-manager.ts`),
+    the `tdsapp-projects` skill and the brain's save rules (with Ian's yes); phase 5 adds the approval screen
+    and a script check that an `email` entry is written only by its inbox owner.
 31. **Weekly digest.** On Mondays the Account Owner's `/gm` offers a short Claude-written "where we
     are" for each active project they own. **It reads shared brain files only** (updates, shared to-dos,
     filed call notes, project files), never the private meeting list, personal to-dos or anything that

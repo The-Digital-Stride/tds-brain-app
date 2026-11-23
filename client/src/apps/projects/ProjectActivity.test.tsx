@@ -159,6 +159,18 @@ describe('marking it seen', () => {
     expect(api.projectSeen).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the token across tab switches: one read, and that read is the one marked seen', async () => {
+    await openProject();
+    await screen.findByText('Nothing new since you last looked.');
+    fireEvent.click(screen.getByRole('button', { name: 'Updates' }));
+    await screen.findByText('No updates yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    await screen.findByText('Nothing new since you last looked.');
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    await waitFor(() => expect(api.projectSeen).toHaveBeenCalledWith({ key: SKY.key, token: 'tok-1' }));
+    expect(api.projectActivity).toHaveBeenCalledTimes(1);
+  });
+
   it('does not post when the card was never shown', async () => {
     let resolve: (r: ProjectActivityResponse) => void = () => {};
     api.projectActivity.mockReturnValue(new Promise((r) => (resolve = r)));

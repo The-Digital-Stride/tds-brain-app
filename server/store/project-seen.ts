@@ -53,6 +53,8 @@ function checkSeen(raw: unknown): ProjectSeen | null {
     links: trimList(links),
     files: trimList(files),
   };
+  const updates = strings(r.updates);
+  if (updates) out.updates = updates.slice(-PROJECT_SEEN_LIST_MAX);
   const titles = r.todoTitles;
   if (titles && typeof titles === 'object' && !Array.isArray(titles)) {
     const kept = new Set(out.todos);

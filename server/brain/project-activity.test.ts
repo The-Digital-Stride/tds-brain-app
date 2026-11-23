@@ -165,6 +165,24 @@ describe('project activity', () => {
     });
   });
 
+  it('a gone personal to-do is never listed (personal to-dos are always your own)', async () => {
+    const s = setup(seed({ todos: ['personal/p.md'], todoTitles: { 'personal/p.md': 'Book dentist' } }), {
+      todos: [],
+    });
+    expect(await texts(s)).toEqual([]);
+  });
+
+  it('an update written before your last look but synced in after it is listed once, then not again', async () => {
+    const early = update('note', 'ben-mcadam', '2026-11-19T10:00:00.000Z'); // dated before SINCE
+    const s = setup(seed({ updates: [] }), { updates: [early] });
+    await s.ready;
+    const r = await s.svc.read(KEY, me);
+    expect(r.items.map((i) => i.text)).toEqual(['Ben McAdam added a note']);
+    await s.svc.seen(KEY, r.token as string, me);
+    expect((await s.store.get(KEY))?.updates).toEqual([early.path]);
+    expect((await s.svc.read(KEY, me)).items).toEqual([]);
+  });
+
   it('uses the done file title when the snapshot has none, and leaves out their own tick', async () => {
     const s = setup(seed({ todos: ['a.md', 'b.md'] }), {
       done: {

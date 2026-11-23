@@ -30,6 +30,12 @@ export interface ProjectSeen {
   links: string[];
   /** The project's files then, as paths RELATIVE to the project folder (so a move can't list every file as new). */
   files: string[];
+  /**
+   * Paths of the updates-log entries seen then (the newest UPDATES_PAGE). An entry is new when its path isn't here,
+   * so a teammate's note that syncs in late still shows (correctness review). Older snapshots without it fall back
+   * to "written after `at`".
+   */
+  updates?: string[];
   /** Titles of the open to-dos then, by key, so a to-do that's gone can still be named (dropped when unknown). */
   todoTitles?: Record<string, string>;
   /** True when a list was cut at PROJECT_SEEN_LIST_MAX (then "added" from that list is not shown). */

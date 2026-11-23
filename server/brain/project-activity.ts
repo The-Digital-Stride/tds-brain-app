@@ -171,6 +171,7 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
       todos: keptTodos,
       links: newest(nowLinks),
       files: newest(nowFiles),
+      updates: updateRead.updates.map((u) => u.path),
     };
     const todoTitles: Record<string, string> = {};
     for (const k of keptTodos) if (titles[k] !== undefined) todoTitles[k] = titles[k];
@@ -191,9 +192,13 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
       const sinceMs = Date.parse(before.at);
       const cutList = (list: string[]) => before.cut === true && list.length >= PROJECT_SEEN_LIST_MAX;
 
+      // New = not in the snapshot's list (so an entry that synced in late still shows); older snapshots without
+      // the list fall back to "written after the last look".
+      const seenUpdates = before.updates ? new Set(before.updates) : null;
       for (const u of updateRead.updates) {
         const at = Date.parse(u.at);
-        if (Number.isNaN(at) || at <= sinceMs) continue;
+        if (Number.isNaN(at)) continue;
+        if (seenUpdates ? seenUpdates.has(u.path) : at <= sinceMs) continue;
         if (u.by === identity.slug || (card.space === 'personal' && u.by === 'me')) continue;
         const name = nameOf(u.by) ?? (u.byName && u.byName !== u.by ? u.byName : null);
         const auto = u.kind === 'status' || u.kind === 'owner';
@@ -219,10 +224,11 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
             });
       }
       const open = new Set(nowTodos);
-      const gone = before.todos.filter((k) => !open.has(k));
+      // Personal to-dos here are always this person's own, so a gone one is their own change: never listed.
+      const gone = before.todos.filter((k) => !open.has(k) && !k.startsWith('personal/'));
       const closed = await Promise.all(
         gone.map(async (k): Promise<ActivityItem | null> => {
-          const info = k.startsWith('personal/') ? null : await deps.done(k).catch(() => null);
+          const info = await deps.done(k).catch(() => null);
           const title = before.todoTitles?.[k] ?? info?.title ?? null;
           if (!title) return null; // no blank rows
           if (info) {

@@ -33,24 +33,8 @@ export const ADS_TOOL_TITLES: Record<AdsToolId, string> = {
   'ads-account-summary': 'Ads Account Summary',
 };
 
-/**
- * Additions to `ToolSlot` (sections-contract.ts). Optional, so existing tools compile unchanged.
- * - `rowNote`: a short line for the drawer row that is not a waiting count (e.g. "3 due"); never summed into the rail.
- */
-export interface ToolSlotAdditions {
-  rowNote?: (snap: ToolSnapshotAdditions) => string | null;
-}
-
-/**
- * Additions to `ToolSnapshot`. `adsDue` is the current account's due-or-overdue task count. The ad store copies it
- * into a main-store field when a board loads; null until then (the row then shows no note).
- */
-export interface ToolSnapshotAdditions {
-  adsDue?: number | null;
-}
-
 /** One hook (store.tsx) replaces the five places that build `{ ads }` by hand (decision 4). */
-export type UseToolSnapshot = () => { ads: unknown } & ToolSnapshotAdditions;
+export type UseToolSnapshot = () => { ads: unknown };
 
 /**
  * Shared account loading (decision 3), moved out of `AdManagerSheet.tsx`: the caller's account (`toolArg`), else the
@@ -104,23 +88,6 @@ export interface Readiness {
 
 /** Null health (no board yet) gives null: no panel. */
 export type ReadinessFn = (health: AdsBoard['health'] | null) => Readiness | null;
-
-/**
- * Due state of a task card (decision 6). `stopped` is set by the caller from task-runs, not by dueState.
- * - Local calendar days; thresholds inclusive. `days` counts from the due date.
- * - `upcoming` (monthly and quarterly only): `on` is the local due date as YYYY-MM-DD, shown as "Due Mon 1 Dec".
- * - A future or invalid `lastRunAt` gives null. Never run (null): daily is `due`; others null; never `overdue`.
- */
-export type DueState =
-  | { kind: 'due' }
-  | { kind: 'overdue'; days: number }
-  | { kind: 'upcoming'; on: string }
-  | null;
-export type DueStateFn = (
-  cadence: AdsBoard['cards'][number]['cadence'],
-  lastRunAt: string | null,
-  now: Date,
-) => DueState;
 
 /** One "Needs you" line on Ads Manager (decision 5). Ordered bad, then warn. */
 export type NeedsYouTarget =

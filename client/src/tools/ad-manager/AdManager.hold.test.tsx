@@ -25,7 +25,7 @@ vi.mock('../../api.ts', () => ({
 }));
 vi.mock('../../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: null }),
+  useToolSnapshot: () => ({ ads: store.current.ads ?? null }),
 }));
 
 const { ShellProvider, useShell } = await import('../../shell/ShellProvider.tsx');

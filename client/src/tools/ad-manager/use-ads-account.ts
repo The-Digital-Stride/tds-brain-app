@@ -6,8 +6,7 @@ import { loadApprovals, loadBoard, selectAccount, useAd, waitingFor } from './st
  * The account every Ads sheet shows (plan 2026-11-19-ads-workbench-sections, decision 3), moved out of
  * `AdManagerSheet`: the caller's account (`toolArg`), else the one used last, else the first with something waiting;
  * then that account's board. Also loads the account list and approvals (on arrival, on the `ads-changed` summary
- * and on Refresh), since a tool opened directly has nothing else to load them. The drawer's "N due" note is
- * `useAdsDue`'s, mounted in the shell.
+ * and on Refresh), since a tool opened directly has nothing else to load them.
  */
 export function useAdsAccount(): { account: string | null; loading: boolean } {
   const { ads, boot, toolArg, clearToolArg, updatePrefs } = useStore();

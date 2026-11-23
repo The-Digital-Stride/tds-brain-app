@@ -18,7 +18,7 @@ const apiMock = vi.hoisted(() => ({ askedTodos: vi.fn(), todoHistory: vi.fn() })
 vi.mock('../api.ts', () => ({ api: apiMock }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: store.current.adsDue ?? null }),
+  useToolSnapshot: () => ({ ads: store.current.ads ?? null }),
   TODO_UNDO_MS: 10_000,
 }));
 vi.mock('./TodoDetailsEditor.tsx', async () => ({

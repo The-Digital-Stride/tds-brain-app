@@ -10,7 +10,7 @@ const desk = vi.hoisted(() => ({
 }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: store.current.ads ?? null, adsDue: store.current.adsDue ?? null }),
+  useToolSnapshot: () => ({ ads: store.current.ads ?? null }),
 }));
 vi.mock('./ShellProvider.tsx', () => ({
   useShell: () => ({ state: desk.shell, dispatch: vi.fn() }),

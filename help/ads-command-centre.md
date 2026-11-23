@@ -4,11 +4,11 @@ title: Ads Command Centre
 area: getting-around
 order: 8
 summary: Check an account's data, then start its regular Google Ads jobs.
-benefit: You see which jobs are due and start each one with a single press.
+benefit: You see every regular job in one place and start each one with a single press.
 roles: [owner, scout]
 related: [ad-manager, ads-account-summary, workbench]
 since: 0.50.0
-reviewed: 2026-11-19
+reviewed: 2026-11-23
 ---
 
 ## What it does
@@ -17,7 +17,7 @@ Ads Command Centre is for running a client's Google Ads account. The top panel s
 
 ## Why it helps
 
-- Due and overdue jobs stand out, so none are forgotten.
+- Every job is optional, so you run the checks you need, when you need them.
 - Every job starts a fresh Claude chat that already has what it needs.
 
 ## How to use it
@@ -25,7 +25,7 @@ Ads Command Centre is for running a client's Google Ads account. The top panel s
 1. Open **Workbench**, then **Ads**, and choose **Ads Command Centre**.
 2. Read the data panel. Green means every file is ready. Amber means something is stale or the daily fetch has a problem. Red means a file is missing. Press **Show files** to see each one.
 3. Use the colour key. A report pulls information together, insights find what to do, actions make a change, and the standup is a multi-agent debate.
-4. Check the badge on each card. The Workbench menu shows how many are due before you open the tool. **Due** means it is time to run it. **Overdue** says how late it is. A date means it is coming up. **Stopped** means the last run was stopped or failed.
+4. A **Stopped** badge on a card means its last run was stopped or failed.
 5. Press **Run**. The chat opens over the page, and **Hide chat** takes you back. The card says **Running**.
 6. A card shows when it last ran. After a stopped run, **Last good run** opens the last one that finished.
 7. On the Daily standup card, press **Rate calls** to score each call it made.

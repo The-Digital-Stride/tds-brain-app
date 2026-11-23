@@ -23,10 +23,10 @@ vi.mock('../api.ts', () => ({
 const apps = vi.hoisted(() => [] as AppSlot[]);
 vi.mock('./apps.ts', () => ({ APPS: apps }));
 
-// The Workbench drawer's "N due" hook (Ads Release 3) is mounted by the shell; its own behaviour is tested in
+// The Ads start-up board load (for ⌘K search) is mounted by the shell; its own behaviour is tested in
 // tools/ad-manager/Command.test.tsx, so here it is only checked to be switched on.
-const dueHook = vi.hoisted(() => vi.fn());
-vi.mock('../tools/ad-manager/use-ads-due.ts', () => ({ useAdsDue: dueHook }));
+const preloadHook = vi.hoisted(() => vi.fn());
+vi.mock('../tools/ad-manager/use-ads-preload.ts', () => ({ useAdsPreload: preloadHook }));
 
 class FakeEventSource {
   static last: FakeEventSource | null = null;
@@ -176,10 +176,10 @@ describe('the rail', () => {
     expect(toggle.textContent).toBe('');
   });
 
-  it("mounts the Ads due-count hook, so the Workbench menu's note is worked out from start-up", async () => {
+  it('mounts the Ads start-up board load, so search finds Ads tasks before any Ads tool opens', async () => {
     render(<App />);
     await screen.findByRole('navigation', { name: /./ });
-    expect(dueHook).toHaveBeenCalled();
+    expect(preloadHook).toHaveBeenCalled();
   });
 
   it('shows no Apps group while there are no apps', async () => {

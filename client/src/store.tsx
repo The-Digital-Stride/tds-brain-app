@@ -337,12 +337,6 @@ export interface Store {
   /** The ads summary: loaded after boot and on `ads-changed`; null until then or when the server has none. */
   ads: AdsSummary | null;
   reloadAds: () => Promise<void>;
-  /**
-   * The current Ads account's due-or-overdue task count (plan 2026-11-19-ads-workbench-sections, decision 4). Set by
-   * the ad store when a board loads; null until then. Read through `useToolSnapshot`.
-   */
-  adsDue: number | null;
-  setAdsDue: (n: number | null) => void;
   /** Sends the first message of a new chat, or a follow-up in a live one. */
   send: (
     text: string,
@@ -499,8 +493,8 @@ export function useStore(): Store {
 
 /** What a tool's `visible`, `badge` and `rowNote` read: one snapshot, so the rail, drawer and sheets agree. */
 export function useToolSnapshot(): ToolSnapshot {
-  const { ads, adsDue } = useStore();
-  return useMemo(() => ({ ads, adsDue }), [ads, adsDue]);
+  const { ads } = useStore();
+  return useMemo(() => ({ ads }), [ads]);
 }
 
 function messageOf(err: unknown): string {
@@ -551,7 +545,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [chatsState, setChatsState] = useState<ListState>('loading');
   const [actionError, setActionError] = useState<string | null>(null);
   const [ads, setAds] = useState<AdsSummary | null>(null);
-  const [adsDue, setAdsDue] = useState<number | null>(null);
   const [toolArg, setToolArg] = useState<string | null>(null);
   const [composerFocus, setComposerFocus] = useState(0);
   const requestFocus = useCallback(() => setComposerFocus((n) => n + 1), []);
@@ -1640,8 +1633,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startChat,
       ads,
       reloadAds,
-      adsDue,
-      setAdsDue,
       send,
       askPage,
       updatePrefs,
@@ -1726,7 +1717,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       startChat,
       ads,
       reloadAds,
-      adsDue,
       send,
       askPage,
       updatePrefs,

@@ -6,7 +6,7 @@ import type { ShellApi } from './contract.ts';
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('../store.tsx', () => ({
   useStore: () => store.current,
-  useToolSnapshot: () => ({ ads: null, adsDue: null }),
+  useToolSnapshot: () => ({ ads: null }),
 }));
 
 const { ShellProvider, useShell } = await import('./ShellProvider.tsx');
@@ -140,7 +140,7 @@ describe('ShellProvider: the right panel holds unsaved work', () => {
 
   it('a tool tab goes through the hold: it asks, and Discard opens the tool', () => {
     const openTool = vi.fn();
-    store.current = { ...store.current, openTool, ads: null, adsDue: null };
+    store.current = { ...store.current, openTool, ads: null };
     const tool = (id: string) => ({
       id,
       title: `Tool ${id}`,

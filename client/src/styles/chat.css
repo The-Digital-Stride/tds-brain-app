@@ -24,6 +24,8 @@
     min-height: 0;
     overflow-y: auto;
     padding: var(--sp-24) 28px;
+    --edge-pt: var(--sp-24);
+    --edge-px: 28px;
   }
   .thread-col {
     max-width: 680px;
@@ -896,10 +898,6 @@
     display: grid;
     gap: var(--sp-8);
   }
-  .inspector > .seg {
-    margin: 0 var(--sp-4);
-  }
-
   /* Key/value lists (the panel's Details, Settings' About): hairline rows. */
   .inspector .kv {
     padding: 0 var(--sp-8);
@@ -954,6 +952,8 @@
   @media (max-width: 599px) {
     .thread {
       padding: var(--sp-16);
+      --edge-pt: var(--sp-16);
+      --edge-px: var(--sp-16);
     }
     .floater {
       padding: var(--sp-8) var(--sp-16) var(--sp-12);

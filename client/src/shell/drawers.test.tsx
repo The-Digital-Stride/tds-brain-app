@@ -372,6 +372,21 @@ describe('Chats drawer kind filter', () => {
   const personal = (id: string): LiveSession => ({ ...live(id), kind: 'personal' });
   const kindSwitch = () => screen.queryByRole('radiogroup', { name: 'Which kind of chat' });
 
+  it('keeps both switches and New chat in the fixed band above the list, so they never scroll away', () => {
+    setStore({ sessions: { live: [live('s1'), personal('s2')], past: [] } });
+    render(<ChatsDrawer />);
+    const band = screen
+      .getByRole('radiogroup', { name: 'Which chats' })
+      .closest('.drawer-tools') as HTMLElement;
+    const list = screen.getByText('Chat s1').closest('.drawer-scroll') as HTMLElement;
+    expect(band).not.toBeNull();
+    expect(list).not.toBeNull();
+    expect(band.contains(kindSwitch())).toBe(true);
+    expect(band.contains(screen.getByRole('button', { name: 'New chat' }))).toBe(true);
+    expect(list.contains(band)).toBe(false);
+    expect(band.parentElement).toBe(list.parentElement);
+  });
+
   it('hides the switch when no chat is personal', () => {
     setStore({ sessions: { live: [live('s1')], past: [] } });
     render(<ChatsDrawer />);

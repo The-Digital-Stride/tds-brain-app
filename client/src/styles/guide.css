@@ -123,8 +123,9 @@
       box-shadow: none;
       border-radius: 0;
       margin: 0;
-      -webkit-mask-image: none;
-      mask-image: none;
+    }
+    .desk:has(.guide) .sheet-scroll::before {
+      content: none;
     }
     .desk:has(.guide) .railslot,
     .desk:has(.guide) .rail,

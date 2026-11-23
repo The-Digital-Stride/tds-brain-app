@@ -12,6 +12,8 @@
     min-height: 0;
     overflow-y: auto;
     padding: var(--sp-32) 28px var(--sp-24);
+    --edge-pt: var(--sp-32);
+    --edge-px: 28px;
   }
   .home-in {
     max-width: 880px;
@@ -140,6 +142,8 @@
   @media (max-width: 480px) {
     .home-scroll {
       padding: var(--sp-24) var(--sp-16) 20px;
+      --edge-pt: var(--sp-24);
+      --edge-px: var(--sp-16);
     }
     .home-greeting {
       font-size: var(--fs-title);

@@ -287,97 +287,104 @@ export function ChatsDrawer() {
     );
   };
   return (
-    <div className="drawer-body" ref={body} tabIndex={-1}>
+    // The switches sit in the drawer's fixed band, like every drawer's filters; only the list scrolls.
+    <div className="drawer-split" ref={body} tabIndex={-1}>
       {status}
-      {/* New chat ends the row it acts on, like the To-dos drawer's + (design system, Actions rule 7). */}
-      <div className="chats-switch">
-        <Seg
-          label="Which chats"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'open', label: `Open, ${open.length}` },
-            { value: 'earlier', label: 'Earlier' },
-          ]}
-        />
-        <button
-          type="button"
-          className="icon-btn"
-          data-variant="primary"
-          aria-label="New chat"
-          onClick={() => {
-            newChat();
-            // A floating drawer closes once a choice is made; a pushing one stays.
-            if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
-          }}
-        >
-          <Icon name="plus" size={18} />
-        </button>
+      <div className="drawer-tools chats-tools">
+        {/* New chat ends the row it acts on, like the To-dos drawer's + (design system, Actions rule 7). */}
+        <div className="chats-switch">
+          <Seg
+            label="Which chats"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'open', label: `Open, ${open.length}` },
+              { value: 'earlier', label: 'Earlier' },
+            ]}
+          />
+          <button
+            type="button"
+            className="icon-btn"
+            data-variant="primary"
+            aria-label="New chat"
+            onClick={() => {
+              newChat();
+              // A floating drawer closes once a choice is made; a pushing one stays.
+              if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
+            }}
+          >
+            <Icon name="plus" size={18} />
+          </button>
+        </div>
+        {showKind ? (
+          // In the same band as the tab switch above, so both are the same width.
+          <Seg<ChatKindFilter>
+            label="Which kind of chat"
+            value={active}
+            onChange={setKind}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'tds', label: 'TDS' },
+              { value: 'personal', label: 'Personal' },
+            ]}
+          />
+        ) : null}
       </div>
-      {showKind ? (
-        // Straight in the body like the tab switch above, so both are the same width.
-        <Seg<ChatKindFilter>
-          label="Which kind of chat"
-          value={active}
-          onChange={setKind}
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'tds', label: 'TDS' },
-            { value: 'personal', label: 'Personal' },
-          ]}
-        />
-      ) : null}
-      {tab === 'open' ? (
-        open.length === 0 ? (
-          <p className="dock-empty">No chats open. Use New chat to start one.</p>
-        ) : shownOpen.length === 0 ? (
-          <p className="dock-empty">No {kindWord} chats open.</p>
-        ) : (
-          <ul className="drawer-list">
-            {shownOpen.map((c) => (
-              <Fragment key={c.id}>
-                <OpenRow
-                  chat={c}
-                  showKind={active === 'all'}
-                  favourite={isFavourite(c, favs)}
-                  onStar={onStar}
-                />
-                <HelperRows chat={c} />
-              </Fragment>
-            ))}
-          </ul>
-        )
-      ) : pastAll.length === 0 ? (
-        <p className="dock-empty">No earlier chats yet.</p>
-      ) : shownPast.length === 0 ? (
-        <p className="dock-empty">No earlier {kindWord} chats.</p>
-      ) : (
-        <>
-          {/* Favourites first, open; then the rest grouped by when they were last used, the newest group open. */}
-          {favPast.length > 0 ? (
-            <Fold
-              key="favourites"
-              title="Favourites"
-              count={favPast.length}
-              open={openFolds.favourites ?? true}
-              onToggle={(o) => setOpenFolds((f) => ({ ...f, favourites: o }))}
-            >
-              <ul className="drawer-list">{favPast.map(pastItem)}</ul>
-            </Fold>
-          ) : null}
-          {pastGroups.map((g, i) => (
-            <Fold
-              key={g.key}
-              title={g.title}
-              count={g.items.length}
-              open={openFolds[g.key] ?? i === 0}
-              onToggle={(o) => setOpenFolds((f) => ({ ...f, [g.key]: o }))}
-            >
-              <ul className="drawer-list">{g.items.map(pastItem)}</ul>
-            </Fold>
-          ))}
-        </>
-      )}
+      <div className="drawer-scroll">
+        <div className="drawer-body">
+          {tab === 'open' ? (
+            open.length === 0 ? (
+              <p className="dock-empty">No chats open. Use New chat to start one.</p>
+            ) : shownOpen.length === 0 ? (
+              <p className="dock-empty">No {kindWord} chats open.</p>
+            ) : (
+              <ul className="drawer-list">
+                {shownOpen.map((c) => (
+                  <Fragment key={c.id}>
+                    <OpenRow
+                      chat={c}
+                      showKind={active === 'all'}
+                      favourite={isFavourite(c, favs)}
+                      onStar={onStar}
+                    />
+                    <HelperRows chat={c} />
+                  </Fragment>
+                ))}
+              </ul>
+            )
+          ) : pastAll.length === 0 ? (
+            <p className="dock-empty">No earlier chats yet.</p>
+          ) : shownPast.length === 0 ? (
+            <p className="dock-empty">No earlier {kindWord} chats.</p>
+          ) : (
+            <>
+              {/* Favourites first, open; then the rest grouped by when they were last used, the newest group open. */}
+              {favPast.length > 0 ? (
+                <Fold
+                  key="favourites"
+                  title="Favourites"
+                  count={favPast.length}
+                  open={openFolds.favourites ?? true}
+                  onToggle={(o) => setOpenFolds((f) => ({ ...f, favourites: o }))}
+                >
+                  <ul className="drawer-list">{favPast.map(pastItem)}</ul>
+                </Fold>
+              ) : null}
+              {pastGroups.map((g, i) => (
+                <Fold
+                  key={g.key}
+                  title={g.title}
+                  count={g.items.length}
+                  open={openFolds[g.key] ?? i === 0}
+                  onToggle={(o) => setOpenFolds((f) => ({ ...f, [g.key]: o }))}
+                >
+                  <ul className="drawer-list">{g.items.map(pastItem)}</ul>
+                </Fold>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

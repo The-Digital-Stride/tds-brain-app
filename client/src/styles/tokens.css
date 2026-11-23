@@ -61,6 +61,14 @@
     --lift-2: 0 1px 2px rgba(2, 27, 67, 0.06), 0 12px 32px rgba(2, 27, 67, 0.1);
     /* Three steps up: what sits over everything: the palette, the answer box, a floating drawer. */
     --lift-3: 0 1px 2px rgba(2, 27, 67, 0.06), 0 18px 48px rgba(2, 27, 67, 0.14);
+    /* The shadow a fixed header or filter band casts on the list scrolled under it: --lift-1's
+     two layers, drawn as a band 8px deep (see the scroll edge in shell.css). */
+    --edge-lift: linear-gradient(
+      to bottom,
+      rgba(2, 27, 67, 0.1),
+      rgba(2, 27, 67, 0.04) 2px,
+      rgba(2, 27, 67, 0) 8px
+    );
     /* One step down: the tray, pressed into the sheet. */
     --recess: inset 0 1px 2px rgba(2, 27, 67, 0.06);
     /* The edge of an unticked checkbox or radio: 3:1 on white and on glass. */

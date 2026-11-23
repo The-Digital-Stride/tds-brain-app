@@ -41,8 +41,10 @@
     flex-direction: column;
     overflow: hidden;
     padding: 0;
-    -webkit-mask-image: none;
-    mask-image: none;
+  }
+  /* Not a scroller here: the list below its tools scrolls and draws the edge. */
+  .dock-body:has(> .drawer-split)::before {
+    content: none;
   }
   .drawer-split {
     flex: 1;
@@ -74,6 +76,7 @@
     min-height: 0;
     overflow-y: auto;
     padding: 0 var(--sp-10) var(--sp-12);
+    --edge-px: var(--sp-10);
   }
   /* A skill row: one line of its description until the chevron opens it. */
   .skill-row {
@@ -311,6 +314,12 @@
     display: grid;
     gap: var(--sp-6);
     margin-bottom: var(--sp-8);
+  }
+  /* The Chats drawer's band: the Open/Earlier switch over the kind switch, the same width, fixed above the list. */
+  .drawer-tools.chats-tools {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-8);
   }
   /* The Chats drawer's Open/Earlier switch, with New chat (a 32px primary +) at its right end, like the To-dos +. */
   .chats-switch {

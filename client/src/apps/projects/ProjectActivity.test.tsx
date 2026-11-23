@@ -196,6 +196,8 @@ describe('activity on the Overview', () => {
       expect(screen.getByRole('button', { name: /^To-dos/ }).getAttribute('aria-current')).toBeTruthy(),
     );
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-todo' }));
+    // The row is gone with the Overview, so focus goes to the tab now shown, not the page.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^To-dos/ }));
   });
 
   it('shows five changes, then the shared Show more, and says where the rest are', async () => {

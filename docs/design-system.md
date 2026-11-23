@@ -149,7 +149,10 @@ consistent".) These rules answer the same questions for every tool. A new tool f
 named here or it isn't one.
 
 1. **A row click opens what the row names and never creates anything.** Chat, skill, project and Home card
-   rows open their thing; a to-do's title opens it in the to-do panel (Home's Favourite to-dos too). One
+   rows open their thing; a to-do's title opens it in the to-do panel (Home's Favourite to-dos too). A row
+   naming something this person can't open there goes to the tab that lists it instead, with focus on that tab
+   (a project's activity rows: a teammate's to-do opens the To-dos tab, a note the Updates tab); a finished
+   to-do they can't open is plain text (`.line.proj-static`, no lift). One
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
    opens it large. Project Files has no pane, so its row opens the file.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →

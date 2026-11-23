@@ -169,4 +169,24 @@ look-back dropped; Coming up merged on the page. Nice, deferred: skip declined m
 
 ## Review outcomes
 
-(Filled at the end.)
+- **Lead's browser check:** domain matching never worked on real brains: client profiles write
+  `- **Website:** https://…` as a bullet and `websiteDomain` wanted the bare form. Fixed, tested with the real format;
+  28 of 35 real profiles now give a domain. Added `COMMON_WORDS` (the, and, call, meeting, weekly…) so a project can't
+  match on filler words.
+- **Correctness reviewer (opus), confirmed and fixed:** (1) an outside guest whose client couldn't be pinned fell into
+  the internal/personal pool and could land a client's call on a TDS project → `matchMeeting` returns null when an
+  outside, non-public domain is invited and no client matched; (2) a call note tagged for another project within 30
+  minutes counted as filed (back-to-back calls), and exactly 30 minutes counted → skipped, strict `<`; (3) no test that
+  `startChat` passes `project` → added. Not taken: a test that the merge timer is cleared (nit).
+- **Lead:** "File the notes" moved from `api.startSession` to `store.startChat` (now takes `project`) so the Chats list
+  refreshes and failures show as elsewhere.
+- **UX expert (opus):** signed off after one fix: the phone-width squeeze → `.proj-meeting > .line-text` so the action
+  wraps under the text (checked at 390px). `docs/design-system.md` Actions rule 1 gained the Meetings card. Nits left:
+  the double colon in "Meeting: Website rebuild: page templates"; quiet "Open notes".
+- **Overseer sign-off:** signed off, no blockers. Its help-page catch fixed: Builder B had cut three lines (two of them
+  warnings) to stay under 350 words; restored, other wording trimmed.
+- **Follow-ups (not blocking):** a guest on public mail with no client can still title-match an internal project
+  (consider personal only); history keeps the old project key, so a moved project loses its Last meeting; the Files-tab
+  "Call notes" group (decision 8); skipping declined meetings once the cache records a response.
+- **Shell.test.tsx:** the End chat confirm test missed its 1s wait in two full runs (as in the v0.68.0 merge, before
+  this branch); main and branch passed 8/8 side by side. Its wait is now 5s.

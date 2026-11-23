@@ -570,6 +570,15 @@ export function TodosDrawer() {
     if (was !== undefined && !skip && focusUndo !== was) setRefocus(was);
   }, [openKey, focusUndo]);
 
+  // With no list (still loading, or the load failed) PanelHost isn't mounted, so its give-up timer can't run: a
+  // panel opened from elsewhere (a project's To-dos tab) would leave the sheet locked under nothing. Same limit here.
+  const waitingKey = !todos && panel && panel.mode !== 'add' ? panel.key : null;
+  useEffect(() => {
+    if (waitingKey === null) return;
+    const giveUp = setTimeout(() => shellDispatch({ type: 'close-todo', force: true }), PANEL_WAIT_MS);
+    return () => clearTimeout(giveUp);
+  }, [waitingKey, shellDispatch]);
+
   if (!todos) return <StateNote kind="loading" />;
   const items = tab === 'mine' ? todos.mine : tab === 'open' ? todos.open : [];
   const me = boot?.identity.slug ?? '';

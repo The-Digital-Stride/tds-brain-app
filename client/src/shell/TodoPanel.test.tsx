@@ -232,6 +232,17 @@ describe('a to-do the drawer never gets', () => {
     expect(api.state.todoPanel).toBeNull();
   });
 
+  it('also gives up when the to-do list never loaded (the panel was opened from a project page)', () => {
+    vi.useFakeTimers();
+    const s0 = store.current as { todos: TodoList | null };
+    store.current = { ...s0, todos: null };
+    mount();
+    act(() => api.dispatch({ type: 'open-todo', key: 'a.md', mode: 'read' }));
+    expect(api.state.todoPanel?.key).toBe('a.md');
+    act(() => vi.advanceTimersByTime(PANEL_WAIT_MS));
+    expect(api.state.todoPanel).toBeNull();
+  });
+
   it('still waits for one that shows up in time (just added) and keeps it open', () => {
     vi.useFakeTimers();
     const view = mount();

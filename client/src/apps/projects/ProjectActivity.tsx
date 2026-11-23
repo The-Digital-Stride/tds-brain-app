@@ -180,8 +180,8 @@ export function ProjectActivity({
             ) : null}
             {showAll && data.more > 0 ? (
               <p className="hint proj-more">
-                {data.more === 1 ? '1 more change' : `${data.more} more changes`} are on the To-dos, Updates
-                and Files tabs.
+                {data.more === 1 ? '1 more change is' : `${data.more} more changes are`} on the To-dos,
+                Updates and Files tabs.
               </p>
             ) : null}
           </>

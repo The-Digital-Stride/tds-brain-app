@@ -183,6 +183,18 @@ describe('project activity', () => {
     expect((await s.svc.read(KEY, me)).items).toEqual([]);
   });
 
+  it('an old entry that slides back into a full page (a newer one removed) is not new', async () => {
+    const day = (n: number) => `2026-10-${String(n).padStart(2, '0')}T10:00:00.000Z`;
+    const seenList = Array.from({ length: 50 }, (_, i) =>
+      update('note', 'ben-mcadam', `2026-11-0${(i % 9) + 1}T${String(i % 24).padStart(2, '0')}:00:00.000Z`),
+    );
+    const slidIn = update('note', 'ben-mcadam', day(1)); // older than every entry seen
+    const s = setup(seed({ updates: seenList.map((u) => u.path) }), {
+      updates: [...seenList.slice(1), slidIn],
+    });
+    expect(await texts(s)).toEqual([]);
+  });
+
   it('uses the done file title when the snapshot has none, and leaves out their own tick', async () => {
     const s = setup(seed({ todos: ['a.md', 'b.md'] }), {
       done: {

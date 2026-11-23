@@ -21,7 +21,7 @@ import {
   type ProjectActivityResponse,
   type ProjectSeen,
 } from '../../shared/project-activity-contract.ts';
-import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
+import { type ProjectUpdatesResponse, UPDATES_PAGE } from '../../shared/project-updates-contract.ts';
 import {
   type ProjectCard,
   type ProjectFilesResponse,
@@ -195,10 +195,20 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
       // New = not in the snapshot's list (so an entry that synced in late still shows); older snapshots without
       // the list fall back to "written after the last look".
       const seenUpdates = before.updates ? new Set(before.updates) : null;
+      // A full page seen: an entry older than the oldest one seen was paged out then, not new (it slid back in
+      // because a newer entry was removed).
+      let pagedOutBefore = Number.NEGATIVE_INFINITY;
+      if (seenUpdates && seenUpdates.size >= UPDATES_PAGE) {
+        const seenAts = updateRead.updates
+          .filter((u) => seenUpdates.has(u.path))
+          .map((u) => Date.parse(u.at))
+          .filter((t) => !Number.isNaN(t));
+        if (seenAts.length > 0) pagedOutBefore = Math.min(...seenAts);
+      }
       for (const u of updateRead.updates) {
         const at = Date.parse(u.at);
         if (Number.isNaN(at)) continue;
-        if (seenUpdates ? seenUpdates.has(u.path) : at <= sinceMs) continue;
+        if (seenUpdates ? seenUpdates.has(u.path) || at < pagedOutBefore : at <= sinceMs) continue;
         if (u.by === identity.slug || (card.space === 'personal' && u.by === 'me')) continue;
         const name = nameOf(u.by) ?? (u.byName && u.byName !== u.by ? u.byName : null);
         const auto = u.kind === 'status' || u.kind === 'owner';

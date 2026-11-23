@@ -339,7 +339,7 @@ function Overview({
 
       <div className="tray lib-tray">
         {card.archived ? null : (
-          <ProjectActivity projectKey={card.key} activity={activity} onUpdates={onUpdates} />
+          <ProjectActivity key={card.key} projectKey={card.key} activity={activity} onUpdates={onUpdates} />
         )}
         <section className="card proj-card" aria-label="Details">
           <dl className="kv">

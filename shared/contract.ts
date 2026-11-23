@@ -1935,6 +1935,8 @@ export const ROUTES = {
   projectFiles: '/api/projects/files',
   /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */
   projectTodos: '/api/projects/todos',
+  /** R2 phase 2. `GET ?key=<ProjectKey>[&before=<path>]` → ProjectUpdatesResponse (shared/project-updates-contract.ts). */
+  projectUpdates: '/api/projects/updates',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

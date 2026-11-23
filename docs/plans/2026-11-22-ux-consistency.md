@@ -261,3 +261,17 @@ lists are set in each builder's brief from the review's file:line evidence.
 - Carried to Release 3: ProposalPanel stepper in the header band (needs a shell header slot; P/N keys);
   RemovePanel "Keep, unlinked" wording; Documents/Images "Clear" label; `--attn-working-edge` red (dot
   vocabulary); Composer Send `disabled` while empty (not busy, so allowed by rule 12).
+
+### Release 3 (commits bba0d18, 1555544 + fixes)
+- Deviation: `@layer` moved wholly to Release 4. Layering only `patterns.css` would make it lose to every
+  unlayered sheet and silently change which rule wins; one commit across every sheet is safer.
+- Visual check: 26 help scenes retaken and compared pixel by pixel with the Release 2 set: 14 unchanged, 10
+  under 0.3%, the to-do forms 2–4% (labels 2px closer to their fields: the shared 4px gap). Browser check on
+  Ads Command Centre, Projects and Settings > Health.
+- UI/accessibility reviewer: 5 confirmed (forced-colours marks for the current menu row and a bad field;
+  menu focus ring clipped; info-notice border claim; doc Layers line; dot-without-word wording) → fixed by the
+  lead. The Settings tab dot keeps its spoken name only; passed to the final critique.
+- Correctness/code-quality reviewer: 3 confirmed (update strip's buttons spread apart; Rate calls load error
+  shown as info and not announced; "All tidy" not announced) and 6 nits (duplicate assertion, stale doc class
+  names, guard comment, dead `:has` rule, loosened test, RemovePanel closable while deleting) → fixed by the
+  lead. Found on the way: ShowMore's hidden noun lost its space in the accessible name ("Show fewerrows").

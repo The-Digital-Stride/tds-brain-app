@@ -176,40 +176,42 @@ export function UpdateBanner() {
         <span ref={textRef} tabIndex={-1}>
           {text}
         </span>
-        <UpdateAction
-          update={update}
-          label={failed || unfinished ? 'Try again' : 'Update and restart'}
-          onMoved={() => moveFocus(textRef.current)}
-        />
-        {status.latest ? (
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            onClick={() => {
-              update.later();
-              moveFocus(null);
-            }}
-          >
-            Later
-          </button>
-        ) : null}
-        {status.notes.length > 0 ? (
-          <button
-            type="button"
-            className="btn"
-            data-variant="quiet"
-            data-size="small"
-            data-chevron
-            aria-expanded={notesOpen}
-            aria-controls={notesId}
-            onClick={() => setNotesOpen((o) => !o)}
-          >
-            <Icon name="chevron" size={14} />
-            What's new
-          </button>
-        ) : null}
+        <span className="notice-actions">
+          <UpdateAction
+            update={update}
+            label={failed || unfinished ? 'Try again' : 'Update and restart'}
+            onMoved={() => moveFocus(textRef.current)}
+          />
+          {status.latest ? (
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              onClick={() => {
+                update.later();
+                moveFocus(null);
+              }}
+            >
+              Later
+            </button>
+          ) : null}
+          {status.notes.length > 0 ? (
+            <button
+              type="button"
+              className="btn"
+              data-variant="quiet"
+              data-size="small"
+              data-chevron
+              aria-expanded={notesOpen}
+              aria-controls={notesId}
+              onClick={() => setNotesOpen((o) => !o)}
+            >
+              <Icon name="chevron" size={14} />
+              What's new
+            </button>
+          ) : null}
+        </span>
         {notesOpen && changes.length > 0 ? (
           <ul className="update-notes" id={notesId}>
             {changes.map((c, i) => (

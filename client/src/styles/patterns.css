@@ -10,7 +10,7 @@
  * rules go when their callers are swapped.
  */
 
-/* Notice: a box or a strip with a level. Text and borders reach 4.5:1 / 3:1 on their own fill. ------------ */
+/* Notice: a box or a strip with a level. Text reaches 4.5:1 on its fill; the words carry the meaning. ------------ */
 .notice[data-shape] {
   display: flex;
   flex-wrap: wrap;
@@ -183,6 +183,20 @@ textarea.field {
 .menu-row[aria-current="true"] {
   background: var(--tint-1);
   box-shadow: inset 0 0 0 1.5px var(--blue-ink);
+}
+.menu-row:focus-visible {
+  /* Inside the pop-up's scrolling box, so the ring sits inside the row and is never clipped. */
+  outline-offset: -2px;
+}
+/* High contrast modes drop shadows and recolour borders: mark the current row and a bad field another way. */
+@media (forced-colors: active) {
+  .menu-row[aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .field[aria-invalid="true"] {
+    border-width: 2px;
+  }
 }
 .menu-row[aria-disabled="true"] {
   opacity: 0.5;

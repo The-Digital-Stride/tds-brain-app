@@ -30,7 +30,7 @@ export function ShowMore({
     >
       {expanded ? (
         <>
-          Show fewer<span className="visually-hidden"> {noun.many}</span>
+          Show fewer <span className="visually-hidden">{noun.many}</span>
         </>
       ) : wording === 'all' ? (
         `Show all ${n} ${word}`

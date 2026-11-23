@@ -38,8 +38,7 @@ describe('Confirm', () => {
   it('is a labelled group and links the question to the action', () => {
     setup();
     const group = screen.getByRole('group', { name: 'Delete project' });
-    expect(group.className).toContain('confirm');
-    expect(group.className).toContain('confirm');
+    expect(group.className).toBe('confirm');
     const action = screen.getByRole('button', { name: 'Delete project' });
     expect(document.getElementById(action.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
       'Delete this project?',

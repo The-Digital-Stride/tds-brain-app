@@ -165,7 +165,8 @@ export function RemovePanel({
         if (e.key !== 'Escape') return;
         e.preventDefault();
         e.stopPropagation();
-        onCancel();
+        // While the request runs nothing closes, as in every Confirm.
+        if (!busy) onCancel();
       }}
     >
       <legend className="proj-remove-q">
@@ -287,7 +288,15 @@ export function RemovePanel({
             {label}
           </button>
         ) : null}
-        <button type="button" className="btn" ref={cancelBtn} onClick={onCancel}>
+        <button
+          type="button"
+          className="btn"
+          ref={cancelBtn}
+          aria-disabled={busy || undefined}
+          onClick={() => {
+            if (!busy) onCancel();
+          }}
+        >
           Cancel
         </button>
       </div>

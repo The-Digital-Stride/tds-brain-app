@@ -349,7 +349,9 @@ export function TidyScreen({
       {message ? <StateNote kind="error">{message}</StateNote> : null}
       {tidy === null && !message ? <StateNote kind="loading" /> : null}
       {tidy && tidy.rows.length === 0 ? (
-        <StateNote kind="empty">All tidy. There are no old labels left.</StateNote>
+        <div role="status">
+          <StateNote kind="empty">All tidy. There are no old labels left.</StateNote>
+        </div>
       ) : null}
       {tidy && tidy.rows.length > 0 ? (
         <ul className="proj-tidy" ref={list$}>

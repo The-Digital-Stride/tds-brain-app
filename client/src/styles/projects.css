@@ -226,14 +226,6 @@
 }
 
 /* The move confirm (shell/Confirm): the question on its own line above the explanation, buttons below. */
-.confirm:has(> .proj-move-q) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  border: 0;
-}
 .confirm > span:has(> .proj-move-q) {
   flex-basis: 100%;
 }

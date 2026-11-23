@@ -45,9 +45,15 @@ export function RateCalls() {
   if (recs.length === 0)
     return (
       <div className="am-panel">
-        <p className="notice" data-level="info" data-shape="box">
-          {error ?? 'No standup calls to rate yet. Run the Daily standup first.'}
-        </p>
+        {error ? (
+          <p className="notice" data-level="error" data-shape="box" role="alert">
+            {error}
+          </p>
+        ) : (
+          <p className="notice" data-level="info" data-shape="box">
+            No standup calls to rate yet. Run the Daily standup first.
+          </p>
+        )}
       </div>
     );
   const set = (i: number, patch: Partial<Rating>) =>

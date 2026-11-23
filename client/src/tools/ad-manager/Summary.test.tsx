@@ -321,11 +321,9 @@ describe('deep dive tables', () => {
     expect(more.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(more);
     expect(within(alpha).getAllByRole('row')).toHaveLength(9);
-    expect(
-      within(alpha)
-        .getByRole('button', { name: /^Show fewer/ })
-        .getAttribute('aria-expanded'),
-    ).toBe('true');
+    expect(within(alpha).getByRole('button', { name: 'Show fewer rows' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
     expect(
       within(screen.getByRole('region', { name: 'Beta' })).queryByRole('button', { name: /Show/ }),
     ).toBeNull();

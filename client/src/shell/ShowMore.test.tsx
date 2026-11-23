@@ -26,7 +26,8 @@ describe('ShowMore', () => {
     render(<ShowMore expanded count={4} noun={noun} wording="more" onToggle={() => {}} />);
     const b = screen.getByRole('button');
     expect(b.textContent).toBe('Show fewer to-dos');
-    expect(b.querySelector('.visually-hidden')?.textContent).toBe(' to-dos');
+    expect(screen.getByRole('button', { name: 'Show fewer to-dos' })).toBe(b);
+    expect(b.querySelector('.visually-hidden')?.textContent).toBe('to-dos');
   });
 
   it('carries aria-expanded and toggles on click', () => {

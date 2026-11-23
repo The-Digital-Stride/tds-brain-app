@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
+import { READ_ONLY_NOTICE } from './logic.ts';
 import { card, projectList } from './testing.ts';
 
 const store = vi.hoisted(() => ({
@@ -98,23 +99,27 @@ describe('the Updates tab', () => {
     await openUpdates();
     expect(await screen.findAllByText('Me Myself')).toHaveLength(2);
     expect(api.projectUpdates).toHaveBeenCalledWith(SKY.key);
-    expect(screen.getAllByText('Note').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Note')).toHaveLength(1);
     expect(screen.getByText('Status')).toBeTruthy();
     expect(screen.getByText('Email')).toBeTruthy();
-    expect(screen.getByText('Fine for the client')).toBeTruthy();
-    expect(screen.getAllByText('Internal')).toHaveLength(2);
+    expect(screen.getAllByText('Fine to share with the client')).toHaveLength(1);
+    expect(screen.queryByText('Internal')).toBeNull();
+    expect(screen.queryByText('Fine for the client')).toBeNull();
     expect(screen.getByText('From the old folder')).toBeTruthy();
     expect(screen.getByText('draft').tagName).toBe('STRONG');
     expect(document.querySelector('script')).toBeNull();
   });
 
-  it('sends the update action from the form', async () => {
+  it('opens the form from the tab row and sends the update action', async () => {
     await openUpdates();
+    expect(screen.queryByLabelText('Update')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an update' }));
     fireEvent.change(await screen.findByLabelText('Update'), { target: { value: ' Rang them. ' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Call' }));
     fireEvent.click(screen.getByLabelText('Fine to share with the client'));
     api.changeProject.mockResolvedValue(projectList([SKY]));
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    const form = screen.getByRole('form', { name: 'Add an update' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Add an update' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenCalledWith({
         kind: 'update',
@@ -123,26 +128,68 @@ describe('the Updates tab', () => {
       }),
     );
     await waitFor(() => expect(api.projectUpdates).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByLabelText('Update')).toBeNull());
   });
 
-  it('hides the form when canAdd is false', async () => {
+  it('puts "Write the update first." on the textarea, and a save failure on the form', async () => {
+    await openUpdates();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an update' }));
+    const form = await screen.findByRole('form', { name: 'Add an update' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Add an update' }));
+    const area = screen.getByLabelText('Update');
+    expect(area.getAttribute('aria-invalid')).toBe('true');
+    expect(area.getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('Write the update first.')).toBeTruthy();
+    fireEvent.change(area, { target: { value: 'Rang them.' } });
+    expect(area.getAttribute('aria-invalid')).toBeNull();
+    api.changeProject.mockRejectedValue(new Error('x'));
+    fireEvent.click(within(form).getByRole('button', { name: 'Add an update' }));
+    await waitFor(() => expect(within(form).getAllByRole('alert')).toHaveLength(1));
+    expect(screen.getByLabelText('Update').getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('asks before cancelling typed text', async () => {
+    await openUpdates();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an update' }));
+    fireEvent.change(await screen.findByLabelText('Update'), { target: { value: 'Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByText('Discard your changes?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(screen.queryByLabelText('Update')).toBeNull());
+  });
+
+  it('shows no Add button or form when canAdd is false, with the old-skill notice', async () => {
     api.projectUpdates.mockResolvedValue(reply([item()], { canAdd: false }));
     await openUpdates();
     await screen.findByText('Me Myself');
-    expect(screen.queryByLabelText('Update')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add an update' })).toBeNull();
+    expect(screen.getByText(READ_ONLY_NOTICE)).toBeTruthy();
   });
 
-  it('shows Remove only where canRemove, with different words for a personal project', async () => {
+  it('shows no notice when the card is not readable', async () => {
+    api.projectUpdates.mockResolvedValue(reply([item()], { canAdd: false }));
+    await openUpdates({ ...SKY, card: 'unreadable' } as typeof SKY);
+    await screen.findByText('Me Myself');
+    expect(screen.queryByText(READ_ONLY_NOTICE)).toBeNull();
+  });
+
+  it('says there are no updates yet', async () => {
+    await openUpdates();
+    const note = await screen.findByText('No updates yet.');
+    expect(note.closest('[data-kind="empty"]')).toBeTruthy();
+  });
+
+  it('shows Delete only where canRemove, with different words for a personal project', async () => {
     api.projectUpdates.mockResolvedValue(
       reply([item({ canRemove: true }), item({ path: 'b', version: 'h-b', canRemove: false })]),
     );
     await openUpdates();
     await screen.findAllByText('Me Myself');
-    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(screen.getByText("Remove this update? It will still be in the brain's history.")).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /^Delete update: / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /^Delete update: / }));
+    expect(screen.getByText("Delete this update? It will still be in the brain's history.")).toBeTruthy();
     api.changeProject.mockResolvedValue(projectList([SKY]));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove update' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete update' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenCalledWith({
         kind: 'update-remove',
@@ -155,8 +202,8 @@ describe('the Updates tab', () => {
     projectsStore.reset();
     api.projectUpdates.mockResolvedValue(reply([item({ canRemove: true })]));
     await openUpdates(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(screen.getByText("Remove this update? It can't be brought back.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete update: / }));
+    expect(screen.getByText("Delete this update? It can't be brought back.")).toBeTruthy();
   });
 
   it('pages older entries with before, and counts unreadable ones', async () => {
@@ -173,7 +220,7 @@ describe('the Updates tab', () => {
       'clients/skyseal/projects/site/updates/a.md',
     );
     expect(screen.queryByRole('button', { name: 'Show older' })).toBeNull();
-    const list = screen.getAllByRole('listitem').filter((li) => li.className.includes('proj-update'));
+    const list = screen.getAllByRole('listitem').filter((li) => li.className.includes('proj-update-item'));
     expect(within(list[1] as HTMLElement).getByText('Earlier.')).toBeTruthy();
   });
 });

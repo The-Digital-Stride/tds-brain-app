@@ -5,6 +5,8 @@ import type { ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
 import { Markdown } from '../../markdown.tsx';
 import { Confirm } from '../../shell/Confirm.tsx';
+import { Icon } from '../../shell/Icon.tsx';
+import { Seg } from '../../shell/Seg.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { dateWords, READ_ONLY_NOTICE } from './logic.ts';
@@ -31,10 +33,10 @@ export function whenWords(at: string): string {
   return `${dateWords(at)}, ${time}`;
 }
 
-export const removeWords = (personal: boolean): string =>
+export const deleteWords = (personal: boolean): string =>
   personal
-    ? "Remove this update? It can't be brought back."
-    : "Remove this update? It will still be in the brain's history.";
+    ? "Delete this update? It can't be brought back."
+    : "Delete this update? It will still be in the brain's history.";
 
 interface Page {
   updates: ProjectUpdateItem[];
@@ -43,8 +45,26 @@ interface Page {
   canAdd: boolean;
 }
 
-/** The project's updates log, newest first, with a way to add a note or call and to remove one's own. */
-export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChange: boolean }) {
+const ADD_BUTTON = '[data-focus="addupdate"]';
+
+/**
+ * The project's updates log, newest first, with a way to add a note or call and to delete one's own.
+ * The add form's button sits at the end of the tabs row (ProjectPage), so `adding` lives there; `onCanAdd` tells the
+ * page whether the button should show.
+ */
+export function ProjectUpdates({
+  card,
+  canChange,
+  adding,
+  onAdding,
+  onCanAdd,
+}: {
+  card: ProjectCard;
+  canChange: boolean;
+  adding: boolean;
+  onAdding: (open: boolean) => void;
+  onCanAdd: (can: boolean) => void;
+}) {
   const change = useProjectChange({ reloadOnChanged: true });
   const [page, setPage] = useState<Page | null>(null);
   const [failed, setFailed] = useState(false);
@@ -54,16 +74,20 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
   const [kind, setKind] = useState<ManualUpdateKind>('note');
   const [clientSafe, setClientSafe] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "Write the update first." belongs to the textarea; a save failure from the server is the form's.
+  const [fieldError, setFieldError] = useState('');
   const [message, setMessage] = useState('');
+  const [asking, setAsking] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeMessage, setRemoveMessage] = useState('');
   const textId = useId();
   const errorId = useId();
+  const kindLabel = useId();
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const kindName = useId();
-  const dirty = text.trim() !== '';
+  const dirty = adding && text.trim() !== '';
   const leave = useSheetHold(dirty);
   const keepFocus = useKeepFocus();
   const personal = card.space === 'personal';
@@ -88,6 +112,12 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     void load();
   }, [load]);
 
+  const canAdd = page?.canAdd === true;
+  useEffect(() => {
+    onCanAdd(canAdd);
+    return () => onCanAdd(false);
+  }, [canAdd, onCanAdd]);
+
   const older = async () => {
     if (!page || moreBusy || page.updates.length === 0) return;
     setMoreBusy(true);
@@ -104,16 +134,40 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     setMoreBusy(false);
   };
 
+  const focusAdd = () =>
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>(ADD_BUTTON)?.focus();
+    });
+
+  const close = () => {
+    setText('');
+    setKind('note');
+    setClientSafe(false);
+    setFieldError('');
+    setMessage('');
+    setAsking(false);
+    onAdding(false);
+  };
+  const cancel = () => {
+    if (leave.asking) leave.keep();
+    if (dirty) setAsking(true);
+    else {
+      close();
+      focusAdd();
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
     const summary = text.trim();
     if (!summary) {
-      setMessage('Write the update first.');
+      setFieldError('Write the update first.');
       textRef.current?.focus();
       return;
     }
     setBusy(true);
+    setFieldError('');
     setMessage('');
     const res = await change({ kind: 'update', key: card.key, entry: { kind, summary, clientSafe } });
     setBusy(false);
@@ -121,10 +175,9 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
       setMessage(res.message);
       return;
     }
-    setText('');
-    setKind('note');
-    setClientSafe(false);
+    close();
     await load();
+    focusAdd();
   };
 
   const remove = async (item: ProjectUpdateItem) => {
@@ -141,14 +194,17 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     }
     setRemoving(null);
     await load();
-    // The row is gone: put the keyboard back somewhere sensible.
-    (textRef.current ?? listRef.current)?.focus();
+    // The row is gone: put the keyboard on the card heading, or the Add button when the card goes too.
+    requestAnimationFrame(() => {
+      if (headingRef.current) headingRef.current.focus();
+      else document.querySelector<HTMLButtonElement>(ADD_BUTTON)?.focus();
+    });
   };
 
-  /** Back on the row's Remove button after Cancel (the Confirm replaced it). */
-  const focusRemove = (path: string) =>
+  /** Back on the row's Delete button after Cancel (the Confirm replaced the row's strip). */
+  const focusDelete = (path: string) =>
     requestAnimationFrame(() =>
-      listRef.current?.querySelector<HTMLButtonElement>(`[data-remove="${CSS.escape(path)}"]`)?.focus(),
+      listRef.current?.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(path)}"]`)?.focus(),
     );
 
   if (failed && !page)
@@ -159,16 +215,36 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     );
   if (!page) return <StateNote kind="loading">Loading updates…</StateNote>;
 
+  const notice = card.archived
+    ? "Archived projects can't take new updates."
+    : card.card !== 'ok' || !canChange || page.canAdd
+      ? null
+      : READ_ONLY_NOTICE;
+
   return (
     <>
-      {page.canAdd ? (
+      {notice ? <p className="proj-note">{notice}</p> : null}
+      {adding && page.canAdd ? (
         <form
           className="card proj-card proj-form"
           aria-label="Add an update"
           onSubmit={(e) => void submit(e)}
           onFocus={keepFocus.track}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented || !dirty) return;
+            // Typed work: Esc asks, and asking again keeps it. While a leave question shows, Esc keeps editing.
+            e.preventDefault();
+            e.stopPropagation();
+            if (leave.asking) {
+              leave.keep();
+              keepFocus.restore();
+            } else {
+              setAsking(!asking);
+              if (asking) keepFocus.restore();
+            }
+          }}
         >
-          {leave.asking ? (
+          {asking || leave.asking ? (
             <Confirm
               label="Discard your changes"
               text="Discard your changes?"
@@ -176,45 +252,58 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
               safe="Keep editing"
               variant="danger"
               busy={false}
-              onConfirm={() => leave.discard()}
+              key={leave.asking ? 'leave' : 'cancel'}
+              onConfirm={() => {
+                if (leave.asking) leave.discard();
+                close();
+                focusAdd();
+              }}
               onCancel={() => {
-                leave.keep();
+                if (leave.asking) leave.keep();
+                setAsking(false);
                 keepFocus.restore();
               }}
             />
           ) : null}
-          <div className="card-head">
-            <h3>Add an update</h3>
-          </div>
           <div className="form-field">
             <label htmlFor={textId}>Update</label>
             <textarea
               ref={textRef}
               id={textId}
-              aria-invalid={message ? true : undefined}
-              aria-describedby={message ? errorId : undefined}
+              aria-invalid={fieldError ? true : undefined}
+              aria-describedby={fieldError ? errorId : undefined}
               className="field proj-area"
               rows={3}
               value={text}
               maxLength={UPDATE_SUMMARY_MAX}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (fieldError) setFieldError('');
+              }}
+              // biome-ignore lint/a11y/noAutofocus: the person just pressed Add an update.
+              autoFocus
+            />
+            {fieldError ? (
+              <p className="error" role="alert" id={errorId}>
+                {fieldError}
+              </p>
+            ) : null}
+          </div>
+          <div className="form-field">
+            <span className="label" id={kindLabel}>
+              Kind
+            </span>
+            <Seg
+              label="Kind"
+              labelledBy={kindLabel}
+              value={kind}
+              options={[
+                { value: 'note', label: kindWords('note') },
+                { value: 'call', label: kindWords('call') },
+              ]}
+              onChange={setKind}
             />
           </div>
-          <fieldset className="proj-checks">
-            <legend className="visually-hidden">Kind of update</legend>
-            {(['note', 'call'] as const).map((k) => (
-              <label key={k} className="proj-check">
-                <input
-                  type="radio"
-                  className="tick"
-                  name={kindName}
-                  checked={kind === k}
-                  onChange={() => setKind(k)}
-                />
-                {kindWords(k)}
-              </label>
-            ))}
-          </fieldset>
           <label className="proj-check">
             <input
               type="checkbox"
@@ -225,20 +314,19 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
             Fine to share with the client
           </label>
           {message ? (
-            <p className="error" role="alert" id={errorId}>
+            <p className="error" role="alert">
               {message}
             </p>
           ) : null}
           <div className="proj-buttons">
             <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
-              Add
+              Add an update
+            </button>
+            <button type="button" className="btn" onClick={cancel}>
+              Cancel
             </button>
           </div>
         </form>
-      ) : card.archived ? (
-        <p className="proj-note">Archived projects can't take new updates.</p>
-      ) : canChange ? (
-        <p className="proj-note">{READ_ONLY_NOTICE}</p>
       ) : null}
       {page.unreadable > 0 ? (
         <p className="notice" data-level="warn" data-shape="box" role="status">
@@ -253,59 +341,72 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
         </p>
       ) : null}
       {page.updates.length === 0 ? (
-        <p className="proj-note">No updates yet.</p>
+        <StateNote kind="empty">No updates yet.</StateNote>
       ) : (
-        <ul className="proj-updates" ref={listRef} tabIndex={-1} aria-label="Updates">
-          {page.updates.map((u) => (
-            <li key={u.path} className="card proj-card proj-update">
-              <div className="proj-update-head">
-                <span className="line-title">{u.byName}</span>
-                <span className="line-meta">{whenWords(u.at)}</span>
-                <span className="chip">{kindWords(u.kind)}</span>
-                <span className="chip">{u.clientSafe ? 'Fine for the client' : 'Internal'}</span>
-                {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
-              </div>
-              <Markdown text={u.summary} />
-              {u.canRemove ? (
-                removing === u.path ? (
-                  <Confirm
-                    label="Remove this update"
-                    text={removeWords(personal)}
-                    action="Remove update"
-                    variant="danger"
-                    busy={removeBusy}
-                    onConfirm={() => void remove(u)}
-                    onCancel={() => {
-                      setRemoving(null);
-                      focusRemove(u.path);
-                    }}
-                  />
-                ) : (
-                  <div className="proj-buttons">
-                    <button
-                      type="button"
-                      className="btn"
-                      data-size="small"
-                      data-remove={u.path}
-                      onClick={() => {
-                        setRemoveMessage('');
-                        setRemoving(u.path);
-                      }}
-                    >
-                      Remove
-                    </button>
+        <div className="tray lib-tray">
+          <section className="card proj-card" aria-label="Updates">
+            <div className="card-head">
+              <h3 ref={headingRef} tabIndex={-1}>
+                Updates
+              </h3>
+            </div>
+            <ul className="lib-list" ref={listRef}>
+              {page.updates.map((u) => (
+                <li key={u.path} className="proj-update-item">
+                  <div className="line proj-update">
+                    <div className="proj-update-body">
+                      <div className="proj-update-head">
+                        <span className="line-title">{u.byName}</span>
+                        <span className="line-meta">{whenWords(u.at)}</span>
+                        <span className="chip">{kindWords(u.kind)}</span>
+                        {u.clientSafe ? <span className="chip">Fine to share with the client</span> : null}
+                        {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
+                      </div>
+                      <Markdown text={u.summary} />
+                    </div>
+                    {u.canRemove ? (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        data-delete={u.path}
+                        data-tip="Delete update"
+                        aria-label={`Delete update: ${whenWords(u.at)}`}
+                        onClick={() => {
+                          setRemoveMessage('');
+                          setRemoving(u.path);
+                        }}
+                      >
+                        <Icon name="bin" size={14} />
+                      </button>
+                    ) : null}
                   </div>
-                )
-              ) : null}
-            </li>
-          ))}
-        </ul>
+                  {u.canRemove && removing === u.path ? (
+                    <Confirm
+                      label="Delete this update"
+                      text={deleteWords(personal)}
+                      action="Delete update"
+                      variant="danger"
+                      busy={removeBusy}
+                      onConfirm={() => void remove(u)}
+                      onCancel={() => {
+                        setRemoving(null);
+                        focusDelete(u.path);
+                      }}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
       )}
       {page.more ? (
         <div className="proj-buttons">
           <button
             type="button"
             className="btn"
+            data-variant="quiet"
+            data-size="small"
             aria-disabled={moreBusy || undefined}
             onClick={() => void older()}
           >

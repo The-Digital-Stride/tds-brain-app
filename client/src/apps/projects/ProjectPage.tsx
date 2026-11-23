@@ -521,11 +521,15 @@ export function ProjectPage({
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
+  // And Add an update: the Updates tab says whether the brain's skill allows it.
+  const [addingUpdate, setAddingUpdate] = useState(false);
+  const [canAddUpdate, setCanAddUpdate] = useState(false);
   const { todos, newChat } = useStore();
   const canAddTodo = todos?.canProject === true && !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
     if (tab !== 'todos') setAdding(false);
+    if (tab !== 'updates') setAddingUpdate(false);
   }, [tab]);
   // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
   // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
@@ -623,6 +627,20 @@ export function ProjectPage({
             Add a to-do
           </button>
         ) : null}
+        {tab === 'updates' && canAddUpdate ? (
+          <button
+            type="button"
+            className="btn"
+            data-variant="primary"
+            data-size="small"
+            data-focus="addupdate"
+            onClick={() => setAddingUpdate(true)}
+            aria-disabled={addingUpdate || undefined}
+          >
+            <Icon name="plus" size={14} />
+            Add an update
+          </button>
+        ) : null}
         {tab === 'files' && editable ? (
           <button
             type="button"
@@ -663,7 +681,15 @@ export function ProjectPage({
             onAdding={setAdding}
           />
         ) : null}
-        {tab === 'updates' ? <ProjectUpdates card={card} canChange={canChange} /> : null}
+        {tab === 'updates' ? (
+          <ProjectUpdates
+            card={card}
+            canChange={canChange}
+            adding={addingUpdate}
+            onAdding={setAddingUpdate}
+            onCanAdd={setCanAddUpdate}
+          />
+        ) : null}
         {tab === 'files' ? (
           <ProjectFiles card={card} canChange={editable} linking={linking} onLinking={setLinking} />
         ) : null}

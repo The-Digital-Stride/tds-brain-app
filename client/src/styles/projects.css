@@ -415,19 +415,25 @@
 
 @layer features {
   /* Updates tab */
-  .proj-updates {
+  .proj-update-item {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-8);
-    margin: 0;
-    padding: 0;
-    list-style: none;
   }
-  .proj-update {
+  /* An update row is not a button (its bin is): no lift on hover, like a project to-do row. */
+  .line.proj-update {
+    align-items: flex-start;
+  }
+  .line.proj-update:hover {
+    background: var(--glass-92);
+    box-shadow: none;
+    transform: none;
+  }
+  .proj-update-body {
     display: flex;
+    flex: 1;
     flex-direction: column;
     gap: var(--sp-8);
-    padding: var(--sp-12);
+    min-width: 0;
   }
   .proj-update-head {
     display: flex;

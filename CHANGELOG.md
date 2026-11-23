@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.64.0 — 2026-11-23
+
+- **feat**: leaving a page asks before discarding typed work; one file language; health words
+- **fix**: a Projects search hit while Projects shows asks before replacing a changed form
+- **fix**: star and chat only on my to-dos on a project page
+- **fix**: design gate - every project form asks before leaving; Keep puts you back
+- **fix**: All projects, Edit and the picker's Close ask before dropping unsaved work
+
 ## v0.63.0 — 2026-11-23
 
 - **fix**: release 1 of UX consistency - shared file-stage styles, one small size, health in words, drift guard

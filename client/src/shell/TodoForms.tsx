@@ -390,7 +390,7 @@ export function AddTodoForm({
             if (busy || title.trim() === '' || overLimit) e.preventDefault();
           }}
         >
-          Add to-do
+          Add a to-do
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel

@@ -1,10 +1,7 @@
 @layer patterns {
   /*
  * Shared patterns (docs/design-system.md, "Shared pieces"). Each one exists once; tools compose them and never
- * restyle them. Built in Release 3 of the UX consistency programme; the old copies are swapped over next.
- *
- * Not in an @layer yet: layering only some sheets would change which rules win. Layers come in Release 4,
- * across every sheet at once.
+ * restyle them. Built in Release 3 of the UX consistency programme.
  *
  * `.notice` and `.dot` already have bare rules in chat.css and base.css, so their new rules all carry an
  * attribute (`data-shape`, `data-state`). That keeps today's markup looking exactly as it does, and the old
@@ -304,5 +301,73 @@
     font-size: var(--fs-small);
     line-height: 1.45;
     color: var(--iron);
+  }
+
+  /*
+ * The Undo line (shell/UndoLine.tsx; design system, Actions rule 4): a held to-do, earlier chat or file. Nothing is
+ * sent yet. A row sits in a drawer list in place of the row it holds; a strip sits at the top of the sheet.
+ */
+  .undo-line {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-10);
+    min-width: 0;
+    color: var(--navy);
+  }
+  .undo-line[data-as="row"] {
+    padding: 7px var(--sp-8);
+    border-radius: var(--r-10);
+  }
+  .undo-line[data-as="strip"] {
+    flex: none;
+    padding: var(--sp-6) var(--sheet-gutter);
+    background: var(--wash);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-control);
+  }
+  .undo-line-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .undo-line-sending {
+    flex: none;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  /* A thin line along the bottom that runs down while Undo is still possible; it stops while the line is held. */
+  .undo-line-bar {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 2px;
+    height: 2px;
+    border-radius: var(--r-5);
+    background: var(--blue-ink);
+    opacity: 0.35;
+    transform-origin: left;
+    animation-name: undo-countdown;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    pointer-events: none;
+  }
+  .undo-line-bar[data-paused] {
+    animation-play-state: paused;
+  }
+  @keyframes undo-countdown {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+  /* Without motion a still bar would look stuck; the status line already says how long is left. */
+  @media (prefers-reduced-motion: reduce) {
+    .undo-line-bar {
+      display: none;
+    }
   }
 }

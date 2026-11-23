@@ -597,11 +597,13 @@ export function ProjectPage({
           <button
             type="button"
             className="btn"
+            data-variant="primary"
             data-size="small"
             data-focus="linkfiles"
             onClick={() => setLinking(true)}
             aria-disabled={linking || undefined}
           >
+            <Icon name="plus" size={14} />
             Link files
           </button>
         ) : null}

@@ -197,16 +197,17 @@ describe('quick add', () => {
     expect(toggle.getAttribute('data-on')).toBe('true');
   });
 
+  const submitButton = () =>
+    within(screen.getByRole('form', { name: 'Add a to-do' })).getByRole('button', { name: 'Add a to-do' });
+
   it('describes the Add button with the personal warning while it shows', async () => {
     setStore([todo('a.md', 'Renew contract')], { canUsePersonal: true });
     render(<TodosDrawer />);
     await openAdd();
-    expect(screen.getByRole('button', { name: 'Add to-do' }).getAttribute('aria-describedby')).toBeNull();
+    expect(submitButton().getAttribute('aria-describedby')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
     const warning = screen.getByText(/Personal to-dos stay on this Mac/);
-    expect(screen.getByRole('button', { name: 'Add to-do' }).getAttribute('aria-describedby')).toBe(
-      warning.id,
-    );
+    expect(submitButton().getAttribute('aria-describedby')).toBe(warning.id);
   });
 
   it('More options moves focus to the first field it reveals', async () => {
@@ -336,7 +337,11 @@ describe('the + button', () => {
     todo('a.md', 'Renew contract', { client: 'acme' }),
     todo('b.md', 'Ring Bob', { client: 'bolt' }),
   ];
-  const add = () => screen.getByRole('button', { name: 'Add a to-do' });
+  // The opener; the form's own submit shares its name while the form is open.
+  const add = () =>
+    screen
+      .getAllByRole('button', { name: 'Add a to-do' })
+      .find((b) => b.hasAttribute('aria-expanded')) as HTMLElement;
   const row = () => document.querySelector('.todo-filters') as HTMLElement;
   const tabs = () => screen.getByRole('radiogroup', { name: 'Which to-dos' });
 

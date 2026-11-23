@@ -155,7 +155,7 @@ export function ProjectTodos({
           ) : null}
           <div className="proj-buttons">
             <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
-              Add to-do
+              Add a to-do
             </button>
             <button type="button" className="btn" onClick={cancel}>
               Cancel

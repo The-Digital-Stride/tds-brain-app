@@ -215,8 +215,11 @@ describe('the design system guard: scales', () => {
   });
 
   // Sheets swept onto the tokens in Release 4 (plan 2026-11-22-ux-consistency, decision 24): a raw size here,
-  // even one on the scale, fails. base.css and todo-panel.css still hold one-off colours, so they aren't locked.
+  // even one on the scale, fails. tokens.css defines the scales, and apps/images/images.css has no declarations
+  // of its own to lock, so neither is listed.
   const LOCKED = [
+    'styles/base.css',
+    'styles/todo-panel.css',
     'styles/primitives.css',
     'styles/patterns.css',
     'styles/library-shared.css',
@@ -245,7 +248,8 @@ describe('the design system guard: scales', () => {
     const found = locked.flatMap((d) => {
       if (d.prop === 'font-size' || d.prop === 'font')
         // The `/ line-height` part of the shorthand isn't a size.
-        return (d.value.replace(/\/\s*\S+/, '').match(/(?<![\w.-])[\d.]+px/g) ?? []).map(
+        // `rem` sizes are flagged too; `em` (code at 0.88em) stays allowed.
+        return (d.value.replace(/\/\s*\S+/, '').match(/(?<![\w.-])[\d.]+(?:px|rem)\b/g) ?? []).map(
           (v) => `${d.file} font ${v}`,
         );
       if (/^border(-[a-z]+)*-radius$/.test(d.prop))

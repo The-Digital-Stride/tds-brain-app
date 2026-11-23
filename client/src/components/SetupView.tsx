@@ -124,6 +124,7 @@ export function SetupView({
   const useLabel = underService ? 'Use this folder and restart' : 'Use this folder';
 
   async function save(chosen: string) {
+    if (busy) return;
     const value = chosen.trim();
     if (!value) {
       setRefusal('Enter the path to your brain folder first.');
@@ -232,7 +233,7 @@ export function SetupView({
                           className="btn"
                           data-variant={c === soleChoice ? 'primary' : undefined}
                           aria-label={`${useLabel}: ${c}`}
-                          disabled={busy}
+                          aria-disabled={busy || undefined}
                           onClick={() => save(c)}
                         >
                           {useLabel}
@@ -290,7 +291,7 @@ export function SetupView({
                   type="submit"
                   className="btn"
                   data-variant={soleChoice ? undefined : 'primary'}
-                  disabled={busy}
+                  aria-disabled={busy || undefined}
                 >
                   {useLabel}
                 </button>

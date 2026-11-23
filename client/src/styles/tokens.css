@@ -76,8 +76,9 @@
     --t: 240ms;
 
     /*
-     * Scales (docs/design-system.md): defined here, used sheet by sheet. Every value matches what the screens
-     * already show, so swapping a typed value for its token changes nothing.
+     * Scales (docs/design-system.md): defined here, used sheet by sheet. A token holds a value the screens
+     * already showed, so swapping a typed value for it changes nothing; the few deliberate exceptions (the tour's
+     * 240ms and 15px title) are listed in the design system's tokens note.
      */
     /* Spacing */
     --sp-2: 2px;
@@ -132,6 +133,13 @@
     /* White at 70% (a tick's fill and centre) and at 92% (a bar or overlay that mostly hides what is behind). */
     --glass-70: rgba(255, 255, 255, 0.7);
     --glass-92: rgba(255, 255, 255, 0.92);
+    /* The in-between whites some surfaces had before the token sweep: 85 (a code box, a palette hover), 80 (a rail hover), 75 (a field on the approval card). */
+    --glass-85: rgba(255, 255, 255, 0.85);
+    --glass-80: rgba(255, 255, 255, 0.8);
+    --glass-75: rgba(255, 255, 255, 0.75);
+    /* Ink at 4% (a gap in a diff) and a pale grey (the record dot). */
+    --tint-04: rgba(2, 27, 67, 0.04);
+    --grey-record: #b9c0ce;
 
     /* Text, fields, focus */
     --text: var(--navy);
@@ -149,12 +157,12 @@
 
     /* Status colours, from the attention bar in the IDE. For bars, dots and edges only; text stays in ink. */
     --attn-ready: #22c55e;
-    --attn-working: #dc2626;
+    --attn-working: var(--state-working);
     --attn-asking: #f59e0b;
     /* Deeper shades for dots, edges and the message box border, which must reach 3:1 on white. */
     --attn-ready-edge: #16a34a;
     --attn-asking-edge: #d97706;
-    --attn-working-edge: #dc2626;
+    --attn-working-edge: var(--state-working);
     --attn-asking-pulse: #b45309;
 
     --danger: #a4261b;
@@ -167,7 +175,7 @@
 
     /*
    * State colours for the `.dot` pattern (patterns.css): each 3:1 or better on white, used beside a visible word.
-   * Red is `bad` only; `working` is blue. (--attn-working-edge stays red until its callers move to these.)
+   * Red is `bad` only; `working` is blue, and --attn-working and --attn-working-edge point here so every working surface is blue.
    * ok 5.02:1, warn 5.02:1, bad 7.31:1, idle 3.48:1, working 4.24:1, asking 3.19:1.
    */
     --state-ok: #15803d;

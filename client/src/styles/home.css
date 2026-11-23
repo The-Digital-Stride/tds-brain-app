@@ -108,6 +108,10 @@
     min-width: 0;
     padding: var(--sp-12) var(--sp-6) var(--sp-6);
   }
+  /* An empty line sits under the card heading, not under the card's edge: the heading has 8px of its own. */
+  .tray .card > .hint {
+    padding: 0 var(--sp-8);
+  }
   /*
  * A row in a card rises one step off it on hover, like every other hover in the app: it stays
  * white and casts the one-step shadow (`--lift-1`), with no edge of its own.

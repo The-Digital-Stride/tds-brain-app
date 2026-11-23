@@ -78,7 +78,16 @@ function LastResult() {
   );
 }
 
-function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary }) {
+function Actions({
+  client,
+  p,
+  onDirty,
+}: {
+  client: ClientApprovals;
+  p: ProposalSummary;
+  /** Tells the panel whether anything is typed, so stepping to another proposal can ask first. */
+  onDirty: (dirty: boolean) => void;
+}) {
   const { ads } = useStore();
   const { busy, unknownApply, approvals } = useAd();
   const run = useAdsRunner();
@@ -92,6 +101,11 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
   const decidedBox = useRef<HTMLInputElement>(null);
   const key = proposalKey(client.slug, p.id);
   useRestoreFocus(ask, () => document.querySelector<HTMLElement>('.am-title'));
+  const typed = note.trim() !== '' || who.trim() !== '' || decided.trim() !== '';
+  useEffect(() => {
+    onDirty(typed);
+    return () => onDirty(false);
+  }, [typed, onDirty]);
   const f = p.flags;
   const canDraft = (ads?.features ?? []).includes(ADS_DRAFT_CHANGE_CAPABILITY);
   const isBusy = busy !== null;
@@ -434,6 +448,8 @@ function Actions({ client, p }: { client: ClientApprovals; p: ProposalSummary })
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
   const { approvals, selected, full, last, busy, focusTitle } = useAd();
+  const [dirty, setDirty] = useState(false);
+  const [askStep, setAskStep] = useState<-1 | 1 | null>(null);
   const found = findProposal(approvals, selected);
   const key = found ? proposalKey(found.client.slug, found.proposal.id) : '';
   // After a decision the next proposal replaces this one and the button that was pressed is gone: the heading
@@ -478,9 +494,14 @@ export function ProposalPanel() {
   // Previous and Next follow the page's order: waiting for a decision, then approved and ready to apply.
   const order = [...client.open.filter(isWaiting), ...client.open.filter((x) => !isWaiting(x))];
   const at = order.findIndex((x) => x.id === p.id);
-  const step = (by: -1 | 1) => {
+  const go = (by: -1 | 1) => {
     const to = order[at + by];
     if (to) adStore.set({ selected: { client: client.slug, id: to.id }, panelMode: 'proposal' });
+  };
+  // Typed text is lost when the next proposal replaces this one, so a step with text in the boxes asks first.
+  const step = (by: -1 | 1) => {
+    if (dirty) setAskStep(by);
+    else go(by);
   };
   const text = full[key];
   const facts = proposalFacts(text ?? p, undefined, approvals?.people);
@@ -527,6 +548,23 @@ export function ProposalPanel() {
           </button>
         </nav>
       ) : null}
+      {askStep !== null ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => {
+            const by = askStep;
+            setAskStep(null);
+            setDirty(false);
+            go(by);
+          }}
+          onCancel={() => setAskStep(null)}
+        />
+      ) : null}
       <h3 className="am-title" tabIndex={-1}>
         {p.fm.title}
       </h3>
@@ -543,7 +581,7 @@ export function ProposalPanel() {
       <Fold key={`${key}-text`} title="Full proposal text" defaultOpen={false} onToggle={loadText}>
         {text ? <pre className="am-body">{text.body}</pre> : <StateNote kind="loading" />}
       </Fold>
-      <Actions key={key} client={client} p={p} />
+      <Actions key={key} client={client} p={p} onDirty={setDirty} />
       <LastResult />
     </div>
   );

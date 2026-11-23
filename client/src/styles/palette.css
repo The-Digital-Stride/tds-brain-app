@@ -87,7 +87,7 @@
       box-shadow var(--t-fast) var(--ease);
   }
   .palette .opt:hover {
-    background: var(--glass-92);
+    background: var(--glass-85);
     box-shadow: var(--lift-1);
   }
   /* The active option: white, raised and ringed, so it is clearly more than a hover. */

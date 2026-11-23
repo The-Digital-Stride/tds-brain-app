@@ -148,7 +148,7 @@
       break-before: page;
       page-break-before: always;
       font-size: 12pt;
-      color: var(--text);
+      color: black;
     }
     .guide-print-page:first-child {
       break-before: auto;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Icon } from '../../shell/Icon.tsx';
 import { followMovedProject, projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -253,6 +254,7 @@ export function ProjectsSheet() {
                 data-focus="new"
                 onClick={() => go({ is: 'new' }, 'new')}
               >
+                <Icon name="plus" size={14} />
                 New project
               </button>
             ) : null

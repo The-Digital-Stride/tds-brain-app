@@ -20,6 +20,8 @@ export function SheetTabs({ label, items, current, onChoose, className = 'tool-t
             type="button"
             aria-current={isCurrent ? 'page' : undefined}
             aria-label={spoken}
+            // The dot is silent for sighted mouse users, so it carries its meaning as a tooltip.
+            data-tip={t.dot ? spoken : undefined}
             onClick={() => {
               if (!isCurrent) onChoose(t.id);
             }}

@@ -295,6 +295,47 @@ describe('panel', () => {
     );
   });
 
+  it('asks "Discard your changes?" when stepping with a typed note, and keeps the note on Keep editing', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    const box = screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Too high for March' } });
+    const nav = screen.getByRole('navigation', { name: 'Proposals' });
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next proposal' }));
+    const ask = screen.getByRole('group', { name: 'Discard your changes' });
+    expect(ask.textContent).toContain('Discard your changes?');
+    expect(screen.getByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+    const keep = within(ask).getByRole('button', { name: 'Keep editing' });
+    expect(document.activeElement).toBe(keep);
+    fireEvent.click(keep);
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+    expect((screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement).value).toBe('Too high for March');
+    expect(screen.getByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+  });
+
+  it('Discard changes steps on and drops the note; a clean panel steps with no question', async () => {
+    await ready();
+    await screen.findByRole('heading', { name: 'Raise the budget' });
+    fireEvent.change(screen.getByLabelText(/Reason or note/), { target: { value: 'Draft' } });
+    const nav = screen.getByRole('navigation', { name: 'Proposals' });
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next proposal' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Discard your changes' })).getByRole('button', {
+        name: 'Discard changes',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Add negatives' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+    expect((screen.getByLabelText(/Reason or note/) as HTMLTextAreaElement).value).toBe('');
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Proposals' })).getByRole('button', {
+        name: 'Previous proposal',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Raise the budget' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Discard your changes' })).toBeNull();
+  });
+
   it('names the reviewer from the roster when the skill sends people, and keeps the slug otherwise', async () => {
     api.adsApprovals.mockResolvedValue({ ...approvals([p1, p2]), people: { sam: 'Sam Smith' } });
     await ready();

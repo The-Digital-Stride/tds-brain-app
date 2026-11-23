@@ -90,8 +90,12 @@ afterEach(() => {
 });
 
 async function openChat() {
+  // A stream left by an earlier test must never take this test's events.
+  FakeEventSource.last = null;
   render(<App />);
   await screen.findByRole('heading', { name: 'Report check' });
+  // Events are sent only once this chat's stream is listening, so none is lost under load.
+  await waitFor(() => expect(FakeEventSource.last?.onmessage).toBeTruthy());
 }
 
 describe('closing a chat', () => {

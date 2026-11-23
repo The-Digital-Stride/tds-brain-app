@@ -238,9 +238,10 @@ describe('the To-dos tab (fix 2)', () => {
       expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Keep me');
     });
 
-    it('submits with "Add to-do"', async () => {
+    it('submits with "Add a to-do"', async () => {
       await openForm();
-      expect(screen.getByRole('button', { name: 'Add to-do' }).getAttribute('type')).toBe('submit');
+      const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
+      expect(within(form).getByRole('button', { name: 'Add a to-do' }).getAttribute('type')).toBe('submit');
     });
   });
 
@@ -255,8 +256,9 @@ describe('the To-dos tab (fix 2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
     fireEvent.change(screen.getByLabelText('To-do'), { target: { value: 'New thing' } });
     const before = api.projectTodos.mock.calls.length;
+    const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add to-do' }));
+      fireEvent.click(within(form).getByRole('button', { name: 'Add a to-do' }));
     });
     await waitFor(() => expect(api.projectTodos.mock.calls.length).toBeGreaterThan(before));
   });

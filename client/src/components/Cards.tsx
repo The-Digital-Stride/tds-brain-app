@@ -184,6 +184,7 @@ export function PermissionCard({ item, sessionId, onAnswered }: CardProps<Permis
   }
 
   const decide = async (decision: PermissionDecision) => {
+    if (busy) return;
     setBusy(true);
     const ok = await run(() =>
       api.answerPermission(sessionId, {
@@ -238,7 +239,7 @@ export function PermissionCard({ item, sessionId, onAnswered }: CardProps<Permis
           type="button"
           className="btn"
           data-variant="primary"
-          disabled={busy}
+          aria-disabled={busy || undefined}
           onClick={() => void decide('allow')}
         >
           Allow
@@ -247,14 +248,19 @@ export function PermissionCard({ item, sessionId, onAnswered }: CardProps<Permis
           <button
             type="button"
             className="btn"
-            disabled={busy}
+            aria-disabled={busy || undefined}
             aria-describedby={whyId}
             onClick={() => void decide('allow-session')}
           >
             Allow for this chat
           </button>
         ) : null}
-        <button type="button" className="btn" disabled={busy} onClick={() => void decide('deny')}>
+        <button
+          type="button"
+          className="btn"
+          aria-disabled={busy || undefined}
+          onClick={() => void decide('deny')}
+        >
           Don't allow
         </button>
       </div>
@@ -321,6 +327,7 @@ export function QuestionCard({ item, sessionId, onAnswered }: CardProps<Question
   }
 
   const send = async () => {
+    if (busy) return;
     setBusy(true);
     const reply: QuestionReply = { requestId: item.requestId, answers };
     const ok = await run(() => api.answerQuestion(sessionId, reply));
@@ -385,7 +392,13 @@ export function QuestionCard({ item, sessionId, onAnswered }: CardProps<Question
         );
       })}
       <div className="answer-actions">
-        <button type="submit" className="btn" data-variant="primary" disabled={!complete || busy}>
+        <button
+          type="submit"
+          className="btn"
+          data-variant="primary"
+          disabled={!complete}
+          aria-disabled={busy || undefined}
+        >
           Send answer
         </button>
       </div>

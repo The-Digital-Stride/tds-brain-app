@@ -156,7 +156,7 @@
   }
   .rail-item:hover,
   .rail-item[data-open="true"] {
-    background: var(--glass-strong);
+    background: var(--glass-80);
     box-shadow: var(--lift-1);
     color: var(--navy);
   }
@@ -267,7 +267,7 @@
   }
   /* Opens the Profile page: the same hover, pressed and current states as the rail's other buttons. */
   .rail-person:hover {
-    background: var(--glass-strong);
+    background: var(--glass-80);
     box-shadow: var(--lift-1);
     color: var(--navy);
   }

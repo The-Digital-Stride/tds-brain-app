@@ -29,6 +29,9 @@ describe('SheetTabs', () => {
     expect(screen.getByRole('button', { name: 'Beta, 2 due' }).textContent).toBe('Beta2 due');
     const health = screen.getByRole('button', { name: 'Health, 1 thing needs attention: Brain sync.' });
     expect(health.querySelector('.dot')?.getAttribute('data-state')).toBe('bad');
+    // The dot's meaning is also the tooltip, and a tab with no dot has none.
+    expect(health.getAttribute('data-tip')).toBe('Health, 1 thing needs attention: Brain sync.');
+    expect(screen.getByRole('button', { name: 'Beta, 2 due' }).getAttribute('data-tip')).toBeNull();
   });
 
   it('chooses another tab on press, but not the current one', () => {

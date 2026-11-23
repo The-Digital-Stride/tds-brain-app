@@ -154,6 +154,25 @@ describe('the page', () => {
     expect(mocks.saveBrainFolder).toHaveBeenCalledWith('/b/brain');
   });
 
+  it('marks the buttons aria-disabled while saving, and a press then does nothing', async () => {
+    await show(
+      READY,
+      info({ candidates: ['/a/brain', '/b/brain'], current: { path: '/a/brain', source: 'settings' } }),
+    );
+    mocks.saveBrainFolder.mockReturnValueOnce(new Promise(() => {}));
+    const buttons = screen.getAllByRole('button', { name: /^Use this folder/ });
+    fireEvent.click(buttons[0] as HTMLElement);
+    await act(async () => {});
+    for (const b of buttons) {
+      expect(b.getAttribute('aria-disabled')).toBe('true');
+      expect((b as HTMLButtonElement).disabled).toBe(false);
+    }
+    fireEvent.click(buttons[0] as HTMLElement);
+    fireEvent.click(buttons[1] as HTMLElement);
+    await act(async () => {});
+    expect(mocks.saveBrainFolder).toHaveBeenCalledTimes(1);
+  });
+
   it('says so when none are found', async () => {
     await show(SETUP);
     expect(screen.getByText(/You'll need the Agency Brain on this Mac first/)).toBeTruthy();

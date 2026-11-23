@@ -1106,7 +1106,9 @@ export function TodosDrawer() {
               Set by Working on (Home) ·{' '}
               <button
                 type="button"
-                className="link-btn"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
                 onClick={() => {
                   clearPicked();
                   // The button goes with the reason: the keyboard moves to the Project select, now free.

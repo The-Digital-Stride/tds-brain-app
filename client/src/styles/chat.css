@@ -316,7 +316,7 @@
     height: 8px;
     border-radius: 50%;
     margin-right: var(--sp-8);
-    background: var(--grey-dot);
+    background: var(--grey-record);
   }
 
   /* The floater: under the thread, never over it ------------------------------------------------ */
@@ -480,7 +480,7 @@
     padding: 1px var(--sp-10) 1px 26px;
     font: var(--fs-small) / 1.5 var(--body);
     color: var(--iron);
-    background: var(--tint-1);
+    background: var(--tint-04);
   }
 
   .approval-warning {
@@ -499,7 +499,7 @@
     color: var(--iron);
   }
   .pending .field:not(:disabled) {
-    background: var(--glass-strong);
+    background: var(--glass-75);
   }
 
   /* Allow first, then Allow for this chat, then Don't allow: one row. */
@@ -909,7 +909,7 @@
     margin-bottom: var(--sp-6);
     padding: var(--sp-6) var(--sp-10);
     border-radius: var(--r-6);
-    background: var(--glass-92);
+    background: var(--glass-85);
     border: 1px solid var(--line-strong);
     font: 400 var(--fs-mono) / 1.5 var(--mono);
     overflow-wrap: anywhere;

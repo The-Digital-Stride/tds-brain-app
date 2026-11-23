@@ -252,7 +252,8 @@ describe('the left dock', () => {
     expect(chats.getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'End chat' }));
-    const keep = screen.getByRole('button', { name: 'Keep chat' });
+    // Wait for it: under a full parallel run the confirm can land a tick after the click.
+    const keep = await screen.findByRole('button', { name: 'Keep chat' });
     press('Escape', keep);
     expect(screen.queryByText(/End this chat\?/)).toBeNull();
     expect(chats.getAttribute('aria-expanded')).toBe('true');

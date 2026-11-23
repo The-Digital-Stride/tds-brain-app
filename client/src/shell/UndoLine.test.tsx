@@ -80,6 +80,20 @@ describe('UndoLine', () => {
     expect(line).toBeTruthy();
   });
 
+  it('resumes the clock when it goes away while held (a drawer swapped by a key), so the hold still sends', () => {
+    const { view, onPause, onResume } = setup();
+    fireEvent.focus(screen.getByRole('button', { name: /Undo/ }));
+    expect(onPause).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume on going away when nothing held it', () => {
+    const { view, onResume } = setup();
+    view.unmount();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
   it('resumes only when both pointer and focus have left', () => {
     const { line, onPause, onResume } = setup();
     const undo = screen.getByRole('button', { name: /Undo/ });

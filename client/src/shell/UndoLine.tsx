@@ -80,6 +80,17 @@ export function UndoLine({
     // preventScroll: the line is where the person already is.
     if (focusOnMount) button.current?.focus({ preventScroll: true });
   }, [focusOnMount]);
+  // Unmounting while held (a key swaps the drawer, a refresh drops the row) sends no blur or mouseleave, so the
+  // clock would stay stopped and the hold never send. Resume on the way out; the store ignores a resume for an
+  // entry already undone or sent.
+  const latestResume = useRef(onResume);
+  latestResume.current = onResume;
+  useEffect(
+    () => () => {
+      if (on.current.pointer || on.current.focus) latestResume.current();
+    },
+    [],
+  );
   const set = (which: 'pointer' | 'focus', value: boolean) => {
     const was = on.current.pointer || on.current.focus;
     on.current = { ...on.current, [which]: value };

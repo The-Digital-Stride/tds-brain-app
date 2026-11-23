@@ -498,6 +498,7 @@
     min-height: 0;
     overflow-y: auto;
     padding: 0 var(--sp-10) var(--sp-12);
+    --edge-px: var(--sp-10);
   }
   /* Inside a clipping scroller the focus ring sits inside the row. */
   .dock-body :focus-visible {
@@ -594,16 +595,47 @@
     min-height: 0;
     overflow-y: auto;
   }
-  /* No layer draws a line under its header. What scrolls under a fixed header fades out over the
-   scroller's top 8px, on glass and on white alike. */
+  /* The scroll edge. No layer draws a line under its header, and nothing fades (Ian, 2026-11-23: "a hard cut
+   off"): what scrolls under a fixed header or filter band stops dead at the scroller's top edge. At rest nothing
+   marks that edge; once the content has scrolled under it, the band lifts one step and casts --edge-lift down onto
+   it, so it reads as sitting above the list. The shadow is the scroller's first box, sticky at its top, 8px deep
+   with -8px below it, so it takes no room and moves nothing. It fades in over the first 12px scrolled past the
+   scroller's own top padding (--edge-pt) and spans its side padding (--edge-px). Without scroll-driven animations
+   it stays hidden: a plain hard cut. */
   .dock-body,
   .drawer-scroll,
   .sheet-scroll,
   .home-scroll,
   .thread {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, var(--navy) 8px);
-    mask-image: linear-gradient(to bottom, transparent, var(--navy) 8px);
     scroll-padding-top: 8px;
+  }
+  :is(.dock-body, .drawer-scroll, .sheet-scroll, .home-scroll, .thread)::before {
+    content: "";
+    position: sticky;
+    /* A sticky box stops at the scroller's padding edge, so lift it back over the top padding. */
+    top: calc(-1 * var(--edge-pt, 0px));
+    z-index: 3;
+    display: block;
+    height: 8px;
+    margin: 0 calc(-1 * var(--edge-px, 0px)) -8px;
+    background: var(--edge-lift);
+    opacity: 0;
+    pointer-events: none;
+  }
+  @supports (animation-timeline: scroll()) {
+    :is(.dock-body, .drawer-scroll, .sheet-scroll, .home-scroll, .thread)::before {
+      animation: edge-lift linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: var(--edge-pt, 0px) calc(var(--edge-pt, 0px) + 12px);
+    }
+  }
+  @keyframes edge-lift {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   .sheet-bar {

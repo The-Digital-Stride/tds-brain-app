@@ -130,77 +130,84 @@ export function Inspector() {
   const canResume = boot.identity.role === 'owner' || boot.identity.role === 'scout';
 
   return (
-    <div className="inspector">
-      <Seg
-        label="Show"
-        value={state.panelTab}
-        options={TABS}
-        onChange={(tab) => dispatch({ type: 'set-panel-tab', tab })}
-      />
-      {state.panelTab === 'files' ? (
-        <ChatFiles sessionId={id} />
-      ) : (
-        <dl className="kv">
-          <dt>Client</dt>
-          <dd>{clientName}</dd>
-          {live ? (
-            <>
-              <dt>Kind</dt>
+    // The Show switch sits in the panel's fixed band, like a drawer's filters; only what it shows scrolls.
+    <div className="drawer-split">
+      <div className="drawer-tools inspector-tools">
+        <Seg
+          label="Show"
+          value={state.panelTab}
+          options={TABS}
+          onChange={(tab) => dispatch({ type: 'set-panel-tab', tab })}
+        />
+      </div>
+      <div className="drawer-scroll">
+        <div className="inspector">
+          {state.panelTab === 'files' ? (
+            <ChatFiles sessionId={id} />
+          ) : (
+            <dl className="kv">
+              <dt>Client</dt>
+              <dd>{clientName}</dd>
+              {live ? (
+                <>
+                  <dt>Kind</dt>
+                  <dd>
+                    <Seg<ChatKind>
+                      label="Kind of chat"
+                      value={live.kind ?? 'tds'}
+                      options={[
+                        { value: 'tds', label: 'TDS' },
+                        { value: 'personal', label: 'Personal' },
+                      ]}
+                      onChange={(kind) => void setChatKind(id, kind)}
+                    />
+                    <span className="kv-note">
+                      Only sorts your Chats list. The chat still uses the shared brain.
+                    </span>
+                  </dd>
+                </>
+              ) : null}
+              {todo ? (
+                <>
+                  <dt>To-do</dt>
+                  <dd>{todo.title}</dd>
+                </>
+              ) : null}
+              {started ? (
+                <>
+                  <dt>Started</dt>
+                  <dd>{started}</dd>
+                </>
+              ) : null}
+              {sessionState ? (
+                <>
+                  <dt>State</dt>
+                  <dd>{STATE_WORDS[sessionState]}</dd>
+                </>
+              ) : null}
+              <dt>Approvals</dt>
               <dd>
-                <Seg<ChatKind>
-                  label="Kind of chat"
-                  value={live.kind ?? 'tds'}
-                  options={[
-                    { value: 'tds', label: 'TDS' },
-                    { value: 'personal', label: 'Personal' },
-                  ]}
-                  onChange={(kind) => void setChatKind(id, kind)}
-                />
-                <span className="kv-note">
-                  Only sorts your Chats list. The chat still uses the shared brain.
-                </span>
+                {APPROVALS_SHORT}
+                <span className="kv-note">{approvalsSentence(boot.engine.permissionMode)}</span>
               </dd>
-            </>
+              {sdkId && canResume ? (
+                <>
+                  <dt className="kv-wide">Continue in the terminal</dt>
+                  <dd className="kv-wide">
+                    <code className="terminal-cmd">claude --resume {sdkId}</code>
+                    <span className="kv-note">
+                      Chats started here do not show in the terminal's own list, so use this line.
+                    </span>
+                  </dd>
+                </>
+              ) : null}
+            </dl>
+          )}
+          {state.panelTab === 'details' ? (
+            <ContextFold key={id} sessionId={id} readingAt={chat?.context?.at ?? null} />
           ) : null}
-          {todo ? (
-            <>
-              <dt>To-do</dt>
-              <dd>{todo.title}</dd>
-            </>
-          ) : null}
-          {started ? (
-            <>
-              <dt>Started</dt>
-              <dd>{started}</dd>
-            </>
-          ) : null}
-          {sessionState ? (
-            <>
-              <dt>State</dt>
-              <dd>{STATE_WORDS[sessionState]}</dd>
-            </>
-          ) : null}
-          <dt>Approvals</dt>
-          <dd>
-            {APPROVALS_SHORT}
-            <span className="kv-note">{approvalsSentence(boot.engine.permissionMode)}</span>
-          </dd>
-          {sdkId && canResume ? (
-            <>
-              <dt className="kv-wide">Continue in the terminal</dt>
-              <dd className="kv-wide">
-                <code className="terminal-cmd">claude --resume {sdkId}</code>
-                <span className="kv-note">
-                  Chats started here do not show in the terminal's own list, so use this line.
-                </span>
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      )}
-      {state.panelTab === 'details' ? (
-        <ContextFold key={id} sessionId={id} readingAt={chat?.context?.at ?? null} />
-      ) : null}
+        </div>
+      </div>
     </div>
   );
 }

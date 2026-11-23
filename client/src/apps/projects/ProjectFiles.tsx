@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useState } from 'react';
 import {
   LIBRARY_SEARCH_QUERY,
   type LibraryItem,
@@ -9,72 +9,17 @@ import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects
 import { api } from '../../api.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { Icon } from '../../shell/Icon.tsx';
+import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
-import { FORMAT_ICONS } from '../documents/icons.ts';
+import { useStore } from '../../store.tsx';
+import { DOCUMENTS } from '../documents/kind.tsx';
+import { IMAGES } from '../images/kind.tsx';
 import { useLoaded } from '../shared/data.ts';
-import { Thumb } from '../shared/Thumb.tsx';
+import { type KindSpec, LibraryBrowser, type View } from '../shared/LibraryBrowser.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
-
-const KINDS: { kind: LibraryKind; title: string }[] = [
-  { kind: 'image', title: 'Images' },
-  { kind: 'document', title: 'Documents' },
-];
-
-function FileRow({
-  item,
-  linked,
-  canUnlink,
-  busy,
-  onView,
-  onUnlink,
-}: {
-  item: LibraryItem;
-  linked: boolean;
-  canUnlink: boolean;
-  busy: boolean;
-  onView: () => void;
-  onUnlink: () => void;
-}) {
-  // The whole row opens the file in the viewer drawer. Documents rows select instead; a project's file rows open,
-  // deliberately: linking and removing are the only things to do here, and they have their own buttons.
-  return (
-    <li className="line lib-row proj-file">
-      <button type="button" className="lib-open" data-file={item.id} onClick={onView}>
-        {item.kind === 'image' ? (
-          <Thumb item={item} width={96} iconSize={18} />
-        ) : (
-          <span className="doc-glyph">
-            <Icon name={FORMAT_ICONS[item.format ?? 'doc']} size={18} />
-          </span>
-        )}
-        <span className="line-text">
-          <span className="line-title" title={item.name}>
-            {item.title || item.name}
-          </span>
-          <span className="line-meta">
-            {item.group}
-            {linked ? ' · added from the library' : ''}
-          </span>
-        </span>
-      </button>
-      {linked && canUnlink ? (
-        <button
-          type="button"
-          className="icon-btn"
-          aria-disabled={busy || undefined}
-          aria-label={`Remove ${item.title || item.name} from this project`}
-          data-tip="Remove from this project. The file stays in the library."
-          onClick={busy ? undefined : onUnlink}
-        >
-          <Icon name="close" size={14} />
-        </button>
-      ) : null}
-    </li>
-  );
-}
 
 /** Why a search hit can't be ticked, or null when it can. */
 function blockedWhy(card: ProjectCard, path: string): string | null {
@@ -298,95 +243,115 @@ function Picker({
   );
 }
 
-function Kind({
+type Kinds = { kind: LibraryKind; word: string; spec: KindSpec };
+const KINDS: Kinds[] = [
+  { kind: 'document', word: 'Documents', spec: DOCUMENTS },
+  { kind: 'image', word: 'Images', spec: IMAGES },
+];
+
+/** A number for the card's version text, so one load key can refresh quietly when it changes. */
+function stamp(text: string): number {
+  let n = 0;
+  for (const c of text) n = (n * 31 + c.charCodeAt(0)) | 0;
+  return n;
+}
+
+/** The project's files: Documents or Images (a Seg), with the Documents and Images apps' own filters and layout. */
+function Files({
   card,
-  kind,
-  title,
   canChange,
   onView,
   onChanged,
   onUnlinked,
 }: {
   card: ProjectCard;
-  kind: LibraryKind;
-  title: string;
   canChange: boolean;
   onView: (item: LibraryItem) => void;
   onChanged: (message: string) => void;
   onUnlinked: (name: string) => void;
 }) {
+  const { libraryVersion } = useStore();
   const change = useProjectChange({ reloadOnChanged: true });
   const [busy, setBusy] = useState(false);
-  const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
+  // Local state: the project page never touches what the Documents and Images apps remember.
+  const [view, setView] = useState<View>({ query: '', layout: 'list', format: 'all', sort: 'newest' });
+  const [chosen, setChosen] = useState<LibraryKind | null>(null);
 
-  // After a removal the row may be gone and the Remove icon button always is: focus goes to the next row's open button,
-  // else the previous, else the Add files button, once the list has reloaded.
-  const focusId = useRef<string | null>(null);
-  const items = loaded.status === 'ready' ? loaded.data.items : null;
-  useEffect(() => {
-    if (focusId.current === null || !items) return;
-    const wanted = focusId.current;
-    focusId.current = null;
-    const target =
-      (wanted ? document.querySelector<HTMLElement>(`[data-file="${CSS.escape(wanted)}"]`) : null) ??
-      document.querySelector<HTMLElement>('[data-focus="linkfiles"]');
-    target?.focus({ preventScroll: true });
-  }, [items]);
+  // One load per kind, so the Seg can show both counts. A change to the card or the library refreshes quietly.
+  const refresh = stamp(`${card.version}|${libraryVersion}`);
+  const docs = useLoaded(`${card.key}|document`, refresh, () => api.projectFiles(card.key, 'document'));
+  const images = useLoaded(`${card.key}|image`, refresh, () => api.projectFiles(card.key, 'image'));
+  const loads = { document: docs, image: images };
 
-  const unlink = async (item: LibraryItem) => {
-    const list = items ?? [];
-    const at = list.findIndex((i) => i.id === item.id);
-    const neighbour = list[at + 1] ?? list[at - 1];
+  // Documents first, unless the project has only images.
+  const onlyImages =
+    docs.status === 'ready' &&
+    images.status === 'ready' &&
+    docs.data.items.length === 0 &&
+    images.data.items.length > 0;
+  const kind: LibraryKind = chosen ?? (onlyImages ? 'image' : 'document');
+  const now = KINDS.find((k) => k.kind === kind) ?? KINDS[0];
+  const loaded = loads[kind];
+  if (!now) return null;
+
+  const unlink = async (item: LibraryItem): Promise<boolean> => {
     setBusy(true);
     const res = await change({ kind: 'unlink', key: card.key, path: item.path, expect: card.version });
     setBusy(false);
     onChanged(res.ok ? '' : res.message);
-    if (res.ok) {
-      focusId.current = neighbour?.id ?? '';
-      onUnlinked(item.title || item.name);
-    }
+    if (res.ok) onUnlinked(item.title || item.name);
+    return res.ok;
   };
 
+  const kindSeg = (
+    <Seg
+      label="Kind"
+      value={kind}
+      options={KINDS.map((k) => {
+        const l = loads[k.kind];
+        return { value: k.kind, label: l.status === 'ready' ? `${k.word}, ${l.data.items.length}` : k.word };
+      })}
+      onChange={(next) => {
+        setChosen(next);
+        // A type like "PDFs" means nothing for images, and the search starts afresh for the other kind.
+        setView((v) => ({ ...v, format: 'all' }));
+      }}
+    />
+  );
+
   return (
-    <section className="card proj-card" aria-label={title}>
-      <div className="card-head">
-        <h3>{title}</h3>
-        {loaded.status === 'ready' ? <span className="count">{loaded.data.items.length}</span> : null}
-      </div>
-      {loaded.status === 'loading' ? <StateNote kind="loading" /> : null}
-      {loaded.status === 'failed' ? (
-        <StateNote kind="error" onRetry={loaded.retry}>
-          {loaded.message}
-        </StateNote>
-      ) : null}
-      {loaded.status === 'ready' ? (
-        <>
-          {loaded.data.items.length === 0 ? (
-            <StateNote kind="empty">No {title.toLowerCase()} in this project yet.</StateNote>
-          ) : (
-            <ul className="lib-list">
-              {loaded.data.items.map((item) => (
-                <FileRow
-                  key={item.id}
-                  item={item}
-                  linked={card.links.includes(item.path)}
-                  canUnlink={canChange}
-                  busy={busy}
-                  onView={() => onView(item)}
-                  onUnlink={() => void unlink(item)}
-                />
-              ))}
-            </ul>
-          )}
-          {loaded.data.hidden > 0 ? (
-            <p className="proj-note">
-              {loaded.data.hidden} linked file{loaded.data.hidden === 1 ? " can't" : "s can't"} be shown,
-              because you can't open {loaded.data.hidden === 1 ? 'it' : 'them'}.
-            </p>
-          ) : null}
-        </>
-      ) : null}
-    </section>
+    <LibraryBrowser
+      key={kind}
+      spec={now.spec}
+      view={view}
+      onView={(patch) => setView((v) => ({ ...v, ...patch }))}
+      data={{
+        status: loaded.status,
+        message: loaded.message,
+        retry: loaded.retry,
+        items: loaded.data?.items ?? [],
+        order: [],
+        truncated: false,
+        hiddenLinks: loaded.data?.hidden ?? 0,
+      }}
+      lead={kindSeg}
+      nested
+      bin={false}
+      empty={`No ${now.word.toLowerCase()} in this project yet.`}
+      // A file opens in the viewer drawer, which has "Open in Documents/Images"; no row stays selected.
+      onChoose={onView}
+      takeOut={(item) =>
+        canChange && card.links.includes(item.path)
+          ? {
+              label: `Remove ${item.title || item.name} from this project`,
+              tip: 'Remove from this project. The file stays in the library.',
+              busy,
+              run: () => unlink(item),
+            }
+          : null
+      }
+      note={(item) => (card.links.includes(item.path) ? 'added from the library' : undefined)}
+    />
   );
 }
 
@@ -442,8 +407,8 @@ export function ProjectFiles({
       <p className={done ? 'proj-note' : 'visually-hidden'} role="status">
         {done}
       </p>
-      <div className="tray lib-tray">
-        {linking && canChange ? (
+      {linking && canChange ? (
+        <div className="tray lib-tray">
           <Picker
             card={card}
             onClose={() => onLinking(false)}
@@ -452,20 +417,15 @@ export function ProjectFiles({
               setDone(count === 1 ? 'Added 1 file.' : `Added ${count} files.`);
             }}
           />
-        ) : null}
-        {KINDS.map((k) => (
-          <Kind
-            key={k.kind}
-            card={card}
-            kind={k.kind}
-            title={k.title}
-            canChange={canChange}
-            onView={(item) => void view(item)}
-            onChanged={setMessage}
-            onUnlinked={(name) => setDone(`${name} removed from this project.`)}
-          />
-        ))}
-      </div>
+        </div>
+      ) : null}
+      <Files
+        card={card}
+        canChange={canChange}
+        onView={(item) => void view(item)}
+        onChanged={setMessage}
+        onUnlinked={(name) => setDone(`${name} removed from this project.`)}
+      />
     </>
   );
 }

@@ -6,9 +6,17 @@ import { PROJECT_LINKS_MAX } from '../../../../shared/projects-contract.ts';
 import { card, projectList } from './testing.ts';
 
 const store = vi.hoisted(() => ({
+  libraryVersion: 0,
+  hiddenFileIds: new Set<string>(),
+  deleteFile: vi.fn(),
+  toggleFavouriteFile: vi.fn(),
   newChat: vi.fn(),
   changeTodos: vi.fn(),
-  boot: { identity: { slug: 'me' }, clients: [] as { slug: string; name: string }[] },
+  boot: {
+    identity: { slug: 'me' },
+    clients: [] as { slug: string; name: string }[],
+    prefs: { favouriteFiles: [] as string[] },
+  },
   todos: {
     mine: [],
     open: [],
@@ -170,6 +178,8 @@ describe('a file row on the Files tab', () => {
     title: 'Launch plan',
     path: 'clients/skyseal/projects/site/plan.docx',
     format: 'doc',
+    ext: 'docx',
+    bytes: 1000,
     group: 'Projects',
     view: 'html',
     thumb: false,
@@ -189,7 +199,7 @@ describe('a file row on the Files tab', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Files' }));
     const remove = await screen.findByRole('button', { name: 'Remove Launch plan from this project' });
-    expect(remove.className).toBe('icon-btn');
+    expect(remove.className).toBe('icon-btn lib-delete');
     expect(remove.getAttribute('data-tip')).toBe('Remove from this project. The file stays in the library.');
     expect(remove.textContent).toBe('');
     api.changeProject.mockResolvedValueOnce(
@@ -198,6 +208,7 @@ describe('a file row on the Files tab', () => {
     api.projectFiles.mockImplementation(async () => ({ items: [], hidden: 0 }));
     fireEvent.click(remove);
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Remove Launch plan/ })).toBeNull());
-    await waitFor(() => expect(document.activeElement?.getAttribute('data-focus')).toBe('linkfiles'));
+    // The list is now empty, so focus falls back to the summary line above it.
+    await waitFor(() => expect(document.activeElement?.hasAttribute('data-lib-summary')).toBe(true));
   });
 });

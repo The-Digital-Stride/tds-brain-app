@@ -5,6 +5,10 @@ import type { TidyList } from '../../../../shared/projects-contract.ts';
 import { card, projectList } from './testing.ts';
 
 const store = vi.hoisted(() => ({
+  libraryVersion: 0,
+  hiddenFileIds: new Set<string>(),
+  deleteFile: vi.fn(),
+  toggleFavouriteFile: vi.fn(),
   newChat: vi.fn(),
   changeTodos: vi.fn(),
   toggleFavouriteTodo: vi.fn(),
@@ -13,7 +17,7 @@ const store = vi.hoisted(() => ({
   boot: {
     identity: { slug: 'me' },
     clients: [] as { slug: string; name: string }[],
-    prefs: { favouriteTodos: [] as string[] },
+    prefs: { favouriteTodos: [] as string[], favouriteFiles: [] as string[] },
   },
   todos: {
     mine: [],
@@ -514,6 +518,8 @@ describe('the Files tab', () => {
     title: 'Agency Brian - building the TDS Google Ads Manager, a very long name',
     path: 'clients/the-digital-stride/projects/site/plan.docx',
     format: 'doc',
+    ext: 'docx',
+    bytes: 1000,
     group: 'Projects',
     view: 'html',
     thumb: false,
@@ -527,7 +533,7 @@ describe('the Files tab', () => {
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Files/ }));
-    return screen.findByRole('button', { name: /Agency Brian/ });
+    return screen.findByRole('button', { name: /^Agency Brian/ });
   }
 
   it('opens a document in the viewer drawer, with its library, and stays on the Files tab', async () => {
@@ -544,7 +550,7 @@ describe('the Files tab', () => {
       }),
     );
     expect(api.libraryItems).toHaveBeenCalledWith(['tds.abc']);
-    expect(screen.getByRole('button', { name: /Agency Brian/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Agency Brian/ })).toBeTruthy();
   });
 
   it('still opens the file when its library cannot be looked up', async () => {

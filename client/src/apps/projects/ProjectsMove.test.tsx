@@ -282,9 +282,9 @@ describe('the move screen', () => {
     await waitFor(() =>
       // The Overview's own status line is in the page too, so find the one holding these words.
       expect(
-        screen.getAllByRole('status', { name: '' }).some(
-          (s) => s.textContent === 'Moved to Acme Heating. 3 to-dos moved with it.',
-        ),
+        screen
+          .getAllByRole('status', { name: '' })
+          .some((s) => s.textContent === 'Moved to Acme Heating. 3 to-dos moved with it.'),
       ).toBe(true),
     );
     expect(projectChoice.get().project).toBe('acme/site');

@@ -130,8 +130,7 @@
     align-items: center;
     gap: var(--sp-8);
   }
-  .proj-todo,
-  .proj-file {
+  .proj-todo {
     padding: var(--sp-4) var(--sp-8);
   }
   /* A teammate's row isn't a button: give its text the button's padding so the titles line up. */

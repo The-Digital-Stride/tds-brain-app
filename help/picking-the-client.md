@@ -8,7 +8,7 @@ benefit: Claude uses the right client's notes, so answers fit the job.
 roles: all
 related: [home, talking-to-claude, settings, pinned]
 since: 0.38.0
-reviewed: 2026-11-21
+reviewed: 2026-11-23
 ---
 
 ## What it does

@@ -51,10 +51,19 @@ export function chatPlaceWords(
   client: string | null | undefined,
   project: ProjectKey | null | undefined,
   clients: readonly { slug: string; name: string }[],
-  cards: readonly Pick<ProjectCard, 'key' | 'title' | 'slug'>[] | undefined,
+  cards:
+    | readonly (Pick<ProjectCard, 'key' | 'title' | 'slug'> & {
+        client?: string | null;
+        movedFrom?: string[];
+      })[]
+    | undefined,
 ): string {
-  const clientName = client ? placeName(client, clients) : '';
-  const card = project ? cards?.find((c) => c.key === project) : undefined;
+  // A project that moved since the chat was saved is found by its old key, and shown under its client now.
+  const card = project
+    ? cards?.find((c) => c.key === project || (c.movedFrom ?? []).includes(project))
+    : undefined;
+  const now = card && card.key !== project && card.client !== undefined ? card.client : client;
+  const clientName = now ? placeName(now, clients) : '';
   const title = card ? card.title || card.slug : '';
   return [clientName, title].filter(Boolean).join(' · ');
 }

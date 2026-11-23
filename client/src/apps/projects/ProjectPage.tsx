@@ -553,7 +553,7 @@ export function ProjectPage({
         {!card.archived ? (
           <button
             type="button"
-            className={editable ? 'btn' : 'btn proj-head-end'}
+            className="btn proj-head-end"
             data-size="small"
             data-focus="chat"
             onClick={() => newChat(projectChatPlace(card, clients))}

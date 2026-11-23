@@ -8,7 +8,7 @@ benefit: Know how each project is going without asking around.
 roles: all
 related: [todos, documents, images, picking-the-client, home]
 since: 0.55.0
-reviewed: 2026-11-21
+reviewed: 2026-11-23
 ---
 
 ## What it does
@@ -26,11 +26,12 @@ Projects shows the work the team does for each client. Each project has a page w
 2. Choose **Mine** to see only your projects. Use the filters for status, Account Owner and service.
 3. Open a project. **Overview** shows the details and team. **To-dos** shows what is open. **Files** shows images and documents. **Add files** adds them from the library; the cross takes one off again.
 4. Press **New project** to add one. Press **Edit**, at the right of the project's name, to change one. Press **Add to team** beside a person marked "from to-dos" to keep them on the team.
-5. To move a project to another client, press **Move**.
-6. When a project is finished, press **Archive** on its Overview. Choose what happens to each open to-do, then press **Archive**.
-7. To see archived projects, set the status filter to **Archived**. Open one and press **Unarchive** to bring it back.
-8. If you see a tidy-up notice, press **Tidy up** and review each old label.
-9. To remove an archived project for good, press **Delete** and type its name.
+5. Press **New chat for this project** to start a chat for it. What Claude makes in that chat is saved in the project's folder, so it shows under **Files**. Archived projects don't have this button.
+6. To move a project to another client, press **Move**.
+7. When a project is finished, press **Archive** on its Overview. Choose what happens to each open to-do, then press **Archive**.
+8. To see archived projects, set the status filter to **Archived**. Open one and press **Unarchive** to bring it back.
+9. If you see a tidy-up notice, press **Tidy up** and review each old label.
+10. To remove an archived project for good, press **Delete** and type its name.
 
 ## Good to know
 

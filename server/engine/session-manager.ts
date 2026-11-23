@@ -3131,6 +3131,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       // On resume the saved place wins. Only when nothing was saved (a chat from before places were saved) does a
       // woken chat keep the client and project the page sends (it sends what it had); one that has gone since is
       // dropped, never refused: the person's message must still get through. A new chat's are checked strictly.
+      // True when a reopened chat's place came from the page (nothing usable was saved): it is saved below.
+      let placeFromPage = false;
       if (!(resume && (client !== null || project !== null))) {
         if (req.client !== undefined && req.client !== null) {
           const slug = req.client;
@@ -3149,6 +3151,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             }
           }
         }
+        placeFromPage = resume !== null && (client !== null || project !== null);
       }
       let todoId: string | null = null;
       if (req.todoId !== undefined && req.todoId !== null) {
@@ -3185,6 +3188,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         makeRoom();
         const s = newSession({ title, client, project, openProjects, todoId, kind, sdkSessionId: resume });
         live.set(s.id, s);
+        // A reopened chat keeps the same Claude session id, so the save on `init` won't run for it: save its place
+        // now, so one woken with what the page sent remembers it next time too (decision 3).
+        if (resume && placeFromPage) void chatPlaces.set(resume, { client: s.client, project: s.project });
         notifyChanged();
         log(resume ? 'Reopened a past chat.' : 'Started a chat.');
 

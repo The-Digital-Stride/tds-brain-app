@@ -8,7 +8,7 @@ benefit: Never lose a conversation, and switch between jobs in a click.
 roles: all
 related: [talking-to-claude, approvals-and-questions, home]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-23
 ---
 
 ## What it does

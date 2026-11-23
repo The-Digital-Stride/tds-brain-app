@@ -6243,6 +6243,17 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect([s.client, s.project]).toEqual(['urban-cooling', null]);
   });
 
+  it('a woken chat with nothing saved saves the place it was given, under the same session id', async () => {
+    const fx = projectSetup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    await mgr.start({ resume: 'old-1', client: 'urban-cooling', project: 'urban-cooling/web' });
+    await flush();
+    expect(await fx.chatPlaces.placeOf('old-1')).toEqual({
+      client: 'urban-cooling',
+      project: 'urban-cooling/web',
+    });
+  });
+
   it("a reopened chat's saved place wins over what the page sends", async () => {
     const fx = projectSetup();
     await fx.chatPlaces.set('old-1', { client: 'urban-cooling', project: null });

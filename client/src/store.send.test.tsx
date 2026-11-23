@@ -285,13 +285,15 @@ describe('waking a chat: where the person ends up, and what goes with it', () =>
   beforeEach(() => {
     sessionStorage.setItem('tds-brain-open-chat', 's1');
     api.sessions.mockResolvedValueOnce({
-      live: [{ ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md' }],
+      live: [
+        { ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md', project: 'urban-cooling/web' },
+      ],
       past: [],
     });
     api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
   });
 
-  it('takes the chat’s client and to-do with it', async () => {
+  it('takes the chat’s client, to-do and project with it', async () => {
     await drive();
     fireEvent.click(screen.getByText('send'));
     await waitFor(() =>
@@ -300,6 +302,7 @@ describe('waking a chat: where the person ends up, and what goes with it', () =>
         prompt: 'carry on',
         client: 'urban-cooling',
         todoId: '20261111-mine.md',
+        project: 'urban-cooling/web',
       }),
     );
   });

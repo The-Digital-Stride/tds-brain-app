@@ -12,6 +12,10 @@
   .proj-head > .proj-head-end {
     margin-left: auto;
   }
+  /* Two end actions (New chat, Edit) sit together at the end: only the first takes the free space. */
+  .proj-head > .proj-head-end + .proj-head-end {
+    margin-left: 0;
+  }
   /* Back to the list ("All projects"): the shared chevron points down, so it turns to point left. */
   .proj-back .icon {
     transform: rotate(90deg);

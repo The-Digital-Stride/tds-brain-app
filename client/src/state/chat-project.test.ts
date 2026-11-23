@@ -50,4 +50,12 @@ describe('chat project helpers', () => {
     expect(chatPlaceWords(null, null, clients, cards)).toBe('');
     expect(chatPlaceWords('acme', 'acme/gone', clients, cards)).toBe('Acme Heating');
   });
+
+  it('finds a project that moved by its old key, under its client now', () => {
+    const moved = [
+      { key: 'north/site', slug: 'site', title: 'Site', client: 'north', movedFrom: ['acme/site'] },
+    ];
+    const both = [...clients, { slug: 'north', name: 'Northwind' }];
+    expect(chatPlaceWords('acme', 'acme/site', both, moved)).toBe('Northwind · Site');
+  });
 });

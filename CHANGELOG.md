@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.67.0 — 2026-11-23
+
+- **feat**: what changed since you last looked, and what's coming up
+- **fix**: a linked file outside the project reads as Linked; no doubled name on update rows
+- **fix**: a teammate's note that syncs in late still shows; your own personal to-do ticks aren't listed back
+- **fix**: activity cards follow the design system (five rows then Show more, end date row doesn't lift, one empty-state size)
+- **fix**: an old update paged back in isn't new; a new project starts folded; one-change wording; badge tones in the design system
+
 ## v0.66.0 — 2026-11-23
 
 - **feat**: updates log on each project

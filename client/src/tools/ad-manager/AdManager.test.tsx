@@ -301,6 +301,19 @@ describe('panel', () => {
     );
   });
 
+  it('keeps Previous and Next in the panel’s fixed band above the proposal, so they never scroll away', async () => {
+    await ready();
+    const title = await screen.findByRole('heading', { name: 'Raise the budget' });
+    const band = screen
+      .getByRole('navigation', { name: 'Proposals' })
+      .closest('.drawer-tools') as HTMLElement;
+    const list = title.closest('.drawer-scroll') as HTMLElement;
+    expect(band).not.toBeNull();
+    expect(list).not.toBeNull();
+    expect(list.contains(band)).toBe(false);
+    expect(band.parentElement).toBe(list.parentElement);
+  });
+
   it('asks "Discard your changes?" when stepping with a typed note, and keeps the note on Keep editing', async () => {
     await ready();
     await screen.findByRole('heading', { name: 'Raise the budget' });

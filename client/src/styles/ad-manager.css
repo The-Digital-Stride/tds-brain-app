@@ -279,10 +279,21 @@
     font-size: var(--fs-body);
   }
   /* Previous / Next through the account's open proposals: the count, then up and down icon buttons, above the title. */
+  /* The "Discard your changes?" strip stays at the top of the proposal's scroller, as a project form's does
+     (projects.css), so a step from a scrolled panel asks in view. Solid, so nothing shows through it. */
+  .am-panel > .confirm[aria-label="Discard your changes"] {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(var(--tint-1), var(--tint-1)), var(--surface);
+  }
+  /* In the panel's fixed band (.drawer-tools), lined up with the panel's content below it. */
   .am-step {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: var(--sp-8);
+    padding: 0 var(--sp-8);
   }
   .am-step .am-sub {
     margin: 0 auto 0 0;

@@ -2263,7 +2263,7 @@ function updateRemove(input, ctx) {
 
 // The words the app shows for a status and a light (updates log decision 4).
 const STATUS_WORDS = { planned: 'Planned', active: 'Active', 'on-hold': 'On hold', done: 'Done' };
-const LIGHT_WORDS = { green: 'Green', amber: 'Amber', red: 'Red' };
+const LIGHT_WORDS = { green: 'On track', amber: 'At risk', red: 'Off track' }; // as the app shows them (client logic.ts)
 
 // A card value as raw one-line text, '' when there is none.
 function rawValue(value) {

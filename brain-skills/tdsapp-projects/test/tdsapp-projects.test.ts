@@ -2607,7 +2607,7 @@ describe('updates log', () => {
           change: 'health',
           from: 'green',
           to: 'amber',
-          body: '\nHealth: Green → Amber.\n',
+          body: '\nHealth: On track → At risk.\n',
         },
         {
           ...base,
@@ -2635,7 +2635,7 @@ describe('updates log', () => {
       expect(editCard({ health: null, owner: null }).reply).toMatchObject({ ok: true });
       const got = autoEntries().sort((a, b) => String(a.change).localeCompare(String(b.change)));
       expect(got.map((e) => [e.change, e.from, e.to, e.body])).toEqual([
-        ['health', 'green', '', '\nHealth: Green → not set.\n'],
+        ['health', 'green', '', '\nHealth: On track → not set.\n'],
         ['owner', 'tess-team', '', '\nAccount Owner: Tess Team → nobody.\n'],
       ]);
       for (const n of entries()) expect(read(`${UPDATES}/${n}`)).toContain('\nto: ""\n');
@@ -2643,7 +2643,7 @@ describe('updates log', () => {
       expect(editCard({ health: 'red', status: 'done' }).reply).toMatchObject({ ok: true });
       const again = autoEntries().sort((a, b) => String(a.change).localeCompare(String(b.change)));
       expect(again.map((e) => [e.change, e.from, e.to, e.body])).toEqual([
-        ['health', '', 'red', '\nHealth: not set → Red.\n'],
+        ['health', '', 'red', '\nHealth: not set → Off track.\n'],
         ['status', 'active', 'done', '\nStatus: Active → Done.\n'],
       ]);
     });

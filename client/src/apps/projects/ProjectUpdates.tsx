@@ -59,6 +59,9 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeMessage, setRemoveMessage] = useState('');
   const textId = useId();
+  const errorId = useId();
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const kindName = useId();
   const dirty = text.trim() !== '';
   const leave = useSheetHold(dirty);
@@ -107,6 +110,7 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     const summary = text.trim();
     if (!summary) {
       setMessage('Write the update first.');
+      textRef.current?.focus();
       return;
     }
     setBusy(true);
@@ -137,7 +141,15 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
     }
     setRemoving(null);
     await load();
+    // The row is gone: put the keyboard back somewhere sensible.
+    (textRef.current ?? listRef.current)?.focus();
   };
+
+  /** Back on the row's Remove button after Cancel (the Confirm replaced it). */
+  const focusRemove = (path: string) =>
+    requestAnimationFrame(() =>
+      listRef.current?.querySelector<HTMLButtonElement>(`[data-remove="${CSS.escape(path)}"]`)?.focus(),
+    );
 
   if (failed && !page)
     return (
@@ -177,7 +189,10 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
           <div className="form-field">
             <label htmlFor={textId}>Update</label>
             <textarea
+              ref={textRef}
               id={textId}
+              aria-invalid={message ? true : undefined}
+              aria-describedby={message ? errorId : undefined}
               className="field proj-area"
               rows={3}
               value={text}
@@ -210,7 +225,7 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
             Fine to share with the client
           </label>
           {message ? (
-            <p className="error" role="alert">
+            <p className="error" role="alert" id={errorId}>
               {message}
             </p>
           ) : null}
@@ -220,7 +235,9 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
             </button>
           </div>
         </form>
-      ) : canChange && !card.archived ? (
+      ) : card.archived ? (
+        <p className="proj-note">Archived projects can't take new updates.</p>
+      ) : canChange ? (
         <p className="proj-note">{READ_ONLY_NOTICE}</p>
       ) : null}
       {page.unreadable > 0 ? (
@@ -238,7 +255,7 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
       {page.updates.length === 0 ? (
         <p className="proj-note">No updates yet.</p>
       ) : (
-        <ul className="proj-updates">
+        <ul className="proj-updates" ref={listRef} tabIndex={-1} aria-label="Updates">
           {page.updates.map((u) => (
             <li key={u.path} className="card proj-card proj-update">
               <div className="proj-update-head">
@@ -258,7 +275,10 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
                     variant="danger"
                     busy={removeBusy}
                     onConfirm={() => void remove(u)}
-                    onCancel={() => setRemoving(null)}
+                    onCancel={() => {
+                      setRemoving(null);
+                      focusRemove(u.path);
+                    }}
                   />
                 ) : (
                   <div className="proj-buttons">
@@ -266,6 +286,7 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
                       type="button"
                       className="btn"
                       data-size="small"
+                      data-remove={u.path}
                       onClick={() => {
                         setRemoveMessage('');
                         setRemoving(u.path);
@@ -290,7 +311,11 @@ export function ProjectUpdates({ card, canChange }: { card: ProjectCard; canChan
           >
             Show older
           </button>
-          {moreFailed ? <span className="error">Couldn't load older updates.</span> : null}
+          {moreFailed ? (
+            <span className="error" role="alert">
+              Couldn't load older updates.
+            </span>
+          ) : null}
         </div>
       ) : null}
     </>

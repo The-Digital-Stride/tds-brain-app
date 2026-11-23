@@ -24,7 +24,7 @@ Projects shows the work the team does for each client. Each project has a page w
 
 1. Open Projects from the rail.
 2. Choose **Mine** to see only your projects. Use the filters for status, Account Owner and service.
-3. Open a project. **Overview** shows the details and team. **To-dos** shows what is open. **Updates** is the log: add a note or call; status and Account Owner changes appear too. **Files** shows images and documents. **Add files** adds them from the library; the cross takes one off again.
+3. Open a project. **Overview** shows the details and team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** shows images and documents. **Add files** adds them from the library; the cross takes one off again.
 4. Press **New project** to add one. Press **Edit** to change one. **Add to team** keeps a person marked "from to-dos".
 5. **New chat for this project** starts a chat whose files are saved in the project, under **Files**.
 6. To move a project to another client, press **Move**.

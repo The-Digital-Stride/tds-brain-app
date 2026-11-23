@@ -78,7 +78,7 @@ export interface ProjectUpdateRemoveAction {
  * Auto entries on `edit` (decision 4). After the card is written, for each of these that changed, one entry:
  *   status  → kind 'status', summary `Status: <old> → <new>.` (words as the app shows them: Planned, Active,
  *             On hold, Done)
- *   health  → kind 'status', summary `Health: <old or "not set"> → <new or "not set">.` (Green, Amber, Red)
+ *   health  → kind 'status', summary `Health: <old or "not set"> → <new or "not set">.` (On track, At risk, Off track: the app's words)
  *   owner   → kind 'owner',  summary `Account Owner: <old name or "nobody"> → <new name or "nobody">.`
  * One `edit` that changes several writes one entry per change, all client_safe false. A value sent back
  * unchanged writes nothing (older apps send every field on `edit`). Each auto entry also carries flat facts

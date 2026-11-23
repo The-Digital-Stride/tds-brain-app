@@ -11,6 +11,7 @@ import type {
   ProposalSummary,
 } from '../../../shared/ads-contract.ts';
 import { projectList } from '../apps/projects/testing.ts';
+import { projectPageRequest } from '../state/client-choice.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -265,6 +266,18 @@ describe('leaving a project form with changes', () => {
     // Back on the Projects list, not Home: the page change was dropped.
     expect(await screen.findByRole('button', { name: 'New project' })).toBeTruthy();
     expect(pageTitle()).toMatch(/Projects/);
+  });
+
+  it('a Projects search hit while Projects shows asks too; Keep keeps the form, Discard opens the hit', async () => {
+    await formTyped();
+    act(() => projectPageRequest.set('acme/spring'));
+    expect(within(form()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
+    expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Spring launch');
+    press('Keep editing');
+    expect(form()).toBeTruthy();
+    act(() => projectPageRequest.set('acme/spring'));
+    press('Discard changes');
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'New project' })).toBeNull());
   });
 
   it('with nothing changed, the rail goes at once', async () => {

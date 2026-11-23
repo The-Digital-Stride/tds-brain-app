@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../../shell/Icon.tsx';
+import { ShellContext } from '../../shell/shell-context.ts';
 import { followMovedProject, projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -28,13 +29,22 @@ export function ProjectsSheet() {
   const [notice, setNotice] = useState('');
   // A Projects search hit asks for a project's page (client-choice `projectPageRequest`): open it on
   // mount, and again whenever another hit asks while the app is already showing.
+  // A hit while the app already shows replaces this page, so a form with unsaved work asks first (the leave guard,
+  // Actions rule 9). On mount the page change itself went through the guard.
+  const shell = useContext(ShellContext);
+  const guardLeave = useRef(shell?.guardLeave);
+  guardLeave.current = shell?.guardLeave;
   useEffect(() => {
-    const open = () => {
+    const show = (key: string) => setScreen({ is: 'project', key, tab: 'overview' });
+    const first = takeProjectPageRequest();
+    if (first) show(first);
+    return projectPageRequest.subscribe(() => {
       const key = takeProjectPageRequest();
-      if (key) setScreen({ is: 'project', key, tab: 'overview' });
-    };
-    open();
-    return projectPageRequest.subscribe(open);
+      if (!key) return;
+      const guard = guardLeave.current;
+      if (guard) guard(() => show(key));
+      else show(key);
+    });
   }, []);
   const root = useRef<HTMLDivElement>(null);
   // What was pressed to get to each screen, so Back puts focus there again.

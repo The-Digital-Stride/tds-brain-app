@@ -3,7 +3,7 @@ id: files-on-todos
 title: Files on to-dos
 area: todos
 order: 3
-summary: Link images and documents to a to-do, or upload new ones.
+summary: Add images and documents to a to-do, or upload new ones.
 benefit: The brief, the logo or the quote sits with the job, so nobody goes looking for it.
 roles: all
 related: [todos, adding-todos, asked-of-others, personal-todos, documents, images]
@@ -13,7 +13,7 @@ reviewed: 2026-11-16
 
 ## What it does
 
-A to-do can have files. They are listed under its details, in **Files**. You can link a file that is already in the library, or upload a new one. Uploads are saved in the library, so they also show in Images and Documents.
+A to-do can have files. They are listed under its details, in **Files**. You can add a file that is already in the library, or upload a new one. Uploads are saved in the library, so they also show in Images and Documents.
 
 ## Why it helps
 
@@ -33,7 +33,7 @@ A to-do can have files. They are listed under its details, in **Files**. You can
 
 - An upload goes into the to-do's client folder, in Files or Images. This works when the to-do's client is set and matches a client in the brain.
 - Otherwise it goes to your personal files. Cortex says so first: the file saves to your personal files, and only you can open it.
-- To link a personal file to a team to-do, Cortex asks first. Its name shows to everyone with the brain once it syncs, but only you can open it.
+- To add a personal file to a team to-do, Cortex asks first. Its name shows to everyone with the brain once it syncs, but only you can open it.
 - To send a file with a to-do, add it for yourself, add the file, then pass it on.
 - Other lines under Files, such as a web link, show as plain text. You can change them in the brain.
 - If a file can't be found, the list says so.

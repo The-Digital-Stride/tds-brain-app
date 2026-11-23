@@ -152,7 +152,7 @@
     "scene": "delete-chat",
     "crop": "#drawer",
     "pad": 0,
-    "alt": "An earlier chat about to be deleted, with the question that asks first."
+    "alt": "An earlier chat just moved to the Bin, with Undo in its place."
   },
   {
     "id": "todo-add",

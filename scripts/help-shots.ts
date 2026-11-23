@@ -409,7 +409,7 @@ const SCENES: Record<string, Scene> = {
     await openDrawer(page, 'Chats');
     await page.getByRole('radio', { name: 'Earlier' }).click();
     await page.locator('#drawer button[aria-label^="Delete chat:"]').first().click();
-    await page.locator('#drawer .line-confirm').waitFor();
+    await page.locator('#drawer .undo-line').waitFor();
   },
 
   async 'todo-add'(page) {

@@ -159,7 +159,7 @@ function Shell() {
   const touring = useTourOpen();
   // The Workbench drawer's "N due" note, worked out from start-up rather than on first opening an Ads tool.
   useAdsDue();
-  const { boot, newChat, view } = useStore();
+  const { boot, view } = useStore();
   const snap = useToolSnapshot();
   const { state, dispatch, modes } = useShell();
   // One source of truth for what shows and what floats: the shell provider's layout.
@@ -221,20 +221,7 @@ function Shell() {
                 {drawer === 'todos' ? <HelpLink page="todos" /> : null}
                 {drawer === 'skills' ? <HelpLink page="skills" /> : null}
                 {drawer === 'section' ? <HelpLink page="workbench" /> : null}
-                {drawer === 'chats' ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    data-variant="primary"
-                    onClick={() => {
-                      newChat();
-                      // A floating drawer closes once a choice is made; a pushing one stays.
-                      if (modes.drawerOverlays) dispatch({ type: 'close-drawer' });
-                    }}
-                  >
-                    New chat
-                  </button>
-                ) : null}
+                {/* New chat is the + at the end of the Chats drawer's Open/Earlier row (ChatsDrawer). */}
               </>
             }
           >

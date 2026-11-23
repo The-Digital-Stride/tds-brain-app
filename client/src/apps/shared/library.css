@@ -215,11 +215,6 @@
     transition: none;
   }
 }
-.lib-held {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-}
 /* Shared by Documents and a project's Files tab. */
 /* The file's kind: a line icon in a flat white box with a hairline edge, the size of a small picture. */
 .doc-glyph {

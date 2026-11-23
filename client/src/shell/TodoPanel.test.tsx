@@ -205,10 +205,13 @@ describe('opening and reading', () => {
     expect(screen.queryByRole('button', { name: /^Tick/ })).toBeNull();
   });
 
-  it('the Options button opens the same panel for someone who may only tick things off', async () => {
+  // The read-only "Options" (three dots) button is gone (plan 2026-11-22-ux-consistency, decision 10): the title
+  // opens the same read view, so someone who may only tick things off uses that.
+  it('someone who may only tick things off has no Options button; the title opens the same panel', async () => {
     setStore('restricted', three(), { directWrites: true });
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Options for "First"' }));
+    expect(screen.queryByRole('button', { name: /^Options for/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'First' }));
     await dialog();
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'read' });
   });

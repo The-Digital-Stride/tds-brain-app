@@ -55,7 +55,8 @@ export function SheetNotices(_: SheetNoticesProps) {
       ) : null}
       <FileDeleteNotice />
       {notice ? (
-        // A deleted file's note is spoken by the status line in FileDeleteNotice (always on the page).
+        // A deleted file's note is spoken by the status line in FileDeleteNotice (always on the page), and a
+        // deleted chat's by the Chats drawer's, where the delete was started.
         <p
           className="closed-note"
           role={notice === fileNotice ? undefined : 'status'}

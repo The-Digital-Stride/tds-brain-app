@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type { HeldTodo } from '../store.tsx';
 import type { ShellAction } from './contract.ts';
 
 const store = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
@@ -75,11 +76,16 @@ const fns = {
   holdTodo: vi.fn(),
   markTodosSeen: vi.fn(),
   undoHeld: vi.fn(),
+  pauseHeld: vi.fn(),
+  resumeHeld: vi.fn(),
   newChat: vi.fn(),
   openChat: vi.fn(),
   openPast: vi.fn(),
   requestClose: vi.fn(),
-  deletePastChat: vi.fn(),
+  holdDeletePastChat: vi.fn(),
+  undoDeletePastChat: vi.fn(),
+  pauseChatDelete: vi.fn(),
+  resumeChatDelete: vi.fn(),
   startSkill: vi.fn(),
   togglePin: vi.fn(),
   toggleFavouriteChat: vi.fn(),
@@ -90,6 +96,8 @@ function setStore(over: Record<string, unknown> = {}, directWrites = false, pins
     ...fns,
     view: 'chat',
     heldTodos: [],
+    heldChats: [],
+    chatNotice: null,
     activeChat: { kind: 'new', key: 1, draft: '', skill: null, todoId: null },
     boot: {
       clients: [],
@@ -137,7 +145,9 @@ describe('To-dos drawer', () => {
     render(<TodosDrawer />);
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
+    // No "Options" (three dots) button any more (plan 2026-11-22-ux-consistency, decision 10): the title opens it.
+    expect(screen.queryByRole('button', { name: /^Options for/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
     const panel = await screen.findByRole('dialog', { name: 'Renew contract' });
     const done = within(panel).getByRole('button', { name: 'Mark as done' });
     // Focus goes to the heading, not the button, so two presses of Enter can't finish it.
@@ -156,7 +166,7 @@ describe('To-dos drawer', () => {
   it('closes the opened to-do with its close button without finishing it', async () => {
     setStore({}, true);
     render(<TodosDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Options for "Renew contract"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
     await screen.findByRole('dialog', { name: 'Renew contract' });
     fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -268,6 +278,93 @@ describe('To-dos drawer', () => {
     expect(screen.getByText('1 more belongs to other people.')).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: 'Open, 1' }));
     expect(screen.getByText('Anyone can do this')).toBeTruthy();
+  });
+});
+
+describe('To-dos drawer, held ticks (plan 2026-11-22-ux-consistency, R1)', () => {
+  const two = () => ({
+    mine: [todo('t1.md', 'Renew contract', '2020-01-01'), todo('t2.md', 'Book the van', '2020-01-01')],
+    open: [],
+    othersCount: 0,
+    team: [],
+    changes: 'no-skill',
+    canAddOpen: false,
+  });
+  /** The store's own held queue behind the mocked store, so "sent at 10 s" is the real clock. */
+  async function withRealQueue() {
+    const { createHeldQueue } = await vi.importActual<typeof import('../store.tsx')>('../store.tsx');
+    const { UNDO_MS } = await import('./UndoLine.tsx');
+    const sent: string[] = [];
+    const queue = createHeldQueue<HeldTodo>({
+      send: async (h) => {
+        sent.push(h.todoId);
+      },
+      onQueued: () => {},
+    });
+    fns.holdTodo.mockImplementation((h: HeldTodo) => {
+      queue.hold(h.todoId, h, { replace: true });
+      store.current = { ...store.current, heldTodos: [h] };
+    });
+    fns.pauseHeld.mockImplementation((id: string) => queue.pause(id));
+    fns.resumeHeld.mockImplementation((id: string) => queue.resume(id));
+    return { sent, UNDO_MS };
+  }
+  async function openAndFind() {
+    setStore({ todos: two() }, true);
+    render(<TodosDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
+    const panel = await screen.findByRole('dialog', { name: 'Renew contract' });
+    return within(panel).getByRole('button', { name: 'Mark as done' });
+  }
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('people who can only tick things off see the star and the chat button, no Options or Edit', () => {
+    setStore({}, true);
+    render(<TodosDrawer />);
+    const row = screen.getByRole('button', { name: 'Renew contract' }).closest('li') as HTMLElement;
+    const buttons = within(row)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    expect(buttons).toEqual([
+      'Renew contract',
+      'Favourite: Renew contract',
+      'Start a chat on this: Renew contract',
+    ]);
+  });
+
+  it('a POINTER tick is sent at 10 s with no further interaction: focus goes to the next row, not Undo', async () => {
+    const { sent, UNDO_MS } = await withRealQueue();
+    const done = await openAndFind();
+    vi.useFakeTimers();
+    fireEvent.pointerDown(done);
+    fireEvent.click(done, { detail: 1 });
+    const undo = screen.getByRole('button', { name: 'Undo marking as done "Renew contract"' });
+    expect(document.activeElement).not.toBe(undo);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Book the van' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNDO_MS - 1);
+    });
+    expect(sent).toEqual([]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(sent).toEqual(['t1.md']);
+  });
+
+  it('a KEYBOARD tick puts focus on Undo, which holds the clock while it is there', async () => {
+    const { sent, UNDO_MS } = await withRealQueue();
+    const done = await openAndFind();
+    vi.useFakeTimers();
+    fireEvent.keyDown(done, { key: 'Enter' });
+    fireEvent.click(done, { detail: 0 });
+    const undo = screen.getByRole('button', { name: 'Undo marking as done "Renew contract"' });
+    expect(document.activeElement).toBe(undo);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNDO_MS * 3);
+    });
+    expect(sent).toEqual([]);
   });
 });
 
@@ -516,108 +613,135 @@ describe('Chats drawer', () => {
       expect(screen.getByRole('button', { name: 'Delete chat: Other chat' })).toBeTruthy();
     });
 
-    it('asks first, with Keep chat focused and the title still shown', () => {
+    // The inline "Move this chat to the Bin?" question is gone (plan 2026-11-22-ux-consistency, decision 12): the bin
+    // holds the delete in the store and the row gives way to an Undo line. These replace the old question's tests.
+    const two = [
+      { sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' as const },
+      { sdkSessionId: 'p2', title: 'Other chat', lastModified: '2026-11-01T09:00:00Z', kind: 'tds' as const },
+    ];
+    const held = (phase: 'waiting' | 'sending' = 'waiting') => ({
+      sdkSessionId: 'p1',
+      title: 'Old chat',
+      phase,
+      session: two[0],
+    });
+    /** What the store serves while p1 is held: the past list without it, and the held line. */
+    const holding = (phase: 'waiting' | 'sending' = 'waiting') =>
+      setStore({ sessions: { live: [], past: [two[1]] }, heldChats: [held(phase)] });
+
+    it('the bin holds the delete at once, with no question first', () => {
       openEarlier();
       fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
-      expect(screen.getByText(/Move this chat to the Bin\?/)).toBeTruthy();
-      expect(screen.getByText('Old chat')).toBeTruthy();
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep chat' }));
-      expect(fns.deletePastChat).not.toHaveBeenCalled();
+      expect(fns.holdDeletePastChat).toHaveBeenCalledExactlyOnceWith('p1', 'Old chat');
+      expect(screen.queryByText(/Move this chat to the Bin/)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Keep chat' })).toBeNull();
     });
 
-    it('Keep chat cancels', () => {
+    it('shows the held chat as an Undo line in its place, and says so in the always-there status line', () => {
+      holding();
       openEarlier();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Keep chat' }));
-      expect(screen.queryByText(/Move this chat to the Bin/)).toBeNull();
-      expect(fns.deletePastChat).not.toHaveBeenCalled();
+      const undo = screen.getByRole('button', { name: 'Undo deleting “Old chat”' });
+      expect(undo.textContent).toBe('Undo');
+      const line = undo.closest('li') as HTMLElement;
+      expect(line.classList.contains('undo-line')).toBe(true);
+      expect(line.textContent).toContain('“Old chat” moved to the Bin. It leaves the terminal too.');
+      // In its place: before the other chat, as it was.
+      const rows = Array.from(document.querySelectorAll('.drawer-list > li'));
+      expect(rows.indexOf(line)).toBe(0);
+      expect(screen.getByTestId('chat-delete-status').textContent).toBe(
+        '“Old chat” moved to the Bin. It leaves the terminal too. Undo is in its place.',
+      );
+      fireEvent.mouseEnter(line);
+      expect(fns.pauseChatDelete).toHaveBeenCalledWith('p1');
+      fireEvent.mouseLeave(line);
+      expect(fns.resumeChatDelete).toHaveBeenCalledWith('p1');
+      fireEvent.click(undo);
+      expect(fns.undoDeletePastChat).toHaveBeenCalledWith('p1');
+    });
+
+    it('says "Sending…" once the time is up, with no Undo; the result is left to the sheet notice', () => {
+      holding('sending');
+      const view = render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+      expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      expect(screen.getByText('Sending…')).toBeTruthy();
+      setStore({
+        sessions: { live: [], past: [two[1]] },
+        chatNotice: '“Old chat” moved to the Bin. You can put it back from there.',
+      });
+      view.rerender(<ChatsDrawer />);
+      // The sheet's always-mounted notice speaks the result (it survives the drawer closing), so the drawer's
+      // own line stays empty rather than announcing it twice.
+      expect(screen.getByTestId('chat-delete-status').textContent).toBe('');
+    });
+
+    it('after a pointer press focus goes to the next chat, not to Undo, so nothing holds the clock', () => {
+      setStore({ sessions: { live: [], past: two } });
+      // The store updates in the same press, as the real one does.
+      fns.holdDeletePastChat.mockImplementation(() => holding());
+      render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+      const bin = screen.getByRole('button', { name: 'Delete chat: Old chat' });
+      bin.focus();
+      fireEvent.pointerDown(bin);
+      fireEvent.click(bin, { detail: 1 });
+      expect(screen.getByRole('button', { name: 'Undo deleting “Old chat”' })).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Other chat/ }));
+      expect(fns.pauseChatDelete).not.toHaveBeenCalled();
+    });
+
+    it('after a keyboard press focus goes to Undo', () => {
+      setStore({ sessions: { live: [], past: two } });
+      fns.holdDeletePastChat.mockImplementation(() => holding());
+      render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+      const bin = screen.getByRole('button', { name: 'Delete chat: Old chat' });
+      bin.focus();
+      fireEvent.keyDown(bin, { key: 'Enter' });
+      fireEvent.click(bin, { detail: 0 });
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo deleting “Old chat”' }));
+    });
+
+    it('Undo puts focus back on the chat’s own bin', () => {
+      holding();
+      fns.undoDeletePastChat.mockImplementation(() => setStore({ sessions: { live: [], past: two } }));
+      render(<ChatsDrawer />);
+      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Undo deleting “Old chat”' }));
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
     });
 
-    it('Esc cancels without reaching the shell', () => {
-      const onKey = vi.fn();
-      document.addEventListener('keydown', onKey);
+    it('no bin is ever disabled', () => {
+      holding();
       openEarlier();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
-      fireEvent.keyDown(screen.getByRole('button', { name: 'Keep chat' }), { key: 'Escape' });
-      document.removeEventListener('keydown', onKey);
-      expect(screen.queryByText(/Move this chat to the Bin/)).toBeNull();
-      expect(onKey).not.toHaveBeenCalled();
-      expect(fns.deletePastChat).not.toHaveBeenCalled();
-    });
-
-    it('Delete chat calls the action', () => {
-      fns.deletePastChat.mockResolvedValue(true);
-      openEarlier();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
-      expect(fns.deletePastChat).toHaveBeenCalledWith('p1');
-    });
-
-    it('while deleting, Esc stays in the question and other bins wait', async () => {
-      let finish: (ok: boolean) => void = () => {};
-      fns.deletePastChat.mockReturnValue(new Promise<boolean>((r) => (finish = r)));
-      setStore({
-        sessions: {
-          live: [],
-          past: [
-            { sdkSessionId: 'p1', title: 'Old chat', lastModified: '2026-11-01T10:00:00Z', kind: 'tds' },
-            { sdkSessionId: 'p2', title: 'Other chat', lastModified: '2026-11-01T09:00:00Z', kind: 'tds' },
-          ],
-        },
-      });
-      const onKey = vi.fn();
-      document.addEventListener('keydown', onKey);
-      openEarlier();
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Old chat' }));
-      const del = screen.getByRole('button', { name: 'Delete chat' });
-      del.focus();
-      fireEvent.click(del);
-      // Still focusable (a disabled button would drop focus to the page, so Esc would miss the question).
-      expect((del as HTMLButtonElement).disabled).toBe(false);
-      expect(del.getAttribute('aria-disabled')).toBe('true');
-      expect(document.activeElement).toBe(del);
-      fireEvent.click(screen.getByRole('button', { name: 'Keep chat' }));
-      fireEvent.click(del);
-      expect(fns.deletePastChat).toHaveBeenCalledTimes(1);
-      fireEvent.keyDown(del, { key: 'Escape' });
-      document.removeEventListener('keydown', onKey);
-      expect(onKey).not.toHaveBeenCalled();
-      expect(screen.getByText(/Move this chat to the Bin/)).toBeTruthy();
       expect(
         (screen.getByRole('button', { name: 'Delete chat: Other chat' }) as HTMLButtonElement).disabled,
-      ).toBe(true);
-      await act(async () => finish(false));
-    });
-
-    it('after a delete, focus goes to the next chat in the list as shown, even in a later group', async () => {
-      const today = new Date().toISOString();
-      const rows = [
-        { sdkSessionId: 'a', title: 'Chat A', lastModified: today, kind: 'tds' as const },
-        { sdkSessionId: 'b', title: 'Chat B', lastModified: today, kind: 'tds' as const },
-        { sdkSessionId: 'c', title: 'Chat C', lastModified: '2025-01-02T10:00:00Z', kind: 'tds' as const },
-        { sdkSessionId: 'd', title: 'Chat D', lastModified: '2025-01-02T09:00:00Z', kind: 'tds' as const },
-      ];
-      setStore({ sessions: { live: [], past: rows } });
-      fns.deletePastChat.mockResolvedValue(true);
-      const view = render(<ChatsDrawer />);
-      fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-      // The older group starts folded: open it.
-      for (const b of screen.getAllByRole('button', { expanded: false })) fireEvent.click(b);
-      fireEvent.click(screen.getByRole('button', { name: 'Delete chat: Chat C' }));
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
-      });
-      setStore({ sessions: { live: [], past: rows.filter((r) => r.sdkSessionId !== 'c') } });
-      view.rerender(<ChatsDrawer />);
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete chat: Chat D' }));
+      ).toBe(false);
     });
   });
 
-  it('Open rows open the chat and have a separate close button', () => {
+  it('puts New chat at the end of the Open/Earlier row, as a primary + like the To-dos drawer', () => {
+    shell.modes.drawerOverlays = true;
+    render(<ChatsDrawer />);
+    const button = screen.getByRole('button', { name: 'New chat' });
+    const row = button.closest('.chats-switch') as HTMLElement;
+    expect(row.lastElementChild).toBe(button);
+    expect(within(row).getByRole('radiogroup', { name: 'Which chats' })).toBeTruthy();
+    expect(button.classList.contains('icon-btn')).toBe(true);
+    expect(button.dataset.variant).toBe('primary');
+    fireEvent.click(button);
+    expect(fns.newChat).toHaveBeenCalledWith();
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'close-drawer' });
+  });
+
+  it('Open rows open the chat and have a separate End chat button (its own icon, not X)', () => {
     setStore({ sessions: { live: [live('s1')], past: [] }, activeChat: { kind: 'live', sessionId: 's1' } });
     render(<ChatsDrawer />);
-    const close = screen.getByRole('button', { name: 'Close chat: Chat s1' });
+    expect(screen.queryByRole('button', { name: 'Close chat: Chat s1' })).toBeNull();
+    const close = screen.getByRole('button', { name: 'End chat: Chat s1' });
+    expect(close.dataset.tip).toBe('End chat');
+    // The `end` icon (an arrow out of a box), not the X.
+    expect(close.querySelector('path')?.getAttribute('d')).toMatch(/^M8\.5 4H5/);
     fireEvent.click(close);
     expect(fns.requestClose).toHaveBeenCalledWith('s1');
     expect(fns.openChat).not.toHaveBeenCalled();
@@ -744,11 +868,12 @@ describe('Skills drawer', () => {
 });
 
 describe('Chats drawer, floating', () => {
-  it('closing a chat from a floating drawer also closes the drawer, so the confirm can be seen', () => {
+  // The button is "End chat" now (plan 2026-11-22-ux-consistency, decision 10); the behaviour is unchanged.
+  it('ending a chat from a floating drawer also closes the drawer, so the confirm can be seen', () => {
     shell.modes.drawerOverlays = true;
     setStore({ sessions: { live: [{ ...live('s1'), title: '' }], past: [] } });
     render(<ChatsDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Close chat: New chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End chat: New chat' }));
     expect(fns.requestClose).toHaveBeenCalledWith('s1');
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'close-drawer' });
   });

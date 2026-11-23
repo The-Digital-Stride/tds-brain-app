@@ -323,30 +323,42 @@
   gap: 8px;
 }
 
-/* A tick, delete or pass-on waiting out its undo time: nothing is in the brain yet. */
-.todo-held {
+/*
+ * The Undo line (shell/UndoLine.tsx; design system, Actions rule 4): a held to-do, earlier chat or file. Nothing is
+ * sent yet. A row sits in a drawer list in place of the row it holds; a strip sits at the top of the sheet.
+ */
+.undo-line {
   position: relative;
   overflow: hidden;
+  display: flex;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--navy);
 }
-.todo-held:hover {
-  transform: none;
+.undo-line[data-as="row"] {
+  padding: 7px 8px;
+  border-radius: 10px;
 }
-/* biome-ignore lint/style/noDescendingSpecificity: a held to-do row is never a skill row. */
-.todo-held .line-meta {
-  color: var(--iron);
+.undo-line[data-as="strip"] {
+  flex: none;
+  padding: 6px var(--sheet-gutter);
+  background: var(--wash);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
 }
-.todo-gone {
-  color: var(--iron);
-  text-decoration: line-through;
+.undo-line-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-.todo-sending {
-  align-self: center;
+.undo-line-sending {
+  flex: none;
   font-size: 13px;
   color: var(--iron);
 }
-/* A thin line along the bottom that runs down while Undo is still possible. */
-.todo-countdown {
+/* A thin line along the bottom that runs down while Undo is still possible; it stops while the line is held. */
+.undo-line-bar {
   position: absolute;
   left: 8px;
   right: 8px;
@@ -356,11 +368,15 @@
   background: var(--blue-ink);
   opacity: 0.35;
   transform-origin: left;
-  animation-name: todo-countdown;
+  animation-name: undo-countdown;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
+  pointer-events: none;
 }
-@keyframes todo-countdown {
+.undo-line-bar[data-paused] {
+  animation-play-state: paused;
+}
+@keyframes undo-countdown {
   from {
     transform: scaleX(1);
   }
@@ -370,9 +386,30 @@
 }
 /* Without motion a still bar would look stuck; the status line already says how long is left. */
 @media (prefers-reduced-motion: reduce) {
-  .todo-countdown {
+  .undo-line-bar {
     display: none;
   }
+}
+/* The file strips at the top of any sheet (FileDeleteNotice): eager here, as they show before any library loads. */
+.undo-strips {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* The Chats drawer's Open/Earlier switch, with New chat (a 32px primary +) at its right end, like the To-dos +. */
+.chats-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: the Chats switch row is never a to-do filter row. */
+.chats-switch > .seg {
+  flex: 1;
+  min-width: 0;
+}
+.chats-switch > .icon-btn {
+  flex: none;
 }
 .todo-note {
   margin: 0;

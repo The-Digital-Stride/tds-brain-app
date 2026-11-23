@@ -418,14 +418,13 @@ const ALLOW_DUPLICATE_CLASS: Allow = {
 const ALLOW_UNUSED_CLASS: Allow = {};
 const ALLOW_LAZY_ONLY_CLASS: Allow = {
   // apps/shared/parts.tsx is eager but holds the library parts too; the scan is per file, so these are
-  // flagged. `.lib-held` is being fixed by the Undo line work.
+  // flagged.
   '.docs': 1,
   '.lib-actions': 1,
   '.lib-actions-row': 1,
   '.lib-client': 1,
   '.lib-delete-gap': 1,
   '.lib-empty': 1,
-  '.lib-held': 1,
   '.lib-list': 1,
   '.lib-search': 1,
   '.lib-selbar': 1,

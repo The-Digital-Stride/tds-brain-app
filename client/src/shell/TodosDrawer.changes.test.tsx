@@ -69,6 +69,8 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
     heldTodos,
     holdTodo,
     undoHeld,
+    pauseHeld: vi.fn(),
+    resumeHeld: vi.fn(),
     completeTodo: vi.fn(),
     newChat: vi.fn(),
     openChat: vi.fn(),
@@ -332,7 +334,9 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(done.disabled).toBe(false);
   });
 
-  it('shows a held to-do struck through with Undo, and Undo puts it back', () => {
+  // A held row is the shared Undo line now (plan 2026-11-22-ux-consistency, decision 12): a sentence saying what
+  // happened in place of the struck-through title and its label.
+  it('shows a held to-do as an Undo line, and Undo puts it back', () => {
     const held: HeldTodo = {
       todoId: 't1.md',
       title: 'Renew contract',
@@ -343,13 +347,15 @@ describe('To-dos drawer, changing to-dos', () => {
     setStore('on', undefined, [held]);
     render(<TodosDrawer />);
     expect(screen.queryByRole('button', { name: 'Edit "Renew contract"' })).toBeNull();
-    expect(screen.getByText('Renew contract').className).toContain('todo-gone');
+    const line = screen.getByText('"Renew contract" deleted.').closest('li') as HTMLElement;
+    expect(line.classList.contains('undo-line')).toBe(true);
+    expect(line.querySelector('.undo-line-bar')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Undo deleting "Renew contract"' }));
     expect(undoHeld).toHaveBeenCalledWith('t1.md');
     expect(screen.getByText('Undone.')).toBeTruthy();
   });
 
-  it('does not strike through a passed-on to-do', () => {
+  it('says who a held to-do was passed to', () => {
     setStore('on', undefined, [
       {
         todoId: 't1.md',
@@ -360,8 +366,7 @@ describe('To-dos drawer, changing to-dos', () => {
       },
     ]);
     render(<TodosDrawer />);
-    expect(screen.getByText('Renew contract').className).not.toContain('todo-gone');
-    expect(screen.getByText('Passed to Ben McAdam')).toBeTruthy();
+    expect(screen.getByText('"Renew contract" passed to Ben McAdam.')).toBeTruthy();
   });
 
   it('does not hold the pass-on when the title or date part of the save fails', async () => {

@@ -1,8 +1,9 @@
-import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useId, useLayoutEffect, useState } from 'react';
 import { type LibraryItem, type LibraryScope, ROUTES } from '../../../../shared/contract.ts';
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { UndoLine } from '../../shell/UndoLine.tsx';
 import { clearPickedProject, useProjectChoice } from '../../state/client-choice.ts';
 import { filterOptions, useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
@@ -374,8 +375,8 @@ export function DeleteButton({
 }
 
 /**
- * Files waiting out their Undo time: one line each, with an Undo button. Nothing has been sent yet. The clock
- * stops while the pointer or focus is on a line, so Undo can be reached. A visually hidden status line is
+ * Files waiting out their Undo time: one Undo line (`UndoLine`, a strip) each. Nothing has been sent yet. The
+ * clock stops while the pointer or focus is on a line, so Undo can be reached. A visually hidden status line is
  * always on the page, so a screen reader announces the delete, and later the result, as the text changes.
  */
 export function FileDeleteNotice() {
@@ -391,11 +392,14 @@ export function FileDeleteNotice() {
         {spoken}
       </p>
       {waiting.length === 0 ? null : (
-        <div className="lib-held">
+        // Styled in drawers.css (eager): this shows on any sheet, before any library screen has loaded.
+        <div className="undo-strips">
           {waiting.map((f) => (
-            <HeldLine
+            <UndoLine
               key={f.id}
-              title={f.title}
+              as="strip"
+              text={`${f.title} deleted.`}
+              undoLabel={`Undo deleting ${f.title}`}
               onPause={() => pauseFileDelete(f.id)}
               onResume={() => resumeFileDelete(f.id)}
               onUndo={() => undoDeleteFile(f.id)}
@@ -436,53 +440,4 @@ export function useDeleteFocus(
     setWant(null);
   }, [want, waiting, root, fallback]);
   return (id) => setWant({ id });
-}
-
-/**
- * One held file's line. The pointer and focus each hold the clock on their own: it resumes only when
- * both have left, so a mouse passing over while focus sits on Undo can't restart it (re-review 2026-11-15).
- */
-function HeldLine({
-  title,
-  onPause,
-  onResume,
-  onUndo,
-}: {
-  title: string;
-  onPause: () => void;
-  onResume: () => void;
-  onUndo: () => void;
-}) {
-  const on = useRef({ pointer: false, focus: false });
-  const set = (which: 'pointer' | 'focus', value: boolean) => {
-    const was = on.current.pointer || on.current.focus;
-    on.current = { ...on.current, [which]: value };
-    const now = on.current.pointer || on.current.focus;
-    if (now && !was) onPause();
-    if (!now && was) onResume();
-  };
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: only pauses the Undo clock; the button inside is the control
-    <div
-      className="update-banner"
-      onMouseEnter={() => set('pointer', true)}
-      onMouseLeave={() => set('pointer', false)}
-      onFocus={() => set('focus', true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) set('focus', false);
-      }}
-    >
-      <span>{title} deleted.</span>
-      <button
-        type="button"
-        className="btn"
-        data-variant="quiet"
-        data-size="small"
-        aria-label={`Undo deleting ${title}`}
-        onClick={onUndo}
-      >
-        Undo
-      </button>
-    </div>
-  );
 }

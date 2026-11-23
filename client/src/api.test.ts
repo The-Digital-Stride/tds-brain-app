@@ -50,6 +50,8 @@ describe('api.deletePastChat', () => {
     expect(url).toBe(`/api/sessions/past/${id}`);
     expect(init.method).toBe('DELETE');
     expect(init.body).toBe('{}');
+    // Held for its Undo time first, then sent; closing the page must not cut it off.
+    expect(init.keepalive).toBe(true);
     // The browser adds Host, Origin, Sec-Fetch-Site and the cookie; the app adds the rest.
     const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
     const { sessionCookieName } = await import('../../shared/contract.ts');

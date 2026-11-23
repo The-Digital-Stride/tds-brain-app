@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ADS_NOTE_MAX } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { useAd } from './store.ts';
 import type { StandupBrief } from './types.ts';
+import { useUnsavedWork } from './unsaved.ts';
 import { actionLabel, adsErrorText } from './words.ts';
 
 type Rating = { score: string; note: string };
+
+/** What is rated or noted, as text, so "changed since the last save" is one comparison. `scoredOnly`: what Save sends. */
+const signature = (ratings: Record<number, Rating>, scoredOnly: boolean): string =>
+  JSON.stringify(
+    Object.entries(ratings)
+      .filter(([, x]) => (scoredOnly ? x.score : x.score || x.note.trim()))
+      .map(([i, x]) => [i, x.score, x.note.trim()]),
+  );
 
 /** Rate the latest standup brief's per-campaign calls, 1 to 5 and a note (the Workbench's "Rate calls"). Shown in Ads Command Centre's side panel. */
 export function RateCalls() {
@@ -16,6 +27,11 @@ export function RateCalls() {
   const [ratings, setRatings] = useState<Record<number, Rating>>({});
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // What the last complete save held: ratings and notes past it are unsaved work.
+  const [savedSig, setSavedSig] = useState('[]');
+  const { dispatch, panelHold } = useShell();
+  const now = signature(ratings, false);
+  useUnsavedWork(now !== '[]' && now !== savedSig, () => setRatings({}));
 
   useEffect(() => {
     if (!account) return;
@@ -86,6 +102,7 @@ export function RateCalls() {
       }
     }
     setSaving(false);
+    if (ok === todo.length) setSavedSig(signature(ratings, true));
     setResult(`Saved ${ok} of ${todo.length} rating${todo.length === 1 ? '' : 's'}.`);
   };
   return (
@@ -94,6 +111,18 @@ export function RateCalls() {
         From the brief dated {brief?.date}. 5 means you did exactly this, 1 means you did nothing like it. The
         notes matter most.
       </p>
+      {panelHold.asking ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => dispatch({ type: 'discard-panel' })}
+          onCancel={() => dispatch({ type: 'keep-panel' })}
+        />
+      ) : null}
       <ul className="am-rate">
         {recs.map((r, i) => (
           <li key={`${r.campaign}-${r.action_category}`}>

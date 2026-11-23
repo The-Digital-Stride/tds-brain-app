@@ -34,7 +34,13 @@ const api = vi.hoisted(() => ({
 vi.mock('../../api.ts', () => ({ api, ApiFailure: class extends Error {} }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: { panelOpen: false }, dispatch: shell.dispatch, modes: {} }),
+  useShell: () => ({
+    state: { panelOpen: false },
+    dispatch: shell.dispatch,
+    modes: {},
+    panelHold: { dirty: false, asking: false },
+    guardPanel: (run: () => void) => run(),
+  }),
 }));
 
 const { CommandSheet } = await import('./CommandSheet.tsx');

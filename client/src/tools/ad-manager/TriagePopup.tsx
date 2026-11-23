@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AdsTriageRow } from '../../../../shared/ads-contract.ts';
 import { api } from '../../api.ts';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { useStore } from '../../store.tsx';
 import { selectAccount } from './store.ts';
@@ -27,6 +28,7 @@ export function TriagePopup({
   onClose: () => void;
 }) {
   const { updatePrefs } = useStore();
+  const { guardPanel } = useShell();
   const [rows, setRows] = useState<AdsTriageRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -76,10 +78,12 @@ export function TriagePopup({
   }, [close, openerRef]);
 
   const choose = (key: string) => {
-    if (key !== account) {
-      selectAccount(key);
-      void updatePrefs({ adsAccount: key });
-    }
+    // Another account empties the panel, so typed work in it is asked about first.
+    if (key !== account)
+      guardPanel(() => {
+        selectAccount(key);
+        void updatePrefs({ adsAccount: key });
+      });
     close();
   };
 

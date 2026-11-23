@@ -169,6 +169,16 @@ export type ShellAction =
   | { type: 'keep-todo' }
   /** "Discard": runs the held-back action with the changes dropped. Handled by the shell provider. */
   | { type: 'discard-todo' }
+  /**
+   * The right panel (a tool's or app's) says whether it holds unsaved work, to the shell provider, which keeps it in
+   * `ShellApi.panelHold` (design system, Actions rule 9). While true, a close of the panel, or a step the panel passes to
+   * `guardPanel`, is held back and the panel asks "Discard your changes?". Not part of `ShellState`: the reducer ignores it.
+   */
+  | { type: 'set-panel-dirty'; dirty: boolean }
+  /** "Keep editing": drops the held-back action. Handled by the shell provider. */
+  | { type: 'keep-panel' }
+  /** "Discard changes": the panel's work is dropped and the held-back action runs. Handled by the shell provider. */
+  | { type: 'discard-panel' }
   | { type: 'set-single-keys'; on: boolean }
   /** The viewer's width in px, or null for its default. */
   | { type: 'set-viewer-width'; width: number | null }
@@ -204,6 +214,19 @@ export interface ShellApi {
   state: ShellState;
   dispatch: (action: ShellAction) => void;
   modes: DockModes;
+  /** The right panel's unsaved-work hold: `dirty` is what it last reported, `asking` that an action is held and it should show the question. */
+  panelHold: PanelHold;
+  /**
+   * Runs `run` now, or, while the right panel holds unsaved work, asks first and runs it on "Discard changes"
+   * (never on "Keep editing"). For what changes the panel's content without a shell action (choosing another
+   * proposal, another account).
+   */
+  guardPanel: (run: () => void) => void;
+}
+
+export interface PanelHold {
+  dirty: boolean;
+  asking: boolean;
 }
 
 // ── Keys ───────────────────────────────────────────────────────────────────────────────────────

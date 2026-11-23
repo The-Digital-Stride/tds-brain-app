@@ -60,7 +60,13 @@ vi.mock('../../api.ts', () => ({
 }));
 vi.mock('../../store.tsx', () => ({ useStore: () => store }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({
-  useShell: () => ({ state: shell.state, dispatch: shell.dispatch, modes: {} }),
+  useShell: () => ({
+    state: shell.state,
+    dispatch: shell.dispatch,
+    modes: {},
+    panelHold: { dirty: false, asking: false },
+    guardPanel: (run: () => void) => run(),
+  }),
 }));
 
 const { AdManagerSheet } = await import('./AdManagerSheet.tsx');

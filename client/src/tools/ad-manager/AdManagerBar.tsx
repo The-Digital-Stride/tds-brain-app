@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { HelpLink } from '../../shell/HelpLink.tsx';
 import { SearchSelect } from '../../shell/SearchSelect.tsx';
+import { useShell } from '../../shell/ShellProvider.tsx';
 import type { PickOption } from '../../shell/search-select.ts';
 import { useStore } from '../../store.tsx';
 import { adStore, selectAccount, useAd, waitingFor } from './store.ts';
@@ -9,6 +10,7 @@ import { adStore, selectAccount, useAd, waitingFor } from './store.ts';
 export function AdManagerBar() {
   const { accounts, account, loading } = useAd();
   const { ads, reloadAds, updatePrefs } = useStore();
+  const { guardPanel } = useShell();
   const id = useId();
   const options: PickOption[] = (accounts ?? []).map((a) => {
     const waiting = waitingFor(ads, a);
@@ -30,10 +32,13 @@ export function AdManagerBar() {
         options={options}
         placeholder="Choose an account"
         disabled={!accounts || accounts.length === 0}
-        onChange={(key) => {
-          selectAccount(key);
-          void updatePrefs({ adsAccount: key });
-        }}
+        onChange={(key) =>
+          // Another account empties the panel, so typed work in it is asked about first.
+          guardPanel(() => {
+            selectAccount(key);
+            void updatePrefs({ adsAccount: key });
+          })
+        }
       />
       <button
         type="button"

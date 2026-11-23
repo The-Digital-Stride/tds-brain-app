@@ -17,6 +17,7 @@ import { StatusBadge } from './Approvals.tsx';
 import { type RunOptions, useAdsRunner } from './actions.ts';
 import { useRestoreFocus } from './focus.ts';
 import { adStore, applyReply, findProposal, proposalKey, useAd } from './store.ts';
+import { useUnsavedWork } from './unsaved.ts';
 import { adsErrorText, isWaiting, personName, proposalFacts } from './words.ts';
 
 type Ask = 'approve' | 'reject' | 'apply' | null;
@@ -106,6 +107,12 @@ function Actions({
     onDirty(typed);
     return () => onDirty(false);
   }, [typed, onDirty]);
+  // The shell holds a close, or another proposal, until this is answered; Discard empties the boxes.
+  useUnsavedWork(typed, () => {
+    setNote('');
+    setWho('');
+    setDecided('');
+  });
   const f = p.flags;
   const canDraft = (ads?.features ?? []).includes(ADS_DRAFT_CHANGE_CAPABILITY);
   const isBusy = busy !== null;
@@ -448,6 +455,7 @@ function Actions({
 /** The right panel for Ad Manager: the chosen proposal's facts, full text and the buttons the person may use. */
 export function ProposalPanel() {
   const { approvals, selected, full, last, busy, focusTitle } = useAd();
+  const { dispatch, panelHold } = useShell();
   const [dirty, setDirty] = useState(false);
   const [askStep, setAskStep] = useState<-1 | 1 | null>(null);
   const found = findProposal(approvals, selected);
@@ -548,7 +556,8 @@ export function ProposalPanel() {
           </button>
         </nav>
       ) : null}
-      {askStep !== null ? (
+      {/* One strip for both: a step from this panel, or what the shell held back (a close, another proposal). */}
+      {askStep !== null || panelHold.asking ? (
         <Confirm
           label="Discard your changes"
           text="Discard your changes?"
@@ -559,10 +568,16 @@ export function ProposalPanel() {
           onConfirm={() => {
             const by = askStep;
             setAskStep(null);
-            setDirty(false);
-            go(by);
+            if (panelHold.asking) dispatch({ type: 'discard-panel' });
+            else if (by !== null) {
+              setDirty(false);
+              go(by);
+            }
           }}
-          onCancel={() => setAskStep(null)}
+          onCancel={() => {
+            setAskStep(null);
+            if (panelHold.asking) dispatch({ type: 'keep-panel' });
+          }}
         />
       ) : null}
       <h3 className="am-title" tabIndex={-1}>

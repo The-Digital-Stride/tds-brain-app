@@ -32,6 +32,7 @@ import { type Store, useStore, useToolSnapshot } from '../store.tsx';
 import { APPS } from './apps.ts';
 import {
   type DrawerName,
+  type PanelHold,
   SHELL_STORAGE_KEY,
   type ShellAction,
   type ShellApi,
@@ -201,94 +202,143 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   // Set while "Discard" runs the action the to-do panel held back, so it is not held back again.
   const discarding = useRef(false);
 
-  const dispatch = useCallback(function dispatch(action: ShellAction) {
-    const s = stateRef.current;
-    const now = layoutRef.current;
-    // The chat drawer is the store's (it goes with the active chat), so hiding it is handed over there.
-    if (action.type === 'close-chat-drawer') {
-      chatDrawerRef.current.hide?.();
-      return;
-    }
-    // "Discard": drop the unsaved changes, then do what was asked.
-    if (action.type === 'discard-todo') {
-      const then = s.todoPanel?.ask ?? null;
-      rawDispatch({
-        action: { type: 'set-todo-dirty', dirty: false },
-        width: widthRef.current,
-        rail: now.railShowsNames,
-      });
-      if (then) {
-        discarding.current = true;
-        try {
-          dispatch(then);
-        } finally {
-          discarding.current = false;
+  // The right panel's own hold (a tool's or app's panel with typed work). Kept here and not in the shell state: the
+  // panel reports it, and the held action is a function that need not be a shell action. `holdRef` is current at once,
+  // so two calls in one event see each other.
+  const [panelHold, setPanelHoldState] = useState<PanelHold>({ dirty: false, asking: false });
+  const holdRef = useRef(panelHold);
+  const heldRun = useRef<(() => void) | null>(null);
+  const setHold = useCallback((next: PanelHold) => {
+    if (holdRef.current.dirty === next.dirty && holdRef.current.asking === next.asking) return;
+    holdRef.current = next;
+    setPanelHoldState(next);
+  }, []);
+
+  const dispatch = useCallback(
+    function dispatch(action: ShellAction) {
+      const s = stateRef.current;
+      const now = layoutRef.current;
+      // The chat drawer is the store's (it goes with the active chat), so hiding it is handed over there.
+      if (action.type === 'close-chat-drawer') {
+        chatDrawerRef.current.hide?.();
+        return;
+      }
+      // The right panel's unsaved-work hold (its state is the provider's own, not the reducer's).
+      if (action.type === 'set-panel-dirty') {
+        if (!action.dirty) heldRun.current = null;
+        setHold({ dirty: action.dirty, asking: action.dirty && holdRef.current.asking });
+        return;
+      }
+      if (action.type === 'keep-panel') {
+        heldRun.current = null;
+        setHold({ ...holdRef.current, asking: false });
+        return;
+      }
+      if (action.type === 'discard-panel') {
+        const run = heldRun.current;
+        heldRun.current = null;
+        // The work is dropped first, so what was held is not held back again.
+        setHold({ dirty: false, asking: false });
+        run?.();
+        return;
+      }
+      // "Discard": drop the unsaved changes, then do what was asked.
+      if (action.type === 'discard-todo') {
+        const then = s.todoPanel?.ask ?? null;
+        rawDispatch({
+          action: { type: 'set-todo-dirty', dirty: false },
+          width: widthRef.current,
+          rail: now.railShowsNames,
+        });
+        if (then) {
+          discarding.current = true;
+          try {
+            dispatch(then);
+          } finally {
+            discarding.current = false;
+          }
+        }
+        return;
+      }
+      // The to-do panel holds unsaved changes: whatever would close it or move it to another to-do (a drawer
+      // swap, Esc, the next to-do) is held back and the panel asks first, so nothing typed is lost at a key press.
+      const forced = (action.type === 'close-todo' || action.type === 'open-todo') && action.force === true;
+      if (s.todoPanel?.dirty && !discarding.current && !forced && !TODO_BOOKKEEPING.has(action.type)) {
+        const next = shellReducer(s, action).todoPanel;
+        if (next === null || next.key !== s.todoPanel.key || next.mode !== s.todoPanel.mode) {
+          rawDispatch({
+            action: { type: 'ask-todo', after: action },
+            width: widthRef.current,
+            rail: now.railShowsNames,
+          });
+          return;
         }
       }
-      return;
-    }
-    // The to-do panel holds unsaved changes: whatever would close it or move it to another to-do (a drawer
-    // swap, Esc, the next to-do) is held back and the panel asks first, so nothing typed is lost at a key press.
-    const forced = (action.type === 'close-todo' || action.type === 'open-todo') && action.force === true;
-    if (s.todoPanel?.dirty && !discarding.current && !forced && !TODO_BOOKKEEPING.has(action.type)) {
-      const next = shellReducer(s, action).todoPanel;
-      if (next === null || next.key !== s.todoPanel.key || next.mode !== s.todoPanel.mode) {
+      // The right panel holds unsaved work: whatever would shut it (its toggle, Esc, a drawer that needs the room) is
+      // held back and the panel asks first.
+      if (
+        holdRef.current.dirty &&
+        s.panelOpen &&
+        !giveWay(s, action, widthRef.current, now.railShowsNames).panelOpen
+      ) {
+        heldRun.current = () => dispatch(action);
+        setHold({ dirty: true, asking: true });
+        return;
+      }
+      if (action.type === 'toggle-rail') {
+        // While the panel shows, the toggle works against its hold (see toggleRail).
+        const next = toggleRail(s, widthRef.current, {
+          panelShowing: now.panelShowing,
+          railOverride: overrideRef.current,
+        });
+        setRailOverride(next.railOverride);
+        if (next.railWide !== s.railWide)
+          rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
+        return;
+      }
+      if (action.type === 'open-viewer' && s.viewer === null) {
+        const active = document.activeElement;
+        viewerOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      }
+      // Opening Help decides its first page now: the one asked for, else the one for where the person is.
+      if (
+        s.drawer !== 'help' &&
+        (action.type === 'open-help' ||
+          ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && action.drawer === 'help'))
+      ) {
+        if (!helpOnRef.current) return;
+        const page =
+          action.type === 'open-help' && action.page
+            ? action.page
+            : helpForContext(helpContext(whereRef.current, s.drawer), helpLibrary);
+        focusIntent.current = 'left';
         rawDispatch({
-          action: { type: 'ask-todo', after: action },
+          action: { type: 'open-help', page },
           width: widthRef.current,
           rail: now.railShowsNames,
         });
         return;
       }
-    }
-    if (action.type === 'toggle-rail') {
-      // While the panel shows, the toggle works against its hold (see toggleRail).
-      const next = toggleRail(s, widthRef.current, {
-        panelShowing: now.panelShowing,
-        railOverride: overrideRef.current,
-      });
-      setRailOverride(next.railOverride);
-      if (next.railWide !== s.railWide)
-        rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
-      return;
-    }
-    if (action.type === 'open-viewer' && s.viewer === null) {
-      const active = document.activeElement;
-      viewerOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
-    }
-    // Opening Help decides its first page now: the one asked for, else the one for where the person is.
-    if (
-      s.drawer !== 'help' &&
-      (action.type === 'open-help' ||
-        ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && action.drawer === 'help'))
-    ) {
-      if (!helpOnRef.current) return;
-      const page =
-        action.type === 'open-help' && action.page
-          ? action.page
-          : helpForContext(helpContext(whereRef.current, s.drawer), helpLibrary);
-      focusIntent.current = 'left';
-      rawDispatch({ action: { type: 'open-help', page }, width: widthRef.current, rail: now.railShowsNames });
-      return;
-    }
-    // Asking for a page while Help shows moves it there.
-    if (action.type === 'open-help' && !action.page) return;
-    const opensDrawer =
-      ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer) ||
-      ((action.type === 'toggle-section' || action.type === 'open-section') &&
-        (s.drawer !== 'section' || s.section !== action.section)) ||
-      // Closing Help puts a drawer back, which takes focus like any drawer a person opened.
-      ((action.type === 'close-help' || (action.type === 'toggle-drawer' && action.drawer === 'help')) &&
-        s.drawer === 'help' &&
-        s.helpReturn !== null);
-    const opensPanel =
-      (action.type === 'toggle-panel' && !s.panelOpen) ||
-      (action.type === 'set-panel' && action.open) ||
-      (action.type === 'show-chat-file' && !now.panelShowing);
-    if (opensDrawer) focusIntent.current = 'left';
-    else if (opensPanel) focusIntent.current = 'right';
-    rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
-  }, []);
+      // Asking for a page while Help shows moves it there.
+      if (action.type === 'open-help' && !action.page) return;
+      const opensDrawer =
+        ((action.type === 'toggle-drawer' || action.type === 'open-drawer') && s.drawer !== action.drawer) ||
+        ((action.type === 'toggle-section' || action.type === 'open-section') &&
+          (s.drawer !== 'section' || s.section !== action.section)) ||
+        // Closing Help puts a drawer back, which takes focus like any drawer a person opened.
+        ((action.type === 'close-help' || (action.type === 'toggle-drawer' && action.drawer === 'help')) &&
+          s.drawer === 'help' &&
+          s.helpReturn !== null);
+      const opensPanel =
+        (action.type === 'toggle-panel' && !s.panelOpen) ||
+        (action.type === 'set-panel' && action.open) ||
+        (action.type === 'show-chat-file' && !now.panelShowing);
+      if (opensDrawer) focusIntent.current = 'left';
+      else if (opensPanel) focusIntent.current = 'right';
+      rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
+    },
+    [setHold],
+  );
 
   // Opening an app or a tool (from the rail, a drawer, the palette or a search result) closes the open drawer, so it
   // has the room. Only on the move into an app: a drawer opened while the app shows stays open.
@@ -368,8 +418,23 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [dispatch]);
 
+  const guardPanel = useCallback(
+    (run: () => void) => {
+      if (!holdRef.current.dirty) {
+        run();
+        return;
+      }
+      heldRun.current = run;
+      setHold({ dirty: true, asking: true });
+    },
+    [setHold],
+  );
+
   const { modes } = layout;
-  const api = useMemo<ShellApi>(() => ({ state, dispatch, modes }), [state, dispatch, modes]);
+  const api = useMemo<ShellApi>(
+    () => ({ state, dispatch, modes, panelHold, guardPanel }),
+    [state, dispatch, modes, panelHold, guardPanel],
+  );
   const desk = useMemo<Desk>(
     () => ({
       width,

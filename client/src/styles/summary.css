@@ -2,7 +2,7 @@
   /* Ads Account Summary (plan 2026-11-19-ads-workbench-sections, decision 8). Deep-dive table rules stay in ad-manager.css. */
   .sm .sm-period {
     margin-left: auto;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .sm .sm-worth ul {
@@ -10,13 +10,13 @@
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .sm .sm-worth li {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 10px;
+    gap: var(--sp-6) var(--sp-10);
   }
   .sm .sm-worth li p {
     flex: 1 1 240px;
@@ -26,11 +26,11 @@
   .sm .am-t-h:focus {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--r-5);
   }
   /* Totals strip: Release 2, shown only when the board carries `totalRanges`. */
   .sm .sm-totals {
-    margin-top: 12px;
+    margin-top: var(--sp-12);
   }
   .sm .sm-totals .card-head {
     flex-wrap: wrap;
@@ -40,8 +40,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 12px;
-    font-size: 13px;
+    gap: var(--sp-4) var(--sp-12);
+    font-size: var(--fs-control);
     color: var(--iron);
   }
   .sm .sm-switch .seg > button {
@@ -52,13 +52,13 @@
   .sm .sm-facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px;
+    gap: var(--sp-8);
     margin: 0;
-    padding: 0 8px 8px;
+    padding: 0 var(--sp-8) var(--sp-8);
   }
   .sm .sm-wasted {
     margin: 0;
-    padding: 8px 8px 4px;
+    padding: var(--sp-8) var(--sp-8) var(--sp-4);
     border-top: 1px solid var(--line);
   }
   @media (prefers-reduced-motion: no-preference) {

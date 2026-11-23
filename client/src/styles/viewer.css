@@ -10,13 +10,13 @@
     --viewer-pad: 12px;
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: var(--z-viewer);
   }
   .viewer-veil {
     position: absolute;
     inset: 0;
-    background: rgba(2, 27, 67, 0.16);
-    animation: viewer-fade 160ms var(--ease);
+    background: var(--veil);
+    animation: viewer-fade var(--t-mid) var(--ease);
   }
   /* Wide enough to read a page, leaving the rail and an edge of the chat in view behind the veil. */
   .viewer-drawer {
@@ -27,7 +27,7 @@
     width: min(1040px, calc(100vw - 2 * var(--viewer-pad) - 70px));
     display: flex;
     flex-direction: column;
-    border-radius: 16px;
+    border-radius: var(--r-16);
     box-shadow: var(--lift-3);
     animation: viewer-in var(--t) var(--ease);
   }
@@ -62,7 +62,7 @@
     left: 5px;
     width: 4px;
     height: 48px;
-    border-radius: 2px;
+    border-radius: var(--r-5);
     transform: translateY(-50%);
     background: var(--grey-dot);
     transition: background-color var(--t) var(--ease);
@@ -82,7 +82,7 @@
   /* The app's own focus ring (base.css), drawn inside the strip so it isn't clipped. */
   .viewer-resize:focus-visible {
     outline-offset: -2px;
-    border-radius: 6px;
+    border-radius: var(--r-6);
   }
   /* While dragging: no text selecting, and the page frame lets the pointer through to the handle. */
   body.viewer-resizing {
@@ -102,9 +102,9 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas: "name actions close";
     align-items: center;
-    gap: 6px 8px;
+    gap: var(--sp-6) var(--sp-8);
     min-height: 47px;
-    padding: 8px 10px 8px 16px;
+    padding: var(--sp-8) var(--sp-10) var(--sp-8) var(--sp-16);
   }
   @media (max-width: 640px) {
     .viewer-head {
@@ -120,7 +120,7 @@
   }
   .viewer-name h2 {
     margin: 0;
-    font: 600 14px / 1.3 var(--head);
+    font: 600 var(--fs-body) / 1.3 var(--head);
     overflow-wrap: anywhere;
   }
   /* The heading takes focus only so the reader starts there; it needs no ring. */
@@ -128,8 +128,8 @@
     outline: none;
   }
   .viewer-place {
-    margin: 2px 0 0;
-    font-size: 12px;
+    margin: var(--sp-2) 0 0;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .viewer-actions {
@@ -137,7 +137,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
   }
   .viewer-close {
     grid-area: close;
@@ -150,9 +150,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
     overflow-y: auto;
-    padding: 0 12px 12px;
+    padding: 0 var(--sp-12) var(--sp-12);
   }
   .viewer-body:focus-visible,
   .viewer-body :focus-visible {
@@ -170,20 +170,20 @@
   .lib-note {
     margin: 0;
     padding: 0;
-    font-size: 12px;
+    font-size: var(--fs-small);
     line-height: 1.45;
     color: var(--iron);
   }
   .viewer-body .lib-note {
-    padding: 0 4px;
+    padding: 0 var(--sp-4);
   }
   .viewer-body .lib-note:empty {
     display: none;
   }
   .lib-file {
     margin: -6px 0 0;
-    padding: 0 4px;
-    font-size: 12px;
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-small);
     line-height: 1.45;
     color: var(--iron);
     overflow-wrap: anywhere;
@@ -194,7 +194,7 @@
     display: grid;
     place-items: center;
     min-height: 160px;
-    padding: 8px;
+    padding: var(--sp-8);
   }
   .lib-viewer-image {
     display: block;
@@ -202,7 +202,7 @@
     max-height: calc(100dvh - 150px);
     object-fit: contain;
     border: 1px solid var(--line-strong);
-    border-radius: 6px;
+    border-radius: var(--r-6);
   }
   /* The viewer has no sheet header above the picture, so it gets 30px more. */
   .viewer-body .lib-viewer-image {
@@ -213,11 +213,11 @@
     width: 100%;
     max-width: 760px;
     margin: 0 auto;
-    padding: 20px 24px;
+    padding: 20px var(--sp-24);
   }
   .lib-text {
     margin: 0;
-    font: 400 14px / 1.6 var(--body);
+    font: 400 var(--fs-body) / 1.6 var(--body);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -225,15 +225,15 @@
   .viewer-body .lib-page {
     flex: 1;
     display: flex;
-    padding: 6px;
+    padding: var(--sp-6);
   }
   .lib-frame {
     flex: 1;
     width: 100%;
     min-height: 420px;
     border: 0;
-    border-radius: 10px;
-    background: #fff;
+    border-radius: var(--r-10);
+    background: var(--surface);
   }
   /* A PDF's reader is dark: the card itself is its edge, no inner ring, corners clipped by the card. */
   .tray .lib-pdf,
@@ -271,8 +271,8 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 12px;
+    gap: var(--sp-8);
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .page-versions .field {
@@ -288,26 +288,26 @@
     min-height: 240px;
     width: 100%;
     border: 1px solid var(--line-strong);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--r-8);
+    background: var(--surface);
   }
   .page-ask {
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px 12px;
+    gap: var(--sp-8);
+    padding: var(--sp-10) var(--sp-12) var(--sp-12);
     border-top: 1px solid var(--line-strong);
   }
   .page-ask-state {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .page-ask-line {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
 
   /* A tool's chat in a drawer on the right of the sheet (`ChatDrawer.tsx`). Non-modal, so no veil: the tool stays
@@ -319,12 +319,12 @@
     top: var(--viewer-pad);
     bottom: var(--viewer-pad);
     right: var(--viewer-pad);
-    z-index: 5;
+    z-index: var(--z-rail);
     width: min(520px, calc(100% - 2 * var(--viewer-pad)));
     max-width: calc(100% - 2 * var(--viewer-pad));
     display: flex;
     flex-direction: column;
-    border-radius: 16px;
+    border-radius: var(--r-16);
     box-shadow: var(--lift-3);
     animation: viewer-in var(--t) var(--ease);
   }
@@ -337,19 +337,19 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    padding: 10px 10px 8px 16px;
+    gap: var(--sp-4);
+    padding: var(--sp-10) var(--sp-10) var(--sp-8) var(--sp-16);
   }
   .chat-drawer-name {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .chat-drawer-name h2 {
     margin: 0;
-    font: 600 14px / 1.3 var(--head);
+    font: 600 var(--fs-body) / 1.3 var(--head);
     color: var(--navy);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -359,7 +359,7 @@
   .chat-drawer-note {
     flex-basis: 100%;
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .chat-drawer-note:empty {

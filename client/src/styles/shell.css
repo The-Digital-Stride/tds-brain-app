@@ -26,7 +26,7 @@
   /* The slot keeps the rail's footprint (--rail-w) in the desk's row; the rail inside can widen over the page. */
   .railslot {
     position: relative;
-    z-index: 5;
+    z-index: var(--z-rail);
     flex: none;
     width: var(--rail-w);
     transition: width var(--t) var(--ease);
@@ -42,7 +42,7 @@
   }
   /* Opened by hover or Tab over an icons-only rail: under the veil (40) and every modal layer. */
   .railslot:has(.rail[data-expanded="true"]) {
-    z-index: 39;
+    z-index: var(--z-hover-rail);
   }
   .rail {
     position: absolute;
@@ -50,14 +50,14 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sp-2);
     /* No padding above: the brand row is the rail's share of the header band. */
-    padding: 0 10px 10px;
-    border-radius: 16px;
+    padding: 0 var(--sp-10) var(--sp-10);
+    border-radius: var(--r-16);
     overflow: hidden;
     transition:
-      width 160ms var(--ease),
-      box-shadow 160ms var(--ease);
+      width var(--t-mid) var(--ease),
+      box-shadow var(--t-mid) var(--ease);
   }
   /* Names slide out over the drawer and sheet; nothing else moves. Only width, shadow and layer: the names
    themselves come from data-wide. */
@@ -79,22 +79,22 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-10);
     /* The header band: 48px with the glass edge, the mark centred on the same line as every title. */
     height: 47px;
     /* Right: room for the toggle, so a long name never runs under it. */
-    padding: 0 40px 1px 4px;
+    padding: 0 40px 1px var(--sp-4);
     white-space: nowrap;
-    font: 600 15px var(--head);
+    font: 600 var(--fs-reading) var(--head);
   }
   .rail[data-wide="false"] .rail-brand {
-    padding-right: 4px;
+    padding-right: var(--sp-4);
   }
   .rail-mark {
     width: 32px;
     height: 32px;
     flex: none;
-    transition: opacity 120ms;
+    transition: opacity var(--t-fast);
   }
   /* Show or hide names: the icon at the top right, like a dock's close button (10px from the edge). */
   .rail-toggle {
@@ -102,9 +102,9 @@
     top: 7px;
     right: 0;
     transition:
-      background-color 120ms var(--ease),
-      box-shadow 120ms var(--ease),
-      opacity 120ms;
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease),
+      opacity var(--t-fast);
   }
   /* Icons only: the toggle takes the mark's place. Where there is no hover (touch), it simply shows. */
   .rail[data-wide="false"] .rail-toggle {
@@ -139,24 +139,24 @@
     gap: 11px;
     width: 100%;
     height: 36px;
-    padding: 0 10px;
+    padding: 0 var(--sp-10);
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: none;
     color: var(--ink-soft);
-    font-size: 14px;
+    font-size: var(--fs-body);
     text-align: left;
     cursor: pointer;
     transition:
-      background-color 120ms var(--ease),
-      box-shadow 120ms var(--ease);
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
   }
   .rail-item .icon {
     flex: none;
   }
   .rail-item:hover,
   .rail-item[data-open="true"] {
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--glass-strong);
     box-shadow: var(--lift-1);
     color: var(--navy);
   }
@@ -164,7 +164,7 @@
     box-shadow: none;
   }
   .rail-item[aria-current="page"] {
-    background: #fff;
+    background: var(--surface);
     color: var(--navy);
     font-weight: 600;
     box-shadow: var(--lift-1);
@@ -177,7 +177,7 @@
     top: 10px;
     bottom: 10px;
     width: 3px;
-    border-radius: 0 3px 3px 0;
+    border-radius: 0 var(--r-5) var(--r-5) 0;
     background: var(--blue-ink);
   }
   .rail-label {
@@ -195,14 +195,14 @@
     opacity: 0;
     visibility: hidden;
     transition:
-      opacity 120ms,
-      visibility 0s 120ms;
+      opacity var(--t-fast),
+      visibility 0s var(--t-fast);
   }
   .rail-pip {
     position: absolute;
     left: 25px;
     top: 6px;
-    box-shadow: 0 0 0 2px #f1eee8;
+    box-shadow: 0 0 0 2px var(--tray);
   }
   /* Icons only: a count on the icon, so waiting work still shows. */
   .rail-badge {
@@ -211,15 +211,15 @@
     left: 22px;
     min-width: 16px;
     height: 16px;
-    padding: 0 4px;
+    padding: 0 var(--sp-4);
     border-radius: 999px;
     background: var(--navy);
     color: var(--paper);
-    font-size: 10px;
+    font-size: var(--fs-caption);
     font-weight: 600;
     line-height: 16px;
     text-align: center;
-    box-shadow: 0 0 0 2px #f1eee8;
+    box-shadow: 0 0 0 2px var(--tray);
   }
   /* With a count on the icon, the status dot moves to the icon's lower corner. */
   .rail-badge + .rail-pip {
@@ -228,16 +228,16 @@
   .rail-group {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-top: 6px;
-    padding-top: 6px;
+    gap: var(--sp-2);
+    margin-top: var(--sp-6);
+    padding-top: var(--sp-6);
     border-top: 1px solid var(--line-strong);
   }
   .rail-group-name {
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
-    padding: 4px 10px 2px;
+    padding: var(--sp-4) var(--sp-10) var(--sp-2);
   }
   .rail[data-wide="false"] .rail-group-name {
     display: none;
@@ -254,7 +254,7 @@
     min-height: 44px;
     padding: 0 7px;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: none;
     color: inherit;
     font: inherit;
@@ -262,12 +262,12 @@
     white-space: nowrap;
     cursor: pointer;
     transition:
-      background-color 120ms var(--ease),
-      box-shadow 120ms var(--ease);
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
   }
   /* Opens the Profile page: the same hover, pressed and current states as the rail's other buttons. */
   .rail-person:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--glass-strong);
     box-shadow: var(--lift-1);
     color: var(--navy);
   }
@@ -275,7 +275,7 @@
     box-shadow: none;
   }
   .rail-person[aria-current="page"] {
-    background: #fff;
+    background: var(--surface);
     color: var(--navy);
     font-weight: 600;
     box-shadow: var(--lift-1);
@@ -287,7 +287,7 @@
     border-radius: 50%;
     background: var(--navy);
     color: var(--paper);
-    font: 600 11px / 26px var(--body);
+    font: 600 var(--fs-caption) / 26px var(--body);
     text-align: center;
   }
   .rail-who {
@@ -296,7 +296,7 @@
     line-height: 1.25;
   }
   .rail-who small {
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
 
@@ -306,11 +306,11 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 6px;
-    margin: 4px 0 0;
-    padding: 6px 0 0 7px;
+    gap: var(--sp-4) var(--sp-6);
+    margin: var(--sp-4) 0 0;
+    padding: var(--sp-6) 0 0 7px;
     border-top: 1px solid var(--line);
-    font-size: 11px;
+    font-size: var(--fs-caption);
     line-height: 1.3;
     color: var(--iron);
     font-variant-numeric: tabular-nums;
@@ -332,14 +332,14 @@
     flex-basis: 100%;
   }
   .rail-update > .confirm {
-    font-size: 12px;
-    gap: 6px;
+    font-size: var(--fs-small);
+    gap: var(--sp-6);
   }
   .rail-update[data-wide="false"] {
     flex-direction: column;
     flex-wrap: nowrap;
-    padding: 6px 0 0;
-    font-size: 10px;
+    padding: var(--sp-6) 0 0;
+    font-size: var(--fs-caption);
     text-align: center;
   }
   .rail-update[data-wide="false"] .rail-version {
@@ -364,24 +364,24 @@
   .rail-sync {
     position: relative;
     /* A hairline above, so it reads as the app's status rather than a line about the person. */
-    margin: 4px 0 0;
-    padding: 8px 7px 0;
+    margin: var(--sp-4) 0 0;
+    padding: var(--sp-8) 7px 0;
     border-top: 1px solid var(--line);
-    font-size: 11px;
+    font-size: var(--fs-caption);
     line-height: 1.3;
     color: var(--iron);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .rail-sync[data-wide="false"] {
-    padding: 8px 0 0;
-    font-size: 10px;
+    padding: var(--sp-8) 0 0;
+    font-size: var(--fs-caption);
     text-align: center;
   }
   .rail-sync-shown {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
+    gap: var(--sp-6);
   }
   /* The longest line, "Not synced since 23:59, 30 Sept" in bold, can be wider than the rail: wrap it,
    keeping the time and date together. */
@@ -400,11 +400,11 @@
     width: 7px;
     height: 7px;
     /* Centred on the first line of text. */
-    margin-top: 4px;
+    margin-top: var(--sp-4);
     background: var(--ok);
   }
   .rail-sync[data-wide="false"] .rail-sync-dot {
-    margin: 0 0 2px;
+    margin: 0 0 var(--sp-2);
   }
   .rail-sync[data-stale="true"] {
     color: var(--danger);
@@ -422,7 +422,7 @@
   /* Under the version line, which already draws the hairline. */
   .rail-update + .rail-sync {
     margin-top: 0;
-    padding-top: 4px;
+    padding-top: var(--sp-4);
     border-top: 0;
   }
 
@@ -430,18 +430,18 @@
    into the body so no drawer clips it. Navy, as the search's tooltips. */
   .tip {
     position: fixed;
-    z-index: 80;
+    z-index: var(--z-tooltip);
     top: 0;
     left: 0;
     width: max-content;
     max-width: 240px;
     visibility: hidden;
-    padding: 4px 8px;
-    border-radius: 6px;
+    padding: var(--sp-4) var(--sp-8);
+    border-radius: var(--r-6);
     background: var(--navy);
     color: var(--paper);
     box-shadow: var(--lift-2);
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 500;
     line-height: 1.4;
     overflow-wrap: anywhere;
@@ -450,7 +450,7 @@
   }
   .tip[data-placed="true"] {
     visibility: visible;
-    animation: tip-fade 120ms var(--ease);
+    animation: tip-fade var(--t-fast) var(--ease);
   }
   @keyframes tip-fade {
     from {
@@ -473,7 +473,7 @@
     transition:
       width var(--t) var(--ease),
       margin var(--t) var(--ease),
-      opacity 160ms;
+      opacity var(--t-mid);
   }
   .dock[data-open="true"] {
     width: 316px;
@@ -488,7 +488,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    border-radius: 16px;
+    border-radius: var(--r-16);
   }
   .dock[data-side="right"] .dock-panel {
     width: 332px;
@@ -497,14 +497,14 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 0 10px 12px;
+    padding: 0 var(--sp-10) var(--sp-12);
   }
   /* Inside a clipping scroller the focus ring sits inside the row. */
   .dock-body :focus-visible {
     outline-offset: -2px;
   }
   .dock-empty {
-    padding: 8px;
+    padding: var(--sp-8);
     color: var(--iron);
   }
 
@@ -521,13 +521,13 @@
     position: fixed;
     top: var(--desk-pad);
     bottom: var(--desk-pad);
-    z-index: 41;
+    z-index: var(--z-dock);
     height: auto;
     box-shadow: var(--lift-3);
     opacity: 0;
     visibility: hidden;
     transition:
-      opacity 160ms,
+      opacity var(--t-mid),
       transform var(--t) var(--ease),
       visibility 0s var(--t);
   }
@@ -546,17 +546,17 @@
     visibility: visible;
     transform: none;
     transition:
-      opacity 160ms,
+      opacity var(--t-mid),
       transform var(--t) var(--ease);
   }
   .veil {
     position: fixed;
     inset: 0;
-    z-index: 40;
-    background: rgba(2, 27, 67, 0.16);
+    z-index: var(--z-veil);
+    background: var(--veil);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 160ms;
+    transition: opacity var(--t-mid);
   }
   .veil[data-open="true"] {
     opacity: 1;
@@ -573,10 +573,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #fff;
-    border-radius: 18px;
+    background: var(--surface);
+    border-radius: var(--r-18);
     box-shadow: var(--lift-1);
-    font-size: 14px;
+    font-size: var(--fs-body);
     /* The sheet bar adapts to the sheet's own width, which the docks change. */
     container: sheet / inline-size;
   }
@@ -601,8 +601,8 @@
   .sheet-scroll,
   .home-scroll,
   .thread {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 8px);
-    mask-image: linear-gradient(to bottom, transparent, #000 8px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, var(--navy) 8px);
+    mask-image: linear-gradient(to bottom, transparent, var(--navy) 8px);
     scroll-padding-top: 8px;
   }
 
@@ -610,17 +610,17 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-10);
     min-height: 48px;
     padding: 0 var(--sheet-gutter);
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   .crumb {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .crumb-lead,
   .crumb-sep {
@@ -629,7 +629,7 @@
   }
   .crumb h1 {
     min-width: 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -638,14 +638,14 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     height: 32px;
-    padding: 0 10px 0 12px;
+    padding: 0 var(--sp-10) 0 var(--sp-12);
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: var(--tint-1);
     color: var(--iron);
-    font-size: 13px;
+    font-size: var(--fs-control);
     cursor: pointer;
   }
   .jump:hover {
@@ -675,9 +675,9 @@
   .closed-note {
     flex: none;
     margin: 0;
-    padding: 8px 16px;
+    padding: var(--sp-8) var(--sp-16);
     text-align: center;
-    font-size: 13px;
+    font-size: var(--fs-control);
     color: var(--iron);
   }
 
@@ -696,8 +696,8 @@
   @container sheet (max-width: 560px) {
     .sheet-bar {
       flex-wrap: wrap;
-      row-gap: 6px;
-      padding-block: 8px;
+      row-gap: var(--sp-6);
+      padding-block: var(--sp-8);
     }
     .sheet-bar > .crumb {
       flex: 1 0 100%;
@@ -709,7 +709,7 @@
       --gap: 8px;
     }
     .sheet {
-      border-radius: 14px;
+      border-radius: var(--r-14);
     }
     .sheet-bar {
       padding-left: var(--sheet-gutter);

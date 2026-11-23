@@ -6,7 +6,7 @@
   }
   /* The open tool: white and lifted like every drawer's current row (aria-current="page"; base.css marks "true"). */
   .section-row[aria-current="page"] {
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--lift-1);
   }
   .section-row[aria-current="page"] .line-title {
@@ -30,7 +30,7 @@
     flex: none;
     align-self: flex-start;
     max-width: calc(100% - 32px);
-    margin: 12px 16px 0;
+    margin: var(--sp-12) var(--sp-16) 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -45,11 +45,11 @@
     flex: none;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
     white-space: nowrap;
   }
   .tool-tabs .tool-tab-note {
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 500;
     color: var(--iron);
   }

@@ -4,14 +4,14 @@
   .palette-veil {
     position: fixed;
     inset: 0;
-    z-index: 70;
-    background: rgba(2, 27, 67, 0.16);
+    z-index: var(--z-palette);
+    background: var(--veil);
     animation: palette-fade var(--t) var(--ease);
   }
 
   .palette {
     position: fixed;
-    z-index: 71;
+    z-index: calc(var(--z-palette) + 1);
     left: 50%;
     top: 15%;
     transform: translateX(-50%);
@@ -20,7 +20,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-radius: 18px;
+    border-radius: var(--r-18);
     box-shadow: var(--lift-3);
     animation: palette-in var(--t) var(--ease);
   }
@@ -32,9 +32,9 @@
     border-bottom: 1px solid var(--line);
     border-radius: 0;
     background: none;
-    font: 16px / 1.4 var(--body);
+    font: var(--fs-reading) / 1.4 var(--body);
     color: var(--navy);
-    padding: 16px 18px;
+    padding: var(--sp-16) 18px;
   }
   .palette-input::placeholder {
     color: var(--iron);
@@ -48,16 +48,16 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: 8px;
+    padding-bottom: var(--sp-8);
   }
   .palette .grp {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    font-size: 12px;
+    gap: var(--sp-8);
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
-    padding: 10px 18px 4px;
+    padding: var(--sp-10) 18px var(--sp-4);
   }
   /* "6 of 23" and "Still looking…" after a group's heading. */
   .palette .grp-note {
@@ -70,29 +70,29 @@
   .palette .opt {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 0 6px;
-    padding: 6px 12px;
+    gap: var(--sp-10);
+    margin: 0 var(--sp-6);
+    padding: var(--sp-6) var(--sp-12);
     min-height: 36px;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: transparent;
     box-shadow: none;
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 400;
     color: var(--navy);
     cursor: pointer;
     transition:
-      background-color 120ms var(--ease),
-      box-shadow 120ms var(--ease);
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
   }
   .palette .opt:hover {
-    background: rgba(255, 255, 255, 0.85);
+    background: var(--glass-92);
     box-shadow: var(--lift-1);
   }
   /* The active option: white, raised and ringed, so it is clearly more than a hover. */
   .palette .opt[aria-selected="true"] {
-    background: #fff;
+    background: var(--surface);
     box-shadow:
       var(--lift-1),
       inset 0 0 0 1.5px var(--blue-ink);
@@ -110,7 +110,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 400;
     color: var(--iron);
   }
@@ -141,8 +141,8 @@
   }
   .palette-foot {
     margin: 0;
-    padding: 4px 18px 10px;
-    font-size: 12px;
+    padding: var(--sp-4) 18px var(--sp-10);
+    font-size: var(--fs-small);
     color: var(--iron);
   }
 
@@ -150,16 +150,16 @@
    like the rail's names, but several lines that wrap, with the file path last in monospace. */
   .palette-tip {
     position: fixed;
-    z-index: 72;
+    z-index: calc(var(--z-palette) + 2);
     top: 0;
     left: 0;
     visibility: hidden;
-    padding: 6px 9px;
-    border-radius: 6px;
+    padding: var(--sp-6) 9px;
+    border-radius: var(--r-6);
     background: var(--navy);
     color: var(--paper);
     box-shadow: var(--lift-2);
-    font-size: 12px;
+    font-size: var(--fs-small);
     line-height: 1.4;
     /* It can be pointed at, and its path selected (WCAG 1.4.13); it is not a button. */
     cursor: default;
@@ -167,7 +167,7 @@
   }
   .palette-tip[data-placed="true"] {
     visibility: visible;
-    animation: palette-fade 120ms var(--ease);
+    animation: palette-fade var(--t-fast) var(--ease);
   }
   .palette-tip p {
     margin: 0;
@@ -177,9 +177,9 @@
     font-weight: 600;
   }
   .palette-tip .palette-tip-path {
-    margin-top: 2px;
+    margin-top: var(--sp-2);
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: var(--fs-caption);
     opacity: 0.85;
   }
   @media (prefers-reduced-motion: reduce) {

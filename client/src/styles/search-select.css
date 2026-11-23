@@ -19,7 +19,7 @@
     pointer-events: none;
   }
   .ss-chevron svg {
-    transition: transform 160ms var(--ease);
+    transition: transform var(--t-mid) var(--ease);
   }
   /* Points up while the list is open, so the box shows its state. */
   .ss-input[aria-expanded="true"] + .ss-chevron svg {
@@ -38,7 +38,7 @@
     position: fixed;
     display: flex;
     flex-direction: column;
-    padding: 6px 0;
+    padding: var(--sp-6) 0;
   }
   .ss-list {
     flex: 1;
@@ -46,20 +46,20 @@
     overflow-y: auto;
   }
   .ss-grp {
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
-    padding: 8px 16px 4px;
+    padding: var(--sp-8) var(--sp-16) var(--sp-4);
   }
   .menu-row.ss-opt {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     width: auto;
     min-height: 32px;
-    margin: 0 6px;
-    padding: 6px 10px;
-    font-size: 13px;
+    margin: 0 var(--sp-6);
+    padding: var(--sp-6) var(--sp-10);
+    font-size: var(--fs-control);
     color: var(--navy);
   }
   .ss-opt-label {
@@ -93,8 +93,8 @@
   }
   .ss-empty {
     margin: 0;
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: var(--sp-8) var(--sp-16);
+    font-size: var(--fs-control);
     color: var(--iron);
   }
 }

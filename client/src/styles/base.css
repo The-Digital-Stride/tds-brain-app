@@ -37,7 +37,7 @@
   body {
     margin: 0;
     color: var(--text);
-    font: 14px / 1.5 var(--body);
+    font: var(--fs-body) / 1.5 var(--body);
     -webkit-font-smoothing: antialiased;
     background:
       radial-gradient(620px 760px at 0% 0%, rgba(24, 137, 255, 0.42), transparent 66%),
@@ -56,13 +56,13 @@
     line-height: 1.25;
   }
   h1 {
-    font-size: 18px;
+    font-size: var(--fs-title);
   }
   h2 {
-    font-size: 15px;
+    font-size: var(--fs-reading);
   }
   h3 {
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   p {
     margin: 0;
@@ -87,11 +87,11 @@
   }
 
   kbd {
-    font: 500 11.5px / 1.5 var(--body);
-    background: #fff;
+    font: 500 var(--fs-caption) / 1.5 var(--body);
+    background: var(--surface);
     border: 1px solid var(--line-strong);
     border-bottom-width: 2px;
-    border-radius: 5px;
+    border-radius: var(--r-5);
     padding: 0 5px;
     color: var(--iron);
   }
@@ -112,11 +112,11 @@
     position: absolute;
     left: 8px;
     top: -100px;
-    z-index: 60;
-    background: #fff;
+    z-index: var(--z-skip);
+    background: var(--surface);
     color: var(--text);
-    padding: 8px 12px;
-    border-radius: 10px;
+    padding: var(--sp-8) var(--sp-12);
+    border-radius: var(--r-10);
     box-shadow: var(--lift-2);
   }
   .skip-link:focus {
@@ -128,10 +128,10 @@
   }
   .meta {
     color: var(--iron);
-    font-size: 12px;
+    font-size: var(--fs-small);
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: var(--sp-4) var(--sp-12);
   }
   .meta .overdue {
     color: var(--danger);
@@ -142,9 +142,9 @@
   .page {
     max-width: 600px;
     margin: 0 auto;
-    padding: 24px 28px 32px;
+    padding: var(--sp-24) 28px var(--sp-32);
     display: grid;
-    gap: 16px;
+    gap: var(--sp-16);
   }
 
   /*
@@ -159,9 +159,9 @@
   .line,
   .todo {
     transition:
-      background-color 120ms var(--ease),
-      box-shadow 120ms var(--ease),
-      transform 120ms var(--ease);
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease);
   }
 
   /*
@@ -174,17 +174,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sp-6);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-control);
     font-weight: 600;
     line-height: 1.2;
     cursor: pointer;
     height: 32px;
-    padding: 0 12px;
-    border-radius: 9px;
+    padding: 0 var(--sp-12);
+    border-radius: var(--r-9);
     border: 1px solid var(--line-strong);
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--lift-0);
     color: var(--navy);
     text-align: center;
@@ -252,8 +252,8 @@
   }
   .btn[data-size="small"] {
     height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
+    padding: 0 var(--sp-10);
+    font-size: var(--fs-small);
   }
 
   /*
@@ -270,7 +270,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 9px;
+    border-radius: var(--r-9);
     background: none;
     color: var(--ink-soft);
     cursor: pointer;
@@ -368,13 +368,13 @@
 
   .field {
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-control);
     color: var(--text);
-    background: #fff;
+    background: var(--surface);
     border: 1px solid var(--field-edge);
-    border-radius: 9px;
+    border-radius: var(--r-9);
     height: 32px;
-    padding: 0 10px;
+    padding: 0 var(--sp-10);
     width: 100%;
   }
   /* A native select keeps a short fixed list: our chevron (the `chevron` icon path) in place of the browser's. */
@@ -398,8 +398,8 @@
     height: 18px;
     margin: 0;
     border: 1.5px solid var(--tick-edge);
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.7) center / 14px 14px no-repeat;
+    border-radius: var(--r-5);
+    background: var(--glass-70) center / 14px 14px no-repeat;
     cursor: pointer;
     vertical-align: middle;
   }
@@ -413,7 +413,7 @@
   }
   .tick[type="radio"]:checked {
     border-color: var(--navy);
-    background: radial-gradient(circle, var(--navy) 0 4px, rgba(255, 255, 255, 0.7) 4.5px);
+    background: radial-gradient(circle, var(--navy) 0 4px, var(--glass-70) 4.5px);
   }
   .tick:disabled {
     opacity: 0.5;
@@ -439,7 +439,7 @@
     border-radius: 999px;
     background: var(--grey-dot);
     cursor: pointer;
-    transition: background-color 120ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease);
   }
   .switch::before {
     content: "";
@@ -449,9 +449,9 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--lift-0);
-    transition: transform 120ms var(--ease);
+    transition: transform var(--t-fast) var(--ease);
   }
   .switch:checked {
     background: var(--navy);
@@ -470,10 +470,10 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: var(--sp-6);
+    font-size: var(--fs-small);
     font-weight: 500;
-    padding: 2px 9px;
+    padding: var(--sp-2) 9px;
     border-radius: 999px;
     background: var(--tray);
     color: var(--navy);
@@ -484,11 +484,11 @@
   .count {
     display: inline-block;
     min-width: 18px;
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
     line-height: 18px;
     text-align: center;
-    padding: 0 6px;
+    padding: 0 var(--sp-6);
     border-radius: 999px;
     background: rgba(2, 27, 67, 0.08);
     color: var(--navy);
@@ -524,7 +524,7 @@
   .status-tag {
     flex: none;
     min-width: 44px;
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--amber-text);
   }
@@ -535,9 +535,9 @@
   /* A word badge, e.g. "Still being tested". `data-tone` waiting or draft for amber. */
   .badge {
     display: inline-block;
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
-    padding: 1px 8px;
+    padding: 1px var(--sp-8);
     border-radius: 999px;
     background: var(--wash);
     color: var(--blue-ink);
@@ -559,7 +559,7 @@
     border: 1px solid var(--danger);
   }
   .badge[data-tone="muted"] {
-    background: #fff;
+    background: var(--surface);
     color: var(--ink-soft);
     box-shadow: inset 0 0 0 1px var(--line-strong);
   }
@@ -569,18 +569,18 @@
     display: flex;
     gap: 3px; /* a hovered or focused option never touches its neighbour (Ian, 2026-11-13) */
     padding: 3px;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: var(--tint-1);
   }
   .seg > button {
     flex: 1;
     min-width: 0;
     min-height: 28px;
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--r-8);
     background: none;
-    font-size: 13px;
+    font-size: var(--fs-control);
     font-weight: 500;
     color: var(--ink-soft);
     cursor: pointer;
@@ -590,7 +590,7 @@
   }
   .seg > button[aria-checked="true"],
   .seg > button[aria-current="page"] {
-    background: #fff;
+    background: var(--surface);
     color: var(--navy);
     font-weight: 600;
     box-shadow: var(--lift-0);
@@ -601,7 +601,7 @@
 
   /* Expanding section (the Fold component). */
   .fold {
-    margin-bottom: 4px;
+    margin-bottom: var(--sp-4);
   }
   .fold-head {
     font: inherit;
@@ -609,14 +609,14 @@
   .fold-head > button {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     width: 100%;
     min-height: 30px;
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--r-8);
     background: none;
-    font-size: 13px;
+    font-size: var(--fs-control);
     font-weight: 600;
     text-align: left;
     cursor: pointer;
@@ -631,7 +631,7 @@
   .fold-head .icon,
   .btn[data-chevron] .icon,
   .icon-btn[data-chevron] .icon {
-    transition: transform 160ms;
+    transition: transform var(--t-mid);
   }
   .fold-head > button[aria-expanded="false"] .icon,
   .btn[data-chevron][aria-expanded="false"] .icon,
@@ -644,7 +644,7 @@
   }
   .fold-rows {
     display: grid;
-    gap: 2px;
+    gap: var(--sp-2);
   }
   .fold-rows[hidden] {
     display: none;
@@ -659,21 +659,21 @@
   .todo {
     width: 100%;
     min-width: 0;
-    padding: 7px 8px;
-    border-radius: 10px;
+    padding: 7px var(--sp-8);
+    border-radius: var(--r-10);
     text-align: left;
     color: inherit;
   }
   .line {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-10);
   }
   .todo {
     display: grid;
     /* No tick box: a to-do is finished from inside it, so the title gets the whole width. */
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
+    gap: var(--sp-10);
     align-items: start;
   }
   button.line,
@@ -683,7 +683,7 @@
     cursor: pointer;
   }
   .line:hover {
-    background: rgba(255, 255, 255, 0.92);
+    background: var(--glass-92);
     box-shadow: var(--lift-1);
     transform: translateY(-1px);
   }
@@ -692,13 +692,13 @@
   }
   /* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
   .todo:hover {
-    background: rgba(255, 255, 255, 0.92);
+    background: var(--glass-92);
   }
   .line[aria-current="true"],
   .line[data-current="true"],
   .todo[aria-current="true"],
   .todo[data-current="true"] {
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--lift-1);
   }
   .line-text {
@@ -719,7 +719,7 @@
   }
   .line-meta {
     display: block;
-    font-size: 12px;
+    font-size: var(--fs-small);
     line-height: 1.45;
     color: var(--iron);
   }
@@ -756,10 +756,10 @@
 
   /* A raised white card. */
   .card {
-    background: #fff;
-    border-radius: 14px;
+    background: var(--surface);
+    border-radius: var(--r-14);
     box-shadow: var(--lift-1);
-    padding: 12px 6px 6px;
+    padding: var(--sp-12) var(--sp-6) var(--sp-6);
   }
 
   @media (prefers-reduced-motion: reduce) {

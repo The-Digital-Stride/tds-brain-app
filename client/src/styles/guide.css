@@ -6,9 +6,9 @@
   .guide {
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
-    gap: 24px;
+    gap: var(--sp-24);
     align-items: start;
-    padding: 12px var(--sheet-gutter) 32px;
+    padding: var(--sp-12) var(--sheet-gutter) var(--sp-32);
   }
   .guide-contents {
     position: sticky;
@@ -16,20 +16,20 @@
     max-height: calc(100dvh - 140px);
     overflow-y: auto;
     display: grid;
-    gap: 12px;
+    gap: var(--sp-12);
   }
   .guide-area {
-    margin: 0 0 2px;
-    padding: 0 8px;
-    font-size: 12px;
+    margin: 0 0 var(--sp-2);
+    padding: 0 var(--sp-8);
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
   }
   .guide-contents .drawer-list {
-    gap: 2px;
+    gap: var(--sp-2);
   }
   .guide-contents .line {
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
   /* The page you're on: a wash, as rows on white do (design-system.md). */
   .guide-contents .line[aria-current="true"] {
@@ -45,17 +45,17 @@
     min-width: 0;
     max-width: 640px;
     display: grid;
-    gap: 12px;
+    gap: var(--sp-12);
     justify-items: start;
   }
   .guide-page-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 8px;
+    gap: var(--sp-4) var(--sp-8);
   }
   .guide-page h2 {
-    font-size: 18px;
+    font-size: var(--fs-title);
     color: var(--navy);
     overflow-wrap: anywhere;
   }
@@ -63,19 +63,19 @@
     outline: none;
   }
   .guide-page .help-article {
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   .guide-related {
     display: grid;
-    gap: 6px;
+    gap: var(--sp-6);
   }
   .guide-related h3 {
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   .guide-related ul {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 8px;
+    gap: var(--sp-4) var(--sp-8);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -85,14 +85,14 @@
   @container sheet (max-width: 900px) {
     .guide {
       grid-template-columns: minmax(0, 1fr);
-      gap: 12px;
+      gap: var(--sp-12);
     }
     .guide-contents {
       display: none;
     }
     .guide-picker {
       display: grid;
-      gap: 4px;
+      gap: var(--sp-4);
     }
     .guide-picker .field {
       width: 100%;
@@ -148,7 +148,7 @@
       break-before: page;
       page-break-before: always;
       font-size: 12pt;
-      color: #000;
+      color: var(--text);
     }
     .guide-print-page:first-child {
       break-before: auto;
@@ -179,11 +179,11 @@
   .help-inline {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--sp-2);
     min-width: 0;
   }
   .settings .help-inline[data-heading="true"] {
-    margin-bottom: 4px;
+    margin-bottom: var(--sp-4);
   }
   .settings .help-inline[data-heading="true"] h2 {
     margin: 0;

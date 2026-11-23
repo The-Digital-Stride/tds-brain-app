@@ -11,7 +11,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 32px 28px 24px;
+    padding: var(--sp-32) 28px var(--sp-24);
   }
   .home-in {
     max-width: 880px;
@@ -21,25 +21,25 @@
   }
 
   .home-greeting {
-    margin: 0 0 4px;
-    font: 600 26px / 1.15 var(--head);
+    margin: 0 0 var(--sp-4);
+    font: 600 var(--fs-display) / 1.15 var(--head);
     letter-spacing: -0.01em;
     color: var(--navy);
   }
   .home-sub {
     min-height: 1.5em;
     margin: 0 0 18px;
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--iron);
   }
 
   .home-composer {
     display: grid;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .home-status {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .home-status:empty {
@@ -49,7 +49,7 @@
   }
   .client-label {
     flex: none;
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
     white-space: nowrap;
@@ -58,7 +58,7 @@
   .scope-field {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     flex: 1 1 200px;
     min-width: 0;
     max-width: 300px;
@@ -73,22 +73,22 @@
   .home-scope {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .client-ask {
     display: grid;
-    gap: 10px;
-    padding: 12px 14px;
+    gap: var(--sp-10);
+    padding: var(--sp-12) 14px;
   }
   .client-ask h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   .client-ask-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .client-ask-pick {
     width: 240px;
@@ -99,14 +99,14 @@
     flex-direction: column;
     align-items: flex-start;
     flex-wrap: nowrap;
-    gap: 2px;
+    gap: var(--sp-2);
   }
   .home-skill .meta {
-    font-size: 12px;
+    font-size: var(--fs-small);
   }
   .tray .card {
     min-width: 0;
-    padding: 12px 6px 6px;
+    padding: var(--sp-12) var(--sp-6) var(--sp-6);
   }
   /*
  * A row in a card rises one step off it on hover, like every other hover in the app: it stays
@@ -115,7 +115,7 @@
   .tray .line:hover {
     position: relative;
     z-index: 1;
-    background: #fff;
+    background: var(--surface);
     box-shadow: var(--lift-1);
     transform: translateY(-1px);
   }
@@ -129,16 +129,16 @@
     font-weight: 600;
   }
   .card-note {
-    padding: 7px 8px;
-    font-size: 13px;
+    padding: 7px var(--sp-8);
+    font-size: var(--fs-control);
     color: var(--iron);
   }
   @media (max-width: 480px) {
     .home-scroll {
-      padding: 24px 16px 20px;
+      padding: var(--sp-24) var(--sp-16) 20px;
     }
     .home-greeting {
-      font-size: 22px;
+      font-size: var(--fs-title);
     }
   }
 }

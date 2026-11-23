@@ -11,7 +11,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .lib-client {
     flex: none;
@@ -36,7 +36,7 @@
     color: var(--iron);
   }
   .lib-search .field {
-    padding-left: 32px;
+    padding-left: var(--sp-32);
   }
   .lib-tools .seg {
     flex: none;
@@ -71,7 +71,7 @@
     z-index: 1;
     flex: none;
     opacity: 0;
-    transition: opacity 120ms var(--ease);
+    transition: opacity var(--t-fast) var(--ease);
   }
   /* The same room at the end of every row, button or not, so the columns line up. */
   .lib-row .lib-view,
@@ -94,28 +94,28 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
     /* Pinned to the bottom of the sheet, however short the list is. */
     margin-top: auto;
-    padding: 6px 6px 6px 14px;
-    border-radius: 14px;
+    padding: var(--sp-6) var(--sp-6) var(--sp-6) 14px;
+    border-radius: var(--r-14);
     box-shadow: var(--lift-2);
   }
   .lib-selcount {
-    margin-right: 6px;
-    font-size: 13px;
+    margin-right: var(--sp-6);
+    font-size: var(--fs-control);
     font-weight: 600;
   }
   /* Two rows on purpose: the actions on the file, then the two file utilities (Download, Copy file path). */
   .lib-actions {
     display: grid;
-    gap: 6px;
-    padding: 0 4px;
+    gap: var(--sp-6);
+    padding: 0 var(--sp-4);
   }
   .lib-actions-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--sp-6);
   }
 
   /* Documents' grid tile is a page: portrait, so a PDF's first page or a slide fills it without a band. */

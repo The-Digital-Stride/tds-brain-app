@@ -7,15 +7,15 @@
     container-type: inline-size;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px var(--sheet-gutter) 24px;
+    gap: var(--sp-4);
+    padding: var(--sp-12) var(--sheet-gutter) var(--sp-24);
   }
   /* Tabs sit straight above the sheet body: the gap under them is the control-row gap. */
   .tool-tabs + .sheet-scroll > .am {
-    padding-top: 8px;
+    padding-top: var(--sp-8);
   }
   .am .tray {
-    margin-top: 8px;
+    margin-top: var(--sp-8);
   }
   .am-tray[data-cols="1"] {
     grid-template-columns: minmax(0, 1fr);
@@ -52,7 +52,7 @@
   }
   .am-h {
     margin: 20px 0 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 600;
   }
   .am-h-text {
@@ -61,7 +61,7 @@
     font: inherit;
   }
   .am-h .sm-missing {
-    margin: 4px 0 0;
+    margin: var(--sp-4) 0 0;
     font-weight: 400;
   }
 
@@ -70,7 +70,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 4px 12px;
+    gap: var(--sp-4) var(--sp-12);
     margin: 20px 0 0;
   }
   .am-account {
@@ -79,12 +79,12 @@
   }
   .am-dim {
     color: var(--iron);
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 400;
   }
   .am-sub {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .am-block {
@@ -94,8 +94,8 @@
     white-space: nowrap;
   }
   .am-camp {
-    margin: 4px 0 0;
-    font-size: 13px;
+    margin: var(--sp-4) 0 0;
+    font-size: var(--fs-control);
     font-weight: 600;
   }
 
@@ -103,15 +103,15 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   /* A panel's footer: the primary action on the left, then what happened. */
   .am-foot {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 12px;
-    padding-top: 10px;
+    gap: var(--sp-8) var(--sp-12);
+    padding-top: var(--sp-10);
     border-top: 1px solid var(--line);
   }
   .am-grow {
@@ -121,16 +121,16 @@
   /* Tables: scroll sideways inside their card rather than widening the sheet. */
   .am-scroll {
     overflow-x: auto;
-    padding: 0 8px 4px;
+    padding: 0 var(--sp-8) var(--sp-4);
   }
   .am-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
   .am-table th {
-    padding: 6px 10px 6px 0;
-    font-size: 12px;
+    padding: var(--sp-6) var(--sp-10) var(--sp-6) 0;
+    font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
     text-align: left;
@@ -139,7 +139,7 @@
   }
   .am-table td {
     position: relative;
-    padding: 8px 10px 8px 0;
+    padding: var(--sp-8) var(--sp-10) var(--sp-8) 0;
     vertical-align: top;
     border-top: 1px solid var(--line);
   }
@@ -165,14 +165,14 @@
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--sp-4);
     min-height: 24px;
-    padding: 0 6px;
+    padding: 0 var(--sp-6);
     margin: 0 -6px;
     cursor: pointer;
     font: inherit;
-    border-radius: 6px;
-    transition: background-color 120ms var(--ease);
+    border-radius: var(--r-6);
+    transition: background-color var(--t-fast) var(--ease);
   }
   .am-sort:hover {
     background: var(--tint-2);
@@ -199,7 +199,7 @@
   }
   /* Key/value lists and notes in a card line up with the card's heading. */
   .am .card > .kv {
-    padding-inline: 8px;
+    padding-inline: var(--sp-8);
   }
   /* A narrow sheet drops the proposals' ID, Type and Section (all in the panel) so Status and Details stay in view. */
   @container (max-width: 760px) {
@@ -213,14 +213,14 @@
 
   .am-opts {
     list-style: none;
-    margin: 8px 0 0;
-    padding: 0 8px;
+    margin: var(--sp-8) 0 0;
+    padding: 0 var(--sp-8);
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px;
+    gap: var(--sp-12);
   }
   .am-opts p {
-    margin: 0 0 4px;
+    margin: 0 0 var(--sp-4);
   }
 
   /* Cadence cards. */
@@ -230,53 +230,53 @@
     padding: 0;
   }
   .am-task {
-    padding: 8px;
+    padding: var(--sp-8);
     border-top: 1px solid var(--line);
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: var(--sp-2);
   }
   .am-task:first-child {
     border-top: 0;
   }
   .am-task .btn {
-    margin-top: 6px;
+    margin-top: var(--sp-6);
   }
   /* When a task last ran (from this app), and a status dot with words while its chat is running. */
   .am-run {
-    margin: 4px 0 0;
-    font-size: 12px;
+    margin: var(--sp-4) 0 0;
+    font-size: var(--fs-small);
     color: var(--iron);
     font-variant-numeric: tabular-nums;
   }
   .am-run-state {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
     color: var(--navy);
     font-weight: 600;
   }
   .card > .am-run {
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
   }
 
   /* The panel. */
   .am-panel {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 0 8px 16px;
+    gap: var(--sp-10);
+    padding: 0 var(--sp-8) var(--sp-16);
   }
   .am-title {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   /* Previous / Next through the account's open proposals: the count, then up and down icon buttons, above the title. */
   .am-step {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .am-step .am-sub {
     margin: 0 auto 0 0;
@@ -294,23 +294,23 @@
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    padding: 10px 12px;
-    border-radius: 10px;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-10);
     background: var(--tray);
-    font-size: 12.5px;
+    font-size: var(--fs-mono);
   }
   .am-act {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .am-last {
-    padding-top: 8px;
+    padding-top: var(--sp-8);
     border-top: 1px solid var(--line);
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
   .am-last p {
-    margin: 0 0 6px;
+    margin: 0 0 var(--sp-6);
   }
   .am-rate {
     list-style: none;
@@ -318,7 +318,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--sp-12);
   }
   .am-score .field {
     width: 120px;
@@ -328,8 +328,8 @@
   .am-th {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
-    padding: 0 4px 8px 2px;
+    gap: var(--sp-6);
+    padding: 0 var(--sp-4) var(--sp-8) var(--sp-2);
   }
   .am-th-text {
     flex: 1 1 auto;
@@ -337,11 +337,11 @@
   }
   .am-th h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
     line-height: 28px;
   }
   .am-th-badge {
-    margin-top: 4px;
+    margin-top: var(--sp-4);
   }
   .am-th .icon-btn {
     flex: none;
@@ -356,7 +356,7 @@
   /* Where the card in the air would land. */
   .am-drop {
     box-sizing: border-box;
-    border-radius: 14px;
+    border-radius: var(--r-14);
     background: var(--tint-1);
     border: 1.5px dashed var(--line-strong);
   }
@@ -403,18 +403,18 @@
     right: 10px;
     bottom: 3px;
     max-width: calc(100% - 10px);
-    border-radius: 4px;
+    border-radius: var(--r-5);
     background: var(--wash);
   }
   .am-more {
-    padding: 4px 8px 4px;
+    padding: var(--sp-4) var(--sp-8) var(--sp-4);
   }
   .am-deep .am-table th:first-child,
   .am-deep .am-table td:first-child {
     position: sticky;
     left: 0;
     z-index: 1;
-    background: #fff;
+    background: var(--surface);
   }
 
   /* Ads Manager page (plan 2026-11-19-ads-workbench-sections, decision 5): account head, fact tiles, Needs you,
@@ -423,21 +423,21 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     padding: 0;
   }
   .am-head h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-title);
     font-weight: 600;
   }
   .am-facts {
     list-style: none;
-    margin: 8px 0 0;
+    margin: var(--sp-8) 0 0;
     padding: 0;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    gap: var(--sp-8);
   }
   @container (max-width: 760px) {
     .am-facts {
@@ -458,11 +458,11 @@
   .stat-jump {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sp-2);
     width: 100%;
-    padding: 8px 10px;
+    padding: var(--sp-8) var(--sp-10);
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-10);
     background: none;
     font: inherit;
     color: inherit;
@@ -480,13 +480,13 @@
   .am-needs-list {
     list-style: none;
     margin: 0;
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
   }
   .am-needs-list li {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 0;
+    gap: var(--sp-10);
+    padding: var(--sp-6) 0;
   }
   .am-needs-list li + li {
     border-top: 1px solid var(--line);
@@ -499,7 +499,7 @@
     margin: 0;
   }
   .am-need-sub {
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   /* A proposal's title with its campaign underneath; a date with its words underneath. */
@@ -508,30 +508,30 @@
   }
   .am-subline {
     display: block;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   /* Monthly close. */
   .am-close .am-links {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 0 8px 8px;
+    gap: var(--sp-6);
+    padding: 0 var(--sp-8) var(--sp-8);
   }
   .am-close > .btn,
   .am-close > .am-sign {
-    margin: 0 8px 8px;
+    margin: 0 var(--sp-8) var(--sp-8);
   }
   .am-close > .btn {
     align-self: flex-start;
   }
   .am-close .am-sign {
     display: grid;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   /* The jump to Monthly close outlines the card for 1.6 s (FLASH_MS in Approvals.tsx). */
   .am-close {
-    scroll-margin-top: 12px;
+    scroll-margin-top: var(--sp-12);
   }
   .am-flash {
     outline: 3px solid var(--focus);
@@ -544,18 +544,18 @@
   }
   /* Release 2: Earlier months under Monthly close. */
   .am-close .fold {
-    margin: 0 8px 8px;
+    margin: 0 var(--sp-8) var(--sp-8);
   }
   .am-earlier {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 10px;
+    gap: var(--sp-10);
   }
   .am-earlier-item {
     display: grid;
-    gap: 6px;
+    gap: var(--sp-6);
     justify-items: start;
   }
   .am-earlier-head {

@@ -7,10 +7,10 @@
 
   /* Account data: a tinted panel by overall state. */
   .cc-ready {
-    margin-top: 8px;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: #fff;
+    margin-top: var(--sp-8);
+    padding: var(--sp-12) 14px;
+    border-radius: var(--r-10);
+    background: var(--surface);
     box-shadow: var(--lift-1);
   }
   .cc-ready[data-tone="ok"] {
@@ -24,13 +24,13 @@
   }
   .cc-ready h2 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
   /* Shown for any focus, not only the keyboard: a jump from Ads Manager can't be told from a click here. */
   .cc-ready h2:focus {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
-    border-radius: 3px;
+    border-radius: var(--r-5);
   }
   .cc-ready .am-sub {
     color: var(--ink-soft);
@@ -38,7 +38,7 @@
   .cc-ready-head {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .cc-ready-head > .btn {
     margin-left: auto;
@@ -49,13 +49,13 @@
   .cc-groups {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 6px;
-    margin-top: 4px;
+    gap: var(--sp-6);
+    margin-top: var(--sp-4);
   }
   .cc-group {
     background: var(--glass-strong);
-    border-radius: 9px;
-    padding: 8px 10px;
+    border-radius: var(--r-9);
+    padding: var(--sp-8) var(--sp-10);
     min-width: 0;
   }
   .cc-group-h {
@@ -63,8 +63,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
+    gap: var(--sp-6);
+    font-size: var(--fs-control);
     font-weight: 600;
   }
   .cc-count {
@@ -73,7 +73,7 @@
   }
   .cc-group ul {
     list-style: none;
-    margin: 6px 0 0;
+    margin: var(--sp-6) 0 0;
     padding: 0;
     display: grid;
     gap: 3px;
@@ -81,27 +81,27 @@
   .cc-group li {
     display: grid;
     grid-template-columns: 8px 1fr;
-    gap: 0 8px;
+    gap: 0 var(--sp-8);
     align-items: center;
-    font-size: 12px;
+    font-size: var(--fs-small);
   }
   .cc-group li > .cc-note {
     grid-column: 2;
   }
   .cc-file {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: var(--fs-small);
     overflow-wrap: anywhere;
   }
   .cc-key {
-    margin-top: 6px;
+    margin-top: var(--sp-6);
   }
 
   /* "What I run on", and the key. */
   .cc-board-head {
     display: grid;
-    gap: 4px;
-    margin-top: 12px;
+    gap: var(--sp-4);
+    margin-top: var(--sp-12);
   }
   .cc-h {
     margin: 0;
@@ -112,25 +112,25 @@
   }
   .cc-key-list {
     list-style: none;
-    margin: 4px 0 0;
+    margin: var(--sp-4) 0 0;
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 16px;
-    font-size: 12px;
+    gap: var(--sp-6) var(--sp-16);
+    font-size: var(--fs-small);
     color: var(--ink-soft);
   }
   .cc-key-list li {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
   }
   .cc-tkey {
     display: inline-flex;
     align-items: center;
     height: 22px;
-    padding: 0 8px;
-    border-radius: 6px;
+    padding: 0 var(--sp-8);
+    border-radius: var(--r-6);
     font-weight: 500;
     color: var(--navy);
     box-shadow: inset 0 0 0 1px var(--line-strong);
@@ -174,10 +174,10 @@
 
   /* A task card: the whole fill is its type, with navy text. */
   .cc-task {
-    margin: 0 2px 6px;
+    margin: 0 var(--sp-2) var(--sp-6);
     border: 0;
-    border-radius: 9px;
-    padding: 8px 10px 10px;
+    border-radius: var(--r-9);
+    padding: var(--sp-8) var(--sp-10) var(--sp-10);
     gap: 3px;
     color: var(--navy);
   }
@@ -197,12 +197,12 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: var(--sp-4);
   }
   .cc-type {
-    font-size: 12px;
+    font-size: var(--fs-small);
     font-weight: 600;
-    margin-right: 2px;
+    margin-right: var(--sp-2);
   }
   .cc-due {
     display: inline-flex;
@@ -210,8 +210,8 @@
   .cc-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 4px;
+    gap: var(--sp-6);
+    margin-top: var(--sp-4);
   }
   .cc-actions .btn {
     margin-top: 0;
@@ -247,25 +247,25 @@
     .cc-triage-wrap > .popover {
       position: static;
       width: auto;
-      margin-top: 6px;
+      margin-top: var(--sp-6);
     }
   }
   .cc-triage-head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 4px 6px;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-4) var(--sp-6);
   }
   .cc-triage-head h4 {
     margin: 0;
     font-family: var(--head);
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--fs-body);
     flex: 1;
   }
   .cc-triage-hint {
     margin: 0;
-    padding: 0 4px 6px;
+    padding: 0 var(--sp-4) var(--sp-6);
   }
   .cc-triage-flag {
     margin-left: auto;
@@ -273,24 +273,24 @@
     flex-shrink: 0;
   }
   .cc-triage-wrap .popover > .hint {
-    padding: 4px;
+    padding: var(--sp-4);
   }
   .cc-triage-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 2px;
+    gap: var(--sp-2);
   }
   .cc-triage-name {
     font-weight: 600;
     display: flex;
-    gap: 6px;
+    gap: var(--sp-6);
     align-items: center;
   }
 
   /* A teammate's (or own) saved result, beside the run line. */
   .cc-result {
-    margin-top: 2px;
+    margin-top: var(--sp-2);
   }
 }

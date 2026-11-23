@@ -127,6 +127,11 @@
     /* A white surface (the sheet, a card, a field) and the dim over the sheet behind a panel or the palette */
     --surface: #fff;
     --veil: rgba(2, 27, 67, 0.16);
+    /* The heavier dim behind the tour spotlight. */
+    --veil-heavy: rgba(2, 27, 67, 0.45);
+    /* White at 70% (a tick's fill and centre) and at 92% (a bar or overlay that mostly hides what is behind). */
+    --glass-70: rgba(255, 255, 255, 0.7);
+    --glass-92: rgba(255, 255, 255, 0.92);
 
     /* Text, fields, focus */
     --text: var(--navy);
@@ -138,6 +143,7 @@
 
     /* Amber, for "needs you" surfaces */
     --amber-bg: #fff4db;
+    --amber-glass: rgba(255, 248, 232, 0.72); /* the answer box's see-through amber */
     --amber-edge: #d99a00;
     --amber-text: #3d2a00;
 

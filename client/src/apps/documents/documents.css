@@ -8,7 +8,7 @@
   .doc-col {
     flex: none;
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fs-small);
     line-height: 1.45;
     color: var(--iron);
     white-space: nowrap;

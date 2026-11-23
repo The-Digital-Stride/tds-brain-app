@@ -211,7 +211,52 @@ describe('the design system guard: scales', () => {
   it('finds the stylesheets and declarations (so the scan itself still works)', () => {
     expect(cssFiles.length).toBeGreaterThan(15);
     expect(allDeclarations.length).toBeGreaterThan(2000);
-    expect(allDeclarations.some((d) => d.prop === 'font-size' && d.value === '14px')).toBe(true);
+    expect(allDeclarations.some((d) => d.prop === 'font-size' && d.value === 'var(--fs-body)')).toBe(true);
+  });
+
+  // Sheets swept onto the tokens in Release 4 (plan 2026-11-22-ux-consistency, decision 24): a raw size here,
+  // even one on the scale, fails. base.css and todo-panel.css still hold one-off colours, so they aren't locked.
+  const LOCKED = [
+    'styles/primitives.css',
+    'styles/patterns.css',
+    'styles/library-shared.css',
+    'styles/viewer.css',
+    'styles/projects.css',
+    'styles/ad-manager.css',
+    'styles/command.css',
+    'styles/summary.css',
+    'apps/shared/library.css',
+    'apps/documents/documents.css',
+    'styles/chat.css',
+    'styles/shell.css',
+    'styles/drawers.css',
+    'styles/home.css',
+    'styles/palette.css',
+    'styles/search-select.css',
+    'styles/help.css',
+    'styles/guide.css',
+    'styles/tour.css',
+    'styles/sections.css',
+    'styles/settings.css',
+  ];
+  it('locked sheets take font sizes, radii and layers from tokens only', () => {
+    const locked = allDeclarations.filter((d) => LOCKED.includes(d.file));
+    expect(new Set(locked.map((d) => d.file)).size).toBe(LOCKED.length);
+    const found = locked.flatMap((d) => {
+      if (d.prop === 'font-size' || d.prop === 'font')
+        // The `/ line-height` part of the shorthand isn't a size.
+        return (d.value.replace(/\/\s*\S+/, '').match(/(?<![\w.-])[\d.]+px/g) ?? []).map(
+          (v) => `${d.file} font ${v}`,
+        );
+      if (/^border(-[a-z]+)*-radius$/.test(d.prop))
+        return (d.value.match(/(?<![\w.-])[\d.]+px/g) ?? [])
+          .filter((v) => Number.parseFloat(v) < 100)
+          .map((v) => `${d.file} radius ${v}`);
+      if (d.prop === 'z-index' && /^\d+$/.test(d.value) && Number(d.value) > 3)
+        return [`${d.file} z-index ${d.value}`];
+      return [];
+    });
+    expect(found).toEqual([]);
   });
 
   it('font sizes are on the type scale', () => {
@@ -383,70 +428,17 @@ describe('the design system guard: markup', () => {
 });
 
 // Today's remaining offenders ("file value": count). Lower or delete an entry when you fix it. ------------
-const ALLOW_FONT_SIZE: Allow = {
-  'styles/home.css 22px': 1,
-  'styles/palette.css 11px': 1,
-  'styles/palette.css 16px': 1,
-  'styles/shell.css 10px': 3,
-  'styles/shell.css 11px': 3,
-};
-const ALLOW_RADIUS: Allow = {
-  'styles/ad-manager.css 4px': 1,
-  'styles/chat.css 2px': 1,
-  'styles/chat.css 4px': 1,
-  'styles/command.css 3px': 1,
-  'styles/drawers.css 2px': 1,
-  'styles/shell.css 3px': 2,
-  'styles/summary.css 4px': 1,
-  'styles/todo-panel.css 4px': 1,
-  'styles/viewer.css 2px': 1,
-};
-const ALLOW_Z_INDEX: Allow = {
-  'styles/chat.css 6': 1,
-};
+const ALLOW_FONT_SIZE: Allow = {};
+const ALLOW_RADIUS: Allow = {};
+const ALLOW_Z_INDEX: Allow = {};
 const ALLOW_RAW_COLOUR: Allow = {
-  'apps/shared/library.css #fff': 4,
-  'apps/shared/library.css rgba(255,255,255,0.92)': 2,
-  'styles/ad-manager.css #fff': 1,
-  'styles/base.css #fff': 9,
   'styles/base.css rgba(2,27,67,0.08)': 1,
   'styles/base.css rgba(2,27,67,0.24)': 1,
   'styles/base.css rgba(2,27,67,0.3)': 1,
   'styles/base.css rgba(24,137,255,0.2)': 1,
   'styles/base.css rgba(24,137,255,0.42)': 1,
   'styles/base.css rgba(255,255,255,0.55)': 1,
-  'styles/base.css rgba(255,255,255,0.7)': 2,
-  'styles/base.css rgba(255,255,255,0.92)': 2,
-  'styles/chat.css #b9c0ce': 1,
-  'styles/chat.css #fff': 5,
-  'styles/chat.css #fff0': 1,
-  'styles/chat.css rgba(2,27,67,0.04)': 1,
-  'styles/chat.css rgba(245,158,11,0.5)': 1,
-  'styles/chat.css rgba(255,248,232,0.72)': 1,
-  'styles/chat.css rgba(255,255,255,0.7)': 1,
-  'styles/chat.css rgba(255,255,255,0.75)': 1,
-  'styles/chat.css rgba(255,255,255,0.85)': 1,
-  'styles/chat.css rgba(255,255,255,0.92)': 1,
-  'styles/command.css #fff': 1,
-  'styles/guide.css #000': 1,
-  'styles/home.css #fff': 1,
-  'styles/palette.css #fff': 1,
-  'styles/palette.css rgba(2,27,67,0.16)': 1,
-  'styles/palette.css rgba(255,255,255,0.85)': 1,
-  'styles/sections.css #fff': 1,
-  'styles/shell.css #000': 2,
-  'styles/shell.css #f1eee8': 2,
-  'styles/shell.css #fff': 3,
-  'styles/shell.css rgba(2,27,67,0.16)': 1,
-  'styles/shell.css rgba(255,255,255,0.8)': 2,
-  'styles/todo-panel.css #fff': 2,
   'styles/todo-panel.css rgba(11,92,181,0.2)': 1,
-  'styles/todo-panel.css rgba(2,27,67,0.16)': 1,
-  'styles/todo-panel.css rgba(255,255,255,0.7)': 1,
-  'styles/tour.css #fff': 2,
-  'styles/tour.css rgba(2,27,67,0.45)': 2,
-  'styles/viewer.css #fff': 2,
-  'styles/viewer.css rgba(2,27,67,0.16)': 1,
 };
 const ALLOW_DUPLICATE_CLASS: Allow = {
   '.drawer-scroll: styles/drawers.css, styles/shell.css': 1,

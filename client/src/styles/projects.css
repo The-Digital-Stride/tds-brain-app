@@ -6,7 +6,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-head > .btn[data-variant="primary"],
   .proj-head > .proj-head-end {
@@ -18,7 +18,7 @@
   }
   .proj-title {
     margin: 0;
-    font: 600 14px / 1.25 var(--head);
+    font: 600 var(--fs-body) / 1.25 var(--head);
     color: var(--navy);
   }
 
@@ -26,7 +26,7 @@
   .proj-tabrow {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-tabrow > .btn {
     margin-left: auto;
@@ -36,7 +36,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-tools .seg {
     flex: none;
@@ -56,15 +56,15 @@
   /* A line of words in the sheet: a note, or the quiet message under a list. */
   .proj-note {
     margin: 0;
-    padding: 4px 8px;
-    font-size: 13px;
+    padding: var(--sp-4) var(--sp-8);
+    font-size: var(--fs-control);
     color: var(--iron);
   }
   .lib > .proj-note {
     padding-inline: 0;
   }
   .card > .proj-note {
-    padding-bottom: 8px;
+    padding-bottom: var(--sp-8);
   }
 
   /* Rows */
@@ -76,11 +76,11 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 10px;
+    gap: var(--sp-10);
     min-width: 0;
-    padding: 6px 8px;
+    padding: var(--sp-6) var(--sp-8);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--r-8);
     background: none;
     color: inherit;
     font: inherit;
@@ -90,17 +90,17 @@
   .proj-light {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-6);
   }
   .proj-card {
-    padding: 12px 8px 8px;
+    padding: var(--sp-12) var(--sp-8) var(--sp-8);
   }
   .proj-card .kv {
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
   }
   .proj-brief {
     margin: 0;
-    padding: 0 8px 8px;
+    padding: 0 var(--sp-8) var(--sp-8);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -110,31 +110,31 @@
     padding: 0;
   }
   .proj-team .line {
-    padding: 4px 8px;
+    padding: var(--sp-4) var(--sp-8);
   }
   .proj-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-todo,
   .proj-file {
-    padding: 4px 8px;
+    padding: var(--sp-4) var(--sp-8);
   }
   /* A teammate's row isn't a button: give its text the button's padding so the titles line up. */
   .proj-todo > .line-text {
-    padding: 6px 8px;
+    padding: var(--sp-6) var(--sp-8);
   }
   .proj-search {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 8px 8px;
+    gap: var(--sp-8);
+    padding: 0 var(--sp-8) var(--sp-8);
   }
   .proj-search .field {
     flex: 1 1 220px;
@@ -144,31 +144,31 @@
   .proj-form-page {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
     max-width: 680px;
   }
   .proj-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px;
+    gap: var(--sp-12);
+    padding: var(--sp-12);
   }
   .proj-area {
     height: auto;
     min-height: 64px;
-    padding: 8px 10px;
+    padding: var(--sp-8) var(--sp-10);
     resize: vertical;
   }
   .proj-pair {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
+    gap: var(--sp-12);
   }
   .proj-checks {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 4px 16px;
+    gap: var(--sp-4) var(--sp-16);
   }
   .proj-checks > legend {
     width: 100%;
@@ -176,24 +176,24 @@
   .proj-check {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-8);
     min-height: 24px;
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
   .proj-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-form .proj-buttons {
-    padding-top: 4px;
+    padding-top: var(--sp-4);
   }
 
   /* Tidy-up */
   .proj-tidy {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
     list-style: none;
     margin: 0;
     padding: 0;
@@ -201,29 +201,29 @@
   .proj-tidy-row {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-8);
   }
   .proj-tidy-row .card-head {
     padding-bottom: 0;
   }
   .proj-suggest {
     margin: 0;
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
     font-weight: 500;
   }
   .proj-tidy-todos,
   .proj-conflicts ul {
     margin: 0;
-    padding: 0 8px 0 26px;
-    font-size: 12px;
+    padding: 0 var(--sp-8) 0 26px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
   .proj-conflicts {
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
   }
   .proj-tidy-row .proj-buttons,
   .proj-tidy-row .form-field {
-    padding: 0 8px;
+    padding: 0 var(--sp-8);
   }
 
   /* The move confirm (shell/Confirm): the question on its own line above the explanation, buttons below. */
@@ -232,7 +232,7 @@
   }
   .proj-move-q {
     display: block;
-    font: 600 13px / 1.3 var(--head);
+    font: 600 var(--fs-control) / 1.3 var(--head);
     color: var(--navy);
   }
   /* The archive and delete confirm keeps its own body (radio choices, a typed name), so it is a plain `.confirm` box. */
@@ -244,17 +244,17 @@
   .proj-remove-q {
     float: left;
     width: 100%;
-    margin: 0 0 4px;
+    margin: 0 0 var(--sp-4);
     padding: 0;
-    font: 600 13px / 1.3 var(--head);
+    font: 600 var(--fs-control) / 1.3 var(--head);
     color: var(--navy);
   }
 
   /* Archive and delete confirm: to-do choices, one row each; the warning in the error colour. */
   .proj-remove-todos {
     display: grid;
-    gap: 6px;
-    margin: 0 0 8px;
+    gap: var(--sp-6);
+    margin: 0 0 var(--sp-8);
     padding: 0;
     list-style: none;
   }
@@ -267,31 +267,31 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 4px 12px;
+    gap: var(--sp-4) var(--sp-12);
   }
   .proj-remove-title {
     float: left;
     min-width: 0;
     padding: 0;
-    margin-right: 12px;
+    margin-right: var(--sp-12);
     overflow-wrap: anywhere;
   }
   .proj-remove-opts {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: var(--sp-4) var(--sp-12);
   }
   .proj-remove-opt {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-size: 13px;
+    gap: var(--sp-4);
+    font-size: var(--fs-control);
   }
   .proj-remove-warn {
     font-weight: 600;
   }
   .proj-remove-ask .form-field {
-    margin-top: 8px;
+    margin-top: var(--sp-8);
   }
 
   /* Read-only client on the edit form, with Move… beside it */
@@ -299,27 +299,27 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 12px;
-    font-size: 14px;
+    gap: var(--sp-8) var(--sp-12);
+    font-size: var(--fs-body);
     color: var(--navy);
   }
   .proj-move-btn {
-    margin-left: 12px;
+    margin-left: var(--sp-12);
   }
   .proj-move-text {
     display: block;
-    margin: 4px 0 10px;
-    font-size: 13px;
+    margin: var(--sp-4) 0 var(--sp-10);
+    font-size: var(--fs-control);
     line-height: 1.45;
     color: var(--navy);
   }
   .proj-move-text p {
-    margin: 0 0 6px;
+    margin: 0 0 var(--sp-6);
   }
   .proj-move-files {
-    margin: 0 0 6px;
+    margin: 0 0 var(--sp-6);
     padding-left: 18px;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--iron);
   }
 
@@ -329,25 +329,25 @@
     bottom: 0;
     z-index: 1;
     display: grid;
-    gap: 8px;
-    margin: 8px 8px 0;
-    padding: 10px 12px;
-    border-radius: 9px;
+    gap: var(--sp-8);
+    margin: var(--sp-8) var(--sp-8) 0;
+    padding: var(--sp-10) var(--sp-12);
+    border-radius: var(--r-9);
     background: var(--tint-1);
   }
   .proj-pick-chosen {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: var(--sp-4) var(--sp-12);
     margin: 0;
     padding: 0;
     list-style: none;
-    font-size: 13px;
+    font-size: var(--fs-control);
   }
   .proj-pick-chosen li {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--sp-2);
     min-width: 0;
   }
   .proj-pick-name {
@@ -356,8 +356,8 @@
   }
   .proj-pick {
     align-items: center;
-    gap: 10px;
-    padding: 4px 8px;
+    gap: var(--sp-10);
+    padding: var(--sp-4) var(--sp-8);
   }
   .proj-pick > input {
     flex: none;
@@ -375,14 +375,14 @@
   /* Open items from a legacy todo.md checklist: read-only, quiet, the same size as the note above. */
   .proj-checklist {
     margin: 0;
-    padding: 0 8px 8px 28px;
-    font-size: 13px;
+    padding: 0 var(--sp-8) var(--sp-8) 28px;
+    font-size: var(--fs-control);
     color: var(--ink-soft);
   }
   .proj-checklist > li {
     overflow-wrap: anywhere;
   }
   .proj-checklist > li + li {
-    margin-top: 2px;
+    margin-top: var(--sp-2);
   }
 }

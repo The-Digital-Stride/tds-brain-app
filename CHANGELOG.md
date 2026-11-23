@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.68.1 — 2026-11-23
+
+- **refactor**: remove due reminders from Ads Command Centre
+- **fix**: keep the start-up board load so search still finds Ads tasks
+
 ## v0.68.0 — 2026-11-23
 
 - **feat**: Since you last looked stays until you press Clear; its file rows open the file in Documents or Images

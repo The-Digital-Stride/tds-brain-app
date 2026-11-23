@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.68.0 — 2026-11-23
+
+- **feat**: Since you last looked stays until you press Clear; its file rows open the file in Documents or Images
+- **refactor**: one shared LibraryBrowser for Documents and Images, ready for a project's Files tab
+- **feat**: a project's Files tab uses the shared library browser: kind switch, type filter, sort and layout
+- **fix**: Files tab groups files by where they sit in the project, the kind switch keeps its width, and the tabs row wraps on a phone
+- **fix**: review fixes: kind switch width and Tab order, fixed group order, Home's project picker cleared when opening a file outside it, one note after Clear, help trimmed
+- **fix**: switching Documents/Images keeps keyboard focus; a Clear that finishes after a project switch says nothing; review outcomes
+
 ## v0.67.1 — 2026-11-23
 
 - **fix**: activity rows only open a to-do the panel can show; the panel stops waiting for one that never arrives

@@ -288,6 +288,11 @@ export interface SessionManager extends LevelSessionApi {
   replyPermission(id: string, reply: PermissionReply): Promise<void>;
   replyQuestion(id: string, reply: QuestionReply): Promise<void>;
   interrupt(id: string): Promise<void>;
+  /**
+   * Sends again the message a hook in Claude Code held back (see `ROUTES.sessionResend`). Throws SessionError:
+   * busy | bad-request (nothing held) | session-closed | not-found.
+   */
+  resend?(id: string): Promise<void>;
   close(id: string): Promise<void>;
   /**
    * Marks a live chat TDS or Personal and saves it (at once when the engine's id is known, else when
@@ -721,6 +726,10 @@ interface Session {
   mapper: EventMapper;
   query: EngineQuery | null;
   input: InputQueue | null;
+  /** The text last handed to Claude Code for a turn, exactly as sent (notes and nudges included). */
+  lastPushed: string | null;
+  /** That text, when a hook in Claude Code dropped it before Claude saw it: what Send again sends. */
+  heldMessage: string | null;
   pump: Promise<void> | null;
   pending: Map<string, Pending>;
   /** Tool calls refused on a card (or by the app), so the engine's later denial is not shown twice. */
@@ -1142,6 +1151,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       mapper: createEventMapper(),
       query: null,
       input: null,
+      lastPushed: null,
+      heldMessage: null,
       pump: null,
       pending: new Map(),
       deniedTools: new Set(),
@@ -1501,8 +1512,11 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     for (const event of s.mapper.map(raw, {
       interrupted: s.interruptRequested,
       deniedByPerson: s.deniedTools,
-    }))
+    })) {
+      // A hook dropped the message just sent: keep it, so Send again sends exactly that.
+      if (event.type === 'notice' && event.resend) s.heldMessage = s.lastPushed;
       emit(s, event);
+    }
     s.files?.observe(raw);
     notifyHelpers(s.helperList.observe(raw));
     observeContext(s, raw);
@@ -2148,6 +2162,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     s.interruptRequested = false;
     s.turnSent = false;
     s.pendingOffer = null;
+    // A newer message replaces one a hook held back: Send again no longer applies.
+    s.heldMessage = null;
     s.helpersRunning.clear();
     s.helpersStarted = 0;
     s.helperList.clear();
@@ -2188,6 +2204,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     if (!levels) {
       if (kitFirst) settleKit(s, typed, pickText(text, files), null);
       s.turnSent = true;
+      s.lastPushed = message;
       s.input?.push(message);
       return;
     }
@@ -2410,7 +2427,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         }
         s.turnSent = true;
         if (nudge) s.nudged = true;
-        input.push(nudge ? withHelpersNudge(message) : message);
+        s.lastPushed = nudge ? withHelpersNudge(message) : message;
+        input.push(s.lastPushed);
       });
   }
 
@@ -3159,6 +3177,28 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       if (!s.turnSent) return;
       const q = s.query;
       if (q) await q.interrupt().catch(() => {});
+    },
+
+    async resend(id) {
+      const s = getLive(id);
+      if (s.turnRunning) throw new SessionError('busy', BUSY_MESSAGE);
+      if (s.closing) throw new SessionError('session-closed', 'That chat has been closed. Start a new one.');
+      const message = s.heldMessage;
+      // The message is already on screen, so nothing new goes in the transcript: the chat just starts working.
+      if (message === null || !s.input || !s.query) {
+        throw new SessionError(
+          'bad-request',
+          'There is no held message to send again. Type it in the box instead.',
+        );
+      }
+      clearIdle(s);
+      s.heldMessage = null;
+      s.turnRunning = true;
+      s.interruptRequested = false;
+      s.turnSent = true;
+      setState(s, 'working');
+      s.lastPushed = message;
+      s.input.push(message);
     },
 
     async close(id) {

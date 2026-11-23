@@ -1527,6 +1527,19 @@ describe('uploads', () => {
     return sent;
   }
 
+  it('sends a held message again through the resend route, for the chat named', async () => {
+    const asked: string[] = [];
+    const ctx = {
+      sessions: { resend: async (id: string) => void asked.push(id) },
+      log: () => {},
+    } as unknown as RouteContext;
+    const sent = await call(ctx, '/api/sessions/chat%201/resend', { body: '{}' });
+    expect(sent.status).toBe(200);
+    expect(asked).toEqual(['chat 1']);
+    const get = await call(ctx, '/api/sessions/chat-1/resend', { method: 'GET' });
+    expect(get.status).toBe(405);
+  });
+
   const upload = (ctx: RouteContext, name: string | null, body: string, length?: number | null) => {
     const headers: Record<string, string> = { 'content-type': 'application/octet-stream' };
     if (name !== null) headers[UPLOAD_NAME_HEADER] = encodeURIComponent(name);

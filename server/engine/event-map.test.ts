@@ -478,3 +478,47 @@ describe('compaction (context management, decision 1)', () => {
     );
   });
 });
+
+describe('a message a hook held back', () => {
+  const info = (over: Record<string, unknown> = {}, parent: string | null = null): RawMessage => ({
+    type: 'system',
+    subtype: 'informational',
+    content: 'UserPromptSubmit operation blocked by hook:\ncold\n\nOriginal prompt: secret words',
+    level: 'warning',
+    prevent_continuation: true,
+    prompt_submit_outcome: {
+      kind: 'dropped_by_hook',
+      prompt_kept: false,
+      reason: 'cache-tax: the prompt cache went cold 8h14m ago.\nSend it again to pay it.',
+    },
+    parent_tool_use_id: parent,
+    session_id: SID,
+    ...over,
+  });
+
+  it('becomes a warning with Send again, quoting the hook’s reason (never the prompt echo)', () => {
+    const [ev] = run([info()]);
+    expect(ev).toEqual({
+      type: 'notice',
+      level: 'warning',
+      text: 'Claude Code held this message back, so Claude hasn\'t seen it. It said: "cache-tax: the prompt cache went cold 8h14m ago. Send it again to pay it."',
+      resend: true,
+    });
+    expect(JSON.stringify(ev)).not.toContain('secret words');
+  });
+
+  it('says so even with no reason, and cuts a very long one', () => {
+    expect(run([info({ prompt_submit_outcome: { prompt_kept: false } })])[0]).toMatchObject({
+      text: "Claude Code held this message back, so Claude hasn't seen it.",
+      resend: true,
+    });
+    const long = run([info({ prompt_submit_outcome: { prompt_kept: false, reason: 'x'.repeat(900) } })])[0];
+    expect(long && 'text' in long ? long.text.length : 0).toBeLessThan(600);
+  });
+
+  it('ignores a kept prompt, other informational lines and helpers', () => {
+    expect(run([info({ prompt_submit_outcome: { prompt_kept: true } })])).toEqual([]);
+    expect(run([info({ prompt_submit_outcome: undefined })])).toEqual([]);
+    expect(run([info({}, 'toolu_helper')])).toEqual([]);
+  });
+});

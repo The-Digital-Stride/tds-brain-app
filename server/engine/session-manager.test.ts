@@ -2696,6 +2696,34 @@ describe('levels', () => {
     await mgr.setEngineChoice({ model: null, effort: null, levelMode: 'auto' });
   }
 
+  it('Send again re-sends a held message that went through the level picker, exactly as it went', async () => {
+    const fx = setupLevels({
+      script: ({ q, turn, text }) => {
+        fx.log.push(`push:${text}`);
+        q.init();
+        if (turn === 0)
+          q.emit({
+            type: 'system',
+            subtype: 'informational',
+            content: 'held',
+            level: 'warning',
+            prevent_continuation: true,
+            prompt_submit_outcome: { kind: 'dropped_by_hook', prompt_kept: false, reason: 'cold' },
+            session_id: q.sid,
+          });
+        q.result();
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'Summarise the call' });
+    await flush();
+    await mgr.resend?.(s.id);
+    await flush();
+    const pushes = fx.log.filter((l) => l.startsWith('push:'));
+    expect(pushes).toHaveLength(2);
+    expect(pushes[1]).toBe(pushes[0]);
+  });
+
   function levelEvents(id: string): ChatEvent[] {
     return events(mgr, id).filter((e) => e.type === 'level');
   }
@@ -5852,5 +5880,94 @@ describe('start-up kits (shadow mode)', () => {
       'superpowers:brainstorm',
       'vercel:deploy',
     ]);
+  });
+});
+
+describe('a message a hook held back (Send again)', () => {
+  /** Claude Code's line when a UserPromptSubmit hook (here, the cache-tax mod) drops the prompt. */
+  const dropped = (q: FakeQuery) =>
+    q.emit({
+      type: 'system',
+      subtype: 'informational',
+      content: 'UserPromptSubmit operation blocked by hook',
+      level: 'warning',
+      prevent_continuation: true,
+      prompt_submit_outcome: {
+        kind: 'dropped_by_hook',
+        prompt_kept: false,
+        reason: 'cache-tax: send it again',
+      },
+      session_id: q.sid,
+    });
+  /** The first message is dropped; any later one is answered. */
+  const dropFirst = async ({ q, turn }: { q: FakeQuery; turn: number }) => {
+    q.init();
+    if (turn === 0) dropped(q);
+    else q.text(`a${turn}`, 'Here it is.');
+    q.result();
+  };
+
+  it('shows the hold with Send again, and Send again sends exactly what went the first time', async () => {
+    const { queries } = setup(dropFirst);
+    const s = await mgr.start({ prompt: 'Summarise this chat' });
+    await flush();
+    const notice = events(mgr, s.id).find((e) => e.type === 'notice');
+    expect(notice).toMatchObject({ type: 'notice', level: 'warning', resend: true });
+    expect(notice && 'text' in notice ? notice.text : '').toContain('cache-tax: send it again');
+    await mgr.resend?.(s.id);
+    await flush();
+    expect(queries[0]?.received).toEqual(['Summarise this chat', 'Summarise this chat']);
+    // The message is already on screen: no second copy of it in the transcript.
+    expect(events(mgr, s.id).filter((e) => e.type === 'user-message')).toHaveLength(1);
+    expect(events(mgr, s.id)).toContainEqual(
+      expect.objectContaining({ type: 'assistant-message', text: 'Here it is.' }),
+    );
+  });
+
+  it('refuses when nothing is held, when sent again already, and while a turn runs', async () => {
+    let release: () => void = () => {};
+    setup(async ({ q, turn }) => {
+      q.init();
+      if (turn === 0) dropped(q);
+      if (turn === 1) await new Promise<void>((r) => (release = r));
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'one' });
+    await flush();
+    await mgr.resend?.(s.id);
+    await flush();
+    // The resent turn is running.
+    await expectCode(mgr.resend?.(s.id) ?? Promise.resolve(), 'busy');
+    release();
+    await flush();
+    await expectCode(mgr.resend?.(s.id) ?? Promise.resolve(), 'bad-request');
+  });
+
+  it('a newer message replaces a held one', async () => {
+    setup(dropFirst);
+    const s = await mgr.start({ prompt: 'old' });
+    await flush();
+    await mgr.send(s.id, 'new');
+    await flush();
+    await expectCode(mgr.resend?.(s.id) ?? Promise.resolve(), 'bad-request');
+  });
+
+  it('a message kept by the hook is not held', async () => {
+    setup(async ({ q }) => {
+      q.init();
+      q.emit({
+        type: 'system',
+        subtype: 'informational',
+        content: 'Note from a hook',
+        level: 'warning',
+        prompt_submit_outcome: { kind: 'blocked_by_hook', prompt_kept: true },
+        session_id: q.sid,
+      });
+      q.result();
+    });
+    const s = await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect(events(mgr, s.id).some((e) => e.type === 'notice')).toBe(false);
+    await expectCode(mgr.resend?.(s.id) ?? Promise.resolve(), 'bad-request');
   });
 });

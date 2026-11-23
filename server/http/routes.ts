@@ -1903,7 +1903,7 @@ async function askPage(
 }
 
 const PAST_SESSION = /^\/api\/sessions\/past\/([^/]+)$/;
-const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|close|kind)$/;
+const SESSION_ACTION = /^\/api\/sessions\/([^/]+)\/(messages|permission|answer|interrupt|resend|close|kind)$/;
 const SESSION_LEVEL = /^\/api\/sessions\/([^/]+)\/level$/;
 const SESSION_CONTEXT = /^\/api\/sessions\/([^/]+)\/context$/;
 const SESSION_FILE_CHANGES = /^\/api\/sessions\/([^/]+)\/file-changes\/([^/]+)$/;
@@ -2658,6 +2658,10 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
         break;
       case 'interrupt':
         await ctx.sessions.interrupt(id);
+        break;
+      case 'resend':
+        if (!ctx.sessions.resend) throw new HttpError(404, 'not-found', 'That chat could not be found.');
+        await ctx.sessions.resend(id);
         break;
       case 'close':
         await ctx.sessions.close(id);

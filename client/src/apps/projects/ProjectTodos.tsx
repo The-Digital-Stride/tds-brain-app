@@ -1,11 +1,15 @@
-import { type FormEvent, useId, useMemo, useState } from 'react';
+import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
+import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
+import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
+import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
+import { useKeepFocus } from './useKeepFocus.ts';
 
 /** The project's open to-dos, by stage, and a way to add one with client and project filled in. */
 export function ProjectTodos({
@@ -29,7 +33,7 @@ export function ProjectTodos({
   adding: boolean;
   onAdding: (open: boolean) => void;
 }) {
-  const { todos, changeTodos } = useStore();
+  const { todos, changeTodos, boot, toggleFavouriteTodo } = useStore();
   const { dispatch } = useShell();
   const { refresh } = useProjects();
   const [title, setTitle] = useState('');
@@ -38,8 +42,22 @@ export function ProjectTodos({
   const [message, setMessage] = useState('');
   // Cancel with a title typed asks first (design system, Actions rule 9).
   const [asking, setAsking] = useState(false);
+  // Leaving the page (the rail, search, a tab) with typing in the form is held and asked about in the same strip
+  // (plan 2026-11-23-ux-follow-ups, decision 1). One strip: a leave question shows instead of the Cancel one.
+  const dirty = title.trim() !== '' || stage !== '';
+  const leave = useSheetHold(dirty);
+  const keepFocus = useKeepFocus();
   const titleId = useId();
   const stageId = useId();
+
+  // The same star as the To-dos drawer's rows; focus follows a to-do whose star moved it.
+  const favs = boot?.prefs?.favouriteTodos ?? NO_FAVOURITES;
+  const trayRef = useRef<HTMLDivElement>(null);
+  const rememberStar = useStarFocus(trayRef, favs);
+  const star = (key: string, button: HTMLElement) => {
+    rememberStar(key, button);
+    void toggleFavouriteTodo(key);
+  };
 
   const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
   // The to-do panel belongs to the To-dos drawer, so open the drawer first.
@@ -57,7 +75,8 @@ export function ProjectTodos({
     setAsking(false);
   };
   const cancel = () => {
-    if (title.trim() || stage) setAsking(true);
+    if (leave.asking) leave.keep();
+    if (dirty) setAsking(true);
     else close();
   };
 
@@ -103,15 +122,23 @@ export function ProjectTodos({
           className="card proj-card proj-form"
           onSubmit={(e) => void submit(e)}
           aria-label="Add a to-do"
+          onFocus={keepFocus.track}
           onKeyDown={(e) => {
-            if (e.key !== 'Escape' || (!title.trim() && !stage)) return;
-            // Typed work: Esc asks, and asking again keeps it.
+            // The strip handles its own Esc (Keep editing).
+            if (e.key !== 'Escape' || e.defaultPrevented || !dirty) return;
+            // Typed work: Esc asks, and asking again keeps it. While a leave question shows, Esc keeps editing.
             e.preventDefault();
             e.stopPropagation();
-            setAsking(!asking);
+            if (leave.asking) {
+              leave.keep();
+              keepFocus.restore();
+            } else {
+              setAsking(!asking);
+              if (asking) keepFocus.restore();
+            }
           }}
         >
-          {asking ? (
+          {asking || leave.asking ? (
             <Confirm
               label="Discard your changes"
               text="Discard your changes?"
@@ -119,8 +146,18 @@ export function ProjectTodos({
               safe="Keep editing"
               variant="danger"
               busy={false}
-              onConfirm={close}
-              onCancel={() => setAsking(false)}
+              // A new reason is a new question: Keep editing takes focus again.
+              key={leave.asking ? 'leave' : 'cancel'}
+              onConfirm={() => {
+                // Discard runs the page change the hold kept back; the form goes with it or is closed here.
+                if (leave.asking) leave.discard();
+                close();
+              }}
+              onCancel={() => {
+                if (leave.asking) leave.keep();
+                setAsking(false);
+                keepFocus.restore();
+              }}
             />
           ) : null}
           <div className="form-field">
@@ -177,7 +214,7 @@ export function ProjectTodos({
       ) : groups.length === 0 ? (
         <p className="proj-note">No open to-dos in this project.</p>
       ) : (
-        <div className="tray lib-tray">
+        <div className="tray lib-tray" ref={trayRef} tabIndex={-1}>
           {groups.map((g) => (
             <section className="card proj-card" key={g.stage || 'none'} aria-label={g.title}>
               <div className="card-head">
@@ -194,6 +231,26 @@ export function ProjectTodos({
                     ) : (
                       <TodoText t={t} team={team} />
                     )}
+                    {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). Only on my
+                        to-dos: the server links a chat only to a to-do on my lists, and Home lists only those stars. */}
+                    {t.mine ? (
+                      <div className="todo-btns">
+                        <StarButton
+                          id={t.key}
+                          title={t.title}
+                          on={favs.includes(t.key)}
+                          onPress={(_, button) => star(t.key, button)}
+                        />
+                        <TodoChatButton
+                          todo={{
+                            key: t.key,
+                            path: t.scope === 'personal' ? `personal/todo/${t.id}` : `todo/${t.id}`,
+                            title: t.title,
+                            client: card.client,
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>

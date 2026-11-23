@@ -40,6 +40,7 @@ import {
 } from './contract.ts';
 import { sectionKeys, visibleToolFor } from './sections.ts';
 import { settingsTabOrDefault } from './settings-tabs.ts';
+import { ShellContext } from './shell-context.ts';
 
 type DockSide = 'left' | 'right';
 
@@ -59,7 +60,6 @@ interface Desk extends Omit<Layout, 'modes'> {
   viewerOpener: RefObject<HTMLElement | null>;
 }
 
-const ShellContext = createContext<ShellApi | null>(null);
 const DeskContext = createContext<Desk | null>(null);
 
 /** The panel hold's guard, or a plain run outside a ShellProvider (pieces tested on their own). */
@@ -113,6 +113,12 @@ const TODO_BOOKKEEPING: ReadonlySet<string> = new Set([
   'keep-todo',
 ]);
 
+/**
+ * The close the leave guard sends the to-do panel before a page change (see `guardLeave`). Its own object, so the
+ * provider can tell its question from any other the to-do panel asks.
+ */
+const LEAVE_CLOSE_TODO: ShellAction = { type: 'close-todo' };
+
 /** A shell action with the width it happened at, or a resize to fit the docks to. */
 type Step = { action: ShellAction; width: number; rail: boolean } | { fit: number; rail: boolean };
 
@@ -162,7 +168,17 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   // The panel only shows for a live chat on the sheet, or an app that brings a panel of its own;
   // while it shows, the rail is held to icons.
-  const { view, activeChat, chats, boot, chatDrawer, hideChatDrawer, settingsTab, skillLevels } = useStore();
+  const {
+    view,
+    activeChat,
+    chats,
+    boot,
+    chatDrawer,
+    hideChatDrawer,
+    settingsTab,
+    skillLevels,
+    setLeaveGuard,
+  } = useStore();
   const snap = useToolSnapshot();
   // Read by the key listener and dispatch, which are made once.
   // A store without the drawer (an older test double) reads as closed.
@@ -221,6 +237,20 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     setPanelHoldState(next);
   }, []);
 
+  // The sheet form's hold (the project form), the panel hold's sibling: only page changes (`guardLeave`) are held.
+  const [sheetHold, setSheetHoldState] = useState<PanelHold>({ dirty: false, asking: false });
+  const sheetRef = useRef(sheetHold);
+  const sheetRun = useRef<(() => void) | null>(null);
+  const setSheet = useCallback((next: PanelHold) => {
+    if (sheetRef.current.dirty === next.dirty && sheetRef.current.asking === next.asking) return;
+    sheetRef.current = next;
+    setSheetHoldState(next);
+  }, []);
+
+  // A page change waiting on the to-do panel's question (see `guardLeave`): run on its Discard, dropped on its Keep or
+  // when another question replaces it.
+  const afterTodo = useRef<(() => void) | null>(null);
+
   const dispatch = useCallback(
     function dispatch(action: ShellAction) {
       const s = stateRef.current;
@@ -249,6 +279,26 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         run?.();
         return;
       }
+      // The sheet form's hold, the same way.
+      if (action.type === 'set-sheet-dirty') {
+        if (!action.dirty) sheetRun.current = null;
+        setSheet({ dirty: action.dirty, asking: action.dirty && sheetRef.current.asking });
+        return;
+      }
+      if (action.type === 'keep-sheet') {
+        sheetRun.current = null;
+        setSheet({ ...sheetRef.current, asking: false });
+        return;
+      }
+      if (action.type === 'discard-sheet') {
+        const run = sheetRun.current;
+        sheetRun.current = null;
+        setSheet({ dirty: false, asking: false });
+        run?.();
+        return;
+      }
+      // "Keep editing" on the to-do panel also drops a page change waiting on it.
+      if (action.type === 'keep-todo') afterTodo.current = null;
       // "Discard": drop the unsaved changes, then do what was asked.
       if (action.type === 'discard-todo') {
         const then = s.todoPanel?.ask ?? null;
@@ -265,6 +315,10 @@ export function ShellProvider({ children }: { children: ReactNode }) {
             discarding.current = false;
           }
         }
+        // The leave guard's close: the page change carries on to the next hold.
+        const after = then === LEAVE_CLOSE_TODO ? afterTodo.current : null;
+        afterTodo.current = null;
+        after?.();
         return;
       }
       // The to-do panel holds unsaved changes: whatever would close it or move it to another to-do (a drawer
@@ -273,6 +327,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       if (s.todoPanel?.dirty && !discarding.current && !forced && !TODO_BOOKKEEPING.has(action.type)) {
         const next = shellReducer(s, action).todoPanel;
         if (next === null || next.key !== s.todoPanel.key || next.mode !== s.todoPanel.mode) {
+          // Another question replaces the leave guard's: the page change waiting on it is dropped.
+          if (action !== LEAVE_CLOSE_TODO) afterTodo.current = null;
           rawDispatch({
             action: { type: 'ask-todo', after: action },
             width: widthRef.current,
@@ -344,7 +400,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       else if (opensPanel) focusIntent.current = 'right';
       rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
     },
-    [setHold],
+    [setHold, setSheet],
   );
 
   // Opening an app or a tool (from the rail, a drawer, the palette or a search result) closes the open drawer, so it
@@ -439,10 +495,56 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     [setHold, dispatch],
   );
 
+  const guardSheet = useCallback(
+    (run: () => void) => {
+      if (!sheetRef.current.dirty) {
+        run();
+        return;
+      }
+      sheetRun.current = run;
+      setSheet({ dirty: true, asking: true });
+    },
+    [setSheet],
+  );
+
+  // The leave guard (plan 2026-11-23-ux-follow-ups, decision 1): every page change a person makes, from the store.
+  // One question at a time, always in this order, and nothing runs after a "Keep editing":
+  //  1. The to-do panel, only when the right panel or the sheet form holds work: it covers both (they are inert under
+  //     it), so it shuts first, through its own hold (a dirty to-do asks; its Discard carries on, its Keep stops).
+  //     With nothing else held the to-do panel is left to its own rule: the page changes and the panel then asks.
+  //  2. The right panel's hold (`guardPanel`: a shut panel opens to ask).
+  //  3. The sheet form's hold.
+  //  Then the page changes. A second page change while one is asking replaces the one held.
+  const guardLeave = useCallback(
+    (go: () => void) => {
+      const unsaved = () => guardPanel(() => guardSheet(go));
+      const s = stateRef.current;
+      if (s.todoPanel === null || !(holdRef.current.dirty || sheetRef.current.dirty)) {
+        unsaved();
+        return;
+      }
+      afterTodo.current = unsaved;
+      dispatch(LEAVE_CLOSE_TODO);
+      // Nothing typed in the to-do panel: it has shut, so carry on now. Otherwise it asks, and its answer decides.
+      if (!s.todoPanel.dirty) {
+        afterTodo.current = null;
+        unsaved();
+      }
+    },
+    [guardPanel, guardSheet, dispatch],
+  );
+
+  // The store sends every page change through the guard (it sits outside this provider, so it can't `useShell`).
+  // A store without it (an older test double) changes pages at once.
+  useEffect(() => {
+    setLeaveGuard?.(guardLeave);
+    return () => setLeaveGuard?.(null);
+  }, [setLeaveGuard, guardLeave]);
+
   const { modes } = layout;
   const api = useMemo<ShellApi>(
-    () => ({ state, dispatch, modes, panelHold, guardPanel }),
-    [state, dispatch, modes, panelHold, guardPanel],
+    () => ({ state, dispatch, modes, panelHold, guardPanel, sheetHold, guardLeave }),
+    [state, dispatch, modes, panelHold, guardPanel, sheetHold, guardLeave],
   );
   const desk = useMemo<Desk>(
     () => ({

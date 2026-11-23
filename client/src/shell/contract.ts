@@ -179,6 +179,16 @@ export type ShellAction =
   | { type: 'keep-panel' }
   /** "Discard changes": the panel's work is dropped and the held-back action runs. Handled by the shell provider. */
   | { type: 'discard-panel' }
+  /**
+   * A form on the sheet (the project form) says whether it holds unsaved work, kept in `ShellApi.sheetHold` (plan
+   * 2026-11-23-ux-follow-ups, decision 1). While true, a page change (`guardLeave`) is held back and the form asks
+   * "Discard your changes?". One form at a time: the sheet shows one page. Not part of `ShellState`.
+   */
+  | { type: 'set-sheet-dirty'; dirty: boolean }
+  /** "Keep editing": drops the held-back page change. Handled by the shell provider. */
+  | { type: 'keep-sheet' }
+  /** "Discard changes": the form's work is dropped and the held-back page change runs. Handled by the shell provider. */
+  | { type: 'discard-sheet' }
   | { type: 'set-single-keys'; on: boolean }
   /** The viewer's width in px, or null for its default. */
   | { type: 'set-viewer-width'; width: number | null }
@@ -222,8 +232,19 @@ export interface ShellApi {
    * proposal, another account).
    */
   guardPanel: (run: () => void) => void;
+  /** The sheet form's unsaved-work hold, the same shape as `panelHold`. */
+  sheetHold: PanelHold;
+  /**
+   * The leave guard: runs `go` (a page change) now, or asks first while unsaved work would be lost, and runs it only
+   * once every question has had "Discard changes" (never after "Keep editing"). The store sends every page change a
+   * person makes through it (`Store.setLeaveGuard`); an in-page move that bypasses the store can call it too.
+   * One question at a time, in this order: the to-do panel (it covers the sheet and the right panel, so it shuts
+   * first, through its own hold), then the right panel, then the sheet form.
+   */
+  guardLeave: (go: () => void) => void;
 }
 
+/** An unsaved-work hold (the right panel's or the sheet form's). */
 export interface PanelHold {
   dirty: boolean;
   asking: boolean;

@@ -152,13 +152,13 @@ named here or it isn't one.
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
    opens it large. Project Files has no pane, so its row opens the file.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
-   remove (bin, or X for a chip) at the very edge. At most three icons. Where the row's main action is an icon
+   remove (bin, or X for a chip or a file added to a to-do or project) at the very edge. At most three icons. Where the row's main action is an icon
    (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.
 3. **One icon, one verb.**
 
    | Icon | Means only |
    |---|---|
-   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip out of a set. Never ends work |
+   | `close` (X) | put a surface away (drawer, panel, viewer, pop-up), or take a chip, or a file added to a to-do or project, out of a set. Never ends work |
    | `end` | End chat: ends a chat session (Open chat rows, the chat's top bar). Not a square, so it can't be read as Stop |
    | `bin` | delete |
    | `edit` (pencil) | edit |
@@ -191,7 +191,7 @@ named here or it isn't one.
    fields.
 7. **New and Add** are primary with `plus`, at the right end of the row they act on, never in a dock header:
    the Chats and To-dos drawers' 32px primary `+` icon button ("New chat", "Add a to-do"), "New project" on
-   the Projects tools row, "Add a to-do" on a project's tabs row, "Link files" on a project's Files tab. One
+   the Projects tools row, "Add a to-do" on a project's tabs row, "Add files" on a project's Files tab. One
    named exception: "Add a file" inside the to-do panel is standard, because the panel's primary is its own
    footer action and one area has one primary.
 8. **Edit**: a pencil icon in a row; a labelled "Edit" with the pencil at the right end of the header row on a
@@ -200,8 +200,9 @@ named here or it isn't one.
    has changed, in one strip under the header band (Discard changes, danger; Keep editing, focused). The
    to-do panel asks through the shell's to-do hold; the right panel (Ads proposal note, Rate calls) through
    the panel hold (`set-panel-dirty`, `guardPanel`), on close, on choosing another item and on stepping.
-   Known limit: leaving the sheet by the rail or search isn't guarded for sheet and right-panel forms (Ads,
-   project forms); only the to-do panel's hold covers that. A guard there is a follow-up.
+   Leaving the page (rail, search, Home, a chat) goes through the shell's leave guard (`guardLeave`, registered
+   with the store): the to-do panel first, then the right panel, then the sheet form (`useSheetHold`, e.g. the
+   project form), one question at a time; Keep stops everything after it.
 10. **Header band, right side**: item actions → star → bin → Help → previous / next → close, close always last.
 11. **Stepping** between items is up and down `icon-btn`s in the header band ("Previous {thing} (P)", "Next
     {thing} (N)"). **Back** to a list is "All {things}", quiet small with a left chevron. One named
@@ -253,7 +254,7 @@ Every main sheet's header, toolbars, tab switches, action buttons and plain text
 - **On the gutter:** the sheet title text, the outer edge of every top-level box (buttons, fields, segs, tabs, banners, trays), and plain text sitting straight on the sheet (no side inset of its own: `.lib-empty`, `.lib-note`, `.am-h`, `.cc-h`, a `.proj-note` straight in `.lib`).
 - **Cards:** the outer edge sits on the gutter, inside a `.tray`; the content is inset by the card's own padding. A card group without a tray is wrong.
 - **Vertical rhythm:** sheet bar to first row 12px; between control rows 8px; last control row to content 8px. Tabs inside `.lib` take no margin of their own (`.lib > .tool-tabs`); tabs above a sheet body leave 8px (`.tool-tabs + .sheet-scroll > .am`, Settings).
-- **A primary action** sits at the right end of the row it acts on, never on a row of its own (New project ends the tools row; Link files ends the project tabs row).
+- **A primary action** sits at the right end of the row it acts on, never on a row of its own (New project ends the tools row; Add files ends the project tabs row).
 - **Only conversation pages are centred** (Home, the chat thread). Pages with tools or tabs (Settings, Profile, the Guide) start at the gutter.
 
 ## Surfaces inside the sheet

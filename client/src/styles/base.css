@@ -691,8 +691,14 @@
     transform: none;
   }
   /* A to-do row is not a button itself (its buttons are), so it shows which row they belong to without lifting. */
-  .todo:hover {
+  .todo:hover,
+  .line.proj-todo:hover {
     background: var(--glass-92);
+  }
+  /* A project to-do row isn't a button either (its title is, when the to-do is mine): no lift. */
+  .line.proj-todo:hover {
+    box-shadow: none;
+    transform: none;
   }
   .line[aria-current="true"],
   .line[data-current="true"],

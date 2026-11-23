@@ -7,6 +7,7 @@ import {
   groupByStage,
   groupProjects,
   isMine,
+  LIGHT_WORDS,
   NO_FILTERS,
   slugFromTitle,
   teamRows,
@@ -116,5 +117,12 @@ describe('errorWords', () => {
     for (const code of ['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal'])
       expect(errorWords(code).length).toBeGreaterThan(10);
     expect(errorWords('changed')).toMatch(/Reload/);
+  });
+});
+
+describe('the health words', () => {
+  it('say what the light means; the stored values stay colours', () => {
+    expect(LIGHT_WORDS).toEqual({ green: 'On track', amber: 'At risk', red: 'Off track' });
+    expect(valuesFromCard(card({ health: 'amber' })).health).toBe('amber');
   });
 });

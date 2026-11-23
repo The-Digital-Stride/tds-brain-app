@@ -7,13 +7,16 @@ import {
 } from '../../../../shared/contract.ts';
 import { PROJECT_LINKS_MAX, type ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { Confirm } from '../../shell/Confirm.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
+import { useSheetHold } from '../../shell/useSheetHold.ts';
 import { FORMAT_ICONS } from '../documents/icons.ts';
 import { useLoaded } from '../shared/data.ts';
 import { Thumb } from '../shared/Thumb.tsx';
 import { useProjectChange } from './useChange.ts';
+import { useKeepFocus } from './useKeepFocus.ts';
 
 const KINDS: { kind: LibraryKind; title: string }[] = [
   { kind: 'image', title: 'Images' },
@@ -53,20 +56,20 @@ function FileRow({
           </span>
           <span className="line-meta">
             {item.group}
-            {linked ? ' · linked' : ''}
+            {linked ? ' · added from the library' : ''}
           </span>
         </span>
       </button>
       {linked && canUnlink ? (
         <button
           type="button"
-          className="btn"
-          data-size="small"
+          className="icon-btn"
           aria-disabled={busy || undefined}
           aria-label={`Remove ${item.title || item.name} from this project`}
+          data-tip="Remove from this project. The file stays in the library."
           onClick={busy ? undefined : onUnlink}
         >
-          Remove
+          <Icon name="close" size={14} />
         </button>
       ) : null}
     </li>
@@ -75,7 +78,7 @@ function FileRow({
 
 /** Why a search hit can't be ticked, or null when it can. */
 function blockedWhy(card: ProjectCard, path: string): string | null {
-  if (card.links.includes(path)) return 'Already linked';
+  if (card.links.includes(path)) return 'Already added';
   // The skill refuses this (a shared project would show the team something private), so say so up front.
   if (card.space !== 'personal' && path.startsWith('personal/')) return "Personal: can't be shared";
   return null;
@@ -137,7 +140,7 @@ function Picker({
     let expect = card.version;
     let done = 0;
     for (const h of todo) {
-      setProgress(`Linking ${done + 1} of ${todo.length}`);
+      setProgress(`Adding ${done + 1} of ${todo.length}`);
       const res = await change({ kind: 'link', key: card.key, path: h.item.path, expect });
       if (!res.ok) {
         // Keep what's still to do chosen, so another press finishes the job.
@@ -145,7 +148,7 @@ function Picker({
         setPicked(left);
         setProgress('');
         setBusy(false);
-        setMessage(done > 0 ? `Linked ${done} of ${todo.length}. ${res.message}` : res.message);
+        setMessage(done > 0 ? `Added ${done} of ${todo.length}. ${res.message}` : res.message);
         return;
       }
       done += 1;
@@ -158,12 +161,37 @@ function Picker({
 
   const chosen = [...picked.values()];
   const count = chosen.length;
+  // Chosen files are unsaved work: leaving the page or switching tab asks first (Actions rule 9).
+  const leave = useSheetHold(count > 0);
+  // Close with files chosen asks too, in the same strip (rule 9: Cancel, Esc, Back and close).
+  const [askClose, setAskClose] = useState(false);
+  const close = () => (count > 0 ? setAskClose(true) : onClose());
+  const keepFocus = useKeepFocus();
 
   return (
-    <section className="card proj-card" aria-label="Link files">
-      <form className="proj-search" onSubmit={(e) => void search(e)} aria-label="Search files to link">
+    <section className="card proj-card" aria-label="Add files" onFocus={keepFocus.track}>
+      {leave.asking || askClose ? (
+        <Confirm
+          label="Discard your changes"
+          text="Discard your changes?"
+          action="Discard changes"
+          safe="Keep editing"
+          variant="danger"
+          busy={false}
+          onConfirm={() => {
+            if (leave.asking) leave.discard();
+            else onClose();
+          }}
+          onCancel={() => {
+            setAskClose(false);
+            if (leave.asking) leave.keep();
+            keepFocus.restore();
+          }}
+        />
+      ) : null}
+      <form className="proj-search" onSubmit={(e) => void search(e)} aria-label="Search files to add">
         <label htmlFor={id} className="visually-hidden">
-          Search files to link
+          Search files to add
         </label>
         <input
           id={id}
@@ -172,7 +200,7 @@ function Picker({
           placeholder="Search images and documents"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          // biome-ignore lint/a11y/noAutofocus: the person just pressed Link files.
+          // biome-ignore lint/a11y/noAutofocus: the person just pressed Add files.
           autoFocus
         />
         <button type="submit" className="btn" aria-disabled={busy || undefined}>
@@ -183,7 +211,7 @@ function Picker({
           className="btn"
           data-variant="quiet"
           aria-disabled={busy || undefined}
-          onClick={busy ? undefined : onClose}
+          onClick={busy ? undefined : close}
         >
           Close
         </button>
@@ -209,7 +237,7 @@ function Picker({
                   id={boxId}
                   type="checkbox"
                   className="tick"
-                  checked={why === 'Already linked' || on}
+                  checked={why === 'Already added' || on}
                   disabled={busy || why !== null || (!on && count >= room)}
                   onChange={() => toggle(h)}
                 />
@@ -251,7 +279,7 @@ function Picker({
               aria-disabled={busy || undefined}
               onClick={() => !busy && void linkChosen()}
             >
-              {progress || (count > 1 ? `Link ${count} files` : 'Link file')}
+              {progress || (count > 1 ? `Add ${count} files` : 'Add file')}
             </button>
             <button
               type="button"
@@ -291,8 +319,8 @@ function Kind({
   const [busy, setBusy] = useState(false);
   const loaded = useLoaded(`${card.key}|${kind}|${card.version}`, 0, () => api.projectFiles(card.key, kind));
 
-  // After a removal the row may be gone and the Remove button always is: focus goes to the next row's open button,
-  // else the previous, else the Link files button, once the list has reloaded.
+  // After a removal the row may be gone and the Remove icon button always is: focus goes to the next row's open button,
+  // else the previous, else the Add files button, once the list has reloaded.
   const focusId = useRef<string | null>(null);
   const items = loaded.status === 'ready' ? loaded.data.items : null;
   useEffect(() => {
@@ -362,7 +390,7 @@ function Kind({
   );
 }
 
-/** The project's images and documents (in its folder, or linked), with Link files and Remove. */
+/** The project's images and documents (in its folder, or linked), with Add files and Remove. */
 export function ProjectFiles({
   card,
   canChange,
@@ -371,14 +399,14 @@ export function ProjectFiles({
 }: {
   card: ProjectCard;
   canChange: boolean;
-  /** Whether the picker is open. The page owns it: its Link files button sits in the tabs row. */
+  /** Whether the picker is open. The page owns it: its Add files button sits in the tabs row. */
   linking: boolean;
   onLinking: (open: boolean) => void;
 }) {
   const { dispatch } = useShell();
   const [message, setMessage] = useState('');
   const [done, setDone] = useState('');
-  // Opening the picker clears the "Linked N files." line.
+  // Opening the picker clears the "Added N files." line.
   useEffect(() => {
     if (linking) setDone('');
   }, [linking]);
@@ -421,7 +449,7 @@ export function ProjectFiles({
             onClose={() => onLinking(false)}
             onLinked={(count) => {
               onLinking(false);
-              setDone(count === 1 ? 'Linked 1 file.' : `Linked ${count} files.`);
+              setDone(count === 1 ? 'Added 1 file.' : `Added ${count} files.`);
             }}
           />
         ) : null}

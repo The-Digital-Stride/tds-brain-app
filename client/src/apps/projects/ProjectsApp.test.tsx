@@ -74,7 +74,7 @@ describe('the list', () => {
     expect(heads).toEqual(['Acme Heating', 'Skyseal', 'Personal']);
     const row = screen.getByRole('button', { name: /Sky site/ });
     expect(row.textContent).toMatch(/Active · ends 28 Feb 2027 · 2 open to-dos/);
-    expect(row.textContent).toMatch(/Health: green/);
+    expect(row.textContent).toMatch(/Health: on track/);
   });
 
   it('Mine shows the projects I own, am in the team of, or am in from to-dos', async () => {

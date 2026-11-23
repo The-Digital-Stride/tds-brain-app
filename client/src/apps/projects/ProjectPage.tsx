@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type {
   ProjectCard,
@@ -9,6 +9,7 @@ import type {
 import { ApiFailure, api } from '../../api.ts';
 import { Icon } from '../../shell/Icon.tsx';
 import { SheetTabs } from '../../shell/SheetTabs.tsx';
+import { ShellContext } from '../../shell/shell-context.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import {
@@ -509,7 +510,7 @@ export function ProjectPage({
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
   const projectTodos = useProjectTodos(card.key, card.openTodos);
-  // Link files sits at the right end of the tabs row, so the picker's state lives here.
+  // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
@@ -517,7 +518,16 @@ export function ProjectPage({
   const canAddTodo = todos?.canProject === true && !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
+    if (tab !== 'todos') setAdding(false);
   }, [tab]);
+  // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
+  // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
+  const shell = useContext(ShellContext);
+  const held = (go: () => void) => {
+    if (shell?.sheetHold.dirty) shell.guardLeave(go);
+    else go();
+  };
+  const chooseTab = (next: ProjectTab) => held(() => onTab(next));
   return (
     <>
       <div className="proj-head">
@@ -526,7 +536,7 @@ export function ProjectPage({
           className="btn proj-back"
           data-variant="quiet"
           data-size="small"
-          onClick={onBack}
+          onClick={() => held(onBack)}
         >
           <Icon name="chevron" size={14} />
           All projects
@@ -540,7 +550,7 @@ export function ProjectPage({
             className="btn proj-head-end"
             data-size="small"
             data-focus="edit"
-            onClick={onEdit}
+            onClick={() => held(onEdit)}
           >
             <Icon name="edit" size={14} />
             Edit
@@ -573,7 +583,7 @@ export function ProjectPage({
         <SheetTabs
           label="Project sections"
           current={tab}
-          onChoose={(id) => onTab(id as ProjectTab)}
+          onChoose={(id) => chooseTab(id as ProjectTab)}
           items={[
             { id: 'overview', label: 'Overview', dot: null },
             { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
@@ -604,7 +614,7 @@ export function ProjectPage({
             aria-disabled={linking || undefined}
           >
             <Icon name="plus" size={14} />
-            Link files
+            Add files
           </button>
         ) : null}
       </div>

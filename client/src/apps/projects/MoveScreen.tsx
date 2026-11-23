@@ -60,8 +60,8 @@ export function ConfirmText({
           <p>Your to-dos for it move with it. You can't make it personal again.</p>
           {check.personalLinks.length > 0 ? (
             <p>
-              {plural(check.personalLinks.length, 'linked personal file')} from outside this project will be
-              unlinked, so they stay private.
+              {plural(check.personalLinks.length, 'personal file')} added from outside this project will be
+              removed from it, so they stay private.
             </p>
           ) : null}
         </>

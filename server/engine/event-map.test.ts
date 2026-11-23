@@ -501,7 +501,7 @@ describe('a message a hook held back', () => {
     expect(ev).toEqual({
       type: 'notice',
       level: 'warning',
-      text: 'Claude Code held this message back, so Claude hasn\'t seen it. It said: "cache-tax: the prompt cache went cold 8h14m ago. Send it again to pay it."',
+      text: 'This message wasn\'t sent, so Claude hasn\'t seen it. A check in Claude Code held it back. It said: "cache-tax: the prompt cache went cold 8h14m ago. Send it again to pay it."',
       resend: true,
     });
     expect(JSON.stringify(ev)).not.toContain('secret words');
@@ -509,11 +509,11 @@ describe('a message a hook held back', () => {
 
   it('says so even with no reason, and cuts a very long one', () => {
     expect(run([info({ prompt_submit_outcome: { prompt_kept: false } })])[0]).toMatchObject({
-      text: "Claude Code held this message back, so Claude hasn't seen it.",
+      text: "This message wasn't sent, so Claude hasn't seen it. A check in Claude Code held it back.",
       resend: true,
     });
     const long = run([info({ prompt_submit_outcome: { prompt_kept: false, reason: 'x'.repeat(900) } })])[0];
-    expect(long && 'text' in long ? long.text.length : 0).toBeLessThan(600);
+    expect(long && 'text' in long ? long.text.length : 0).toBeLessThan(650);
   });
 
   it('ignores a kept prompt, other informational lines and helpers', () => {

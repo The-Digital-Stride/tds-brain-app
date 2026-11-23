@@ -2724,6 +2724,39 @@ describe('levels', () => {
     expect(pushes[1]).toBe(pushes[0]);
   });
 
+  it('Send again goes at the level chosen since the hold, and marks the message sent', async () => {
+    const fx = setupLevels({
+      picks: () => ready(QUICK),
+      script: ({ q, turn, text }) => {
+        fx.log.push(`push:${text}`);
+        q.init();
+        if (turn === 0)
+          q.emit({
+            type: 'system',
+            subtype: 'informational',
+            content: 'held',
+            level: 'warning',
+            prevent_continuation: true,
+            prompt_submit_outcome: { kind: 'dropped_by_hook', prompt_kept: false, reason: 'cold' },
+            session_id: q.sid,
+          });
+        q.result();
+      },
+    });
+    await auto();
+    const s = await mgr.start({ prompt: 'Summarise the call' });
+    await flush();
+    await mgr.setChatLevel(s.id, 'deep');
+    await mgr.resend?.(s.id);
+    await flush();
+    expect(fx.log.slice(-3)).toEqual(['model:opus', 'effort:high', 'push:Summarise the call']);
+    const notes = events(mgr, s.id).filter((e) => e.type === 'notice');
+    expect(notes.map((e) => (e.type === 'notice' ? e.text : ''))).toEqual([
+      expect.stringContaining("Claude hasn't seen it"),
+      'Sent again.',
+    ]);
+  });
+
   function levelEvents(id: string): ChatEvent[] {
     return events(mgr, id).filter((e) => e.type === 'level');
   }

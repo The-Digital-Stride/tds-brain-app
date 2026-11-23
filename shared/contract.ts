@@ -1980,6 +1980,8 @@ export const ROUTES = {
    * `POST {}` → `{ ok: true }`: sends again the message a hook in Claude Code held back (a `notice` with `resend`),
    * exactly as it went the first time, files included. `busy` while a turn runs; `bad-request` when nothing is held
    * (it was sent again already, or a newer message replaced it); `session-closed` / `not-found` as for messages.
+   * On success the stream gets an `info` notice "Sent again." (after it, no page offers Send again for that message),
+   * and with levels on, the level is worked out again first, as for a new message.
    */
   sessionResend: (id: string) => `/api/sessions/${encodeURIComponent(id)}/resend`,
   sessionClose: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,

@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   chatFileFor,
   findPathMentions,
@@ -175,22 +175,28 @@ function itemKey(item: ChatItem): string {
  * Send again sends exactly what went the first time, files included, so nothing has to be pasted again.
  */
 function HeldNotice({ text, sessionId, canResend }: { text: string; sessionId: string; canResend: boolean }) {
-  const { run } = useStore();
+  const { run, requestComposerFocus } = useStore();
   const [busy, setBusy] = useState(false);
+  const noteId = useId();
   return (
-    <div className="notice" data-shape="box" data-level="warn">
-      <span>{text}</span>
+    // Advice, not an emergency: a status, so a screen reader says the message didn't go.
+    <div className="notice" data-shape="box" data-level="warn" role="status">
+      <span id={noteId}>{text}</span>
       {canResend ? (
         <button
           type="button"
           className="btn"
           data-size="small"
-          disabled={busy}
+          // aria-disabled, never disabled, so focus stays on the button while it works (design system).
+          aria-disabled={busy}
+          aria-describedby={noteId}
           onClick={async () => {
+            if (busy) return;
             setBusy(true);
-            // On success the chat starts working and the button goes; on failure the error shows and it stays.
-            await run(() => api.resend(sessionId));
-            setBusy(false);
+            // On success the chat starts working, the button goes and the message box takes focus; on failure
+            // the error shows and the button stays.
+            if (await run(() => api.resend(sessionId))) requestComposerFocus();
+            else setBusy(false);
           }}
         >
           Send again
@@ -305,7 +311,8 @@ export function Transcript({
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (it?.kind === 'notice' && it.resend) return it.id;
-      if (it?.kind === 'user' || it?.kind === 'assistant') return null;
+      // A reply, a newer message or the server's "Sent again." note: nothing is held any more.
+      if (it?.kind === 'user' || it?.kind === 'assistant' || it?.kind === 'notice') return null;
     }
     return null;
   }, [items, sessionState]);

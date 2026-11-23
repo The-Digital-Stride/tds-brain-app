@@ -196,7 +196,7 @@ export function createEventMapper(): EventMapper {
       {
         type: 'notice',
         level: 'warning',
-        text: `Claude Code held this message back, so Claude hasn't seen it.${said}`,
+        text: `This message wasn't sent, so Claude hasn't seen it. A check in Claude Code held it back.${said}`,
         resend: true,
       },
     ];

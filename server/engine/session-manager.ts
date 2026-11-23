@@ -730,6 +730,8 @@ interface Session {
   lastPushed: string | null;
   /** That text, when a hook in Claude Code dropped it before Claude saw it: what Send again sends. */
   heldMessage: string | null;
+  /** What the last turn was asked with, so Send again can work out its level again (levels on). */
+  lastAsk: { text: string; files: readonly StagedFile[]; skill: string | null } | null;
   pump: Promise<void> | null;
   pending: Map<string, Pending>;
   /** Tool calls refused on a card (or by the app), so the engine's later denial is not shown twice. */
@@ -1153,6 +1155,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       input: null,
       lastPushed: null,
       heldMessage: null,
+      lastAsk: null,
       pump: null,
       pending: new Map(),
       deniedTools: new Set(),
@@ -2201,6 +2204,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     const kitFirst = kit !== null && s.kitFirst;
     if (kit) s.kitFirst = false;
     const message = withPageNote(withAttachmentNote(text, files), pageNote);
+    s.lastAsk = { text, files, skill };
     if (!levels) {
       if (kitFirst) settleKit(s, typed, pickText(text, files), null);
       s.turnSent = true;
@@ -2369,6 +2373,8 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     files: readonly StagedFile[],
     skill: string | null,
     kitFirst = false,
+    /** Send again: push exactly this (as Claude Code was first handed it), with no new nudge. */
+    pushAs: string | null = null,
   ): void {
     const input = s.input;
     const q = s.query;
@@ -2384,6 +2390,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         // Decision 11: the message a helpers pick was made for, once, at Standard or above.
         // Never for a /skill: Claude Code would file the nudge inside the skill's arguments.
         nudge =
+          pushAs === null &&
           levelMode === 'auto' &&
           !skill &&
           s.pick !== before &&
@@ -2427,7 +2434,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         }
         s.turnSent = true;
         if (nudge) s.nudged = true;
-        s.lastPushed = nudge ? withHelpersNudge(message) : message;
+        s.lastPushed = pushAs ?? (nudge ? withHelpersNudge(message) : message);
         input.push(s.lastPushed);
       });
   }
@@ -3195,8 +3202,18 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
       s.heldMessage = null;
       s.turnRunning = true;
       s.interruptRequested = false;
-      s.turnSent = true;
+      s.pendingOffer = null;
       setState(s, 'working');
+      // Marks the held message as sent, so no page offers Send again for it after this (even on replay).
+      emit(s, { type: 'notice', level: 'info', text: 'Sent again.' });
+      const ask = s.lastAsk;
+      if (levels && ask) {
+        // The level may have changed since (picked on the line, or a /skill's level reset): work it out again.
+        s.turnSent = false;
+        sendWhenLevelled(s, ask.text, ask.text, ask.files, ask.skill, false, message);
+        return;
+      }
+      s.turnSent = true;
       s.lastPushed = message;
       s.input.push(message);
     },

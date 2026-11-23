@@ -592,10 +592,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
-  // Each chat's Claude session id, kept after it leaves the open list, so a message sent in it can reopen it.
-  const sdkIds = useRef(new Map<string, string>());
+  // What each chat needs to wake up (its Claude session id, client and to-do), kept after it leaves the open list.
+  const wakeInfo = useRef(
+    new Map<string, { sdk: string | null; client: string | null; todoId: string | null }>(),
+  );
   useEffect(() => {
-    for (const s of sessions?.live ?? []) if (s.sdkSessionId) sdkIds.current.set(s.id, s.sdkSessionId);
+    for (const s of sessions?.live ?? [])
+      wakeInfo.current.set(s.id, { sdk: s.sdkSessionId, client: s.client, todoId: s.todoId });
   }, [sessions]);
   const serverStartedAt = useRef<string | null>(null);
 
@@ -839,8 +842,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         await api.close(id);
       } catch (err) {
-        setActionError(messageOf(err));
-        return false;
+        // A chat that went to sleep before the app restarted is unknown to the server now: it is closed already.
+        const gone = err instanceof ApiFailure && (err.code === 'not-found' || err.code === 'session-closed');
+        if (!gone) {
+          setActionError(messageOf(err));
+          return false;
+        }
       }
       setActionError(null);
       setCloseRequest(null);
@@ -1036,14 +1043,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    */
   const wakeAndSend = useCallback(
     async (endedId: string, body: string, attachments: string[]): Promise<boolean> => {
-      const sdk = chatsRef.current[endedId]?.sdkSessionId ?? sdkIds.current.get(endedId) ?? null;
+      const info = wakeInfo.current.get(endedId);
+      const sdk = chatsRef.current[endedId]?.sdkSessionId ?? info?.sdk ?? null;
       // A chat being deleted must not come back.
       if (!sdk || hiddenChatRef.current.has(sdk)) return false;
       let id: string;
       try {
+        // Its client and to-do go with it, so Claude still knows who the chat is for.
         const { session } = await api.startSession({
           resume: sdk,
           prompt: body,
+          ...(info?.client ? { client: info.client } : {}),
+          ...(info?.todoId ? { todoId: info.todoId } : {}),
           ...(attachments.length > 0 ? { attachments } : {}),
         });
         id = session.id;

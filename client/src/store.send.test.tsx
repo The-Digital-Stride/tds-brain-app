@@ -24,6 +24,7 @@ const { api, ApiFailure } = vi.hoisted(() => {
       startSession: vi.fn(),
       sendMessage: vi.fn(),
       updatePrefs: vi.fn(),
+      close: vi.fn(),
     },
   };
 });
@@ -231,5 +232,122 @@ describe('send into a chat that has ended', () => {
     await go('carry on', []);
     await waitFor(() => expect(results).toEqual([false]));
     expect(api.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Drives the store the way the screens do, and shows where the person is. */
+function Driver() {
+  const store = useStore();
+  const active = store.activeChat.kind === 'live' ? store.activeChat.sessionId : 'new';
+  return (
+    <div>
+      <p data-testid="where">{`${active}|${store.chatDrawer ?? '-'}`}</p>
+      <button
+        type="button"
+        onClick={() => void store.send('carry on', null, []).then((ok) => results.push(ok))}
+      >
+        send
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          store.openView('tool:ads/manager');
+          store.openChat('s1', { in: 'drawer' });
+        }}
+      >
+        drawer
+      </button>
+      <button type="button" onClick={() => store.openChat('s2')}>
+        other
+      </button>
+      <button type="button" onClick={() => store.holdDeletePastChat('sdk-1', 'Report check')}>
+        delete
+      </button>
+      <button type="button" onClick={() => void store.closeChat('s1').then((ok) => results.push(ok))}>
+        clear
+      </button>
+    </div>
+  );
+}
+
+async function drive() {
+  render(
+    <StoreProvider>
+      <Driver />
+    </StoreProvider>,
+  );
+  await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+  await act(async () => {});
+}
+const where = () => screen.getByTestId('where').textContent;
+
+describe('waking a chat: where the person ends up, and what goes with it', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    api.sessions.mockResolvedValueOnce({
+      live: [{ ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md' }],
+      past: [],
+    });
+    api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
+  });
+
+  it('takes the chat’s client and to-do with it', async () => {
+    await drive();
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({
+        resume: 'sdk-1',
+        prompt: 'carry on',
+        client: 'urban-cooling',
+        todoId: '20261111-mine.md',
+      }),
+    );
+  });
+
+  it('stays in the drawer, which follows the woken chat', async () => {
+    await drive();
+    fireEvent.click(screen.getByText('drawer'));
+    await waitFor(() => expect(where()).toBe('s1|s1'));
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(where()).toBe('s9|s9'));
+    expect(results).toEqual([true]);
+  });
+
+  it('never pulls the person back to the chat if they moved on while it woke', async () => {
+    let finish: (v: unknown) => void = () => {};
+    api.startSession.mockReturnValueOnce(new Promise((r) => (finish = r)));
+    await drive();
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(api.startSession).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('other'));
+    await act(async () => finish({ session: { id: 's9' } }));
+    await waitFor(() => expect(results).toEqual([true]));
+    expect(where()).toBe('s2|-');
+  });
+
+  it('does not bring back a chat that is being deleted', async () => {
+    // The ended chat is listed under Earlier, where the person presses delete.
+    api.sessions.mockReset();
+    api.sessions.mockResolvedValue({
+      live: [liveS1],
+      past: [{ sdkSessionId: 'sdk-1', title: 'Report check', lastModified: '', kind: 'tds' }],
+    });
+    await drive();
+    fireEvent.click(screen.getByText('delete'));
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(results).toEqual([false]));
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('/clear in a chat the server no longer knows', () => {
+  it('starts afresh instead of showing an error', async () => {
+    sessionStorage.setItem('tds-brain-open-chat', 's1');
+    api.sessions.mockResolvedValueOnce({ live: [liveS1], past: [] });
+    api.close.mockRejectedValueOnce(new ApiFailure('not-found', 'That chat could not be found.'));
+    await drive();
+    fireEvent.click(screen.getByText('clear'));
+    await waitFor(() => expect(results).toEqual([true]));
+    expect(where()).toBe('new|-');
   });
 });

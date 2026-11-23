@@ -128,4 +128,15 @@ The email exception for phase 1's "save without asking" is already in the projec
 
 ## Review outcomes
 
-(filled at the end)
+- Overseer pre-review: 2 blockers (seen token; personal to-dos follow the To-dos tab), both folded in before building.
+- Browser check (throwaway brain, 3878): a linked file outside the folder read "New file" (fixed: "Linked file"); the
+  writer's name showed twice on update rows (fixed). Seen-on-leave and "changed while open stays unseen" verified.
+  Pre-existing, not this phase: tabs don't respond while the to-dos drawer is open; another person's to-do opened
+  from a project doesn't show in the drawer (same as the To-dos tab).
+- Correctness (Opus): 2 should-fix confirmed and fixed (updates now seen by path, so a late-synced note still shows;
+  gone personal to-dos never listed); 2 consider items fixed in the fix round (an old entry paged back in isn't new;
+  the cards remount per project). 1 accepted: only the 50 newest log entries are checked.
+- Security (Opus): no findings.
+- UX/UI expert (Opus, screenshots): BLOCKED on the end-date row lifting like a button; fixed with 7 more (five rows
+  then ShowMore, Coming up hidden on error, one empty-state size, aria-haspopup, "Linked file", badge warn tone,
+  leftovers); then SIGNED OFF after a one-change wording fix. Badge tones added to docs/design-system.md.

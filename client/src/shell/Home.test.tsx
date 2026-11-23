@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   close: vi.fn(),
   updatePrefs: vi.fn(),
   libraryItems: vi.fn(),
+  projects: vi.fn(),
 }));
 vi.mock('../api.ts', () => ({
   api,
@@ -44,6 +45,7 @@ class FakeEventSource {
 
 const { App } = await import('../App.tsx');
 const { clientChoice, projectChoice } = await import('../state/client-choice.ts');
+const { projectsStore } = await import('../state/projects.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
   name,
@@ -319,6 +321,72 @@ describe('Home', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'acme' });
     expect(clientChoice.get()).toBe('client:northwind');
+  });
+
+  describe('the chat is for a project (projects R2)', () => {
+    const projectCard = (key: string, client: string | null, title: string) => ({
+      key,
+      space: client === null ? 'personal' : 'client',
+      slug: key.split('/')[1],
+      client,
+      folder: `clients/${client}/projects/${key.split('/')[1]}`,
+      archived: false,
+      status: 'active',
+      title,
+    });
+    const withProjects = () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({
+        projects: [
+          projectCard('northwind/site', 'northwind', 'Site rebuild'),
+          projectCard('personal/diary', null, 'Diary'),
+        ],
+        duplicates: [],
+      });
+    };
+    afterEach(() => projectsStore.reset());
+
+    it("sends Working on's project while Chat for is still its client", async () => {
+      withProjects();
+      projectChoice.set('northwind/site');
+      const box = await renderHome();
+      await waitFor(() => expect(api.projects).toHaveBeenCalled());
+      await act(async () => {});
+      typeAndSend(box, 'Hello there');
+      await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+      expect(api.startSession).toHaveBeenCalledWith({
+        prompt: 'Hello there',
+        client: 'northwind',
+        project: 'northwind/site',
+      });
+    });
+
+    it('drops the project when Chat for is hand-picked to another client', async () => {
+      withProjects();
+      projectChoice.set('northwind/site');
+      const box = await renderHome();
+      await waitFor(() => expect(api.projects).toHaveBeenCalled());
+      await act(async () => {});
+      pickOption('Chat for', 'Acme Heating');
+      typeAndSend(box, 'Hello there');
+      await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+      expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello there', client: 'acme' });
+    });
+
+    it('a personal project is sent with No client', async () => {
+      withProjects();
+      projectChoice.set('personal/diary');
+      const box = await renderHome();
+      await waitFor(() => expect(api.projects).toHaveBeenCalled());
+      await act(async () => {});
+      typeAndSend(box, 'Hello there');
+      await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+      expect(api.startSession).toHaveBeenCalledWith({
+        prompt: 'Hello there',
+        client: null,
+        project: 'personal/diary',
+      });
+    });
   });
 
   it('a personal project starts Chat for on No client; a client not in the list leaves Auto', async () => {

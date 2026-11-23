@@ -169,6 +169,7 @@ export function createBrainReaders(
     libraryFile: (id) => library.file(id),
     libraryItemForPath: (rel) => library.itemForPath(rel),
     projects: (identity) => projects.list(identity),
+    projectsIndex: () => projects.index(),
     changeProject: async (action, identity) => {
       const list = await projects.change(action, identity);
       // A card or its links changed: files listed in any scope may now belong elsewhere.

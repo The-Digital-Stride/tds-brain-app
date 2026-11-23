@@ -9,6 +9,7 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ChatScopeStore } from '../../shared/chat-places-contract.ts';
 import {
   BRAIN_COMPACT_INSTRUCTIONS,
   type ChatContextDetail,
@@ -40,9 +41,12 @@ import type {
 } from '../../shared/levels-contract.ts';
 import { isRealPage, pageTitle } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX } from '../../shared/pages-contract.ts';
+import type { ProjectCard } from '../../shared/projects-contract.ts';
+import type { ProjectsIndex } from '../brain/projects.ts';
 import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
+import { createChatPlaceStore } from '../store/chat-places.ts';
 import type { ContextReadingStore } from '../store/context-readings.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
@@ -352,10 +356,14 @@ function setup(
     kitTracker?: KitTracker;
     kits?: () => Promise<Readonly<Record<KitId, Kit>>>;
     kitPicker?: KitPicker;
+    chatPlaces?: ChatScopeStore;
+    projectsIndex?: () => Promise<ProjectsIndex>;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    chatPlaces: opts.chatPlaces,
+    projectsIndex: opts.projectsIndex,
     kitTracker: opts.kitTracker,
     kits: opts.kits,
     kitPicker: opts.kitPicker ?? SILENT_KIT_PICKER,
@@ -6002,5 +6010,427 @@ describe('a message a hook held back (Send again)', () => {
     await flush();
     expect(events(mgr, s.id).some((e) => e.type === 'notice')).toBe(false);
     await expectCode(mgr.resend?.(s.id) ?? Promise.resolve(), 'bad-request');
+  });
+});
+
+describe('a chat for a project (Projects R2 phase 1)', () => {
+  const CLIENTS: ClientInfo[] = [
+    { slug: 'urban-cooling', name: 'Urban Cooling' },
+    { slug: 'skyseal', name: 'Skyseal' },
+    { slug: 'the-digital-stride', name: 'The Digital Stride' },
+  ];
+
+  function card(key: string, over: Partial<ProjectCard> = {}): ProjectCard {
+    const [owner, slug] = key.split('/') as [string, string];
+    const space = over.space ?? (owner === 'personal' ? 'personal' : 'client');
+    return {
+      key,
+      space,
+      slug,
+      client: space === 'personal' ? null : owner,
+      folder:
+        space === 'personal'
+          ? `personal/projects/${slug}`
+          : space === 'legacy'
+            ? `projects/${slug}`
+            : `clients/${owner}/projects/${slug}`,
+      card: 'ok',
+      archived: false,
+      title: slug,
+      status: 'active',
+      ...over,
+    } as ProjectCard;
+  }
+
+  const WEB = card('urban-cooling/web', { title: 'Website rebuild' });
+  const CARDS: ProjectCard[] = [
+    WEB,
+    card('urban-cooling/ppc', { title: 'PPC launch', status: 'planned' }),
+    card('urban-cooling/old', { title: 'Old audit', status: 'done' }),
+    card('urban-cooling/gone', { title: 'Archived thing', archived: true, status: 'done' }),
+    card('skyseal/roof', { title: 'Roof pages', movedFrom: ['urban-cooling/roof'] }),
+    card('personal/garden', { title: 'Garden plans' }),
+    card('the-digital-stride/portal', { space: 'legacy', title: 'Client portal' }),
+    card('other-co/legacy', { space: 'legacy', client: 'other-co', folder: 'projects/legacy' }),
+  ];
+
+  function index(cards: ProjectCard[] = CARDS): ProjectsIndex {
+    const byKey = new Map(cards.map((c) => [c.key, c]));
+    return {
+      cards,
+      byKey: (key) => byKey.get(key) ?? cards.find((c) => c.movedFrom?.includes(key)) ?? null,
+      keysForPath: () => [],
+      resolve: () => ({ kind: 'none' }) as never,
+    };
+  }
+
+  function projectSetup(
+    over: {
+      cards?: ProjectCard[];
+      projectsIndex?: () => Promise<ProjectsIndex>;
+      chatPlaces?: ChatScopeStore;
+      chatKinds?: ChatKindStore;
+      clients?: ClientInfo[];
+    } = {},
+  ) {
+    const chatPlaces = over.chatPlaces ?? createChatPlaceStore(null);
+    const fx = setup(undefined, {
+      brain: { clients: async () => over.clients ?? CLIENTS },
+      chatPlaces,
+      chatKinds: over.chatKinds,
+      projectsIndex: over.projectsIndex ?? (async () => index(over.cards)),
+    });
+    return { ...fx, chatPlaces };
+  }
+
+  const append = (q: FakeQuery | undefined) =>
+    (q?.options.systemPrompt as { append?: string } | undefined)?.append ?? '';
+
+  const PROJECT_LINE =
+    "This chat is for the project \"Website rebuild\", whose folder is `clients/urban-cooling/projects/web/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. These still go where the brain's save rules say: anything with names, emails, phone numbers or addresses (`clients/urban-cooling/crm/data/`), call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/urban-cooling/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action, but never link a file from `crm/data/` or `personal/` to a shared project. Tell the user where each file went.";
+
+  const NOT_OPEN = "That project isn't open any more. Pick another from Working on.";
+  const OTHER_CLIENT = 'That project belongs to another client.';
+
+  async function expectRefusal(p: Promise<unknown>, code: string, message: string) {
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe(code);
+    expect((err as SessionError).message).toBe(message);
+  }
+
+  it('a client project fills in the client, and Claude is told to save in the project folder', async () => {
+    const { queries } = projectSetup();
+    const s = await mgr.start({ prompt: 'hi', project: 'urban-cooling/web' });
+    await flush();
+    expect(s.client).toBe('urban-cooling');
+    expect(s.project).toBe('urban-cooling/web');
+    expect(s.kind).toBe('tds');
+    expect((await mgr.list()).live[0]?.project).toBe('urban-cooling/web');
+    const text = append(queries[0]);
+    const lines = text.split('\n');
+    // The client line keeps reading the client's context, without its reports-first sentence.
+    expect(lines[0]).toBe(
+      "The user is working on the client in clients/urban-cooling/ for this chat. Read that folder's context before client-specific work, and keep to that client unless the user says otherwise.",
+    );
+    expect(lines[1]).toBe(PROJECT_LINE);
+    expect(text).not.toContain('offer `clients/urban-cooling/reports/` first');
+    expect(text).not.toContain('This client has these open projects');
+    expect(text.endsWith(`\n${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
+  });
+
+  it('the same client may be given with its project', async () => {
+    projectSetup();
+    const s = await mgr.start({ prompt: 'hi', client: 'urban-cooling', project: 'urban-cooling/web' });
+    expect([s.client, s.project]).toEqual(['urban-cooling', 'urban-cooling/web']);
+  });
+
+  it('refuses an unknown, archived or badly formed project, and one for another client', async () => {
+    const { queries } = projectSetup();
+    await expectRefusal(mgr.start({ prompt: 'hi', project: 'urban-cooling/nope' }), 'bad-request', NOT_OPEN);
+    await expectRefusal(mgr.start({ prompt: 'hi', project: 'urban-cooling/gone' }), 'bad-request', NOT_OPEN);
+    await expectRefusal(mgr.start({ prompt: 'hi', project: '../../etc' }), 'bad-request', NOT_OPEN);
+    await expectRefusal(mgr.start({ prompt: 'hi', project: 7 as never }), 'bad-request', NOT_OPEN);
+    await expectRefusal(
+      mgr.start({ prompt: 'hi', client: 'skyseal', project: 'urban-cooling/web' }),
+      'bad-request',
+      OTHER_CLIENT,
+    );
+    await expectRefusal(
+      mgr.start({ prompt: 'hi', client: 'skyseal', project: 'personal/garden' }),
+      'bad-request',
+      OTHER_CLIENT,
+    );
+    expect(queries).toHaveLength(0);
+    expect((await mgr.list()).live).toHaveLength(0);
+  });
+
+  it('refuses a project when the projects cannot be read or are not there', async () => {
+    projectSetup({ projectsIndex: () => Promise.reject(new Error('boom')) });
+    await expectCode(mgr.start({ prompt: 'hi', project: 'urban-cooling/web' }), 'internal');
+    // An older set-up with no projects index.
+    setup();
+    await expectRefusal(mgr.start({ prompt: 'hi', project: 'urban-cooling/web' }), 'bad-request', NOT_OPEN);
+  });
+
+  it('a moved project follows its new key, and the folder always comes from the index', async () => {
+    const { queries } = projectSetup();
+    const s = await mgr.start({ prompt: 'hi', project: 'urban-cooling/roof' });
+    await flush();
+    expect([s.client, s.project]).toEqual(['skyseal', 'skyseal/roof']);
+    expect(append(queries[0])).toContain('whose folder is `clients/skyseal/projects/roof/`');
+  });
+
+  it('a personal project has no client, is personal, and leaves out the shared-data sentences', async () => {
+    const { queries } = projectSetup();
+    const s = await mgr.start({ prompt: 'hi', project: 'personal/garden' });
+    await flush();
+    expect([s.client, s.project, s.kind]).toEqual([null, 'personal/garden', 'personal']);
+    const text = append(queries[0]);
+    expect(text.split('\n')[0]).toBe(
+      "This chat is for the project \"Garden plans\", whose folder is `personal/projects/garden/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. These still go where the brain's save rules say: call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/<client>/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action. Tell the user where each file went.",
+    );
+    expect(text).not.toContain('crm/data');
+    expect(text).not.toContain('The user is working on the client');
+  });
+
+  it("a legacy project takes the card's client when the brain has it, else none, and is TDS", async () => {
+    const { queries } = projectSetup();
+    const a = await mgr.start({ prompt: 'hi', project: 'the-digital-stride/portal' });
+    expect([a.client, a.project, a.kind]).toEqual(['the-digital-stride', 'the-digital-stride/portal', 'tds']);
+    const b = await mgr.start({ prompt: 'hi', project: 'other-co/legacy' });
+    expect([b.client, b.project, b.kind]).toEqual([null, 'other-co/legacy', 'tds']);
+    await flush();
+    expect(append(queries[1])).toContain('whose folder is `projects/legacy/`');
+    expect(append(queries[1])).toContain('(`clients/<client>/crm/data/`)');
+  });
+
+  it("cleans a project title before it goes into Claude's instructions", async () => {
+    const long = `Line one\nline \`two\` "quoted" ${'x'.repeat(200)}`;
+    const { queries } = projectSetup({ cards: [card('urban-cooling/web', { title: long })] });
+    await mgr.start({ prompt: 'hi', project: 'urban-cooling/web' });
+    await flush();
+    const m = /This chat is for the project "([^"]*)", whose folder/.exec(append(queries[0]));
+    expect(m).not.toBeNull();
+    const title = m?.[1] ?? '';
+    expect(title.length).toBeLessThanOrEqual(80);
+    expect(title).not.toMatch(/[\n\r`"]/);
+    expect(title.startsWith("Line one line two 'quoted' x")).toBe(true);
+  });
+
+  it("a client chat with no project lists the client's open projects", async () => {
+    const { queries } = projectSetup();
+    await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+    await flush();
+    const text = append(queries[0]);
+    // The reports-first sentence stays in a chat with no project.
+    expect(text).toContain('offer `clients/urban-cooling/reports/` first');
+    const line = text.split('\n').find((l) => l.startsWith('This client has these open projects:'));
+    expect(line).toBe(
+      'This client has these open projects: "PPC launch" (`clients/urban-cooling/projects/ppc/`); "Website rebuild" (`clients/urban-cooling/projects/web/`). If the user names one of them, treat this work as for that project: save its files in that project\'s folder by the same rules as a project chat. Otherwise, before saving a new document, page or file the user will keep, ask with AskUserQuestion which project it\'s for, offering these project folders first and the client\'s usual folder from the save rules after. When you add a to-do for one of these projects, set its project.',
+    );
+  });
+
+  it('lists at most 12 open projects, and says nothing with none or when the projects cannot be read', async () => {
+    const many = Array.from({ length: 15 }, (_, i) =>
+      card(`urban-cooling/p-${String(i).padStart(2, '0')}`, { title: `P ${String(i).padStart(2, '0')}` }),
+    );
+    const a = projectSetup({ cards: many });
+    await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+    await flush();
+    const line = append(a.queries[0])
+      .split('\n')
+      .find((l) => l.startsWith('This client has these open projects:'));
+    expect(line?.match(/\(`clients\/urban-cooling\/projects\/p-\d\d\/`\)/g)).toHaveLength(12);
+
+    const b = projectSetup({ cards: [card('urban-cooling/old', { status: 'done' })] });
+    await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+    await flush();
+    expect(append(b.queries[0])).not.toContain('This client has these open projects');
+
+    const c = projectSetup({ projectsIndex: () => Promise.reject(new Error('boom')) });
+    const s = await mgr.start({ prompt: 'hi', client: 'urban-cooling' });
+    await flush();
+    expect(s.client).toBe('urban-cooling');
+    expect(append(c.queries[0])).not.toContain('This client has these open projects');
+  });
+
+  it('every chat is told not to ask where to save in a project chat, and to file attachments in its folder', () => {
+    expect(FILES_LINE).toContain(
+      'or when this chat is for a project (save in its folder as told above), or when changing a page or file that already exists',
+    );
+    expect(ATTACHMENT_NOTE).toContain(
+      "using .claude/rules/save-locations.md and this chat's project folder or client (if set),",
+    );
+  });
+
+  it('saves the place when the engine gives the chat its id, and nothing for a chat with neither', async () => {
+    const { chatPlaces } = projectSetup();
+    const s = await mgr.start({ prompt: 'hi', project: 'urban-cooling/web' });
+    expect(await chatPlaces.placeOf('sdk-new-1')).toBeNull();
+    await flush();
+    expect(s.sdkSessionId).toBeNull();
+    expect(await chatPlaces.placeOf('sdk-new-1')).toEqual({
+      client: 'urban-cooling',
+      project: 'urban-cooling/web',
+    });
+
+    const other = projectSetup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    expect((await other.chatPlaces.all()).size).toBe(0);
+  });
+
+  it('the past list shows each chat’s saved place, and deleting a chat removes it', async () => {
+    const ID = '11111111-2222-4333-8444-555555555555';
+    const chatPlaces = createChatPlaceStore(null);
+    await chatPlaces.set(ID, { client: 'urban-cooling', project: 'urban-cooling/web' });
+    const fx = projectSetup({ chatPlaces });
+    fx.past.push({ sessionId: ID, summary: 'Web chat', lastModified: 2_000 });
+    fx.past.push({ sessionId: 'old-2', summary: 'Other', lastModified: 1_000 });
+    fx.engine.trashSession = async () => {};
+    const past = (await mgr.list()).past;
+    expect(past[0]).toMatchObject({
+      sdkSessionId: ID,
+      client: 'urban-cooling',
+      project: 'urban-cooling/web',
+    });
+    expect(past[1]).not.toHaveProperty('client');
+    expect(past[1]).not.toHaveProperty('project');
+    await mgr.deletePast(ID);
+    expect(await chatPlaces.placeOf(ID)).toBeNull();
+  });
+
+  it('a past list still shows when the saved places cannot be read', async () => {
+    const fx = projectSetup({
+      chatPlaces: {
+        placeOf: () => Promise.reject(new Error('boom')),
+        all: () => Promise.reject(new Error('boom')),
+        set: async () => {},
+        remove: async () => {},
+      },
+    });
+    fx.past.push({ sessionId: 'old-1', summary: 'Mine', lastModified: 2_000 });
+    expect((await mgr.list()).past).toEqual([
+      { sdkSessionId: 'old-1', title: 'Mine', lastModified: expect.any(String), kind: 'tds' },
+    ]);
+  });
+
+  async function reopen(
+    place: { client: string | null; project: string | null } | null,
+    over: Parameters<typeof projectSetup>[0] = {},
+  ) {
+    const chatPlaces = over.chatPlaces ?? createChatPlaceStore(null);
+    if (place) await chatPlaces.set('old-1', place);
+    const fx = projectSetup({ ...over, chatPlaces });
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1' });
+    await mgr.send(s.id, 'carry on');
+    await flush();
+    return { s, text: append(fx.queries[0]), chatPlaces };
+  }
+
+  it('a reopened chat gets its client and project back, and its instructions are rebuilt', async () => {
+    const { s, text } = await reopen({ client: 'urban-cooling', project: 'urban-cooling/web' });
+    expect([s.client, s.project]).toEqual(['urban-cooling', 'urban-cooling/web']);
+    expect(text.split('\n')[1]).toBe(PROJECT_LINE);
+    expect((await mgr.list()).live[0]?.project).toBe('urban-cooling/web');
+  });
+
+  it('a reopened client chat gets its client and the which-project list back', async () => {
+    const { s, text } = await reopen({ client: 'urban-cooling', project: null });
+    expect([s.client, s.project]).toEqual(['urban-cooling', null]);
+    expect(text).toContain('offer `clients/urban-cooling/reports/` first');
+    expect(text).toContain('This client has these open projects: "PPC launch"');
+  });
+
+  it('a reopened chat whose project moved follows it, client and all', async () => {
+    const { s, text } = await reopen({ client: 'urban-cooling', project: 'urban-cooling/roof' });
+    expect([s.client, s.project]).toEqual(['skyseal', 'skyseal/roof']);
+    expect(text).toContain('whose folder is `clients/skyseal/projects/roof/`');
+  });
+
+  it('a reopened chat whose project is archived or gone drops it and keeps the client', async () => {
+    const a = await reopen({ client: 'urban-cooling', project: 'urban-cooling/gone' });
+    expect([a.s.client, a.s.project]).toEqual(['urban-cooling', null]);
+    expect(a.text).not.toContain('This chat is for the project');
+    const b = await reopen({ client: 'urban-cooling', project: 'urban-cooling/vanished' });
+    expect([b.s.client, b.s.project]).toEqual(['urban-cooling', null]);
+    // Dropping it on reopening never rewrites what was saved.
+    expect(await b.chatPlaces.placeOf('old-1')).toEqual({
+      client: 'urban-cooling',
+      project: 'urban-cooling/vanished',
+    });
+  });
+
+  it('a reopened personal project chat keeps its project and is personal, even if its kind was lost', async () => {
+    const chatKinds = createChatKindStore(null);
+    await chatKinds.set('old-1', 'personal');
+    const { s } = await reopen({ client: null, project: 'personal/garden' }, { chatKinds });
+    expect([s.client, s.project, s.kind]).toEqual([null, 'personal/garden', 'personal']);
+    const lost = await reopen({ client: null, project: 'personal/garden' });
+    expect(lost.s.kind).toBe('personal');
+  });
+
+  it('reopening never fails because of the place: a store or index failure, or a gone client, opens it plain', async () => {
+    const plain = `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
+    const broken: ChatScopeStore = {
+      placeOf: () => Promise.reject(new Error('boom')),
+      all: () => Promise.reject(new Error('boom')),
+      set: async () => {},
+      remove: async () => {},
+    };
+    const a = await reopen(null, { chatPlaces: broken });
+    expect([a.s.client, a.s.project, a.text]).toEqual([null, null, plain]);
+
+    const b = await reopen(
+      { client: 'urban-cooling', project: 'urban-cooling/web' },
+      { projectsIndex: () => Promise.reject(new Error('boom')) },
+    );
+    expect([b.s.client, b.s.project, b.text]).toEqual([null, null, plain]);
+
+    const c = await reopen(
+      { client: 'urban-cooling', project: 'urban-cooling/web' },
+      { clients: [{ slug: 'skyseal', name: 'Skyseal' }] },
+    );
+    expect([c.s.client, c.s.project, c.text]).toEqual([null, null, plain]);
+  });
+
+  it('a woken chat with nothing saved keeps the project the page sends, when it is still open', async () => {
+    const fx = projectSetup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', project: 'urban-cooling/web' });
+    expect([s.client, s.project]).toEqual(['urban-cooling', 'urban-cooling/web']);
+  });
+
+  it('a woken chat drops a project the page sends that is no longer open, never refusing', async () => {
+    const fx = projectSetup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', client: 'urban-cooling', project: 'urban-cooling/gone' });
+    expect([s.client, s.project]).toEqual(['urban-cooling', null]);
+  });
+
+  it('a woken chat with nothing saved saves the place it was given, under the same session id', async () => {
+    const fx = projectSetup();
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    await mgr.start({ resume: 'old-1', client: 'urban-cooling', project: 'urban-cooling/web' });
+    await flush();
+    expect(await fx.chatPlaces.placeOf('old-1')).toEqual({
+      client: 'urban-cooling',
+      project: 'urban-cooling/web',
+    });
+  });
+
+  it("never saves the page's place over one it couldn't read", async () => {
+    const real = createChatPlaceStore(null);
+    const sets: string[] = [];
+    const chatPlaces: ChatScopeStore = {
+      ...real,
+      placeOf: async () => {
+        throw new Error('disk');
+      },
+      set: async (id, place) => {
+        sets.push(id);
+        return real.set(id, place);
+      },
+    };
+    const fx = projectSetup({ chatPlaces });
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', client: 'urban-cooling', project: 'urban-cooling/web' });
+    await flush();
+    // The woken chat still carries on with what the page sent, but nothing is saved for it.
+    expect([s.client, s.project]).toEqual(['urban-cooling', 'urban-cooling/web']);
+    expect(sets).not.toContain('old-1');
+  });
+
+  it("a reopened chat's saved place wins over what the page sends", async () => {
+    const fx = projectSetup();
+    await fx.chatPlaces.set('old-1', { client: 'urban-cooling', project: null });
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', project: 'urban-cooling/web' });
+    expect([s.client, s.project]).toEqual(['urban-cooling', null]);
   });
 });

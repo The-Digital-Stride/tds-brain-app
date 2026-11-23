@@ -85,3 +85,9 @@ edits are already in the brain, so each "current passage" quotes the brain file 
 | 17 | `command-centre.patch` (see `command-centre.md`) | `tools/members/command-centre/` | `patch --dry-run -p1` is clean, then the checks in `command-centre.md` |
 
 Item 17 replaces the note above: the Workbench's Archive now refuses a clash instead of renaming.
+
+## Release 2, phase 1: files made in a project chat
+
+`r2-chat-project.md`: one edit to `.claude/rules/save-locations.md` and one to
+`.claude/skills/tds-doc/SKILL.md`, so sessions outside TDS Cortex also file a project's work in its
+folder. Apply only with Ian's yes, after the app version with "New chat for this project" is installed.

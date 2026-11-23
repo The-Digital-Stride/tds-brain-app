@@ -285,13 +285,15 @@ describe('waking a chat: where the person ends up, and what goes with it', () =>
   beforeEach(() => {
     sessionStorage.setItem('tds-brain-open-chat', 's1');
     api.sessions.mockResolvedValueOnce({
-      live: [{ ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md' }],
+      live: [
+        { ...liveS1, client: 'urban-cooling', todoId: '20261111-mine.md', project: 'urban-cooling/web' },
+      ],
       past: [],
     });
     api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
   });
 
-  it('takes the chat’s client and to-do with it', async () => {
+  it('takes the chat’s client, to-do and project with it', async () => {
     await drive();
     fireEvent.click(screen.getByText('send'));
     await waitFor(() =>
@@ -300,6 +302,7 @@ describe('waking a chat: where the person ends up, and what goes with it', () =>
         prompt: 'carry on',
         client: 'urban-cooling',
         todoId: '20261111-mine.md',
+        project: 'urban-cooling/web',
       }),
     );
   });
@@ -349,5 +352,54 @@ describe('/clear in a chat the server no longer knows', () => {
     fireEvent.click(screen.getByText('clear'));
     await waitFor(() => expect(results).toEqual([true]));
     expect(where()).toBe('new|-');
+  });
+});
+
+function ProjectProbe({ todoChat }: { todoChat: boolean }) {
+  const { send, newChat } = useStore();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          newChat({ client: 'acme', project: 'acme/site', ...(todoChat ? { todoId: 't1.md' } : {}) })
+        }
+      >
+        open
+      </button>
+      <button type="button" onClick={() => void send('Hello', 'acme', [], 'acme/site')}>
+        go
+      </button>
+    </>
+  );
+}
+async function run(todoChat: boolean) {
+  render(
+    <StoreProvider>
+      <ProjectProbe todoChat={todoChat} />
+    </StoreProvider>,
+  );
+  await waitFor(() => expect(api.sessions).toHaveBeenCalled());
+  await act(async () => {});
+  fireEvent.click(await screen.findByText('open'));
+  fireEvent.click(await screen.findByText('go'));
+}
+
+describe('send with a project', () => {
+  it('sends the project with a new chat', async () => {
+    await run(false);
+    await waitFor(() =>
+      expect(api.startSession).toHaveBeenCalledWith({
+        prompt: 'Hello',
+        client: 'acme',
+        project: 'acme/site',
+      }),
+    );
+  });
+
+  it("drops the to-do's project with its link when the message no longer names the to-do", async () => {
+    await run(true);
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+    expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello', client: 'acme' });
   });
 });

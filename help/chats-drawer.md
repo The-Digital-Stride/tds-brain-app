@@ -8,7 +8,7 @@ benefit: Never lose a conversation, and switch between jobs in a click.
 roles: all
 related: [talking-to-claude, approvals-and-questions, home]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-23
 ---
 
 ## What it does
@@ -34,6 +34,7 @@ Once you have a personal chat, a second switch appears. It filters by **All**, *
 
 ## Good to know
 
+- Each chat shows its client and project under its title, such as Acme Heating · Site rebuild. The list isn't narrowed by **Working on** yet, so every chat is always shown.
 - You can have up to four chats open at once. If you start a fifth, the one you left longest is closed. If all four are busy, wait or close one.
 - A chat you haven't used for 30 minutes goes to sleep, and so does every open chat when the app updates. Send a message in it as usual: it wakes up where you left off, with your message, and goes back under **Open**.
 - Close a chat before you delete it.

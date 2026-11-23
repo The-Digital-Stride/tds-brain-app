@@ -54,6 +54,7 @@ import { createAppStore } from './store/app-store.ts';
 import { createAssetCache, sweepAssetTemps } from './store/asset-cache.ts';
 import { createChatKindStore } from './store/chat-kinds.ts';
 import { createChatLevelStore } from './store/chat-levels.ts';
+import { createChatPlaceStore } from './store/chat-places.ts';
 import { createClientPickTally } from './store/client-pick-tally.ts';
 import { createContextReadingStore } from './store/context-readings.ts';
 import { createKitShadowStore } from './store/kit-shadow.ts';
@@ -204,6 +205,10 @@ function buildBrainSide(path: string | null) {
     uploads,
     dataDir: config.dataDir,
     chatKinds: createChatKindStore(config.dataDir, log),
+    // Each chat's client and project (Projects R2 phase 1, decision 3), in the data folder, never the brain.
+    chatPlaces: createChatPlaceStore(config.dataDir, log),
+    // The projects index, to check a chat's project and find its folder (decision 1).
+    ...(brain.projectsIndex ? { projectsIndex: brain.projectsIndex } : {}),
     // Each chat's newest context reading (plan 2026-11-14-context-management), in the data folder.
     contextReadings: createContextReadingStore(config.dataDir),
     pageCopies,

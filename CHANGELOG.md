@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.66.0 — 2026-11-23
+
+- **feat**: updates log on each project
+- **fix**: updates log uses the app's health words, keeps focus, explains archived
+- **fix**: Remove only where the script allows it; names and edited entries read right
+- **feat**: nothing from an email reaches a project without the inbox owner's yes
+- **fix**: Updates tab follows the design system
+- **fix**: the Updates form's Kind switch fits its words; design sign-off recorded
+
 ## v0.65.1 — 2026-11-23
 
 - **fix**: a message Claude Code held back shows why, with Send again

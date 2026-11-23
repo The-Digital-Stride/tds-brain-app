@@ -99,6 +99,18 @@
   --ok-wash: #e6f4ea;
 
   /*
+   * State colours for the `.dot` pattern (patterns.css): each 3:1 or better on white, used beside a visible word.
+   * Red is `bad` only; `working` is blue. (--attn-working-edge stays red until its callers move to these.)
+   * ok 5.02:1, warn 5.02:1, bad 7.31:1, idle 3.48:1, working 4.24:1, asking 3.19:1.
+   */
+  --state-ok: #15803d;
+  --state-warn: #b45309;
+  --state-bad: #a4261b;
+  --state-idle: #7c8aa5;
+  --state-working: #1a7be0;
+  --state-asking: #d97706;
+
+  /*
    * Category colours: soft fills for "kind of thing", never "state" (status keeps green, amber, red and blue).
    * Navy, #525252 and #33456a text pass WCAG AA on every one. Named by hue; tools alias them by meaning.
    */

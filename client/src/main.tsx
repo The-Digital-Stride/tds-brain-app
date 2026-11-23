@@ -19,6 +19,7 @@ import './styles/todo-panel.css';
 import './styles/help.css';
 import './styles/guide.css';
 import './styles/tour.css';
+import './styles/patterns.css';
 
 const root = document.getElementById('root');
 if (root) {

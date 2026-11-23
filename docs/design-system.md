@@ -63,6 +63,24 @@ The current values, top first: tour 200, tooltip 80, palette 70–72, skip link 
 - Thread: column gap 12px; paragraph margin 0 0 12px.
 - Drawer sections: header 32px; a `--line` hairline and 12px of space above every section but the first; rows 6px apart; only the top section starts open, except that a Favourites section and the section under it both start open, so starring never hides today's items. A section can carry one action (`Fold`'s `action` slot): a quiet small `.btn` on the right of the heading line, outside the toggle button (nested buttons are invalid). The unread dot hangs in the row's left padding so titles share one left edge.
 
+## Shared pieces
+
+Each piece below exists once; tools compose it and never restyle it. Built in Release 3 of the UX consistency programme (plan 2026-11-22-ux-consistency, decision 21); callers are swapped over after, so some old classes still exist and are listed under "Not".
+
+| Need | Use | Not |
+|---|---|---|
+| Warning, error, info or success box | `.notice` with `data-level="info\|warn\|error\|ok"` and `data-shape="box\|strip"` (`patterns.css`). A box is a 10px-radius card line; a strip is a full-width band (`--sheet-gutter` inset, bottom hairline). Buttons placed in it go to the end of the line; wrap two in `.notice-actions`. Error and warn use `--danger` / `--amber-*` on their washes. The rules need `data-shape`, so the old chat `.notice` is unaffected until swapped | `.proj-banner`, `.error-banner`, `.update-banner`, `.offline-banner`, `.health-summary`, `.am-line`, `.home-skill`; `data-level="warning"` (it is `warn`) |
+| "Are you sure?" strip | `Confirm` (`shell/Confirm.tsx`): `label`, `text`, `action`, optional `safe` (default "Cancel"; "Keep editing" or "Keep chat" when protecting work), `variant`, `busy`. The safe option has focus, Esc picks it, busy uses `aria-disabled`. Classes `confirm close-confirm` | `.close-confirm` written by hand, `.todo-ask`, `.proj-ask`, `.am-confirm` |
+| Status dot | `.dot` with `data-state="ok\|warn\|bad\|idle\|working\|asking"` (colours `--state-*`, each 3:1 or better on white). **Always beside a visible word.** Red is `bad` only: running work is `working` (blue), never red | `.attn-dot`, `.health-dot`, `.cc-dot`; `--attn-working-edge` (red) for "running" |
+| Form field | `.form-field` (label above, 4px gap) holding a `.label`, the control (`.field`, `textarea.field`), then `.hint` (12px, iron) and `.error` (12px, danger). Mark a bad control `aria-invalid="true"` (danger border) and link its message with `aria-describedby`. `:disabled` is styled once | `.todo-field`, `.proj-field`, `.am-field`, `.note-field` |
+| Hint or meta text | `.hint` (12px) and `.note` (13px) | one-off 12/13px text classes |
+| Pop-up list or menu | `.popover` (layer 45, radius 12, `--lift-2`) holding `.menu-row`s (hover `--tint-1`, `aria-current="true"` ring) | `.ss-pop`, `.cc-triage`, `.level-menu` and their rows |
+| Headline figure | `.stat` with `.stat-label`, `.stat-value` (18px), `.stat-change` (`data-tone="good\|bad"`), inside a `.card` | `.am-fact`, `.sm-fact` |
+| "Show N more / Show all N / Show fewer" | `ShowMore` (`shell/ShowMore.tsx`): `expanded`, `count`, `noun {one, many}`, `wording "more\|all"`, `onToggle`. A quiet small button with `aria-expanded`; "Show fewer" keeps the noun for screen readers | the three hand-built buttons (Home's `MoreLink`, `FolderCard`, `AmTable`) |
+| Panel header band | `.panel-head`: 47px high, padding `0 10px 1px 16px` (the 16px is `--sheet-gutter`, the sheet bar's and the viewer's inset; the dock used 14 and the to-do panel 18), contents centred, `h2` 14/600 | the five header builds with insets of 14, 16 and 18px |
+| Empty, loading, error line | `StateNote` (`shell/StateNote.tsx`): `kind`, children ("Loading…" is the default), `onRetry` adds a standard "Try again" button. One size: 12px, the `.hint` look | `LibraryNotice`, 12/13/14px variants, "Loading" without the ellipsis |
+| Copy to clipboard | `useCopy` (`shell/useCopy.ts`): `{ said, copy }`; `said` is "Copied" or "Could not copy" for two seconds | `apps/shared/copy.ts` (kept as a re-export) |
+
 ## Controls
 
 - **Buttons: one language** (Ian, 2026-11-13: "every button should be a button, not text. Unless within inline text"). Six kinds, each with one meaning:

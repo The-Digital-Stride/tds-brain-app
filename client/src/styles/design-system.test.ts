@@ -415,7 +415,19 @@ const ALLOW_DUPLICATE_CLASS: Allow = {
   '.jump: styles/base.css, styles/shell.css': 1,
   '.thread: styles/chat.css, styles/shell.css': 1,
 };
-const ALLOW_UNUSED_CLASS: Allow = {};
+const ALLOW_UNUSED_CLASS: Allow = {
+  // Built in R3, swapped next: patterns.css classes no caller uses yet. Each entry goes when its swap lands.
+  'styles/patterns.css .form-field': 3,
+  'styles/patterns.css .menu-row': 4,
+  'styles/patterns.css .panel-head': 3,
+  'styles/patterns.css .popover': 2,
+  'styles/patterns.css .stat': 1,
+  'styles/patterns.css .stat-change': 3,
+  'styles/patterns.css .stat-label': 1,
+  'styles/patterns.css .stat-value': 1,
+  // Confirm moved to shell/ and takes `.confirm` (patterns.css); the swap deletes the old class.
+  'styles/ad-manager.css .am-confirm': 1,
+};
 const ALLOW_LAZY_ONLY_CLASS: Allow = {
   // apps/shared/parts.tsx is eager but holds the library parts too; the scan is per file, so these are
   // flagged.

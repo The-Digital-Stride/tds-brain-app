@@ -342,8 +342,8 @@ function Files({
   );
 
   return (
+    // No key: the Documents/Images switch lives inside, and remounting it would drop keyboard focus.
     <LibraryBrowser
-      key={kind}
       spec={now.spec}
       view={view}
       onView={(patch) => setView((v) => ({ ...v, ...patch }))}

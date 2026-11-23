@@ -88,6 +88,16 @@ describe('the Files tab, in the shared library browser', () => {
     await waitFor(() => expect(titles()).toEqual(['logo.png']));
   });
 
+  it('keeps keyboard focus on the switch when the arrow keys change the kind', async () => {
+    answer([PLAN, BRIEF], [LOGO]);
+    show();
+    const docs = await screen.findByRole('radio', { name: 'Documents, 2' });
+    docs.focus();
+    fireEvent.keyDown(docs, { key: 'ArrowRight' });
+    await waitFor(() => expect(titles()).toEqual(['logo.png']));
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Images, 1' }));
+  });
+
   it('opens on Images when the project has only images', async () => {
     answer([], [LOGO]);
     show();

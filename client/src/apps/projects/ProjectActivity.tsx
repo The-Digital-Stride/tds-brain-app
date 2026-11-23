@@ -17,8 +17,11 @@ import { whenWords } from './ProjectUpdates.tsx';
 /** Rows shown before "Show N more changes", as Home's cards (design system: shared ShowMore). */
 const SINCE_ROWS = 5;
 
-/** What Clear did: marked the list seen, found the read too old to mark (nothing marked), or failed. */
-export type ClearResult = 'cleared' | 'stale' | 'failed';
+/**
+ * What Clear did: marked the list seen, found the read too old to mark (nothing marked), failed, or finished after the
+ * person moved to another project (nothing to say there).
+ */
+export type ClearResult = 'cleared' | 'stale' | 'failed' | 'moved';
 
 export interface ActivityState {
   data: ProjectActivityResponse | null;
@@ -93,7 +96,7 @@ export function useProjectActivity(key: ProjectKey, enabled: boolean): ActivityS
     try {
       await api.projectSeen({ key, token: held });
       const res = await api.projectActivity(key);
-      if (current.current !== key) return 'failed';
+      if (current.current !== key) return 'moved';
       token.current = res.token;
       listed.current = res.since !== null && res.items.length > 0;
       setData(res);
@@ -186,6 +189,7 @@ export function ProjectActivity({
     setMessage('');
     const result = await clear();
     setClearing(false);
+    if (result === 'moved') return;
     setShowAll(false);
     if (result === 'cleared') {
       setMessage('Cleared. New changes will show here.');

@@ -138,4 +138,24 @@ since you last looked, then they should have links to open the docs in the doc e
 
 ## Review outcomes
 
-(filled at the end)
+- **Built as ruled**, plus one design change found in the browser: the Files tab groups files by where they sit in
+  the project (`placeIn`: "In the project folder", subfolder names A to Z, "From the library"), in that fixed order,
+  instead of the library's "Projects" group. The project tabs row now wraps on a phone ("Add files" overflowed on
+  main too).
+- **UX/UI expert (opus):** BLOCK on the kind switch clipping "Documents, 3" (fixed: options size to their words).
+  Should: the switch was first on screen but second in Tab order (fixed: `LibraryTools` `lead` slot); Clear's name
+  (kept, Ian's word; spoken "Clear Since you last looked"). Nice: one note after Clear, "From the library",
+  design-system.md rule 1 and the `lead` entry. Re-check: SIGN OFF.
+- **Correctness (opus):** group order followed the sort (fixed, tested); Home's "Working on" project beat `openItem`,
+  so a file opened from activity could land deselected (fixed: `openItem` clears it when the file isn't in it;
+  tested); missing tests for the Clear guards (added: no post on leaving after a stale Clear, one post on a double
+  press, a Clear finishing after a project switch).
+- **Overseer (fable) sign-off:** one blocker, switching kind remounted the switch and dropped keyboard focus (fixed:
+  no `key`; a test fails without it). Ruled that clearing Home's picker is right (never set it to the file's
+  project). Should: a Clear that finishes after a switch now says nothing (`'moved'`). Signed off on those fixes.
+- **Gates:** typecheck, lint (one old warning in `server/engine/event-map.ts`), full suite, build. Browser check on a
+  throwaway brain at 1440px and 390px: list stays after leaving, file row opens Documents with the file chosen,
+  Clear empties the card and focuses its heading, Files tab filters, sorts, switches layout and kind, remove shows
+  on linked files.
+- **Watch:** "Working on" resets silently when a file outside it is opened; the 50-update window means very long
+  unseen lists undercount (accepted in decision 6).

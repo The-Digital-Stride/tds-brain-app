@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { ProjectActivityResponse } from '../../../../shared/project-activity-contract.ts';
 import { card, projectList } from './testing.ts';
@@ -392,6 +392,26 @@ describe('Clear', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText("Couldn't clear the list. Try again.")).toBeTruthy();
     expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
+  });
+});
+
+describe('useProjectActivity', () => {
+  it("says 'moved', and shows nothing, when Clear finishes after a switch to another project", async () => {
+    const { useProjectActivity } = await import('./ProjectActivity.tsx');
+    let finish: () => void = () => {};
+    api.projectActivity.mockResolvedValue(reply({ items: CHANGES }));
+    api.projectSeen.mockReturnValueOnce(new Promise<void>((r) => (finish = r)));
+    const { result, rerender } = renderHook(({ k }) => useProjectActivity(k, true), {
+      initialProps: { k: SKY.key },
+    });
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    let outcome: Promise<string> = Promise.resolve('');
+    act(() => {
+      outcome = result.current.clear();
+    });
+    rerender({ k: OTHER.key });
+    finish();
+    expect(await outcome).toBe('moved');
   });
 });
 

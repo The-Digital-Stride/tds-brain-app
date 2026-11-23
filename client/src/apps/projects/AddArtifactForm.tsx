@@ -91,6 +91,7 @@ export function AddArtifactForm({
     <form
       className="card proj-card proj-form"
       aria-label="Add a claude.ai page"
+      noValidate
       onSubmit={(e) => void submit(e)}
       onFocus={keepFocus.track}
       onKeyDown={(e) => {

@@ -57,7 +57,7 @@ export function DocumentsPanel() {
         <dd>{dateWords(doc.modified)}</dd>
         {artifact ? (
           <>
-            <dt>From claude.ai</dt>
+            <dt>Source</dt>
             <dd>{artifactWords(artifact)}</dd>
           </>
         ) : null}

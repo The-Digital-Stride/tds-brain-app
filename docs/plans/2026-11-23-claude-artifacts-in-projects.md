@@ -113,7 +113,7 @@ project's Files tab, opened in the same viewer, with a way back to the original 
      "Link to a claude.ai page, added 23 November 2026" for a link card. The actions gain "Open on claude.ai", the
      same `<a class="btn" target="_blank" rel="noopener noreferrer">` with the hidden "(opens in a new tab)" as
      `PageStage.tsx:303`, rendered only when the client's own `isArtifactUrl` check passes. No `window.open`.
-   - Documents details panel (`DocumentsPanel.tsx`): one `.kv` row "From claude.ai" with the same date wording.
+   - Documents details panel (`DocumentsPanel.tsx`): one `.kv` row "Source" with the same wording ("Copied from claude.ai on …").
    - Tiles and rows: words in the meta line, "Web page, 840 KB, from claude.ai". No new mark or logo.
    - When `partial` is set, the existing note "Some parts of this page only work on claude.ai." shows.
    Plain: you see the artifact in the app and are one click from the live version, using the app's existing parts.
@@ -162,7 +162,7 @@ project's Files tab, opened in the same viewer, with a way back to the original 
     shared table test. Tags are read with fixed patterns from a bounded head and never rendered as HTML. The page
     sandbox and `PAGE_PREVIEW_CSP` are unchanged; link cards carry no scripts. The route takes no path from the
     browser. No new outbound request from the server. `add-artifact`'s HTML target is the one new write the skill
-    allows, limited to a live project's `files/` folder. Security gate.
+    allows, limited to the `files/` folder of a project folder that has its `project.md` card (the skill checks it; the route also refuses archived, card-less and legacy projects). Security gate.
     Plain: a file in a project can't use this feature to send you anywhere but claude.ai, or to reach into the app.
 
 ## Phase 2 (later, not in scope)

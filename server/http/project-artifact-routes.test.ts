@@ -110,6 +110,13 @@ beforeAll(async () => {
     get projectArtifact() {
       return state.hasService ? service : undefined;
     },
+    // The change, move and archive answers carry the list the page then shows (review: correctness 2).
+    changeProject: async () => ({ projects: CARDS, canChange: state.canChange }) as unknown as ProjectList,
+    moveProject: async () => ({
+      key: 'skyseal/web',
+      list: { projects: CARDS, canChange: state.canChange } as unknown as ProjectList,
+    }),
+    removeProject: async () => ({ list: { projects: CARDS, canChange: state.canChange } as unknown as ProjectList }),
   };
   app = createAppServer({
     port: PORT,
@@ -347,4 +354,39 @@ describe('canAddArtifact on the projects list', () => {
     state.hasService = false;
     expect('canAddArtifact' in (await list()).json).toBe(false);
   });
+});
+
+describe('canAddArtifact on every answer that carries the projects list', () => {
+  const VERSION = 'a'.repeat(64);
+  const call = (path: string, body: unknown) =>
+    send(path, { method: 'POST', headers: { cookie: COOKIE, ...headers }, body });
+  const answers: [string, string, unknown, (j: Reply['json']) => unknown][] = [
+    [
+      'a change',
+      ROUTES.projectsChange,
+      { kind: 'create', space: 'client', client: 'acme', slug: 'new', fields: { title: 'New' } },
+      (j) => j.canAddArtifact,
+    ],
+    [
+      'a move',
+      ROUTES.projectsMove,
+      { key: 'acme/web', client: 'skyseal', expect: VERSION },
+      (j) => (j.list as Record<string, unknown>).canAddArtifact,
+    ],
+    [
+      'an archive',
+      ROUTES.projectsArchive,
+      { key: 'acme/web', action: 'archive', expect: VERSION },
+      (j) => (j.list as Record<string, unknown>).canAddArtifact,
+    ],
+  ];
+  for (const [name, path, body, flag] of answers) {
+    it(`keeps the Add action after ${name}`, async () => {
+      const r = await call(path, body);
+      expect(r.status).toBe(200);
+      expect(flag(r.json)).toBe(true);
+      state.canAdd = false;
+      expect(flag((await call(path, body)).json)).toBeUndefined();
+    });
+  }
 });

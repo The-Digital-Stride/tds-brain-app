@@ -1407,6 +1407,7 @@ describe('claude artifacts in the library (plan 2026-11-23-claude-artifacts-in-p
       );
       put(brain, 'clients/acme/profile.md', '# Acme');
       mkdirSync(join(brain, 'clients/acme/projects/site'), { recursive: true });
+      put(brain, 'clients/acme/projects/site/project.md', '# Site');
       return { brain, home };
     };
 

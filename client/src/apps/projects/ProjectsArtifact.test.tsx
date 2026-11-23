@@ -114,6 +114,17 @@ describe('Add a claude.ai page', () => {
     expect(api.projectArtifact).not.toHaveBeenCalled();
   });
 
+  it("gives the app's own message for a link without https:// (the browser's check never takes over)", async () => {
+    await openFiles(SKY, { canAddArtifact: true });
+    fireEvent.click(await screen.findByRole('button', { name: ADD }));
+    fireEvent.change(screen.getByLabelText('Link'), { target: { value: 'claude.ai/artifact/AbC123' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByText(/isn't a claude\.ai artifact link/)).toBeTruthy();
+    expect(screen.getByLabelText('Link').getAttribute('aria-invalid')).toBe('true');
+    expect(api.projectArtifact).not.toHaveBeenCalled();
+  });
+
   it('sends the link and name, reloads the files, announces it and returns focus to the button', async () => {
     api.projectArtifact.mockResolvedValue({
       path: 'clients/skyseal/projects/site/files/q4.html',

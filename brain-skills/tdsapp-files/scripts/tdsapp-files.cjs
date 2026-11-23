@@ -1129,6 +1129,9 @@ function addArtifact(input, ctx) {
     data = Buffer.from(linkCard({ url, copied }, title, description), 'utf8');
   }
   existingFolder(ctx, target.home);
+  // A live project only: the folder must have its card (a plain project.md, never a link or a folder).
+  const card = lstatOrNull(path.join(ctx.root, ...target.home, 'project.md'));
+  if (!card || !card.isFile()) throw refuse('not-found', `${target.home.join('/')} has no project card (project.md)`);
   const gitRule = target.scope === 'client' ? requireNotIgnored : requireIgnored;
   gitRule(ctx, [rel]);
   const dir = plainFolder(path.join(ctx.root, ...target.home), target.folder.slice(target.home.length), 'not-allowed');

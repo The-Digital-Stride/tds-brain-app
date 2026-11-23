@@ -307,15 +307,15 @@ describe('a claude.ai artifact among the documents', () => {
     expect(screen.getByRole('button', { name: /^Explainer/ }).textContent).not.toContain('claude.ai');
   });
 
-  it('gives the panel one From claude.ai row, and none for an ordinary page', () => {
+  it('gives the panel one Source row, and none for an ordinary page', () => {
     docsStore.set({ current: artifactPage });
     const { unmount } = render(<DocumentsPanel />);
-    expect(screen.getByText('From claude.ai')).toBeTruthy();
+    expect(screen.getByText('Source')).toBeTruthy();
     expect(screen.getByText('Copied from claude.ai on 23 November 2026')).toBeTruthy();
     unmount();
     docsStore.set({ current: page });
     render(<DocumentsPanel />);
-    expect(screen.queryByText('From claude.ai')).toBeNull();
+    expect(screen.queryByText('Source')).toBeNull();
   });
 });
 

@@ -1321,7 +1321,15 @@ describe('add-artifact', () => {
 
   beforeEach(() => {
     mkdirSync(abs('clients/acme/projects/site'), { recursive: true });
+    put('clients/acme/projects/site/project.md', '# Site');
     put('clients/acme/profile.md', 'profile');
+  });
+
+  it('refuses a project folder that has no card (security review: a live project only)', () => {
+    mkdirSync(abs('clients/acme/projects/bare'), { recursive: true });
+    expectRefused(art('clients/acme/projects/bare/files/p.html', { title: 'T' }), 'not-found');
+    mkdirSync(abs('clients/acme/projects/odd/project.md'), { recursive: true });
+    expectRefused(art('clients/acme/projects/odd/files/p.html', { title: 'T' }), 'not-found');
   });
 
   it('writes the block once, straight after a doctype', () => {
@@ -1452,6 +1460,7 @@ describe('add-artifact', () => {
 
   it('allows only the two files/ shapes', () => {
     mkdirSync(abs('personal/projects/mine'), { recursive: true });
+    writeFileSync(abs('personal/projects/mine/project.md'), '# Mine');
     writeFileSync(join(root, '.gitignore'), 'personal/*\n');
     expect(art('personal/projects/mine/files/p.html', { title: 'T' }).exit).toBe(0);
     expect(logLines()).toEqual([]);

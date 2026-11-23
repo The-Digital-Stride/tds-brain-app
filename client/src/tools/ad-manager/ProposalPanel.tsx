@@ -524,82 +524,89 @@ export function ProposalPanel() {
         adStore.set({ last: { client: client.slug, id: p.id, ok: false, text: adsErrorText(err) } }),
       );
   };
+  // Previous and Next sit in the panel's fixed band, like a drawer's filters; only the proposal scrolls.
+  const stepper =
+    order.length > 1 && at >= 0 ? (
+      <nav className="am-step" aria-label="Proposals">
+        <span className="am-sub" aria-hidden="true">
+          {at + 1} of {order.length}
+        </span>
+        <span className="visually-hidden" aria-live="polite">
+          {`Proposal ${at + 1} of ${order.length}, ${p.fm.title}`}
+        </span>
+        {/* Up and down icon buttons, as the to-do panel steps (design system, Actions rule 11). */}
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Previous proposal"
+          data-tip="Previous proposal"
+          aria-disabled={at === 0 || undefined}
+          onClick={() => step(-1)}
+        >
+          <Icon name="up" size={18} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Next proposal"
+          data-tip="Next proposal"
+          aria-disabled={at === order.length - 1 || undefined}
+          onClick={() => step(1)}
+        >
+          <Icon name="chevron" size={18} />
+        </button>
+      </nav>
+    ) : null;
   return (
-    <div className="am-panel">
-      {region}
-      {order.length > 1 && at >= 0 ? (
-        <nav className="am-step" aria-label="Proposals">
-          <span className="am-sub" aria-hidden="true">
-            {at + 1} of {order.length}
-          </span>
-          <span className="visually-hidden" aria-live="polite">
-            {`Proposal ${at + 1} of ${order.length}, ${p.fm.title}`}
-          </span>
-          {/* Up and down icon buttons, as the to-do panel steps (design system, Actions rule 11). */}
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Previous proposal"
-            data-tip="Previous proposal"
-            aria-disabled={at === 0 || undefined}
-            onClick={() => step(-1)}
-          >
-            <Icon name="up" size={18} />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Next proposal"
-            data-tip="Next proposal"
-            aria-disabled={at === order.length - 1 || undefined}
-            onClick={() => step(1)}
-          >
-            <Icon name="chevron" size={18} />
-          </button>
-        </nav>
-      ) : null}
-      {/* One strip for both: a step from this panel, or what the shell held back (a close, another proposal). */}
-      {askStep !== null || panelHold.asking ? (
-        <Confirm
-          label="Discard your changes"
-          text="Discard your changes?"
-          action="Discard changes"
-          safe="Keep editing"
-          variant="danger"
-          busy={false}
-          onConfirm={() => {
-            const by = askStep;
-            setAskStep(null);
-            if (panelHold.asking) dispatch({ type: 'discard-panel' });
-            else if (by !== null) {
-              setDirty(false);
-              go(by);
-            }
-          }}
-          onCancel={() => {
-            setAskStep(null);
-            if (panelHold.asking) dispatch({ type: 'keep-panel' });
-          }}
-        />
-      ) : null}
-      <h3 className="am-title" tabIndex={-1}>
-        {p.fm.title}
-      </h3>
-      <dl className="kv">
-        {facts.map(([k, v]) => (
-          <div key={k} className="am-kvrow">
-            <dt>{k}</dt>
-            <dd data-warn={k === 'Warnings' ? 'true' : undefined}>
-              {k === 'Status' ? <StatusBadge status={p.fm.status} /> : v}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <Fold key={`${key}-text`} title="Full proposal text" defaultOpen={false} onToggle={loadText}>
-        {text ? <pre className="am-body">{text.body}</pre> : <StateNote kind="loading" />}
-      </Fold>
-      <Actions key={key} client={client} p={p} onDirty={setDirty} />
-      <LastResult />
+    <div className="drawer-split">
+      {stepper ? <div className="drawer-tools">{stepper}</div> : null}
+      <div className="drawer-scroll">
+        <div className="am-panel">
+          {region}
+          {/* One strip for both: a step from this panel, or what the shell held back (a close, another proposal). */}
+          {askStep !== null || panelHold.asking ? (
+            <Confirm
+              label="Discard your changes"
+              text="Discard your changes?"
+              action="Discard changes"
+              safe="Keep editing"
+              variant="danger"
+              busy={false}
+              onConfirm={() => {
+                const by = askStep;
+                setAskStep(null);
+                if (panelHold.asking) dispatch({ type: 'discard-panel' });
+                else if (by !== null) {
+                  setDirty(false);
+                  go(by);
+                }
+              }}
+              onCancel={() => {
+                setAskStep(null);
+                if (panelHold.asking) dispatch({ type: 'keep-panel' });
+              }}
+            />
+          ) : null}
+          <h3 className="am-title" tabIndex={-1}>
+            {p.fm.title}
+          </h3>
+          <dl className="kv">
+            {facts.map(([k, v]) => (
+              <div key={k} className="am-kvrow">
+                <dt>{k}</dt>
+                <dd data-warn={k === 'Warnings' ? 'true' : undefined}>
+                  {k === 'Status' ? <StatusBadge status={p.fm.status} /> : v}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <Fold key={`${key}-text`} title="Full proposal text" defaultOpen={false} onToggle={loadText}>
+            {text ? <pre className="am-body">{text.body}</pre> : <StateNote kind="loading" />}
+          </Fold>
+          <Actions key={key} client={client} p={p} onDirty={setDirty} />
+          <LastResult />
+        </div>
+      </div>
     </div>
   );
 }

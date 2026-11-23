@@ -221,5 +221,9 @@ export function matchMeeting(
   ctx: MatchContext,
 ): { key: ProjectKey; match: ProjectMatch } | null {
   if (m.allDay) return null;
-  return matchProject(m, matchClient(m, ctx), ctx);
+  const client = matchClient(m, ctx);
+  // Someone from outside the agency is invited but we can't tell which client: never fall back to the agency's
+  // own or personal projects, or a client's call could land (and its notes be filed) in an internal project.
+  if (client === null && attendeeDomains(m, ctx).length > 0) return null;
+  return matchProject(m, client, ctx);
 }

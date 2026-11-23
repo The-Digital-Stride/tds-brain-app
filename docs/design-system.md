@@ -158,7 +158,14 @@ named here or it isn't one.
    change it clears, shown or not): it acts at once with no Undo, then one status line and focus on the card's
    heading, or on Clear when the read was too old and nothing was cleared. One
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
-   opens it large. Project Files has no pane, so its row opens the file.
+   opens it large. Project Files has no pane, so its row opens the file. A project's Meetings card (Overview,
+   between Since you last looked and Coming up; this person's own calendar) has plain rows (`.line.proj-static`,
+   no lift), because a meeting can't be opened. The last meeting carries one action at the row's right end, which
+   wraps under the text when narrow (`.proj-meeting`). With no call note filed, it is a quiet small "File the
+   notes", which starts a chat in the drawer. With one filed, it is "Notes filed" (`.hint`) and a quiet small "Open
+   notes", which opens the note as a file row does. A stale calendar shows a `.hint` line, "Calendar last checked
+   {d Mon}.", above the rows or the empty line. The next meeting within 14 days also shows in Coming up as a plain
+   "Meeting: {title}" row.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
    remove (bin, or X for a chip or a file added to a to-do or project) at the very edge. At most three icons. Where the row's main action is an icon
    (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.

@@ -115,6 +115,22 @@ describe('startChat', () => {
     expect(store.activeChat).toEqual({ kind: 'live', sessionId: 's9' });
   });
 
+  it("sends the chat's project when given one (File the notes), and nothing extra when not", async () => {
+    await mount();
+    await act(async () => {
+      await store.startChat('File the notes', 'acme', { open: true, in: 'drawer', project: 'acme/site' });
+    });
+    expect(api.startSession).toHaveBeenLastCalledWith({
+      prompt: 'File the notes',
+      client: 'acme',
+      project: 'acme/site',
+    });
+    await act(async () => {
+      await store.startChat('Run it', 'acme', { open: false, project: null });
+    });
+    expect(api.startSession).toHaveBeenLastCalledWith({ prompt: 'Run it', client: 'acme' });
+  });
+
   it('with open: false leaves the person where they are', async () => {
     await mount();
     await act(async () => {

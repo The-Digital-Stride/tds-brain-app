@@ -84,12 +84,14 @@ export async function findCallNote(
       if (text === null) continue;
       const { data } = parseFrontmatter(text);
       const at = Date.parse(asString(data.meeting_start).trim());
+      const project = asString(data.project).trim();
       let diff: number | null = null;
       if (!Number.isNaN(at)) {
-        if (Math.abs(at - startMs) <= MEETING_NOTE_MATCH_MS) diff = Math.abs(at - startMs);
+        // A note tagged for ANOTHER project is that project's meeting (back-to-back calls with one client).
+        const otherProject = !dir.inProject && project !== '' && project !== card.slug;
+        if (!otherProject && Math.abs(at - startMs) < MEETING_NOTE_MATCH_MS) diff = Math.abs(at - startMs);
       } else if (asString(data.meeting_start).trim() === '') {
         const date = asString(data.date).trim().slice(0, 10);
-        const project = asString(data.project).trim();
         if (date === day && (dir.inProject || project === card.slug)) diff = MEETING_NOTE_MATCH_MS;
       }
       if (diff === null) continue;

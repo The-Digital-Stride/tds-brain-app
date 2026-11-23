@@ -48,14 +48,31 @@ describe('findCallNote', () => {
     });
     await put(
       'clients/acme-heating/call-notes/2026-11-20-other.md',
-      note(
-        `date: 2026-11-20\nproject: someone-else\nmeeting_start: ${new Date(2026, 10, 20, 10, 5).toISOString()}`,
-      ),
+      note(`date: 2026-11-20\nmeeting_start: ${new Date(2026, 10, 20, 10, 5).toISOString()}`),
     );
     // closest wins
     expect((await findCallNote(root, card, START))?.path).toBe(
       'clients/acme-heating/call-notes/2026-11-20-other.md',
     );
+  });
+
+  it('skips a note tagged for another project, even at the same time (back-to-back calls)', async () => {
+    await put(
+      'clients/acme-heating/call-notes/2026-11-20-ppc.md',
+      note(
+        `date: 2026-11-20\nproject: ppc-campaign\nmeeting_start: ${new Date(2026, 10, 20, 10, 0).toISOString()}`,
+      ),
+    );
+    expect(await findCallNote(root, card, START)).toBeNull();
+  });
+
+  it('exactly 30 minutes apart does not count', async () => {
+    const at = new Date(Date.parse(START) + 30 * 60 * 1000).toISOString();
+    await put(
+      'clients/acme-heating/call-notes/2026-11-20-edge.md',
+      note(`date: 2026-11-20\nmeeting_start: ${at}`),
+    );
+    expect(await findCallNote(root, card, START)).toBeNull();
   });
 
   it('does not match a meeting_start more than 30 minutes away, tagged or not', async () => {

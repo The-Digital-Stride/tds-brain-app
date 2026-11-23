@@ -62,7 +62,9 @@ describe('domainOf and websiteDomain', () => {
     expect(websiteDomain('---\nclient: X\nwebsite: "http://x.com"\n---\n')).toBe('x.com');
     // The brain's own profiles write it as a bullet.
     expect(websiteDomain('# Kinedo\n\n- **Website:** https://www.kinedo.co.uk\n')).toBe('kinedo.co.uk');
-    expect(websiteDomain('- **Website:** https://bookvault.app — **always without www**\n')).toBe('bookvault.app');
+    expect(websiteDomain('- **Website:** https://bookvault.app — **always without www**\n')).toBe(
+      'bookvault.app',
+    );
     expect(websiteDomain('**Website:** not a url')).toBeNull();
     expect(websiteDomain('nothing')).toBeNull();
   });
@@ -181,6 +183,32 @@ describe('matchMeeting: project', () => {
       projects: [project('skyseal/seo', 'SEO retainer'), project('skyseal/old', 'Old', { status: 'done' })],
     });
     expect(matchMeeting(meeting('Skyseal chat'), c)).toEqual({ key: 'skyseal/seo', match: 'only' });
+  });
+  it('an outside guest with no known client never lands on an internal or personal project', () => {
+    const c = ctx({
+      clients: [
+        client('acme-heating', 'Acme Heating', null),
+        client('skyseal', 'Skyseal', 'skyseal.com'),
+        client('the-digital-stride', 'The Digital Stride', 'thedigitalstride.co.uk'),
+      ],
+      projects: [
+        project('the-digital-stride/seo-audit', 'SEO audit'),
+        project('personal/website', 'Website'),
+      ],
+    });
+    // Acme has no Website line, so its guest can't be placed.
+    expect(matchMeeting(meeting('SEO monthly review', ['jo@acmeheating.co.uk']), c)).toBeNull();
+    // Two clients invited and the title names neither.
+    expect(
+      matchMeeting(meeting('SEO joint workshop', ['jo@acmeheating.co.uk', 'x@skyseal.com']), c),
+    ).toBeNull();
+    // A stranger's invite can't reach a personal project either.
+    expect(matchMeeting(meeting('Website chat', ['someone@elsewhere.io']), c)).toBeNull();
+    // Agency-only meetings still match internal projects by title.
+    expect(matchMeeting(meeting('SEO audit planning', ['amy@thedigitalstride.co.uk']), c)).toEqual({
+      key: 'the-digital-stride/seo-audit',
+      match: 'title',
+    });
   });
   it('internal and personal projects match by title words only', () => {
     expect(matchMeeting(meeting('Internal tooling sync'), ctx())).toEqual({

@@ -105,7 +105,7 @@ function MeetingLine({
   const when = meetingWhen(meeting.start);
   return (
     <li>
-      <div className="line proj-static">
+      <div className="line proj-static proj-meeting">
         <span className="line-text">
           <span className="line-title">
             {label}: {meeting.title}

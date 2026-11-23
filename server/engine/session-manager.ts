@@ -3035,11 +3035,12 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
    */
   async function restorePlace(
     sdkSessionId: string,
-  ): Promise<{ client: string | null; project: ChatProjectFacts | null }> {
+  ): Promise<{ client: string | null; project: ChatProjectFacts | null; nothingSaved?: true }> {
     const none = { client: null, project: null };
     try {
       const place = await chatPlaces.placeOf(sdkSessionId);
-      if (!place) return none;
+      // Only a definite "nothing saved" lets the page's place be saved for it (never over one we couldn't read).
+      if (!place) return { ...none, nothingSaved: true };
       const known = new Set((await opts.brain.clients()).map((c) => c.slug));
       if (place.client !== null && !known.has(place.client)) return none;
       const client = place.client;
@@ -3114,6 +3115,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
 
       let client: string | null = null;
       let project: ChatProjectFacts | null = null;
+      let nothingSaved = false;
       let kind: ChatKind = 'tds';
       let title = prompt ? makeTitle(prompt) : peeked[0] ? makeTitle(peeked[0].name) : 'Chat';
       if (resume) {
@@ -3126,7 +3128,9 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         // Read here, in the awaited part: never between the re-check below and `live.set`.
         kind = await chatKinds.kindOf(resume).catch(() => 'tds' as const);
         // The saved place, also read here; it never refuses.
-        ({ client, project } = await restorePlace(resume));
+        const restored = await restorePlace(resume);
+        ({ client, project } = restored);
+        nothingSaved = restored.nothingSaved === true;
       }
       // On resume the saved place wins. Only when nothing was saved (a chat from before places were saved) does a
       // woken chat keep the client and project the page sends (it sends what it had); one that has gone since is
@@ -3151,7 +3155,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
             }
           }
         }
-        placeFromPage = resume !== null && (client !== null || project !== null);
+        placeFromPage = resume !== null && nothingSaved && (client !== null || project !== null);
       }
       let todoId: string | null = null;
       if (req.todoId !== undefined && req.todoId !== null) {

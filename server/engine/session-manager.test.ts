@@ -6254,6 +6254,28 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     });
   });
 
+  it("never saves the page's place over one it couldn't read", async () => {
+    const real = createChatPlaceStore(null);
+    const sets: string[] = [];
+    const chatPlaces: ChatScopeStore = {
+      ...real,
+      placeOf: async () => {
+        throw new Error('disk');
+      },
+      set: async (id, place) => {
+        sets.push(id);
+        return real.set(id, place);
+      },
+    };
+    const fx = projectSetup({ chatPlaces });
+    fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
+    const s = await mgr.start({ resume: 'old-1', client: 'urban-cooling', project: 'urban-cooling/web' });
+    await flush();
+    // The woken chat still carries on with what the page sent, but nothing is saved for it.
+    expect([s.client, s.project]).toEqual(['urban-cooling', 'urban-cooling/web']);
+    expect(sets).not.toContain('old-1');
+  });
+
   it("a reopened chat's saved place wins over what the page sends", async () => {
     const fx = projectSetup();
     await fx.chatPlaces.set('old-1', { client: 'urban-cooling', project: null });

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { PROJECTS_UPDATES_CAPABILITY } from '../../shared/project-updates-contract.ts';
 import {
   INTERNAL_CLIENT,
   PROJECTS_ARCHIVE_CAPABILITY,
@@ -219,6 +220,7 @@ describe('with the real script', () => {
       PROJECTS_CAPABILITY,
       PROJECTS_MOVE_CAPABILITY,
       PROJECTS_ARCHIVE_CAPABILITY,
+      PROJECTS_UPDATES_CAPABILITY,
     ]);
     const done = await runner.run({
       kind: 'create',
@@ -268,6 +270,16 @@ describe('with the real script', () => {
     expect(
       readFileSync(join(root, 'clients', 'skyseal', 'projects', 'site', 'project.md'), 'utf8'),
     ).toContain('moved_from:\n  - "acme/site"\n');
+    // Updates log: the new entry's path comes back as `file`, inside the project's updates folder.
+    const logged = await runner.run({
+      kind: 'update',
+      key: 'skyseal/site',
+      entry: { kind: 'note', summary: 'Kick-off booked.', clientSafe: false },
+    });
+    expect(logged.file).toMatch(
+      /^clients\/skyseal\/projects\/site\/updates\/\d{4}-\d{2}-\d{2}-\d{4}-sam-example-[a-z0-9]{6}\.md$/,
+    );
+    expect(readFileSync(join(root, ...(logged.file ?? '').split('/')), 'utf8')).toContain('Kick-off booked.');
   });
 });
 

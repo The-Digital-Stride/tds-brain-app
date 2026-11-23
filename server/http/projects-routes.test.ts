@@ -11,6 +11,7 @@ import {
   type TodoAction,
   type TodoList,
 } from '../../shared/contract.ts';
+import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import {
   type ProjectAction,
   type ProjectList,
@@ -64,6 +65,7 @@ const seen = {
   applies: [] as { apply: TidyApply; by: string }[],
   todoChanges: [] as TodoAction[],
   projectTodos: [] as [string, string][],
+  updates: [] as [string, string | null, string][],
   access: [] as string[],
   moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
   removes: [] as { req: ProjectRemoveRequest; by: string; todos: boolean | undefined }[],
@@ -91,6 +93,8 @@ const PROJECT_TODOS = {
   ],
   count: 1,
 } satisfies ProjectTodosResponse;
+
+const UPDATES = { updates: [], more: false, unreadable: 0, canAdd: true } satisfies ProjectUpdatesResponse;
 
 const MOVE_CHECK = {
   check: {
@@ -180,6 +184,15 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get projectUpdates() {
+      return state.has
+        ? async (key: string, before: string | null, by: Identity) => {
+            maybeFail();
+            seen.updates.push([key, before, by.slug]);
+            return UPDATES;
+          }
+        : undefined;
+    },
     get tidy() {
       return state.has
         ? async () => {
@@ -236,6 +249,7 @@ beforeEach(() => {
   seen.applies.length = 0;
   seen.todoChanges.length = 0;
   seen.projectTodos.length = 0;
+  seen.updates.length = 0;
   seen.access.length = 0;
   seen.moves.length = 0;
   seen.removes.length = 0;
@@ -307,6 +321,14 @@ const CHANGES: ProjectAction[] = [
   },
   { kind: 'link', key: KEY, path: 'clients/acme-heating/reports/r.md', expect: VERSION },
   { kind: 'unlink', key: KEY, path: 'clients/acme-heating/reports/r.md', expect: VERSION },
+  { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'Called Sam.', clientSafe: false } },
+  { kind: 'update', key: KEY, entry: { kind: 'call', summary: 'Agreed the scope.', clientSafe: true } },
+  {
+    kind: 'update-remove',
+    key: KEY,
+    file: 'clients/acme-heating/projects/web/updates/2026-11-21-1004-sam-example-abc123.md',
+    expect: VERSION,
+  },
 ];
 
 describe('the security gate', () => {
@@ -315,6 +337,7 @@ describe('the security gate', () => {
       ROUTES.projects,
       filesPath(KEY, 'image'),
       `${ROUTES.projectTodos}?key=${KEY}`,
+      `${ROUTES.projectUpdates}?key=${KEY}`,
       ROUTES.projectsTidy,
     ]) {
       expect((await send(path)).status, path).toBe(401);
@@ -366,6 +389,40 @@ describe('the security gate', () => {
       body: {},
     });
     expect(todo.status).toBe(415);
+  });
+});
+
+describe('GET /api/projects/updates', () => {
+  const path = (q: string) => `${ROUTES.projectUpdates}?${q}`;
+
+  it('answers the brain reading, passing key, before and who asked', async () => {
+    const first = await get(path(`key=${KEY}`));
+    expect(first.status).toBe(200);
+    expect(first.json).toEqual(UPDATES);
+    const before = 'clients/acme-heating/projects/web/updates/2026-11-21-1004-sam-example-abc123.md';
+    await get(path(`key=${KEY}&before=${encodeURIComponent(before)}`));
+    expect(seen.updates).toEqual([
+      [KEY, null, 'sam-example'],
+      [KEY, before, 'sam-example'],
+    ]);
+  });
+
+  it('refuses a bad key, an empty or long before, a POST, and a missing service', async () => {
+    for (const q of ['', 'key=Bad%20Key', `key=${KEY}&before=`, `key=${KEY}&before=${'x'.repeat(1025)}`]) {
+      const r = await get(path(q));
+      expect(r.status, q).toBe(400);
+      expect(r.json.error?.code).toBe('bad-request');
+    }
+    expect((await post(ROUTES.projectUpdates, {})).status).toBe(405);
+    expect(seen.updates).toEqual([]);
+    state.has = false;
+    expect((await get(path(`key=${KEY}`))).status).toBe(404);
+  });
+
+  it('answers a ProjectsError with its status', async () => {
+    state.fail = new ProjectsError('bad-request', 'That update list is not available.');
+    const r = await get(path(`key=${KEY}&before=nope`));
+    expect(r.status).toBe(400);
   });
 });
 
@@ -427,6 +484,21 @@ describe('POST /api/projects/change', () => {
       { kind: 'link', key: KEY, path: 'x'.repeat(1025), expect: VERSION },
       { kind: 'link', key: KEY, expect: VERSION },
       { kind: 'unlink', key: KEY, path: 'a.md' },
+      { kind: 'update', key: KEY },
+      { kind: 'update', key: KEY, entry: { kind: 'status', summary: 'x', clientSafe: false } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'x' } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 5, clientSafe: false } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: '  ', clientSafe: false } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'x'.repeat(5001), clientSafe: false } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'x', clientSafe: 'no' } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'x', clientSafe: false, by: 'me' } },
+      { kind: 'update', key: KEY, entry: { kind: 'note', summary: 'x', clientSafe: false }, at: 'now' },
+      { kind: 'update', key: 'Bad Key', entry: { kind: 'note', summary: 'x', clientSafe: false } },
+      { kind: 'update-remove', key: KEY, file: 'a/updates/b.md' },
+      { kind: 'update-remove', key: KEY, file: '', expect: VERSION },
+      { kind: 'update-remove', key: KEY, file: 'a/updates/b.md', expect: 'short' },
+      { kind: 'update-remove', key: KEY, file: 'a/updates/b.md', expect: VERSION, extra: 1 },
+      { kind: 'update-remove', key: KEY, file: 'x'.repeat(1025), expect: VERSION },
     ];
     for (const body of bad) {
       const r = await post(ROUTES.projectsChange, body);

@@ -30,11 +30,12 @@ import {
 } from './logic.ts';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
+import { ProjectUpdates } from './ProjectUpdates.tsx';
 import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useProjectTodos } from './useProjectTodos.ts';
 
-export type ProjectTab = 'overview' | 'todos' | 'files';
+export type ProjectTab = 'overview' | 'todos' | 'updates' | 'files';
 
 /** What the Overview needs to archive, unarchive and delete this project. */
 interface Removal {
@@ -482,7 +483,7 @@ function Overview({
   );
 }
 
-/** One project: its title and tabs (Overview, To-dos, Files). */
+/** One project: its title and tabs (Overview, To-dos, Updates, Files). */
 export function ProjectPage({
   card,
   list,
@@ -520,11 +521,15 @@ export function ProjectPage({
   const [linking, setLinking] = useState(false);
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
+  // And Add an update: the Updates tab says whether the brain's skill allows it.
+  const [addingUpdate, setAddingUpdate] = useState(false);
+  const [canAddUpdate, setCanAddUpdate] = useState(false);
   const { todos, newChat } = useStore();
   const canAddTodo = todos?.canProject === true && !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
     if (tab !== 'todos') setAdding(false);
+    if (tab !== 'updates') setAddingUpdate(false);
   }, [tab]);
   // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
   // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
@@ -605,6 +610,7 @@ export function ProjectPage({
           items={[
             { id: 'overview', label: 'Overview', dot: null },
             { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
+            { id: 'updates', label: 'Updates' },
             { id: 'files', label: 'Files' },
           ]}
         />
@@ -619,6 +625,20 @@ export function ProjectPage({
           >
             <Icon name="plus" size={14} />
             Add a to-do
+          </button>
+        ) : null}
+        {tab === 'updates' && canAddUpdate ? (
+          <button
+            type="button"
+            className="btn"
+            data-variant="primary"
+            data-size="small"
+            data-focus="addupdate"
+            onClick={() => setAddingUpdate(true)}
+            aria-disabled={addingUpdate || undefined}
+          >
+            <Icon name="plus" size={14} />
+            Add an update
           </button>
         ) : null}
         {tab === 'files' && editable ? (
@@ -659,6 +679,15 @@ export function ProjectPage({
             reload={projectTodos.reload}
             adding={adding}
             onAdding={setAdding}
+          />
+        ) : null}
+        {tab === 'updates' ? (
+          <ProjectUpdates
+            card={card}
+            canChange={canChange}
+            adding={addingUpdate}
+            onAdding={setAddingUpdate}
+            onCanAdd={setCanAddUpdate}
           />
         ) : null}
         {tab === 'files' ? (

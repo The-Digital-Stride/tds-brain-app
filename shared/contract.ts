@@ -15,6 +15,7 @@ import { chatContextPath } from './context-contract.ts';
 import type { AppState } from './install-contract.ts';
 import type { LevelMode, LevelTier, OwnLevel, SkillLevels, TurnLevel } from './levels-contract.ts';
 import type { ChatPage } from './pages-contract.ts';
+import type { ProjectUpdatesResponse } from './project-updates-contract.ts';
 import type {
   ProjectAction,
   ProjectCard,
@@ -838,7 +839,14 @@ export interface BrainReaders {
    * manager can check a chat's project and find its folder. Optional so older test fakes still satisfy the type.
    */
   projectsIndex?(): Promise<{ cards: ProjectCard[]; byKey(key: ProjectKey): ProjectCard | null }>;
-  changeProject?(action: ProjectAction, identity: Identity): Promise<ProjectList>;
+  /**
+   * `file` (an `update`: the new entry's path) and `updatesFailed` (an `edit` whose card change was saved but an
+   * automatic log entry wasn't) ride beside the list (Projects R2 phase 2).
+   */
+  changeProject?(
+    action: ProjectAction,
+    identity: Identity,
+  ): Promise<ProjectList & { file?: string; updatesFailed?: true }>;
   /**
    * Move plan (2026-11-21-project-move): a check (`check: true`) or a move. `todos: false` leaves the
    * to-dos as they are (they still resolve through the old key).
@@ -856,6 +864,12 @@ export interface BrainReaders {
   ): Promise<ProjectRemoveCheckResponse | ProjectRemoveResult>;
   projectFiles?(key: ProjectKey, kind: LibraryKind, identity: Identity): Promise<ProjectFilesResponse>;
   projectTodos?(key: ProjectKey, identity: Identity): Promise<ProjectTodosResponse>;
+  /** Projects R2 phase 2: a project's updates log (`before` is the last entry of the page before). */
+  projectUpdates?(
+    key: ProjectKey,
+    before: string | null,
+    identity: Identity,
+  ): Promise<ProjectUpdatesResponse>;
   tidy?(identity: Identity): Promise<TidyList>;
   applyTidy?(apply: TidyApply, identity: Identity): Promise<TidyList>;
   /** Runs the script's `purge` (30-day clean-up). Resolves to the number erased; never throws (0 on any failure). */
@@ -1945,6 +1959,8 @@ export const ROUTES = {
   projectFiles: '/api/projects/files',
   /** `GET ?key=<ProjectKey>` → ProjectTodosResponse (every assignee's open to-dos in the project). */
   projectTodos: '/api/projects/todos',
+  /** R2 phase 2. `GET ?key=<ProjectKey>[&before=<path>]` → ProjectUpdatesResponse (shared/project-updates-contract.ts). */
+  projectUpdates: '/api/projects/updates',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */
   projectsTidy: '/api/projects/tidy',
   prefs: '/api/prefs',

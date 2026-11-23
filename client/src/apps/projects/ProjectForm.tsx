@@ -40,6 +40,8 @@ import { useKeepFocus } from './useKeepFocus.ts';
 /** Form order, so the first invalid field gets focus. Ids match `id(name)` below. */
 const FIELD_ORDER = ['title', 'client', 'slug', 'end', 'budget', 'stages', 'brief', 'team'] as const;
 
+/** Shown after an edit when the card was saved but the updates log entry wasn't. */
+export const UPDATES_FAILED = "Saved, but the change couldn't be added to the updates log.";
 /** Shown after Add a card when the Account Owner we sent didn't stick. */
 export const OWNER_DROPPED =
   'Saved. Only an owner or a scout can set the Account Owner on an existing folder, so it was left blank.';
@@ -251,7 +253,8 @@ export function ProjectForm({
     if (res.ok) {
       const kept = mode === 'card' && card ? res.list.projects.find((c) => c.key === card.key) : undefined;
       const dropped = mode === 'card' && v.owner !== '' && kept !== undefined && !kept.owner;
-      onDone(key, dropped ? OWNER_DROPPED : undefined);
+      const logFailed = (res.list as { updatesFailed?: boolean }).updatesFailed === true;
+      onDone(key, dropped ? OWNER_DROPPED : logFailed && mode === 'edit' ? UPDATES_FAILED : undefined);
     } else setFailure({ code: res.code, message: res.message });
   };
 

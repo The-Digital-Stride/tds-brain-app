@@ -174,6 +174,10 @@
     gap: var(--sp-12);
   }
   .proj-checks {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -406,5 +410,44 @@
   }
   .proj-checklist > li + li {
     margin-top: var(--sp-2);
+  }
+}
+
+@layer features {
+  /* Updates tab */
+  .proj-update-item {
+    display: flex;
+    flex-direction: column;
+  }
+  /* An update row is not a button (its bin is): no lift on hover, like a project to-do row. */
+  .line.proj-update {
+    align-items: flex-start;
+  }
+  .line.proj-update:hover {
+    background: var(--glass-92);
+    box-shadow: none;
+    transform: none;
+  }
+  .proj-update-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--sp-8);
+    min-width: 0;
+  }
+  .proj-update-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4) var(--sp-8);
+  }
+
+  /* The Updates add form runs full width (like the To-dos one), so its Kind switch sizes to its words
+     instead of stretching (design-system.md, Page tabs: a .seg stretches unless told not to). */
+  .proj-update-form .seg {
+    align-self: flex-start;
+  }
+  .proj-update-form .seg > button {
+    flex: 1 0 auto;
   }
 }

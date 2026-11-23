@@ -94,6 +94,7 @@ import {
   type SkillLevels,
 } from '../../shared/levels-contract.ts';
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
+import { UPDATE_SUMMARY_MAX } from '../../shared/project-updates-contract.ts';
 import {
   PROJECT_BRIEF_MAX,
   PROJECT_KEY_PATTERN,
@@ -965,6 +966,38 @@ export function parseProjectAction(body: unknown): ProjectAction {
         throw projectBad();
       return { kind: body.kind, key: body.key, path: body.path, expect: body.expect };
     }
+    case 'update': {
+      onlyKeys(body, ['kind', 'key', 'entry'], ['key', 'entry']);
+      if (!isProjectKey(body.key) || !isRec(body.entry)) throw projectBad();
+      const entry = body.entry;
+      onlyKeys(entry, ['kind', 'summary', 'clientSafe'], ['kind', 'summary', 'clientSafe']);
+      if (
+        (entry.kind !== 'note' && entry.kind !== 'call') ||
+        typeof entry.summary !== 'string' ||
+        entry.summary.trim() === '' ||
+        entry.summary.trim().length > UPDATE_SUMMARY_MAX ||
+        typeof entry.clientSafe !== 'boolean'
+      )
+        throw projectBad();
+      return {
+        kind: 'update',
+        key: body.key,
+        entry: { kind: entry.kind, summary: entry.summary, clientSafe: entry.clientSafe },
+      };
+    }
+    case 'update-remove': {
+      onlyKeys(body, ['kind', 'key', 'file', 'expect'], ['key', 'file', 'expect']);
+      if (
+        !isProjectKey(body.key) ||
+        typeof body.file !== 'string' ||
+        body.file === '' ||
+        body.file.length > PROJECT_PATH_MAX ||
+        typeof body.expect !== 'string' ||
+        !PROJECT_VERSION.test(body.expect)
+      )
+        throw projectBad();
+      return { kind: 'update-remove', key: body.key, file: body.file, expect: body.expect };
+    }
     default:
       throw projectBad();
   }
@@ -1225,6 +1258,22 @@ async function projectsRoute(
       sendJson(res, 200, await files.call(ctx.brain, key, kind, await identity()));
     } catch (err) {
       throw projectsFailure(err, ctx, "Reading a project's files");
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectUpdates) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    const before = url.searchParams.get('before');
+    if (!isProjectKey(key) || (before !== null && (before === '' || before.length > PROJECT_PATH_MAX)))
+      throw projectBad();
+    const read = ctx.brain.projectUpdates;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain, key, before, await identity()));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's updates");
     }
     return;
   }
@@ -2331,6 +2380,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectsDelete ||
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
+    path === ROUTES.projectUpdates ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

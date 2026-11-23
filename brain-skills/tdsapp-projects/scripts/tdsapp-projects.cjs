@@ -1,20 +1,24 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.3.1): make and change project cards (`project.md`) the way TDS Cortex does,
-// move a project to another client, and archive, unarchive or delete one. The plans are the app
-// repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
-// docs/plans/2026-11-21-project-move.md and docs/plans/2026-11-21-project-archive-delete.md; the
-// shapes are in its shared/projects-contract.ts (a test checks the constants here match).
+// tdsapp-projects.cjs (v0.4.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// move a project to another client, archive, unarchive or delete one, and keep its updates log. The
+// plans are the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
+// docs/plans/2026-11-21-project-move.md, docs/plans/2026-11-21-project-archive-delete.md and
+// docs/plans/2026-11-23-projects-r2-updates-log.md; the shapes are in its shared/projects-contract.ts
+// and shared/project-updates-contract.ts (a test checks the constants here match).
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
-//   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | capabilities
+//   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | update |
+//             update-remove | capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
 //             link {key, path, expect}, unlink {key, path, expect},
 //             move {key, client, expect, dropPersonal?: true, check?: true, filesExpect?},
 //             archive / unarchive {key, expect?, check?: true, filesExpect?},
-//             delete {key, expect?, check?: true, filesExpect?, leftover?: true}, capabilities {}.
+//             delete {key, expect?, check?: true, filesExpect?, leftover?: true},
+//             update {key, entry: {kind: note|call, summary, clientSafe}}, update-remove {key, file, expect},
+//             capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
 //             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
@@ -23,6 +27,8 @@
 //             the move is refused with `changed` when the folder's files are no longer those checked.
 //             archive, unarchive and delete answer `version: ''`; with `check: true` they add `check`
 //             (ProjectRemoveCheck: what would move or go, who may, and what else names the folder).
+//             `update` adds `file`, the new entry's brain path; `edit` adds `updatesFailed: true` when
+//             the card changed but an automatic log entry couldn't be written.
 //   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed); exit 1 internal.
 //
 // Where projects live (every folder there is a project, card or not):
@@ -76,6 +82,13 @@
 //   billable, stages, monday_id, created, created_by, moved_from
 // Body: the brief, then an optional `## Linked files` section of `- [name](path from the card)` lines.
 //
+// The updates log (R2 phase 2): one file per entry in `<project folder>/updates/`, named
+// `<YYYY-MM-DD>-<HHmm>-<person>-<random6>.md` (UK time), flat frontmatter `v, kind, by, at,
+// client_safe` (auto entries add `change, from, to`), body the summary. `by` and `at` are this Mac's
+// identity and clock. A file is only ever created (never overwritten: a clash retries a new suffix)
+// or removed by `update-remove`. `edit` writes one entry per changed status, health or Account Owner,
+// after the card; a failure there never undoes the card.
+//
 // When `require`d it runs nothing and exports `run(action, input, ctx)`, so tests can pass a brain
 // root, a home folder and a clock. The command line always uses the real clock. Plain Node, no
 // dependencies.
@@ -88,12 +101,21 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.3.2';
+const SCRIPT_VERSION = '0.4.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
 const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
 const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
+// Mirrors shared/project-updates-contract.ts (a test checks they match).
+const PROJECTS_UPDATES_CAPABILITY = 'projects-updates-v1';
+const UPDATES_DIR = 'updates';
+const UPDATE_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]{6}\.md$/;
+const UPDATE_SUMMARY_MAX = 5000;
+// Kinds a person may add, and remove again; every other kind is the script's own or a later phase's.
+const MANUAL_UPDATE_KINDS = ['note', 'call'];
+// Names tried for a new entry before giving up (each with a new random suffix).
+const UPDATE_NAME_TRIES = 5;
 const PROJECT_MOVED_FROM_MAX = 10;
 const INTERNAL_CLIENT = 'the-digital-stride';
 const INTERNAL_PRECEDENCE = [
@@ -133,7 +155,10 @@ const INPUT_MAX = 262144;
 const PATH_MAX = 1024;
 const NAME_MAX = 80;
 const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal']);
-const ACTION_NAMES = ['create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'capabilities'];
+const ACTION_NAMES = [
+  'create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'update', 'update-remove',
+  'capabilities',
+];
 // A move lists at most this many of the folder's files in its check, and walks at most this many entries.
 const MOVE_FILES_SHOWN = 50;
 const MOVE_WALK_MAX = 5000;
@@ -1238,7 +1263,14 @@ function edit(input, ctx) {
   for (const [key, value] of Object.entries(values)) entries = setEntry(entries, key, renderField(key, value));
   const body = brief === undefined ? cardFile.parts.body : bodyWithBrief(cardFile.parts.body, brief);
   const version = writeCard(cardFile, joinCard(entries, body));
-  return { ok: true, action: 'edit', key: loc.key, version };
+  // The card change stands whatever happens to its log entries (updates log decision 4).
+  let updatesFailed = false;
+  try {
+    writeAutoEntries(ctx, loc, who, current, values);
+  } catch {
+    updatesFailed = true;
+  }
+  return { ok: true, action: 'edit', key: loc.key, version, ...(updatesFailed ? { updatesFailed: true } : {}) };
 }
 
 function link(input, ctx) {
@@ -2043,18 +2075,251 @@ function deleteProject(input, ctx) {
   return removeAction('delete', input, ctx);
 }
 
+// ---- the updates log (docs/plans/2026-11-23-projects-r2-updates-log.md) ---------------------------
+
+// The UK local date and time of `at` for an entry's file name: YYYY-MM-DD-HHmm (GMT or BST).
+function ukStamp(at) {
+  const p = {};
+  for (const part of new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(at)) {
+    p[part.type] = part.value;
+  }
+  return `${p.year}-${p.month}-${p.day}-${p.hour}${p.minute}`;
+}
+
+// `at` as written: ISO 8601 in UTC to the second.
+function isoSecond(at) {
+  return at.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+// Six characters of [a-z0-9] for an entry's file name.
+const SUFFIX_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+function randomSuffix() {
+  let out = '';
+  for (let i = 0; i < 6; i++) out += SUFFIX_CHARS[crypto.randomInt(SUFFIX_CHARS.length)];
+  return out;
+}
+
+// Who an entry is by: this Mac's team slug, or `me` on a personal project when there is none.
+// Shared projects only ever get here for someone on the team (checkWriter).
+function entryBy(loc, who) {
+  if (who.known && who.slug) return who.slug;
+  if (loc.space === 'personal') return 'me';
+  throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can add to shared projects');
+}
+
+// Whether `who` wrote an entry whose `by` is `by`.
+function isAuthor(loc, who, by) {
+  if (typeof by !== 'string' || by === '') return false;
+  if (isPerson(who, by) || (who.known && who.slug === by)) return true;
+  return loc.space === 'personal' && by === 'me';
+}
+
+// A located project that may take or lose entries: live, with a card that can be read. A card-less
+// folder may be a moved or archived project's leftover, and an entry would turn it into a ghost project.
+function requireLiveCard(ctx, loc) {
+  if (loc.archived) throw refuse('not-allowed', 'archived projects are read only');
+  try {
+    return openCard(ctx, loc, null);
+  } catch (err) {
+    if (err instanceof Refusal && err.code === 'not-found') {
+      throw refuse('not-allowed', `${loc.key} has no card, so it can't keep updates: add a card first`);
+    }
+    throw err;
+  }
+}
+
+// The project's updates/ folder, checked as a real folder (made when `make` and it isn't there yet).
+function updatesFolder(ctx, loc, make) {
+  const rel = `${loc.rel}/${UPDATES_DIR}`;
+  const abs = path.join(loc.abs, UPDATES_DIR);
+  const check = (st) => {
+    if (st.isSymbolicLink()) throw refuse('not-allowed', `${rel} is a link, so its updates can't be changed here`);
+    if (!st.isDirectory()) throw refuse('not-allowed', `${rel} isn't a folder, so its updates can't be changed here`);
+  };
+  let st = lstatOrNull(abs);
+  if (!st) {
+    if (!make) throw refuse('not-found', `${loc.key} has no updates yet`);
+    try {
+      fs.mkdirSync(abs);
+    } catch (err) {
+      if (errCode(err) !== 'EEXIST') throw err;
+    }
+    st = lstatOrNull(abs);
+    if (!st) throw refuse('internal', `${rel} couldn't be made`);
+  }
+  check(st);
+  requireRealPath(ctx, abs, rel);
+  return { rel, abs };
+}
+
+// A frontmatter value for an entry: `""` when empty, else quoted only when YAML would misread it.
+function factValue(value) {
+  if (value === '') return '""';
+  const text = yamlText(value);
+  return text === null ? '""' : text;
+}
+
+// Writes one entry file, created all at once and never over another: a clash tries a new suffix.
+// Answers its brain-relative path.
+function writeEntry(ctx, loc, who, folder, front, summary) {
+  const by = entryBy(loc, who);
+  const person = workbenchSlug(by) || 'me';
+  const lines = [
+    '---',
+    'v: 1',
+    `kind: ${front.kind}`,
+    `by: ${by}`,
+    `at: ${isoSecond(ctx.now)}`,
+    `client_safe: ${front.clientSafe ? 'true' : 'false'}`,
+  ];
+  if (front.change !== undefined) {
+    lines.push(`change: ${front.change}`, `from: ${factValue(front.from)}`, `to: ${factValue(front.to)}`);
+  }
+  const text = [...lines, '---', '', summary, ''].join('\n');
+  const stamp = ukStamp(ctx.now);
+  const suffix = ctx.updateSuffix || randomSuffix;
+  for (let i = 0; i < UPDATE_NAME_TRIES; i++) {
+    const name = `${stamp}-${person}-${suffix()}.md`;
+    if (!UPDATE_FILE_PATTERN.test(name)) throw refuse('internal', `${name} isn't an update file name`);
+    const rel = `${folder.rel}/${name}`;
+    if (loc.space === 'personal') requirePrivate(ctx, rel);
+    try {
+      createFile(path.join(folder.abs, name), text);
+      return rel;
+    } catch (err) {
+      if (errCode(err) !== 'EEXIST') throw err;
+    }
+  }
+  throw refuse('internal', "a free name for the update couldn't be found: try again");
+}
+
+// A summary as written: line ends made \n and trimmed; one that is empty, too long, holds control
+// characters or a whole merge conflict (it would read back as unreadable) is refused.
+function checkSummary(value) {
+  if (typeof value !== 'string') throw refuse('bad-request', 'the summary must be text');
+  const text = value.replace(/\r\n?/g, '\n').trim();
+  if (text === '') throw refuse('bad-request', 'the summary is empty');
+  if (text.length > UPDATE_SUMMARY_MAX) {
+    throw refuse('bad-request', `the summary is too long (over ${UPDATE_SUMMARY_MAX} characters)`);
+  }
+  if (/[\p{Cc}]/u.test(text.replace(/[\n\t]/g, ''))) throw refuse('bad-request', "the summary can't hold control characters");
+  if (hasConflict(text)) throw refuse('bad-request', "the summary can't hold git's merge conflict lines");
+  return text;
+}
+
+function update(input, ctx) {
+  const loc = locate(ctx, input.key);
+  const entry = input.entry;
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw refuse('bad-request', 'entry must be an object');
+  }
+  if (!MANUAL_UPDATE_KINDS.includes(entry.kind)) throw refuse('bad-request', 'entry kind must be note or call');
+  const summary = checkSummary(entry.summary);
+  if (typeof entry.clientSafe !== 'boolean') throw refuse('bad-request', 'clientSafe must be true or false');
+  const who = identity(ctx);
+  checkWriter(ctx, loc, who);
+  const cardFile = requireLiveCard(ctx, loc);
+  const folder = updatesFolder(ctx, loc, true);
+  const file = writeEntry(ctx, loc, who, folder, { kind: entry.kind, clientSafe: entry.clientSafe }, summary);
+  return { ok: true, action: 'update', key: loc.key, version: sha256(cardFile.bytes), file };
+}
+
+function updateRemove(input, ctx) {
+  const loc = locate(ctx, input.key);
+  const expect = expectOf(input, true);
+  const file = input.file;
+  const prefix = `${loc.rel}/${UPDATES_DIR}/`;
+  const name = typeof file === 'string' && file.length <= PATH_MAX && file.startsWith(prefix)
+    ? file.slice(prefix.length)
+    : '';
+  if (!UPDATE_FILE_PATTERN.test(name)) throw refuse('bad-request', `file must be one of ${loc.key}'s updates`);
+  const who = identity(ctx);
+  checkWriter(ctx, loc, who);
+  const cardFile = requireLiveCard(ctx, loc);
+  const folder = updatesFolder(ctx, loc, false);
+  const abs = path.join(folder.abs, name);
+  const st = lstatOrNull(abs);
+  if (!st) throw refuse('not-found', `there is no update ${file}`);
+  if (st.isSymbolicLink() || !st.isFile()) throw refuse('not-allowed', `${file} isn't a plain file`);
+  requireRealPath(ctx, abs, file);
+  const bytes = fs.readFileSync(abs);
+  if (sha256(bytes) !== expect) throw refuse('changed', 'the update has changed since it was read');
+  const parts = cardParts(decodeFile(bytes).text);
+  if (!parts) throw refuse('not-allowed', `${file} can't be read, so it can't be removed here`);
+  const values = cardValues(parts.entries);
+  if (!MANUAL_UPDATE_KINDS.includes(values.kind)) {
+    throw refuse('not-allowed', 'only notes and calls can be removed: the log keeps its other entries');
+  }
+  if (!isAuthor(loc, who, values.by) && !isOwnerOrScout(who)) {
+    throw refuse('not-allowed', "only the person who added it, the brain's Owner or a scout can remove an update");
+  }
+  fs.unlinkSync(abs);
+  syncDir(folder.abs);
+  return { ok: true, action: 'update-remove', key: loc.key, version: sha256(cardFile.bytes) };
+}
+
+// The words the app shows for a status and a light (updates log decision 4).
+const STATUS_WORDS = { planned: 'Planned', active: 'Active', 'on-hold': 'On hold', done: 'Done' };
+const LIGHT_WORDS = { green: 'On track', amber: 'At risk', red: 'Off track' }; // as the app shows them (client logic.ts)
+
+// A card value as raw one-line text, '' when there is none.
+function rawValue(value) {
+  return typeof value === 'string' ? displayText(value, NAME_MAX) : '';
+}
+
+// One entry per changed status, health or Account Owner (AUTO_UPDATE_FIELDS), after the card is
+// written. A value sent back unchanged writes nothing. Throws when any can't be written.
+function writeAutoEntries(ctx, loc, who, current, values) {
+  const changes = [];
+  for (const field of ['status', 'health', 'owner']) {
+    if (values[field] === undefined) continue;
+    const from = rawValue(current[field]);
+    const to = values[field] === null ? '' : values[field];
+    if (from === to) continue;
+    let summary;
+    if (field === 'status') {
+      const word = v => (v === '' ? 'not set' : STATUS_WORDS[v] || v);
+      summary = `Status: ${word(from)} → ${word(to)}.`;
+    } else if (field === 'health') {
+      const word = v => (v === '' ? 'not set' : LIGHT_WORDS[v] || v);
+      summary = `Health: ${word(from)} → ${word(to)}.`;
+    } else {
+      const word = v => (v === '' ? 'nobody' : memberNamed(ctx.root, v) || v);
+      summary = `Account Owner: ${word(from)} → ${word(to)}.`;
+    }
+    changes.push({ kind: field === 'owner' ? 'owner' : 'status', change: field, from, to, summary });
+  }
+  if (changes.length === 0) return;
+  const folder = updatesFolder(ctx, loc, true);
+  let failed = null;
+  for (const c of changes) {
+    try {
+      writeEntry(ctx, loc, who, folder, { kind: c.kind, clientSafe: false, change: c.change, from: c.from, to: c.to }, c.summary);
+    } catch (err) {
+      failed = failed || err;
+    }
+  }
+  if (failed) throw failed;
+}
+
 function capabilities() {
   return {
     ok: true,
     action: 'capabilities',
     version: SCRIPT_VERSION,
-    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY],
+    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY, PROJECTS_UPDATES_CAPABILITY],
   };
 }
 
 // ---- command line --------------------------------------------------------------------------------
 
-const ACTIONS = { create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, capabilities };
+const ACTIONS = {
+  create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, update,
+  'update-remove': updateRemove, capabilities,
+};
 
 function defaultCtx() {
   return {
@@ -2122,6 +2387,10 @@ module.exports = {
   PROJECTS_CAPABILITY,
   PROJECTS_MOVE_CAPABILITY,
   PROJECTS_ARCHIVE_CAPABILITY,
+  PROJECTS_UPDATES_CAPABILITY,
+  UPDATES_DIR,
+  UPDATE_FILE_PATTERN,
+  UPDATE_SUMMARY_MAX,
   PROJECT_MOVED_FROM_MAX,
   INTERNAL_CLIENT,
   INTERNAL_PRECEDENCE,

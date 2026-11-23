@@ -9,6 +9,7 @@
  */
 
 import type { LibraryItem } from './contract.ts';
+import type { ProjectUpdateAction, ProjectUpdateRemoveAction } from './project-updates-contract.ts';
 
 // ─── Where projects live (decision 1) ─────────────────────────────────────────────────────────────
 
@@ -308,6 +309,9 @@ export type ProjectAction =
       /** Deletes the stray live folder (ProjectList.leftovers), not the archive the key reads. */
       leftover?: true;
     }
+  /** R2 phase 2: adds one entry to the project's updates log (shared/project-updates-contract.ts). */
+  | ProjectUpdateAction
+  | ProjectUpdateRemoveAction
   | { kind: 'capabilities' };
 
 /** The script answers `capabilities` with this too once it can `archive`, `unarchive` and `delete` (0.3). */

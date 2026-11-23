@@ -523,10 +523,11 @@ export function ProjectPage({
   // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
   // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
   const shell = useContext(ShellContext);
-  const chooseTab = (next: ProjectTab) => {
-    if (shell?.sheetHold.dirty) shell.guardLeave(() => onTab(next));
-    else onTab(next);
+  const held = (go: () => void) => {
+    if (shell?.sheetHold.dirty) shell.guardLeave(go);
+    else go();
   };
+  const chooseTab = (next: ProjectTab) => held(() => onTab(next));
   return (
     <>
       <div className="proj-head">
@@ -535,7 +536,7 @@ export function ProjectPage({
           className="btn proj-back"
           data-variant="quiet"
           data-size="small"
-          onClick={onBack}
+          onClick={() => held(onBack)}
         >
           <Icon name="chevron" size={14} />
           All projects
@@ -549,7 +550,7 @@ export function ProjectPage({
             className="btn proj-head-end"
             data-size="small"
             data-focus="edit"
-            onClick={onEdit}
+            onClick={() => held(onEdit)}
           >
             <Icon name="edit" size={14} />
             Edit

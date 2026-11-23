@@ -200,6 +200,26 @@ describe('leaving the project add-a-to-do form with a title typed', () => {
   });
 });
 
+describe('All projects and Edit on the project page', () => {
+  it('All projects asks with a title typed; Keep keeps it, Discard changes goes to the list', async () => {
+    await addFormTyped();
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    expect(within(addForm()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
+    press('Keep editing');
+    expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Book the shoot');
+    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
+    press('Discard changes');
+    expect(await screen.findByRole('button', { name: 'New project' })).toBeTruthy();
+  });
+
+  it('Edit asks with a title typed too', async () => {
+    await addFormTyped();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(within(addForm()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Edit project' })).toBeNull();
+  });
+});
+
 describe('leaving the Files picker with files chosen', () => {
   const hit = {
     item: {
@@ -230,6 +250,27 @@ describe('leaving the Files picker with files chosen', () => {
     fireEvent.click(await tab('Overview'));
     press('Discard changes');
     expect(await screen.findByRole('region', { name: 'Details' })).toBeTruthy();
+  });
+
+  it("the picker's own Close asks too; Keep keeps the choice, Discard changes closes it", async () => {
+    api.librarySearch.mockImplementation(async (_q: string, kind: string) => ({
+      hits: kind === 'image' ? [hit] : [],
+    }));
+    await openProject();
+    fireEvent.click(await tab('Files'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add files' }));
+    fireEvent.change(await screen.findByPlaceholderText('Search images and documents'), {
+      target: { value: 'hero' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    fireEvent.click(within(await screen.findByRole('list', { name: 'Files found' })).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(strip()).not.toBeNull();
+    press('Keep editing');
+    expect(screen.getByRole('list', { name: 'Chosen files' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    press('Discard changes');
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Add files' })).toBeNull());
   });
 });
 

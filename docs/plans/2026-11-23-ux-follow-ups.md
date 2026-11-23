@@ -62,3 +62,12 @@ Ian's answers: all five; merge and push when reviewed; no explainer.
   opens on that project next time.
 - Browser: Projects list ("Health: on track"), project To-dos (star on hover, chat), Files ("Add files", X on
   added files only).
+
+### Design gate (commits 1db2b14 and after)
+- UX/UI gate (Fable): NOT YET with 1 blocker (Move screen still said linked/unlinked) and 5 should, 2 nice →
+  all fixed. The add-a-to-do form and the Files picker use the sheet hold; tab switch, All projects and Edit go
+  through the leave guard; the strip is sticky (only the discard strips, with the shared wash) and Keep editing
+  puts focus back; chat drawer header no longer jumps; a teammate's to-do row no longer lifts; "added from the
+  library", "Health: not set"; rules 2 and 3 allow the X on an added file. Second look: SATISFIED.
+- Correctness reviewer (Opus) on the gate fixes: 2 should (All projects / Edit, and the picker's Close, skipped the
+  hold) → fixed with failing tests first. Two forms never share the hold (one tab at a time).

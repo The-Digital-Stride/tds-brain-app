@@ -163,11 +163,14 @@ function Picker({
   const count = chosen.length;
   // Chosen files are unsaved work: leaving the page or switching tab asks first (Actions rule 9).
   const leave = useSheetHold(count > 0);
+  // Close with files chosen asks too, in the same strip (rule 9: Cancel, Esc, Back and close).
+  const [askClose, setAskClose] = useState(false);
+  const close = () => (count > 0 ? setAskClose(true) : onClose());
   const keepFocus = useKeepFocus();
 
   return (
     <section className="card proj-card" aria-label="Add files" onFocus={keepFocus.track}>
-      {leave.asking ? (
+      {leave.asking || askClose ? (
         <Confirm
           label="Discard your changes"
           text="Discard your changes?"
@@ -175,9 +178,13 @@ function Picker({
           safe="Keep editing"
           variant="danger"
           busy={false}
-          onConfirm={leave.discard}
+          onConfirm={() => {
+            if (leave.asking) leave.discard();
+            else onClose();
+          }}
           onCancel={() => {
-            leave.keep();
+            setAskClose(false);
+            if (leave.asking) leave.keep();
             keepFocus.restore();
           }}
         />
@@ -204,7 +211,7 @@ function Picker({
           className="btn"
           data-variant="quiet"
           aria-disabled={busy || undefined}
-          onClick={busy ? undefined : onClose}
+          onClick={busy ? undefined : close}
         >
           Close
         </button>

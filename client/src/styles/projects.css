@@ -234,14 +234,14 @@
   /* The "Discard your changes?" strip of a form (the project form, the add-a-to-do form, the file picker) stays at the
    top of the sheet's scroller, so focusing it never scrolls a long form back up, and Keep editing leaves the form
    where it was. Solid, so what scrolls under it doesn't show through. */
-  .proj-form-page > .confirm,
-  .proj-form > .confirm,
-  .proj-card > .confirm {
+  .proj-form-page > .confirm[aria-label="Discard your changes"],
+  .proj-form > .confirm[aria-label="Discard your changes"],
+  .proj-card > .confirm[aria-label="Discard your changes"] {
     position: sticky;
     top: 0;
     z-index: 2;
-    border: 1px solid var(--line);
-    background: var(--surface);
+    /* The shared strip's wash, over a solid backing so what scrolls under it doesn't show through. */
+    background: linear-gradient(var(--tint-1), var(--tint-1)), var(--surface);
   }
 
   /* The move confirm (shell/Confirm): the question on its own line above the explanation, buttons below. */

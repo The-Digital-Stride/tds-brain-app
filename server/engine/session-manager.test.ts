@@ -669,6 +669,32 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
     [{ command: 'grep -l email clients/acme/projects/web/updates/*.md > /dev/null' }, 'Bash', false],
     [{ command: 'git log -- clients/acme/projects/web/updates' }, 'Bash', false],
     [{ command: 'mv a.md b.md' }, 'Bash', false],
+    // The skill's own calls are never by hand (fix-round recheck), but they don't excuse a real write beside them.
+    [
+      {
+        command:
+          'echo \'{"key":"acme/website","file":"clients/acme/projects/website/updates/2026-11-24-0900-sam-abc123.md","expect":"x"}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs update-remove',
+      },
+      'Bash',
+      false,
+    ],
+    [
+      {
+        command:
+          'cd /brain && echo \'{"key":"acme/web","entry":{"kind":"note","summary":"Moved projects and updates.","clientSafe":false}}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs update',
+      },
+      'Bash',
+      false,
+    ],
+    [{ command: 'git add clients/acme/projects/web/updates/x.md' }, 'Bash', false],
+    [
+      {
+        command:
+          'node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs capabilities; mv /tmp/x.md clients/acme/projects/web/updates/',
+      },
+      'Bash',
+      true,
+    ],
   ])('a hand-written project update %j with %s is refused: %s', (input, tool, refused) => {
     expect(writesUpdateByHand(input, tool)).toBe(refused);
   });

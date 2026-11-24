@@ -878,18 +878,41 @@ const SHELL_READ_ONLY = new Set([
   'dirname',
   'echo',
   'printf',
+  'cd',
+  'pushd',
+  'popd',
 ]);
-const GIT_READ_ONLY = new Set(['log', 'status', 'diff', 'show', 'blame', 'ls-files', 'check-ignore']);
+/** git commands that never write a file's content (add and commit only record what is already there). */
+const GIT_READ_ONLY = new Set([
+  'log',
+  'status',
+  'diff',
+  'show',
+  'blame',
+  'ls-files',
+  'check-ignore',
+  'add',
+  'commit',
+]);
+/** The tdsapp-projects script: the one sanctioned writer of updates, so its own calls are never "by hand". */
+const PROJECTS_SCRIPT_WORD = /(?:^|[\\/])tdsapp-projects\.cjs['"]?$/;
 
-/** Whether one simple shell command (no `;`, `&&`, `|`) could write somewhere. */
+/** The words of one simple shell command, without leading `VAR=x`, sudo, command, env or nohup. */
+function commandWords(segment: string): string[] {
+  const words = shellWords(segment).filter((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  while (words[0] === 'sudo' || words[0] === 'command' || words[0] === 'env' || words[0] === 'nohup')
+    words.shift();
+  return words;
+}
+
+/** Whether one simple shell command (no `;`, `&&`, `|`) could write somewhere other than through the script. */
 function shellSegmentWrites(segment: string): boolean {
   // A redirect writes (`2>&1` and `>/dev/null` don't).
   const bare = segment.replace(/\d?>&\d/g, '').replace(/\d?>>?\s*\/dev\/null/g, '');
   if (/>/.test(bare)) return true;
-  const words = shellWords(segment).filter((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
-  while (words[0] === 'sudo' || words[0] === 'command' || words[0] === 'env' || words[0] === 'nohup')
-    words.shift();
+  const words = commandWords(segment);
   const first = words[0] ?? '';
+  if (first === 'node' && PROJECTS_SCRIPT_WORD.test(words[1] ?? '')) return false;
   if (first === 'git') return !GIT_READ_ONLY.has(words[1] ?? '');
   if (first === 'find')
     return words.some((w) => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(w));
@@ -898,9 +921,10 @@ function shellSegmentWrites(segment: string): boolean {
 
 /**
  * Writing a project's update file by hand would skip the inbox owner's approval (and every other check of the
- * script's `update`). Refused for file tools by path (`.` and `..` resolved), and for a shell command that could
- * write (mv, cp, tee, a redirect, ...) when any of its words is an Updates path, or when it changes into a
- * project and names `updates` (review of the fix round). Read-only commands on the folder still run.
+ * script's `update`). Refused for file tools by path (`.` and `..` resolved). For Bash, each simple command is
+ * checked on its own: one that could write (mv, cp, tee, a redirect, ...) and names an Updates path, or names
+ * `updates` after a `cd` into a project, is refused. Read-only commands and the tdsapp-projects script's own
+ * calls (`update-remove` names an update file) still run (reviews of the fix round).
  */
 export function writesUpdateByHand(input: unknown, toolName: string): boolean {
   if (!isRec(input)) return false;
@@ -912,22 +936,26 @@ export function writesUpdateByHand(input: unknown, toolName: string): boolean {
   }
   if (toolName !== 'Bash' || typeof input.command !== 'string') return false;
   const command = input.command;
-  const words = shellWords(command);
-  const named =
-    words.some(inProjectUpdates) ||
-    (/(^|[\s;&|(])cd\s/.test(command) &&
-      words.some((w) =>
-        cleanPath(w)
-          .split('/')
-          .some((seg) => fitsSeg(seg, 'projects') && !GLOB_CHARS.test(seg)),
-      ) &&
-      words.some((w) =>
-        cleanPath(w)
-          .split('/')
-          .some((seg) => seg.toLowerCase() === 'updates'),
-      ));
-  if (!named) return false;
-  return command.split(/\|\||&&|[;|\n]/).some((seg) => seg.trim() !== '' && shellSegmentWrites(seg));
+  const cdProject =
+    /(^|[\s;&|(])(cd|pushd)\s/.test(command) &&
+    shellWords(command).some((w) =>
+      cleanPath(w)
+        .split('/')
+        .some((seg) => seg.toLowerCase() === 'projects'),
+    );
+  return command.split(/\|\||&&|[;|\n]/).some((segment) => {
+    if (segment.trim() === '' || !shellSegmentWrites(segment)) return false;
+    const words = shellWords(segment);
+    return (
+      words.some(inProjectUpdates) ||
+      (cdProject &&
+        words.some((w) =>
+          cleanPath(w)
+            .split('/')
+            .some((seg) => fitsSeg(seg, 'updates')),
+        ))
+    );
+  });
 }
 
 export const UPDATES_BY_HAND_REFUSAL =

@@ -206,6 +206,15 @@ Three reviewers (correctness opus, security opus, UX sonnet), then an overseer r
   - An empty owner name falls back to "In their inbox".
   - `@` is refused in names, on screen and in the script.
 
+**Fix-round review (opus, correctness and security)**
+- *Blocking:* `projects/web/./updates/x.md` got past the updates check, and nothing checked a shell `mv`, `cp` or redirect into `updates/`. In accept-edits mode either was a zero-card route. Fixed:
+  - Paths are normalised before they are checked.
+  - A Bash command is refused when it names an Updates path and any part of it could write. Read-only commands still run.
+- *Should:* a glob part that appeared twice (`*/data/*/*.key`) was checked against the wrong parent folder. Fixed: the check walks the path by index.
+- *Should:* any `data/*` path was refused. Fixed:
+  - The key rule now needs `data` under `TDS Brain`.
+  - The `briefing/` glob rule applies to Bash words only. The Glob tool is covered by the Read deny rule.
+
 **Residual, accepted by the overseer as far as an app under the same Mac account can go (Ian to confirm)**
 1. Reading the keys folder deliberately. It sits outside the working folder, so in Cortex this needs a card naming the path. This is the same class of risk as the launch token.
 2. Writing a project's `updates/` file directly, bypassing the script. Refused in Cortex for file tools. A Bash write needs a card. In terminal Claude Code with accept-edits or skip-permissions mode, this is zero cards. Terminal Claude Code in a no-prompt mode is outside what the app can enforce.

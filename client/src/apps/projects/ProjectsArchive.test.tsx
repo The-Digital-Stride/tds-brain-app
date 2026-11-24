@@ -67,9 +67,9 @@ function answer(over: Partial<ProjectRemoveCheck> = {}, rest: Partial<ProjectRem
   return { check: check(over), todos: [], doneTodos: 0, ...rest };
 }
 const TODOS = [
-  { id: 'mine', title: 'My to-do', scope: 'tds' as const, assignee: 'me', version: 'a' },
-  { id: 'nobody', title: 'Loose to-do', scope: 'tds' as const, assignee: null, version: 'b' },
-  { id: 'theirs', title: 'Their to-do', scope: 'tds' as const, assignee: 'sam', version: 'c' },
+  { id: 'mine', title: 'My task', scope: 'tds' as const, assignee: 'me', version: 'a' },
+  { id: 'nobody', title: 'Loose task', scope: 'tds' as const, assignee: null, version: 'b' },
+  { id: 'theirs', title: 'Their task', scope: 'tds' as const, assignee: 'sam', version: 'c' },
 ];
 
 beforeEach(() => {
@@ -191,7 +191,7 @@ describe('buttons on a project page', () => {
 });
 
 describe('the archive panel', () => {
-  it('lists references and open to-dos, keeps them open by default, and sends the choices', async () => {
+  it('lists references and open tasks, keeps them open by default, and sends the choices', async () => {
     api.checkProjectRemove.mockResolvedValue(
       answer(
         { references: ['clients/skyseal/notes.md'], referenceCount: 1 },
@@ -203,13 +203,13 @@ describe('the archive panel', () => {
     press('Archive Sky site');
     expect(await screen.findByText('These files point into this folder:')).toBeTruthy();
     expect(screen.getByText('clients/skyseal/notes.md')).toBeTruthy();
-    expect(screen.getByText('3 finished to-dos stay as they are.')).toBeTruthy();
-    const keep = within(screen.getByRole('group', { name: 'My to-do' })).getByRole('radio', {
+    expect(screen.getByText('3 finished tasks stay as they are.')).toBeTruthy();
+    const keep = within(screen.getByRole('group', { name: 'My task' })).getByRole('radio', {
       name: 'Keep open',
     }) as HTMLInputElement;
     expect(keep.checked).toBe(true);
     fireEvent.click(
-      within(screen.getByRole('group', { name: 'Loose to-do' })).getByRole('radio', { name: 'Mark as done' }),
+      within(screen.getByRole('group', { name: 'Loose task' })).getByRole('radio', { name: 'Mark as done' }),
     );
     api.removeProject.mockResolvedValue({
       list: projectList([{ ...LIVE, archived: true }], { canArchive: true }),
@@ -265,7 +265,7 @@ describe('the delete panel', () => {
     press('Delete');
   }
 
-  it('states what is lost, defaults the to-dos, and needs the title typed', async () => {
+  it('states what is lost, defaults the tasks, and needs the title typed', async () => {
     await open({ localOnlyCount: 3, references: ['skills/x.md'], referenceCount: 1 }, { todos: TODOS });
     expect(await screen.findByText("3 files exist only on this Mac and can't be recovered.")).toBeTruthy();
     expect(screen.getByText(/recovered from the brain's history/)).toBeTruthy();
@@ -275,9 +275,9 @@ describe('the delete panel', () => {
     const on = (todo: string, n: string) =>
       (within(screen.getByRole('group', { name: todo })).getByRole('radio', { name: n }) as HTMLInputElement)
         .checked;
-    expect(on('My to-do', 'Delete')).toBe(true);
-    expect(on('Loose to-do', 'Delete')).toBe(true);
-    expect(on('Their to-do', 'Keep the to-do, remove it from the project')).toBe(true);
+    expect(on('My task', 'Delete')).toBe(true);
+    expect(on('Loose task', 'Delete')).toBe(true);
+    expect(on('Their task', 'Keep the task, remove it from the project')).toBe(true);
     const del = screen.getByRole('button', { name: 'Delete' });
     // aria-disabled, never disabled, until the title is typed (Actions rule 12).
     expect(del.getAttribute('aria-disabled')).toBe('true');
@@ -290,7 +290,7 @@ describe('the delete panel', () => {
     expect(del.getAttribute('aria-disabled')).toBeNull();
   });
 
-  it('deletes, names to-dos that failed, and returns to the list', async () => {
+  it('deletes, names tasks that failed, and returns to the list', async () => {
     await open({}, { todos: TODOS.slice(0, 1) });
     fireEvent.change(await screen.findByLabelText('Type the project name to delete it'), {
       target: { value: 'Old job' },
@@ -313,7 +313,7 @@ describe('the delete panel', () => {
       ),
     );
     expect(await screen.findByText(/Deleted Old job\./)).toBeTruthy();
-    expect(screen.getByText(/1 to-do couldn't be changed \(mine\)/)).toBeTruthy();
+    expect(screen.getByText(/1 task couldn't be changed \(mine\)/)).toBeTruthy();
   });
 
   it('cancels with Escape', async () => {
@@ -343,12 +343,12 @@ describe('the delete panel', () => {
     ).toBeTruthy();
   });
 
-  it('checks again when a listed to-do changed', async () => {
+  it('checks again when a listed task changed', async () => {
     await open({}, { todos: TODOS.slice(0, 1) });
     fireEvent.change(await screen.findByLabelText('Type the project name to delete it'), {
       target: { value: 'Old job' },
     });
-    api.removeProject.mockRejectedValueOnce(new ApiFailure('bad-request', 'A to-do changed.', 400));
+    api.removeProject.mockRejectedValueOnce(new ApiFailure('bad-request', 'A task changed.', 400));
     const calls = api.checkProjectRemove.mock.calls.length;
     press('Delete');
     expect(await screen.findByText('Something changed, so the list has been checked again.')).toBeTruthy();

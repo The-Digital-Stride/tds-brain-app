@@ -154,12 +154,12 @@ export function SettingsView({ tab, checks }: SettingsViewProps) {
               <div>
                 <div className="help-inline">
                   <label className="setting-label" htmlFor="set-direct">
-                    Let the app change to-dos
+                    Let the app change tasks
                   </label>
                   <HelpLink page="change-todos-setting" size={28} />
                 </div>
                 <p className="setting-help" id="set-direct-help">
-                  Lets you mark to-dos as done, add, edit, pass them on and delete them here. Each change is
+                  Lets you mark tasks as done, add, edit, pass them on and delete them here. Each change is
                   made in the shared brain, so the whole team sees it. Off by default.
                 </p>
               </div>
@@ -184,8 +184,8 @@ export function SettingsView({ tab, checks }: SettingsViewProps) {
                 </div>
                 <p className="setting-help" id="set-keys-help">
                   When you're not typing, press <kbd>[</kbd> to show or hide the names on the rail,{' '}
-                  <kbd>T</kbd> for To-dos, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills, <kbd>P</kbd> and{' '}
-                  <kbd>N</kbd> for the previous and next to-do in its panel
+                  <kbd>T</kbd> for Tasks, <kbd>C</kbd> for Chats, <kbd>S</kbd> for Skills, <kbd>P</kbd> and{' '}
+                  <kbd>N</kbd> for the previous and next task in its panel
                   {showHelp ? (
                     <>
                       , <kbd>H</kbd> or <kbd>?</kbd> for Help

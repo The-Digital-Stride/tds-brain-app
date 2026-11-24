@@ -68,7 +68,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("finished and teammates' to-dos follow a to-do change with the To-dos drawer closed", () => {
+describe("finished and teammates' tasks follow a task change with the Tasks drawer closed", () => {
   const start = async () => {
     render(
       <StoreProvider>
@@ -79,7 +79,7 @@ describe("finished and teammates' to-dos follow a to-do change with the To-dos d
     await waitFor(() => expect(api.todos).toHaveBeenCalledTimes(1));
   };
 
-  it("reloads the done list once something has asked for it, and a teammate's to-do already read", async () => {
+  it("reloads the done list once something has asked for it, and a teammate's task already read", async () => {
     await start();
     await doneStore.refresh();
     api.teamTodo.mockResolvedValue(null);

@@ -229,7 +229,7 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
           if (!seenTodos.has(t.key))
             found.push({
               kind: 'todo-added',
-              text: `To-do added: ${t.title}`,
+              text: `Task added: ${t.title}`,
               at: null,
               byName: null,
               target: { kind: 'todo', key: t.key },
@@ -247,7 +247,7 @@ export function createProjectActivity(deps: ProjectActivityDeps): ProjectActivit
             if (info.by !== null && info.by === identity.slug) return null; // their own tick
             return {
               kind: 'todo-closed',
-              text: `To-do done: ${title}`,
+              text: `Task done: ${title}`,
               at: info.at,
               byName: nameOf(info.by),
               target: { kind: 'todo', key: k },

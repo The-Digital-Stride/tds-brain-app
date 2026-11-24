@@ -255,7 +255,7 @@ describe('blocks the editor offers and kept blocks', () => {
     for (const mark of ['code', 'italic', 'strike']) expect(json).toContain(`"type":"${mark}"`);
   });
 
-  it('lets inline code sit inside bold, italic and links (common in to-dos)', () => {
+  it('lets inline code sit inside bold, italic and links (common in tasks)', () => {
     for (const md of [
       '**Run `pnpm test` first**',
       '*see `a.md`*',

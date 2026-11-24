@@ -4,7 +4,7 @@ import { parseHelpFile, splitFrontmatter } from './frontmatter.ts';
 const page = (over: Record<string, string | null> = {}, body = '## What it does\nIt works.\n') => {
   const base: Record<string, string> = {
     id: 'todos',
-    title: 'To-dos',
+    title: 'Tasks',
     area: 'todos',
     order: '10',
     summary: 'See what you need to do.',

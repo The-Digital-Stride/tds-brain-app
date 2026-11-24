@@ -33,17 +33,17 @@ export const APP_VIA = 'TDS Cortex';
  * decision 8): a personal project on a team to-do, or a move to TDS that would carry one.
  */
 export const TODO_PRIVATE_PROJECT_MESSAGE =
-  "A team to-do can't be in a personal project, so nothing was changed. Take it out of the project first.";
+  "A team task can't be in a personal project, so nothing was changed. Take it out of the project first.";
 /** The same rule for files: a team to-do can't link a file kept in a personal project's folder. */
 export const TODO_PRIVATE_FILE_MESSAGE =
-  "A team to-do can't link a file from a personal project, so nothing was changed. Take the link off first, or keep the to-do personal.";
+  "A team task can't link a file from a personal project, so nothing was changed. Take the link off first, or keep the task personal.";
 
 /** The app's own words for each failure. The script's error texts are for developers and never shown. */
 export const TODO_CHANGE_MESSAGES = {
   'bad-request': "That change couldn't be saved. Try again, or make it in a chat instead.",
-  'not-found': 'That to-do could not be found. It may have been finished, deleted or passed on.',
-  'not-allowed': "Changing to-dos isn't available to you in the app yet.",
-  changed: "Someone else changed this to-do since you opened it, so your change wasn't made.",
+  'not-found': 'That task could not be found. It may have been finished, deleted or passed on.',
+  'not-allowed': "Changing tasks isn't available to you in the app yet.",
+  changed: "Someone else changed this task since you opened it, so your change wasn't made.",
   internal: 'The change could not be made. Try again.',
 } as const satisfies Record<TodoChangeErrorCode, string>;
 

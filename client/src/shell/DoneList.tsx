@@ -126,7 +126,7 @@ export function DoneList({
     );
   }
   const partial = historyRead ? null : (
-    <p className="todo-note done-partial">Older to-dos have no date: the git history couldn't be read.</p>
+    <p className="todo-note done-partial">Older tasks have no date: the git history couldn't be read.</p>
   );
   const retry =
     state === 'failed' ? (
@@ -145,10 +145,10 @@ export function DoneList({
         {retry}
         <p className="dock-empty">
           {query
-            ? `No finished to-dos match “${query}”${where}.`
+            ? `No finished tasks match “${query}”${where}.`
             : filteredBy
               ? `Nothing in ${filteredBy} has been finished yet.`
-              : 'No finished to-dos yet.'}
+              : 'No finished tasks yet.'}
         </p>
       </>
     );

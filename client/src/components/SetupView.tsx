@@ -174,7 +174,7 @@ export function SetupView({
         </h1>
         <p>
           TDS Cortex needs the folder where you keep your copy of the Agency Brain. It's how it reads your
-          skills, to-dos and client notes.
+          skills, tasks and client notes.
         </p>
         {tried ? (
           <p className="lede">

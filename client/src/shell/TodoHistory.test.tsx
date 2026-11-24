@@ -96,7 +96,7 @@ describe('TodoHistory', () => {
   it('says what a personal, unavailable or cut-short record means', async () => {
     apiMock.todoHistory.mockResolvedValueOnce(reply({ status: 'personal' }));
     show();
-    await screen.findByText("Personal to-dos aren't synced, so there's no history.");
+    await screen.findByText("Personal tasks aren't synced, so there's no history.");
     cleanup();
     apiMock.todoHistory.mockResolvedValueOnce(reply({ status: 'unavailable' }));
     show();

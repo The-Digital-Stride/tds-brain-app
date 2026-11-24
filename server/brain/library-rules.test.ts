@@ -148,7 +148,7 @@ describe('isNeverListed', () => {
     for (const rel of refused) expect(isNeverListed(rel), rel).toBe(true);
   });
 
-  it('refuses personal to-dos: they are to-dos, not documents (the folder itself too, so a walk never goes in)', () => {
+  it('refuses personal tasks: they are tasks, not documents (the folder itself too, so a walk never goes in)', () => {
     const refused = [
       'personal/todo',
       'personal/todo/20261113-feed-the-cat.md',

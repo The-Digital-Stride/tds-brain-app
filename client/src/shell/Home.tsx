@@ -234,7 +234,7 @@ export function Home() {
     [
       { id: 'meetings', title: 'Meetings' },
       ...(adsShown ? [{ id: 'ads', title: 'Ads approvals' }] : []),
-      { id: 'todos', title: 'Favourite to-dos' },
+      { id: 'todos', title: 'Favourite tasks' },
       { id: 'chats', title: 'Favourite chats' },
       { id: 'files', title: 'Favourite files' },
       { id: 'skills', title: 'Favourite skills' },
@@ -544,7 +544,7 @@ export function Home() {
                   >
                     <div className="card-head">
                       {order.grip('todos')}
-                      <h2 id="home-todos">Favourite to-dos</h2>
+                      <h2 id="home-todos">Favourite tasks</h2>
                       {todos ? <span className="count">{pinnedTodoRows.length}</span> : null}
                       <button
                         type="button"
@@ -553,7 +553,7 @@ export function Home() {
                         data-size="small"
                         onClick={() => openDrawer('todos')}
                       >
-                        All to-dos
+                        All tasks
                       </button>
                     </div>
                     {!todos ? (
@@ -561,8 +561,8 @@ export function Home() {
                     ) : pinnedTodoRows.length === 0 ? (
                       <StateNote kind="empty">
                         {project
-                          ? 'No favourite to-dos in this project.'
-                          : 'Favourite a to-do to keep it here.'}
+                          ? 'No favourite tasks in this project.'
+                          : 'Favourite a task to keep it here.'}
                       </StateNote>
                     ) : (
                       <>
@@ -606,7 +606,7 @@ export function Home() {
                         </ul>
                         <MoreLink
                           total={pinnedTodoRows.length}
-                          noun={['to-do', 'to-dos']}
+                          noun={['task', 'tasks']}
                           expanded={expanded.todos}
                           onToggle={() => toggleCard('todos')}
                         />

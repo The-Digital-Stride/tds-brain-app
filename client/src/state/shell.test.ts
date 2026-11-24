@@ -448,13 +448,13 @@ describe('Help drawer', () => {
   });
 });
 
-describe('the to-do panel in the shell', () => {
+describe('the task panel in the shell', () => {
   const todos: ShellState = { ...DEFAULT_SHELL, drawer: 'todos' };
   const open = (s: ShellState = todos) => shellReducer(s, { type: 'open-todo', key: 'a.md', mode: 'read' });
   const ordered = (s: ShellState) =>
     shellReducer(s, { type: 'set-todo-order', order: ['a.md', 'b.md', 'c.md'] });
 
-  it('opens on a to-do, reading, and closes', () => {
+  it('opens on a task, reading, and closes', () => {
     const s = open();
     expect(s.todoPanel).toEqual({
       key: 'a.md',
@@ -508,7 +508,7 @@ describe('the to-do panel in the shell', () => {
     expect(other.todoPanel).toMatchObject({ start: { project: 'acme/autumn' }, dirty: false });
   });
 
-  it('keeps its order when another to-do replaces the open one', () => {
+  it('keeps its order when another task replaces the open one', () => {
     const s = shellReducer(ordered(open()), { type: 'open-todo', key: 'b.md', mode: 'edit' });
     expect(s.todoPanel).toMatchObject({ key: 'b.md', mode: 'edit', order: ['a.md', 'b.md', 'c.md'] });
   });
@@ -532,7 +532,7 @@ describe('the to-do panel in the shell', () => {
     expect(shellReducer(s, { type: 'set-todo-dirty', dirty: false }).todoPanel?.ask).toBeNull();
   });
 
-  it('shuts whenever the To-dos drawer is closed or replaced', () => {
+  it('shuts whenever the Tasks drawer is closed or replaced', () => {
     const s = open();
     expect(shellReducer(s, { type: 'toggle-drawer', drawer: 'chats' }).todoPanel).toBeNull();
     expect(shellReducer(s, { type: 'close-drawer' }).todoPanel).toBeNull();

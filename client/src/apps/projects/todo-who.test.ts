@@ -7,7 +7,7 @@ const memory = () => {
 };
 
 describe('isMyTodo', () => {
-  it("counts to-dos assigned to me and my personal ones, never a teammate's or an open-to-anyone one", () => {
+  it("counts tasks assigned to me and my personal ones, never a teammate's or an open-to-anyone one", () => {
     expect(isMyTodo({ assignee: 'sam', scope: 'tds' }, 'sam')).toBe(true);
     expect(isMyTodo({ assignee: null, scope: 'personal' }, 'sam')).toBe(true);
     expect(isMyTodo({ assignee: 'ben', scope: 'tds' }, 'sam')).toBe(false);

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The Files picker holds the sheet like the project form does (plan 2026-11-23-ux-follow-ups, decision 1; design
 // system, Actions rule 9), and Keep editing gives focus back to the field that was being edited. A project's "Add a
-// to-do" opens the To-dos panel's full form with the project filled in, and that panel holds typing the same way.
+// task" opens the Tasks panel's full form with the project filled in, and that panel holds typing the same way.
 // The whole app with the real store and shell and a fake server.
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,7 +115,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** A project tab. The rail has a To-dos button too, so look inside the tabs row. */
+/** A project tab. The rail has a Tasks button too, so look inside the tabs row. */
 const tab = async (name: string | RegExp) =>
   within(await screen.findByRole('navigation', { name: 'Project sections' })).getByRole('button', { name });
 
@@ -125,24 +125,24 @@ async function openProject() {
   rail(/^Projects/);
   fireEvent.click(await screen.findByRole('button', { name: /Spring launch/ }));
 }
-/** The project's To-dos tab, then its Add a to-do: the To-dos panel's add form. */
+/** The project's Tasks tab, then its Add a task: the Tasks panel's add form. */
 async function openAdd() {
   await openProject();
-  fireEvent.click(await tab(/^To-dos/));
+  fireEvent.click(await tab(/^Tasks/));
   // As from the keyboard: the button has focus when it is pressed (a jsdom click doesn't move focus).
   projectAdd().focus();
   fireEvent.click(projectAdd());
   return (await screen.findByLabelText('What needs doing?')) as HTMLInputElement;
 }
-const addForm = () => screen.getByRole('form', { name: 'Add a to-do' });
-/** The project page's own Add a to-do, at the end of its tabs row (the drawer and the form have one too). */
+const addForm = () => screen.getByRole('form', { name: 'Add a task' });
+/** The project page's own Add a task, at the end of its tabs row (the drawer and the form have one too). */
 const projectAdd = () =>
   within(
     screen.getByRole('navigation', { name: 'Project sections' }).closest('.proj-tabrow') as HTMLElement,
-  ).getByRole('button', { name: 'Add a to-do' });
+  ).getByRole('button', { name: 'Add a task' });
 
-describe("a project's Add a to-do", () => {
-  it('opens the full form in the To-dos panel, starting in the project, and adds it there', async () => {
+describe("a project's Add a task", () => {
+  it('opens the full form in the Tasks panel, starting in the project, and adds it there', async () => {
     const title = await openAdd();
     // Every option, from the start: nothing behind "More options".
     within(addForm()).getByLabelText('Due date (optional)');
@@ -151,7 +151,7 @@ describe("a project's Add a to-do", () => {
     within(addForm()).getByLabelText('Stage');
     expect(within(addForm()).queryByRole('button', { name: 'More options' })).toBeNull();
     // The project page has no cut-down form of its own.
-    expect(screen.queryByLabelText('To-do')).toBeNull();
+    expect(screen.queryByLabelText('Task')).toBeNull();
     api.changeTodo.mockResolvedValue({
       mine: [],
       open: [],
@@ -191,7 +191,7 @@ describe("a project's Add a to-do", () => {
     await openAdd();
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('What needs doing?')));
     fireEvent.click(within(addForm()).getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('form', { name: 'Add a to-do' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Add a task' })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(projectAdd()));
     // Again with the drawer shut: the panel's code is loaded now, and the drawer opening must not take the keyboard.
     fireEvent.click(
@@ -211,7 +211,7 @@ describe("a project's Add a to-do", () => {
     const title = await openAdd();
     fireEvent.change(title, { target: { value: 'Book the shoot' } });
     rail(/^Home/);
-    // The To-dos panel's own rule: the page changes and the panel asks before it closes.
+    // The Tasks panel's own rule: the page changes and the panel asks before it closes.
     expect(strip()).not.toBeNull();
     press('Keep editing');
     expect((screen.getByLabelText('What needs doing?') as HTMLInputElement).value).toBe('Book the shoot');

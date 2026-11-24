@@ -321,8 +321,8 @@ function TodoRow({
 function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: number }) {
   const text = filtering
     ? count === 0
-      ? 'No to-dos match'
-      : `${count} ${count === 1 ? 'to-do matches' : 'to-dos match'}`
+      ? 'No tasks match'
+      : `${count} ${count === 1 ? 'task matches' : 'tasks match'}`
     : '';
   const [said, setSaid] = useState('');
   useEffect(() => {
@@ -965,12 +965,12 @@ export function TodosDrawer() {
       // The pass-on is held and sent later: it checks against the version after this save's own steps.
       const latest = all.find((t) => t.key === key);
       if (!latest) {
-        setMessage('This to-do is no longer in your list, so it was not passed on.', true);
+        setMessage('This task is no longer in your list, so it was not passed on.', true);
         return {
           done: result.done,
           error: {
             code: 'not-found',
-            message: 'This to-do is no longer in your list, so it was not passed on.',
+            message: 'This task is no longer in your list, so it was not passed on.',
           },
         };
       }
@@ -1107,7 +1107,7 @@ export function TodosDrawer() {
         className="icon-btn todo-add-btn"
         data-variant="primary"
         ref={addButton}
-        aria-label="Add a to-do"
+        aria-label="Add a task"
         aria-expanded={adding}
         onClick={toggleAdd}
       >
@@ -1124,7 +1124,7 @@ export function TodosDrawer() {
         onClick={toggleAdd}
       >
         <Icon name="plus" size={14} />
-        Add a to-do
+        Add a task
       </button>
     )
   ) : null;
@@ -1133,7 +1133,7 @@ export function TodosDrawer() {
     <div className="drawer-split">
       <div className="drawer-tools todo-tabs">
         <Seg
-          label="Which to-dos"
+          label="Which tasks"
           value={tab}
           onChange={setTab}
           options={[
@@ -1148,13 +1148,13 @@ export function TodosDrawer() {
         <div className="drawer-tools">
           <Icon name="search" size={16} />
           <label className="visually-hidden" htmlFor={searchId}>
-            Search done to-dos
+            Search done tasks
           </label>
           <input
             id={searchId}
             type="search"
             className="field"
-            placeholder="Search done to-dos"
+            placeholder="Search done tasks"
             value={doneQuery}
             onChange={(e) => setDoneQuery(e.target.value)}
           />
@@ -1169,7 +1169,7 @@ export function TodosDrawer() {
         >
           {showKind ? (
             <Seg<TodoFilter['scope']>
-              label="Which kind of to-do"
+              label="Which kind of task"
               value={active.scope}
               onChange={(scope) => setFilter({ ...filter, scope })}
               options={[
@@ -1250,7 +1250,7 @@ export function TodosDrawer() {
       ) : null}
       {todos.changes === 'switched-off' && tab !== 'done' ? (
         <p className="todo-note todo-off">
-          Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
+          Adding and editing tasks is switched off. Turn on 'Let the app change tasks' in{' '}
           <button
             type="button"
             className="link-btn"
@@ -1285,7 +1285,7 @@ export function TodosDrawer() {
         <div className="drawer-body">
           {tab === 'asked' && filtering && askedShown && shownCount === 0 && askedAll.length > 0 ? (
             <div className="dock-empty todo-nomatch">
-              <p>None of the to-dos you've asked of others are in {filterName || 'this filter'}.</p>
+              <p>None of the tasks you've asked of others are in {filterName || 'this filter'}.</p>
               <p>
                 <button type="button" className="btn" data-size="small" onClick={clearFilters}>
                   Clear filters
@@ -1352,7 +1352,7 @@ export function TodosDrawer() {
           ) : shown.length === 0 ? (
             filtering ? (
               <div className="dock-empty todo-nomatch">
-                <p>No to-dos match.</p>
+                <p>No tasks match.</p>
                 <p>
                   <button type="button" className="btn" data-size="small" onClick={clearFilters}>
                     Clear filters

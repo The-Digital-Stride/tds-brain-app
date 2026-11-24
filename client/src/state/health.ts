@@ -91,19 +91,19 @@ export function healthChecks({ boot, streamUp, lists, lastSync, now }: HealthInp
     });
   }
 
-  const failed = [lists.todos === 'failed' && 'to-dos', lists.chats === 'failed' && 'chats'].filter(Boolean);
+  const failed = [lists.todos === 'failed' && 'tasks', lists.chats === 'failed' && 'chats'].filter(Boolean);
   if (failed.length > 0) {
     const which = failed.join(' and ');
     checks.push({
       id: 'lists',
-      label: 'To-dos and chats',
+      label: 'Tasks and chats',
       state: 'problem',
       text: `Your ${which} couldn't be loaded. Press Command and R to try again.`,
     });
   } else if (lists.todos === 'loading' || lists.chats === 'loading') {
-    checks.push({ id: 'lists', label: 'To-dos and chats', state: 'checking', text: 'Loading…' });
+    checks.push({ id: 'lists', label: 'Tasks and chats', state: 'checking', text: 'Loading…' });
   } else {
-    checks.push({ id: 'lists', label: 'To-dos and chats', state: 'ok', text: 'Loaded.' });
+    checks.push({ id: 'lists', label: 'Tasks and chats', state: 'ok', text: 'Loaded.' });
   }
 
   checks.push(

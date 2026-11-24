@@ -84,7 +84,7 @@ describe('lists (the Settings health panel)', () => {
     await screen.findByText('todos loaded, chats loaded');
   });
 
-  it('marks the to-dos failed, then loaded again on the next change', async () => {
+  it('marks the tasks failed, then loaded again on the next change', async () => {
     api.todos.mockRejectedValueOnce(new Error('down'));
     await start();
     await screen.findByText('todos failed, chats loaded');

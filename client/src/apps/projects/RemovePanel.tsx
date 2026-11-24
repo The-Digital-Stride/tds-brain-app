@@ -25,10 +25,10 @@ export function titleMatches(typed: string, title: string): boolean {
 /** The to-do count words for a result: "3 to-dos changed. 1 couldn't be changed." */
 export function resultWords(base: string, res: ProjectRemoveResult): string {
   const bits = [base];
-  if (res.todosChanged > 0) bits.push(`${plural(res.todosChanged, 'to-do')} changed.`);
+  if (res.todosChanged > 0) bits.push(`${plural(res.todosChanged, 'task')} changed.`);
   if (res.todosFailed.length > 0)
     bits.push(
-      `${plural(res.todosFailed.length, 'to-do')} couldn't be changed (${res.todosFailed.join(', ')}). They still point at this project.`,
+      `${plural(res.todosFailed.length, 'task')} couldn't be changed (${res.todosFailed.join(', ')}). They still point at this project.`,
     );
   return bits.join(' ');
 }
@@ -149,7 +149,7 @@ export function RemovePanel({
   const options: { value: Do; text: string }[] = deleting
     ? [
         { value: 'delete', text: 'Delete' },
-        { value: 'unlink', text: 'Keep the to-do, remove it from the project' },
+        { value: 'unlink', text: 'Keep the task, remove it from the project' },
       ]
     : [
         { value: 'done', text: 'Mark as done' },
@@ -214,7 +214,7 @@ export function RemovePanel({
         )}
         {check && open.length > 0 ? (
           <>
-            <p>{deleting ? 'Open to-dos linked to this project:' : 'Open to-dos for this project:'}</p>
+            <p>{deleting ? 'Open tasks linked to this project:' : 'Open tasks for this project:'}</p>
             <ul className="proj-remove-todos">
               {open.map((t) => (
                 <li key={t.id} className="proj-remove-todo">
@@ -245,13 +245,13 @@ export function RemovePanel({
             {answer.doneTodos > 0 ? (
               <p>
                 {answer.doneTodos === 1
-                  ? '1 finished to-do stays as it is.'
-                  : `${answer.doneTodos} finished to-dos stay as they are.`}
+                  ? '1 finished task stays as it is.'
+                  : `${answer.doneTodos} finished tasks stay as they are.`}
               </p>
             ) : null}
             {deleting ? (
               <>
-                <p>Deleted to-dos go to the deleted folder and can be brought back.</p>
+                <p>Deleted tasks go to the deleted folder and can be brought back.</p>
                 <p>Chats are kept.</p>
               </>
             ) : null}

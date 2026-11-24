@@ -93,18 +93,18 @@ describe('store.markTodosSeen', () => {
   });
 });
 
-describe('store.send, the to-do link', () => {
-  it('keeps the link for a personal to-do named by its personal path', async () => {
+describe('store.send, the task link', () => {
+  it('keeps the link for a personal task named by its personal path', async () => {
     const p = item('p.md', { scope: 'personal', key: 'personal/p.md', path: 'personal/todo/p.md' });
     await mount([p]);
-    act(() => store?.newChat({ draft: 'Help me with this to-do: personal/todo/p.md (p)', todoId: p.key }));
+    act(() => store?.newChat({ draft: 'Help me with this task: personal/todo/p.md (p)', todoId: p.key }));
     await act(async () => {
-      await store?.send('Help me with this to-do: personal/todo/p.md (p)', null);
+      await store?.send('Help me with this task: personal/todo/p.md (p)', null);
     });
     expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({ todoId: 'personal/p.md' }));
   });
 
-  it('drops the link when the message no longer names the to-do', async () => {
+  it('drops the link when the message no longer names the task', async () => {
     const p = item('p.md', { scope: 'personal', key: 'personal/p.md', path: 'personal/todo/p.md' });
     await mount([p]);
     act(() => store?.newChat({ draft: 'x', todoId: p.key }));

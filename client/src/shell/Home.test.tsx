@@ -153,7 +153,7 @@ const card = (name: string) => within(screen.getByRole('region', { name }));
  * clicks the row, then that button (Start a chat, or Open chat when the to-do already has one).
  */
 const startChatFromPanel = async (title: RegExp) => {
-  fireEvent.click(await card('Favourite to-dos').findByRole('button', { name: title }));
+  fireEvent.click(await card('Favourite tasks').findByRole('button', { name: title }));
   const panel = await screen.findByRole('dialog');
   fireEvent.click(within(panel).getByRole('button', { name: /^(Start a chat|Open chat)$/ }));
 };
@@ -188,9 +188,9 @@ describe('Home', () => {
     await renderHome();
     expect(screen.getByText(/^Good (morning|afternoon|evening), Sam$/)).toBeTruthy();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    await screen.findByText('One to-do is overdue, one is due today and one chat is waiting for you.');
+    await screen.findByText('One task is overdue, one is due today and one chat is waiting for you.');
 
-    const needs = card('Favourite to-dos');
+    const needs = card('Favourite tasks');
     expect(needs.getByText('2')).toBeTruthy();
     expect(needs.getByText('Write the call tracking case')).toBeTruthy();
     expect(needs.getByText('overdue by 2 days').className).toBe('late');
@@ -222,7 +222,7 @@ describe('Home', () => {
       prefs: { ...boot.prefs, pins: [], favouriteTodos: [], favouriteChats: [] },
     });
     await renderHome();
-    expect(await screen.findByText('Favourite a to-do to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Favourite a task to keep it here.')).toBeTruthy();
     expect(screen.getByText('Favourite a chat to keep it here.')).toBeTruthy();
     expect(await screen.findByText('Favourite a file to keep it here.')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Favourite skills' })).toBeTruthy();
@@ -245,7 +245,7 @@ describe('Home', () => {
     api.todos.mockReturnValue(new Promise(() => {}));
     api.sessions.mockReturnValue(new Promise(() => {}));
     await renderHome();
-    expect(card('Favourite to-dos').getByText('Loading…')).toBeTruthy();
+    expect(card('Favourite tasks').getByText('Loading…')).toBeTruthy();
     expect(card('Favourite chats').getByText('Loading…')).toBeTruthy();
   });
 
@@ -600,7 +600,7 @@ describe('Home', () => {
     expect(api.clientPickOutcome.mock.calls).toEqual([['ask-cancelled'], ['ask-cancelled']]);
   });
 
-  it("a to-do chat opens on the to-do's client; a personal to-do on No client", async () => {
+  it("a task chat opens on the task's client; a personal task on No client", async () => {
     api.todos.mockResolvedValue({
       ...todoList,
       mine: [
@@ -620,7 +620,7 @@ describe('Home', () => {
     expect(api.clientGuess).not.toHaveBeenCalled();
   });
 
-  it("a to-do's client beats Working on's, and isn't credited to it", async () => {
+  it("a task's client beats Working on's, and isn't credited to it", async () => {
     api.todos.mockResolvedValue({ ...todoList, mine: [todo('t-a.md', 'Acme thing', dayOffset(0), 'acme')] });
     await renderHome();
     await startChatFromPanel(/^Acme thing/);
@@ -652,12 +652,12 @@ describe('Home', () => {
     expect(api.startSession).not.toHaveBeenCalled();
   });
 
-  it("starts a chat from a to-do's panel and keeps the to-do link", async () => {
+  it("starts a chat from a task's panel and keeps the task link", async () => {
     const box = (await renderHome()) as HTMLTextAreaElement;
     await startChatFromPanel(/^Check the monthly reports/);
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
-        'Help me with this to-do: todo/t-today.md (Check the monthly reports)',
+        'Help me with this task: todo/t-today.md (Check the monthly reports)',
       ),
     );
     expect(box).toBeTruthy();
@@ -669,7 +669,7 @@ describe('Home', () => {
     expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md', client: null });
   });
 
-  it('marks a to-do passed to you as seen when it is opened from Home', async () => {
+  it('marks a task passed to you as seen when it is opened from Home', async () => {
     const at = new Date(Date.now() - 3_600_000).toISOString();
     api.todos.mockResolvedValue({
       ...todoList,
@@ -681,11 +681,11 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Favourite to-dos').findByRole('button', { name: /^Fresh from Ben/ }));
+    fireEvent.click(await card('Favourite tasks').findByRole('button', { name: /^Fresh from Ben/ }));
     await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ todoSeen: { 't-new.md': at } }));
   });
 
-  it('opens the live chat for a to-do that already has one', async () => {
+  it('opens the live chat for a task that already has one', async () => {
     await renderHome();
     await startChatFromPanel(/^Write the call tracking case/);
     await screen.findByRole('heading', { level: 1, name: 'Call tracking case' });
@@ -715,55 +715,55 @@ describe('Home', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Newer plan' })).toBeTruthy();
   });
 
-  it('shows five pinned to-dos, and "Show N more" expands the card in place and back', async () => {
-    const mine = Array.from({ length: 7 }, (_, i) => todo(`m${i}.md`, `To-do ${i}`, null));
+  it('shows five pinned tasks, and "Show N more" expands the card in place and back', async () => {
+    const mine = Array.from({ length: 7 }, (_, i) => todo(`m${i}.md`, `Task ${i}`, null));
     api.todos.mockResolvedValue({ ...todoList, mine });
     api.bootstrap.mockResolvedValue({
       ...boot,
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Favourite to-dos');
-    await card1.findByText('To-do 4');
-    expect(card1.queryByText('To-do 5')).toBeNull();
-    const more = card1.getByRole('button', { name: 'Show 2 more to-dos' });
+    const card1 = card('Favourite tasks');
+    await card1.findByText('Task 4');
+    expect(card1.queryByText('Task 5')).toBeNull();
+    const more = card1.getByRole('button', { name: 'Show 2 more tasks' });
     expect(more.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(more);
-    expect(card1.getByText('To-do 5')).toBeTruthy();
-    expect(card1.getByText('To-do 6')).toBeTruthy();
-    expect(more.textContent).toBe('Show fewer to-dos'); // "to-dos" is visually hidden
+    expect(card1.getByText('Task 5')).toBeTruthy();
+    expect(card1.getByText('Task 6')).toBeTruthy();
+    expect(more.textContent).toBe('Show fewer tasks'); // "tasks" is visually hidden
     expect(more.getAttribute('aria-expanded')).toBe('true');
     // It no longer opens the drawer (which did nothing visible when the drawer was already open).
-    expect(screen.queryByRole('heading', { name: 'To-dos' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Tasks' })).toBeNull();
     fireEvent.click(more);
-    expect(card1.queryByText('To-do 5')).toBeNull();
-    expect(more.textContent).toBe('Show 2 more to-dos');
+    expect(card1.queryByText('Task 5')).toBeNull();
+    expect(more.textContent).toBe('Show 2 more tasks');
   });
 
-  it('says "1 more to-do", not "1 more to-dos"', async () => {
-    const mine = Array.from({ length: 6 }, (_, i) => todo(`m${i}.md`, `To-do ${i}`, null));
+  it('says "1 more task", not "1 more tasks"', async () => {
+    const mine = Array.from({ length: 6 }, (_, i) => todo(`m${i}.md`, `Task ${i}`, null));
     api.todos.mockResolvedValue({ ...todoList, mine });
     api.bootstrap.mockResolvedValue({
       ...boot,
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Favourite to-dos');
-    expect(await card1.findByRole('button', { name: 'Show 1 more to-do' })).toBeTruthy();
+    const card1 = card('Favourite tasks');
+    expect(await card1.findByRole('button', { name: 'Show 1 more task' })).toBeTruthy();
   });
 
-  it('keeps focus in the card when the last favourite to-do is taken off it', async () => {
+  it('keeps focus in the card when the last favourite task is taken off it', async () => {
     const only = todo('m0.md', 'Only favourite', null);
     api.todos.mockResolvedValue({ ...todoList, mine: [only] });
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteTodos: [only.key] } });
     api.updatePrefs.mockResolvedValue({ ...boot.prefs, favouriteTodos: [] });
     await renderHome();
-    const star = await card('Favourite to-dos').findByRole('button', { name: 'Favourite: Only favourite' });
+    const star = await card('Favourite tasks').findByRole('button', { name: 'Favourite: Only favourite' });
     star.focus();
     fireEvent.click(star);
-    await card('Favourite to-dos').findByText('Favourite a to-do to keep it here.', { exact: false });
+    await card('Favourite tasks').findByText('Favourite a task to keep it here.', { exact: false });
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Favourite to-dos' })),
+      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Favourite tasks' })),
     );
   });
 
@@ -788,17 +788,17 @@ describe('Home', () => {
     await screen.findByText('Meeting notes', { selector: 'strong' });
   });
 
-  it('"All to-dos", "All chats" and "All skills" open their drawers', async () => {
+  it('"All tasks", "All chats" and "All skills" open their drawers', async () => {
     api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
     const drawer = () => document.getElementById('drawer') as HTMLElement;
     expect(drawer().hasAttribute('inert')).toBe(true);
-    for (const name of ['All to-dos', 'All chats', 'All skills']) {
+    for (const name of ['All tasks', 'All chats', 'All skills']) {
       expect(screen.getByRole('button', { name }).getAttribute('data-size')).toBe('small');
     }
-    fireEvent.click(screen.getByRole('button', { name: 'All to-dos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All tasks' }));
     await waitFor(() => expect(drawer().hasAttribute('inert')).toBe(false));
-    expect(within(drawer()).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    expect(within(drawer()).getByRole('heading', { name: 'Tasks' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'All chats' }));
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Chats' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'All skills' }));
@@ -819,26 +819,26 @@ describe('Home: moving the cards', () => {
 
   it('moves a card with the keyboard on its grip, saves it for this person, and resets', async () => {
     await renderHome();
-    await card('Favourite to-dos').findByText('Write the call tracking case');
+    await card('Favourite tasks').findByText('Write the call tracking case');
     expect(order()).toEqual([
       'Meetings',
-      'Favourite to-dos',
+      'Favourite tasks',
       'Favourite chats',
       'Favourite files',
       'Favourite skills',
     ]);
     expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
 
-    const grip = screen.getByRole('button', { name: 'Move Favourite to-dos, 2 of 5' });
+    const grip = screen.getByRole('button', { name: 'Move Favourite tasks, 2 of 5' });
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
     expect(order()).toEqual([
       'Meetings',
       'Favourite chats',
-      'Favourite to-dos',
+      'Favourite tasks',
       'Favourite files',
       'Favourite skills',
     ]);
-    expect(screen.getByText('Favourite to-dos moved to 3 of 5')).toBeTruthy();
+    expect(screen.getByText('Favourite tasks moved to 3 of 5')).toBeTruthy();
     // Ads approvals is hidden (nothing waiting) but keeps its default place, second, in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
@@ -850,7 +850,7 @@ describe('Home: moving the cards', () => {
     ]);
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Move Favourite to-dos, 3 of 5' }),
+        screen.getByRole('button', { name: 'Move Favourite tasks, 3 of 5' }),
       ),
     );
 
@@ -860,7 +860,7 @@ describe('Home: moving the cards', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset card order' }));
     expect(order()).toEqual([
       'Meetings',
-      'Favourite to-dos',
+      'Favourite tasks',
       'Favourite chats',
       'Favourite files',
       'Favourite skills',
@@ -880,7 +880,7 @@ describe('Home: moving the cards', () => {
         'Favourite skills',
         'Favourite files',
         'Meetings',
-        'Favourite to-dos',
+        'Favourite tasks',
         'Favourite chats',
       ]),
     );

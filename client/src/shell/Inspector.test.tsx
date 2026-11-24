@@ -125,7 +125,7 @@ describe('the "This chat" panel', () => {
     expect(terms).toEqual([
       'Client',
       'Kind',
-      'To-do',
+      'Task',
       'Started',
       'State',
       'Approvals',
@@ -140,11 +140,11 @@ describe('the "This chat" panel', () => {
     expect(document.querySelectorAll('dt')).toHaveLength(0);
   });
 
-  it('leaves out the to-do when the chat has none, and says "No client" when there is none', () => {
+  it('leaves out the task when the chat has none, and says "No client" when there is none', () => {
     h.live = liveChat({ todoId: null, client: null });
     renderPanel();
     fireEvent.click(screen.getByRole('radio', { name: 'Details' }));
-    expect(screen.queryByText('To-do')).toBeNull();
+    expect(screen.queryByText('Task')).toBeNull();
     expect(screen.getByText('No client')).toBeTruthy();
   });
 

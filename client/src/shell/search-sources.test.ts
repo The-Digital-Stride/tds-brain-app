@@ -141,7 +141,7 @@ describe('section tools in the sources', () => {
 });
 
 describe('searchSources order', () => {
-  it('is Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats, Help, then apps and Done to-dos', () => {
+  it('is Go to, Tasks, Open chats, Skills, Clients, Projects, Earlier chats, Help, then apps and Done tasks', () => {
     apps.push(
       fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
     );
@@ -183,12 +183,12 @@ describe('searchSources order', () => {
 });
 
 describe('Go to', () => {
-  it('lists Home, To-dos, Chats, Skills, Settings and then every app, derived from APPS', () => {
+  it('lists Home, Tasks, Chats, Skills, Settings and then every app, derived from APPS', () => {
     apps.push(fakeApp('images', 'Images', null), fakeApp('notes', 'Notes', null));
     const go = source('go').idle?.(ctx()) ?? [];
     expect(labels(go)).toEqual([
       'Home',
-      'To-dos',
+      'Tasks',
       'Chats',
       'Skills',
       'Settings',
@@ -209,6 +209,12 @@ describe('Go to', () => {
     const actions = { openView: vi.fn() } as unknown as SearchActions;
     hit?.run(actions);
     expect(actions.openView).toHaveBeenCalledWith('app:notes');
+  });
+
+  it('still finds the Tasks entry by its old name, to-do or todo', () => {
+    for (const q of ['to-do', 'to-dos', 'todo', 'todos']) {
+      expect(hits('go', q).map((h) => h.id)).toContain('go-todos');
+    }
   });
 
   it('runs Home, a drawer and Settings through the palette actions', () => {
@@ -247,7 +253,7 @@ describe('Settings tabs in Go to', () => {
   });
 });
 
-describe('To-dos', () => {
+describe('Tasks', () => {
   const mine = [
     todo('a.md', 'Renew contract', { client: 'acme-heating', due: '2999-01-02' }),
     todo('b.md', 'Ring Bob', { details: 'About the boiler', due: '2999-01-01' }),
@@ -262,7 +268,7 @@ describe('To-dos', () => {
     expect(labels(hits('todos', 'website rebuild', c))).toEqual(['Website plan']);
   });
 
-  it('includes open to-dos and says so in the hint', () => {
+  it('includes open tasks and says so in the hint', () => {
     const [hit] = hits('todos', 'open thing', c);
     expect(hit?.hint).toBe('Open to anyone');
   });
@@ -286,7 +292,7 @@ describe('To-dos', () => {
     ]);
   });
 
-  it('reveals the to-do when chosen', () => {
+  it('reveals the task when chosen', () => {
     const actions = { revealTodo: vi.fn() } as unknown as SearchActions;
     hits('todos', 'renew', c)[0]?.run(actions);
     expect(actions.revealTodo).toHaveBeenCalledWith(mine[0]);
@@ -667,7 +673,7 @@ describe('the Projects group', () => {
     expect(hits('projects', 'website')).toEqual([]);
   });
 
-  it('puts "Client · Project" on a to-do hit', () => {
+  it('puts "Client · Project" on a task hit', () => {
     const t = todo('t1', 'Ship the build', {
       projectMatch: { how: 'key', key: 'acme-heating/website-rebuild' },
     });
@@ -676,7 +682,7 @@ describe('the Projects group', () => {
   });
 });
 
-describe('Done to-dos', () => {
+describe('Done tasks', () => {
   const done = (id: string, title: string, over: Partial<DoneTodo> = {}): DoneTodo => ({
     key: `done:todo/done/${id}`,
     id,
@@ -705,10 +711,10 @@ describe('Done to-dos', () => {
     });
   };
 
-  it('is its own group, with a title, and finds finished to-dos by title and place', () => {
+  it('is its own group, with a title, and finds finished tasks by title and place', () => {
     load([done('a', 'Send the quote'), done('b', 'Book the van')]);
     const s = source('done-todos');
-    expect(s.title).toBe('Done to-dos');
+    expect(s.title).toBe('Done tasks');
     expect(s.idle).toBeUndefined();
     expect(labels(hits('done-todos', 'quote'))).toEqual(['Send the quote']);
     expect(labels(hits('done-todos', 'northwind'))).toHaveLength(2);

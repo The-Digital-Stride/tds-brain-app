@@ -104,7 +104,7 @@ export function ProjectTodos({
     <>
       {card.archived ? null : todos?.changes === 'switched-off' ? (
         <p className="proj-note">
-          Adding to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
+          Adding tasks is switched off. Turn on 'Let the app change tasks' in{' '}
           <button type="button" className="link-btn" onClick={() => openSettings('general', 'set-direct')}>
             Settings
           </button>
@@ -112,12 +112,12 @@ export function ProjectTodos({
         </p>
       ) : todos?.canProject === true &&
         (card.space !== 'personal' || todos.canUsePersonal === true) ? null : (
-        <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>
+        <p className="proj-note">Update the brain's skills to add tasks to a project.</p>
       )}
       {showWho ? (
         <div className="proj-tools" ref={whoRef}>
           <Seg
-            label="Whose to-dos"
+            label="Whose tasks"
             value={who}
             options={[
               { value: 'everyone', label: `Everyone, ${rows?.length ?? 0}` },
@@ -129,20 +129,20 @@ export function ProjectTodos({
       ) : null}
       {failed && rows === null ? (
         <p className="proj-note" role="alert">
-          The to-dos can't be loaded right now.{' '}
+          The tasks can't be loaded right now.{' '}
           <button type="button" className="btn" data-size="small" onClick={() => void reload()}>
             Try again
           </button>
         </p>
       ) : rows === null ? (
         <p className="proj-note" role="status">
-          Loading to-dos…
+          Loading tasks…
         </p>
       ) : groups.length === 0 ? (
         <>
           {who === 'mine' ? (
             <p className="proj-note">
-              You have no open to-dos in this project.{' '}
+              You have no open tasks in this project.{' '}
               <button
                 type="button"
                 className="btn"
@@ -156,7 +156,7 @@ export function ProjectTodos({
               </button>
             </p>
           ) : (
-            <p className="proj-note">No open to-dos in this project.</p>
+            <p className="proj-note">No open tasks in this project.</p>
           )}
           {doneSection}
         </>

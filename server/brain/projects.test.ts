@@ -75,7 +75,7 @@ const card = (title: string, extra = '') =>
 const todoText = (fields: Record<string, string>) =>
   `---\n${Object.entries(fields)
     .map(([k, v]) => `${k}: ${v}`)
-    .join('\n')}\n---\n\n# To-do\n`;
+    .join('\n')}\n---\n\n# Task\n`;
 
 const CLIENTS: ClientInfo[] = ['acme', 'harvey-nash', INTERNAL_CLIENT].map((slug) => ({
   slug,
@@ -90,7 +90,7 @@ interface Fakes {
   gitCalls: string[][];
   /** Answers per git call; default: no output. */
   gitAnswer: (args: string[]) => string;
-  /** Per to-do id: fail its tidy write with this code ('crash': a plain Error). */
+  /** Per task id: fail its tidy write with this code ('crash': a plain Error). */
   todoFail: Record<string, 'changed' | 'not-found' | 'crash'>;
   createExists: boolean;
   todoCaps: string[];
@@ -215,7 +215,7 @@ function service(
     },
     capabilities: async () => fakes.caps,
   };
-  // Stands in for the to-do script: really writes the project lines, so re-reads see them.
+  // Stands in for the task script: really writes the project lines, so re-reads see them.
   const todoSkill: TodoSkillRunner = {
     async run(action) {
       fakes.todoRuns.push(action);
@@ -434,7 +434,7 @@ describe('walking the projects locations', () => {
     ]);
   });
 
-  it('resolves to-do labels, never a TDS to-do to a personal project', async () => {
+  it('resolves task labels, never a TDS task to a personal project', async () => {
     folder('clients/acme/projects/site');
     folder('personal/projects/tds-brain-app');
     const index = await service().index();
@@ -448,7 +448,7 @@ describe('walking the projects locations', () => {
   });
 });
 
-describe('counts and the team from to-dos', () => {
+describe('counts and the team from tasks', () => {
   beforeEach(() => {
     put(
       'clients/acme/projects/site/project.md',
@@ -479,7 +479,7 @@ describe('counts and the team from to-dos', () => {
     put('personal/todo/r.md', todoText({ assignee: 'someone-else', project: 'acme/site' }));
   });
 
-  it('counts open TDS to-dos and this person’s personal ones, never done ones', async () => {
+  it('counts open TDS tasks and this person’s personal ones, never done ones', async () => {
     const list = await service().list(ME);
     expect(byKey(list.projects, 'acme/site')?.openTodos).toBe(5);
     expect(byKey(list.projects, `${INTERNAL_CLIENT}/client-portal`)?.openTodos).toBe(1);
@@ -498,7 +498,7 @@ describe('counts and the team from to-dos', () => {
     ]);
   });
 
-  it('never counts a personal to-do for the team, and gives personal projects none', async () => {
+  it('never counts a personal task for the team, and gives personal projects none', async () => {
     const list = await service().list(ME);
     const people = byKey(list.projects, 'acme/site')?.teamFromTodos.map((t) => t.person);
     expect(people).not.toContain('ian-hancock');
@@ -521,8 +521,8 @@ describe('counts and the team from to-dos', () => {
     expect((await s.list(ME)).canChange).toBe(true);
   });
 
-  // UX B2: every open to-do in the project, whoever has it, and this person's own personal ones.
-  it("lists a project's open to-dos, every assignee's, with count equal to openTodos", async () => {
+  // UX B2: every open task in the project, whoever has it, and this person's own personal ones.
+  it("lists a project's open tasks, every assignee's, with count equal to openTodos", async () => {
     put(
       'todo/b.md',
       todoText({ assignee: 'simon-jones', project: 'acme/site', due: '2026-11-25', stage: 'Build' }),
@@ -551,13 +551,13 @@ describe('counts and the team from to-dos', () => {
       key: 'b.md',
       id: 'b.md',
       scope: 'tds',
-      title: 'To-do',
+      title: 'Task',
       assignee: 'simon-jones',
       due: '2026-11-25',
       stage: 'Build',
       mine: false,
     });
-    // Never someone else's personal to-do, never a done one.
+    // Never someone else's personal task, never a done one.
     expect(res.todos.map((t) => t.key)).not.toContain('personal/r.md');
     expect(res.todos.map((t) => t.key)).not.toContain('f.md');
     const jev = await s.projectTodos('personal/jev', ME);
@@ -566,8 +566,8 @@ describe('counts and the team from to-dos', () => {
     await expect(s.projectTodos('acme/nothing', ME)).rejects.toMatchObject({ code: 'not-found' });
   });
 
-  // Done-todos plan, decision 7: finished to-dos fold under the open ones.
-  it("lists a project's finished to-dos newest first, personal ones only for their owner", async () => {
+  // Done-todos plan, decision 7: finished tasks fold under the open ones.
+  it("lists a project's finished tasks newest first, personal ones only for their owner", async () => {
     put(
       'todo/done/dn-old.md',
       todoText({
@@ -636,7 +636,7 @@ describe('counts and the team from to-dos', () => {
       key: 'done:todo/done/dn-new.md',
       id: 'dn-new.md',
       scope: 'tds',
-      title: 'To-do',
+      title: 'Task',
       assignee: 'simon-jones',
       stage: 'Build',
       doneDate: '2026-11-18',
@@ -722,7 +722,7 @@ describe('tidy', () => {
     put('todo/e.md', todoText({ assignee: 'ben-mcadam', project: 'acme/new-thing' }));
   });
 
-  it('lists the waiting labels from open to-dos, a teammate’s included, never done or missing ones', async () => {
+  it('lists the waiting labels from open tasks, a teammate’s included, never done or missing ones', async () => {
     const s = service();
     const tidy = await s.tidy(ME);
     expect(tidy.rows.map((r) => r.label)).toEqual(['harvey-nash', 'ad-manager-cortex', 'client-portal']);
@@ -743,7 +743,7 @@ describe('tidy', () => {
     expect((await s.applyTidy({ label: 'client-portal', do: 'unskip' }, ME)).skipped).toEqual([]);
   });
 
-  it('approves a link through the to-do script, one project action per to-do with its own expect', async () => {
+  it('approves a link through the task script, one project action per task with its own expect', async () => {
     const s = service();
     const version = sha('todo/c.md');
     const after = await s.applyTidy(
@@ -839,7 +839,7 @@ describe('tidy', () => {
     ]);
   });
 
-  it('refuses a changed suggestion that would put a TDS to-do in a personal project', async () => {
+  it('refuses a changed suggestion that would put a TDS task in a personal project', async () => {
     folder('personal/projects/jev');
     const s = service();
     await expect(
@@ -855,7 +855,7 @@ describe('tidy', () => {
     expect(fakes.todoRuns).toEqual([]);
   });
 
-  it('only takes this person’s own personal to-dos', async () => {
+  it('only takes this person’s own personal tasks', async () => {
     put('personal/todo/m.md', todoText({ assignee: 'ian-hancock', project: 'notes-app' }));
     put('personal/todo/n.md', todoText({ assignee: 'someone-else', project: 'other-app' }));
     const labels = (await service().tidy(ME)).rows.map((r) => r.label);
@@ -863,16 +863,16 @@ describe('tidy', () => {
     expect(labels).not.toContain('other-app');
   });
 
-  it('never touches a personal to-do that shares a file name with a TDS conflict (review fix 3)', async () => {
+  it('never touches a personal task that shares a file name with a TDS conflict (review fix 3)', async () => {
     // x.md (TDS) carries the label but names another client: a conflict. The personal x.md is a
-    // different to-do with a different label; it must stay exactly as it is.
+    // different task with a different label; it must stay exactly as it is.
     put('todo/x.md', todoText({ assignee: 'ben-mcadam', project: 'harvey-nash', client: 'acme' }));
     put('personal/todo/x.md', todoText({ assignee: 'ian-hancock', project: 'my-notes' }));
     const personal = readFileSync(abs('personal/todo/x.md'), 'utf8');
     const tds = readFileSync(abs('todo/x.md'), 'utf8');
     const s = service();
     const row = (await s.tidy(ME)).rows.find((r) => r.label === 'harvey-nash');
-    expect(row?.conflicts).toEqual([{ id: 'x.md', scope: 'tds', title: 'To-do', client: 'acme' }]);
+    expect(row?.conflicts).toEqual([{ id: 'x.md', scope: 'tds', title: 'Task', client: 'acme' }]);
     await s.applyTidy(
       {
         label: 'harvey-nash',
@@ -1024,7 +1024,7 @@ describe('move', () => {
     }
   };
 
-  it('checks first, counting the open to-dos it would move and writing nothing', async () => {
+  it('checks first, counting the open tasks it would move and writing nothing', async () => {
     const s = moving();
     const r = (await s.move(
       { key: 'personal/jev', client: 'skyseal', expect: V, check: true },
@@ -1051,14 +1051,14 @@ describe('move', () => {
       ME,
     )) as ProjectMoveCheckResponse;
     expect(tds.todos).toBe(3);
-    // Without the to-dos (the Settings switch): none counted.
+    // Without the tasks (the Settings switch): none counted.
     const off = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V, check: true }, ME, {
       todos: false,
     })) as ProjectMoveCheckResponse;
     expect(off.todos).toBe(0);
   });
 
-  it('moves, then re-points only the open to-dos chosen before the move, keeping their stage', async () => {
+  it('moves, then re-points only the open tasks chosen before the move, keeping their stage', async () => {
     const s = moving();
     const before = { t: sha('todo/t.md'), u: sha('todo/u.md'), s: sha('personal/todo/s.md') };
     const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME)) as ProjectMoveResult;
@@ -1118,7 +1118,7 @@ describe('move', () => {
     expect(fakes.skillRuns).toEqual([]);
   });
 
-  it('moves a personal project, its own personal to-dos and none of anyone else’s', async () => {
+  it('moves a personal project, its own personal tasks and none of anyone else’s', async () => {
     const s = moving();
     const r = (await s.move(
       { key: 'personal/jev', client: 'skyseal', expect: V, dropPersonal: true },
@@ -1132,7 +1132,7 @@ describe('move', () => {
     expect(r).toMatchObject({ key: 'skyseal/jev', todosMoved: 2, todosLeft: 0 });
   });
 
-  it('counts a to-do it could not re-point as left, and still answers the move', async () => {
+  it('counts a task it could not re-point as left, and still answers the move', async () => {
     const s = moving();
     fakes.todoFail = { 't.md': 'changed', 'u.md': 'crash' };
     const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME)) as ProjectMoveResult;
@@ -1141,7 +1141,7 @@ describe('move', () => {
     expect(byKey(r.list.projects, 'skyseal/site')?.openTodos).toBe(3);
   });
 
-  it('re-points nothing when told not to change to-dos', async () => {
+  it('re-points nothing when told not to change tasks', async () => {
     const s = moving();
     const r = (await s.move({ key: 'acme/site', client: 'skyseal', expect: V }, ME, {
       todos: false,
@@ -1453,7 +1453,7 @@ describe('archive, unarchive and delete', () => {
     }
   };
 
-  it('checks first: the script answers, open linked to-dos are listed, done ones counted, nothing written', async () => {
+  it('checks first: the script answers, open linked tasks are listed, done ones counted, nothing written', async () => {
     const s = removing();
     const r = (await s.remove(
       { key: 'acme/site', action: 'archive', check: true },
@@ -1467,7 +1467,7 @@ describe('archive, unarchive and delete', () => {
       ['p.md', 'personal', 'ian-hancock', sha('personal/todo/p.md')],
       ['simon.md', 'tds', 'simon-jones', sha('todo/simon.md')],
     ]);
-    expect(r.todos.find((t) => t.id === 'mine.md')?.title).toBe('To-do');
+    expect(r.todos.find((t) => t.id === 'mine.md')?.title).toBe('Task');
     expect(fakes.skillRuns).toEqual([{ kind: 'archive', key: 'acme/site', check: true }]);
     expect(fakes.todoRuns).toEqual([]);
     expect(fakes.moved).toEqual([]);
@@ -1510,7 +1510,7 @@ describe('archive, unarchive and delete', () => {
     expect(byKey(r.list.projects, 'acme/site')?.archived).toBe(true);
   });
 
-  it('unarchives with no to-dos', async () => {
+  it('unarchives with no tasks', async () => {
     const s = removing();
     await s.remove({ key: 'acme/old', action: 'unarchive' }, ME);
     expect(existsSync(abs('clients/acme/projects/old/project.md'))).toBe(true);
@@ -1534,7 +1534,7 @@ describe('archive, unarchive and delete', () => {
     ).toBe('bad-request');
   });
 
-  it('deletes the folder, then deletes or unlinks each chosen to-do (client kept)', async () => {
+  it('deletes the folder, then deletes or unlinks each chosen task (client kept)', async () => {
     const s = removing();
     const before = { mine: sha('todo/mine.md'), simon: sha('todo/simon.md') };
     const r = (await s.remove(
@@ -1594,7 +1594,7 @@ describe('archive, unarchive and delete', () => {
     expect(existsSync(abs('clients/acme/projects/site/project.md'))).toBe(true);
   });
 
-  it('drops a choice for a to-do no longer open and linked, counting it neither way', async () => {
+  it('drops a choice for a task no longer open and linked, counting it neither way', async () => {
     const s = removing();
     // A teammate ticked simon.md between the check and the confirm; the others were never listed.
     rmSync(abs('todo/simon.md'));
@@ -1621,7 +1621,7 @@ describe('archive, unarchive and delete', () => {
     expect(r).not.toHaveProperty('leftBehind');
   });
 
-  it('applies the to-do choices and answers leftBehind when the deleted folder was only partly removed', async () => {
+  it('applies the task choices and answers leftBehind when the deleted folder was only partly removed', async () => {
     const s = removing();
     fakes.leftBehind = 'clients/acme/projects/.tdsapp-projects-site-0123456789ab.deleting~';
     const r = (await s.remove(
@@ -1645,7 +1645,7 @@ describe('archive, unarchive and delete', () => {
     expect(byKey(r.list.projects, 'acme/site')).toBeUndefined();
   });
 
-  it('refuses unlink choices without the to-do project capability, before touching the folder', async () => {
+  it('refuses unlink choices without the task project capability, before touching the folder', async () => {
     const s = removing();
     fakes.todoCaps = [];
     const unlink = {
@@ -1663,12 +1663,12 @@ describe('archive, unarchive and delete', () => {
     expect(err).toBeInstanceOf(ProjectsError);
     expect(err).toMatchObject({
       code: 'not-allowed',
-      message: "Update the brain's skills to unlink to-dos.",
+      message: "Update the brain's skills to unlink tasks.",
     });
     expect(fakes.skillRuns).toEqual([]);
     expect(fakes.todoRuns).toEqual([]);
     expect(existsSync(abs('clients/acme/projects/site/project.md'))).toBe(true);
-    // Deleting a to-do needs no such capability.
+    // Deleting a task needs no such capability.
     const r = (await s.remove(
       {
         key: 'acme/site',
@@ -1681,7 +1681,7 @@ describe('archive, unarchive and delete', () => {
     expect(r).toMatchObject({ todosChanged: 1, todosFailed: [] });
   });
 
-  it('collects to-dos that fail as ids and still answers (the folder change happened)', async () => {
+  it('collects tasks that fail as ids and still answers (the folder change happened)', async () => {
     const s = removing();
     const r = await (async () => {
       fakes.todoFail = { 'mine.md': 'changed', 'nobody.md': 'crash' };
@@ -1704,7 +1704,7 @@ describe('archive, unarchive and delete', () => {
     expect(existsSync(abs('clients/acme/projects-archive/site'))).toBe(true);
   });
 
-  it('refuses to-do changes up front when the app may not change to-dos, but still allows keep', async () => {
+  it('refuses task changes up front when the app may not change tasks, but still allows keep', async () => {
     const s = removing();
     const todos = [
       { id: 'mine.md', scope: 'tds' as const, version: sha('todo/mine.md'), do: 'done' as const },
@@ -1738,7 +1738,7 @@ describe('archive, unarchive and delete', () => {
     expect(fakes.skillRuns).toHaveLength(1);
   });
 
-  it("passes the script's refusal on and changes no to-do", async () => {
+  it("passes the script's refusal on and changes no task", async () => {
     const s = removing();
     for (const code of ['not-allowed', 'changed', 'exists'] as const) {
       fakes.removeFail = code;

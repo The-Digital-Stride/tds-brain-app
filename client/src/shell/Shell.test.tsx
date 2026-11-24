@@ -210,15 +210,15 @@ describe('the left dock', () => {
 
   it('a drawer button sets aria-expanded, moves focus in, and Esc returns focus to it', async () => {
     await renderHome();
-    const todos = railButton('To-dos');
+    const todos = railButton('Tasks');
     expect(todos.getAttribute('aria-expanded')).toBe('false');
     expect(todos.getAttribute('aria-controls')).toBe('drawer');
 
     openWithClick(todos);
     expect(todos.getAttribute('aria-expanded')).toBe('true');
     expect(drawerDock().hasAttribute('inert')).toBe(false);
-    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'To-dos' }));
+    expect(drawerDock().getAttribute('aria-label')).toBe('Tasks');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Tasks' }));
 
     press('Escape');
     expect(todos.getAttribute('aria-expanded')).toBe('false');
@@ -266,8 +266,8 @@ describe('the left dock', () => {
 
   it('a synthetic Esc that something else prevented is ignored', async () => {
     await renderHome();
-    openWithClick(railButton('To-dos'));
-    const heading = screen.getByRole('heading', { level: 2, name: 'To-dos' });
+    openWithClick(railButton('Tasks'));
+    const heading = screen.getByRole('heading', { level: 2, name: 'Tasks' });
     const handled = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     handled.preventDefault();
     act(() => {
@@ -279,7 +279,7 @@ describe('the left dock', () => {
   it('floats with a veil on a narrow window, making the rest of the desk inert', async () => {
     vi.stubGlobal('innerWidth', 800);
     await renderHome();
-    openWithClick(railButton('To-dos'));
+    openWithClick(railButton('Tasks'));
     const dock = drawerDock().parentElement as HTMLElement;
     expect(dock.getAttribute('data-overlay')).toBe('true');
     expect(screen.getByRole('navigation', { name: 'Main', hidden: true }).hasAttribute('inert')).toBe(true);
@@ -302,7 +302,7 @@ describe('keys and memory', () => {
 
     box.blur();
     press('t', document.body);
-    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
+    expect(drawerDock().getAttribute('aria-label')).toBe('Tasks');
     expect(drawerDock().hasAttribute('inert')).toBe(false);
     press('s', document.body);
     expect(drawerDock().getAttribute('aria-label')).toBe('Skills');
@@ -337,7 +337,7 @@ describe('keys and memory', () => {
     });
     try {
       await renderHome();
-      openWithClick(railButton('To-dos'));
+      openWithClick(railButton('Tasks'));
       expect(drawerDock().hasAttribute('inert')).toBe(false);
     } finally {
       getItem.mockRestore();
@@ -376,13 +376,13 @@ describe('app slots', () => {
       { id: 'maps', title: 'Maps', icon: 'skills', Sheet: AdsSheet, search: null },
     );
     await renderHome();
-    openWithClick(railButton('To-dos'));
+    openWithClick(railButton('Tasks'));
     expect(drawerDock().hasAttribute('inert')).toBe(false);
 
     openWithClick(railButton('Ads'));
     await screen.findByRole('heading', { level: 1, name: 'Ads' });
     expect(drawerDock().hasAttribute('inert')).toBe(true);
-    expect(railButton('To-dos').getAttribute('aria-expanded')).toBe('false');
+    expect(railButton('Tasks').getAttribute('aria-expanded')).toBe('false');
 
     openWithClick(railButton('Chats'));
     expect(drawerDock().hasAttribute('inert')).toBe(false);
@@ -397,7 +397,7 @@ describe('app slots', () => {
   it('focus left in the drawer goes to the app, not back to the drawer’s rail button', async () => {
     apps.push({ id: 'ads', title: 'Ads', icon: 'skills', Sheet: AdsSheet, search: null });
     await renderHome();
-    openWithClick(railButton('To-dos'));
+    openWithClick(railButton('Tasks'));
     expect(drawerDock().contains(document.activeElement)).toBe(true);
 
     // A click that doesn't move focus (Safari, or the palette handing focus back to the drawer).
@@ -509,7 +509,7 @@ describe('the two docks give way to each other', () => {
 
     press('t', document.body);
     expect(drawerDock().hasAttribute('inert')).toBe(false);
-    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
+    expect(drawerDock().getAttribute('aria-label')).toBe('Tasks');
     expect(screen.getByRole('navigation', { name: 'Main' }).hasAttribute('inert')).toBe(false);
     expect(document.getElementById('main')?.hasAttribute('inert')).toBe(false);
     expect(panelDock().hasAttribute('inert')).toBe(true);
@@ -558,13 +558,13 @@ describe('single keys', () => {
 
   it('the rail advertises them only while they are switched on', async () => {
     const on = await renderHome();
-    expect(railButton('To-dos').getAttribute('aria-keyshortcuts')).toBe('t');
+    expect(railButton('Tasks').getAttribute('aria-keyshortcuts')).toBe('t');
     const jump = () => screen.getByRole('button', { name: 'Search or jump to' });
     expect(jump().getAttribute('aria-keyshortcuts')).toMatch(/ \/$/);
     on.unmount();
     localStorage.setItem('tds-brain-shell', JSON.stringify({ singleKeys: false, railWide: true }));
     await renderHome();
-    expect(railButton('To-dos').hasAttribute('aria-keyshortcuts')).toBe(false);
+    expect(railButton('Tasks').hasAttribute('aria-keyshortcuts')).toBe(false);
     expect(
       screen.getByRole('button', { name: 'Search or jump to' }).getAttribute('aria-keyshortcuts'),
     ).not.toContain('/');
@@ -758,18 +758,18 @@ describe('Help, for an owner', () => {
   it('a drawer header has a Help link; closing Help puts the drawer back', async () => {
     api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'owner' } });
     await renderHome();
-    openWithClick(railButton('To-dos'));
-    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
-    fireEvent.click(screen.getByRole('button', { name: 'Help: To-dos' }));
+    openWithClick(railButton('Tasks'));
+    expect(drawerDock().getAttribute('aria-label')).toBe('Tasks');
+    fireEvent.click(screen.getByRole('button', { name: 'Help: Tasks' }));
     expect(drawerDock().getAttribute('aria-label')).toBe('Help');
     fireEvent.click(within(drawerDock()).getByRole('button', { name: 'Close help' }));
-    expect(drawerDock().getAttribute('aria-label')).toBe('To-dos');
+    expect(drawerDock().getAttribute('aria-label')).toBe('Tasks');
     expect(drawerDock().hasAttribute('inert')).toBe(false);
   });
 
   it('a scout has a Help link too', async () => {
     await renderHome();
-    openWithClick(railButton('To-dos'));
-    expect(screen.getByRole('button', { name: 'Help: To-dos' })).toBeTruthy();
+    openWithClick(railButton('Tasks'));
+    expect(screen.getByRole('button', { name: 'Help: Tasks' })).toBeTruthy();
   });
 });

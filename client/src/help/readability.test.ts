@@ -86,7 +86,7 @@ describe('fkGrade', () => {
 });
 
 describe('glossary terms in the reading score', () => {
-  const text = 'Every approval needs a favourite helper. Each team member sees the to-dos.';
+  const text = 'Every approval needs a favourite helper. Each team member sees the tasks.';
   const plain = fkGrade(text);
 
   it('glossaryTerms reads the ### lines only', () => {
@@ -95,10 +95,10 @@ describe('glossary terms in the reading score', () => {
     expect(glossaryTerms(md)).toEqual(['Brain', 'Team member']);
   });
   it('a matching word counts as one syllable (case, plural, hyphen)', () => {
-    expect(fkGrade(text, ['approval', 'favourite', 'helper', 'team member', 'to-do'])).toBeLessThan(plain);
+    expect(fkGrade(text, ['approval', 'favourite', 'helper', 'team member', 'task'])).toBeLessThan(plain);
     expect(fkGrade('Approvals.', ['Approval'])).toBeCloseTo(fkGrade('Cat.'), 5);
     expect(fkGrade('APPROVAL.', ['approval'])).toBeCloseTo(fkGrade('Cat.'), 5);
-    expect(fkGrade('To-dos.', ['to-do'])).toBeCloseTo(fkGrade('Cat.'), 5);
+    expect(fkGrade('Tasks.', ['task'])).toBeCloseTo(fkGrade('Cat.'), 5);
     expect(fkGrade('Team-members.', ['team member'])).toBeLessThan(fkGrade('Team-members.'));
   });
   it('a two-word term counts each of its words as one syllable', () => {

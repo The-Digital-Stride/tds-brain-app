@@ -223,7 +223,7 @@ describe('walking through', () => {
       seen.push(title());
     }
     expect(seen).not.toContain('Find anything fast');
-    expect(seen).toContain('Your to-dos');
+    expect(seen).toContain('Your tasks');
   });
 
   it('goes back', async () => {
@@ -392,7 +392,7 @@ describe('focus, keys and replay', () => {
     setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
-    const todos = document.querySelector('button.rail-item[data-dock-label="To-dos"]') as HTMLElement;
+    const todos = document.querySelector('button.rail-item[data-dock-label="Tasks"]') as HTMLElement;
     fireEvent.click(todos);
     await waitFor(() => expect(todos.getAttribute('aria-expanded')).toBe('true'));
     act(() => startTour());
@@ -407,7 +407,7 @@ describe('focus, keys and replay', () => {
     for (const key of ['c', 't', 's', 'h', '?', '/']) fireEvent.keyDown(document.body, { key });
     expect(help.getAttribute('aria-expanded')).toBe('false');
     expect(
-      document.querySelector('button.rail-item[data-dock-label="To-dos"]')?.getAttribute('aria-expanded'),
+      document.querySelector('button.rail-item[data-dock-label="Tasks"]')?.getAttribute('aria-expanded'),
     ).toBe('false');
     expect(screen.getByRole('dialog')).toBeTruthy();
   });

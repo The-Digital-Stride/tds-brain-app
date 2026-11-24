@@ -57,7 +57,7 @@ export function ConfirmText({
               that type (such as videos and zips). They stay on this Mac.
             </p>
           ) : null}
-          <p>Your to-dos for it move with it. You can't make it personal again.</p>
+          <p>Your tasks for it move with it. You can't make it personal again.</p>
           {check.personalLinks.length > 0 ? (
             <p>
               {plural(check.personalLinks.length, 'personal file')} added from outside this project will be
@@ -67,7 +67,7 @@ export function ConfirmText({
         </>
       ) : (
         <p>
-          Its folder moves from {oldName} to {target.name}. {plural(answer.todos, 'open to-do')} move with it.
+          Its folder moves from {oldName} to {target.name}. {plural(answer.todos, 'open task')} move with it.
         </p>
       )}
       <p>

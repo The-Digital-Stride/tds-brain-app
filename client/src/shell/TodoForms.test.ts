@@ -78,7 +78,7 @@ describe('buildEditActions with a project', () => {
     expect(buildEditActions(t, draftOf(t), false, false, true)).toEqual([]);
   });
 
-  it("clearing the project removes it and its stage but keeps the to-do's client", () => {
+  it("clearing the project removes it and its stage but keeps the task's client", () => {
     const t = todo({ projectMatch: { how: 'key', key: 'acme/site' }, stage: 'Build', client: 'acme' });
     const [a] = buildEditActions(t, draftOf(t, { project: '' }), false, false, true);
     expect(a).toMatchObject({ kind: 'project', client: 'acme', project: null, stage: null });
@@ -90,7 +90,7 @@ describe('buildEditActions with a project', () => {
     expect(a).toMatchObject({ kind: 'project', scope: 'personal', client: null, project: 'personal/diary' });
   });
 
-  it('moving a personal to-do out of a private project asks to drop it and sends dropProject', () => {
+  it('moving a personal task out of a private project asks to drop it and sends dropProject', () => {
     const t = todo({ scope: 'personal', projectMatch: { how: 'key', key: 'personal/diary' }, stage: 'x' });
     const actions = buildEditActions(t, draftOf(t, { scope: 'tds' }), false, false, true);
     expect(actions).toEqual([
@@ -98,7 +98,7 @@ describe('buildEditActions with a project', () => {
     ]);
   });
 
-  it('after the drop it can still put the to-do in a team project, addressed at its new place', () => {
+  it('after the drop it can still put the task in a team project, addressed at its new place', () => {
     const t = todo({ scope: 'personal', projectMatch: { how: 'key', key: 'personal/diary' } });
     const actions = buildEditActions(
       t,
@@ -112,7 +112,7 @@ describe('buildEditActions with a project', () => {
     expect(actions[1]).not.toHaveProperty('scope');
   });
 
-  it('never sends a personal project for a to-do that is moving to the team', () => {
+  it('never sends a personal project for a task that is moving to the team', () => {
     const t = todo({ scope: 'personal' });
     const actions = buildEditActions(
       t,

@@ -291,7 +291,7 @@ process.stdin.on('end', () => {
       mkdirSync(join(root, '.claude', 'skills', 'tdsapp-todo', 'scripts'), { recursive: true });
       writeFileSync(
         join(root, '.claude', 'skills', 'tdsapp-todo', 'SKILL.md'),
-        `---\ndescription: Change to-dos.\nroles: ${opts.roles ?? 'owner, scout'}\nmaturity: draft\n---\n`,
+        `---\ndescription: Change tasks.\nroles: ${opts.roles ?? 'owner, scout'}\nmaturity: draft\n---\n`,
       );
       writeFileSync(join(root, TODO_SCRIPT), FAKE_SCRIPT);
     }
@@ -367,10 +367,10 @@ process.stdin.on('end', () => {
     expect(list.mine.map((t) => t.id)).not.toContain(MINE);
     expect(list.changes).toBe('on');
     expect(list.team.map((m) => m.slug)).toEqual(['sam-example', 'alex-sample', 'jo-owner']);
-    expect(logs).toEqual(['Changed a to-do (delete).']);
+    expect(logs).toEqual(['Changed a task (delete).']);
   });
 
-  describe('personal to-dos', () => {
+  describe('personal tasks', () => {
     const PID = '20261110-dentist.md';
     const withPersonal = (extra: Parameters<typeof makeBrain>[0] = {}) => {
       const made = makeBrain({ caps: ['handover', 'scope'], ...extra });
@@ -409,7 +409,7 @@ process.stdin.on('end', () => {
       expect(json.moved).toBeUndefined();
     });
 
-    it('ticks a personal to-do through the script with scope, and never writes itself', async () => {
+    it('ticks a personal task through the script with scope, and never writes itself', async () => {
       const { root, brain, calls, version } = withPersonal();
       const { status } = await send(brain, {
         path: ROUTES.completeTodo,
@@ -502,13 +502,13 @@ process.stdin.on('end', () => {
     expect(status).toBe(403);
     expect(json.error).toEqual({
       code: 'not-allowed',
-      message: "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings.",
+      message: "Adding and editing tasks is switched off. Turn on 'Let the app change tasks' in Settings.",
     });
     expect(calls()).toEqual([]);
     expect(existsSync(join(root, 'todo', MINE))).toBe(true);
   });
 
-  it('refuses a body that is not a to-do change, and other methods', async () => {
+  it('refuses a body that is not a task change, and other methods', async () => {
     const { brain, calls } = makeBrain();
     for (const body of [
       { kind: 'delete' },
@@ -533,7 +533,7 @@ process.stdin.on('end', () => {
     expect(other.status).toBe(404);
     expect(other.json.error).toEqual({
       code: 'not-found',
-      message: 'That to-do could not be found. It may have been finished, deleted or passed on.',
+      message: 'That task could not be found. It may have been finished, deleted or passed on.',
     });
     const badDate = await send(brain, { body: { kind: 'due', id: MINE, due: '2026-02-30' } });
     expect(badDate.status).toBe(400);
@@ -572,7 +572,7 @@ process.stdin.on('end', () => {
     const sent = await send(brain, { body: { kind: 'delete', id: MINE, expect: 'f'.repeat(64) } });
     expect(sent.status).toBe(409);
     expect(sent.json.error.code).toBe('changed');
-    expect(sent.json.error.message).toContain('Someone else changed this to-do');
+    expect(sent.json.error.message).toContain('Someone else changed this task');
     expect(calls()).toEqual([]);
   });
 
@@ -688,7 +688,7 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
     ]);
   });
 
-  it('answers the history of a to-do, no-store', async () => {
+  it('answers the history of a task, no-store', async () => {
     const res = await get(
       makeBrain(gitOk),
       `${ROUTES.todoHistory}?key=${encodeURIComponent(`asked:todo/${ID}`)}`,
@@ -727,7 +727,7 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
     expect((asked.json as AskedTodoList).waiting).toHaveLength(1);
   });
 
-  it('lists finished to-dos through the gate: own personal only, no-store, GET only', async () => {
+  it('lists finished tasks through the gate: own personal only, no-store, GET only', async () => {
     const brain = makeBrain(gitOk);
     const root = (brain as unknown as { root: string }).root;
     mkdirSync(join(root, 'personal', 'todo', 'done'), { recursive: true });
@@ -758,7 +758,7 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
     expect(bad.status).toBe(400);
   });
 
-  it('reads one teammate to-do through the gate: 200, 400, 404, no-store, GET only', async () => {
+  it('reads one teammate task through the gate: 200, 400, 404, no-store, GET only', async () => {
     const brain = makeBrain(gitOk);
     const base = `${ROUTES.teamTodo}?id=`;
     const ok = await get(brain, `${base}${ID}`);
@@ -775,7 +775,7 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
     expect((await get(brain, `${base}${ID}`, 'POST')).status).toBe(405);
   });
 
-  it('setup mode answers a teammate to-do with 404', async () => {
+  it('setup mode answers a teammate task with 404', async () => {
     expect((await get(createSetupBrain(), `${ROUTES.teamTodo}?id=${ID}`)).status).toBe(404);
   });
 
@@ -1997,18 +1997,18 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     }
   });
 
-  it('saves favourite to-dos as a list of to-do keys, once each', async () => {
+  it('saves favourite tasks as a list of task keys, once each', async () => {
     const sent = await call('/api/prefs', 'PUT', { favouriteTodos: ['a1', 'personal/b2', 'a1'] });
     expect(sent.status).toBe(200);
     expect(sent.json.favouriteTodos).toEqual(['a1', 'personal/b2']);
   });
 
-  it('refuses favourite to-dos that are not a list of to-do keys, or too many', async () => {
+  it('refuses favourite tasks that are not a list of task keys, or too many', async () => {
     const keys = Array.from({ length: 201 }, (_, i) => `t${i}`);
     for (const favouriteTodos of ['nope', [''], [3], ['x'.repeat(301)], keys]) {
       const sent = await call('/api/prefs', 'PUT', { favouriteTodos });
       expect(sent.status).toBe(400);
-      expect(sent.json.error.message).toBe('The favourite to-dos were not understood.');
+      expect(sent.json.error.message).toBe('The favourite tasks were not understood.');
     }
   });
 
@@ -3263,7 +3263,7 @@ process.stdin.on('end', () => {
       expect: expectV,
     });
     expect(() => s.uploads.peek([info.id])).toThrow();
-    expect(s.logs).toEqual(['Added a file to a to-do.']);
+    expect(s.logs).toEqual(['Added a file to a task.']);
   });
 
   it('answers 409 with the saved-but-not-linked message when attach fails after add', async () => {
@@ -3299,7 +3299,7 @@ process.stdin.on('end', () => {
     expect(s.uploads.peek([info.id])).toHaveLength(1);
   });
 
-  it('refuses with 400 a bad shape, an unknown or used upload, and a type to-dos never take', async () => {
+  it('refuses with 400 a bad shape, an unknown or used upload, and a type tasks never take', async () => {
     const s = setup();
     const info = await s.stage();
     for (const body of [

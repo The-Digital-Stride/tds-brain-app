@@ -185,7 +185,7 @@ export function dateWords(iso: string | null): string {
 }
 
 export const todoWords = (n: number): string =>
-  n === 0 ? 'No open to-dos' : `${n} open to-do${n === 1 ? '' : 's'}`;
+  n === 0 ? 'No open tasks' : `${n} open task${n === 1 ? '' : 's'}`;
 
 /** The label that goes under a row's title. */
 export function rowMeta(card: ProjectCard): string {

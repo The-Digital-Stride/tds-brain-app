@@ -47,7 +47,7 @@ describe('isMine and the filters', () => {
     teamFromTodos: [{ person: 'me', openTodos: 1, lastActive: '2026-11-20' }],
   });
   const other = card({ slug: 'n', owner: 'x' });
-  it('counts the owner, the team and people from to-dos', () => {
+  it('counts the owner, the team and people from tasks', () => {
     expect([owner, onTeam, fromTodos, other].map((c) => isMine(c, 'me'))).toEqual([true, true, true, false]);
     expect(isMine(owner, '')).toBe(false);
   });
@@ -61,7 +61,7 @@ describe('isMine and the filters', () => {
 });
 
 describe('the team', () => {
-  it('lists the owner, then the team, then people from to-dos', () => {
+  it('lists the owner, then the team, then people from tasks', () => {
     const c = card({
       owner: 'a',
       team: ['b'],
@@ -75,8 +75,8 @@ describe('the team', () => {
   });
 });
 
-describe('to-dos', () => {
-  it('finds the to-dos for a project and groups them by stage', () => {
+describe('tasks', () => {
+  it('finds the tasks for a project and groups them by stage', () => {
     const todos = [
       { projectMatch: { how: 'key' as const, key: 'skyseal/website-rebuild' }, stage: 'Build' },
       { projectMatch: { how: 'legacy' as const, key: 'skyseal/website-rebuild' }, stage: null },

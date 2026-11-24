@@ -211,9 +211,9 @@ function Team({
               <span className="line-title">{personName(r.person, team)}</span>
               <span className="line-meta">
                 {r.role === 'owner' ? 'Account Owner' : r.role === 'team' ? 'Team' : null}
-                {r.role === 'from-todos' ? <span className="chip">from to-dos</span> : null}
+                {r.role === 'from-todos' ? <span className="chip">from tasks</span> : null}
                 {r.role === 'from-todos' && r.openTodos
-                  ? ` ${r.openTodos} open to-do${r.openTodos === 1 ? '' : 's'}`
+                  ? ` ${r.openTodos} open task${r.openTodos === 1 ? '' : 's'}`
                   : null}
               </span>
             </span>
@@ -485,15 +485,15 @@ function Overview({
               <h3 id="proj-checklist">Old checklist</h3>
             </div>
             <p className="proj-note">
-              This project has a checklist from before to-dos were linked to projects:{' '}
+              This project has a checklist from before tasks were linked to projects:{' '}
               <code>{card.checklist}</code>
             </p>
             {card.checklistOpen && card.checklistOpen.length > 0 ? (
               <>
                 <p className="proj-note">
                   {card.checklistOpen.length === 1
-                    ? '1 item is still open. It shows on the Workbench and isn’t counted in this project’s to-dos:'
-                    : `${card.checklistOpen.length} items are still open. They show on the Workbench and aren’t counted in this project’s to-dos:`}
+                    ? '1 item is still open. It shows on the Workbench and isn’t counted in this project’s tasks:'
+                    : `${card.checklistOpen.length} items are still open. They show on the Workbench and aren’t counted in this project’s tasks:`}
                 </p>
                 <ul className="proj-checklist">
                   {card.checklistOpen.map((item, i) => (
@@ -691,7 +691,7 @@ export function ProjectPage({
             // No tab dot for news: a tab's dot means a problem (design-system Page tabs), and a project opens
             // on its Overview, where "Since you last looked" already sits.
             { id: 'overview', label: 'Overview' },
-            { id: 'todos', label: 'To-dos', count: projectTodos.data?.count ?? card.openTodos },
+            { id: 'todos', label: 'Tasks', count: projectTodos.data?.count ?? card.openTodos },
             { id: 'updates', label: 'Updates' },
             { id: 'files', label: 'Files' },
           ]}
@@ -699,7 +699,7 @@ export function ProjectPage({
         {tab === 'todos' && canAddTodo ? (
           <button type="button" className="btn" data-variant="primary" data-size="small" onClick={addTodo}>
             <Icon name="plus" size={14} />
-            Add a to-do
+            Add a task
           </button>
         ) : null}
         {tab === 'updates' && canAddUpdate ? (

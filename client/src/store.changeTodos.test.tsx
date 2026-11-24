@@ -89,7 +89,7 @@ describe('store.changeTodos', () => {
     expect(store?.todos?.mine[0]?.title).toBe('after first');
   });
 
-  it('reloads the to-dos when the "Let the app change to-dos" switch changes', async () => {
+  it('reloads the tasks when the "Let the app change tasks" switch changes', async () => {
     api.bootstrap.mockRejectedValue(new Error('no boot'));
     api.sessions.mockResolvedValue({ live: [], past: [] });
     api.todos.mockReset();
@@ -114,7 +114,7 @@ describe('store.changeTodos', () => {
     expect(store?.todos?.changes).toBe('on');
   });
 
-  it('does not reload the to-dos for other preferences', async () => {
+  it('does not reload the tasks for other preferences', async () => {
     api.bootstrap.mockRejectedValue(new Error('no boot'));
     api.sessions.mockResolvedValue({ live: [], past: [] });
     api.todos.mockReset();
@@ -139,7 +139,7 @@ describe('store.changeTodos', () => {
   });
 });
 
-describe('store.changeTodos, moving a to-do', () => {
+describe('store.changeTodos, moving a task', () => {
   it('addresses later steps to the new id and version after a name clash', async () => {
     api.bootstrap.mockRejectedValue(new Error('no boot'));
     api.todos.mockResolvedValue(list('start'));
@@ -376,17 +376,17 @@ describe('store.holdTodo (undo)', () => {
     expect(api.changeTodo.mock.calls.filter(([x]) => x === b)).toHaveLength(1);
   });
 
-  it('shows the error and gives the to-do back when a held change fails', async () => {
+  it('shows the error and gives the task back when a held change fails', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await start();
-    api.completeTodo.mockRejectedValue(new TestFailure('That to-do could not be found.'));
+    api.completeTodo.mockRejectedValue(new TestFailure('That task could not be found.'));
     act(() =>
       store?.holdTodo({ todoId: 'a.md', title: 'A', kind: 'tick', label: 'Marked as done', action: null }),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);
     });
-    expect(store?.actionError).toBe('That to-do could not be found.');
+    expect(store?.actionError).toBe('That task could not be found.');
     expect(store?.heldTodos).toEqual([]);
   });
 
@@ -395,7 +395,7 @@ describe('store.holdTodo (undo)', () => {
     await start();
     api.changeTodo.mockRejectedValue(
       Object.assign(
-        new TestFailure('Someone else changed this to-do since you opened it, so your change was not made.'),
+        new TestFailure('Someone else changed this task since you opened it, so your change was not made.'),
         {
           code: 'changed',
         },
@@ -414,7 +414,7 @@ describe('store.holdTodo (undo)', () => {
       await vi.advanceTimersByTimeAsync(TODO_UNDO_MS + 100);
     });
     expect(store?.actionError).toBe(
-      'Someone else changed this to-do since you opened it, so your change was not made. Open it to see the latest, then try again.',
+      'Someone else changed this task since you opened it, so your change was not made. Open it to see the latest, then try again.',
     );
   });
 
@@ -451,7 +451,7 @@ describe('store.holdTodo (undo)', () => {
     expect(result?.todos?.mine[0]?.version).toBe('v3');
   });
 
-  it('stops the save when the to-do is missing from the list a step returned', async () => {
+  it('stops the save when the task is missing from the list a step returned', async () => {
     await boot();
     api.changeTodo.mockResolvedValue({ ...list('x'), mine: [] });
     let result: ChangeTodosResult | undefined;

@@ -72,7 +72,7 @@ export function TodoHistory({ todoKey, team }: { todoKey: string; team: readonly
 
 function HistoryBody({ res, team }: { res: TodoHistoryResponse; team: readonly TeamMember[] }) {
   if (res.status === 'personal')
-    return <p className="todo-note">Personal to-dos aren't synced, so there's no history.</p>;
+    return <p className="todo-note">Personal tasks aren't synced, so there's no history.</p>;
   if (res.status === 'unavailable')
     return <p className="todo-note">History isn't available in this brain.</p>;
   const fromGit = res.events.some((e) => e.actor.source === 'history');

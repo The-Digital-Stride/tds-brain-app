@@ -84,8 +84,8 @@ function setStore(changes: TodoChangeAccess, items?: TodoItem[], heldTodos: Held
 
 /** Opens the panel's add form (the panel loads the first time, hence the wait). */
 const openAdd = async () => {
-  fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-  await screen.findByRole('form', { name: 'Add a to-do' });
+  fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+  await screen.findByRole('form', { name: 'Add a task' });
 };
 /** Opens a to-do in the panel, already editing. */
 const openEdit = async (title = 'Renew contract') => {
@@ -110,17 +110,17 @@ beforeEach(() => fakeShell.reset());
 const type = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-describe('To-dos drawer, changing to-dos', () => {
+describe('Tasks drawer, changing tasks', () => {
   it('shows the controls only when changes are on', () => {
     render(<TodosDrawer />);
-    expect(screen.getByRole('button', { name: 'Add a to-do' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add a task' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Edit "Renew contract"' })).toBeTruthy();
     cleanup();
     fakeShell.reset();
     for (const c of ['restricted', 'no-skill', 'switched-off'] as const) {
       setStore(c);
       render(<TodosDrawer />);
-      expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Add a task' })).toBeNull();
       expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
       cleanup();
       fakeShell.reset();
@@ -130,7 +130,7 @@ describe('To-dos drawer, changing to-dos', () => {
   it('shows the switched-off line with a Settings link, and nothing for restricted', () => {
     setStore('switched-off');
     render(<TodosDrawer />);
-    expect(screen.getByText(/Adding and editing to-dos is switched off/)).toBeTruthy();
+    expect(screen.getByText(/Adding and editing tasks is switched off/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(openSettings).toHaveBeenCalledWith('general', 'set-direct');
     cleanup();
@@ -165,7 +165,7 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(types).not.toContain('ask-todo');
   });
 
-  it('already on Settings, the link closes an open to-do panel without putting focus back on its row', async () => {
+  it('already on Settings, the link closes an open task panel without putting focus back on its row', async () => {
     setStore('switched-off');
     (store.current as { view: string }).view = 'settings';
     render(<TodosDrawer />);
@@ -189,7 +189,7 @@ describe('To-dos drawer, changing to-dos', () => {
     const who = screen.getByLabelText('Assigned to') as HTMLSelectElement;
     expect(who.value).toBe('sam-example');
     expect([...who.options].map((o) => o.text)).toEqual(['Me', 'Ben McAdam']);
-    fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Add a task' }));
     await waitFor(() =>
       expect(changeTodos).toHaveBeenCalledWith([
         { kind: 'add', title: 'Ring the client', due: null, assignee: 'sam-example' },
@@ -272,14 +272,14 @@ describe('To-dos drawer, changing to-dos', () => {
   it('shows the server message and keeps the editor when nothing was saved', async () => {
     changeTodos.mockResolvedValue({
       done: 0,
-      error: { code: 'not-found', message: 'That to-do could not be found.' },
+      error: { code: 'not-found', message: 'That task could not be found.' },
     });
     render(<TodosDrawer />);
     await openEdit('Renew contract');
     type('Title', 'Renew it');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(
-      await screen.findByText('That to-do could not be found. Your changes are still here.'),
+      await screen.findByText('That task could not be found. Your changes are still here.'),
     ).toBeTruthy();
     expect(screen.getByRole('form', { name: /^Edit/ })).toBeTruthy();
   });
@@ -303,7 +303,7 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(screen.queryByRole('form', { name: /^Edit/ })).toBeNull();
   });
 
-  it('has no tick box: Mark as done in the opened to-do holds it instead of sending it', async () => {
+  it('has no tick box: Mark as done in the opened task holds it instead of sending it', async () => {
     render(<TodosDrawer />);
     expect(screen.queryByRole('checkbox')).toBeNull();
     await openEdit('Renew contract');
@@ -333,7 +333,7 @@ describe('To-dos drawer, changing to-dos', () => {
 
   // A held row is the shared Undo line now (plan 2026-11-22-ux-consistency, decision 12): a sentence saying what
   // happened in place of the struck-through title and its label.
-  it('shows a held to-do as an Undo line, and Undo puts it back', () => {
+  it('shows a held task as an Undo line, and Undo puts it back', () => {
     const held: HeldTodo = {
       todoId: 't1.md',
       title: 'Renew contract',
@@ -352,7 +352,7 @@ describe('To-dos drawer, changing to-dos', () => {
     expect(screen.getByText('Undone.')).toBeTruthy();
   });
 
-  it('says who a held to-do was passed to', () => {
+  it('says who a held task was passed to', () => {
     setStore('on', undefined, [
       {
         todoId: 't1.md',
@@ -413,7 +413,7 @@ describe('To-dos drawer, changing to-dos', () => {
   });
 });
 
-describe('To-dos drawer, conflict check and open adds', () => {
+describe('Tasks drawer, conflict check and open adds', () => {
   it('sends the version captured when the editor opened, not a refreshed one', async () => {
     render(<TodosDrawer />);
     await openEdit('Renew contract');
@@ -434,7 +434,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
     expect(holdTodo.mock.calls[0]?.[0].action).toMatchObject({ kind: 'assignee', expect: 'v1' });
   });
 
-  it('does not hold the pass-on when the to-do is missing after the save', async () => {
+  it('does not hold the pass-on when the task is missing after the save', async () => {
     changeTodos.mockResolvedValue({ done: 1, todos: list('on', []) });
     render(<TodosDrawer />);
     await openEdit('Renew contract');
@@ -479,7 +479,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
     await screen.findByText(/Your changes are still here/);
     expect((screen.getByLabelText('Details') as HTMLTextAreaElement).value).toBe('Ben notes');
     expect((screen.getByLabelText('Due date') as HTMLInputElement).value).toBe('2031-05-05');
-    const note = screen.getByText(/Someone else changed this to-do while you were editing/);
+    const note = screen.getByText(/Someone else changed this task while you were editing/);
     expect(note.textContent).toContain('\u201cTheirs\u201d');
     expect(note.textContent).not.toContain('different details');
     expect(note.textContent).toContain('Press Save to replace it with yours, or Cancel to keep theirs.');
@@ -578,7 +578,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
     await openAdd();
     type('What needs doing?', 'Anyone can do this');
     type('Assigned to', '');
-    fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Add a task' }));
     await waitFor(() =>
       expect(changeTodos).toHaveBeenCalledWith([
         { kind: 'add', title: 'Anyone can do this', due: null, assignee: null },
@@ -587,7 +587,7 @@ describe('To-dos drawer, conflict check and open adds', () => {
   });
 });
 
-describe('To-dos drawer, edge cases', () => {
+describe('Tasks drawer, edge cases', () => {
   it('after a part-saved edit keeps the unsaved date and sends only that next', async () => {
     changeTodos.mockImplementationOnce(async () => {
       const fresh = list('on', [todo({ title: 'Renew it', version: 'v2' })]);
@@ -662,6 +662,6 @@ describe('To-dos drawer, edge cases', () => {
     undoButton.focus();
     setStore('on', [], []);
     rerender(<TodosDrawer />);
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a to-do' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a task' }));
   });
 });

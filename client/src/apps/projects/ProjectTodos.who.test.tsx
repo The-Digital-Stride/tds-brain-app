@@ -62,9 +62,9 @@ afterEach(() => {
 });
 
 describe('the Everyone / Mine switch', () => {
-  it("starts on Everyone, with each side's count, and lists everyone's to-dos", () => {
+  it("starts on Everyone, with each side's count, and lists everyone's tasks", () => {
     show(rows);
-    const sw = screen.getByRole('radiogroup', { name: 'Whose to-dos' });
+    const sw = screen.getByRole('radiogroup', { name: 'Whose tasks' });
     const everyone = within(sw).getByRole('radio', { name: 'Everyone, 4' });
     expect(everyone.getAttribute('aria-checked')).toBe('true');
     expect(within(sw).getByRole('radio', { name: 'Mine, 2' })).toBeTruthy();
@@ -94,7 +94,7 @@ describe('the Everyone / Mine switch', () => {
   it("says so when none are mine, and Show everyone's switches back with focus on the switch", () => {
     localStorage.setItem(todoWhoKey('sam'), 'mine');
     show([open('b.md', 'ben')]);
-    expect(screen.getByText(/You have no open to-dos in this project/)).toBeTruthy();
+    expect(screen.getByText(/You have no open tasks in this project/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: "Show everyone's" }));
     const everyone = screen.getByRole('radio', { name: 'Everyone, 1' });
     expect(everyone.getAttribute('aria-checked')).toBe('true');
@@ -103,7 +103,7 @@ describe('the Everyone / Mine switch', () => {
     expect(localStorage.getItem(todoWhoKey('sam'))).toBe('everyone');
   });
 
-  it('is not shown in a personal project, where every to-do is mine', () => {
+  it('is not shown in a personal project, where every task is mine', () => {
     const personal = { ...card, space: 'personal' } as unknown as ProjectCard;
     render(
       <ProjectTodos
@@ -118,13 +118,13 @@ describe('the Everyone / Mine switch', () => {
     expect(screen.getByText('Job p.md')).toBeTruthy();
   });
 
-  it('is not shown while loading or when the project has no to-dos at all', () => {
+  it('is not shown while loading or when the project has no tasks at all', () => {
     render(<ProjectTodos card={card} team={[]} rows={null} failed={false} reload={async () => {}} />);
     expect(screen.queryByRole('radiogroup')).toBeNull();
     cleanup();
     localStorage.setItem(todoWhoKey('sam'), 'mine');
     show([]);
     expect(screen.queryByRole('radiogroup')).toBeNull();
-    expect(screen.getByText('No open to-dos in this project.')).toBeTruthy();
+    expect(screen.getByText('No open tasks in this project.')).toBeTruthy();
   });
 });

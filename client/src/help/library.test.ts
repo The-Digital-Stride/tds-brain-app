@@ -45,7 +45,7 @@ describe('createHelpLibrary', () => {
     expect(lib.groups().map((g) => [g.area, g.label, g.topics.length])).toEqual([
       ['home', 'Home', 2],
       ['chats', 'Chats', 1],
-      ['todos', 'To-dos', 1],
+      ['todos', 'Tasks', 1],
       ['skills', 'Skills', 1],
       ['help', 'Help', 1],
     ]);

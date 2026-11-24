@@ -23,7 +23,7 @@ const TOP_APPS = new Set(['projects']);
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
 export const DRAWER_LABELS: Record<DrawerName, string> = {
   chats: 'Chats',
-  todos: 'To-dos',
+  todos: 'Tasks',
   skills: 'Skills',
   help: 'Help',
   // The dock shows the section's own title (see App.tsx); this is only the fallback.
@@ -260,7 +260,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
         <Item
           choose={choose}
           icon="todos"
-          label="To-dos"
+          label="Tasks"
           name={todosRailLabel(mine, fresh)}
           fresh={fresh > 0}
           wide={showsNames}

@@ -114,7 +114,7 @@ describe('todos', () => {
       'notes.txt',
       '/etc/passwd',
     ]) {
-      await expect(brain.completeTodo(id, sam)).rejects.toThrow(/to-do/i);
+      await expect(brain.completeTodo(id, sam)).rejects.toThrow(/task/i);
     }
     expect(existsSync(join(root, 'todo', 'AGENTS.md'))).toBe(true);
   });
@@ -131,7 +131,7 @@ describe('todos', () => {
     );
   });
 
-  it('completeTodo leaves the to-do open, and nothing in done/, if the open copy cannot be removed', async () => {
+  it('completeTodo leaves the task open, and nothing in done/, if the open copy cannot be removed', async () => {
     const root = copyFixture();
     const brain = createBrainReaders(root);
     const unlink = vi.spyOn(fsPromises, 'unlink').mockRejectedValueOnce(new Error('EPERM'));
@@ -195,7 +195,7 @@ function addTodoSkill(
   mkdirSync(join(root, '.claude', 'skills', skill, 'scripts'), { recursive: true });
   writeFileSync(
     join(root, '.claude', 'skills', skill, 'SKILL.md'),
-    `---\ndescription: Add, edit, pass on, re-date or delete a to-do.\nroles: ${roles}\nmaturity: draft\n---\nBody.\n`,
+    `---\ndescription: Add, edit, pass on, re-date or delete a task.\nroles: ${roles}\nmaturity: draft\n---\nBody.\n`,
   );
   if (script !== null) writeFileSync(join(root, '.claude', 'skills', skill, 'scripts', scriptName), script);
 }
@@ -325,7 +325,7 @@ describe('changeTodo', () => {
     return { root, brain: createBrainReaders(root, { todoSkill: { env: fake.env } }), calls: fake.calls };
   }
 
-  it('runs the script for a listed to-do (mine or open) and for an add', async () => {
+  it('runs the script for a listed task (mine or open) and for an add', async () => {
     const { brain, calls } = brainWithSkill();
     await brain.changeTodo(
       { kind: 'edit', id: '20261105-send-report.md', title: 'Send it', details: 'Soon' },
@@ -630,7 +630,7 @@ function personalFile(root: string, id: string, text: string): void {
   writeFileSync(join(root, 'personal', 'todo', id), text);
 }
 
-describe('personal to-dos: listing', () => {
+describe('personal tasks: listing', () => {
   it('lists personal files with scope, key and path, in mine only, never open or othersCount', async () => {
     const root = copyFixture();
     personalFile(
@@ -792,7 +792,7 @@ describe('handover', () => {
     expect(second.mine.filter((t) => t.handover !== null).length).toBeGreaterThan(30);
   });
 
-  it('reads an open stamp (assigned_to: open) for an open to-do', async () => {
+  it('reads an open stamp (assigned_to: open) for an open task', async () => {
     const root = copyFixture();
     writeFileSync(
       join(root, 'todo', '20261112-released.md'),
@@ -832,7 +832,7 @@ describe('handover', () => {
     expect(stranger.mine[0]?.handover).toMatchObject({ by: null, byName: 'Zed Zed', source: 'history' });
   });
 
-  it('is null when git resolves to the current person, on failure, and for open, others and personal to-dos', async () => {
+  it('is null when git resolves to the current person, on failure, and for open, others and personal tasks', async () => {
     const root = copyFixture();
     personalFile(root, '20261110-dentist.md', '---\nassignee: sam-example\n---\n');
     const self = gitOf('Sam Example', 'sam@example.test');
@@ -844,7 +844,7 @@ describe('handover', () => {
     expect(failing.mine.every((t) => t.handover === null)).toBe(true);
     const asked = gitOf('Alex Sample', 'alex@example.test');
     const list = await createBrainReaders(root, { todoGit: asked.run }).todos(sam);
-    // Only TDS to-dos in mine are looked up.
+    // Only TDS tasks in mine are looked up.
     expect(asked.calls.every((c) => c.startsWith('todo/'))).toBe(true);
     expect(asked.calls).toHaveLength(list.mine.filter((t) => t.scope === 'tds').length);
     expect(list.open.every((t) => t.handover === null)).toBe(true);
@@ -894,7 +894,7 @@ describe('changeTodo: personal scope', () => {
     expect(calls()).toEqual([]);
   });
 
-  it('on an older script, refuses moving a to-do in a personal project to TDS, running nothing', async () => {
+  it('on an older script, refuses moving a task in a personal project to TDS, running nothing', async () => {
     const { root, brain: b, calls } = brain(['handover', 'scope']);
     personalFile(
       root,
@@ -907,7 +907,7 @@ describe('changeTodo: personal scope', () => {
     );
     expect(got).toBe('not-allowed');
     expect(calls()).toEqual([]);
-    // A to-do in no project still moves on the older script.
+    // A task in no project still moves on the older script.
     await b.changeTodo(
       { kind: 'move', id: '20261110-dentist.md', scope: 'personal', to: 'tds', expect: dentist(root) },
       sam,
@@ -996,7 +996,7 @@ describe('changeTodo: personal scope', () => {
     });
   });
 
-  it('moves a TDS to-do to personal, keyed under personal/', async () => {
+  it('moves a TDS task to personal, keyed under personal/', async () => {
     const { root, brain: b } = brain();
     const id = '20261101-renew-contract.md';
     const result = await b.changeTodo(
@@ -1047,7 +1047,7 @@ describe('changeTodo with the real v0.4 script', () => {
     return { root, brain };
   }
 
-  it('adds a personal to-do for the person using the app, whatever git calls them', async () => {
+  it('adds a personal task for the person using the app, whatever git calls them', async () => {
     const { root, brain } = realBrain();
     expect((await brain.todos(me)).canUsePersonal).toBe(true);
     await brain.changeTodo(
@@ -1072,7 +1072,7 @@ describe('changeTodo with the real v0.4 script', () => {
     expect(added?.handover === null || added?.handover?.by === 'sam-example').toBe(true);
   });
 
-  it('passing a to-do on stamps the person and the app, not git', async () => {
+  it('passing a task on stamps the person and the app, not git', async () => {
     const { root, brain } = realBrain();
     const id = '20261103-open-task.md';
     await brain.changeTodo({ kind: 'assignee', id, assignee: 'alex-sample' }, me);
@@ -1105,7 +1105,7 @@ describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
     return { index, asked };
   }
 
-  it('fills stage and projectMatch on every to-do, and asks with its client and place', async () => {
+  it('fills stage and projectMatch on every task, and asks with its client and place', async () => {
     const root = copyFixture();
     writeFileSync(
       join(root, 'todo', FILE),
@@ -1181,7 +1181,7 @@ describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
       expect(calls()).toHaveLength(2);
     });
 
-    it("refuses it without the capability, and for to-dos that are not this person's or open", async () => {
+    it("refuses it without the capability, and for tasks that are not this person's or open", async () => {
       const older = setup(['scope']);
       expect(await codeOf(older.brain.changeTodo(set(), sam))).toBe('not-allowed');
       expect(older.calls()).toEqual([]);
@@ -1214,7 +1214,7 @@ describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
       expect(calls()).toEqual([]);
     });
 
-    it('refuses a private project for a team to-do before the script is asked', async () => {
+    it('refuses a private project for a team task before the script is asked', async () => {
       const { brain, calls } = setup();
       expect(await codeOf(brain.changeTodo(set({ client: null, project: 'personal/plan' }), sam))).toBe(
         'not-allowed',
@@ -1222,7 +1222,7 @@ describe('todos and projects (projects R1, decisions 5, 6 and 15)', () => {
       expect(calls()).toEqual([]);
     });
 
-    it('needs expect for a personal to-do, as every personal change does', async () => {
+    it('needs expect for a personal task, as every personal change does', async () => {
       const { brain } = setup();
       expect(
         await codeOf(

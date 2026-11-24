@@ -225,7 +225,7 @@ export function checkSuggestion(
   const privateProject = () =>
     new ProjectsError(
       'not-allowed',
-      "A team to-do can't go into a personal project. Pick a shared project instead.",
+      "A team task can't go into a personal project. Pick a shared project instead.",
     );
   const knownClient = (c: string) => ctx.clients.includes(c) || c === INTERNAL_CLIENT;
   const checkKey = (key: ProjectKey) => {

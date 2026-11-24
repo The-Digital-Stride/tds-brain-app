@@ -70,7 +70,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'working-on',
     anchor: '.home-composer #pick-project',
     title: 'What are you working on?',
-    text: 'Pick a project to see only its to-dos and files, here and in Images and Documents. New chats start on its client.',
+    text: 'Pick a project to see only its tasks and files, here and in Images and Documents. New chats start on its client.',
   },
   {
     id: 'client',
@@ -82,7 +82,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'projects',
     anchor: 'button.rail-item[data-app="projects"]',
     title: 'Your projects',
-    text: 'One place for each piece of client work: its to-dos, files, meetings, emails and an updates log.',
+    text: 'One place for each piece of client work: its tasks, files, meetings, emails and an updates log.',
     covers: ['app:projects'],
   },
   {
@@ -94,8 +94,8 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'todos',
-    anchor: 'button.rail-item[data-dock-label="To-dos"]',
-    title: 'Your to-dos',
+    anchor: 'button.rail-item[data-dock-label="Tasks"]',
+    title: 'Your tasks',
     text: 'Yours and the team’s. Star the important ones and they show on Home.',
     covers: ['drawer:todos'],
   },
@@ -117,13 +117,13 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'cards',
     anchor: '.home-tray .card-head',
     title: 'Cards on Home',
-    text: 'Your meetings and favourite to-dos, chats and files show here. Drag a card by its grip to put them in your order.',
+    text: 'Your meetings and favourite tasks, chats and files show here. Drag a card by its grip to put them in your order.',
   },
   {
     id: 'search',
     anchor: '.sheet-bar button[aria-label="Search or jump to"]',
     title: 'Find anything fast',
-    text: 'Press ⌘K (Ctrl K on Windows) and start typing. Chats, to-dos, projects, skills, files and help all come up.',
+    text: 'Press ⌘K (Ctrl K on Windows) and start typing. Chats, tasks, projects, skills, files and help all come up.',
   },
   {
     id: 'help',

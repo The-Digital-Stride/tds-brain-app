@@ -141,7 +141,7 @@ describe('project activity', () => {
     expect(r.items).toEqual([]);
   });
 
-  it('lists a to-do added, done and gone, never a gone one with no known title', async () => {
+  it('lists a task added, done and gone, never a gone one with no known title', async () => {
     const s = setup(
       seed({
         todos: ['done.md', 'moved.md', 'untitled.md'],
@@ -153,8 +153,8 @@ describe('project activity', () => {
       },
     );
     expect(await texts(s)).toEqual([
-      'To-do done: Send the quote',
-      'To-do added: Write the brief',
+      'Task done: Send the quote',
+      'Task added: Write the brief',
       'No longer in this project: Book the venue',
     ]);
     const r = await s.svc.read(KEY, me);
@@ -165,7 +165,7 @@ describe('project activity', () => {
     });
   });
 
-  it('a gone personal to-do is never listed (personal to-dos are always your own)', async () => {
+  it('a gone personal task is never listed (personal tasks are always your own)', async () => {
     const s = setup(seed({ todos: ['personal/p.md'], todoTitles: { 'personal/p.md': 'Book dentist' } }), {
       todos: [],
     });
@@ -202,7 +202,7 @@ describe('project activity', () => {
         'b.md': { title: 'Mine', by: 'sam-taylor', at: '2026-11-22T10:00:00.000Z' },
       },
     });
-    expect(await texts(s)).toEqual(['To-do done: From the file']);
+    expect(await texts(s)).toEqual(['Task done: From the file']);
   });
 
   it('lists a link and a file added, with a path both linked and a file shown once as a file', async () => {
@@ -292,7 +292,7 @@ describe('project activity', () => {
   it('does not list "added" from a list that was cut', async () => {
     const full = Array.from({ length: PROJECT_SEEN_LIST_MAX }, (_, i) => `t${i}.md`);
     const s = setup(seed({ todos: full, cut: true }), { todos: [todo('brand-new.md')] });
-    expect((await texts(s)).filter((t) => t.startsWith('To-do added'))).toEqual([]);
+    expect((await texts(s)).filter((t) => t.startsWith('Task added'))).toEqual([]);
   });
 
   it('coming up: overdue first, within 14 days, soonest next, and the end date', async () => {
@@ -327,11 +327,11 @@ describe('project activity', () => {
     expect((await done.svc.read(KEY, me)).comingUp).toEqual([]);
   });
 
-  it('own personal to-dos follow what the To-dos read gives (key personal/<id>)', async () => {
+  it('own personal tasks follow what the Tasks read gives (key personal/<id>)', async () => {
     const s = setup(seed(), { todos: [todo('mine.md', 'My own', '2026-11-24', 'personal')] });
     await s.ready;
     const r = await s.svc.read(KEY, me);
-    expect(r.items[0]).toMatchObject({ text: 'To-do added: My own', target: { key: 'personal/mine.md' } });
+    expect(r.items[0]).toMatchObject({ text: 'Task added: My own', target: { key: 'personal/mine.md' } });
     expect(r.comingUp[0]?.target).toEqual({ kind: 'todo', key: 'personal/mine.md' });
   });
 
@@ -358,7 +358,7 @@ describe('project activity', () => {
       await s.svc.seen(KEY, r.token as string, me);
       expect((await s.store.get(KEY))?.todos).toEqual(['a.md']);
       expect((await s.svc.read(KEY, me)).items.map((i) => i.text)).toEqual([
-        'To-do added: synced-meanwhile.md',
+        'Task added: synced-meanwhile.md',
       ]);
     });
 

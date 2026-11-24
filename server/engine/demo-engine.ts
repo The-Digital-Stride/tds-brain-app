@@ -233,7 +233,7 @@ class DemoQuery implements EngineQuery {
         '- **Boiler quote:** the office manager is waiting for a price.',
         '- **Next call:** booked for the end of the month.',
         '',
-        'Would you like me to turn these into to-dos?',
+        'Would you like me to turn these into tasks?',
       ].join('\n'),
     );
     this.result('ok');

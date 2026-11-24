@@ -254,7 +254,7 @@ describe('the move screen', () => {
     );
   });
 
-  it('confirms client to client with the to-do count, then opens the new key and announces it', async () => {
+  it('confirms client to client with the task count, then opens the new key and announces it', async () => {
     projectChoice.set('skyseal/site');
     await toMove(SKY);
     api.checkProjectMove.mockResolvedValue({
@@ -265,7 +265,7 @@ describe('the move screen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     const ask = await screen.findByRole('group', { name: 'Move this project to Acme Heating?' });
     expect(
-      within(ask).getByText('Its folder moves from Skyseal to Acme Heating. 3 open to-dos move with it.'),
+      within(ask).getByText('Its folder moves from Skyseal to Acme Heating. 3 open tasks move with it.'),
     ).toBeTruthy();
     const moved = card({ slug: 'site', client: 'acme', title: 'Sky site', owner: 'me', version: 'v2' });
     api.moveProject.mockResolvedValue({
@@ -284,7 +284,7 @@ describe('the move screen', () => {
       expect(
         screen
           .getAllByRole('status', { name: '' })
-          .some((s) => s.textContent === 'Moved to Acme Heating. 3 to-dos moved with it.'),
+          .some((s) => s.textContent === 'Moved to Acme Heating. 3 tasks moved with it.'),
       ).toBe(true),
     );
     expect(projectChoice.get().project).toBe('acme/site');

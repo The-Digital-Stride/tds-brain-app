@@ -7,7 +7,7 @@ const dispatch = vi.hoisted(() => vi.fn());
 vi.mock('../store.tsx', () => ({ useStore: () => store.current }));
 vi.mock('./ShellProvider.tsx', () => ({ useShell: () => ({ state: {}, dispatch }) }));
 vi.mock('../help/library.ts', () => ({
-  helpLibrary: { byId: (id: string) => (id === 'todos' ? { id: 'todos', title: 'To-dos' } : undefined) },
+  helpLibrary: { byId: (id: string) => (id === 'todos' ? { id: 'todos', title: 'Tasks' } : undefined) },
 }));
 
 const { HelpLink } = await import('./HelpLink.tsx');
@@ -23,7 +23,7 @@ describe('HelpLink', () => {
   it('is an icon button named for its page, and opens Help on it, for an owner', () => {
     as('owner');
     render(<HelpLink page="todos" />);
-    const button = screen.getByRole('button', { name: 'Help: To-dos' });
+    const button = screen.getByRole('button', { name: 'Help: Tasks' });
     expect(button.classList.contains('icon-btn')).toBe(true);
     expect(button.getAttribute('data-tip')).toBe('Help');
     fireEvent.click(button);
@@ -41,7 +41,7 @@ describe('HelpLink', () => {
   it.each(['team', 'scout', 'unknown'])('is shown for %s', (role) => {
     as(role);
     render(<HelpLink page="todos" />);
-    expect(screen.getByRole('button', { name: 'Help: To-dos' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Help: Tasks' })).toBeTruthy();
   });
 
   it('is not shown for a page that does not exist', () => {

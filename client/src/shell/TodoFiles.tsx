@@ -19,10 +19,10 @@ import { useShell } from './ShellProvider.tsx';
 
 /** Said once, before an upload that will land in the person's own files (they never sync). */
 export const PERSONAL_UPLOAD_WARNING =
-  'This to-do has no client in the brain, so the file saves to your personal files. Only you can open it.';
+  'This task has no client in the brain, so the file saves to your personal files. Only you can open it.';
 /** Said once, before a personal file is linked to a to-do the team can read. */
 export const PERSONAL_PICK_WARNING =
-  'Its name will show on this to-do for the team, but only you can open it.';
+  'Its name will show on this task for the team, but only you can open it.';
 const TYPES_SENTENCE =
   'Only PNG, JPG, WebP, GIF, PDF, Word, Excel, PowerPoint, CSV, Markdown and text files can be added.';
 
@@ -141,7 +141,7 @@ export function TodoFiles(props: TodoFilesProps) {
     ]);
     setWorking(false);
     if (r.error) onStatus(r.error.message, true);
-    else onStatus(`Removed ${a.name} from this to-do. The file is still in the library.`);
+    else onStatus(`Removed ${a.name} from this task. The file is still in the library.`);
     // The row is gone: keep the keyboard in the block.
     requestAnimationFrame(() => addButton.current?.focus({ preventScroll: true }));
   };
@@ -175,8 +175,8 @@ export function TodoFiles(props: TodoFilesProps) {
                   <button
                     type="button"
                     className="icon-btn"
-                    aria-label={`Remove ${a.name} from this to-do`}
-                    data-tip="Remove from this to-do. The file stays in the library."
+                    aria-label={`Remove ${a.name} from this task`}
+                    data-tip="Remove from this task. The file stays in the library."
                     aria-disabled={busy ? true : undefined}
                     onClick={() => void remove(a)}
                   >
@@ -318,7 +318,7 @@ function AddFile({
         if (!fresh && file !== files[files.length - 1]) {
           failure = {
             name: files[saved.length]?.name ?? file.name,
-            message: 'This to-do is no longer in your list, so the rest were not added.',
+            message: 'This task is no longer in your list, so the rest were not added.',
           };
           break;
         }
@@ -369,7 +369,7 @@ function AddFile({
       return close();
     }
     if (attachments.length + ok.length > TODO_ATTACHMENTS_MAX) {
-      onStatus(`A to-do can hold up to ${TODO_ATTACHMENTS_MAX} files.`, true);
+      onStatus(`A task can hold up to ${TODO_ATTACHMENTS_MAX} files.`, true);
       return close();
     }
     if (goesPersonal && !warnedUpload.current) {
@@ -419,7 +419,7 @@ function AddFile({
       />
       {step === 'closed' ? (
         atMax ? (
-          <p className="todo-note">This to-do has the most files it can hold.</p>
+          <p className="todo-note">This task has the most files it can hold.</p>
         ) : (
           <button
             type="button"

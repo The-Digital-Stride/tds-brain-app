@@ -76,6 +76,7 @@ import {
   type SessionManager,
   splitAttachmentNote,
   splitPageNote,
+  TASKS_WORD_LINE,
   touchesEmailDrafts,
   UPDATES_BY_HAND_REFUSAL,
   withPageNote,
@@ -440,7 +441,7 @@ describe('a new chat', () => {
     expect(o.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
     // Pages reach the app only through Write/Edit, and are shown in the app, never a browser Claude opens.
@@ -516,6 +517,15 @@ describe('a new chat', () => {
     expect(notices[0]).toMatchObject({ level: 'warning' });
   });
 
+  it('gives every new chat the tasks word line, straight after the files line', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const sp = queries[0]?.options.systemPrompt as { append?: string };
+    expect(sp.append).toContain(`${FILES_LINE}\n${TASKS_WORD_LINE}`);
+    expect(TASKS_WORD_LINE).toContain('tdsapp-todo');
+  });
+
   it('trims a long first prompt into the title', async () => {
     setup();
     const s = await mgr.start({ prompt: `  ${'word '.repeat(40)}` });
@@ -534,9 +544,11 @@ describe('a new chat', () => {
     // about: a test on 15 Nov 2026 saved an Urban Cooling chart in `personal/` without asking.
     expect(sp.append).toContain('offer `clients/urban-cooling/reports/` first');
     expect(sp.append).toContain('ask even for a quick chart or page');
-    // The client line first, then the files line (decision 7), then the summary line (context decision 9).
-    expect(sp.append?.split('\n')).toHaveLength(3);
-    expect(sp.append?.endsWith(`\n${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
+    // The client line first, then the files line (decision 7), the tasks word line, then the summary line (context decision 9).
+    expect(sp.append?.split('\n')).toHaveLength(4);
+    expect(sp.append?.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(
+      true,
+    );
     await expectCode(mgr.start({ prompt: 'hi', client: '../etc' }), 'bad-request');
   });
 
@@ -749,8 +761,8 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
   });
 });
 
-describe('a chat started on a to-do (A19)', () => {
-  it('keeps a listed to-do id, mine or open, and shows it in the live list', async () => {
+describe('a chat started on a task (A19)', () => {
+  it('keeps a listed task id, mine or open, and shows it in the live list', async () => {
     setup();
     const a = await mgr.start({ prompt: 'on mine', todoId: '20261111-mine.md' });
     const b = await mgr.start({ prompt: 'on open', todoId: '20261112-open.md' });
@@ -770,7 +782,7 @@ describe('a chat started on a to-do (A19)', () => {
     await expectCode(mgr.start({ prompt: 'x', todoId: 'todo/20261111-mine.md' }), 'bad-request');
   });
 
-  it('is null when no to-do is given', async () => {
+  it('is null when no task is given', async () => {
     setup();
     expect((await mgr.start({ prompt: 'hi' })).todoId).toBeNull();
     expect((await mgr.start({ prompt: 'hi', todoId: null })).todoId).toBeNull();
@@ -787,7 +799,7 @@ describe('a chat started on a to-do (A19)', () => {
   });
 
   it('is kept when a chat that went to sleep is woken, and its saved kind stays', async () => {
-    // Saved as personal; the to-do is a TDS one, so its scope must not overwrite the saved kind.
+    // Saved as personal; the task is a TDS one, so its scope must not overwrite the saved kind.
     const chatKinds = createChatKindStore(null);
     await chatKinds.set('old-1', 'personal');
     const fx = setup(undefined, { chatKinds });
@@ -797,7 +809,7 @@ describe('a chat started on a to-do (A19)', () => {
     expect(s.kind).toBe('personal');
   });
 
-  it('is dropped, never refused, on resume when the to-do has gone', async () => {
+  it('is dropped, never refused, on resume when the task has gone', async () => {
     const fx = setup();
     fx.past.push({ sessionId: 'old-1', summary: 'x', lastModified: 1 });
     const s = await mgr.start({ resume: 'old-1', todoId: 'gone.md' });
@@ -1524,7 +1536,7 @@ describe('reopening a past chat (A4)', () => {
     expect(fx.queries[0]?.options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -3084,7 +3096,7 @@ describe('levels', () => {
     expect(fx.picks).toEqual([]);
   });
 
-  it('picks for chats started from a skill with no level, a client, a to-do or only files', async () => {
+  it('picks for chats started from a skill with no level, a client, a task or only files', async () => {
     const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-lvl-')));
     const uploads = createUploadStaging({ dataDir, brainRoot: BRAIN, sweepMs: 0 });
     try {
@@ -3092,12 +3104,12 @@ describe('levels', () => {
       await auto();
       await mgr.start({ prompt: '/gm' });
       await mgr.start({ prompt: 'Check the ads', client: 'urban-cooling' });
-      await mgr.start({ prompt: 'Do this to-do', todoId: '20261111-mine.md' });
+      await mgr.start({ prompt: 'Do this task', todoId: '20261111-mine.md' });
       const up = await uploads.save(Readable.from([Buffer.alloc(6, 0x61)]), 'brief.pdf', 6);
       await mgr.start({ attachments: [up.id] });
       await flush();
       expect(fx.picks).toHaveLength(4);
-      expect(fx.picks.slice(0, 3)).toEqual(['/gm', 'Check the ads', 'Do this to-do']);
+      expect(fx.picks.slice(0, 3)).toEqual(['/gm', 'Check the ads', 'Do this task']);
       expect(fx.picks[3]).toContain('brief.pdf');
       await mgr.closeAll();
     } finally {
@@ -3689,7 +3701,7 @@ describe('levels', () => {
     expect(Object.keys(o?.agents ?? {}).sort()).toEqual(['tdsapp-expert', 'tdsapp-scout', 'tdsapp-worker']);
     expect(o?.agents?.['tdsapp-scout']?.model).toBe('haiku');
     expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
     expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBeUndefined();
     expect(o?.hooks?.PreToolUse?.[1]?.matcher).toBe('Agent|Task');
@@ -3701,7 +3713,7 @@ describe('levels', () => {
     await flush();
     expect(queries[0]?.options.agents).toBeUndefined();
     expect((queries[0]?.options.systemPrompt as { append: string } | undefined)?.append).toBe(
-      `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
   });
 
@@ -4489,7 +4501,7 @@ describe('levels', () => {
 
 const HELPERS_AT_ONCE_MAX_FOR_TEST = 4;
 describe('chat kinds (TDS / Personal)', () => {
-  it('a new chat is TDS, and one on a personal to-do is personal', async () => {
+  it('a new chat is TDS, and one on a personal task is personal', async () => {
     setup();
     expect((await mgr.start({ prompt: 'hi' })).kind).toBe('tds');
     expect((await mgr.start({ prompt: 'on tds', todoId: '20261111-mine.md' })).kind).toBe('tds');
@@ -4980,7 +4992,7 @@ describe('context management', () => {
     expect(o?.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
+      append: `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
       snapshot: true,
     });
   });
@@ -5027,7 +5039,7 @@ describe('context management', () => {
     expect(s.id).toBeTruthy();
   });
 
-  it('after a compaction, re-anchors Claude on the to-do, the newest files and the closing line', async () => {
+  it('after a compaction, re-anchors Claude on the task, the newest files and the closing line', async () => {
     const { queries } = setup();
     await mgr.start({ prompt: 'hi', todoId: '20261111-mine.md' });
     await flush();
@@ -6331,7 +6343,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect(lines[1]).toBe(PROJECT_LINE);
     expect(text).not.toContain('offer `clients/urban-cooling/reports/` first');
     expect(text).not.toContain('This client has these open projects');
-    expect(text.endsWith(`\n${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
+    expect(text.endsWith(`\n${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`)).toBe(true);
   });
 
   it('the same client may be given with its project', async () => {
@@ -6568,7 +6580,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
   });
 
   it('reopening never fails because of the place: a store or index failure, or a gone client, opens it plain', async () => {
-    const plain = `${FILES_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
+    const plain = `${FILES_LINE}\n${TASKS_WORD_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`;
     const broken: ChatScopeStore = {
       placeOf: () => Promise.reject(new Error('boom')),
       all: () => Promise.reject(new Error('boom')),

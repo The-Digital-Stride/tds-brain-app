@@ -37,7 +37,7 @@ describe('client codes', () => {
   });
 });
 
-describe('client names (to-do rows showed "Gladwell and patterson")', () => {
+describe('client names (task rows showed "Gladwell and patterson")', () => {
   const brain = (files: Record<string, string>) => {
     const root = mkdtempSync(join(tmpdir(), 'clients-'));
     for (const [rel, text] of Object.entries(files)) {

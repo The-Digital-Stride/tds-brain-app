@@ -423,7 +423,7 @@ export async function validatePrefsPatch(
               v.length <= SEEN_VALUE_MAX,
           )
         ) {
-          throw bad('The list of to-dos you have seen was not understood.');
+          throw bad('The list of tasks you have seen was not understood.');
         }
         patch.todoSeen = Object.fromEntries(entries as [string, string][]);
         break;
@@ -461,7 +461,7 @@ export async function validatePrefsPatch(
           value.length > FAVOURITE_TODOS_MAX ||
           !value.every((v) => typeof v === 'string' && v !== '' && v.length <= TODO_KEY_MAX)
         ) {
-          throw bad('The favourite to-dos were not understood.');
+          throw bad('The favourite tasks were not understood.');
         }
         patch.favouriteTodos = [...new Set(value as string[])];
         break;
@@ -781,10 +781,10 @@ async function todos(ctx: RouteContext): Promise<TodoList> {
     : { ...list, changes: 'switched-off', canUsePersonal: false, canAttach: false, canUpload: false };
 }
 
-const TODO_HISTORY_BAD_KEY = "That to-do wasn't understood.";
+const TODO_HISTORY_BAD_KEY = "That task wasn't understood.";
 
 const TODO_SWITCHED_OFF =
-  "Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in Settings.";
+  "Adding and editing tasks is switched off. Turn on 'Let the app change tasks' in Settings.";
 
 /** Each action's fields besides `kind`: required text, text or null, optional text, or optional `true`. */
 const TODO_SHAPES: Record<
@@ -1518,7 +1518,7 @@ async function projectsRoute(
     try {
       sendJson(res, 200, await read.call(ctx.brain, key, await identity()));
     } catch (err) {
-      throw projectsFailure(err, ctx, "Reading a project's to-dos");
+      throw projectsFailure(err, ctx, "Reading a project's tasks");
     }
     return;
   }
@@ -1630,10 +1630,10 @@ async function projectsRoute(
     }
     try {
       const list = await run.call(ctx.brain, apply, who);
-      ctx.log(`Tidied to-do projects (${apply.do}).`);
+      ctx.log(`Tidied task projects (${apply.do}).`);
       sendJson(res, 200, list);
     } catch (err) {
-      throw projectsFailure(err, ctx, 'The to-do tidy-up');
+      throw projectsFailure(err, ctx, 'The task tidy-up');
     }
     return;
   }
@@ -1698,10 +1698,10 @@ async function uploadTodoFileRoute(
     );
   } catch (err) {
     if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
-    ctx.log('Adding a file to a to-do failed unexpectedly.');
+    ctx.log('Adding a file to a task failed unexpectedly.');
     throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
   }
-  ctx.log(saved.personal ? 'Added a personal file to a to-do.' : 'Added a file to a to-do.');
+  ctx.log(saved.personal ? 'Added a personal file to a task.' : 'Added a file to a task.');
   const out: TodoUploadResponse = { list: await todos(ctx), path: saved.path, personal: saved.personal };
   sendJson(res, 200, out);
 }
@@ -2737,7 +2737,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     if (method !== 'GET') throw methodNotAllowed();
     const id = url.searchParams.get('id');
     if (id === null || id.length > TODO_KEY_MAX || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(id)) {
-      throw new HttpError(400, 'bad-request', 'That is not a to-do this app can open.');
+      throw new HttpError(400, 'bad-request', 'That is not a task this app can open.');
     }
     const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
     const item = await safe(ctx.brain.teamTodo?.(id, identity) ?? Promise.resolve(null), null);
@@ -2745,7 +2745,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       throw new HttpError(
         404,
         'not-found',
-        'That to-do could not be found. It may have been finished or moved.',
+        'That task could not be found. It may have been finished or moved.',
       );
     }
     sendJson(res, 200, item);
@@ -2763,8 +2763,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       body = await ctx.brain.todoHistory(key, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
     } catch (err) {
       if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
-      ctx.log('Reading a to-do history failed unexpectedly.');
-      throw new HttpError(500, 'internal', "That to-do's history couldn't be read. Try again.");
+      ctx.log('Reading a task history failed unexpectedly.');
+      throw new HttpError(500, 'internal', "That task's history couldn't be read. Try again.");
     }
     sendJson(res, 200, body);
     return;
@@ -2778,12 +2778,12 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       throw new HttpError(
         403,
         'not-allowed',
-        'Ticking to-dos is switched off. Turn on changes to the shared brain in Settings first.',
+        'Ticking tasks is switched off. Turn on changes to the shared brain in Settings first.',
       );
     }
     const id = isRec(body) ? body.id : undefined;
     if (typeof id !== 'string' || !id || id.length > 255 || /[\\/\0]/.test(id) || id.startsWith('.')) {
-      throw new HttpError(400, 'bad-request', 'That to-do was not understood.');
+      throw new HttpError(400, 'bad-request', 'That task was not understood.');
     }
     const scope = isRec(body) ? body.scope : undefined;
     const expect = isRec(body) ? body.expect : undefined;
@@ -2791,7 +2791,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       (scope !== undefined && !isTodoScope(scope)) ||
       (expect !== undefined && typeof expect !== 'string')
     ) {
-      throw new HttpError(400, 'bad-request', 'That to-do was not understood.');
+      throw new HttpError(400, 'bad-request', 'That task was not understood.');
     }
     if (scope === 'personal') {
       // A personal to-do is ticked by the brain's script (scope + expect), never by the app's own write.
@@ -2806,10 +2806,10 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       try {
         await ctx.brain.completeTodo(id, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY));
       } catch {
-        throw new HttpError(404, 'not-found', 'That to-do could not be found. It may already be done.');
+        throw new HttpError(404, 'not-found', 'That task could not be found. It may already be done.');
       }
     }
-    ctx.log('Ticked a to-do.');
+    ctx.log('Ticked a task.');
     sendJson(res, 200, await todos(ctx));
     return;
   }
@@ -2825,10 +2825,10 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       moved = (await ctx.brain.changeTodo(action, await safe(ctx.brain.identity(), UNKNOWN_IDENTITY))).moved;
     } catch (err) {
       if (err instanceof TodoChangeError) throw new HttpError(statusFor(err.code), err.code, err.message);
-      ctx.log('A to-do change failed unexpectedly.');
+      ctx.log('A task change failed unexpectedly.');
       throw new HttpError(500, 'internal', TODO_CHANGE_MESSAGES.internal);
     }
-    ctx.log(`Changed a to-do (${action.kind}).`);
+    ctx.log(`Changed a task (${action.kind}).`);
     const list = await todos(ctx);
     sendJson(res, 200, moved ? { ...list, moved } : list);
     return;

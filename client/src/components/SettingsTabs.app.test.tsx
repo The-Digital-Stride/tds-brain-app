@@ -177,7 +177,7 @@ describe('Settings tabs, in the real app', () => {
     );
   });
 
-  it('lands the to-dos link on General with the switch focused', async () => {
+  it('lands the tasks link on General with the switch focused', async () => {
     await openSettings();
     fireEvent.click(tab('About'));
     await screen.findByRole('heading', { name: /^About TDS Cortex/ });

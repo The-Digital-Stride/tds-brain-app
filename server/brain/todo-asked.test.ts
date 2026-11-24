@@ -309,7 +309,7 @@ describe('asked of others', () => {
     ]);
   });
 
-  it(`leaves out done to-dos finished more than 60 days ago`, async () => {
+  it(`leaves out done tasks finished more than 60 days ago`, async () => {
     const stamp = [
       'assignee: alex-sample',
       'assigned_to: alex-sample',
@@ -324,7 +324,7 @@ describe('asked of others', () => {
     expect(list.done.map((t) => t.id)).toEqual(['20260801-recent.md']);
   });
 
-  it('leaves out open, personal and my own to-dos', async () => {
+  it('leaves out open, personal and my own tasks', async () => {
     const mine = ['created_by: sam-example', 'assigned_by: sam-example', 'assigned_at: 2026-11-01T09:00:00Z'];
     const root = brainWith({
       'todo/20261101-open.md': fm(['title: Anyone', ...mine, 'assigned_to: open']),

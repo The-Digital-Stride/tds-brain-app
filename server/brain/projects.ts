@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { type ClientInfo, type Identity, TodoChangeError, type TodoList } from '../../shared/contract.ts';
+import { PROJECTS_REFS_CAPABILITY, type RefIndex } from '../../shared/project-refs-contract.ts';
 import {
   archivedFolderPath,
   archiveFolderFor,
@@ -62,6 +63,7 @@ import {
   type TodoProjectMatch,
 } from '../../shared/projects-contract.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
+import { buildRefIndex, cleanRef } from './project-refs.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
 import { buildTidyRows, checkSuggestion, type TidyContext, type TidyTodo, tidyTarget } from './tidy.ts';
 import { defaultGitRunner } from './todo-history.ts';
@@ -75,6 +77,8 @@ export interface ProjectsIndex {
   /** The projects a file belongs to: by folder prefix, or listed in a card's `## Linked files`. */
   keysForPath(brainRel: string): ProjectKey[];
   resolve(value: string | null, client: string | null, scope: 'tds' | 'personal'): TodoProjectMatch;
+  /** Project codes (R2 phase 4b): every card, live and archived; personal and duplicate refs resolve to nothing. */
+  refs?: RefIndex;
 }
 
 export interface ProjectsService {
@@ -387,6 +391,7 @@ async function readCard(root: string, loc: Location): Promise<ProjectCard> {
     billable: billable === 'true' ? true : billable === 'false' ? false : null,
     stages: list(data.stages),
     mondayId: text(data.monday_id),
+    ref: cleanRef(text(data.ref)),
     created: text(data.created),
     createdBy: text(data.created_by),
     lastChanged: null,
@@ -680,7 +685,7 @@ const ownPersonal = (t: TodoRec, identity: Identity) => !t.assignee || t.assigne
 
 // ─── The service ────────────────────────────────────────────────────────────────────────────────────
 
-function makeIndex(w: Walk, clients: string[]): ProjectsIndex {
+function makeIndex(w: Walk, clients: string[], refs: RefIndex): ProjectsIndex {
   const byKey = new Map(w.cards.map((c) => [c.key, c]));
   return {
     cards: w.cards,
@@ -694,6 +699,7 @@ function makeIndex(w: Walk, clients: string[]): ProjectsIndex {
     keysForPath: (rel) =>
       w.cards.filter((c) => rel.startsWith(`${c.folder}/`) || c.links.includes(rel)).map((c) => c.key),
     resolve: (value, client, scope) => resolveTodoProject(value, client, scope, w.cards, clients),
+    refs,
   };
 }
 
@@ -714,9 +720,30 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
   const load = () => {
     if (indexCache && fresh(indexCache.at)) return indexCache.value;
     const value = (async () => {
-      const [w, infos] = await Promise.all([walk(root, git), opts.clients().catch(() => [] as ClientInfo[])]);
-      const clients = [...new Set([...infos.map((c) => c.slug), ...w.clients])];
-      return { index: makeIndex(w, clients), walk: w, clients };
+      const [walked, infos] = await Promise.all([
+        walk(root, git),
+        opts.clients().catch(() => [] as ClientInfo[]),
+      ]);
+      const clients = [...new Set([...infos.map((c) => c.slug), ...walked.clients])];
+      const refResult = buildRefIndex(
+        walked.cards.map((c) => ({ key: c.key, space: c.space, client: c.client, ref: c.ref ?? null })),
+        new Map(infos.map((c) => [c.slug, c.code ?? null] as const)),
+      );
+      const w: Walk = {
+        ...walked,
+        cards: walked.cards.map((c) => {
+          const info = refResult.byKey.get(c.key);
+          return info
+            ? {
+                ...c,
+                ref: info.ref,
+                refState: info.refState,
+                ...(info.refDuplicateOf ? { refDuplicateOf: info.refDuplicateOf } : {}),
+              }
+            : c;
+        }),
+      };
+      return { index: makeIndex(w, clients, refResult.index), walk: w, clients };
     })();
     indexCache = { at: now().getTime(), value };
     value.catch(() => {
@@ -838,6 +865,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       tidy(identity),
     ]);
     const canChange = features.includes(PROJECTS_CAPABILITY) && allowed;
+    const canRef = canChange && features.includes(PROJECTS_REFS_CAPABILITY);
     return {
       projects,
       canChange,
@@ -848,6 +876,9 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
         todoFeatures.includes(TODO_PROJECT_CAPABILITY),
       // Archive plan decision 11: the script's own capability, and the same roles check as any change.
       canArchive: canChange && features.includes(PROJECTS_ARCHIVE_CAPABILITY),
+      // Project codes (R2 phase 4b): the script's own capability; "all" is the brain's Owner only.
+      canRef,
+      canRefAll: canRef && identity.role === 'owner',
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
       leftovers: w.leftovers,
@@ -859,7 +890,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     const bad = () =>
       new ProjectsError('bad-request', "That change couldn't be saved. Check the details and try again.");
     if (!action || typeof action !== 'object') throw bad();
-    if (!['create', 'card', 'edit', 'link', 'unlink'].includes(action.kind)) throw bad();
+    if (!['create', 'card', 'edit', 'link', 'unlink', 'ref'].includes(action.kind)) throw bad();
     if (!(await mayChange(identity))) {
       throw new ProjectsError('not-allowed', "Changing projects isn't available to you in the app yet.");
     }
@@ -867,7 +898,16 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     if (!caps.includes(PROJECTS_CAPABILITY)) {
       throw new ProjectsError('not-allowed', "Update the brain's skills to change projects.");
     }
-    if ('key' in action) {
+    if (action.kind === 'ref') {
+      if (!caps.includes(PROJECTS_REFS_CAPABILITY)) {
+        throw new ProjectsError('not-allowed', "Update the brain's skills to give projects codes.");
+      }
+      // Decision 5: a backfill of every card is the brain Owner's alone (the script checks too).
+      if (action.all === true && identity.role !== 'owner') {
+        throw new ProjectsError('not-allowed', 'Only the brain Owner can give every project a code at once.');
+      }
+    }
+    if ('key' in action && action.key !== undefined) {
       const card = (await load()).index.byKey(action.key);
       if (card?.archived) throw new ProjectsError('not-allowed', 'Archived projects are read only.');
       if (
@@ -954,10 +994,13 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     }
     let result: { key: ProjectKey; version: string };
     try {
-      result = await opts.skill.run({
+      const ran = await opts.skill.run({
         ...base,
         ...(req.dropPersonal === true ? { dropPersonal: true } : {}),
       });
+      if (ran.key === undefined)
+        throw new ProjectsError('internal', 'The move could not be made. Try again.');
+      result = { key: ran.key, version: ran.version };
     } finally {
       changed();
     }

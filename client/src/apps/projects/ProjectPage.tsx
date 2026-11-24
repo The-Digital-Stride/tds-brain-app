@@ -31,6 +31,7 @@ import {
 import { type ActivityState, ProjectActivity, useProjectActivity } from './ProjectActivity.tsx';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { type MeetingsState, ProjectMeetings, useProjectMeetings } from './ProjectMeetings.tsx';
+import { ProjectRef } from './ProjectRef.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
 import { ProjectUpdates } from './ProjectUpdates.tsx';
 import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
@@ -239,6 +240,7 @@ function Overview({
   clients,
   canChange,
   canMove,
+  list,
   removal,
   activity,
   meetings,
@@ -252,6 +254,7 @@ function Overview({
   clients: readonly { slug: string; name: string }[];
   canChange: boolean;
   canMove: MoveState;
+  list: ProjectList;
   removal: Removal;
   activity: ActivityState;
   meetings: MeetingsState;
@@ -342,6 +345,11 @@ function Overview({
         </div>
       ) : null}
 
+      <ProjectRef
+        card={card}
+        list={list}
+        title={(key) => list.projects.find((p) => p.key === key)?.title ?? 'another project'}
+      />
       <div className="tray lib-tray">
         {card.archived ? null : (
           <ProjectActivity
@@ -722,6 +730,7 @@ export function ProjectPage({
             clients={clients}
             canChange={canChange}
             canMove={moveState(card, list)}
+            list={list}
             removal={removal}
             activity={activity}
             meetings={meetings}

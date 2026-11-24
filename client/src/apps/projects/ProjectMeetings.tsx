@@ -87,6 +87,7 @@ function checkedWords(iso: string | null): string {
 /** The prompt for "File the notes". Never holds the invite's title (anyone can write one). */
 export function fileNotesPrompt(m: MeetingView, place: string): string {
   const head = `File the notes for my meeting on ${promptWhen(m.start)} with the meeting-notes skill.`;
+  // A code in the invite is certain, so 'ref' (like 'title') never asks to be checked.
   return m.match === 'only'
     ? `${head} It's probably for the ${place} project; check that with me.`
     : `${head} It's for the ${place} project.`;

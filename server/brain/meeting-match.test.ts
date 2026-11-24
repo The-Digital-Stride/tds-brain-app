@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cleanMeetingRefs,
   domainOf,
   type MatchClient,
   type MatchContext,
@@ -9,6 +10,7 @@ import {
   matchMeeting,
   websiteDomain,
 } from './meeting-match.ts';
+import { buildRefIndex } from './project-refs.ts';
 
 const client = (slug: string, name: string, domain: string | null, aliases: string[] = []): MatchClient => ({
   slug,
@@ -227,5 +229,118 @@ describe('matchMeeting: project', () => {
       key: 'skyseal/seo',
       match: 'title',
     });
+  });
+});
+
+describe('matchMeeting: project codes (decision 10)', () => {
+  const codes = new Map<string, string | null>([
+    ['acme-heating', 'ACM'],
+    ['skyseal', 'SKY'],
+    ['the-digital-stride', 'TDS'],
+  ]);
+  const card = (key: string, ref: string | null, space: 'client' | 'personal' = 'client') => ({
+    key,
+    space,
+    client: space === 'personal' ? null : (key.split('/')[0] as string),
+    ref,
+  });
+  const withRefs = (
+    cards = [
+      card('acme-heating/website-rebuild', 'ACM4K7'),
+      card('acme-heating/ppc-campaign', 'ACM5M2'),
+      card('skyseal/seo', 'SKY4K7'),
+      card('personal/reading', 'TDS9A9', 'personal'),
+      card('skyseal/dup-a', 'SKY6N3'),
+      card('skyseal/dup-b', 'SKY6N3'),
+    ],
+  ): MatchContext => ctx({ refs: buildRefIndex(cards, codes).index });
+
+  it('matches one code in the title, with no title words or attendees needed', () => {
+    expect(matchMeeting(meeting('Catch up [ACM4K7]'), withRefs())).toEqual({
+      key: 'acme-heating/website-rebuild',
+      match: 'ref',
+    });
+    expect(matchMeeting(meeting('acm4k7 call'), withRefs())?.match).toBe('ref');
+  });
+
+  it('reads the cached refs defensively and combines them with the title', () => {
+    const c = withRefs();
+    expect(matchMeeting(meeting('Lunch', [], { refs: ['sky4k7'] }), c)?.key).toBe('skyseal/seo');
+    expect(matchMeeting(meeting('ACM4K7', [], { refs: ['ACM4K7'] }), c)?.key).toBe(
+      'acme-heating/website-rebuild',
+    );
+    for (const bad of ['SKY4K7', 42, { a: 1 }, [1, null, 'nope'], null]) {
+      expect(matchMeeting(meeting('Lunch', [], { refs: bad }), c)).toBeNull();
+    }
+  });
+
+  it('two different projects ignore codes and run the phase 4 rules', () => {
+    const m = meeting('PPC campaign ACM4K7 ACM5M2', ['x@acmeheating.co.uk']);
+    expect(matchMeeting(m, withRefs())).toEqual({ key: 'acme-heating/ppc-campaign', match: 'title' });
+  });
+
+  it('a domain pointing at another client ignores the code', () => {
+    const m = meeting('Weekly SEO ACM4K7', ['x@skyseal.com']);
+    expect(matchMeeting(m, withRefs())).toEqual({ key: 'skyseal/seo', match: 'title' });
+  });
+
+  it('a domain of the same client, public mail or the agency still matches by code', () => {
+    const c = withRefs();
+    expect(matchMeeting(meeting('ACM4K7', ['x@acmeheating.co.uk']), c)?.match).toBe('ref');
+    expect(matchMeeting(meeting('ACM4K7', ['x@gmail.com', 'me2@thedigitalstride.co.uk']), c)?.match).toBe(
+      'ref',
+    );
+  });
+
+  it('personal and duplicate codes never match', () => {
+    const c = withRefs();
+    expect(matchMeeting(meeting('TDS9A9'), c)).toBeNull();
+    expect(matchMeeting(meeting('SKY6N3'), c)).toBeNull();
+  });
+
+  it('a moved card keeps its code and the client comes from the card', () => {
+    const c = ctx({
+      refs: buildRefIndex([card('skyseal/moved', 'ACM4K7')], codes).index,
+      projects: [project('skyseal/moved', 'Moved thing')],
+    });
+    expect(matchMeeting(meeting('ACM4K7', ['x@acmeheating.co.uk']), c)).toBeNull();
+    expect(matchMeeting(meeting('ACM4K7', ['x@skyseal.com']), c)).toEqual({
+      key: 'skyseal/moved',
+      match: 'ref',
+    });
+  });
+
+  it('an archived project is ignored for codes (overseer); a done one still matches', () => {
+    const refs = buildRefIndex(
+      [card('acme-heating/old', 'ACM4K7'), card('acme-heating/finished', 'ACM5M2')],
+      codes,
+    ).index;
+    const c = ctx({
+      refs,
+      projects: [
+        project('acme-heating/old', 'Old', { archived: true }),
+        project('acme-heating/finished', 'Finished', { status: 'done' }),
+        project('acme-heating/website-rebuild', 'Website rebuild'),
+      ],
+    });
+    expect(matchMeeting(meeting('Catch up ACM4K7', ['x@acmeheating.co.uk']), c)).toEqual({
+      key: 'acme-heating/website-rebuild',
+      match: 'only',
+    });
+    expect(matchMeeting(meeting('ACM5M2'), c)).toEqual({ key: 'acme-heating/finished', match: 'ref' });
+  });
+
+  it('a context or cache with no refs behaves as before', () => {
+    expect(matchMeeting(meeting('Website rebuild ACM4K7', ['x@acmeheating.co.uk']), ctx())).toEqual({
+      key: 'acme-heating/website-rebuild',
+      match: 'title',
+    });
+    expect(matchMeeting(meeting('Lunch ACM4K7'), withRefs([]))).toBeNull();
+  });
+
+  it('cleanMeetingRefs upper-cases, validates, de-duplicates and caps', () => {
+    expect(cleanMeetingRefs(['acm4k7', 'ACM4K7', 'AB123', 5])).toEqual(['ACM4K7']);
+    const many = Array.from({ length: 40 }, (_, i) => `ACM${(i % 8) + 2}K${(i % 7) + 2}`);
+    expect(cleanMeetingRefs(many).length).toBeLessThanOrEqual(20);
   });
 });

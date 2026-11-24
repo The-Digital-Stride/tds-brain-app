@@ -43,6 +43,7 @@ const sam: Identity = {
   role: 'scout',
   knownMember: true,
 };
+let who: Identity = sam;
 const LIST = { projects: [], looseLabels: [], skippedFolders: 0 } as unknown as ProjectList;
 const TIDY = { rows: [], skipped: [] } satisfies TidyList;
 const TODOS = {
@@ -138,7 +139,7 @@ let listenPort: number;
 beforeAll(async () => {
   const brain = {
     watch: () => () => {},
-    identity: async () => sam,
+    identity: async () => who,
     todos: async () => state.todos,
     skillAccess: async (_who: Identity, name: string) => {
       seen.access.push(name);
@@ -287,6 +288,7 @@ afterAll(async () => {
   await new Promise((done) => app.server.close(done));
 });
 beforeEach(() => {
+  who = sam;
   state = { has: true, directWrites: true, fail: null, access: 'allowed', todos: TODOS };
   seen.projects = 0;
   seen.changes.length = 0;
@@ -587,6 +589,56 @@ describe('POST /api/projects/change', () => {
   it('passes each valid action on exactly as sent', async () => {
     for (const action of CHANGES) expect((await post(ROUTES.projectsChange, action)).status).toBe(200);
     expect(seen.changes).toEqual(CHANGES);
+  });
+
+  it('passes the three project-code shapes on, through the real gate', async () => {
+    const refs: ProjectAction[] = [
+      { kind: 'ref', key: KEY, expect: VERSION },
+      { kind: 'ref', key: KEY, expect: VERSION, replace: true },
+    ];
+    for (const a of refs) expect((await post(ROUTES.projectsChange, a)).status).toBe(200);
+    who = { ...sam, role: 'owner' };
+    const all: ProjectAction = { kind: 'ref', all: true };
+    expect((await post(ROUTES.projectsChange, all)).status).toBe(200);
+    expect(seen.changes).toEqual([...refs, all]);
+  });
+
+  it('refuses every other project-code shape with 400', async () => {
+    who = { ...sam, role: 'owner' };
+    const bad: unknown[] = [
+      { kind: 'ref' },
+      { kind: 'ref', key: KEY },
+      { kind: 'ref', key: KEY, expect: 'short' },
+      { kind: 'ref', key: KEY, expect: VERSION, replace: false },
+      { kind: 'ref', key: KEY, expect: VERSION, all: true },
+      { kind: 'ref', key: KEY, expect: VERSION, extra: 1 },
+      { kind: 'ref', all: false },
+      { kind: 'ref', all: true, key: KEY },
+      { kind: 'ref', all: true, replace: true },
+      { kind: 'ref', key: 'Bad Key', expect: VERSION },
+    ];
+    for (const body of bad) {
+      const r = await post(ROUTES.projectsChange, body);
+      expect(r.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(seen.changes).toEqual([]);
+  });
+
+  it("refuses 'all' from anyone but the brain Owner before the brain runs it", async () => {
+    for (const role of ['scout', 'team'] as const) {
+      who = { ...sam, role };
+      const r = await post(ROUTES.projectsChange, { kind: 'ref', all: true });
+      expect(r.status, role).toBe(403);
+      expect(r.json.error?.code).toBe('not-allowed');
+    }
+    expect(seen.changes).toEqual([]);
+  });
+
+  it('answers a code refusal with its status and message', async () => {
+    state.fail = new ProjectsError('exists', 'This project already has a code.');
+    const r = await post(ROUTES.projectsChange, { kind: 'ref', key: KEY, expect: VERSION });
+    expect(r.status).toBe(409);
+    expect(r.json.error?.message).toBe('This project already has a code.');
   });
 
   it('does not depend on the to-do switch in Settings', async () => {

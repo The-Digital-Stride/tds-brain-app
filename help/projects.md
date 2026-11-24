@@ -6,7 +6,7 @@ order: 3
 summary: See every project, who is on it, its to-dos and its files, in one place.
 benefit: Know how each project is going without asking around.
 roles: all
-related: [todos, documents, images, picking-the-client, home]
+related: [project-codes, todos, documents, images, picking-the-client, home]
 since: 0.55.0
 reviewed: 2026-11-23
 ---

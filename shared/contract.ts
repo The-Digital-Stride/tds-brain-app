@@ -637,6 +637,11 @@ export interface ClientInfo {
    * picker; never shown. Absent when it has none, and from older servers.
    */
   aliases?: string[];
+  /**
+   * R2 phase 4b: the profile's `code:` (e.g. "AST"), upper-cased, when it passes CLIENT_CODE_PATTERN
+   * (shared/project-refs-contract.ts); else null. Absent from older servers.
+   */
+  code?: string | null;
 }
 
 /**

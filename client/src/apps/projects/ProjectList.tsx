@@ -1,9 +1,11 @@
-import { type ReactNode, useId, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectList as ProjectListData } from '../../../../shared/projects-contract.ts';
+import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import {
   ARCHIVED,
+  didYouMean,
   dotState,
   type Filters,
   filterProjects,
@@ -18,6 +20,7 @@ import {
   servicesIn,
   serviceWords,
 } from './logic.ts';
+import { useProjectChange } from './useChange.ts';
 
 const VIEWS: { value: 'all' | 'mine'; label: string }[] = [
   { value: 'all', label: 'All projects' },
@@ -96,6 +99,40 @@ export function ProjectListView({
   const live = useMemo(() => data.projects.filter((c) => !c.archived), [data.projects]);
   const archivedCount = data.projects.length - live.length;
   const cardless = useMemo(() => live.filter(needsCard).length, [live]);
+  const change = useProjectChange();
+  const [codesBusy, setCodesBusy] = useState(false);
+  const [codesNote, setCodesNote] = useState('');
+  const [codesProblem, setCodesProblem] = useState('');
+  const searchId = useId();
+  const codeless = live.filter((c) => c.refState === 'missing').length;
+  const canGiveCodes = data.canRefAll === true && data.canChange && codeless > 0;
+  const guesses = useMemo(
+    () => (shown.length === 0 && filters.query ? didYouMean(filters.query, data.projects) : []),
+    [shown.length, filters.query, data.projects],
+  );
+  const giveCodes = async () => {
+    if (codesBusy) return;
+    setCodesBusy(true);
+    setCodesNote('');
+    setCodesProblem('');
+    const res = await change({ kind: 'ref', all: true });
+    setCodesBusy(false);
+    if (!res.ok) {
+      setCodesProblem(res.message);
+      return;
+    }
+    const withCode = (cards: readonly ProjectCard[]) => cards.filter((c) => c.ref).length;
+    const given = Math.max(0, withCode(res.list.projects) - withCode(data.projects));
+    setCodesNote(
+      given === 0
+        ? 'No projects were given a code.'
+        : `${given} project${given === 1 ? ' was' : 's were'} given a code.`,
+    );
+  };
+  const codesNoteRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (codesNote) codesNoteRef.current?.focus();
+  }, [codesNote]);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
   return (
@@ -115,6 +152,34 @@ export function ProjectListView({
             {filters.noCard ? 'Show all' : 'Show them'}
           </button>
         </div>
+      ) : null}
+      {canGiveCodes ? (
+        <div className="notice" data-level="info" data-shape="box">
+          <span>
+            {codeless} project{codeless === 1 ? ' has' : 's have'} no code yet
+          </span>
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            aria-disabled={codesBusy || undefined}
+            onClick={() => void giveCodes()}
+          >
+            Give projects codes
+          </button>
+        </div>
+      ) : null}
+      <div role="status">
+        {codesNote ? (
+          <p ref={codesNoteRef} className="notice" data-level="info" data-shape="box" tabIndex={-1}>
+            {codesNote}
+          </p>
+        ) : null}
+      </div>
+      {codesProblem ? (
+        <p className="notice" data-level="error" data-shape="box" role="alert">
+          {codesProblem}
+        </p>
       ) : null}
       <div className="proj-tools">
         <Seg
@@ -149,6 +214,20 @@ export function ProjectListView({
           options={services.map((s) => ({ value: s, label: serviceWords(s) }))}
           onChange={(v) => set({ service: v })}
         />
+        <div className="lib-search">
+          <Icon name="search" size={16} />
+          <label className="visually-hidden" htmlFor={searchId}>
+            Search projects
+          </label>
+          <input
+            id={searchId}
+            type="search"
+            className="field"
+            placeholder="Search by name or code"
+            value={filters.query}
+            onChange={(e) => set({ query: e.target.value })}
+          />
+        </div>
         <p className="lib-summary" role="status">
           {filters.status === ARCHIVED
             ? `${shown.length} of ${archivedCount} archived project${archivedCount === 1 ? '' : 's'}`
@@ -171,6 +250,17 @@ export function ProjectListView({
       ) : shown.length === 0 ? (
         <p className="proj-note">
           No projects match these filters.{' '}
+          {guesses.map((g) => (
+            <button
+              key={g}
+              type="button"
+              className="btn"
+              data-size="small"
+              onClick={() => setFilters({ ...NO_FILTERS, query: g })}
+            >
+              Did you mean {g}?
+            </button>
+          ))}{' '}
           <button type="button" className="btn" data-size="small" onClick={() => setFilters(NO_FILTERS)}>
             Clear filters
           </button>

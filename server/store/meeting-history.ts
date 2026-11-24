@@ -36,7 +36,7 @@ function check(raw: unknown): KeptMeeting | null {
   if (typeof r.id !== 'string' || r.id === '' || typeof r.title !== 'string') return null;
   if (typeof r.start !== 'string' || Number.isNaN(Date.parse(r.start))) return null;
   if (typeof r.key !== 'string' || parseProjectKey(r.key) === null) return null;
-  if (r.match !== 'title' && r.match !== 'only') return null;
+  if (r.match !== 'title' && r.match !== 'only' && r.match !== 'ref') return null;
   const end = typeof r.end === 'string' && !Number.isNaN(Date.parse(r.end)) ? r.end : null;
   const people = Array.isArray(r.people)
     ? r.people.filter((p): p is string => typeof p === 'string' && p.trim() !== '' && !p.includes('@'))

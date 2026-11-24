@@ -41,6 +41,12 @@ describe('meeting history store', () => {
     expect((await s.all()).map((m) => m.id)).toEqual(['a']);
   });
 
+  it("keeps a 'ref' match and reads it back after a restart", async () => {
+    await createMeetingHistoryStore(dir).merge([kept('r', '2026-11-22T10:00:00Z', { match: 'ref' })], NOW);
+    const back = await createMeetingHistoryStore(dir).all();
+    expect(back.map((m) => [m.id, m.match])).toEqual([['r', 'ref']]);
+  });
+
   it('keys by id and start together, and refreshes a repeat', async () => {
     const s = createMeetingHistoryStore(dir);
     await s.merge([kept('series', '2026-11-16T10:00:00Z'), kept('series', '2026-11-09T10:00:00Z')], NOW);

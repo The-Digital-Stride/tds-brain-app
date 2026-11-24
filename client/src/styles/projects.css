@@ -485,3 +485,30 @@
     white-space: nowrap;
   }
 }
+
+@layer features {
+  /* The project code on the Overview (R2 phase 4b): the code in --mono beside one Copy button. */
+  .proj-ref {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .proj-ref-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .proj-ref-label {
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
+  .proj-ref-code {
+    font-family: var(--mono);
+    font-size: var(--fs-mono);
+    color: var(--navy);
+  }
+  .proj-ref > .proj-note {
+    padding-inline: 0;
+  }
+}

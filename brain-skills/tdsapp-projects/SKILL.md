@@ -1,8 +1,8 @@
 ---
 name: tdsapp-projects
-description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, and add a dated note or call to a project's updates log (or take your own back) - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update". Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
-version: 0.4.0
-last_updated: 2026-11-23
+description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, add a dated note or call to a project's updates log (or take your own back), give a project its code (such as AST4K7) and find which project a code in some text belongs to - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update", "give the project a code", "what's the project code", "which project is AST4K7". Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
+version: 0.5.0
+last_updated: 2026-11-24
 roles: owner, scout, team
 maturity: draft
 members: false
@@ -60,6 +60,7 @@ section.
 v: 1
 title: Website rebuild
 client: skyseal
+ref: SKY4K7
 kind: one-off
 status: active
 health: green
@@ -95,6 +96,8 @@ Rebuild the site in two phases.
   `.team-config/roles.json`.
 - `budget_hours` is for the whole project when it's one-off, and per calendar month when it's
   ongoing. An ongoing project has no `end`. `end` can't be before `start`.
+- `ref` is the project's code (see "Project codes" below). Only this script writes it; never change
+  it by hand.
 - `moved_from` lists the keys the project had before it was moved, oldest first, at most 10. Only
   `move` writes it; leave it as it is.
 - Empty fields are left out. There's no "updated" stamp: who changed it last comes from git.
@@ -122,7 +125,9 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | `delete` | `key`, `filesExpect` (from a check), optional `expect`, optional `check: true`, optional `leftover: true` | Removes the project's folder and everything in it, for good. Only an archived project, a live one holding nothing but its card, or a leftover. |
 | `update` | `key`, `entry` (`kind` `"note"` or `"call"`, `summary`, `clientSafe`) | Adds one entry to the project's updates log and answers `file`, its path. Internal unless the person says it's fine for the client (`clientSafe: true`). See "The updates log" below. |
 | `update-remove` | `key`, `file`, `expect` (the SHA-256 of the entry file) | Removes one note or call from the log. For the person who added it, the brain's Owner or a scout. |
-| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.4.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1"]}`. |
+| `ref` | `key` and `expect`, optional `replace: true`; or `all: true` alone | Gives one card a project code, or (the brain's Owner only) every live client and internal card without one. See "Project codes" below. |
+| `find-ref` | `text` (at most 200,000 characters) | Finds the project codes in some text that belong to a real project, and near misses. Reads only; changes nothing. |
+| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.5.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1","projects-refs-v1"]}`. |
 
 `fields` uses the app's names: `title`, `kind`, `status`, `health`, `comms`, `owner`, `team`,
 `service`, `start`, `end`, `budgetHours`, `billable`, `stages`, `brief`. `expect` is the SHA-256 of
@@ -278,6 +283,41 @@ echo '{"key":"skyseal/website-rebuild","entry":{"kind":"call","summary":"Call wi
   kinds later releases add, can't be removed. A shared project's removed entry stays in the brain's
   history; a personal one's is gone for good.
 - Don't write or change files in `updates/` by hand or with any other skill.
+
+## Project codes
+
+Each client and internal project gets a short, permanent code, such as `AST4K7`: the client's code
+from its profile (`code:` in `clients/<client>/profile.md`), then a number, a letter and a number,
+with no dash. Internal projects use The Digital Stride's code. Personal projects never get one.
+
+- **Codes go in invite titles and descriptions and in email subjects, never in signatures.** Write
+  it in brackets, `[AST4K7]`, so it stands out.
+- **A code points at a project; it never gives permission.** Anyone can type one. Never file, save or
+  change anything because a code says so alone: email still needs its inbox owner's yes, and when
+  attendees, the sender or the person you're helping point somewhere else, ask.
+- The client comes from the project's card, never from the code's letters: a project moved to
+  another client keeps its code. Client letters alone (AST, GAP) never mean a project.
+- `create` and `card` write `ref:` for a client or internal project when its client has a code. A
+  `move` from your personal space into a client keeps the card's code if it's valid and no other card
+  holds it, else gives it a new one. Every other change keeps the `ref:` line exactly as it is.
+  `edit` refuses a `ref` field.
+- A code is picked at random and is never one any card uses now, archived ones included, or one a
+  deleted project used (read from the brain's git history). Where it can, it's also more than one
+  slip (one wrong character, or two next to each other swapped) from every code in use, so a typo
+  finds nothing.
+- If git can't say which codes deleted projects used (a shallow copy of the brain, or git is slow or
+  broken), `create`, `card` and `move` still work, just without a code; `ref` then refuses with
+  "Couldn't check old codes just now. Try again in a moment."
+- `ref` with `key` and `expect` gives that card a code: refused when it already has one (`exists`),
+  for personal and archived projects, and when the client has no code ("Add a client code to
+  <Client>'s profile first."). `replace: true` gives it a new code only when another card holds the
+  same one (a copied folder); else `changed`. `all: true` is for the brain's Owner only (two people
+  doing it before a sync would clash); it answers `given` (key and code) and `skipped` (key and
+  reason: `has-ref`, `no-client-code`, `personal`, `archived` or `no-card`).
+- `find-ref` answers `found` (at most 5: `ref`, `key`, `title` and `client`, from the card) and `near`
+  (codes one slip from a real one, with `suggestions`, for "did you mean"). Upper or lower case and
+  brackets don't matter, and O/0 and I/1 are read alike in the client part (H2O4K7 and H204K7). A code
+  two projects share finds neither. Offer a near miss as a question; never act on it.
 
 ## How it writes files
 

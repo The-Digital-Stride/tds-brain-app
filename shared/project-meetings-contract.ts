@@ -32,6 +32,11 @@ export interface CachedMeeting {
   allDay: boolean;
   location: string | null;
   attendees: { name: string | null; email: string | null }[];
+  /**
+   * R2 phase 4b (shared/project-refs-contract.ts): code-shaped words from the invite DESCRIPTION, at most
+   * MEETING_REFS_MAX. Absent from older caches. The description itself is never in the cache.
+   */
+  refs?: string[];
 }
 
 export interface MeetingsCacheFile {
@@ -79,9 +84,11 @@ export interface MeetingHistoryFile {
 /**
  * How the meeting's project was found (decision 4). 'title': the meeting title names the project. 'only': the
  * client has exactly one open project and the title named none, so it's a likely guess (the File-the-notes prompt
- * asks Claude to check it with the person).
+ * asks Claude to check it with the person). 'ref' (R2 phase 4b): a project code in the title or description
+ * resolved to exactly one project, and no attendee domain points at a different client; the prompt states the
+ * project without asking.
  */
-export type ProjectMatch = 'title' | 'only';
+export type ProjectMatch = 'title' | 'only' | 'ref';
 
 // ─── Reading (server → app) ─────────────────────────────────────────────────────────────────────
 

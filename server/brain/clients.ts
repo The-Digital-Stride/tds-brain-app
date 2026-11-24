@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import type { ClientInfo } from '../../shared/contract.ts';
+import { CLIENT_CODE_PATTERN } from '../../shared/project-refs-contract.ts';
 import { humanise, isDir, readText } from './util.ts';
 
 async function accountNames(root: string): Promise<Map<string, string>> {
@@ -57,6 +58,26 @@ async function profileName(root: string, slug: string): Promise<string | null> {
   return name !== '' && name.length <= 80 ? name : null;
 }
 
+/**
+ * The `code:` line of a client's `profile.md` frontmatter (project codes, R2 phase 4b), upper-cased. Null when
+ * there's none or it doesn't pass CLIENT_CODE_PATTERN: a bad code reads as no code.
+ */
+async function profileCode(root: string, slug: string): Promise<string | null> {
+  const text = await readText(join(root, 'clients', slug, 'profile.md')).catch(() => null);
+  if (!text?.startsWith('---')) return null;
+  const end = text.indexOf('\n---', 3);
+  const head = end === -1 ? '' : text.slice(3, end);
+  const m = /^code:[ \t]*(.*)$/m.exec(head);
+  if (!m?.[1]) return null;
+  const code = m[1]
+    .replace(/\s+#.*$/, '')
+    .trim()
+    .replace(/^(["'])(.*)\1$/, '$2')
+    .trim()
+    .toUpperCase();
+  return CLIENT_CODE_PATTERN.test(code) ? code : null;
+}
+
 const SMALL_WORDS = new Set(['and', 'of', 'the', 'for', 'in', 'on', 'at', 'to', 'a']);
 
 /** A client folder name as a name: "sig-roofing" reads "Sig Roofing", "gladwell-and-patterson" "Gladwell and Patterson". */
@@ -90,7 +111,7 @@ export async function listClients(root: string): Promise<ClientInfo[]> {
       mapped.get(slug) ??
       (await profileName(root, slug)) ??
       folderName(slug);
-    out.push({ slug, name });
+    out.push({ slug, name, code: await profileCode(root, slug) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 }

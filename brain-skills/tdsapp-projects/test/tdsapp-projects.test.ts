@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
+import { PROJECTS_REFS_CAPABILITY } from '../../../shared/project-refs-contract.ts';
 import {
   PROJECTS_UPDATES_CAPABILITY,
   UPDATE_FILE_PATTERN,
@@ -697,6 +698,7 @@ describe('capabilities and the command line', () => {
           PROJECTS_MOVE_CAPABILITY,
           PROJECTS_ARCHIVE_CAPABILITY,
           PROJECTS_UPDATES_CAPABILITY,
+          PROJECTS_REFS_CAPABILITY,
         ],
       },
     });
@@ -1275,6 +1277,7 @@ describe('move', () => {
       PROJECTS_MOVE_CAPABILITY,
       PROJECTS_ARCHIVE_CAPABILITY,
       PROJECTS_UPDATES_CAPABILITY,
+      PROJECTS_REFS_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),

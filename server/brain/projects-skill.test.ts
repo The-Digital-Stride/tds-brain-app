@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { PROJECTS_REFS_CAPABILITY } from '../../shared/project-refs-contract.ts';
 import { PROJECTS_UPDATES_CAPABILITY } from '../../shared/project-updates-contract.ts';
 import {
   INTERNAL_CLIENT,
@@ -132,6 +133,54 @@ describe('createProjectsSkillRunner', () => {
     }
   });
 
+  it('runs ref: the one-card form answers key and version, all answers no key, and a ref internal refusal shows its reason', async () => {
+    const V = 'b'.repeat(64);
+    const one = { kind: 'ref', key: 'acme/site', expect: V } as const;
+    const b = brain();
+    const runner = createProjectsSkillRunner(b.root, { env: b.env() });
+    expect(await runner.run(one)).toEqual({ key: 'acme/site', version: 'a'.repeat(64) });
+    expect(b.calls()[0]?.argv).toEqual(['ref']);
+    const all = brain();
+    const allReply = '{"ok":true,"action":"ref","given":[],"skipped":[]}';
+    const r = await createProjectsSkillRunner(all.root, { env: all.env({ out: allReply }) }).run({
+      kind: 'ref',
+      all: true,
+    });
+    expect(r.key).toBeUndefined();
+    const wrong = brain();
+    expect(
+      await errorOf(
+        createProjectsSkillRunner(wrong.root, {
+          env: wrong.env({ out: `{"ok":true,"key":"acme/other","version":"${'a'.repeat(64)}"}` }),
+        }).run(one),
+      ),
+    ).toEqual({ code: 'internal', message: PROJECTS_CHANGE_MESSAGES.internal });
+    const git = brain();
+    const out =
+      '{"ok":false,"error":"internal","message":"Couldn\'t check old codes just now. Try again in a moment."}';
+    expect(
+      // The real script exits 1 for an internal refusal (tdsapp-projects test "refuses the ref action with internal").
+      await errorOf(createProjectsSkillRunner(git.root, { env: git.env({ exit: 1, out }) }).run(one)),
+    ).toEqual({ code: 'internal', message: "Couldn't check old codes just now. Try again in a moment." });
+    const raw = brain();
+    const rawOut =
+      '{"ok":false,"error":"internal","message":"EACCES: permission denied, open \'/Users/x/brain/a\'"}';
+    expect(
+      await errorOf(createProjectsSkillRunner(raw.root, { env: raw.env({ exit: 1, out: rawOut }) }).run(one)),
+    ).toEqual({ code: 'internal', message: PROJECTS_CHANGE_MESSAGES.internal });
+    const full = brain();
+    const fullOut = '{"ok":false,"error":"internal","message":"Every code for Acme is used."}';
+    expect(
+      await errorOf(
+        createProjectsSkillRunner(full.root, { env: full.env({ exit: 1, out: fullOut }) }).run(one),
+      ),
+    ).toEqual({ code: 'internal', message: 'Every code for Acme is used.' });
+    const other = brain();
+    expect(
+      await errorOf(createProjectsSkillRunner(other.root, { env: other.env({ exit: 1, out }) }).run(EDIT)),
+    ).toEqual({ code: 'internal', message: PROJECTS_CHANGE_MESSAGES.internal });
+  });
+
   it('treats a crash, a bad reply, exit 1 or a reply without a version as internal', async () => {
     for (const reply of [
       { exit: 1, out: '{"ok":false,"error":"internal","message":"disk"}' },
@@ -221,6 +270,7 @@ describe('with the real script', () => {
       PROJECTS_MOVE_CAPABILITY,
       PROJECTS_ARCHIVE_CAPABILITY,
       PROJECTS_UPDATES_CAPABILITY,
+      PROJECTS_REFS_CAPABILITY,
     ]);
     const done = await runner.run({
       kind: 'create',

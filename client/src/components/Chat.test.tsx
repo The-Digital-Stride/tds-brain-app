@@ -724,12 +724,17 @@ describe('Save to project', () => {
     expect(save()).toBeNull();
   });
 
-  it('is disabled while Claude is replying', () => {
+  it('is aria-disabled while Claude is replying, and pressing it does nothing', () => {
     h.chat = chatState('working');
     h.live.sdkSessionId = SDK;
     h.projects = list(true);
     render(sheet());
-    expect((save() as HTMLButtonElement).disabled).toBe(true);
+    const button = save() as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(saveChatRequest.get()).toBeNull();
+    expect(screen.queryByLabelText('Save to')).toBeNull();
   });
 
   it('asks for a project when the chat has none, then sets the request and opens Projects with the chat beside it', () => {

@@ -538,6 +538,9 @@
 
 @layer features {
   /* Save to project (chat summaries): the to-dos step's rows and a chat entry on the Updates tab */
+  .proj-save-form {
+    container-type: inline-size;
+  }
   .proj-save-steps {
     flex-direction: column;
     flex-wrap: nowrap;
@@ -564,11 +567,14 @@
     gap: var(--sp-4);
     padding: var(--sp-4) var(--sp-12);
   }
+  .proj-update-body > .fold {
+    margin: 0;
+  }
   .proj-chat-more > ul {
     margin: 0;
     padding-left: var(--sp-16);
   }
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .proj-save-step {
       grid-template-columns: auto minmax(0, 1fr);
     }

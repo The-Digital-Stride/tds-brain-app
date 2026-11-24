@@ -26,3 +26,16 @@ describe('saveChatRequest', () => {
     expect(takeSaveChatRequest('acme/site')).toBeNull();
   });
 });
+
+describe('savingChat', () => {
+  it('holds the chat whose form is open and tells listeners only when it changes', async () => {
+    const { savingChat } = await import('./save-chat-request.ts');
+    const seen: (string | null)[] = [];
+    const off = savingChat.subscribe(() => seen.push(savingChat.get()));
+    savingChat.set('c1');
+    savingChat.set('c1');
+    savingChat.set(null);
+    off();
+    expect(seen).toEqual(['c1', null]);
+  });
+});

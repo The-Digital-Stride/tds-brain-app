@@ -32,3 +32,26 @@ export function takeSaveChatRequest(key: string): SaveChatRequest | null {
   saveChatRequest.set(null);
   return req;
 }
+
+/**
+ * The chat whose "Save to project" form is open on a project's Updates tab (its SDK session id), or null. Set by
+ * the project page while the form shows and cleared when it closes; the chat drawer's header hides its own Save to
+ * project for that chat, so the button isn't offered beside the form it already opened.
+ */
+let savingChatId: string | null = null;
+const savingListeners = new Set<() => void>();
+
+export const savingChat = {
+  get: (): string | null => savingChatId,
+  set(chat: string | null): void {
+    if (chat === savingChatId) return;
+    savingChatId = chat;
+    for (const l of [...savingListeners]) l();
+  },
+  subscribe(listener: () => void): () => void {
+    savingListeners.add(listener);
+    return () => {
+      savingListeners.delete(listener);
+    };
+  },
+};

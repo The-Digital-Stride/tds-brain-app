@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { CHAT_TITLE_MAX } from '../../../shared/chat-summary-contract.ts';
 import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
@@ -16,7 +16,7 @@ import { type ChatItem, COMPACTING_LINE, initialChatState, pendingCard } from '.
 import { projectPageRequest } from '../state/client-choice.ts';
 import { closeConfirmText, isClearCommand, needsCloseConfirm } from '../state/close.ts';
 import { filterOptions, isOpenProject, useProjects } from '../state/projects.ts';
-import { saveChatRequest } from '../state/save-chat-request.ts';
+import { saveChatRequest, savingChat } from '../state/save-chat-request.ts';
 import { useStore } from '../store.tsx';
 import { AttentionBar } from './AttentionBar.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
@@ -127,7 +127,9 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     // The chat stays open beside the form.
     if (sessionId) openChat(sessionId, { in: 'drawer' });
   };
+  const savingNow = useSyncExternalStore(savingChat.subscribe, savingChat.get);
   const pressSave = () => {
+    if (working) return;
     const own = live?.project ? savable.find((c) => c.key === live.project) : undefined;
     if (own) saveTo(own.key);
     else setPicking((v) => !v);
@@ -222,9 +224,8 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     <button
       type="button"
       className="btn"
-      data-variant="quiet"
       data-size="small"
-      disabled={working}
+      aria-disabled={working || undefined}
       aria-expanded={picking}
       data-tip={working ? SAVE_BUSY : undefined}
       onClick={pressSave}
@@ -250,13 +251,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
             if (v) saveTo(v);
           }}
         />
-        <button
-          type="button"
-          className="btn"
-          data-variant="quiet"
-          data-size="small"
-          onClick={() => setPicking(false)}
-        >
+        <button type="button" className="btn" data-size="small" onClick={() => setPicking(false)}>
           Cancel
         </button>
       </div>
@@ -268,7 +263,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
         <h2 id={headingId}>{title}</h2>
         {clientName ? <span className="chip">{clientName}</span> : null}
       </div>
-      {saveButton}
+      {sdkId !== null && savingNow === sdkId ? null : saveButton}
       <button
         type="button"
         className="icon-btn"

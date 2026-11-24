@@ -426,7 +426,9 @@ describe('chat summary entries', () => {
       </ShellContext.Provider>,
     );
     await screen.findByRole('button', { name: 'Updates' });
-    act(() => saveChatRequest.set({ key: SKY.key, chat: '11111111-2222-3333-4444-555555555555', title: 'Fix' }));
+    act(() =>
+      saveChatRequest.set({ key: SKY.key, chat: '11111111-2222-3333-4444-555555555555', title: 'Fix' }),
+    );
     await waitFor(() => expect(guardLeave).toHaveBeenCalledTimes(1));
     expect(screen.queryByLabelText('Objective')).toBeNull();
   });

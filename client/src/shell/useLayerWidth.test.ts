@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_DRAWER_PAD,
+  CONTENT_MIN,
   chatDrawerLimits,
   clampWidth,
   KEY_STEP,
   KEY_STEP_BIG,
+  maxBesideContent,
   stepWidth,
   VIEWER_PAD,
   viewerLimits,
@@ -65,5 +67,14 @@ describe('stepWidth', () => {
   });
   it('ignores other keys', () => {
     expect(stepWidth(1200, 'a', false, l)).toBeNull();
+  });
+});
+
+describe('maxBesideContent', () => {
+  it('leaves 600px beside the drawer and its gaps', () => {
+    expect(maxBesideContent(1200)).toBe(1200 - 2 * CHAT_DRAWER_PAD - CONTENT_MIN);
+  });
+  it("never goes under the drawer's narrowest", () => {
+    expect(maxBesideContent(900)).toBe(380);
   });
 });

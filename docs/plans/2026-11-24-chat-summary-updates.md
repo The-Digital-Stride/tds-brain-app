@@ -213,4 +213,36 @@ B1 imports B2's `readChatSummary`. Order: B2 and A first (small), B1, C, D in pa
 
 ## Review outcomes
 
-(filled at the end)
+**Overseer pre-review (Fable):** 5 blocking, all taken before building: the fork bans tools with `tools: []`
+(not `canUseTool`) and loads no settings (`settingSources: []`, else the brain's `sync.sh` and usage hooks run
+per draft); the draft message itself says it is a reviewed draft (the fork keeps the chat's recorded system
+prompt, EMAIL_LINE included); the End chat prompt was cut (the confirm only shows while a chat replies);
+`ProjectList.canSaveChat` added. Rulings: review form on the Updates tab with the chat in the drawer; Kind filter
+and tour step cut; script checks shape only; team re-split (B1 Opus, Builder A Sonnet).
+
+**Spikes:** fork with `persistSession:false` sees the whole chat, adds no session, leaves the original unchanged;
+a `tools: []` fork of a chat that used tools answers from history.
+
+**Real-engine check (2026-11-24, Sonnet, throwaway folder with SessionStart/UserPromptSubmit/Stop/SessionEnd
+hooks):** the chat fired 4 hooks, the draft fired none; session count unchanged; a chat carrying EMAIL_LINE drafted
+the email's facts (£5,000, 10 December) with `fromEmail: true`, no refusal. The prompt cache isn't reused by the
+fork (one uncached read at the chat's model per draft), accepted.
+
+**Correctness review (Opus):** 3 confirmed, fixed with tests: a title holding both `"` and `'` could never be
+saved (`writableChatTitle`); Save recorded the message count at Save, not at draft, so messages sent while
+reviewing counted as saved (count kept per chat+project at draft); a second save request replaced a form being
+edited without asking (now through the page's leave guard).
+
+**Security review (Opus):** 1 confirmed (consider), fixed with a test: a web address glued to a word
+(`foo_https://…`) still autolinked in the escaped body for older apps; `\b` dropped from the escapes. Fork,
+ownership, frontmatter, refs, email route and request gate found sound.
+
+**Lead's browser check (demo mode, 1440 and 1100):** whole flow works (Overview card → chat → draft → review →
+save → to-dos → card). Fixed: the list didn't show the new entry until Done (`onSaved`); the chat drawer had to
+be allowed beside Projects (`drawerView`, store.tsx), which `store.tsx` cleared on every non-tool view.
+
+**UX/UI expert (Opus):** signed off once blocking fixed. B1 drawer hid the right of the form and the assignee
+picker → Projects reserves the drawer's room when both fit, the drawer opens narrower from Save without saving
+that width, a container query wraps the to-do row; B2 busy button `aria-disabled`. Should S1–S7 and nice N1, N3
+fixed in the same round; N2 (form card tray alignment, older pattern) and N4 ("Not for a project" on the Overview
+card) left for later.

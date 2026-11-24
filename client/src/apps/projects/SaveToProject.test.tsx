@@ -184,7 +184,7 @@ describe('SaveToProject', () => {
     fireEvent.click(screen.getByLabelText('Spare'));
     fireEvent.click(screen.getByLabelText('Fine to share with the client'));
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
-    await screen.findByText("Saved to Sky site's updates.");
+    await screen.findByRole('heading', { name: 'Saved' });
     expect(changed).toHaveBeenCalledWith({
       kind: 'update',
       key: KEY,
@@ -209,14 +209,22 @@ describe('SaveToProject', () => {
 
   it('tells the page once the entry is written, so the list shows it before Done; not on a refused save', async () => {
     const onSaved = vi.fn();
-    render(<SaveToProject chat={CHAT} title="Fix the redirects" project={KEY} onSaved={onSaved} onClose={vi.fn()} />);
+    render(
+      <SaveToProject
+        chat={CHAT}
+        title="Fix the redirects"
+        project={KEY}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    );
     await screen.findByLabelText('Objective');
     api.changeProject.mockRejectedValueOnce(new ApiFailure('not-allowed', 'Refused.', 403));
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
     await screen.findByText('Refused.');
     expect(onSaved).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
-    await screen.findByText("Saved to Sky site's updates.");
+    await screen.findByRole('heading', { name: 'Saved' });
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
@@ -236,7 +244,7 @@ describe('SaveToProject', () => {
       const onClose = show();
       await screen.findByLabelText('Objective');
       fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
-      await screen.findByText("Saved to Sky site's updates.");
+      await screen.findByRole('heading', { name: 'Saved' });
       return onClose;
     };
 

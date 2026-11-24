@@ -18,7 +18,6 @@
     align-items: center;
     gap: var(--sp-8);
     padding: var(--sp-8) var(--sp-16);
-    border-bottom: 1px solid var(--line);
   }
   .chat-save-pick .project-select {
     flex: 1;

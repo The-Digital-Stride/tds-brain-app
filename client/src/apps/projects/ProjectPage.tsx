@@ -13,7 +13,7 @@ import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
 import { useProjects } from '../../state/projects.ts';
-import { saveChatRequest, takeSaveChatRequest } from '../../state/save-chat-request.ts';
+import { saveChatRequest, savingChat, takeSaveChatRequest } from '../../state/save-chat-request.ts';
 import { useStore } from '../../store.tsx';
 import { EmailDrafts } from './EmailDrafts.tsx';
 import {
@@ -606,6 +606,12 @@ export function ProjectPage({
     return saveChatRequest.subscribe(take);
   }, [card.key]);
   const saveChat = (req: SaveChatRequest) => openSaveRef.current(req);
+  // Tells the chat drawer which chat's form is open here, so its header doesn't offer Save to project again.
+  const savingId = saving?.chat ?? null;
+  useEffect(() => {
+    savingChat.set(savingId);
+    return () => savingChat.set(null);
+  }, [savingId]);
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
     if (tab !== 'updates') {

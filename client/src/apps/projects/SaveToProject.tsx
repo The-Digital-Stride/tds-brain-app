@@ -102,7 +102,6 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
   const { list } = useProjects();
   const change = useProjectChange({ reloadOnChanged: true });
   const card = list?.projects.find((p) => p.key === project) ?? null;
-  const projectName = card?.title ?? project;
   const personal = card ? card.space === 'personal' : project.startsWith('personal/');
   const me = boot?.identity.slug ?? '';
 
@@ -234,7 +233,13 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
     const res = await change({
       kind: 'update',
       key: project,
-      entry: { kind: 'chat', summary: body, clientSafe, chat: draft.chat, title: writableChatTitle(draft.title || title) },
+      entry: {
+        kind: 'chat',
+        summary: body,
+        clientSafe,
+        chat: draft.chat,
+        title: writableChatTitle(draft.title || title),
+      },
     });
     if (!live.current) return;
     setBusy(false);
@@ -316,22 +321,25 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
     return (
       <section className="card proj-card proj-form proj-save-form" aria-label="Chat saved">
         <h3 ref={headingRef} tabIndex={-1}>
-          Saved to {projectName}'s updates.
+          Saved
         </h3>
+        <p className="note">It's on the Updates tab below.</p>
         {rows.length > 0 && canTodos ? (
           <fieldset className="proj-checks proj-save-steps">
             <legend className="label">Make to-dos from the next steps?</legend>
             {rows.map((r) => (
               <div className="proj-save-step" key={r.id}>
-                <input
-                  type="checkbox"
-                  className="tick"
-                  aria-label={`Make a to-do: ${r.text}`}
-                  checked={r.on}
-                  onChange={(e) =>
-                    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, on: e.target.checked } : x)))
-                  }
-                />
+                <label className="tick-hit">
+                  <input
+                    type="checkbox"
+                    className="tick"
+                    aria-label={`Make a to-do: ${r.text}`}
+                    checked={r.on}
+                    onChange={(e) =>
+                      setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, on: e.target.checked } : x)))
+                    }
+                  />
+                </label>
                 <input
                   type="text"
                   className="field"
@@ -358,11 +366,9 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
             ))}
           </fieldset>
         ) : null}
-        {added ? (
-          <p className="proj-note" role="status">
-            {added}
-          </p>
-        ) : null}
+        <p className="note" role="status">
+          {added}
+        </p>
         {todoFailed.length > 0 ? (
           <p className="error" role="alert">
             {todoFailed.length === 1 ? "This one wasn't added" : "These weren't added"}:{' '}
@@ -435,8 +441,9 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
           }}
         />
       ) : null}
-      <p className="proj-note">
-        Nothing is saved until you press Save. Only what you see here is saved, never the chat itself.{' '}
+      <p className="note">
+        Nothing is saved until you press Save to project. Only what you see here is saved, never the chat
+        itself.{' '}
         <button type="button" className="link-btn" onClick={() => void openChat()}>
           Open chat
         </button>
@@ -494,7 +501,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
           value={figures}
           onChange={(e) => setFigures(e.target.value)}
         />
-        <p className="proj-note" id={`${id}-figures-hint`}>
+        <p className="hint" id={`${id}-figures-hint`}>
           One per line, with its unit.
         </p>
       </div>
@@ -536,7 +543,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
           value={steps}
           onChange={(e) => setSteps(e.target.value)}
         />
-        <p className="proj-note" id={`${id}-steps-hint`}>
+        <p className="hint" id={`${id}-steps-hint`}>
           One per line. After saving you can turn them into to-dos.
         </p>
       </div>
@@ -549,11 +556,9 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
         />
         Fine to share with the client
       </label>
-      {blocker ? (
-        <p className="proj-note" role="status">
-          {blocker}
-        </p>
-      ) : null}
+      <p className="hint" role="status">
+        {blocker}
+      </p>
       {message ? (
         <p className="error" role="alert">
           {message}
@@ -568,13 +573,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
         >
           Save to project
         </button>
-        <button
-          type="button"
-          className="btn"
-          data-variant="quiet"
-          aria-disabled={busy || undefined}
-          onClick={cancel}
-        >
+        <button type="button" className="btn" aria-disabled={busy || undefined} onClick={cancel}>
           Cancel
         </button>
       </div>

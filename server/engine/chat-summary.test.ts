@@ -613,9 +613,9 @@ describe('chat summary service: saved and unsaved', () => {
     t.setMessages(8); // the person asked the chat something while the form was open
     await t.svc.recordSaved(CHAT, 'acme/web');
     expect(await t.store.get(CHAT, 'acme/web')).toEqual({ savedAt: '2026-11-24T12:00:00.000Z', messages: 6 });
-    expect(
-      await t.svc.unsaved({ keys: ['acme/web'], since: SINCE, hasEntry: async () => true }),
-    ).toEqual([expect.objectContaining({ chat: CHAT })]);
+    expect(await t.svc.unsaved({ keys: ['acme/web'], since: SINCE, hasEntry: async () => true })).toEqual([
+      expect.objectContaining({ chat: CHAT }),
+    ]);
   });
 
   it('a record under a moved_from key counts; an unreadable history is left out', async () => {

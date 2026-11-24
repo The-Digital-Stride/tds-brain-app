@@ -9,8 +9,8 @@
  */
 
 import type { LibraryItem } from './contract.ts';
-import type { ProjectUpdateAction, ProjectUpdateRemoveAction } from './project-updates-contract.ts';
 import type { ProjectRefState, RefAction } from './project-refs-contract.ts';
+import type { ProjectUpdateAction, ProjectUpdateRemoveAction } from './project-updates-contract.ts';
 
 // ─── Where projects live (decision 1) ─────────────────────────────────────────────────────────────
 

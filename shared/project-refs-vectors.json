@@ -7,17 +7,33 @@
     { "text": "HN3P8 call", "expect": ["HN3P8"], "why": "two-letter client" },
     { "text": "SWFT7N2 sprint", "expect": ["SWFT7N2"], "why": "four-letter client" },
     { "text": "AST4K7X", "expect": [], "why": "one longer word that doesn't fit" },
-    { "text": "XAST4K7", "expect": ["XAST4K7"], "why": "the whole word is the candidate (client XAST), never AST4K7 inside it" },
+    {
+      "text": "XAST4K7",
+      "expect": ["XAST4K7"],
+      "why": "the whole word is the candidate (client XAST), never AST4K7 inside it"
+    },
     { "text": "ZZXAST4K7", "expect": [], "why": "too long: AST4K7 is only part of a word" },
     { "text": "Office SW1A 1AA and SW1A1AA", "expect": [], "why": "postcodes end in letters" },
     { "text": "Flight BA284 at 9", "expect": [], "why": "no middle letter" },
     { "text": "A4K7", "expect": [], "why": "client part shorter than 2" },
-    { "text": "AST4K1 and AST4O7", "expect": ["AST4K1", "AST4O7"], "why": "candidates (for did-you-mean) even though neither is a valid ref" },
+    {
+      "text": "AST4K1 and AST4O7",
+      "expect": ["AST4K1", "AST4O7"],
+      "why": "candidates (for did-you-mean) even though neither is a valid ref"
+    },
     { "text": "[AST4K7] [ast4k7] AST4K7", "expect": ["AST4K7"], "why": "de-duplicated after upper-casing" },
-    { "text": "SWFT7N2_H2O4K7-AST4K7.pdf", "expect": ["SWFT7N2", "H2O4K7", "AST4K7"], "why": "_ - . are boundaries; order kept" },
+    {
+      "text": "SWFT7N2_H2O4K7-AST4K7.pdf",
+      "expect": ["SWFT7N2", "H2O4K7", "AST4K7"],
+      "why": "_ - . are boundaries; order kept"
+    },
     { "text": "ast4k7@example.com", "expect": ["AST4K7"], "why": "@ is a boundary" },
     { "text": "Meeting ID 845 1234 5678 passcode 4k7", "expect": [], "why": "conferencing boilerplate" },
-    { "text": "AA2C2 AA2C3 AA2C4 AA2C5 AA2C6 AA2C7", "expect": ["AA2C2", "AA2C3", "AA2C4", "AA2C5", "AA2C6", "AA2C7"], "why": "no cap here: callers cap after lookup" },
+    {
+      "text": "AA2C2 AA2C3 AA2C4 AA2C5 AA2C6 AA2C7",
+      "expect": ["AA2C2", "AA2C3", "AA2C4", "AA2C5", "AA2C6", "AA2C7"],
+      "why": "no cap here: callers cap after lookup"
+    },
     { "text": "", "expect": [], "why": "empty" }
   ],
   "valid": [
@@ -52,15 +68,40 @@
     { "in": "OI", "out": "01" }
   ],
   "near": [
-    { "candidate": "AST4K8", "refs": ["AST4K7", "AST5K7", "GAP4K8"], "expect": ["AST4K7"], "why": "one substitution only" },
-    { "candidate": "AST4O7", "refs": ["AST4Q7", "AST4K7"], "expect": ["AST4Q7", "AST4K7"], "why": "order kept" },
-    { "candidate": "ATS4K7", "refs": ["AST4K7"], "expect": ["AST4K7"], "why": "two neighbouring characters swapped" },
-    { "candidate": "AST4K7", "refs": ["AST4K7", "AST4K8"], "expect": ["AST4K8"], "why": "never the exact ref" },
+    {
+      "candidate": "AST4K8",
+      "refs": ["AST4K7", "AST5K7", "GAP4K8"],
+      "expect": ["AST4K7"],
+      "why": "one substitution only"
+    },
+    {
+      "candidate": "AST4O7",
+      "refs": ["AST4Q7", "AST4K7"],
+      "expect": ["AST4Q7", "AST4K7"],
+      "why": "order kept"
+    },
+    {
+      "candidate": "ATS4K7",
+      "refs": ["AST4K7"],
+      "expect": ["AST4K7"],
+      "why": "two neighbouring characters swapped"
+    },
+    {
+      "candidate": "AST4K7",
+      "refs": ["AST4K7", "AST4K8"],
+      "expect": ["AST4K8"],
+      "why": "never the exact ref"
+    },
     { "candidate": "H204K8", "refs": ["H2O4K7"], "expect": ["H2O4K7"], "why": "compared after folding" },
     { "candidate": "ast4k8", "refs": ["AST4K7"], "expect": ["AST4K7"], "why": "candidate upper-cased" },
     { "candidate": "AST4K7", "refs": ["ASTR4K7"], "expect": [], "why": "different length is never near" },
     { "candidate": "AST4K7", "refs": ["AST5K8"], "expect": [], "why": "two substitutions" },
-    { "candidate": "AST4K7", "refs": ["A4TSK7"], "expect": [], "why": "a swap of non-neighbours is not near" },
+    {
+      "candidate": "AST4K7",
+      "refs": ["A4TSK7"],
+      "expect": [],
+      "why": "a swap of non-neighbours is not near"
+    },
     { "candidate": "AST4K8", "refs": ["AST4K7", "AST4K7"], "expect": ["AST4K7"], "why": "de-duplicated" }
   ]
 }

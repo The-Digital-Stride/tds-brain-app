@@ -95,7 +95,11 @@ project's finished to-dos.
    opens the panel read-only, like a done to-do: details, files, history, "With Ben McAdam", due. New
    `GET ROUTES.teamTodo?id=<id>` returns one `TeamTodo` from `todo/` (TDS only, never `personal/`, SAFE_ID,
    no symlinked files; 404 when it has gone). Panel key `team:todo/<id>`; its history uses the plain id
-   (the existing item history). The panel waits while it loads and closes if it has gone.
+   (the existing item history). The panel waits while it loads and closes if it has gone. The Overview's
+   "Coming up" and "Since you last looked" rows for a teammate's open TDS to-do open the same way (keys
+   with a `/` still go to the To-dos tab). A personal to-do not on my lists stays plain text, a failed
+   load is tried again on the next click (`primeTeamTodo`), and one passed to me while open switches to
+   my own key.
    Plain: on a project page you can open and read any teammate's to-do, but only change your own.
 
 ## Open questions for the overseer
@@ -140,4 +144,22 @@ D everyone's TDS done to-dos (decision 8b).
 
 ## Review outcomes
 
-<Filled at step 10.>
+- **Overseer pre-review:** blockers folded in as decisions 7, 8a and 1 (done rows from `listDoneTodos`
+  injected into `createProjects`; one shared done store with `PanelHost` waiting on `done:` keys; no file
+  cache); open questions A–D decided.
+- **Correctness #1 (3 confirmed, fixed):** the Done list needed its own git log (`doneLogArgs`; Asked's
+  `-G '^assignee:'` missed open-to-anyone to-dos); a reveal of a done key missing from a stale list
+  refreshes once; `doneStore.refresh` mid-load reloads once more. Each has a test that fails without it.
+- **UX/UI expert (6, fixed):** project done rows named the assignee, not who ticked it
+  (`ProjectDoneRow.doneBy`); tabs size to their words so "Asked, N" keeps its count; no switched-off note
+  on Done; one unknown-date wording; older search hints carry the year. Q3 (a reveal clears filters) kept
+  as designed.
+- **Correctness #2 (1 fixed):** the palette said "Nothing matches" while the done list first loaded; it
+  now counts as Searching….
+- **Security (done and team routes):** no findings.
+- **Correctness #3 on decision 10 (3 fixed):** a failed team load was never retried (`primeTeamTodo`,
+  `ensure`); a personal row not on my lists was sent as a `team:` key (now plain text); a to-do passed to
+  me while open stayed read-only (switches to my own key). Dropped: none.
+- **Found in the browser check:** Overview cards still sent teammates' to-dos to the To-dos tab; they now
+  open read-only too.
+- **Gates:** typecheck, biome (0 errors), 5,941 tests, deletion scan, browser check on the demo brain.

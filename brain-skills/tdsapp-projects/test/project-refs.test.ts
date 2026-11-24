@@ -260,6 +260,22 @@ describe('picking a code', () => {
     expect(refLine('clients/acme/projects/website/project.md')).toBe('ref: ACM2C3');
   });
 
+  it('finds a card made and deleted on another Mac before a sync merged it (full history)', () => {
+    commit('base');
+    const main = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+    git(['checkout', '-q', '-b', 'other-mac']);
+    card('clients/acme/projects/gone', ['title: Gone', 'client: acme', 'ref: ACM2A2']);
+    commit('add gone');
+    rmSync(abs('clients/acme/projects/gone'), { recursive: true });
+    commit('delete gone');
+    git(['checkout', '-q', main]);
+    put('notes/meanwhile.md', 'meanwhile');
+    commit('meanwhile on this Mac');
+    git(['merge', '-q', '--no-ff', '-m', 'sync', 'other-mac']);
+    expect(create('acme', 'website').exit).toBe(0);
+    expect(refLine('clients/acme/projects/website/project.md')).toBe('ref: ACM2C3');
+  });
+
   it('reads the deleted card as it was just before it went, even when it was changed first', () => {
     card('clients/acme/projects/gone', ['title: Gone', 'client: acme']);
     commit('add gone');

@@ -57,7 +57,8 @@ export function buildRefIndex(
   for (const c of cards) {
     const ref = refOf.get(c.key) ?? null;
     if (c.space === 'personal') {
-      byKey.set(c.key, { ref, refState: 'personal' });
+      // Decision 3: a personal project's old code is neither shown nor found (search reads `ref`).
+      byKey.set(c.key, { ref: null, refState: 'personal' });
       continue;
     }
     if (ref) {

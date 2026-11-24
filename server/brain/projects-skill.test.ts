@@ -159,11 +159,12 @@ describe('createProjectsSkillRunner', () => {
     const out =
       '{"ok":false,"error":"internal","message":"Couldn\'t check old codes just now. Try again in a moment."}';
     expect(
-      await errorOf(createProjectsSkillRunner(git.root, { env: git.env({ exit: 2, out }) }).run(one)),
+      // The real script exits 1 for an internal refusal (tdsapp-projects test "refuses the ref action with internal").
+      await errorOf(createProjectsSkillRunner(git.root, { env: git.env({ exit: 1, out }) }).run(one)),
     ).toEqual({ code: 'internal', message: "Couldn't check old codes just now. Try again in a moment." });
     const other = brain();
     expect(
-      await errorOf(createProjectsSkillRunner(other.root, { env: other.env({ exit: 2, out }) }).run(EDIT)),
+      await errorOf(createProjectsSkillRunner(other.root, { env: other.env({ exit: 1, out }) }).run(EDIT)),
     ).toEqual({ code: 'internal', message: PROJECTS_CHANGE_MESSAGES.internal });
   });
 

@@ -2581,8 +2581,11 @@ function historyRefs(ctx) {
   if (!head || head.status !== 0) return null;
   const [inside, shallow] = (head.stdout || '').split('\n').map(s => s.trim());
   if (inside !== 'true' || shallow !== 'false') return null;
+  // --full-history: without it git follows one parent at a merge, so a card made and deleted on another Mac
+  // before a sync would be missed and its code handed out again.
   const log = git([
-    '-c', 'core.quotePath=false', 'log', '--diff-filter=D', '--no-renames', '--name-only', '--format=%H', '--',
+    '-c', 'core.quotePath=false', 'log', '--full-history', '--diff-filter=D', '--no-renames', '--name-only',
+    '--format=%H', '--',
     ...REF_HISTORY_PATHS,
   ]);
   if (!log) return null;

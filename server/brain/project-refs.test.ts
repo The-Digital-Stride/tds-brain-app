@@ -49,6 +49,8 @@ describe('buildRefIndex', () => {
       codes,
     );
     expect(byKey.get('personal/p')?.refState).toBe('personal');
+    // Decision 3: its old code is neither shown nor searchable.
+    expect(byKey.get('personal/p')?.ref).toBeNull();
     expect(byKey.get('ast/a')?.refState).toBe('ok');
     expect(index.resolve('AST4K7')).toBe('ast/a');
     const only = buildRefIndex([card('personal/p', 'AST4K7', { space: 'personal', client: null })], codes);

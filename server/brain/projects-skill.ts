@@ -294,7 +294,9 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
     const check = moveCheckOf(reply.check, reply.key);
     return check ? { key: reply.key, version: reply.version, check } : internal;
   }
-  if (outcome.code === 2 && reply.ok === false) {
+  // The script exits 1 for every `internal` refusal, `ref`'s included (it exits 2 for the others).
+  const refInternal = action.kind === 'ref' && outcome.code === 1 && reply.error === 'internal';
+  if ((outcome.code === 2 || refInternal) && reply.ok === false) {
     const code = reply.error;
     // `ref` is the one action whose script may refuse with `internal` (git can't say which codes were used),
     // and its plain reason is shown (contract: "Couldn't check old codes just now. Try again in a moment.").

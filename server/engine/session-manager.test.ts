@@ -588,12 +588,10 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
     const { queries } = setup();
     await mgr.start({ prompt: 'hi' });
     await flush();
-    const all = (
-      queries[0]?.options.hooks as Record<
-        string,
-        { matcher?: string; hooks: ((i: unknown, id?: string) => Promise<unknown>)[] }[]
-      >
-    ).PreToolUse;
+    const hooks = queries[0]?.options.hooks as
+      | Record<string, { matcher?: string; hooks: ((i: unknown, id?: string) => Promise<unknown>)[] }[]>
+      | undefined;
+    const all = hooks?.PreToolUse;
     const guard = all?.find((m) => m.matcher === undefined)?.hooks[0];
     if (!guard) throw new Error('no guard hook');
     const call = (tool_input: unknown) =>

@@ -1,12 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ARTIFACT_URL_CASES } from './artifact-url-cases.ts';
 import { LINK_SCRIPT_TAG, PAGE_WRAPPER_LINK_SCRIPT, withLinkScript } from './page-links.ts';
 import {
+  ARTIFACT_HEAD_BYTES,
+  artifactMetaBlock,
   artifactPublish,
   artifactPublishResult,
+  artifactSource,
   brandedFileName,
   brandedPage,
   brandingMessage,
+  cleanArtifactUrl,
   isArtifactUrl,
   isRealPage,
   pageTitle,
@@ -437,5 +442,85 @@ describe('isRealPage', () => {
     expect(isRealPage('<div>body only</div>')).toBe(false);
     expect(isRealPage('')).toBe(false);
     expect(isRealPage('<!-- unclosed <!doctype html>')).toBe(false);
+  });
+});
+
+describe('cleanArtifactUrl (shared address table)', () => {
+  it.each(ARTIFACT_URL_CASES)('$input', ({ input, clean }) => {
+    expect(cleanArtifactUrl(input)).toBe(clean);
+    if (clean !== null) expect(isArtifactUrl(clean)).toBe(true);
+  });
+});
+
+describe('artifactSource', () => {
+  const URL = 'https://claude.ai/artifact/AbC123';
+  const block = (o: Partial<Parameters<typeof artifactMetaBlock>[0]> = {}) =>
+    artifactMetaBlock({ url: URL, copied: '2026-11-23', kind: 'copy', partial: false, ...o });
+  const page = (b: string) => `<!doctype html>\n${b}<html><head><title>T</title></head><body></body></html>`;
+
+  it('writes the exact block', () => {
+    expect(block()).toBe(
+      `<meta name="tds-artifact-source" content="${URL}">\n` +
+        '<meta name="tds-artifact-copied" content="2026-11-23">\n' +
+        '<meta name="tds-artifact-kind" content="copy">\n',
+    );
+    expect(block({ partial: true })).toBe(`${block()}<meta name="tds-artifact-live" content="partial">\n`);
+  });
+
+  it('reads the written block back', () => {
+    expect(artifactSource(page(block()))).toEqual({
+      url: URL,
+      copied: '2026-11-23',
+      kind: 'copy',
+      partial: false,
+    });
+    expect(artifactSource(page(block({ kind: 'link', partial: true })))).toEqual({
+      url: URL,
+      copied: '2026-11-23',
+      kind: 'link',
+      partial: true,
+    });
+  });
+
+  it('accepts every address the shared table accepts (clean ones only)', () => {
+    for (const c of ARTIFACT_URL_CASES) {
+      const got = artifactSource(page(`<meta name="tds-artifact-source" content="${c.input}">\n`));
+      if (c.clean !== null && c.clean === c.input) expect(got?.url).toBe(c.input);
+      else expect(got).toBeNull();
+    }
+  });
+
+  it('returns null with no tag, for another host, javascript: and look-alikes', () => {
+    expect(artifactSource('<html><head></head></html>')).toBeNull();
+    for (const u of [
+      'https://example.com/artifact/AbC123',
+      'javascript:alert(1)',
+      'https://claude.ai.evil.com/artifact/a',
+    ]) {
+      expect(artifactSource(page(block({ url: u })))).toBeNull();
+    }
+  });
+
+  it('drops a date that is not real, and reads an unknown kind as copy', () => {
+    expect(artifactSource(page(block({ copied: '2026-02-30' })))?.copied).toBeNull();
+    expect(artifactSource(page(block({ copied: 'yesterday' })))?.copied).toBeNull();
+    expect(artifactSource(page(block({ copied: '2028-02-29' })))?.copied).toBe('2028-02-29');
+    expect(artifactSource(page(block({ kind: 'bogus' as 'copy' })))?.kind).toBe('copy');
+  });
+
+  it('ignores tags past the head limit', () => {
+    const filler = `<!-- ${'x'.repeat(ARTIFACT_HEAD_BYTES)} -->`;
+    expect(artifactSource(page(filler + block()))).toBeNull();
+  });
+
+  it('takes the first source tag, and not a later block', () => {
+    const later = block({ url: 'https://claude.ai/artifact/Other1', copied: '2020-01-01' });
+    expect(artifactSource(page(block() + later))?.url).toBe(URL);
+    expect(artifactSource(page(`<p>x</p>${later}${block()}`))?.url).toBe('https://claude.ai/artifact/Other1');
+  });
+
+  it('reads copied, kind and live only from the same contiguous block', () => {
+    const lone = `<meta name="tds-artifact-source" content="${URL}">\n<p>x</p>\n<meta name="tds-artifact-kind" content="link">\n`;
+    expect(artifactSource(page(lone))).toEqual({ url: URL, copied: null, kind: 'copy', partial: false });
   });
 });

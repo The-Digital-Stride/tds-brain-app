@@ -36,6 +36,10 @@
   .proj-tabrow > .btn {
     margin-left: auto;
   }
+  /* A second action (Add a claude.ai page beside Add files) sits next to the first, not spread apart. */
+  .proj-tabrow > .btn + .btn {
+    margin-left: 0;
+  }
 
   .proj-tools {
     display: flex;

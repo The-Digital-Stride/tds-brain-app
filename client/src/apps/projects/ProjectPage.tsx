@@ -544,6 +544,9 @@ export function ProjectPage({
   const meetings = useProjectMeetings(card.key, !card.archived);
   // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
+  // And Add a claude.ai page, offered only where the server says so (live project with a card, not legacy).
+  const [addingArtifact, setAddingArtifact] = useState(false);
+  const canAddArtifact = list.canAddArtifact === true && editable && card.space !== 'legacy';
   // Add a to-do sits there too.
   const [adding, setAdding] = useState(false);
   // And Add an update: the Updates tab says whether the brain's skill allows it.
@@ -697,6 +700,19 @@ export function ProjectPage({
             Add files
           </button>
         ) : null}
+        {tab === 'files' && canAddArtifact ? (
+          <button
+            type="button"
+            className="btn"
+            data-size="small"
+            data-focus="addartifact"
+            onClick={() => setAddingArtifact(true)}
+            aria-disabled={addingArtifact || undefined}
+          >
+            <Icon name="plus" size={14} />
+            Add a claude.ai page
+          </button>
+        ) : null}
       </div>
       <div className="proj-body">
         {tab === 'overview' ? (
@@ -737,7 +753,14 @@ export function ProjectPage({
           />
         ) : null}
         {tab === 'files' ? (
-          <ProjectFiles card={card} canChange={editable} linking={linking} onLinking={setLinking} />
+          <ProjectFiles
+            card={card}
+            canChange={editable}
+            linking={linking}
+            onLinking={setLinking}
+            addingArtifact={addingArtifact && canAddArtifact}
+            onAddingArtifact={setAddingArtifact}
+          />
         ) : null}
       </div>
     </>

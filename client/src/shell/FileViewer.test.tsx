@@ -298,4 +298,50 @@ describe('the file viewer', () => {
     });
     expect(viewing).toBe(false);
   });
+
+  describe('a claude.ai artifact', () => {
+    const url = 'https://claude.ai/artifact/AbC123';
+    const art = (over: Record<string, unknown> = {}) =>
+      ({ url, copied: '2026-11-23', kind: 'copy', partial: false, ...over }) as LibraryItem['artifact'];
+    const open = (artifact: LibraryItem['artifact']) =>
+      renderViewer({ ask: { ...request, item: item({ ext: 'html', name: 'page.html', artifact }) } });
+
+    it('shows where a copy came from and an Open on claude.ai link', () => {
+      open(art());
+      openIt();
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText(/Copied from claude\.ai on 23 November 2026/)).toBeTruthy();
+      const link = within(dialog).getByRole('link', { name: /Open on claude\.ai/ });
+      expect(link.getAttribute('href')).toBe(url);
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(within(dialog).getByText('(opens in a new tab)')).toBeTruthy();
+      expect(within(dialog).queryByText(/only work on claude\.ai/)).toBeNull();
+    });
+
+    it('words a link card, a missing date and a partly working page', () => {
+      open(art({ kind: 'link', partial: true }));
+      openIt();
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText(/Link to a claude\.ai page, added 23 November 2026/)).toBeTruthy();
+      expect(within(dialog).getByText('Some parts of this page only work on claude.ai.')).toBeTruthy();
+    });
+
+    it('leaves the date out when there is none', () => {
+      open(art({ copied: null }));
+      openIt();
+      expect(screen.getByText(/Copied from claude\.ai$/)).toBeTruthy();
+    });
+
+    it('shows no link for an ordinary file, or for an address that is not claude.ai', () => {
+      open(undefined);
+      openIt();
+      expect(screen.queryByRole('link', { name: /Open on claude\.ai/ })).toBeNull();
+      cleanup();
+      open(art({ url: 'https://evil.example/artifact/AbC123' }));
+      openIt();
+      expect(screen.queryByRole('link', { name: /Open on claude\.ai/ })).toBeNull();
+      expect(screen.queryByText(/claude\.ai/)).toBeNull();
+    });
+  });
 });

@@ -16,6 +16,7 @@ import { checkHealth } from './health.ts';
 import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
 import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
+import { createProjectArtifact, type ProjectArtifactService } from './project-artifact.ts';
 import { createProjectMeetings, type ProjectMeetingsService } from './project-meetings.ts';
 import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
@@ -73,6 +74,8 @@ export type SearchableBrain = BrainReaders &
     /** Projects R2 phase 3: activity on the project home. Beside the contract like `ads`; the real brain always has them. */
     projectActivity?: ProjectActivityService['read'];
     projectSeen?: ProjectActivityService['seen'];
+    /** Claude artifacts in projects (decision 8): "Add a claude.ai page". The real brain always has it. */
+    projectArtifact?: ProjectArtifactService;
     /** Projects R2 phase 4: this Mac's own meetings for a project (the cache /gm writes, read only). */
     projectMeetings?: ProjectMeetingsService['read'];
   };
@@ -195,6 +198,13 @@ export function createBrainReaders(
     ads,
     projectActivity: projectActivity.read,
     projectSeen: projectActivity.seen,
+    projectArtifact: createProjectArtifact(root, {
+      files: filesSkill,
+      onSaved: (path) => {
+        library.changed(path);
+        projects.changed(path);
+      },
+    }),
     projectMeetings: projectMeetings.read,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),

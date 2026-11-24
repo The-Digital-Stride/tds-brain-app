@@ -1,20 +1,23 @@
 #!/usr/bin/env node
-// tdsapp-files.cjs (v0.3): delete library files into a holding folder, put them back, erase them
+// tdsapp-files.cjs (v0.4): delete library files into a holding folder, put them back, erase them
 // after 30 days, and keep a team action log. The plan is the app repo's
 // docs/plans/2026-11-15-delete-library-files.md (decisions 1-5 and 9); the shapes are in its
 // shared/files-contract.ts (a test checks the constants here match). v0.2 adds `add`, which copies
 // an uploaded file into the library (docs/plans/2026-11-16-todo-attachments.md, decision 3). v0.3
 // refuses to delete a project's own record inside clients/<client>/projects/<slug>/: project.md,
 // retainer.md and anything in updates/ or months/ (docs/plans/2026-11-20-projects-system.md,
-// decision 27). Other files there delete as before.
+// decision 27). Other files there delete as before. v0.4 adds `add-artifact`, which files a claude.ai
+// artifact in a project's files/ folder, as a copy of its page or a link card
+// (docs/plans/2026-11-23-claude-artifacts-in-projects.md, decisions 2, 6 and 7).
 //
 // Usage:
 //   echo '<json>' | node .claude/skills/tdsapp-files/scripts/tdsapp-files.cjs <action>
 //
-//   <action>  delete | restore | purge | list-deleted | add | capabilities
+//   <action>  delete | restore | purge | list-deleted | add | add-artifact | capabilities
 //   stdin     one JSON object (at most 64 KB): delete {path, expect?, via?, by_name?},
 //             restore {holding, via?, by_name?}, purge {via?}, list-deleted {}, capabilities {},
-//             add {source, path, via?, by_name?}.
+//             add {source, path, via?, by_name?}, add-artifact {url, path, source?, title?, description?,
+//             partial?, copied?, via?, by_name?}.
 //   stdout    one JSON line: {ok: true, action, ...} or {ok: false, code, error}.
 //   exit 0    ok; exit 2 refused (bad-request, not-found, not-allowed, changed, exists);
 //             exit 1 internal.
@@ -65,7 +68,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.3';
+const SCRIPT_VERSION = '0.4';
 
 // Mirrors shared/files-contract.ts (a test checks they match).
 const PURGE_AFTER_DAYS = 30;
@@ -86,6 +89,12 @@ const ADD_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 const ADD_DOCUMENT_EXTENSIONS = ['pdf', 'md', 'txt', 'docx', 'csv', 'xlsx', 'pptx'];
 const ADD_FOLDERS = { images: ADD_IMAGE_EXTENSIONS, files: ADD_DOCUMENT_EXTENSIONS };
 const ADD_NAME_TRIES = 1000;
+// v0.4: `add-artifact`.
+const ARTIFACT_CAPABILITY = 'files-artifact-v1';
+const ARTIFACT_MAX_BYTES = 5 * 1024 * 1024;
+const ARTIFACT_URL_PATTERN = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{1,64}\/?$/;
+const ARTIFACT_TITLE_MAX = 200;
+const ARTIFACT_DESCRIPTION_MAX = 300;
 
 // Mirrors CLASSES in the app's server/brain/library-rules.ts (a test checks they match).
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg'];
@@ -839,24 +848,9 @@ function nameFor(name, n) {
   return `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
 }
 
-function addFile(input, ctx) {
-  const rel = input.path;
-  const target = addTargetOf(rel);
-  const via = displayText(input.via, VIA_MAX) || DEFAULT_VIA;
-  const who = whoFor(ctx, input);
-  if (target.scope === 'client' && !ROLE_CAN.client.has(who.role)) {
-    throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can add client files');
-  }
-  const data = readSource(ctx, input.source, target.ext);
-  existingFolder(ctx, target.home);
-  // Checked before anything is made: a client file must reach the team, a personal one never may.
-  const gitRule = target.scope === 'client' ? requireNotIgnored : requireIgnored;
-  gitRule(ctx, [rel]);
-  const dir = plainFolder(path.join(ctx.root, ...target.home), target.folder.slice(target.home.length), 'not-allowed');
-  requireRealPath(ctx.root, dir, target.folder.join('/'));
-  // Before any change, so a log that can't be written stops the add instead of leaving it unrecorded.
-  const logFile = target.scope === 'client' ? logFileFor(ctx, who) : null;
-
+// Writes `data` to a hidden temp file in `dir`, then hard-links it to the first free name: `name`, then
+// "name (2).ext"… Never over anything. Returns the brain-relative path, or null when no name is free.
+function writeNew(ctx, dir, folder, name0, data, gitRule) {
   const tmp = path.join(dir, `.tdsapp-files-${process.pid}-${crypto.randomBytes(6).toString('hex')}.tmp~`);
   let finalRel = null;
   try {
@@ -868,8 +862,8 @@ function addFile(input, ctx) {
       fs.closeSync(fd);
     }
     for (let n = 1; n <= ADD_NAME_TRIES && finalRel === null; n++) {
-      const name = nameFor(target.name, n);
-      const candidate = [...target.folder, name].join('/');
+      const name = nameFor(name0, n);
+      const candidate = [...folder, name].join('/');
       if (n > 1) {
         if (candidate.length > PATH_MAX) break;
         gitRule(ctx, [candidate]);
@@ -893,6 +887,28 @@ function addFile(input, ctx) {
   } finally {
     try { fs.unlinkSync(tmp); } catch { /* never made */ }
   }
+  return finalRel;
+}
+
+function addFile(input, ctx) {
+  const rel = input.path;
+  const target = addTargetOf(rel);
+  const via = displayText(input.via, VIA_MAX) || DEFAULT_VIA;
+  const who = whoFor(ctx, input);
+  if (target.scope === 'client' && !ROLE_CAN.client.has(who.role)) {
+    throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can add client files');
+  }
+  const data = readSource(ctx, input.source, target.ext);
+  existingFolder(ctx, target.home);
+  // Checked before anything is made: a client file must reach the team, a personal one never may.
+  const gitRule = target.scope === 'client' ? requireNotIgnored : requireIgnored;
+  gitRule(ctx, [rel]);
+  const dir = plainFolder(path.join(ctx.root, ...target.home), target.folder.slice(target.home.length), 'not-allowed');
+  requireRealPath(ctx.root, dir, target.folder.join('/'));
+  // Before any change, so a log that can't be written stops the add instead of leaving it unrecorded.
+  const logFile = target.scope === 'client' ? logFileFor(ctx, who) : null;
+
+  const finalRel = writeNew(ctx, dir, target.folder, target.name, data, gitRule);
   if (finalRel === null) throw refuse('exists', `no free name for ${rel}`);
   const reply = { ok: true, action: 'add', path: finalRel };
   if (logFile && !appendLog(logFile, logLine(ctx.now, 'add', who, via, 'client', finalRel, data.length, ''))) {
@@ -901,13 +917,243 @@ function addFile(input, ctx) {
   return reply;
 }
 
+// ---- add-artifact (v0.4) -----------------------------------------------------------------------
+
+// The destination: exactly clients/<client>/projects/<slug>/files/<name>.html or
+// personal/projects/<slug>/files/<name>.html. Its own rule; `add`'s is unchanged.
+function artifactTargetOf(rel) {
+  const segs = pathSegments(rel);
+  let scope = null;
+  if (segs.length === 6 && segs[0] === 'clients' && segs[2] === 'projects' && segs[4] === 'files') scope = 'client';
+  else if (segs.length === 5 && segs[0] === 'personal' && segs[1] === 'projects' && segs[3] === 'files') scope = 'personal';
+  if (!scope) {
+    throw refuse('not-allowed', 'an artifact can only be added to clients/<client>/projects/<project>/files/ or personal/projects/<project>/files/');
+  }
+  if (isNeverListed(rel)) throw refuse('not-allowed', 'that path is never listed in the library');
+  const name = segs[segs.length - 1];
+  if (/[\p{Cc}]/u.test(name)) throw refuse('bad-request', 'the file name has a control character in it');
+  if (PROTECTED_NAMES.includes(name.normalize('NFKC').toLowerCase())) throw refuse('not-allowed', `${name} is protected`);
+  if (extOf(name) !== 'html') throw refuse('not-allowed', 'an artifact is saved as a .html file');
+  // The project folder must already be there; files/ is made if missing.
+  return { scope, name, home: segs.slice(0, -2), folder: segs.slice(0, -1) };
+}
+
+// Trim, drop any ?query or #fragment, then the claude.ai artifact address pattern. Null otherwise.
+function cleanArtifactUrl(input) {
+  if (typeof input !== 'string') return null;
+  const url = input.trim().split(/[?#]/)[0];
+  return ARTIFACT_URL_PATTERN.test(url) ? url : null;
+}
+
+// YYYY-MM-DD, a real date.
+function isRealDate(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+function localDate(now) {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function longDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Byte-identical to artifactMetaBlock in the app's shared/pages.ts.
+function artifactMetaBlock(meta) {
+  return (
+    `<meta name="tds-artifact-source" content="${meta.url}">\n` +
+    `<meta name="tds-artifact-copied" content="${meta.copied}">\n` +
+    `<meta name="tds-artifact-kind" content="${meta.kind}">\n` +
+    (meta.partial ? '<meta name="tds-artifact-live" content="partial">\n' : '')
+  );
+}
+
+// A port of linkScriptOffset in the app's shared/page-links.ts: after a leading doctype (past a BOM,
+// whitespace, comments and <?…> bogus comments), else after the BOM. Works on a latin1 reading, where
+// the offset is a byte offset.
+const BOMS = ['﻿', 'ï»¿'];
+const HTML_SPACE = /[\t\n\f\r ]/;
+const DOCTYPE = /^<!doctype\b[^>]*>/i;
+function commentEnd(html, i) {
+  if (html.startsWith('<!-->', i)) return i + 5;
+  if (html.startsWith('<!--->', i)) return i + 6;
+  const close = html.indexOf('--', i + 4);
+  for (let at = close; at !== -1; at = html.indexOf('--', at + 1)) {
+    if (html.startsWith('-->', at)) return at + 3;
+    if (html.startsWith('--!>', at)) return at + 4;
+  }
+  return -1;
+}
+function metaOffset(html) {
+  const found = BOMS.find((b) => html.startsWith(b));
+  const bom = found ? found.length : 0;
+  let i = bom;
+  while (i < html.length) {
+    const c = html[i];
+    if (HTML_SPACE.test(c)) {
+      i += 1;
+    } else if (html.startsWith('<!--', i)) {
+      const end = commentEnd(html, i);
+      if (end === -1) return bom;
+      i = end;
+    } else if (html.startsWith('<?', i)) {
+      const end = html.indexOf('>', i);
+      if (end === -1) return bom;
+      i = end + 1;
+    } else {
+      const doctype = DOCTYPE.exec(html.slice(i, i + 4096));
+      return doctype ? i + doctype[0].length : bom;
+    }
+  }
+  return bom;
+}
+
+// The source page's bytes: .html or .htm, outside the brain, a regular file, at most 5 MB (checked by
+// size before anything is read), not UTF-16.
+function readArtifactSource(ctx, source) {
+  if (typeof source !== 'string' || source === '' || source.includes('\0') || !path.isAbsolute(source)) {
+    throw refuse('bad-request', 'source must be an absolute path');
+  }
+  const ext = extOf(path.basename(source));
+  if (ext !== 'html' && ext !== 'htm') throw refuse('bad-request', 'source must be a .html or .htm file');
+  const st = lstatOrNull(source);
+  if (!st) throw refuse('not-found', "source isn't there");
+  if (st.isSymbolicLink() || !st.isFile()) throw refuse('not-allowed', "source isn't a regular file");
+  if (st.size > ARTIFACT_MAX_BYTES) throw refuse('bad-request', `source is over ${ARTIFACT_MAX_BYTES / 1024 / 1024} MB`);
+  const real = fs.realpathSync.native(source);
+  const brain = fs.realpathSync.native(ctx.root);
+  if (real === brain || real.startsWith(brain + path.sep)) throw refuse('not-allowed', 'source is already in the brain');
+  let fd;
+  try {
+    fd = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const fst = fs.fstatSync(fd);
+    if (!fst.isFile()) throw refuse('not-allowed', "source isn't a regular file");
+    if (fst.size > ARTIFACT_MAX_BYTES) throw refuse('bad-request', `source is over ${ARTIFACT_MAX_BYTES / 1024 / 1024} MB`);
+    const data = fs.readFileSync(fd);
+    if (data.length >= 2 && ((data[0] === 0xff && data[1] === 0xfe) || (data[0] === 0xfe && data[1] === 0xff))) {
+      throw refuse('bad-request', 'source is UTF-16; save it as UTF-8 first');
+    }
+    return data;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function plainText(value, max, what, required) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw refuse('bad-request', `${what} is required`);
+    return '';
+  }
+  if (typeof value !== 'string') throw refuse('bad-request', `${what} must be text`);
+  if (/[\p{Cc}]/u.test(value)) throw refuse('bad-request', `${what} has a control character in it`);
+  const text = value.trim();
+  if (required && text === '') throw refuse('bad-request', `${what} is required`);
+  if (text.length > max) throw refuse('bad-request', `${what} is over ${max} characters`);
+  return text;
+}
+
+function linkCard(meta, title, description) {
+  const block = artifactMetaBlock({ ...meta, kind: 'link', partial: false });
+  const t = escapeHtml(title);
+  return `<!doctype html>
+${block}<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${t}</title>
+<style>
+:root { color-scheme: light dark; --bg: #f5f7fb; --card: #ffffff; --text: #021B43; --muted: #4a5a78; --line: #d5dbe8; --btn: #021B43; --btn-text: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #021B43; --card: #0b2a5c; --text: #f2f5fb; --muted: #b6c2dc; --line: #27427a; --btn: #f2f5fb; --btn-text: #021B43; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { width: 100%; max-width: 32rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+h1 { margin: 0 0 8px; font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; }
+p { margin: 0 0 16px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.button { display: inline-block; padding: 12px 20px; border-radius: 8px; background: var(--btn); color: var(--btn-text); font-weight: 600; text-decoration: none; }
+.button:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+.added { margin: 16px 0 0; font-size: 0.875rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>${t}</h1>
+${description ? `<p>${escapeHtml(description)}</p>\n` : ''}<p class="muted">This page lives on claude.ai. Use the button to open it in a new tab.</p>
+<p><a class="button" href="${meta.url}" target="_blank" rel="noopener noreferrer">Open on claude.ai<span class="hidden"> (opens in a new tab)</span></a></p>
+<p class="added muted">Added ${longDate(meta.copied)}</p>
+</main>
+</body>
+</html>
+`;
+}
+
+function addArtifact(input, ctx) {
+  const rel = input.path;
+  const target = artifactTargetOf(rel);
+  const url = cleanArtifactUrl(input.url);
+  if (!url) throw refuse('bad-request', 'url must be a claude.ai artifact address, such as https://claude.ai/artifact/<id>');
+  const hasSource = input.source !== undefined && input.source !== null && input.source !== '';
+  const title = plainText(input.title, ARTIFACT_TITLE_MAX, 'title', !hasSource);
+  const description = plainText(input.description, ARTIFACT_DESCRIPTION_MAX, 'description', false);
+  const partial = input.partial === undefined ? false : input.partial;
+  if (typeof partial !== 'boolean') throw refuse('bad-request', 'partial must be true or false');
+  if (partial && !hasSource) throw refuse('bad-request', 'partial only goes with a source');
+  let copied = localDate(ctx.now);
+  if (input.copied !== undefined && input.copied !== null && input.copied !== '') {
+    if (typeof input.copied !== 'string' || !isRealDate(input.copied)) throw refuse('bad-request', 'copied must be a real date, YYYY-MM-DD');
+    copied = input.copied;
+  }
+  const via = displayText(input.via, VIA_MAX) || DEFAULT_VIA;
+  const who = whoFor(ctx, input);
+  if (target.scope === 'client' && !ROLE_CAN.client.has(who.role)) {
+    throw refuse('not-allowed', 'only people on the team in .team-config/roles.json can add client files');
+  }
+  let data;
+  if (hasSource) {
+    const source = readArtifactSource(ctx, input.source).toString('latin1');
+    const at = metaOffset(source);
+    const block = artifactMetaBlock({ url, copied, kind: 'copy', partial });
+    data = Buffer.from(source.slice(0, at) + block + source.slice(at), 'latin1');
+  } else {
+    data = Buffer.from(linkCard({ url, copied }, title, description), 'utf8');
+  }
+  existingFolder(ctx, target.home);
+  // A live project only: the folder must have its card (a plain project.md, never a link or a folder).
+  const card = lstatOrNull(path.join(ctx.root, ...target.home, 'project.md'));
+  if (!card || !card.isFile()) throw refuse('not-found', `${target.home.join('/')} has no project card (project.md)`);
+  const gitRule = target.scope === 'client' ? requireNotIgnored : requireIgnored;
+  gitRule(ctx, [rel]);
+  const dir = plainFolder(path.join(ctx.root, ...target.home), target.folder.slice(target.home.length), 'not-allowed');
+  requireRealPath(ctx.root, dir, target.folder.join('/'));
+  const logFile = target.scope === 'client' ? logFileFor(ctx, who) : null;
+  const finalRel = writeNew(ctx, dir, target.folder, target.name, data, gitRule);
+  if (finalRel === null) throw refuse('exists', `no free name for ${rel}`);
+  const reply = { ok: true, action: 'add-artifact', path: finalRel, kind: hasSource ? 'copy' : 'link' };
+  if (logFile && !appendLog(logFile, logLine(ctx.now, 'add', who, via, 'client', finalRel, data.length, ''))) {
+    reply.logged = false;
+  }
+  return reply;
+}
+
 function capabilities() {
-  return { ok: true, action: 'capabilities', version: SCRIPT_VERSION, features: [FILES_CAPABILITY, ADD_CAPABILITY] };
+  return { ok: true, action: 'capabilities', version: SCRIPT_VERSION, features: [FILES_CAPABILITY, ADD_CAPABILITY, ARTIFACT_CAPABILITY] };
 }
 
 // ---- command line ------------------------------------------------------------------------------
 
-const ACTIONS = { delete: deleteFile, restore, purge, 'list-deleted': listDeleted, add: addFile, capabilities };
+const ACTIONS = { delete: deleteFile, restore, purge, 'list-deleted': listDeleted, add: addFile, 'add-artifact': addArtifact, capabilities };
 
 function defaultCtx() {
   return {
@@ -979,6 +1225,9 @@ module.exports = {
   listDeleted,
   capabilities,
   addFile,
+  addArtifact,
+  cleanArtifactUrl,
+  artifactMetaBlock,
   isNeverListed,
   extOf,
   versionOf,
@@ -994,6 +1243,8 @@ module.exports = {
   PROJECT_PROTECTED_NAMES,
   FILES_CAPABILITY,
   ADD_CAPABILITY,
+  ARTIFACT_CAPABILITY,
+  ARTIFACT_MAX_BYTES,
   ADD_MAX_BYTES,
   ADD_IMAGE_EXTENSIONS,
   ADD_DOCUMENT_EXTENSIONS,

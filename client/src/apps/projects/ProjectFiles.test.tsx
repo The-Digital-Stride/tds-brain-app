@@ -227,4 +227,10 @@ describe('placeIn: a file is grouped by where it sits in the project', () => {
     expect(placeIn(at, 'clients/acme/projects/boiler/files/a/b.pdf')).toBe('Files');
     expect(placeIn(at, 'clients/acme/reports/q3.pdf')).toBe('From the library');
   });
+
+  it("puts a file straight inside the project's files/ or images/ folder in the project folder", () => {
+    expect(placeIn(at, 'clients/acme/projects/boiler/files/page.html')).toBe('In the project folder');
+    expect(placeIn(at, 'clients/acme/projects/boiler/images/logo.png')).toBe('In the project folder');
+    expect(placeIn(at, 'clients/acme/projects/boiler/notes/page.html')).toBe('Notes');
+  });
 });

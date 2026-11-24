@@ -1,5 +1,6 @@
 import { FileStar } from '../../shell/FileStar.tsx';
 import { Icon } from '../../shell/Icon.tsx';
+import { validArtifact } from '../shared/artifact-words.ts';
 import type { ItemProps, KindSpec } from '../shared/LibraryBrowser.tsx';
 import { ViewButton } from '../shared/parts.tsx';
 import { Thumb } from '../shared/Thumb.tsx';
@@ -8,7 +9,14 @@ import { FORMAT_ICONS } from './icons.ts';
 import { countWords, filterDocs, metaWords, sortDocs, summaryWords } from './library.ts';
 
 function metaLine({ item, note }: ItemProps): string {
-  return note ? `${metaWords(item)} · ${note}` : metaWords(item);
+  // A link card is a shortcut, not a page worth a size (UX review): say what it is.
+  const artifact = validArtifact(item.artifact);
+  const words = !artifact
+    ? metaWords(item)
+    : artifact.kind === 'link'
+      ? 'Link to a claude.ai page'
+      : `${metaWords(item)}, from claude.ai`;
+  return note ? `${words} · ${note}` : words;
 }
 
 /** A grid tile: the first page where Quick Look drew one, otherwise the type's icon on the page. */

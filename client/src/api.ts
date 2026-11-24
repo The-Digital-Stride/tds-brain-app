@@ -77,6 +77,8 @@ import type { ProjectMeetingsResponse } from '../../shared/project-meetings-cont
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import type {
   ProjectAction,
+  ProjectArtifactRequest,
+  ProjectArtifactResponse,
   ProjectFilesResponse,
   ProjectKey,
   ProjectList,
@@ -265,6 +267,9 @@ export const api = {
       'GET',
       `${ROUTES.projectFiles}?key=${encodeURIComponent(key)}&kind=${encodeURIComponent(kind)}`,
     ),
+  /** Add a claude.ai page to a project as a link card (the server never fetches claude.ai). */
+  projectArtifact: (req: ProjectArtifactRequest) =>
+    request<ProjectArtifactResponse>('POST', ROUTES.projectArtifact, req),
   projectUpdates: (key: ProjectKey, before?: string) =>
     request<ProjectUpdatesResponse>(
       'GET',

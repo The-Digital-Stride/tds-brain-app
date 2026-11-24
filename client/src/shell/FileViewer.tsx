@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { ROUTES } from '../../../shared/contract.ts';
 import { api } from '../api.ts';
+import { artifactWords, validArtifact } from '../apps/shared/artifact-words.ts';
 import { DeleteButton } from '../apps/shared/parts.tsx';
 import { openLibraryItem } from '../apps/shared/search.ts';
 import { FileStage } from '../apps/shared/Viewer.tsx';
@@ -133,6 +134,8 @@ export function FileViewer() {
     );
   }
   const { item, place, openIn } = request;
+  const artifact = validArtifact(item.artifact);
+  const placeLine = [place, artifact ? artifactWords(artifact) : ''].filter(Boolean).join(' · ');
   const remove = () => {
     // The row that opened the viewer goes with the file; the next row's open button gets focus.
     const row = viewerOpener.current?.closest('li') ?? null;
@@ -161,13 +164,19 @@ export function FileViewer() {
             <h2 id={headingId} ref={heading} tabIndex={-1}>
               {item.title}
             </h2>
-            {place ? <p className="viewer-place">{place}</p> : null}
+            {placeLine ? <p className="viewer-place">{placeLine}</p> : null}
           </div>
           <div className="viewer-actions">
             {openIn ? (
               <button type="button" className="btn" onClick={openInApp}>
                 {APP_WORDS[openIn.app]}
               </button>
+            ) : null}
+            {artifact ? (
+              <a className="btn" href={artifact.url} target="_blank" rel="noopener noreferrer">
+                Open on claude.ai
+                <span className="visually-hidden"> (opens in a new tab)</span>
+              </a>
             ) : null}
             <a
               className="btn"
@@ -187,6 +196,11 @@ export function FileViewer() {
         {/* Focusable so the keyboard can scroll a long file (Safari doesn't reach scroll areas by Tab). */}
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus to scroll. */}
         <section className="viewer-body" aria-label={`Contents of ${item.title}`} tabIndex={0}>
+          {artifact?.partial ? (
+            <p className="notice" data-shape="box" data-level="warn">
+              Some parts of this page only work on claude.ai.
+            </p>
+          ) : null}
           {item.view === null ? (
             <StateNote kind="empty">This type can't be shown here. Download it to open it.</StateNote>
           ) : (

@@ -34,7 +34,10 @@ export const PROJECTS_SCRIPT = '.claude/skills/tdsapp-projects/scripts/tdsapp-pr
 export const PROJECTS_SCRIPT_MAX_OUTPUT_BYTES = 64 * 1024;
 
 /** Test injection: the spawner (`spawn`), environment, time limit and output cap. */
-export type ProjectsSkillOptions = ScriptOptions;
+export interface ProjectsSkillOptions extends ScriptOptions {
+  /** Runs every `tdsapp-projects` call one at a time; shared with the email drafts so an email save never runs beside a move or archive. */
+  queue?: ReturnType<typeof createQueue>;
+}
 
 /** What a run answers: the project's key (a move's new one) and its card's version; a move check adds `check`. */
 export interface ProjectsSkillResult {
@@ -334,7 +337,7 @@ export function createProjectsSkillRunner(
   opts: ProjectsSkillOptions = {},
 ): ProjectsSkillRunner {
   const options = withDefaults(opts, PROJECTS_SCRIPT_TIMEOUT_MS, PROJECTS_SCRIPT_MAX_OUTPUT_BYTES);
-  const queue = createQueue();
+  const queue = opts.queue ?? createQueue();
 
   const runOnce = async (action: ProjectAction): Promise<ProjectsSkillResult> => {
     if (action.kind === 'capabilities' || !Object.hasOwn(COMMAND, action.kind)) {

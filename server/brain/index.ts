@@ -6,6 +6,7 @@ import { createMeetingHistoryStore } from '../store/meeting-history.ts';
 import { createProjectSeenStore } from '../store/project-seen.ts';
 import { type AdsService, type AdsServiceOptions, createAdsService } from './ads-skill.ts';
 import { listClients } from './clients.ts';
+import { createEmailDrafts, type EmailDraftsService } from './email-drafts.ts';
 import {
   createFilesSkillRunner,
   FILES_SKILL,
@@ -21,6 +22,7 @@ import { createProjectMeetings, type ProjectMeetingsService } from './project-me
 import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
+import { createQueue } from './skill-runner.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
@@ -80,6 +82,8 @@ export type SearchableBrain = BrainReaders &
     projectMeetings?: ProjectMeetingsService['read'];
     /** Home meetings: every upcoming meeting in this Mac's cache, project or not. */
     homeMeetings?: ProjectMeetingsService['home'];
+    /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK (this Mac's gitignored files, via the script). */
+    emailDrafts?: EmailDraftsService;
   };
 
 export function createBrainReaders(
@@ -105,7 +109,9 @@ export function createBrainReaders(
   // One runner per brain, so to-do changes run one at a time.
   const todoSkill = createTodoSkillRunner(root, deps.todoSkill);
   // The projects service reads the brain itself; its writes (and the tidy-up's to-do changes) are scripts'.
-  const projectsSkill = createProjectsSkillRunner(root, deps.projectsSkill);
+  // One queue for every tdsapp-projects call, email drafts included.
+  const projectsQueue = createQueue();
+  const projectsSkill = createProjectsSkillRunner(root, { ...deps.projectsSkill, queue: projectsQueue });
   // `edit` can answer `updatesFailed` (an auto log entry wasn't written); the service drops the script's answer,
   // so it is kept here, keyed by the action object the service passes on (Projects R2 phase 2).
   const editAnswers = new WeakMap<object, { updatesFailed?: true }>();
@@ -137,6 +143,18 @@ export function createBrainReaders(
     mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
   });
   // Activity on the project home: reuses the To-dos, Files and Updates reads; the snapshot lives in the data folder.
+  const emailDrafts = createEmailDrafts(root, {
+    index: () => projects.index(),
+    clients: () => listClients(root),
+    identity: () => readIdentity(root, run),
+    capabilities: () => projectsSkill.capabilities(),
+    mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
+    ignored: deps.libraryIgnored,
+    onChanged: () => projects.changed(),
+    queue: projectsQueue,
+    script: deps.projectsSkill,
+    now,
+  });
   const projectActivity = createProjectActivity({
     index: () => projects.index(),
     todos: (key, identity) => projects.projectTodos(key, identity),
@@ -209,6 +227,7 @@ export function createBrainReaders(
     }),
     projectMeetings: projectMeetings.read,
     homeMeetings: projectMeetings.home,
+    emailDrafts,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),

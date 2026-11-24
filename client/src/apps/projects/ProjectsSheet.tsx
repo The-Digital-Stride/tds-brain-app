@@ -4,6 +4,7 @@ import { ShellContext } from '../../shell/shell-context.ts';
 import { followMovedProject, projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
+import { EmailDrafts } from './EmailDrafts.tsx';
 import { moveState, plural, READ_ONLY_NOTICE } from './logic.ts';
 import { MoveScreen } from './MoveScreen.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
@@ -249,6 +250,9 @@ export function ProjectsSheet() {
             still in them stays only on this Mac: {(list.leftovers ?? []).join(', ')}.
           </p>
         ) : null}
+        <div className="tray lib-tray">
+          <EmailDrafts list={list} clients={clients} />
+        </div>
         <ProjectListView
           data={list}
           me={me}

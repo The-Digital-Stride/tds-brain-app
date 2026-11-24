@@ -6,7 +6,7 @@ order: 3
 summary: See every project, who is on it, its to-dos and its files, in one place.
 benefit: Know how each project is going without asking around.
 roles: all
-related: [project-codes, meetings, todos, documents, images, picking-the-client, home]
+related: [project-emails, project-codes, meetings, todos, documents, images, picking-the-client, home]
 since: 0.55.0
 reviewed: 2026-11-24
 ---
@@ -24,7 +24,7 @@ Projects shows the team's work for each client: each project's brief, team, to-d
 
 1. Open Projects, just under Home.
 2. Choose **Mine** for your projects, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what's new, what's due and the team. **To-dos** shows what is open. **Updates** logs notes, calls and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images, with the same filters as Documents. **Add files** adds library files; the cross removes one. **Add a claude.ai page** adds a claude.ai page.
+3. Open a project. **Overview** shows what's new, what's due and the team. **To-dos** shows what is open. **Updates** logs notes, calls, emails and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images, with the same filters as Documents. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one here.
 4. **New project** adds one; **Edit** changes one. **Add to team** keeps a person marked "from to-dos".
 5. **New chat for this project** starts a chat that saves its files here.
 6. **Move** moves a project to another client.

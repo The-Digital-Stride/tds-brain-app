@@ -97,3 +97,9 @@ folder. Apply only with Ian's yes, after the app version with "New chat for this
 `r2-meetings.md`: three edits to `.claude/skills/meeting-notes/SKILL.md` (call notes record their project as
 `project:`) and one to `.claude/skills/gm/SKILL.md` (the meeting list holds the next 14 days). Copy straight after
 the merge (Ian's standing yes, 2026-11-23); the checks are in the file.
+
+## Release 2, phase 5: email entries
+
+`r2-email.md`: one edit to `.claude/rules/save-locations.md` (the only way in is `email-draft`) and one to
+`.claude/skills/gm/SKILL.md` (Step 4b makes up to 8 drafts a run for the inbox owner to approve in the app).
+Copy straight after the merge, with `tdsapp-projects` 0.6.0 (Ian's standing yes for R2); the checks are in the file.

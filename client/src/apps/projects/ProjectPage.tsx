@@ -13,6 +13,7 @@ import { ShellContext } from '../../shell/shell-context.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
 import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
+import { EmailDrafts } from './EmailDrafts.tsx';
 import {
   dateWords,
   dotState,
@@ -351,6 +352,7 @@ function Overview({
         title={(key) => list.projects.find((p) => p.key === key)?.title ?? 'another project'}
       />
       <div className="tray lib-tray">
+        {card.archived ? null : <EmailDrafts list={list} clients={clients} projectKey={card.key} />}
         {card.archived ? null : (
           <ProjectActivity
             key={card.key}

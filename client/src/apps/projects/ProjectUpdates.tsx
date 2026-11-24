@@ -33,6 +33,15 @@ export function whenWords(at: string): string {
   return `${dateWords(at)}, ${time}`;
 }
 
+/** "From Alex Smith · with 2 others · 20 Nov 2026, 16:30" for an email entry (the others are its people). */
+export function emailLine(u: ProjectUpdateItem): string {
+  const bits = [`From ${u.emailFrom?.trim() || 'someone'}`];
+  const n = u.emailPeople?.length ?? 0;
+  if (n > 0) bits.push(`with ${n} ${n === 1 ? 'other' : 'others'}`);
+  bits.push(whenWords(u.emailSentAt ?? u.at));
+  return bits.join(' · ');
+}
+
 export const deleteWords = (personal: boolean): string =>
   personal
     ? "Delete this update? It can't be brought back."
@@ -43,6 +52,27 @@ interface Page {
   more: boolean;
   unreadable: number;
   canAdd: boolean;
+}
+
+/** An email entry's subject, who it was from and where to read it. The link exists only for the inbox owner. */
+function EmailBody({ u }: { u: ProjectUpdateItem }) {
+  return (
+    <>
+      {u.emailSubject ? <strong className="proj-email-subject">{u.emailSubject}</strong> : null}
+      <p className="proj-email-meta">
+        {emailLine(u)} ·{' '}
+        {u.gmailUrl ? (
+          <a href={u.gmailUrl} target="_blank" rel="noopener noreferrer">
+            Open in Gmail<span className="visually-hidden"> (opens in a new tab)</span>
+          </a>
+        ) : u.byName ? (
+          `In ${u.byName}'s inbox`
+        ) : (
+          'In their inbox'
+        )}
+      </p>
+    </>
+  );
 }
 
 const ADD_BUTTON = '[data-focus="addupdate"]';
@@ -362,6 +392,7 @@ export function ProjectUpdates({
                         {u.clientSafe ? <span className="chip">Fine to share with the client</span> : null}
                         {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
                       </div>
+                      {u.kind === 'email' ? <EmailBody u={u} /> : null}
                       <Markdown text={u.summary} />
                     </div>
                     {u.canRemove ? (

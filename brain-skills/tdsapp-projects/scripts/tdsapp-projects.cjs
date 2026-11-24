@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.5.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// tdsapp-projects.cjs (v0.6.0): make and change project cards (`project.md`) the way TDS Cortex does,
 // move a project to another client, archive, unarchive or delete one, keep its updates log, and give
-// projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md). The
+// projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md), and keep email
+// drafts for their inbox owner's approval (docs/plans/2026-11-24-projects-r2-email-entries.md). The
 // plans are the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
 // docs/plans/2026-11-21-project-move.md, docs/plans/2026-11-21-project-archive-delete.md and
 // docs/plans/2026-11-23-projects-r2-updates-log.md; the shapes are in its shared/projects-contract.ts
@@ -11,7 +12,7 @@
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
 //   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | update |
-//             update-remove | ref | find-ref | capabilities
+//             update-remove | ref | find-ref | email-draft | email-draft-remove | capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
 //             link {key, path, expect}, unlink {key, path, expect},
@@ -19,7 +20,10 @@
 //             archive / unarchive {key, expect?, check?: true, filesExpect?},
 //             delete {key, expect?, check?: true, filesExpect?, leftover?: true},
 //             update {key, entry: {kind: note|call, summary, clientSafe}}, update-remove {key, file, expect},
-//             ref {key, expect, replace?: true} or {all: true}, find-ref {text}, capabilities {}.
+//             ref {key, expect, replace?: true} or {all: true}, find-ref {text},
+//             email-draft {EmailDraftInput}, email-draft-remove {id, dismiss},
+//             update {key, entry: {kind: email, draft, token, summary, subject, from, people, clientSafe}}
+//             (the app only, on the inbox owner's Save), capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
 //             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
@@ -31,7 +35,10 @@
 //             `update` adds `file`, the new entry's brain path; `edit` adds `updatesFailed: true` when
 //             the card changed but an automatic log entry couldn't be written. `ref` answers `given`
 //             and `skipped` (plus key and version for one card); `find-ref` answers `found` and `near`.
-//   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed); exit 1 internal.
+//             `email-draft` and `email-draft-remove` answer `id` (never the draft's token); an
+//             `exists` refusal for an email adds `file` and `key`, the entry that already holds it.
+//   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed, dismissed);
+//             exit 1 internal.
 //
 // Where projects live (every folder there is a project, card or not):
 //   clients/<client>/projects/<slug>/            key <client>/<slug>
@@ -108,7 +115,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.5.0';
+const SCRIPT_VERSION = '0.6.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -118,6 +125,35 @@ const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
 const PROJECTS_UPDATES_CAPABILITY = 'projects-updates-v1';
 // Mirrors shared/project-refs-contract.ts (a test checks they match): project codes ("refs").
 const PROJECTS_REFS_CAPABILITY = 'projects-refs-v1';
+// Projects R2 phase 5 (docs/plans/2026-11-24-projects-r2-email-entries.md): email drafts and email
+// entries, as shared/project-email-contract.ts (a test checks these match).
+const PROJECTS_EMAIL_CAPABILITY = 'projects-email-v1';
+const EMAIL_DRAFT_FILE_PATTERN = /^[a-z0-9]{12}\.json$/;
+// The approve keys live outside the brain, in this Mac user's TDS Cortex data folder (overseer ruling after
+// the security review): never in a folder Claude works in, never moved by HOME or TDS_BRAIN_APP_DATA.
+const EMAIL_KEYS_SUBDIR = 'Library/Application Support/TDS Brain/data/email-keys';
+const EMAIL_KEY_FILE_PATTERN = /^[a-z0-9]{12}\.key$/;
+const EMAIL = {
+  EMAIL_DRAFTS_DIR: 'briefing/email-drafts',
+  DISMISSED_DAYS: 90,
+  DRAFT_MAX_AGE_DAYS: 30,
+  EMAIL_SUBJECT_MAX: 300,
+  EMAIL_PERSON_MAX: 320,
+  EMAIL_PEOPLE_MAX: 30,
+  EMAIL_THREAD_IDS_MAX: 20,
+  EMAIL_NEWEST_TEXT_MAX: 4000,
+  MESSAGE_ID_MAX: 300,
+  EMAIL_NAME_MAX: 120,
+};
+const EMAIL_DRAFTS_DIR_MODE = 0o700;
+const EMAIL_DRAFT_FILE_MODE = 0o600;
+const EMAIL_DRAFT_MAX_BYTES = 64 * 1024;
+const GMAIL_THREAD_ID_PATTERN = /^[0-9a-f]{8,32}$/i;
+// The whole `email-draft` call, as JSON, so it always fits Cortex's 20,000-character command limit
+// with the command around it (overseer 4): every field at its own limit together would not.
+const EMAIL_DRAFT_INPUT_MAX = 19000;
+// An entry file this big is no entry this script wrote: skipped when looking for an email.
+const ENTRY_READ_MAX = 256 * 1024;
 const REF_DIGITS = '23456789';
 const REF_LETTERS = 'ACDEFGHJKMNPQRTUVWXY';
 const CLIENT_CODE_PATTERN = /^[A-Z0-9]{2,4}$/;
@@ -184,10 +220,10 @@ const LINK_ROOTS = ['clients/', 'templates/', 'personal/', 'projects/', 'project
 const INPUT_MAX = 262144;
 const PATH_MAX = 1024;
 const NAME_MAX = 80;
-const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal']);
+const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'dismissed', 'internal']);
 const ACTION_NAMES = [
   'create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'update', 'update-remove',
-  'ref', 'find-ref', 'capabilities',
+  'ref', 'find-ref', 'email-draft', 'email-draft-remove', 'capabilities',
 ];
 // A move lists at most this many of the folder's files in its check, and walks at most this many entries.
 const MOVE_FILES_SHOWN = 50;
@@ -218,12 +254,14 @@ const FIELD_KEYS = {
 const LIST_KEYS = new Set(['team', 'service', 'stages', 'moved_from']);
 
 class Refusal extends Error {
-  constructor(code, message) {
+  constructor(code, message, extra) {
     super(message);
     this.code = ERRORS.has(code) ? code : 'internal';
+    // More facts for the reply (such as where an email already is). Never a draft's token.
+    this.extra = extra && typeof extra === 'object' ? extra : null;
   }
 }
-const refuse = (code, message) => new Refusal(code, message);
+const refuse = (code, message, extra) => new Refusal(code, message, extra);
 
 // ---- small helpers -------------------------------------------------------------------------------
 
@@ -2234,6 +2272,7 @@ function writeEntry(ctx, loc, who, folder, front, summary) {
   if (front.change !== undefined) {
     lines.push(`change: ${front.change}`, `from: ${factValue(front.from)}`, `to: ${factValue(front.to)}`);
   }
+  if (front.email !== undefined) lines.push(...emailLines(front.email));
   const text = [...lines, '---', '', summary, ''].join('\n');
   const stamp = ukStamp(ctx.now);
   const suffix = ctx.updateSuffix || randomSuffix;
@@ -2272,7 +2311,8 @@ function update(input, ctx) {
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     throw refuse('bad-request', 'entry must be an object');
   }
-  if (!MANUAL_UPDATE_KINDS.includes(entry.kind)) throw refuse('bad-request', 'entry kind must be note or call');
+  if (entry.kind === 'email') return emailUpdate(input, entry, loc, ctx);
+  if (!MANUAL_UPDATE_KINDS.includes(entry.kind)) throw refuse('bad-request', 'entry kind must be note, call or email');
   const summary = checkSummary(entry.summary);
   if (typeof entry.clientSafe !== 'boolean') throw refuse('bad-request', 'clientSafe must be true or false');
   const who = identity(ctx);
@@ -2306,10 +2346,16 @@ function updateRemove(input, ctx) {
   const parts = cardParts(decodeFile(bytes).text);
   if (!parts) throw refuse('not-allowed', `${file} can't be read, so it can't be removed here`);
   const values = cardValues(parts.entries);
-  if (!MANUAL_UPDATE_KINDS.includes(values.kind)) {
-    throw refuse('not-allowed', 'only notes and calls can be removed: the log keeps its other entries');
-  }
-  if (!isAuthor(loc, who, values.by) && !isOwnerOrScout(who)) {
+  if (values.kind === 'email') {
+    // Overseer ruling d: an email entry is for its inbox owner, the brain's Owner or a scout.
+    const owner = values.email_inbox_owner;
+    const isOwner = typeof owner === 'string' && owner !== '' && (isPerson(who, owner) || (who.known && who.slug === owner));
+    if (!isOwner && !isOwnerOrScout(who)) {
+      throw refuse('not-allowed', "only the person whose inbox it came from, the brain's Owner or a scout can remove an email");
+    }
+  } else if (!MANUAL_UPDATE_KINDS.includes(values.kind)) {
+    throw refuse('not-allowed', 'only notes, calls and emails can be removed: the log keeps its other entries');
+  } else if (!isAuthor(loc, who, values.by) && !isOwnerOrScout(who)) {
     throw refuse('not-allowed', "only the person who added it, the brain's Owner or a scout can remove an update");
   }
   fs.unlinkSync(abs);
@@ -2830,15 +2876,709 @@ function capabilities() {
       PROJECTS_ARCHIVE_CAPABILITY,
       PROJECTS_UPDATES_CAPABILITY,
       PROJECTS_REFS_CAPABILITY,
+      PROJECTS_EMAIL_CAPABILITY,
     ],
   };
+}
+
+// ---- email entries (docs/plans/2026-11-24-projects-r2-email-entries.md) ----------------------------
+//
+// Nothing from an email reaches a project until the owner of the inbox it came from approves exactly
+// what is saved. `email-draft` writes one draft into briefing/email-drafts/ (git-ignored, folder 0700,
+// files 0600, so it never syncs): the facts, Claude's summary and the codes found. Its random approve
+// token goes to `<this Mac user's home>/Library/Application Support/TDS Brain/data/email-keys/<id>.key`,
+// outside the brain, with the SHA-256 of the draft file's bytes. The newest message's text is read for
+// codes and dropped. No reply ever holds the token: only the app's server reads it from the key file when
+// the inbox owner clicks Save, and passes it to `update` with an `email` entry, which refuses unless the
+// key file exists, the token matches and the draft is unchanged. That entry takes its thread id, key, sent time and inbox owner
+// from the draft and the rest (as edited on screen) from the request, and is never written twice for
+// one email (`email_key`, across every project). Entries hold names, never addresses.
+
+const ONE_LINE_BAD = /[\p{Cc}\p{Zl}\p{Zp}]/u;
+const SPACE_BAD = /[\s\p{Cc}\p{Zl}\p{Zp}]/u;
+const DRAFT_ID_PATTERN = /^[a-z0-9]{12}$/;
+const TOKEN_PATTERN = /^[0-9a-f]{32}$/;
+const ISO_TIME = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const NEVER_BCC = 'bcc is never accepted: leave out anyone who was blind-copied';
+
+// Whether a `bcc` key (any case) is anywhere in `value`. Walked without recursion: stdin is distrusted.
+function hasBcc(value) {
+  const stack = [value];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (v === null || typeof v !== 'object') continue;
+    if (Array.isArray(v)) {
+      for (const x of v) stack.push(x);
+      continue;
+    }
+    for (const [k, x] of Object.entries(v)) {
+      if (k.toLowerCase() === 'bcc') return true;
+      stack.push(x);
+    }
+  }
+  return false;
+}
+
+// One line of text, trimmed: no line breaks or control characters, at most `max`.
+function emailLine(value, name, max, allowEmpty) {
+  if (typeof value !== 'string') throw refuse('bad-request', `${name} must be text`);
+  if (ONE_LINE_BAD.test(value)) throw refuse('bad-request', `${name} must be one line`);
+  const text = value.trim();
+  if (!allowEmpty && text === '') throw refuse('bad-request', `${name} is empty`);
+  if (text.length > max) throw refuse('bad-request', `${name} is too long (over ${max} characters)`);
+  return text;
+}
+
+function emailAddress(value, name) {
+  if (typeof value !== 'string' || value === '' || SPACE_BAD.test(value)) {
+    throw refuse('bad-request', `${name} must be an email address`);
+  }
+  const at = value.lastIndexOf('@');
+  if (at <= 0 || at === value.length - 1) throw refuse('bad-request', `${name} must be an email address`);
+  if (value.length + 2 > EMAIL.EMAIL_PERSON_MAX) throw refuse('bad-request', `${name} is too long`);
+  return value;
+}
+
+// An EmailPerson: `{name: text or null, address}`, together at most EMAIL_PERSON_MAX as "Name <address>".
+function emailPerson(value, name) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw refuse('bad-request', `${name} must be {name, address}`);
+  }
+  const address = emailAddress(value.address, `${name}'s address`);
+  let personName = null;
+  if (value.name !== null && value.name !== undefined) {
+    personName = emailLine(value.name, `${name}'s name`, EMAIL.EMAIL_NAME_MAX, true) || null;
+  }
+  const whole = personName === null ? `<${address}>` : `${personName} <${address}>`;
+  if (whole.length > EMAIL.EMAIL_PERSON_MAX) throw refuse('bad-request', `${name} is too long`);
+  return { name: personName, address };
+}
+
+// An RFC 822 Message-ID, always written with its angle brackets (so `abc@x` and `<abc@x>` are one key).
+function messageIdOf(value, name) {
+  if (typeof value !== 'string') throw refuse('bad-request', `${name} must be a Message-ID`);
+  const inner = value.length >= 2 && value.startsWith('<') && value.endsWith('>') ? value.slice(1, -1) : value;
+  if (inner === '' || SPACE_BAD.test(inner) || /[<>]/.test(inner)) {
+    throw refuse('bad-request', `${name} must be a Message-ID with no spaces`);
+  }
+  const id = `<${inner}>`;
+  if (id.length > EMAIL.MESSAGE_ID_MAX) throw refuse('bad-request', `${name} is too long (over ${EMAIL.MESSAGE_ID_MAX} characters)`);
+  if (yamlText(id) === null) throw refuse('bad-request', `${name} can't be written as it is`);
+  return id;
+}
+
+function sentTime(value) {
+  const m = typeof value === 'string' ? ISO_TIME.exec(value) : null;
+  const t = m && isRealDate(m[1]) ? new Date(value) : null;
+  if (!t || Number.isNaN(t.getTime())) throw refuse('bad-request', 'sentAt must be an ISO time, such as 2026-11-20T16:30:00Z');
+  return t;
+}
+
+// The subject as the key reads it: lower case, spaces collapsed, leading Re:/Fwd:/Fw: taken off repeatedly.
+function keySubject(subject) {
+  let s = subject.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (;;) {
+    const next = s.replace(/^(?:re|fwd|fw):\s*/, '');
+    if (next === s) return s;
+    s = next;
+  }
+}
+
+// One email, one entry, across inboxes (contract EmailKey): the Message-ID, else `x:` + a hash of
+// the sender, the minute it was sent (UTC) and the subject.
+function emailKeyOf(messageId, from, sent, subject) {
+  if (messageId !== null) return messageId;
+  const minute = sent.toISOString().slice(0, 16);
+  return `x:${sha256(`${from.address.toLowerCase()}\n${minute}\n${keySubject(subject)}`)}`;
+}
+
+// The newest message's own words: quoted lines (`>`) skipped, and everything after a `-- ` line.
+function ownText(text) {
+  const out = [];
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (line === '-- ') break;
+    if (/^\s*>/.test(line)) continue;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+// Distinct valid project codes in `text` (the shared code rules), upper case, in order.
+function codesIn(text) {
+  return refCandidates(text).filter(isValidRef);
+}
+
+function draftsRel(name) {
+  return `${EMAIL.EMAIL_DRAFTS_DIR}/${name}`;
+}
+
+function dismissedName(slug) {
+  return `dismissed-${slug}.json`;
+}
+
+// The drafts folder, checked: briefing/ and briefing/email-drafts/ real folders (never links), and git
+// ignoring every one of `rels` (not a git repository, or git can't tell: refused). Made, and its mode
+// set to 0700, when `make`; else null when it isn't there.
+function draftsFolder(ctx, make, rels) {
+  const dirRel = EMAIL.EMAIL_DRAFTS_DIR;
+  const parentRel = dirRel.slice(0, dirRel.lastIndexOf('/'));
+  const dirAbs = path.join(ctx.root, ...dirRel.split('/'));
+  const parentAbs = path.join(ctx.root, ...parentRel.split('/'));
+  for (const [rel, abs] of [[parentRel, parentAbs], [dirRel, dirAbs]]) {
+    const st = lstatOrNull(abs);
+    if (st && st.isSymbolicLink()) throw refuse('not-allowed', `${rel} is a link, so email drafts can't be kept private there`);
+    if (st && !st.isDirectory()) throw refuse('not-allowed', `${rel} isn't a folder`);
+  }
+  const cant = () => refuse('not-allowed', `git couldn't check that ${dirRel} stays on this Mac, so email drafts can't be kept there`);
+  const repo = brainRepo(ctx);
+  if (repo !== 'repo') throw cant();
+  const out = gitInBrain(ctx, ['check-ignore', '--stdin', '-z'], rels.map(r => `${r}\0`).join(''));
+  if (!out || (out.status !== 0 && out.status !== 1)) throw cant();
+  const ignored = new Set((out.stdout || '').split('\0').filter(Boolean));
+  if (!rels.every(r => ignored.has(r))) {
+    throw refuse('not-allowed', `${dirRel} would sync to the team: git doesn't ignore it, so email drafts can't be kept there`);
+  }
+  if (!lstatOrNull(dirAbs)) {
+    if (!make) return null;
+    if (!lstatOrNull(parentAbs)) {
+      try { fs.mkdirSync(parentAbs); } catch (err) { if (errCode(err) !== 'EEXIST') throw err; }
+    }
+    try { fs.mkdirSync(dirAbs, EMAIL_DRAFTS_DIR_MODE); } catch (err) { if (errCode(err) !== 'EEXIST') throw err; }
+  }
+  const st = lstatOrNull(dirAbs);
+  if (!st || st.isSymbolicLink() || !st.isDirectory()) throw refuse('not-allowed', `${dirRel} isn't a folder`);
+  requireRealPath(ctx, dirAbs, dirRel);
+  if ((st.mode & 0o777) !== EMAIL_DRAFTS_DIR_MODE) {
+    try {
+      fs.chmodSync(dirAbs, EMAIL_DRAFTS_DIR_MODE);
+    } catch {
+      throw refuse('not-allowed', `${dirRel} can't be made private to you`);
+    }
+  }
+  return { rel: dirRel, abs: dirAbs };
+}
+
+// A file in the drafts folder, written all at once with mode 0600. `replace` swaps it in; else EEXIST
+// rather than overwrite anything.
+function writePrivate(folder, name, data, replace) {
+  const abs = path.join(folder.abs, name);
+  const tmp = writeTemp(folder.abs, data, EMAIL_DRAFT_FILE_MODE);
+  try {
+    if (replace) {
+      fs.renameSync(tmp, abs);
+    } else {
+      try {
+        fs.linkSync(tmp, abs);
+      } catch (err) {
+        if (errCode(err) === 'EEXIST') throw err;
+        fs.writeFileSync(abs, data, { encoding: 'utf8', flag: 'wx', mode: EMAIL_DRAFT_FILE_MODE });
+        fs.chmodSync(abs, EMAIL_DRAFT_FILE_MODE);
+      }
+    }
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+  syncDir(folder.abs);
+}
+
+function removeQuietly(abs) {
+  try {
+    fs.unlinkSync(abs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const isText = v => typeof v === 'string';
+const isPersonShape = p => p !== null && typeof p === 'object' && (p.name === null || isText(p.name)) && isText(p.address);
+
+// One draft file: `missing`, `bad` (not a draft this script wrote) or `ok` with the draft.
+function readDraft(folder, name) {
+  const abs = path.join(folder.abs, name);
+  const st = lstatOrNull(abs);
+  if (!st) return { state: 'missing', abs, st };
+  if (st.isSymbolicLink() || !st.isFile() || st.size > EMAIL_DRAFT_MAX_BYTES) return { state: 'bad', abs, st };
+  let d;
+  try {
+    d = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  } catch {
+    return { state: 'bad', abs, st };
+  }
+  const ok = d !== null && typeof d === 'object' && !Array.isArray(d)
+    && d.v === 1
+    && `${d.id}.json` === name
+    && isText(d.inbox_owner) && isSlug(d.inbox_owner)
+    && isText(d.created_at) && Number.isFinite(Date.parse(d.created_at))
+    && isText(d.thread_id) && GMAIL_THREAD_ID_PATTERN.test(d.thread_id)
+    && isText(d.email_key) && d.email_key !== '' && d.email_key.length <= EMAIL.MESSAGE_ID_MAX + 2
+    && !SPACE_BAD.test(d.email_key) && yamlText(d.email_key) !== null
+    && isText(d.sent_at) && ISO_TIME.test(d.sent_at)
+    && isPersonShape(d.from)
+    && Array.isArray(d.people) && d.people.every(isPersonShape);
+  return ok ? { state: 'ok', abs, st, draft: d } : { state: 'bad', abs, st };
+}
+
+// Whether a draft (or, when it can't be read, its file) is older than DRAFT_MAX_AGE_DAYS.
+function draftExpired(ctx, r) {
+  const made = r.state === 'ok' ? Date.parse(r.draft.created_at) : r.st.mtimeMs;
+  return ctx.now.getTime() - made > EMAIL.DRAFT_MAX_AGE_DAYS * DAY_MS;
+}
+
+// Every draft file in the folder (names), never a link.
+function draftNames(folder) {
+  let names;
+  try {
+    names = fs.readdirSync(folder.abs);
+  } catch {
+    return [];
+  }
+  return names.filter(n => EMAIL_DRAFT_FILE_PATTERN.test(n)).sort();
+}
+
+// Deletes drafts older than DRAFT_MAX_AGE_DAYS, whoever's they are (overseer 6), with their keys; then
+// key files older than that, and this brain's key files whose draft is gone (overseer ruling).
+function sweepDrafts(ctx, folder) {
+  for (const name of draftNames(folder)) {
+    const r = readDraft(folder, name);
+    if (r.state === 'missing' || r.st.isSymbolicLink() || !r.st.isFile()) continue;
+    if (draftExpired(ctx, r)) {
+      removeQuietly(r.abs);
+      removeKey(ctx, name.replace(/\.json$/, ''));
+    }
+  }
+  const dir = keysDir(ctx);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  const brain = brainReal(ctx);
+  for (const name of names) {
+    if (!EMAIL_KEY_FILE_PATTERN.test(name)) continue;
+    const abs = path.join(dir, name);
+    const st = lstatOrNull(abs);
+    if (!st || st.isSymbolicLink() || !st.isFile()) continue;
+    const old = ctx.now.getTime() - st.mtimeMs > EMAIL.DRAFT_MAX_AGE_DAYS * DAY_MS;
+    // Another brain on this Mac (a demo, a second brain) keeps its keys until they are old.
+    const k = readKeyAt(abs);
+    const orphan = k !== null && k.brain === brain && !lstatOrNull(path.join(folder.abs, name.replace(/\.key$/, '.json')));
+    if (old || orphan) removeQuietly(abs);
+  }
+}
+
+// ---- approve keys (outside the brain) ----
+
+// `<this Mac user's home>/Library/Application Support/TDS Brain/data/email-keys`. The home is the account's
+// own (os.userInfo), never the HOME variable, so a command can't move it. Tests pass ctx.keysDir in-process.
+function keysDir(ctx) {
+  return ctx.keysDir || path.join(os.userInfo().homedir, ...EMAIL_KEYS_SUBDIR.split('/'));
+}
+
+function brainReal(ctx) {
+  try {
+    return fs.realpathSync.native(ctx.root);
+  } catch {
+    return path.resolve(ctx.root);
+  }
+}
+
+function readKeyAt(abs) {
+  const st = lstatOrNull(abs);
+  if (!st || st.isSymbolicLink() || !st.isFile() || st.size > 4096) return null;
+  try {
+    const k = JSON.parse(fs.readFileSync(abs, 'utf8'));
+    return k && isText(k.token) && TOKEN_PATTERN.test(k.token) && isText(k.draft_sha256)
+      && /^[0-9a-f]{64}$/.test(k.draft_sha256) && isText(k.brain) ? k : null;
+  } catch {
+    return null;
+  }
+}
+
+function removeKey(ctx, id) {
+  removeQuietly(path.join(keysDir(ctx), `${id}.key`));
+}
+
+// Writes the key for draft `id`: the token and the SHA-256 of the draft file's bytes. Folder 0700, file 0600.
+function writeKey(ctx, id, token, draftBytes) {
+  const dir = keysDir(ctx);
+  fs.mkdirSync(dir, { recursive: true, mode: EMAIL_DRAFTS_DIR_MODE });
+  const st = fs.lstatSync(dir);
+  if (st.isSymbolicLink() || !st.isDirectory()) throw refuse('not-allowed', 'the approve keys folder is not a plain folder');
+  fs.chmodSync(dir, EMAIL_DRAFTS_DIR_MODE);
+  const body = `${JSON.stringify({ v: 1, token, draft_sha256: sha256(draftBytes), brain: brainReal(ctx) })}\n`;
+  writePrivate({ abs: dir }, `${id}.key`, body, false);
+}
+
+// Whole days from `ymd` to today (UK), or null when `ymd` isn't a date.
+function daysSince(ctx, ymd) {
+  if (!isRealDate(ymd)) return null;
+  return Math.round((Date.parse(`${ukDate(ctx.now)}T00:00:00Z`) - Date.parse(`${ymd}T00:00:00Z`)) / DAY_MS);
+}
+
+// This owner's dismissals still in force: `{ email_key: date }`, older than DISMISSED_DAYS left out.
+function readDismissed(ctx, folder, slug) {
+  const abs = path.join(folder.abs, dismissedName(slug));
+  const st = lstatOrNull(abs);
+  if (!st || st.isSymbolicLink() || !st.isFile() || st.size > 4 * 1024 * 1024) return {};
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  } catch {
+    return {};
+  }
+  const out = {};
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [key, date] of Object.entries(raw)) {
+    const age = isText(date) ? daysSince(ctx, date) : null;
+    if (age !== null && age <= EMAIL.DISMISSED_DAYS) out[key] = date;
+  }
+  return out;
+}
+
+// The earliest `email` entry in any project (every folder, archives and old folders too) for this
+// key, or an old file's `email_message_id` equal to it: `{file, key}`, or null.
+function emailHeld(ctx, emailKey) {
+  const messageId = emailKey.startsWith('<') ? emailKey : null;
+  let best = null;
+  for (const b of projectBases(ctx)) {
+    for (const name of b.names) {
+      const projectKey = `${b.client}/${name}`;
+      if (!parseKey(projectKey)) continue;
+      const dirRel = `${b.rel}/${name}/${UPDATES_DIR}`;
+      const dirAbs = path.join(ctx.root, ...dirRel.split('/'));
+      const st = lstatOrNull(dirAbs);
+      if (!st || st.isSymbolicLink() || !st.isDirectory()) continue;
+      let files;
+      try {
+        files = fs.readdirSync(dirAbs);
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (!UPDATE_FILE_PATTERN.test(f)) continue;
+        const fileAbs = path.join(dirAbs, f);
+        const fst = lstatOrNull(fileAbs);
+        if (!fst || fst.isSymbolicLink() || !fst.isFile() || fst.size > ENTRY_READ_MAX) continue;
+        let text;
+        try {
+          text = decodeFile(fs.readFileSync(fileAbs)).text;
+        } catch {
+          continue;
+        }
+        if (!text.includes('email')) continue;
+        const parts = cardParts(text);
+        if (!parts) continue;
+        const v = cardValues(parts.entries);
+        if (v.kind !== 'email') continue;
+        const same = v.email_key === emailKey
+          || (messageId !== null && (v.email_message_id === messageId || v.email_message_id === messageId.slice(1, -1)));
+        if (!same) continue;
+        const found = { file: `${dirRel}/${f}`, key: projectKey, at: isText(v.at) ? v.at : '' };
+        if (!best || found.at < best.at || (found.at === best.at && found.file < best.file)) best = found;
+      }
+    }
+  }
+  return best ? { file: best.file, key: best.key } : null;
+}
+
+function alreadyIn(held) {
+  return refuse('exists', `That email is already in ${held.key}.`, { file: held.file, key: held.key });
+}
+
+// This Mac's team member, with the email roles.json gives them; refused when there is none.
+function inboxOwner(ctx) {
+  const who = identity(ctx);
+  if (!who.known || !who.slug || !isText(who.member.email) || who.member.email.trim() === '') {
+    throw refuse('not-allowed', 'only people on the team in .team-config/roles.json, with an email there, can keep email drafts');
+  }
+  return who;
+}
+
+// A `requested` project: a live project with a card, else not-found.
+function requireRequested(ctx, key) {
+  const gone = () => refuse('not-found', `there is no live project ${key} with a card`);
+  let loc;
+  try {
+    loc = locate(ctx, key);
+  } catch (err) {
+    if (err instanceof Refusal) throw gone();
+    throw err;
+  }
+  if (loc.archived || loc.leftover) throw gone();
+  try {
+    openCard(ctx, loc, null);
+  } catch (err) {
+    if (err instanceof Refusal) throw gone();
+    throw err;
+  }
+}
+
+// Twelve random characters of [a-z0-9]. The file is created without overwriting, so a clash (36^12
+// to one) fails rather than replace another draft.
+function newDraftId() {
+  let id = '';
+  for (let j = 0; j < 12; j++) id += SUFFIX_CHARS[crypto.randomInt(SUFFIX_CHARS.length)];
+  return id;
+}
+
+// `email-draft` (EmailDraftInput): one waiting draft for this Mac's inbox owner.
+function emailDraft(input, ctx) {
+  if (hasBcc(input)) throw refuse('bad-request', NEVER_BCC);
+  if (JSON.stringify(input).length > EMAIL_DRAFT_INPUT_MAX) {
+    throw refuse('bad-request', `the draft is too long (over ${EMAIL_DRAFT_INPUT_MAX} characters): shorten the summary or the newest text`);
+  }
+  if (!isText(input.threadId) || !GMAIL_THREAD_ID_PATTERN.test(input.threadId)) {
+    throw refuse('bad-request', "threadId must be the Gmail thread id (8 to 32 hex characters)");
+  }
+  const threadId = input.threadId.toLowerCase();
+  const inboxAddress = emailAddress(input.inboxAddress, 'inboxAddress');
+  const messageId = input.messageId === undefined || input.messageId === null ? null : messageIdOf(input.messageId, 'messageId');
+  let threadMessageIds = [];
+  if (input.threadMessageIds !== undefined && input.threadMessageIds !== null) {
+    if (!Array.isArray(input.threadMessageIds) || input.threadMessageIds.length > EMAIL.EMAIL_THREAD_IDS_MAX) {
+      throw refuse('bad-request', `threadMessageIds must be a list of at most ${EMAIL.EMAIL_THREAD_IDS_MAX} Message-IDs`);
+    }
+    threadMessageIds = [...new Set(input.threadMessageIds.map(m => messageIdOf(m, 'a thread Message-ID')))];
+  }
+  const subject = emailLine(input.subject, 'subject', EMAIL.EMAIL_SUBJECT_MAX, true);
+  const from = emailPerson(input.from, 'from');
+  if (!Array.isArray(input.people) || input.people.length > EMAIL.EMAIL_PEOPLE_MAX) {
+    throw refuse('bad-request', `people must be a list of at most ${EMAIL.EMAIL_PEOPLE_MAX} people (to and cc)`);
+  }
+  const people = input.people.map(p => emailPerson(p, 'a person'));
+  const sent = sentTime(input.sentAt);
+  const summary = checkSummary(input.summary);
+  if (!isText(input.newestText)) throw refuse('bad-request', 'newestText must be text');
+  if (input.newestText.length > EMAIL.EMAIL_NEWEST_TEXT_MAX) {
+    throw refuse('bad-request', `newestText is too long (over ${EMAIL.EMAIL_NEWEST_TEXT_MAX} characters)`);
+  }
+  let requested = null;
+  if (input.requested !== undefined && input.requested !== null) {
+    if (!parseKey(input.requested)) throw refuse('bad-request', 'requested must be <client>/<slug> or personal/<slug>');
+    requested = input.requested;
+  }
+
+  const who = inboxOwner(ctx);
+  if (who.member.email.trim().toLowerCase() !== inboxAddress.toLowerCase()) {
+    throw refuse('not-allowed', "that inbox isn't yours: only its owner, on their own Mac, can draft its emails for a project");
+  }
+  if (requested !== null) requireRequested(ctx, requested);
+
+  // Git must ignore the very files written: the new draft and this owner's dismissals.
+  const id = newDraftId();
+  const folder = draftsFolder(ctx, true, [draftsRel(`${id}.json`), draftsRel(dismissedName(who.slug))]);
+  sweepDrafts(ctx, folder);
+
+  const emailKey = emailKeyOf(messageId, from, sent, subject);
+  if (Object.prototype.hasOwnProperty.call(readDismissed(ctx, folder, who.slug), emailKey)) {
+    throw refuse('dismissed', 'You said this email is not for a project, so it is not suggested again.');
+  }
+  const held = emailHeld(ctx, emailKey);
+  if (held) throw alreadyIn(held);
+
+  for (const name of draftNames(folder)) {
+    const r = readDraft(folder, name);
+    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && r.draft.email_key === emailKey) {
+      removeQuietly(r.abs);
+      removeKey(ctx, r.draft.id);
+    }
+  }
+  const draft = {
+    v: 1,
+    id,
+    inbox_owner: who.slug,
+    created_at: isoSecond(ctx.now),
+    thread_id: threadId,
+    email_key: emailKey,
+    thread_message_ids: threadMessageIds,
+    subject: fitQuotes(subject),
+    from: fitName(from),
+    from_domain: from.address.slice(from.address.lastIndexOf('@') + 1).toLowerCase(),
+    people: people.map(fitName),
+    sent_at: isoSecond(sent),
+    summary,
+    codes_subject: codesIn(subject),
+    codes_body: codesIn(ownText(input.newestText)),
+    requested,
+  };
+  const bytes = `${JSON.stringify(draft, null, 2)}\n`;
+  writePrivate(folder, `${id}.json`, bytes, false);
+  try {
+    writeKey(ctx, id, crypto.randomBytes(16).toString('hex'), Buffer.from(bytes, 'utf8'));
+  } catch (err) {
+    // A draft without its key can never be saved: take it away again.
+    removeQuietly(path.join(folder.abs, `${id}.json`));
+    syncDir(folder.abs);
+    throw err;
+  }
+  return { ok: true, action: 'email-draft', id };
+}
+
+function draftIdOf(value) {
+  if (!isText(value) || !DRAFT_ID_PATTERN.test(value)) throw refuse('bad-request', 'draft must be a draft id (12 letters and numbers)');
+  return value;
+}
+
+// The draft `id`, for its inbox owner only: refused when missing, unreadable, someone else's or expired.
+function ownDraft(ctx, folder, id, who) {
+  const gone = () => refuse('not-found', "That draft isn't waiting any more.");
+  if (!folder) throw gone();
+  const r = readDraft(folder, `${id}.json`);
+  if (r.state === 'missing') throw gone();
+  if (r.state === 'bad') throw refuse('not-allowed', "that draft can't be read, so it can't be used");
+  if (r.draft.inbox_owner !== who.slug) throw refuse('not-allowed', 'only the person whose inbox it came from can use that draft');
+  if (draftExpired(ctx, r)) {
+    removeQuietly(r.abs);
+    removeKey(ctx, id);
+    throw gone();
+  }
+  return r;
+}
+
+// `email-draft-remove` {id, dismiss}: the inbox owner takes a draft away; `dismiss` records its key.
+function emailDraftRemove(input, ctx) {
+  const id = draftIdOf(input.id);
+  if (typeof input.dismiss !== 'boolean') throw refuse('bad-request', 'dismiss must be true or false');
+  const who = inboxOwner(ctx);
+  const dismissedRel = draftsRel(dismissedName(who.slug));
+  const folder = draftsFolder(ctx, false, [draftsRel(`${id}.json`), dismissedRel]);
+  if (folder) sweepDrafts(ctx, folder);
+  const r = ownDraft(ctx, folder, id, who);
+  if (input.dismiss) {
+    const kept = readDismissed(ctx, folder, who.slug);
+    kept[r.draft.email_key] = ukDate(ctx.now);
+    writePrivate(folder, dismissedName(who.slug), `${JSON.stringify(kept, null, 2)}\n`, true);
+  }
+  removeQuietly(r.abs);
+  removeKey(ctx, id);
+  syncDir(folder.abs);
+  return { ok: true, action: 'email-draft-remove', id };
+}
+
+// Email text comes from outsiders, so it is never refused for its quote marks: when a value can't be
+// written without escapes (both ' and ", or a backslash with '), straight double quotes become curly ones
+// and backslashes slashes. Done when the draft is made, so the owner approves the words that are saved.
+function fitQuotes(text) {
+  if (yamlItem(text) !== null && yamlText(text) !== null) return text;
+  let open = true;
+  const curly = text.replace(/"/g, () => {
+    const q = open ? '\u201c' : '\u201d';
+    open = !open;
+    return q;
+  });
+  return curly.replace(/\\/g, '/');
+}
+
+// The draft keeps what the sheet will show, in a form the entry can hold (the key uses the original).
+function fitName(p) {
+  return p.name === null ? p : { ...p, name: fitQuotes(p.name) };
+}
+
+// A display name for an entry (overseer 3): one line, at most EMAIL_NAME_MAX, written as a list item.
+function entryName(value, name) {
+  const text = fitQuotes(emailLine(value, name, EMAIL.EMAIL_NAME_MAX, false));
+  if (yamlItem(text) === null) throw refuse('bad-request', `${name} can't be written as it is`);
+  return text;
+}
+
+// An entry stores names, never addresses (overseer 3, UX review): the app shows a nameless person by the part
+// of the address before the @, so an @ in any name is refused.
+function requireNames(names) {
+  for (const n of names) {
+    if (n.includes('@')) throw refuse('bad-request', `use the person's name, not an email address (${n})`);
+  }
+}
+
+function sameToken(given, wanted) {
+  const a = Buffer.from(given, 'utf8');
+  const b = Buffer.from(wanted, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// `update` with an `email` entry (ProjectEmailEntryInput), only on the inbox owner's Save.
+function emailUpdate(input, entry, loc, ctx) {
+  if (hasBcc(input)) throw refuse('bad-request', NEVER_BCC);
+  const id = draftIdOf(entry.draft);
+  const notApproved = () => refuse('not-allowed', "only the inbox owner's Save in TDS Cortex can add an email to a project");
+  if (!isText(entry.token) || !TOKEN_PATTERN.test(entry.token)) throw notApproved();
+  const summary = checkSummary(entry.summary);
+  const subject = fitQuotes(emailLine(entry.subject, 'subject', EMAIL.EMAIL_SUBJECT_MAX, true));
+  if (yamlText(subject) === null) throw refuse('bad-request', "the subject can't be written as it is");
+  const from = entryName(entry.from, 'from');
+  if (!Array.isArray(entry.people) || entry.people.length > EMAIL.EMAIL_PEOPLE_MAX) {
+    throw refuse('bad-request', `people must be a list of at most ${EMAIL.EMAIL_PEOPLE_MAX} names`);
+  }
+  const people = entry.people.map(p => entryName(p, 'a name'));
+  if (typeof entry.clientSafe !== 'boolean') throw refuse('bad-request', 'clientSafe must be true or false');
+
+  const who = identity(ctx);
+  checkWriter(ctx, loc, who);
+  const cardFile = requireLiveCard(ctx, loc);
+  if (!who.known || !who.slug) throw notApproved();
+  const folder = draftsFolder(ctx, false, [draftsRel(`${id}.json`)]);
+  const r = ownDraft(ctx, folder, id, who);
+  // The key file outside the brain, written with the draft: missing (a hand-made draft), another token,
+  // or a draft changed since it was written are all refused (overseer ruling).
+  const key = readKeyAt(path.join(keysDir(ctx), `${id}.key`));
+  if (!key || !sameToken(entry.token, key.token)) throw notApproved();
+  let bytes;
+  try {
+    bytes = fs.readFileSync(r.abs);
+  } catch {
+    throw notApproved();
+  }
+  if (!sameToken(sha256(bytes), key.draft_sha256)) throw notApproved();
+  requireNames([from, ...people]);
+
+  const held = emailHeld(ctx, r.draft.email_key);
+  if (held) {
+    removeQuietly(r.abs);
+    removeKey(ctx, id);
+    throw alreadyIn(held);
+  }
+  const updates = updatesFolder(ctx, loc, true);
+  const file = writeEntry(ctx, loc, who, updates, {
+    kind: 'email',
+    clientSafe: entry.clientSafe,
+    email: {
+      subject,
+      from,
+      people,
+      sentAt: isoSecond(new Date(r.draft.sent_at)),
+      threadId: r.draft.thread_id,
+      key: r.draft.email_key,
+      inboxOwner: r.draft.inbox_owner,
+    },
+  }, summary);
+  removeQuietly(r.abs);
+  removeKey(ctx, id);
+  syncDir(folder.abs);
+  return { ok: true, action: 'update', key: loc.key, version: sha256(cardFile.bytes), file };
+}
+
+// An email entry's frontmatter lines, after `client_safe` (contract ProjectEmailEntryInput).
+function emailLines(e) {
+  const lines = [`email_subject: ${factValue(e.subject)}`, `email_from: ${factValue(e.from)}`];
+  if (e.people.length === 0) lines.push('email_people: []');
+  else lines.push('email_people:', ...e.people.map(p => `  - ${yamlItem(p)}`));
+  lines.push(
+    `email_sent_at: ${e.sentAt}`,
+    `email_thread_id: ${factValue(e.threadId)}`,
+    `email_key: ${factValue(e.key)}`,
+    `email_inbox_owner: ${e.inboxOwner}`,
+  );
+  return lines;
 }
 
 // ---- command line --------------------------------------------------------------------------------
 
 const ACTIONS = {
   create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, update,
-  'update-remove': updateRemove, ref: refAction, 'find-ref': findRef, capabilities,
+  'update-remove': updateRemove, ref: refAction, 'find-ref': findRef, 'email-draft': emailDraft,
+  'email-draft-remove': emailDraftRemove, capabilities,
 };
 
 function defaultCtx() {
@@ -2851,7 +3591,10 @@ function defaultCtx() {
 
 // Runs one action. Returns the exit code and the reply; never throws.
 function run(action, input, ctx) {
-  const fail = (code, message) => ({ exit: code === 'internal' ? 1 : 2, reply: { ok: false, error: code, message } });
+  const fail = (code, message, extra) => ({
+    exit: code === 'internal' ? 1 : 2,
+    reply: { ...(extra || {}), ok: false, error: code, message },
+  });
   if (typeof action !== 'string' || !ACTION_NAMES.includes(action)) return fail('bad-request', 'unknown action');
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return fail('bad-request', 'stdin must be one JSON object');
@@ -2861,7 +3604,7 @@ function run(action, input, ctx) {
   try {
     return { exit: 0, reply: ACTIONS[action](input, context) };
   } catch (err) {
-    if (err instanceof Refusal) return fail(err.code, err.message);
+    if (err instanceof Refusal) return fail(err.code, err.message, err.extra);
     return fail('internal', err && err.message ? String(err.message) : 'internal error');
   }
 }
@@ -2909,6 +3652,11 @@ module.exports = {
   PROJECTS_ARCHIVE_CAPABILITY,
   PROJECTS_UPDATES_CAPABILITY,
   PROJECTS_REFS_CAPABILITY,
+  PROJECTS_EMAIL_CAPABILITY,
+  EMAIL,
+  EMAIL_DRAFT_FILE_PATTERN,
+  EMAIL_KEYS_SUBDIR,
+  emailKeysDir: keysDir,
   REF_DIGITS,
   REF_LETTERS,
   CLIENT_CODE_PATTERN,

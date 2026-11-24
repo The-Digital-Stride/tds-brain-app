@@ -111,6 +111,8 @@ function dayOf(d: Date): string {
 function updateText(kind: string, change: string | undefined, name: string): string {
   if (kind === 'note') return `${name} added a note`;
   if (kind === 'call') return `${name} added a call`;
+  // Phase 5: who and what kind only, never the subject or the summary.
+  if (kind === 'email') return `${name} added an email`;
   if (kind === 'status' || kind === 'owner') {
     if (change === 'health') return 'Health changed';
     if (change === 'owner' || kind === 'owner') return 'Account Owner changed';

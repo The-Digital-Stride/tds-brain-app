@@ -255,7 +255,9 @@ function matchByRef(m: MatchMeeting, ctx: MatchContext): { key: ProjectKey; matc
   if (keys.size !== 1) return null;
   const key = [...keys][0] as ProjectKey;
   const card = ctx.projects.find((p) => p.key === key);
-  if (!card) return null;
+  // Overseer ruling: an archived project has no Meetings card, so its code is ignored and the phase 4 rules
+  // place the meeting. A done (not archived) project still matches.
+  if (!card || card.archived) return null;
   const cardClient = card.client ?? INTERNAL_CLIENT;
   const domains = attendeeDomains(m, ctx);
   for (const c of ctx.clients) {

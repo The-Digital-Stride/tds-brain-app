@@ -204,9 +204,9 @@ copied, the script).
 | Overseer | `overseer`, fable (resumed from phases 1–4) | plan critique and sign-off | (read-only) |
 | CRM expert | `expert`, opus | done: idea review | (read-only) |
 | Builder A | `builder`, opus | hard list: data integrity. It is the one file that writes the shared brain, and this is its first read of git history (overseer d) | `brain-skills/tdsapp-projects/scripts/tdsapp-projects.cjs`, `brain-skills/tdsapp-projects/test/**`, `brain-skills/tdsapp-projects/SKILL.md` |
-| Builder B | `builder`, sonnet | default | `shared/project-refs.ts` (+test), `server/brain/project-refs.ts` (+test), `server/brain/projects.ts` (+test), `server/brain/projects-skill.ts`, `server/brain/clients.ts`, `server/brain/meeting-match.ts` (+test), `server/brain/project-meetings.ts`, `server/store/meeting-history.ts` (+test), `server/http/routes.ts`, route tests |
+| Builder B | `builder`, sonnet | default | `server/brain/project-refs.ts` (+test), `server/brain/projects.ts` (+test), `server/brain/projects-skill.ts`, `server/brain/clients.ts`, `server/brain/meeting-match.ts` (+test), `server/brain/project-meetings.ts`, `server/store/meeting-history.ts` (+test), `server/http/routes.ts`, route tests |
 | Builder C | `builder`, sonnet | default | `client/src/apps/projects/**`, `client/src/shell/search-sources.ts`, `client/src/api.ts`, `client/src/styles/projects.css`, `help/projects.md`, `docs/design-system.md` |
-| Lead (me) | | | `shared/project-refs-vectors.json` (test cases both suites read, written first), `shared/project-refs-contract.ts`, `shared/projects-contract.ts`, `shared/project-meetings-contract.ts`, `shared/contract.ts`, brain edits (`brain-skills/tdsapp-projects/brain-rules/r2-project-codes.md`: meeting-notes step 2, client-setup, gm Step 3, `calendar-live-refs.patch`, the 21 client `code:` lines) |
+| Lead (me) | | | `shared/project-refs.ts` (+test), `shared/project-refs-vectors.json` (test cases both suites read, written first), `shared/project-refs-contract.ts`, `shared/projects-contract.ts`, `shared/project-meetings-contract.ts`, `shared/contract.ts`, brain edits (`brain-skills/tdsapp-projects/brain-rules/r2-project-codes.md`: meeting-notes step 2, client-setup, gm Step 3, `calendar-live-refs.patch`, the 21 client `code:` lines) |
 | Reviewers | correctness (opus), UI/accessibility (sonnet) | | (read-only) |
 | UX expert | `expert`, opus | standing gate | (read-only) |
 
@@ -268,6 +268,26 @@ codes are for existing codes only.
 **Escalated to Ian:** the overseer ruled meetings read codes from the title only. Ian chose title and
 description (decision 10).
 
-## Review outcomes
+## Review outcomes (2026-11-24)
 
-(Filled at step 10.)
+- Build: lead wrote `shared/project-refs.ts` (+ test) and the vectors file before the builders started, so all
+  three built against one implementation; Builder A (opus) script 0.5.0, B (sonnet) server, C (sonnet) client.
+  C moved the help section to its own page, `help/project-codes.md` (the projects page would pass the 350-word cap).
+- Correctness reviewer (opus): 3 confirmed, all fixed with tests that fail without them: the history scan needed
+  `--full-history` (a card made and deleted on another Mac before a merge was missed, so its code could be
+  reused); the script exits 1 for `internal`, so the "Couldn't check old codes" reason was lost; personal cards
+  still sent `ref`, so search found them (decision 3).
+- UX expert (opus): signed off with 9 should/nice items, all applied: a duplicate code shows no Copy and no
+  help line; focus returns after Cancel, Make a code and Give projects codes; always-mounted status line; Copy
+  label swaps to "Copied" like the app's other copy buttons; help says meetings show on the Meetings card and
+  emails come later; punctuation; no extra landmark; "Did you mean" clears filters.
+- Overseer (fable) sign-off: no blockers. Ruling: **a code never matches an archived project's meeting** (it has
+  no Meetings card); phase 4 rules place it instead; a done project still matches. Should items applied: for
+  `ref` internal refusals only the two known sentences are shown (raw script errors can hold paths). Follow-up
+  to watch: the history scan has a 5 s budget; if Ian's first "Give projects codes" says it couldn't check old
+  codes twice running, raise `REF_HISTORY_BUDGET_MS`.
+- Builder decisions kept: `ref:` sits straight after `client:`; archived cards are refused for `ref`; spacing
+  checks every client's codes (stricter than decision 4); a shallow clone makes cards without codes.
+- Browser check (demo brain, port 3878): create writes a code; every state; Make a new code; Give projects
+  codes; search and did-you-mean; a meeting matched by a code in its description and one by a lower-case
+  bracketed code in its title; phone width.

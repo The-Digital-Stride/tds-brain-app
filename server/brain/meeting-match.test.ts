@@ -310,6 +310,26 @@ describe('matchMeeting: project codes (decision 10)', () => {
     });
   });
 
+  it('an archived project is ignored for codes (overseer); a done one still matches', () => {
+    const refs = buildRefIndex(
+      [card('acme-heating/old', 'ACM4K7'), card('acme-heating/finished', 'ACM5M2')],
+      codes,
+    ).index;
+    const c = ctx({
+      refs,
+      projects: [
+        project('acme-heating/old', 'Old', { archived: true }),
+        project('acme-heating/finished', 'Finished', { status: 'done' }),
+        project('acme-heating/website-rebuild', 'Website rebuild'),
+      ],
+    });
+    expect(matchMeeting(meeting('Catch up ACM4K7', ['x@acmeheating.co.uk']), c)).toEqual({
+      key: 'acme-heating/website-rebuild',
+      match: 'only',
+    });
+    expect(matchMeeting(meeting('ACM5M2'), c)).toEqual({ key: 'acme-heating/finished', match: 'ref' });
+  });
+
   it('a context or cache with no refs behaves as before', () => {
     expect(matchMeeting(meeting('Website rebuild ACM4K7', ['x@acmeheating.co.uk']), ctx())).toEqual({
       key: 'acme-heating/website-rebuild',

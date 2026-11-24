@@ -162,6 +162,19 @@ describe('createProjectsSkillRunner', () => {
       // The real script exits 1 for an internal refusal (tdsapp-projects test "refuses the ref action with internal").
       await errorOf(createProjectsSkillRunner(git.root, { env: git.env({ exit: 1, out }) }).run(one)),
     ).toEqual({ code: 'internal', message: "Couldn't check old codes just now. Try again in a moment." });
+    const raw = brain();
+    const rawOut =
+      '{"ok":false,"error":"internal","message":"EACCES: permission denied, open \'/Users/x/brain/a\'"}';
+    expect(
+      await errorOf(createProjectsSkillRunner(raw.root, { env: raw.env({ exit: 1, out: rawOut }) }).run(one)),
+    ).toEqual({ code: 'internal', message: PROJECTS_CHANGE_MESSAGES.internal });
+    const full = brain();
+    const fullOut = '{"ok":false,"error":"internal","message":"Every code for Acme is used."}';
+    expect(
+      await errorOf(
+        createProjectsSkillRunner(full.root, { env: full.env({ exit: 1, out: fullOut }) }).run(one),
+      ),
+    ).toEqual({ code: 'internal', message: 'Every code for Acme is used.' });
     const other = brain();
     expect(
       await errorOf(createProjectsSkillRunner(other.root, { env: other.env({ exit: 1, out }) }).run(EDIT)),

@@ -134,6 +134,10 @@ export async function findProjectsScript(root: string): Promise<string | null> {
 }
 
 /** The script's reason as a sentence, or null when it isn't one fit to show. */
+/** The script's two plain `ref` refusals with code `internal` (tdsapp-projects.cjs). */
+const REF_INTERNAL_REASON =
+  /^(Couldn't check old codes just now\. Try again in a moment\.|Every code for [^\n]{1,200} is used\.)$/;
+
 function reasonOf(message: unknown): string | null {
   if (typeof message !== 'string') return null;
   const text = message.replace(/[\p{Cc}\s]+/gu, ' ').trim();
@@ -311,8 +315,11 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
         FILES_CHANGED_REASON.test(reply.message)
       )
         return new ProjectsError(c, PROJECTS_MOVE_FILES_CHANGED);
-      const reason =
-        SHOW_REASON.includes(c) || (action.kind === 'ref' && c === 'internal')
+      // For `ref`'s internal refusals only the script's two known sentences are shown: the script also sends raw
+      // Node errors (which can hold paths) as `internal`.
+      const reason = SHOW_REASON.includes(c)
+        ? reasonOf(reply.message)
+        : action.kind === 'ref' && c === 'internal' && REF_INTERNAL_REASON.test(String(reply.message))
           ? reasonOf(reply.message)
           : null;
       return new ProjectsError(c, reason ?? PROJECTS_CHANGE_MESSAGES[c]);

@@ -13,7 +13,7 @@ reviewed: 2026-11-24
 
 ### Brain
 
-The Brain is the agency's shared folder of knowledge. It holds skills, to-dos and client notes.
+The Brain is the agency's shared folder of knowledge. It holds skills, tasks and client notes.
 
 ### Cortex
 
@@ -21,7 +21,7 @@ Cortex is the app you are using. Its full name is TDS Cortex.
 
 ### client
 
-A client is a customer of the agency, such as a heating company. Chats and to-dos can be linked to one.
+A client is a customer of the agency, such as a heating company. Chats and tasks can be linked to one.
 
 ### chat
 
@@ -47,13 +47,13 @@ A level is how hard Claude works on something. The levels are Quick, Standard an
 
 An approval is a question Claude asks before it does something. You say yes or no.
 
-### to-do
+### task
 
-A to-do is a job someone needs to do. To-dos live in the Brain, so the team sees them.
+A task is a job someone needs to do. Tasks live in the Brain, so the team sees them. Tasks used to be called to-dos.
 
 ### drawer
 
-A drawer is a panel that slides out from the rail, such as the To-dos drawer.
+A drawer is a panel that slides out from the rail, such as the Tasks drawer.
 
 ### rail
 
@@ -65,11 +65,11 @@ Home is the first screen. It has the message box, your meetings and your favouri
 
 ### pin
 
-Starred to-dos, chats and files also show on Home, under headings that start with Favourite.
+Starred tasks, chats and files also show on Home, under headings that start with Favourite.
 
 ### favourite
 
-A favourite is something you starred, such as a chat, to-do, skill or file. It shows at the top of its list.
+A favourite is something you starred, such as a chat, task, skill or file. It shows at the top of its list.
 
 ### sync
 

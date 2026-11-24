@@ -8,7 +8,7 @@ benefit: See what a chat used and made, without scrolling back through it.
 roles: all
 related: [chat-files, chat-kinds, how-full-a-chat-is, continuing-in-the-terminal]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -32,7 +32,7 @@ The **This chat** panel sits beside an open chat. It has two tabs: **Files** and
 
 - **Client**: the client this chat is about.
 - **Kind**: TDS or Personal, for open chats. See [TDS or Personal chats](help:chat-kinds).
-- **To-do**: the to-do the chat started from, if any.
+- **Task**: the task the chat started from, if any.
 - **Started**: when it began.
 - **State**: for example Working, Ready for you, Needs your answer or Ended.
 - **Approvals**: **Same as your terminal**. Cortex asks as often as your terminal does.

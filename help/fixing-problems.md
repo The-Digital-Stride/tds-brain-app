@@ -8,7 +8,7 @@ benefit: Get back to work fast, and know when to ask for help.
 roles: all
 related: [health, getting-help, attaching-files]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 Start in Settings, on the **Health** tab. It says what's wrong. A red dot on the tab shows when something needs attention. [How Cortex is running](help:health) explains each line.
@@ -21,7 +21,7 @@ The panel says "Lost the live connection". Wait a minute. If it lasts longer, re
 
 The panel says "Not synced since" a time. Check you're online. Check Brain Connect (the app that syncs the Brain) is running. It normally syncs every minute.
 
-## To-dos or chats won't load
+## Tasks or chats won't load
 
 Press Command and R to try again.
 

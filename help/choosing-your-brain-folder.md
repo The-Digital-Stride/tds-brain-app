@@ -4,11 +4,11 @@ title: Choosing your Brain folder
 area: settings
 order: 4
 summary: Tell Cortex which folder holds your copy of the Brain.
-benefit: Cortex finds your skills, to-dos and client notes without any typing.
+benefit: Cortex finds your skills, tasks and client notes without any typing.
 roles: all
 related: [health, settings, brain-and-cortex, fixing-problems]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -17,7 +17,7 @@ Cortex needs the folder where you keep your copy of the Agency Brain. A screen c
 
 ## Why it helps
 
-- Cortex reads your skills, to-dos and client notes from there.
+- Cortex reads your skills, tasks and client notes from there.
 - You choose the folder once, and it remembers.
 - It lists the Brains it finds on your Mac, so you rarely type a path.
 

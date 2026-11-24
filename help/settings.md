@@ -8,7 +8,7 @@ benefit: You set Cortex up once, and it works the way you like.
 roles: all
 related: [change-todos-setting, keyboard-shortcuts, levels, skill-levels, tokens-saved, health, version-history]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -24,7 +24,7 @@ Settings has tabs under the top bar: **General**, **Claude**, **Skill levels**, 
 ## How to use it
 
 1. Open Settings from the rail, then press a tab.
-2. **General** has **Preferences**: switch **Let the app change to-dos** and **Single-key shortcuts** on or off. It also has **Working out the client**.
+2. **General** has **Preferences**: switch **Let the app change tasks** and **Single-key shortcuts** on or off. It also has **Working out the client**.
 3. **Claude** has **Claude in chats**, where you choose how Claude picks a level for each chat. Below it is **Tokens saved**.
 4. **Skill levels** shows the level the team set for each skill. This tab shows only when your Brain has skill levels.
 5. **Health** says how Cortex is running, with a line for each thing it needs.

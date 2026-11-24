@@ -22,7 +22,7 @@ Claude already knows our clients, our notes and our way of doing things. You don
 - File call notes. Drop in your notes, and Claude files them where the team can find them.
 - Write client reports. Ask for a draft for Acme Heating, then tweak it.
 - Draft pages and content. Get a first version in minutes, not hours.
-- Hand things over. Pass a to-do to a teammate, and they see it the next time their Brain syncs.
+- Hand things over. Pass a task to a teammate, and they see it the next time their Brain syncs.
 - Share with the team. Anything Claude files in the Brain is there for everyone who needs it. Nobody has to set up access.
 
 ![Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and favourite cards.](images/home-overview.webp)
@@ -39,4 +39,4 @@ When you aren't typing, press the H key or the ? key to open Help. (This needs *
 
 ## Where to go next
 
-Start with [Home](help:home). Then see how to [talk to Claude](help:talking-to-claude), and how [to-dos](help:todos) and [skills](help:skills) save you time.
+Start with [Home](help:home). Then see how to [talk to Claude](help:talking-to-claude), and how [tasks](help:todos) and [skills](help:skills) save you time.

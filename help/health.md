@@ -8,7 +8,7 @@ benefit: One glance tells you if Cortex is working, before you lose time.
 roles: all
 related: [settings, fixing-problems, choosing-your-brain-folder, updates]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -36,7 +36,7 @@ Each line means this:
 - **Brain folder:** the Brain was found. **Change** lets you pick another folder.
 - **Claude Code:** Claude is ready to start chats.
 - **Brain sync:** the Brain updated in the last 5 minutes. After that, it shows as stale.
-- **To-dos and chats:** the lists have loaded.
+- **Tasks and chats:** the lists have loaded.
 - **Starts by itself:** Cortex starts when you log in. A **Note** means it was started by hand.
 - **Sign-in:** you are signed in on this computer.
 

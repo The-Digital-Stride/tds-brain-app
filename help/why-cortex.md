@@ -8,7 +8,7 @@ benefit: Spend your time on client work, not on admin and chasing information.
 roles: all
 related: [welcome, a-day-with-cortex, brain-and-cortex, sharing-with-your-team]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 TDS Cortex is the app you use to work with Claude and the Brain. The Brain is our shared folder of knowledge. Cortex puts it to work.
@@ -21,7 +21,7 @@ Good work needs facts. What did the client agree last month? Where is the latest
 
 - **Claude already knows the background.** It reads the Brain, so you don't explain the client again each time.
 - **The boring parts get done.** Claude files notes, drafts reports and writes first versions of pages.
-- **Nothing slips.** To-dos live in one shared list, so you can see what is yours and what nobody has picked up.
+- **Nothing slips.** Tasks live in one shared list, so you can see what is yours and what nobody has picked up.
 - **Your team sees your work.** What you file or pass on goes into the Brain. Teammates see it the next time their Brain syncs. There is nothing to share or send.
 - **You stay in charge.** Claude asks before it does anything that needs your say-so, and shows you what it did.
 

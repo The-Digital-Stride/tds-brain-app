@@ -250,7 +250,7 @@ describe('project activity', () => {
     await s.ready;
     const r = await s.svc.read(KEY, me);
     expect(r.items.map((i) => `${i.kind}|${i.text}`)).toEqual([
-      'update|Ben McAdam added an update',
+      'update|Ben McAdam added an email',
       'status|Account Owner changed',
       'status|Status changed',
       'status|Health changed',

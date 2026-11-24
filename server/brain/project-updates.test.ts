@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Identity } from '../../shared/contract.ts';
+import { PROJECTS_EMAIL_CAPABILITY } from '../../shared/project-email-contract.ts';
 import { PROJECTS_UPDATES_CAPABILITY, UPDATES_PAGE } from '../../shared/project-updates-contract.ts';
 import { PROJECTS_CAPABILITY, type ProjectCard, ProjectsError } from '../../shared/projects-contract.ts';
 import { createProjectUpdates } from './project-updates.ts';
@@ -391,5 +392,88 @@ describe('changing the log', () => {
       ).rejects.toMatchObject({ code: 'bad-request' });
     }
     expect(s.runs).toEqual([]);
+  });
+});
+
+describe('email entries (phase 5)', () => {
+  const EMAIL_CAPS = [PROJECTS_CAPABILITY, PROJECTS_UPDATES_CAPABILITY, PROJECTS_EMAIL_CAPABILITY];
+  const emailEntry = (at: string, by: string, key: string, owner = 'sam-example') =>
+    entry(
+      at,
+      by,
+      'email',
+      'They agreed.',
+      `email_subject: Quote\nemail_from: Alex Smith\nemail_people: Jo\nemail_sent_at: ${at}\nemail_thread_id: 1a2b3c4d5e6f\nemail_key: ${key}\nemail_inbox_owner: ${owner}\n`,
+    );
+
+  it('reads email_key, and collapses the same key within a project to the earliest', async () => {
+    add('2026-11-21T10:00:00Z', emailEntry('2026-11-21T10:00:00Z', 'ben-mcadam', '<k1@x>'), FOLDER, 'late11');
+    add(
+      '2026-11-20T10:00:00Z',
+      emailEntry('2026-11-20T10:00:00Z', 'sam-example', '<k1@x>'),
+      FOLDER,
+      'early1',
+    );
+    add(
+      '2026-11-22T10:00:00Z',
+      emailEntry('2026-11-22T10:00:00Z', 'sam-example', '<k2@x>'),
+      FOLDER,
+      'other1',
+    );
+    // An old file with only email_message_id collapses with the new key's twin.
+    add(
+      '2026-11-23T10:00:00Z',
+      entry('2026-11-23T10:00:00Z', 'sam-example', 'email', 'x', 'email_message_id: <k2@x>\n'),
+      FOLDER,
+      'oldfmt',
+    );
+    const r = await setup({ caps: EMAIL_CAPS }).svc.read(KEY, null, me());
+    expect(r.updates.map((u) => u.path.split('-').pop()?.slice(0, 6))).toEqual(['other1', 'early1']);
+    expect(r.updates[1]?.emailKey).toBe('<k1@x>');
+  });
+
+  it('does not collapse the same key in two different projects', async () => {
+    add('2026-11-20T10:00:00Z', emailEntry('2026-11-20T10:00:00Z', 'sam-example', '<k1@x>'));
+    put(
+      file('clients/acme/projects/seo', '2026-11-21T10:00:00Z'),
+      emailEntry('2026-11-21T10:00:00Z', 'sam-example', '<k1@x>'),
+    );
+    const cards = [card(), card({ key: 'acme/seo', slug: 'seo', folder: 'clients/acme/projects/seo' })];
+    const s = setup({ cards, caps: EMAIL_CAPS });
+    expect((await s.svc.read(KEY, null, me())).updates).toHaveLength(1);
+    expect((await s.svc.read('acme/seo', null, me())).updates).toHaveLength(1);
+  });
+
+  it('gives Open in Gmail only to the inbox owner, from their roles.json email', async () => {
+    add('2026-11-20T10:00:00Z', emailEntry('2026-11-20T10:00:00Z', 'sam-example', '<k1@x>'));
+    const s = setup({ caps: EMAIL_CAPS });
+    const mine = (await s.svc.read(KEY, null, me())).updates[0];
+    expect(mine?.gmailUrl).toBe(
+      `https://mail.google.com/mail/?authuser=${encodeURIComponent('s@x.test')}#all/thread-f:${BigInt('0x1a2b3c4d5e6f').toString(10)}`,
+    );
+    const ben = { ...me('team', 'ben-mcadam'), name: 'Ben McAdam' };
+    const theirs = (await s.svc.read(KEY, null, ben)).updates[0];
+    expect(theirs?.gmailUrl).toBeUndefined();
+  });
+
+  it('a bad thread id gives no link', async () => {
+    add(
+      '2026-11-20T10:00:00Z',
+      emailEntry('2026-11-20T10:00:00Z', 'sam-example', '<k1@x>').replace('1a2b3c4d5e6f', 'not hex!'),
+    );
+    expect(
+      (await setup({ caps: EMAIL_CAPS }).svc.read(KEY, null, me())).updates[0]?.gmailUrl,
+    ).toBeUndefined();
+  });
+
+  it('canRemove: inbox owner, Owner or scout, with the email capability', async () => {
+    add('2026-11-20T10:00:00Z', emailEntry('2026-11-20T10:00:00Z', 'ben-mcadam', '<k1@x>', 'sam-example'));
+    const can = async (who: Identity, caps = EMAIL_CAPS) =>
+      (await setup({ caps }).svc.read(KEY, null, who)).updates[0]?.canRemove;
+    expect(await can(me())).toBe(true); // the inbox owner, though Ben saved it
+    expect(await can({ ...me('owner', 'zed'), name: 'Zed' })).toBe(true);
+    expect(await can({ ...me('scout', 'zed'), name: 'Zed' })).toBe(true);
+    expect(await can({ ...me('team', 'ben-mcadam'), name: 'Ben McAdam' })).toBe(false);
+    expect(await can(me(), [PROJECTS_CAPABILITY, PROJECTS_UPDATES_CAPABILITY])).toBe(false);
   });
 });

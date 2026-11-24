@@ -76,7 +76,7 @@ describe('project code on the Overview', () => {
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(
       screen.getByText(
-        /Put this in a meeting invite.s title or description so the meeting finds this project\. Emails will use it soon too\./,
+        /Put this in a meeting invite or an email's subject or text so they find this project\./,
       ),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Copy code SKY4K7' }));

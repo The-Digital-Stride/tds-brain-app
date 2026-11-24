@@ -23,6 +23,21 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
+import {
+  DISMISSED_DAYS,
+  DRAFT_MAX_AGE_DAYS,
+  EMAIL_DRAFT_FILE_PATTERN,
+  EMAIL_DRAFTS_DIR,
+  EMAIL_NAME_MAX,
+  EMAIL_NEWEST_TEXT_MAX,
+  EMAIL_PEOPLE_MAX,
+  EMAIL_PERSON_MAX,
+  EMAIL_SUBJECT_MAX,
+  EMAIL_THREAD_IDS_MAX,
+  emailDismissedFile,
+  MESSAGE_ID_MAX,
+  PROJECTS_EMAIL_CAPABILITY,
+} from '../../../shared/project-email-contract.ts';
 import { PROJECTS_REFS_CAPABILITY } from '../../../shared/project-refs-contract.ts';
 import {
   PROJECTS_UPDATES_CAPABILITY,
@@ -83,6 +98,9 @@ interface ProjectsModule {
   PROJECTS_MOVE_CAPABILITY: string;
   PROJECTS_ARCHIVE_CAPABILITY: string;
   PROJECTS_UPDATES_CAPABILITY: string;
+  PROJECTS_EMAIL_CAPABILITY: string;
+  EMAIL: Record<string, number | string>;
+  EMAIL_DRAFT_FILE_PATTERN: RegExp;
   UPDATES_DIR: string;
   UPDATE_FILE_PATTERN: RegExp;
   UPDATE_SUMMARY_MAX: number;
@@ -699,9 +717,11 @@ describe('capabilities and the command line', () => {
           PROJECTS_ARCHIVE_CAPABILITY,
           PROJECTS_UPDATES_CAPABILITY,
           PROJECTS_REFS_CAPABILITY,
+          PROJECTS_EMAIL_CAPABILITY,
         ],
       },
     });
+    expect(projects.SCRIPT_VERSION).toBe('0.6.0');
   });
 
   it('runs from the command line: one JSON line, exit 0, 2 and 1', () => {
@@ -755,6 +775,20 @@ describe('constants', () => {
     expect(projects.PROJECTS_MOVE_CAPABILITY).toBe(PROJECTS_MOVE_CAPABILITY);
     expect(projects.PROJECTS_ARCHIVE_CAPABILITY).toBe(PROJECTS_ARCHIVE_CAPABILITY);
     expect(projects.PROJECTS_UPDATES_CAPABILITY).toBe(PROJECTS_UPDATES_CAPABILITY);
+    expect(projects.PROJECTS_EMAIL_CAPABILITY).toBe(PROJECTS_EMAIL_CAPABILITY);
+    expect(projects.EMAIL_DRAFT_FILE_PATTERN.source).toBe(EMAIL_DRAFT_FILE_PATTERN.source);
+    expect(projects.EMAIL).toEqual({
+      EMAIL_DRAFTS_DIR,
+      DISMISSED_DAYS,
+      DRAFT_MAX_AGE_DAYS,
+      EMAIL_SUBJECT_MAX,
+      EMAIL_PERSON_MAX,
+      EMAIL_PEOPLE_MAX,
+      EMAIL_THREAD_IDS_MAX,
+      EMAIL_NEWEST_TEXT_MAX,
+      MESSAGE_ID_MAX,
+      EMAIL_NAME_MAX,
+    });
     expect(projects.UPDATES_DIR).toBe(UPDATES_DIR);
     expect(projects.UPDATE_FILE_PATTERN.source).toBe(UPDATE_FILE_PATTERN.source);
     expect(projects.UPDATE_SUMMARY_MAX).toBe(UPDATE_SUMMARY_MAX);
@@ -1278,6 +1312,7 @@ describe('move', () => {
       PROJECTS_ARCHIVE_CAPABILITY,
       PROJECTS_UPDATES_CAPABILITY,
       PROJECTS_REFS_CAPABILITY,
+      PROJECTS_EMAIL_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),
@@ -2481,7 +2516,6 @@ describe('updates log', () => {
       for (const [kind, name] of [
         ['status', '2026-11-19-0900-olive-owner-aaa111.md'],
         ['owner', '2026-11-19-0900-olive-owner-aaa222.md'],
-        ['email', '2026-11-19-0900-olive-owner-aaa333.md'],
         ['digest', '2026-11-19-0900-olive-owner-aaa444.md'],
       ] as const) {
         const file = entry('olive-owner', kind, name);
@@ -2737,5 +2771,785 @@ describe('updates log', () => {
     expect(skill).toContain('| `update` |');
     expect(skill).toContain('| `update-remove` |');
     expect(skill).toContain(PROJECTS_UPDATES_CAPABILITY);
+  });
+});
+
+// Projects R2 phase 5 (docs/plans/2026-11-24-projects-r2-email-entries.md, contract
+// shared/project-email-contract.ts): email drafts wait on the inbox owner's Mac, and only their
+// approval (the draft's token, read by the server on Save) writes an `email` entry.
+describe('email entries', () => {
+  const LIVE = 'clients/acme/projects/website';
+  const UPDATES = `${LIVE}/updates`;
+  const OTHER = 'clients/skyseal/projects/roof';
+  const DRAFTS = EMAIL_DRAFTS_DIR;
+  const CARD_TEXT =
+    '---\nv: 1\ntitle: Website rebuild\nclient: acme\nref: ACM4K7\nstatus: active\n---\n\nThe brief.\n';
+  const DAY = 24 * 60 * 60 * 1000;
+  const as = (email: string) => git(['config', 'user.email', email]);
+  const replies: Reply[] = [];
+  const runAt = (action: string, input: Record<string, unknown>, extra: Partial<Ctx> = {}) => {
+    const r = projects.run(action, { kind: action, ...input }, { root, home, now: T0, ...extra });
+    replies.push(r.reply);
+    return r;
+  };
+  const DRAFT = {
+    threadId: '18c2f0a1b2c3d4e5',
+    inboxAddress: 'sam@example.test',
+    subject: 'Re: Budget for December [ACM4K7]',
+    from: { name: 'Alex Smith', address: 'Alex@Client.Example' },
+    people: [
+      { name: 'Sam Example', address: 'sam@example.test' },
+      { name: null, address: 'ops@client.example' },
+    ],
+    sentAt: '2026-11-19T16:30:12Z',
+    summary: 'Alex agreed the December budget.',
+    newestText:
+      'Yes, go ahead with sky4k7 please.\n> On Monday you wrote ACM2C3\n  > and ACM3D4\n\n-- \nAlex Smith ACM9X9',
+  };
+  const KEY = `x:${createHash('sha256')
+    .update('alex@client.example\n2026-11-19T16:30\nbudget for december [acm4k7]')
+    .digest('hex')}`;
+  const draft = (over: Record<string, unknown> = {}, extra: Partial<Ctx> = {}) =>
+    runAt('email-draft', { ...DRAFT, ...over }, extra);
+  const draftFiles = () =>
+    existsSync(abs(DRAFTS))
+      ? readdirSync(abs(DRAFTS))
+          .filter((n) => EMAIL_DRAFT_FILE_PATTERN.test(n))
+          .sort()
+      : [];
+  const tokens = new Set<string>();
+  const draftOf = (id: string) => {
+    const file = JSON.parse(read(`${DRAFTS}/${id}.json`));
+    if (typeof file.approve_token === 'string') tokens.add(file.approve_token);
+    return file;
+  };
+  const newDraft = (over: Record<string, unknown> = {}, extra: Partial<Ctx> = {}) => {
+    const r = draft(over, extra);
+    expect(r.reply, JSON.stringify(r.reply)).toMatchObject({ ok: true });
+    const id = String(r.reply.id);
+    draftOf(id);
+    return id;
+  };
+  const approve = (
+    id: string,
+    over: Record<string, unknown> = {},
+    key = 'acme/website',
+    extra: Partial<Ctx> = {},
+  ) =>
+    runAt(
+      'update',
+      {
+        key,
+        entry: {
+          kind: 'email',
+          draft: id,
+          token: draftOf(id).approve_token,
+          summary: 'Alex agreed the December budget.',
+          subject: 'Budget for December',
+          from: 'Alex Smith',
+          people: ['Sam Example', 'ops@client.example'],
+          clientSafe: false,
+          ...over,
+        },
+      },
+      extra,
+    );
+  const entries = (dir = UPDATES) => (existsSync(abs(dir)) ? readdirSync(abs(dir)).sort() : []);
+  // An email entry as another Mac would have written it.
+  const emailEntry = (
+    dir: string,
+    by: string,
+    key: string,
+    name = `2026-11-19-0900-${by}-eee111.md`,
+    extra = '',
+  ) => {
+    const rel = `${dir}/${name}`;
+    put(
+      rel,
+      `---\nv: 1\nkind: email\nby: ${by}\nat: 2026-11-19T09:00:00Z\nclient_safe: false\nemail_subject: Hi\nemail_from: Alex\nemail_key: ${key}\nemail_inbox_owner: ${by}\n${extra}---\n\nHello.\n`,
+    );
+    return rel;
+  };
+  const mode = (rel: string) => statSync(abs(rel)).mode & 0o777;
+
+  beforeEach(() => {
+    replies.length = 0;
+    writeFileSync(join(root, '.gitignore'), 'personal/\n*~\nbriefing/email-drafts/\n');
+    put(`${LIVE}/project.md`, CARD_TEXT);
+    put(`${OTHER}/project.md`, '---\nv: 1\ntitle: Roof\nclient: skyseal\n---\n');
+  });
+
+  afterEach(() => {
+    // No reply, ever, holds a draft's approve_token.
+    for (const name of draftFiles()) {
+      try {
+        draftOf(name.replace(/\.json$/, ''));
+      } catch {
+        // not a draft
+      }
+    }
+    for (const token of tokens) for (const r of replies) expect(JSON.stringify(r)).not.toContain(token);
+    tokens.clear();
+  });
+
+  describe('email-draft', () => {
+    it('writes one private draft with the facts, the codes and a token, and answers only its id', () => {
+      const r = draft({
+        inboxOwner: 'olive-owner',
+        inbox_owner: 'olive-owner',
+        approve_token: 'f'.repeat(32),
+      });
+      expect(r.exit).toBe(0);
+      const id = String(r.reply.id);
+      expect(id).toMatch(/^[a-z0-9]{12}$/);
+      expect(r.reply).toEqual({ ok: true, action: 'email-draft', id });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      const file = draftOf(id);
+      expect(file).toEqual({
+        v: 1,
+        id,
+        inbox_owner: 'sam-example',
+        created_at: '2026-11-20T10:20:30Z',
+        thread_id: '18c2f0a1b2c3d4e5',
+        email_key: KEY,
+        thread_message_ids: [],
+        subject: 'Re: Budget for December [ACM4K7]',
+        from: { name: 'Alex Smith', address: 'Alex@Client.Example' },
+        from_domain: 'client.example',
+        people: DRAFT.people,
+        sent_at: '2026-11-19T16:30:12Z',
+        summary: 'Alex agreed the December budget.',
+        codes_subject: ['ACM4K7'],
+        codes_body: ['SKY4K7'],
+        requested: null,
+        approve_token: expect.stringMatching(/^[0-9a-f]{32}$/),
+      });
+      expect(file.approve_token).not.toBe('f'.repeat(32));
+      // The newest message's text is read for codes and dropped.
+      const text = read(`${DRAFTS}/${id}.json`);
+      expect(text).not.toContain('go ahead');
+      expect(text).not.toContain('newest');
+      expect(mode(DRAFTS)).toBe(0o700);
+      expect(mode(`${DRAFTS}/${id}.json`)).toBe(0o600);
+      // Nothing else lands in the folder (no temp files left behind).
+      expect(readdirSync(abs(DRAFTS))).toEqual([`${id}.json`]);
+    });
+
+    it('keys an email by its Message-ID when given, angle brackets or not, and keeps the thread ids', () => {
+      const a = newDraft({
+        messageId: '<abc.123@mail.client.example>',
+        threadMessageIds: ['older@x.example'],
+      });
+      expect(draftOf(a)).toMatchObject({
+        email_key: '<abc.123@mail.client.example>',
+        thread_message_ids: ['<older@x.example>'],
+      });
+      const b = newDraft({ messageId: 'abc.123@mail.client.example' });
+      // The same key replaces the waiting draft.
+      expect(draftFiles()).toEqual([`${b}.json`]);
+      expect(draftOf(b).email_key).toBe('<abc.123@mail.client.example>');
+    });
+
+    it('derives the same key whatever the Re:/Fwd: prefixes, case, spacing and seconds', () => {
+      const a = newDraft();
+      expect(draftOf(a).email_key).toBe(KEY);
+      const b = newDraft({
+        subject: 'RE: Fwd: fw:  budget for   DECEMBER [acm4k7] ',
+        sentAt: '2026-11-19T16:30:59.900Z',
+        from: { name: 'Alex', address: 'alex@client.example' },
+      });
+      expect(draftOf(b).email_key).toBe(KEY);
+      expect(draftFiles()).toEqual([`${b}.json`]);
+      // A different minute is a different email.
+      const c = newDraft({ sentAt: '2026-11-19T16:31:00Z' });
+      expect(draftOf(c).email_key).not.toBe(KEY);
+      expect(draftFiles()).toHaveLength(2);
+      // In another time zone, the same minute in UTC.
+      const d = newDraft({ sentAt: '2026-11-19T17:30:12+01:00' });
+      expect(draftOf(d).email_key).toBe(KEY);
+    });
+
+    it('finds codes only in the newest text itself: quoted lines and the signature skipped, distinct, upper case', () => {
+      const id = newDraft({
+        subject: 'Two codes ACM4K7 and acm4k7, and SKY4K7 [ACM1X1] ACM',
+        newestText:
+          'About SKY4K7 and sky4k7 and ACM4K7.\r\n>ACM2C3\r\n--\r\nACM3D4 still body\r\n-- \r\nACM5E5',
+      });
+      expect(draftOf(id)).toMatchObject({
+        codes_subject: ['ACM4K7', 'SKY4K7'],
+        codes_body: ['SKY4K7', 'ACM4K7', 'ACM3D4'],
+      });
+    });
+
+    it('records who from this Mac, and refuses an inbox that is not theirs', () => {
+      expect(draft({ inboxAddress: 'SAM@Example.TEST' }).reply).toMatchObject({ ok: true });
+      expect(refusal(draft({ inboxAddress: 'olive@example.test' }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      as('tess@example.test');
+      expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+      const id = newDraft({ inboxAddress: 'tess@example.test' });
+      expect(draftOf(id).inbox_owner).toBe('tess-team');
+      as('stranger@example.test');
+      expect(refusal(draft({ inboxAddress: 'stranger@example.test' }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+    });
+
+    it('refuses when git does not ignore the drafts folder, or it is a link, or git cannot tell', () => {
+      writeFileSync(join(root, '.gitignore'), 'personal/\n');
+      expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs(DRAFTS))).toBe(false);
+      writeFileSync(
+        join(root, '.gitignore'),
+        'personal/\nbriefing/email-drafts/*\n!briefing/email-drafts/dismissed-*\n',
+      );
+      expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+      writeFileSync(join(root, '.gitignore'), 'briefing/\n');
+      const elsewhere = mkdtempSync(join(tmpdir(), 'drafts-elsewhere-'));
+      try {
+        mkdirSync(abs('briefing'));
+        symlinkSync(elsewhere, abs(DRAFTS));
+        expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+        expect(readdirSync(elsewhere)).toEqual([]);
+        rmSync(abs(DRAFTS));
+        rmSync(abs('briefing'), { recursive: true });
+        symlinkSync(elsewhere, abs('briefing'));
+        expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+        expect(readdirSync(elsewhere)).toEqual([]);
+      } finally {
+        rmSync(abs('briefing'), { force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+      // Not a git repository: nothing can say it stays on this Mac.
+      writeFileSync(join(root, '.gitignore'), 'briefing/email-drafts/\n');
+      rmSync(abs('.git'), { recursive: true });
+      expect(refusal(draft())).toEqual({ exit: 2, error: 'not-allowed' });
+    });
+
+    it('tightens the folder and file modes it finds', () => {
+      mkdirSync(abs(DRAFTS), { recursive: true, mode: 0o755 });
+      const id = newDraft();
+      expect(mode(DRAFTS)).toBe(0o700);
+      expect(mode(`${DRAFTS}/${id}.json`)).toBe(0o600);
+    });
+
+    it('refuses bad or over-long fields and any bcc', () => {
+      const bad: Record<string, unknown>[] = [
+        { bcc: [{ name: null, address: 'x@y.example' }] },
+        { from: { name: 'A', address: 'a@b.example', bcc: 'x@y.example' } },
+        { people: [{ name: 'A', address: 'a@b.example', BCC: true }] },
+        { extra: { deep: [{ bcc: null }] } },
+        { threadId: 'not-hex!' },
+        { threadId: '12ab' },
+        { threadId: 'a'.repeat(33) },
+        { threadId: undefined },
+        { inboxAddress: undefined },
+        { subject: 'Line one\nline two' },
+        { subject: 'x'.repeat(EMAIL_SUBJECT_MAX + 1) },
+        { subject: 5 },
+        { from: { name: 'Alex\nSmith', address: 'alex@client.example' } },
+        { from: { name: 'A'.repeat(EMAIL_NAME_MAX + 1), address: 'alex@client.example' } },
+        { from: { name: 'Alex', address: 'not an address' } },
+        { from: { name: 'Alex', address: 'alex@' } },
+        { from: { name: 'Alex', address: `${'a'.repeat(EMAIL_PERSON_MAX)}@client.example` } },
+        { from: 'Alex <alex@client.example>' },
+        { people: 'everyone' },
+        { people: [{ name: 'A', address: 'no-at-sign' }] },
+        {
+          people: Array.from({ length: EMAIL_PEOPLE_MAX + 1 }, (_, i) => ({
+            name: null,
+            address: `p${i}@x.example`,
+          })),
+        },
+        { messageId: '<has space@x.example>' },
+        { messageId: `<${'a'.repeat(MESSAGE_ID_MAX)}@x>` },
+        { messageId: '' },
+        { messageId: '<>' },
+        { threadMessageIds: Array.from({ length: EMAIL_THREAD_IDS_MAX + 1 }, (_, i) => `<m${i}@x.example>`) },
+        { threadMessageIds: ['<a b@x>'] },
+        { sentAt: 'yesterday' },
+        { sentAt: '2026-02-30T10:00:00Z' },
+        { summary: '   ' },
+        { summary: 'x'.repeat(UPDATE_SUMMARY_MAX + 1) },
+        { newestText: 'x'.repeat(EMAIL_NEWEST_TEXT_MAX + 1) },
+        { newestText: undefined },
+        { requested: 'not a key' },
+      ];
+      for (const over of bad) {
+        expect(refusal(draft(over)), JSON.stringify(over).slice(0, 80)).toEqual({
+          exit: 2,
+          error: 'bad-request',
+        });
+      }
+      expect(draftFiles()).toEqual([]);
+      // At the limits is fine.
+      expect(
+        draft({
+          subject: 'x'.repeat(EMAIL_SUBJECT_MAX),
+          threadId: 'a'.repeat(32),
+          newestText: 'x'.repeat(EMAIL_NEWEST_TEXT_MAX),
+          people: Array.from({ length: EMAIL_PEOPLE_MAX }, (_, i) => ({
+            name: null,
+            address: `p${i}@x.example`,
+          })),
+        }).reply,
+      ).toMatchObject({ ok: true });
+    });
+
+    it('keeps the largest call it accepts under the 20,000-character command limit', () => {
+      const person = (i: number) => ({
+        name: `N${i}`.padEnd(EMAIL_NAME_MAX, 'n'),
+        address: `${String(i).padStart(3, '0')}@${'d'.repeat(EMAIL_PERSON_MAX - EMAIL_NAME_MAX - 20)}.example`,
+      });
+      const big = (summaryLength: number, threadIds = EMAIL_THREAD_IDS_MAX) => ({
+        ...DRAFT,
+        threadId: 'a'.repeat(32),
+        messageId: `<${'m'.repeat(MESSAGE_ID_MAX - 15)}@mail.example>`,
+        threadMessageIds: Array.from(
+          { length: threadIds },
+          (_, i) => `<${String(i).padStart(2, '0')}${'t'.repeat(MESSAGE_ID_MAX - 17)}@mail.example>`,
+        ),
+        subject: 's'.repeat(EMAIL_SUBJECT_MAX),
+        from: person(999),
+        people: Array.from({ length: EMAIL_PEOPLE_MAX }, (_, i) => person(i)),
+        summary: 'y'.repeat(summaryLength),
+        newestText: 'z'.repeat(EMAIL_NEWEST_TEXT_MAX),
+        requested: 'acme/website',
+      });
+      // Every field at its own limit together is too long for one command, so it is refused.
+      expect(refusal(runAt('email-draft', big(UPDATE_SUMMARY_MAX)))).toEqual({
+        exit: 2,
+        error: 'bad-request',
+      });
+      expect(refusal(runAt('email-draft', big(1)))).toEqual({ exit: 2, error: 'bad-request' });
+      // The largest summary accepted beside the other fields at their limits (no thread ids).
+      let lo = 0;
+      let hi = UPDATE_SUMMARY_MAX;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (runAt('email-draft', big(mid, 0)).exit === 0) lo = mid;
+        else hi = mid - 1;
+      }
+      expect(lo).toBeGreaterThan(1000);
+      expect(lo).toBeLessThan(UPDATE_SUMMARY_MAX);
+      expect(runAt('email-draft', big(lo, 0)).exit).toBe(0);
+      expect(runAt('email-draft', big(lo + 1, 0)).exit).toBe(2);
+      // As the command would send it, with its kind.
+      expect(JSON.stringify({ kind: 'email-draft', ...big(lo, 0) }).length).toBeLessThan(20_000);
+    });
+
+    it('stores a requested project only when it is live with a card', () => {
+      const id = newDraft({ requested: 'skyseal/roof' });
+      expect(draftOf(id).requested).toBe('skyseal/roof');
+      put('clients/acme/projects-archive/old/project.md', '---\nv: 1\ntitle: Old\n---\n');
+      put('clients/acme/projects/bare/notes.md', 'no card');
+      for (const requested of ['acme/old', 'acme/bare', 'acme/nothing']) {
+        expect(refusal(draft({ requested })), requested).toEqual({ exit: 2, error: 'not-found' });
+      }
+    });
+
+    it('replaces a waiting draft of the same email from the same owner, never another owner', () => {
+      as('tess@example.test');
+      const tess = newDraft({ inboxAddress: 'tess@example.test' });
+      as('sam@example.test');
+      const a = newDraft();
+      const b = newDraft({ summary: 'A better summary.' });
+      expect(b).not.toBe(a);
+      expect(draftFiles().sort()).toEqual([`${b}.json`, `${tess}.json`].sort());
+      expect(draftOf(b).summary).toBe('A better summary.');
+    });
+
+    it('deletes drafts older than 30 days, any owner, and keeps younger ones', () => {
+      as('tess@example.test');
+      const old = newDraft({ inboxAddress: 'tess@example.test' });
+      const young = newDraft(
+        { inboxAddress: 'tess@example.test', subject: 'Another' },
+        { now: new Date(T0.getTime() + 2 * DAY) },
+      );
+      as('sam@example.test');
+      put(`${DRAFTS}/zzzzzzzzzzzz.json`, 'not json');
+      const later = new Date(T0.getTime() + (DRAFT_MAX_AGE_DAYS + 1) * DAY);
+      const mine = newDraft({}, { now: later });
+      expect(draftFiles().sort()).toEqual([`${mine}.json`, `${young}.json`, 'zzzzzzzzzzzz.json'].sort());
+      expect(existsSync(abs(`${DRAFTS}/${old}.json`))).toBe(false);
+    });
+
+    it('refuses an email already in any project, answering where', () => {
+      const file = emailEntry(`${OTHER}/updates`, 'tess-team', KEY);
+      const r = draft();
+      expect(r.exit).toBe(2);
+      expect(r.reply).toMatchObject({ ok: false, error: 'exists', file, key: 'skyseal/roof' });
+      expect(draftFiles()).toEqual([]);
+      // An old file's email_message_id counts for a Message-ID too.
+      const old = emailEntry(
+        `${LIVE}/updates`,
+        'terry-team',
+        'x:other',
+        '2026-11-18-0900-terry-team-eee222.md',
+        'email_message_id: <old@mail.example>\n',
+      );
+      expect(draft({ messageId: '<old@mail.example>' }).reply).toMatchObject({
+        error: 'exists',
+        file: old,
+        key: 'acme/website',
+      });
+      // A note mentioning the key is not an email entry.
+      put(
+        `${LIVE}/updates/2026-11-18-0900-terry-team-nnn333.md`,
+        '---\nv: 1\nkind: note\nby: terry-team\nat: 2026-11-18T09:00:00Z\nclient_safe: false\nemail_key: <new@mail.example>\n---\n\nHi.\n',
+      );
+      expect(draft({ messageId: '<new@mail.example>' }).reply).toMatchObject({ ok: true });
+    });
+
+    it('runs from the command line: one JSON line', () => {
+      const out = spawnSync(process.execPath, [SCRIPT, 'email-draft'], {
+        input: JSON.stringify({ kind: 'email-draft', ...DRAFT }),
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
+      });
+      expect(out.status).toBe(0);
+      expect(out.stdout.split('\n').filter(Boolean)).toHaveLength(1);
+      const reply = JSON.parse(out.stdout);
+      expect(Object.keys(reply).sort()).toEqual(['action', 'id', 'ok']);
+      const dismissed = spawnSync(process.execPath, [SCRIPT, 'email-draft-remove'], {
+        input: JSON.stringify({ id: reply.id, dismiss: true }),
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
+      });
+      expect(JSON.parse(dismissed.stdout)).toEqual({ ok: true, action: 'email-draft-remove', id: reply.id });
+      const again = spawnSync(process.execPath, [SCRIPT, 'email-draft'], {
+        input: JSON.stringify(DRAFT),
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
+      });
+      expect(again.status).toBe(2);
+      expect(JSON.parse(again.stdout)).toMatchObject({ ok: false, error: 'dismissed' });
+    });
+  });
+
+  describe('email-draft-remove', () => {
+    it("removes the owner's draft; dismissing records the key with today's date, for this owner only", () => {
+      const id = newDraft();
+      expect(runAt('email-draft-remove', { id, dismiss: true })).toEqual({
+        exit: 0,
+        reply: { ok: true, action: 'email-draft-remove', id },
+      });
+      expect(draftFiles()).toEqual([]);
+      const dismissedRel = emailDismissedFile('sam-example');
+      expect(JSON.parse(read(dismissedRel))).toEqual({ [KEY]: '2026-11-20' });
+      expect(mode(dismissedRel)).toBe(0o600);
+      expect(draft().reply).toMatchObject({ ok: false, error: 'dismissed' });
+      expect(draft().exit).toBe(2);
+      // Another owner's inbox isn't dismissed by it.
+      as('tess@example.test');
+      expect(draft({ inboxAddress: 'tess@example.test' }).reply).toMatchObject({ ok: true });
+    });
+
+    it('without dismiss, just removes it, so the email can be drafted again', () => {
+      const id = newDraft();
+      expect(runAt('email-draft-remove', { id, dismiss: false }).reply).toMatchObject({ ok: true });
+      expect(existsSync(abs(emailDismissedFile('sam-example')))).toBe(false);
+      expect(draft().reply).toMatchObject({ ok: true });
+    });
+
+    it('drops dismissals older than 90 days when it writes, and an old one no longer refuses', () => {
+      put(
+        emailDismissedFile('sam-example'),
+        JSON.stringify({ 'x:ancient': '2026-01-01', 'x:recent': '2026-11-01', 'x:bad': 'soon' }),
+      );
+      const id = newDraft();
+      runAt('email-draft-remove', { id, dismiss: true });
+      expect(JSON.parse(read(emailDismissedFile('sam-example')))).toEqual({
+        'x:recent': '2026-11-01',
+        [KEY]: '2026-11-20',
+      });
+      const later = new Date(T0.getTime() + (DISMISSED_DAYS + 1) * DAY);
+      expect(draft({}, { now: later }).reply).toMatchObject({ ok: true });
+    });
+
+    it("refuses another owner's draft, an unknown one and a bad id", () => {
+      const id = newDraft();
+      as('tess@example.test');
+      expect(refusal(runAt('email-draft-remove', { id, dismiss: true }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      as('olive@example.test');
+      expect(refusal(runAt('email-draft-remove', { id, dismiss: false }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      as('sam@example.test');
+      expect(refusal(runAt('email-draft-remove', { id: 'aaaaaaaaaaaa', dismiss: false }))).toEqual({
+        exit: 2,
+        error: 'not-found',
+      });
+      for (const input of [{ id: '../x', dismiss: false }, { id }, { id, dismiss: 'yes' }]) {
+        expect(refusal(runAt('email-draft-remove', input)), JSON.stringify(input)).toEqual({
+          exit: 2,
+          error: 'bad-request',
+        });
+      }
+    });
+
+    it('also deletes drafts older than 30 days', () => {
+      const old = newDraft();
+      const later = new Date(T0.getTime() + (DRAFT_MAX_AGE_DAYS + 1) * DAY);
+      expect(refusal(runAt('email-draft-remove', { id: old, dismiss: false }, { now: later }))).toEqual({
+        exit: 2,
+        error: 'not-found',
+      });
+      expect(draftFiles()).toEqual([]);
+    });
+  });
+
+  describe('update with an email entry', () => {
+    it("never refuses an outsider's quote marks: both kinds become curly double quotes, in the draft and the entry", () => {
+      const id = newDraft({
+        subject: `Re: "Budget" for Pete's team`,
+        from: { name: `Alex "AJ" O'Neil`, address: 'Alex@Client.Example' },
+      });
+      const d = draftOf(id);
+      expect(d.subject).toBe(`Re: \u201cBudget\u201d for Pete's team`);
+      expect(d.from.name).toBe(`Alex \u201cAJ\u201d O'Neil`);
+      const r = approve(id, { subject: `Re: "Budget" for Pete's team`, from: `Alex "AJ" O'Neil` });
+      expect(r.exit, JSON.stringify(r.reply)).toBe(0);
+      const text = read(`${UPDATES}/${entries()[0]}`);
+      expect(text).toContain(`email_subject: "Re: \u201cBudget\u201d for Pete's team"`);
+      expect(text).toContain(`\u201cAJ\u201d O'Neil`);
+    });
+
+    it('writes the entry from the draft and the approved words, never an address, then deletes the draft', () => {
+      const id = newDraft();
+      const r = approve(id, {
+        // Ignored: these come from the draft.
+        threadId: 'ffffffffffffffff',
+        emailKey: 'x:forged',
+        sentAt: '2020-01-01T00:00:00Z',
+        inboxOwner: 'olive-owner',
+        by: 'olive-owner',
+        clientSafe: true,
+        summary: 'Edited: Alex agreed the budget.',
+      });
+      expect(r.exit).toBe(0);
+      const names = entries();
+      expect(names).toHaveLength(1);
+      const name = names[0] as string;
+      expect(name).toMatch(/^2026-11-20-1020-sam-example-[a-z0-9]{6}\.md$/);
+      expect(r.reply).toEqual({
+        ok: true,
+        action: 'update',
+        key: 'acme/website',
+        version: sha(`${LIVE}/project.md`),
+        file: `${UPDATES}/${name}`,
+      });
+      const text = read(`${UPDATES}/${name}`);
+      expect(text).toBe(
+        [
+          '---',
+          'v: 1',
+          'kind: email',
+          'by: sam-example',
+          'at: 2026-11-20T10:20:30Z',
+          'client_safe: true',
+          'email_subject: Budget for December',
+          'email_from: Alex Smith',
+          'email_people:',
+          '  - "Sam Example"',
+          '  - "ops@client.example"',
+          'email_sent_at: 2026-11-19T16:30:12Z',
+          'email_thread_id: 18c2f0a1b2c3d4e5',
+          `email_key: ${KEY}`,
+          'email_inbox_owner: sam-example',
+          '---',
+          '',
+          'Edited: Alex agreed the budget.',
+          '',
+        ].join('\n'),
+      );
+      expect(text).not.toContain('Alex@Client.Example');
+      expect(text).not.toContain('sam@example.test');
+      expect(parseFrontmatter(text).data).toMatchObject({
+        kind: 'email',
+        email_people: ['Sam Example', 'ops@client.example'],
+        email_key: KEY,
+      });
+      expect(draftFiles()).toEqual([]);
+      // Now the same email can't be drafted again.
+      expect(draft().reply).toMatchObject({ error: 'exists', key: 'acme/website' });
+    });
+
+    it('quotes what YAML would misread, writes no people as an empty list, and curls quotes it cannot write straight', () => {
+      const id = newDraft({ threadId: '1234567890123456', people: [] });
+      const r = approve(id, { subject: 'Re: "quote" #1', from: "O'Brien: Alex", people: [] });
+      expect(r.exit).toBe(0);
+      const data = parseFrontmatter(read(String(r.reply.file))).data;
+      expect(data).toMatchObject({
+        email_subject: 'Re: "quote" #1',
+        email_from: "O'Brien: Alex",
+        email_thread_id: '1234567890123456',
+      });
+      expect(read(String(r.reply.file))).toContain('email_people: []\n');
+      // Both kinds of quote mark: written with curly double quotes, never refused (lead's fix).
+      const id2 = newDraft({ subject: 'Second' });
+      const r2 = approve(id2, { subject: `It's "both": here` });
+      expect(r2.exit, JSON.stringify(r2.reply)).toBe(0);
+      expect(parseFrontmatter(read(String(r2.reply.file))).data.email_subject).toBe(
+        `It's \u201cboth\u201d: here`,
+      );
+      expect(draftFiles()).toEqual([]);
+    });
+
+    it("refuses without a draft or token, with a wrong token, and for a draft that is not this owner's", () => {
+      const id = newDraft();
+      const token = draftOf(id).approve_token as string;
+      const entry = {
+        kind: 'email',
+        summary: 'S.',
+        subject: 'Budget',
+        from: 'Alex Smith',
+        people: [],
+        clientSafe: false,
+      };
+      const up = (e: Record<string, unknown>) =>
+        runAt('update', { key: 'acme/website', entry: { ...entry, ...e } });
+      expect(refusal(up({ token }))).toEqual({ exit: 2, error: 'bad-request' });
+      expect(refusal(up({ draft: '../../x', token }))).toEqual({ exit: 2, error: 'bad-request' });
+      expect(refusal(up({ draft: id }))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(refusal(up({ draft: id, token: '0'.repeat(32) }))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(refusal(up({ draft: id, token: token.toUpperCase() }))).toEqual({
+        exit: 2,
+        error: 'not-allowed',
+      });
+      expect(refusal(up({ draft: 'aaaaaaaaaaaa', token }))).toEqual({ exit: 2, error: 'not-found' });
+      // Another owner, even with the right token and as the brain's Owner.
+      as('olive@example.test');
+      expect(refusal(up({ draft: id, token }))).toEqual({ exit: 2, error: 'not-allowed' });
+      as('tess@example.test');
+      expect(refusal(up({ draft: id, token }))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(entries()).toEqual([]);
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      as('sam@example.test');
+      expect(up({ draft: id, token }).reply).toMatchObject({ ok: true });
+    });
+
+    it('refuses bcc, bad names and addresses that are not a nameless person on the draft', () => {
+      const id = newDraft();
+      const bad: Record<string, unknown>[] = [
+        { bcc: ['x@y.example'] },
+        { people: ['Sam Example', { bcc: 'x' }] },
+        { from: 'Alex\nSmith' },
+        { from: '' },
+        { from: 'A'.repeat(EMAIL_NAME_MAX + 1) },
+        { from: 'Alex@Client.Example' },
+        { from: 'Alex Smith <alex@client.example>' },
+        { people: ['sam@example.test'] },
+        { people: ['Sam\nExample'] },
+        { people: 'Sam' },
+        { people: Array.from({ length: EMAIL_PEOPLE_MAX + 1 }, (_, i) => `P${i}`) },
+        { subject: 'a\nb' },
+        { subject: 'x'.repeat(EMAIL_SUBJECT_MAX + 1) },
+        { summary: '' },
+        { clientSafe: 'no' },
+      ];
+      for (const over of bad) {
+        expect(refusal(approve(id, over)), JSON.stringify(over).slice(0, 60)).toEqual({
+          exit: 2,
+          error: 'bad-request',
+        });
+      }
+      expect(entries()).toEqual([]);
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      // A nameless person's address is their name.
+      expect(approve(id, { people: ['OPS@client.example'] }).reply).toMatchObject({ ok: true });
+    });
+
+    it('refuses an email already in any project with exists, answering where, and clears the draft', () => {
+      const id = newDraft();
+      const file = emailEntry(`${OTHER}/updates`, 'tess-team', KEY);
+      const r = approve(id);
+      expect(r.exit).toBe(2);
+      expect(r.reply).toMatchObject({ ok: false, error: 'exists', file, key: 'skyseal/roof' });
+      expect(entries()).toEqual([]);
+      expect(draftFiles()).toEqual([]);
+    });
+
+    it('follows the note and call rules for the project', () => {
+      const id = newDraft();
+      put('clients/acme/projects-archive/old/project.md', '---\nv: 1\ntitle: Old\n---\n');
+      expect(refusal(approve(id, {}, 'acme/old'))).toEqual({ exit: 2, error: 'not-allowed' });
+      put('clients/acme/projects/bare/notes.md', 'no card');
+      expect(refusal(approve(id, {}, 'acme/bare'))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(refusal(approve(id, {}, 'acme/nothing'))).toEqual({ exit: 2, error: 'not-found' });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      // Any live project, not only the one the draft was routed to.
+      expect(approve(id, {}, 'skyseal/roof').reply).toMatchObject({ ok: true, key: 'skyseal/roof' });
+    });
+
+    it('refuses when the drafts folder stops being ignored', () => {
+      const id = newDraft();
+      const token = draftOf(id).approve_token;
+      writeFileSync(join(root, '.gitignore'), 'personal/\n');
+      const r = runAt('update', {
+        key: 'acme/website',
+        entry: {
+          kind: 'email',
+          draft: id,
+          token,
+          summary: 'S.',
+          subject: 'B',
+          from: 'Alex',
+          people: [],
+          clientSafe: false,
+        },
+      });
+      expect(refusal(r)).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(entries()).toEqual([]);
+    });
+  });
+
+  describe('update-remove of an email entry', () => {
+    const remove = (file: string) => runAt('update-remove', { key: 'acme/website', file, expect: sha(file) });
+
+    it("is for the entry's inbox owner, the brain's Owner or a scout", () => {
+      const a = emailEntry(UPDATES, 'tess-team', '<a@x>', '2026-11-19-0900-tess-team-aaa001.md');
+      const b = emailEntry(UPDATES, 'tess-team', '<b@x>', '2026-11-19-0900-tess-team-aaa002.md');
+      const c = emailEntry(UPDATES, 'tess-team', '<c@x>', '2026-11-19-0900-tess-team-aaa003.md');
+      as('terry@example.test');
+      expect(refusal(remove(a))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(existsSync(abs(a))).toBe(true);
+      as('tess@example.test');
+      expect(remove(a).reply).toMatchObject({ ok: true, action: 'update-remove' });
+      as('olive@example.test');
+      expect(remove(b).reply).toMatchObject({ ok: true });
+      as('sam@example.test');
+      expect(remove(c).reply).toMatchObject({ ok: true });
+    });
+
+    it('goes by email_inbox_owner, not by', () => {
+      const rel = `${UPDATES}/2026-11-19-0900-terry-team-aaa004.md`;
+      put(
+        rel,
+        '---\nv: 1\nkind: email\nby: tess-team\nat: 2026-11-19T09:00:00Z\nclient_safe: false\nemail_key: <d@x>\nemail_inbox_owner: terry-team\n---\n\nHi.\n',
+      );
+      as('tess@example.test');
+      expect(refusal(remove(rel))).toEqual({ exit: 2, error: 'not-allowed' });
+      as('terry@example.test');
+      expect(remove(rel).reply).toMatchObject({ ok: true });
+    });
+  });
+
+  it('is documented in the skill file, with the rule that only the app saves an email', () => {
+    const skill = readFileSync(fileURLToPath(new URL('../SKILL.md', import.meta.url)), 'utf8');
+    expect(skill).toContain('| `email-draft` |');
+    expect(skill).toContain('| `email-draft-remove` |');
+    expect(skill).toContain(PROJECTS_EMAIL_CAPABILITY);
+    expect(skill).toContain('0.6.0');
+    expect(skill).toMatch(/never call `update` with `kind` `"email"`/i);
+    expect(skill).toContain('briefing/email-drafts');
   });
 });

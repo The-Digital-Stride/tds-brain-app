@@ -9,6 +9,11 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import type { Identity } from '../../shared/contract.ts';
 import {
+  GMAIL_THREAD_ID_PATTERN,
+  gmailThreadUrl,
+  PROJECTS_EMAIL_CAPABILITY,
+} from '../../shared/project-email-contract.ts';
+import {
   PROJECTS_UPDATES_CAPABILITY,
   type ProjectUpdateAction,
   type ProjectUpdateItem,
@@ -27,6 +32,7 @@ import {
   type ProjectKey,
   ProjectsError,
 } from '../../shared/projects-contract.ts';
+import { isSlugOf, memberEmailOfSlug } from './email-drafts.ts';
 import { asString, type FrontmatterValue, parseFrontmatter } from './frontmatter.ts';
 import { hasConflict, type ProjectsIndex } from './projects.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
@@ -128,6 +134,7 @@ function parseEntry(path: string, name: string, bytes: Buffer, old: boolean): Pa
       : {}),
     ...(text(data.email_sent_at) !== undefined ? { emailSentAt: text(data.email_sent_at) } : {}),
     ...(text(data.email_thread_id) !== undefined ? { emailThreadId: text(data.email_thread_id) } : {}),
+    ...(text(data.email_key) !== undefined ? { emailKey: text(data.email_key) } : {}),
     ...(text(data.email_message_id) !== undefined ? { emailMessageId: text(data.email_message_id) } : {}),
     ...(text(data.email_inbox_owner) !== undefined ? { emailInboxOwner: text(data.email_inbox_owner) } : {}),
     path,
@@ -135,6 +142,24 @@ function parseEntry(path: string, name: string, bytes: Buffer, old: boolean): Pa
     ...(old ? { fromOldFolder: true as const } : {}),
   };
   return { item, time, name };
+}
+
+/**
+ * Within one project, entries with the same `email_key` (or an old file's `email_message_id`) collapse to the
+ * earliest by `at`, ties to the smaller file name (phase 5, overseer 5): two people approving one email show once.
+ */
+function collapseEmails(entries: Parsed[]): Parsed[] {
+  const first = new Map<string, Parsed>();
+  for (const e of entries) {
+    const k = e.item.kind === 'email' ? (e.item.emailKey ?? e.item.emailMessageId) : undefined;
+    if (!k) continue;
+    const cur = first.get(k);
+    if (!cur || e.time < cur.time || (e.time === cur.time && e.name < cur.name)) first.set(k, e);
+  }
+  return entries.filter((e) => {
+    const k = e.item.kind === 'email' ? (e.item.emailKey ?? e.item.emailMessageId) : undefined;
+    return !k || first.get(k) === e;
+  });
 }
 
 async function readFolder(root: string, folder: string, old: boolean): Promise<Listing> {
@@ -223,7 +248,7 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     const hit = cache.get(card.key);
     if (hit && hit.stamp === stamp) return hit.value;
     const parts = await Promise.all(folders.map((f) => readFolder(root, f.folder, f.old)));
-    const entries = parts.flatMap((p) => p.entries);
+    const entries = collapseEmails(parts.flatMap((p) => p.entries));
     entries.sort((a, b) => b.time - a.time || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
     const value = { entries, unreadable: parts.reduce((n, p) => n + p.unreadable, 0) };
     cache.set(card.key, { stamp, value });
@@ -233,11 +258,19 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
   const capable = async () =>
     (await opts.skill.capabilities().catch(() => [] as string[])).includes(PROJECTS_UPDATES_CAPABILITY);
 
+  const emailCapable = async () =>
+    (await opts.skill.capabilities().catch(() => [] as string[])).includes(PROJECTS_EMAIL_CAPABILITY);
+
   const read: ProjectUpdatesService['read'] = async (key, before, identity) => {
     const index = await opts.index();
     const card = index.byKey(key);
     if (!card) throw new ProjectsError('not-found', COULD_NOT_FIND);
-    const [all, allowed, hasCap] = await Promise.all([listing(card, index), mayChange(identity), capable()]);
+    const [all, allowed, hasCap, hasEmailCap] = await Promise.all([
+      listing(card, index),
+      mayChange(identity),
+      capable(),
+      emailCapable(),
+    ]);
     let start = 0;
     if (before !== null) {
       const at = all.entries.findIndex((e) => e.item.path === before);
@@ -254,18 +287,39 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     // The script refuses both changes without a live, readable card.
     const live = !card.archived && card.card === 'ok';
     const page = all.entries.slice(start, start + UPDATES_PAGE);
+    // "Open in Gmail" only for the inbox owner: their roles.json email is the Gmail account to open.
+    const gmail = new Map<string, string | null>();
+    for (const { item } of page) {
+      const owner = item.emailInboxOwner;
+      if (item.kind !== 'email' || !owner || gmail.has(owner) || !isSlugOf(identity, owner)) continue;
+      gmail.set(owner, (await memberEmailOfSlug(root, owner).catch(() => null)) ?? identity.email);
+    }
     const updates: ProjectUpdateItem[] = page.map(({ item }) => {
+      const isEmail = item.kind === 'email';
       const author = item.by === identity.slug || (card.space === 'personal' && item.by === 'me');
-      const mayRemove = author || identity.role === 'owner' || identity.role === 'scout';
+      // An email entry: its inbox owner (not just whoever saved it), the Owner or a scout (contract, overseer d).
+      const mayRemove = isEmail
+        ? isSlugOf(identity, item.emailInboxOwner) || identity.role === 'owner' || identity.role === 'scout'
+        : author || identity.role === 'owner' || identity.role === 'scout';
+      const ownerEmail = item.emailInboxOwner ? gmail.get(item.emailInboxOwner) : null;
+      let gmailUrl: string | undefined;
+      if (isEmail && ownerEmail && item.emailThreadId && GMAIL_THREAD_ID_PATTERN.test(item.emailThreadId)) {
+        try {
+          gmailUrl = gmailThreadUrl(ownerEmail, item.emailThreadId);
+        } catch {
+          gmailUrl = undefined;
+        }
+      }
       return {
         ...item,
+        ...(gmailUrl ? { gmailUrl } : {}),
         byName: roster.get(item.by) ?? item.by,
         canRemove:
           hasCap &&
           allowed &&
           live &&
           !item.fromOldFolder &&
-          MANUAL_KINDS.includes(item.kind) &&
+          (isEmail ? hasEmailCap : MANUAL_KINDS.includes(item.kind)) &&
           UPDATE_FILE_PATTERN.test(item.path.slice(item.path.lastIndexOf('/') + 1)) &&
           mayRemove,
       };

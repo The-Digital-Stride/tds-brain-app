@@ -513,3 +513,19 @@
     padding-inline: 0;
   }
 }
+
+@layer features {
+  /* Waiting-for-your-OK emails (EmailDrafts) and an email's Updates row */
+  .proj-email-subject {
+    overflow-wrap: anywhere;
+  }
+  .proj-email-row {
+    align-items: center;
+  }
+  .proj-email-row .proj-update-body {
+    gap: var(--sp-4);
+  }
+  .proj-email-form .proj-update-body {
+    gap: var(--sp-8);
+  }
+}

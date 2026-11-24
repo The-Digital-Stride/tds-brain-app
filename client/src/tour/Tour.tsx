@@ -49,7 +49,7 @@ interface Box {
   height: number;
 }
 
-/** The first-run tour: a spotlight and a small card, walking round seven places. Mounted once, inside the shell. */
+/** The first-run tour: a spotlight and a small card, walking round Cortex (steps.ts). Mounted once, inside the shell. */
 export function Tour() {
   const { boot, lists, sessions, view, activeChat, newChat, updatePrefs } = useStore();
   const { state, dispatch } = useShell();
@@ -96,8 +96,8 @@ export function Tour() {
   const finish = useCallback(() => {
     stop();
     setDismissed(true);
-    // Someone new to Cortex has nothing to catch up on: the notes up to this version count as read, so the
-    // "TDS Brain is now TDS Cortex" card never greets a person who never used TDS Brain.
+    // Someone new to Cortex has nothing to catch up on: the notes up to this version count as read, so old
+    // What's new cards (the TDS Cortex rename among them) never greet a person who has just arrived.
     const caughtUp =
       !existing && !boot?.prefs.whatsNewSeen
         ? pickNote(whatsNewNotes, boot?.appVersion ?? '', null)?.version
@@ -181,6 +181,8 @@ export function Tour() {
       setBox({ left: r.left - PAD, top: r.top - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
       setCardH(cardRef.current?.offsetHeight || 180);
     };
+    // Home scrolls on its own: bring the step's target into view first, so the spotlight is never off-screen.
+    findAnchor(step)?.scrollIntoView?.({ block: 'nearest' });
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);

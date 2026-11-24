@@ -49,6 +49,7 @@ function projectsApp(): AppSlot {
 
 /**
  * Apps on the rail. The rail shows an "Apps" group only when this has entries, and the view
- * `app:<id>` shows the matching `Sheet`.
+ * `app:<id>` shows the matching `Sheet`. A new app needs a tour step too (`client/src/tour/steps.ts`);
+ * `client/src/tour/steps.test.ts` fails until it has one.
  */
 export const APPS: AppSlot[] = [imagesApp(), documentsApp(), projectsApp()];

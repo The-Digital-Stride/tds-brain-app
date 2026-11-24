@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdsSummary } from '../../../../shared/ads-contract.ts';
+import { TOUR_VERSION } from '../../tour/steps.ts';
 import { card, projectList } from './testing.ts';
 
 const api = vi.hoisted(() => ({
@@ -61,7 +62,7 @@ const boot = {
   skills: [],
   clients: [{ slug: 'acme', name: 'Acme Heating' }],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1 },
+  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: TOUR_VERSION },
 };
 const adsSummary: AdsSummary = {
   visible: true,

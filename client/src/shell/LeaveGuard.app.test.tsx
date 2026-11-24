@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/ads-contract.ts';
 import { projectList } from '../apps/projects/testing.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
+import { TOUR_VERSION } from '../tour/steps.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -65,7 +66,7 @@ const boot = {
   skills: [],
   clients: [{ slug: 'acme', name: 'Acme Heating' }],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1 },
+  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: TOUR_VERSION },
 };
 const adsSummary: AdsSummary = {
   visible: true,

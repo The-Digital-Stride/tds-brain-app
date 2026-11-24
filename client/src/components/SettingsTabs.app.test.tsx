@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TOUR_VERSION } from '../tour/steps.ts';
 
 // The whole app with the real store and a fake server: what the Settings tabs do to the sheet.
 const api = vi.hoisted(() => ({
@@ -62,7 +63,14 @@ const boot = (over: Record<string, unknown> = {}, prefs: Record<string, unknown>
   skills: [],
   clients: [],
   usedOften: [],
-  prefs: { pins: [], lastClient: null, todoPanelOpen: false, directWrites: false, tourSeen: 1, ...prefs },
+  prefs: {
+    pins: [],
+    lastClient: null,
+    todoPanelOpen: false,
+    directWrites: false,
+    tourSeen: TOUR_VERSION,
+    ...prefs,
+  },
   ...over,
 });
 

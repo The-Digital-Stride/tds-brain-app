@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.75.1 — 2026-11-24
+
+- **fix**: What's new note for 0.75.0 (the fresh tour)
+
+## v0.75.0 — 2026-11-24
+
+- **feat**: tour shows Projects, Working on, the Workbench, Images and Documents and Home's cards; keeps up by itself
+
 ## v0.74.1 — 2026-11-24
 
 - **docs**: help caught up with v0.55 to v0.74: What's new notes for each release, 14 pages fixed against the app, Home screenshot retaken

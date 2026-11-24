@@ -433,9 +433,7 @@ const SCENES: Record<string, Scene> = {
     await form
       .getByRole('textbox', { name: 'What needs doing?' })
       .fill('Call the office manager about the quote');
-    await form.getByRole('button', { name: 'Add a due date' }).click();
     await form.getByLabel('Due date (optional)').fill('2026-11-24');
-    await form.getByRole('button', { name: "Choose who it's for" }).click();
     await form.getByLabel('Assigned to').selectOption({ label: 'Alex Morgan' });
     await sleep(300);
   },

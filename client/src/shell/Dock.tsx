@@ -34,6 +34,8 @@ export function Dock({ side, open, label, overlay, onClose, actions, children }:
       // panel left open, say), or focus would be stranded on something that has just gone inert.
       if (!asked && !overlay) return;
       if (asked) focusIntent.current = null;
+      // The to-do panel opened with its drawer (a project's Add a to-do) and its form has the keyboard: leave it there.
+      if (active instanceof HTMLElement && active.closest('#todo-panel-slot') !== null) return;
       if (!inside && active instanceof HTMLElement && active !== document.body) opener.current = active;
       heading.current?.focus();
       return;

@@ -123,12 +123,11 @@ beforeEach(() => {
 afterEach(cleanup);
 beforeEach(() => fakeShell.reset());
 
-describe('quick add', () => {
-  it('opens a one-line add from the + button and Enter adds it to me with no date', async () => {
+describe('adding a to-do', () => {
+  it('opens the add form from the + button and Enter adds it to me with no date', async () => {
     render(<TodosDrawer />);
     expect(screen.getByRole('button', { name: 'Add a to-do' }).getAttribute('data-variant')).toBe('primary');
     await openAdd();
-    expect(screen.queryByLabelText('Due date (optional)')).toBeNull();
     fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: ' Ring Bob ' } });
     fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
     await waitFor(() =>
@@ -172,7 +171,6 @@ describe('quick add', () => {
     render(<TodosDrawer />);
     await openAdd();
     fireEvent.click(screen.getByRole('button', { name: 'Keep it personal' }));
-    fireEvent.click(screen.getByRole('button', { name: "Choose who it's for" }));
     fireEvent.change(screen.getByLabelText('Assigned to'), { target: { value: 'ben-mcadam' } });
     const lock = screen.getByRole('button', { name: 'Keep it personal' });
     expect(lock.getAttribute('aria-disabled')).toBe('true');
@@ -182,19 +180,6 @@ describe('quick add', () => {
     );
     fireEvent.click(lock);
     expect(lock.getAttribute('aria-pressed')).toBe('false');
-    // The person toggle now names who it is for.
-    expect(screen.getByRole('button', { name: 'For: Ben McAdam' }).getAttribute('data-on')).toBe('true');
-  });
-
-  it('names the date in its toggle and uses only aria-expanded', async () => {
-    render(<TodosDrawer />);
-    await openAdd();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a due date' }));
-    fireEvent.change(screen.getByLabelText('Due date (optional)'), { target: { value: '2030-11-14' } });
-    const toggle = screen.getByRole('button', { name: 'Due date: 14 Nov' });
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle.getAttribute('aria-pressed')).toBeNull();
-    expect(toggle.getAttribute('data-on')).toBe('true');
   });
 
   const submitButton = () =>
@@ -210,19 +195,15 @@ describe('quick add', () => {
     expect(submitButton().getAttribute('aria-describedby')).toBe(warning.id);
   });
 
-  it('More options moves focus to the first field it reveals', async () => {
+  it('opens with every field showing and the keyboard on the title: nothing hidden behind More options', async () => {
     render(<TodosDrawer />);
     await openAdd();
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
-    expect(document.activeElement).toBe(screen.getByLabelText('Due date (optional)'));
-  });
-
-  it('More options shows the date and assignee fields', async () => {
-    render(<TodosDrawer />);
-    await openAdd();
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('What needs doing?'));
     expect(screen.getByLabelText('Due date (optional)')).toBeTruthy();
     expect(screen.getByLabelText('Assigned to')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'More options' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a due date' })).toBeNull();
+    expect(screen.queryByRole('button', { name: "Choose who it's for" })).toBeNull();
   });
 });
 

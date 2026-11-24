@@ -111,6 +111,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   const asked = props.asked ?? null;
   const { state, dispatch, modes } = useShell();
   const panel = state.todoPanel;
+  const addStart = panel?.mode === 'add' ? (panel.start ?? null) : null;
   const overlays = modes.drawerOverlays;
   const headId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -266,6 +267,8 @@ export default function TodoPanel(props: TodoPanelProps) {
         {mode === 'add' ? (
           <div className="todo-body todo-add-body">
             <AddTodoForm
+              // Opened from a page (a project) it starts where that page says; a new start is a new form.
+              key={addStart ? `${addStart.personal ? 'personal' : 'tds'}:${addStart.project}` : 'drawer'}
               me={props.me}
               team={props.team}
               busy={props.busy}
@@ -273,8 +276,8 @@ export default function TodoPanel(props: TodoPanelProps) {
               canUsePersonal={props.canUsePersonal}
               canAttach={props.canAttach}
               canProject={canProject}
-              startPersonal={props.startPersonal}
-              startProject={props.startProject}
+              startPersonal={addStart ? addStart.personal : props.startPersonal}
+              startProject={addStart ? addStart.project : props.startProject}
               onAdd={props.onAdd}
               onCancel={props.onCancelAdd}
               onDirty={setAddDirty}

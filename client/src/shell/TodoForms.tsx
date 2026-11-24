@@ -23,13 +23,6 @@ export const PERSONAL_WARNING =
 /** Said when a personal to-do is given to someone else. */
 export const PASS_ON_NOTE = 'Passing it on makes it a TDS to-do so they can see it.';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/** "14 Nov" from YYYY-MM-DD. */
-function shortDate(iso: string): string {
-  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso);
-  return m ? `${Number(m[2])} ${MONTHS[Number(m[1]) - 1] ?? ''}`.trim() : iso;
-}
-
 /**
  * The details the panel shows and the editor edits. With `canAttach` that is the body without its
  * `## Files` section (the section is shown as a Files block and kept by the skill); otherwise the whole body.
@@ -159,8 +152,9 @@ export function Assignee({
 }
 
 /**
- * The "Add a to-do" line: type, press Enter, done (it goes to you, with no date). Icon toggles on the line
- * add a personal flag, a date and a person; "More options" opens the full fields. Esc cancels.
+ * The "Add a to-do" form, with every field showing from the start wherever it is opened: title, due date, who
+ * it's for, project and stage, details. Enter in the title adds it (to you, with no date, unless set). The lock on
+ * the title line keeps it personal. Esc cancels.
  */
 export function AddTodoForm({
   me,
@@ -201,36 +195,23 @@ export function AddTodoForm({
   const [due, setDue] = useState('');
   const [assignee, setAssignee] = useState(me);
   const [personalChoice, setPersonal] = useState(startPersonal && canUsePersonal);
-  const [dateOpen, setDateOpen] = useState(false);
-  const [whoOpen, setWhoOpen] = useState(false);
-  const [full, setFull] = useState(false);
   const [details, setDetails] = useState('');
   // A new to-do starts in the project the drawer is filtered to (that is the app-wide picker's while it holds one).
   const picked = useProjectChoice();
   const [project, setProject] = useState(canProject ? startProject || picked : '');
   const [stage, setStage] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
-  const dueRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
   const hasTitle = title.trim() !== '';
   const hasDetails = canAttach && details.trim() !== '';
   const overLimit = canAttach && details.length > TODO_DETAILS_MAX;
   useEffect(() => onDirty?.(hasTitle || hasDetails), [hasTitle, hasDetails, onDirty]);
-  // "More options" removes itself: put the keyboard on the first field it reveals.
-  useEffect(() => {
-    if (full) dueRef.current?.focus();
-  }, [full]);
 
   // Someone else, or open to anyone, can't be personal: it turns off and the toggle is disabled.
   const mine = assignee === me;
   const personal = canUsePersonal && personalChoice && mine;
-  const whoName =
-    assignee === '' ? 'Open to anyone' : (team.find((m) => m.slug === assignee)?.name ?? assignee);
-  const showDate = full || dateOpen;
-  const showWho = full || whoOpen;
   // A TDS to-do is never put in a personal project, so a preset one falls away when it isn't personal.
   const projectKey = canProject && (personal || !project.startsWith('personal/')) ? project : '';
-  const showProject = canProject && (full || projectKey !== '');
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -261,9 +242,7 @@ export function AddTodoForm({
   return (
     <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label="Add a to-do">
       <div className="form-field">
-        <label htmlFor={`${uid}-title`} className={full ? undefined : 'visually-hidden'}>
-          What needs doing?
-        </label>
+        <label htmlFor={`${uid}-title`}>What needs doing?</label>
         <div className="todo-quick">
           <input
             id={`${uid}-title`}
@@ -289,26 +268,6 @@ export function AddTodoForm({
               <Icon name="lock" size={16} />
             </button>
           ) : null}
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={due ? `Due date: ${shortDate(due)}` : 'Add a due date'}
-            aria-expanded={showDate}
-            data-on={due !== '' ? 'true' : undefined}
-            onClick={() => setDateOpen(!dateOpen)}
-          >
-            <Icon name="calendar" size={16} />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={mine ? "Choose who it's for" : `For: ${whoName}`}
-            aria-expanded={showWho}
-            data-on={!mine ? 'true' : undefined}
-            onClick={() => setWhoOpen(!whoOpen)}
-          >
-            <Icon name="person" size={16} />
-          </button>
         </div>
       </div>
       {canUsePersonal && !mine ? (
@@ -321,33 +280,28 @@ export function AddTodoForm({
           {PERSONAL_WARNING}
         </p>
       ) : null}
-      {showDate ? (
-        <div className="form-field">
-          <label htmlFor={`${uid}-due`}>Due date (optional)</label>
-          <input
-            id={`${uid}-due`}
-            ref={dueRef}
-            type="date"
-            className="field"
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
-        </div>
-      ) : null}
-      {showWho ? (
-        <div className="form-field">
-          <label htmlFor={`${uid}-who`}>Assigned to</label>
-          <Assignee
-            id={`${uid}-who`}
-            value={assignee}
-            onChange={setAssignee}
-            me={me}
-            team={team}
-            allowOpen={canAddOpen}
-          />
-        </div>
-      ) : null}
-      {showProject ? (
+      <div className="form-field">
+        <label htmlFor={`${uid}-due`}>Due date (optional)</label>
+        <input
+          id={`${uid}-due`}
+          type="date"
+          className="field"
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+        />
+      </div>
+      <div className="form-field">
+        <label htmlFor={`${uid}-who`}>Assigned to</label>
+        <Assignee
+          id={`${uid}-who`}
+          value={assignee}
+          onChange={setAssignee}
+          me={me}
+          team={team}
+          allowOpen={canAddOpen}
+        />
+      </div>
+      {canProject ? (
         <ProjectFields
           id={`${uid}-add`}
           scope={personal ? 'personal' : 'tds'}
@@ -395,17 +349,6 @@ export function AddTodoForm({
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
         </button>
-        {full ? null : (
-          <button
-            type="button"
-            className="btn todo-more"
-            data-variant="quiet"
-            data-size="small"
-            onClick={() => setFull(true)}
-          >
-            More options
-          </button>
-        )}
       </div>
     </form>
   );

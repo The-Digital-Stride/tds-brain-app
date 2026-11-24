@@ -13,6 +13,7 @@ import type {
   ShellAction,
   ShellReducer,
   ShellState,
+  TodoAddStart,
 } from '../shell/contract.ts';
 
 export const DEFAULT_SHELL: ShellState = {
@@ -59,6 +60,11 @@ function withPanelRule(state: ShellState): ShellState {
   return state.todoPanel !== null && state.drawer !== 'todos' ? { ...state, todoPanel: null } : state;
 }
 
+/** Two add-form starting points are the same: the same project and scope, or neither set. */
+export function sameStart(a: TodoAddStart | null, b: TodoAddStart | null): boolean {
+  return a === b || (a !== null && b !== null && a.project === b.project && a.personal === b.personal);
+}
+
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((k, i) => k === b[i]);
 }
@@ -68,6 +74,14 @@ function todoPanelReducer(state: ShellState, action: ShellAction): ShellState {
   const panel = state.todoPanel;
   switch (action.type) {
     case 'open-todo':
+      // The add form already open where this one would start: leave it as it is, typing and all.
+      if (
+        action.mode === 'add' &&
+        panel?.mode === 'add' &&
+        sameStart(panel.start ?? null, action.start ?? null)
+      ) {
+        return state;
+      }
       return {
         ...state,
         todoPanel: {
@@ -76,6 +90,7 @@ function todoPanelReducer(state: ShellState, action: ShellAction): ShellState {
           dirty: false,
           ask: null,
           order: panel?.order ?? [],
+          start: action.mode === 'add' ? (action.start ?? null) : null,
         },
       };
     case 'set-todo-mode':

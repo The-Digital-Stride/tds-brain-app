@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { TidyList } from '../../../../shared/projects-contract.ts';
 import { card, projectList } from './testing.ts';
 
@@ -12,6 +12,7 @@ const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   changeTodos: vi.fn(),
   toggleFavouriteTodo: vi.fn(),
+  openSettings: vi.fn(),
   openChat: vi.fn(),
   sessions: null as unknown,
   boot: {
@@ -28,6 +29,7 @@ const store = vi.hoisted(() => ({
       { slug: 'simon', name: 'Simon' },
     ],
     canProject: true,
+    changes: 'on',
   } as unknown,
 }));
 const shell = vi.hoisted(() => ({ dispatch: vi.fn() }));
@@ -63,6 +65,7 @@ vi.mock('../../shell/ShellProvider.tsx', () => ({
 const { ProjectsSheet } = await import('./ProjectsSheet.tsx');
 const { projectsStore } = await import('../../state/projects.ts');
 const { ApiFailure } = await import('../../api.ts');
+const { ShellContext } = await import('../../shell/shell-context.ts');
 
 const SKY = card({ slug: 'site', title: 'Sky site', owner: 'me' });
 
@@ -77,11 +80,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** A stand-in shell for the page's own calls (Add a to-do): dispatch is recorded, nothing is held. */
+const shellApi = {
+  dispatch: shell.dispatch,
+  sheetHold: { dirty: false },
+  guardLeave: (go: () => void) => go(),
+};
 async function show(list: ReturnType<typeof projectList>) {
   api.projects.mockResolvedValue(list);
   projectsStore.apply(list);
-  render(<ProjectsSheet />);
+  const view = render(
+    <ShellContext.Provider value={shellApi as never}>
+      <ProjectsSheet />
+    </ShellContext.Provider>,
+  );
   await screen.findByText(/of \d+ project/);
+  return view;
 }
 
 describe('the form after a "changed" refusal (fix 1)', () => {
@@ -232,75 +246,86 @@ describe('the To-dos tab (fix 2)', () => {
     expect(screen.queryByRole('button', { name: /: Loose$/ })).toBeNull();
   });
 
-  describe('the add form asks before throwing away typing (UX consistency, release 2B)', () => {
-    const openForm = async () => {
+  it("Add a to-do opens the To-dos panel's full form, starting in this project", async () => {
+    api.projectTodos.mockResolvedValue(rows);
+    await show(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    await screen.findByText('Simon two');
+    shell.dispatch.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    expect(shell.dispatch.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'open-drawer', drawer: 'todos' },
+      { type: 'open-todo', key: null, mode: 'add', start: { project: SKY.key, personal: false } },
+    ]);
+    // No cut-down form of its own on the page.
+    expect(screen.queryByLabelText('To-do')).toBeNull();
+  });
+
+  it('a personal project offers no Add a to-do when the brain has no personal to-dos', async () => {
+    const mine = card({ slug: 'garden', client: null, title: 'Garden', owner: 'me' });
+    api.projectTodos.mockResolvedValue(rows);
+    await show(projectList([mine]));
+    fireEvent.click(screen.getByRole('button', { name: /Garden/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    await screen.findByText('Simon two');
+    expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
+    expect(screen.getByText(/Update the brain's skills/)).toBeTruthy();
+  });
+
+  it('a personal project starts the form personal', async () => {
+    const was = store.todos;
+    store.todos = { ...(was as object), canUsePersonal: true };
+    onTestFinished(() => {
+      store.todos = was;
+    });
+    const mine = card({ slug: 'garden', client: null, title: 'Garden', owner: 'me' });
+    api.projectTodos.mockResolvedValue(rows);
+    await show(projectList([mine]));
+    fireEvent.click(screen.getByRole('button', { name: /Garden/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    await screen.findByText('Simon two');
+    shell.dispatch.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    expect(shell.dispatch).toHaveBeenCalledWith({
+      type: 'open-todo',
+      key: null,
+      mode: 'add',
+      start: { project: 'personal/garden', personal: true },
+    });
+  });
+
+  it('offers no Add a to-do while changing to-dos is switched off, and says how to turn it on', async () => {
+    const was = store.todos;
+    store.todos = { ...(was as object), changes: 'switched-off' };
+    try {
       api.projectTodos.mockResolvedValue(rows);
       await show(projectList([SKY]));
       fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
       fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
       await screen.findByText('Simon two');
-      fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    };
-
-    it('closes at once on Cancel while nothing is typed', async () => {
-      await openForm();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.queryByLabelText('To-do')).toBeNull();
-      expect(screen.queryByText('Discard your changes?')).toBeNull();
-    });
-
-    it('asks on Cancel once a title is typed, with Keep editing focused', async () => {
-      await openForm();
-      fireEvent.change(screen.getByLabelText('To-do'), { target: { value: 'Half a thought' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.getByText('Discard your changes?')).toBeTruthy();
-      await waitFor(() =>
-        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep editing' })),
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
-      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Half a thought');
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
-      expect(screen.queryByLabelText('To-do')).toBeNull();
-      // Reopened, the form starts empty: the discarded typing is gone.
-      fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('');
-    });
-
-    it('keeps the typing on Esc', async () => {
-      await openForm();
-      const field = screen.getByLabelText('To-do');
-      fireEvent.change(field, { target: { value: 'Keep me' } });
-      fireEvent.keyDown(field, { key: 'Escape' });
-      expect(screen.getByText('Discard your changes?')).toBeTruthy();
-      // Esc again, from the strip, keeps editing.
-      fireEvent.keyDown(screen.getByRole('button', { name: 'Keep editing' }), { key: 'Escape' });
-      expect(screen.queryByText('Discard your changes?')).toBeNull();
-      expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Keep me');
-    });
-
-    it('submits with "Add a to-do"', async () => {
-      await openForm();
-      const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
-      expect(within(form).getByRole('button', { name: 'Add a to-do' }).getAttribute('type')).toBe('submit');
-    });
+      expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
+      expect(screen.getByText(/Adding to-dos is switched off/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(store.openSettings).toHaveBeenCalledWith('general', 'set-direct');
+    } finally {
+      store.todos = was;
+    }
   });
 
-  it('refreshes after Add a to-do', async () => {
+  it('reloads the list when the to-do lists change (an add in the To-dos panel)', async () => {
     api.projectTodos.mockResolvedValue(rows);
-    store.changeTodos.mockResolvedValue({});
-    await show(projectList([SKY]));
+    const view = await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
     fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
     await screen.findByText('Simon two');
-    api.projects.mockResolvedValue(projectList([SKY]));
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    fireEvent.change(screen.getByLabelText('To-do'), { target: { value: 'New thing' } });
     const before = api.projectTodos.mock.calls.length;
-    const form = screen.getByLabelText('To-do').closest('form') as HTMLElement;
-    await act(async () => {
-      fireEvent.click(within(form).getByRole('button', { name: 'Add a to-do' }));
-    });
+    store.todos = { ...(store.todos as object) };
+    view.rerender(
+      <ShellContext.Provider value={shellApi as never}>
+        <ProjectsSheet />
+      </ShellContext.Provider>,
+    );
     await waitFor(() => expect(api.projectTodos.mock.calls.length).toBeGreaterThan(before));
   });
 });

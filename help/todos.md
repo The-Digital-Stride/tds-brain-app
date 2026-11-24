@@ -40,6 +40,7 @@ The Tasks drawer shows your tasks and the team's open ones. They live in the Bra
 
 - TDS Cortex can't change tasks until that switch is on. It's off by default, because tasks are shared by the whole team.
 - Passing a personal task on makes it a TDS task, so your teammate can see it.
+- From a project, you can open a teammate's task to read it. Only they can change it.
 - Marking something done records who did it and when.
 - **Done** shows the whole team's finished tasks, plus your own personal ones. A project's **Tasks** tab keeps its finished ones in a folded **Done** section. Search finds them too, marked as done.
 - Open a task's **History** (at the bottom of the panel) to see how it changed.

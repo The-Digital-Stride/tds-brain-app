@@ -12,6 +12,7 @@ import { InviteIcon, JoinLink, joinOpen } from './MeetingActions.tsx';
 import { clockTime, dayWords, localDay, parseDay, withWords } from './meeting-words.ts';
 import { ShowMore } from './ShowMore.tsx';
 import { StateNote } from './StateNote.tsx';
+import type { CardDragProps } from './useCardOrder.tsx';
 import { useNow } from './useNow.ts';
 
 const HOUR = 60 * 60 * 1000;
@@ -131,7 +132,13 @@ function MeetingRow({
 }
 
 /** Home's Meetings card: what's coming up in this person's own calendar, project or not. */
-export function HomeMeetings() {
+export function HomeMeetings({
+  grip,
+  cardProps,
+}: {
+  grip?: React.ReactNode;
+  cardProps?: CardDragProps;
+} = {}) {
   const { openView } = useStore();
   const [data, setData] = useState<HomeMeetingsResponse | null>(null);
   const [error, setError] = useState(false);
@@ -227,8 +234,9 @@ export function HomeMeetings() {
   }
 
   return (
-    <section className="card home-meetings" aria-labelledby="home-meetings">
+    <section className="card home-meetings" aria-labelledby="home-meetings" {...cardProps}>
       <div className="card-head">
+        {grip}
         <h2 id="home-meetings">Meetings</h2>
         <a
           className="btn"

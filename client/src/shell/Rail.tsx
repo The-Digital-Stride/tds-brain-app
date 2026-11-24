@@ -17,6 +17,9 @@ import { SyncStamp } from './SyncStamp.tsx';
 import { sectionBadge, toolFor, visibleSections } from './sections.ts';
 import { chatsRailLabel, initials, ROLE_WORDS, todosRailLabel } from './words.ts';
 
+/** Apps shown in the top group, straight under Home, rather than in the Apps group. */
+const TOP_APPS = new Set(['projects']);
+
 /** The labels the left dock shows for each drawer. App.tsx passes the same text to `Dock`. */
 export const DRAWER_LABELS: Record<DrawerName, string> = {
   chats: 'Chats',
@@ -164,6 +167,8 @@ export function Rail({ inert = false }: { inert?: boolean }) {
     : 0;
   const sections = visibleSections(snap);
   const app = APPS.find((a) => view === `app:${a.id}`);
+  const topApps = APPS.filter((a) => TOP_APPS.has(a.id));
+  const groupApps = APPS.filter((a) => !TOP_APPS.has(a.id));
   const onHome = (view === 'chat' && activeChat.kind === 'new') || (view.startsWith('app:') && !app);
   const drawer = (name: DrawerName) => ({ name, open: state.drawer === name });
   const choose = () => hover.current?.choose();
@@ -222,6 +227,19 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           current={onHome}
           onClick={() => newChat()}
         />
+        {/* Projects sits straight under Home (Ian 2026-11-24): keeping work organised is what Cortex is for.
+          The other apps stay in the Apps group below. */}
+        {topApps.map((a) => (
+          <Item
+            choose={choose}
+            key={a.id}
+            icon={a.icon}
+            label={a.title}
+            wide={showsNames}
+            current={app?.id === a.id}
+            onClick={() => openView(`app:${a.id}`)}
+          />
+        ))}
         <Item
           choose={choose}
           icon="chat"
@@ -270,10 +288,10 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           );
         })}
 
-        {APPS.length > 0 ? (
+        {groupApps.length > 0 ? (
           <div className="rail-group">
             <span className="rail-group-name rail-label">Apps</span>
-            {APPS.map((a) => (
+            {groupApps.map((a) => (
               <Item
                 choose={choose}
                 key={a.id}

@@ -2,6 +2,19 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.73.2 — 2026-11-24
+
+- **fix**: Projects sits straight under Home in the main menu
+
+## v0.73.1 — 2026-11-24
+
+- **fix**: card grips always visible
+
+## v0.73.0 — 2026-11-24
+
+- **feat**: drag Home's cards into your own order, kept per person in this browser
+- **fix**: card order keeps hidden Ads approvals in place; focus only after a real move; reset focuses the first grip
+
 ## v0.72.1 — 2026-11-24
 
 - **fix**: code note no longer promises email matching before it exists

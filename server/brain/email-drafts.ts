@@ -408,7 +408,9 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
       summary === '' ||
       summary.length > UPDATE_SUMMARY_MAX ||
       typeof req.subject !== 'string' ||
-      !checkText(req.subject, EMAIL_SUBJECT_MAX) ||
+      // An email can have no subject (correctness review).
+      req.subject.length > EMAIL_SUBJECT_MAX ||
+      NEWLINE.test(req.subject) ||
       typeof req.from !== 'string' ||
       !checkText(req.from, EMAIL_NAME_MAX) ||
       !Array.isArray(req.people) ||

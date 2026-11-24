@@ -56,7 +56,9 @@ describe('EmailApproval', () => {
     expect(screen.getByText('The project code is in the subject.')).toBeTruthy();
     expect((screen.getByLabelText('Client can see this') as HTMLInputElement).checked).toBe(false);
     fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Budget, final' } });
-    fireEvent.change(screen.getByLabelText('Who else was on it'), { target: { value: 'Jo Lee' } });
+    fireEvent.change(screen.getByLabelText('Who else was on it'), {
+      target: { value: 'Smith, Alex\n Jo Lee \n' },
+    });
     fireEvent.change(screen.getByLabelText('Summary'), { target: { value: ' Agreed. ' } });
     fireEvent.click(screen.getByLabelText('Client can see this'));
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
@@ -68,11 +70,19 @@ describe('EmailApproval', () => {
         summary: 'Agreed.',
         subject: 'Budget, final',
         from: 'Alex Smith',
-        people: ['Jo Lee'],
+        people: ['Smith, Alex', 'Jo Lee'],
         clientSafe: true,
       }),
     );
     await waitFor(() => expect(onDone).toHaveBeenCalledWith({ done: 'saved', key: 'skyseal/site' }));
+  });
+
+  it('refuses an email address in the names before sending anything', () => {
+    render(<EmailApproval draft={draft()} projects={projects} onDone={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Who else was on it'), { target: { value: 'jo@client.example' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
+    expect(api.projectEmailDraftAct).not.toHaveBeenCalled();
+    expect(screen.getByText("Use people's names, not email addresses.")).toBeTruthy();
   });
 
   it('says why Save did nothing until a project is chosen, and the reason line follows the choice (UX review)', () => {

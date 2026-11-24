@@ -980,8 +980,8 @@ export function parseEmailDraftPost(body: unknown): EmailDraftApproveRequest | E
     typeof summary !== 'string' ||
     summary.trim() === '' ||
     summary.trim().length > UPDATE_SUMMARY_MAX ||
+    // An email can have no subject; the script saves it as given (correctness review).
     typeof subject !== 'string' ||
-    subject.trim() === '' ||
     subject.length > EMAIL_SUBJECT_MAX ||
     !noNewline(subject) ||
     !name(from) ||

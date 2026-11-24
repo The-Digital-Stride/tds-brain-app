@@ -239,6 +239,12 @@ describe('POST /api/projects/email-drafts', () => {
     expect(seen.access).toContain('tdsapp-projects');
   });
 
+  it('approves an email with no subject, as the script saves it (correctness review)', async () => {
+    const r = await post({ ...APPROVE, subject: '' });
+    expect(r.status).toBe(200);
+    expect(seen.approved).toEqual([{ ...APPROVE, subject: '' }]);
+  });
+
   it('answers exists as a normal reply', async () => {
     state.answer = { ok: false, code: 'exists', key: 'acme/seo', byName: 'Ben McAdam' };
     const r = await post(APPROVE);

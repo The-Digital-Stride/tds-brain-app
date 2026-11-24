@@ -66,7 +66,7 @@ export function EmailApproval({
   const [project, setProject] = useState(draft.route.key ?? '');
   const [subject, setSubject] = useState(draft.subject);
   const [from, setFrom] = useState(draft.from);
-  const [people, setPeople] = useState(draft.people.join(', '));
+  const [people, setPeople] = useState(draft.people.join('\n'));
   const [summary, setSummary] = useState(draft.summary);
   const [clientSafe, setClientSafe] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,7 +76,7 @@ export function EmailApproval({
     project !== (draft.route.key ?? '') ||
     subject !== draft.subject ||
     from !== draft.from ||
-    people !== draft.people.join(', ') ||
+    people !== draft.people.join('\n') ||
     summary !== draft.summary ||
     clientSafe;
   const leave = useSheetHold(dirty);
@@ -96,6 +96,15 @@ export function EmailApproval({
   const save = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    // One name per line, so a name written "Smith, Alex" stays one person (correctness review).
+    const names = people
+      .split('\n')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if ([from, ...names].some((n) => n.includes('@'))) {
+      setMessage("Use people's names, not email addresses.");
+      return;
+    }
     if (!project) {
       // UX review: say why Save did nothing.
       setMessage('Choose a project first.');
@@ -112,10 +121,7 @@ export function EmailApproval({
         summary: summary.trim(),
         subject: subject.trim(),
         from: from.trim(),
-        people: people
-          .split(',')
-          .map((p) => p.trim())
-          .filter(Boolean),
+        people: names,
         clientSafe,
       });
       if (res.ok) {
@@ -241,17 +247,16 @@ export function EmailApproval({
       </div>
       <div className="form-field">
         <label htmlFor={`${id}-people`}>Who else was on it</label>
-        <input
+        <textarea
           id={`${id}-people`}
-          className="field"
-          type="text"
-          autoComplete="off"
+          className="field proj-area"
+          rows={Math.min(6, Math.max(2, draft.people.length))}
           aria-describedby={`${id}-people-hint`}
           value={people}
           onChange={(e) => setPeople(e.target.value)}
         />
         <p className="proj-note" id={`${id}-people-hint`}>
-          Names only, separated by commas. Email addresses are never saved.
+          One name per line. Email addresses are never saved.
         </p>
       </div>
       <div className="form-field">

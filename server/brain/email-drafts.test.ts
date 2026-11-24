@@ -276,6 +276,23 @@ describe('approving', () => {
     expect(s.changed()).toBe(1);
   });
 
+  it('passes an empty subject through to the script (correctness review)', async () => {
+    putDraft(draft('aaaaaaaaaaaa'));
+    const s = setup({
+      reply: {
+        out: JSON.stringify({
+          ok: true,
+          action: 'update',
+          key: 'acme/web',
+          version: 'a'.repeat(64),
+          file: 'f',
+        }),
+      },
+    });
+    await s.svc.approve({ ...body, subject: '' });
+    expect(JSON.parse(calls()[0]?.stdin ?? '{}').entry.subject).toBe('');
+  });
+
   it('answers exists with the project and who added it', async () => {
     putDraft(draft('aaaaaaaaaaaa'));
     const file = 'clients/acme/projects/web/updates/2026-11-01-0900-sam-example-abc123.md';

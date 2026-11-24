@@ -103,7 +103,7 @@ export function EmailDrafts({
               <li key={d.id}>
                 <div className="line proj-update proj-email-row">
                   <div className="proj-update-body">
-                    <span className="line-title proj-email-subject">{d.subject}</span>
+                    <span className="line-title proj-email-subject">{d.subject || 'No subject'}</span>
                     <span className="line-meta">
                       From {d.from} · {dateWords(d.sentAt)}
                       {/* On the list, where each email is headed (UX review). */}
@@ -114,7 +114,7 @@ export function EmailDrafts({
                     type="button"
                     className="btn"
                     data-size="small"
-                    aria-label={`Review email: ${d.subject}`}
+                    aria-label={`Review email: ${d.subject || 'No subject'}`}
                     onClick={() => {
                       setNotice('');
                       setOpenId(d.id);

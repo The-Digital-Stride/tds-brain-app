@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.78.0 — 2026-11-24
+
+- **feat**: Everyone / Mine switch on a project's To-dos tab
+- **fix**: Mine switch follows the design rules
+
 ## v0.77.0 — 2026-11-24
 
 - **feat**: list and search done to-dos in the drawer

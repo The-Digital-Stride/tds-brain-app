@@ -109,9 +109,9 @@ by the lead before builders start).
 |---|---|---|---|
 | Overseer | `overseer`, fable | plan critique and sign-off | (read-only) |
 | Builder A (script) | `builder`, opus | hard list: who may write (owner-only), de-duplication, never-shared drafts | `brain-skills/tdsapp-projects/scripts/tdsapp-projects.cjs`, its test, `brain-skills/tdsapp-projects/SKILL.md` |
-| Builder B (server) | `builder`, sonnet | default; routing is one pure function, table test first | `server/brain/email-drafts.ts` (+test), `server/brain/email-route.ts` (+test), `server/brain/project-updates.ts` (+test), `server/brain/project-activity.ts`, `server/brain/index.ts`, `server/http/routes.ts`, `server/http/project-email-routes.test.ts`, `shared/contract.ts` |
+| Builder B (server) | `builder`, sonnet | default; routing is one pure function, table test first | `server/brain/email-drafts.ts` (+test), `server/brain/email-route.ts` (+test), `server/brain/project-updates.ts` (+test), `server/brain/project-activity.ts`, `server/brain/index.ts`, `server/http/routes.ts`, `server/http/project-email-routes.test.ts`, `shared/contract.ts`, `shared/project-updates-contract.ts` |
 | Builder C (client) | `builder`, sonnet | default (UI) | `client/src/apps/projects/EmailDrafts.tsx` (+test), `client/src/apps/projects/EmailApproval.tsx` (+test), `client/src/apps/projects/ProjectUpdates.tsx` (+test), `client/src/apps/projects/ProjectsApp.tsx`, `client/src/apps/projects/ProjectPage.tsx`, `client/src/apps/projects/ProjectRef.tsx` (+ProjectsRefs test), `client/src/api.ts`, `client/src/styles/projects.css`, `help/projects.md`, `help/project-codes.md` |
-| Lead | me | | plan, contract, `shared/project-email-contract.ts`, `server/engine/session-manager.ts` line, `brain-skills/tdsapp-projects/brain-rules/r2-email.md` (gm Step 4b text), explainer |
+| Lead | me | | plan, contract, `shared/project-email-contract.ts`, `server/engine/session-manager.ts` (EMAIL_LINE + `canUseTool` denial, +test), `brain-skills/tdsapp-projects/brain-rules/r2-email.md` (gm Step 4b text), explainer |
 | Correctness reviewer | `reviewer`, opus high | | |
 | Security gate | `reviewer`, opus high (email content, identity, files) | | |
 | UX/UI gate | `expert`, sonnet medium + lead's browser check | | |
@@ -134,9 +134,40 @@ by the lead before builders start).
 - [ ] Domain gates: security (email content, identity, local files), UX/UI
 - [ ] Browser check: Projects app card, approval sheet, Overview card, Updates email row, narrow width
 
-## Pre-review outcomes
+## Pre-review outcomes (overseer, 2026-11-24)
 
-<Filled after the overseer's pre-review.>
+These override the decisions above where they differ; the contract has them.
+
+- **B1 Approval needs the owner's click.** The script writes a random `approve_token` into the draft and
+  never returns it. Email `update` needs it; only the server reads it from the file, on Save
+  (`POST ROUTES.projectEmailDrafts {action:'approve'}`). The lead adds a `canUseTool` denial for tool calls
+  naming the drafts folder or the token (`server/engine/session-manager.ts`), with a test. Residual risk: a
+  process that deliberately reads the file can still forge approval (security gate weighs it).
+  Plain: Claude can suggest; only your click saves.
+- **B2 Message-ID.** Probed 2026-11-24: the Gmail connector shows the Message-ID only in RAW format. So
+  `messageId` is optional and the script derives `email_key` = Message-ID, else `x:` + SHA-256 of sender
+  address, sent minute and normalised subject. The probe also confirmed the Gmail link format
+  (`?authuser=<email>#all/thread-f:<decimal>`), so "Open in Gmail" is built from it.
+  Plain: the same email is still recognised in two inboxes.
+- **B3 No addresses in synced files.** Entries store display names (an address only where there's no name).
+  Addresses and the domain stay in the local draft (brain `save-locations.md`: contact details live in
+  `crm/data/`).
+  Plain: the team sees who was on an email, not their addresses.
+- **B4 Size.** Newest text at most 4,000 characters and thread ids at most 20, so "link this thread" fits
+  Cortex's 20,000-character command limit (test it).
+- **S5** The server collapses the same `email_key` within a project on read (earliest wins).
+- **S6** Drafts expire after 30 days; folder 0700, files 0600; dismissals kept per inbox owner.
+- **S7** `inboxAddress` must equal this person's `roles.json` email, so a shared inbox or someone else's
+  login can't be saved as yours (watch: aliases).
+- **S8** The email rule moves to an every-chat line naming `email-draft` as the only route ("never as a note").
+- **S9** Patterns: hex thread id, Message-ID ≤300 characters with no whitespace, no newlines in subject or names.
+- Rulings: (a) a gitignored draft is fine with the conditions above; (b) the server routes, the script records
+  facts, both use the shared code rules; (c) the key is enough, thread Message-IDs kept in the draft only;
+  (d) removal by the inbox owner, the Owner or a scout; (e) team approved, the lead owns the `canUseTool`
+  denial; (f) drafts don't follow you to another Mac; a non-project chat may draft (routing decides); the
+  Workbench doesn't read `updates/`; older Cortex shows "email" and the summary.
+- Nice, adopted: the sheet says when the requested project differs from an already-linked thread; /gm says
+  which app version is needed to approve.
 
 ## Review outcomes
 

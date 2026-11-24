@@ -465,6 +465,9 @@ describe('next meeting in Coming up', () => {
     others: 0,
     match: 'title',
     notes: null,
+    calendar: 'https://www.google.com/calendar/event?eid=abc',
+    calendarKind: 'event',
+    join: null,
   });
 
   it('joins the list within 14 days, in date order, as a plain line', async () => {
@@ -482,6 +485,10 @@ describe('next meeting in Coming up', () => {
     const rows = screen.getAllByText(/to-do$|^Meeting: /).map((e) => e.textContent);
     expect(rows).toEqual(['Early to-do', 'Meeting: Design review', 'Late to-do']);
     expect(meeting.closest('button')).toBeNull();
+    const invites = screen.getAllByRole('link', {
+      name: 'Open invite for Design review (opens in a new tab)',
+    });
+    expect(invites.some((a) => meeting.closest('li')?.contains(a))).toBe(true);
   });
 
   it('is left out beyond 14 days', async () => {

@@ -57,6 +57,7 @@ import type {
   UploadResponse,
 } from '../../shared/contract.ts';
 import { ROUTES, UPLOAD_NAME_HEADER } from '../../shared/contract.ts';
+import type { HomeMeetingsResponse } from '../../shared/home-meetings-contract.ts';
 import {
   SETUP_ROUTES,
   type SetBrainRequest,
@@ -283,6 +284,8 @@ export const api = {
   /** Projects R2 phase 4: this person's last and next meeting for the project, from their own calendar. */
   projectMeetings: (key: ProjectKey) =>
     request<ProjectMeetingsResponse>('GET', `${ROUTES.projectMeetings}?key=${encodeURIComponent(key)}`),
+  /** Home meetings: every upcoming meeting from this person's own calendar, project or not. */
+  homeMeetings: () => request<HomeMeetingsResponse>('GET', ROUTES.homeMeetings),
   projectTodos: (key: ProjectKey) =>
     request<ProjectTodosResponse>('GET', `${ROUTES.projectTodos}?key=${encodeURIComponent(key)}`),
   tidy: () => request<TidyList>('GET', ROUTES.projectsTidy),

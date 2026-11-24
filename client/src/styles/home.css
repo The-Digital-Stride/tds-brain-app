@@ -130,6 +130,115 @@
     box-shadow: none;
     transform: none;
   }
+  /* Meetings card: one column like the other cards; rows are static (not buttons) so they don't lift. */
+  .home-meeting {
+    --meet-when: 48px;
+    align-items: flex-start;
+  }
+  .tray .line.home-meeting:hover,
+  .tray .line.home-meeting:active {
+    background: var(--glass-92);
+    box-shadow: none;
+    transform: none;
+  }
+  .meet-when {
+    flex: none;
+    width: var(--meet-when);
+    display: flex;
+    flex-direction: column;
+    font-variant-numeric: tabular-nums;
+  }
+  .meet-start {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-size: var(--fs-body);
+    font-weight: 500;
+    color: var(--navy);
+  }
+  /* The title is one line, cut with an ellipsis. The meta wraps instead, so the project link in it is never cut
+     off (a focusable link must stay visible). */
+  .home-meeting .line-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
+  .home-meeting .line-meta .link-btn {
+    display: inline;
+    text-align: start;
+  }
+  /* The card measures itself, so the narrow rules below follow the card's width, not Home's. */
+  .home-meetings {
+    container-type: inline-size;
+  }
+  .tray .card.home-meetings > .hint {
+    margin-bottom: var(--sp-4);
+  }
+  /* A narrow card (phone, side panel): the title may take two lines so Join never squeezes it to a word, and the
+     meta wraps so the project link is never cut off (it must stay visible when it has focus). */
+  @container (max-width: 360px) {
+    .home-meeting .line-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    /* Join moves under the text so it never squeezes it; the invite icon stays at the right of the first line. */
+    .home-meeting {
+      display: grid;
+      grid-template-columns: var(--meet-when) minmax(0, 1fr) auto;
+      column-gap: var(--sp-10);
+      row-gap: var(--sp-4);
+    }
+    .home-meeting > .meet-when {
+      grid-row: 1 / span 2;
+    }
+    .home-meeting > .meet-actions {
+      display: contents;
+    }
+    .home-meeting > .meet-actions > .btn {
+      grid-column: 2;
+      grid-row: 2;
+      justify-self: start;
+    }
+    .home-meeting > .meet-actions > .icon-btn {
+      grid-column: 3;
+      grid-row: 1;
+    }
+    .home-meetings .card-head {
+      flex-wrap: wrap;
+      row-gap: var(--sp-4);
+    }
+  }
+  .meet-end {
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .meet-all {
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  h3.meet-day {
+    margin: 0;
+    padding: var(--sp-2) var(--sp-8);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .meet-group + .meet-group > h3.meet-day {
+    margin-top: var(--sp-6);
+  }
+  .meet-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    margin-left: auto;
+    align-self: center;
+  }
   .tray .line-meta .late {
     color: var(--danger);
     font-weight: 600;

@@ -11,6 +11,7 @@ import {
   type TodoAction,
   type TodoList,
 } from '../../shared/contract.ts';
+import type { HomeMeetingsResponse } from '../../shared/home-meetings-contract.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
 import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
@@ -71,6 +72,7 @@ const seen = {
   updates: [] as [string, string | null, string][],
   activity: [] as [string, string][],
   meetings: [] as string[],
+  home: 0,
   marked: [] as [string, string, string][],
   access: [] as string[],
   moves: [] as { req: ProjectMoveRequest; by: string; todos: boolean | undefined }[],
@@ -114,6 +116,12 @@ const MEETINGS = {
   last: null,
   next: null,
 } satisfies ProjectMeetingsResponse;
+
+const HOME_MEETINGS = {
+  cache: 'fresh',
+  checked: '2026-11-23T08:00:00.000Z',
+  meetings: [],
+} satisfies HomeMeetingsResponse;
 
 const UPDATES = { updates: [], more: false, unreadable: 0, canAdd: true } satisfies ProjectUpdatesResponse;
 
@@ -232,6 +240,15 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get homeMeetings() {
+      return state.has
+        ? async () => {
+            maybeFail();
+            seen.home++;
+            return HOME_MEETINGS;
+          }
+        : undefined;
+    },
     get projectSeen() {
       return state.has
         ? async (key: string, token: string, by: Identity) => {
@@ -300,6 +317,7 @@ beforeEach(() => {
   seen.updates.length = 0;
   seen.activity.length = 0;
   seen.meetings.length = 0;
+  seen.home = 0;
   seen.marked.length = 0;
   seen.access.length = 0;
   seen.moves.length = 0;
@@ -471,6 +489,23 @@ describe('GET /api/projects/meetings', () => {
     const same = await get(`${ROUTES.projectActivity}?key=${KEY}`);
     expect(r.status).toBe(same.status);
     expect(r.status).toBe(404);
+  });
+});
+
+describe('GET /api/meetings (Home)', () => {
+  it("answers this Mac's upcoming meetings, through the real gate", async () => {
+    const r = await get(ROUTES.homeMeetings);
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual(HOME_MEETINGS);
+    expect(seen.home).toBe(1);
+  });
+
+  it('refuses no session, a POST, and a missing service', async () => {
+    expect((await send(ROUTES.homeMeetings)).status).toBe(401);
+    expect((await post(ROUTES.homeMeetings, {})).status).toBe(405);
+    expect(seen.home).toBe(0);
+    state.has = false;
+    expect((await get(ROUTES.homeMeetings)).status).toBe(404);
   });
 });
 

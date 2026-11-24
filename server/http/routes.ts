@@ -84,6 +84,7 @@ import {
   type VersionNotes,
 } from '../../shared/contract.ts';
 import { FILES_CHANGE_MESSAGES, FILES_CHANGE_STATUS, FilesChangeError } from '../../shared/files-contract.ts';
+import type { HomeMeetingsResponse } from '../../shared/home-meetings-contract.ts';
 import { type AppState, SETUP_ROUTES, type SetupService } from '../../shared/install-contract.ts';
 import { USAGE_SAVINGS_PATH } from '../../shared/kits-contract.ts';
 import {
@@ -186,6 +187,7 @@ export interface RouteContext {
     /** Claude artifacts in projects (decision 8): "Add a claude.ai page". Absent: the route says it isn't there. */
     projectArtifact?: ProjectArtifactService;
     projectMeetings?: (key: ProjectKey) => Promise<ProjectMeetingsResponse>;
+    homeMeetings?: () => Promise<HomeMeetingsResponse>;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -1439,6 +1441,18 @@ async function projectsRoute(
     return;
   }
 
+  if (path === ROUTES.homeMeetings) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const read = ctx.brain.homeMeetings;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain));
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'Reading your meetings');
+    }
+    return;
+  }
+
   if (path === ROUTES.projectMeetings) {
     if (method !== 'GET') throw methodNotAllowed();
     const key = url.searchParams.get('key');
@@ -2571,6 +2585,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectSeen ||
     path === ROUTES.projectArtifact ||
     path === ROUTES.projectMeetings ||
+    path === ROUTES.homeMeetings ||
     path === ROUTES.projectsTidy
   ) {
     await projectsRoute(req, res, url, ctx);

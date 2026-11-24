@@ -160,12 +160,26 @@ named here or it isn't one.
    named exception: a list with a details pane (Documents, Images) selects on click, and a trailing "Open"
    opens it large. Project Files has no pane, so its row opens the file. A project's Meetings card (Overview,
    between Since you last looked and Coming up; this person's own calendar) has plain rows (`.line.proj-static`,
-   no lift), because a meeting can't be opened. The last meeting carries one action at the row's right end, which
-   wraps under the text when narrow (`.proj-meeting`). With no call note filed, it is a quiet small "File the
-   notes", which starts a chat in the drawer. With one filed, it is "Notes filed" (`.hint`) and a quiet small "Open
-   notes", which opens the note as a file row does. A stale calendar shows a `.hint` line, "Calendar last checked
+   no lift): a meeting row isn't itself a link, but it always carries the invite and, near the start, Join. Each row's
+   actions sit together at its right end in `.proj-notes` (`flex: none`), wrapping under the text when narrow
+   (`.proj-meeting`). The last meeting: with no call note filed, a quiet small "File the notes", which starts a chat
+   in the drawer; with one filed, "Notes filed" (`.hint`) and a quiet small "Open notes", which opens the note as a
+   file row does; then "Open invite". The next meeting: "Join" (only from 15 minutes before the start to its end),
+   then "Open invite". A stale calendar shows a `.hint` line, "Calendar last checked
    {d Mon}.", above the rows or the empty line. The next meeting within 14 days also shows in Coming up as a plain
-   "Meeting: {title}" row.
+   "Meeting: {title}" row (`.line.proj-static`) with a trailing quiet small "Open invite" where the Overdue badge sits
+   (no Join there).
+   Everywhere a meeting shows (Home, a project's Meetings card, Coming up) it carries the link to its invite.
+   Outside links are `<a class="btn" target="_blank" rel="noopener noreferrer">`, with a visually hidden " (opens in
+   a new tab)" in the name and no external-link icon, except Home's Meetings invite (an icon link, below). Home's Meetings card (`.home-meetings`, first in `.tray`, one
+   column like the other cards, `h2` "Meetings", no count; head link "Open Google Calendar") groups by day (`h3.meet-day`: Today,
+   Tomorrow, "Wed 26 Nov") with static `li.line.home-meeting` rows: a 48px time column (`.meet-when`: start and end,
+   or "All day"; a working `.dot` and "Now" while it runs), the title, a meta line (client · project link, "with"
+   people, "until {d}") and `.meet-actions`: Join (standard small, from 15 minutes before) then a 28px `a.icon-btn` with the `calendar`
+   icon, named "Open invite for {title} (opens in a new tab)", tooltip "Open invite" ("Open calendar for {d}" /
+   "Open calendar" for the day fallback), always last. The title is one line, cut with an ellipsis; the meta wraps so its project link is never cut off (on a
+   card narrower than 360px inside, measured on the card itself, the title may take two lines and Join moves under the text). It shows all of today's meetings, at least 3, then "Show N more
+   meetings". It always shows a `.hint` "Calendar checked …" and does not follow Working on.
    A project's code (Overview, above the cards; `.proj-ref`) is a label "Project code", the code in `--mono`
    (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its
    accessible name is "Copy code AST4K7", the label swaps to "Copied" for two seconds (`useCopy`, like every copy
@@ -255,6 +269,9 @@ named here or it isn't one.
 | Favourite | the star, card titles ("Favourite to-dos"), hints ("Favourite a to-do to keep it here") | Pinned, Star a… |
 | All {things} | back to a list | |
 | Try again | always a standard button | a link |
+| Open invite | the link to a meeting's calendar page (on Home, the calendar icon's name and tooltip) | Open event |
+| Open calendar | the same link when only the day view is known | Open invite |
+| Join | the video call link, shown from 15 minutes before a meeting | Join call |
 
 No button ends in an ellipsis: the confirm that follows already says there's another step.
 

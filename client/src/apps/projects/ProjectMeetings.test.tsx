@@ -33,6 +33,9 @@ const meeting = (over: Partial<MeetingView> = {}): MeetingView => ({
   others: 4,
   match: 'title',
   notes: null,
+  calendar: 'https://www.google.com/calendar/event?eid=abc',
+  calendarKind: 'event',
+  join: null,
   ...over,
 });
 const reply = (over: Partial<ProjectMeetingsResponse> = {}): ProjectMeetingsResponse => ({
@@ -129,5 +132,42 @@ describe('Meetings card', () => {
     expect(api.libraryItems).toHaveBeenCalledWith(['n1']);
     expect(openLibraryItem).toHaveBeenCalledWith('documents', 'scope-1', item);
     expect(dispatch).toHaveBeenCalledWith({ type: 'set-panel', open: true });
+  });
+});
+
+describe('invite links', () => {
+  afterEach(() => cleanup());
+  it('Last and Next carry Open invite, Open calendar for a day link', () => {
+    show(
+      reply({
+        last: meeting({ title: 'Kick-off' }),
+        next: meeting({
+          id: 'm2',
+          title: 'Review',
+          calendarKind: 'day',
+          calendar: 'https://calendar.google.com/calendar/r/day/2026/11/25',
+        }),
+      }),
+    );
+    const invite = screen.getByRole('link', { name: 'Open invite for Kick-off (opens in a new tab)' });
+    expect(invite.getAttribute('target')).toBe('_blank');
+    expect(invite.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByRole('link', { name: /^Open calendar for Wed 25 Nov/ })).toBeTruthy();
+  });
+
+  it('Next carries Join only in the 15-minute window', () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 25, 14, 20) });
+    try {
+      show(reply({ next: meeting({ join: 'https://meet.google.com/abc' }) }));
+      expect(
+        screen.getByRole('link', { name: 'Join Secret invite title (opens in a new tab)' }),
+      ).toBeTruthy();
+      cleanup();
+      vi.setSystemTime(new Date(2026, 10, 25, 13, 0));
+      show(reply({ next: meeting({ join: 'https://meet.google.com/abc' }) }));
+      expect(screen.queryByRole('link', { name: /^Join/ })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

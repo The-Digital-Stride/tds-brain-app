@@ -78,6 +78,8 @@ export type SearchableBrain = BrainReaders &
     projectArtifact?: ProjectArtifactService;
     /** Projects R2 phase 4: this Mac's own meetings for a project (the cache /gm writes, read only). */
     projectMeetings?: ProjectMeetingsService['read'];
+    /** Home meetings: every upcoming meeting in this Mac's cache, project or not. */
+    homeMeetings?: ProjectMeetingsService['home'];
   };
 
 export function createBrainReaders(
@@ -206,6 +208,7 @@ export function createBrainReaders(
       },
     }),
     projectMeetings: projectMeetings.read,
+    homeMeetings: projectMeetings.home,
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),

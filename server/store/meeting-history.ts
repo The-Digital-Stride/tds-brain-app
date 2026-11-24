@@ -8,6 +8,7 @@ import {
   type MeetingHistoryFile,
 } from '../../shared/project-meetings-contract.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
+import { cleanCalendarLink } from '../brain/meeting-links.ts';
 import { meetingEndMs } from '../brain/meeting-match.ts';
 
 /**
@@ -41,6 +42,8 @@ function check(raw: unknown): KeptMeeting | null {
   const people = Array.isArray(r.people)
     ? r.people.filter((p): p is string => typeof p === 'string' && p.trim() !== '' && !p.includes('@'))
     : [];
+  // Home meetings plan decision 4: only a Google Calendar event link is ever kept.
+  const link = cleanCalendarLink(r.link);
   const others =
     typeof r.others === 'number' && Number.isFinite(r.others) ? Math.max(0, Math.trunc(r.others)) : 0;
   return {
@@ -52,6 +55,7 @@ function check(raw: unknown): KeptMeeting | null {
     end,
     people: people.slice(0, MAX_PEOPLE),
     others: Math.max(others, Math.min(people.length, MAX_PEOPLE)),
+    ...(link ? { link } : {}),
   };
 }
 

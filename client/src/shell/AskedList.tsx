@@ -162,7 +162,7 @@ export function AskedList({
       {intro}
       {list.historyRead ? null : (
         <p className="todo-note asked-partial">
-          Only tasks passed on in the app or with the todo skill are listed: the git history couldn't be read.
+          Only tasks passed on in the app or by Claude are listed: the git history couldn't be read.
         </p>
       )}
       {state === 'failed' ? (

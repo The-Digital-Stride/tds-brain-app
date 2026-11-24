@@ -38,7 +38,7 @@ A task can have files. They are listed under its details, in **Files**. You can 
 - Other lines under Files, such as a web link, show as plain text. You can change them in the brain.
 - If a file can't be found, the list says so.
 - Uploads go one at a time. If one fails, Cortex names it.
-- This needs the newest todo skill in the brain. Until then the buttons don't show.
+- This needs the newest version of the brain's `todo` skill. Until then the buttons don't show.
 
 ## Try this
 

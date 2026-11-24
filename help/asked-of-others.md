@@ -33,7 +33,7 @@ The **Asked** tab in the Tasks drawer lists the tasks you passed on to a teammat
 
 - If you passed a task to Ben and he passed it on, only the latest hand-over counts, so it leaves your list.
 - Some names come from git history (the Brain's sync record) rather than from the task itself. They are whoever's Mac synced the change, which may not be who made it. These are marked with a star in History, and as "(git history)" elsewhere.
-- If the git history can't be read, the tab says so and lists only tasks passed on in the app or with the todo skill.
+- If the git history can't be read, the tab says so and lists only tasks passed on in the app or by Claude.
 - Personal tasks aren't synced, so they have no history and never appear here.
 
 ## Try this

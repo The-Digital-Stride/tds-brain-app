@@ -43,7 +43,7 @@ Insert this block straight **before** the paragraph that starts
 `**Read-only. Never send, reply, archive, label or delete during \`/gm\`.**`
 
 ```
-**Emails for projects (TDS Cortex 0.73 or later).** Only when this Mac has the `tdsapp-projects` skill
+**Emails for projects (TDS Cortex 0.74 or later).** Only when this Mac has the `tdsapp-projects` skill
 with the `email-draft` action (`node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs
 capabilities` lists `projects-email-v1`); skip silently otherwise.
 

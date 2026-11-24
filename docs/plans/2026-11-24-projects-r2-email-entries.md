@@ -171,4 +171,41 @@ These override the decisions above where they differ; the contract has them.
 
 ## Review outcomes
 
-<Filled at step 10.>
+Three reviewers (correctness opus, security opus, UX sonnet), then an overseer ruling on the token design.
+
+**Correctness**
+- *Blocking:* the drafts guard matched prose. A Write containing "Daily briefing", or an email that mentions a briefing, was refused, including /gm's own briefing file. Fixed: the guard checks only paths: path fields, a Glob's pattern and the path-shaped words of a Bash command. Prose cases are now in the tests.
+- *Should:* "Smith, Alex" was split into two people. Fixed: the field takes one name per line.
+- *Should:* an email with no subject couldn't be saved. Fixed: the server allows an empty subject, as the script already did.
+
+**Security**
+- *High:* the approve token sat in plain text in the brain. A read-only `grep -r` from the brain root runs without a card. If the person had always-allowed the script, one pipeline could then save an email with zero cards. A hand-written draft with a chosen token also passed.
+- *Fixed per the overseer's ruling:*
+  - The token now lives outside the brain, at `<account home>/Library/Application Support/TDS Brain/data/email-keys/<id>.key`. The home comes from `os.userInfo()`, so neither HOME nor TDS_BRAIN_APP_DATA can move it. The file also holds the SHA-256 of the draft's bytes and the brain's path.
+  - `update` refuses if there is no key file, the token is different, or the draft has changed. The server hides drafts that have no key.
+  - Every chat denies Read and Edit on the drafts folder and the keys folder.
+  - File tools are refused for any `projects/<slug>/updates/` path.
+  - The sweep never deletes another brain's keys, except by age.
+- *Medium:* prose false positives. Fixed by the same path-only change as the correctness blocker.
+- *Low, residual:*
+  - Claude could reach the app's API with curl after reading the launch token.
+  - `inboxAddress` is whatever Claude states.
+  - Email text going into a note, Write or link is stopped only by the instructions.
+
+**UX**
+- No blockers.
+- Fixed:
+  - The reason line only describes the suggested project.
+  - Save explains itself when no project is chosen.
+  - "Nothing is saved until…".
+  - "This date is saved too".
+  - Help has its own Emails page, and the Projects page is restored to the original apart from the word "emails".
+  - The list shows where each email is headed.
+  - The empty state reads "Nothing else is waiting".
+  - The Gmail line sits on one aligned row.
+  - An empty owner name falls back to "In their inbox".
+  - `@` is refused in names, on screen and in the script.
+
+**Residual, accepted by the overseer as far as an app under the same Mac account can go (Ian to confirm)**
+1. Reading the keys folder deliberately. It sits outside the working folder, so in Cortex this needs a card naming the path. This is the same class of risk as the launch token.
+2. Writing a project's `updates/` file directly, bypassing the script. Refused in Cortex for file tools. A Bash write needs a card. In terminal Claude Code with accept-edits or skip-permissions mode, this is zero cards. Terminal Claude Code in a no-prompt mode is outside what the app can enforce.

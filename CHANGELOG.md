@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.75.2 — 2026-11-24
+
+- **fix**: every add opens the full to-do form
+
 ## v0.75.1 — 2026-11-24
 
 - **fix**: What's new note for 0.75.0 (the fresh tour)

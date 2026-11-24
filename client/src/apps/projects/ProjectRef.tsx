@@ -137,7 +137,8 @@ export function ProjectRef({
       ) : null}
       {shown ? (
         <p className="proj-note">
-          Put this in the meeting invite or the email subject so meetings and emails find this project.
+          Put this in a meeting invite's title or description so the meeting finds this project. Emails will
+          use it soon too.
         </p>
       ) : null}
       {problem ? (

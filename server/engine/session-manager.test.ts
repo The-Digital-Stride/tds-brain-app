@@ -591,6 +591,10 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
       'Read',
     ],
     [{ command: 'node -e "x" --path=briefing/email-drafts' }, 'Bash'],
+    // Review of the fix round: the same glob twice, and `..`.
+    [{ command: 'cd ~/Library/Application\\ Support && cat */data/*/*.key' }, 'Bash'],
+    [{ command: 'cat */../briefing/*/*.json' }, 'Bash'],
+    [{ command: 'cat briefing/./email-drafts/x.json' }, 'Bash'],
   ])('refuses %j (%s)', (input, tool) => {
     expect(touchesEmailDrafts(input, tool)).toBe(true);
   });
@@ -630,6 +634,11 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
     [{ pattern: 'email drafts|approve token', path: 'clients' }, 'Grep'],
     [{ command: 'ls src/e*' }, 'Bash'],
     [{ pattern: '**/*.json' }, 'Glob'],
+    // Any other folder called data, and a Glob of briefing/ (the Read deny rule hides the drafts from it).
+    [{ command: 'ls src/data/*' }, 'Bash'],
+    [{ command: 'rm -rf build/data/*' }, 'Bash'],
+    [{ command: 'ls clients/acme/data/*' }, 'Bash'],
+    [{ pattern: 'briefing/*' }, 'Glob'],
   ])('allows %j (%s)', (input, tool) => {
     expect(touchesEmailDrafts(input, tool)).toBe(false);
   });
@@ -641,6 +650,25 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
     [{ file_path: 'clients/acme/projects/web/updates/x.md' }, 'Read', false],
     [{ command: 'ls clients/acme/projects/web/updates' }, 'Bash', false],
     [{ file_path: 'clients/acme/projects/web/notes/updates.md' }, 'Write', false],
+    // Review of the fix round: `.` and `..` in the path, and shell writes into the folder.
+    [
+      { file_path: '/brain/clients/acme/projects/website/./updates/2026-11-24-0900-sam-abc123.md' },
+      'Write',
+      true,
+    ],
+    [{ file_path: 'clients/acme/projects/website/x/../updates/a.md' }, 'Write', true],
+    [{ command: 'mv notes/x.md clients/acme/projects/web/updates/' }, 'Bash', true],
+    [{ command: 'cp /tmp/x.md clients/acme/projects/web/./updates/x.md' }, 'Bash', true],
+    [{ command: "printf '%s' x > clients/acme/projects/web/updates/x.md" }, 'Bash', true],
+    [{ command: 'cat x | tee clients/acme/projects/web/updates/x.md' }, 'Bash', true],
+    [{ command: 'mv x.md clients/acme/projects/*/upd*/' }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web && mv /tmp/x.md updates/' }, 'Bash', true],
+    [{ command: 'find clients/acme/projects/web/updates -name "*.md" -delete' }, 'Bash', true],
+    [{ command: 'cat clients/acme/projects/web/updates/x.md' }, 'Bash', false],
+    [{ command: 'ls clients/acme/projects/web/updates 2>&1 | head' }, 'Bash', false],
+    [{ command: 'grep -l email clients/acme/projects/web/updates/*.md > /dev/null' }, 'Bash', false],
+    [{ command: 'git log -- clients/acme/projects/web/updates' }, 'Bash', false],
+    [{ command: 'mv a.md b.md' }, 'Bash', false],
   ])('a hand-written project update %j with %s is refused: %s', (input, tool, refused) => {
     expect(writesUpdateByHand(input, tool)).toBe(refused);
   });

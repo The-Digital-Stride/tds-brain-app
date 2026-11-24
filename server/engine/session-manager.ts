@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants as fsConstants, promises as fsp, realpathSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import type {
   HookCallback,
@@ -785,49 +785,149 @@ function segmentRegex(seg: string): RegExp | null {
   }
 }
 
-/** One path (or path-shaped word) that names the drafts folder or the keys, literally or by a glob. */
-export function pathReachesEmailSecrets(raw: string): boolean {
-  const p = raw.trim().replace(/^['"`]+|['"`]+$/g, '');
+/** Whether one path part (a name or a shell glob) could be `name`. `**` could be anything. */
+function fitsSeg(seg: string | undefined, name: string): boolean {
+  if (seg === undefined) return false;
+  if (seg === '**') return true;
+  if (seg.toLowerCase() === name) return true;
+  if (!GLOB_CHARS.test(seg)) return false;
+  return segmentRegex(seg)?.test(name) === true;
+}
+
+/** A path or shell word with its quotes taken off and `\` read as `/`, `.` and `..` resolved. */
+function cleanPath(raw: string): string {
+  const p = raw
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/\\(?=[ ])/g, '')
+    .replace(/\\/g, '/');
+  return p ? posix.normalize(p) : '';
+}
+
+/**
+ * One path (or path-shaped word) that names the drafts folder or the keys, literally or by a glob. `fromShell`:
+ * a word of a Bash command, where a glob under briefing/ counts too (the overseer's ruling); the Read deny rule
+ * already hides the drafts from the Glob and Grep tools, so a Glob of `briefing/*` lists as normal.
+ */
+export function pathReachesEmailSecrets(raw: string, fromShell = false): boolean {
+  const p = cleanPath(raw);
   if (!p) return false;
   if (SECRET_SEGMENT.test(p)) return true;
   if (!GLOB_CHARS.test(p)) return false;
-  const segs = p.split(/[\\/]+/);
-  for (const seg of segs) {
+  const segs = p.split('/');
+  // Walk by index (the same glob can appear twice, as in `*/data/*/*.key`; review of the fix round).
+  for (let at = 1; at < segs.length; at++) {
+    const seg = segs[at] as string;
     if (!GLOB_CHARS.test(seg)) continue;
     const re = segmentRegex(seg);
     if (!re) continue;
-    // `e*` alone is everyday; it only reaches a secret folder after its parent (briefing/ or the data folder).
-    const at = segs.indexOf(seg);
-    const before = at > 0 ? (segs[at - 1] as string) : null;
-    if (before === null) continue;
-    const prev = GLOB_CHARS.test(before) ? segmentRegex(before) : null;
-    const under = (parent: string) => before.toLowerCase() === parent || prev?.test(parent) === true;
-    if ((re.test('email-drafts') && under('briefing')) || (re.test('email-keys') && under('data')))
+    // `e*` alone is everyday: only under briefing/ (shell words), or under `TDS Brain/data` (a shell word split
+    // at the space keeps only `Brain/data/...`), so `ls src/data/*` still runs.
+    if (fromShell && re.test('email-drafts') && fitsSeg(segs[at - 1], 'briefing')) return true;
+    if (
+      re.test('email-keys') &&
+      fitsSeg(segs[at - 1], 'data') &&
+      (fitsSeg(segs[at - 2], 'tds brain') || fitsSeg(segs[at - 2], 'brain'))
+    )
       return true;
   }
   return false;
 }
 
-/** Shell words of a command: split on spaces and operators, quotes kept for pathReachesEmailSecrets to strip. */
+/** Shell words of a command: split on spaces and operators, quotes kept for the checks to strip. */
 function shellWords(command: string): string[] {
-  return command.split(/[\s|;&<>()]+/).filter(Boolean);
+  return command.split(/(?<!\\)\s+|[|;&<>()]+/).filter(Boolean);
 }
 
-/** A project's Updates folder (clients/<c>/projects/<slug>/updates/ or personal/projects/...). */
-const UPDATES_PATH = /(?:^|[\\/])projects[\\/]+[^\\/]+[\\/]+updates(?:[\\/]|$)/i;
+/** Whether a path is inside, or is, a project's Updates folder (`projects/<slug>/updates`), globs included. */
+export function inProjectUpdates(raw: string): boolean {
+  const segs = cleanPath(raw).split('/').filter(Boolean);
+  for (let i = 2; i < segs.length; i++) {
+    if (fitsSeg(segs[i], 'updates') && fitsSeg(segs[i - 2], 'projects')) return true;
+  }
+  return false;
+}
+
 /** Claude Code's file-writing tools: an update is written only by the tdsapp-projects script (overseer ruling). */
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+/** Shell commands that only read, so naming an Updates path with them is fine (no redirect, no find -exec). */
+const SHELL_READ_ONLY = new Set([
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'less',
+  'more',
+  'wc',
+  'stat',
+  'file',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'find',
+  'du',
+  'tree',
+  'diff',
+  'cmp',
+  'shasum',
+  'md5',
+  'realpath',
+  'readlink',
+  'basename',
+  'dirname',
+  'echo',
+  'printf',
+]);
+const GIT_READ_ONLY = new Set(['log', 'status', 'diff', 'show', 'blame', 'ls-files', 'check-ignore']);
+
+/** Whether one simple shell command (no `;`, `&&`, `|`) could write somewhere. */
+function shellSegmentWrites(segment: string): boolean {
+  // A redirect writes (`2>&1` and `>/dev/null` don't).
+  const bare = segment.replace(/\d?>&\d/g, '').replace(/\d?>>?\s*\/dev\/null/g, '');
+  if (/>/.test(bare)) return true;
+  const words = shellWords(segment).filter((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  while (words[0] === 'sudo' || words[0] === 'command' || words[0] === 'env' || words[0] === 'nohup')
+    words.shift();
+  const first = words[0] ?? '';
+  if (first === 'git') return !GIT_READ_ONLY.has(words[1] ?? '');
+  if (first === 'find')
+    return words.some((w) => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(w));
+  return !SHELL_READ_ONLY.has(first);
+}
 
 /**
- * Writing a project's update file by hand would skip the inbox owner's approval (and every other check of
- * the script's `update`): refused for file tools only, so a Bash command that merely names the folder runs.
+ * Writing a project's update file by hand would skip the inbox owner's approval (and every other check of the
+ * script's `update`). Refused for file tools by path (`.` and `..` resolved), and for a shell command that could
+ * write (mv, cp, tee, a redirect, ...) when any of its words is an Updates path, or when it changes into a
+ * project and names `updates` (review of the fix round). Read-only commands on the folder still run.
  */
 export function writesUpdateByHand(input: unknown, toolName: string): boolean {
-  if (!isRec(input) || !FILE_WRITE_TOOLS.has(toolName)) return false;
-  return ['file_path', 'notebook_path'].some((k) => {
-    const v = input[k];
-    return typeof v === 'string' && UPDATES_PATH.test(v);
-  });
+  if (!isRec(input)) return false;
+  if (FILE_WRITE_TOOLS.has(toolName)) {
+    return ['file_path', 'notebook_path'].some((k) => {
+      const v = input[k];
+      return typeof v === 'string' && inProjectUpdates(v);
+    });
+  }
+  if (toolName !== 'Bash' || typeof input.command !== 'string') return false;
+  const command = input.command;
+  const words = shellWords(command);
+  const named =
+    words.some(inProjectUpdates) ||
+    (/(^|[\s;&|(])cd\s/.test(command) &&
+      words.some((w) =>
+        cleanPath(w)
+          .split('/')
+          .some((seg) => fitsSeg(seg, 'projects') && !GLOB_CHARS.test(seg)),
+      ) &&
+      words.some((w) =>
+        cleanPath(w)
+          .split('/')
+          .some((seg) => seg.toLowerCase() === 'updates'),
+      ));
+  if (!named) return false;
+  return command.split(/\|\||&&|[;|\n]/).some((seg) => seg.trim() !== '' && shellSegmentWrites(seg));
 }
 
 export const UPDATES_BY_HAND_REFUSAL =
@@ -843,8 +943,11 @@ export function touchesEmailDrafts(input: unknown, toolName = ''): boolean {
   }
   // Glob's pattern is a path; Grep's is a regex over file text, never checked.
   if (toolName === 'Glob' && typeof input.pattern === 'string') paths.push(input.pattern);
-  if (typeof input.command === 'string') paths.push(...shellWords(input.command));
-  return paths.some(pathReachesEmailSecrets);
+  if (paths.some((p) => pathReachesEmailSecrets(p))) return true;
+  return (
+    typeof input.command === 'string' &&
+    shellWords(input.command).some((w) => pathReachesEmailSecrets(w, true))
+  );
 }
 
 export const EMAIL_DRAFTS_REFUSAL =

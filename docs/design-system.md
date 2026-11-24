@@ -426,7 +426,7 @@ Clients are always shown by name, never by folder slug. The same goes for a to-d
 ## Apps on the sheet
 
 An app is one entry in `client/src/shell/apps.ts` (`AppSlot`): a rail item, a sheet, and optionally
-its own sheet-bar buttons and right-panel body. It builds from the shared pieces and adds no look of
+its own sheet-bar buttons and right-panel body. Apps sit in the rail's Apps group, except Projects, which sits straight under Home (`TOP_APPS` in `Rail.tsx`; Ian 2026-11-24). It builds from the shared pieces and adds no look of
 its own: `.field` for pickers and search, `Seg` for any one-of-many choice (including filters,
 labelled "Name, count"), the `.tray` with one `.card` per group (`.card-head`: title, `.count`, a
 quiet button on the right), `.line` rows or tiles inside the card, `.tick` in `label.tick-hit` for

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TodoItem } from '../../../shared/contract.ts';
 
@@ -222,6 +222,17 @@ describe('Rail hover expand', () => {
     expect(nav(container).getAttribute('data-expanded')).toBe('true');
     expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(true);
     expect(nav(container).getAttribute('data-expanded')).toBeNull();
+  });
+
+  it('puts Projects straight under Home, and keeps the other apps in the Apps group', () => {
+    setStore([]);
+    render(<Rail />);
+    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    expect(names[names.indexOf('Home') + 1]).toBe('Projects');
+    const group = screen.getByText('Apps').closest('.rail-group') as HTMLElement;
+    expect(within(group).queryByRole('button', { name: 'Projects' })).toBeNull();
+    expect(within(group).getByRole('button', { name: 'Images' })).toBeTruthy();
+    expect(within(group).getByRole('button', { name: 'Documents' })).toBeTruthy();
   });
 
   it('shows Skills to owners and scouts only, at the foot just above Help', () => {

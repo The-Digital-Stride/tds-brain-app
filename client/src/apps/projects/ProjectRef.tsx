@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ProjectCard, ProjectList } from '../../../../shared/projects-contract.ts';
 import { Confirm } from '../../shell/Confirm.tsx';
 import { useCopy } from '../../shell/useCopy.ts';
@@ -26,7 +26,17 @@ export function ProjectRef({
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState('');
+  // Which `data-focus` element gets focus once the next render has put it on the page.
+  const [focusOn, setFocusOn] = useState<string | null>(null);
   const state = card.refState;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the card's code and state changing is what puts the target on the page.
+  useEffect(() => {
+    if (!focusOn) return;
+    const el = document.querySelector<HTMLElement>(`[data-focus="${focusOn}"]`);
+    if (!el) return;
+    el.focus();
+    setFocusOn(null);
+  }, [focusOn, card.ref, state]);
   if (!state || state === 'personal') return null;
   const canRef = list.canRef === true && list.canChange && !card.archived && card.card === 'ok';
 
@@ -42,16 +52,21 @@ export function ProjectRef({
     });
     setBusy(false);
     setAsking(false);
-    if (!res.ok) setProblem(res.message);
+    if (!res.ok) {
+      setProblem(res.message);
+      return;
+    }
+    setFocusOn('copyref');
   };
 
   const ref = card.ref ?? '';
   const other = card.refDuplicateOf?.[0];
   const otherTitle = other ? title(other) : 'another project';
-  const shown = (state === 'ok' || state === 'duplicate') && ref !== '';
+  const shown = state === 'ok' && ref !== '';
+  const duplicate = state === 'duplicate' && ref !== '';
 
   return (
-    <section className="proj-ref" aria-label="Project code">
+    <div className="proj-ref">
       <div className="proj-ref-row">
         <span className="proj-ref-label">Project code</span>
         {shown ? (
@@ -61,21 +76,18 @@ export function ProjectRef({
               type="button"
               className="btn"
               data-size="small"
-              aria-label={`Copy ${bracketed(ref)}`}
+              data-focus="copyref"
+              aria-label={`Copy code ${ref}`}
               onClick={() => void copy(bracketed(ref))}
             >
-              Copy
+              {said ?? 'Copy'}
             </button>
             <span className="visually-hidden" role="status">
               {said ?? ''}
             </span>
-            {said ? (
-              <span className="proj-ref-said" aria-hidden="true">
-                {said}
-              </span>
-            ) : null}
           </>
         ) : null}
+        {duplicate ? <code className="proj-ref-code">{ref}</code> : null}
         {state === 'missing' && canRef ? (
           <button
             type="button"
@@ -87,7 +99,7 @@ export function ProjectRef({
             Make a code
           </button>
         ) : null}
-        {state === 'missing' && !canRef ? <span className="proj-note">No code yet.</span> : null}
+        {state === 'missing' && !canRef ? <span className="proj-note">No code yet</span> : null}
         {state === 'no-client-code' ? <span className="proj-note">Add a client code first</span> : null}
       </div>
       {state === 'duplicate' ? (
@@ -117,7 +129,10 @@ export function ProjectRef({
           variant="primary"
           busy={busy}
           onConfirm={() => void send(true)}
-          onCancel={() => setAsking(false)}
+          onCancel={() => {
+            setAsking(false);
+            setFocusOn('newref');
+          }}
         />
       ) : null}
       {shown ? (
@@ -130,6 +145,6 @@ export function ProjectRef({
           {problem}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }

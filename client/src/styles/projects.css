@@ -508,10 +508,6 @@
     font-size: var(--fs-mono);
     color: var(--navy);
   }
-  .proj-ref-said {
-    font-size: var(--fs-small);
-    color: var(--iron);
-  }
   .proj-ref > .proj-note {
     padding-inline: 0;
   }

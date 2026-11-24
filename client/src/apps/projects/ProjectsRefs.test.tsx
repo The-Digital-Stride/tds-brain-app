@@ -75,16 +75,20 @@ describe('project code on the Overview', () => {
     await openProject();
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(screen.getByText(/Put this in the meeting invite or the email subject/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Copy [SKY4K7]' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code SKY4K7' }));
     await waitFor(() => expect(clip.writeText).toHaveBeenCalledWith('[SKY4K7]'));
-    expect(await screen.findAllByText('Copied')).not.toHaveLength(0);
+    expect(await screen.findByRole('button', { name: 'Copy code SKY4K7' })).toHaveProperty(
+      'textContent',
+      'Copied',
+    );
   });
 
-  it('still shows the code and Copy without canRef, but no buttons', async () => {
+  it('a duplicate shows plain text: no Copy, no help line, no buttons without canRef', async () => {
     await openProject(mk({ refState: 'duplicate', refDuplicateOf: ['skyseal/other'] }), {});
-    expect(screen.getByRole('button', { name: 'Copy [SKY4K7]' })).toBeTruthy();
+    expect(screen.getByText('SKY4K7')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Copy/ })).toBeNull();
+    expect(screen.queryByText(/Put this in the meeting invite/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Make a new code' })).toBeNull();
-    await openProject; // no-op: keeps the lint quiet about unused imports
   });
 
   it('missing: Make a code sends the ref action with the card version', async () => {
@@ -226,6 +230,18 @@ describe('Search by code', () => {
     projectsStore.apply(list);
     render(<ProjectsSheet />);
     await screen.findByText(/of \d+ project/);
+    fireEvent.change(screen.getByLabelText('Search projects'), { target: { value: 'SKY4K8' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Did you mean SKY4K7?' }));
+    expect(screen.getByText('Sky site')).toBeTruthy();
+  });
+
+  it('picking a guess also clears the other filters', async () => {
+    const list = projectList([mk({ owner: 'someone' })], { canRef: true });
+    api.projects.mockResolvedValue(list);
+    projectsStore.apply(list);
+    render(<ProjectsSheet />);
+    await screen.findByText(/of \d+ project/);
+    fireEvent.click(screen.getByRole('radio', { name: 'Mine' }));
     fireEvent.change(screen.getByLabelText('Search projects'), { target: { value: 'SKY4K8' } });
     fireEvent.click(await screen.findByRole('button', { name: 'Did you mean SKY4K7?' }));
     expect(screen.getByText('Sky site')).toBeTruthy();

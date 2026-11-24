@@ -167,9 +167,11 @@ named here or it isn't one.
    {d Mon}.", above the rows or the empty line. The next meeting within 14 days also shows in Coming up as a plain
    "Meeting: {title}" row.
    A project's code (Overview, above the cards; `.proj-ref`) is a label "Project code", the code in `--mono`
-   (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); "Copied"
-   shows beside it for two seconds (`useCopy`) and is announced. A `.proj-note` line says where to put it. "Make a
-   code" is a standard small button; replacing a duplicate's code uses `Confirm` (primary). The Projects search is
+   (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its
+   accessible name is "Copy code AST4K7", the label swaps to "Copied" for two seconds (`useCopy`, like every copy
+   button) and one hidden status line announces it. Only a code that resolves (`ok`) gets Copy and the `.proj-note`
+   line saying where to put it; a duplicate shows as plain text with neither. After "Make a code" focus moves to
+   Copy; cancelling the replace `Confirm` returns focus to "Make a new code". "Make a code" is a standard small button; replacing a duplicate's code uses `Confirm` (primary). The Projects search is
    the library's `.lib-search` field and also finds a code.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
    remove (bin, or X for a chip or a file added to a to-do or project) at the very edge. At most three icons. Where the row's main action is an icon

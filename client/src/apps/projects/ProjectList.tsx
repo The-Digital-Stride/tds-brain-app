@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectList as ProjectListData } from '../../../../shared/projects-contract.ts';
 import { Icon } from '../../shell/Icon.tsx';
@@ -129,6 +129,10 @@ export function ProjectListView({
         : `${given} project${given === 1 ? ' was' : 's were'} given a code.`,
     );
   };
+  const codesNoteRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (codesNote) codesNoteRef.current?.focus();
+  }, [codesNote]);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
   return (
@@ -152,7 +156,7 @@ export function ProjectListView({
       {canGiveCodes ? (
         <div className="notice" data-level="info" data-shape="box">
           <span>
-            {codeless} project{codeless === 1 ? ' has' : 's have'} no code yet.
+            {codeless} project{codeless === 1 ? ' has' : 's have'} no code yet
           </span>
           <button
             type="button"
@@ -165,11 +169,13 @@ export function ProjectListView({
           </button>
         </div>
       ) : null}
-      {codesNote ? (
-        <p className="notice" data-level="info" data-shape="box" role="status">
-          {codesNote}
-        </p>
-      ) : null}
+      <div role="status">
+        {codesNote ? (
+          <p ref={codesNoteRef} className="notice" data-level="info" data-shape="box" tabIndex={-1}>
+            {codesNote}
+          </p>
+        ) : null}
+      </div>
       {codesProblem ? (
         <p className="notice" data-level="error" data-shape="box" role="alert">
           {codesProblem}
@@ -245,7 +251,13 @@ export function ProjectListView({
         <p className="proj-note">
           No projects match these filters.{' '}
           {guesses.map((g) => (
-            <button key={g} type="button" className="btn" data-size="small" onClick={() => set({ query: g })}>
+            <button
+              key={g}
+              type="button"
+              className="btn"
+              data-size="small"
+              onClick={() => setFilters({ ...NO_FILTERS, query: g })}
+            >
               Did you mean {g}?
             </button>
           ))}{' '}

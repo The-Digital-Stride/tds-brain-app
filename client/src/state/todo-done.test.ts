@@ -92,15 +92,30 @@ describe('doneStore', () => {
   });
   const list: DoneTodoList = { items: [], historyRead: true };
 
-  it('loads once on ensure, sharing one request', async () => {
+  it('loads once on ensure', async () => {
     apiMock.doneTodos.mockResolvedValue(list);
     doneStore.ensure();
     doneStore.ensure();
-    void doneStore.refresh();
     expect(doneStore.get().loading).toBe(true);
     await doneStore.refresh();
-    expect(apiMock.doneTodos).toHaveBeenCalledTimes(1);
+    expect(apiMock.doneTodos).toHaveBeenCalledTimes(2);
     expect(doneStore.get()).toEqual({ list, loading: false, error: null });
+  });
+
+  it('loads once more when a refresh is asked for mid-load, and keeps only the newer answer', async () => {
+    const older: DoneTodoList = { items: [], historyRead: true };
+    const newer: DoneTodoList = { items: [], historyRead: false };
+    let finish: (l: DoneTodoList) => void = () => {};
+    apiMock.doneTodos.mockReturnValueOnce(new Promise<DoneTodoList>((r) => (finish = r)));
+    apiMock.doneTodos.mockResolvedValueOnce(newer);
+    const first = doneStore.refresh();
+    const second = doneStore.refresh();
+    void doneStore.refresh();
+    finish(older);
+    await Promise.all([first, second]);
+    expect(apiMock.doneTodos).toHaveBeenCalledTimes(2);
+    expect(doneStore.get().list).toBe(newer);
+    expect(doneStore.get().loading).toBe(false);
   });
 
   it('keeps the last good list when a refresh fails', async () => {

@@ -73,6 +73,27 @@ export function askedLogArgs(): string[] {
   ];
 }
 
+/**
+ * Every commit that added a file to `todo/done/`, with only those files listed: the tick's commit for
+ * the Done list (done-todos plan, decision 2). Unlike `askedLogArgs` it doesn't need an `assignee:` line,
+ * so a to-do that was open to anyone is found too.
+ */
+export function doneLogArgs(): string[] {
+  return [
+    'log',
+    '--no-renames',
+    '--no-follow',
+    '--no-color',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--diff-filter=A',
+    '--name-status',
+    '--format=%x1e%an%x00%ae%x00%aI',
+    '--',
+    'todo/done',
+  ];
+}
+
 const TOP = /^todo\/([^/]+)$/;
 const DONE = /^todo\/done\/([^/]+)$/;
 
@@ -256,7 +277,8 @@ export interface AskedLog {
   read(root: string): Promise<LogResult>;
 }
 
-export function createAskedLog(run: GitLogRunner = runGit): AskedLog {
+/** One cached `git log` per brain folder and HEAD; `args` picks the log (Asked's by default, or `doneLogArgs`). */
+export function createAskedLog(run: GitLogRunner = runGit, args: () => string[] = askedLogArgs): AskedLog {
   const cache = new Map<string, { head: string; log: Promise<LogResult> }>();
 
   const read = async (root: string): Promise<LogResult> => {
@@ -271,7 +293,7 @@ export function createAskedLog(run: GitLogRunner = runGit): AskedLog {
     // A shared in-flight read can still fail: every caller gets 'unread' (stamps only), never a throw.
     if (hit && hit.head === head) return hit.log.catch(() => 'unread' as const);
     const log = (async (): Promise<LogResult> => {
-      const out = await run(askedLogArgs(), root, {
+      const out = await run(args(), root, {
         maxOutput: ASKED_LOG_MAX_OUTPUT,
         timeoutMs: ASKED_LOG_TIMEOUT_MS,
       });

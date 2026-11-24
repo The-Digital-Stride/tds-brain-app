@@ -1,9 +1,10 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Identity } from '../../shared/contract.ts';
 import { copyFixture } from './test-helpers.ts';
-import { createAskedLog } from './todo-asked.ts';
+import { createAskedLog, doneLogArgs } from './todo-asked.ts';
 import { listDoneTodos } from './todo-done.ts';
 import type { GitLogRunner } from './todo-history.ts';
 import { parseHistoryKey } from './todo-timeline.ts';
@@ -237,5 +238,33 @@ describe('parseHistoryKey done: keys', () => {
       'done:personal/todo/done/.md',
     ])
       expect(parseHistoryKey(k), k).toBeNull();
+  });
+});
+
+describe('listDoneTodos with a real git record', () => {
+  it('dates a ticked to-do that was open to anyone (no assignee line) from the commit that moved it', async () => {
+    const root = brainWith({ 'todo/20261101-open.md': fm(['title: Open to anyone']) });
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Alex Sample',
+      GIT_AUTHOR_EMAIL: 'alex@example.test',
+      GIT_COMMITTER_NAME: 'Alex Sample',
+      GIT_COMMITTER_EMAIL: 'alex@example.test',
+    };
+    const git = (args: string[], date: string) =>
+      execFileSync('git', args, { cwd: root, env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+    git(['init', '-q'], '2026-11-01T09:00:00+00:00');
+    git(['add', '-A'], '2026-11-01T09:00:00+00:00');
+    git(['commit', '-q', '-m', 'add'], '2026-11-01T09:00:00+00:00');
+    mkdirSync(join(root, 'todo', 'done'), { recursive: true });
+    renameSync(join(root, 'todo', '20261101-open.md'), join(root, 'todo', 'done', '20261101-open.md'));
+    git(['add', '-A'], '2026-11-15T10:30:00+00:00');
+    git(['commit', '-q', '-m', 'tick'], '2026-11-15T10:30:00+00:00');
+
+    const list = await listDoneTodos(root, sam, { log: createAskedLog(undefined, doneLogArgs) });
+    expect(list.historyRead).toBe(true);
+    const item = list.items.find((i) => i.id === '20261101-open.md');
+    expect(item?.done?.at.slice(0, 10)).toBe('2026-11-15');
+    expect(item?.done?.source).toBe('history');
   });
 });

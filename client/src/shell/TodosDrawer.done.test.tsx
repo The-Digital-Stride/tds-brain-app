@@ -249,3 +249,35 @@ describe('a done: panel key', () => {
     expect(fakeShell.state.todoPanel).toBeNull();
   });
 });
+
+describe('revealDoneTodo', () => {
+  // As the real store: clearing the request really clears it, so a dropped reveal can't come back on a re-render.
+  const reveal = (key: string) => {
+    const clearDoneReveal = vi.fn(() => {
+      store.current = { ...store.current, doneReveal: null };
+    });
+    store.current = { ...store.current, doneReveal: { key, n: 1 }, clearDoneReveal };
+  };
+
+  it('refreshes a stale list once and opens a to-do ticked since it last loaded', async () => {
+    api.doneTodos.mockResolvedValueOnce(LIST);
+    await doneStore.refresh();
+    const fresh = done('new.md', 'Just finished');
+    api.doneTodos.mockResolvedValue({ ...LIST, items: [fresh, ...LIST.items] });
+    reveal(fresh.key);
+    render(<TodosDrawer />);
+    await waitFor(() => expect(fakeShell.state.todoPanel?.key).toBe(fresh.key));
+    expect(api.doneTodos.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('radio', { name: 'Done' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('gives up when the to-do is still missing after the refresh', async () => {
+    api.doneTodos.mockResolvedValue(LIST);
+    await doneStore.refresh();
+    reveal('done:todo/done/gone.md');
+    render(<TodosDrawer />);
+    await waitFor(() => expect(store.current.clearDoneReveal).toHaveBeenCalled());
+    expect(api.doneTodos.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(sent.some((a) => a.type === 'open-todo')).toBe(false);
+  });
+});

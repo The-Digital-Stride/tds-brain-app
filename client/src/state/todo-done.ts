@@ -24,6 +24,8 @@ const EMPTY: DoneSnapshot = { list: null, loading: false, error: null };
 let snap: DoneSnapshot = EMPTY;
 let started = false;
 let inflight: Promise<void> | null = null;
+/** A refresh was asked for while one was loading: its answer may be out of date, so load once more. */
+let again = false;
 const listeners = new Set<() => void>();
 
 function emit(next: DoneSnapshot): void {
@@ -39,20 +41,32 @@ export const doneStore = {
       listeners.delete(listener);
     };
   },
-  /** GET again. Overlapping calls share one request. Failures keep the last good list. */
+  /**
+   * GET again. A call while a load is running doesn't start a second request: that load's answer is
+   * thrown away and one more is made, so a change that came during it isn't missed. Every caller's
+   * promise settles with the last load. Failures keep the last good list.
+   */
   refresh(): Promise<void> {
-    if (inflight) return inflight;
+    if (inflight) {
+      again = true;
+      return inflight;
+    }
     started = true;
     emit({ ...snap, loading: true });
-    inflight = Promise.resolve()
-      .then(() => api.doneTodos())
-      .then((list) => emit({ list, loading: false, error: null }))
-      .catch((e: unknown) =>
-        emit({ list: snap.list, loading: false, error: e instanceof Error ? e.message : String(e) }),
-      )
-      .finally(() => {
-        inflight = null;
-      });
+    const load = async (): Promise<void> => {
+      again = false;
+      try {
+        const list = await api.doneTodos();
+        if (again) return load();
+        emit({ list, loading: false, error: null });
+      } catch (e: unknown) {
+        if (again) return load();
+        emit({ list: snap.list, loading: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    };
+    inflight = load().finally(() => {
+      inflight = null;
+    });
     return inflight;
   },
   /** Starts the first load once; later loads come from `refresh`. */
@@ -67,6 +81,7 @@ export const doneStore = {
     snap = EMPTY;
     started = false;
     inflight = null;
+    again = false;
     listeners.clear();
   },
 };

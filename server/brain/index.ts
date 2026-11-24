@@ -26,7 +26,7 @@ import { createQueue } from './skill-runner.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
-import { createAskedLog, createAskedTodos } from './todo-asked.ts';
+import { createAskedLog, createAskedTodos, doneLogArgs } from './todo-asked.ts';
 import { listDoneTodos } from './todo-done.ts';
 import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
@@ -120,6 +120,8 @@ export function createBrainReaders(
   const editAnswers = new WeakMap<object, { updatesFailed?: true }>();
   // One `todo/` git log per HEAD, shared by the Asked and Done lists.
   const askedLog = createAskedLog(deps.todoLog);
+  // The Done list's own log: Asked's only lists commits touching `assignee:`, so it misses to-dos open to anyone.
+  const doneLog = createAskedLog(deps.todoLog, doneLogArgs);
   const projects = createProjects(root, {
     skill: {
       capabilities: () => projectsSkill.capabilities(),
@@ -138,7 +140,7 @@ export function createBrainReaders(
     todoList: (identity) => listTodos(root, identity, { capabilities: () => todoSkill.capabilities() }),
     // A project's finished to-dos (Done section): the same reader as the Done tab.
     doneTodos: (identity) =>
-      listDoneTodos(root, identity, { log: askedLog, projects: () => projects.index() }),
+      listDoneTodos(root, identity, { log: doneLog, projects: () => projects.index() }),
     // A moved folder's files leave one library scope and join another.
     onMoved: (from, to) => {
       library.changed(from);
@@ -272,7 +274,7 @@ export function createBrainReaders(
       }),
     askedTodos: (identity) => askedTodos.list(root, identity, now(), () => projects.index()),
     doneTodos: (identity) =>
-      listDoneTodos(root, identity, { log: askedLog, projects: () => projects.index() }),
+      listDoneTodos(root, identity, { log: doneLog, projects: () => projects.index() }),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {

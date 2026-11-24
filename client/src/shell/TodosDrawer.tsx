@@ -533,7 +533,9 @@ export function TodosDrawer() {
   }, [reveal, todos, clearReveal, shellDispatch]);
 
   // A finished to-do was asked for (`revealDoneTodo`): show the Done tab with no filters or search and open it in
-  // the panel. It waits for the shared store's list; a failed load drops the request.
+  // the panel. It waits for the shared store's list; a failed load drops the request. One the list doesn't hold
+  // yet (ticked since it last loaded, while the drawer was closed) gets one refresh before it is given up.
+  const doneRevealRefreshed = useRef<unknown>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `setMessage` only sets state.
   useEffect(() => {
     if (!doneReveal || !todos) return;
@@ -543,10 +545,19 @@ export function TodosDrawer() {
       return;
     }
     const key = doneReveal.key;
-    clearDoneReveal();
     const item = doneSnap.list.items.find((t) => t.key === key);
-    // A to-do that has gone since it was found has nothing to show.
-    if (!item) return;
+    if (!item) {
+      if (doneSnap.loading) return;
+      if (doneRevealRefreshed.current !== doneReveal) {
+        doneRevealRefreshed.current = doneReveal;
+        void doneStore.refresh();
+        return;
+      }
+      // Still not there after a fresh load: it has gone (deleted, or moved back), so there is nothing to show.
+      clearDoneReveal();
+      return;
+    }
+    clearDoneReveal();
     setVisitSeen(new Set());
     setTabState('done');
     setFilter(EMPTY_FILTER);
@@ -555,7 +566,7 @@ export function TodosDrawer() {
       setChoice({ client: pickedClient, project: '' });
     setMessage('');
     shellDispatch({ type: 'open-todo', key, mode: 'read' });
-  }, [doneReveal, todos, doneSnap.list, doneSnap.error, clearDoneReveal, shellDispatch]);
+  }, [doneReveal, todos, doneSnap.list, doneSnap.error, doneSnap.loading, clearDoneReveal, shellDispatch]);
 
   // After the panel closes, put the keyboard back on the row's title button (or the Add button).
   useEffect(() => {

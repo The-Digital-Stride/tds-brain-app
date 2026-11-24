@@ -30,7 +30,7 @@ Chats stay on your own Mac. **Save to project** lets Claude write a short summar
 5. Press **Save to project**. Nothing is saved before this.
 6. To make tasks, tick the next steps you want, choose who gets each one, and press **Add tasks**. Press **Done** to finish.
 
-On a project's **Overview**, **Chats not saved yet** lists chats with new messages. Press **Save to project** beside one.
+On a project's **Overview**, **Chats not saved yet** lists your chats from the last 30 days that have new messages. Press **Save to project** beside one.
 
 ## Good to know
 

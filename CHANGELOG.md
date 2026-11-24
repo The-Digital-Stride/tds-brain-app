@@ -2,6 +2,15 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.72.0 — 2026-11-24
+
+- **feat**: invite links on every meeting and a Home meetings read
+- **feat**: Home meetings card; invite and Join links on project meetings
+- **fix**: compact Home meetings card after design review
+- **fix**: narrow Home meetings card keeps the project link visible
+- **fix**: Home meeting meta wraps so the project link is never cut off
+- **fix**: full meeting title on hover; review outcomes
+
 ## v0.71.0 — 2026-11-24
 
 - **feat**: shared rules for reading project codes

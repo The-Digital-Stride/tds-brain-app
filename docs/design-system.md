@@ -177,9 +177,8 @@ named here or it isn't one.
    or "All day"; a working `.dot` and "Now" while it runs), the title, a meta line (client · project link, "with"
    people, "until {d}") and `.meet-actions`: Join (standard small, from 15 minutes before) then a 28px `a.icon-btn` with the `calendar`
    icon, named "Open invite for {title} (opens in a new tab)", tooltip "Open invite" ("Open calendar for {d}" /
-   "Open calendar" for the day fallback), always last. Title and meta are one line each, cut with an ellipsis (on a
-   card narrower than 360px inside, measured on the card itself, the title may take two lines and the meta wraps so the
-   project link stays visible). It shows all of today's meetings, at least 3, then "Show N more
+   "Open calendar" for the day fallback), always last. The title is one line, cut with an ellipsis; the meta wraps so its project link is never cut off (on a
+   card narrower than 360px inside, measured on the card itself, the title may take two lines and Join moves under the text). It shows all of today's meetings, at least 3, then "Show N more
    meetings". It always shows a `.hint` "Calendar checked …" and does not follow Working on.
    A project's code (Overview, above the cards; `.proj-ref`) is a label "Project code", the code in `--mono`
    (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its

@@ -156,13 +156,17 @@
     font-weight: 500;
     color: var(--navy);
   }
-  /* One line each, cut with an ellipsis, so a long title or guest list never makes a row taller. */
-  .home-meeting .line-title,
-  .home-meeting .line-meta {
+  /* The title is one line, cut with an ellipsis. The meta wraps instead, so the project link in it is never cut
+     off (a focusable link must stay visible). */
+  .home-meeting .line-title {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow-wrap: normal;
+  }
+  .home-meeting .line-meta .link-btn {
+    display: inline;
+    text-align: start;
   }
   /* The card measures itself, so the narrow rules below follow the card's width, not Home's. */
   .home-meetings {
@@ -180,16 +184,6 @@
       -webkit-line-clamp: 2;
       white-space: normal;
       overflow-wrap: anywhere;
-    }
-    .home-meeting .line-meta {
-      white-space: normal;
-      overflow: visible;
-      text-overflow: clip;
-      overflow-wrap: break-word;
-    }
-    .home-meeting .line-meta .link-btn {
-      display: inline;
-      text-align: start;
     }
     /* Join moves under the text so it never squeezes it; the invite icon stays at the right of the first line. */
     .home-meeting {

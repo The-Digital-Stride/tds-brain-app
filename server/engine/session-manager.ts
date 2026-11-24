@@ -6,9 +6,10 @@
  *
  * `query`, `listSessions` and `getSessionMessages` are injected, so tests never start Claude Code.
  */
+
 import { randomUUID } from 'node:crypto';
 import { constants as fsConstants, promises as fsp, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import type {
@@ -90,6 +91,7 @@ import {
 } from '../../shared/levels-contract.ts';
 import { brandedFileName, brandedPage, brandingMessage, suggestionMessage } from '../../shared/pages.ts';
 import { PAGE_NOTE_MAX, type PageAskRequest, type PageRef } from '../../shared/pages-contract.ts';
+import { EMAIL_DRAFTS_DIR, emailKeysDir } from '../../shared/project-email-contract.ts';
 import { parseProjectKey } from '../../shared/projects.ts';
 import type { ProjectCard, ProjectKey } from '../../shared/projects-contract.ts';
 import type { ProjectsIndex } from '../brain/projects.ts';
@@ -204,6 +206,8 @@ export interface SessionManagerOptions {
   /** Without `libraryItemForPath`, chats report no files. */
   brain: Pick<BrainReaders, 'identity' | 'skillAccess' | 'clients' | 'todos' | 'libraryItemForPath'>;
   brainRoot: string;
+  /** Test only: the approve keys folder (shared/project-email-contract.ts). Default: this Mac account's own. */
+  emailKeysDir?: string;
   /** The installed `claude`, or null when it could not be found. */
   claudePath: string | null;
   engine: EngineFns;
@@ -617,9 +621,17 @@ function pastTitle(p: PastInfo, fallback: string): string {
 export function permissionSettings(
   uploadsRoot: string | null,
   dataDir: string | null,
+  email: { brainRoot: string; keysDir: string } | null = null,
 ): NonNullable<Options['settings']> | null {
   const allow: string[] = [];
   const deny: string[] = [];
+  if (email) {
+    // Email entries (overseer ruling after the security review): Claude's own tools never read or change
+    // the drafts or the approve keys. Nothing copies out of either, so an Edit deny costs nothing here.
+    const drafts = `${realOr(email.brainRoot)}/${EMAIL_DRAFTS_DIR}`;
+    const keys = realOr(email.keysDir);
+    deny.push(`Read(/${drafts}/**)`, `Edit(/${drafts}/**)`, `Read(/${keys}/**)`, `Edit(/${keys}/**)`);
+  }
   if (uploadsRoot) {
     allow.push(`Read(/${uploadsRoot}/**)`);
   }
@@ -634,6 +646,15 @@ export function permissionSettings(
   }
   if (allow.length === 0 && deny.length === 0) return null;
   return { permissions: allow.length > 0 ? { allow, deny } : { deny } };
+}
+
+/** The real path when it exists (no link stands in for it), else the resolved one. */
+function realOr(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return resolve(p);
+  }
 }
 
 /** The two refusals a chat's project can get (shared/chat-places-contract.ts). */
@@ -720,28 +741,110 @@ export const EMAIL_LINE =
 export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE} ${EMAIL_LINE}`;
 
 /**
- * Email entries plan, overseer B1: a draft's approve_token must only ever reach the script through the
- * owner's click in the app. Any tool call that names the drafts folder, the token, or lists or globs the
- * `briefing/` folder itself is refused. Not a wall against a process set on reading the disk (the security
- * gate's residual risk), but Claude is never shown the token by the app or the script.
+ * Email entries plan, overseer B1, as fixed after the security and correctness reviews: Claude never opens
+ * the drafts folder or the approve keys. Only paths are checked (path fields, a Glob's pattern and the
+ * path-shaped words of a Bash command), never file contents, prose or an email's text, so a "creative
+ * briefing" or /gm's own briefing files still save. The Read and Edit deny rules in permissionSettings do the
+ * same for Claude Code's own path checks; neither is a wall against a process set on reading the disk.
  */
-const DRAFTS_TOUCH = [
-  /email[-_ ]?drafts/i,
-  /approve[-_ ]?token/i,
-  // A glob under briefing/ (briefing/*, briefing/e?, briefing/{a,b}) could reach the drafts folder.
-  /briefing[\\/]+[^\s"'|;&]*[*?[{]/i,
-  // The briefing folder itself (ls briefing, grep -r x briefing/, find briefing).
-  /(?:^|[^\w.-])briefing[\\/]*(?=$|[\s"'|;&)\]}])/i,
-];
+const SECRET_SEGMENT = /(?:^|[\\/=])email[-_]?(?:drafts|keys)(?=$|[\\/"'`,;:)\]}])/i;
+const PATH_KEYS = ['file_path', 'path', 'notebook_path', 'paths', 'source', 'destination', 'glob'];
+const GLOB_CHARS = /[*?[{]/;
 
-export function touchesEmailDrafts(input: unknown): boolean {
-  let text: string;
-  try {
-    text = typeof input === 'string' ? input : JSON.stringify(input ?? '');
-  } catch {
-    return false;
+/** A shell glob segment as a regex (`*`, `?`, `[...]`, `{a,b}`); `**` never counts as reaching a folder. */
+function segmentRegex(seg: string): RegExp | null {
+  if (seg === '**') return null;
+  let out = '';
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i] as string;
+    if (c === '*') out += '[^/]*';
+    else if (c === '?') out += '[^/]';
+    else if (c === '[') {
+      const end = seg.indexOf(']', i + 1);
+      if (end < 0) return null;
+      out += `[${seg
+        .slice(i + 1, end)
+        .replace(/^!/, '^')
+        .replace(/\\/g, '\\\\')}]`;
+      i = end;
+    } else if (c === '{') {
+      const end = seg.indexOf('}', i + 1);
+      if (end < 0) return null;
+      out += `(?:${seg
+        .slice(i + 1, end)
+        .split(',')
+        .map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|')})`;
+      i = end;
+    } else out += c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
-  return DRAFTS_TOUCH.some((re) => re.test(text));
+  try {
+    return new RegExp(`^${out}$`, 'i');
+  } catch {
+    return null;
+  }
+}
+
+/** One path (or path-shaped word) that names the drafts folder or the keys, literally or by a glob. */
+export function pathReachesEmailSecrets(raw: string): boolean {
+  const p = raw.trim().replace(/^['"`]+|['"`]+$/g, '');
+  if (!p) return false;
+  if (SECRET_SEGMENT.test(p)) return true;
+  if (!GLOB_CHARS.test(p)) return false;
+  const segs = p.split(/[\\/]+/);
+  for (const seg of segs) {
+    if (!GLOB_CHARS.test(seg)) continue;
+    const re = segmentRegex(seg);
+    if (!re) continue;
+    // `e*` alone is everyday; it only reaches a secret folder after its parent (briefing/ or the data folder).
+    const at = segs.indexOf(seg);
+    const before = at > 0 ? (segs[at - 1] as string) : null;
+    if (before === null) continue;
+    const prev = GLOB_CHARS.test(before) ? segmentRegex(before) : null;
+    const under = (parent: string) => before.toLowerCase() === parent || prev?.test(parent) === true;
+    if ((re.test('email-drafts') && under('briefing')) || (re.test('email-keys') && under('data')))
+      return true;
+  }
+  return false;
+}
+
+/** Shell words of a command: split on spaces and operators, quotes kept for pathReachesEmailSecrets to strip. */
+function shellWords(command: string): string[] {
+  return command.split(/[\s|;&<>()]+/).filter(Boolean);
+}
+
+/** A project's Updates folder (clients/<c>/projects/<slug>/updates/ or personal/projects/...). */
+const UPDATES_PATH = /(?:^|[\\/])projects[\\/]+[^\\/]+[\\/]+updates(?:[\\/]|$)/i;
+/** Claude Code's file-writing tools: an update is written only by the tdsapp-projects script (overseer ruling). */
+const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * Writing a project's update file by hand would skip the inbox owner's approval (and every other check of
+ * the script's `update`): refused for file tools only, so a Bash command that merely names the folder runs.
+ */
+export function writesUpdateByHand(input: unknown, toolName: string): boolean {
+  if (!isRec(input) || !FILE_WRITE_TOOLS.has(toolName)) return false;
+  return ['file_path', 'notebook_path'].some((k) => {
+    const v = input[k];
+    return typeof v === 'string' && UPDATES_PATH.test(v);
+  });
+}
+
+export const UPDATES_BY_HAND_REFUSAL =
+  "A project's updates are added only with the tdsapp-projects skill's `update` action, never written by hand. For an email, use its `email-draft` action so the inbox owner can approve it.";
+
+export function touchesEmailDrafts(input: unknown, toolName = ''): boolean {
+  if (!isRec(input)) return false;
+  const paths: string[] = [];
+  for (const k of PATH_KEYS) {
+    const v = input[k];
+    if (typeof v === 'string') paths.push(v);
+    else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') paths.push(x);
+  }
+  // Glob's pattern is a path; Grep's is a regex over file text, never checked.
+  if (toolName === 'Glob' && typeof input.pattern === 'string') paths.push(input.pattern);
+  if (typeof input.command === 'string') paths.push(...shellWords(input.command));
+  return paths.some(pathReachesEmailSecrets);
 }
 
 export const EMAIL_DRAFTS_REFUSAL =
@@ -1047,7 +1150,10 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
   const closeTimeoutMs = opts.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
   const env = scrubEnv(opts.env ?? process.env);
   const log = opts.log ?? (() => {});
-  const engineSettings = permissionSettings(opts.uploads?.root ?? null, opts.dataDir ?? null);
+  const engineSettings = permissionSettings(opts.uploads?.root ?? null, opts.dataDir ?? null, {
+    brainRoot: opts.brainRoot,
+    keysDir: opts.emailKeysDir ?? emailKeysDir(userInfo().homedir),
+  });
   const resolveMode = opts.permissionMode ?? (() => resolvePermissionMode(opts.brainRoot, homedir()));
   const resolveDefaults = opts.engineDefaults ?? (() => resolveEngineDefaults(opts.brainRoot, homedir()));
   /** The model and effort the person chose in Settings; null = "Same as Claude Code". */
@@ -2690,18 +2796,25 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
     };
   }
 
-  /** Overseer B1: refuse any tool call that would reach the email drafts or their approve tokens. */
+  /** Overseer B1 and its ruling: refuse a call that would reach the email drafts or approve keys, or write an update by hand. */
   function draftsGuardHook(s: Session): HookCallback {
     return async (raw, toolUseID) => {
       const input: unknown = raw;
-      if (!isRec(input) || !touchesEmailDrafts(input.tool_input)) return { continue: true };
+      if (!isRec(input)) return { continue: true };
+      const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
+      const reason = touchesEmailDrafts(input.tool_input, tool)
+        ? EMAIL_DRAFTS_REFUSAL
+        : writesUpdateByHand(input.tool_input, tool)
+          ? UPDATES_BY_HAND_REFUSAL
+          : null;
+      if (!reason) return { continue: true };
       const id = toolUseID ?? (typeof input.tool_use_id === 'string' ? input.tool_use_id : '');
       if (id) s.deniedTools.add(id);
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: EMAIL_DRAFTS_REFUSAL,
+          permissionDecisionReason: reason,
         },
       };
     };

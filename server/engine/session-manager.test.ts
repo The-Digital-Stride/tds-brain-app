@@ -77,11 +77,28 @@ import {
   splitAttachmentNote,
   splitPageNote,
   touchesEmailDrafts,
+  UPDATES_BY_HAND_REFUSAL,
   withPageNote,
+  writesUpdateByHand,
 } from './session-manager.ts';
 import { TrashMissingError } from './trash-session.ts';
 
 const BRAIN = '/tmp/fake-brain-root';
+const KEYS = '/tmp/fake-email-keys';
+/** The email deny rules every chat carries (overseer ruling): drafts and approve keys, read and edit. */
+const DRAFTS_REAL = `${(() => {
+  try {
+    return realpathSync.native(BRAIN);
+  } catch {
+    return BRAIN;
+  }
+})()}/briefing/email-drafts`;
+const EMAIL_DENY = [
+  `Read(/${DRAFTS_REAL}/**)`,
+  `Edit(/${DRAFTS_REAL}/**)`,
+  `Read(/${KEYS}/**)`,
+  `Edit(/${KEYS}/**)`,
+];
 const CLAUDE = '/usr/local/bin/claude';
 
 // ---------------------------------------------------------------------------
@@ -381,6 +398,7 @@ function setup(
     chatKinds: opts.chatKinds,
     brain: fakeBrain(opts.brain),
     brainRoot: BRAIN,
+    emailKeysDir: KEYS,
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
     engine: fx.engine,
     env: opts.env ?? { PATH: '/bin', HOME: '/home/x' },
@@ -554,34 +572,77 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
   });
 
   it.each([
-    [{ file_path: '/brain/briefing/email-drafts/abc123def456.json' }],
-    [{ command: 'cat briefing/email-drafts/*.json' }],
-    [{ command: 'ls briefing' }],
-    [{ command: 'grep -r token briefing/' }],
-    [{ command: 'cat briefing/*/x.json' }],
-    [{ command: 'cat briefing/e*/a.json' }],
-    [{ pattern: 'briefing/**' }],
-    [{ path: 'briefing', pattern: 'token' }],
-    [{ command: 'echo \'{"kind":"email","approve_token":"x"}\' | node s.cjs update' }],
-    [{ path: '/Users/x/agencybrain/briefing/' }],
-  ])('refuses %j', (input) => {
-    expect(touchesEmailDrafts(input)).toBe(true);
+    [{ file_path: '/brain/briefing/email-drafts/abc123def456.json' }, 'Read'],
+    [{ command: 'cat briefing/email-drafts/*.json' }, 'Bash'],
+    [{ command: 'cat briefing/*/x.json' }, 'Bash'],
+    [{ command: 'cat briefing/e*/a.json' }, 'Bash'],
+    // The security review's bypasses.
+    [{ command: 'cat brief*/e*/*.json' }, 'Bash'],
+    [{ command: 'ls b{r,x}iefing/email_drafts' }, 'Bash'],
+    [{ pattern: 'briefing/email-drafts/*.json' }, 'Glob'],
+    [{ path: '/Users/x/agencybrain/briefing/email-drafts' }, 'Grep'],
+    [
+      { command: 'cat "$HOME/Library/Application Support/TDS Brain/data/email-keys/abc123def456.key"' },
+      'Bash',
+    ],
+    [{ command: 'cat ~/Library/Application\\ Support/TDS\\ Brain/data/e*/x' }, 'Bash'],
+    [
+      { file_path: '/Users/x/Library/Application Support/TDS Brain/data/email-keys/abc123def456.key' },
+      'Read',
+    ],
+    [{ command: 'node -e "x" --path=briefing/email-drafts' }, 'Bash'],
+  ])('refuses %j (%s)', (input, tool) => {
+    expect(touchesEmailDrafts(input, tool)).toBe(true);
   });
 
   it.each([
-    [{ file_path: '/brain/briefing/meetings-cache.json' }],
-    [{ command: 'cat briefing/inbox-cache.json' }],
+    [{ file_path: '/brain/briefing/meetings-cache.json' }, 'Read'],
+    [{ command: 'cat briefing/inbox-cache.json' }, 'Bash'],
+    [{ command: 'ls briefing' }, 'Bash'],
     [
       {
         command:
           'echo \'{"action":"email-draft","threadId":"1a2b3c4d"}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs email-draft',
       },
+      'Bash',
     ],
-    [{ command: 'node s.cjs email-draft-remove' }],
-    [{ file_path: '/brain/clients/acme/briefing-notes.md' }],
-    [{ command: 'git status' }],
-  ])('allows %j', (input) => {
-    expect(touchesEmailDrafts(input)).toBe(false);
+    [{ command: 'node s.cjs email-draft-remove' }, 'Bash'],
+    [{ file_path: '/brain/clients/acme/briefing-notes.md' }, 'Write'],
+    [{ command: 'git status' }, 'Bash'],
+    // Prose is never checked (correctness and security reviews): these were all refused before.
+    [{ file_path: 'briefing/2026-11-24-briefing.md', content: '# Daily briefing for Ian' }, 'Write'],
+    [{ file_path: 'clients/acme/reports/brief.md', content: '# Creative briefing for Acme' }, 'Write'],
+    [
+      {
+        file_path: 'briefing/inbox-cache.json',
+        content: '{"subject":"Q4 briefing","note":"attached the email drafts"}',
+      },
+      'Write',
+    ],
+    [
+      {
+        command:
+          'echo \'{"subject":"Client briefing call","newestText":"Thanks for the briefing yesterday"}\' | node s.cjs email-draft',
+      },
+      'Bash',
+    ],
+    [{ command: 'grep -ri "briefing" clients/acme' }, 'Bash'],
+    [{ pattern: 'email drafts|approve token', path: 'clients' }, 'Grep'],
+    [{ command: 'ls src/e*' }, 'Bash'],
+    [{ pattern: '**/*.json' }, 'Glob'],
+  ])('allows %j (%s)', (input, tool) => {
+    expect(touchesEmailDrafts(input, tool)).toBe(false);
+  });
+
+  it.each([
+    [{ file_path: '/brain/clients/acme/projects/web/updates/2026-11-24-0900-sam-abc123.md' }, 'Write', true],
+    [{ file_path: 'personal/projects/garden/updates/x.md' }, 'Edit', true],
+    [{ file_path: 'clients/acme/projects/web/updates/x.md' }, 'MultiEdit', true],
+    [{ file_path: 'clients/acme/projects/web/updates/x.md' }, 'Read', false],
+    [{ command: 'ls clients/acme/projects/web/updates' }, 'Bash', false],
+    [{ file_path: 'clients/acme/projects/web/notes/updates.md' }, 'Write', false],
+  ])('a hand-written project update %j with %s is refused: %s', (input, tool, refused) => {
+    expect(writesUpdateByHand(input, tool)).toBe(refused);
   });
 
   it('a PreToolUse hook on every chat refuses such a call, even one that needs no permission', async () => {
@@ -604,6 +665,26 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
       },
     });
     expect(await call({ file_path: '/brain/clients/acme/notes.md' })).toEqual({ continue: true });
+    expect(
+      await guard(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Write',
+          tool_input: {
+            file_path: '/brain/clients/acme/projects/web/updates/x.md',
+            content: 'From an email.',
+          },
+          tool_use_id: 't2',
+        },
+        't2',
+      ),
+    ).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: UPDATES_BY_HAND_REFUSAL,
+      },
+    });
   });
 });
 
@@ -764,7 +845,7 @@ describe('the model and effort choice', () => {
     expect(queries[2]?.options.model).toBeUndefined();
     expect(queries[2]?.options.effort).toBe('max');
     expect(queries[3]?.options).toMatchObject({ model: 'sonnet', effort: 'low' });
-    for (const q of queries) expect(q.options.settings).toBeUndefined();
+    for (const q of queries) expect(q.options.settings).toEqual({ permissions: { deny: EMAIL_DENY } });
   });
 
   it('calls setModel and applyFlagSettings on live engines only for the parts that changed', async () => {
@@ -1959,7 +2040,7 @@ describe('attachments', () => {
     expect(o.settings).toEqual({
       permissions: {
         allow: [`Read(/${root}/**)`],
-        deny: [`Read(/${dataDir}/*.json)`, `Read(/${dataDir}/*.tmp)`],
+        deny: [...EMAIL_DENY, `Read(/${dataDir}/*.json)`, `Read(/${dataDir}/*.tmp)`],
       },
     });
     expect((o.settings as { permissions: { allow: string[] } }).permissions.allow[0]).toMatch(
@@ -1972,7 +2053,7 @@ describe('attachments', () => {
     const { queries } = setup();
     await mgr.start({ prompt: 'hi' });
     await flush();
-    expect(queries[0]?.options.settings).toBeUndefined();
+    expect(queries[0]?.options.settings).toEqual({ permissions: { deny: EMAIL_DENY } });
     const brainRoot = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-brain-')));
     temps.push(brainRoot);
     const offData = join(brainRoot, 'data');
@@ -1982,7 +2063,7 @@ describe('attachments', () => {
     await mgr.start({ prompt: 'hi' });
     await flush();
     expect(fx.queries[0]?.options.settings).toEqual({
-      permissions: { deny: [`Read(/${offData}/*.json)`, `Read(/${offData}/*.tmp)`] },
+      permissions: { deny: [...EMAIL_DENY, `Read(/${offData}/*.json)`, `Read(/${offData}/*.tmp)`] },
     });
     await expectCode(mgr.start({ prompt: 'hi', attachments: ['x'] }), 'not-allowed');
   });

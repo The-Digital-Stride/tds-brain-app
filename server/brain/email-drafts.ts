@@ -3,11 +3,14 @@
  * email drafts waiting for their inbox owner's OK. A draft is a gitignored file the `tdsapp-projects` script
  * wrote on this Mac (`briefing/email-drafts/<id>.json`, never an email's text). This reads them (only when git
  * says the folder is ignored, only this person's, not older than DRAFT_MAX_AGE_DAYS), routes each to a project
- * (email-route.ts) and, on the owner's Save, runs the script's `update` with the token it read from the file.
+ * (email-route.ts) and, on the owner's Save, runs the script's `update` with the token from the draft's key
+ * file outside the brain (`emailKeysDir`, overseer ruling after the security review). A draft with no key is never
+ * listed.
  * The app never writes a brain file: approve and dismiss are the script's. Nothing returned holds an address,
  * the sender's domain or the approve token.
  */
 import { promises as fs } from 'node:fs';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import type { ClientInfo, Identity } from '../../shared/contract.ts';
 import {
@@ -23,6 +26,7 @@ import {
   type EmailDraftItem,
   type EmailDraftsResponse,
   type EmailPerson,
+  emailKeysDir,
   PROJECTS_EMAIL_CAPABILITY,
   type ProjectEmailEntryInput,
 } from '../../shared/project-email-contract.ts';
@@ -62,6 +66,8 @@ export interface EmailDraftsDeps {
   script?: ScriptOptions;
   /** The projects runner's queue, so a draft's save never runs beside another project change. */
   queue?: ReturnType<typeof createQueue>;
+  /** Test only: the approve keys folder. Default: this Mac account's own, as the script finds it. */
+  keysDir?: string;
   now?: () => Date;
 }
 
@@ -83,6 +89,7 @@ const NEWLINE = /[\r\n]/;
 
 const NOT_ALLOWED = "Saving emails to projects isn't available to you in the app yet.";
 const NEEDS_SKILLS = "Update the brain's skills to save emails to projects.";
+const NO_KEY = "This email can't be saved from here. Ask Claude to suggest it again.";
 const NO_DRAFT = "That email isn't waiting any more. It may already have been saved or cleared.";
 const BAD = "That email couldn't be saved. Check the details and try again.";
 const INTERNAL = 'The change could not be made. Try again.';
@@ -147,9 +154,7 @@ export function parseDraft(text: string, id: string): EmailDraftFile | null {
     !isStr(d.summary) ||
     !strList(d.codes_subject) ||
     !strList(d.codes_body) ||
-    !(d.requested === null || isStr(d.requested)) ||
-    !isStr(d.approve_token) ||
-    !/^[0-9a-f]{32}$/.test(d.approve_token)
+    !(d.requested === null || isStr(d.requested))
   )
     return null;
   return d as unknown as EmailDraftFile;
@@ -232,6 +237,21 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
   const canApprove = async (): Promise<boolean> =>
     (await deps.capabilities().catch(() => [] as string[])).includes(PROJECTS_EMAIL_CAPABILITY) &&
     (await folderIgnored());
+
+  const keysDir = deps.keysDir ?? emailKeysDir(userInfo().homedir);
+  /** The approve token from `<id>.key` outside the brain, or null. Read only here, never sent anywhere but the script. */
+  const readKey = async (id: string): Promise<string | null> => {
+    if (!ID.test(id)) return null;
+    try {
+      const abs = join(keysDir, `${id}.key`);
+      const st = await fs.lstat(abs);
+      if (!st.isFile() || st.size > 4096) return null;
+      const k = JSON.parse(await fs.readFile(abs, 'utf8')) as { token?: unknown };
+      return typeof k.token === 'string' && /^[0-9a-f]{32}$/.test(k.token) ? k.token : null;
+    } catch {
+      return null;
+    }
+  };
 
   /** One draft file for this person, or null (missing, unreadable, not theirs). */
   const readOwn = async (id: string, who: Identity): Promise<EmailDraftFile | null> => {
@@ -319,6 +339,11 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
         }
         if (!isSlugOf(who, d.inbox_owner)) continue;
         if (Date.parse(d.created_at) < cutoff) continue;
+        // A draft with no key (hand-made, or its key lost) can never be saved: counted, never shown.
+        if (!(await readKey(id))) {
+          unreadable++;
+          continue;
+        }
         mine.push(d);
       } catch {
         unreadable++;
@@ -436,10 +461,12 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
     // The draft is read here, on the owner's click: the token never reaches the browser or the request.
     const draft = await readOwn(req.id, who);
     if (!draft) throw new ProjectsError('not-found', NO_DRAFT);
+    const token = await readKey(draft.id);
+    if (!token) throw new ProjectsError('not-allowed', NO_KEY);
     const entry: ProjectEmailEntryInput = {
       kind: 'email',
       draft: draft.id,
-      token: draft.approve_token,
+      token,
       summary,
       subject: req.subject,
       from: req.from,

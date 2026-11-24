@@ -129,6 +129,10 @@ const PROJECTS_REFS_CAPABILITY = 'projects-refs-v1';
 // entries, as shared/project-email-contract.ts (a test checks these match).
 const PROJECTS_EMAIL_CAPABILITY = 'projects-email-v1';
 const EMAIL_DRAFT_FILE_PATTERN = /^[a-z0-9]{12}\.json$/;
+// The approve keys live outside the brain, in this Mac user's TDS Cortex data folder (overseer ruling after
+// the security review): never in a folder Claude works in, never moved by HOME or TDS_BRAIN_APP_DATA.
+const EMAIL_KEYS_SUBDIR = 'Library/Application Support/TDS Brain/data/email-keys';
+const EMAIL_KEY_FILE_PATTERN = /^[a-z0-9]{12}\.key$/;
 const EMAIL = {
   EMAIL_DRAFTS_DIR: 'briefing/email-drafts',
   DISMISSED_DAYS: 90,
@@ -2881,10 +2885,12 @@ function capabilities() {
 //
 // Nothing from an email reaches a project until the owner of the inbox it came from approves exactly
 // what is saved. `email-draft` writes one draft into briefing/email-drafts/ (git-ignored, folder 0700,
-// files 0600, so it never syncs): the facts, Claude's summary, the codes found and a random
-// `approve_token`. The newest message's text is read for codes and dropped. No reply ever holds the
-// token: only the app's server reads it from the file when the inbox owner clicks Save, and passes it
-// to `update` with an `email` entry. That entry takes its thread id, key, sent time and inbox owner
+// files 0600, so it never syncs): the facts, Claude's summary and the codes found. Its random approve
+// token goes to `<this Mac user's home>/Library/Application Support/TDS Brain/data/email-keys/<id>.key`,
+// outside the brain, with the SHA-256 of the draft file's bytes. The newest message's text is read for
+// codes and dropped. No reply ever holds the token: only the app's server reads it from the key file when
+// the inbox owner clicks Save, and passes it to `update` with an `email` entry, which refuses unless the
+// key file exists, the token matches and the draft is unchanged. That entry takes its thread id, key, sent time and inbox owner
 // from the draft and the rest (as edited on screen) from the request, and is never written twice for
 // one email (`email_key`, across every project). Entries hold names, never addresses.
 
@@ -3110,8 +3116,7 @@ function readDraft(folder, name) {
     && !SPACE_BAD.test(d.email_key) && yamlText(d.email_key) !== null
     && isText(d.sent_at) && ISO_TIME.test(d.sent_at)
     && isPersonShape(d.from)
-    && Array.isArray(d.people) && d.people.every(isPersonShape)
-    && isText(d.approve_token) && TOKEN_PATTERN.test(d.approve_token);
+    && Array.isArray(d.people) && d.people.every(isPersonShape);
   return ok ? { state: 'ok', abs, st, draft: d } : { state: 'bad', abs, st };
 }
 
@@ -3132,13 +3137,79 @@ function draftNames(folder) {
   return names.filter(n => EMAIL_DRAFT_FILE_PATTERN.test(n)).sort();
 }
 
-// Deletes drafts older than DRAFT_MAX_AGE_DAYS, whoever's they are (overseer 6).
+// Deletes drafts older than DRAFT_MAX_AGE_DAYS, whoever's they are (overseer 6), with their keys; then
+// key files older than that, and this brain's key files whose draft is gone (overseer ruling).
 function sweepDrafts(ctx, folder) {
   for (const name of draftNames(folder)) {
     const r = readDraft(folder, name);
     if (r.state === 'missing' || r.st.isSymbolicLink() || !r.st.isFile()) continue;
-    if (draftExpired(ctx, r)) removeQuietly(r.abs);
+    if (draftExpired(ctx, r)) {
+      removeQuietly(r.abs);
+      removeKey(ctx, name.replace(/\.json$/, ''));
+    }
   }
+  const dir = keysDir(ctx);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  const brain = brainReal(ctx);
+  for (const name of names) {
+    if (!EMAIL_KEY_FILE_PATTERN.test(name)) continue;
+    const abs = path.join(dir, name);
+    const st = lstatOrNull(abs);
+    if (!st || st.isSymbolicLink() || !st.isFile()) continue;
+    const old = ctx.now.getTime() - st.mtimeMs > EMAIL.DRAFT_MAX_AGE_DAYS * DAY_MS;
+    // Another brain on this Mac (a demo, a second brain) keeps its keys until they are old.
+    const k = readKeyAt(abs);
+    const orphan = k !== null && k.brain === brain && !lstatOrNull(path.join(folder.abs, name.replace(/\.key$/, '.json')));
+    if (old || orphan) removeQuietly(abs);
+  }
+}
+
+// ---- approve keys (outside the brain) ----
+
+// `<this Mac user's home>/Library/Application Support/TDS Brain/data/email-keys`. The home is the account's
+// own (os.userInfo), never the HOME variable, so a command can't move it. Tests pass ctx.keysDir in-process.
+function keysDir(ctx) {
+  return ctx.keysDir || path.join(os.userInfo().homedir, ...EMAIL_KEYS_SUBDIR.split('/'));
+}
+
+function brainReal(ctx) {
+  try {
+    return fs.realpathSync.native(ctx.root);
+  } catch {
+    return path.resolve(ctx.root);
+  }
+}
+
+function readKeyAt(abs) {
+  const st = lstatOrNull(abs);
+  if (!st || st.isSymbolicLink() || !st.isFile() || st.size > 4096) return null;
+  try {
+    const k = JSON.parse(fs.readFileSync(abs, 'utf8'));
+    return k && isText(k.token) && TOKEN_PATTERN.test(k.token) && isText(k.draft_sha256)
+      && /^[0-9a-f]{64}$/.test(k.draft_sha256) && isText(k.brain) ? k : null;
+  } catch {
+    return null;
+  }
+}
+
+function removeKey(ctx, id) {
+  removeQuietly(path.join(keysDir(ctx), `${id}.key`));
+}
+
+// Writes the key for draft `id`: the token and the SHA-256 of the draft file's bytes. Folder 0700, file 0600.
+function writeKey(ctx, id, token, draftBytes) {
+  const dir = keysDir(ctx);
+  fs.mkdirSync(dir, { recursive: true, mode: EMAIL_DRAFTS_DIR_MODE });
+  const st = fs.lstatSync(dir);
+  if (st.isSymbolicLink() || !st.isDirectory()) throw refuse('not-allowed', 'the approve keys folder is not a plain folder');
+  fs.chmodSync(dir, EMAIL_DRAFTS_DIR_MODE);
+  const body = `${JSON.stringify({ v: 1, token, draft_sha256: sha256(draftBytes), brain: brainReal(ctx) })}\n`;
+  writePrivate({ abs: dir }, `${id}.key`, body, false);
 }
 
 // Whole days from `ymd` to today (UK), or null when `ymd` isn't a date.
@@ -3310,7 +3381,10 @@ function emailDraft(input, ctx) {
 
   for (const name of draftNames(folder)) {
     const r = readDraft(folder, name);
-    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && r.draft.email_key === emailKey) removeQuietly(r.abs);
+    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && r.draft.email_key === emailKey) {
+      removeQuietly(r.abs);
+      removeKey(ctx, r.draft.id);
+    }
   }
   const draft = {
     v: 1,
@@ -3329,9 +3403,17 @@ function emailDraft(input, ctx) {
     codes_subject: codesIn(subject),
     codes_body: codesIn(ownText(input.newestText)),
     requested,
-    approve_token: crypto.randomBytes(16).toString('hex'),
   };
-  writePrivate(folder, `${id}.json`, `${JSON.stringify(draft, null, 2)}\n`, false);
+  const bytes = `${JSON.stringify(draft, null, 2)}\n`;
+  writePrivate(folder, `${id}.json`, bytes, false);
+  try {
+    writeKey(ctx, id, crypto.randomBytes(16).toString('hex'), Buffer.from(bytes, 'utf8'));
+  } catch (err) {
+    // A draft without its key can never be saved: take it away again.
+    removeQuietly(path.join(folder.abs, `${id}.json`));
+    syncDir(folder.abs);
+    throw err;
+  }
   return { ok: true, action: 'email-draft', id };
 }
 
@@ -3350,6 +3432,7 @@ function ownDraft(ctx, folder, id, who) {
   if (r.draft.inbox_owner !== who.slug) throw refuse('not-allowed', 'only the person whose inbox it came from can use that draft');
   if (draftExpired(ctx, r)) {
     removeQuietly(r.abs);
+    removeKey(ctx, id);
     throw gone();
   }
   return r;
@@ -3370,6 +3453,7 @@ function emailDraftRemove(input, ctx) {
     writePrivate(folder, dismissedName(who.slug), `${JSON.stringify(kept, null, 2)}\n`, true);
   }
   removeQuietly(r.abs);
+  removeKey(ctx, id);
   syncDir(folder.abs);
   return { ok: true, action: 'email-draft-remove', id };
 }
@@ -3436,12 +3520,23 @@ function emailUpdate(input, entry, loc, ctx) {
   if (!who.known || !who.slug) throw notApproved();
   const folder = draftsFolder(ctx, false, [draftsRel(`${id}.json`)]);
   const r = ownDraft(ctx, folder, id, who);
-  if (!sameToken(entry.token, r.draft.approve_token)) throw notApproved();
+  // The key file outside the brain, written with the draft: missing (a hand-made draft), another token,
+  // or a draft changed since it was written are all refused (overseer ruling).
+  const key = readKeyAt(path.join(keysDir(ctx), `${id}.key`));
+  if (!key || !sameToken(entry.token, key.token)) throw notApproved();
+  let bytes;
+  try {
+    bytes = fs.readFileSync(r.abs);
+  } catch {
+    throw notApproved();
+  }
+  if (!sameToken(sha256(bytes), key.draft_sha256)) throw notApproved();
   requireNames([from, ...people]);
 
   const held = emailHeld(ctx, r.draft.email_key);
   if (held) {
     removeQuietly(r.abs);
+    removeKey(ctx, id);
     throw alreadyIn(held);
   }
   const updates = updatesFolder(ctx, loc, true);
@@ -3459,6 +3554,7 @@ function emailUpdate(input, entry, loc, ctx) {
     },
   }, summary);
   removeQuietly(r.abs);
+  removeKey(ctx, id);
   syncDir(folder.abs);
   return { ok: true, action: 'update', key: loc.key, version: sha256(cardFile.bytes), file };
 }
@@ -3559,6 +3655,8 @@ module.exports = {
   PROJECTS_EMAIL_CAPABILITY,
   EMAIL,
   EMAIL_DRAFT_FILE_PATTERN,
+  EMAIL_KEYS_SUBDIR,
+  emailKeysDir: keysDir,
   REF_DIGITS,
   REF_LETTERS,
   CLIENT_CODE_PATTERN,

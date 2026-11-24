@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Identity } from '../../shared/contract.ts';
 import {
@@ -39,7 +39,10 @@ const r=JSON.parse(process.env.FAKE_REPLY||'{}');process.stdout.write(r.out||'{"
   );
   mkdirSync(join(root, '.claude', 'skills', 'tdsapp-projects'), { recursive: true });
 });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  rmSync(keysDir(), { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
 
 function put(rel: string, text: string) {
   const abs = join(root, ...rel.split('/'));
@@ -97,11 +100,20 @@ function draft(id: string, over: Partial<EmailDraftFile> = {}): EmailDraftFile {
     codes_subject: [],
     codes_body: [],
     requested: null,
-    approve_token: TOKEN,
     ...over,
   };
 }
-const putDraft = (d: EmailDraftFile) => put(`briefing/email-drafts/${d.id}.json`, JSON.stringify(d));
+/** The draft, and (unless `key: false`) its approve key in the keys folder outside the brain. */
+const putDraft = (d: EmailDraftFile, opts: { key?: boolean } = {}) => {
+  put(`briefing/email-drafts/${d.id}.json`, JSON.stringify(d));
+  if (opts.key === false) return;
+  mkdirSync(keysDir(), { recursive: true });
+  writeFileSync(
+    join(keysDir(), `${d.id}.key`),
+    JSON.stringify({ v: 1, token: TOKEN, draft_sha256: 'a'.repeat(64), brain: root }),
+  );
+};
+const keysDir = () => join(root, '..', `${basename(root)}-keys`);
 
 function setup(
   opts: {
@@ -129,12 +141,20 @@ function setup(
     capabilities: async () => opts.caps ?? [PROJECTS_EMAIL_CAPABILITY],
     ignored: async (rels) => new Set(opts.ignored === false ? [] : rels),
     onChanged: () => changed++,
+    keysDir: keysDir(),
     script: {
       env: { PATH: process.env.PATH, FAKE_LOG: logFile, FAKE_REPLY: JSON.stringify(opts.reply ?? {}) },
     },
   });
   return { svc, changed: () => changed };
 }
+
+describe('approve keys outside the brain (overseer ruling)', () => {
+  it('never lists a draft with no key file, and counts it', async () => {
+    putDraft(draft('aaaaaaaaaaaa'), { key: false });
+    expect(await setup().svc.list(null)).toMatchObject({ drafts: [], unreadable: 1 });
+  });
+});
 
 describe('listing drafts', () => {
   it('lists nothing and cannot approve when git does not ignore the folder', async () => {
@@ -241,7 +261,13 @@ describe('approving', () => {
     clientSafe: true,
   };
 
-  it('runs update with the edited fields and the token read from the file', async () => {
+  it('refuses to save a draft whose key is missing, without running the script', async () => {
+    putDraft(draft('aaaaaaaaaaaa'), { key: false });
+    await expect(setup().svc.approve(body)).rejects.toMatchObject({ code: 'not-allowed' });
+    expect(calls()).toEqual([]);
+  });
+
+  it('runs update with the edited fields and the token read from the key file outside the brain', async () => {
     putDraft(draft('aaaaaaaaaaaa'));
     const s = setup({
       reply: {

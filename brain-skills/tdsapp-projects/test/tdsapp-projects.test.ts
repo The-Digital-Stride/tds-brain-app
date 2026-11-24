@@ -12,13 +12,14 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -28,6 +29,7 @@ import {
   DRAFT_MAX_AGE_DAYS,
   EMAIL_DRAFT_FILE_PATTERN,
   EMAIL_DRAFTS_DIR,
+  EMAIL_KEYS_SUBDIR,
   EMAIL_NAME_MAX,
   EMAIL_NEWEST_TEXT_MAX,
   EMAIL_PEOPLE_MAX,
@@ -90,9 +92,13 @@ interface Ctx {
   removeDir?: (dir: string) => void;
   /** Test only: stands in for an update file name's random six characters. */
   updateSuffix?: () => string;
+  /** Test only, in-process: the approve keys folder (else the Mac account's TDS Brain data folder). */
+  keysDir?: string;
 }
 interface ProjectsModule {
   run(action: string, input: unknown, ctx: Ctx): { exit: number; reply: Reply };
+  EMAIL_KEYS_SUBDIR: string;
+  emailKeysDir(ctx: Partial<Ctx>): string;
   SCRIPT_VERSION: string;
   PROJECTS_CAPABILITY: string;
   PROJECTS_MOVE_CAPABILITY: string;
@@ -165,7 +171,7 @@ const sha = (rel: string) =>
     .update(readFileSync(abs(rel)))
     .digest('hex');
 const call = (action: string, input: Record<string, unknown> = {}) =>
-  projects.run(action, input, { root, home, now: T0 });
+  projects.run(action, input, { root, home, now: T0, keysDir: join(home, 'email-keys') });
 const refusal = (r: { exit: number; reply: Reply }) => ({ exit: r.exit, error: r.reply.error });
 
 function create(slug: string, fields: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
@@ -777,6 +783,7 @@ describe('constants', () => {
     expect(projects.PROJECTS_UPDATES_CAPABILITY).toBe(PROJECTS_UPDATES_CAPABILITY);
     expect(projects.PROJECTS_EMAIL_CAPABILITY).toBe(PROJECTS_EMAIL_CAPABILITY);
     expect(projects.EMAIL_DRAFT_FILE_PATTERN.source).toBe(EMAIL_DRAFT_FILE_PATTERN.source);
+    expect(projects.EMAIL_KEYS_SUBDIR).toBe(EMAIL_KEYS_SUBDIR);
     expect(projects.EMAIL).toEqual({
       EMAIL_DRAFTS_DIR,
       DISMISSED_DAYS,
@@ -2307,7 +2314,11 @@ describe('updates log', () => {
     '---\nv: 1\ntitle: Website rebuild\nclient: acme\nstatus: active\nhealth: green\nowner: tess-team\n---\n\nThe brief.\n';
   const as = (email: string) => git(['config', 'user.email', email]);
   const runAt = (action: string, input: Record<string, unknown>, extra: Partial<Ctx> = {}) =>
-    projects.run(action, { kind: action, ...input }, { root, home, now: T0, ...extra });
+    projects.run(
+      action,
+      { kind: action, ...input },
+      { root, home, now: T0, keysDir: join(home, 'email-keys'), ...extra },
+    );
   const add = (
     entry: Record<string, unknown> = { kind: 'note', summary: 'Sent the quote.', clientSafe: false },
     key = 'acme/website',
@@ -2788,7 +2799,11 @@ describe('email entries', () => {
   const as = (email: string) => git(['config', 'user.email', email]);
   const replies: Reply[] = [];
   const runAt = (action: string, input: Record<string, unknown>, extra: Partial<Ctx> = {}) => {
-    const r = projects.run(action, { kind: action, ...input }, { root, home, now: T0, ...extra });
+    const r = projects.run(
+      action,
+      { kind: action, ...input },
+      { root, home, now: T0, keysDir: join(home, 'email-keys'), ...extra },
+    );
     replies.push(r.reply);
     return r;
   };
@@ -2818,9 +2833,19 @@ describe('email entries', () => {
           .sort()
       : [];
   const tokens = new Set<string>();
+  const keyPath = (id: string) => join(home, 'email-keys', `${id}.key`);
+  const keyOf = (id: string) => {
+    const key = JSON.parse(readFileSync(keyPath(id), 'utf8')) as {
+      token: string;
+      draft_sha256: string;
+      brain: string;
+    };
+    tokens.add(key.token);
+    return key;
+  };
   const draftOf = (id: string) => {
     const file = JSON.parse(read(`${DRAFTS}/${id}.json`));
-    if (typeof file.approve_token === 'string') tokens.add(file.approve_token);
+    if (existsSync(keyPath(id))) keyOf(id);
     return file;
   };
   const newDraft = (over: Record<string, unknown> = {}, extra: Partial<Ctx> = {}) => {
@@ -2843,7 +2868,7 @@ describe('email entries', () => {
         entry: {
           kind: 'email',
           draft: id,
-          token: draftOf(id).approve_token,
+          token: existsSync(keyPath(id)) ? keyOf(id).token : '0'.repeat(32),
           summary: 'Alex agreed the December budget.',
           subject: 'Budget for December',
           from: 'Alex Smith',
@@ -2922,9 +2947,20 @@ describe('email entries', () => {
         codes_subject: ['ACM4K7'],
         codes_body: ['SKY4K7'],
         requested: null,
-        approve_token: expect.stringMatching(/^[0-9a-f]{32}$/),
       });
-      expect(file.approve_token).not.toBe('f'.repeat(32));
+      // The token lives outside the brain, with the SHA-256 of the draft's bytes and the brain it belongs to.
+      const key = keyOf(id);
+      expect(key.token).toMatch(/^[0-9a-f]{32}$/);
+      expect(key.token).not.toBe('f'.repeat(32));
+      expect(key.draft_sha256).toBe(
+        createHash('sha256')
+          .update(readFileSync(abs(`${DRAFTS}/${id}.json`)))
+          .digest('hex'),
+      );
+      expect(key.brain).toBe(realpathSync.native(root));
+      expect(read(`${DRAFTS}/${id}.json`)).not.toContain(key.token);
+      expect(statSync(join(home, 'email-keys')).mode & 0o777).toBe(0o700);
+      expect(statSync(keyPath(id)).mode & 0o777).toBe(0o600);
       // The newest message's text is read for codes and dropped.
       const text = read(`${DRAFTS}/${id}.json`);
       expect(text).not.toContain('go ahead');
@@ -3204,28 +3240,16 @@ describe('email entries', () => {
       expect(draft({ messageId: '<new@mail.example>' }).reply).toMatchObject({ ok: true });
     });
 
-    it('runs from the command line: one JSON line', () => {
-      const out = spawnSync(process.execPath, [SCRIPT, 'email-draft'], {
-        input: JSON.stringify({ kind: 'email-draft', ...DRAFT }),
-        encoding: 'utf8',
-        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
-      });
-      expect(out.status).toBe(0);
-      expect(out.stdout.split('\n').filter(Boolean)).toHaveLength(1);
-      const reply = JSON.parse(out.stdout);
-      expect(Object.keys(reply).sort()).toEqual(['action', 'id', 'ok']);
-      const dismissed = spawnSync(process.execPath, [SCRIPT, 'email-draft-remove'], {
-        input: JSON.stringify({ id: reply.id, dismiss: true }),
-        encoding: 'utf8',
-        env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
-      });
-      expect(JSON.parse(dismissed.stdout)).toEqual({ ok: true, action: 'email-draft-remove', id: reply.id });
+    it('runs from the command line: one JSON line (a refusal, so no key is written outside the test)', () => {
+      const id = newDraft();
+      expect(runAt('email-draft-remove', { id, dismiss: true }).reply).toMatchObject({ ok: true });
       const again = spawnSync(process.execPath, [SCRIPT, 'email-draft'], {
         input: JSON.stringify(DRAFT),
         encoding: 'utf8',
         env: { PATH: process.env.PATH, HOME: home, BRAIN_ROOT: root, GIT_CONFIG_NOSYSTEM: '1' },
       });
       expect(again.status).toBe(2);
+      expect(again.stdout.split('\n').filter(Boolean)).toHaveLength(1);
       expect(JSON.parse(again.stdout)).toMatchObject({ ok: false, error: 'dismissed' });
     });
   });
@@ -3404,9 +3428,57 @@ describe('email entries', () => {
       expect(draftFiles()).toEqual([]);
     });
 
+    it('refuses a hand-written draft with no key file, even with a matching hash (overseer ruling)', () => {
+      const id = newDraft();
+      const token = keyOf(id).token;
+      rmSync(keyPath(id));
+      expect(refusal(approve(id, { token }))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(entries()).toEqual([]);
+    });
+
+    it('refuses a draft changed since the script wrote it', () => {
+      const id = newDraft();
+      const file = draftOf(id);
+      put(`${DRAFTS}/${id}.json`, `${JSON.stringify({ ...file, summary: 'Changed by hand.' }, null, 2)}\n`);
+      expect(refusal(approve(id))).toEqual({ exit: 2, error: 'not-allowed' });
+      expect(entries()).toEqual([]);
+    });
+
+    it("the key folder is the Mac account's own: HOME and TDS_BRAIN_APP_DATA never move it", () => {
+      const was = { HOME: process.env.HOME, DATA: process.env.TDS_BRAIN_APP_DATA };
+      process.env.HOME = home;
+      process.env.TDS_BRAIN_APP_DATA = join(home, 'data');
+      try {
+        expect(projects.emailKeysDir({ root, home, now: T0 })).toBe(
+          join(userInfo().homedir, ...projects.EMAIL_KEYS_SUBDIR.split('/')),
+        );
+      } finally {
+        if (was.HOME === undefined) delete process.env.HOME;
+        else process.env.HOME = was.HOME;
+        if (was.DATA === undefined) delete process.env.TDS_BRAIN_APP_DATA;
+        else process.env.TDS_BRAIN_APP_DATA = was.DATA;
+      }
+      expect(projects.EMAIL_KEYS_SUBDIR).toBe('Library/Application Support/TDS Brain/data/email-keys');
+    });
+
+    it("removes the key with the draft, and sweeps this brain's orphan keys but not another brain's", () => {
+      const id = newDraft();
+      expect(approve(id).reply).toMatchObject({ ok: true });
+      expect(existsSync(keyPath(id))).toBe(false);
+      const gone = newDraft({ threadId: '18c2f0a1b2c3d4ff', subject: 'Other' });
+      rmSync(abs(`${DRAFTS}/${gone}.json`));
+      writeFileSync(
+        join(home, 'email-keys', 'zzzzzzzzzzzz.key'),
+        JSON.stringify({ v: 1, token: 'a'.repeat(32), draft_sha256: 'b'.repeat(64), brain: '/elsewhere' }),
+      );
+      newDraft({ threadId: '18c2f0a1b2c3d4aa', subject: 'Third' });
+      expect(existsSync(keyPath(gone))).toBe(false);
+      expect(existsSync(join(home, 'email-keys', 'zzzzzzzzzzzz.key'))).toBe(true);
+    });
+
     it("refuses without a draft or token, with a wrong token, and for a draft that is not this owner's", () => {
       const id = newDraft();
-      const token = draftOf(id).approve_token as string;
+      const token = keyOf(id).token;
       const entry = {
         kind: 'email',
         summary: 'S.',
@@ -3493,7 +3565,7 @@ describe('email entries', () => {
 
     it('refuses when the drafts folder stops being ignored', () => {
       const id = newDraft();
-      const token = draftOf(id).approve_token;
+      const token = keyOf(id).token;
       writeFileSync(join(root, '.gitignore'), 'personal/\n');
       const r = runAt('update', {
         key: 'acme/website',

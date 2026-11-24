@@ -20,6 +20,25 @@ export const emailDismissedFile = (slug: string): string => `briefing/email-draf
 export const DISMISSED_DAYS = 90;
 /** Drafts older than this (any owner) are deleted by the script on every email-draft / email-draft-remove, and hidden by the server (overseer 6). */
 export const DRAFT_MAX_AGE_DAYS = 30;
+/**
+ * The approve keys (overseer ruling after the security review): outside the brain, in this Mac account's own
+ * TDS Cortex data folder, `<os.userInfo().homedir>/<EMAIL_KEYS_SUBDIR>/<id>.key`. Never moved by HOME or
+ * TDS_BRAIN_APP_DATA, so a command can't redirect it; tests pass their own folder in-process only. Shared by
+ * every brain on the Mac (ids are random); each key names its brain, so a sweep only drops its own orphans.
+ */
+export const EMAIL_KEYS_SUBDIR = 'Library/Application Support/TDS Brain/data/email-keys';
+export const EMAIL_KEY_FILE_PATTERN = /^[a-z0-9]{12}\.key$/;
+export const emailKeysDir = (accountHome: string): string => `${accountHome}/${EMAIL_KEYS_SUBDIR}`;
+/** `<id>.key`, mode 0600 in a 0700 folder. `update` refuses unless it exists, the token matches and the draft file's bytes still hash to `draft_sha256`. */
+export interface EmailKeyFile {
+  v: 1;
+  /** 32 hex characters from crypto random. Never in a reply, never sent to the browser. */
+  token: string;
+  /** SHA-256 (hex) of the draft file's bytes as the script wrote them. */
+  draft_sha256: string;
+  /** The brain's real path. */
+  brain: string;
+}
 /** Folder 0700, files 0600 (overseer 6). */
 export const EMAIL_DRAFTS_DIR_MODE = 0o700;
 export const EMAIL_DRAFT_FILE_MODE = 0o600;
@@ -116,11 +135,7 @@ export interface EmailDraftFile {
   codes_subject: string[];
   codes_body: string[];
   requested: string | null;
-  /**
-   * 32 hex characters from crypto random (overseer blocker 1). Never returned by any script reply, never sent to
-   * the app's client. The server reads it from the file when the owner clicks Save and passes it to `update`.
-   */
-  approve_token: string;
+  // No approve token: it lives in the key file outside the brain (EmailKeyFile).
 }
 
 /** stdin `{"action":"email-draft-remove", id, dismiss}`. `dismiss: true` records the Message-ID (decision 5). Only the draft's inbox owner. Answers `{ok:true, action:'email-draft-remove', id}`. */
@@ -140,7 +155,7 @@ export interface EmailDraftRemoveInput {
 export interface ProjectEmailEntryInput {
   kind: 'email';
   draft: string;
-  /** The draft's approve_token: injected by the server from the file, never from the client. Missing or wrong → `not-allowed`. */
+  /** The key file's token: injected by the server from `<id>.key`, never from the client. Missing or wrong, no key file, or a changed draft → `not-allowed`. */
   token: string;
   summary: string;
   subject: string;

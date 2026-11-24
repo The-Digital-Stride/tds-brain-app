@@ -304,8 +304,9 @@ echo '{"threadId":"18c2f0a1b2c3d4e5","inboxAddress":"ian@thedigitalstride.com","
   app. The draft lives in `briefing/email-drafts/` on this Mac only (git ignores it; the folder is
   yours alone), and it's refused if git doesn't ignore that folder.
 - **Never call `update` with `kind` `"email"`, and never read, list or open `briefing/email-drafts/`.**
-  Only the app does that, when the inbox owner clicks Save; the draft holds a secret it needs, which
-  no reply ever shows. Saving an email any other way (a note, a call, a file) is never allowed.
+  Only the app does that, when the inbox owner clicks Save, with a key kept outside the brain that no
+  reply ever shows (never look for it). Saving an email any other way (a note, a call, a file, or an
+  update written by hand) is never allowed.
 - Fields: `threadId` is the Gmail thread id (hex); `inboxAddress` the Gmail address of the inbox you
   read, which must be this person's email in `.team-config/roles.json`; `from` and `people` (to and cc,
   at most 30) are `{name, address}` (`name` null when there is none); `sentAt` an ISO time;

@@ -1,0 +1,34 @@
+--- a/lib/calendar-live.cjs
++++ b/lib/calendar-live.cjs
+@@ -35,6 +35,23 @@
+ const DAYS_AHEAD = 14;
+ const SOURCE = 'google-calendar-api';
+ 
++// Project codes (TDS Cortex, Projects R2 phase 4b): code-shaped words from an invite's description, so a
++// meeting with a project code such as AST4K7 in its description finds its project. Same rule as the app's
++// shared/project-refs-contract.ts REF_PATTERN. The description itself is never written to the cache.
++const REF_WORD = /^[A-Z0-9]{2,4}[2-9][ACDEFGHJKMNPQRTUVWXY][2-9]$/;
++const MEETING_REFS_MAX = 20;
++
++function refsFrom(text) {
++  if (typeof text !== 'string' || !text) return undefined;
++  const out = [];
++  for (const m of text.matchAll(/[A-Za-z0-9]+/g)) {
++    const word = m[0].toUpperCase();
++    if (REF_WORD.test(word) && !out.includes(word)) out.push(word);
++    if (out.length >= MEETING_REFS_MAX) break;
++  }
++  return out.length ? out : undefined;
++}
++
+ let inFlight = null;
+ let lastFailAt = 0;             // back off after a failure so a dead token isn't hammered
+ 
+@@ -95,6 +112,7 @@
+       attendees: (ev.attendees || [])
+         .filter((a) => !a.self && !a.resource)
+         .map((a) => ({ name: a.displayName || null, email: a.email || null })),
++      refs: refsFrom(ev.description),
+     }));
+ }
+ 

@@ -8,7 +8,7 @@ benefit: Get anywhere in a few key presses, without hunting through drawers.
 roles: all
 related: [keyboard-shortcuts, home, getting-help]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -24,7 +24,7 @@ reviewed: 2026-11-20
 ## How to use it
 
 1. Press **⌘K** on a Mac, or **Ctrl K** on Windows. You can also press the **Search or jump to** button at the top. When you aren't typing, the slash key (/) works too.
-2. Type a few letters. Results are grouped: Go to, To-dos, Open chats, Skills, Clients and Earlier chats. Files from Documents and Images show too.
+2. Type a few letters. Results are grouped: Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats and Help. Files from Documents and Images show too.
 3. Use the up and down arrow keys to move through the results.
 4. Press Enter to open the one you want. Press Esc to close the box without choosing.
 
@@ -34,7 +34,7 @@ reviewed: 2026-11-20
 
 - With nothing typed, the box shows places to go and a few of your own to-dos and chats, and your favourite skills.
 - Each group shows its best six matches.
-- Picking a client starts a new chat for that client.
+- Picking a client starts a new chat for that client. Each project shows two rows. **Open project** opens it. **Filter to this project** sets **Working on** to it on Home. You can find a project by its code too.
 - Picking a skill starts a chat with that skill.
 - **Help** is here too, and help pages show in the results.
 - The slash key needs **Single-key shortcuts** switched on in Settings (**General** tab). **⌘K** works everywhere except an open file. Press Esc to close the file first.

@@ -6,9 +6,9 @@ order: 1
 summary: Start a chat, pick a client and see what needs you today.
 benefit: Go from "I need to do this" to a working chat in one step.
 roles: all
-related: [talking-to-claude, chats-drawer, todos, skills, updates]
+related: [talking-to-claude, picking-the-client, meetings, chats-drawer, todos, updates]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -19,25 +19,25 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 
 - You can start work straight away, without hunting for the right place.
 - Claude uses the right client's notes, so answers fit the job.
-- Your pinned to-dos, chats and files are one click away.
+- Your favourite to-dos, chats and files are one click away.
 
 ## How to use it
 
 1. Click the message box (1). It says "Ask Claude anything about your work".
 2. Type what you need, in plain words.
-3. Leave the client picker (2) on **Auto**. Cortex then works out which client you mean. If it isn't sure, it asks you.
-4. Or pick a client yourself. Choose **No client** if the job isn't about one.
+3. Leave **Chat for** (2) on **Auto**. Cortex then works out which client you mean. If it isn't sure, it asks you.
+4. Or pick a client yourself. Choose **No client** if the job isn't about one. If you are busy on one project, set **Working on** to it. See [Picking the client](help:picking-the-client).
 5. Press **Send**.
 
-![The message box on Home, with the client picker set to Auto.](images/home-start.webp)
+![The message box on Home, with Chat for set to Auto.](images/home-start.webp)
 
-Under the box you will see your pinned to-dos, pinned chats and pinned files. If you have no favourite skills yet, Home shows the ones you use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
+Under the box you will see your [meetings](help:meetings), then your favourite to-dos, chats and files. While an Ads change waits for your yes, an **Ads approvals** card shows too. If you have no favourite skills yet, Home shows the ones you use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
 
 ## Good to know
 
 - Your chat opens as soon as you send, and you can follow it in the [Chats drawer](help:chats-drawer).
 - Pick a skill first, and Home starts the chat from that skill.
-- To move a card, drag the grip beside its heading. Your order is kept on this computer. **Reset card order** puts it back.
+- To move a card, drag the grip beside its heading. Or put the keyboard on the grip and use the arrow keys. Your order is kept on this computer. Once you have moved a card, **Reset card order** puts them back.
 - After an update, a What's new card may show above the message box. It says what changed and links to Help. Press **Close** to hide it. See [Updates and what's new](help:updates).
 
 ## Try this

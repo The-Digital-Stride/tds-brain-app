@@ -29,7 +29,7 @@ Each new chat can be about one client. The **Chat for** picker, inside the messa
 4. Choose **No client** if the job isn't about one.
 5. Type your message and press **Send**.
 
-![The message box on Home, with the client picker set to Auto.](images/home-start.webp)
+![The message box on Home, with Chat for set to Auto.](images/home-start.webp)
 
 If Cortex isn't sure, it asks **Which client is this for?** Pick a name, pick **No client**, or press **Cancel** to change your message.
 

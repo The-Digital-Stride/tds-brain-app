@@ -8,7 +8,7 @@ benefit: Nothing slips through the cracks, and everyone can see who's doing what
 roles: all
 related: [home, talking-to-claude, skills, asked-of-others]
 since: 0.36.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -26,9 +26,10 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 1. Open the To-dos drawer from the rail.
 2. To make changes, first switch on **Let the app change to-dos** in Settings (**General** tab). Until then you can only read the list.
 3. **Mine** shows what is yours. **Open** shows jobs nobody has taken. **Asked** shows what you passed on to others (see Asked of others).
-4. Press a to-do's title to read it in a wide panel. Press **Mark as done** when it's finished.
-5. To add one, press the **+** button (1), type it and press Enter.
-6. To hand a to-do over, open it, press **Edit** and change who it's assigned to.
+4. Pick a project in the **Project** filter to see only its to-dos, on any tab. A to-do in a project shows its name. Press the name to filter by it. **Working on** on Home sets this filter too.
+5. Press a to-do's title to read it in a wide panel. Press **Mark as done** when it's finished.
+6. To add one, press the **+** button (1), type it and press Enter.
+7. To hand a to-do over, open it, press **Edit** and change who it's assigned to.
 
 ![The To-dos drawer with the Mine tab open.](images/todos-drawer.webp)
 

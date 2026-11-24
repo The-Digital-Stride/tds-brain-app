@@ -8,7 +8,7 @@ benefit: Move around Cortex quickly without reaching for the mouse.
 roles: all
 related: [search-and-jump, settings, getting-help]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -24,13 +24,13 @@ Cortex has a few keys that open drawers and search. Most are single keys, so the
 ## How to use it
 
 1. Press **⌘K** (**Ctrl K** on Windows) to open **Search or jump to**. This works even while you type, but not while a file is open in the viewer.
-2. When you aren't typing, press **T** for To-dos, **C** for Chats and **S** for Skills. If you have the Workbench, **W** opens it.
+2. When you aren't typing, press **T** for To-dos, **C** for Chats and **S** for Skills (owners and scouts only). If you have the Workbench, **W** opens it.
 3. Press **[** to show or hide the names on the rail.
 4. Press the slash key (/) to open search.
 5. Press **H** or **?** to open Help.
 6. With a to-do open in its panel, press **P** for the previous to-do and **N** for the next.
 7. While you read a to-do in its panel, press **E** to edit it. While you edit, press ⌘ and Enter (Ctrl and Enter on Windows) to save.
-8. Press Esc to close the search box, then the to-do panel, then a drawer, one step at a time. If the to-do panel has unsaved changes, it asks first.
+8. Press Esc to close the search box, then the to-do panel, then a drawer, one step at a time. If the to-do panel has unsaved changes, it asks first. So does any form you have typed in before you leave it.
 
 In the message box, press Enter to send. Press Shift and Enter for a new line.
 

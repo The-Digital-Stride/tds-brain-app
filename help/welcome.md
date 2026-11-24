@@ -25,9 +25,9 @@ Claude already knows our clients, our notes and our way of doing things. You don
 - Hand things over. Pass a to-do to a teammate, and they see it the next time their Brain syncs.
 - Share with the team. Anything Claude files in the Brain is there for everyone who needs it. Nobody has to set up access.
 
-![Home in TDS Cortex, with the message box, the client picker and your favourite cards.](images/home-overview.webp)
+![Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and favourite cards.](images/home-overview.webp)
 
-Home is where you start. The big box under the greeting is for your message (1). Inside it, at the bottom left, is the client picker (2). Your pinned cards sit underneath.
+Home is where you start. The big box under the greeting is for your message (1). Inside it is **Chat for** (2), which picks the client. Your meetings and favourite cards sit underneath.
 
 ## Take the tour
 

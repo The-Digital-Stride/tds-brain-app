@@ -8,7 +8,7 @@ benefit: Never lose a conversation, and switch between jobs in a click.
 roles: all
 related: [talking-to-claude, approvals-and-questions, home]
 since: 0.36.0
-reviewed: 2026-11-23
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -25,7 +25,7 @@ The Chats drawer lists every chat you have with Claude. It keeps the ones you're
 
 1. Open the Chats drawer from the rail.
 2. Use the switch at the top (1). **Open** shows the chats you're using now. **Earlier** shows past ones.
-3. Click any chat to carry on with it.
+3. Click any chat to carry on with it. To start a new one, press the **+** button at the end of the switch row.
 4. In **Earlier**, chats are grouped by when you last used them. Starred chats sit at the top.
 
 ![The Chats drawer with two open chats and the Earlier switch.](images/chats-drawer.webp)
@@ -35,9 +35,9 @@ Once you have a personal chat, a second switch appears. It filters by **All**, *
 ## Good to know
 
 - Each chat shows its client and project under its title, such as Acme Heating · Site rebuild. The list isn't narrowed by **Working on** yet, so every chat is always shown.
-- You can have up to four chats open at once. If you start a fifth, the one you left longest is closed. If all four are busy, wait or close one.
+- You can have up to four chats open at once. If you start a fifth, the one you left longest is closed. If all four are busy, wait or end one.
 - A chat you haven't used for 30 minutes goes to sleep, and so does every open chat when the app updates. Send a message in it as usual: it wakes up where you left off, with your message, and goes back under **Open**.
-- Close a chat before you delete it.
+- To end an open chat, press the **End chat** button on its row. You can only delete a chat once it has ended.
 - Deleting an earlier chat moves it to the Bin on your Mac. You can put it back from there.
 - If Claude hands parts of a job to helpers, they're listed under that chat.
 

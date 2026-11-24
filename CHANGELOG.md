@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.71.0 — 2026-11-24
+
+- **feat**: shared rules for reading project codes
+- **feat**: project codes on cards, pages, search and meetings (R2 phase 4b)
+- **fix**: full git history for old codes, show the retry reason, hide personal codes from search
+- **fix**: project code UI after UX review (duplicate shows no Copy, focus, status line, wording)
+- **fix**: codes ignore archived projects for meetings; show only known ref reasons
+
 ## v0.70.0 — 2026-11-24
 
 - **feat**: show claude.ai artifacts in projects as copies or link cards

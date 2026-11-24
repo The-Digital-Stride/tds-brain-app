@@ -60,8 +60,7 @@ export function ProjectTodos({
                 <span className="line-text">
                   <span className="line-title">{t.title}</span>
                   <span className="line-meta">
-                    {t.doneDate ? `Done ${dateWords(t.doneDate)}` : 'Date not known'}
-                    {t.assignee ? ` · ${personName(t.assignee, team)}` : ''}
+                    {doneRowMeta(t)}
                   </span>
                 </span>
               </button>
@@ -167,4 +166,14 @@ function TodoText({ t, team }: { t: ProjectTodoRow; team: readonly TeamMember[] 
       </span>
     </span>
   );
+}
+
+/**
+ * A finished row's line, worded as the To-dos drawer's Done rows (who ticked it, not who had it): "Done by Sam,
+ * 20 Nov 2026". The year stays: the project's Done list has no month groups to give it.
+ */
+export function doneRowMeta(t: Pick<ProjectDoneRow, 'doneDate' | 'doneBy'>): string {
+  const first = t.doneBy?.split(/\s+/)[0] ?? '';
+  if (!t.doneDate) return first ? `Done by ${first}; date not known` : 'Done; date not known';
+  return `${first ? `Done by ${first}` : 'Done'}, ${dateWords(t.doneDate)}`;
 }

@@ -640,6 +640,7 @@ describe('counts and the team from to-dos', () => {
       assignee: 'simon-jones',
       stage: 'Build',
       doneDate: '2026-11-18',
+      doneBy: 'Simon Jones',
     });
     const jev = await self.s.projectTodos('personal/jev', ME);
     expect(jev.done?.map((d) => d.key)).toEqual(['done:personal/todo/done/dn-mine.md']);

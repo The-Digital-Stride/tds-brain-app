@@ -1293,6 +1293,7 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
             assignee: t.assignee,
             stage: t.stage,
             doneDate: t.done && /^\d{4}-\d{2}-\d{2}/.test(t.done.at) ? t.done.at.slice(0, 10) : null,
+            doneBy: t.done?.name ?? null,
           }));
         response.done = doneRows;
         response.doneCount = doneRows.length;

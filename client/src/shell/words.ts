@@ -265,7 +265,7 @@ const LONG_MONTHS = [
 /** The panel's status line for a finished to-do: "Done by Sam Example on 12 November 2026". */
 export function doneStatusLine(t: Pick<DoneTodo, 'done'>): string {
   const at = t.done ? new Date(t.done.at) : null;
-  if (!t.done || !at || Number.isNaN(at.getTime())) return 'Finished; date not known';
+  if (!t.done || !at || Number.isNaN(at.getTime())) return 'Done; date not known';
   const day = `${at.getDate()} ${LONG_MONTHS[at.getMonth()]} ${at.getFullYear()}`;
   const tag = t.done.source === 'history' ? ' (git history)' : '';
   return `${t.done.name ? `Done by ${t.done.name}` : 'Done'} on ${day}${tag}`;

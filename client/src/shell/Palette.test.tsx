@@ -2,6 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  DoneTodo,
+  DoneTodoList,
   LibraryScope,
   LibrarySearchResponse,
   LiveSession,
@@ -26,6 +28,8 @@ const api = vi.hoisted(() => ({
   libraryScopes: vi.fn(),
   library: vi.fn(),
   libraryText: vi.fn(),
+  doneTodos: vi.fn(),
+  todoHistory: vi.fn(async () => ({ status: 'ok', events: [], more: false })),
 }));
 // The editor and the converter need a real browser; the panel's own behaviour is tested in TodoPanel.test.tsx.
 vi.mock('./TodoDetailsEditor.tsx', async () => ({
@@ -52,6 +56,7 @@ class FakeEventSource {
 
 const { App } = await import('../App.tsx');
 const { docsStore } = await import('../apps/documents/store.ts');
+const { doneStore } = await import('../state/todo-done.ts');
 const { doc, SCOPES, listing } = await import('../apps/shared/testing.ts');
 
 const skill = (name: string, title: string): SkillInfo => ({
@@ -178,6 +183,7 @@ afterEach(() => {
   cleanup();
   clientChoice.set('');
   docsStore.reset();
+  doneStore.reset();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
@@ -904,5 +910,44 @@ describe('global search', () => {
       'What Claude did',
       'Levels: Quick, Standard and Deep',
     ]);
+  });
+});
+
+describe('Palette: finished to-dos', () => {
+  const zebra: DoneTodo = {
+    key: 'done:todo/done/20261101-zebra.md',
+    id: '20261101-zebra.md',
+    scope: 'tds',
+    path: 'todo/done/20261101-zebra.md',
+    title: 'Send the zebra crossing quote',
+    assignee: 'sam-example',
+    assigneeName: 'Sam Example',
+    due: null,
+    details: '',
+    done: { slug: 'sam-example', name: 'Sam Example', at: new Date().toISOString(), source: 'stamp' },
+    version: 'v1',
+    attachments: [],
+    client: null,
+    project: null,
+    stage: null,
+  };
+
+  it('says "Searching…" while the done list first loads, then shows the Done group without another keystroke', async () => {
+    let finish: (l: DoneTodoList) => void = () => {};
+    api.doneTodos.mockReturnValue(new Promise<DoneTodoList>((r) => (finish = r)));
+    await renderHome();
+    await openPalette();
+    fireEvent.change(input(), { target: { value: 'zebra' } });
+    // Let the library search answer (empty): only the done list is still on its way.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700));
+    });
+    expect(api.doneTodos).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Searching…')).toBeTruthy();
+    expect(screen.queryByText('Nothing matches')).toBeNull();
+    await act(async () => finish({ historyRead: true, items: [zebra] }));
+    const dialog = screen.getByRole('dialog', { name: 'Search or jump to' });
+    expect(await within(dialog).findByText('Done to-dos')).toBeTruthy();
+    expect(options().some((o) => o.textContent?.includes('Send the zebra crossing quote'))).toBe(true);
   });
 });

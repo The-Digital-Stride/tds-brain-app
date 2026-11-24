@@ -1097,7 +1097,7 @@ export function TodosDrawer() {
 
   return (
     <div className="drawer-split">
-      <div className="drawer-tools">
+      <div className="drawer-tools todo-tabs">
         <Seg
           label="Which to-dos"
           value={tab}
@@ -1214,7 +1214,7 @@ export function TodosDrawer() {
           ) : null}
         </div>
       ) : null}
-      {todos.changes === 'switched-off' ? (
+      {todos.changes === 'switched-off' && tab !== 'done' ? (
         <p className="todo-note todo-off">
           Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
           <button

@@ -16,7 +16,7 @@ vi.mock('../../store.tsx', () => ({
 }));
 vi.mock('../../shell/ShellProvider.tsx', () => ({ useShell: () => ({ dispatch }) }));
 
-const { ProjectTodos } = await import('./ProjectTodos.tsx');
+const { ProjectTodos, doneRowMeta } = await import('./ProjectTodos.tsx');
 
 const card = { key: 'tds/sky', stages: [], archived: false, client: 'tds' } as unknown as ProjectCard;
 const row = (id: string, over: Partial<ProjectDoneRow> = {}): ProjectDoneRow => ({
@@ -27,6 +27,7 @@ const row = (id: string, over: Partial<ProjectDoneRow> = {}): ProjectDoneRow => 
   assignee: null,
   stage: null,
   doneDate: '2026-11-12',
+  doneBy: null,
   ...over,
 });
 const show = (done?: ProjectDoneRow[], doneCount?: number) =>
@@ -67,9 +68,18 @@ describe('ProjectTodos Done section', () => {
     show([row('a')], 1);
     fireEvent.click(screen.getByRole('button', { name: /Done/ }));
     const open = screen.getByText('Job a');
-    expect(screen.getByText(/Done 12 Nov 2026/)).toBeTruthy();
+    expect(screen.getByText(/Done, 12 Nov 2026/)).toBeTruthy();
     fireEvent.click(open);
     expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
     expect(revealDoneTodo).toHaveBeenCalledWith('done:todo/done/a');
+  });
+});
+
+describe('doneRowMeta', () => {
+  it('names who ticked it (first name), not who had it, and keeps the year', () => {
+    expect(doneRowMeta({ doneDate: '2026-11-12', doneBy: 'Sam Taylor' })).toMatch(/^Done by Sam, 12 Nov/);
+    expect(doneRowMeta({ doneDate: '2026-11-12', doneBy: null })).toMatch(/^Done, 12 Nov/);
+    expect(doneRowMeta({ doneDate: null, doneBy: 'Sam Taylor' })).toBe('Done by Sam; date not known');
+    expect(doneRowMeta({ doneDate: null, doneBy: null })).toBe('Done; date not known');
   });
 });

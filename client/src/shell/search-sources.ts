@@ -210,8 +210,15 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
   };
 }
 
+/** "5 Nov", with the year when it isn't this year ("5 Nov 2025"), so an old finished to-do doesn't look recent. */
+function doneDay(iso: string, now: Date): string {
+  const day = shortDay(iso);
+  const year = new Date(iso).getFullYear();
+  return day && year !== now.getFullYear() ? `${day} ${year}` : day;
+}
+
 function doneHit(todo: DoneTodo, ctx: SearchContext): SearchHit {
-  const day = todo.done ? shortDay(todo.done.at) : '';
+  const day = todo.done ? doneDay(todo.done.at, new Date()) : '';
   const hint = [
     day ? `Done ${day}` : 'Done, date not known',
     todoPlaceParts(todo, ctx.projects, ctx.clients)[0],

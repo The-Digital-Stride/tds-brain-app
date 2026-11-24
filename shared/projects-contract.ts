@@ -658,6 +658,8 @@ export interface ProjectDoneRow {
   stage: string | null;
   /** YYYY-MM-DD it was ticked (stamp, else git), or null when not known. */
   doneDate: string | null;
+  /** Who ticked it (DoneTodo.done.name), or null when not known. Not the assignee. */
+  doneBy: string | null;
 }
 export interface ProjectTodosResponse {
   todos: ProjectTodoRow[];

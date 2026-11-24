@@ -17,6 +17,7 @@ import {
   ROUTES,
   SESSION_COOKIE,
   sessionCookieName,
+  type TeamTodo,
   TODO_SCRIPT,
   type TodoHistoryResponse,
   type TodoList,
@@ -755,6 +756,27 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
       `${ROUTES.todoHistory}?key=${encodeURIComponent('done:todo/done/..%2Fx.md')}`,
     );
     expect(bad.status).toBe(400);
+  });
+
+  it('reads one teammate to-do through the gate: 200, 400, 404, no-store, GET only', async () => {
+    const brain = makeBrain(gitOk);
+    const base = `${ROUTES.teamTodo}?id=`;
+    const ok = await get(brain, `${base}${ID}`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers['Cache-Control']).toBe('no-store');
+    expect((ok.json as TeamTodo).key).toBe(`team:todo/${ID}`);
+    for (const bad of ['', '..%2Fx.md', 'personal%2Ftodo%2Fa.md', 'a.txt']) {
+      expect((await get(brain, `${base}${bad}`)).status, bad).toBe(400);
+    }
+    expect((await get(brain, ROUTES.teamTodo)).status).toBe(400);
+    const gone = await get(brain, `${base}20261101-gone.md`);
+    expect(gone.status).toBe(404);
+    expect(JSON.stringify(gone.json)).toContain('could not be found');
+    expect((await get(brain, `${base}${ID}`, 'POST')).status).toBe(405);
+  });
+
+  it('setup mode answers a teammate to-do with 404', async () => {
+    expect((await get(createSetupBrain(), `${ROUTES.teamTodo}?id=${ID}`)).status).toBe(404);
   });
 
   it('setup mode answers done empty', async () => {

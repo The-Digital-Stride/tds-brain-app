@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectCard, ProjectDoneRow } from '../../../../shared/projects-contract.ts';
+import type { ProjectCard, ProjectDoneRow, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
 
 const dispatch = vi.hoisted(() => vi.fn());
 const revealDoneTodo = vi.hoisted(() => vi.fn());
@@ -72,6 +72,51 @@ describe('ProjectTodos Done section', () => {
     fireEvent.click(open);
     expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
     expect(revealDoneTodo).toHaveBeenCalledWith('done:todo/done/a');
+  });
+});
+
+describe("ProjectTodos teammates' rows", () => {
+  const todo = (id: string, mine: boolean) =>
+    ({
+      key: mine ? `todo/${id}` : `team:${id}`,
+      id,
+      scope: 'tds',
+      title: `Job ${id}`,
+      assignee: 'ben-mcadam',
+      stage: null,
+      due: null,
+      mine,
+    }) as unknown as ProjectTodoRow;
+
+  it("opens a teammate's to-do read only under its team: key, without star or chat", () => {
+    render(
+      <ProjectTodos
+        card={card}
+        team={[]}
+        rows={[todo('t.md', false)]}
+        failed={false}
+        reload={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Job t.md/ }));
+    expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'team:todo/t.md', mode: 'read' });
+    expect(screen.getByText(/Assigned to/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /star|chat/i })).toBeNull();
+  });
+
+  it('still opens my own to-do by its own key', () => {
+    render(
+      <ProjectTodos
+        card={card}
+        team={[]}
+        rows={[todo('m.md', true)]}
+        failed={false}
+        reload={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: /Job m.md/ })[0] as HTMLElement);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'todo/m.md', mode: 'read' });
   });
 });
 

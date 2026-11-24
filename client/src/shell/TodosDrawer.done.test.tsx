@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DoneTodo, DoneTodoList } from '../../../shared/contract.ts';
+import type { DoneTodo, DoneTodoList, TeamTodo } from '../../../shared/contract.ts';
 import { card, projectList } from '../apps/projects/testing.ts';
 import { pickOption } from '../test/pick.ts';
 
@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   doneTodos: vi.fn(),
   projects: vi.fn(),
   todoHistory: vi.fn(),
+  teamTodo: vi.fn(),
 }));
 vi.mock('../api.ts', () => ({ api }));
 vi.mock('../store.tsx', () => ({ useStore: () => store.current, TODO_UNDO_MS: 10_000 }));
@@ -28,6 +29,7 @@ vi.mock('../todo-doc/index.ts', async () => (await import('./todo-test-kit.tsx')
 const { fakeShell, sent } = await import('./todo-test-kit.tsx');
 const { projectsStore } = await import('../state/projects.ts');
 const { doneStore } = await import('../state/todo-done.ts');
+const { teamTodoStore } = await import('../state/team-todo.ts');
 const { TodosDrawer, PANEL_WAIT_MS } = await import('./TodosDrawer.tsx');
 
 const SITE = card({ slug: 'site', client: 'acme', title: 'Website' });
@@ -128,6 +130,7 @@ afterEach(() => {
   vi.useRealTimers();
   projectsStore.reset();
   doneStore.reset();
+  teamTodoStore.reset();
   for (const f of Object.values(api)) f.mockReset();
 });
 
@@ -247,6 +250,73 @@ describe('a done: panel key', () => {
       vi.advanceTimersByTime(PANEL_WAIT_MS + 100);
     });
     expect(fakeShell.state.todoPanel).toBeNull();
+  });
+});
+
+const TEAM_KEY = 'team:todo/t.md';
+const team = (over: Partial<TeamTodo> = {}): TeamTodo => ({
+  key: TEAM_KEY,
+  id: 't.md',
+  path: 'todo/t.md',
+  title: 'Ring the supplier',
+  assignee: 'ben-mcadam',
+  assigneeName: 'Ben McAdam',
+  due: null,
+  details: 'Ask about lead times',
+  version: 'v1',
+  attachments: [],
+  client: null,
+  project: null,
+  stage: null,
+  ...over,
+});
+
+describe("a team: panel key (a teammate's open to-do)", () => {
+  it('waits for a slow load past the give-up time, then reads it with no edit buttons', async () => {
+    let finish: (t: TeamTodo) => void = () => {};
+    api.teamTodo.mockReturnValue(new Promise<TeamTodo>((r) => (finish = r)));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    render(<TodosDrawer />);
+    act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
+    await act(async () => {
+      vi.advanceTimersByTime(PANEL_WAIT_MS + 1000);
+    });
+    expect(sent.some((a) => a.type === 'close-todo')).toBe(false);
+    expect(api.teamTodo).toHaveBeenCalledWith('t.md');
+    vi.useRealTimers();
+    await act(async () => finish(team()));
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByLabelText('Details').textContent).toContain('Ask about lead times');
+    expect(within(panel).getByText('With Ben McAdam')).toBeTruthy();
+    expect(
+      within(panel).getByText("This is Ben's to-do, so you can read it but not change it."),
+    ).toBeTruthy();
+    for (const name of ['Edit', 'Mark as done', 'Delete'])
+      expect(within(panel).queryByRole('button', { name })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: /chat/i })).toBeNull();
+    expect(fakeShell.state.todoPanel?.order).toEqual([TEAM_KEY]);
+    fireEvent.click(within(panel).getByRole('button', { name: 'History' }));
+    await waitFor(() => expect(api.todoHistory).toHaveBeenCalledWith('t.md'));
+  });
+
+  it('says so for a to-do open to anyone', async () => {
+    api.teamTodo.mockResolvedValue(team({ assignee: null, assigneeName: null }));
+    render(<TodosDrawer />);
+    act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('Open to anyone')).toBeTruthy();
+    expect(
+      within(panel).getByText('This to-do is open to anyone. Pick it up from the Open tab to change it.'),
+    ).toBeTruthy();
+  });
+
+  it('closes when the to-do has gone', async () => {
+    api.teamTodo.mockRejectedValue(
+      Object.assign(new Error('That to-do could not be found.'), { status: 404 }),
+    );
+    render(<TodosDrawer />);
+    act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
+    await waitFor(() => expect(fakeShell.state.todoPanel).toBeNull());
   });
 });
 

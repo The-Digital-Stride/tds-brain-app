@@ -59,9 +59,7 @@ export function ProjectTodos({
               <button type="button" className="proj-open" onClick={() => openDone(t.key)}>
                 <span className="line-text">
                   <span className="line-title">{t.title}</span>
-                  <span className="line-meta">
-                    {doneRowMeta(t)}
-                  </span>
+                  <span className="line-meta">{doneRowMeta(t)}</span>
                 </span>
               </button>
             </li>
@@ -110,13 +108,14 @@ export function ProjectTodos({
               <ul className="lib-list">
                 {g.items.map((t) => (
                   <li key={t.key} className="line proj-todo">
-                    {t.mine ? (
-                      <button type="button" className="proj-open" onClick={() => openPanel(t.key)}>
-                        <TodoText t={t} team={team} />
-                      </button>
-                    ) : (
+                    {/* A teammate's to-do opens read only (its own `team:` key); only mine get the star and chat. */}
+                    <button
+                      type="button"
+                      className="proj-open"
+                      onClick={() => openPanel(t.mine ? t.key : `team:todo/${t.id}`)}
+                    >
                       <TodoText t={t} team={team} />
-                    )}
+                    </button>
                     {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). Only on my
                         to-dos: the server links a chat only to a to-do on my lists, and Home lists only those stars. */}
                     {t.mine ? (

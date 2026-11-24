@@ -49,6 +49,7 @@ import type {
   StartSessionRequest,
   StartSessionResponse,
   SyncStatus,
+  TeamTodo,
   TodoAction,
   TodoHistoryResponse,
   TodoList,
@@ -233,6 +234,8 @@ export const api = {
   askedTodos: () => request<AskedTodoList>('GET', ROUTES.askedTodos),
   /** Every finished to-do this person may see, newest first (its own request, like `askedTodos`). */
   doneTodos: () => request<DoneTodoList>('GET', ROUTES.doneTodos),
+  /** One teammate's open to-do, read only (404 when it has gone). */
+  teamTodo: (id: string) => request<TeamTodo>('GET', `${ROUTES.teamTodo}?id=${encodeURIComponent(id)}`),
   todoHistory: (key: string) =>
     request<TodoHistoryResponse>('GET', `${ROUTES.todoHistory}?key=${encodeURIComponent(key)}`),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),

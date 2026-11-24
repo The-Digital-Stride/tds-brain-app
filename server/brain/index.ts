@@ -1,4 +1,4 @@
-import type { BrainReaders, DoneTodoList, Identity } from '../../shared/contract.ts';
+import type { BrainReaders, DoneTodoList, Identity, TeamTodo } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
 import { MEETINGS_MERGE_EVERY_MS } from '../../shared/project-meetings-contract.ts';
 import { LEGACY_PROJECTS_SCOPE, ProjectsError } from '../../shared/projects-contract.ts';
@@ -30,6 +30,7 @@ import { createAskedLog, createAskedTodos, doneLogArgs } from './todo-asked.ts';
 import { listDoneTodos } from './todo-done.ts';
 import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
+import { readTeamTodo } from './todo-team.ts';
 import { createTodoTimeline } from './todo-timeline.ts';
 import { changeTodo, completeTodo, listTodos, readTeam, uploadTodoFile } from './todos.ts';
 import { readUsage } from './usage.ts';
@@ -87,6 +88,8 @@ export type SearchableBrain = BrainReaders &
     emailDrafts?: EmailDraftsService;
     /** Done-todos plan: every finished to-do this person may see. Beside the contract like `ads`. */
     doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
+    /** Done-todos plan, decision 10: one teammate's open to-do, read only. Null when it has gone. */
+    teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
   };
 
 export function createBrainReaders(
@@ -275,6 +278,7 @@ export function createBrainReaders(
     askedTodos: (identity) => askedTodos.list(root, identity, now(), () => projects.index()),
     doneTodos: (identity) =>
       listDoneTodos(root, identity, { log: doneLog, projects: () => projects.index() }),
+    teamTodo: (id, identity) => readTeamTodo(root, id, identity.slug, { projects: () => projects.index() }),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {

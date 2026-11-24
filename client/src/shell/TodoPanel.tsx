@@ -13,6 +13,7 @@ import {
   type AskedTodo,
   type DoneTodo,
   type TeamMember,
+  type TeamTodo,
   TODO_DETAILS_MAX,
   TODO_TITLE_MAX,
   type TodoAction,
@@ -49,7 +50,14 @@ import {
   todoProjectValue,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
-import { askedStatusLine, doneStatusLine, handoverLine, todoChatDraft } from './words.ts';
+import {
+  askedStatusLine,
+  doneStatusLine,
+  handoverLine,
+  teamNote,
+  teamStatusLine,
+  todoChatDraft,
+} from './words.ts';
 
 const LONG_NOTE = 'These details are too long to edit here. Change them in a chat instead.';
 const UNFAITHFUL_NOTE =
@@ -62,6 +70,8 @@ export interface TodoPanelProps {
   asked?: AskedTodo | null;
   /** A finished to-do, shown read only (then `todo` and `asked` are null). */
   done?: DoneTodo | null;
+  /** A teammate's open to-do, shown read only (then `todo`, `asked` and `done` are null). */
+  teamTodo?: TeamTodo | null;
   mode: TodoPanelMode;
   /** The drawer's status line, said here while the panel is open (it may cover the drawer). */
   message: string;
@@ -113,6 +123,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   const { todo, mode, message, isError } = props;
   const asked = props.asked ?? null;
   const done = props.done ?? null;
+  const teamTodo = props.teamTodo ?? null;
   const { state, dispatch, modes } = useShell();
   const panel = state.todoPanel;
   const addStart = panel?.mode === 'add' ? (panel.start ?? null) : null;
@@ -149,7 +160,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   const ask = panel?.ask ?? null;
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
-  const key = todo?.key ?? asked?.key ?? done?.key ?? '';
+  const key = todo?.key ?? asked?.key ?? done?.key ?? teamTodo?.key ?? '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: restart when the to-do or mode changes only.
   useEffect(() => {
     if (mode === 'edit') titleInput.current?.focus();
@@ -186,7 +197,8 @@ export default function TodoPanel(props: TodoPanelProps) {
   };
   const close = () => dispatch({ type: 'close-todo' });
 
-  const title = mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? done?.title ?? '');
+  const title =
+    mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? done?.title ?? teamTodo?.title ?? '');
   const keys = state.singleKeys;
 
   return (
@@ -291,6 +303,8 @@ export default function TodoPanel(props: TodoPanelProps) {
           <AskedReadView asked={asked} team={props.team} me={props.me} onStatus={props.onStatus} />
         ) : done ? (
           <DoneReadView done={done} team={props.team} me={props.me} onStatus={props.onStatus} />
+        ) : teamTodo ? (
+          <TeamReadView team={teamTodo} roster={props.team} me={props.me} onStatus={props.onStatus} />
         ) : todo === null ? null : mode === 'edit' ? (
           <EditView
             {...props}
@@ -537,6 +551,8 @@ function ReadView({
 /** What the read-only panel shows for a to-do that isn't the person's to change (passed on, or finished). */
 interface ReadOnlyItem {
   key: string;
+  /** The history key, when it isn't `key` (a teammate's to-do is panelled as `team:todo/<id>`, kept as `<id>`). */
+  historyKey?: string;
   details: string;
   attachments: AskedTodo['attachments'];
   due: string | null;
@@ -584,7 +600,7 @@ function ReadOnlyView({
             busy={false}
             onStatus={onStatus}
           />
-          <TodoHistory key={item.key} todoKey={item.key} team={team} />
+          <TodoHistory key={item.historyKey ?? item.key} todoKey={item.historyKey ?? item.key} team={team} />
         </div>
         <dl className="todo-facts">
           <div>
@@ -664,6 +680,35 @@ function DoneReadView({
         status: doneStatusLine(done),
         assigned: done.assigneeName ?? undefined,
         note: 'This to-do is finished, so it can only be read here.',
+      }}
+    />
+  );
+}
+
+/** A teammate's open to-do: read only, with its history (kept under the plain file name). */
+function TeamReadView({
+  team,
+  roster,
+  ...rest
+}: {
+  team: TeamTodo;
+  roster: TeamMember[];
+  me: string;
+  onStatus: (text: string, isError?: boolean) => void;
+}) {
+  return (
+    <ReadOnlyView
+      {...rest}
+      team={roster}
+      item={{
+        key: team.key,
+        historyKey: team.id,
+        details: team.details,
+        attachments: team.attachments,
+        due: team.due,
+        overdue: team.due !== null && isOverdue(team.due),
+        status: teamStatusLine(team),
+        note: teamNote(team),
       }}
     />
   );

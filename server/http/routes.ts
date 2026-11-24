@@ -66,6 +66,7 @@ import {
   type SequencedEvent,
   type StartSessionRequest,
   type SyncStatus,
+  type TeamTodo,
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
@@ -201,6 +202,8 @@ export interface RouteContext {
     emailDrafts?: EmailDraftsService;
     /** Done-todos plan: finished to-dos. Beside the contract like `ads`; the real brain and setup mode have it. */
     doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
+    /** Done-todos plan, decision 10: one teammate's open to-do, read only. Null when it has gone. */
+    teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -2710,6 +2713,25 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       NO_DONE,
     );
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.teamTodo) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const id = url.searchParams.get('id');
+    if (id === null || id.length > TODO_KEY_MAX || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(id)) {
+      throw new HttpError(400, 'bad-request', 'That is not a to-do this app can open.');
+    }
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const item = await safe(ctx.brain.teamTodo?.(id, identity) ?? Promise.resolve(null), null);
+    if (item === null) {
+      throw new HttpError(
+        404,
+        'not-found',
+        'That to-do could not be found. It may have been finished or moved.',
+      );
+    }
+    sendJson(res, 200, item);
     return;
   }
 

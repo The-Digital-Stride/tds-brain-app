@@ -239,6 +239,19 @@ export function askedStatusLine(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'a
   return day ? `With ${t.assigneeName} since ${day}${tag}` : `With ${t.assigneeName}`;
 }
 
+/** The panel's status line for a teammate's open to-do: "With Ben McAdam", or "Open to anyone". */
+export function teamStatusLine(t: { assigneeName: string | null }): string {
+  return t.assigneeName ? `With ${t.assigneeName}` : 'Open to anyone';
+}
+
+/** The footer line saying why a teammate's to-do can't be changed from here. */
+export function teamNote(t: { assigneeName: string | null }): string {
+  const first = t.assigneeName?.trim().split(/\s+/)[0];
+  return t.assigneeName
+    ? `This is ${first}'s to-do, so you can read it but not change it.`
+    : 'This to-do is open to anyone. Pick it up from the Open tab to change it.';
+}
+
 /** The Done tab's row line: "Done by Sam, 12 Nov", "Done 12 Nov", or "Date not known". */
 export function doneMeta(t: Pick<DoneTodo, 'done'>): string {
   const day = t.done ? shortDay(t.done.at) : '';

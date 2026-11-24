@@ -56,6 +56,7 @@ export function createSetupBrain(): SearchableBrain {
     },
     askedTodos: async () => ({ waiting: [], done: [], historyRead: false }),
     doneTodos: async () => ({ items: [], historyRead: false }),
+    teamTodo: async () => null,
     todoHistory: async () => ({ status: 'unavailable', events: [], more: false }),
     clients: async () => [],
     usedOften: async () => [],

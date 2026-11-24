@@ -6,6 +6,7 @@ import {
   ATTENTION_LABEL,
   attentionFor,
   type DoneTodo,
+  type TeamTodo,
   type TodoAction,
   type TodoItem,
 } from '../../../shared/contract.ts';
@@ -20,6 +21,7 @@ import {
   todoProjectChip,
   useProjects,
 } from '../state/projects.ts';
+import { teamTodoStore, useTeamTodo } from '../state/team-todo.ts';
 import { doneStore, filterDone, groupDone, searchDone, useDoneTodos } from '../state/todo-done.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import {
@@ -339,13 +341,20 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
 export const PANEL_WAIT_MS = 4000;
 
 /** What `PanelHost` adds to the panel's own props: where it is open and what the drawer holds for it. */
-type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'done' | 'mode' | 'dirtyAsk' | 'order'> & {
+type HostProps = Omit<
+  TodoPanelProps,
+  'todo' | 'asked' | 'done' | 'teamTodo' | 'mode' | 'dirtyAsk' | 'order'
+> & {
   panel: TodoPanelState;
   todo: TodoItem | null;
   asked: AskedTodo | null;
   done: DoneTodo | null;
   /** The finished to-dos are still on their way (not loaded, no failure yet): a `done:` key waits for them. */
   doneLoading: boolean;
+  /** A teammate's open to-do, loaded for a `team:` key. */
+  teamTodo: TeamTodo | null;
+  /** Its load is still on its way (no answer or failure yet): a `team:` key waits for it. */
+  teamLoading: boolean;
   order: string[];
 };
 
@@ -354,7 +363,17 @@ type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'done' | 'mode' | 'dirt
  * keeps the shell's list of what previous and next walk through. The controller (drafts, saves, holds) stays
  * in the drawer, which is why the panel is rendered from here and not from App.
  */
-function PanelHost({ panel, todo, asked, done, doneLoading, order, ...rest }: HostProps) {
+function PanelHost({
+  panel,
+  todo,
+  asked,
+  done,
+  doneLoading,
+  teamTodo,
+  teamLoading,
+  order,
+  ...rest
+}: HostProps) {
   const { dispatch } = useShell();
   const orderKey = order.join('\n');
   // biome-ignore lint/correctness/useExhaustiveDependencies: `orderKey` stands for `order`.
@@ -367,24 +386,30 @@ function PanelHost({ panel, todo, asked, done, doneLoading, order, ...rest }: Ho
   const seen = useRef<string | null>(null);
   useEffect(() => {
     if (panel.key === null) return;
-    if (todo || asked || done) {
+    if (todo || asked || done || teamTodo) {
       seen.current = panel.key;
       return;
     }
     // A finished to-do is found in the shared done store: while that is still loading there is nothing to
     // give up on yet (it can be big, and may be slow).
     if (panel.key.startsWith('done:') && doneLoading) return;
+    // A teammate's to-do loads on its own: wait for it however long it takes, and close the moment it is
+    // known to be missing (finished or moved) or can't be read.
+    if (panel.key.startsWith('team:')) {
+      if (!teamLoading) dispatch({ type: 'close-todo', force: true });
+      return;
+    }
     if (seen.current === panel.key) {
       dispatch({ type: 'close-todo', force: true });
       return;
     }
     const giveUp = setTimeout(() => dispatch({ type: 'close-todo', force: true }), PANEL_WAIT_MS);
     return () => clearTimeout(giveUp);
-  }, [panel.key, todo, asked, done, doneLoading, dispatch]);
-  if (panel.mode !== 'add' && !todo && !asked && !done) return null;
+  }, [panel.key, todo, asked, done, doneLoading, teamTodo, teamLoading, dispatch]);
+  if (panel.mode !== 'add' && !todo && !asked && !done && !teamTodo) return null;
   const node = (
     <Suspense fallback={null}>
-      <TodoPanel todo={todo} asked={asked} done={done} mode={panel.mode} {...rest} />
+      <TodoPanel todo={todo} asked={asked} done={done} teamTodo={teamTodo} mode={panel.mode} {...rest} />
     </Suspense>
   );
   const slot = typeof document === 'undefined' ? null : document.getElementById('todo-panel-slot');
@@ -449,6 +474,9 @@ export function TodosDrawer() {
   // The finished to-dos are one shared store: the Done tab or a `done:` panel key starts the first load.
   const panelIsDone = panel?.key?.startsWith('done:') === true;
   const doneSnap = useDoneTodos(tab === 'done' || panelIsDone);
+  // A teammate's open to-do (`team:` key, from a project page) loads on its own, by key.
+  const panelTeamKey = panel?.key?.startsWith('team:') === true ? panel.key : null;
+  const teamSnap = useTeamTodo(panelTeamKey);
   const [doneQuery, setDoneQuery] = useState('');
   const searchId = useId();
   // The asked-of-others list is its own request: it never blocks or fails the main list. It loads with the
@@ -475,6 +503,7 @@ export function TodosDrawer() {
     if (haveTodos) void loadAsked();
     // The same change signal refreshes the finished to-dos, once something has asked for them.
     if (haveTodos && doneStore.isStarted()) void doneStore.refresh();
+    if (haveTodos) teamTodoStore.refreshLoaded();
   }, [todos, haveTodos, loadAsked]);
   useEffect(
     () => () => {
@@ -870,8 +899,9 @@ export function TodosDrawer() {
   };
 
   // The order previous and next walk through: what the drawer shows now, held rows left out.
-  const order =
-    tab === 'asked'
+  const order = panelTeamKey
+    ? [panelTeamKey]
+    : tab === 'asked'
       ? askedOrder(askedShown)
       : tab === 'done'
         ? doneOrder(doneGroups)
@@ -1405,6 +1435,8 @@ export function TodosDrawer() {
           asked={panelAsked}
           done={panelDone}
           doneLoading={doneSnap.list === null && doneSnap.error === null}
+          teamTodo={panelTeamKey ? teamSnap.item : null}
+          teamLoading={teamSnap.item === null && teamSnap.error === null}
           order={order}
           message={message}
           isError={isError}

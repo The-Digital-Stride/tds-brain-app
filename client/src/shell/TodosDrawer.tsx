@@ -21,7 +21,7 @@ import {
   todoProjectChip,
   useProjects,
 } from '../state/projects.ts';
-import { teamTodoStore, useTeamTodo } from '../state/team-todo.ts';
+import { useTeamTodo } from '../state/team-todo.ts';
 import { doneStore, filterDone, groupDone, searchDone, useDoneTodos } from '../state/todo-done.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import {
@@ -506,10 +506,8 @@ export function TodosDrawer() {
   const haveTodos = todos !== null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `todos` changing is the trigger to reload.
   useEffect(() => {
+    // The finished to-dos and teammates' to-dos refresh on the same signal in the store (StoreProvider).
     if (haveTodos) void loadAsked();
-    // The same change signal refreshes the finished to-dos, once something has asked for them.
-    if (haveTodos && doneStore.isStarted()) void doneStore.refresh();
-    if (haveTodos) teamTodoStore.refreshLoaded();
   }, [todos, haveTodos, loadAsked]);
   useEffect(
     () => () => {

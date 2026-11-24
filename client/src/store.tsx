@@ -49,6 +49,8 @@ import type { ListState } from './state/health.ts';
 import { projectsStore } from './state/projects.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
+import { teamTodoStore } from './state/team-todo.ts';
+import { doneStore } from './state/todo-done.ts';
 import { loadAdsSummary } from './tools/ad-manager/summary.ts';
 import { taskRuns } from './tools/ad-manager/task-runs.ts';
 
@@ -545,6 +547,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [todos, setTodos] = useState<TodoList | null>(null);
   const [sessions, setSessions] = useState<SessionList | null>(null);
+  // A to-do list change (a tick, a hand-over, a sync) also refreshes the finished to-dos and any teammate's
+  // to-do already read, whether or not the To-dos drawer is open, so search and the panel stay current.
+  useEffect(() => {
+    if (todos === null) return;
+    if (doneStore.isStarted()) void doneStore.refresh();
+    teamTodoStore.refreshLoaded();
+  }, [todos]);
   const [view, setView] = useState<View>('chat');
   const [activeChat, setActiveChat] = useState<ActiveChat>(() => freshNewChat());
   const [chats, dispatchChat] = useReducer(chatsReducer, {} as Chats);

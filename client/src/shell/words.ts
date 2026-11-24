@@ -37,7 +37,7 @@ export const ROLE_WORDS: Words['ROLE_WORDS'] = {
 };
 
 export const todoChatDraft: Words['todoChatDraft'] = (todo) =>
-  `Help me with this to-do: ${todo.path} (${todo.title})`;
+  `Help me with this task: ${todo.path} (${todo.title})`;
 
 export const whenWords: Words['whenWords'] = (iso) => {
   const d = new Date(iso);
@@ -112,7 +112,7 @@ export function chatsRailLabel(live: LiveSession[]): string {
 /** The To-dos rail button's accessible name: "To-dos, 5 of yours, 2 new". Undefined when there is nothing to add. */
 export function todosRailLabel(mine: number, fresh: number): string | undefined {
   if (mine === 0) return undefined;
-  return `To-dos, ${mine} of yours${fresh > 0 ? `, ${fresh} new` : ''}`;
+  return `Tasks, ${mine} of yours${fresh > 0 ? `, ${fresh} new` : ''}`;
 }
 
 /** "SE" for "Sam Example": first and last names' first letters. */
@@ -248,8 +248,8 @@ export function teamStatusLine(t: { assigneeName: string | null }): string {
 export function teamNote(t: { assigneeName: string | null }): string {
   const first = t.assigneeName?.trim().split(/\s+/)[0];
   return t.assigneeName
-    ? `This is ${first}'s to-do, so you can read it but not change it.`
-    : 'This to-do is open to anyone. Pick it up from the Open tab to change it.';
+    ? `This is ${first}'s task, so you can read it but not change it.`
+    : 'This task is open to anyone. Pick it up from the Open tab to change it.';
 }
 
 /** The Done tab's row line: "Done by Sam, 12 Nov", "Done 12 Nov", or "Date not known". */

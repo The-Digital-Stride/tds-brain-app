@@ -19,7 +19,7 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 
 - You can start work straight away, without hunting for the right place.
 - Claude uses the right client's notes, so answers fit the job.
-- Your favourite to-dos, chats and files are one click away.
+- Your favourite tasks, chats and files are one click away.
 
 ## How to use it
 
@@ -31,7 +31,7 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 
 ![The message box on Home, with Chat for set to Auto.](images/home-start.webp)
 
-Under the box you will see your [meetings](help:meetings), then your favourite to-dos, chats and files. While an Ads change waits for your yes, an **Ads approvals** card shows too. If you have no favourite skills yet, Home shows the ones you use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
+Under the box you will see your [meetings](help:meetings), then your favourite tasks, chats and files. While an Ads change waits for your yes, an **Ads approvals** card shows too. If you have no favourite skills yet, Home shows the ones you use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
 
 ## Good to know
 

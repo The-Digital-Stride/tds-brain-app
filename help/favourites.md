@@ -3,17 +3,17 @@ id: favourites
 title: Favourites
 area: skills
 order: 2
-summary: Star the chats, to-dos, skills and files you use most.
+summary: Star the chats, tasks, skills and files you use most.
 benefit: Your most-used things stay at the top, and on Home.
 roles: all
 related: [pinned, skills, todos, chats-drawer]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
 
-A star marks something as a favourite. A starred chat, to-do or skill goes into a **Favourites** section at the top of its list. A starred file shows on Home under **Favourite files**. Starred to-dos and chats also appear on Home. See [Favourite to-dos, chats and files](help:pinned).
+A star marks something as a favourite. A starred chat, task or skill goes into a **Favourites** section at the top of its list. A starred file shows on Home under **Favourite files**. Starred tasks and chats also appear on Home. See [Favourite tasks, chats and files](help:pinned).
 
 ## Why it helps
 
@@ -23,9 +23,9 @@ A star marks something as a favourite. A starred chat, to-do or skill goes into 
 
 ## How to use it
 
-1. Find a chat, to-do, skill or file. Chats, to-dos and skills have a star at the end of their row in their drawer.
+1. Find a chat, task, skill or file. Chats, tasks and skills have a star at the end of their row in their drawer.
 2. Press the star button. Its tooltip says **Favourite**.
-3. A chat, to-do or skill moves up into **Favourites**. A file shows on Home.
+3. A chat, task or skill moves up into **Favourites**. A file shows on Home.
 4. Press the star again to take it off.
 
 For a file, open it in the viewer. The star sits beside the **Download** button. See [Viewing a file](help:viewing-a-file).
@@ -35,7 +35,7 @@ For a file, open it in the viewer. The star sits beside the **Download** button.
 ## Good to know
 
 - Favourites are yours alone. They are kept in Cortex on your computer, so teammates don't see them.
-- Starring a to-do doesn't change the to-do. It works even when **Let the app change to-dos** is off.
+- Starring a task doesn't change the task. It works even when **Let the app change tasks** is off.
 - Favourite skills show on Home under **Favourite skills**.
 
 ## Try this

@@ -64,7 +64,7 @@ describe('ProjectTodos Done section', () => {
     expect(screen.queryByRole('button', { name: /Done/ })).toBeNull();
   });
 
-  it('opens the finished to-do in the drawer when its row is pressed', () => {
+  it('opens the finished task in the drawer when its row is pressed', () => {
     show([row('a')], 1);
     fireEvent.click(screen.getByRole('button', { name: /Done/ }));
     const open = screen.getByText('Job a');
@@ -88,7 +88,7 @@ describe("ProjectTodos teammates' rows", () => {
       mine,
     }) as unknown as ProjectTodoRow;
 
-  it("opens a teammate's to-do read only under its team: key, without star or chat", () => {
+  it("opens a teammate's task read only under its team: key, without star or chat", () => {
     render(
       <ProjectTodos
         card={card}
@@ -105,14 +105,14 @@ describe("ProjectTodos teammates' rows", () => {
     expect(screen.queryByRole('button', { name: /star|chat/i })).toBeNull();
   });
 
-  it('leaves a personal to-do that is not on my lists as plain text (it is never sent as a team: key)', () => {
+  it('leaves a personal task that is not on my lists as plain text (it is never sent as a team: key)', () => {
     const personal = { ...todo('p.md', false), key: 'personal/p.md', scope: 'personal' } as ProjectTodoRow;
     render(<ProjectTodos card={card} team={[]} rows={[personal]} failed={false} reload={async () => {}} />);
     expect(screen.getByText('Job p.md')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Job p.md/ })).toBeNull();
   });
 
-  it('still opens my own to-do by its own key', () => {
+  it('still opens my own task by its own key', () => {
     render(
       <ProjectTodos
         card={card}

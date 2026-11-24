@@ -198,7 +198,7 @@ describe('the Asked tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Bolt · SEO audit' }));
     fireEvent.click(screen.getByRole('radio', { name: /^Asked/ }));
     expect(
-      await screen.findByText("None of the to-dos you've asked of others are in Bolt · SEO audit."),
+      await screen.findByText("None of the tasks you've asked of others are in Bolt · SEO audit."),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(screen.getByText('Chase the logo')).toBeTruthy();
@@ -234,13 +234,13 @@ describe('review fixes', () => {
 });
 
 describe('adding while filtered', () => {
-  it('starts the new to-do in the project the drawer is filtered to', async () => {
+  it('starts the new task in the project the drawer is filtered to', async () => {
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Acme · Website' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    await screen.findByRole('form', { name: 'Add a task' });
     fireEvent.change(screen.getByLabelText('What needs doing?'), { target: { value: 'New bit' } });
-    fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Add a task' }));
     const changeTodos = store.current.changeTodos as ReturnType<typeof vi.fn>;
     await waitFor(() => expect(changeTodos).toHaveBeenCalled());
     expect(changeTodos.mock.calls[0]?.[0]?.[0]).toMatchObject({ kind: 'add', project: 'acme/site' });

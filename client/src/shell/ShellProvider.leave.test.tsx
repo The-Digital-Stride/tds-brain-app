@@ -259,8 +259,8 @@ describe('leave guard: a sheet form holds typed work', () => {
   });
 });
 
-describe('leave guard and the to-do panel', () => {
-  it('a dirty to-do alone: the page changes at once and the to-do asks, as before', async () => {
+describe('leave guard and the task panel', () => {
+  it('a dirty task alone: the page changes at once and the task asks, as before', async () => {
     await mount();
     act(() => store.openView('app:projects'));
     todoDirty();
@@ -271,7 +271,7 @@ describe('leave guard and the to-do panel', () => {
     expect(shell.state.todoPanel).not.toBeNull();
   });
 
-  it('a dirty to-do and a dirty panel: the to-do asks first; Keep runs nothing', async () => {
+  it('a dirty task and a dirty panel: the task asks first; Keep runs nothing', async () => {
     await onAdsWithPanelWork();
     todoDirty();
     act(() => store.openView('settings'));
@@ -284,7 +284,7 @@ describe('leave guard and the to-do panel', () => {
     expect(store.view).toBe(ADS);
   });
 
-  it('Discard at the to-do closes it, then the panel asks, then Discard there goes', async () => {
+  it('Discard at the task closes it, then the panel asks, then Discard there goes', async () => {
     await onAdsWithPanelWork();
     todoDirty();
     act(() => store.openView('settings'));
@@ -296,7 +296,7 @@ describe('leave guard and the to-do panel', () => {
     expect(store.view).toBe('settings');
   });
 
-  it('a to-do question replaced by another step drops the page change', async () => {
+  it('a task question replaced by another step drops the page change', async () => {
     await onAdsWithPanelWork();
     todoDirty();
     act(() => store.openView('settings'));
@@ -308,7 +308,7 @@ describe('leave guard and the to-do panel', () => {
     expect(store.view).toBe(ADS);
   });
 
-  it('a clean to-do over a dirty panel shuts first, so the panel question can be reached', async () => {
+  it('a clean task over a dirty panel shuts first, so the panel question can be reached', async () => {
     await onAdsWithPanelWork();
     todoOpen();
     act(() => store.openView('settings'));

@@ -29,8 +29,8 @@ const topic = (id: string, title: string, over: Partial<HelpTopic> = {}): HelpTo
 });
 const topics = [
   topic('welcome', 'Welcome'),
-  topic('home', 'Home', { body: 'Start here. See [To-dos](help:todos).' }),
-  topic('todos', 'To-dos', { area: 'todos', roles: ['owner', 'scout'] }),
+  topic('home', 'Home', { body: 'Start here. See [Tasks](help:todos).' }),
+  topic('todos', 'Tasks', { area: 'todos', roles: ['owner', 'scout'] }),
   topic('owners', 'Owners', { area: 'settings', roles: ['owner'] }),
   topic('whats-new', "What's new", { area: 'help', body: 'The newest notes.' }),
 ];
@@ -73,8 +73,8 @@ describe('HelpDrawer', () => {
   it('starts afresh when Help is opened again on the same page', () => {
     shell.state = { drawer: 'help', helpPage: 'home', helpOpened: 1 };
     const { rerender } = render(<HelpDrawer />);
-    fireEvent.click(screen.getByRole('link', { name: 'To-dos' }));
-    expect(screen.getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Tasks' }));
+    expect(screen.getByRole('heading', { name: 'Tasks' })).toBeTruthy();
     shell.state = { drawer: 'help', helpPage: 'home', helpOpened: 2 };
     rerender(<HelpDrawer />);
     expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy();
@@ -97,8 +97,8 @@ describe('HelpDrawer', () => {
 
   it('opens a linked page, shows the owner badge, and Back returns', () => {
     render(<HelpDrawer />);
-    fireEvent.click(screen.getByRole('link', { name: 'To-dos' }));
-    const heading = screen.getByRole('heading', { name: 'To-dos' });
+    fireEvent.click(screen.getByRole('link', { name: 'Tasks' }));
+    const heading = screen.getByRole('heading', { name: 'Tasks' });
     expect(heading).toBeTruthy();
     expect(screen.getByText('For owners and scouts')).toBeTruthy();
     expect(document.activeElement).toBe(heading);
@@ -110,11 +110,11 @@ describe('HelpDrawer', () => {
   it('lists each area as its own shut fold after the page, and a row opens its page', () => {
     render(<HelpDrawer />);
     expect(screen.queryByRole('button', { name: /All help pages/ })).toBeNull();
-    const area = screen.getByRole('button', { name: /^To-dos\s*1$/ });
+    const area = screen.getByRole('button', { name: /^Tasks\s*1$/ });
     expect(area.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(area);
-    fireEvent.click(screen.getByText('About To-dos').closest('button') as HTMLElement);
-    expect(screen.getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    fireEvent.click(screen.getByText('About Tasks').closest('button') as HTMLElement);
+    expect(screen.getByRole('heading', { name: 'Tasks' })).toBeTruthy();
   });
 
   it('names who a page is for', () => {
@@ -141,7 +141,7 @@ describe('HelpDrawer', () => {
     const box = screen.getByRole('searchbox', { name: 'Search help' });
     fireEvent.change(box, { target: { value: 'welcome' } });
     expect(screen.queryByRole('heading', { name: 'Home' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^To-dos\s*1$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Tasks\s*1$/ })).toBeNull();
     const hit = screen.getByText('About Welcome');
     fireEvent.click(hit);
     expect(screen.getByRole('heading', { name: 'Welcome' })).toBeTruthy();
@@ -151,7 +151,7 @@ describe('HelpDrawer', () => {
 
   it('starts again on the new page when Help is opened on another one', () => {
     const { rerender } = render(<HelpDrawer />);
-    fireEvent.click(screen.getByRole('link', { name: 'To-dos' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Tasks' }));
     shell.state = { drawer: 'help', helpPage: 'welcome' };
     rerender(<HelpDrawer />);
     const head = screen.getByRole('heading', { name: 'Welcome' });

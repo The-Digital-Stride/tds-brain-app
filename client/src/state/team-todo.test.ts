@@ -43,18 +43,18 @@ describe('teamTodoStore', () => {
 
   it('records a 404 as an error with no item', async () => {
     api.teamTodo.mockRejectedValue(
-      Object.assign(new Error('That to-do could not be found.'), { status: 404 }),
+      Object.assign(new Error('That task could not be found.'), { status: 404 }),
     );
     teamTodoStore.ensure(KEY);
     await teamTodoStore.refresh(KEY);
     expect(teamTodoStore.get(KEY)).toEqual({
       item: null,
       loading: false,
-      error: 'That to-do could not be found.',
+      error: 'That task could not be found.',
     });
   });
 
-  it('refreshes only keys already loaded, and drops a to-do that has gone', async () => {
+  it('refreshes only keys already loaded, and drops a task that has gone', async () => {
     api.teamTodo.mockResolvedValueOnce(item('a.md'));
     teamTodoStore.ensure(KEY);
     await teamTodoStore.refresh(KEY);

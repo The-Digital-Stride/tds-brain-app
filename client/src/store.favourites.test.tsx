@@ -181,7 +181,7 @@ describe('toggleFavouriteChat', () => {
 });
 
 describe('toggleFavouriteTodo', () => {
-  it('stars to-dos by key in their own list, and two quick taps each build on the one before', async () => {
+  it('stars tasks by key in their own list, and two quick taps each build on the one before', async () => {
     const replies: ((p: AppPrefs) => void)[] = [];
     api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
     await start();
@@ -214,7 +214,7 @@ describe('toggleFavouriteTodo', () => {
     expect(screen.getByText(/, error/)).toBeTruthy();
   });
 
-  it('keeps each list as shown while a chat star and a to-do star save at the same time', async () => {
+  it('keeps each list as shown while a chat star and a task star save at the same time', async () => {
     const replies: ((p: AppPrefs) => void)[] = [];
     api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
     await start();
@@ -242,7 +242,7 @@ describe('toggleFavouriteTodo', () => {
     ]);
   });
 
-  it("keeps a to-do star that is still saving when another setting's reply lands", async () => {
+  it("keeps a task star that is still saving when another setting's reply lands", async () => {
     const replies: ((p: AppPrefs) => void)[] = [];
     api.updatePrefs.mockImplementation(() => new Promise<AppPrefs>((r) => replies.push(r)));
     await start();
@@ -254,7 +254,7 @@ describe('toggleFavouriteTodo', () => {
     expect(screen.getByText('todo favs t')).toBeTruthy();
   });
 
-  it('moves the star to the new key when a starred to-do moves between TDS and personal', async () => {
+  it('moves the star to the new key when a starred task moves between TDS and personal', async () => {
     api.updatePrefs.mockImplementation(async (patch: Partial<AppPrefs>) => ({ ...DEFAULT_PREFS, ...patch }));
     api.changeTodo.mockResolvedValue({
       mine: [],
@@ -272,7 +272,7 @@ describe('toggleFavouriteTodo', () => {
     expect(screen.getByText('todo favs w personal/x')).toBeTruthy();
   });
 
-  it('leaves the stars alone when an unstarred to-do moves', async () => {
+  it('leaves the stars alone when an unstarred task moves', async () => {
     api.updatePrefs.mockImplementation(async (patch: Partial<AppPrefs>) => ({ ...DEFAULT_PREFS, ...patch }));
     api.changeTodo.mockResolvedValue({
       mine: [],

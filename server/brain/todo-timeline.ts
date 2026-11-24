@@ -24,7 +24,7 @@ import { authorSlug, dueOf, lower, readTeam, SAFE_ID } from './todos.ts';
 
 export const HISTORY_MAX_OUTPUT = 512 * 1024;
 const KEY_MAX = 255;
-const BAD_KEY = "That to-do wasn't understood.";
+const BAD_KEY = "That task wasn't understood.";
 
 export type HistoryKey =
   | { kind: 'personal'; id: string }

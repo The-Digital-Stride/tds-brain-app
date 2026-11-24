@@ -62,18 +62,18 @@ afterEach(() => {
   desk.shell = { drawer: null, singleKeys: true };
 });
 
-describe('Rail to-dos item', () => {
+describe('Rail tasks item', () => {
   it('says how many are new and shows the pip', () => {
     setStore([todo('a.md', 'ben-mcadam'), todo('b.md', null)]);
     const { container } = render(<Rail />);
-    expect(screen.getByRole('button', { name: 'To-dos, 2 of yours, 1 new' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tasks, 2 of yours, 1 new' })).toBeTruthy();
     expect(container.querySelector('.rail-pip[data-new="true"]')).toBeTruthy();
   });
 
   it('has no pip and no "new" when nothing is new', () => {
     setStore([todo('a.md', 'ben-mcadam')], { 'a.md': at });
     const { container } = render(<Rail />);
-    expect(screen.getByRole('button', { name: 'To-dos, 1 of yours' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tasks, 1 of yours' })).toBeTruthy();
     expect(container.querySelector('.rail-pip[data-new="true"]')).toBeNull();
   });
 });

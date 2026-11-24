@@ -239,7 +239,7 @@ describe('SaveToProject', () => {
     expect(screen.getByLabelText('Objective')).toBeTruthy();
   });
 
-  describe('after saving: to-dos from the next steps', () => {
+  describe('after saving: tasks from the next steps', () => {
     const saved = async () => {
       const onClose = show();
       await screen.findByLabelText('Objective');
@@ -250,18 +250,18 @@ describe('SaveToProject', () => {
 
     it('adds only the ticked steps, one at a time, with who and the details line', async () => {
       await saved();
-      expect(screen.getByText('Make to-dos from the next steps?')).toBeTruthy();
+      expect(screen.getByText('Make tasks from the next steps?')).toBeTruthy();
       const ticks = screen.getAllByRole('checkbox');
       expect(ticks.every((t) => !(t as HTMLInputElement).checked)).toBe(true);
-      fireEvent.click(screen.getByLabelText('Make a to-do: Check Search Console'));
-      fireEvent.change(screen.getByLabelText('To-do title for step 2'), {
+      fireEvent.click(screen.getByLabelText('Make a task: Check Search Console'));
+      fireEvent.change(screen.getByLabelText('Task title for step 2'), {
         target: { value: 'Check Search Console on Friday' },
       });
       const who = screen.getAllByRole('combobox');
       expect((who[1] as HTMLSelectElement).value).toBe('me');
       fireEvent.change(who[1] as HTMLSelectElement, { target: { value: 'jo' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Add to-dos' }));
-      expect(await screen.findByText('Added 1 to-do.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Add tasks' }));
+      expect(await screen.findByText('Added 1 task.')).toBeTruthy();
       expect(store.changeTodos).toHaveBeenCalledTimes(1);
       const action = store.changeTodos.mock.calls[0]?.[0][0];
       expect(action).toMatchObject({
@@ -279,29 +279,29 @@ describe('SaveToProject', () => {
         .mockResolvedValueOnce({ done: 1 })
         .mockResolvedValueOnce({ done: 0, error: { code: 'internal', message: 'No' } });
       await saved();
-      fireEvent.click(screen.getByLabelText('Make a to-do: Tell the client'));
-      fireEvent.click(screen.getByLabelText('Make a to-do: Check Search Console'));
-      fireEvent.click(screen.getByRole('button', { name: 'Add to-dos' }));
-      expect(await screen.findByText('Added 1 to-do.')).toBeTruthy();
+      fireEvent.click(screen.getByLabelText('Make a task: Tell the client'));
+      fireEvent.click(screen.getByLabelText('Make a task: Check Search Console'));
+      fireEvent.click(screen.getByRole('button', { name: 'Add tasks' }));
+      expect(await screen.findByText('Added 1 task.')).toBeTruthy();
       expect(screen.getByRole('alert').textContent).toContain("This one wasn't added: Check Search Console");
     });
 
-    it('Done closes as saved; skipping to-dos is fine', async () => {
+    it('Done closes as saved; skipping tasks is fine', async () => {
       const onClose = await saved();
       fireEvent.click(screen.getByRole('button', { name: 'Done' }));
       expect(onClose).toHaveBeenCalledWith(true);
       expect(store.changeTodos).not.toHaveBeenCalled();
     });
 
-    it('offers no to-do step when there are no next steps or to-dos cannot be added', async () => {
+    it('offers no task step when there are no next steps or tasks cannot be added', async () => {
       api.chatSummaryDraft.mockResolvedValue(draft({ fields: { ...draft().fields, nextSteps: [] } }));
       await saved();
-      expect(screen.queryByText('Make to-dos from the next steps?')).toBeNull();
+      expect(screen.queryByText('Make tasks from the next steps?')).toBeNull();
       cleanup();
       api.chatSummaryDraft.mockResolvedValue(draft());
       store.todos.changes = 'off';
       await saved();
-      expect(screen.queryByText('Make to-dos from the next steps?')).toBeNull();
+      expect(screen.queryByText('Make tasks from the next steps?')).toBeNull();
       store.todos.changes = 'on';
     });
   });

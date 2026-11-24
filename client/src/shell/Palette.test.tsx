@@ -204,7 +204,7 @@ describe('Palette', () => {
     await waitFor(() => expect(document.activeElement).toBe(input()));
     expect(input().getAttribute('aria-expanded')).toBe('true');
     expect(input().getAttribute('aria-label')).toBe('Search or jump to');
-    expect(input().getAttribute('placeholder')).toBe('Search to-dos, chats, skills, files and more');
+    expect(input().getAttribute('placeholder')).toBe('Search tasks, chats, skills, files and more');
     expect(input().getAttribute('aria-controls')).toBe(screen.getByRole('listbox').id);
     expect(desk().hasAttribute('inert')).toBe(true);
     expect(
@@ -259,7 +259,7 @@ describe('Palette', () => {
     await openPalette();
     expect(selectedLabel()).toBe('Home');
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
-    expect(selectedLabel()).toBe('To-dos');
+    expect(selectedLabel()).toBe('Tasks');
     fireEvent.keyDown(input(), { key: 'ArrowUp' });
     fireEvent.keyDown(input(), { key: 'ArrowUp' });
     // Home is first, so the second Up wraps to the last option: the pinned skill.
@@ -271,7 +271,7 @@ describe('Palette', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const drawer = document.getElementById('drawer') as HTMLElement;
     await waitFor(() => expect(drawer.hasAttribute('inert')).toBe(false));
-    expect(within(drawer).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    expect(within(drawer).getByRole('heading', { name: 'Tasks' })).toBeTruthy();
     expect(desk().hasAttribute('inert')).toBe(false);
   });
 
@@ -283,21 +283,21 @@ describe('Palette', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('shows a to-do in the drawer, and a second Enter on its row starts the chat with its link', async () => {
+  it('shows a task in the drawer, and a second Enter on its row starts the chat with its link', async () => {
     await renderHome();
     await openPalette();
     fireEvent.click(screen.getByRole('option', { name: /Check the monthly reports/ }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const drawer = document.getElementById('drawer') as HTMLElement;
     await waitFor(() => expect(drawer.hasAttribute('inert')).toBe(false));
-    expect(within(drawer).getByRole('heading', { name: 'To-dos' })).toBeTruthy();
+    expect(within(drawer).getByRole('heading', { name: 'Tasks' })).toBeTruthy();
     // The to-do opens in the panel, ready to read; its chat button starts the chat.
     const panel = await screen.findByRole('dialog', { name: 'Check the monthly reports' });
     expect(within(drawer).getByRole('button', { name: 'Check the monthly reports' })).toBeTruthy();
     fireEvent.click(within(panel).getByRole('button', { name: 'Start a chat' }));
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
-        'Help me with this to-do: todo/t-today.md (Check the monthly reports)',
+        'Help me with this task: todo/t-today.md (Check the monthly reports)',
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -305,7 +305,7 @@ describe('Palette', () => {
     expect(api.startSession.mock.calls[0]?.[0]).toMatchObject({ todoId: 't-today.md' });
   });
 
-  it('finds an open to-do too, and reveals it on the Open to anyone tab', async () => {
+  it('finds an open task too, and reveals it on the Open to anyone tab', async () => {
     api.todos.mockResolvedValue({
       ...todoList,
       open: [{ ...todo('o1.md', 'Pick up the audit', null), assignee: null }],
@@ -330,7 +330,7 @@ describe('Palette', () => {
     ).toBeTruthy();
   });
 
-  it('reveals a personal to-do by its key, then starts its chat with the personal path', async () => {
+  it('reveals a personal task by its key, then starts its chat with the personal path', async () => {
     api.todos.mockResolvedValue({
       ...todoList,
       mine: [
@@ -351,7 +351,7 @@ describe('Palette', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Start a chat' }));
     await waitFor(() =>
       expect((screen.getByRole('textbox', { name: 'Message to Claude' }) as HTMLTextAreaElement).value).toBe(
-        'Help me with this to-do: personal/todo/p1.md (Private errand)',
+        'Help me with this task: personal/todo/p1.md (Private errand)',
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -381,7 +381,7 @@ describe('Palette', () => {
       'Settings: Health',
       'Settings: About',
       'Settings',
-      'Letting Cortex change to-dos',
+      'Letting Cortex change tasks',
       'Welcome to TDS Cortex',
       'Picking the client',
       'What Claude did',
@@ -452,7 +452,7 @@ describe('Palette', () => {
     await renderHome();
     await openPalette();
     expect(document.querySelectorAll('.palette kbd')).toHaveLength(0);
-    expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toContain('To-dos');
+    expect(options().map((o) => o.querySelector('.opt-label')?.textContent)).toContain('Tasks');
   });
 });
 
@@ -488,14 +488,14 @@ describe('global search', () => {
     await screen.findByRole('dialog', { name: 'Search or jump to' });
   });
 
-  it('lists Go to, To-dos, Open chats and Skills with nothing typed, apps in Go to', async () => {
+  it('lists Go to, Tasks, Open chats and Skills with nothing typed, apps in Go to', async () => {
     api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'scout' } });
     await renderHome();
     await openPalette();
-    expect(groupTitles()).toEqual(['Go to', 'To-dos', 'Open chats', 'Skills']);
+    expect(groupTitles()).toEqual(['Go to', 'Tasks', 'Open chats', 'Skills']);
     expect(labelsOf().slice(0, 13)).toEqual([
       'Home',
-      'To-dos',
+      'Tasks',
       'Chats',
       'Skills',
       'Help',
@@ -731,7 +731,7 @@ describe('global search', () => {
     const rail = within(screen.getByRole('navigation', { name: 'Main' }));
     fireEvent.click(rail.getByRole('button', { name: 'Documents' }));
     await screen.findByRole('heading', { level: 1, name: 'Documents' });
-    const todos = rail.getByRole('button', { name: /^To-dos/ });
+    const todos = rail.getByRole('button', { name: /^Tasks/ });
     todos.focus();
     fireEvent.click(todos);
     const drawer = document.getElementById('drawer') as HTMLElement;
@@ -913,7 +913,7 @@ describe('global search', () => {
   });
 });
 
-describe('Palette: finished to-dos', () => {
+describe('Palette: finished tasks', () => {
   const zebra: DoneTodo = {
     key: 'done:todo/done/20261101-zebra.md',
     id: '20261101-zebra.md',
@@ -947,7 +947,7 @@ describe('Palette: finished to-dos', () => {
     expect(screen.queryByText('Nothing matches')).toBeNull();
     await act(async () => finish({ historyRead: true, items: [zebra] }));
     const dialog = screen.getByRole('dialog', { name: 'Search or jump to' });
-    expect(await within(dialog).findByText('Done to-dos')).toBeTruthy();
+    expect(await within(dialog).findByText('Done tasks')).toBeTruthy();
     expect(options().some((o) => o.textContent?.includes('Send the zebra crossing quote'))).toBe(true);
   });
 });

@@ -681,10 +681,10 @@ export const TODO_FILES_MESSAGES = {
   headingInDetails:
     'The details can\'t have their own "Files" heading, because the files are listed under it. Rename that heading and try again.',
   notListable: "That file isn't in the library, so it can't be linked. It may have been moved or deleted.",
-  full: `A to-do can have up to ${TODO_ATTACHMENTS_MAX} files. Remove one before adding another.`,
-  uploadNotAllowed: "Adding new files to to-dos isn't available to you in the app yet.",
+  full: `A task can have up to ${TODO_ATTACHMENTS_MAX} files. Remove one before adding another.`,
+  uploadNotAllowed: "Adding new files to tasks isn't available to you in the app yet.",
   badType:
-    "That kind of file can't be added to a to-do. Add a picture, PDF, Word document, spreadsheet, slide deck or text file.",
+    "That kind of file can't be added to a task. Add a picture, PDF, Word document, spreadsheet, slide deck or text file.",
   saveFailed: "That file couldn't be saved to the library. Try again.",
   saveRefused: "That file couldn't be saved there in the library.",
 } as const;
@@ -693,7 +693,7 @@ const FILES_HEADING_REFUSED = TODO_FILES_MESSAGES.headingInDetails;
 
 /** Said when `add` worked and `attach` didn't: the file is in the library at `path`, just not linked. */
 export function savedNotLinkedMessage(path: string): string {
-  return `The file was saved to the library at ${path}, but it couldn't be linked to this to-do. Add it from the library instead.`;
+  return `The file was saved to the library at ${path}, but it couldn't be linked to this task. Add it from the library instead.`;
 }
 
 /** Refuses `bad-request` unless `path` is a real, listable file and there is room on the to-do for it. */
@@ -876,10 +876,10 @@ export const TICKED_VIA = APP_VIA;
 
 export async function completeTodo(root: string, id: string, by: Identity, at: Date): Promise<void> {
   if (typeof id !== 'string' || !SAFE_ID.test(id))
-    throw new Error('That is not a to-do the app can tick off.');
+    throw new Error('That is not a task the app can tick off.');
   const live = await readFolder(root, 'tds', '', []);
   if (!live.some((t) => t.id === id))
-    throw new Error('That to-do could not be found. It may already be done.');
+    throw new Error('That task could not be found. It may already be done.');
   const source = join(root, 'todo', id);
   const doneDir = join(root, 'todo', 'done');
   const target = join(doneDir, id);
@@ -890,7 +890,7 @@ export async function completeTodo(root: string, id: string, by: Identity, at: D
     await fs.writeFile(target, stamped, { encoding: 'utf8', flag: 'wx' });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST')
-      throw new Error('A finished to-do with that name already exists, so nothing was moved.');
+      throw new Error('A finished task with that name already exists, so nothing was moved.');
     throw err;
   }
   try {

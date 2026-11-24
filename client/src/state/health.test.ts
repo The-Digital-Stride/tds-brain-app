@@ -94,13 +94,13 @@ describe('healthChecks', () => {
 
   it('names which list failed to load', () => {
     expect(byId(input({ lists: { todos: 'failed', chats: 'loaded' } }), 'lists')?.text).toMatch(
-      /^Your to-dos/,
+      /^Your tasks/,
     );
     expect(byId(input({ lists: { todos: 'loaded', chats: 'failed' } }), 'lists')?.text).toMatch(
       /^Your chats/,
     );
     expect(byId(input({ lists: { todos: 'failed', chats: 'failed' } }), 'lists')?.text).toMatch(
-      /^Your to-dos and chats/,
+      /^Your tasks and chats/,
     );
     expect(byId(input({ lists: { todos: 'loading', chats: 'loaded' } }), 'lists')?.state).toBe('checking');
   });

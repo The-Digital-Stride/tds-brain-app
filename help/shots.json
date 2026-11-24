@@ -74,7 +74,7 @@
         "target": "#drawer .todo-add-btn, #drawer .todo-add-label"
       }
     ],
-    "alt": "The To-dos drawer with the Mine tab open."
+    "alt": "The Tasks drawer with the Mine tab open."
   },
   {
     "id": "skills-drawer",
@@ -159,20 +159,20 @@
     "scene": "todo-add",
     "crop": ".todo-panel",
     "pad": 10,
-    "alt": "The panel for adding a to-do, with a due date and who it's for."
+    "alt": "The panel for adding a task, with a due date and who it's for."
   },
   {
     "id": "todo-edit",
     "scene": "todo-edit",
     "crop": ".todo-panel",
     "pad": 10,
-    "alt": "A to-do open for editing in the panel beside the drawer, with the Assigned to field."
+    "alt": "A task open for editing in the panel beside the drawer, with the Assigned to field."
   },
   {
     "id": "settings-todos-switch",
     "scene": "settings-todos-switch",
     "crop": ".setting:has(#set-direct)",
-    "alt": "The Let the app change to-dos switch in Settings.",
+    "alt": "The Let the app change tasks switch in Settings.",
     "pad": 2
   },
   {

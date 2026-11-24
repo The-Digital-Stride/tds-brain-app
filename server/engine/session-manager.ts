@@ -765,6 +765,9 @@ export const EMAIL_LINE =
 
 export const FILES_LINE = `When you mention a file in the brain, give its whole path from the brain folder in backticks every time, for example \`clients/acme/reports/audit.md\`, even in a list or table under a heading that already names the folder, so the app can open it. ${PAGES_LINE} ${SAVE_LINE} ${EMAIL_LINE}`;
 
+/** Wording only: the team says "tasks" for the brain's to-dos; nothing underneath is renamed. Instructions to Claude, never shown to a person. */
+export const TASKS_WORD_LINE = `The team calls to-dos 'tasks'. Say task or tasks to the person, and when they say task they mean a to-do in the brain. Underneath nothing is renamed: keep the \`todo/\` folder, the \`todo\` and \`tdsapp-todo\` skills and every path as they are. Ad Manager's scheduled tasks are a separate thing.`;
+
 /**
  * Email entries plan, overseer B1, as fixed after the security and correctness reviews: Claude never opens
  * the drafts folder or the approve keys. Only paths are checked (path fields, a Glob's pattern and the
@@ -1533,6 +1536,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
         project ? projectLine(project, client) : null,
         client && !project ? whichProjectLine(fields.openProjects) : null,
         FILES_LINE,
+        TASKS_WORD_LINE,
         levels ? HELPERS_LINE : null,
         // Decision 9: steers every summary, manual or automatic (spike S4 route c).
         BRAIN_COMPACT_INSTRUCTIONS,
@@ -3680,7 +3684,7 @@ export function createSessionManager(opts: SessionManagerOptions): SessionManage
           if (found && !resume) kind = found.scope;
         }
         if (!listed && !resume)
-          throw new SessionError('bad-request', 'That to-do is not on your list any more.');
+          throw new SessionError('bad-request', 'That task is not on your list any more.');
         todoId = listed;
       }
       // A personal project's chat is personal, whatever else it was started from or saved as.

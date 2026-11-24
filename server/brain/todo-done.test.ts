@@ -47,7 +47,7 @@ function brainWith(files: Record<string, string>): string {
 const fm = (lines: string[], body = '') => `---\n${lines.join('\n')}\n---\n${body}`;
 
 describe('listDoneTodos', () => {
-  it('lists TDS done to-dos with their stamps, newest first, unknown last', async () => {
+  it('lists TDS done tasks with their stamps, newest first, unknown last', async () => {
     const root = brainWith({
       'todo/done/20261101-a.md': fm(
         [
@@ -242,7 +242,7 @@ describe('parseHistoryKey done: keys', () => {
 });
 
 describe('listDoneTodos with a real git record', () => {
-  it('dates a ticked to-do that was open to anyone (no assignee line) from the commit that moved it', async () => {
+  it('dates a ticked task that was open to anyone (no assignee line) from the commit that moved it', async () => {
     const root = brainWith({ 'todo/20261101-open.md': fm(['title: Open to anyone']) });
     const env = {
       ...process.env,

@@ -293,7 +293,7 @@ describe('waking a chat: where the person ends up, and what goes with it', () =>
     api.sendMessage.mockRejectedValueOnce(new ApiFailure('session-closed', 'That chat has been closed.'));
   });
 
-  it('takes the chat’s client, to-do and project with it', async () => {
+  it('takes the chat’s client, task and project with it', async () => {
     await drive();
     fireEvent.click(screen.getByText('send'));
     await waitFor(() =>
@@ -397,7 +397,7 @@ describe('send with a project', () => {
     );
   });
 
-  it("drops the to-do's project with its link when the message no longer names the to-do", async () => {
+  it("drops the task's project with its link when the message no longer names the task", async () => {
     await run(true);
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(api.startSession).toHaveBeenCalledWith({ prompt: 'Hello', client: 'acme' });

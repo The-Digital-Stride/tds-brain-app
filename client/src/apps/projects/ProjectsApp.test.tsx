@@ -72,26 +72,26 @@ async function show(list: ReturnType<typeof projectList>) {
 }
 
 describe('the list', () => {
-  it('groups by client with personal last, and shows light, end date and open to-dos', async () => {
+  it('groups by client with personal last, and shows light, end date and open tasks', async () => {
     await show(projectList([SKY, PERSONAL, ACME, MINE_TEAM]));
     const heads = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads).toEqual(['Acme Heating', 'Skyseal', 'Personal']);
     const row = screen.getByRole('button', { name: /Sky site/ });
-    expect(row.textContent).toMatch(/Active · ends 28 Feb 2027 · 2 open to-dos/);
+    expect(row.textContent).toMatch(/Active · ends 28 Feb 2027 · 2 open tasks/);
     expect(row.textContent).toMatch(/Health: on track/);
   });
 
-  it('Mine shows the projects I own, am in the team of, or am in from to-dos', async () => {
+  it('Mine shows the projects I own, am in the team of, or am in from tasks', async () => {
     const fromTodos = card({
       slug: 'ft',
-      title: 'From to-dos',
+      title: 'From tasks',
       owner: 'x',
       teamFromTodos: [{ person: 'me', openTodos: 1, lastActive: '2026-11-20' }],
     });
     await show(projectList([SKY, ACME, MINE_TEAM, fromTodos]));
     fireEvent.click(screen.getByRole('radio', { name: 'Mine' }));
     expect(screen.queryByRole('button', { name: /Sky site/ })).toBeNull();
-    for (const t of ['Boiler leads', 'SEO audit', 'From to-dos'])
+    for (const t of ['Boiler leads', 'SEO audit', 'From tasks'])
       expect(screen.getByRole('button', { name: new RegExp(t) })).toBeTruthy();
   });
 
@@ -122,7 +122,7 @@ describe('read-only mode', () => {
 });
 
 describe('Add to team', () => {
-  it('adds a person from to-dos to the team with the card version as expect', async () => {
+  it('adds a person from tasks to the team with the card version as expect', async () => {
     const c = card({
       owner: 'x',
       team: ['simon'],
@@ -132,7 +132,7 @@ describe('Add to team', () => {
     api.changeProject.mockResolvedValue(projectList([c]));
     await show(projectList([c]));
     fireEvent.click(screen.getByRole('button', { name: /Website rebuild/ }));
-    expect(screen.getByText('from to-dos')).toBeTruthy();
+    expect(screen.getByText('from tasks')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add Pat Jones to the team' }));
     await waitFor(() =>
       expect(api.changeProject).toHaveBeenCalledWith({

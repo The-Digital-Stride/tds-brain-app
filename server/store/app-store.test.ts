@@ -84,7 +84,7 @@ describe('app store', () => {
     expect((await store.update({ favouriteChats: many })).favouriteChats).toEqual(many.slice(5));
   });
 
-  it('keeps favourite to-dos: an old file reads as none; empty, long and repeated keys are dropped; the newest 200 stay', async () => {
+  it('keeps favourite tasks: an old file reads as none; empty, long and repeated keys are dropped; the newest 200 stay', async () => {
     const dir = fresh();
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'prefs.json'), JSON.stringify({ pins: ['a'] }));
@@ -102,7 +102,7 @@ describe('app store', () => {
     expect((await createAppStore(dir).get()).favouriteTodos).toEqual(['a1', 'personal/b2']);
     const many = Array.from({ length: 205 }, (_, i) => `t${i}`);
     expect((await store.update({ favouriteTodos: many })).favouriteTodos).toEqual(many.slice(5));
-    // A chat star save leaves the to-do stars alone.
+    // A chat star save leaves the task stars alone.
     expect((await store.update({ favouriteChats: [] })).favouriteTodos).toEqual(many.slice(5));
   });
 

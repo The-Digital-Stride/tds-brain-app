@@ -7,8 +7,8 @@ const img = (src: string) => (src === 'images/a.webp' ? '/assets/a-123.webp' : n
 
 describe('renderHelp', () => {
   it('keeps a help link to a known page', () => {
-    expect(render('See [To-dos](help:todos).', img)).toContain(
-      '<a href="#help-todos" data-help-id="todos">To-dos</a>',
+    expect(render('See [Tasks](help:todos).', img)).toContain(
+      '<a href="#help-todos" data-help-id="todos">Tasks</a>',
     );
   });
   it('unwraps a help link to an unknown page', () => {

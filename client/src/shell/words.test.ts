@@ -37,7 +37,7 @@ const live = (state: LiveSession['state']): LiveSession => ({
 });
 
 describe('todoChatDraft', () => {
-  it('names the to-do by its path, so the store keeps the chat linked to it', () => {
+  it('names the task by its path, so the store keeps the chat linked to it', () => {
     const todo: TodoItem = {
       id: '20261111-renew.md',
       scope: 'tds',
@@ -62,7 +62,7 @@ describe('todoChatDraft', () => {
     expect(todoChatDraft({ ...todo, path: 'personal/todo/20261111-renew.md' })).toContain(
       'personal/todo/20261111-renew.md',
     );
-    expect(draft).toBe('Help me with this to-do: todo/20261111-renew.md (Renew the contract)');
+    expect(draft).toBe('Help me with this task: todo/20261111-renew.md (Renew the contract)');
   });
 });
 
@@ -140,7 +140,7 @@ describe('placeName and todoPlaces', () => {
     expect(placeName('gladwell-and-patterson', clients)).toBe('Gladwell and patterson');
     expect(placeName('uc-ai-search', clients)).toBe('UC AI search');
   });
-  it('names the client and the project of a to-do', () => {
+  it('names the client and the project of a task', () => {
     expect(todoPlaces(todo('acme', 'website-rebuild'), clients)).toEqual(['Acme Heating', 'Website rebuild']);
     expect(todoPlaces(todo(null, 'acme'), clients)).toEqual(['Acme Heating']);
     expect(todoPlaces(todo(null, null), clients)).toEqual([]);
@@ -238,12 +238,12 @@ describe('handover words', () => {
     expect(handoverMeta(h({ at: new Date(2026, 9, 1).toISOString() }), 'sam-example', now)).toBeNull();
     expect(handoverMeta({ handover: null, assignee: 'sam-example' }, 'sam-example', now)).toBeNull();
   });
-  it('says nothing for a to-do that is open or belongs to someone else', () => {
+  it('says nothing for a task that is open or belongs to someone else', () => {
     expect(handoverMeta(h({}, null), 'sam-example', now)).toBeNull();
     expect(handoverLine(h({}, null), 'sam-example')).toBeNull();
     expect(handoverMeta(h({}, 'ben-mcadam'), 'sam-example', now)).toBeNull();
   });
-  it('shows to-dos stamped with the old app name under the new one, and other stamps as they are', () => {
+  it('shows tasks stamped with the old app name under the new one, and other stamps as they are', () => {
     expect(handoverLine(h({ via: 'TDS Brain App' }), 'sam-example')).toBe(
       'Passed to you by Ben McAdam, 12 Nov (TDS Cortex)',
     );

@@ -169,7 +169,7 @@ export function Inspector() {
               ) : null}
               {todo ? (
                 <>
-                  <dt>To-do</dt>
+                  <dt>Task</dt>
                   <dd>{todo.title}</dd>
                 </>
               ) : null}

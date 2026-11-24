@@ -5,7 +5,7 @@ can be used without a terminal or an IDE. Internal tool. **Local only: this repo
 here is published.**
 
 - It keeps nothing of the brain's. It reads the brain folder and drives the Claude Code already installed.
-- It never changes brain files with its own code; changes go through brain skills (the to-do tick is the
+- It never changes brain files with its own code; changes go through brain skills (the task tick is the
   one exception, for now).
 - Project tracking for the brain guardian (why the app, features, change requests, the "would like"
   pipeline, changelog) lives in the brain at `os/tds-brain-app/`.
@@ -24,8 +24,8 @@ here is published.**
   Stopped. They stay listed until you send the next message. Closing a chat stops its helpers too, and
   the close question says so.
   The approval mode follows your Claude Code settings (never "skip permissions").
-  A chat is TDS or Personal: one started from a personal to-do is Personal, and "This chat" → Details → Kind
-  changes it. Once any chat is Personal, the Chats drawer filters by kind (All / TDS / Personal), like To-dos.
+  A chat is TDS or Personal: one started from a personal task is Personal, and "This chat" → Details → Kind
+  changes it. Once any chat is Personal, the Chats drawer filters by kind (All / TDS / Personal), like Tasks.
   The app keeps which chats are personal in its own data folder (`chat-kinds.json`), never in the brain.
   An earlier chat can be deleted with its bin button (after a "Move this chat to the Bin?" question): its
   Claude Code history moves to the macOS Bin, so Finder's Put Back restores it, and it also leaves the
@@ -41,9 +41,9 @@ here is published.**
   File paths in replies and file steps open the file there, and "What changed" shows a file's edits.
   Only files Documents would show you are listed. A reopened chat rebuilds the list from Claude Code's
   own history, which keeps no helper-agent steps, so files only a helper touched don't show there.
-- **To-dos**: your to-dos and the team's open ones. Ticking, adding, editing, passing to a teammate,
+- **Tasks**: your tasks and the team's open ones. Ticking, adding, editing, passing to a teammate,
   setting a due date and deleting are off by default, because they change the shared brain; switch
-  them on in Settings ("Let the app change to-dos"). A tick records who did it and when. Every change
+  them on in Settings ("Let the app change tasks"). A tick records who did it and when. Every change
   except the tick is made by the brain's own `todo` skill (see `brain-skills/`), never by the app's
   code, and works exactly as the Workbench does. Until that skill is released it is for owners and
   scouts only. Weak spots found in the Workbench's behaviour wait for sign-off in
@@ -58,7 +58,7 @@ here is published.**
 
 Keys: <kbd>⌘K</kbd> opens the command palette; <kbd>Esc</kbd> closes a drawer. With single-key
 shortcuts on (Settings), <kbd>[</kbd> shows or hides the names on the rail, and <kbd>T</kbd>,
-<kbd>C</kbd> and <kbd>S</kbd> open To-dos, Chats and Skills.
+<kbd>C</kbd> and <kbd>S</kbd> open Tasks, Chats and Skills.
 
 ## Install it (macOS)
 
@@ -178,7 +178,7 @@ To sign every browser out, run `bin/tds-brain sign-out-everywhere`.
 | Folder | What it holds |
 |---|---|
 | `shared/contract.ts` | The types and routes both halves build against |
-| `server/brain/` | Reads the brain folder (skills, to-dos, clients, identity, usage, the library and its previews). Never runs brain code in-process |
+| `server/brain/` | Reads the brain folder (skills, tasks, clients, identity, usage, the library and its previews). Never runs brain code in-process |
 | `server/engine/` | Drives Claude Code through the Agent SDK: chats, approvals, questions |
 | `server/http/` | The local web server and its security checks |
 | `server/store/` | The app's own notes (pins, layout), kept in the data folder |

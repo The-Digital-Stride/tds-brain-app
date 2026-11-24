@@ -21,17 +21,17 @@ describe('summary', () => {
     expect(s(0, 0, 0)).toBe('Nothing is waiting for you.');
   });
   it('reads singular and plural naturally', () => {
-    expect(s(1, 0, 0)).toBe('One to-do is overdue.');
-    expect(s(3, 0, 0)).toBe('3 to-dos are overdue.');
-    expect(s(0, 1, 0)).toBe('One to-do is due today.');
-    expect(s(0, 2, 0)).toBe('2 to-dos are due today.');
+    expect(s(1, 0, 0)).toBe('One task is overdue.');
+    expect(s(3, 0, 0)).toBe('3 tasks are overdue.');
+    expect(s(0, 1, 0)).toBe('One task is due today.');
+    expect(s(0, 2, 0)).toBe('2 tasks are due today.');
     expect(s(0, 0, 1)).toBe('One chat is waiting for you.');
     expect(s(0, 0, 3)).toBe('3 chats are waiting for you.');
   });
   it('joins two and three parts', () => {
-    expect(s(1, 0, 1)).toBe('One to-do is overdue and one chat is waiting for you.');
-    expect(s(3, 2, 0)).toBe('3 to-dos are overdue and 2 are due today.');
-    expect(s(1, 1, 0)).toBe('One to-do is overdue and one is due today.');
-    expect(s(3, 2, 1)).toBe('3 to-dos are overdue, 2 are due today and one chat is waiting for you.');
+    expect(s(1, 0, 1)).toBe('One task is overdue and one chat is waiting for you.');
+    expect(s(3, 2, 0)).toBe('3 tasks are overdue and 2 are due today.');
+    expect(s(1, 1, 0)).toBe('One task is overdue and one is due today.');
+    expect(s(3, 2, 1)).toBe('3 tasks are overdue, 2 are due today and one chat is waiting for you.');
   });
 });

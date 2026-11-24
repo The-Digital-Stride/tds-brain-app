@@ -710,7 +710,7 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
     expect(readLog(ok.log)[0]?.argv.slice(1)).toEqual(['project']);
     const refused = setup({
       exit: 2,
-      out: '{"error":"a team to-do can\'t be in a personal project","status":403}\n',
+      out: '{"error":"a team task can\'t be in a personal project","status":403}\n',
     });
     expect(
       await codeOf(
@@ -728,7 +728,7 @@ describe('v0.6: project, add with a project and move with dropProject (projects 
   it("maps a 403 about a personal project's file to the file message", async () => {
     const refused = setup({
       exit: 2,
-      out: '{"error":"a team to-do can\'t link a file from a personal project","status":403}\n',
+      out: '{"error":"a team task can\'t link a file from a personal project","status":403}\n',
     });
     expect(
       await codeOf(

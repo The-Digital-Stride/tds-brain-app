@@ -11,7 +11,7 @@ function Page({ close = true }: { close?: boolean }) {
     <>
       <Tooltips />
       {close ? (
-        <button type="button" className="icon-btn" aria-label="Close to-dos">
+        <button type="button" className="icon-btn" aria-label="Close tasks">
           x
         </button>
       ) : null}
@@ -47,14 +47,14 @@ afterEach(() => {
 describe('Tooltips', () => {
   it("shows an icon button's label after a short pause, and its short name when it has one", () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS - 10);
     expect(tip()).toBeNull();
     wait(10);
-    expect(tip()?.textContent).toBe('Close to-dos');
+    expect(tip()?.textContent).toBe('Close tasks');
     expect(tip()?.getAttribute('aria-hidden')).toBe('true');
     // Moving to the next one while one shows follows at once.
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: button('Favourite: Renew the contract') });
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: button('Favourite: Renew the contract') });
     fireEvent.pointerOver(button('Favourite: Renew the contract'));
     expect(tip()?.textContent).toBe('Favourite');
   });
@@ -64,17 +64,17 @@ describe('Tooltips', () => {
     fireEvent.pointerOver(document.querySelector('.btn') as HTMLElement);
     wait(TIP_DELAY_MS);
     expect(tip()).toBeNull();
-    fireEvent.pointerOver(button('Close to-dos'), { pointerType: 'touch' });
+    fireEvent.pointerOver(button('Close tasks'), { pointerType: 'touch' });
     wait(TIP_DELAY_MS);
     expect(tip()).toBeNull();
   });
 
   it('stays while the pointer moves onto it, and goes a moment after the pointer leaves', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     const t = tip() as HTMLElement;
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: t });
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: t });
     fireEvent.pointerOver(t);
     wait(HOVER_GRACE_MS * 3);
     expect(tip()).not.toBeNull();
@@ -87,17 +87,17 @@ describe('Tooltips', () => {
 
   it('never shows for a button the pointer only passed over', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS / 2);
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: document.body });
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: document.body });
     wait(TIP_DELAY_MS);
     expect(tip()).toBeNull();
   });
 
   it('shows at once for a button reached from the keyboard, not for one focused by a click', () => {
     page();
-    fireEvent.pointerDown(button('Close to-dos'));
-    act(() => button('Close to-dos').focus());
+    fireEvent.pointerDown(button('Close tasks'));
+    act(() => button('Close tasks').focus());
     expect(tip()).toBeNull();
     fireEvent.keyDown(window, { key: 'Tab' });
     act(() => button('Favourite: Renew the contract').focus());
@@ -108,7 +108,7 @@ describe('Tooltips', () => {
 
   it('takes Escape for a pointed-at tooltip, but lets it through for one shown by focus', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     const pointed = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     act(() => {
@@ -118,7 +118,7 @@ describe('Tooltips', () => {
     expect(tip()).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Tab' });
-    act(() => button('Close to-dos').focus());
+    act(() => button('Close tasks').focus());
     expect(tip()).not.toBeNull();
     const focused = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     act(() => {
@@ -131,9 +131,9 @@ describe('Tooltips', () => {
 
   it('goes when the button is pressed or the page scrolls', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
-    fireEvent.pointerDown(button('Close to-dos'));
+    fireEvent.pointerDown(button('Close tasks'));
     expect(tip()).toBeNull();
     fireEvent.pointerOver(button('Favourite: Renew the contract'));
     wait(TIP_DELAY_MS);
@@ -143,7 +143,7 @@ describe('Tooltips', () => {
 
   it('goes when its button leaves the page', () => {
     const { rerender } = page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     rerender(<Page close={false} />);
     wait(250);
@@ -152,7 +152,7 @@ describe('Tooltips', () => {
 
   it('never shows for a button that left the page while its wait ran', () => {
     const { rerender } = page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     rerender(<Page close={false} />);
     wait(TIP_DELAY_MS);
     expect(tip()).toBeNull();
@@ -225,50 +225,50 @@ describe('Tooltips', () => {
   it('goes when its button is hidden or made inert, on Enter or Space, and on resize', () => {
     page();
     const show = () => {
-      fireEvent.pointerOver(button('Close to-dos'));
+      fireEvent.pointerOver(button('Close tasks'));
       wait(TIP_DELAY_MS);
       expect(tip()).not.toBeNull();
-      fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: document.body });
+      fireEvent.pointerOut(button('Close tasks'), { relatedTarget: document.body });
       wait(HOVER_GRACE_MS);
     };
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(tip()).toBeNull();
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: document.body });
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: document.body });
     show();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     fireEvent(window, new Event('resize'));
     expect(tip()).toBeNull();
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: document.body });
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: document.body });
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
-    button('Close to-dos').parentElement?.setAttribute('inert', '');
+    button('Close tasks').parentElement?.setAttribute('inert', '');
     wait(250);
     expect(tip()).toBeNull();
   });
 
   it('keeps a pointed-at tooltip when focus leaves the button, and ignores touch leaving', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
-    act(() => button('Close to-dos').focus());
-    act(() => button('Close to-dos').blur());
+    act(() => button('Close tasks').focus());
+    act(() => button('Close tasks').blur());
     expect(tip()).not.toBeNull();
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: document.body, pointerType: 'touch' });
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: document.body, pointerType: 'touch' });
     wait(HOVER_GRACE_MS);
     expect(tip()).not.toBeNull();
   });
 
   it('keeps showing when the pointer goes from the tooltip back to its button', () => {
     page();
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOver(button('Close tasks'));
     wait(TIP_DELAY_MS);
     const t = tip() as HTMLElement;
-    fireEvent.pointerOut(button('Close to-dos'), { relatedTarget: t });
-    fireEvent.pointerOut(t, { relatedTarget: button('Close to-dos') });
-    fireEvent.pointerOver(button('Close to-dos'));
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: t });
+    fireEvent.pointerOut(t, { relatedTarget: button('Close tasks') });
+    fireEvent.pointerOver(button('Close tasks'));
     wait(HOVER_GRACE_MS * 2);
     expect(tip()).not.toBeNull();
   });
@@ -333,7 +333,7 @@ describe('Tooltips', () => {
 
     it('centres under the button, 6px below', () => {
       page();
-      expect(place(button('Close to-dos'), { left: 500, top: 100, width: 28, height: 28 })).toEqual({
+      expect(place(button('Close tasks'), { left: 500, top: 100, width: 28, height: 28 })).toEqual({
         left: 474,
         top: 134,
       });
@@ -341,7 +341,7 @@ describe('Tooltips', () => {
 
     it('goes above when there is no room below, and stays 8px inside the window', () => {
       page();
-      expect(place(button('Close to-dos'), { left: 980, top: 570, width: 28, height: 28 })).toEqual({
+      expect(place(button('Close tasks'), { left: 980, top: 570, width: 28, height: 28 })).toEqual({
         left: 912,
         top: 544,
       });
@@ -349,7 +349,7 @@ describe('Tooltips', () => {
 
     it('follows its button when the button moves (the rail widening)', () => {
       page();
-      const el = button('Close to-dos');
+      const el = button('Close tasks');
       place(el, { left: 500, top: 100, width: 28, height: 28 });
       el.getBoundingClientRect = () => rect({ left: 600, top: 100, width: 28, height: 28 });
       wait(250);

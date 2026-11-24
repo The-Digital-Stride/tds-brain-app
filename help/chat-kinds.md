@@ -8,7 +8,7 @@ benefit: Work chats and your own chats stay apart in the list.
 roles: all
 related: [chats-drawer, this-chat-panel, todos]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -18,7 +18,7 @@ Every chat is either **TDS** or **Personal**. The label only sorts your Chats li
 ## Why it helps
 
 - You can look at work chats without your own ones in the way.
-- A chat about a personal to-do is marked Personal for you.
+- A chat about a personal task is marked Personal for you.
 
 ## How to use it
 
@@ -31,7 +31,7 @@ Every chat is either **TDS** or **Personal**. The label only sorts your Chats li
 
 ## Good to know
 
-- A new chat starts as TDS. If it begins from a personal to-do, it starts as Personal.
+- A new chat starts as TDS. If it begins from a personal task, it starts as Personal.
 - The change is saved on this computer, and it's kept when you open the chat again.
 - The setting only sorts your list. The chat still uses the shared Brain, so Claude can read the same things.
 

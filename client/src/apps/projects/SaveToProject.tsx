@@ -281,7 +281,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
     setTodoBusy(false);
     setRows((prev) => prev.filter((r) => !chosen.includes(r) || failed.includes(r)).map((r) => ({ ...r })));
     setTodoFailed(failed.map((r) => r.text));
-    setAdded(ok === 1 ? 'Added 1 to-do.' : `Added ${ok} to-dos.`);
+    setAdded(ok === 1 ? 'Added 1 task.' : `Added ${ok} tasks.`);
   };
 
   const openChat = async () => {
@@ -326,14 +326,14 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
         <p className="note">It's on the Updates tab below.</p>
         {rows.length > 0 && canTodos ? (
           <fieldset className="proj-checks proj-save-steps">
-            <legend className="label">Make to-dos from the next steps?</legend>
+            <legend className="label">Make tasks from the next steps?</legend>
             {rows.map((r) => (
               <div className="proj-save-step" key={r.id}>
                 <label className="tick-hit">
                   <input
                     type="checkbox"
                     className="tick"
-                    aria-label={`Make a to-do: ${r.text}`}
+                    aria-label={`Make a task: ${r.text}`}
                     checked={r.on}
                     onChange={(e) =>
                       setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, on: e.target.checked } : x)))
@@ -343,7 +343,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
                 <input
                   type="text"
                   className="field"
-                  aria-label={`To-do title for step ${r.id + 1}`}
+                  aria-label={`Task title for step ${r.id + 1}`}
                   maxLength={CHAT_NEXT_STEP_MAX}
                   value={r.text}
                   onChange={(e) =>
@@ -384,7 +384,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
               aria-disabled={ticked === 0 || todoBusy || undefined}
               onClick={() => void addTodos()}
             >
-              Add to-dos
+              Add tasks
             </button>
           ) : null}
           <button type="button" className="btn" onClick={() => onClose(true)}>
@@ -544,7 +544,7 @@ export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveTo
           onChange={(e) => setSteps(e.target.value)}
         />
         <p className="hint" id={`${id}-steps-hint`}>
-          One per line. After saving you can turn them into to-dos.
+          One per line. After saving you can turn them into tasks.
         </p>
       </div>
       <label className="proj-check">

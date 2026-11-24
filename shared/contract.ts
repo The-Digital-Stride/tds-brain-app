@@ -1942,7 +1942,7 @@ export type ApiErrorCode =
   | 'forbidden' // wrong Host or Origin
   | 'not-found'
   | 'not-allowed' // the person's role may not run that skill
-  | 'changed' // a to-do changed since the person read it (409)
+  | 'changed' // a task changed since the person read it (409)
   | 'busy' // a turn is already running in that chat
   | 'session-closed'
   | 'too-many-chats' // MAX_LIVE_SESSIONS are all busy

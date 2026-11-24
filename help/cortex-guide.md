@@ -8,7 +8,7 @@ benefit: Read all of Cortex's help in order, or keep a printed copy.
 roles: all
 related: [getting-help, welcome, why-cortex, settings]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -34,7 +34,7 @@ The Cortex Guide shows every help page in order, like a book. Contents sit on th
 
 ## Good to know
 
-- The guide starts with Welcome, Why Cortex and A day with Cortex. Then it goes area by area: Home, Chats, To-dos and so on.
+- The guide starts with Welcome, Why Cortex and A day with Cortex. Then it goes area by area: Home, Chats, Tasks and so on.
 - Printing starts each page on a new sheet and keeps the pictures.
 - The rail, the contents and the top bar don't print.
 - Everyone who uses Cortex can open and print it.

@@ -80,7 +80,7 @@ describe('useProjects', () => {
 describe('todoProjectOptions', () => {
   const values = (o: { value: string }[]) => o.map((x) => x.value);
 
-  it('never offers a personal project to a TDS to-do (privacy rule)', () => {
+  it('never offers a personal project to a TDS task (privacy rule)', () => {
     expect(values(todoProjectOptions(cards, clients, { scope: 'tds', client: null }))).toEqual([
       'acme/site',
       'bolt/seo',
@@ -90,7 +90,7 @@ describe('todoProjectOptions', () => {
     ]);
   });
 
-  it('even keeps a personal project out when it is the current value of a TDS to-do', () => {
+  it('even keeps a personal project out when it is the current value of a TDS task', () => {
     const opts = todoProjectOptions(cards, clients, {
       scope: 'tds',
       client: null,
@@ -99,7 +99,7 @@ describe('todoProjectOptions', () => {
     expect(values(opts)).not.toContain('personal/diary');
   });
 
-  it("offers a personal to-do the person's own projects too, and leaves out closed ones", () => {
+  it("offers a personal task the person's own projects too, and leaves out closed ones", () => {
     const opts = todoProjectOptions(cards, clients, { scope: 'personal', client: 'acme' });
     expect(values(opts)).toEqual(['acme/site', 'personal/diary']);
   });

@@ -310,7 +310,7 @@ describe('canAdd and canRemove', () => {
 });
 
 describe('names and freshness', () => {
-  it('names a person whose slug the script wrote differently from the to-do slug', async () => {
+  it('names a person whose slug the script wrote differently from the task slug', async () => {
     put(
       '.team-config/roles.json',
       JSON.stringify({ members: [{ name: "Mary O'Brien", email: 'm@x.test' }] }),

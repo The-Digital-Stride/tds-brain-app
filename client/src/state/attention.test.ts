@@ -28,7 +28,7 @@ describe('formatElapsed', () => {
 });
 
 describe('chatForTodo', () => {
-  it('finds the chat that belongs to a to-do, or null', () => {
+  it('finds the chat that belongs to a task, or null', () => {
     const live = [chat('a', 'idle', 't1')];
     expect(chatForTodo('t1', live)?.id).toBe('a');
     expect(chatForTodo('t2', live)).toBeNull();

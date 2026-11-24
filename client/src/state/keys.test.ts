@@ -229,7 +229,7 @@ describe('keyAction: Help', () => {
   });
 });
 
-describe('keyAction: the to-do panel', () => {
+describe('keyAction: the task panel', () => {
   const panel = { key: 'a.md', mode: 'read' as const, dirty: false, ask: null, order: ['a.md', 'b.md'] };
   const open = { drawer: 'todos' as const, todoPanel: panel };
 
@@ -254,7 +254,7 @@ describe('keyAction: the to-do panel', () => {
     });
   });
 
-  it('P and N walk through the to-dos, leaving [ to the rail', () => {
+  it('P and N walk through the tasks, leaving [ to the rail', () => {
     expect(keyAction(key('p'), ctx(open))).toEqual({ type: 'todo-step', dir: -1 });
     expect(keyAction(key('n'), ctx(open))).toEqual({ type: 'todo-step', dir: 1 });
     expect(keyAction(key('['), ctx(open))).toEqual({ type: 'toggle-rail' });

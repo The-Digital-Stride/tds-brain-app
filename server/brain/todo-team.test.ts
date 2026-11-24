@@ -7,7 +7,7 @@ import { readTeamTodo } from './todo-team.ts';
 const fm = (lines: string[], body = '') => `---\n${lines.join('\n')}\n---\n${body}`;
 
 describe('readTeamTodo', () => {
-  it('reads a TDS to-do with the roster name, due date and files', async () => {
+  it('reads a TDS task with the roster name, due date and files', async () => {
     const root = copyFixture();
     writeFileSync(
       join(root, 'todo', '20261101-quote.md'),
@@ -31,7 +31,7 @@ describe('readTeamTodo', () => {
     expect(Array.isArray(t?.attachments)).toBe(true);
   });
 
-  it('reports an unassigned to-do as open to anyone', async () => {
+  it('reports an unassigned task as open to anyone', async () => {
     const root = copyFixture();
     writeFileSync(join(root, 'todo', '20261101-open.md'), fm(['assignee: open'], 'Words\n'));
     const t = await readTeamTodo(root, '20261101-open.md', 'sam-example');

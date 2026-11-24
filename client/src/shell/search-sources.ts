@@ -85,6 +85,8 @@ interface GoTo {
   /** "T", "C", "S": the key that opens a drawer. */
   hint: string | null;
   icon: IconName;
+  /** Other words that find this entry (an old name), never shown. */
+  terms?: string[];
   run: (actions: SearchActions) => void;
 }
 
@@ -97,10 +99,17 @@ const DRAWERS: Record<
   { go: Omit<GoTo, 'run'>; source: SearchSource }
 > = {
   todos: {
-    go: { id: 'go-todos', label: 'To-dos', hint: 'T', icon: 'todos' },
+    go: {
+      id: 'go-todos',
+      label: 'Tasks',
+      hint: 'T',
+      icon: 'todos',
+      // Tasks used to be called to-dos: the old word still jumps here.
+      terms: ['to-do', 'to-dos', 'todo', 'todos'],
+    },
     source: {
       id: 'todos',
-      title: 'To-dos',
+      title: 'Tasks',
       search: (query, ctx) => {
         const { mine, open } = ctx.todos ?? { mine: [], open: [] };
         const all: { todo: TodoItem; isOpen: boolean }[] = [
@@ -242,7 +251,7 @@ function doneHit(todo: DoneTodo, ctx: SearchContext): SearchHit {
  */
 const doneTodos: SearchSource = {
   id: 'done-todos',
-  title: 'Done to-dos',
+  title: 'Done tasks',
   search: (query, ctx) => {
     const items = doneStore.get().list?.items ?? [];
     return ranked(
@@ -381,7 +390,8 @@ function goToHit(entry: GoTo): SearchHit {
 const goTo: SearchSource = {
   id: GO_TO_SOURCE,
   title: 'Go to',
-  search: (query, ctx) => ranked(query, goToEntries(ctx), (e) => ({ title: e.label, fields: [] }), goToHit),
+  search: (query, ctx) =>
+    ranked(query, goToEntries(ctx), (e) => ({ title: e.label, fields: e.terms ?? [] }), goToHit),
   idle: (ctx) => goToEntries(ctx).map(goToHit),
 };
 

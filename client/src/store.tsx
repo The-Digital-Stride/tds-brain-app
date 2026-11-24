@@ -1369,7 +1369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               done,
               error: {
                 code: 'not-found',
-                message: 'This to-do is no longer in your list, so the rest of your changes were not saved.',
+                message: 'This task is no longer in your list, so the rest of your changes were not saved.',
               },
               ...(latest ? { todos: latest } : {}),
               ...found(),

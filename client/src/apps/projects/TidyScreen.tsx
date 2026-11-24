@@ -47,7 +47,7 @@ export function suggestionWords(
       const n = target ? target.openTodos : rows.find((r) => r.label === s.into)?.todos.length;
       return n === undefined
         ? `Rename to '${s.into}'`
-        : `Rename to '${s.into}', joining its ${n} to-do${n === 1 ? '' : 's'}`;
+        : `Rename to '${s.into}', joining its ${n} task${n === 1 ? '' : 's'}`;
     }
     case 'clear':
       return 'Remove the label. It is only a placeholder';
@@ -333,8 +333,8 @@ export function TidyScreen({
         </h2>
       </div>
       <p className="proj-note">
-        Some to-dos carry an old project label. Approve, change or skip each one. Nothing is changed until you
-        approve it. Approving changes your teammates' to-dos too, but only their client, project and stage
+        Some tasks carry an old project label. Approve, change or skip each one. Nothing is changed until you
+        approve it. Approving changes your teammates' tasks too, but only their client, project and stage
         lines.
       </p>
       <p className="proj-note">
@@ -413,7 +413,7 @@ function doneWords(
   team: readonly TeamMember[] | undefined,
 ): string {
   const n = row.todos.length;
-  const todos = `${n} to-do${n === 1 ? '' : 's'}`;
+  const todos = `${n} task${n === 1 ? '' : 's'}`;
   const theirs = row.todos.filter((t) => t.assignee && t.assignee !== me);
   const owners = [...new Set(theirs.map((t) => t.assignee as string))];
   const whose =

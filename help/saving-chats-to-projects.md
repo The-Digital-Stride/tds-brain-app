@@ -19,7 +19,7 @@ Chats stay on your own Mac. **Save to project** lets Claude write a short summar
 
 - The team sees what was done and how it ended.
 - You write nothing from scratch. You only check and change Claude's draft.
-- The next steps can become real to-dos in one go.
+- The next steps can become real tasks in one go.
 
 ## How to use it
 
@@ -28,7 +28,7 @@ Chats stay on your own Mac. **Save to project** lets Claude write a short summar
 3. Check the objective, outcome, key figures, documents and next steps. Change anything you like.
 4. Tick **Fine to share with the client** only if the client may read it.
 5. Press **Save to project**. Nothing is saved before this.
-6. To make to-dos, tick the next steps you want, choose who gets each one, and press **Add to-dos**. Press **Done** to finish.
+6. To make tasks, tick the next steps you want, choose who gets each one, and press **Add tasks**. Press **Done** to finish.
 
 On a project's **Overview**, **Chats not saved yet** lists chats with new messages. Press **Save to project** beside one.
 

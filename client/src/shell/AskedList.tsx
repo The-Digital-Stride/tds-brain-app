@@ -124,7 +124,7 @@ export function AskedList({
     if (side && !folds[side]) setFolds({ ...folds, [side]: true });
   }
   const intro = (
-    <p className="todo-note asked-intro">Asked of others: to-dos you passed on or added for someone.</p>
+    <p className="todo-note asked-intro">Asked of others: tasks you passed on or added for someone.</p>
   );
   if (!list) {
     return (
@@ -162,8 +162,7 @@ export function AskedList({
       {intro}
       {list.historyRead ? null : (
         <p className="todo-note asked-partial">
-          Only to-dos passed on in the app or with the to-do skill are listed: the git history couldn't be
-          read.
+          Only tasks passed on in the app or by Claude are listed: the git history couldn't be read.
         </p>
       )}
       {state === 'failed' ? (

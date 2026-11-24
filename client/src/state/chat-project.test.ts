@@ -23,7 +23,7 @@ const cards = [
 const clients = [{ slug: 'acme', name: 'Acme Heating' }];
 
 describe('chat project helpers', () => {
-  it("a to-do's project is its matched key when that is a live card", () => {
+  it("a task's project is its matched key when that is a live card", () => {
     expect(todoChatProject({ projectMatch: { how: 'key', key: 'acme/site' } as never }, cards)).toBe(
       'acme/site',
     );

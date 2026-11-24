@@ -19,9 +19,9 @@ import TodoDetailsEditor from './TodoDetailsEditor.tsx';
 
 /** Said when a to-do is set to Personal in the editor (plan decision 9). */
 export const PERSONAL_WARNING =
-  "Personal to-dos stay on this Mac. They aren't backed up, and the Workbench, Reminders and teammates stop seeing them.";
+  "Personal tasks stay on this Mac. They aren't backed up, and the Workbench, Reminders and teammates stop seeing them.";
 /** Said when a personal to-do is given to someone else. */
-export const PASS_ON_NOTE = 'Passing it on makes it a TDS to-do so they can see it.';
+export const PASS_ON_NOTE = 'Passing it on makes it a TDS task so they can see it.';
 
 /**
  * The details the panel shows and the editor edits. With `canAttach` that is the body without its
@@ -33,7 +33,7 @@ export function detailsText(todo: { details: string }, canAttach: boolean): stri
 
 /** Said before moving a personal to-do that sits in a private project to the team (decision 8). */
 export function dropProjectQuestion(name: string | null): string {
-  return `This to-do is in your private project${name ? ` '${name}'` : ''}. Moving it to the team removes it from that project.`;
+  return `This task is in your private project${name ? ` '${name}'` : ''}. Moving it to the team removes it from that project.`;
 }
 
 const NO_PROJECT = 'none';
@@ -240,7 +240,7 @@ export function AddTodoForm({
   };
 
   return (
-    <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label="Add a to-do">
+    <form className="todo-form" onSubmit={submit} onKeyDown={onKeyDown} aria-label="Add a task">
       <div className="form-field">
         <label htmlFor={`${uid}-title`}>What needs doing?</label>
         <div className="todo-quick">
@@ -272,7 +272,7 @@ export function AddTodoForm({
       </div>
       {canUsePersonal && !mine ? (
         <p className="todo-note" id={`${uid}-why`}>
-          A personal to-do can only be yours.
+          A personal task can only be yours.
         </p>
       ) : null}
       {personal ? (
@@ -344,7 +344,7 @@ export function AddTodoForm({
             if (busy || title.trim() === '' || overLimit) e.preventDefault();
           }}
         >
-          Add a to-do
+          Add a task
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
@@ -470,5 +470,5 @@ export function conflictNote(
   }
   if (theirs.details !== draft.details) parts.push('with different details');
   const theirsText = parts.length > 0 ? ` Their version: ${parts.join(', ')}.` : '';
-  return `Someone else changed this to-do while you were editing.${theirsText} Press Save to replace it with yours, or Cancel to keep theirs.`;
+  return `Someone else changed this task while you were editing.${theirsText} Press Save to replace it with yours, or Cancel to keep theirs.`;
 }

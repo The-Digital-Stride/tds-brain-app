@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The to-do changes the browser really builds, through the server's real request check. Client tests mock the
+ * The task changes the browser really builds, through the server's real request check. Client tests mock the
  * API and route tests hand-write their bodies, so a field only one side knew (`detailsOnly`, 2026-11-20) failed
  * every Save and tick in the panel while every other test passed.
  */
@@ -35,7 +35,7 @@ const draftOf = (t: TodoItem): EditDraft => {
 const sent = (actions: ReturnType<typeof buildEditActions>) =>
   actions.map((a) => parseTodoAction(JSON.parse(JSON.stringify(a))));
 
-describe('to-do changes from the panel pass the route check', () => {
+describe('task changes from the panel pass the route check', () => {
   for (const canAttach of [false, true]) {
     describe(canAttach ? 'with files on' : 'with files off', () => {
       it('a tick in the details', () => {
@@ -61,7 +61,7 @@ describe('to-do changes from the panel pass the route check', () => {
         expect(() => sent(passOn)).not.toThrow();
       });
 
-      it('the date cleared, and a personal to-do changed', () => {
+      it('the date cleared, and a personal task changed', () => {
         expect(() =>
           sent(buildEditActions(todo, { ...draftOf(todo), due: '' }, true, canAttach)),
         ).not.toThrow();

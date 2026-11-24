@@ -9,7 +9,7 @@ const past = (sdk: string) =>
   ({ sdkSessionId: sdk, title: sdk, lastModified: '', kind: 'tds' }) as PastSession;
 
 describe('pinnedTodos', () => {
-  it('lists starred to-dos from mine, then open ones, and no others', () => {
+  it('lists starred tasks from mine, then open ones, and no others', () => {
     const got = pinnedTodos([todo('a'), todo('b')], [todo('c'), todo('d')], ['d', 'a']);
     expect(got.map((t) => t.key)).toEqual(['a', 'd']);
   });

@@ -11,7 +11,7 @@ import {
 } from './tidy.ts';
 
 // The real brain's labels (2026-11-20, read only): clients, legacy projects/ folders and Ian's local
-// personal/projects/ folders, which a TDS to-do must never be tidied into.
+// personal/projects/ folders, which a TDS task must never be tidied into.
 const CTX: TidyContext = {
   projects: [
     {
@@ -50,7 +50,7 @@ function todo(project: string | null, extra: Partial<TidyTodo> = {}): TidyTodo {
   return {
     id: `2026110${n % 10}-t${n}.md`,
     scope: 'tds',
-    title: `To-do ${n}`,
+    title: `Task ${n}`,
     client: null,
     assignee: 'simon-jones',
     version: String(n).padStart(64, '0'),
@@ -108,7 +108,7 @@ describe('suggestTidy: the real label set', () => {
     });
   });
 
-  it("a slug in several clients links within the to-dos' client", () => {
+  it("a slug in several clients links within the tasks' client", () => {
     const r = row('website', [todo('website', { client: 'skyseal' }), todo('website')]);
     expect(r.suggestion).toEqual({ do: 'link', key: 'skyseal/website', why: 'same-slug' });
     expect(r.todos).toHaveLength(2);
@@ -145,14 +145,14 @@ describe('suggestTidy: what it never does', () => {
     });
   });
 
-  it('never overwrites a different client: those to-dos are listed apart', () => {
+  it('never overwrites a different client: those tasks are listed apart', () => {
     const other = todo('harvey-nash', { client: 'weightmans' });
     const r = row('harvey-nash', [todo('harvey-nash'), other]);
     expect(r.todos.map((t) => t.id)).not.toContain(other.id);
     expect(r.conflicts).toEqual([{ id: other.id, scope: 'tds', title: other.title, client: 'weightmans' }]);
   });
 
-  it('never makes a TDS to-do a personal project, even when one of that name is on this Mac', () => {
+  it('never makes a TDS task a personal project, even when one of that name is on this Mac', () => {
     const r = row('tds-brain-app', [todo('tds-brain-app'), todo('tds-brain-app')]);
     expect(r.suggestion).toEqual({
       do: 'new-project',
@@ -162,7 +162,7 @@ describe('suggestTidy: what it never does', () => {
     });
   });
 
-  it('offers a personal project to personal to-dos only', () => {
+  it('offers a personal project to personal tasks only', () => {
     expect(row('jev', [todo('jev', { scope: 'personal' })]).suggestion).toEqual({
       do: 'link',
       key: 'personal/jev',
@@ -201,7 +201,7 @@ describe('buildTidyRows', () => {
     expect(rows[0]?.todos).toHaveLength(2);
   });
 
-  it("leaves a personal to-do's own personal match out of a row its TDS namesakes share", () => {
+  it("leaves a personal task's own personal match out of a row its TDS namesakes share", () => {
     const mine = todo('jev', { scope: 'personal' });
     const rows = buildTidyRows([todo('jev'), mine], CTX);
     expect(rows).toHaveLength(1);
@@ -223,7 +223,7 @@ describe('checkSuggestion and tidyTarget (a changed suggestion is checked again)
     }
   };
 
-  it('refuses a personal project for a TDS to-do', () => {
+  it('refuses a personal project for a TDS task', () => {
     expect(codeOf({ do: 'link', key: 'personal/tds-brain-app', why: 'same-slug' })).toBe('not-allowed');
     expect(codeOf({ do: 'merge', into: 'personal/jev', why: 'near-spelling' })).toBe('not-allowed');
     expect(codeOf({ do: 'new-project', client: null, slug: 'x', why: 'no-match' })).toBe('not-allowed');
@@ -240,7 +240,7 @@ describe('checkSuggestion and tidyTarget (a changed suggestion is checked again)
     expect(codeOf({ do: 'link', key: 'acme/website', why: 'same-slug' })).toBeNull();
   });
 
-  it('gives each to-do its three lines, keeping a stage only on a link', () => {
+  it('gives each task its three lines, keeping a stage only on a link', () => {
     const t = todo('website', { client: 'acme', stage: 'Build' });
     expect(tidyTarget(t, { do: 'link', key: 'acme/website', why: 'same-slug' })).toEqual({
       client: 'acme',

@@ -468,7 +468,7 @@ describe('the security gate', () => {
     expect(seen.applies).toHaveLength(1);
   });
 
-  it('reads are GET and changes are POST only, and the to-do route is just as strict', async () => {
+  it('reads are GET and changes are POST only, and the task route is just as strict', async () => {
     expect((await post(ROUTES.projects, {})).status).toBe(405);
     expect((await post(filesPath(KEY, 'image'), {})).status).toBe(405);
     expect((await get(ROUTES.projectsChange)).status).toBe(405);
@@ -730,7 +730,7 @@ describe('POST /api/projects/change', () => {
     expect(r.json.error?.message).toBe('This project already has a code.');
   });
 
-  it('does not depend on the to-do switch in Settings', async () => {
+  it('does not depend on the task switch in Settings', async () => {
     state.directWrites = false;
     expect((await post(ROUTES.projectsChange, CHANGES[0])).status).toBe(200);
     expect((await get(ROUTES.projects)).status).toBe(200);
@@ -872,7 +872,7 @@ describe('GET /api/projects and /api/projects/files', () => {
 });
 
 describe('/api/projects/tidy (decision 13)', () => {
-  it('reads without the to-do switch, and changes only with it', async () => {
+  it('reads without the task switch, and changes only with it', async () => {
     state.directWrites = false;
     expect((await get(ROUTES.projectsTidy)).json).toEqual(TIDY);
     const off = await post(ROUTES.projectsTidy, TIDY_APPROVE);
@@ -881,8 +881,8 @@ describe('/api/projects/tidy (decision 13)', () => {
     expect(seen.applies).toEqual([]);
   });
 
-  it("applies an approval for the signed-in person, whoever's to-dos the row holds", async () => {
-    // The service changes the teammate's to-dos through the script; the route's job is the gate, the
+  it("applies an approval for the signed-in person, whoever's tasks the row holds", async () => {
+    // The service changes the teammate's tasks through the script; the route's job is the gate, the
     // switch and the shape. Who is acting comes from this Mac, never from the body.
     const suggestions: TidyApply[] = [
       TIDY_APPROVE,
@@ -943,15 +943,15 @@ describe('/api/projects/tidy (decision 13)', () => {
   });
 
   it('maps the service errors', async () => {
-    state.fail = new ProjectsError('not-allowed', 'You can only tidy your own personal to-dos.');
+    state.fail = new ProjectsError('not-allowed', 'You can only tidy your own personal tasks.');
     const r = await post(ROUTES.projectsTidy, TIDY_APPROVE);
     expect(r.status).toBe(403);
-    expect(r.json.error?.message).toBe('You can only tidy your own personal to-dos.');
+    expect(r.json.error?.message).toBe('You can only tidy your own personal tasks.');
     expect((await get(ROUTES.projectsTidy)).status).toBe(403);
   });
 });
 
-// Review fixes (release 1): who may change projects and approve tidy-ups, and a project's to-dos.
+// Review fixes (release 1): who may change projects and approve tidy-ups, and a project's tasks.
 describe('permissions (review fix 4)', () => {
   it("refuses a project change unless the tdsapp-projects skill's roles allow this person", async () => {
     for (const access of ['restricted', 'unknown-skill'] as const) {
@@ -969,7 +969,7 @@ describe('permissions (review fix 4)', () => {
     expect((await post(ROUTES.projectsChange, CHANGES[0])).status).toBe(200);
   });
 
-  it('refuses a tidy approval unless changing to-dos is on and can set projects', async () => {
+  it('refuses a tidy approval unless changing tasks is on and can set projects', async () => {
     for (const todos of [
       { ...TODOS, changes: 'restricted' },
       { ...TODOS, changes: 'no-skill' },
@@ -980,13 +980,13 @@ describe('permissions (review fix 4)', () => {
       expect(r.status, JSON.stringify(todos)).toBe(403);
       expect(r.json.error).toEqual({
         code: 'not-allowed',
-        message: "Changing to-dos isn't available to you in the app yet.",
+        message: "Changing tasks isn't available to you in the app yet.",
       });
     }
     expect(seen.applies).toEqual([]);
   });
 
-  it('skips and unskips with the to-do switch off and no to-do access: they only write the app’s data folder', async () => {
+  it('skips and unskips with the task switch off and no task access: they only write the app’s data folder', async () => {
     state.directWrites = false;
     state.todos = { ...TODOS, changes: 'restricted', canProject: false };
     state.access = 'restricted';
@@ -1002,7 +1002,7 @@ describe('permissions (review fix 4)', () => {
 });
 
 describe('GET /api/projects/todos (UX B2)', () => {
-  it("answers the project's to-dos for the signed-in person", async () => {
+  it("answers the project's tasks for the signed-in person", async () => {
     const r = await get(`${ROUTES.projectTodos}?key=${encodeURIComponent('personal/plan')}`);
     expect(r).toEqual({ status: 200, json: PROJECT_TODOS });
     expect(seen.projectTodos).toEqual([['personal/plan', 'sam-example']]);
@@ -1031,7 +1031,7 @@ describe('GET /api/projects/todos (UX B2)', () => {
   });
 });
 
-describe('the to-do project action (decisions 5 and 6)', () => {
+describe('the task project action (decisions 5 and 6)', () => {
   const project = (over: Record<string, unknown> = {}) => ({
     kind: 'project',
     id: '20261105-send-report.md',
@@ -1073,7 +1073,7 @@ describe('the to-do project action (decisions 5 and 6)', () => {
     expect(seen.todoChanges).toEqual([]);
   });
 
-  it('follows the to-do switch in Settings', async () => {
+  it('follows the task switch in Settings', async () => {
     state.directWrites = false;
     const r = await post(ROUTES.changeTodo, project());
     expect(r.status).toBe(403);
@@ -1213,7 +1213,7 @@ describe('POST /api/projects/move', () => {
     expect(seen.moves).toEqual([]);
   });
 
-  it('lets the to-dos follow only where the app may change to-dos', async () => {
+  it('lets the tasks follow only where the app may change tasks', async () => {
     expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
     state.directWrites = false;
     expect((await post(ROUTES.projectsMove, MOVE)).status).toBe(200);
@@ -1342,7 +1342,7 @@ describe.each([
     expect(seen.removes).toEqual([]);
   });
 
-  it('lets to-do choices run only where the app may change to-dos', async () => {
+  it('lets task choices run only where the app may change tasks', async () => {
     expect((await post(path, REQ)).status).toBe(200);
     state.directWrites = false;
     expect((await post(path, REQ)).status).toBe(200);

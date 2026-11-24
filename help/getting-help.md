@@ -8,7 +8,7 @@ benefit: Get an answer where you are, then go straight back to work.
 roles: all
 related: [cortex-guide, welcome, updates, search-and-jump, fixing-problems]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -24,7 +24,7 @@ The Help drawer opens on the help page for the screen you're on. It also lets yo
 ## How to use it
 
 1. Press **Help** on the rail. Or press H or ?, when you aren't typing.
-2. Read the page that opens. If you're in the To-dos drawer, you get the to-dos page.
+2. Read the page that opens. If you're in the Tasks drawer, you get the tasks page.
 3. Type in **Search help** to find another page.
 4. Open an area to see its pages, and click one to read it.
 5. Press **Back** to return to the page before.
@@ -45,4 +45,4 @@ The Help drawer opens on the help page for the screen you're on. It also lets yo
 
 ## Try this
 
-Open To-dos, then press **Help** on the rail to see the to-dos page open.
+Open Tasks, then press **Help** on the rail to see the tasks page open.

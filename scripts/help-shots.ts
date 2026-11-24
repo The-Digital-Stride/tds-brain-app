@@ -208,7 +208,7 @@ async function startChat(page: Page, client: string, text: string, waitFor: stri
   await page.locator(waitFor).first().waitFor();
 }
 
-async function openDrawer(page: Page, name: 'Chats' | 'To-dos' | 'Skills' | 'Help'): Promise<void> {
+async function openDrawer(page: Page, name: 'Chats' | 'Tasks' | 'Skills' | 'Help'): Promise<void> {
   const rail = page.locator(`button.rail-item[data-dock-label="${name}"]`);
   await rail.click();
   await page.locator(`#drawer[aria-label="${name}"]:not([inert])`).waitFor();
@@ -270,7 +270,7 @@ async function openSettingsTab(page: Page, tab: string | RegExp): Promise<void> 
     .click();
 }
 
-/** The Settings switch that lets the app change to-dos (the demo Brain has a stand-in to-do skill). */
+/** The Settings switch that lets the app change tasks (the demo Brain has a stand-in todo skill). */
 async function enableTodoChanges(page: Page): Promise<void> {
   await openSettingsTab(page, 'General');
   await page.locator('#set-direct').click();
@@ -287,7 +287,7 @@ const SCENES: Record<string, Scene> = {
 
   async 'home-overview'(page) {
     // Pin a few things so the cards under the message box are not empty.
-    await openDrawer(page, 'To-dos');
+    await openDrawer(page, 'Tasks');
     await page.locator('#drawer .star-btn').nth(0).click();
     await page.locator('#drawer .star-btn').nth(1).click();
     await closeDrawer(page);
@@ -321,12 +321,12 @@ const SCENES: Record<string, Scene> = {
   },
 
   async 'todos-drawer'(page) {
-    // The change switch lives in Settings; the demo Brain has a stand-in to-do skill so the button shows.
+    // The change switch lives in Settings; the demo Brain has a stand-in todo skill so the button shows.
     await openSettingsTab(page, 'General');
     await page.locator('#set-direct').click();
     await page.locator('#set-direct[aria-checked="true"]').waitFor();
     await goHome(page);
-    await openDrawer(page, 'To-dos');
+    await openDrawer(page, 'Tasks');
     const seen = page.getByRole('button', { name: 'Mark all as seen' });
     if (await seen.count()) {
       await seen.click();
@@ -334,10 +334,10 @@ const SCENES: Record<string, Scene> = {
       // brings back the plain list.
       await page.getByText('Marked as seen.').waitFor();
       await page.reload();
-      // The shell remembers the open drawer, so after the reload To-dos may already be open.
-      await page.locator('button.rail-item[data-dock-label="To-dos"]').waitFor();
-      if (!(await page.locator('#drawer[aria-label="To-dos"]:not([inert])').count()))
-        await openDrawer(page, 'To-dos');
+      // The shell remembers the open drawer, so after the reload Tasks may already be open.
+      await page.locator('button.rail-item[data-dock-label="Tasks"]').waitFor();
+      if (!(await page.locator('#drawer[aria-label="Tasks"]:not([inert])').count()))
+        await openDrawer(page, 'Tasks');
     }
     await page.locator('#drawer .todo-add-btn, #drawer .todo-add-label').first().waitFor();
   },
@@ -426,10 +426,10 @@ const SCENES: Record<string, Scene> = {
 
   async 'todo-add'(page) {
     await enableTodoChanges(page);
-    await openDrawer(page, 'To-dos');
+    await openDrawer(page, 'Tasks');
     await page.locator('#drawer .todo-add-btn, #drawer .todo-add-label').first().click();
-    // The add form opens in the to-do panel, beside the drawer.
-    const form = page.locator('.todo-panel form[aria-label="Add a to-do"]');
+    // The add form opens in the task panel, beside the drawer.
+    const form = page.locator('.todo-panel form[aria-label="Add a task"]');
     await form
       .getByRole('textbox', { name: 'What needs doing?' })
       .fill('Call the office manager about the quote');
@@ -440,9 +440,9 @@ const SCENES: Record<string, Scene> = {
 
   async 'todo-edit'(page) {
     await enableTodoChanges(page);
-    await openDrawer(page, 'To-dos');
+    await openDrawer(page, 'Tasks');
     await page.locator('#drawer button[aria-label^="Edit "]').first().click();
-    // Editing happens in the to-do panel, beside the drawer.
+    // Editing happens in the task panel, beside the drawer.
     await page.locator('.todo-panel form[aria-label^="Edit "]').waitFor();
     await sleep(300);
   },
@@ -505,9 +505,9 @@ const SCENES: Record<string, Scene> = {
     await page.locator('section[aria-labelledby="levels-h"]').scrollIntoViewIfNeeded();
   },
 
-  // Opened from the To-dos drawer's own Help button, so it shows the page for the screen you are on.
+  // Opened from the Tasks drawer's own Help button, so it shows the page for the screen you are on.
   async 'help-drawer'(page) {
-    await openDrawer(page, 'To-dos');
+    await openDrawer(page, 'Tasks');
     await page.locator('#drawer button[aria-label^="Help: "]').first().click();
     await page.locator('#drawer[aria-label="Help"]:not([inert]) .help-page').waitFor();
     await thumbsLoaded(page);

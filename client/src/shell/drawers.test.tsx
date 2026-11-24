@@ -131,15 +131,15 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('To-dos drawer', () => {
-  it('shows no tick box, and no way to finish a to-do, when the switch is off', () => {
+describe('Tasks drawer', () => {
+  it('shows no tick box, and no way to finish a task, when the switch is off', () => {
     render(<TodosDrawer />);
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /^Options for/ })).toBeNull();
     expect(screen.getByText('Renew contract')).toBeTruthy();
   });
 
-  it('with only the switch on, a to-do is opened and marked as done on purpose, held for undo', async () => {
+  it('with only the switch on, a task is opened and marked as done on purpose, held for undo', async () => {
     setStore({}, true);
     shell.modes.drawerOverlays = true;
     render(<TodosDrawer />);
@@ -163,17 +163,17 @@ describe('To-dos drawer', () => {
     expect(shell.dispatch).not.toHaveBeenCalledWith({ type: 'close-drawer' });
   });
 
-  it('closes the opened to-do with its close button without finishing it', async () => {
+  it('closes the opened task with its close button without finishing it', async () => {
     setStore({}, true);
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'Renew contract' }));
     await screen.findByRole('dialog', { name: 'Renew contract' });
-    fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(fns.holdTodo).not.toHaveBeenCalled();
   });
 
-  it('starts a chat with a draft naming the to-do and its id, then closes a floating drawer', () => {
+  it('starts a chat with a draft naming the task and its id, then closes a floating drawer', () => {
     shell.modes.drawerOverlays = true;
     render(<TodosDrawer />);
     fireEvent.click(screen.getByRole('button', { name: /^Start a chat on this: Renew contract/ }));
@@ -263,7 +263,7 @@ describe('To-dos drawer', () => {
     expect(end?.lastElementChild?.classList.contains('todo-btns')).toBe(true);
   });
 
-  it('keeps the line about other people, and the old group of to-dos open to anyone', () => {
+  it('keeps the line about other people, and the old group of tasks open to anyone', () => {
     setStore({
       todos: {
         mine: [],
@@ -281,7 +281,7 @@ describe('To-dos drawer', () => {
   });
 });
 
-describe('To-dos drawer, held ticks (plan 2026-11-22-ux-consistency, R1)', () => {
+describe('Tasks drawer, held ticks (plan 2026-11-22-ux-consistency, R1)', () => {
   const two = () => ({
     mine: [todo('t1.md', 'Renew contract', '2020-01-01'), todo('t2.md', 'Book the van', '2020-01-01')],
     open: [],
@@ -735,7 +735,7 @@ describe('Chats drawer', () => {
     });
   });
 
-  it('puts New chat at the end of the Open/Earlier row, as a primary + like the To-dos drawer', () => {
+  it('puts New chat at the end of the Open/Earlier row, as a primary + like the Tasks drawer', () => {
     shell.modes.drawerOverlays = true;
     render(<ChatsDrawer />);
     const button = screen.getByRole('button', { name: 'New chat' });

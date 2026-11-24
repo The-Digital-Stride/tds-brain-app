@@ -198,7 +198,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   const close = () => dispatch({ type: 'close-todo' });
 
   const title =
-    mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? done?.title ?? teamTodo?.title ?? '');
+    mode === 'add' ? 'Add a task' : (todo?.title ?? asked?.title ?? done?.title ?? teamTodo?.title ?? '');
   const keys = state.singleKeys;
 
   return (
@@ -237,8 +237,8 @@ export default function TodoPanel(props: TodoPanelProps) {
               <button
                 type="button"
                 className="icon-btn"
-                aria-label="Previous to-do"
-                data-tip={keys ? 'Previous to-do (P)' : 'Previous to-do'}
+                aria-label="Previous task"
+                data-tip={keys ? 'Previous task (P)' : 'Previous task'}
                 aria-disabled={hasPrev ? undefined : true}
                 onClick={() => step(-1)}
               >
@@ -247,8 +247,8 @@ export default function TodoPanel(props: TodoPanelProps) {
               <button
                 type="button"
                 className="icon-btn"
-                aria-label="Next to-do"
-                data-tip={keys ? 'Next to-do (N)' : 'Next to-do'}
+                aria-label="Next task"
+                data-tip={keys ? 'Next task (N)' : 'Next task'}
                 aria-disabled={hasNext ? undefined : true}
                 onClick={() => step(1)}
               >
@@ -256,13 +256,7 @@ export default function TodoPanel(props: TodoPanelProps) {
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Close to-do"
-            data-tip="Close"
-            onClick={close}
-          >
+          <button type="button" className="icon-btn" aria-label="Close task" data-tip="Close" onClick={close}>
             <Icon name="close" />
           </button>
         </header>
@@ -640,8 +634,8 @@ function AskedReadView({
     asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
   const note =
     asked.state === 'done'
-      ? `${first ? `${first} ticked this off` : 'This to-do was ticked off'}, so it can't be changed here.`
-      : `This is ${first || asked.assigneeName}'s to-do now, so you can read it but not change it.`;
+      ? `${first ? `${first} ticked this off` : 'This task was ticked off'}, so it can't be changed here.`
+      : `This is ${first || asked.assigneeName}'s task now, so you can read it but not change it.`;
   return (
     <ReadOnlyView
       {...rest}
@@ -679,7 +673,7 @@ function DoneReadView({
         overdue: false,
         status: doneStatusLine(done),
         assigned: done.assigneeName ?? undefined,
-        note: 'This to-do is finished, so it can only be read here.',
+        note: 'This task is finished, so it can only be read here.',
       }}
     />
   );
@@ -903,7 +897,7 @@ function EditView({
             <div className="form-field">
               <span className="label">Where it's kept</span>
               <Seg<TodoScope>
-                label="Where this to-do is kept"
+                label="Where this task is kept"
                 value={draft.scope}
                 onChange={setScope}
                 options={[

@@ -37,7 +37,7 @@ describe('newToYou', () => {
     const a = todo('a.md', handover());
     expect(newToYou([a], 'sam-example', {}, NOW)).toEqual([a]);
   });
-  it('ignores your own handovers, old ones and to-dos with no handover', () => {
+  it('ignores your own handovers, old ones and tasks with no handover', () => {
     const own = todo('own.md', handover({ by: 'sam-example' }));
     const old = todo('old.md', handover({ at: '2026-11-01T09:00:00+00:00' }));
     const none = todo('none.md', null);
@@ -48,7 +48,7 @@ describe('newToYou', () => {
     expect(newToYou([a], 'sam-example', { 'a.md': '2026-11-12T09:00:00+00:00' }, NOW)).toEqual([]);
     expect(newToYou([a], 'sam-example', { 'a.md': '2026-11-10T09:00:00+00:00' }, NOW)).toEqual([a]);
   });
-  it('keys the seen map by key, so a personal to-do and a TDS one with one name stay apart', () => {
+  it('keys the seen map by key, so a personal task and a TDS one with one name stay apart', () => {
     const p = { ...todo('personal/a.md', handover()), scope: 'personal' as const };
     expect(newToYou([p], 'sam-example', { 'a.md': p.handover?.at ?? '' }, NOW)).toEqual([p]);
   });

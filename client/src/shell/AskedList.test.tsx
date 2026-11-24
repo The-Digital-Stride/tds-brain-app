@@ -41,7 +41,7 @@ const view = (
 afterEach(cleanup);
 
 describe('AskedList', () => {
-  it('leads with the quiet line and shows who has each waiting to-do and since when', () => {
+  it('leads with the quiet line and shows who has each waiting task and since when', () => {
     view(full());
     expect(screen.getByText(/^Asked of others:/)).toBeTruthy();
     expect(screen.getByText('With Ben since 13 Nov')).toBeTruthy();

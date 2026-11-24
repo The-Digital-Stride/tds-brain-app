@@ -1,5 +1,5 @@
 /**
- * Files on to-dos (plan 2026-11-16-todo-attachments, release 3): attachments on the list, the
+ * Files on tasks (plan 2026-11-16-todo-attachments, release 3): attachments on the list, the
  * canAttach / canUpload gates, the attach/detach/edit/add payloads and the upload sequence. All content
  * is invented; every brain is a temp copy of the test fixture.
  */
@@ -42,7 +42,7 @@ function tempDir(prefix = 'tba-attach-'): string {
 const MINE = '20261105-send-report.md';
 const CLIENTS = [{ slug: 'acme-heating' }, { slug: 'northwind' }];
 
-/** The to-do script: logs every change; answers capabilities from FAKE_TODO_CAPS; per command from FAKE_TODO_REPLIES. */
+/** The task script: logs every change; answers capabilities from FAKE_TODO_CAPS; per command from FAKE_TODO_REPLIES. */
 const TODO_FAKE = `
 const fs = require('node:fs');
 let input = '';
@@ -79,7 +79,7 @@ process.stdin.on('end', () => {
 `;
 
 interface Setup {
-  /** The to-do script's capabilities; null: an older script that refuses the command. */
+  /** The task script's capabilities; null: an older script that refuses the command. */
   todoCaps?: string[] | null;
   /** Install tdsapp-files; null leaves it out. */
   filesCaps?: string[] | null;
@@ -158,7 +158,7 @@ const todo = (over: Partial<Pick<TodoItem, 'scope' | 'client'>>): Pick<TodoItem,
 });
 
 describe('uploadDestination (decision 3)', () => {
-  it("files a client's to-do under that client, images and documents apart", () => {
+  it("files a client's task under that client, images and documents apart", () => {
     expect(uploadDestination(todo({ client: 'acme-heating' }), CLIENTS, 'logo.png')).toEqual({
       path: 'clients/acme-heating/images/logo.png',
       personal: false,
@@ -173,7 +173,7 @@ describe('uploadDestination (decision 3)', () => {
     });
   });
 
-  it('needs an exact slug match; anything else, and every personal to-do, goes to personal files', () => {
+  it('needs an exact slug match; anything else, and every personal task, goes to personal files', () => {
     for (const client of [null, 'Acme-Heating', 'acme heating', 'acme', 'Acme Heating', 'unknown-co']) {
       expect(uploadDestination(todo({ client }), CLIENTS, 'shot.jpg'), String(client)).toEqual({
         path: 'personal/images/shot.jpg',
@@ -332,7 +332,7 @@ describe('attachments on the list (decision 7)', () => {
     expect(item?.attachments.every((a) => a.libraryId === null)).toBe(true);
   });
 
-  it('is [] without a section, and on open and personal to-dos too', async () => {
+  it('is [] without a section, and on open and personal tasks too', async () => {
     const s = setup();
     put(s.root, 'personal/files/plan.pdf');
     writeTodo(
@@ -349,7 +349,7 @@ describe('attachments on the list (decision 7)', () => {
     ]);
   });
 
-  it('reads asked-of-others to-dos the same way', async () => {
+  it('reads asked-of-others tasks the same way', async () => {
     const s = setup();
     put(s.root, 'clients/acme-heating/images/logo.png');
     writeTodo(
@@ -378,7 +378,7 @@ describe('canAttach and canUpload', () => {
     expect([list.changes, list.canAttach, list.canUpload]).toEqual(['on', true, true]);
   });
 
-  it('canAttach needs the to-do script to list "attach"', async () => {
+  it('canAttach needs the task script to list "attach"', async () => {
     for (const caps of [['handover', 'scope'], null]) {
       const list = await setup({ todoCaps: caps }).brain.todos(sam);
       expect([list.canAttach, list.canUpload], String(caps)).toEqual([false, false]);
@@ -635,7 +635,7 @@ describe('uploadTodoFile (decision 3)', () => {
     ]);
   });
 
-  it('goes to personal files for a to-do with no client, and says so', async () => {
+  it('goes to personal files for a task with no client, and says so', async () => {
     const { root, brain, calls } = setup({
       filesReplies: { add: { out: JSON.stringify({ ok: true, path: 'personal/files/brief.pdf' }) } },
     });
@@ -697,7 +697,7 @@ describe('uploadTodoFile (decision 3)', () => {
     expect(odd.calls().map((c) => c.command)).toEqual(['add']);
   });
 
-  it('refuses before anything runs: no canUpload, a bad type, a stale version, an unknown to-do, a full one', async () => {
+  it('refuses before anything runs: no canUpload, a bad type, a stale version, an unknown task, a full one', async () => {
     const base = (root: string, over: Record<string, unknown> = {}) => ({
       stagedPath: staged('brief.pdf'),
       name: 'brief.pdf',

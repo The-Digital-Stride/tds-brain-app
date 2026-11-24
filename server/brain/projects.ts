@@ -1089,11 +1089,11 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
     if (acting.length > 0 && removeOpts.todos === false) {
       throw new ProjectsError(
         'not-allowed',
-        'Changing to-dos is switched off, so they can only be kept. Turn on changes to the shared brain in Settings first.',
+        'Changing tasks is switched off, so they can only be kept. Turn on changes to the shared brain in Settings first.',
       );
     }
     if (acting.some((c) => c.do === 'unlink') && !todoFeatures.includes(TODO_PROJECT_CAPABILITY)) {
-      throw new ProjectsError('not-allowed', "Update the brain's skills to unlink to-dos.");
+      throw new ProjectsError('not-allowed', "Update the brain's skills to unlink tasks.");
     }
     // The to-dos are chosen from a fresh read, before the folder changes.
     if (req.check !== true) changed();

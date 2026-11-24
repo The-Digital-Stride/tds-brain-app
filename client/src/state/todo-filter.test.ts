@@ -59,7 +59,7 @@ describe('the project filter', () => {
     todo('d', { projectMatch: { how: 'loose', label: 'website' }, project: 'website' }),
   ];
 
-  it('keeps only the to-dos whose project resolves to the key', () => {
+  it('keeps only the tasks whose project resolves to the key', () => {
     expect(ids(filterTodos(items, { ...EMPTY_FILTER, project: 'acme/website' }, clients))).toEqual(['a']);
     expect(filterActive({ ...EMPTY_FILTER, project: 'acme/website' })).toBe(true);
   });

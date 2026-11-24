@@ -8,7 +8,7 @@ benefit: Cortex is one click away, with no web address to remember.
 roles: all
 related: [settings, health, updates]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -19,7 +19,7 @@ You can add Cortex to your Mac's Dock (the row of app icons). It then opens in i
 
 - You open Cortex in one click.
 - It has its own window, so it doesn't get lost among browser tabs.
-- It's the same Cortex, with the same chats and to-dos.
+- It's the same Cortex, with the same chats and tasks.
 
 ## How to use it
 

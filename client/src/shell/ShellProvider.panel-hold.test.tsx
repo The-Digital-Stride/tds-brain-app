@@ -117,7 +117,7 @@ describe('ShellProvider: the right panel holds unsaved work', () => {
     expect(api.state.panelOpen).toBe(false);
   });
 
-  it('leaves the to-do hold alone: a dirty to-do panel still asks through its own action', () => {
+  it('leaves the task hold alone: a dirty task panel still asks through its own action', () => {
     mount();
     act(() => api.dispatch({ type: 'open-drawer', drawer: 'todos' }));
     act(() => api.dispatch({ type: 'open-todo', key: 'a', mode: 'edit' }));

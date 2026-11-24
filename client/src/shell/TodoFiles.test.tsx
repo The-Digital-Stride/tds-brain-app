@@ -44,7 +44,7 @@ function Probe() {
 }
 
 const PERSONAL_WARNING =
-  'This to-do has no client in the brain, so the file saves to your personal files. Only you can open it.';
+  'This task has no client in the brain, so the file saves to your personal files. Only you can open it.';
 const FILES = '## Files\n\n- [logo.png](../clients/acme/images/logo.png)';
 const att = (over: Partial<TodoAttachment> = {}): TodoAttachment => ({
   path: 'clients/acme/images/logo.png',
@@ -223,7 +223,7 @@ describe('the Files block', () => {
     expect(apiMock.libraryItems).toHaveBeenCalledWith(['acme.1']);
   });
 
-  it('shows the files read only, and opens one, to someone who cannot change to-dos here', async () => {
+  it('shows the files read only, and opens one, to someone who cannot change tasks here', async () => {
     setStore(todo(), { canAttach: false, canUpload: false, changes: 'switched-off' });
     const item = { id: 'acme.1', kind: 'image', path: 'clients/acme/images/logo.png' } as LibraryItem;
     apiMock.libraryItems.mockResolvedValue({ files: [{ item, scope: { id: 'acme', name: 'Acme' } }] });
@@ -239,7 +239,7 @@ describe('the Files block', () => {
   it('removes a file with the version it was read at, and says the file stays in the library', async () => {
     mount();
     const panel = await openFirst();
-    const remove = within(panel).getByRole('button', { name: 'Remove logo.png from this to-do' });
+    const remove = within(panel).getByRole('button', { name: 'Remove logo.png from this task' });
     expect(remove.getAttribute('data-tip')).toContain('stays in the library');
     fireEvent.click(remove);
     await waitFor(() => expect(changeTodos).toHaveBeenCalled());
@@ -249,7 +249,7 @@ describe('the Files block', () => {
     await waitFor(() => expect(status()).toContain('The file is still in the library'));
   });
 
-  it('shows the files, read only, on a to-do you passed on', async () => {
+  it('shows the files, read only, on a task you passed on', async () => {
     const asked: AskedTodo = {
       key: 'asked:todo/x.md',
       id: 'x.md',
@@ -322,13 +322,13 @@ describe('ticking and editing the details', () => {
   });
 });
 
-describe('adding a to-do with details', () => {
+describe('adding a task with details', () => {
   const openAdd = async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    return screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    return screen.findByRole('form', { name: 'Add a task' });
   };
 
-  it('sends the details with the new to-do when files are available', async () => {
+  it('sends the details with the new task when files are available', async () => {
     mount();
     const form = await openAdd();
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'New job' } });
@@ -607,7 +607,7 @@ describe('picking from the library, again', () => {
     ]);
   });
 
-  it('asks once before linking a personal file to a team to-do', async () => {
+  it('asks once before linking a personal file to a team task', async () => {
     apiMock.librarySearch.mockImplementation(async (_q: string, kind: string) => ({
       hits: kind === 'document' ? [hit('p1', 'Mine.pdf', 'personal/files/Mine.pdf')] : [],
       total: 1,
@@ -620,7 +620,7 @@ describe('picking from the library, again', () => {
     fireEvent.click(await screen.findByLabelText(/Mine\.pdf/));
     fireEvent.click(screen.getByRole('button', { name: 'Add file' }));
     expect(
-      screen.getByText('Its name will show on this to-do for the team, but only you can open it.'),
+      screen.getByText('Its name will show on this task for the team, but only you can open it.'),
     ).toBeTruthy();
     expect(changeTodos).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -680,8 +680,8 @@ describe('the two personal warnings are separate', () => {
 
 describe('after Add', () => {
   const addOne = async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    const form = await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    const form = await screen.findByRole('form', { name: 'Add a task' });
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'New job' } });
     fireEvent.submit(form);
   };
@@ -693,7 +693,7 @@ describe('after Add', () => {
     });
   };
 
-  it('opens the new to-do to read when files are available', async () => {
+  it('opens the new task to read when files are available', async () => {
     mount();
     withNew(true);
     await addOne();

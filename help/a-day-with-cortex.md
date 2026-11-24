@@ -8,14 +8,14 @@ benefit: See how Cortex fits into a normal working day.
 roles: all
 related: [why-cortex, talking-to-claude, todos, sharing-with-your-team]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 Here is how one day could go. You don't have to do all of it. Pick the parts that match your work.
 
 ## Morning: see what needs you
 
-Open Cortex. Home greets you and sums up what needs attention. Your favourite to-dos, chats and files sit underneath. See [Favourite to-dos, chats and files](help:pinned).
+Open Cortex. Home greets you and sums up what needs attention. Your favourite tasks, chats and files sit underneath. See [Favourite tasks, chats and files](help:pinned).
 
 ## After a call: file it
 
@@ -31,7 +31,7 @@ Ask Claude for the first version of a page or a piece of content. Claude can sho
 
 ## Before you leave: hand things over
 
-Add a to-do for a teammate, or pass one on. It shows up for them the next time their Brain syncs, and they see it is new to them. The rail's **Synced** stamp tells you when your own Brain last synced. See [Sharing with your team](help:sharing-with-your-team).
+Add a task for a teammate, or pass one on. It shows up for them the next time their Brain syncs, and they see it is new to them. The rail's **Synced** stamp tells you when your own Brain last synced. See [Sharing with your team](help:sharing-with-your-team).
 
 ## Then what?
 

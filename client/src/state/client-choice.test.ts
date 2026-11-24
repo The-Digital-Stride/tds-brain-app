@@ -57,7 +57,7 @@ describe('clientSlugOf and scopeForClient', () => {
 
 describe('todoChatClient', () => {
   const clients = [{ slug: 'acme' }];
-  it('keeps a listed client, gives a personal to-do none, and leaves the rest to be worked out', () => {
+  it('keeps a listed client, gives a personal task none, and leaves the rest to be worked out', () => {
     expect(todoChatClient({ key: 'a.md', client: 'acme' }, clients)).toBe('acme');
     expect(todoChatClient({ key: 'personal/a.md', client: 'acme' }, clients)).toBeNull();
     // A client folder that has gone, or no client at all: worked out from the message.

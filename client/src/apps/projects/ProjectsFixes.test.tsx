@@ -80,7 +80,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** A stand-in shell for the page's own calls (Add a to-do): dispatch is recorded, nothing is held. */
+/** A stand-in shell for the page's own calls (Add a task): dispatch is recorded, nothing is held. */
 const shellApi = {
   dispatch: shell.dispatch,
   sheetHold: { dirty: false },
@@ -168,7 +168,7 @@ describe('a refresh while editing (fix-round review)', () => {
   });
 });
 
-describe('the To-dos tab (fix 2)', () => {
+describe('the Tasks tab (fix 2)', () => {
   const rows = {
     count: 3,
     todos: [
@@ -205,30 +205,30 @@ describe('the To-dos tab (fix 2)', () => {
     ],
   };
 
-  it("lists everyone's to-dos by stage, with names; a teammate's opens read only; the count comes from the server", async () => {
+  it("lists everyone's tasks by stage, with names; a teammate's opens read only; the count comes from the server", async () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
     expect(api.projectTodos).toHaveBeenCalledWith(SKY.key);
-    expect(screen.getByRole('button', { name: 'To-dos, 3 waiting' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tasks, 3 waiting' })).toBeTruthy();
     const heads = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads).toEqual(['Discovery', 'Build', 'No stage']);
-    // A to-do that isn't mine says who it is assigned to (UX consistency, release 2B).
+    // A task that isn't mine says who it is assigned to (UX consistency, release 2B).
     expect(screen.getByText('Assigned to Simon')).toBeTruthy();
-    // A teammate's to-do opens read only under its own team: key (done-todos plan, decision 10).
+    // A teammate's task opens read only under its own team: key (done-todos plan, decision 10).
     fireEvent.click(screen.getByRole('button', { name: /^Simon two/ }));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'team:todo/b', mode: 'read' });
     fireEvent.click(screen.getByRole('button', { name: /^Mine one/ }));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'a', mode: 'read' });
   });
 
-  it("gives my to-dos the drawer's star and chat buttons; others' to-dos have neither", async () => {
+  it("gives my tasks the drawer's star and chat buttons; others' tasks have neither", async () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
     const star = screen.getByRole('button', { name: 'Favourite: Mine one' });
     expect(star.getAttribute('aria-pressed')).toBe('false');
@@ -248,30 +248,30 @@ describe('the To-dos tab (fix 2)', () => {
     expect(screen.queryByRole('button', { name: /: Loose$/ })).toBeNull();
   });
 
-  it("Add a to-do opens the To-dos panel's full form, starting in this project", async () => {
+  it("Add a task opens the Tasks panel's full form, starting in this project", async () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
     shell.dispatch.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
     expect(shell.dispatch.mock.calls.map((c) => c[0])).toEqual([
       { type: 'open-drawer', drawer: 'todos' },
       { type: 'open-todo', key: null, mode: 'add', start: { project: SKY.key, personal: false } },
     ]);
     // No cut-down form of its own on the page.
-    expect(screen.queryByLabelText('To-do')).toBeNull();
+    expect(screen.queryByLabelText('Task')).toBeNull();
   });
 
-  it('a personal project offers no Add a to-do when the brain has no personal to-dos', async () => {
+  it('a personal project offers no Add a task when the brain has no personal tasks', async () => {
     const mine = card({ slug: 'garden', client: null, title: 'Garden', owner: 'me' });
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([mine]));
     fireEvent.click(screen.getByRole('button', { name: /Garden/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
-    expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a task' })).toBeNull();
     expect(screen.getByText(/Update the brain's skills/)).toBeTruthy();
   });
 
@@ -285,10 +285,10 @@ describe('the To-dos tab (fix 2)', () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([mine]));
     fireEvent.click(screen.getByRole('button', { name: /Garden/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
     shell.dispatch.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
     expect(shell.dispatch).toHaveBeenCalledWith({
       type: 'open-todo',
       key: null,
@@ -297,17 +297,17 @@ describe('the To-dos tab (fix 2)', () => {
     });
   });
 
-  it('offers no Add a to-do while changing to-dos is switched off, and says how to turn it on', async () => {
+  it('offers no Add a task while changing tasks is switched off, and says how to turn it on', async () => {
     const was = store.todos;
     store.todos = { ...(was as object), changes: 'switched-off' };
     try {
       api.projectTodos.mockResolvedValue(rows);
       await show(projectList([SKY]));
       fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
-      fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
       await screen.findByText('Simon two');
-      expect(screen.queryByRole('button', { name: 'Add a to-do' })).toBeNull();
-      expect(screen.getByText(/Adding to-dos is switched off/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Add a task' })).toBeNull();
+      expect(screen.getByText(/Adding tasks is switched off/)).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
       expect(store.openSettings).toHaveBeenCalledWith('general', 'set-direct');
     } finally {
@@ -315,11 +315,11 @@ describe('the To-dos tab (fix 2)', () => {
     }
   });
 
-  it('reloads the list when the to-do lists change (an add in the To-dos panel)', async () => {
+  it('reloads the list when the task lists change (an add in the Tasks panel)', async () => {
     api.projectTodos.mockResolvedValue(rows);
     const view = await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^To-dos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
     const before = api.projectTodos.mock.calls.length;
     store.todos = { ...(store.todos as object) };
@@ -374,10 +374,10 @@ describe('the tidy-up (fix 3)', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('That did not work.');
   });
 
-  it('hides Approve when to-do changes are switched off, and shows the server message', async () => {
+  it('hides Approve when task changes are switched off, and shows the server message', async () => {
     await open();
     api.applyTidy.mockRejectedValue(
-      new ApiFailure('not-allowed' as never, 'To-do changes are switched off in Settings.', 403),
+      new ApiFailure('not-allowed' as never, 'Task changes are switched off in Settings.', 403),
     );
     await act(async () => {
       fireEvent.click(
@@ -400,13 +400,13 @@ describe('the tidy-up (fix 3)', () => {
         }),
       );
     });
-    const status = await screen.findByText(/Linked 3 to-dos \(2 belong to Simon\) to/);
+    const status = await screen.findByText(/Linked 3 tasks \(2 belong to Simon\) to/);
     expect(status.textContent).toMatch(/Sky site/);
     const next = within(screen.getByRole('listitem', { name: 'Label other' })).getByRole('button', {
       name: 'Approve',
     });
     expect(document.activeElement).toBe(next);
-    expect(screen.getByText(/Approving changes your teammates' to-dos too/)).toBeTruthy();
+    expect(screen.getByText(/Approving changes your teammates' tasks too/)).toBeTruthy();
   });
 
   it('words a merge, names the client, and offers a new project and client only', async () => {

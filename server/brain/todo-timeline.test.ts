@@ -18,7 +18,7 @@ const HEAD = 'c'.repeat(40);
 const ID = '20261101-draft-plan.md';
 
 // ---------------------------------------------------------------------------
-// Hand-written `git log --no-renames -p -U0 --format=%x1e%an%x00%ae%x00%aI` output (invented to-dos).
+// Hand-written `git log --no-renames -p -U0 --format=%x1e%an%x00%ae%x00%aI` output (invented tasks).
 // ---------------------------------------------------------------------------
 
 const commit = (author: readonly [string, string], at: string, ...diffs: string[]) =>
@@ -165,7 +165,7 @@ afterAll(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-describe('to-do history', () => {
+describe('task history', () => {
   it('runs one read-only git log over the three paths, no --follow, with its own cap', async () => {
     const root = brainWith({ [TOP]: v1.join('\n') });
     const git = fakeGit('');

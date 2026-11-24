@@ -137,7 +137,7 @@ afterEach(() => {
 const openDone = () => fireEvent.click(screen.getByRole('radio', { name: 'Done' }));
 
 describe('the Done tab', () => {
-  it('loads only when opened, then lists finished to-dos with who and when', async () => {
+  it('loads only when opened, then lists finished tasks with who and when', async () => {
     render(<TodosDrawer />);
     await waitFor(() => expect(api.askedTodos).toHaveBeenCalled());
     expect(api.doneTodos).not.toHaveBeenCalled();
@@ -152,21 +152,21 @@ describe('the Done tab', () => {
     expect(screen.getAllByText('Date not known')).toHaveLength(2);
     // The kind switch isn't shown; the search box is.
     expect(screen.queryByRole('radio', { name: 'Personal' })).toBeNull();
-    expect(screen.getByLabelText('Search done to-dos')).toBeTruthy();
+    expect(screen.getByLabelText('Search done tasks')).toBeTruthy();
   });
 
   it('has its search box on this tab only, and searches title and details', async () => {
     render(<TodosDrawer />);
-    expect(screen.queryByLabelText('Search done to-dos')).toBeNull();
+    expect(screen.queryByLabelText('Search done tasks')).toBeNull();
     openDone();
     await screen.findByText('Send the quote');
-    fireEvent.change(screen.getByLabelText('Search done to-dos'), { target: { value: 'boiler' } });
+    fireEvent.change(screen.getByLabelText('Search done tasks'), { target: { value: 'boiler' } });
     expect(screen.getByText('Send the quote')).toBeTruthy();
     expect(screen.queryByText('Audit the titles')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Search done to-dos'), { target: { value: 'zzz' } });
-    expect(screen.getByText('No finished to-dos match “zzz”.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Search done tasks'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No finished tasks match “zzz”.')).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: /^Mine/ }));
-    expect(screen.queryByLabelText('Search done to-dos')).toBeNull();
+    expect(screen.queryByLabelText('Search done tasks')).toBeNull();
   });
 
   it('filters by project', async () => {
@@ -182,7 +182,7 @@ describe('the Done tab', () => {
     api.doneTodos.mockResolvedValueOnce({ items: [], historyRead: false });
     render(<TodosDrawer />);
     openDone();
-    expect(await screen.findByText('No finished to-dos yet.')).toBeTruthy();
+    expect(await screen.findByText('No finished tasks yet.')).toBeTruthy();
     expect(screen.getByText(/git history couldn't be read/)).toBeTruthy();
     cleanup();
     doneStore.reset();
@@ -239,7 +239,7 @@ describe('a done: panel key', () => {
     expect(screen.getAllByText('Send the quote').length).toBeGreaterThan(0);
   });
 
-  it('closes once the list has loaded and the to-do is not in it', async () => {
+  it('closes once the list has loaded and the task is not in it', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     render(<TodosDrawer />);
     act(() => fakeShell.dispatch({ type: 'open-todo', key: 'done:todo/done/gone.md', mode: 'read' }));
@@ -271,8 +271,8 @@ const team = (over: Partial<TeamTodo> = {}): TeamTodo => ({
   ...over,
 });
 
-describe("a team: panel key (a teammate's open to-do)", () => {
-  it('switches to my own key when the to-do turns out to be mine (passed to me)', async () => {
+describe("a team: panel key (a teammate's open task)", () => {
+  it('switches to my own key when the task turns out to be mine (passed to me)', async () => {
     api.teamTodo.mockResolvedValue(team({ assignee: 'sam-example', assigneeName: 'Sam Example' }));
     render(<TodosDrawer />);
     act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
@@ -297,9 +297,7 @@ describe("a team: panel key (a teammate's open to-do)", () => {
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByLabelText('Details').textContent).toContain('Ask about lead times');
     expect(within(panel).getByText('With Ben McAdam')).toBeTruthy();
-    expect(
-      within(panel).getByText("This is Ben's to-do, so you can read it but not change it."),
-    ).toBeTruthy();
+    expect(within(panel).getByText("This is Ben's task, so you can read it but not change it.")).toBeTruthy();
     for (const name of ['Edit', 'Mark as done', 'Delete'])
       expect(within(panel).queryByRole('button', { name })).toBeNull();
     expect(within(panel).queryByRole('button', { name: /chat/i })).toBeNull();
@@ -308,20 +306,20 @@ describe("a team: panel key (a teammate's open to-do)", () => {
     await waitFor(() => expect(api.todoHistory).toHaveBeenCalledWith('t.md'));
   });
 
-  it('says so for a to-do open to anyone', async () => {
+  it('says so for a task open to anyone', async () => {
     api.teamTodo.mockResolvedValue(team({ assignee: null, assigneeName: null }));
     render(<TodosDrawer />);
     act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Open to anyone')).toBeTruthy();
     expect(
-      within(panel).getByText('This to-do is open to anyone. Pick it up from the Open tab to change it.'),
+      within(panel).getByText('This task is open to anyone. Pick it up from the Open tab to change it.'),
     ).toBeTruthy();
   });
 
-  it('closes when the to-do has gone', async () => {
+  it('closes when the task has gone', async () => {
     api.teamTodo.mockRejectedValue(
-      Object.assign(new Error('That to-do could not be found.'), { status: 404 }),
+      Object.assign(new Error('That task could not be found.'), { status: 404 }),
     );
     render(<TodosDrawer />);
     act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
@@ -338,7 +336,7 @@ describe('revealDoneTodo', () => {
     store.current = { ...store.current, doneReveal: { key, n: 1 }, clearDoneReveal };
   };
 
-  it('refreshes a stale list once and opens a to-do ticked since it last loaded', async () => {
+  it('refreshes a stale list once and opens a task ticked since it last loaded', async () => {
     api.doneTodos.mockResolvedValueOnce(LIST);
     await doneStore.refresh();
     const fresh = done('new.md', 'Just finished');
@@ -350,7 +348,7 @@ describe('revealDoneTodo', () => {
     expect(screen.getByRole('radio', { name: 'Done' }).getAttribute('aria-checked')).toBe('true');
   });
 
-  it('gives up when the to-do is still missing after the refresh', async () => {
+  it('gives up when the task is still missing after the refresh', async () => {
     api.doneTodos.mockResolvedValue(LIST);
     await doneStore.refresh();
     reveal('done:todo/done/gone.md');

@@ -217,7 +217,7 @@ describe('opening and reading', () => {
   });
 });
 
-describe('a to-do the drawer never gets', () => {
+describe('a task the drawer never gets', () => {
   afterEach(() => vi.useRealTimers());
 
   it('closes the panel after PANEL_WAIT_MS, so no empty panel is left over a locked sheet', () => {
@@ -232,7 +232,7 @@ describe('a to-do the drawer never gets', () => {
     expect(api.state.todoPanel).toBeNull();
   });
 
-  it('also gives up when the to-do list never loaded (the panel was opened from a project page)', () => {
+  it('also gives up when the task list never loaded (the panel was opened from a project page)', () => {
     vi.useFakeTimers();
     const s0 = store.current as { todos: TodoList | null };
     store.current = { ...s0, todos: null };
@@ -325,10 +325,10 @@ describe('editing and saving', () => {
     expect(within(panel).getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBeNull();
     const head = panel.querySelector('.todo-head') as HTMLElement;
     const labels = [...head.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Favourite: Second', 'Previous to-do', 'Next to-do', 'Close to-do']);
+    expect(labels).toEqual(['Favourite: Second', 'Previous task', 'Next task', 'Close task']);
   });
 
-  it('the header star toggles the to-do as a favourite', async () => {
+  it('the header star toggles the task as a favourite', async () => {
     mount();
     const panel = await open('Second');
     fireEvent.click(within(panel).getByRole('button', { name: 'Favourite: Second' }));
@@ -346,7 +346,7 @@ describe('editing and saving', () => {
     await waitFor(() => expect(changeTodos).toHaveBeenCalled());
   });
 
-  it('the E key edits a to-do being read', async () => {
+  it('the E key edits a task being read', async () => {
     mount();
     await open('First');
     press('e');
@@ -442,12 +442,12 @@ describe('ticking while reading', () => {
   it('shows the refusal in the usual words and leaves the details as they were', async () => {
     changeTodos.mockResolvedValue({
       done: 0,
-      error: { code: 'changed', message: 'Someone else changed this to-do.' },
+      error: { code: 'changed', message: 'Someone else changed this task.' },
     });
     mount();
     await open('First');
     fireEvent.click(screen.getByRole('button', { name: 'Tick 2' }));
-    expect(await screen.findByText("Your tick wasn't saved. Someone else changed this to-do.")).toBeTruthy();
+    expect(await screen.findByText("Your tick wasn't saved. Someone else changed this task.")).toBeTruthy();
     expect(screen.getByLabelText('Details').textContent).toContain('- [ ] one\n- [x] two');
   });
 
@@ -473,8 +473,8 @@ describe('previous and next', () => {
     expect(order).toHaveLength(3);
     const titleOf = (k: string | null | undefined) => three().find((t) => t.key === k)?.title;
     await open(titleOf(order[0]) ?? '');
-    const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next to-do' }));
-    const prev = () => fireEvent.click(screen.getByRole('button', { name: 'Previous to-do' }));
+    const next = () => fireEvent.click(screen.getByRole('button', { name: 'Next task' }));
+    const prev = () => fireEvent.click(screen.getByRole('button', { name: 'Previous task' }));
     next();
     expect(heading()).toBe(titleOf(order[1]));
     press('n');
@@ -482,14 +482,14 @@ describe('previous and next', () => {
     // At the end, Next does nothing.
     next();
     expect(heading()).toBe(titleOf(order[2]));
-    expect(screen.getByRole('button', { name: 'Next to-do' }).getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Next task' }).getAttribute('aria-disabled')).toBe('true');
     press('p');
     expect(heading()).toBe(titleOf(order[1]));
     prev();
     expect(heading()).toBe(titleOf(order[0]));
   });
 
-  it('skip a to-do waiting out its Undo', async () => {
+  it('skip a task waiting out its Undo', async () => {
     const held: HeldTodo = {
       todoId: 'b.md',
       title: 'Second',
@@ -503,7 +503,7 @@ describe('previous and next', () => {
     expect(order).not.toContain('b.md');
     const titleOf = (k: string | null | undefined) => three().find((t) => t.key === k)?.title ?? '';
     await open(titleOf(order[0]));
-    fireEvent.click(screen.getByRole('button', { name: 'Next to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next task' }));
     expect(heading()).toBe(titleOf(order[1]));
     expect(heading()).not.toBe('Second');
   });
@@ -517,17 +517,17 @@ describe('unsaved changes', () => {
     type('Title', 'Changed');
   };
 
-  it('ask before closing, before the next to-do, and before a drawer swap; Keep editing drops the question', async () => {
+  it('ask before closing, before the next task, and before a drawer swap; Keep editing drops the question', async () => {
     await dirty();
     expect(api.state.todoPanel?.dirty).toBe(true);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
     expect(screen.getByText('Discard your changes?')).toBeTruthy();
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'edit' });
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
     expect(screen.queryByText('Discard your changes?')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next task' }));
     expect(screen.getByText('Discard your changes?')).toBeTruthy();
     expect(api.state.todoPanel?.key).toBe('a.md');
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
@@ -562,7 +562,7 @@ describe('unsaved changes', () => {
 
   it('Discard on a close or next moves on, in reading mode', async () => {
     await dirty();
-    fireEvent.click(screen.getByRole('button', { name: 'Next to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next task' }));
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(api.state.todoPanel).toMatchObject({ mode: 'read', dirty: false });
     expect(api.state.todoPanel?.key).not.toBe('a.md');
@@ -600,7 +600,7 @@ describe('closing and focus', () => {
   it('the close button and the veil close it too', async () => {
     mount();
     await open('First');
-    fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
     expect(api.state.todoPanel).toBeNull();
     await open('Second');
     fireEvent.click(document.querySelector('.todo-veil') as HTMLElement);
@@ -633,8 +633,8 @@ describe('adding', () => {
       return { done: 1, todos: list };
     });
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    const form = await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    const form = await screen.findByRole('form', { name: 'Add a task' });
     expect(api.state.todoPanel).toMatchObject({ key: null, mode: 'add' });
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'Brand new' } });
     expect(api.state.todoPanel?.dirty).toBe(true);
@@ -645,15 +645,15 @@ describe('adding', () => {
 
   it('asks before an add with a title typed is closed', async () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    const form = await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    const form = await screen.findByRole('form', { name: 'Add a task' });
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'Half typed' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Close to-do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close task' }));
     expect(screen.getByText('Discard your changes?')).toBeTruthy();
   });
 });
 
-describe('another to-do while editing', () => {
+describe('another task while editing', () => {
   it('asks first when a different row is pressed, and keeps the draft', async () => {
     mount();
     await open('First');
@@ -683,7 +683,7 @@ describe('nothing is lost without asking', () => {
     expect(api.state.todoPanel).toMatchObject({ key: 'a.md', mode: 'edit' });
   });
 
-  it('a search that reopens the to-do being edited, in reading mode, asks first', async () => {
+  it('a search that reopens the task being edited, in reading mode, asks first', async () => {
     await dirty();
     act(() => api.dispatch({ type: 'open-todo', key: 'a.md', mode: 'read' }));
     expect(asked()).toBe(true);
@@ -713,8 +713,8 @@ describe('nothing is lost without asking', () => {
 
   it('Esc and Cancel in the Add form ask once a title is typed, and close when it is empty', async () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    let form = await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    let form = await screen.findByRole('form', { name: 'Add a task' });
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'Half typed' } });
     fireEvent.keyDown(within(form).getByLabelText('What needs doing?'), { key: 'Escape' });
     expect(asked()).toBe(true);
@@ -726,8 +726,8 @@ describe('nothing is lost without asking', () => {
       false,
     );
     expect(api.state.todoPanel).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a to-do' }));
-    form = await screen.findByRole('form', { name: 'Add a to-do' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add a task' }));
+    form = await screen.findByRole('form', { name: 'Add a task' });
     fireEvent.change(within(form).getByLabelText('What needs doing?'), { target: { value: 'Again' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
     expect(asked()).toBe(true);
@@ -849,7 +849,7 @@ describe('asked of others', () => {
     expect(screen.queryByRole('button', { name: /^Tick/ })).toBeNull();
   });
 
-  it('the E key does nothing for an asked to-do', async () => {
+  it('the E key does nothing for an asked task', async () => {
     fireEvent.click(await openAsked());
     await dialog();
     press('e');
@@ -873,7 +873,7 @@ describe('asked of others', () => {
     expect(heading()).toBe('Book the venue');
   });
 
-  it('loads History only when its fold is opened, for any to-do', async () => {
+  it('loads History only when its fold is opened, for any task', async () => {
     apiMock.todoHistory.mockResolvedValue({ status: 'ok', events: [], more: false });
     mount();
     await open('First');
@@ -882,11 +882,11 @@ describe('asked of others', () => {
     await waitFor(() => expect(apiMock.todoHistory).toHaveBeenCalledWith('a.md'));
   });
 
-  it('says in the footer why a waiting or done asked to-do cannot be changed', async () => {
+  it('says in the footer why a waiting or done asked task cannot be changed', async () => {
     fireEvent.click(await openAsked());
     const panel = await dialog();
     expect(
-      within(panel).getByText("This is Ben's to-do now, so you can read it but not change it."),
+      within(panel).getByText("This is Ben's task now, so you can read it but not change it."),
     ).toBeTruthy();
     press('n');
     press('n');
@@ -908,7 +908,7 @@ describe('asked of others', () => {
     await waitFor(() => expect(document.activeElement).toBe(titleButton('Old job')));
   });
 
-  it('asks for the asked list again when the to-dos reload, and ignores an older answer landing late', async () => {
+  it('asks for the asked list again when the tasks reload, and ignores an older answer landing late', async () => {
     let late: (l: AskedTodoList) => void = () => {};
     apiMock.askedTodos.mockResolvedValueOnce(list());
     const view = mount();
@@ -946,7 +946,7 @@ describe('asked of others', () => {
     await screen.findByText('Loading…');
   });
 
-  it('closes History and fetches afresh for the next to-do', async () => {
+  it('closes History and fetches afresh for the next task', async () => {
     apiMock.todoHistory.mockResolvedValue({ status: 'ok', events: [], more: false });
     fireEvent.click(await openAsked());
     await dialog();
@@ -961,7 +961,7 @@ describe('asked of others', () => {
     expect(apiMock.todoHistory).toHaveBeenCalledTimes(2);
   });
 
-  it('has no History for a personal to-do', async () => {
+  it('has no History for a personal task', async () => {
     setStore('on', [todo('p.md', 'Mine only', { scope: 'personal', key: 'personal/p.md' })]);
     mount();
     const panel = await open('Mine only');
@@ -983,7 +983,7 @@ describe('projects in the panel', () => {
       projectMatch: { how: 'key', key: 'personal/diary' },
     });
 
-  it('asks before moving a to-do out of a private project, then sends dropProject', async () => {
+  it('asks before moving a task out of a private project, then sends dropProject', async () => {
     withProjects([privateTodo()]);
     mount();
     await open('Diary job');
@@ -992,7 +992,7 @@ describe('projects in the panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(
       await screen.findByText(
-        "This to-do is in your private project 'diary'. Moving it to the team removes it from that project.",
+        "This task is in your private project 'diary'. Moving it to the team removes it from that project.",
       ),
     ).toBeTruthy();
     expect(changeTodos).not.toHaveBeenCalled();

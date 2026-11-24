@@ -111,7 +111,7 @@ describe('activity on the Overview', () => {
     expect(await screen.findByText('Changes will show here from your next visit.')).toBeTruthy();
   });
 
-  it('opens a to-do in the panel and an update on the Updates tab', async () => {
+  it('opens a task in the panel and an update on the Updates tab', async () => {
     store.todos.mine = [{ key: 'todo/a.md' }];
     onTestFinished(() => {
       store.todos.mine = [];
@@ -121,7 +121,7 @@ describe('activity on the Overview', () => {
         items: [
           {
             kind: 'todo-added',
-            text: 'To-do added: Send the quote',
+            text: 'Task added: Send the quote',
             at: null,
             byName: null,
             target: { kind: 'todo', key: 'todo/a.md' },
@@ -158,20 +158,20 @@ describe('activity on the Overview', () => {
     expect(await screen.findByText('No updates yet.')).toBeTruthy();
   });
 
-  it("a teammate's open to-do opens read only in the panel; a finished one not on my lists is plain text", async () => {
+  it("a teammate's open task opens read only in the panel; a finished one not on my lists is plain text", async () => {
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
           {
             kind: 'todo-added',
-            text: 'To-do added: Book the photographer',
+            text: 'Task added: Book the photographer',
             at: null,
             byName: null,
             target: { kind: 'todo', key: '20261120-theirs.md' },
           },
           {
             kind: 'todo-closed',
-            text: 'To-do done: Send the quote',
+            text: 'Task done: Send the quote',
             at: '2026-11-22T10:00:00Z',
             byName: 'Sam Taylor',
             target: { kind: 'todo', key: 'todo/done.md' },
@@ -189,13 +189,13 @@ describe('activity on the Overview', () => {
       }),
     );
     await openProject();
-    const done = (await screen.findByText('To-do done: Send the quote')).closest('.line');
+    const done = (await screen.findByText('Task done: Send the quote')).closest('.line');
     expect(done?.tagName).toBe('DIV');
     expect(done?.classList.contains('proj-static')).toBe(true);
 
     const coming = screen.getByRole('button', { name: /^Book the photographer/ });
     expect(coming.getAttribute('aria-haspopup')).toBe('dialog');
-    const added = screen.getByRole('button', { name: /To-do added: Book the photographer/ });
+    const added = screen.getByRole('button', { name: /Task added: Book the photographer/ });
     expect(added.getAttribute('aria-haspopup')).toBe('dialog');
     fireEvent.click(added);
     expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
@@ -206,13 +206,13 @@ describe('activity on the Overview', () => {
     });
   });
 
-  it('sends a to-do key it cannot open read only to the To-dos tab', async () => {
+  it('sends a task key it cannot open read only to the Tasks tab', async () => {
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
           {
             kind: 'todo-added',
-            text: 'To-do added: Odd one',
+            text: 'Task added: Odd one',
             at: null,
             byName: null,
             target: { kind: 'todo', key: 'todo/odd.md' },
@@ -222,11 +222,11 @@ describe('activity on the Overview', () => {
       }),
     );
     await openProject();
-    const added = await screen.findByRole('button', { name: /To-do added: Odd one/ });
+    const added = await screen.findByRole('button', { name: /Task added: Odd one/ });
     expect(added.getAttribute('aria-haspopup')).toBeNull();
     fireEvent.click(added);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /^To-dos/ }).getAttribute('aria-current')).toBeTruthy(),
+      expect(screen.getByRole('button', { name: /^Tasks/ }).getAttribute('aria-current')).toBeTruthy(),
     );
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-todo' }));
   });
@@ -234,19 +234,19 @@ describe('activity on the Overview', () => {
   it('shows five changes, then the shared Show more, and says where the rest are', async () => {
     const items = Array.from({ length: 7 }, (_, i) => ({
       kind: 'todo-added' as const,
-      text: `To-do added: Task ${i + 1}`,
+      text: `Task added: Task ${i + 1}`,
       at: null,
       byName: null,
       target: { kind: 'todo' as const, key: `todo/${i}.md` },
     }));
     api.projectActivity.mockResolvedValue(reply({ items, more: 3 }));
     await openProject();
-    await screen.findByText('To-do added: Task 5');
-    expect(screen.queryByText('To-do added: Task 6')).toBeNull();
+    await screen.findByText('Task added: Task 5');
+    expect(screen.queryByText('Task added: Task 6')).toBeNull();
     expect(screen.queryByText(/more changes are on/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show 2 more changes' }));
-    expect(screen.getByText('To-do added: Task 7')).toBeTruthy();
-    expect(screen.getByText('3 more changes are on the To-dos, Updates and Files tabs.')).toBeTruthy();
+    expect(screen.getByText('Task added: Task 7')).toBeTruthy();
+    expect(screen.getByText('3 more changes are on the Tasks, Updates and Files tabs.')).toBeTruthy();
   });
 
   it('the end date row is not a button and does not lift; Coming up hides when the read fails', async () => {
@@ -278,7 +278,7 @@ describe('activity on the Overview', () => {
 const CHANGES = [
   {
     kind: 'todo-added' as const,
-    text: 'To-do added: Book the photographer',
+    text: 'Task added: Book the photographer',
     at: null,
     byName: null,
     target: { kind: 'todo' as const, key: 'todo/theirs.md' },
@@ -348,7 +348,7 @@ describe('Clear', () => {
   it('keeps listed changes when the person leaves: nothing is marked seen', async () => {
     api.projectActivity.mockResolvedValue(reply({ items: CHANGES }));
     await openProject();
-    await screen.findByText('To-do added: Book the photographer');
+    await screen.findByText('Task added: Book the photographer');
     fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
     await new Promise((r) => setTimeout(r, 20));
     expect(api.projectSeen).not.toHaveBeenCalled();
@@ -359,7 +359,7 @@ describe('Clear', () => {
       .mockResolvedValueOnce(reply({ items: CHANGES, more: 2 }))
       .mockResolvedValueOnce(reply({ since: '2026-11-23T09:00:00Z', token: 'tok-2' }));
     await openProject();
-    await screen.findByText('To-do added: Book the photographer');
+    await screen.findByText('Task added: Book the photographer');
     const head = screen.getByRole('heading', { name: 'Since you last looked' }).closest('.card-head');
     expect(head?.querySelector('.count')?.textContent).toBe('3');
     fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
@@ -380,11 +380,11 @@ describe('Clear', () => {
       .mockResolvedValueOnce(reply({ items: CHANGES }))
       .mockResolvedValueOnce(reply({ token: 'tok-2', items: CHANGES }));
     await openProject();
-    await screen.findByText('To-do added: Book the photographer');
+    await screen.findByText('Task added: Book the photographer');
     fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText('This list was out of date, so nothing was cleared.')).toBeTruthy();
     expect(api.projectSeen).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
+    expect(screen.getByText('Task added: Book the photographer')).toBeTruthy();
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByRole('button', { name: 'Clear Since you last looked' }),
@@ -401,7 +401,7 @@ describe('Clear', () => {
     api.projectActivity.mockResolvedValueOnce(reply({ items: CHANGES }));
     api.projectSeen.mockReturnValueOnce(new Promise<void>((r) => (finish = r)));
     await openProject();
-    await screen.findByText('To-do added: Book the photographer');
+    await screen.findByText('Task added: Book the photographer');
     const clear = screen.getByRole('button', { name: 'Clear Since you last looked' });
     fireEvent.click(clear);
     await waitFor(() => expect(clear.getAttribute('aria-disabled')).toBe('true'));
@@ -415,10 +415,10 @@ describe('Clear', () => {
     api.projectActivity.mockResolvedValue(reply({ items: CHANGES }));
     api.projectSeen.mockRejectedValue(new Error('down'));
     await openProject();
-    await screen.findByText('To-do added: Book the photographer');
+    await screen.findByText('Task added: Book the photographer');
     fireEvent.click(screen.getByRole('button', { name: 'Clear Since you last looked' }));
     expect(await screen.findByText("Couldn't clear the list. Try again.")).toBeTruthy();
-    expect(screen.getByText('To-do added: Book the photographer')).toBeTruthy();
+    expect(screen.getByText('Task added: Book the photographer')).toBeTruthy();
   });
 });
 
@@ -499,16 +499,16 @@ describe('next meeting in Coming up', () => {
     api.projectActivity.mockResolvedValue(
       reply({
         comingUp: [
-          { kind: 'todo-due', text: 'Early to-do', date: ymd(inDays(1)), overdue: false, target: null },
-          { kind: 'todo-due', text: 'Late to-do', date: ymd(inDays(10)), overdue: false, target: null },
+          { kind: 'todo-due', text: 'Early task', date: ymd(inDays(1)), overdue: false, target: null },
+          { kind: 'todo-due', text: 'Late task', date: ymd(inDays(10)), overdue: false, target: null },
         ],
       }),
     );
     api.projectMeetings.mockResolvedValue({ cache: 'fresh', checked: null, last: null, next: next(5) });
     await openProject();
     const meeting = await screen.findByText('Meeting: Design review');
-    const rows = screen.getAllByText(/to-do$|^Meeting: /).map((e) => e.textContent);
-    expect(rows).toEqual(['Early to-do', 'Meeting: Design review', 'Late to-do']);
+    const rows = screen.getAllByText(/task$|^Meeting: /).map((e) => e.textContent);
+    expect(rows).toEqual(['Early task', 'Meeting: Design review', 'Late task']);
     expect(meeting.closest('button')).toBeNull();
     const invites = screen.getAllByRole('link', {
       name: 'Open invite for Design review (opens in a new tab)',

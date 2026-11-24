@@ -177,7 +177,7 @@ export function ProjectsSheet() {
           setAnnounce('');
           const words =
             res.todosMoved > 0
-              ? `Moved to ${name}. ${plural(res.todosMoved, 'to-do')} moved with it.`
+              ? `Moved to ${name}. ${plural(res.todosMoved, 'task')} moved with it.`
               : `Moved to ${name}.`;
           setTimeout(() => setAnnounce(words), 50);
           toProject(res.key);
@@ -230,7 +230,7 @@ export function ProjectsSheet() {
         {list.looseLabels > 0 ? (
           <div className="notice" data-level="info" data-shape="box">
             <span>
-              {list.looseLabels} old project label{list.looseLabels === 1 ? '' : 's'} on your to-dos could be
+              {list.looseLabels} old project label{list.looseLabels === 1 ? '' : 's'} on your tasks could be
               tidied up.
             </span>
             {canChange ? (

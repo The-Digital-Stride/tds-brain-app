@@ -8,12 +8,12 @@ benefit: Know which is which, so help and chat make sense.
 roles: all
 related: [why-cortex, sharing-with-your-team, choosing-your-brain-folder, glossary]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
-The **Brain** is the agency's shared folder of knowledge. It holds client notes, files, to-dos and the skills Claude can use. Everyone at TDS shares it.
+The **Brain** is the agency's shared folder of knowledge. It holds client notes, files, tasks and the skills Claude can use. Everyone at TDS shares it.
 
-**Cortex** is the app you use to reach it. You chat with Claude, read files and tick off to-dos. Cortex does the work. The Brain remembers it.
+**Cortex** is the app you use to reach it. You chat with Claude, read files and tick off tasks. Cortex does the work. The Brain remembers it.
 
 ## Why two names?
 

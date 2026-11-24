@@ -39,7 +39,7 @@ describe('HelpArticle', () => {
     const link = document.createElement('a');
     link.setAttribute('data-help-id', 'todos');
     link.href = '#help-todos';
-    link.textContent = 'To-dos';
+    link.textContent = 'Tasks';
     container.querySelector('.help-article')?.append(link);
     const notStopped = fireEvent.click(link);
     expect(onOpen).toHaveBeenCalledWith('todos');

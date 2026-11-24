@@ -610,7 +610,7 @@ export function ProjectForm({
         <Field
           id={id('stages')}
           label="Stages"
-          hint="One per line, in order. To-dos can be put in a stage."
+          hint="One per line, in order. Tasks can be put in a stage."
           error={errors.stages}
         >
           <textarea

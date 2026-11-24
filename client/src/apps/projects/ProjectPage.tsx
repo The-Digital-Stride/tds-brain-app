@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type {
   ProjectCard,
@@ -547,7 +547,10 @@ export function ProjectPage({
   const editable = canChange && isEditable(card);
   const [note, setNote] = useState('');
   const removal = useRemoval(card, list, me, onRemoved ?? (() => {}), setNote);
-  const projectTodos = useProjectTodos(card.key, card.openTodos);
+  const { todos, newChat } = useStore();
+  // The list reloads when the project's count moves or the to-do lists change (an add in the To-dos panel).
+  const todosStamp = useMemo(() => [card.openTodos, todos], [card.openTodos, todos]);
+  const projectTodos = useProjectTodos(card.key, todosStamp);
   // Read once per project; it says what was seen when the person leaves (see useProjectActivity).
   const activity = useProjectActivity(card.key, !card.archived);
   // Read once per project too: the Meetings card and Coming up share it.
@@ -557,16 +560,18 @@ export function ProjectPage({
   // And Add a claude.ai page, offered only where the server says so (live project with a card, not legacy).
   const [addingArtifact, setAddingArtifact] = useState(false);
   const canAddArtifact = list.canAddArtifact === true && editable && card.space !== 'legacy';
-  // Add a to-do sits there too.
-  const [adding, setAdding] = useState(false);
   // And Add an update: the Updates tab says whether the brain's skill allows it.
   const [addingUpdate, setAddingUpdate] = useState(false);
   const [canAddUpdate, setCanAddUpdate] = useState(false);
-  const { todos, newChat } = useStore();
-  const canAddTodo = todos?.canProject === true && !card.archived;
+  // As in the To-dos drawer: only while the app may change to-dos (the server refuses an add otherwise). A personal
+  // project also needs personal to-dos, or the form would drop the project and add a TDS to-do the team can see.
+  const canAddTodo =
+    todos?.changes === 'on' &&
+    todos.canProject === true &&
+    (card.space !== 'personal' || todos.canUsePersonal === true) &&
+    !card.archived;
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
-    if (tab !== 'todos') setAdding(false);
     if (tab !== 'updates') setAddingUpdate(false);
   }, [tab]);
   // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
@@ -577,6 +582,16 @@ export function ProjectPage({
     else go();
   };
   const chooseTab = (next: ProjectTab) => held(() => onTab(next));
+  // Add a to-do opens the same full form as the To-dos drawer, in its panel, with this project filled in.
+  const addTodo = () => {
+    shell?.dispatch({ type: 'open-drawer', drawer: 'todos' });
+    shell?.dispatch({
+      type: 'open-todo',
+      key: null,
+      mode: 'add',
+      start: { project: card.key, personal: card.space === 'personal' },
+    });
+  };
   // A row on the Overview that switches tab removes itself, so focus would fall to the page: it goes to the tab
   // that is now current instead (design review), and only once the switch really happened (the leave guard may ask).
   const [focusTab, setFocusTab] = useState(false);
@@ -670,14 +685,7 @@ export function ProjectPage({
           ]}
         />
         {tab === 'todos' && canAddTodo ? (
-          <button
-            type="button"
-            className="btn"
-            data-variant="primary"
-            data-size="small"
-            onClick={() => setAdding(true)}
-            aria-disabled={adding || undefined}
-          >
+          <button type="button" className="btn" data-variant="primary" data-size="small" onClick={addTodo}>
             <Icon name="plus" size={14} />
             Add a to-do
           </button>
@@ -746,12 +754,9 @@ export function ProjectPage({
           <ProjectTodos
             card={card}
             team={team}
-            me={me}
             rows={projectTodos.data?.todos ?? null}
             failed={projectTodos.error}
             reload={projectTodos.reload}
-            adding={adding}
-            onAdding={setAdding}
           />
         ) : null}
         {tab === 'updates' ? (

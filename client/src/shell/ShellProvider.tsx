@@ -24,6 +24,7 @@ import {
   layoutOf,
   loadShell,
   RAIL_NAMES_FROM,
+  sameStart,
   saveShell,
   shellReducer,
   toggleRail,
@@ -41,6 +42,7 @@ import {
 import { sectionKeys, visibleToolFor } from './sections.ts';
 import { settingsTabOrDefault } from './settings-tabs.ts';
 import { ShellContext } from './shell-context.ts';
+import { todoOpener } from './todo-opener.ts';
 
 type DockSide = 'left' | 'right';
 
@@ -326,7 +328,12 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       const forced = (action.type === 'close-todo' || action.type === 'open-todo') && action.force === true;
       if (s.todoPanel?.dirty && !discarding.current && !forced && !TODO_BOOKKEEPING.has(action.type)) {
         const next = shellReducer(s, action).todoPanel;
-        if (next === null || next.key !== s.todoPanel.key || next.mode !== s.todoPanel.mode) {
+        if (
+          next === null ||
+          next.key !== s.todoPanel.key ||
+          next.mode !== s.todoPanel.mode ||
+          !sameStart(next.start ?? null, s.todoPanel.start ?? null)
+        ) {
           // Another question replaces the leave guard's: the page change waiting on it is dropped.
           if (action !== LEAVE_CLOSE_TODO) afterTodo.current = null;
           rawDispatch({
@@ -358,6 +365,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         if (next.railWide !== s.railWide)
           rawDispatch({ action, width: widthRef.current, rail: now.railShowsNames });
         return;
+      }
+      if (action.type === 'open-todo') {
+        const active = document.activeElement;
+        todoOpener.current =
+          action.start && active instanceof HTMLElement && active !== document.body ? active : null;
       }
       if (action.type === 'open-viewer' && s.viewer === null) {
         const active = document.activeElement;

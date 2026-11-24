@@ -1,55 +1,29 @@
-import { type FormEvent, useId, useMemo, useRef, useState } from 'react';
-import type { TeamMember, TodoAction } from '../../../../shared/contract.ts';
+import { useMemo, useRef } from 'react';
+import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
-import { Confirm } from '../../shell/Confirm.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
 import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
-import { useSheetHold } from '../../shell/useSheetHold.ts';
-import { useProjects } from '../../state/projects.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
-import { useKeepFocus } from './useKeepFocus.ts';
 
-/** The project's open to-dos, by stage, and a way to add one with client and project filled in. */
+/** The project's open to-dos, by stage. Its Add a to-do button (ProjectPage) opens the To-dos panel's full form. */
 export function ProjectTodos({
   card,
   team,
-  me,
   rows,
   failed,
   reload,
-  adding,
-  onAdding,
 }: {
   card: ProjectCard;
   team: readonly TeamMember[] | undefined;
-  me: string;
   /** The project's open to-dos from the server, or null while loading. */
   rows: readonly ProjectTodoRow[] | null;
   failed: boolean;
   reload: () => Promise<void>;
-  /** The add form is open. Its button sits at the end of the tabs row (ProjectPage), so the state lives there. */
-  adding: boolean;
-  onAdding: (open: boolean) => void;
 }) {
-  const { todos, changeTodos, boot, toggleFavouriteTodo } = useStore();
+  const { todos, boot, toggleFavouriteTodo, openSettings } = useStore();
   const { dispatch } = useShell();
-  const { refresh } = useProjects();
-  const [title, setTitle] = useState('');
-  const [stage, setStage] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  // Cancel with a title typed asks first (design system, Actions rule 9).
-  const [asking, setAsking] = useState(false);
-  // Leaving the page (the rail, search, a tab) with typing in the form is held and asked about in the same strip
-  // (plan 2026-11-23-ux-follow-ups, decision 1). One strip: a leave question shows instead of the Cancel one.
-  const dirty = title.trim() !== '' || stage !== '';
-  const leave = useSheetHold(dirty);
-  const keepFocus = useKeepFocus();
-  const titleId = useId();
-  const stageId = useId();
-
   // The same star as the To-dos drawer's rows; focus follows a to-do whose star moved it.
   const favs = boot?.prefs?.favouriteTodos ?? NO_FAVOURITES;
   const trayRef = useRef<HTMLDivElement>(null);
@@ -65,141 +39,20 @@ export function ProjectTodos({
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };
-  const canAdd = todos?.canProject === true && !card.archived;
-
-  const close = () => {
-    setTitle('');
-    setStage('');
-    onAdding(false);
-    setMessage('');
-    setAsking(false);
-  };
-  const cancel = () => {
-    if (leave.asking) leave.keep();
-    if (dirty) setAsking(true);
-    else close();
-  };
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (busy) return;
-    const text = title.trim();
-    if (!text) {
-      setMessage('Give the to-do a title.');
-      return;
-    }
-    setBusy(true);
-    setMessage('');
-    const action: TodoAction = {
-      kind: 'add',
-      title: text,
-      due: null,
-      assignee: me || null,
-      ...(card.space === 'personal' ? { scope: 'personal' as const } : {}),
-      client: card.space === 'personal' ? null : card.client,
-      project: card.key,
-      stage: stage || null,
-    };
-    const res = await changeTodos([action]);
-    setBusy(false);
-    if (res.error) {
-      setMessage(res.error.message);
-      return;
-    }
-    setTitle('');
-    setStage('');
-    setAsking(false);
-    onAdding(false);
-    void refresh();
-    void reload();
-  };
-
   return (
     <>
-      {canAdd ? null : <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>}
-      {adding && canAdd ? (
-        <form
-          className="card proj-card proj-form"
-          onSubmit={(e) => void submit(e)}
-          aria-label="Add a to-do"
-          onFocus={keepFocus.track}
-          onKeyDown={(e) => {
-            // The strip handles its own Esc (Keep editing).
-            if (e.key !== 'Escape' || e.defaultPrevented || !dirty) return;
-            // Typed work: Esc asks, and asking again keeps it. While a leave question shows, Esc keeps editing.
-            e.preventDefault();
-            e.stopPropagation();
-            if (leave.asking) {
-              leave.keep();
-              keepFocus.restore();
-            } else {
-              setAsking(!asking);
-              if (asking) keepFocus.restore();
-            }
-          }}
-        >
-          {asking || leave.asking ? (
-            <Confirm
-              label="Discard your changes"
-              text="Discard your changes?"
-              action="Discard changes"
-              safe="Keep editing"
-              variant="danger"
-              busy={false}
-              // A new reason is a new question: Keep editing takes focus again.
-              key={leave.asking ? 'leave' : 'cancel'}
-              onConfirm={() => {
-                // Discard runs the page change the hold kept back; the form goes with it or is closed here.
-                if (leave.asking) leave.discard();
-                close();
-              }}
-              onCancel={() => {
-                if (leave.asking) leave.keep();
-                setAsking(false);
-                keepFocus.restore();
-              }}
-            />
-          ) : null}
-          <div className="form-field">
-            <label htmlFor={titleId}>To-do</label>
-            <input
-              id={titleId}
-              className="field"
-              value={title}
-              maxLength={200}
-              onChange={(e) => setTitle(e.target.value)}
-              // biome-ignore lint/a11y/noAutofocus: the person just pressed Add a to-do.
-              autoFocus
-            />
-          </div>
-          {card.stages.length > 0 ? (
-            <div className="form-field">
-              <label htmlFor={stageId}>Stage</label>
-              <select id={stageId} className="field" value={stage} onChange={(e) => setStage(e.target.value)}>
-                <option value="">No stage</option>
-                {card.stages.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          {message ? (
-            <p className="error" role="alert">
-              {message}
-            </p>
-          ) : null}
-          <div className="proj-buttons">
-            <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
-              Add a to-do
-            </button>
-            <button type="button" className="btn" onClick={cancel}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      ) : null}
+      {card.archived ? null : todos?.changes === 'switched-off' ? (
+        <p className="proj-note">
+          Adding to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
+          <button type="button" className="link-btn" onClick={() => openSettings('general', 'set-direct')}>
+            Settings
+          </button>
+          .
+        </p>
+      ) : todos?.canProject === true &&
+        (card.space !== 'personal' || todos.canUsePersonal === true) ? null : (
+        <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>
+      )}
       {failed && rows === null ? (
         <p className="proj-note" role="alert">
           The to-dos can't be loaded right now.{' '}

@@ -108,6 +108,12 @@ export type ViewerRequest = LibraryViewerRequest | PageViewerRequest;
 /** What the to-do panel is doing: reading a to-do, editing it, or adding a new one. */
 export type TodoPanelMode = 'read' | 'edit' | 'add';
 
+/** Where a new to-do starts when it is added from somewhere else (a project page): its project, and personal or not. */
+export interface TodoAddStart {
+  project: string;
+  personal: boolean;
+}
+
 export interface TodoPanelState {
   /** The to-do's `key`, or null while adding a new one. */
   key: string | null;
@@ -121,6 +127,8 @@ export interface TodoPanelState {
   ask: ShellAction | null;
   /** The keys of the to-dos the drawer shows now, in order, held ones left out: what previous and next walk through. */
   order: string[];
+  /** Add mode only: the project (and scope) the add form starts in, from the page that opened it. Else the drawer's. */
+  start?: TodoAddStart | null;
 }
 
 export type ShellAction =
@@ -155,7 +163,7 @@ export type ShellAction =
   | { type: 'update-viewer'; viewer: LibraryViewerRequest }
   | { type: 'close-viewer' }
   /** Opens the to-do panel on a to-do (read or edit) or, with a null key, on the add form. Replaces one already open (`force`: even over unsaved changes, for a to-do that was just saved or added). */
-  | { type: 'open-todo'; key: string | null; mode: TodoPanelMode; force?: true }
+  | { type: 'open-todo'; key: string | null; mode: TodoPanelMode; force?: true; start?: TodoAddStart }
   | { type: 'set-todo-mode'; mode: TodoPanelMode }
   | { type: 'set-todo-dirty'; dirty: boolean }
   | { type: 'set-todo-order'; order: string[] }

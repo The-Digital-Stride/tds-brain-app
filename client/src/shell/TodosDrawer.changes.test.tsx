@@ -185,11 +185,6 @@ describe('To-dos drawer, changing to-dos', () => {
   it('adds with the person themselves as the default assignee', async () => {
     render(<TodosDrawer />);
     await openAdd();
-    const moreOpts = screen.getByRole('button', { name: 'More options' });
-    expect(moreOpts.classList.contains('btn')).toBe(true);
-    expect(moreOpts.getAttribute('data-variant')).toBe('quiet');
-    expect(moreOpts.classList.contains('link-btn')).toBe(false);
-    fireEvent.click(moreOpts);
     type('What needs doing?', '  Ring the client ');
     const who = screen.getByLabelText('Assigned to') as HTMLSelectElement;
     expect(who.value).toBe('sam-example');
@@ -574,7 +569,6 @@ describe('To-dos drawer, conflict check and open adds', () => {
   it('offers Open to anyone when adding only with canAddOpen, and sends assignee null', async () => {
     render(<TodosDrawer />);
     await openAdd();
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     expect(screen.queryByRole('option', { name: 'Open to anyone' })).toBeNull();
     cleanup();
     fakeShell.reset();
@@ -582,7 +576,6 @@ describe('To-dos drawer, conflict check and open adds', () => {
     setStore('on');
     render(<TodosDrawer />);
     await openAdd();
-    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     type('What needs doing?', 'Anyone can do this');
     type('Assigned to', '');
     fireEvent.submit(screen.getByRole('form', { name: 'Add a to-do' }));

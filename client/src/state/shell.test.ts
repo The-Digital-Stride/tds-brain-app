@@ -456,7 +456,14 @@ describe('the to-do panel in the shell', () => {
 
   it('opens on a to-do, reading, and closes', () => {
     const s = open();
-    expect(s.todoPanel).toEqual({ key: 'a.md', mode: 'read', dirty: false, ask: null, order: [] });
+    expect(s.todoPanel).toEqual({
+      key: 'a.md',
+      mode: 'read',
+      dirty: false,
+      ask: null,
+      order: [],
+      start: null,
+    });
     expect(shellReducer(s, { type: 'close-todo' }).todoPanel).toBeNull();
     expect(shellReducer(todos, { type: 'close-todo' })).toBe(todos);
   });
@@ -466,6 +473,39 @@ describe('the to-do panel in the shell', () => {
       key: null,
       mode: 'add',
     });
+  });
+
+  it('opens the add form where a page says (a project), and keeps that start only while adding', () => {
+    const start = { project: 'acme/spring', personal: false };
+    const s = shellReducer(todos, { type: 'open-todo', key: null, mode: 'add', start });
+    expect(s.todoPanel).toMatchObject({ key: null, mode: 'add', start });
+    // Reading or editing has no start, even when one is sent.
+    expect(
+      shellReducer(todos, { type: 'open-todo', key: 'a.md', mode: 'read', start }).todoPanel?.start,
+    ).toBeNull();
+  });
+
+  it('leaves an add form with typing alone when the same start is asked for again', () => {
+    const start = { project: 'acme/spring', personal: false };
+    const adding = shellReducer(todos, { type: 'open-todo', key: null, mode: 'add', start });
+    const typed = shellReducer(adding, { type: 'set-todo-dirty', dirty: true });
+    expect(shellReducer(typed, { type: 'open-todo', key: null, mode: 'add', start: { ...start } })).toBe(
+      typed,
+    );
+    // The drawer's own add (no start) on top of it is the same too.
+    const plain = shellReducer(shellReducer(todos, { type: 'open-todo', key: null, mode: 'add' }), {
+      type: 'set-todo-dirty',
+      dirty: true,
+    });
+    expect(shellReducer(plain, { type: 'open-todo', key: null, mode: 'add' })).toBe(plain);
+    // Another project is a new form.
+    const other = shellReducer(typed, {
+      type: 'open-todo',
+      key: null,
+      mode: 'add',
+      start: { project: 'acme/autumn', personal: false },
+    });
+    expect(other.todoPanel).toMatchObject({ start: { project: 'acme/autumn' }, dirty: false });
   });
 
   it('keeps its order when another to-do replaces the open one', () => {

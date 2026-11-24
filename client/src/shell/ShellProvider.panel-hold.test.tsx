@@ -127,6 +127,22 @@ describe('ShellProvider: the right panel holds unsaved work', () => {
     expect(api.panelHold).toEqual({ dirty: false, asking: false });
   });
 
+  it('a dirty add form asks before another project replaces it', () => {
+    mount();
+    act(() => api.dispatch({ type: 'open-drawer', drawer: 'todos' }));
+    const start = { project: 'acme/spring', personal: false };
+    act(() => api.dispatch({ type: 'open-todo', key: null, mode: 'add', start }));
+    act(() => api.dispatch({ type: 'set-todo-dirty', dirty: true }));
+    const other = {
+      type: 'open-todo' as const,
+      key: null,
+      mode: 'add' as const,
+      start: { ...start, project: 'acme/autumn' },
+    };
+    act(() => api.dispatch(other));
+    expect(api.state.todoPanel).toMatchObject({ start, dirty: true, ask: other });
+  });
+
   it('a guarded choice made while the panel is shut opens it, so the question is in view', () => {
     mount();
     dirty(true);

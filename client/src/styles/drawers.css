@@ -247,23 +247,15 @@
   .todo-nomatch p {
     margin: 0;
   }
-  /* The one-line add: the field, then the icon toggles. */
+  /* The add form's title line: the field, then the personal lock. */
   .todo-quick {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
   }
-  .drawer-tools .todo-quick .field {
-    flex: 1;
-    min-width: 0;
-    padding-left: var(--sp-10);
-  }
   /* Both filters: the kind switch takes the first line; the client select and + share the second, never wrapping. */
   .drawer-tools.todo-filters[data-stacked] > .seg {
     flex: 1 1 100%;
-  }
-  .todo-actions .todo-more {
-    margin-left: auto;
   }
   /* "New to you": a red dot before the row (Ian, 2026-11-13), and a quiet line to clear them all. */
   .todo-new,

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// The project's "Add a to-do" form and the Files picker hold the sheet like the project form does (plan
-// 2026-11-23-ux-follow-ups, decision 1; design system, Actions rule 9), and Keep editing gives focus back to the field
-// that was being edited. The whole app with the real store and shell and a fake server.
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+// The Files picker holds the sheet like the project form does (plan 2026-11-23-ux-follow-ups, decision 1; design
+// system, Actions rule 9), and Keep editing gives focus back to the field that was being edited. A project's "Add a
+// to-do" opens the To-dos panel's full form with the project filled in, and that panel holds typing the same way.
+// The whole app with the real store and shell and a fake server.
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdsSummary } from '../../../../shared/ads-contract.ts';
 import { card, projectList } from './testing.ts';
@@ -10,6 +11,7 @@ import { card, projectList } from './testing.ts';
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
   todos: vi.fn(),
+  changeTodo: vi.fn(),
   sessions: vi.fn(),
   sync: vi.fn(async () => ({ lastSync: null })),
   changelog: vi.fn(async () => ({ versions: [] })),
@@ -76,7 +78,6 @@ const press = (name: string) =>
     within(screen.getByRole('group', { name: 'Discard your changes' })).getByRole('button', { name }),
   );
 const rail = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
-const pageTitle = () => screen.getByRole('heading', { level: 1 }).textContent ?? '';
 
 beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -88,6 +89,7 @@ beforeEach(() => {
     othersCount: 0,
     team: [{ slug: 'sam', name: 'Sam' }],
     canProject: true,
+    changes: 'on',
   });
   api.sessions.mockResolvedValue({ live: [], past: [] });
   api.updatePrefs.mockImplementation(async (patch: object) => ({ ...boot.prefs, ...patch }));
@@ -122,103 +124,96 @@ async function openProject() {
   rail(/^Projects/);
   fireEvent.click(await screen.findByRole('button', { name: /Spring launch/ }));
 }
-/** The project's To-dos tab with the add form open and a title typed. */
-async function addFormTyped(text = 'Book the shoot') {
+/** The project's To-dos tab, then its Add a to-do: the To-dos panel's add form. */
+async function openAdd() {
   await openProject();
   fireEvent.click(await tab(/^To-dos/));
-  fireEvent.click(await screen.findByRole('button', { name: 'Add a to-do' }));
-  const title = (await screen.findByLabelText('To-do')) as HTMLInputElement;
-  fireEvent.change(title, { target: { value: text } });
-  return title;
+  // As from the keyboard: the button has focus when it is pressed (a jsdom click doesn't move focus).
+  projectAdd().focus();
+  fireEvent.click(projectAdd());
+  return (await screen.findByLabelText('What needs doing?')) as HTMLInputElement;
 }
 const addForm = () => screen.getByRole('form', { name: 'Add a to-do' });
+/** The project page's own Add a to-do, at the end of its tabs row (the drawer and the form have one too). */
+const projectAdd = () =>
+  within(
+    screen.getByRole('navigation', { name: 'Project sections' }).closest('.proj-tabrow') as HTMLElement,
+  ).getByRole('button', { name: 'Add a to-do' });
 
-describe('leaving the project add-a-to-do form with a title typed', () => {
-  it('a rail click asks with the form strip; Keep editing keeps the title and focus goes back to it', async () => {
-    const title = await addFormTyped();
-    title.focus();
-    rail(/^Home/);
-    const group = within(addForm()).getByRole('group', { name: 'Discard your changes' });
-    expect(screen.getAllByRole('group', { name: 'Discard your changes' })).toHaveLength(1);
-    expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Keep editing' }));
-    expect(pageTitle()).toMatch(/Projects/);
-    press('Keep editing');
+describe("a project's Add a to-do", () => {
+  it('opens the full form in the To-dos panel, starting in the project, and adds it there', async () => {
+    const title = await openAdd();
+    // Every option, from the start: nothing behind "More options".
+    within(addForm()).getByLabelText('Due date (optional)');
+    within(addForm()).getByLabelText('Assigned to');
+    within(addForm()).getByLabelText('Project');
+    within(addForm()).getByLabelText('Stage');
+    expect(within(addForm()).queryByRole('button', { name: 'More options' })).toBeNull();
+    // The project page has no cut-down form of its own.
+    expect(screen.queryByLabelText('To-do')).toBeNull();
+    api.changeTodo.mockResolvedValue({
+      mine: [],
+      open: [],
+      othersCount: 0,
+      team: [{ slug: 'sam', name: 'Sam' }],
+      canProject: true,
+      changes: 'on',
+    });
+    fireEvent.change(title, { target: { value: 'Book the shoot' } });
+    fireEvent.change(within(addForm()).getByLabelText('Stage'), { target: { value: 'Build' } });
+    const before = api.projectTodos.mock.calls.length;
+    fireEvent.submit(addForm());
+    await waitFor(() =>
+      expect(api.changeTodo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'add',
+          title: 'Book the shoot',
+          client: 'acme',
+          project: 'acme/spring',
+          stage: 'Build',
+        }),
+      ),
+    );
+    // The project's list reloads to show it.
+    await waitFor(() => expect(api.projectTodos.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('pressed again with a title typed, keeps the typing', async () => {
+    const title = await openAdd();
+    fireEvent.change(title, { target: { value: 'Half a thought' } });
+    fireEvent.click(projectAdd());
     expect(strip()).toBeNull();
-    expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Book the shoot');
-    expect(document.activeElement).toBe(screen.getByLabelText('To-do'));
+    expect((screen.getByLabelText('What needs doing?') as HTMLInputElement).value).toBe('Half a thought');
   });
 
-  it('Discard changes goes to the page asked for', async () => {
-    await addFormTyped();
-    rail(/^Settings/);
-    press('Discard changes');
-    await waitFor(() => expect(pageTitle()).toMatch(/^Settings/));
+  it('puts the keyboard in the title every time, and Cancel gives it back to the project button', async () => {
+    await openAdd();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('What needs doing?')));
+    fireEvent.click(within(addForm()).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Add a to-do' })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(projectAdd()));
+    // Again with the drawer shut: the panel's code is loaded now, and the drawer opening must not take the keyboard.
+    fireEvent.click(
+      within(document.getElementById('drawer') as HTMLElement).getAllByRole('button', {
+        name: /^Close/,
+      })[0] as HTMLElement,
+    );
+    await waitFor(() => expect(document.querySelector('#drawer form, #todo-panel-slot form')).toBeNull());
+    projectAdd().focus();
+    fireEvent.click(projectAdd());
+    await screen.findByLabelText('What needs doing?');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.activeElement).toBe(screen.getByLabelText('What needs doing?'));
   });
 
-  it('a picked stage alone also asks', async () => {
-    await openProject();
-    fireEvent.click(await tab(/^To-dos/));
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a to-do' }));
-    fireEvent.change(await screen.findByLabelText('Stage'), { target: { value: 'Build' } });
+  it('with a title typed, a rail click asks in the panel; Keep editing keeps the title', async () => {
+    const title = await openAdd();
+    fireEvent.change(title, { target: { value: 'Book the shoot' } });
     rail(/^Home/);
+    // The To-dos panel's own rule: the page changes and the panel asks before it closes.
     expect(strip()).not.toBeNull();
-  });
-
-  it('with nothing typed, the rail goes at once', async () => {
-    await openProject();
-    fireEvent.click(await tab(/^To-dos/));
-    fireEvent.click(await screen.findByRole('button', { name: 'Add a to-do' }));
-    await screen.findByLabelText('To-do');
-    act(() => rail(/^Home/));
-    expect(strip()).toBeNull();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Home' })).toBeTruthy();
-  });
-
-  it('Cancel while the leave question shows leaves one strip, and Esc on it keeps editing', async () => {
-    await addFormTyped();
-    rail(/^Home/);
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getAllByRole('group', { name: 'Discard your changes' })).toHaveLength(1);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Keep editing' }), { key: 'Escape' });
-    expect(strip()).toBeNull();
-    expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Book the shoot');
-  });
-
-  it('a tab switch asks; Keep stays on To-dos with the title, Discard changes goes to Overview', async () => {
-    await addFormTyped();
-    fireEvent.click(await tab('Overview'));
-    expect(within(addForm()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: 'Details' })).toBeNull();
     press('Keep editing');
-    expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Book the shoot');
-    fireEvent.click(await tab('Overview'));
-    press('Discard changes');
-    expect(await screen.findByRole('region', { name: 'Details' })).toBeTruthy();
-    expect(screen.queryByLabelText('To-do')).toBeNull();
-    // Coming back to To-dos, the form is not left open and empty.
-    fireEvent.click(await tab(/^To-dos/));
-    await screen.findByText('No open to-dos in this project.');
-    expect(screen.queryByLabelText('To-do')).toBeNull();
-  });
-});
-
-describe('All projects and Edit on the project page', () => {
-  it('All projects asks with a title typed; Keep keeps it, Discard changes goes to the list', async () => {
-    await addFormTyped();
-    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
-    expect(within(addForm()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
-    press('Keep editing');
-    expect((screen.getByLabelText('To-do') as HTMLInputElement).value).toBe('Book the shoot');
-    fireEvent.click(screen.getByRole('button', { name: 'All projects' }));
-    press('Discard changes');
-    expect(await screen.findByRole('button', { name: 'New project' })).toBeTruthy();
-  });
-
-  it('Edit asks with a title typed too', async () => {
-    await addFormTyped();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(within(addForm()).getByRole('group', { name: 'Discard your changes' })).toBeTruthy();
-    expect(screen.queryByRole('form', { name: 'Edit project' })).toBeNull();
+    expect((screen.getByLabelText('What needs doing?') as HTMLInputElement).value).toBe('Book the shoot');
   });
 });
 

@@ -43,6 +43,7 @@ import { StateNote } from './StateNote.tsx';
 import { TodoChatButton } from './TodoChatButton.tsx';
 import { buildEditActions, detailsText, type EditDraft } from './TodoForms.tsx';
 import type { TodoPanelProps } from './TodoPanel.tsx';
+import { todoOpener } from './todo-opener.ts';
 import { pressedByKeyboard, UNDO_MS, UndoLine } from './UndoLine.tsx';
 import { cap, handoverMeta } from './words.ts';
 
@@ -400,7 +401,7 @@ export function TodosDrawer() {
   } = useStore();
   const pickedProject = useProjectChoice();
   const pickedClient = useClientChoice();
-  const { list: projectCards } = useProjects();
+  const { list: projectCards, refresh: refreshProjects } = useProjects();
   /** Clears the app-wide picker's project (keeping its client): what the drawer's "Clear" and "Clear filters" do. */
   const clearPicked = () => setChoice({ client: pickedClient, project: '' });
   const favs = boot?.prefs.favouriteTodos ?? NO_FAVOURITES;
@@ -516,6 +517,9 @@ export function TodosDrawer() {
   // After the panel closes, put the keyboard back on the row's title button (or the Add button).
   useEffect(() => {
     if (refocus === null) return;
+    // An add form a page opened (a project's Add a to-do) gives the keyboard back to that page's button.
+    const opener = todoOpener.current;
+    todoOpener.current = null;
     const after = afterHold.current;
     if (after !== null && after.id === refocus) {
       // Held after a pointer press: the neighbouring row's title, else the list (a row in a closed group can't
@@ -525,8 +529,10 @@ export function TodosDrawer() {
         ? document.querySelector<HTMLElement>(`[data-panel-for="${CSS.escape(after.next)}"]`)
         : null;
       (next && !next.closest('[hidden]') ? next : scrollRef.current)?.focus({ preventScroll: true });
-    } else if (refocus === '') (addButton.current ?? scrollRef.current)?.focus();
-    else {
+    } else if (refocus === '') {
+      const back = opener?.isConnected && opener.closest('[inert]') === null ? opener : null;
+      (back ?? addButton.current ?? scrollRef.current)?.focus();
+    } else {
       const id = CSS.escape(refocus);
       const row =
         document.querySelector<HTMLElement>(`[data-panel-for="${id}"]`) ??
@@ -776,6 +782,8 @@ export function TodosDrawer() {
     const result = await run([action]);
     if (result.error) return setMessage(result.error.message, true);
     setMessage('Added.');
+    // A to-do added to a project changes that project's count (and its page's list, which follows the count).
+    if (action.kind === 'add' && action.project) void refreshProjects();
     // After adding one for yourself, the panel stays on it. With files available it opens in read view (the
     // details were written in the Add panel, and files are added from there); otherwise in edit mode so the
     // details can be written at once.

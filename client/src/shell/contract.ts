@@ -480,6 +480,8 @@ export interface FoldProps {
   onToggle?: (open: boolean) => void;
   /** Shown beside the heading, never inside its toggle (e.g. "Mark all as seen"). */
   action?: ReactNode;
+  /** The heading level: 3 (default, a drawer's sections) or 4 (folds inside a card that has its own h3). */
+  level?: 3 | 4;
   children: ReactNode;
 }
 

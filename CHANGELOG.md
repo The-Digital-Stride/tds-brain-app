@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.76.0 — 2026-11-24
+
+- **feat**: show the client's background on a project's Overview
+
 ## v0.75.2 — 2026-11-24
 
 - **fix**: every add opens the full to-do form

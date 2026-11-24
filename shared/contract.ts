@@ -2060,6 +2060,8 @@ export const ROUTES = {
   projectArtifact: '/api/projects/artifact',
   /** R2 phase 4. `GET ?key=<ProjectKey>` → ProjectMeetingsResponse (shared/project-meetings-contract.ts). This Mac's own calendar only. */
   projectMeetings: '/api/projects/meetings',
+  /** Client background on a project's Overview. `GET ?key=<ProjectKey>` → ProjectBusinessResponse (shared/project-business-contract.ts). Read only. */
+  projectBusiness: '/api/projects/business',
   /**
    * R2 phase 5. `GET [?key=<ProjectKey>]` → EmailDraftsResponse; `POST` EmailDraftApproveRequest or EmailDraftDismissRequest
    * (shared/project-email-contract.ts). This Mac's own drafts only; the server reads the draft file and adds the token.

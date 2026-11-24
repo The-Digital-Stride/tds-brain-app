@@ -24,6 +24,7 @@ const api = vi.hoisted(() => ({
   projectActivity: vi.fn(async () => ({ since: null, token: null, items: [], more: 0, comingUp: [] })),
   projectSeen: vi.fn(async () => undefined),
   projectMeetings: vi.fn(async () => ({ cache: 'none', checked: null, last: null, next: null })),
+  projectBusiness: vi.fn(async () => ({ state: 'none', client: null, path: null, facts: [], sections: [] })),
   changeProject: vi.fn(),
   projectFiles: vi.fn(),
   tidy: vi.fn(),
@@ -178,6 +179,23 @@ describe('notices on a project', () => {
     fireEvent.click(screen.getByRole('button', { name: /Website rebuild/ }));
     expect(screen.getByText('Hours a month')).toBeTruthy();
     expect(screen.queryByText('Budget hours')).toBeNull();
+  });
+
+  it('puts the Brief first, then About the client, then Details', async () => {
+    api.projectBusiness.mockResolvedValueOnce({
+      state: 'ok',
+      client: { slug: 'skyseal', name: 'Skyseal', status: null },
+      path: 'clients/skyseal/context/business.md',
+      facts: [{ id: 'contact', words: 'Main contact', value: 'Sam, ops lead', from: 'business' }],
+      sections: [],
+    } as never);
+    await show(projectList([SKY]));
+    fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
+    const brief = screen.getByRole('heading', { name: 'Brief' });
+    const about = await screen.findByRole('heading', { name: 'About Skyseal' });
+    const details = screen.getByRole('region', { name: 'Details' });
+    expect(brief.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(about.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

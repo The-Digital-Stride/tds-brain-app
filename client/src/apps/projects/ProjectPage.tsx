@@ -30,6 +30,12 @@ import {
   teamRows,
 } from './logic.ts';
 import { type ActivityState, ProjectActivity, useProjectActivity } from './ProjectActivity.tsx';
+import {
+  type BusinessState,
+  ProjectBusiness,
+  showsBusiness,
+  useProjectBusiness,
+} from './ProjectBusiness.tsx';
 import { ProjectFiles } from './ProjectFiles.tsx';
 import { type MeetingsState, ProjectMeetings, useProjectMeetings } from './ProjectMeetings.tsx';
 import { ProjectRef } from './ProjectRef.tsx';
@@ -245,6 +251,7 @@ function Overview({
   removal,
   activity,
   meetings,
+  business,
   onUpdates,
   onTodos,
   onAddCard,
@@ -259,6 +266,7 @@ function Overview({
   removal: Removal;
   activity: ActivityState;
   meetings: MeetingsState;
+  business: BusinessState;
   onUpdates: () => void;
   onTodos: () => void;
   onAddCard: () => void;
@@ -364,6 +372,19 @@ function Overview({
             onTodos={onTodos}
           />
         )}
+        <section className="card proj-card" aria-labelledby="proj-brief">
+          <div className="card-head">
+            <h3 id="proj-brief">Brief</h3>
+          </div>
+          {card.brief ? (
+            <p className="proj-brief">{card.brief}</p>
+          ) : (
+            <p className="proj-note">No brief yet.</p>
+          )}
+        </section>
+
+        {showsBusiness(card) ? <ProjectBusiness card={card} clients={clients} business={business} /> : null}
+
         <section className="card proj-card" aria-label="Details">
           <dl className="kv">
             <dt>Client</dt>
@@ -449,17 +470,6 @@ function Overview({
               </>
             ) : null}
           </dl>
-        </section>
-
-        <section className="card proj-card" aria-labelledby="proj-brief">
-          <div className="card-head">
-            <h3 id="proj-brief">Brief</h3>
-          </div>
-          {card.brief ? (
-            <p className="proj-brief">{card.brief}</p>
-          ) : (
-            <p className="proj-note">No brief yet.</p>
-          )}
         </section>
 
         <section className="card proj-card" aria-labelledby="proj-team">
@@ -555,6 +565,8 @@ export function ProjectPage({
   const activity = useProjectActivity(card.key, !card.archived);
   // Read once per project too: the Meetings card and Coming up share it.
   const meetings = useProjectMeetings(card.key, !card.archived);
+  // And the client background: only for a live client project (the server answers 'none' for the rest).
+  const business = useProjectBusiness(card.key, showsBusiness(card));
   // Add files sits at the right end of the tabs row, so the picker's state lives here.
   const [linking, setLinking] = useState(false);
   // And Add a claude.ai page, offered only where the server says so (live project with a card, not legacy).
@@ -744,6 +756,7 @@ export function ProjectPage({
             removal={removal}
             activity={activity}
             meetings={meetings}
+            business={business}
             onUpdates={() => chooseTabFromRow('updates')}
             onTodos={() => chooseTabFromRow('todos')}
             onAddCard={onAddCard}

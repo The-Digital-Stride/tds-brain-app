@@ -99,6 +99,7 @@ import {
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
+import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
 import {
   EMAIL_NAME_MAX,
   EMAIL_PEOPLE_MAX,
@@ -197,6 +198,7 @@ export interface RouteContext {
     /** Claude artifacts in projects (decision 8): "Add a claude.ai page". Absent: the route says it isn't there. */
     projectArtifact?: ProjectArtifactService;
     projectMeetings?: (key: ProjectKey) => Promise<ProjectMeetingsResponse>;
+    projectBusiness?: (key: ProjectKey) => Promise<ProjectBusinessResponse>;
     homeMeetings?: () => Promise<HomeMeetingsResponse>;
     /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK. Absent: the route says it isn't there. */
     emailDrafts?: EmailDraftsService;
@@ -1561,6 +1563,20 @@ async function projectsRoute(
     return;
   }
 
+  if (path === ROUTES.projectBusiness) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const read = ctx.brain.projectBusiness;
+    if (!read) throw missing();
+    try {
+      sendJson(res, 200, await read.call(ctx.brain, key));
+    } catch (err) {
+      throw projectsFailure(err, ctx, "Reading a project's client background");
+    }
+    return;
+  }
+
   if (path === ROUTES.projectSeen) {
     if (method !== 'POST') throw methodNotAllowed();
     const body = await readJson(req);
@@ -2680,6 +2696,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectSeen ||
     path === ROUTES.projectArtifact ||
     path === ROUTES.projectMeetings ||
+    path === ROUTES.projectBusiness ||
     path === ROUTES.homeMeetings ||
     path === ROUTES.projectsTidy
   ) {

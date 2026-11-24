@@ -165,7 +165,7 @@ text "Open invite" on every row, 5+ rows, actions wrapping on phones). Changes m
 1, 2, 3, 6 and 7:
 - One tray column like the other cards (sits beside Favourite to-dos), not both.
 - Shows all of today's meetings, at least 3 (`MEETING_ROWS`), then "Show N more meetings".
-- Title and meta one line each with an ellipsis (two lines for the title on a card under 420px).
+- Title and meta one line each with an ellipsis (on a card narrower than 360px inside: title up to two lines, meta wraps, Join moves under the text).
 - The invite link is a 28px calendar `icon-btn` (`InviteIcon`), named "Open invite for {title} (opens in a new
   tab)" / "Open calendar for {d} …", tooltip "Open invite" / "Open calendar". Project page keeps the text links.
 - Tighter day headings; the phone wrap block removed.

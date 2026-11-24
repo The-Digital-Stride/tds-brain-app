@@ -171,12 +171,15 @@ named here or it isn't one.
    (no Join there).
    Everywhere a meeting shows (Home, a project's Meetings card, Coming up) it carries the link to its invite.
    Outside links are `<a class="btn" target="_blank" rel="noopener noreferrer">`, with a visually hidden " (opens in
-   a new tab)" in the name and no external-link icon. Home's Meetings card (`.home-meetings`, first in `.tray`, both
-   columns, `h2` "Meetings", no count; head link "Open Google Calendar") groups by day (`h3.meet-day`: Today,
+   a new tab)" in the name and no external-link icon, except Home's Meetings invite (an icon link, below). Home's Meetings card (`.home-meetings`, first in `.tray`, one
+   column like the other cards, `h2` "Meetings", no count; head link "Open Google Calendar") groups by day (`h3.meet-day`: Today,
    Tomorrow, "Wed 26 Nov") with static `li.line.home-meeting` rows: a 48px time column (`.meet-when`: start and end,
    or "All day"; a working `.dot` and "Now" while it runs), the title, a meta line (client · project link, "with"
-   people, "until {d}") and `.meet-actions` (Join, then Open invite, always at the right edge). It always shows a
-   `.hint` "Calendar checked …" and does not follow Working on. On a narrow card the actions wrap under the row.
+   people, "until {d}") and `.meet-actions`: Join (standard small, from 15 minutes before) then a 28px `a.icon-btn` with the `calendar`
+   icon, named "Open invite for {title} (opens in a new tab)", tooltip "Open invite" ("Open calendar for {d}" /
+   "Open calendar" for the day fallback), always last. Title and meta are one line each, cut with an ellipsis (on a
+   card under 420px the title may take two lines). It shows all of today's meetings, at least 3, then "Show N more
+   meetings". It always shows a `.hint` "Calendar checked …" and does not follow Working on.
    A project's code (Overview, above the cards; `.proj-ref`) is a label "Project code", the code in `--mono`
    (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its
    accessible name is "Copy code AST4K7", the label swaps to "Copied" for two seconds (`useCopy`, like every copy
@@ -266,7 +269,7 @@ named here or it isn't one.
 | Favourite | the star, card titles ("Favourite to-dos"), hints ("Favourite a to-do to keep it here") | Pinned, Star a… |
 | All {things} | back to a list | |
 | Try again | always a standard button | a link |
-| Open invite | the link to a meeting's calendar page | Open event |
+| Open invite | the link to a meeting's calendar page (on Home, the calendar icon's name and tooltip) | Open event |
 | Open calendar | the same link when only the day view is known | Open invite |
 | Join | the video call link, shown from 15 minutes before a meeting | Join call |
 

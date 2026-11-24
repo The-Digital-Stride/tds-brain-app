@@ -130,10 +130,7 @@
     box-shadow: none;
     transform: none;
   }
-  /* Meetings card: spans both columns of the tray; rows are static (not buttons) so they don't lift. */
-  .home-meetings {
-    grid-column: 1 / -1;
-  }
+  /* Meetings card: one column like the other cards; rows are static (not buttons) so they don't lift. */
   .home-meeting {
     --meet-when: 48px;
     align-items: flex-start;
@@ -159,6 +156,24 @@
     font-weight: 500;
     color: var(--navy);
   }
+  /* One line each, cut with an ellipsis, so a long title or guest list never makes a row taller. */
+  .home-meeting .line-title,
+  .home-meeting .line-meta {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
+  /* A narrow card (phone, side panel): the title may take two lines so Join never squeezes it to a word. */
+  @container (max-width: 420px) {
+    .home-meeting .line-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
   .meet-end {
     font-size: var(--fs-small);
     color: var(--iron);
@@ -170,13 +185,13 @@
   }
   h3.meet-day {
     margin: 0;
-    padding: var(--sp-4) var(--sp-8);
+    padding: var(--sp-2) var(--sp-8);
     font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
   }
   .meet-group + .meet-group > h3.meet-day {
-    margin-top: var(--sp-8);
+    margin-top: var(--sp-6);
   }
   .meet-actions {
     flex: none;
@@ -184,15 +199,7 @@
     align-items: center;
     gap: var(--sp-6);
     margin-left: auto;
-  }
-  @container (max-width: 560px) {
-    .home-meeting {
-      flex-wrap: wrap;
-    }
-    .meet-actions {
-      flex-basis: 100%;
-      padding-left: calc(var(--meet-when) + var(--sp-10));
-    }
+    align-self: center;
   }
   .tray .line-meta .late {
     color: var(--danger);

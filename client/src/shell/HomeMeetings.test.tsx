@@ -224,7 +224,7 @@ describe('Home meetings rows', () => {
     expect(head.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('shows five rows and counts the rest under Show more', async () => {
+  it('shows three rows when today is quiet and counts the rest under Show more', async () => {
     const many = Array.from({ length: 7 }, (_, i) =>
       meeting({
         id: `m${i}`,
@@ -235,12 +235,30 @@ describe('Home meetings rows', () => {
       }),
     );
     await show(reply({ meetings: many }));
-    expect(screen.queryByText('Meeting 5')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more meetings' }));
+    expect(screen.getByText('Meeting 2')).toBeTruthy();
+    expect(screen.queryByText('Meeting 3')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 4 more meetings' }));
     expect(screen.getByText('Meeting 6')).toBeTruthy();
     expect(
       within(screen.getByText('Meeting 6').closest('li') as HTMLElement).getAllByRole('link'),
     ).toHaveLength(1);
+  });
+
+  it('never hides a meeting today, however many there are', async () => {
+    const today = Array.from({ length: 5 }, (_, i) =>
+      meeting({
+        id: `t${i}`,
+        title: `Today ${i}`,
+        start: at(24, 13 + i),
+        end: at(24, 14 + i),
+        day: '2026-11-24',
+      }),
+    );
+    const later = meeting({ id: 'l', title: 'Later', start: at(26, 9), end: at(26, 10), day: '2026-11-26' });
+    await show(reply({ meetings: [...today, later] }));
+    expect(screen.getByText('Today 4')).toBeTruthy();
+    expect(screen.queryByText('Later')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show 1 more meeting' })).toBeTruthy();
   });
 
   it('never puts a calendar or join link in the File the notes prompt', () => {

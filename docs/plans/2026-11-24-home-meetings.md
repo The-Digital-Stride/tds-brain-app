@@ -158,6 +158,19 @@ Then: "Everywhere a meeting displays, always have the link to the meeting invite
    card, Coming up's meeting row, outside links (`<a class="btn">`, hidden " (opens in a new tab)", no icon),
    Words: "Open invite", "Open calendar", "Join".
 
+## Design review (2026-11-24, after Ian: "The home meeting card is using a lot of space")
+
+A design and layout expert (opus) reviewed screenshots of the card as built (~450px tall, both tray columns, a
+text "Open invite" on every row, 5+ rows, actions wrapping on phones). Changes made, overriding Appendix A items
+1, 2, 3, 6 and 7:
+- One tray column like the other cards (sits beside Favourite to-dos), not both.
+- Shows all of today's meetings, at least 3 (`MEETING_ROWS`), then "Show N more meetings".
+- Title and meta one line each with an ellipsis (two lines for the title on a card under 420px).
+- The invite link is a 28px calendar `icon-btn` (`InviteIcon`), named "Open invite for {title} (opens in a new
+  tab)" / "Open calendar for {d} …", tooltip "Open invite" / "Open calendar". Project page keeps the text links.
+- Tighter day headings; the phone wrap block removed.
+Measured in the browser: 281px tall at 1280px with 1 all-day + 2 timed today (was ~450px across both columns).
+
 ## Review outcomes
 
 (to fill)

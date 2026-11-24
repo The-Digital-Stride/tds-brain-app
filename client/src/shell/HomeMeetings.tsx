@@ -7,15 +7,16 @@ import {
 } from '../../../shared/home-meetings-contract.ts';
 import { api } from '../api.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
-import { PINNED_ROWS } from '../state/home-pins.ts';
 import { useStore } from '../store.tsx';
-import { InviteLink, JoinLink, joinOpen } from './MeetingActions.tsx';
+import { InviteIcon, JoinLink, joinOpen } from './MeetingActions.tsx';
 import { clockTime, dayWords, localDay, parseDay, withWords } from './meeting-words.ts';
 import { ShowMore } from './ShowMore.tsx';
 import { StateNote } from './StateNote.tsx';
 import { useNow } from './useNow.ts';
 
 const HOUR = 60 * 60 * 1000;
+/** Rows shown before "Show N more meetings" when today has fewer. */
+const MEETING_ROWS = 3;
 
 /** The day after a plain YYYY-MM-DD, by hand. */
 function nextDay(day: string): string {
@@ -121,7 +122,7 @@ function MeetingRow({
       </span>
       <span className="meet-actions">
         {m.join && joinOpen(m, now) ? <JoinLink href={m.join} title={m.title} /> : null}
-        <InviteLink meeting={m} title={m.title} day={m.day} />
+        <InviteIcon meeting={m} title={m.title} day={m.day} />
       </span>
     </li>
   );
@@ -182,7 +183,8 @@ export function HomeMeetings() {
     const rows = data.meetings.filter((m) => !ended(m, now));
     const today = localDay(now);
     const todayCount = rows.filter((m) => m.day === today).length;
-    const limit = Math.max(PINNED_ROWS, todayCount);
+    // All of today, topped up to MEETING_ROWS with what comes next (design review: compact by default).
+    const limit = Math.max(MEETING_ROWS, todayCount);
     const shown = expanded ? rows : rows.slice(0, limit);
     const days: { day: string; rows: HomeMeeting[] }[] = [];
     for (const m of shown) {

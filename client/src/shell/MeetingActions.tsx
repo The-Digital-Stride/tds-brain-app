@@ -1,4 +1,5 @@
 import type { MeetingLinks } from '../../../shared/home-meetings-contract.ts';
+import { Icon } from './Icon.tsx';
 import { dayWords } from './meeting-words.ts';
 
 const JOIN_LEAD_MS = 15 * 60 * 1000;
@@ -49,6 +50,27 @@ export function JoinLink({ href, title }: { href: string; title: string }) {
   return (
     <a className="btn" data-size="small" href={href} target="_blank" rel="noopener noreferrer">
       Join <span className="visually-hidden">{title} (opens in a new tab)</span>
+    </a>
+  );
+}
+
+/**
+ * Home's compact invite link (design review 2026-11-24): a 28px calendar icon, always last in the row. Same names as
+ * InviteLink, given as aria-label, with a tooltip of the short label.
+ */
+export function InviteIcon({ meeting, title, day }: { meeting: MeetingLinks; title: string; day: string }) {
+  const isDay = meeting.calendarKind === 'day';
+  const label = isDay ? 'Open calendar' : 'Open invite';
+  return (
+    <a
+      className="icon-btn"
+      href={meeting.calendar}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label} for ${isDay ? dayWords(day) : title} (opens in a new tab)`}
+      data-tip={label}
+    >
+      <Icon name="calendar" />
     </a>
   );
 }

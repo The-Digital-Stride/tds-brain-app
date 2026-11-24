@@ -305,6 +305,15 @@ describe('invite links (home meetings plan decisions 2-4)', () => {
     await writeCache([]);
     expect((await svc.read(KEY)).last?.calendar).toBe(EVENT);
   });
+  it("a recurring series sharing one id: next takes its own instance's call link", async () => {
+    await writeCache([
+      mtg('series', '2026-11-30T10:00:00Z', 30, { join: 'https://meet.google.com/later-one' }),
+      mtg('series', '2026-11-24T10:00:00Z', 30, { join: 'https://meet.google.com/soon-one' }),
+    ]);
+    const r = await service().svc.read(KEY);
+    expect(r.next?.start).toBe('2026-11-24T10:00:00Z');
+    expect(r.next?.join).toBe('https://meet.google.com/soon-one');
+  });
   it('a missing or unsafe link falls back to the day view; an unsafe call link is dropped', async () => {
     await writeCache([
       mtg('soon', '2026-11-24T10:00:00Z', 30, {

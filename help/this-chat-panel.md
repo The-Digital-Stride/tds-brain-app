@@ -6,7 +6,7 @@ order: 9
 summary: A side panel with the chat's files and details.
 benefit: See what a chat used and made, without scrolling back through it.
 roles: all
-related: [chat-files, chat-kinds, how-full-a-chat-is, continuing-in-the-terminal]
+related: [chat-files, saving-chats-to-projects, chat-kinds, how-full-a-chat-is, continuing-in-the-terminal]
 since: 0.38.0
 reviewed: 2026-11-15
 ---
@@ -44,6 +44,7 @@ The picture leaves out Started and Approvals. Owners and scouts also see **Conti
 - The panel only shows for a chat that is open.
 - The **Context** fold on this tab shows [how full the chat is](help:how-full-a-chat-is).
 - The **Files** tab is explained in [Chat files](help:chat-files).
+- To share what a chat achieved, see [Saving a chat to a project](help:saving-chats-to-projects).
 
 ## Try this
 

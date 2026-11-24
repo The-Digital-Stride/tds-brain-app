@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChatView } from '../components/Chat.tsx';
 import { useStore } from '../store.tsx';
 import { ResizeHandle } from './ResizeHandle.tsx';
-import { useLayerWidth } from './useLayerWidth.ts';
+import { CHAT_DRAWER_PAD, CONTENT_MIN, maxBesideContent, useLayerWidth } from './useLayerWidth.ts';
 
 /**
  * A tool's chat in a drawer on the right of the sheet (plan 2026-11-16-run-chat-drawer), so the tool stays in
@@ -30,7 +30,29 @@ function useSheetWidth(): number | undefined {
 }
 
 function ChatDrawerBody() {
-  const layer = useLayerWidth('chat', useSheetWidth());
+  const { view } = useStore();
+  const sheetWidth = useSheetWidth();
+  const onProjects = view === 'app:projects';
+  // On Projects the drawer is held narrower (this session only) so the page keeps room for its review form.
+  const layer = useLayerWidth(
+    'chat',
+    sheetWidth,
+    onProjects && sheetWidth ? maxBesideContent(sheetWidth) : undefined,
+  );
+  // When that room is there, the Projects page makes way for the drawer; below it the drawer overlays as before.
+  const room = layer.width + 2 * CHAT_DRAWER_PAD;
+  const makeWay = onProjects && sheetWidth !== undefined && sheetWidth - room >= CONTENT_MIN;
+  useEffect(() => {
+    if (!makeWay) return;
+    const sheet = document.getElementById('main');
+    if (!sheet) return;
+    sheet.style.setProperty('--chat-room', `${room}px`);
+    sheet.setAttribute('data-chat-room', '');
+    return () => {
+      sheet.style.removeProperty('--chat-room');
+      sheet.removeAttribute('data-chat-room');
+    };
+  }, [makeWay, room]);
   // What had focus as the drawer opened (Run, Open chat): focus goes back there when it is hidden.
   const opener = useRef<Element | null>(typeof document === 'undefined' ? null : document.activeElement);
   useEffect(() => {

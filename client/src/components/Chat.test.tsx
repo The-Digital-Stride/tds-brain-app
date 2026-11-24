@@ -17,6 +17,9 @@ const h = vi.hoisted(() => ({
   hideChatDrawer: vi.fn(),
   expandChatDrawer: vi.fn(),
   chatDrawer: null as string | null,
+  live: { sdkSessionId: null as string | null, project: undefined as string | undefined },
+  projects: null as unknown,
+  openChat: vi.fn(),
 }));
 const api = vi.hoisted(() => ({
   answerPermission: vi.fn().mockResolvedValue({ ok: true }),
@@ -46,7 +49,16 @@ vi.mock('../store.tsx', () => ({
     activeChat: { kind: 'live', sessionId: 's1' },
     chats: { s1: h.chat },
     sessions: {
-      live: [{ id: 's1', title: 'T', client: null, sdkSessionId: null, lastActivityAt: h.lastActivityAt }],
+      live: [
+        {
+          id: 's1',
+          title: 'T',
+          client: null,
+          sdkSessionId: h.live.sdkSessionId,
+          project: h.live.project,
+          lastActivityAt: h.lastActivityAt,
+        },
+      ],
       past: [],
     },
     send: async () => true,
@@ -72,9 +84,17 @@ vi.mock('../store.tsx', () => ({
     hideChatDrawer: h.hideChatDrawer,
     expandChatDrawer: h.expandChatDrawer,
     chatDrawer: h.chatDrawer,
+    openChat: h.openChat,
   }),
 }));
+vi.mock('../state/projects.ts', async (orig) => ({
+  ...(await orig<typeof import('../state/projects.ts')>()),
+  useProjects: () => ({ list: h.projects, error: null, refresh: async () => {}, apply: () => {} }),
+}));
 
+const { saveChatRequest, savingChat } = await import('../state/save-chat-request.ts');
+const { projectPageRequest } = await import('../state/client-choice.ts');
+const { pickOption } = await import('../test/pick.ts');
 const { ChatView } = await import('./Chat.tsx');
 const { ShellProvider, useShell } = await import('../shell/ShellProvider.tsx');
 
@@ -128,6 +148,12 @@ afterEach(() => {
   h.expandChatDrawer.mockClear();
   h.setSkillLevel.mockClear();
   h.dismissLevelOffer.mockClear();
+  h.live = { sdkSessionId: null, project: undefined };
+  h.projects = null;
+  h.openChat.mockClear();
+  h.openView.mockClear();
+  saveChatRequest.set(null);
+  projectPageRequest.set('');
 });
 
 describe('status line above the message box', () => {
@@ -662,5 +688,104 @@ describe('the context meter and summarising line', () => {
     expect(document.querySelector('.level-kept')?.textContent).toBe(
       'Staying on Deep for now: it costs less than switching down and re-reading the whole chat.',
     );
+  });
+});
+
+describe('Save to project', () => {
+  const SDK = '6127dcf1-a50e-43e0-bc6d-f370942a7e48';
+  const card = (key: string, title: string) => ({
+    key,
+    title,
+    slug: key.split('/')[1],
+    client: key.split('/')[0],
+    space: 'client',
+    card: 'ok',
+    archived: false,
+    status: 'active',
+  });
+  const list = (canSaveChat: boolean) => ({
+    canSaveChat,
+    projects: [card('acme/site', 'Site'), card('acme/seo', 'SEO')],
+  });
+  const save = () => screen.queryByRole('button', { name: 'Save to project' });
+
+  it('is hidden without canSaveChat', () => {
+    h.chat = chatState('idle');
+    h.live.sdkSessionId = SDK;
+    h.projects = list(false);
+    render(sheet());
+    expect(save()).toBeNull();
+  });
+
+  it('is hidden while the chat has no sdkSessionId (nothing to save yet)', () => {
+    h.chat = chatState('idle');
+    h.projects = list(true);
+    render(sheet());
+    expect(save()).toBeNull();
+  });
+
+  it('is aria-disabled while Claude is replying, and pressing it does nothing', () => {
+    h.chat = chatState('working');
+    h.live.sdkSessionId = SDK;
+    h.projects = list(true);
+    render(sheet());
+    const button = save() as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(saveChatRequest.get()).toBeNull();
+    expect(screen.queryByLabelText('Save to')).toBeNull();
+  });
+
+  it('asks for a project when the chat has none, then sets the request and opens Projects with the chat beside it', () => {
+    h.chat = chatState('idle');
+    h.live.sdkSessionId = SDK;
+    h.projects = list(true);
+    render(sheet());
+    fireEvent.click(save() as HTMLElement);
+    expect(saveChatRequest.get()).toBeNull();
+    pickOption('Save to', 'Site');
+    expect(saveChatRequest.get()).toEqual({ key: 'acme/site', chat: SDK, title: 'T' });
+    expect(projectPageRequest.get()).toBe('acme/site');
+    expect(h.openView).toHaveBeenCalledWith('app:projects');
+    expect(h.openChat).toHaveBeenCalledWith('s1', { in: 'drawer' });
+  });
+
+  it("is hidden in the drawer while this chat's form is open on Projects, and kept in the full-screen bar", () => {
+    h.chat = chatState('idle');
+    h.live.sdkSessionId = SDK;
+    h.projects = list(true);
+    savingChat.set(SDK);
+    try {
+      const { unmount } = render(
+        <ShellProvider>
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      expect(save()).toBeNull();
+      unmount();
+      render(sheet());
+      expect(save()).toBeTruthy();
+      cleanup();
+      savingChat.set('another-chat');
+      render(
+        <ShellProvider>
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      expect(save()).toBeTruthy();
+    } finally {
+      savingChat.set(null);
+    }
+  });
+
+  it("uses the chat's own live project without asking", () => {
+    h.chat = chatState('idle');
+    h.live = { sdkSessionId: SDK, project: 'acme/seo' };
+    h.projects = list(true);
+    render(sheet());
+    fireEvent.click(save() as HTMLElement);
+    expect(screen.queryByLabelText('Save to')).toBeNull();
+    expect(saveChatRequest.get()).toEqual({ key: 'acme/seo', chat: SDK, title: 'T' });
   });
 });

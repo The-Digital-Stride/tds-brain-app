@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
+import { PROJECTS_CHAT_SUMMARY_CAPABILITY } from '../../shared/chat-summary-contract.ts';
 import {
   type ClientInfo,
   type DoneTodoList,
@@ -891,6 +892,8 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
       // Project codes (R2 phase 4b): the script's own capability; "all" is the brain's Owner only.
       canRef,
       canRefAll: canRef && identity.role === 'owner',
+      // Chat summaries: the script's own capability, and the same roles check as any change.
+      canSaveChat: canChange && features.includes(PROJECTS_CHAT_SUMMARY_CAPABILITY),
       looseLabels: tidied.rows.length,
       duplicates: w.duplicates,
       leftovers: w.leftovers,

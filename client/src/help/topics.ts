@@ -12,6 +12,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'projects',
   'project-codes',
   'project-emails',
+  'saving-chats-to-projects',
   'meetings',
   // Phase 2
   'why-cortex',

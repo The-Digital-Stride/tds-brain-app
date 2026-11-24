@@ -304,3 +304,52 @@ describe('api.resend', () => {
     expect(decision).toEqual({ action: 'allow' });
   });
 });
+
+describe('api.chatSummaryDraft', () => {
+  it('posts the chat and project with headers that pass the real request check', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.chatSummaryDraft({ chat: '6127dcf1-a50e-43e0-bc6d-f370942a7e48', project: 'acme/site' });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/chat-summary/draft');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      chat: '6127dcf1-a50e-43e0-bc6d-f370942a7e48',
+      project: 'acme/site',
+    });
+    const { checkRequest, cookieValueFor } = await import('../../server/http/security.ts');
+    const { sessionCookieName } = await import('../../shared/contract.ts');
+    const port = 3877;
+    const token = 'launch-token';
+    const sent = Object.fromEntries(
+      Object.entries(init.headers as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const decision = checkRequest(
+      {
+        method: 'POST',
+        path: url,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'sec-fetch-site': 'same-origin',
+          cookie: `${sessionCookieName(port)}=${cookieValueFor(token)}`,
+          ...sent,
+        },
+      },
+      { port, launchToken: token },
+    );
+    expect(decision).toEqual({ action: 'allow' });
+  });
+});
+
+describe('api.projectUnsavedChats', () => {
+  it('gets the project key, encoded', async () => {
+    const body = { chats: [], canSave: true };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(body)));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.projectUnsavedChats('acme/site')).resolves.toEqual(body);
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      '/api/projects/unsaved-chats?key=acme%2Fsite',
+    );
+  });
+});

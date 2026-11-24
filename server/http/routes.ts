@@ -23,6 +23,14 @@ import {
   type AdsErrorCode,
   type AdsRequests,
 } from '../../shared/ads-contract.ts';
+import { readChatSummary } from '../../shared/chat-summary.ts';
+import {
+  CHAT_ID_PATTERN,
+  CHAT_TITLE_MAX,
+  type ChatSummaryDraftRequest,
+  UNSAVED_CHATS_DAYS,
+  type UnsavedChatsResponse,
+} from '../../shared/chat-summary-contract.ts';
 import {
   ADS_FOLDS_MAX,
   ADS_PREF_KEY_MAX,
@@ -122,6 +130,7 @@ import {
   PROJECTS_ERROR_STATUS,
   type ProjectAction,
   type ProjectArtifactRequest,
+  type ProjectCard,
   type ProjectFields,
   type ProjectKey,
   type ProjectList,
@@ -149,10 +158,12 @@ import {
   cleanArtifactTitle,
   type ProjectArtifactService,
 } from '../brain/project-artifact.ts';
+import type { ProjectUpdatesService } from '../brain/project-updates.ts';
 import { PROJECTS_SKILL } from '../brain/projects-skill.ts';
 import { SKILL_LEVEL_MESSAGES, SkillLevelError, type SkillLevelsService } from '../brain/skill-levels.ts';
 import { TODO_CHANGE_MESSAGES } from '../brain/todo-skill.ts';
 import { TODO_FILES_MESSAGES } from '../brain/todos.ts';
+import { ChatDraftError } from '../engine/chat-summary.ts';
 import {
   CLIENT_GUESS_MAX_CHARS,
   type ClientAlias,
@@ -206,6 +217,10 @@ export interface RouteContext {
     doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
     /** Done-todos plan, decision 10: one teammate's open to-do, read only. Null when it has gone. */
     teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
+    /** Chat summaries: this person's `chat` entries for one chat on a project (whole log, newest first). */
+    chatEntries?: ProjectUpdatesService['chatEntries'];
+    /** Chat summaries: hands the brain the session manager's `ownsChat`, for "Open chat" on `chat` entries. */
+    setHoldsChat?: (fn: ((chatId: string) => Promise<boolean>) | null) => void;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -1056,6 +1071,38 @@ export function parseProjectAction(body: unknown): ProjectAction {
       onlyKeys(body, ['kind', 'key', 'entry'], ['key', 'entry']);
       if (!isProjectKey(body.key) || !isRec(body.entry)) throw projectBad();
       const entry = body.entry;
+      if (entry.kind === 'chat') {
+        // Chat summaries (decision 1): the route checks ownership and the body's layout before the script runs.
+        onlyKeys(
+          entry,
+          ['kind', 'summary', 'clientSafe', 'chat', 'title'],
+          ['kind', 'summary', 'clientSafe', 'chat', 'title'],
+        );
+        if (
+          typeof entry.summary !== 'string' ||
+          entry.summary.trim() === '' ||
+          entry.summary.trim().length > UPDATE_SUMMARY_MAX ||
+          typeof entry.clientSafe !== 'boolean' ||
+          typeof entry.chat !== 'string' ||
+          !CHAT_ID_PATTERN.test(entry.chat) ||
+          typeof entry.title !== 'string' ||
+          entry.title.trim() === '' ||
+          entry.title.trim().length > CHAT_TITLE_MAX ||
+          !noNewline(entry.title)
+        )
+          throw projectBad();
+        return {
+          kind: 'update',
+          key: body.key,
+          entry: {
+            kind: 'chat',
+            summary: entry.summary,
+            clientSafe: entry.clientSafe,
+            chat: entry.chat,
+            title: entry.title.trim(),
+          },
+        };
+      }
       onlyKeys(entry, ['kind', 'summary', 'clientSafe'], ['kind', 'summary', 'clientSafe']);
       if (
         (entry.kind !== 'note' && entry.kind !== 'call') ||
@@ -1288,6 +1335,105 @@ export function parseProjectArtifact(body: unknown): ProjectArtifactRequest {
   return { key: body.key, url, title, ...(description !== undefined ? { description } : {}) };
 }
 
+// ---------------------------------------------------------------------------
+// Chat summaries (plan 2026-11-24-chat-summary-updates, decisions 2-4, 10)
+// ---------------------------------------------------------------------------
+
+const CHAT_NOT_HERE = "That chat couldn't be found on this Mac.";
+const CHAT_NOT_YOURS = 'Only the person who had this chat can save a summary of it.';
+const CHAT_PROJECT_CLOSED = "Chat summaries can't be saved to an archived project.";
+const CHAT_NO_CARD = 'This project needs a card before chat summaries can be saved to it.';
+const CHAT_NEEDS_SKILLS = "Update the brain's skills to save chat summaries to projects.";
+const CHAT_BAD_BODY = "That summary isn't in the layout the app saves. Open Save to project again.";
+const CHAT_BAD_DOC = "One of the documents can't be linked. Untick it and try again.";
+const CHAT_PERSONAL_DOC =
+  "A file in your personal files can't be linked from a shared project. Untick it and try again.";
+
+/** `POST ROUTES.chatSummaryDraft`: exactly `chat` and `project`. */
+export function parseChatSummaryDraft(body: unknown): ChatSummaryDraftRequest {
+  if (!isRec(body)) throw projectBad();
+  onlyKeys(body, ['chat', 'project'], ['chat', 'project']);
+  if (typeof body.chat !== 'string' || !CHAT_ID_PATTERN.test(body.chat) || !isProjectKey(body.project))
+    throw projectBad();
+  return { chat: body.chat, project: body.project };
+}
+
+/**
+ * The live project a summary may be saved to (followed through moved keys), for this person. Throws HttpError:
+ * not-found (no such project) or not-allowed (archived, no card, no capability or this person can't change projects).
+ */
+async function savableCard(
+  ctx: RouteContext,
+  list: NonNullable<RouteContext['brain']['projects']>,
+  key: ProjectKey,
+  who: Identity,
+): Promise<ProjectCard> {
+  const projects = await list.call(ctx.brain, who);
+  const card =
+    projects.projects.find((c) => c.key === key) ??
+    projects.projects.find((c) => (c.movedFrom ?? []).includes(key)) ??
+    null;
+  if (!card) throw new HttpError(404, 'not-found', "That project couldn't be found. It may have been moved.");
+  if (card.archived) throw new HttpError(403, 'not-allowed', CHAT_PROJECT_CLOSED);
+  if (card.card !== 'ok') throw new HttpError(403, 'not-allowed', CHAT_NO_CARD);
+  if (projects.canChange !== true) throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+  if (projects.canSaveChat !== true) throw new HttpError(403, 'not-allowed', CHAT_NEEDS_SKILLS);
+  return card;
+}
+
+/**
+ * Before a `chat` entry reaches the script (decisions 2, 3; overseer should 3): only this Mac's own chat, a body
+ * in the layout, and every document an https address or a brain file the library lists, never a `personal/`
+ * file on a shared project. Answers the project's live key, for the saved count. Throws HttpError.
+ */
+async function checkChatSummarySave(
+  ctx: RouteContext,
+  key: ProjectKey,
+  entry: { chat: string; summary: string },
+): Promise<ProjectKey> {
+  const owns = ctx.sessions.chatSummaries?.owns ?? ctx.sessions.ownsChat;
+  if (!owns || !(await safe(owns(entry.chat), false)))
+    throw new HttpError(403, 'not-allowed', CHAT_NOT_YOURS);
+  const fields = readChatSummary(entry.summary);
+  if (!fields) throw new HttpError(400, 'bad-request', CHAT_BAD_BODY);
+  const card = ctx.brain.projectsIndex
+    ? ((await safe(ctx.brain.projectsIndex(), null))?.byKey(key) ?? null)
+    : null;
+  const shared = card ? card.space !== 'personal' : !key.startsWith('personal/');
+  for (const doc of fields.documents) {
+    const ref = doc.ref;
+    if (/^https:\/\//i.test(ref)) {
+      let ok = false;
+      try {
+        const u = new URL(ref);
+        ok = u.protocol === 'https:' && u.username === '' && u.password === '';
+      } catch {
+        ok = false;
+      }
+      if (!ok) throw new HttpError(400, 'bad-request', CHAT_BAD_DOC);
+      continue;
+    }
+    const personal = ref === 'personal' || ref.startsWith('personal/');
+    if (personal && shared) throw new HttpError(400, 'bad-request', CHAT_PERSONAL_DOC);
+    if (ref.startsWith('/') || ref.split('/').some((seg) => seg === '..' || seg === '.' || seg === ''))
+      throw new HttpError(400, 'bad-request', CHAT_BAD_DOC);
+    const found = ctx.brain.libraryItemForPath ? await safe(ctx.brain.libraryItemForPath(ref), null) : null;
+    if (!found?.item) throw new HttpError(400, 'bad-request', CHAT_BAD_DOC);
+    if (shared && found.scope.kind === 'personal') throw new HttpError(400, 'bad-request', CHAT_PERSONAL_DOC);
+  }
+  return card?.key ?? key;
+}
+
+/** Hands the brain this app's `ownsChat` once, so `chat` entries can say "Open chat" (decision 12). */
+const boundHolds = new WeakMap<object, unknown>();
+function bindHoldsChat(ctx: RouteContext): void {
+  const set = ctx.brain.setHoldsChat;
+  const owns = ctx.sessions.ownsChat;
+  if (!set || !owns || boundHolds.get(ctx.brain) === ctx.sessions) return;
+  boundHolds.set(ctx.brain, ctx.sessions);
+  set.call(ctx.brain, (chatId) => owns.call(ctx.sessions, chatId));
+}
+
 /** Sets `canAddArtifact` (true only; absent otherwise) on a list the route sends: changes allowed and the files skill can add pages. */
 async function withArtifactFlag(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
   const service = ctx.brain.projectArtifact;
@@ -1333,8 +1479,13 @@ async function projectsRoute(
     // Project codes: a backfill of every card is the brain Owner's alone, refused before the script runs.
     if (action.kind === 'ref' && action.all === true && who.role !== 'owner')
       throw new HttpError(403, 'not-allowed', 'Only the brain Owner can give every project a code at once.');
+    const chatEntry = action.kind === 'update' && action.entry.kind === 'chat' ? action.entry : null;
+    const savedKey =
+      chatEntry && action.kind === 'update' ? await checkChatSummarySave(ctx, action.key, chatEntry) : null;
     try {
       const list = await change.call(ctx.brain, action, who);
+      // Counted, not timed (decision 10): the nudge lists this chat again only once it has new messages.
+      if (chatEntry && savedKey) await ctx.sessions.chatSummaries?.recordSaved(chatEntry.chat, savedKey);
       ctx.log(`Changed a project (${action.kind}).`);
       sendJson(res, 200, await withArtifactFlag(ctx, list, who));
     } catch (err) {
@@ -1466,10 +1617,80 @@ async function projectsRoute(
       throw projectBad();
     const read = ctx.brain.projectUpdates;
     if (!read) throw missing();
+    bindHoldsChat(ctx);
     try {
       sendJson(res, 200, await read.call(ctx.brain, key, before, await identity()));
     } catch (err) {
       throw projectsFailure(err, ctx, "Reading a project's updates");
+    }
+    return;
+  }
+
+  if (path === ROUTES.chatSummaryDraft) {
+    if (method !== 'POST') throw methodNotAllowed();
+    const draftReq = parseChatSummaryDraft(await readJson(req));
+    const service = ctx.sessions.chatSummaries;
+    const list = ctx.brain.projects;
+    if (!service || !list) throw missing();
+    // Only the person who ran the chat (decision 3): a chat this Mac doesn't hold is not found.
+    if (!(await service.owns(draftReq.chat))) throw new HttpError(404, 'not-found', CHAT_NOT_HERE);
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    try {
+      const card = await savableCard(ctx, list, draftReq.project, who);
+      const earlier = (await ctx.brain.chatEntries?.(card.key, draftReq.chat, who)) ?? [];
+      const draft = await service.draft({
+        chat: draftReq.chat,
+        project: { key: card.key, title: card.title, personal: card.space === 'personal' },
+        earlier,
+      });
+      ctx.log('Drafted a chat summary.');
+      sendJson(res, 200, draft);
+    } catch (err) {
+      if (err instanceof ChatDraftError) throw new HttpError(statusFor(err.code), err.code, err.message);
+      throw projectsFailure(err, ctx, 'A chat summary draft');
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectUnsavedChats) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const key = url.searchParams.get('key');
+    if (!isProjectKey(key)) throw projectBad();
+    const list = ctx.brain.projects;
+    if (!list) throw missing();
+    const none: UnsavedChatsResponse = { chats: [], canSave: false };
+    const service = ctx.sessions.chatSummaries;
+    const who = await identity();
+    if (
+      !service ||
+      (await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed'
+    ) {
+      sendJson(res, 200, none);
+      return;
+    }
+    let card: ProjectCard;
+    try {
+      card = await savableCard(ctx, list, key, who);
+    } catch (err) {
+      if (err instanceof HttpError && err.code === 'not-allowed') {
+        sendJson(res, 200, none);
+        return;
+      }
+      throw projectsFailure(err, ctx, 'Reading the chats not saved yet');
+    }
+    try {
+      const entries = ctx.brain.chatEntries;
+      const chats = await service.unsaved({
+        keys: [card.key, ...(card.movedFrom ?? [])],
+        since: Date.now() - UNSAVED_CHATS_DAYS * 24 * 60 * 60 * 1000,
+        hasEntry: async (chat) => (entries ? (await entries(card.key, chat, who)).length > 0 : false),
+      });
+      const body: UnsavedChatsResponse = { chats, canSave: true };
+      sendJson(res, 200, body);
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'Reading the chats not saved yet');
     }
     return;
   }
@@ -2691,6 +2912,8 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
     path === ROUTES.projectUpdates ||
+    path === ROUTES.chatSummaryDraft ||
+    path === ROUTES.projectUnsavedChats ||
     path === ROUTES.projectEmailDrafts ||
     path === ROUTES.projectActivity ||
     path === ROUTES.projectSeen ||

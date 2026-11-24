@@ -2067,6 +2067,13 @@ export const ROUTES = {
    * (shared/project-email-contract.ts). This Mac's own drafts only; the server reads the draft file and adds the token.
    */
   projectEmailDrafts: '/api/projects/email-drafts',
+  /**
+   * Chat summaries (shared/chat-summary-contract.ts). `POST` ChatSummaryDraftRequest → ChatSummaryDraft: Claude's
+   * draft from a side copy of the chat, never saved. Saving goes through `projectsChange`.
+   */
+  chatSummaryDraft: '/api/chat-summary/draft',
+  /** Chat summaries, decision 10. `GET ?key=<ProjectKey>` → UnsavedChatsResponse (this Mac's chats only). */
+  projectUnsavedChats: '/api/projects/unsaved-chats',
   /** Home meetings. `GET` → HomeMeetingsResponse (shared/home-meetings-contract.ts): every upcoming meeting, this Mac's calendar only. */
   homeMeetings: '/api/meetings',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */

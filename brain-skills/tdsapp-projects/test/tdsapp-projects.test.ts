@@ -25,6 +25,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFrontmatter } from '../../../server/brain/frontmatter.ts';
 import {
+  CHAT_ID_PATTERN,
+  CHAT_TITLE_MAX,
+  PROJECTS_CHAT_SUMMARY_CAPABILITY,
+} from '../../../shared/chat-summary-contract.ts';
+import {
   DISMISSED_DAYS,
   DRAFT_MAX_AGE_DAYS,
   EMAIL_DRAFT_FILE_PATTERN,
@@ -105,6 +110,9 @@ interface ProjectsModule {
   PROJECTS_ARCHIVE_CAPABILITY: string;
   PROJECTS_UPDATES_CAPABILITY: string;
   PROJECTS_EMAIL_CAPABILITY: string;
+  PROJECTS_CHAT_SUMMARY_CAPABILITY: string;
+  CHAT_ID_PATTERN: RegExp;
+  CHAT_TITLE_MAX: number;
   EMAIL: Record<string, number | string>;
   EMAIL_DRAFT_FILE_PATTERN: RegExp;
   UPDATES_DIR: string;
@@ -724,10 +732,11 @@ describe('capabilities and the command line', () => {
           PROJECTS_UPDATES_CAPABILITY,
           PROJECTS_REFS_CAPABILITY,
           PROJECTS_EMAIL_CAPABILITY,
+          PROJECTS_CHAT_SUMMARY_CAPABILITY,
         ],
       },
     });
-    expect(projects.SCRIPT_VERSION).toBe('0.6.0');
+    expect(projects.SCRIPT_VERSION).toBe('0.7.0');
   });
 
   it('runs from the command line: one JSON line, exit 0, 2 and 1', () => {
@@ -782,6 +791,9 @@ describe('constants', () => {
     expect(projects.PROJECTS_ARCHIVE_CAPABILITY).toBe(PROJECTS_ARCHIVE_CAPABILITY);
     expect(projects.PROJECTS_UPDATES_CAPABILITY).toBe(PROJECTS_UPDATES_CAPABILITY);
     expect(projects.PROJECTS_EMAIL_CAPABILITY).toBe(PROJECTS_EMAIL_CAPABILITY);
+    expect(projects.PROJECTS_CHAT_SUMMARY_CAPABILITY).toBe(PROJECTS_CHAT_SUMMARY_CAPABILITY);
+    expect(projects.CHAT_ID_PATTERN.source).toBe(CHAT_ID_PATTERN.source);
+    expect(projects.CHAT_TITLE_MAX).toBe(CHAT_TITLE_MAX);
     expect(projects.EMAIL_DRAFT_FILE_PATTERN.source).toBe(EMAIL_DRAFT_FILE_PATTERN.source);
     expect(projects.EMAIL_KEYS_SUBDIR).toBe(EMAIL_KEYS_SUBDIR);
     expect(projects.EMAIL).toEqual({
@@ -1320,6 +1332,7 @@ describe('move', () => {
       PROJECTS_UPDATES_CAPABILITY,
       PROJECTS_REFS_CAPABILITY,
       PROJECTS_EMAIL_CAPABILITY,
+      PROJECTS_CHAT_SUMMARY_CAPABILITY,
     ]);
     const r = spawnSync(process.execPath, [SCRIPT, 'move'], {
       input: JSON.stringify({ kind: 'move', key: 'acme/website', client: 'skyseal', expect: sha(CARD) }),
@@ -2630,6 +2643,99 @@ describe('updates log', () => {
     });
   });
 
+  describe('chat entries', () => {
+    const CHAT = '3f2a9c1e-5b7d-4e8a-9c0f-1a2b3c4d5e6f';
+    const chat = (extra: Record<string, unknown> = {}) => ({
+      kind: 'chat',
+      summary: '**Objective:** Quote.\n\n**Outcome:** Sent.',
+      clientSafe: false,
+      chat: CHAT,
+      title: 'Quote for Skyseal',
+      ...extra,
+    });
+
+    it('writes a chat entry like a note, plus chat and chat_title, with the summary as the body', () => {
+      const r = add(chat());
+      expect(r.exit).toBe(0);
+      const name = entries()[0] as string;
+      expect(read(`${UPDATES}/${name}`)).toBe(
+        `---\nv: 1\nkind: chat\nby: sam-example\nat: 2026-11-20T10:20:30Z\nclient_safe: false\nchat: ${CHAT}\nchat_title: Quote for Skyseal\n---\n\n**Objective:** Quote.\n\n**Outcome:** Sent.\n`,
+      );
+      expect(r.reply).toMatchObject({ ok: true, action: 'update', file: `${UPDATES}/${name}` });
+      expect(read(`${LIVE}/project.md`)).toBe(CARD_TEXT);
+    });
+
+    it('refuses a bad chat id, and an empty, over-long or multi-line title', () => {
+      for (const bad of [
+        chat({ chat: 'nope' }),
+        chat({ chat: CHAT.toUpperCase() }),
+        chat({ chat: undefined }),
+        chat({ title: '' }),
+        chat({ title: '   ' }),
+        chat({ title: 'x'.repeat(CHAT_TITLE_MAX + 1) }),
+        chat({ title: 'one\ntwo' }),
+        chat({ title: 'tab\there' }),
+        chat({ title: 42 }),
+        chat({ title: undefined }),
+        chat({ summary: '   ' }),
+        chat({ clientSafe: 'yes' }),
+        chat({ title: `a: it's "both"` }),
+      ]) {
+        expect(refusal(add(bad)), JSON.stringify(bad)).toEqual({ exit: 2, error: 'bad-request' });
+      }
+      expect(entries()).toEqual([]);
+      expect(add(chat({ title: 'x'.repeat(CHAT_TITLE_MAX) })).exit).toBe(0);
+    });
+
+    it('trims the title and round-trips colons, quotes and hashes', () => {
+      for (const title of ['Plan: phase 2', 'The "big" one', "Alex's #1 ask", 'a # b', '- dash', '{x}']) {
+        const r = add(chat({ title: `  ${title}  ` }));
+        expect(r.exit, title).toBe(0);
+        const fmv = fm(String(r.reply.file));
+        expect(fmv.data.chat_title, title).toBe(title);
+        expect(fmv.data.chat).toBe(CHAT);
+        expect(fmv.data.kind).toBe('chat');
+      }
+    });
+
+    it('refuses an archived project and a stranger, like a note', () => {
+      as('stranger@example.test');
+      expect(refusal(add(chat()))).toMatchObject({ exit: 2 });
+      expect(entries()).toEqual([]);
+    });
+
+    const chatFile = (by: string, name = `2026-11-19-0900-${by}-ccc123.md`) => {
+      const rel = `${UPDATES}/${name}`;
+      put(
+        rel,
+        `---\nv: 1\nkind: chat\nby: ${by}\nat: 2026-11-19T09:00:00Z\nclient_safe: false\nchat: ${CHAT}\nchat_title: T\n---\n\nHello.\n`,
+      );
+      return rel;
+    };
+
+    it('lets the author remove their own chat entry, not another member, but the Owner or a scout can', () => {
+      const own = String(add(chat()).reply.file);
+      expect(remove(own).reply).toMatchObject({ ok: true });
+      expect(existsSync(abs(own))).toBe(false);
+      const tess = chatFile('tess-team');
+      as('terry@example.test');
+      expect(refusal(remove(tess))).toEqual({ exit: 2, error: 'not-allowed' });
+      as('olive@example.test');
+      expect(remove(tess).reply).toMatchObject({ ok: true });
+      const tess2 = chatFile('tess-team', '2026-11-19-0901-tess-team-ddd456.md');
+      as('sam@example.test');
+      expect(remove(tess2).reply).toMatchObject({ ok: true });
+    });
+
+    it('leaves a note call exactly as before', () => {
+      const r = add({ kind: 'note', summary: 'Plain.', clientSafe: false, chat: CHAT, title: 'ignored' });
+      expect(r.exit).toBe(0);
+      expect(read(String(`${UPDATES}/${entries()[0]}`))).toBe(
+        '---\nv: 1\nkind: note\nby: sam-example\nat: 2026-11-20T10:20:30Z\nclient_safe: false\n---\n\nPlain.\n',
+      );
+    });
+  });
+
   describe('automatic entries on edit', () => {
     const autoEntries = () =>
       entries().map((n) => {
@@ -3621,7 +3727,7 @@ describe('email entries', () => {
     expect(skill).toContain('| `email-draft` |');
     expect(skill).toContain('| `email-draft-remove` |');
     expect(skill).toContain(PROJECTS_EMAIL_CAPABILITY);
-    expect(skill).toContain('0.6.0');
+    expect(skill).toContain('0.7.0');
     expect(skill).toMatch(/never call `update` with `kind` `"email"`/i);
     expect(skill).toContain('briefing/email-drafts');
   });

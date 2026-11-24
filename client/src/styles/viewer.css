@@ -332,6 +332,10 @@
     box-shadow: var(--lift-3);
     animation: viewer-in var(--t) var(--ease);
   }
+  /* On Projects, when the sheet has the room, the page makes way for the drawer (`ChatDrawer.tsx` sets these on #main). */
+  #main[data-chat-room] .lib.proj {
+    padding-right: var(--chat-room);
+  }
   .chat-drawer > .chat {
     flex: 1;
     min-height: 0;

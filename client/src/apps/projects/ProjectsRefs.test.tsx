@@ -74,7 +74,11 @@ describe('project code on the Overview', () => {
   it('shows the code and Copy copies it with brackets (ok)', async () => {
     await openProject();
     expect(screen.getByText('SKY4K7')).toBeTruthy();
-    expect(screen.getByText(/Put this in the meeting invite or the email subject/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Put this in a meeting invite.s title or description so the meeting finds this project\. Emails will use it soon too\./,
+      ),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Copy code SKY4K7' }));
     await waitFor(() => expect(clip.writeText).toHaveBeenCalledWith('[SKY4K7]'));
     expect(await screen.findByRole('button', { name: 'Copy code SKY4K7' })).toHaveProperty(
@@ -87,7 +91,7 @@ describe('project code on the Overview', () => {
     await openProject(mk({ refState: 'duplicate', refDuplicateOf: ['skyseal/other'] }), {});
     expect(screen.getByText('SKY4K7')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Copy/ })).toBeNull();
-    expect(screen.queryByText(/Put this in the meeting invite/)).toBeNull();
+    expect(screen.queryByText(/Put this in a meeting invite/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Make a new code' })).toBeNull();
   });
 

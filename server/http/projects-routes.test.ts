@@ -13,6 +13,7 @@ import {
 } from '../../shared/contract.ts';
 import type { HomeMeetingsResponse } from '../../shared/home-meetings-contract.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
+import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
 import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import {
@@ -72,6 +73,7 @@ const seen = {
   updates: [] as [string, string | null, string][],
   activity: [] as [string, string][],
   meetings: [] as string[],
+  business: [] as string[],
   home: 0,
   marked: [] as [string, string, string][],
   access: [] as string[],
@@ -116,6 +118,14 @@ const MEETINGS = {
   last: null,
   next: null,
 } satisfies ProjectMeetingsResponse;
+
+const BUSINESS = {
+  state: 'none',
+  client: null,
+  path: null,
+  facts: [],
+  sections: [],
+} satisfies ProjectBusinessResponse;
 
 const HOME_MEETINGS = {
   cache: 'fresh',
@@ -240,6 +250,15 @@ beforeAll(async () => {
           }
         : undefined;
     },
+    get projectBusiness() {
+      return state.has
+        ? async (key: string) => {
+            maybeFail();
+            seen.business.push(key);
+            return BUSINESS;
+          }
+        : undefined;
+    },
     get homeMeetings() {
       return state.has
         ? async () => {
@@ -317,6 +336,7 @@ beforeEach(() => {
   seen.updates.length = 0;
   seen.activity.length = 0;
   seen.meetings.length = 0;
+  seen.business.length = 0;
   seen.home = 0;
   seen.marked.length = 0;
   seen.access.length = 0;
@@ -409,6 +429,7 @@ describe('the security gate', () => {
       `${ROUTES.projectUpdates}?key=${KEY}`,
       `${ROUTES.projectActivity}?key=${KEY}`,
       `${ROUTES.projectMeetings}?key=${KEY}`,
+      `${ROUTES.projectBusiness}?key=${KEY}`,
       ROUTES.projectsTidy,
     ]) {
       expect((await send(path)).status, path).toBe(401);
@@ -488,6 +509,39 @@ describe('GET /api/projects/meetings', () => {
     const r = await get(path(`key=${KEY}`));
     const same = await get(`${ROUTES.projectActivity}?key=${KEY}`);
     expect(r.status).toBe(same.status);
+    expect(r.status).toBe(404);
+  });
+});
+
+describe('GET /api/projects/business', () => {
+  const path = (q: string) => `${ROUTES.projectBusiness}?${q}`;
+
+  it("answers the client's background for the project, through the real gate", async () => {
+    const r = await get(path(`key=${KEY}`));
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual(BUSINESS);
+    expect(seen.business).toEqual([KEY]);
+  });
+
+  it('refuses no session, another site, a bad key, a POST, and a missing service', async () => {
+    expect((await send(path(`key=${KEY}`))).status).toBe(401);
+    const cross = await send(path(`key=${KEY}`), {
+      headers: { cookie: COOKIE, 'sec-fetch-site': 'cross-site' },
+    });
+    expect(cross.status).toBe(403);
+    for (const q of ['', 'key=Bad%20Key', `key=${KEY}/../x`]) {
+      expect((await get(path(q))).status, q).toBe(400);
+    }
+    expect((await post(ROUTES.projectBusiness, {})).status).toBe(405);
+    expect(seen.business).toEqual([]);
+    state.has = false;
+    expect((await get(path(`key=${KEY}`))).status).toBe(404);
+  });
+
+  it('answers an unknown project as the activity route does', async () => {
+    state.fail = new ProjectsError('not-found', 'gone');
+    const r = await get(path(`key=${KEY}`));
+    expect(r.status).toBe((await get(`${ROUTES.projectActivity}?key=${KEY}`)).status);
     expect(r.status).toBe(404);
   });
 });

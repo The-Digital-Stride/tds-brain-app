@@ -111,7 +111,8 @@ function unwrapMarked(html: string): string {
 }
 
 /**
- * The only place text from the server is shown as markup, and only assistant text goes through it.
+ * The only place text from the server is shown as markup. Assistant text goes through it, and so does brain
+ * text such as project updates, viewer files and a client's business file; it is sanitised the same way.
  * Everything else the server sends is plain React text.
  * `link` turns a path in the text into a chat file key; clicking such a link calls `onFile` with the key.
  */

@@ -259,26 +259,13 @@
     }
   }
 
-  /* Moving Home's cards (as the Ad Manager deep dive, design-system "Reorder"): a grip left of each heading, shown
-     on the card under the pointer or the keyboard (always on touch); the card in the air hides and a dashed
-     placeholder shows where it would land. */
+  /* Moving Home's cards (as the Ad Manager deep dive, design-system "Reorder"): a grip left of each heading, always
+     shown on Home so people can see the cards move; the card in the air hides and a dashed placeholder shows where
+     it would land. */
   .home-tray .card-grip {
     flex: none;
     cursor: grab;
     margin-left: calc(-1 * var(--sp-4));
-  }
-  @media (hover: hover) {
-    .home-tray .card .card-grip {
-      opacity: 0;
-    }
-    .home-tray .card:is(:hover, :focus-within) .card-grip {
-      opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .home-tray .card-grip {
-      transition: opacity 0.12s;
-    }
   }
   .home-tray .card[draggable="true"] {
     cursor: grabbing;

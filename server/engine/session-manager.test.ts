@@ -687,6 +687,13 @@ describe('email drafts stay with the inbox owner (email entries, overseer B1 and
       false,
     ],
     [{ command: 'git add clients/acme/projects/web/updates/x.md' }, 'Bash', false],
+    // Overseer sign-off: stepping into the Updates folder, then writing.
+    [{ command: 'cd clients/acme/projects/web/updates && cp /tmp/x.md a.md' }, 'Bash', true],
+    [{ command: "cd clients/acme/projects/web/updates && printf '%s' x > a.md" }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web && cd updates && cp /tmp/x.md a.md' }, 'Bash', true],
+    [{ command: 'pushd clients/acme/projects/web/updates; mv /tmp/x.md .' }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web/updates && ls -la' }, 'Bash', false],
+    [{ command: 'cd clients/acme/projects/web && mkdir notes' }, 'Bash', false],
     [
       {
         command:

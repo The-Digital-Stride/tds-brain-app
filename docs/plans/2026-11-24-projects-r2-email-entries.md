@@ -216,5 +216,14 @@ Three reviewers (correctness opus, security opus, UX sonnet), then an overseer r
   - The `briefing/` glob rule applies to Bash words only. The Glob tool is covered by the Read deny rule.
 
 **Residual, accepted by the overseer as far as an app under the same Mac account can go (Ian to confirm)**
-1. Reading the keys folder deliberately. It sits outside the working folder, so in Cortex this needs a card naming the path. This is the same class of risk as the launch token.
-2. Writing a project's `updates/` file directly, bypassing the script. Refused in Cortex for file tools. A Bash write needs a card. In terminal Claude Code with accept-edits or skip-permissions mode, this is zero cards. Terminal Claude Code in a no-prompt mode is outside what the app can enforce.
+1. **Reading the keys folder deliberately.** The folder is outside the brain and denied to Claude's file tools, and the guard refuses any command that names it. A command that never names it, such as `find ~/Library -name '*.key' -exec cat {} +`, gets past the guard. In default and accept-edits modes it needs a permission card. In auto mode, Claude Code's own classifier decides. This is the same class of risk as the app's launch token.
+2. **Writing a project's `updates/` file directly, bypassing the script.** In Cortex (whatever its mode: default, accept-edits or auto), these are refused:
+   - a file tool writing an Updates path (`.` and `..` resolved);
+   - a shell command that could write (mv, cp, tee, a redirect, find -delete and so on) and names an Updates path;
+   - such a command after a `cd` or `pushd` into that folder.
+
+   Two things get past the guard:
+   - A disguised shell write, such as the path held in a variable or built at run time. It needs a card in default mode, but in accept-edits or auto mode it may not.
+   - Claude Code run in a terminal without Cortex. There no guard runs, and in a no-prompt mode nothing asks.
+
+   Both mean Claude acting against a standing instruction. They are outside what the app can enforce.

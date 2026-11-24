@@ -935,27 +935,35 @@ export function writesUpdateByHand(input: unknown, toolName: string): boolean {
     });
   }
   if (toolName !== 'Bash' || typeof input.command !== 'string') return false;
-  const command = input.command;
-  const cdProject =
-    /(^|[\s;&|(])(cd|pushd)\s/.test(command) &&
-    shellWords(command).some((w) =>
-      cleanPath(w)
-        .split('/')
-        .some((seg) => seg.toLowerCase() === 'projects'),
-    );
-  return command.split(/\|\||&&|[;|\n]/).some((segment) => {
-    if (segment.trim() === '' || !shellSegmentWrites(segment)) return false;
-    const words = shellWords(segment);
-    return (
-      words.some(inProjectUpdates) ||
-      (cdProject &&
-        words.some((w) =>
-          cleanPath(w)
-            .split('/')
-            .some((seg) => fitsSeg(seg, 'updates')),
-        ))
-    );
-  });
+  // Follow `cd`/`pushd` left to right (overseer sign-off): once inside a project, or its Updates folder, a
+  // later part that could write is judged by where it now stands, not only by the paths it names.
+  let inProject = false;
+  let inUpdates = false;
+  for (const segment of input.command.split(/\|\||&&|[;|\n]/)) {
+    if (segment.trim() === '') continue;
+    const words = commandWords(segment);
+    if ((words[0] === 'cd' || words[0] === 'pushd') && words[1]) {
+      const target = words[1];
+      const segs = cleanPath(target).split('/').filter(Boolean);
+      if (inProjectUpdates(target)) inUpdates = true;
+      else if (segs.some((seg) => seg.toLowerCase() === 'projects')) inProject = true;
+      if (inProject && fitsSeg(segs[segs.length - 1], 'updates')) inUpdates = true;
+      continue;
+    }
+    if (!shellSegmentWrites(segment)) continue;
+    const all = shellWords(segment);
+    if (inUpdates || all.some(inProjectUpdates)) return true;
+    if (
+      inProject &&
+      all.some((w) =>
+        cleanPath(w)
+          .split('/')
+          .some((seg) => fitsSeg(seg, 'updates')),
+      )
+    )
+      return true;
+  }
+  return false;
 }
 
 export const UPDATES_BY_HAND_REFUSAL =

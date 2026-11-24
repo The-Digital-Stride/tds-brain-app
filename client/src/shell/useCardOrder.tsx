@@ -49,7 +49,15 @@ export interface CardOrder {
   reset: () => void;
 }
 
-export function useCardOrder(cards: OrderCard[], storageKey: string | null): CardOrder {
+/**
+ * `cards`: the cards on screen now, in their default order. `allIds`: every card that can ever show, in default order
+ * (some hide at times, such as Ads approvals), so a hidden card keeps its default place in a saved order.
+ */
+export function useCardOrder(
+  cards: OrderCard[],
+  storageKey: string | null,
+  allIds: string[] = cards.map((c) => c.id),
+): CardOrder {
   const [saved, setSaved] = useState<string[]>(() => (storageKey ? readOrder(storageKey) : []));
   const [announce, setAnnounce] = useState('');
   const [armed, setArmed] = useState<string | null>(null);
@@ -83,8 +91,19 @@ export function useCardOrder(cards: OrderCard[], storageKey: string | null): Car
   const placeCard = (id: string, to: number) => {
     const next = moveItem(ids, id, to);
     const at = next.indexOf(id);
-    focusId.current = id;
-    if (at !== ids.indexOf(id)) save(mergeOrder(saved, next));
+    if (at !== ids.indexOf(id)) {
+      // Only a real move hands focus back to the grip (a stale target would steal focus on a later re-order).
+      focusId.current = id;
+      // Merge into the full order, so a card hidden now keeps its saved or default place.
+      const full =
+        saved.length > 0
+          ? arrange(
+              allIds.map((x) => ({ id: x })),
+              saved,
+            ).map((x) => x.id)
+          : allIds;
+      save(mergeOrder(full, next));
+    }
     const title = shown.find((c) => c.id === id)?.title ?? 'Card';
     setAnnounce(`${title} moved to ${at + 1} of ${ids.length}`);
   };
@@ -219,6 +238,8 @@ export function useCardOrder(cards: OrderCard[], storageKey: string | null): Car
     ),
     moved,
     reset: () => {
+      // The Reset button goes away with the change: focus lands on the first card's grip, not the page start.
+      focusId.current = cards[0]?.id ?? null;
       save([]);
       setAnnounce('Card order reset');
     },

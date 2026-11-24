@@ -88,6 +88,9 @@ function ProjectPicker({
   );
 }
 
+/** Every Home card that can show, in the default order (Ads approvals only while something waits). */
+const HOME_CARDS = ['meetings', 'ads', 'todos', 'chats', 'files', 'skills'];
+
 const AUTO = '@auto';
 const NONE = '@none';
 /** How much of the first message is used to work out the client. */
@@ -237,6 +240,7 @@ export function Home() {
       { id: 'skills', title: 'Favourite skills' },
     ],
     boot ? homeOrderKey(boot.identity.slug) : null,
+    HOME_CARDS,
   );
   if (!boot) return null;
 

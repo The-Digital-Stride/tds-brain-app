@@ -838,8 +838,10 @@ describe('Home: moving the cards', () => {
       'Favourite skills',
     ]);
     expect(screen.getByText('Favourite to-dos moved to 3 of 5')).toBeTruthy();
+    // Ads approvals is hidden (nothing waiting) but keeps its default place, second, in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
+      'ads',
       'chats',
       'todos',
       'files',
@@ -863,6 +865,9 @@ describe('Home: moving the cards', () => {
       'Favourite skills',
     ]);
     expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual([]);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 5' })),
+    );
   });
 
   it("uses this person's saved order, not someone else's on the same browser", async () => {
@@ -879,6 +884,13 @@ describe('Home: moving the cards', () => {
       ]),
     );
     expect(screen.getByRole('button', { name: 'Reset card order' })).toBeTruthy();
+  });
+
+  it('a key that moves nothing saves nothing', async () => {
+    await renderHome();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Meetings, 1 of 5' }), { key: 'ArrowUp' });
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(screen.getByText('Meetings moved to 1 of 5')).toBeTruthy();
   });
 
   it('a card is only draggable while its grip is pressed', async () => {

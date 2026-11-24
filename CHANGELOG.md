@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.74.1 — 2026-11-24
+
+- **docs**: help caught up with v0.55 to v0.74: What's new notes for each release, 14 pages fixed against the app, Home screenshot retaken
+
 ## v0.74.0 — 2026-11-24
 
 - **feat**: every chat drafts email for projects, never reads the drafts (R2 phase 5)

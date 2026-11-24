@@ -1980,6 +1980,11 @@ export const ROUTES = {
   projectArtifact: '/api/projects/artifact',
   /** R2 phase 4. `GET ?key=<ProjectKey>` → ProjectMeetingsResponse (shared/project-meetings-contract.ts). This Mac's own calendar only. */
   projectMeetings: '/api/projects/meetings',
+  /**
+   * R2 phase 5. `GET [?key=<ProjectKey>]` → EmailDraftsResponse; `POST` EmailDraftApproveRequest or EmailDraftDismissRequest
+   * (shared/project-email-contract.ts). This Mac's own drafts only; the server reads the draft file and adds the token.
+   */
+  projectEmailDrafts: '/api/projects/email-drafts',
   /** Home meetings. `GET` → HomeMeetingsResponse (shared/home-meetings-contract.ts): every upcoming meeting, this Mac's calendar only. */
   homeMeetings: '/api/meetings',
   /** `GET` → TidyList; `POST` TidyApply → TidyList (decision 13). */

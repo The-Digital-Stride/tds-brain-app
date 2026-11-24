@@ -65,6 +65,8 @@ import type { LevelPicker, PickAttempt } from './level-picker.ts';
 import {
   ATTACHMENT_NOTE,
   createSessionManager,
+  EMAIL_DRAFTS_REFUSAL,
+  EMAIL_LINE,
   type EngineFns,
   FILES_LINE,
   type HistoryMessage,
@@ -74,11 +76,29 @@ import {
   type SessionManager,
   splitAttachmentNote,
   splitPageNote,
+  touchesEmailDrafts,
+  UPDATES_BY_HAND_REFUSAL,
   withPageNote,
+  writesUpdateByHand,
 } from './session-manager.ts';
 import { TrashMissingError } from './trash-session.ts';
 
 const BRAIN = '/tmp/fake-brain-root';
+const KEYS = '/tmp/fake-email-keys';
+/** The email deny rules every chat carries (overseer ruling): drafts and approve keys, read and edit. */
+const DRAFTS_REAL = `${(() => {
+  try {
+    return realpathSync.native(BRAIN);
+  } catch {
+    return BRAIN;
+  }
+})()}/briefing/email-drafts`;
+const EMAIL_DENY = [
+  `Read(/${DRAFTS_REAL}/**)`,
+  `Edit(/${DRAFTS_REAL}/**)`,
+  `Read(/${KEYS}/**)`,
+  `Edit(/${KEYS}/**)`,
+];
 const CLAUDE = '/usr/local/bin/claude';
 
 // ---------------------------------------------------------------------------
@@ -378,6 +398,7 @@ function setup(
     chatKinds: opts.chatKinds,
     brain: fakeBrain(opts.brain),
     brainRoot: BRAIN,
+    emailKeysDir: KEYS,
     claudePath: opts.claudePath === undefined ? CLAUDE : opts.claudePath,
     engine: fx.engine,
     env: opts.env ?? { PATH: '/bin', HOME: '/home/x' },
@@ -542,6 +563,192 @@ describe('a new chat', () => {
   });
 });
 
+describe('email drafts stay with the inbox owner (email entries, overseer B1 and S8)', () => {
+  it('every chat is told the one route for email into a project', () => {
+    expect(FILES_LINE).toContain(EMAIL_LINE);
+    expect(EMAIL_LINE).toContain('`email-draft`');
+    expect(EMAIL_LINE).toContain('Never call its `update` action for an email');
+    expect(EMAIL_LINE).toContain('a note or call, a file or a link');
+  });
+
+  it.each([
+    [{ file_path: '/brain/briefing/email-drafts/abc123def456.json' }, 'Read'],
+    [{ command: 'cat briefing/email-drafts/*.json' }, 'Bash'],
+    [{ command: 'cat briefing/*/x.json' }, 'Bash'],
+    [{ command: 'cat briefing/e*/a.json' }, 'Bash'],
+    // The security review's bypasses.
+    [{ command: 'cat brief*/e*/*.json' }, 'Bash'],
+    [{ command: 'ls b{r,x}iefing/email_drafts' }, 'Bash'],
+    [{ pattern: 'briefing/email-drafts/*.json' }, 'Glob'],
+    [{ path: '/Users/x/agencybrain/briefing/email-drafts' }, 'Grep'],
+    [
+      { command: 'cat "$HOME/Library/Application Support/TDS Brain/data/email-keys/abc123def456.key"' },
+      'Bash',
+    ],
+    [{ command: 'cat ~/Library/Application\\ Support/TDS\\ Brain/data/e*/x' }, 'Bash'],
+    [
+      { file_path: '/Users/x/Library/Application Support/TDS Brain/data/email-keys/abc123def456.key' },
+      'Read',
+    ],
+    [{ command: 'node -e "x" --path=briefing/email-drafts' }, 'Bash'],
+    // Review of the fix round: the same glob twice, and `..`.
+    [{ command: 'cd ~/Library/Application\\ Support && cat */data/*/*.key' }, 'Bash'],
+    [{ command: 'cat */../briefing/*/*.json' }, 'Bash'],
+    [{ command: 'cat briefing/./email-drafts/x.json' }, 'Bash'],
+  ])('refuses %j (%s)', (input, tool) => {
+    expect(touchesEmailDrafts(input, tool)).toBe(true);
+  });
+
+  it.each([
+    [{ file_path: '/brain/briefing/meetings-cache.json' }, 'Read'],
+    [{ command: 'cat briefing/inbox-cache.json' }, 'Bash'],
+    [{ command: 'ls briefing' }, 'Bash'],
+    [
+      {
+        command:
+          'echo \'{"action":"email-draft","threadId":"1a2b3c4d"}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs email-draft',
+      },
+      'Bash',
+    ],
+    [{ command: 'node s.cjs email-draft-remove' }, 'Bash'],
+    [{ file_path: '/brain/clients/acme/briefing-notes.md' }, 'Write'],
+    [{ command: 'git status' }, 'Bash'],
+    // Prose is never checked (correctness and security reviews): these were all refused before.
+    [{ file_path: 'briefing/2026-11-24-briefing.md', content: '# Daily briefing for Ian' }, 'Write'],
+    [{ file_path: 'clients/acme/reports/brief.md', content: '# Creative briefing for Acme' }, 'Write'],
+    [
+      {
+        file_path: 'briefing/inbox-cache.json',
+        content: '{"subject":"Q4 briefing","note":"attached the email drafts"}',
+      },
+      'Write',
+    ],
+    [
+      {
+        command:
+          'echo \'{"subject":"Client briefing call","newestText":"Thanks for the briefing yesterday"}\' | node s.cjs email-draft',
+      },
+      'Bash',
+    ],
+    [{ command: 'grep -ri "briefing" clients/acme' }, 'Bash'],
+    [{ pattern: 'email drafts|approve token', path: 'clients' }, 'Grep'],
+    [{ command: 'ls src/e*' }, 'Bash'],
+    [{ pattern: '**/*.json' }, 'Glob'],
+    // Any other folder called data, and a Glob of briefing/ (the Read deny rule hides the drafts from it).
+    [{ command: 'ls src/data/*' }, 'Bash'],
+    [{ command: 'rm -rf build/data/*' }, 'Bash'],
+    [{ command: 'ls clients/acme/data/*' }, 'Bash'],
+    [{ pattern: 'briefing/*' }, 'Glob'],
+  ])('allows %j (%s)', (input, tool) => {
+    expect(touchesEmailDrafts(input, tool)).toBe(false);
+  });
+
+  it.each([
+    [{ file_path: '/brain/clients/acme/projects/web/updates/2026-11-24-0900-sam-abc123.md' }, 'Write', true],
+    [{ file_path: 'personal/projects/garden/updates/x.md' }, 'Edit', true],
+    [{ file_path: 'clients/acme/projects/web/updates/x.md' }, 'MultiEdit', true],
+    [{ file_path: 'clients/acme/projects/web/updates/x.md' }, 'Read', false],
+    [{ command: 'ls clients/acme/projects/web/updates' }, 'Bash', false],
+    [{ file_path: 'clients/acme/projects/web/notes/updates.md' }, 'Write', false],
+    // Review of the fix round: `.` and `..` in the path, and shell writes into the folder.
+    [
+      { file_path: '/brain/clients/acme/projects/website/./updates/2026-11-24-0900-sam-abc123.md' },
+      'Write',
+      true,
+    ],
+    [{ file_path: 'clients/acme/projects/website/x/../updates/a.md' }, 'Write', true],
+    [{ command: 'mv notes/x.md clients/acme/projects/web/updates/' }, 'Bash', true],
+    [{ command: 'cp /tmp/x.md clients/acme/projects/web/./updates/x.md' }, 'Bash', true],
+    [{ command: "printf '%s' x > clients/acme/projects/web/updates/x.md" }, 'Bash', true],
+    [{ command: 'cat x | tee clients/acme/projects/web/updates/x.md' }, 'Bash', true],
+    [{ command: 'mv x.md clients/acme/projects/*/upd*/' }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web && mv /tmp/x.md updates/' }, 'Bash', true],
+    [{ command: 'find clients/acme/projects/web/updates -name "*.md" -delete' }, 'Bash', true],
+    [{ command: 'cat clients/acme/projects/web/updates/x.md' }, 'Bash', false],
+    [{ command: 'ls clients/acme/projects/web/updates 2>&1 | head' }, 'Bash', false],
+    [{ command: 'grep -l email clients/acme/projects/web/updates/*.md > /dev/null' }, 'Bash', false],
+    [{ command: 'git log -- clients/acme/projects/web/updates' }, 'Bash', false],
+    [{ command: 'mv a.md b.md' }, 'Bash', false],
+    // The skill's own calls are never by hand (fix-round recheck), but they don't excuse a real write beside them.
+    [
+      {
+        command:
+          'echo \'{"key":"acme/website","file":"clients/acme/projects/website/updates/2026-11-24-0900-sam-abc123.md","expect":"x"}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs update-remove',
+      },
+      'Bash',
+      false,
+    ],
+    [
+      {
+        command:
+          'cd /brain && echo \'{"key":"acme/web","entry":{"kind":"note","summary":"Moved projects and updates.","clientSafe":false}}\' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs update',
+      },
+      'Bash',
+      false,
+    ],
+    [{ command: 'git add clients/acme/projects/web/updates/x.md' }, 'Bash', false],
+    // Overseer sign-off: stepping into the Updates folder, then writing.
+    [{ command: 'cd clients/acme/projects/web/updates && cp /tmp/x.md a.md' }, 'Bash', true],
+    [{ command: "cd clients/acme/projects/web/updates && printf '%s' x > a.md" }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web && cd updates && cp /tmp/x.md a.md' }, 'Bash', true],
+    [{ command: 'pushd clients/acme/projects/web/updates; mv /tmp/x.md .' }, 'Bash', true],
+    [{ command: 'cd clients/acme/projects/web/updates && ls -la' }, 'Bash', false],
+    [{ command: 'cd clients/acme/projects/web && mkdir notes' }, 'Bash', false],
+    [
+      {
+        command:
+          'node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs capabilities; mv /tmp/x.md clients/acme/projects/web/updates/',
+      },
+      'Bash',
+      true,
+    ],
+  ])('a hand-written project update %j with %s is refused: %s', (input, tool, refused) => {
+    expect(writesUpdateByHand(input, tool)).toBe(refused);
+  });
+
+  it('a PreToolUse hook on every chat refuses such a call, even one that needs no permission', async () => {
+    const { queries } = setup();
+    await mgr.start({ prompt: 'hi' });
+    await flush();
+    const hooks = queries[0]?.options.hooks as
+      | Record<string, { matcher?: string; hooks: ((i: unknown, id?: string) => Promise<unknown>)[] }[]>
+      | undefined;
+    const all = hooks?.PreToolUse;
+    const guard = all?.find((m) => m.matcher === undefined)?.hooks[0];
+    if (!guard) throw new Error('no guard hook');
+    const call = (tool_input: unknown) =>
+      guard({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input, tool_use_id: 't1' }, 't1');
+    expect(await call({ file_path: '/brain/briefing/email-drafts/abc123def456.json' })).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: EMAIL_DRAFTS_REFUSAL,
+      },
+    });
+    expect(await call({ file_path: '/brain/clients/acme/notes.md' })).toEqual({ continue: true });
+    expect(
+      await guard(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Write',
+          tool_input: {
+            file_path: '/brain/clients/acme/projects/web/updates/x.md',
+            content: 'From an email.',
+          },
+          tool_use_id: 't2',
+        },
+        't2',
+      ),
+    ).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: UPDATES_BY_HAND_REFUSAL,
+      },
+    });
+  });
+});
+
 describe('a chat started on a to-do (A19)', () => {
   it('keeps a listed to-do id, mine or open, and shows it in the live list', async () => {
     setup();
@@ -699,7 +906,7 @@ describe('the model and effort choice', () => {
     expect(queries[2]?.options.model).toBeUndefined();
     expect(queries[2]?.options.effort).toBe('max');
     expect(queries[3]?.options).toMatchObject({ model: 'sonnet', effort: 'low' });
-    for (const q of queries) expect(q.options.settings).toBeUndefined();
+    for (const q of queries) expect(q.options.settings).toEqual({ permissions: { deny: EMAIL_DENY } });
   });
 
   it('calls setModel and applyFlagSettings on live engines only for the parts that changed', async () => {
@@ -1894,7 +2101,7 @@ describe('attachments', () => {
     expect(o.settings).toEqual({
       permissions: {
         allow: [`Read(/${root}/**)`],
-        deny: [`Read(/${dataDir}/*.json)`, `Read(/${dataDir}/*.tmp)`],
+        deny: [...EMAIL_DENY, `Read(/${dataDir}/*.json)`, `Read(/${dataDir}/*.tmp)`],
       },
     });
     expect((o.settings as { permissions: { allow: string[] } }).permissions.allow[0]).toMatch(
@@ -1907,7 +2114,7 @@ describe('attachments', () => {
     const { queries } = setup();
     await mgr.start({ prompt: 'hi' });
     await flush();
-    expect(queries[0]?.options.settings).toBeUndefined();
+    expect(queries[0]?.options.settings).toEqual({ permissions: { deny: EMAIL_DENY } });
     const brainRoot = realpathSync(mkdtempSync(join(tmpdir(), 'tba-sm-brain-')));
     temps.push(brainRoot);
     const offData = join(brainRoot, 'data');
@@ -1917,7 +2124,7 @@ describe('attachments', () => {
     await mgr.start({ prompt: 'hi' });
     await flush();
     expect(fx.queries[0]?.options.settings).toEqual({
-      permissions: { deny: [`Read(/${offData}/*.json)`, `Read(/${offData}/*.tmp)`] },
+      permissions: { deny: [...EMAIL_DENY, `Read(/${offData}/*.json)`, `Read(/${offData}/*.tmp)`] },
     });
     await expectCode(mgr.start({ prompt: 'hi', attachments: ['x'] }), 'not-allowed');
   });
@@ -2823,7 +3030,11 @@ describe('levels', () => {
     const { queries } = setup();
     const s = await mgr.start({ prompt: 'hi' });
     await flush();
-    expect(Object.keys(queries[0]?.options.hooks ?? {}).sort()).toEqual(['PreModelSwitch', 'SessionStart']);
+    expect(Object.keys(queries[0]?.options.hooks ?? {}).sort()).toEqual([
+      'PreModelSwitch',
+      'PreToolUse',
+      'SessionStart',
+    ]);
     expect(levelEvents(s.id)).toEqual([]);
   });
 
@@ -3480,7 +3691,8 @@ describe('levels', () => {
     expect((o?.systemPrompt as { append: string } | undefined)?.append).toBe(
       `${FILES_LINE}\n${HELPERS_LINE}\n${BRAIN_COMPACT_INSTRUCTIONS}`,
     );
-    expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBe('Agent|Task');
+    expect(o?.hooks?.PreToolUse?.[0]?.matcher).toBeUndefined();
+    expect(o?.hooks?.PreToolUse?.[1]?.matcher).toBe('Agent|Task');
   });
 
   it('without levels there are no app helpers and no helper instruction (v0.19.0)', async () => {
@@ -4764,7 +4976,7 @@ describe('context management', () => {
     await mgr.start({ prompt: 'hi' });
     await flush();
     const o = queries[0]?.options;
-    expect(Object.keys(o?.hooks ?? {}).sort()).toEqual(['PreModelSwitch', 'SessionStart']);
+    expect(Object.keys(o?.hooks ?? {}).sort()).toEqual(['PreModelSwitch', 'PreToolUse', 'SessionStart']);
     expect(o?.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
@@ -6087,7 +6299,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     (q?.options.systemPrompt as { append?: string } | undefined)?.append ?? '';
 
   const PROJECT_LINE =
-    "This chat is for the project \"Website rebuild\", whose folder is `clients/urban-cooling/projects/web/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. Add a project update only with the tdsapp-projects skill's `update` action, marked internal unless the user says it's fine for the client. Never put anything from an email (its text, a summary, quotes or attachments) into this project, as an update, a file or a link, until the owner of the inbox it came from has approved exactly what will be saved. These still go where the brain's save rules say: anything with names, emails, phone numbers or addresses (`clients/urban-cooling/crm/data/`), call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/urban-cooling/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action, but never link a file from `crm/data/` or `personal/` to a shared project. Tell the user where each file went.";
+    "This chat is for the project \"Website rebuild\", whose folder is `clients/urban-cooling/projects/web/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. Add a project update only with the tdsapp-projects skill's `update` action, marked internal unless the user says it's fine for the client. Email goes into this project only as an `email-draft` its inbox owner approves, as said above. These still go where the brain's save rules say: anything with names, emails, phone numbers or addresses (`clients/urban-cooling/crm/data/`), call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/urban-cooling/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action, but never link a file from `crm/data/` or `personal/` to a shared project. Tell the user where each file went.";
 
   const NOT_OPEN = "That project isn't open any more. Pick another from Working on.";
   const OTHER_CLIENT = 'That project belongs to another client.';
@@ -6171,7 +6383,7 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     expect([s.client, s.project, s.kind]).toEqual([null, 'personal/garden', 'personal']);
     const text = append(queries[0]);
     expect(text.split('\n')[0]).toBe(
-      "This chat is for the project \"Garden plans\", whose folder is `personal/projects/garden/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. Add a project update only with the tdsapp-projects skill's `update` action, marked internal unless the user says it's fine for the client. Never put anything from an email (its text, a summary, quotes or attachments) into this project, as an update, a file or a link, until the owner of the inbox it came from has approved exactly what will be saved. These still go where the brain's save rules say: call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/<client>/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action. Tell the user where each file went.",
+      "This chat is for the project \"Garden plans\", whose folder is `personal/projects/garden/`. Save the documents, pages, decks, images and other files you make for this work in that folder or a subfolder of it, without asking, even where a skill or the brain's save rules would put a client document in `reports/`. Only save somewhere else if the user names another place or says a file is only for them. Never create or use `project.md`, `retainer.md`, `summary.md`, `updates/`, `months/` or `reports/` inside the project folder. Add a project update only with the tdsapp-projects skill's `update` action, marked internal unless the user says it's fine for the client. Email goes into this project only as an `email-draft` its inbox owner approves, as said above. These still go where the brain's save rules say: call notes (through the meeting-notes skill), to-dos (through the tdsapp-todo skill, with this project set), dated data pulls (`data/`) and files for an ad platform (`clients/<client>/created/`). When you save a call note, data pull or ad-platform file for this work, link it to the project with the tdsapp-projects skill's `link` action. Tell the user where each file went.",
     );
     expect(text).not.toContain('crm/data');
     expect(text).not.toContain('The user is working on the client');

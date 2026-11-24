@@ -6,6 +6,7 @@
  * The app never writes brain files itself: every entry is written or removed by the script.
  */
 
+import type { ProjectEmailEntryInput } from './project-email-contract.ts';
 import type { ProjectKey, ProjectUpdate } from './projects-contract.ts';
 
 // ─── Capability ──────────────────────────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ export type UpdateKind = ProjectUpdate['kind'];
 export interface ProjectUpdateAction {
   kind: 'update';
   key: ProjectKey;
-  entry: { kind: ManualUpdateKind; summary: string; clientSafe: boolean };
+  entry: { kind: ManualUpdateKind; summary: string; clientSafe: boolean } | ProjectEmailEntryInput;
 }
 
 /**
@@ -101,6 +102,10 @@ export interface ProjectUpdateItem extends Omit<ProjectUpdate, 'kind'> {
   change?: 'status' | 'health' | 'owner' | string;
   from?: string;
   to?: string;
+  /** Email entries (phase 5): the key that makes one email one entry (shared/project-email-contract.ts). */
+  emailKey?: string;
+  /** Email entries, only when this Mac's identity is the entry's inbox owner: "Open in Gmail". */
+  gmailUrl?: string;
   /** Brain-relative path of the entry file (its id). */
   path: string;
   /** SHA-256 of the entry file's bytes, sent back as `expect` on `update-remove`. */

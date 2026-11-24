@@ -74,6 +74,11 @@ import type {
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
+import type {
+  EmailDraftApproveRequest,
+  EmailDraftDismissRequest,
+  EmailDraftsResponse,
+} from '../../shared/project-email-contract.ts';
 import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import type { ProjectUpdatesResponse } from '../../shared/project-updates-contract.ts';
 import type {
@@ -275,6 +280,19 @@ export const api = {
     request<ProjectUpdatesResponse>(
       'GET',
       `${ROUTES.projectUpdates}?key=${encodeURIComponent(key)}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
+    ),
+  /** Projects R2 phase 5: emails waiting for this person's OK (optionally only those routed to one project). */
+  projectEmailDrafts: (key?: ProjectKey) =>
+    request<EmailDraftsResponse>(
+      'GET',
+      key ? `${ROUTES.projectEmailDrafts}?key=${encodeURIComponent(key)}` : ROUTES.projectEmailDrafts,
+    ),
+  /** Save one waiting email to a project, or say it is not for a project. */
+  projectEmailDraftAct: (req: EmailDraftApproveRequest | EmailDraftDismissRequest) =>
+    request<{ ok: true } | { ok: false; code: string; key?: string; byName?: string }>(
+      'POST',
+      ROUTES.projectEmailDrafts,
+      req,
     ),
   /** Projects R2 phase 3: what changed since this person last looked, and what is due soon. */
   projectActivity: (key: ProjectKey) =>

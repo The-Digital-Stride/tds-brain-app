@@ -97,6 +97,13 @@ import {
 import { LINK_SCRIPT_TAG, linkScriptOffset } from '../../shared/page-links.ts';
 import { cleanArtifactUrl } from '../../shared/pages.ts';
 import type { ProjectActivityResponse } from '../../shared/project-activity-contract.ts';
+import {
+  EMAIL_NAME_MAX,
+  EMAIL_PEOPLE_MAX,
+  EMAIL_SUBJECT_MAX,
+  type EmailDraftApproveRequest,
+  type EmailDraftDismissRequest,
+} from '../../shared/project-email-contract.ts';
 import type { ProjectMeetingsResponse } from '../../shared/project-meetings-contract.ts';
 import { UPDATE_SUMMARY_MAX } from '../../shared/project-updates-contract.ts';
 import {
@@ -129,6 +136,7 @@ import {
 } from '../../shared/update-contract.ts';
 import { AdsError, type AdsInflightEntry, type AdsService } from '../brain/ads-skill.ts';
 import { readClientAliases, withClientAliases } from '../brain/client-aliases.ts';
+import type { EmailDraftsService } from '../brain/email-drafts.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { classify } from '../brain/library-rules.ts';
@@ -188,6 +196,8 @@ export interface RouteContext {
     projectArtifact?: ProjectArtifactService;
     projectMeetings?: (key: ProjectKey) => Promise<ProjectMeetingsResponse>;
     homeMeetings?: () => Promise<HomeMeetingsResponse>;
+    /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK. Absent: the route says it isn't there. */
+    emailDrafts?: EmailDraftsService;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -943,6 +953,47 @@ function onlyKeys(body: Record<string, unknown>, allowed: string[], need: string
   for (const k of need) if (body[k] === undefined) throw projectBad();
 }
 
+const EMAIL_DRAFT_ID = /^[a-z0-9]{12}$/;
+const noNewline = (v: string) => !/[\r\n\u2028\u2029]/.test(v);
+
+/**
+ * `POST ROUTES.projectEmailDrafts`: exactly an EmailDraftApproveRequest or an EmailDraftDismissRequest and no other
+ * field. No token, address or thread id ever comes from the browser: the server reads the draft file itself.
+ */
+export function parseEmailDraftPost(body: unknown): EmailDraftApproveRequest | EmailDraftDismissRequest {
+  if (!isRec(body) || typeof body.id !== 'string' || !EMAIL_DRAFT_ID.test(body.id)) throw projectBad();
+  if (body.action === 'dismiss') {
+    onlyKeys(body, ['action', 'id'], ['action', 'id']);
+    return { action: 'dismiss', id: body.id };
+  }
+  if (body.action !== 'approve') throw projectBad();
+  onlyKeys(
+    body,
+    ['action', 'id', 'key', 'summary', 'subject', 'from', 'people', 'clientSafe'],
+    ['action', 'id', 'key', 'summary', 'subject', 'from', 'people', 'clientSafe'],
+  );
+  const { key, summary, subject, from, people, clientSafe } = body;
+  const name = (v: unknown): v is string =>
+    typeof v === 'string' && v.trim() !== '' && v.length <= EMAIL_NAME_MAX && noNewline(v);
+  if (
+    !isProjectKey(key) ||
+    typeof summary !== 'string' ||
+    summary.trim() === '' ||
+    summary.trim().length > UPDATE_SUMMARY_MAX ||
+    // An email can have no subject; the script saves it as given (correctness review).
+    typeof subject !== 'string' ||
+    subject.length > EMAIL_SUBJECT_MAX ||
+    !noNewline(subject) ||
+    !name(from) ||
+    !Array.isArray(people) ||
+    people.length > EMAIL_PEOPLE_MAX ||
+    !people.every(name) ||
+    typeof clientSafe !== 'boolean'
+  )
+    throw projectBad();
+  return { action: 'approve', id: body.id, key, summary, subject, from, people: [...people], clientSafe };
+}
+
 /**
  * `POST ROUTES.projectsChange`: exactly one ProjectAction shape, no other fields. `capabilities` is the
  * script's own probe and not something a page may send. The service checks the values again.
@@ -1409,6 +1460,41 @@ async function projectsRoute(
       sendJson(res, 200, await read.call(ctx.brain, key, before, await identity()));
     } catch (err) {
       throw projectsFailure(err, ctx, "Reading a project's updates");
+    }
+    return;
+  }
+
+  if (path === ROUTES.projectEmailDrafts) {
+    const drafts = ctx.brain.emailDrafts;
+    if (!drafts) throw missing();
+    if (method === 'GET') {
+      const key = url.searchParams.get('key');
+      if (key !== null && !isProjectKey(key)) throw projectBad();
+      try {
+        sendJson(res, 200, await drafts.list(key));
+      } catch (err) {
+        throw projectsFailure(err, ctx, 'Reading the emails waiting for approval');
+      }
+      return;
+    }
+    if (method !== 'POST') throw methodNotAllowed();
+    const post = parseEmailDraftPost(await readJson(req));
+    // The same roles check as any project change; the service checks the draft's owner and the script's again.
+    const who = await identity();
+    if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
+      throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    try {
+      if (post.action === 'dismiss') {
+        await drafts.dismiss(post.id);
+        ctx.log('Cleared an email waiting for approval.');
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      const answer = await drafts.approve(post);
+      ctx.log(answer.ok ? 'Saved an approved email to a project.' : 'An email was already in a project.');
+      sendJson(res, 200, answer);
+    } catch (err) {
+      throw projectsFailure(err, ctx, 'Saving an email to a project');
     }
     return;
   }
@@ -2581,6 +2667,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
     path === ROUTES.projectFiles ||
     path === ROUTES.projectTodos ||
     path === ROUTES.projectUpdates ||
+    path === ROUTES.projectEmailDrafts ||
     path === ROUTES.projectActivity ||
     path === ROUTES.projectSeen ||
     path === ROUTES.projectArtifact ||

@@ -110,6 +110,39 @@ describe('the Updates tab', () => {
     expect(document.querySelector('script')).toBeNull();
   });
 
+  it('shows an email row: chip, subject, from line, summary, and Open in Gmail for the owner only', async () => {
+    const email = {
+      kind: 'email',
+      byName: 'Ian',
+      summary: 'They agreed the budget.',
+      emailSubject: 'Budget for December',
+      emailFrom: 'Alex Smith',
+      emailPeople: ['Jo Lee', 'Sam Roe'],
+      emailSentAt: '2026-11-20T16:30:00Z',
+    };
+    api.projectUpdates.mockResolvedValue(
+      reply([
+        item({
+          ...email,
+          path: 'e1',
+          gmailUrl: 'https://mail.google.com/mail/?authuser=i%40x.com#all/thread-f:1',
+        } as Partial<ProjectUpdateItem>),
+        item({ ...email, path: 'e2', byName: 'Sam' } as Partial<ProjectUpdateItem>),
+      ]),
+    );
+    await openUpdates();
+    expect(await screen.findAllByText('Email')).toHaveLength(2);
+    expect(screen.getAllByText('Budget for December')).toHaveLength(2);
+    expect(screen.getAllByText(/^From Alex Smith · with 2 others · 20 Nov 2026, /)).toHaveLength(2);
+    expect(screen.getAllByText('They agreed the budget.')).toHaveLength(2);
+    const link = screen.getByRole('link', { name: /Open in Gmail/ });
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.textContent).toContain('(opens in a new tab)');
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByText(/· In Sam's inbox$/)).toBeTruthy();
+  });
+
   it('opens the form from the tab row and sends the update action', async () => {
     await openUpdates();
     expect(screen.queryByLabelText('Update')).toBeNull();

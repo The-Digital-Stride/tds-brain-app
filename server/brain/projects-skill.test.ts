@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { PROJECTS_EMAIL_CAPABILITY } from '../../shared/project-email-contract.ts';
 import { PROJECTS_REFS_CAPABILITY } from '../../shared/project-refs-contract.ts';
 import { PROJECTS_UPDATES_CAPABILITY } from '../../shared/project-updates-contract.ts';
 import {
@@ -271,6 +272,7 @@ describe('with the real script', () => {
       PROJECTS_ARCHIVE_CAPABILITY,
       PROJECTS_UPDATES_CAPABILITY,
       PROJECTS_REFS_CAPABILITY,
+      PROJECTS_EMAIL_CAPABILITY,
     ]);
     const done = await runner.run({
       kind: 'create',

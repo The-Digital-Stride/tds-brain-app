@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
+import type { SaveChatRequest } from '../../../../shared/chat-summary-contract.ts';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type {
   ProjectCard,
@@ -12,6 +13,7 @@ import { SheetTabs } from '../../shell/SheetTabs.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
 import { useProjects } from '../../state/projects.ts';
+import { saveChatRequest, takeSaveChatRequest } from '../../state/save-chat-request.ts';
 import { useStore } from '../../store.tsx';
 import { EmailDrafts } from './EmailDrafts.tsx';
 import {
@@ -40,6 +42,7 @@ import { ProjectFiles } from './ProjectFiles.tsx';
 import { type MeetingsState, ProjectMeetings, useProjectMeetings } from './ProjectMeetings.tsx';
 import { ProjectRef } from './ProjectRef.tsx';
 import { ProjectTodos } from './ProjectTodos.tsx';
+import { ProjectUnsavedChats } from './ProjectUnsavedChats.tsx';
 import { ProjectUpdates } from './ProjectUpdates.tsx';
 import { notAllowedWords, RemovePanel, resultWords } from './RemovePanel.tsx';
 import { useProjectChange } from './useChange.ts';
@@ -254,6 +257,7 @@ function Overview({
   business,
   onUpdates,
   onTodos,
+  onSaveChat,
   onAddCard,
   onMove,
 }: {
@@ -269,6 +273,7 @@ function Overview({
   business: BusinessState;
   onUpdates: () => void;
   onTodos: () => void;
+  onSaveChat: (req: SaveChatRequest) => void;
   onAddCard: () => void;
   onMove: () => void;
 }) {
@@ -361,6 +366,9 @@ function Overview({
       />
       <div className="tray lib-tray">
         {card.archived ? null : <EmailDrafts list={list} clients={clients} projectKey={card.key} />}
+        {card.archived || list.canSaveChat !== true ? null : (
+          <ProjectUnsavedChats projectKey={card.key} onSave={onSaveChat} />
+        )}
         {card.archived ? null : (
           <ProjectActivity
             key={card.key}
@@ -582,9 +590,31 @@ export function ProjectPage({
     todos.canProject === true &&
     (card.space !== 'personal' || todos.canUsePersonal === true) &&
     !card.archived;
+  // A chat being saved to this project (Save to project): its review form shows at the top of the Updates tab.
+  // The chat header asks through `saveChatRequest`; the Overview's "Chats not saved yet" asks directly.
+  const [saving, setSaving] = useState<SaveChatRequest | null>(() => takeSaveChatRequest(card.key));
+  useEffect(() => {
+    const take = () => {
+      const req = takeSaveChatRequest(card.key);
+      if (!req) return;
+      setSaving(req);
+      setAddingUpdate(false);
+      onTab('updates');
+    };
+    take();
+    return saveChatRequest.subscribe(take);
+  }, [card.key, onTab]);
+  const saveChat = (req: SaveChatRequest) => {
+    setSaving(req);
+    setAddingUpdate(false);
+    onTab('updates');
+  };
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
-    if (tab !== 'updates') setAddingUpdate(false);
+    if (tab !== 'updates') {
+      setAddingUpdate(false);
+      setSaving(null);
+    }
   }, [tab]);
   // A tab switch replaces the add form or the file picker inside this page, so it goes through the leave guard like a
   // page change: with typed work (or chosen files) the form asks first (Actions rule 9). Without any it changes at once.
@@ -710,7 +740,7 @@ export function ProjectPage({
             data-size="small"
             data-focus="addupdate"
             onClick={() => setAddingUpdate(true)}
-            aria-disabled={addingUpdate || undefined}
+            aria-disabled={addingUpdate || saving !== null || undefined}
           >
             <Icon name="plus" size={14} />
             Add an update
@@ -759,6 +789,7 @@ export function ProjectPage({
             business={business}
             onUpdates={() => chooseTabFromRow('updates')}
             onTodos={() => chooseTabFromRow('todos')}
+            onSaveChat={saveChat}
             onAddCard={onAddCard}
             onMove={onMove}
           />
@@ -781,6 +812,8 @@ export function ProjectPage({
             adding={addingUpdate}
             onAdding={setAddingUpdate}
             onCanAdd={setCanAddUpdate}
+            saving={saving}
+            onSaveClose={() => setSaving(null)}
           />
         ) : null}
         {tab === 'files' ? (

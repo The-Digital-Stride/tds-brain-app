@@ -241,6 +241,11 @@ export interface ProjectList {
   canRef?: boolean;
   /** R2 phase 4b: canRef && identity.role 'owner' (the brain's Owner). Gates "Give projects codes". */
   canRefAll?: boolean;
+  /**
+   * Chat summaries: canChange && the script answers PROJECTS_CHAT_SUMMARY_CAPABILITY (shared/chat-summary-contract.ts).
+   * False/absent → no Save to project anywhere.
+   */
+  canSaveChat?: boolean;
 }
 
 /** `POST ROUTES.projectArtifact` (decision 8). JSON only; the server builds the target path and files a link card. */
@@ -803,7 +808,7 @@ export const PROJECT_PROTECTED_NAMES = ['project.md', 'retainer.md', 'updates/',
  */
 export interface ProjectUpdate {
   v: 1;
-  kind: 'note' | 'call' | 'status' | 'owner' | 'email' | 'digest' | 'contract';
+  kind: 'note' | 'call' | 'chat' | 'status' | 'owner' | 'email' | 'digest' | 'contract';
   by: string;
   at: string;
   clientSafe: boolean;

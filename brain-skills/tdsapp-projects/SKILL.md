@@ -1,7 +1,7 @@
 ---
 name: tdsapp-projects
-description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, add a dated note or call to a project's updates log (or take your own back), give a project its code (such as AST4K7), find which project a code in some text belongs to, and suggest an email for a project (a draft that waits in the Projects app until the inbox owner approves it) - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update", "give the project a code", "what's the project code", "which project is AST4K7", "link this thread to the project", "add this email to the project". Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
-version: 0.6.0
+description: Make a project and change its card the way TDS Cortex does - start a project inside a client (or The Digital Stride for internal work, or your own personal space), add a card to an existing project folder, change its status, health light, client-comms light, Account Owner, team, service, dates, budget hours, stages or brief, and link files from elsewhere in the brain to it (or unlink them), move a project to another client (or from your personal space to a client), archive a finished project and bring it back, delete one for good, add a dated note or call to a project's updates log (or take your own back), give a project its code (such as AST4K7), find which project a code in some text belongs to, and suggest an email for a project (a draft that waits in the Projects app until the inbox owner approves it) - through one small script that writes `project.md` safely and never overwrites anything. USE WHEN someone says "start a project for Skyseal", "new project", "make a website rebuild project for Acme", "add a card to the client-portal project", "set the project to on hold", "the project is amber", "make Steve the Account Owner", "add Simon to the project team", "link the brief to the project", "take that file off the project", "move this project to Skyseal", "this project belongs to Acme, not me", "archive the website project", "unarchive that project", "delete this project", "note on the project that we sent the quote", "log that call on the project", "add a project update", "give the project a code", "what's the project code", "which project is AST4K7", "link this thread to the project", "add this email to the project", "save this chat to the project", "log this chat on the project", "summarise this chat on the project" (these last three point the person at the **Save to project** button in TDS Cortex; never write the entry yourself). Not for to-dos in a project (use tdsapp-todo's `project` action) or for deleting files (use tdsapp-files). TDS Cortex also runs this script for its Projects app.
+version: 0.7.0
 last_updated: 2026-11-24
 roles: owner, scout, team
 maturity: draft
@@ -129,7 +129,7 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | `find-ref` | `text` (at most 200,000 characters) | Finds the project codes in some text that belong to a real project, and near misses. Reads only; changes nothing. |
 | `email-draft` | `threadId`, `inboxAddress`, `subject`, `from`, `people`, `sentAt`, `summary`, `newestText`, optional `messageId`, `threadMessageIds`, `requested` | Suggests one email for a project: a draft that waits on this Mac for the inbox owner's OK in the Projects app. Answers only its `id`. See "Emails" below. |
 | `email-draft-remove` | `id`, `dismiss` | Takes a waiting draft away (the inbox owner only); `dismiss: true` also means "not for a project", so it isn't suggested again. |
-| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.6.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1","projects-refs-v1","projects-email-v1"]}`. |
+| `capabilities` | none | `{"ok":true,"action":"capabilities","version":"0.7.0","features":["projects-v1","projects-move-v1","projects-archive-v1","projects-updates-v1","projects-refs-v1","projects-email-v1","projects-chat-summary-v1"]}`. |
 
 `fields` uses the app's names: `title`, `kind`, `status`, `health`, `comms`, `owner`, `team`,
 `service`, `start`, `end`, `budgetHours`, `billable`, `stages`, `brief`. `expect` is the SHA-256 of
@@ -266,7 +266,8 @@ echo '{"key":"skyseal/website-rebuild","entry":{"kind":"call","summary":"Call wi
   | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs update
 ```
 
-- `kind` is `note` or `call` (an `email` entry is only ever written by the app: see "Emails").
+- `kind` is `note` or `call` (an `email` entry and a `chat` entry are only ever written by the app: see
+  "Emails" and "Chat summaries").
   `summary` is markdown, at most 5,000 characters, and can't be empty.
 - Keep `clientSafe` false unless the person says the entry is fine for the client: only client-safe
   entries may ever appear in anything a client sees.
@@ -281,12 +282,32 @@ echo '{"key":"skyseal/website-rebuild","entry":{"kind":"call","summary":"Call wi
   `change`, `from` and `to` lines holding the raw values. Sending a value back unchanged adds nothing.
   If one can't be written, the card change still stands and the reply adds `"updatesFailed":true`:
   tell the person the change was saved but its log entry wasn't.
-- There's no editing. `update-remove` takes a note or call back out: `file` is its path from the brain
+- There's no editing. `update-remove` takes a note, call or chat summary back out: `file` is its path from the brain
   folder (inside this project's own `updates/`), `expect` its SHA-256. An email entry can be taken
-  out by the person whose inbox it came from, the brain's Owner or a scout. The automatic entries,
+  out by the person whose inbox it came from, the brain's Owner or a scout. A chat summary goes the
+  way a note does: the person who added it, the brain's Owner or a scout. The automatic entries,
   and kinds later releases add, can't be removed. A shared project's removed entry stays in the brain's
   history; a personal one's is gone for good.
 - Don't write or change files in `updates/` by hand or with any other skill.
+
+### Chat summaries
+
+A `chat` entry is a person's reviewed summary of one TDS Cortex chat, so the team can see what was
+done. **Claude never writes a `chat` entry itself.** When someone asks you to log, save or summarise
+the chat on the project, tell them to press **Save to project** in TDS Cortex: Claude drafts the
+summary there and they check and edit it before anything is saved. Don't call `update` with
+`kind` `"chat"`, and don't copy the chat into a note or call instead.
+
+The app writes it with `update` and `entry` `{kind: "chat", summary, clientSafe, chat, title}`:
+
+- `summary` is the body (markdown, at most 5,000 characters, can't be empty), `clientSafe` as for a
+  note, `chat` the chat's id (a lower-case UUID) and `title` one line of at most 120 characters
+  (trimmed; no line breaks or control characters; one that can't be written is refused).
+- The file is a note's plus two flat lines, `chat: <id>` and `chat_title: <title>` (quoted when YAML
+  would misread it). One chat can have many entries: each covers what was new.
+- Removable like a note: the person who added it, the brain's Owner or a scout.
+- Refused (`bad-request`): a `chat` that isn't a chat id, an empty, over-long or multi-line title,
+  and everything a note is refused for.
 
 ## Emails
 
@@ -368,12 +389,17 @@ with no dash. Internal projects use The Digital Stride's code. Personal projects
 
 ## Backward compatibility
 
+Version 0.7 only adds the `chat` entry kind on `update` (and its removal); every 0.6 call behaves
+exactly as before. An older script refuses a `chat` entry with `bad-request`, which is why the app
+checks `capabilities` for `projects-chat-summary-v1` first. Older apps show a chat entry by its kind
+and summary.
+
 Version 0.6 only adds `email-draft`, `email-draft-remove` and `email` entries on `update`; every
 other action works exactly as in 0.5. An older script answers the new actions with `unknown action`
 and refuses an `email` entry, which is why the app checks `capabilities` for `projects-email-v1`
 first. Older apps show an email entry by its kind and summary.
 
-Versions: 0.6.0 email drafts and email entries (2026-11-24) · 0.5.0 project codes · 0.4.0 updates
+Versions: 0.7.0 chat summaries (2026-11-24) · 0.6.0 email drafts and email entries (2026-11-24) · 0.5.0 project codes · 0.4.0 updates
 log · 0.3.1 projects in their new homes · 0.3 archive and delete · 0.2 move · 0.1 cards.
 
 ## How it writes files

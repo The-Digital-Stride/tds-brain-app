@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PROJECTS_CHAT_SUMMARY_CAPABILITY } from '../../shared/chat-summary-contract.ts';
 import type { ClientInfo, Identity, TodoItem } from '../../shared/contract.ts';
 import { TodoChangeError } from '../../shared/contract.ts';
 import { PROJECTS_REFS_CAPABILITY } from '../../shared/project-refs-contract.ts';
@@ -1397,6 +1398,18 @@ describe('project codes', () => {
     const denied = service({ mayChange: async () => false });
     fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_REFS_CAPABILITY];
     expect(await denied.list(ME)).toMatchObject({ canRef: false, canRefAll: false });
+  });
+
+  it('sets canSaveChat from the capability and roles', async () => {
+    put('clients/acme/projects/a/project.md', card('A'));
+    const s = service();
+    expect((await s.list(ME)).canSaveChat).toBe(false);
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_CHAT_SUMMARY_CAPABILITY];
+    s.changed();
+    expect((await s.list(ME)).canSaveChat).toBe(true);
+    const denied = service({ mayChange: async () => false });
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_CHAT_SUMMARY_CAPABILITY];
+    expect((await denied.list(ME)).canSaveChat).toBe(false);
   });
 
   it('runs a ref change through the script, and refuses all for a non-Owner or without the capability', async () => {

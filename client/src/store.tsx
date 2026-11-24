@@ -84,6 +84,11 @@ export interface HeldFile {
 }
 
 /** The plain line for a failed library delete: the app's own words for the server's code. */
+/** Views a chat drawer may stay open beside: a tool, and Projects (a chat saved beside its review form). */
+export function drawerView(view: string): boolean {
+  return view.startsWith('tool:') || view === 'app:projects';
+}
+
 function fileDeleteMessage(err: unknown): string {
   if (err instanceof ApiFailure && err.code in FILES_CHANGE_MESSAGES) {
     return FILES_CHANGE_MESSAGES[err.code as keyof typeof FILES_CHANGE_MESSAGES];
@@ -1036,15 +1041,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     [leave],
   );
-  // The drawer goes with its chat and with the tool: any other active chat or any non-tool view clears it.
+  // The drawer goes with its chat and with the tool (or Projects, where a chat is saved beside its review form,
+  // plan 2026-11-24-chat-summary-updates decision 8): any other active chat or any other view clears it.
   useEffect(() => {
     if (drawerChat === null) return;
-    if (!view.startsWith('tool:') || activeChat.kind !== 'live' || activeChat.sessionId !== drawerChat)
+    if (!drawerView(view) || activeChat.kind !== 'live' || activeChat.sessionId !== drawerChat)
       setDrawerChat(null);
   }, [drawerChat, view, activeChat]);
   const chatDrawer =
     drawerChat !== null &&
-    view.startsWith('tool:') &&
+    drawerView(view) &&
     activeChat.kind === 'live' &&
     activeChat.sessionId === drawerChat
       ? drawerChat

@@ -20,7 +20,7 @@ import { createProjectActivity, type ProjectActivityService, readDoneInfo } from
 import { createProjectArtifact, type ProjectArtifactService } from './project-artifact.ts';
 import { createProjectBusiness, type ProjectBusinessService } from './project-business.ts';
 import { createProjectMeetings, type ProjectMeetingsService } from './project-meetings.ts';
-import { createProjectUpdates } from './project-updates.ts';
+import { createProjectUpdates, type ProjectUpdatesService } from './project-updates.ts';
 import { createProjects } from './projects.ts';
 import { createProjectsSkillRunner, PROJECTS_SKILL, type ProjectsSkillOptions } from './projects-skill.ts';
 import { createQueue } from './skill-runner.ts';
@@ -93,6 +93,13 @@ export type SearchableBrain = BrainReaders &
     doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
     /** Done-todos plan, decision 10: one teammate's open to-do, read only. Null when it has gone. */
     teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
+    /** Chat summaries: this person's `chat` entries for one chat on a project (whole log, newest first). */
+    chatEntries?: ProjectUpdatesService['chatEntries'];
+    /**
+     * Chat summaries: which chats this Mac holds, for "Open chat" on a `chat` entry. The session manager is made
+     * after the brain, so it is handed in later (routes.ts binds it); until then no entry is openable.
+     */
+    setHoldsChat?: (fn: ((chatId: string) => Promise<boolean>) | null) => void;
   };
 
 export function createBrainReaders(
@@ -153,10 +160,13 @@ export function createBrainReaders(
       library.changed(to);
     },
   });
+  // Chat summaries: bound to the session manager's ownsChat once it exists (setHoldsChat below).
+  let holdsChat: ((chatId: string) => Promise<boolean>) | null = null;
   const projectUpdates = createProjectUpdates(root, {
     index: () => projects.index(),
     skill: projectsSkill,
     mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
+    holdsChat: (chatId) => (holdsChat ? holdsChat(chatId).catch(() => false) : false),
   });
   // Activity on the project home: reuses the To-dos, Files and Updates reads; the snapshot lives in the data folder.
   const emailDrafts = createEmailDrafts(root, {
@@ -250,6 +260,10 @@ export function createBrainReaders(
     projectBusiness: projectBusiness.read,
     homeMeetings: projectMeetings.home,
     emailDrafts,
+    chatEntries: (key, chatId, identity) => projectUpdates.chatEntries(key, chatId, identity),
+    setHoldsChat: (fn) => {
+      holdsChat = fn;
+    },
     health: () => checkHealth(root),
     identity: () => readIdentity(root, run),
     profile: (identity) => readMemberProfile(root, identity),

@@ -1,15 +1,21 @@
-import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { readChatSummary } from '../../../../shared/chat-summary.ts';
+import type { ChatSummaryFields, SaveChatRequest } from '../../../../shared/chat-summary-contract.ts';
 import type { ManualUpdateKind, ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
 import { UPDATE_SUMMARY_MAX } from '../../../../shared/project-updates-contract.ts';
 import type { ProjectCard } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
 import { Markdown } from '../../markdown.tsx';
 import { Confirm } from '../../shell/Confirm.tsx';
+import { Fold } from '../../shell/Fold.tsx';
 import { Icon } from '../../shell/Icon.tsx';
 import { Seg } from '../../shell/Seg.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
+import { ShellContext } from '../../shell/shell-context.ts';
 import { useSheetHold } from '../../shell/useSheetHold.ts';
+import { useStore } from '../../store.tsx';
 import { dateWords, READ_ONLY_NOTICE } from './logic.ts';
+import { SaveToProject } from './SaveToProject.tsx';
 import { useProjectChange } from './useChange.ts';
 import { useKeepFocus } from './useKeepFocus.ts';
 
@@ -18,6 +24,7 @@ const KIND_WORDS: Record<string, string> = {
   call: 'Call',
   status: 'Status',
   owner: 'Account Owner',
+  chat: 'Chat summary',
 };
 
 /** "Note", "Call", "Status", "Account Owner"; any other kind by its name, capitalised. */
@@ -75,6 +82,111 @@ function EmailBody({ u }: { u: ProjectUpdateItem }) {
   );
 }
 
+/** The library folder a brain path belongs to ("clients/acme/x.pdf" is "client:acme"). */
+function scopeOfPath(path: string): string {
+  const client = /^clients\/([^/]+)\//.exec(path);
+  if (client) return `client:${client[1]}`;
+  if (path.startsWith('personal/')) return 'personal';
+  return 'shared:templates';
+}
+
+/** A chat summary entry: Objective and Outcome up front, the rest under More. */
+function ChatBody({
+  u,
+  fields,
+  onOpenDoc,
+  onOpenChat,
+}: {
+  u: ProjectUpdateItem;
+  fields: ChatSummaryFields;
+  onOpenDoc: (ref: string) => void;
+  onOpenChat: (chat: string) => void;
+}) {
+  const hasMore = fields.figures.length + fields.documents.length + fields.nextSteps.length > 0;
+  return (
+    <>
+      {u.chatTitle ? <strong className="proj-email-subject">{u.chatTitle}</strong> : null}
+      <p className="proj-chat-line">
+        <strong>Objective:</strong> {fields.objective}
+      </p>
+      <p className="proj-chat-line">
+        <strong>Outcome:</strong> {fields.outcome}
+      </p>
+      {hasMore ? (
+        <Fold title="More" defaultOpen={false} level={4}>
+          <div className="proj-chat-more">
+            {fields.figures.length > 0 ? (
+              <>
+                <h5 className="label">Key figures</h5>
+                <ul>
+                  {fields.figures.map((f, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {fields.documents.length > 0 ? (
+              <>
+                <h5 className="label">Documents</h5>
+                <ul>
+                  {fields.documents.map((d) => (
+                    <li key={d.ref}>
+                      {/^https:\/\//i.test(d.ref) ? (
+                        <a href={d.ref} target="_blank" rel="noopener noreferrer">
+                          {d.name}
+                          <span className="visually-hidden"> (opens in a new tab)</span>
+                        </a>
+                      ) : (
+                        <button type="button" className="link-btn" onClick={() => onOpenDoc(d.ref)}>
+                          {d.name}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {fields.nextSteps.length > 0 ? (
+              <>
+                <h5 className="label">Next steps</h5>
+                <ul>
+                  {fields.nextSteps.map((n, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: read-only list, never reordered
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        </Fold>
+      ) : null}
+      {u.chatOpenable && u.chatId ? (
+        <div>
+          <button type="button" className="btn" data-size="small" onClick={() => onOpenChat(u.chatId ?? '')}>
+            Open chat
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** A chat entry in its layout; any other body (hand-edited) stays plain Markdown. */
+function ChatSummary({
+  u,
+  onOpenDoc,
+  onOpenChat,
+}: {
+  u: ProjectUpdateItem;
+  onOpenDoc: (ref: string) => void;
+  onOpenChat: (chat: string) => void;
+}) {
+  const fields = readChatSummary(u.summary);
+  if (!fields) return <Markdown text={u.summary} />;
+  return <ChatBody u={u} fields={fields} onOpenDoc={onOpenDoc} onOpenChat={onOpenChat} />;
+}
+
 const ADD_BUTTON = '[data-focus="addupdate"]';
 
 /**
@@ -88,13 +200,21 @@ export function ProjectUpdates({
   adding,
   onAdding,
   onCanAdd,
+  saving = null,
+  onSaveClose,
 }: {
   card: ProjectCard;
   canChange: boolean;
   adding: boolean;
   onAdding: (open: boolean) => void;
   onCanAdd: (can: boolean) => void;
+  /** A chat being saved to this project (Save to project): its review form shows at the top. */
+  saving?: SaveChatRequest | null;
+  onSaveClose?: () => void;
 }) {
+  const { openPast } = useStore();
+  const shell = useContext(ShellContext);
+  const [docError, setDocError] = useState('');
   const change = useProjectChange({ reloadOnChanged: true });
   const [page, setPage] = useState<Page | null>(null);
   const [failed, setFailed] = useState(false);
@@ -162,6 +282,24 @@ export function ProjectUpdates({
       setMoreFailed(true);
     }
     setMoreBusy(false);
+  };
+
+  const openDoc = async (ref: string) => {
+    setDocError('');
+    try {
+      const found = (await api.library(scopeOfPath(ref))).items.find((i) => i.path === ref);
+      if (!found) {
+        setDocError("That file isn't in the library any more.");
+        return;
+      }
+      shell?.dispatch({ type: 'open-viewer', viewer: { item: found } });
+    } catch {
+      setDocError("That file can't be opened right now.");
+    }
+  };
+  const openChat = async (chat: string) => {
+    setDocError('');
+    if (!(await openPast(chat, { in: 'drawer' }))) setDocError("That chat can't be opened on this Mac.");
   };
 
   const focusAdd = () =>
@@ -254,7 +392,24 @@ export function ProjectUpdates({
   return (
     <>
       {notice ? <p className="proj-note">{notice}</p> : null}
-      {adding && page.canAdd ? (
+      {saving ? (
+        <SaveToProject
+          key={`${saving.chat}|${saving.key}`}
+          chat={saving.chat}
+          title={saving.title}
+          project={card.key}
+          onClose={(saved) => {
+            onSaveClose?.();
+            if (saved) void load();
+          }}
+        />
+      ) : null}
+      {docError ? (
+        <p className="notice" data-level="error" data-shape="box" role="alert">
+          {docError}
+        </p>
+      ) : null}
+      {adding && page.canAdd && !saving ? (
         <form
           className="card proj-card proj-form proj-update-form"
           aria-label="Add an update"
@@ -393,7 +548,15 @@ export function ProjectUpdates({
                         {u.fromOldFolder ? <span className="chip">From the old folder</span> : null}
                       </div>
                       {u.kind === 'email' ? <EmailBody u={u} /> : null}
-                      <Markdown text={u.summary} />
+                      {u.kind === 'chat' ? (
+                        <ChatSummary
+                          u={u}
+                          onOpenDoc={(ref) => void openDoc(ref)}
+                          onOpenChat={(chat) => void openChat(chat)}
+                        />
+                      ) : (
+                        <Markdown text={u.summary} />
+                      )}
                     </div>
                     {u.canRemove ? (
                       <button

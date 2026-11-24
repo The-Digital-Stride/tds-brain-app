@@ -105,6 +105,11 @@ export interface ChatSummaryDraftRequest {
 export interface ChatSummaryDocChoice extends ChatSummaryDoc {
   kind: 'file' | 'page' | 'link';
   picked: boolean;
+  /**
+   * (Builder B1) The file is under `personal/`. On a shared project it can't be linked (decision 5): the server
+   * sends it unticked and the form shows it disabled ("Only on your Mac"). Absent otherwise.
+   */
+  personal?: true;
 }
 
 /** An earlier summary of this same chat on this project, by this person (decision 7). */

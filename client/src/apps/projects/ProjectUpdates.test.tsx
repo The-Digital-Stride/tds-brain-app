@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { composeChatSummary } from '../../../../shared/chat-summary.ts';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
+import { ShellContext } from '../../shell/shell-context.ts';
+import { projectPageRequest } from '../../state/client-choice.ts';
+import { saveChatRequest } from '../../state/save-chat-request.ts';
 import { READ_ONLY_NOTICE } from './logic.ts';
 import { card, projectList } from './testing.ts';
 
 const store = vi.hoisted(() => ({
   newChat: vi.fn(),
   changeTodos: vi.fn(),
+  openPast: vi.fn(),
   toggleFavouriteTodo: vi.fn(),
   boot: {
     identity: { slug: 'me' },
@@ -22,6 +27,8 @@ const api = vi.hoisted(() => ({
   projectFiles: vi.fn(),
   projectTodos: vi.fn(),
   projectUpdates: vi.fn(),
+  library: vi.fn(),
+  chatSummaryDraft: vi.fn(),
 }));
 vi.mock('../../api.ts', () => ({
   api,
@@ -273,5 +280,135 @@ describe('an edit whose log entry failed', () => {
     expect(
       await screen.findAllByText("Saved, but the change couldn't be added to the updates log."),
     ).not.toHaveLength(0);
+  });
+});
+
+describe('chat summary entries', () => {
+  const body = composeChatSummary({
+    objective: 'Fix the redirects.',
+    outcome: 'All 40 now work.',
+    figures: ['40 redirects'],
+    documents: [
+      { ref: 'clients/skyseal/report.pdf', name: 'Report' },
+      { ref: 'https://example.com/page', name: 'Live page' },
+    ],
+    nextSteps: ['Tell the client'],
+  });
+  const chat = (over: Partial<ProjectUpdateItem> = {}) =>
+    item({
+      kind: 'chat',
+      path: 'c1',
+      summary: body,
+      chatId: '11111111-2222-3333-4444-555555555555',
+      chatTitle: 'Fix the redirects',
+      ...over,
+    } as Partial<ProjectUpdateItem>);
+  const shellDispatch = vi.fn();
+  const renderSheet = (c = SKY) => {
+    const list = projectList([c]);
+    api.projects.mockResolvedValue(list);
+    projectsStore.apply(list);
+    render(
+      <ShellContext.Provider
+        value={{ dispatch: shellDispatch, sheetHold: { dirty: false, asking: false } } as never}
+      >
+        <ProjectsSheet />
+      </ShellContext.Provider>,
+    );
+  };
+  const openTab = async (c = SKY) => {
+    renderSheet(c);
+    await screen.findByText(/of \d+ project/);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(c.title) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Updates' }));
+  };
+
+  it('shows Chat summary with Objective and Outcome, and the rest under More', async () => {
+    api.projectUpdates.mockResolvedValue(reply([chat()]));
+    await openTab();
+    expect(await screen.findByText('Chat summary')).toBeTruthy();
+    expect(screen.getByText('Fix the redirects')).toBeTruthy();
+    expect(screen.getByText(/Fix the redirects\./)).toBeTruthy();
+    expect(screen.getByText(/All 40 now work\./)).toBeTruthy();
+    const more = screen.getByRole('button', { name: /More/ });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(more);
+    expect(screen.getByText('40 redirects')).toBeTruthy();
+    expect(screen.getByText('Tell the client')).toBeTruthy();
+  });
+
+  it('opens a brain document in the viewer and an https one in a new tab', async () => {
+    api.library.mockResolvedValue({
+      items: [{ id: 'client:skyseal.abc', path: 'clients/skyseal/report.pdf', name: 'report.pdf' }],
+    });
+    api.projectUpdates.mockResolvedValue(reply([chat()]));
+    await openTab();
+    fireEvent.click(await screen.findByRole('button', { name: /More/ }));
+    const live = screen.getByRole('link', { name: /Live page/ });
+    expect(live.getAttribute('target')).toBe('_blank');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    await waitFor(() =>
+      expect(shellDispatch).toHaveBeenCalledWith({
+        type: 'open-viewer',
+        viewer: { item: expect.objectContaining({ path: 'clients/skyseal/report.pdf' }) },
+      }),
+    );
+    expect(api.library).toHaveBeenCalledWith('client:skyseal');
+  });
+
+  it('says so when a linked file is no longer in the library', async () => {
+    api.library.mockResolvedValue({ items: [] });
+    api.projectUpdates.mockResolvedValue(reply([chat()]));
+    await openTab();
+    fireEvent.click(await screen.findByRole('button', { name: /More/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    expect(await screen.findByText("That file isn't in the library any more.")).toBeTruthy();
+  });
+
+  it('shows Open chat only when the chat is on this Mac, and reopens it', async () => {
+    store.openPast.mockResolvedValue(true);
+    api.projectUpdates.mockResolvedValue(
+      reply([chat({ chatOpenable: true }), chat({ path: 'c2', chatId: 'b'.repeat(8) })]),
+    );
+    await openTab();
+    const buttons = await screen.findAllByRole('button', { name: 'Open chat' });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0] as HTMLElement);
+    await waitFor(() =>
+      expect(store.openPast).toHaveBeenCalledWith('11111111-2222-3333-4444-555555555555', { in: 'drawer' }),
+    );
+  });
+
+  it('falls back to plain Markdown for a body that is not the layout', async () => {
+    api.projectUpdates.mockResolvedValue(reply([chat({ summary: 'Edited by hand, with **bold**.' })]));
+    await openTab();
+    expect(await screen.findByText('bold')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /More/ })).toBeNull();
+    expect(screen.queryByText('Objective:')).toBeNull();
+  });
+
+  it('shows the Save to project form on the Updates tab for a waiting request, and reloads after', async () => {
+    api.projectUpdates.mockResolvedValue(reply([]));
+    api.chatSummaryDraft.mockResolvedValue({
+      chat: 'c',
+      project: SKY.key,
+      title: 'Fix the redirects',
+      fields: { objective: 'Obj', outcome: 'Out', figures: [], nextSteps: [] },
+      documents: [],
+      fromEmail: false,
+      earlier: [],
+      nothingNew: false,
+    });
+    saveChatRequest.set({ key: SKY.key, chat: '11111111-2222-3333-4444-555555555555', title: 'Fix' });
+    // The chat header sets both: the request, and the page to open.
+    projectPageRequest.set(SKY.key);
+    renderSheet();
+    expect(await screen.findByLabelText('Objective')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Updates' }).getAttribute('aria-current')).toBe('page');
+    expect(saveChatRequest.get()).toBeNull();
+    const calls = api.projectUpdates.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByLabelText('Objective')).toBeNull());
+    expect(api.projectUpdates.mock.calls.length).toBe(calls);
   });
 });

@@ -7,6 +7,11 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
+import {
+  CHAT_ID_PATTERN,
+  CHAT_TITLE_MAX,
+  PROJECTS_CHAT_SUMMARY_CAPABILITY,
+} from '../../shared/chat-summary-contract.ts';
 import type { Identity } from '../../shared/contract.ts';
 import {
   GMAIL_THREAD_ID_PATTERN,
@@ -44,6 +49,18 @@ export interface ProjectUpdatesOptions {
   skill: ProjectsSkillRunner;
   /** Whether the brain's `tdsapp-projects` skill allows this person (its `roles:`). Missing: everyone. */
   mayChange?: (identity: Identity) => Promise<boolean>;
+  /**
+   * Whether this Mac holds the chat with that session id (live, or in Claude Code's session list), so a
+   * `chat` entry can say "Open chat". Missing: no entry is openable.
+   */
+  holdsChat?: (chatId: string) => boolean | Promise<boolean>;
+}
+
+/** One of this person's `chat` entries for a chat, as `chatEntries` answers it. */
+export interface ChatEntryRef {
+  path: string;
+  at: string;
+  summary: string;
 }
 
 export interface ProjectUpdatesService {
@@ -56,6 +73,11 @@ export interface ProjectUpdatesService {
     action: ProjectUpdateAction | ProjectUpdateRemoveAction,
     identity: Identity,
   ): Promise<{ file?: string }>;
+  /**
+   * Every `chat` entry of that chat on the project (the whole log, not one page, old folders included) that
+   * this person wrote, newest first. Empty for an unknown project.
+   */
+  chatEntries(key: ProjectKey, chatId: string, identity: Identity): Promise<ChatEntryRef[]>;
 }
 
 /** An entry file bigger than this is counted unreadable. */
@@ -137,6 +159,8 @@ function parseEntry(path: string, name: string, bytes: Buffer, old: boolean): Pa
     ...(text(data.email_key) !== undefined ? { emailKey: text(data.email_key) } : {}),
     ...(text(data.email_message_id) !== undefined ? { emailMessageId: text(data.email_message_id) } : {}),
     ...(text(data.email_inbox_owner) !== undefined ? { emailInboxOwner: text(data.email_inbox_owner) } : {}),
+    ...(kind === 'chat' && CHAT_ID_PATTERN.test(text(data.chat) ?? '') ? { chatId: text(data.chat) } : {}),
+    ...(kind === 'chat' && text(data.chat_title) !== undefined ? { chatTitle: text(data.chat_title) } : {}),
     path,
     version: sha256(bytes),
     ...(old ? { fromOldFolder: true as const } : {}),
@@ -258,6 +282,9 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
   const capable = async () =>
     (await opts.skill.capabilities().catch(() => [] as string[])).includes(PROJECTS_UPDATES_CAPABILITY);
 
+  const chatCapable = async () =>
+    (await opts.skill.capabilities().catch(() => [] as string[])).includes(PROJECTS_CHAT_SUMMARY_CAPABILITY);
+
   const emailCapable = async () =>
     (await opts.skill.capabilities().catch(() => [] as string[])).includes(PROJECTS_EMAIL_CAPABILITY);
 
@@ -265,11 +292,12 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     const index = await opts.index();
     const card = index.byKey(key);
     if (!card) throw new ProjectsError('not-found', COULD_NOT_FIND);
-    const [all, allowed, hasCap, hasEmailCap] = await Promise.all([
+    const [all, allowed, hasCap, hasEmailCap, hasChatCap] = await Promise.all([
       listing(card, index),
       mayChange(identity),
       capable(),
       emailCapable(),
+      chatCapable(),
     ]);
     let start = 0;
     if (before !== null) {
@@ -294,6 +322,18 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
       if (item.kind !== 'email' || !owner || gmail.has(owner) || !isSlugOf(identity, owner)) continue;
       gmail.set(owner, (await memberEmailOfSlug(root, owner).catch(() => null)) ?? identity.email);
     }
+    // "Open chat" only for a chat this Mac holds; one look-up per chat id.
+    const held = new Map<string, boolean>();
+    for (const { item } of page) {
+      const id = item.chatId;
+      if (item.kind !== 'chat' || !id || held.has(id)) continue;
+      held.set(
+        id,
+        await Promise.resolve()
+          .then(() => opts.holdsChat?.(id) ?? false)
+          .catch(() => false),
+      );
+    }
     const updates: ProjectUpdateItem[] = page.map(({ item }) => {
       const isEmail = item.kind === 'email';
       const author = item.by === identity.slug || (card.space === 'personal' && item.by === 'me');
@@ -313,13 +353,18 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
       return {
         ...item,
         ...(gmailUrl ? { gmailUrl } : {}),
+        ...(item.kind === 'chat' && item.chatId && held.get(item.chatId)
+          ? { chatOpenable: true as const }
+          : {}),
         byName: roster.get(item.by) ?? item.by,
         canRemove:
           hasCap &&
           allowed &&
           live &&
           !item.fromOldFolder &&
-          (isEmail ? hasEmailCap : MANUAL_KINDS.includes(item.kind)) &&
+          (isEmail
+            ? hasEmailCap
+            : MANUAL_KINDS.includes(item.kind) || (item.kind === 'chat' && hasChatCap)) &&
           UPDATE_FILE_PATTERN.test(item.path.slice(item.path.lastIndexOf('/') + 1)) &&
           mayRemove,
       };
@@ -340,7 +385,22 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     if (action.kind === 'update') {
       const e = action.entry;
       const summary = typeof e?.summary === 'string' ? e.summary.trim() : '';
-      if (
+      if (e?.kind === 'chat') {
+        // Shape only; the route checks ownership and the body's layout. Needs the script's chat capability.
+        const title = typeof e.title === 'string' ? e.title.trim() : '';
+        if (
+          typeof e.chat !== 'string' ||
+          !CHAT_ID_PATTERN.test(e.chat) ||
+          title === '' ||
+          title.length > CHAT_TITLE_MAX ||
+          /[\r\n]/.test(e.title) ||
+          typeof e.clientSafe !== 'boolean' ||
+          summary === '' ||
+          summary.length > UPDATE_SUMMARY_MAX
+        )
+          throw bad();
+        if (!(await chatCapable())) throw new ProjectsError('not-allowed', NEEDS_SKILLS);
+      } else if (
         !e ||
         !MANUAL_KINDS.includes(e.kind) ||
         typeof e.clientSafe !== 'boolean' ||
@@ -374,5 +434,20 @@ export function createProjectUpdates(root: string, opts: ProjectUpdatesOptions):
     return result.file !== undefined ? { file: result.file } : {};
   };
 
-  return { read, change };
+  const chatEntries: ProjectUpdatesService['chatEntries'] = async (key, chatId, identity) => {
+    const index = await opts.index();
+    const card = index.byKey(key);
+    if (!card) return [];
+    const all = await listing(card, index);
+    return all.entries
+      .filter(
+        (e) =>
+          e.item.kind === 'chat' &&
+          e.item.chatId === chatId &&
+          (e.item.by === identity.slug || (card.space === 'personal' && e.item.by === 'me')),
+      )
+      .map((e) => ({ path: e.item.path, at: e.item.at, summary: e.item.summary }));
+  };
+
+  return { read, change, chatEntries };
 }

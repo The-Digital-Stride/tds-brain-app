@@ -197,6 +197,16 @@ describe('startChat', () => {
     expect(store.view).toBe('chat');
   });
 
+  it('a chat stays in the drawer beside Projects (Save to project), but not beside another app', async () => {
+    await mount();
+    await act(async () => store.openView('app:projects'));
+    await act(async () => store.openChat('s9', { in: 'drawer' }));
+    expect(store.view).toBe('app:projects');
+    expect(store.chatDrawer).toBe('s9');
+    await act(async () => store.openView('app:documents'));
+    expect(store.chatDrawer).toBeNull();
+  });
+
   it('the drawer stays open when another tool of the same section is opened (a tab press)', async () => {
     await mount();
     await act(async () => store.openTool('workbench', 'ad-manager'));

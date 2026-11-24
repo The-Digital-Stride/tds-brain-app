@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.6.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// tdsapp-projects.cjs (v0.7.0): make and change project cards (`project.md`) the way TDS Cortex does,
 // move a project to another client, archive, unarchive or delete one, keep its updates log, and give
 // projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md), and keep email
 // drafts for their inbox owner's approval (docs/plans/2026-11-24-projects-r2-email-entries.md). The
@@ -23,7 +23,10 @@
 //             ref {key, expect, replace?: true} or {all: true}, find-ref {text},
 //             email-draft {EmailDraftInput}, email-draft-remove {id, dismiss},
 //             update {key, entry: {kind: email, draft, token, summary, subject, from, people, clientSafe}}
-//             (the app only, on the inbox owner's Save), capabilities {}.
+//             (the app only, on the inbox owner's Save),
+//             update {key, entry: {kind: chat, summary, clientSafe, chat, title}} (the app only, on
+//             Save to project: a chat's reviewed summary, docs/plans/2026-11-24-chat-summary-updates.md),
+//             capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
 //             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
@@ -115,7 +118,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.6.0';
+const SCRIPT_VERSION = '0.7.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -128,6 +131,10 @@ const PROJECTS_REFS_CAPABILITY = 'projects-refs-v1';
 // Projects R2 phase 5 (docs/plans/2026-11-24-projects-r2-email-entries.md): email drafts and email
 // entries, as shared/project-email-contract.ts (a test checks these match).
 const PROJECTS_EMAIL_CAPABILITY = 'projects-email-v1';
+const PROJECTS_CHAT_SUMMARY_CAPABILITY = 'projects-chat-summary-v1';
+// Claude Code's session ids (copied from shared/chat-summary-contract.ts; a test checks they match).
+const CHAT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const CHAT_TITLE_MAX = 120;
 const EMAIL_DRAFT_FILE_PATTERN = /^[a-z0-9]{12}\.json$/;
 // The approve keys live outside the brain, in this Mac user's TDS Cortex data folder (overseer ruling after
 // the security review): never in a folder Claude works in, never moved by HOME or TDS_BRAIN_APP_DATA.
@@ -2273,6 +2280,7 @@ function writeEntry(ctx, loc, who, folder, front, summary) {
     lines.push(`change: ${front.change}`, `from: ${factValue(front.from)}`, `to: ${factValue(front.to)}`);
   }
   if (front.email !== undefined) lines.push(...emailLines(front.email));
+  if (front.chat !== undefined) lines.push(`chat: ${front.chat}`, `chat_title: ${factValue(front.chatTitle)}`);
   const text = [...lines, '---', '', summary, ''].join('\n');
   const stamp = ukStamp(ctx.now);
   const suffix = ctx.updateSuffix || randomSuffix;
@@ -2305,6 +2313,21 @@ function checkSummary(value) {
   return text;
 }
 
+// A chat entry's id and title as written: the id a session id, the title one trimmed line that can be
+// written as it is. Answers {chat, title}.
+function checkChat(entry) {
+  if (typeof entry.chat !== 'string' || !CHAT_ID_PATTERN.test(entry.chat)) {
+    throw refuse('bad-request', 'chat must be a chat id');
+  }
+  if (typeof entry.title !== 'string') throw refuse('bad-request', 'the title must be text');
+  const title = entry.title.trim();
+  if (title === '') throw refuse('bad-request', 'the title is empty');
+  if (title.length > CHAT_TITLE_MAX) throw refuse('bad-request', `the title is too long (over ${CHAT_TITLE_MAX} characters)`);
+  if (/[\p{Cc}\u2028\u2029]/u.test(title)) throw refuse('bad-request', "the title must be one line without control characters");
+  if (yamlText(title) === null) throw refuse('bad-request', "the title can't be written as it is");
+  return { chat: entry.chat, title };
+}
+
 function update(input, ctx) {
   const loc = locate(ctx, input.key);
   const entry = input.entry;
@@ -2312,14 +2335,20 @@ function update(input, ctx) {
     throw refuse('bad-request', 'entry must be an object');
   }
   if (entry.kind === 'email') return emailUpdate(input, entry, loc, ctx);
-  if (!MANUAL_UPDATE_KINDS.includes(entry.kind)) throw refuse('bad-request', 'entry kind must be note, call or email');
+  const isChat = entry.kind === 'chat';
+  if (!isChat && !MANUAL_UPDATE_KINDS.includes(entry.kind)) {
+    throw refuse('bad-request', 'entry kind must be note, call, chat or email');
+  }
   const summary = checkSummary(entry.summary);
   if (typeof entry.clientSafe !== 'boolean') throw refuse('bad-request', 'clientSafe must be true or false');
+  const chat = isChat ? checkChat(entry) : null;
   const who = identity(ctx);
   checkWriter(ctx, loc, who);
   const cardFile = requireLiveCard(ctx, loc);
   const folder = updatesFolder(ctx, loc, true);
-  const file = writeEntry(ctx, loc, who, folder, { kind: entry.kind, clientSafe: entry.clientSafe }, summary);
+  const front = { kind: entry.kind, clientSafe: entry.clientSafe };
+  if (chat) Object.assign(front, { chat: chat.chat, chatTitle: chat.title });
+  const file = writeEntry(ctx, loc, who, folder, front, summary);
   return { ok: true, action: 'update', key: loc.key, version: sha256(cardFile.bytes), file };
 }
 
@@ -2353,8 +2382,8 @@ function updateRemove(input, ctx) {
     if (!isOwner && !isOwnerOrScout(who)) {
       throw refuse('not-allowed', "only the person whose inbox it came from, the brain's Owner or a scout can remove an email");
     }
-  } else if (!MANUAL_UPDATE_KINDS.includes(values.kind)) {
-    throw refuse('not-allowed', 'only notes, calls and emails can be removed: the log keeps its other entries');
+  } else if (!MANUAL_UPDATE_KINDS.includes(values.kind) && values.kind !== 'chat') {
+    throw refuse('not-allowed', 'only notes, calls, chat summaries and emails can be removed: the log keeps its other entries');
   } else if (!isAuthor(loc, who, values.by) && !isOwnerOrScout(who)) {
     throw refuse('not-allowed', "only the person who added it, the brain's Owner or a scout can remove an update");
   }
@@ -2877,6 +2906,7 @@ function capabilities() {
       PROJECTS_UPDATES_CAPABILITY,
       PROJECTS_REFS_CAPABILITY,
       PROJECTS_EMAIL_CAPABILITY,
+      PROJECTS_CHAT_SUMMARY_CAPABILITY,
     ],
   };
 }
@@ -3653,6 +3683,9 @@ module.exports = {
   PROJECTS_UPDATES_CAPABILITY,
   PROJECTS_REFS_CAPABILITY,
   PROJECTS_EMAIL_CAPABILITY,
+  PROJECTS_CHAT_SUMMARY_CAPABILITY,
+  CHAT_ID_PATTERN,
+  CHAT_TITLE_MAX,
   EMAIL,
   EMAIL_DRAFT_FILE_PATTERN,
   EMAIL_KEYS_SUBDIR,

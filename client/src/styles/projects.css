@@ -519,6 +519,12 @@
   .proj-email-subject {
     overflow-wrap: anywhere;
   }
+  /* Who and when, then where to read it: one line, aligned with the subject and summary. */
+  .proj-email-meta {
+    margin: 0;
+    font-size: var(--fs-control);
+    color: var(--iron);
+  }
   .proj-email-row {
     align-items: center;
   }

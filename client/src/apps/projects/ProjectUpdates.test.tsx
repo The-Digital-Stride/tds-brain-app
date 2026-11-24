@@ -140,7 +140,7 @@ describe('the Updates tab', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(link.textContent).toContain('(opens in a new tab)');
     expect(screen.getAllByRole('link')).toHaveLength(1);
-    expect(screen.getByText("In Sam's inbox")).toBeTruthy();
+    expect(screen.getByText(/· In Sam's inbox$/)).toBeTruthy();
   });
 
   it('opens the form from the tab row and sends the update action', async () => {

@@ -90,7 +90,7 @@ describe('EmailDrafts', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(SITE.key));
     expect(api.projectEmailDrafts).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText('Saved to the project.')).toBeTruthy();
+    expect(await screen.findByText(/^Saved to the project\./)).toBeTruthy();
     expect(screen.queryByText('Subject a')).toBeNull();
   });
 
@@ -103,7 +103,7 @@ describe('EmailDrafts', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Review email: Subject a' }));
     fireEvent.change(screen.getByLabelText('Project'), { target: { value: SITE.key } });
     fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
-    expect(await screen.findByText('Already in Sky SEO, added by Sam.')).toBeTruthy();
+    expect(await screen.findByText(/^Already in Sky SEO, added by Sam\./)).toBeTruthy();
     expect(screen.queryByText('Subject a')).toBeNull();
   });
 });

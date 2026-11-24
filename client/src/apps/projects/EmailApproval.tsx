@@ -39,7 +39,7 @@ export function routeWords(route: EmailDraftItem['route']): string {
     case 'domain-several':
       return "The sender's company has more than one project. Choose one.";
     default:
-      return 'Choose a project';
+      return 'No project matched this email. Choose one.';
   }
 }
 
@@ -95,7 +95,13 @@ export function EmailApproval({
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || !project) return;
+    if (busy) return;
+    if (!project) {
+      // UX review: say why Save did nothing.
+      setMessage('Choose a project first.');
+      document.getElementById(`${id}-project`)?.focus();
+      return;
+    }
     setBusy(true);
     setMessage('');
     try {
@@ -182,7 +188,10 @@ export function EmailApproval({
           }}
         />
       ) : null}
-      <p className="proj-note">Only what you see here is saved to the project, never the email itself.</p>
+      <p className="proj-note">
+        Nothing is saved until you press Save to project. Only what you see here is saved, never the email
+        itself.
+      </p>
       <div className="form-field">
         <label htmlFor={`${id}-project`}>Project</label>
         <select
@@ -202,7 +211,8 @@ export function EmailApproval({
           ))}
         </select>
         <p className="proj-note" id={`${id}-why`}>
-          {routeWords(draft.route)}
+          {/* The reason only describes the project the app suggested (UX review). */}
+          {project === (draft.route.key ?? '') ? routeWords(draft.route) : 'You chose this project.'}
         </p>
       </div>
       <div className="form-field">
@@ -255,7 +265,7 @@ export function EmailApproval({
           onChange={(e) => setSummary(e.target.value)}
         />
       </div>
-      <p className="proj-note">Sent {dateWords(draft.sentAt)}.</p>
+      <p className="proj-note">Sent {dateWords(draft.sentAt)}. This date is saved too.</p>
       <label className="proj-check">
         <input
           type="checkbox"
@@ -271,12 +281,7 @@ export function EmailApproval({
         </p>
       ) : null}
       <div className="proj-buttons">
-        <button
-          type="submit"
-          className="btn"
-          data-variant="primary"
-          aria-disabled={busy || !project || undefined}
-        >
+        <button type="submit" className="btn" data-variant="primary" aria-disabled={busy || undefined}>
           Save to project
         </button>
         <button

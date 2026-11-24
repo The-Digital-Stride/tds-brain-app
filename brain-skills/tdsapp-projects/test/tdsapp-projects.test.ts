@@ -2847,7 +2847,7 @@ describe('email entries', () => {
           summary: 'Alex agreed the December budget.',
           subject: 'Budget for December',
           from: 'Alex Smith',
-          people: ['Sam Example', 'ops@client.example'],
+          people: ['Sam Example', 'ops'],
           clientSafe: false,
           ...over,
         },
@@ -3360,7 +3360,7 @@ describe('email entries', () => {
           'email_from: Alex Smith',
           'email_people:',
           '  - "Sam Example"',
-          '  - "ops@client.example"',
+          '  - "ops"',
           'email_sent_at: 2026-11-19T16:30:12Z',
           'email_thread_id: 18c2f0a1b2c3d4e5',
           `email_key: ${KEY}`,
@@ -3375,7 +3375,7 @@ describe('email entries', () => {
       expect(text).not.toContain('sam@example.test');
       expect(parseFrontmatter(text).data).toMatchObject({
         kind: 'email',
-        email_people: ['Sam Example', 'ops@client.example'],
+        email_people: ['Sam Example', 'ops'],
         email_key: KEY,
       });
       expect(draftFiles()).toEqual([]);
@@ -3437,7 +3437,7 @@ describe('email entries', () => {
       expect(up({ draft: id, token }).reply).toMatchObject({ ok: true });
     });
 
-    it('refuses bcc, bad names and addresses that are not a nameless person on the draft', () => {
+    it("refuses bcc, bad names and any email address, even a nameless person's (UX review)", () => {
       const id = newDraft();
       const bad: Record<string, unknown>[] = [
         { bcc: ['x@y.example'] },
@@ -3448,6 +3448,7 @@ describe('email entries', () => {
         { from: 'Alex@Client.Example' },
         { from: 'Alex Smith <alex@client.example>' },
         { people: ['sam@example.test'] },
+        { people: ['OPS@client.example'] },
         { people: ['Sam\nExample'] },
         { people: 'Sam' },
         { people: Array.from({ length: EMAIL_PEOPLE_MAX + 1 }, (_, i) => `P${i}`) },
@@ -3464,8 +3465,8 @@ describe('email entries', () => {
       }
       expect(entries()).toEqual([]);
       expect(draftFiles()).toEqual([`${id}.json`]);
-      // A nameless person's address is their name.
-      expect(approve(id, { people: ['OPS@client.example'] }).reply).toMatchObject({ ok: true });
+      // A nameless person is saved by the part of the address the app shows: no @.
+      expect(approve(id, { people: ['ops'] }).reply).toMatchObject({ ok: true });
     });
 
     it('refuses an email already in any project with exists, answering where, and clears the draft', () => {

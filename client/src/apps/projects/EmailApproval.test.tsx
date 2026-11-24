@@ -43,7 +43,7 @@ describe('routeWords', () => {
     expect(routeWords({ key: null, why: 'codes-disagree', codes: ['SKY1A1', 'SKY2B2'] })).toBe(
       'The email has codes for different projects: SKY1A1, SKY2B2. Choose one.',
     );
-    expect(routeWords({ key: null, why: 'none' })).toBe('Choose a project');
+    expect(routeWords({ key: null, why: 'none' })).toBe('No project matched this email. Choose one.');
   });
 });
 
@@ -75,7 +75,7 @@ describe('EmailApproval', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledWith({ done: 'saved', key: 'skyseal/site' }));
   });
 
-  it('keeps Save disabled until a project is chosen', () => {
+  it('says why Save did nothing until a project is chosen, and the reason line follows the choice (UX review)', () => {
     render(
       <EmailApproval
         draft={draft({ route: { key: null, why: 'none' } })}
@@ -84,11 +84,14 @@ describe('EmailApproval', () => {
       />,
     );
     const save = screen.getByRole('button', { name: 'Save to project' });
-    expect(save.getAttribute('aria-disabled')).toBe('true');
+    expect(save.getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByText('No project matched this email. Choose one.')).toBeTruthy();
     fireEvent.click(save);
     expect(api.projectEmailDraftAct).not.toHaveBeenCalled();
+    expect(screen.getByText('Choose a project first.')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText('Project'));
     fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'skyseal/seo' } });
-    expect(save.getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByText('You chose this project.')).toBeTruthy();
   });
 
   it('"Not for a project" dismisses', async () => {

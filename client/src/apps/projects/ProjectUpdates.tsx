@@ -59,14 +59,16 @@ function EmailBody({ u }: { u: ProjectUpdateItem }) {
   return (
     <>
       {u.emailSubject ? <strong className="proj-email-subject">{u.emailSubject}</strong> : null}
-      <p className="proj-note">{emailLine(u)}</p>
-      <p className="proj-note">
+      <p className="proj-email-meta">
+        {emailLine(u)} ·{' '}
         {u.gmailUrl ? (
           <a href={u.gmailUrl} target="_blank" rel="noopener noreferrer">
             Open in Gmail<span className="visually-hidden"> (opens in a new tab)</span>
           </a>
-        ) : (
+        ) : u.byName ? (
           `In ${u.byName}'s inbox`
+        ) : (
+          'In their inbox'
         )}
       </p>
     </>

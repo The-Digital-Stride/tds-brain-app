@@ -91,6 +91,7 @@ export function EmailDrafts({
       {notice ? (
         <p className="notice" data-level="info" data-shape="box" role="status">
           {notice}
+          {drafts.length === 0 ? ' Nothing else is waiting.' : null}
         </p>
       ) : null}
       {open ? (
@@ -105,6 +106,8 @@ export function EmailDrafts({
                     <span className="line-title proj-email-subject">{d.subject}</span>
                     <span className="line-meta">
                       From {d.from} · {dateWords(d.sentAt)}
+                      {/* On the list, where each email is headed (UX review). */}
+                      {projectKey ? null : ` · ${d.route.key ? titleOf(d.route.key) : 'No project yet'}`}
                     </span>
                   </div>
                   <button

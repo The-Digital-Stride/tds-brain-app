@@ -3400,15 +3400,11 @@ function entryName(value, name) {
   return text;
 }
 
-// An entry stores names, never addresses: an address only for someone on the draft with no name.
-function requireNames(names, draft) {
-  const nameless = new Set([draft.from, ...draft.people]
-    .filter(p => p.name === null || p.name.trim() === '')
-    .map(p => p.address.toLowerCase()));
+// An entry stores names, never addresses (overseer 3, UX review): the app shows a nameless person by the part
+// of the address before the @, so an @ in any name is refused.
+function requireNames(names) {
   for (const n of names) {
-    if (n.includes('@') && !nameless.has(n.toLowerCase())) {
-      throw refuse('bad-request', `use the person's name, not an email address (${n})`);
-    }
+    if (n.includes('@')) throw refuse('bad-request', `use the person's name, not an email address (${n})`);
   }
 }
 
@@ -3441,7 +3437,7 @@ function emailUpdate(input, entry, loc, ctx) {
   const folder = draftsFolder(ctx, false, [draftsRel(`${id}.json`)]);
   const r = ownDraft(ctx, folder, id, who);
   if (!sameToken(entry.token, r.draft.approve_token)) throw notApproved();
-  requireNames([from, ...people], r.draft);
+  requireNames([from, ...people]);
 
   const held = emailHeld(ctx, r.draft.email_key);
   if (held) {

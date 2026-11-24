@@ -1,15 +1,20 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type { ProjectCard, ProjectDoneRow, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
 import { Fold } from '../../shell/Fold.tsx';
+import { Seg } from '../../shell/Seg.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
 import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
 import { primeTeamTodo } from '../../state/team-todo.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
+import { isMyTodo, readTodoWho, saveTodoWho, type TodoWho } from './todo-who.ts';
 
-/** The project's open to-dos, by stage. Its Add a to-do button (ProjectPage) opens the To-dos panel's full form. */
+/**
+ * The project's open to-dos, by stage, with an Everyone / Mine switch. Its Add a to-do button (ProjectPage) opens the
+ * To-dos panel's full form.
+ */
 export function ProjectTodos({
   card,
   team,
@@ -40,7 +45,29 @@ export function ProjectTodos({
     void toggleFavouriteTodo(key);
   };
 
-  const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
+  // Everyone's to-dos, or only mine (todo-who.ts says what counts), remembered per person in this browser.
+  const me = boot?.identity?.slug ?? null;
+  const [picked, setPicked] = useState<TodoWho | null>(null);
+  const anyTodos = rows !== null && (rows.length > 0 || (done?.length ?? 0) > 0);
+  // Not in a personal project: everything there is mine, so the switch would change nothing.
+  const showWho = me !== null && anyTodos && card.space !== 'personal';
+  const who: TodoWho = !showWho ? 'everyone' : (picked ?? readTodoWho(me));
+  const chooseWho = (next: TodoWho) => {
+    setPicked(next);
+    if (me) saveTodoWho(me, next);
+  };
+  const mineRows = useMemo(() => (me ? (rows ?? []).filter((t) => isMyTodo(t, me)) : []), [rows, me]);
+  const shownRows = who === 'mine' ? mineRows : (rows ?? []);
+  const shownDone = who === 'mine' && me && done ? done.filter((t) => isMyTodo(t, me)) : done;
+  const groups = useMemo(() => groupByStage(shownRows, card.stages), [shownRows, card.stages]);
+  // "Show everyone's" in the Mine empty state goes away as it is pressed: focus moves to the switch's choice.
+  const whoRef = useRef<HTMLDivElement>(null);
+  const [focusWho, setFocusWho] = useState(false);
+  useEffect(() => {
+    if (!focusWho) return;
+    setFocusWho(false);
+    whoRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+  }, [focusWho]);
   // The to-do panel belongs to the To-dos drawer, so open the drawer first.
   const openPanel = (key: string) => {
     primeTeamTodo(key);
@@ -53,10 +80,14 @@ export function ProjectTodos({
     revealDoneTodo(key);
   };
   const doneSection =
-    done && done.length > 0 ? (
-      <Fold title="Done" count={doneCount ?? done.length} defaultOpen={false}>
+    shownDone && shownDone.length > 0 ? (
+      <Fold
+        title="Done"
+        count={who === 'mine' ? shownDone.length : (doneCount ?? shownDone.length)}
+        defaultOpen={false}
+      >
         <ul className="lib-list">
-          {done.map((t) => (
+          {shownDone.map((t) => (
             <li key={t.key} className="line proj-todo">
               <button type="button" className="proj-open" onClick={() => openDone(t.key)}>
                 <span className="line-text">
@@ -83,6 +114,19 @@ export function ProjectTodos({
         (card.space !== 'personal' || todos.canUsePersonal === true) ? null : (
         <p className="proj-note">Update the brain's skills to add to-dos to a project.</p>
       )}
+      {showWho ? (
+        <div className="proj-tools" ref={whoRef}>
+          <Seg
+            label="Whose to-dos"
+            value={who}
+            options={[
+              { value: 'everyone', label: `Everyone, ${rows?.length ?? 0}` },
+              { value: 'mine', label: `Mine, ${mineRows.length}` },
+            ]}
+            onChange={chooseWho}
+          />
+        </div>
+      ) : null}
       {failed && rows === null ? (
         <p className="proj-note" role="alert">
           The to-dos can't be loaded right now.{' '}
@@ -96,7 +140,24 @@ export function ProjectTodos({
         </p>
       ) : groups.length === 0 ? (
         <>
-          <p className="proj-note">No open to-dos in this project.</p>
+          {who === 'mine' ? (
+            <p className="proj-note">
+              You have no open to-dos in this project.{' '}
+              <button
+                type="button"
+                className="btn"
+                data-size="small"
+                onClick={() => {
+                  chooseWho('everyone');
+                  setFocusWho(true);
+                }}
+              >
+                Show everyone's
+              </button>
+            </p>
+          ) : (
+            <p className="proj-note">No open to-dos in this project.</p>
+          )}
           {doneSection}
         </>
       ) : (

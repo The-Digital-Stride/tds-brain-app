@@ -285,3 +285,192 @@ describe('privacy', () => {
     expect(r.last?.others).toBe(5);
   });
 });
+
+describe('invite links (home meetings plan decisions 2-4)', () => {
+  const EVENT = 'https://www.google.com/calendar/event?eid=abc123&ctz=Europe/London';
+  it('next carries the event link and call link; last keeps the event link through the history', async () => {
+    await writeCache([
+      mtg('recent', '2026-11-22T10:00:00Z', 30, { link: EVENT, join: 'https://meet.google.com/x' }),
+      mtg('soon', '2026-11-24T10:00:00Z', 30, { link: EVENT, join: 'https://meet.google.com/abc-defg-hij' }),
+    ]);
+    const { svc, store } = service();
+    const r = await svc.read(KEY);
+    expect(r.next).toMatchObject({
+      calendar: EVENT,
+      calendarKind: 'event',
+      join: 'https://meet.google.com/abc-defg-hij',
+    });
+    expect(r.last).toMatchObject({ calendar: EVENT, calendarKind: 'event', join: null });
+    expect((await store.all())[0]?.link).toBe(EVENT);
+    await writeCache([]);
+    expect((await svc.read(KEY)).last?.calendar).toBe(EVENT);
+  });
+  it('a missing or unsafe link falls back to the day view; an unsafe call link is dropped', async () => {
+    await writeCache([
+      mtg('soon', '2026-11-24T10:00:00Z', 30, {
+        link: 'javascript:alert(1)',
+        join: 'https://evil.example/j',
+      }),
+    ]);
+    const { svc, store } = service();
+    const r = await svc.read(KEY);
+    expect(r.next).toMatchObject({
+      calendar: 'https://calendar.google.com/calendar/r/day/2026/11/24',
+      calendarKind: 'day',
+      join: null,
+    });
+    now = new Date('2026-11-25T12:00:00Z');
+    await svc.read(KEY);
+    expect((await store.all())[0]?.link).toBeUndefined();
+  });
+});
+
+describe('home (home meetings plan decisions 6-7)', () => {
+  it('lists every upcoming meeting, project or not, soonest first, and drops ended and far-off ones', async () => {
+    await writeCache([
+      mtg('later', '2026-11-30T10:00:00Z'),
+      mtg('ended', '2026-11-23T09:00:00Z'),
+      mtg('now', '2026-11-23T11:45:00Z', 60),
+      mtg('far', '2026-12-09T10:00:00Z'),
+      { ...mtg('lunch', '2026-11-24T12:00:00Z'), title: 'Lunch with Alex', attendees: [] },
+    ]);
+    const r = await service().svc.home();
+    expect(r.cache).toBe('fresh');
+    expect(r.meetings.map((m) => m.id)).toEqual(['now', 'lunch', 'later']);
+    const lunch = r.meetings[1];
+    expect(lunch?.project).toBeNull();
+    expect(lunch?.client).toBeNull();
+    expect(r.meetings[0]?.project).toEqual({ key: KEY, title: 'SEO retainer', ref: null });
+    expect(r.meetings[0]?.client).toEqual({ slug: 'skyseal', name: 'Skyseal' });
+  });
+  it('an all-day meeting shows with its client but no project', async () => {
+    await writeCache([
+      { ...mtg('day', '2026-11-25T00:00:00Z', 24 * 60), allDay: true, title: 'Skyseal site visit' },
+    ]);
+    const [m] = (await service().svc.home()).meetings;
+    expect(m?.allDay).toBe(true);
+    expect(m?.project).toBeNull();
+    expect(m?.client?.slug).toBe('skyseal');
+  });
+  it('a meeting matching only an archived project shows no project', async () => {
+    const archivedOnly = [{ ...(cards[1] as (typeof cards)[number]) }];
+    const store = createMeetingHistoryStore(null);
+    const svc = createProjectMeetings({
+      root,
+      index: async () => index(archivedOnly),
+      clients: async () => clients,
+      store,
+      selfEmail: async () => 'me@tds.co.uk',
+      ignored: async () => ignoredAnswer,
+      now: () => now,
+    });
+    await writeCache([{ ...mtg('soon', '2026-11-24T10:00:00Z'), title: 'Skyseal Old review' }]);
+    const [m] = (await svc.home()).meetings;
+    expect(m?.project).toBeNull();
+  });
+  it('carries links, keeps emails and locations out, and shows at most three names', async () => {
+    const EVENT = 'https://www.google.com/calendar/event?eid=abc';
+    await writeCache([mtg('soon', '2026-11-24T10:00:00Z', 30, { link: EVENT, join: 'https://zoom.us/j/1' })]);
+    const r = await service().svc.home();
+    expect(r.meetings[0]).toMatchObject({
+      calendar: EVENT,
+      calendarKind: 'event',
+      join: 'https://zoom.us/j/1',
+    });
+    expect(r.meetings[0]?.people).toEqual(['Jo Smith', 'Sam Lee', 'Pat']);
+    expect(r.meetings[0]?.others).toBe(5);
+    const json = JSON.stringify(r);
+    expect(json).not.toContain('@');
+    expect(json).not.toContain('secret road');
+  });
+  it('the same guards as a project read: no cache or not ignored is none; stale after three days', async () => {
+    expect(await service().svc.home()).toEqual({ cache: 'none', checked: null, meetings: [] });
+    await writeCache([mtg('soon', '2026-11-24T10:00:00Z')]);
+    ignoredAnswer = new Set();
+    expect((await service().svc.home()).cache).toBe('none');
+    ignoredAnswer = new Set([MEETINGS_CACHE_PATH]);
+    await writeCache([mtg('soon', '2026-11-24T10:00:00Z')], '2026-11-19T08:00:00Z');
+    expect((await service().svc.home()).cache).toBe('stale');
+  });
+  it('the same instance listed twice shows once', async () => {
+    await writeCache([mtg('dup', '2026-11-24T10:00:00Z'), mtg('dup', '2026-11-24T10:00:00Z')]);
+    expect((await service().svc.home()).meetings).toHaveLength(1);
+  });
+});
+
+describe('home: all-day, kinds and the agency (overseer pre-review)', () => {
+  const allDay = (id: string, start: string, end: string | null, title = 'Leave') => ({
+    ...mtg(id, `${start}T00:00:00Z`),
+    title,
+    attendees: [],
+    allDay: true,
+    start,
+    end,
+  });
+  it('a running multi-day all-day event sits under today, before timed ones, with its last day', async () => {
+    // NOW is Mon 23 Nov 12:00Z. Leave from Sat 21 to Fri 27 (end exclusive 28).
+    await writeCache([mtg('call', '2026-11-23T14:00:00Z'), allDay('leave', '2026-11-21', '2026-11-28')]);
+    const r = await service().svc.home();
+    expect(r.meetings.map((m) => m.id)).toEqual(['leave', 'call']);
+    expect(r.meetings[0]).toMatchObject({
+      day: '2026-11-23',
+      lastDay: '2026-11-27',
+      start: '2026-11-21',
+      end: '2026-11-28',
+    });
+    expect(r.meetings[1]).toMatchObject({ day: '2026-11-23', lastDay: null });
+  });
+  it('a one-day all-day event with no end lasts the whole day, then goes', async () => {
+    await writeCache([allDay('today', '2026-11-23', null)]);
+    now = new Date(2026, 10, 23, 23, 30);
+    expect((await service().svc.home()).meetings[0]).toMatchObject({
+      day: '2026-11-23',
+      lastDay: null,
+      end: '2026-11-24',
+    });
+    now = new Date(2026, 10, 24, 0, 5);
+    expect((await service().svc.home()).meetings).toEqual([]);
+  });
+  it('uses the local date outside the UK too', async () => {
+    const was = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      now = new Date('2026-11-24T06:00:00Z'); // 22:00 on 23 Nov in Los Angeles
+      await writeCache([allDay('a', '2026-11-23', '2026-11-24'), allDay('b', '2026-11-24', '2026-11-25')]);
+      const r = await service().svc.home();
+      expect(r.meetings.map((m) => [m.id, m.day])).toEqual([
+        ['a', '2026-11-23'],
+        ['b', '2026-11-24'],
+      ]);
+    } finally {
+      process.env.TZ = was;
+    }
+  });
+  it('drops focus time, out of office, birthdays and working-location markers; a missing kind shows', async () => {
+    await writeCache([
+      mtg('focus', '2026-11-24T09:00:00Z', 60, { kind: 'focusTime' }),
+      mtg('ooo', '2026-11-24T10:00:00Z', 60, { kind: 'outOfOffice' }),
+      mtg('bday', '2026-11-24T11:00:00Z', 60, { kind: 'birthday' }),
+      mtg('where', '2026-11-24T12:00:00Z', 60, { kind: 'workingLocation' }),
+      mtg('real', '2026-11-24T13:00:00Z', 60, { kind: 'default' }),
+      mtg('old', '2026-11-24T14:00:00Z'),
+    ]);
+    expect((await service().svc.home()).meetings.map((m) => m.id)).toEqual(['real', 'old']);
+    expect((await service().svc.read(KEY)).next?.id).toBe('real');
+  });
+  it("the agency's own client is never shown as the client", async () => {
+    const tds = createProjectMeetings({
+      root,
+      index: async () => index([]),
+      clients: async () => [{ slug: 'the-digital-stride', name: 'The Digital Stride' }],
+      store: createMeetingHistoryStore(null),
+      selfEmail: async () => 'me@tds.co.uk',
+      ignored: async () => ignoredAnswer,
+      now: () => now,
+    });
+    await writeCache([
+      { ...mtg('team', '2026-11-24T10:00:00Z'), title: 'The Digital Stride team meeting', attendees: [] },
+    ]);
+    expect((await tds.home()).meetings[0]?.client).toBeNull();
+  });
+});

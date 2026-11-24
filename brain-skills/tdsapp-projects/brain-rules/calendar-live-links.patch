@@ -1,0 +1,29 @@
+--- a/lib/calendar-live.cjs	2026-11-24 11:20:14
++++ b/lib/calendar-live.cjs	2026-11-24 11:23:45
+@@ -52,6 +52,14 @@
+   return out.length ? out : undefined;
+ }
+ 
++/** The event's video call link: Meet's hangoutLink, else the first video entry point (Zoom, Teams). */
++function joinFrom(ev) {
++  if (ev.hangoutLink) return ev.hangoutLink;
++  const points = (ev.conferenceData && ev.conferenceData.entryPoints) || [];
++  const video = points.find((p) => p && p.entryPointType === 'video' && p.uri);
++  return video ? video.uri : null;
++}
++
+ let inFlight = null;
+ let lastFailAt = 0;             // back off after a failure so a dead token isn't hammered
+ 
+@@ -113,6 +121,11 @@
+         .filter((a) => !a.self && !a.resource)
+         .map((a) => ({ name: a.displayName || null, email: a.email || null })),
+       refs: refsFrom(ev.description),
++      // TDS Cortex (home meetings): the invite's own Google Calendar page and its video call, so every meeting
++      // shown in the app links to its invite. The app keeps only Google Calendar / Meet / Teams / Zoom links.
++      link: ev.htmlLink || null,
++      join: joinFrom(ev),
++      kind: ev.eventType || null,
+     }));
+ }
+ 

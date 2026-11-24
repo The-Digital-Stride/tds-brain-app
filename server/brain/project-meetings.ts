@@ -12,6 +12,12 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import type { ClientInfo } from '../../shared/contract.ts';
 import {
+  HOME_MEETING_DAYS,
+  type HomeMeeting,
+  type HomeMeetingsResponse,
+  NOT_MEETING_KINDS,
+} from '../../shared/home-meetings-contract.ts';
+import {
   type CachedMeeting,
   type KeptMeeting,
   MEETING_PEOPLE_SHOWN,
@@ -20,16 +26,25 @@ import {
   type MeetingView,
   type ProjectMeetingsResponse,
 } from '../../shared/project-meetings-contract.ts';
-import { type ProjectKey, ProjectsError } from '../../shared/projects-contract.ts';
+import { INTERNAL_CLIENT, type ProjectKey, ProjectsError } from '../../shared/projects-contract.ts';
 import type { MeetingHistoryStore } from '../store/meeting-history.ts';
 import { findCallNote, type NoteCard } from './call-notes.ts';
 import { readClientAliases } from './client-aliases.ts';
 import { readMembers } from './identity.ts';
 import { gitIgnored } from './library.ts';
 import {
+  addDays,
+  cleanCalendarLink,
+  cleanJoinLink,
+  localDate,
+  meetingLinks,
+  plainDate,
+} from './meeting-links.ts';
+import {
   cleanMeetingRefs,
   domainOf,
   type MatchContext,
+  matchClient,
   matchMeeting,
   meetingEndMs,
   websiteDomain,
@@ -58,6 +73,8 @@ export interface ProjectMeetingsDeps {
 
 export interface ProjectMeetingsService {
   read(key: ProjectKey): Promise<ProjectMeetingsResponse>;
+  /** Home (home meetings plan decision 6): every upcoming meeting in this Mac's cache, project or not. */
+  home(): Promise<HomeMeetingsResponse>;
   /** Re-reads the cache into the history. Never throws. */
   merge(): Promise<void>;
 }
@@ -81,6 +98,8 @@ function parseCache(text: string): { generated: string; meetings: CachedMeeting[
     if (!m || typeof m !== 'object' || Array.isArray(m)) continue;
     const e = m as Record<string, unknown>;
     if (typeof e.id !== 'string' || e.id === '' || !validTime(e.start)) continue;
+    // Focus time, out of office, birthdays and working-location markers are not meetings (overseer).
+    if (typeof e.kind === 'string' && NOT_MEETING_KINDS.includes(e.kind)) continue;
     const attendees: CachedMeeting['attendees'] = [];
     if (Array.isArray(e.attendees)) {
       for (const a of e.attendees) {
@@ -90,6 +109,8 @@ function parseCache(text: string): { generated: string; meetings: CachedMeeting[
       }
     }
     const refs = cleanMeetingRefs(e.refs);
+    const link = cleanCalendarLink(e.link);
+    const joinLink = cleanJoinLink(e.join);
     meetings.push({
       id: e.id,
       title: str(e.title) ?? '',
@@ -99,6 +120,8 @@ function parseCache(text: string): { generated: string; meetings: CachedMeeting[
       location: null, // never used, never kept
       attendees,
       ...(refs.length > 0 ? { refs } : {}),
+      ...(link ? { link } : {}),
+      ...(joinLink ? { join: joinLink } : {}),
     });
   }
   return { generated: r.generated, meetings };
@@ -207,6 +230,7 @@ export function createProjectMeetings(deps: ProjectMeetingsDeps): ProjectMeeting
           end: meeting.end,
           people: who.people,
           others: who.others,
+          ...(meeting.link ? { link: meeting.link } : {}),
         },
       });
     }
@@ -215,7 +239,8 @@ export function createProjectMeetings(deps: ProjectMeetingsDeps): ProjectMeeting
 
   const ended = (m: { start: string; end: string | null }) => meetingEndMs(m.start, m.end) <= now().getTime();
 
-  const view = (m: KeptMeeting, filed: MeetingView['notes']): MeetingView => ({
+  const view = (m: KeptMeeting, filed: MeetingView['notes'], join: unknown = null): MeetingView => ({
+    ...meetingLinks({ link: m.link, join, start: m.start }),
     id: m.id,
     title: m.title,
     start: m.start,
@@ -226,7 +251,84 @@ export function createProjectMeetings(deps: ProjectMeetingsDeps): ProjectMeeting
     notes: filed,
   });
 
+  async function home(): Promise<HomeMeetingsResponse> {
+    const cache = await readCache();
+    if (!cache) return { cache: 'none', checked: null, meetings: [] };
+    const at = now().getTime();
+    const age = at - Date.parse(cache.generated);
+    const index = await deps.index();
+    const self = await deps.selfEmail().catch(() => null);
+    const ctx = await context(index, self);
+    const names = new Map(ctx.clients.map((c) => [c.slug, c.name]));
+    const today = localDate(now());
+    const lastListed = addDays(today, HOME_MEETING_DAYS);
+    const seen = new Set<string>();
+    const meetings: HomeMeeting[] = [];
+    for (const m of cache.meetings) {
+      // All-day: plain dates, end exclusive (no end = one day); ended once today reaches the end date.
+      let day: string;
+      let lastDay: string | null = null;
+      let start = m.start;
+      let end = m.end;
+      if (m.allDay) {
+        const s = plainDate(m.start);
+        if (!s) continue;
+        let e = plainDate(m.end);
+        if (!e || e <= s) e = addDays(s, 1);
+        if (today >= e) continue;
+        day = s > today ? s : today;
+        const last = addDays(e, -1);
+        lastDay = last > day ? last : null;
+        start = s;
+        end = e;
+      } else {
+        if (meetingEndMs(m.start, m.end) <= at) continue;
+        const d = localDate(new Date(m.start));
+        day = d > today ? d : today;
+      }
+      if (day > lastListed) continue;
+      const once = `${m.id}\u0000${m.start}`;
+      if (seen.has(once)) continue;
+      seen.add(once);
+      const hit = matchMeeting(m, ctx);
+      const card = hit ? index.byKey(hit.key) : null;
+      const project = card && !card.archived ? card : null;
+      const found = project ? project.client : matchClient(m, ctx);
+      const clientSlug = found === INTERNAL_CLIENT ? null : found;
+      const clientName = clientSlug ? names.get(clientSlug) : undefined;
+      const who = people(m, self);
+      meetings.push({
+        ...meetingLinks({ link: m.link, join: m.join, start }),
+        id: m.id,
+        title: m.title,
+        start,
+        end,
+        allDay: m.allDay,
+        day,
+        lastDay,
+        people: who.people.slice(0, MEETING_PEOPLE_SHOWN),
+        others: who.others,
+        project: project ? { key: project.key, title: project.title, ref: project.ref ?? null } : null,
+        client: clientSlug && clientName ? { slug: clientSlug, name: clientName } : null,
+      });
+    }
+    // By listed day, then all-day first, then start time.
+    meetings.sort(
+      (a, b) =>
+        a.day.localeCompare(b.day) ||
+        Number(b.allDay) - Number(a.allDay) ||
+        (a.allDay ? 0 : Date.parse(a.start) - Date.parse(b.start)),
+    );
+    return {
+      cache: age > MEETINGS_STALE_MS ? 'stale' : 'fresh',
+      checked: cache.generated,
+      meetings,
+    };
+  }
+
   return {
+    home,
+
     async merge() {
       try {
         const loaded = await load(deps.index);
@@ -267,7 +369,10 @@ export function createProjectMeetings(deps: ProjectMeetingsDeps): ProjectMeeting
       return {
         ...base,
         last: last ? view(last, await notes(card, last.start).catch(() => null)) : null,
-        next: next ? view(next, null) : null,
+        // The next meeting's call link comes from the cache (the history never keeps one).
+        next: next
+          ? view(next, null, loaded.matched.find((x) => x.kept === next)?.meeting.join ?? null)
+          : null,
       };
     },
   };

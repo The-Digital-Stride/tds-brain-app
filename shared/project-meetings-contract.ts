@@ -15,6 +15,7 @@
  * frontmatter when the call was about an open project. The app reads it (never writes it).
  */
 
+import type { MeetingLinks } from './home-meetings-contract.ts';
 import type { ProjectKey } from './projects-contract.ts';
 
 // ─── The cache (brain, read only) ───────────────────────────────────────────────────────────────
@@ -37,6 +38,15 @@ export interface CachedMeeting {
    * MEETING_REFS_MAX. Absent from older caches. The description itself is never in the cache.
    */
   refs?: string[];
+  /**
+   * Home meetings plan decision 1: the event's own Google Calendar page (`htmlLink`). Absent from older caches.
+   * Cleaned by the server (CALENDAR_LINK_HOSTS, shared/home-meetings-contract.ts) before it reaches the page.
+   */
+  link?: string | null;
+  /** The video call (`hangoutLink` / conference video entry). Cleaned against JOIN_LINK_HOSTS. Absent from older caches. */
+  join?: string | null;
+  /** Google's `eventType`. NOT_MEETING_KINDS are dropped on read. Absent from older caches. */
+  kind?: string | null;
 }
 
 export interface MeetingsCacheFile {
@@ -73,6 +83,11 @@ export interface KeptMeeting {
   people: string[];
   /** How many other people there were (names can be missing). */
   others: number;
+  /**
+   * Home meetings plan decision 4: the cleaned event link when it was seen; absent on older entries (day link).
+   * Treat as an email (see MeetingLinks): never in prompts, logs, brain files or shared reads.
+   */
+  link?: string;
 }
 
 /** `{ v: 1, meetings: KeptMeeting[] }`. A bad read never wipes the file (as project-seen.json). */
@@ -92,7 +107,8 @@ export type ProjectMatch = 'title' | 'only' | 'ref';
 
 // ─── Reading (server → app) ─────────────────────────────────────────────────────────────────────
 
-export interface MeetingView {
+/** Home meetings plan decision 4: both meetings carry their links (`calendar` always set). */
+export interface MeetingView extends MeetingLinks {
   id: string;
   title: string;
   start: string;

@@ -235,5 +235,7 @@ export interface SaveToProjectProps {
   chat: string;
   title: string;
   project: ProjectKey;
+  /** Called once the entry is written (before the to-dos step), so the list can show it straight away. */
+  onSaved?(): void;
   onClose(saved: boolean): void;
 }

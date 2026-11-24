@@ -11,7 +11,7 @@
  * on their own; the service gets its chat facts from the session manager through `ChatSourcePort`.
  */
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { normaliseChatSummaryFields } from '../../shared/chat-summary.ts';
+import { normaliseChatSummaryFields, writableChatTitle } from '../../shared/chat-summary.ts';
 import {
   CHAT_DOC_NAME_MAX,
   CHAT_DOCUMENTS_CANDIDATES,
@@ -468,6 +468,10 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
   const log = opts.log ?? (() => {});
   const now = opts.now ?? (() => new Date());
   const running = new Set<string>();
+  // The chat's message count when its newest draft for a project was taken (correctness review): Save records
+  // this, not the count at Save, so messages sent while the form was open still count as not saved.
+  const draftedAt = new Map<string, number>();
+  const draftKey = (chat: string, key: string) => `${chat}\u0000${key}`;
 
   return {
     owns: (chat) =>
@@ -485,6 +489,7 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
         const src = await opts.port.source(chat).catch(() => null);
         if (!src) throw new ChatDraftError('not-found', DRAFT_NO_CHAT);
         if (src.busy) throw new ChatDraftError('busy', DRAFT_CHAT_BUSY);
+        const counted = await opts.port.messages(chat).catch(() => null);
         const candidates = documentCandidates(src.files);
         const newest = input.earlier[0] ?? null;
         const prompt = buildDraftPrompt({
@@ -506,6 +511,8 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
           log('A chat summary draft came back in a shape the app could not read.');
           throw new ChatDraftError('internal', DRAFT_FAILED);
         }
+        if (counted === null) draftedAt.delete(draftKey(chat, project.key));
+        else draftedAt.set(draftKey(chat, project.key), counted);
         // A personal file can't be linked from a shared project (decision 5): offered unticked, flagged.
         const lockPersonal = !project.personal;
         const documents: ChatSummaryDocChoice[] = candidates.map((c, i) => ({
@@ -518,7 +525,7 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
         return {
           chat,
           project: project.key,
-          title: oneLine(src.title, CHAT_TITLE_MAX) || 'Untitled chat',
+          title: writableChatTitle(src.title) || 'Untitled chat',
           fields: parsed.fields,
           documents,
           fromEmail: parsed.fromEmail || src.emailTool,
@@ -532,8 +539,10 @@ export function createChatSummaryService(opts: ChatSummaryServiceOptions): ChatS
 
     async recordSaved(chat, key) {
       try {
-        const messages = await opts.port.messages(chat);
+        const drafted = draftedAt.get(draftKey(chat, key));
+        const messages = drafted ?? (await opts.port.messages(chat));
         if (messages === null) return;
+        draftedAt.delete(draftKey(chat, key));
         await opts.store.record(chat, key, { savedAt: now().toISOString(), messages });
       } catch {
         log('Could not note that a chat was saved to a project.');

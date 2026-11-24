@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { SaveChatRequest } from '../../../../shared/chat-summary-contract.ts';
 import type { TeamMember } from '../../../../shared/contract.ts';
 import type {
@@ -593,22 +593,19 @@ export function ProjectPage({
   // A chat being saved to this project (Save to project): its review form shows at the top of the Updates tab.
   // The chat header asks through `saveChatRequest`; the Overview's "Chats not saved yet" asks directly.
   const [saving, setSaving] = useState<SaveChatRequest | null>(() => takeSaveChatRequest(card.key));
+  // Another request replaces an open form (a summary being checked, or a typed update) only through the leave
+  // guard, so typed work is never dropped without asking (correctness review). `openSaveRef` is set below,
+  // once `held` exists; it is only called after render.
+  const openSaveRef = useRef<(req: SaveChatRequest) => void>(() => {});
   useEffect(() => {
     const take = () => {
       const req = takeSaveChatRequest(card.key);
-      if (!req) return;
-      setSaving(req);
-      setAddingUpdate(false);
-      onTab('updates');
+      if (req) openSaveRef.current(req);
     };
     take();
     return saveChatRequest.subscribe(take);
-  }, [card.key, onTab]);
-  const saveChat = (req: SaveChatRequest) => {
-    setSaving(req);
-    setAddingUpdate(false);
-    onTab('updates');
-  };
+  }, [card.key]);
+  const saveChat = (req: SaveChatRequest) => openSaveRef.current(req);
   useEffect(() => {
     if (tab !== 'files') setLinking(false);
     if (tab !== 'updates') {
@@ -623,6 +620,12 @@ export function ProjectPage({
     if (shell?.sheetHold.dirty) shell.guardLeave(go);
     else go();
   };
+  openSaveRef.current = (req) =>
+    held(() => {
+      setSaving(req);
+      setAddingUpdate(false);
+      onTab('updates');
+    });
   const chooseTab = (next: ProjectTab) => held(() => onTab(next));
   // Add a to-do opens the same full form as the To-dos drawer, in its panel, with this project filled in.
   const addTodo = () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { composeChatSummary } from '../../../../shared/chat-summary.ts';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
@@ -410,5 +410,24 @@ describe('chat summary entries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByLabelText('Objective')).toBeNull());
     expect(api.projectUpdates.mock.calls.length).toBe(calls);
+  });
+
+  it('with typed work on the page, a save request asks through the leave guard before replacing it', async () => {
+    const guardLeave = vi.fn();
+    const list = projectList([SKY]);
+    api.projects.mockResolvedValue(list);
+    projectsStore.apply(list);
+    projectPageRequest.set(SKY.key);
+    render(
+      <ShellContext.Provider
+        value={{ dispatch: shellDispatch, sheetHold: { dirty: true, asking: false }, guardLeave } as never}
+      >
+        <ProjectsSheet />
+      </ShellContext.Provider>,
+    );
+    await screen.findByRole('button', { name: 'Updates' });
+    act(() => saveChatRequest.set({ key: SKY.key, chat: '11111111-2222-3333-4444-555555555555', title: 'Fix' }));
+    await waitFor(() => expect(guardLeave).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText('Objective')).toBeNull();
   });
 });

@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from '../client/src/markdown.tsx';
-import { composeChatSummary, normaliseChatSummaryFields, readChatSummary } from './chat-summary.ts';
+import {
+  composeChatSummary,
+  normaliseChatSummaryFields,
+  readChatSummary,
+  writableChatTitle,
+} from './chat-summary.ts';
 import {
   CHAT_DOC_NAME_MAX,
   CHAT_DOCUMENTS_MAX,
@@ -92,6 +97,19 @@ describe('composeChatSummary', () => {
     expect(readChatSummary(body)?.documents[0]?.ref).toBe('a) [evil](https://evil.test) (b "c"');
   });
 
+  it('breaks a web address glued to a word, so it never autolinks (security review)', () => {
+    const fields = {
+      objective: 'see foo_https://evil.example/x and 1https://e2.example and a_www.e3.example',
+      outcome: 'o',
+      figures: [],
+      documents: [],
+      nextSteps: [],
+    };
+    const body = composeChatSummary(fields);
+    expect(renderMarkdown(body)).not.toContain('<a ');
+    expect(readChatSummary(body)?.objective).toBe(fields.objective);
+  });
+
   it('fits UPDATE_SUMMARY_MAX at maximal fields, cutting the lowest-priority sections', () => {
     const nasty = (n: number) => '[*'.repeat(n / 2);
     const body = composeChatSummary({
@@ -138,5 +156,15 @@ describe('readChatSummary', () => {
     expect(readChatSummary('**Outcome:** x\n\n**Objective:** y')).toBeNull();
     expect(readChatSummary('**Objective:** x\n\nstray paragraph')).toBeNull();
     expect(readChatSummary('**Objective:** x\n\n**Documents:**\n- not a link')).toBeNull();
+  });
+});
+
+describe('writableChatTitle', () => {
+  it('swaps quote marks only when a title holds both kinds (or a backslash with an apostrophe)', () => {
+    expect(writableChatTitle(`Plan: Alex's "big" launch`)).toBe(`Plan: Alex's 'big' launch`);
+    expect(writableChatTitle(`"Hero" copy for Alex's site`)).toBe(`'Hero' copy for Alex's site`);
+    expect(writableChatTitle(`C:\\files for Sam's call`)).toBe(`C:/files for Sam's call`);
+    expect(writableChatTitle('Plan: the "big" launch')).toBe('Plan: the "big" launch');
+    expect(writableChatTitle("Alex's\n  launch")).toBe("Alex's launch");
   });
 });

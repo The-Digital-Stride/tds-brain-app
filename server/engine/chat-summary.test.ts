@@ -601,6 +601,23 @@ describe('chat summary service: saved and unsaved', () => {
     ]);
   });
 
+  it('Save records the count when the draft was taken, so messages sent while reviewing stay unsaved', async () => {
+    const t = service({
+      script: async function* () {
+        yield result(GOOD);
+      },
+      messages: 6,
+      placed: [placed(CHAT, 'acme/web', '2026-11-23T10:00:00Z')],
+    });
+    await t.svc.draft(INPUT);
+    t.setMessages(8); // the person asked the chat something while the form was open
+    await t.svc.recordSaved(CHAT, 'acme/web');
+    expect(await t.store.get(CHAT, 'acme/web')).toEqual({ savedAt: '2026-11-24T12:00:00.000Z', messages: 6 });
+    expect(
+      await t.svc.unsaved({ keys: ['acme/web'], since: SINCE, hasEntry: async () => true }),
+    ).toEqual([expect.objectContaining({ chat: CHAT })]);
+  });
+
   it('a record under a moved_from key counts; an unreadable history is left out', async () => {
     const t = service({
       script: () => 'hang',

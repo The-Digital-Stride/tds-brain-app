@@ -11,6 +11,7 @@ import {
   CHAT_NEXT_STEPS_MAX,
   CHAT_OBJECTIVE_MAX,
   CHAT_OUTCOME_MAX,
+  CHAT_TITLE_MAX,
   type ChatSummaryFields,
 } from './chat-summary-contract.ts';
 import { UPDATE_SUMMARY_MAX } from './project-updates-contract.ts';
@@ -48,8 +49,9 @@ export function normaliseChatSummaryFields(fields: ChatSummaryFields): ChatSumma
 const escapeText = (s: string): string =>
   s
     .replace(/[\\[\]<>*_`@]/g, '\\$&')
-    .replace(/\b((?:https?|ftp)):/gi, '$1\\:')
-    .replace(/\bwww\./gi, (m) => `${m.slice(0, 3)}\\.`);
+    // No \b: an address glued to a word (`foo_https://…`, `1www.…`) still autolinks in GFM (security review).
+    .replace(/((?:https?|ftp)):/gi, '$1\\:')
+    .replace(/www\./gi, (m) => `${m.slice(0, 3)}\\.`);
 const unescapeText = (s: string): string => s.replace(/\\([\\[\]<>*_`@:.])/g, '$1');
 
 // A ref lives only in the link target: anything that could end or reshape it is percent-encoded.
@@ -155,4 +157,15 @@ export function readChatSummary(body: string): ChatSummaryFields | null {
   }
   if (!out.objective && !out.outcome) return null;
   return out;
+}
+
+/**
+ * A chat title the script can always write (correctness review): its frontmatter quoting needs no escapes, so a
+ * title holding `'` together with `"` or `\` can't be written. Then `"` becomes `'` and `\` becomes `/`.
+ * One line, at most CHAT_TITLE_MAX.
+ */
+export function writableChatTitle(title: string): string {
+  let t = title.replace(/\s+/g, ' ').trim();
+  if (t.includes("'") && (t.includes('"') || t.includes('\\'))) t = t.replace(/"/g, "'").replace(/\\/g, '/');
+  return t.slice(0, CHAT_TITLE_MAX).trim();
 }

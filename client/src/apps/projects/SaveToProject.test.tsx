@@ -207,6 +207,19 @@ describe('SaveToProject', () => {
     });
   });
 
+  it('tells the page once the entry is written, so the list shows it before Done; not on a refused save', async () => {
+    const onSaved = vi.fn();
+    render(<SaveToProject chat={CHAT} title="Fix the redirects" project={KEY} onSaved={onSaved} onClose={vi.fn()} />);
+    await screen.findByLabelText('Objective');
+    api.changeProject.mockRejectedValueOnce(new ApiFailure('not-allowed', 'Refused.', 403));
+    fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
+    await screen.findByText('Refused.');
+    expect(onSaved).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to project' }));
+    await screen.findByText("Saved to Sky site's updates.");
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the form and says so when the save is refused', async () => {
     api.changeProject.mockRejectedValueOnce(
       new ApiFailure('not-allowed', 'Only the person who ran the chat can save it.', 403),

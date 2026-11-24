@@ -398,10 +398,9 @@ export function ProjectUpdates({
           chat={saving.chat}
           title={saving.title}
           project={card.key}
-          onClose={(saved) => {
-            onSaveClose?.();
-            if (saved) void load();
-          }}
+          // The new entry shows in the list at once, under "Saved", not only after Done.
+          onSaved={() => void load()}
+          onClose={() => onSaveClose?.()}
         />
       ) : null}
       {docError ? (

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { composeChatSummary } from '../../../../shared/chat-summary.ts';
+import { composeChatSummary, writableChatTitle } from '../../../../shared/chat-summary.ts';
 import {
   CHAT_DOCUMENTS_MAX,
   CHAT_FIGURE_MAX,
@@ -96,7 +96,7 @@ interface StepRow {
  * Save a chat to a project: Claude drafts a summary, the person checks and edits every part, and Save writes it as a
  * `chat` update. Nothing is saved before Save. Afterwards the next steps can become to-dos, one at a time.
  */
-export function SaveToProject({ chat, title, project, onClose }: SaveToProjectProps) {
+export function SaveToProject({ chat, title, project, onSaved, onClose }: SaveToProjectProps) {
   const id = useId();
   const { boot, todos, changeTodos, openPast } = useStore();
   const { list } = useProjects();
@@ -234,7 +234,7 @@ export function SaveToProject({ chat, title, project, onClose }: SaveToProjectPr
     const res = await change({
       kind: 'update',
       key: project,
-      entry: { kind: 'chat', summary: body, clientSafe, chat: draft.chat, title: draft.title || title },
+      entry: { kind: 'chat', summary: body, clientSafe, chat: draft.chat, title: writableChatTitle(draft.title || title) },
     });
     if (!live.current) return;
     setBusy(false);
@@ -243,6 +243,7 @@ export function SaveToProject({ chat, title, project, onClose }: SaveToProjectPr
       return;
     }
     leave.discard();
+    onSaved?.();
     setRows(stepList.map((text, i) => ({ id: i, text, on: false, who: me })));
     setPhase('saved');
     requestAnimationFrame(() => headingRef.current?.focus());

@@ -605,6 +605,8 @@ export interface SearchActions {
   startSkill: (skill: SkillInfo) => void;
   /** Opens the to-dos drawer on the to-do's tab, clears its filters, opens its group and focuses its row. */
   revealTodo: (todo: TodoItem) => void;
+  /** Opens the to-dos drawer on the Done tab with this finished to-do (`DoneTodo.key`) in the panel. Optional: older callers don't set it. */
+  revealDone?: (key: string) => void;
   /** Shows Home with this client chosen. */
   chooseClient: (slug: string) => void;
   /**

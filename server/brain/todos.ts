@@ -77,7 +77,7 @@ export function surfaceDate(id: string): string | null {
 }
 
 /** Whether `path` is a real folder, not a symlink and not missing. */
-async function isRealDir(path: string): Promise<boolean> {
+export async function isRealDir(path: string): Promise<boolean> {
   try {
     const st = await fs.lstat(path);
     return st.isDirectory() && !st.isSymbolicLink();

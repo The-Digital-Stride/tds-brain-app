@@ -8,6 +8,7 @@ import {
   type AskedTodo,
   ATTENTION_LABEL,
   type ClientInfo,
+  type DoneTodo,
   type LiveSession,
   type SkillInfo,
   SYNC_STALE_MS,
@@ -236,6 +237,38 @@ export function askedStatusLine(t: Pick<AskedTodo, 'state' | 'assigneeName' | 'a
   const day = shortDay(t.asked.at);
   const tag = day && t.asked.source === 'history' ? ' (git history)' : '';
   return day ? `With ${t.assigneeName} since ${day}${tag}` : `With ${t.assigneeName}`;
+}
+
+/** The Done tab's row line: "Done by Sam, 12 Nov", "Done 12 Nov", or "Date not known". */
+export function doneMeta(t: Pick<DoneTodo, 'done'>): string {
+  const day = t.done ? shortDay(t.done.at) : '';
+  if (!day) return 'Date not known';
+  const first = t.done?.name?.split(/\s+/)[0];
+  return first ? `Done by ${first}, ${day}` : `Done ${day}`;
+}
+
+const LONG_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** The panel's status line for a finished to-do: "Done by Sam Example on 12 November 2026". */
+export function doneStatusLine(t: Pick<DoneTodo, 'done'>): string {
+  const at = t.done ? new Date(t.done.at) : null;
+  if (!t.done || !at || Number.isNaN(at.getTime())) return 'Finished; date not known';
+  const day = `${at.getDate()} ${LONG_MONTHS[at.getMonth()]} ${at.getFullYear()}`;
+  const tag = t.done.source === 'history' ? ' (git history)' : '';
+  return `${t.done.name ? `Done by ${t.done.name}` : 'Done'} on ${day}${tag}`;
 }
 
 /** A name for a slug in a history line: the roster's, else the slug as words; 'open' means anyone. */

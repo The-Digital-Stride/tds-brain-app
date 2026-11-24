@@ -647,9 +647,24 @@ export interface ProjectTodoRow {
   /** True when the to-do is in this person's TodoList (`mine` or `open`), so the panel can open it. */
   mine: boolean;
 }
+/** A finished to-do in the project (done-todos plan, decision 7). */
+export interface ProjectDoneRow {
+  /** DoneTodo.key: `done:todo/done/<id>` or `done:personal/todo/done/<id>`. */
+  key: string;
+  id: string;
+  scope: 'tds' | 'personal';
+  title: string;
+  assignee: string | null;
+  stage: string | null;
+  /** YYYY-MM-DD it was ticked (stamp, else git), or null when not known. */
+  doneDate: string | null;
+}
 export interface ProjectTodosResponse {
   todos: ProjectTodoRow[];
   count: number;
+  /** Most recently finished first. Absent from older servers: no Done section. */
+  done?: ProjectDoneRow[];
+  doneCount?: number;
 }
 
 // ─── The picker (decision 11) ──────────────────────────────────────────────────────────────────────

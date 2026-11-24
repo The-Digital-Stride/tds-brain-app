@@ -1,4 +1,4 @@
-import type { BrainReaders, Identity } from '../../shared/contract.ts';
+import type { BrainReaders, DoneTodoList, Identity } from '../../shared/contract.ts';
 import { FilesChangeError } from '../../shared/files-contract.ts';
 import { MEETINGS_MERGE_EVERY_MS } from '../../shared/project-meetings-contract.ts';
 import { LEGACY_PROJECTS_SCOPE, ProjectsError } from '../../shared/projects-contract.ts';
@@ -26,7 +26,8 @@ import { createQueue } from './skill-runner.ts';
 import { listSkills, skillAccess } from './skills.ts';
 import { createSyncReader } from './sync.ts';
 import { readMemberProfile } from './team-profile.ts';
-import { createAskedTodos } from './todo-asked.ts';
+import { createAskedLog, createAskedTodos } from './todo-asked.ts';
+import { listDoneTodos } from './todo-done.ts';
 import { createTodoHistory, type GitLogRunner, type GitRunner } from './todo-history.ts';
 import { createTodoSkillRunner, type TodoSkillOptions } from './todo-skill.ts';
 import { createTodoTimeline } from './todo-timeline.ts';
@@ -84,6 +85,8 @@ export type SearchableBrain = BrainReaders &
     homeMeetings?: ProjectMeetingsService['home'];
     /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK (this Mac's gitignored files, via the script). */
     emailDrafts?: EmailDraftsService;
+    /** Done-todos plan: every finished to-do this person may see. Beside the contract like `ads`. */
+    doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
   };
 
 export function createBrainReaders(
@@ -115,6 +118,8 @@ export function createBrainReaders(
   // `edit` can answer `updatesFailed` (an auto log entry wasn't written); the service drops the script's answer,
   // so it is kept here, keyed by the action object the service passes on (Projects R2 phase 2).
   const editAnswers = new WeakMap<object, { updatesFailed?: true }>();
+  // One `todo/` git log per HEAD, shared by the Asked and Done lists.
+  const askedLog = createAskedLog(deps.todoLog);
   const projects = createProjects(root, {
     skill: {
       capabilities: () => projectsSkill.capabilities(),
@@ -131,6 +136,9 @@ export function createBrainReaders(
     mayChange: async (identity) => (await skillAccess(root, identity, PROJECTS_SKILL)) === 'allowed',
     // A project's to-dos say which ones this person's to-do panel can open (in `mine` or `open`).
     todoList: (identity) => listTodos(root, identity, { capabilities: () => todoSkill.capabilities() }),
+    // A project's finished to-dos (Done section): the same reader as the Done tab.
+    doneTodos: (identity) =>
+      listDoneTodos(root, identity, { log: askedLog, projects: () => projects.index() }),
     // A moved folder's files leave one library scope and join another.
     onMoved: (from, to) => {
       library.changed(from);
@@ -209,7 +217,7 @@ export function createBrainReaders(
   });
   const syncReader = createSyncReader(root);
   const todoHistory = createTodoHistory(deps.todoGit);
-  const askedTodos = createAskedTodos(deps.todoLog);
+  const askedTodos = createAskedTodos(deps.todoLog, askedLog);
   // One bridge per brain, so ads changes run one at a time; the in-flight file lives in the app's data folder.
   const ads = createAdsService(root, { ...deps.adsSkill, dataDir: deps.dataDir ?? null });
   const todoTimeline = createTodoTimeline(deps.todoLog);
@@ -263,6 +271,8 @@ export function createBrainReaders(
         },
       }),
     askedTodos: (identity) => askedTodos.list(root, identity, now(), () => projects.index()),
+    doneTodos: (identity) =>
+      listDoneTodos(root, identity, { log: askedLog, projects: () => projects.index() }),
     todoHistory: (key, identity) => todoTimeline.history(root, key, identity),
     clients: () => listClients(root),
     usedOften: async (identity, opts) => {

@@ -39,6 +39,7 @@ import {
   CLIENT_PICK_REPORTED,
   type ClientGuessResponse,
   type ClientPickReported,
+  type DoneTodoList,
   EFFORT_LEVELS,
   type EffortLevel,
   type EngineHealth,
@@ -198,6 +199,8 @@ export interface RouteContext {
     homeMeetings?: () => Promise<HomeMeetingsResponse>;
     /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK. Absent: the route says it isn't there. */
     emailDrafts?: EmailDraftsService;
+    /** Done-todos plan: finished to-dos. Beside the contract like `ads`; the real brain and setup mode have it. */
+    doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -345,6 +348,8 @@ async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
     return fallback;
   }
 }
+
+const NO_DONE: DoneTodoList = { items: [], historyRead: false };
 
 const UNKNOWN_IDENTITY: Identity = {
   name: '',
@@ -2693,6 +2698,17 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       done: [],
       historyRead: false,
     });
+    sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.doneTodos) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const body: DoneTodoList = await safe(
+      ctx.brain.doneTodos?.(identity) ?? Promise.resolve(NO_DONE),
+      NO_DONE,
+    );
     sendJson(res, 200, body);
     return;
   }

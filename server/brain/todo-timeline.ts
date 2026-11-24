@@ -30,8 +30,10 @@ export type HistoryKey =
   | { kind: 'personal'; id: string }
   | { kind: 'item'; id: string }
   | { kind: 'asked'; id: string; folder: 'todo' | 'done' };
+// `done:` keys map onto these: `done:todo/done/<id>` is an asked-style done-folder key, and
+// `done:personal/todo/done/<id>` an ordinary personal one (no git history).
 
-/** `^(personal/)?<SAFE_ID>$` or `^asked:todo/(done/)?<SAFE_ID>$`; anything else is null. */
+/** `^(personal/)?<SAFE_ID>$`, `^asked:todo/(done/)?<SAFE_ID>$` or `^done:(personal/)?todo/done/<SAFE_ID>$`; anything else is null. */
 export function parseHistoryKey(key: unknown): HistoryKey | null {
   if (typeof key !== 'string' || key.length === 0 || key.length > KEY_MAX + 20) return null;
   const ok = (id: string) => id.length <= KEY_MAX && SAFE_ID.test(id);
@@ -39,6 +41,12 @@ export function parseHistoryKey(key: unknown): HistoryKey | null {
   if (asked) {
     const id = asked[2] ?? '';
     return ok(id) ? { kind: 'asked', id, folder: asked[1] ? 'done' : 'todo' } : null;
+  }
+  const done = /^done:(personal\/)?todo\/done\/([^/]+)$/.exec(key);
+  if (done) {
+    const id = done[2] ?? '';
+    if (!ok(id)) return null;
+    return done[1] ? { kind: 'personal', id } : { kind: 'asked', id, folder: 'done' };
   }
   if (key.startsWith('personal/')) {
     const id = key.slice('personal/'.length);

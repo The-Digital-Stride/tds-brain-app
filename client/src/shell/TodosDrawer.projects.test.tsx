@@ -163,10 +163,10 @@ describe('project chips on rows', () => {
 
   it('counts each tab as it would show, and leaves out the everyone count while filtering', async () => {
     render(<TodosDrawer />);
-    await waitFor(() => expect(tabs()).toEqual(['Mine, 3', 'Open, 1', 'Asked, 2']));
+    await waitFor(() => expect(tabs()).toEqual(['Mine, 3', 'Open, 1', 'Asked, 2', 'Done']));
     expect(screen.getByText('3 more belong to other people.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Filter by project: Acme · Website' }));
-    expect(tabs()).toEqual(['Mine, 1', 'Open, 0', 'Asked, 1']);
+    expect(tabs()).toEqual(['Mine, 1', 'Open, 0', 'Asked, 1', 'Done']);
     expect(screen.queryByText(/more belong to other people/)).toBeNull();
   });
 });

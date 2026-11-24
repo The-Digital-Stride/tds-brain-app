@@ -38,7 +38,8 @@ export type ProjectsSkillOptions = ScriptOptions;
 
 /** What a run answers: the project's key (a move's new one) and its card's version; a move check adds `check`. */
 export interface ProjectsSkillResult {
-  key: ProjectKey;
+  /** Absent only for a `ref` with `all` (it answers who was given what, not one project). */
+  key?: ProjectKey;
   version: string;
   check?: ProjectMoveCheck;
   /** An archive, unarchive or delete check's answer. */
@@ -94,6 +95,7 @@ const COMMAND = {
   delete: 'delete',
   update: 'update',
   'update-remove': 'update-remove',
+  ref: 'ref',
 } as const;
 /** An entry's brain-relative path: `<folder>/updates/<name>.md`, the name as UPDATE_FILE_PATTERN has it. */
 const UPDATE_FILE = new RegExp(`^(?:[^/]+/)+${UPDATES_DIR}/${UPDATE_FILE_PATTERN.source.slice(1)}`);
@@ -256,6 +258,13 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
       const removeCheck = removeCheckOf(reply.check, key);
       return removeCheck ? { key, version: '', removeCheck } : internal;
     }
+    if (action.kind === 'ref') {
+      // Project codes: `all` answers who was given what, no key; the one-card form answers key and version.
+      if (action.all === true) return { version: '' };
+      if (typeof reply.key !== 'string' || reply.key !== action.key || !isVersion(reply.version))
+        return internal;
+      return { key: reply.key, version: reply.version };
+    }
     if (
       typeof reply.key !== 'string' ||
       typeof reply.version !== 'string' ||
@@ -287,7 +296,11 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
   }
   if (outcome.code === 2 && reply.ok === false) {
     const code = reply.error;
-    if (typeof code === 'string' && (CODES as readonly string[]).includes(code)) {
+    // `ref` is the one action whose script may refuse with `internal` (git can't say which codes were used),
+    // and its plain reason is shown (contract: "Couldn't check old codes just now. Try again in a moment.").
+    const known =
+      (CODES as readonly string[]).includes(code as string) || (action.kind === 'ref' && code === 'internal');
+    if (typeof code === 'string' && known) {
       const c = code as ProjectsErrorCode;
       if (
         c === 'changed' &&
@@ -296,7 +309,10 @@ function judge(action: ProjectAction, outcome: Outcome): ProjectsSkillResult | P
         FILES_CHANGED_REASON.test(reply.message)
       )
         return new ProjectsError(c, PROJECTS_MOVE_FILES_CHANGED);
-      const reason = SHOW_REASON.includes(c) ? reasonOf(reply.message) : null;
+      const reason =
+        SHOW_REASON.includes(c) || (action.kind === 'ref' && c === 'internal')
+          ? reasonOf(reply.message)
+          : null;
       return new ProjectsError(c, reason ?? PROJECTS_CHANGE_MESSAGES[c]);
     }
   }

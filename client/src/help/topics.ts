@@ -10,6 +10,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'documents',
   'images',
   'projects',
+  'project-codes',
   // Phase 2
   'why-cortex',
   'a-day-with-cortex',

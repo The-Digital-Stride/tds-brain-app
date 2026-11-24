@@ -1021,6 +1021,24 @@ export function parseProjectAction(body: unknown): ProjectAction {
         throw projectBad();
       return { kind: 'update-remove', key: body.key, file: body.file, expect: body.expect };
     }
+    case 'ref': {
+      // Project codes (R2 phase 4b): exactly one of three shapes.
+      if (body.all !== undefined) {
+        onlyKeys(body, ['kind', 'all'], ['all']);
+        if (body.all !== true) throw projectBad();
+        return { kind: 'ref', all: true };
+      }
+      onlyKeys(body, ['kind', 'key', 'expect', 'replace'], ['key', 'expect']);
+      if (!isProjectKey(body.key) || typeof body.expect !== 'string' || !PROJECT_VERSION.test(body.expect))
+        throw projectBad();
+      if (body.replace !== undefined && body.replace !== true) throw projectBad();
+      return {
+        kind: 'ref',
+        key: body.key,
+        expect: body.expect,
+        ...(body.replace === true ? { replace: true as const } : {}),
+      };
+    }
     default:
       throw projectBad();
   }
@@ -1249,6 +1267,9 @@ async function projectsRoute(
     const who = await identity();
     if ((await safe(ctx.brain.skillAccess(who, PROJECTS_SKILL), 'unknown-skill' as const)) !== 'allowed')
       throw new HttpError(403, 'not-allowed', PROJECTS_NOT_ALLOWED);
+    // Project codes: a backfill of every card is the brain Owner's alone, refused before the script runs.
+    if (action.kind === 'ref' && action.all === true && who.role !== 'owner')
+      throw new HttpError(403, 'not-allowed', 'Only the brain Owner can give every project a code at once.');
     try {
       const list = await change.call(ctx.brain, action, who);
       ctx.log(`Changed a project (${action.kind}).`);

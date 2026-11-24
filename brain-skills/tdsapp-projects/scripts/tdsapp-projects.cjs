@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// tdsapp-projects.cjs (v0.4.0): make and change project cards (`project.md`) the way TDS Cortex does,
-// move a project to another client, archive, unarchive or delete one, and keep its updates log. The
+// tdsapp-projects.cjs (v0.5.0): make and change project cards (`project.md`) the way TDS Cortex does,
+// move a project to another client, archive, unarchive or delete one, keep its updates log, and give
+// projects their codes ("refs", docs/plans/2026-11-24-projects-r2-project-codes.md). The
 // plans are the app repo's docs/plans/2026-11-20-projects-system.md (decisions 1-4b, 8, 9 and 27),
 // docs/plans/2026-11-21-project-move.md, docs/plans/2026-11-21-project-archive-delete.md and
 // docs/plans/2026-11-23-projects-r2-updates-log.md; the shapes are in its shared/projects-contract.ts
@@ -10,7 +11,7 @@
 //   echo '<json>' | node .claude/skills/tdsapp-projects/scripts/tdsapp-projects.cjs <action>
 //
 //   <action>  create | card | edit | link | unlink | move | archive | unarchive | delete | update |
-//             update-remove | capabilities
+//             update-remove | ref | find-ref | capabilities
 //   stdin     one JSON object (at most 256 KB), the app's ProjectAction (camelCase field names):
 //             create {space, client?, slug, fields}, card {key, fields}, edit {key, fields, expect},
 //             link {key, path, expect}, unlink {key, path, expect},
@@ -18,7 +19,7 @@
 //             archive / unarchive {key, expect?, check?: true, filesExpect?},
 //             delete {key, expect?, check?: true, filesExpect?, leftover?: true},
 //             update {key, entry: {kind: note|call, summary, clientSafe}}, update-remove {key, file, expect},
-//             capabilities {}.
+//             ref {key, expect, replace?: true} or {all: true}, find-ref {text}, capabilities {}.
 //             A `kind` field, when sent, must name the same action.
 //   stdout    one JSON line: {ok: true, action, key, version} or {ok: false, error, message}.
 //             `version` is the hex SHA-256 of project.md's bytes after the change. `move` answers the
@@ -28,7 +29,8 @@
 //             archive, unarchive and delete answer `version: ''`; with `check: true` they add `check`
 //             (ProjectRemoveCheck: what would move or go, who may, and what else names the folder).
 //             `update` adds `file`, the new entry's brain path; `edit` adds `updatesFailed: true` when
-//             the card changed but an automatic log entry couldn't be written.
+//             the card changed but an automatic log entry couldn't be written. `ref` answers `given`
+//             and `skipped` (plus key and version for one card); `find-ref` answers `found` and `near`.
 //   exit 0    ok; exit 2 refused (bad-request, not-found, exists, changed, not-allowed); exit 1 internal.
 //
 // Where projects live (every folder there is a project, card or not):
@@ -78,7 +80,7 @@
 //
 // The card (frontmatter keys in this order; empty fields left out, never written as null; lists as
 // quoted `- ` items, so the brain's simple frontmatter readers take them):
-//   v, title, client, kind, status, health, comms, owner, team, service, start, end, budget_hours,
+//   v, title, client, ref, kind, status, health, comms, owner, team, service, start, end, budget_hours,
 //   billable, stages, monday_id, created, created_by, moved_from
 // Body: the brief, then an optional `## Linked files` section of `- [name](path from the card)` lines.
 //
@@ -89,8 +91,13 @@
 // or removed by `update-remove`. `edit` writes one entry per changed status, health or Account Owner,
 // after the card; a failure there never undoes the card.
 //
+// Project codes: `ref:` is written by create, card, ref and a move from personal, never by edit,
+// and kept byte for byte by everything else. Picking reads every card on disk plus the cards deleted
+// in git history (two git calls); when git can't say, create, card and move write no code, and only
+// ref refuses. find-ref is read only and never runs git.
+//
 // When `require`d it runs nothing and exports `run(action, input, ctx)`, so tests can pass a brain
-// root, a home folder and a clock. The command line always uses the real clock. Plain Node, no
+// root, a home folder and a clock (and `refPick`, standing in for the code's random pick). The command line always uses the real clock. Plain Node, no
 // dependencies.
 
 'use strict';
@@ -101,7 +108,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const SCRIPT_VERSION = '0.4.0';
+const SCRIPT_VERSION = '0.5.0';
 
 // Mirrors shared/projects-contract.ts (a test checks they match).
 const PROJECTS_CAPABILITY = 'projects-v1';
@@ -109,6 +116,29 @@ const PROJECTS_MOVE_CAPABILITY = 'projects-move-v1';
 const PROJECTS_ARCHIVE_CAPABILITY = 'projects-archive-v1';
 // Mirrors shared/project-updates-contract.ts (a test checks they match).
 const PROJECTS_UPDATES_CAPABILITY = 'projects-updates-v1';
+// Mirrors shared/project-refs-contract.ts (a test checks they match): project codes ("refs").
+const PROJECTS_REFS_CAPABILITY = 'projects-refs-v1';
+const REF_DIGITS = '23456789';
+const REF_LETTERS = 'ACDEFGHJKMNPQRTUVWXY';
+const CLIENT_CODE_PATTERN = /^[A-Z0-9]{2,4}$/;
+const REF_PATTERN = /^[A-Z0-9]{2,4}[2-9][ACDEFGHJKMNPQRTUVWXY][2-9]$/;
+const REF_PROJECT_PART = 3;
+const REF_CANDIDATE_SOURCE = '[A-Z0-9]{2,4}[0-9][A-Z][0-9]';
+const REF_CANDIDATES_MAX = 5;
+// find-ref reads at most this much text.
+const FIND_REF_TEXT_MAX = 200000;
+// The history scan's git calls share this much time, well inside the app's 10 second script timeout.
+const REF_HISTORY_BUDGET_MS = 5000;
+// Where a deleted card could have been, for the history scan (git's `*` matches `/` too, so deeper
+// folders are read as well: stricter, never looser).
+const REF_HISTORY_PATHS = [
+  'clients/*/projects/*/project.md',
+  'clients/*/projects-archive/*/project.md',
+  'projects/*/project.md',
+  'projects-archive/*/project.md',
+  'personal/projects/*/project.md',
+  'personal/projects-archive/*/project.md',
+];
 const UPDATES_DIR = 'updates';
 const UPDATE_FILE_PATTERN = /^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*-[a-z0-9]{6}\.md$/;
 const UPDATE_SUMMARY_MAX = 5000;
@@ -157,15 +187,16 @@ const NAME_MAX = 80;
 const ERRORS = new Set(['bad-request', 'not-found', 'exists', 'changed', 'not-allowed', 'internal']);
 const ACTION_NAMES = [
   'create', 'card', 'edit', 'link', 'unlink', 'move', 'archive', 'unarchive', 'delete', 'update', 'update-remove',
-  'capabilities',
+  'ref', 'find-ref', 'capabilities',
 ];
 // A move lists at most this many of the folder's files in its check, and walks at most this many entries.
 const MOVE_FILES_SHOWN = 50;
 const MOVE_WALK_MAX = 5000;
 
-// Card frontmatter keys, in the order they are written.
+// Card frontmatter keys, in the order they are written. `ref` (the project code) sits right after
+// `client` and is only ever written by create, card, ref and a move from personal.
 const ORDER = [
-  'v', 'title', 'client', 'kind', 'status', 'health', 'comms', 'owner', 'team', 'service', 'start', 'end',
+  'v', 'title', 'client', 'ref', 'kind', 'status', 'health', 'comms', 'owner', 'team', 'service', 'start', 'end',
   'budget_hours', 'billable', 'stages', 'monday_id', 'created', 'created_by', 'moved_from',
 ];
 // ProjectFields (camelCase) → the card key on disk.
@@ -300,8 +331,9 @@ function unquote(value) {
 // ---- git and identity (as tdsapp-files) ------------------------------------------------------------
 
 // git, run in the brain with messages in English, none of the caller's GIT_* variables and this
-// run's home. Null if it can't run.
-function gitInBrain(ctx, args, input) {
+// run's home. Null if it can't run. `opts.timeout` shortens the 5 second limit; `opts.raw` answers
+// stdout as bytes.
+function gitInBrain(ctx, args, input, opts) {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!key.startsWith('GIT_')) env[key] = value;
@@ -310,7 +342,12 @@ function gitInBrain(ctx, args, input) {
   env.LC_ALL = 'C';
   env.LANGUAGE = '';
   const out = spawnSync('git', args, {
-    cwd: ctx.root, encoding: 'utf8', timeout: 5000, env, input, maxBuffer: 16 * 1024 * 1024,
+    cwd: ctx.root,
+    encoding: opts && opts.raw ? 'buffer' : 'utf8',
+    timeout: opts && opts.timeout ? Math.min(5000, opts.timeout) : 5000,
+    env,
+    input,
+    maxBuffer: 16 * 1024 * 1024,
   });
   return out.error ? null : out;
 }
@@ -905,6 +942,7 @@ function checkFields(fields, ctx, requireTitle) {
       if (hasConflict(brief)) throw refuse('bad-request', "the brief can't hold git's merge conflict lines");
       continue;
     }
+    if (name === 'ref') throw refuse('bad-request', "A project's code can't be set or changed here.");
     if (!Object.prototype.hasOwnProperty.call(FIELD_KEYS, name)) throw refuse('bad-request', `unknown field ${name}`);
     const key = FIELD_KEYS[name];
     switch (name) {
@@ -1117,7 +1155,7 @@ function writeCard(card, text) {
 }
 
 // The frontmatter lines of a new card.
-function newCardEntries(values, client, created, who) {
+function newCardEntries(values, client, created, who, ref) {
   const all = Object.assign({ status: 'active' }, values);
   let entries = [{ key: 'v', lines: ['v: 1'] }];
   for (const key of ORDER) {
@@ -1126,6 +1164,7 @@ function newCardEntries(values, client, created, who) {
     if (key === 'client') lines = client ? [`client: ${client}`] : [];
     else if (key === 'created') lines = [`created: ${created}`];
     else if (key === 'created_by') lines = who.slug ? [`created_by: ${who.slug}`] : [];
+    else if (key === 'ref') lines = ref ? refLines(ref) : [];
     else lines = renderField(key, all[key]);
     entries = setEntry(entries, key, lines);
   }
@@ -1188,6 +1227,9 @@ function create(input, ctx) {
     }
   }
   if (space === 'personal') requirePrivate(ctx, `${rel}/${PROJECT_CARD_FILE}`);
+  // The project code, picked before anything is written. Never a reason to refuse: none when the
+  // client has no code or git can't say which codes deleted cards used.
+  const ref = space === 'client' ? newRefFor(ctx, client) : null;
 
   const parentRel = rel.slice(0, rel.lastIndexOf('/'));
   const parentAbs = path.join(ctx.root, ...parentRel.split('/'));
@@ -1202,7 +1244,7 @@ function create(input, ctx) {
   }
   let version;
   try {
-    version = createCard(path.join(abs, PROJECT_CARD_FILE), newCardEntries(values, client, ukDate(ctx.now), who), brief);
+    version = createCard(path.join(abs, PROJECT_CARD_FILE), newCardEntries(values, client, ukDate(ctx.now), who, ref), brief);
   } catch (err) {
     try { fs.rmdirSync(abs); } catch { /* not empty or gone: leave it */ }
     throw err;
@@ -1228,9 +1270,11 @@ function card(input, ctx) {
     delete values.owner;
     ownerDropped = true;
   }
+  // As create: a client or internal card gets a code when one can be picked, else none.
+  const ref = loc.space === 'personal' ? null : newRefFor(ctx, loc.client);
   let version;
   try {
-    version = createCard(abs, newCardEntries(values, loc.client, ukDate(ctx.now), who), brief);
+    version = createCard(abs, newCardEntries(values, loc.client, ukDate(ctx.now), who, ref), brief);
   } catch (err) {
     if (errCode(err) === 'EEXIST') throw refuse('exists', `${loc.key} already has a card`);
     throw err;
@@ -1535,7 +1579,7 @@ function personalLinksOf(body, folderRel) {
 // every recognised `## Linked files` line is written from the new folder's depth, those inside the
 // old folder pointing into the new one. With `drop`, the personal links outside the folder go.
 // Every other line is kept byte for byte.
-function movedCardText(cardFile, loc, newRel, newKey, client, drop) {
+function movedCardText(cardFile, loc, newRel, newKey, client, drop, newRef) {
   const { entries } = cardFile.parts;
   const old = cardValues(entries).moved_from;
   const listed = Array.isArray(old) ? old : typeof old === 'string' && old !== '' ? [old] : [];
@@ -1550,6 +1594,8 @@ function movedCardText(cardFile, loc, newRel, newKey, client, drop) {
   let next = setEntry(entries, 'moved_from', renderField('moved_from', keys));
   // Always: a personal card has no `client:` line, and a moved card should read like a created one.
   next = setEntry(next, 'client', [`client: ${client}`]);
+  // A move from personal may give the card a code (move()); otherwise `ref:` stays as it is.
+  if (newRef) next = setEntry(next, 'ref', refLines(newRef));
 
   const body = cardFile.parts.body.slice();
   const { range, out } = linkedLines(body);
@@ -1626,6 +1672,11 @@ function move(input, ctx) {
   const ignored = ignoredPaths(ctx, [cardRel, ...files.map(f => `${newRel}/${f}`)]);
   if (ignored.has(cardRel)) throw refuse('not-allowed', `${cardRel} wouldn't sync to the team: git ignores it`);
 
+  // Project codes: a personal project joining a client gets one, unless its own ref is valid and no
+  // other card holds it. Picked here, so nothing slow sits between the fingerprint and the write;
+  // none when the client has no code or git can't say.
+  const spareRef = loc.space === 'personal' && input.check !== true ? newRefFor(ctx, client) : null;
+
   // The fingerprint last, right before the write.
   const cardFile = openCard(ctx, loc, expect);
   const personalLinks = loc.space === 'personal' ? personalLinksOf(cardFile.parts.body, loc.rel) : [];
@@ -1648,7 +1699,12 @@ function move(input, ctx) {
   if (personalLinks.length > 0 && input.dropPersonal !== true) {
     throw refuse('not-allowed', `the card links ${personalLinks.length === 1 ? 'a personal file' : `${personalLinks.length} personal files`} from outside the project, which moving would share with the team: unlink ${personalLinks.length === 1 ? 'it' : 'them'} first`);
   }
-  const text = movedCardText(cardFile, loc, newRel, newKey, client, input.dropPersonal === true);
+  let newRef = null;
+  if (spareRef) {
+    const own = cardRefOf(cardValues(cardFile.parts.entries));
+    if (!own || heldElsewhere(ctx, loc.rel, own)) newRef = spareRef;
+  }
+  const text = movedCardText(cardFile, loc, newRel, newKey, client, input.dropPersonal === true, newRef);
 
   // Claim the new folder: an empty folder nothing else can take meanwhile.
   let madeParent = false;
@@ -2305,12 +2361,473 @@ function writeAutoEntries(ctx, loc, who, current, values) {
   if (failed) throw failed;
 }
 
+// ---- project codes (docs/plans/2026-11-24-projects-r2-project-codes.md) ---------------------------
+//
+// A ref is the client's profile `code:` then digit, letter, digit (`AST4K7`), written as `ref:` right
+// after `client:` by create, card, ref and a move from personal; every other change keeps the line
+// byte for byte. A ref is a pointer, never a permission. The pure rules below copy shared/project-refs.ts
+// (a test runs shared/project-refs-vectors.json against both).
+
+const REF_CANDIDATE = new RegExp(`^${REF_CANDIDATE_SOURCE}$`);
+const REF_WORD = /[A-Za-z0-9]+/g;
+
+// Code-shaped words in `text`, upper-cased, de-duplicated, in order. No cap: callers cap after lookup.
+function refCandidates(text) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(text).matchAll(REF_WORD)) {
+    const word = m[0];
+    if (word.length < 5 || word.length > 7) continue;
+    const up = word.toUpperCase();
+    if (!REF_CANDIDATE.test(up) || seen.has(up)) continue;
+    seen.add(up);
+    out.push(up);
+  }
+  return out;
+}
+
+function isValidRef(s) {
+  return typeof s === 'string' && REF_PATTERN.test(s);
+}
+
+// Client codes compared with O→0 and I→1, so H2O and H20 are the same client code.
+function foldClientCode(code) {
+  return String(code).toUpperCase().replace(/O/g, '0').replace(/I/g, '1');
+}
+
+// The lookup key: upper-cased, client part folded, project part (the last 3) unchanged.
+function foldRef(ref) {
+  const up = String(ref).toUpperCase();
+  const cut = up.length - REF_PROJECT_PART;
+  if (cut <= 0) return up;
+  return foldClientCode(up.slice(0, cut)) + up.slice(cut);
+}
+
+// True when `a` and `b` (already folded) differ by one substitution or one neighbouring swap.
+function oneSlip(a, b) {
+  if (a.length !== b.length || a === b) return false;
+  const diff = [];
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      diff.push(i);
+      if (diff.length > 2) return false;
+    }
+  }
+  if (diff.length === 1) return true;
+  const [i, j] = diff;
+  return j === i + 1 && a[i] === b[j] && a[j] === b[i];
+}
+
+// The refs one slip from `candidate` (compared folded), never the exact ref, in the order given, de-duplicated.
+function nearRefs(candidate, refs) {
+  const c = foldRef(candidate);
+  const out = [];
+  for (const ref of refs) {
+    if (out.includes(ref)) continue;
+    if (oneSlip(c, foldRef(ref))) out.push(ref);
+  }
+  return out;
+}
+
+// One memo per run: the disk walk, the index and the used codes are worked out once and reused.
+const REF_MEMO = new WeakMap();
+function refMemo(ctx) {
+  let memo = REF_MEMO.get(ctx);
+  if (!memo) {
+    memo = {};
+    REF_MEMO.set(ctx, memo);
+  }
+  return memo;
+}
+
+// A client profile's frontmatter text (clients/<client>/profile.md), read as server/brain/clients.ts
+// reads it; null when there is none.
+function profileHead(ctx, client) {
+  if (!isSlug(client)) return null;
+  let text;
+  try {
+    text = fs.readFileSync(path.join(ctx.root, 'clients', client, 'profile.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  if (!text.startsWith('---')) return null;
+  const end = text.indexOf('\n---', 3);
+  return end === -1 ? '' : text.slice(3, end);
+}
+
+// A client's code: its profile's `code:` upper-cased, or null when there is none or it fails the
+// pattern (a bad code reads as none, never an error). Internal projects use the-digital-stride's.
+function clientCode(ctx, client) {
+  const head = profileHead(ctx, client);
+  const m = head === null ? null : /^code:[ \t]*(.*)$/m.exec(head);
+  if (!m || !m[1]) return null;
+  const code = m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim().toUpperCase();
+  return CLIENT_CODE_PATTERN.test(code) ? code : null;
+}
+
+// A client's name for a message: its profile's `client:` line, else its folder name with capitals.
+function clientName(ctx, client) {
+  const head = profileHead(ctx, client);
+  const m = head ? /^client:[ \t]*(.+)$/m.exec(head) : null;
+  if (m) {
+    const name = m[1].trim().replace(/^(["'])(.*)\1$/, '$2').replace(/\s*\([^)]*\)$/, '').trim();
+    if (name !== '' && name.length <= NAME_MAX) return displayText(name, NAME_MAX);
+  }
+  return String(client).split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// A card's ref as the app reads it: upper-cased, or null when there is none or it isn't valid.
+function cardRefOf(values) {
+  const v = values ? values.ref : undefined;
+  if (typeof v !== 'string') return null;
+  const up = v.trim().toUpperCase();
+  return isValidRef(up) ? up : null;
+}
+
+function refLines(ref) {
+  return [`ref: ${yamlText(ref)}`];
+}
+
+// Every `ref:` value in a card's frontmatter block, folded. Read line by line, so a card that can't
+// be parsed (a merge conflict holding two refs) still counts; a brief's own lines never do.
+function rawRefsOf(text) {
+  const out = [];
+  const lines = text.split('\n');
+  if (lines[0] !== '---') return out;
+  let close = lines.indexOf('---', 1);
+  if (close === -1) close = lines.length;
+  for (const line of lines.slice(1, close)) {
+    const m = /^ref[ \t]*:(.*)$/.exec(line);
+    if (!m) continue;
+    const value = unquote(m[1]).toUpperCase();
+    if (value !== '') out.push(foldRef(value));
+  }
+  return out;
+}
+
+// Every card file on disk in a project folder (live, archived, every space and client, shadowed
+// folders too), read once per run. Never runs git.
+function diskCards(ctx) {
+  const memo = refMemo(ctx);
+  if (memo.cards) return memo.cards;
+  const cards = [];
+  for (const b of projectBases(ctx)) {
+    for (const name of b.names) {
+      const key = `${b.client}/${name}`;
+      const parsed = parseKey(key);
+      if (!parsed) continue;
+      const rel = `${b.rel}/${name}`;
+      const at = locationsOf(parsed.client, parsed.slug).findIndex(l => l.rel === rel);
+      if (at === -1) continue;
+      const loc = locationsOf(parsed.client, parsed.slug)[at];
+      const fileAbs = path.join(ctx.root, ...rel.split('/'), PROJECT_CARD_FILE);
+      const st = lstatOrNull(fileAbs);
+      if (!st || st.isSymbolicLink() || !st.isFile()) continue;
+      let text;
+      try {
+        text = decodeFile(fs.readFileSync(fileAbs)).text;
+      } catch {
+        continue;
+      }
+      const parts = cardParts(text);
+      const values = parts ? cardValues(parts.entries) : null;
+      const raw = rawRefsOf(text);
+      cards.push({ key, slug: parsed.slug, rel, at, space: loc.space, archived: loc.archived, values, ref: cardRefOf(values), raw });
+    }
+  }
+  memo.cards = cards;
+  return cards;
+}
+
+// The lookup the app builds (server/brain/project-refs.ts): one card per key (the first folder with a
+// card, in reader precedence), personal cards left out; a folded ref held by two keys resolves to none.
+function refIndex(ctx) {
+  const memo = refMemo(ctx);
+  if (memo.index) return memo.index;
+  const byKey = new Map();
+  for (const c of diskCards(ctx)) {
+    const best = byKey.get(c.key);
+    if (!best || c.at < best.at) byKey.set(c.key, c);
+  }
+  const cards = [...byKey.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const byFold = new Map();
+  for (const c of cards) {
+    if (c.space === 'personal' || !c.ref) continue;
+    const f = foldRef(c.ref);
+    if (!byFold.has(f)) byFold.set(f, []);
+    byFold.get(f).push(c);
+  }
+  memo.index = { cards, byFold };
+  return memo.index;
+}
+
+// Whether a card file other than the one in folder `rel` holds `ref` (folded).
+function heldElsewhere(ctx, rel, ref) {
+  const f = foldRef(ref);
+  return diskCards(ctx).some(c => c.rel !== rel && c.raw.includes(f));
+}
+
+// The folded `ref:` values of cards deleted in the brain's git history, or null when git can't say
+// (not a repository, a shallow clone, a timeout or any error). Two git calls after the shallow check,
+// never a search through every change: the deleted card paths, then one batch read of each as it was
+// just before it went.
+function historyRefs(ctx) {
+  const until = Date.now() + REF_HISTORY_BUDGET_MS;
+  const git = (args, input, raw) => {
+    const left = until - Date.now();
+    return left > 0 ? gitInBrain(ctx, args, input, { timeout: left, raw }) : null;
+  };
+  const head = git(['rev-parse', '--is-inside-work-tree', '--is-shallow-repository']);
+  if (!head || head.status !== 0) return null;
+  const [inside, shallow] = (head.stdout || '').split('\n').map(s => s.trim());
+  if (inside !== 'true' || shallow !== 'false') return null;
+  const log = git([
+    '-c', 'core.quotePath=false', 'log', '--diff-filter=D', '--no-renames', '--name-only', '--format=%H', '--',
+    ...REF_HISTORY_PATHS,
+  ]);
+  if (!log) return null;
+  // A brain with no commits yet has no history to read.
+  if (log.status !== 0) return /does not have any commits yet/.test(log.stderr || '') ? new Set() : null;
+  const wanted = [];
+  let commit = null;
+  for (const line of (log.stdout || '').split('\n')) {
+    if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(line)) {
+      commit = line;
+      continue;
+    }
+    // A quoted path holds characters no project folder name can, so it was never a card.
+    if (line === '' || commit === null || line.startsWith('"')) continue;
+    wanted.push(`${commit}^:${line}`);
+  }
+  const used = new Set();
+  if (wanted.length === 0) return used;
+  // Bytes in as well as out: spawnSync reads a string input in the output encoding.
+  const batch = git(['cat-file', '--batch'], Buffer.from(wanted.map(w => `${w}\n`).join(''), 'utf8'), true);
+  if (!batch || batch.status !== 0 || !Buffer.isBuffer(batch.stdout)) return null;
+  const out = batch.stdout;
+  let at = 0;
+  while (at < out.length) {
+    const nl = out.indexOf(10, at);
+    if (nl === -1) return null;
+    const header = out.subarray(at, nl).toString('utf8');
+    at = nl + 1;
+    if (/ missing$/.test(header)) continue;
+    const m = /^[0-9a-f]+ ([a-z]+) (\d+)$/.exec(header);
+    if (!m) return null;
+    const size = Number(m[2]);
+    if (at + size > out.length) return null;
+    if (m[1] === 'blob') for (const r of rawRefsOf(decodeFile(out.subarray(at, at + size)).text)) used.add(r);
+    at += size + 1;
+  }
+  return used;
+}
+
+// Every code in use (folded): on any card on disk, or on a card deleted in git history. Null when git
+// can't say. Worked out once per run; `ref` with `all` adds each code it gives.
+function usedRefs(ctx) {
+  const memo = refMemo(ctx);
+  if (memo.used === undefined) {
+    const history = historyRefs(ctx);
+    memo.used = history === null ? null : new Set([...history, ...diskCards(ctx).flatMap(c => c.raw)]);
+  }
+  return memo.used;
+}
+
+// A new code for client code `code`: at random (crypto) from the 1,280 options, never one in use,
+// preferring one that isn't one slip from any code in use (any client); else any unused one. Null
+// when every option is used.
+function pickRef(ctx, code, used) {
+  const options = [];
+  for (const d1 of REF_DIGITS) {
+    for (const l of REF_LETTERS) {
+      for (const d2 of REF_DIGITS) {
+        const ref = `${code}${d1}${l}${d2}`;
+        const folded = foldRef(ref);
+        if (isValidRef(ref) && !used.has(folded)) options.push({ ref, folded });
+      }
+    }
+  }
+  if (options.length === 0) return null;
+  const sameLength = [...used].filter(u => u.length === options[0].folded.length);
+  const spaced = options.filter(o => !sameLength.some(u => oneSlip(o.folded, u)));
+  const pool = spaced.length > 0 ? spaced : options;
+  const at = (ctx.refPick || (n => crypto.randomInt(n)))(pool.length);
+  return pool[Number.isInteger(at) && at >= 0 && at < pool.length ? at : 0].ref;
+}
+
+// A new code for a card in `client`, or null: no client code, git can't say, or anything else going
+// wrong. Never a reason to refuse create, card or move (overseer blocker 1).
+function newRefFor(ctx, client) {
+  try {
+    const code = client ? clientCode(ctx, client) : null;
+    if (!code) return null;
+    const used = usedRefs(ctx);
+    return used ? pickRef(ctx, code, used) : null;
+  } catch {
+    return null;
+  }
+}
+
+const CANT_CHECK_REFS = "Couldn't check old codes just now. Try again in a moment.";
+
+// `ref`: one card (`key`, `expect`, optional `replace`), or every live client and internal card
+// without one (`all`, the brain's Owner only).
+function refAction(input, ctx) {
+  for (const flag of ['all', 'replace']) {
+    if (input[flag] !== undefined && input[flag] !== true) throw refuse('bad-request', `${flag} can only be true`);
+  }
+  const all = input.all === true;
+  if (all === (input.key !== undefined)) throw refuse('bad-request', 'send either key or all');
+  if (all) {
+    if (input.replace !== undefined || input.expect !== undefined) {
+      throw refuse('bad-request', 'all takes no key, expect or replace');
+    }
+    return refAll(ctx);
+  }
+  const replace = input.replace === true;
+  const loc = locate(ctx, input.key);
+  const expect = expectOf(input, true);
+  if (loc.space === 'personal') throw refuse('bad-request', "Personal projects don't get codes.");
+  if (loc.archived) throw refuse('bad-request', "Archived projects don't get codes.");
+  const who = identity(ctx);
+  requireTeam(who);
+  const code = clientCode(ctx, loc.client);
+  if (!code) throw refuse('bad-request', `Add a client code to ${clientName(ctx, loc.client)}'s profile first.`);
+  // What the card holds now, so a card with a code is refused before git is asked anything.
+  const had = cardRefOf(cardValues(openCard(ctx, loc, null).parts.entries));
+  if (had && !replace) throw refuse('exists', 'This project already has a code.');
+  if (replace && (!had || !heldElsewhere(ctx, loc.rel, had))) {
+    throw refuse('changed', "No other project uses this project's code now.");
+  }
+  const used = usedRefs(ctx);
+  if (!used) throw refuse('internal', CANT_CHECK_REFS);
+  const ref = pickRef(ctx, code, used);
+  if (!ref) throw refuse('internal', `Every code for ${clientName(ctx, loc.client)} is used.`);
+  // The fingerprint last, right before the write.
+  const cardFile = openCard(ctx, loc, expect);
+  const now = cardRefOf(cardValues(cardFile.parts.entries));
+  if (now && !replace) throw refuse('exists', 'This project already has a code.');
+  if (replace && (!now || foldRef(now) !== foldRef(had))) throw refuse('changed', 'the card has changed since it was read');
+  const entries = setEntry(cardFile.parts.entries, 'ref', refLines(ref));
+  const version = writeCard(cardFile, joinCard(entries, cardFile.parts.body));
+  return { ok: true, action: 'ref', key: loc.key, version, given: [{ key: loc.key, ref }], skipped: [] };
+}
+
+// Overseer blocker 3: two backfills before a sync would write different codes into the same cards.
+function refAll(ctx) {
+  const who = identity(ctx);
+  if (!isBrainOwner(who)) throw refuse('not-allowed', "Only the brain's Owner can give every project a code.");
+  const used = usedRefs(ctx);
+  if (!used) throw refuse('internal', CANT_CHECK_REFS);
+  const keys = new Set();
+  for (const b of projectBases(ctx)) {
+    for (const name of b.names) {
+      const key = `${b.client}/${name}`;
+      if (parseKey(key)) keys.add(key);
+    }
+  }
+  const codes = new Map();
+  const given = [];
+  const skipped = [];
+  for (const key of [...keys].sort()) {
+    if (key.startsWith('personal/')) {
+      skipped.push({ key, reason: 'personal' });
+      continue;
+    }
+    let loc;
+    try {
+      loc = locate(ctx, key);
+    } catch (err) {
+      if (err instanceof Refusal) {
+        skipped.push({ key, reason: 'no-card' });
+        continue;
+      }
+      throw err;
+    }
+    if (loc.archived) {
+      skipped.push({ key, reason: 'archived' });
+      continue;
+    }
+    let cardFile;
+    try {
+      cardFile = openCard(ctx, loc, null);
+    } catch (err) {
+      if (err instanceof Refusal) {
+        skipped.push({ key, reason: 'no-card' });
+        continue;
+      }
+      throw err;
+    }
+    if (cardRefOf(cardValues(cardFile.parts.entries))) {
+      skipped.push({ key, reason: 'has-ref' });
+      continue;
+    }
+    if (!codes.has(loc.client)) codes.set(loc.client, clientCode(ctx, loc.client));
+    const code = codes.get(loc.client);
+    // A client with every one of its 1,280 codes used is as good as one with no code.
+    const ref = code ? pickRef(ctx, code, used) : null;
+    if (!ref) {
+      skipped.push({ key, reason: 'no-client-code' });
+      continue;
+    }
+    used.add(foldRef(ref));
+    writeCard(cardFile, joinCard(setEntry(cardFile.parts.entries, 'ref', refLines(ref)), cardFile.parts.body));
+    given.push({ key, ref });
+  }
+  return { ok: true, action: 'ref', given, skipped };
+}
+
+// `find-ref`: the codes in `text` that belong to a real project, and near misses. Read only, no git.
+function findRef(input, ctx) {
+  const text = input.text;
+  if (typeof text !== 'string') throw refuse('bad-request', 'text must be text');
+  if (text.length > FIND_REF_TEXT_MAX) {
+    throw refuse('bad-request', `text is too long (over ${FIND_REF_TEXT_MAX} characters)`);
+  }
+  const candidates = refCandidates(text);
+  const found = [];
+  const near = [];
+  if (candidates.length === 0) return { ok: true, action: 'find-ref', found, near };
+  const { byFold } = refIndex(ctx);
+  const resolvable = [...byFold.values()].filter(h => h.length === 1).map(h => h[0].ref).sort();
+  const keys = new Set();
+  for (const candidate of candidates) {
+    const holders = byFold.get(foldRef(candidate));
+    if (holders && holders.length === 1) {
+      const c = holders[0];
+      if (found.length >= REF_CANDIDATES_MAX || keys.has(c.key)) continue;
+      keys.add(c.key);
+      const title = c.values && typeof c.values.title === 'string' ? displayText(c.values.title, LIMITS.PROJECT_TITLE_MAX) : '';
+      const cardClient = c.values && typeof c.values.client === 'string' && isSlug(c.values.client) ? c.values.client : null;
+      found.push({
+        ref: c.ref,
+        key: c.key,
+        title: title || defaultTitle(path.join(ctx.root, ...c.rel.split('/')), c.slug),
+        // Decision 8: the client the card says now, never the letters.
+        client: cardClient || c.key.slice(0, c.key.indexOf('/')),
+      });
+      continue;
+    }
+    // A duplicate is a real code (just held twice), so it gets no "did you mean" either.
+    if (holders || near.length >= REF_CANDIDATES_MAX) continue;
+    const suggestions = nearRefs(candidate, resolvable).slice(0, REF_CANDIDATES_MAX);
+    if (suggestions.length > 0) near.push({ candidate, suggestions });
+  }
+  return { ok: true, action: 'find-ref', found, near };
+}
+
 function capabilities() {
   return {
     ok: true,
     action: 'capabilities',
     version: SCRIPT_VERSION,
-    features: [PROJECTS_CAPABILITY, PROJECTS_MOVE_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY, PROJECTS_UPDATES_CAPABILITY],
+    features: [
+      PROJECTS_CAPABILITY,
+      PROJECTS_MOVE_CAPABILITY,
+      PROJECTS_ARCHIVE_CAPABILITY,
+      PROJECTS_UPDATES_CAPABILITY,
+      PROJECTS_REFS_CAPABILITY,
+    ],
   };
 }
 
@@ -2318,7 +2835,7 @@ function capabilities() {
 
 const ACTIONS = {
   create, card, edit, link, unlink, move, archive, unarchive, delete: deleteProject, update,
-  'update-remove': updateRemove, capabilities,
+  'update-remove': updateRemove, ref: refAction, 'find-ref': findRef, capabilities,
 };
 
 function defaultCtx() {
@@ -2388,6 +2905,19 @@ module.exports = {
   PROJECTS_MOVE_CAPABILITY,
   PROJECTS_ARCHIVE_CAPABILITY,
   PROJECTS_UPDATES_CAPABILITY,
+  PROJECTS_REFS_CAPABILITY,
+  REF_DIGITS,
+  REF_LETTERS,
+  CLIENT_CODE_PATTERN,
+  REF_PATTERN,
+  REF_PROJECT_PART,
+  REF_CANDIDATE_SOURCE,
+  REF_CANDIDATES_MAX,
+  refCandidates,
+  isValidRef,
+  foldRef,
+  foldClientCode,
+  nearRefs,
   UPDATES_DIR,
   UPDATE_FILE_PATTERN,
   UPDATE_SUMMARY_MAX,

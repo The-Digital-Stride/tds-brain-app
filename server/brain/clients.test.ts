@@ -9,13 +9,31 @@ import { FIXTURE } from './test-helpers.ts';
 describe('clients', () => {
   it('lists folders only, skipping _ and . names, naming from accounts.json when it matches', async () => {
     expect(await createBrainReaders(FIXTURE).clients()).toEqual([
-      { slug: 'acme-heating', name: 'Acme Heating Ltd' },
-      { slug: 'northwind', name: 'Northwind' },
+      { slug: 'acme-heating', name: 'Acme Heating Ltd', code: null },
+      { slug: 'northwind', name: 'Northwind', code: null },
     ]);
   });
 
   it('returns an empty list when clients/ is missing', async () => {
     expect(await createBrainReaders('/nonexistent/brain').clients()).toEqual([]);
+  });
+});
+
+describe('client codes', () => {
+  it('reads profile code: upper-cased, and a bad code reads as none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'clients-code-'));
+    const put = (slug: string, fm: string) => {
+      mkdirSync(join(root, 'clients', slug), { recursive: true });
+      writeFileSync(join(root, 'clients', slug, 'profile.md'), `---\nclient: ${slug}\n${fm}\n---\n`);
+    };
+    put('a', 'code: ast');
+    put('b', 'code: "H2O"');
+    put('c', 'code: TOOLONG');
+    put('d', 'code: A-B');
+    put('e', 'code: X');
+    put('f', 'other: 1');
+    const codes = Object.fromEntries((await listClients(root)).map((c) => [c.slug, c.code]));
+    expect(codes).toEqual({ a: 'AST', b: 'H2O', c: null, d: null, e: null, f: null });
   });
 });
 
@@ -46,13 +64,13 @@ describe('client names (to-do rows showed "Gladwell and patterson")', () => {
       'clients/odd-one/profile.md': 'client: not frontmatter\n',
     });
     expect(await listClients(root)).toEqual([
-      { slug: 'acme-heating', name: 'Acme Heating Ltd' },
-      { slug: 'ai-stores', name: 'AI Stores' },
-      { slug: 'gladwell-and-patterson', name: 'Gladwell & Patterson' },
-      { slug: 'harvey-nash', name: 'Harvey Nash' },
-      { slug: 'odd-one', name: 'Odd One' },
-      { slug: 'sig-and-the-roofers', name: 'Sig and the Roofers' },
-      { slug: 'the-digital-stride', name: 'The Digital Stride' },
+      { slug: 'acme-heating', name: 'Acme Heating Ltd', code: null },
+      { slug: 'ai-stores', name: 'AI Stores', code: null },
+      { slug: 'gladwell-and-patterson', name: 'Gladwell & Patterson', code: 'GAP' },
+      { slug: 'harvey-nash', name: 'Harvey Nash', code: null },
+      { slug: 'odd-one', name: 'Odd One', code: null },
+      { slug: 'sig-and-the-roofers', name: 'Sig and the Roofers', code: null },
+      { slug: 'the-digital-stride', name: 'The Digital Stride', code: null },
     ]);
   });
 });

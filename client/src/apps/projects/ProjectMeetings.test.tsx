@@ -106,6 +106,18 @@ describe('Meetings card', () => {
     );
   });
 
+  it('uses the certain wording for a match by code', async () => {
+    store.startChat.mockClear();
+    show(reply({ last: meeting({ match: 'ref' }) }));
+    fireEvent.click(screen.getByRole('button', { name: 'File the notes' }));
+    await waitFor(() => expect(store.startChat).toHaveBeenCalled());
+    const prompt = String(store.startChat.mock.calls[0]?.[0]);
+    expect(prompt).toBe(
+      "File the notes for my meeting on Wednesday 25 November at 14:30 with the meeting-notes skill. It's for the Skyseal Website rebuild project.",
+    );
+    expect(prompt).not.toContain('check');
+  });
+
   it('shows Notes filed with Open notes, which opens Documents', async () => {
     const item = { id: 'n1', kind: 'document' };
     api.libraryItems.mockResolvedValue({ files: [{ scope: { id: 'scope-1' }, item }] });

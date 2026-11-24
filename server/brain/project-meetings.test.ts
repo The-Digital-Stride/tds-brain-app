@@ -7,6 +7,7 @@ import { MEETINGS_CACHE_PATH } from '../../shared/project-meetings-contract.ts';
 import { ProjectsError } from '../../shared/projects-contract.ts';
 import { createMeetingHistoryStore } from '../store/meeting-history.ts';
 import { createProjectMeetings } from './project-meetings.ts';
+import { buildRefIndex } from './project-refs.ts';
 import type { ProjectsIndex } from './projects.ts';
 
 const KEY = 'skyseal/seo';
@@ -131,6 +132,61 @@ describe('the cache is read only when it is safe and well formed', () => {
   });
   it('an unknown project is not found', async () => {
     await expect(service().svc.read('skyseal/none')).rejects.toBeInstanceOf(ProjectsError);
+  });
+});
+
+describe('project codes', () => {
+  const withRefs = (): ProjectsIndex =>
+    ({
+      ...index(),
+      refs: buildRefIndex(
+        cards.map((c) => ({
+          key: c.key,
+          space: 'client' as const,
+          client: c.client,
+          ref: c.key === KEY ? 'SKY4K7' : null,
+        })),
+        new Map([['skyseal', 'SKY']]),
+      ).index,
+    }) as unknown as ProjectsIndex;
+  const svc = () => {
+    const store = createMeetingHistoryStore(null);
+    return {
+      store,
+      svc: createProjectMeetings({
+        root,
+        index: async () => withRefs(),
+        clients: async () => clients,
+        store,
+        selfEmail: async () => 'me@tds.co.uk',
+        ignored: async () => ignoredAnswer,
+        notes: (async () => null) as never,
+        now: () => now,
+      }),
+    };
+  };
+
+  it('matches a meeting by a code in the cached refs and keeps it as a ref match', async () => {
+    await writeCache([
+      mtg('code', '2026-11-22T10:00:00Z', 30, {
+        title: 'Quick call',
+        attendees: [],
+        refs: ['sky4k7', 'junk', 7],
+      }),
+    ]);
+    const { svc: s, store } = svc();
+    const r = await s.read(KEY);
+    expect(r.last?.id).toBe('code');
+    expect(r.last?.match).toBe('ref');
+    expect((await store.all()).map((m) => m.match)).toEqual(['ref']);
+  });
+
+  it('a cache with no refs, or refs that are not an array, behaves as before', async () => {
+    await writeCache([
+      mtg('a', '2026-11-22T10:00:00Z', 30, { title: 'Quick call', attendees: [] }),
+      mtg('b', '2026-11-21T10:00:00Z', 30, { title: 'Quick call', attendees: [], refs: 'SKY4K7' }),
+    ]);
+    expect((await svc().svc.read(KEY)).last).toBeNull();
   });
 });
 

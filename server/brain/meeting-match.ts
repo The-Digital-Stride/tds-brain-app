@@ -5,6 +5,8 @@
  */
 
 import type { ProjectMatch } from '../../shared/project-meetings-contract.ts';
+import { refCandidates } from '../../shared/project-refs.ts';
+import { MEETING_REFS_MAX, REF_PATTERN, type RefIndex } from '../../shared/project-refs-contract.ts';
 import { INTERNAL_CLIENT, type ProjectKey, type ProjectStatus } from '../../shared/projects-contract.ts';
 
 export interface MatchClient {
@@ -31,12 +33,16 @@ export interface MatchContext {
   ignoreDomains: string[];
   /** This person's own addresses, left out of the attendees. */
   selfEmails: string[];
+  /** Project codes (R2 phase 4b, decision 10). Missing: codes are not used and matching is as in phase 4. */
+  refs?: RefIndex;
 }
 
 export interface MatchMeeting {
   title: string;
   allDay: boolean;
   attendees: { name: string | null; email: string | null }[];
+  /** The cache's `refs`, read defensively by `cleanMeetingRefs` (anything may be here). */
+  refs?: unknown;
 }
 
 /** Public mail providers: an attendee on one says nothing about a client (decision 3a). */
@@ -215,12 +221,58 @@ export function matchProject(
   return null;
 }
 
+/**
+ * A cache entry's `refs`, read defensively: not an array → none; strings only, upper-cased, kept only if they
+ * pass REF_PATTERN, de-duplicated, at most MEETING_REFS_MAX.
+ */
+export function cleanMeetingRefs(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const up = v.trim().toUpperCase();
+    if (!REF_PATTERN.test(up) || out.includes(up)) continue;
+    out.push(up);
+    if (out.length >= MEETING_REFS_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * Decision 10: codes first. Resolves the title's code-shaped words plus the cached `refs`. Exactly one project,
+ * and no attendee domain pointing at a known client other than that card's client, matches it. Two or more
+ * projects, a disagreeing domain, or no code at all → null, and the phase 4 rules run unchanged. The client
+ * always comes from the card, never from the code's letters.
+ */
+function matchByRef(m: MatchMeeting, ctx: MatchContext): { key: ProjectKey; match: ProjectMatch } | null {
+  const refs = ctx.refs;
+  if (!refs) return null;
+  const keys = new Set<ProjectKey>();
+  for (const c of [...refCandidates(m.title), ...cleanMeetingRefs(m.refs)]) {
+    const key = refs.resolve(c);
+    if (key !== null) keys.add(key);
+  }
+  if (keys.size !== 1) return null;
+  const key = [...keys][0] as ProjectKey;
+  const card = ctx.projects.find((p) => p.key === key);
+  if (!card) return null;
+  const cardClient = card.client ?? INTERNAL_CLIENT;
+  const domains = attendeeDomains(m, ctx);
+  for (const c of ctx.clients) {
+    if (c.slug === cardClient || !c.domain) continue;
+    if (domains.some((d) => underDomain(d, c.domain as string))) return null;
+  }
+  return { key, match: 'ref' };
+}
+
 /** The project a calendar meeting belongs to, or null. All-day events are skipped. */
 export function matchMeeting(
   m: MatchMeeting,
   ctx: MatchContext,
 ): { key: ProjectKey; match: ProjectMatch } | null {
   if (m.allDay) return null;
+  const byRef = matchByRef(m, ctx);
+  if (byRef) return byRef;
   const client = matchClient(m, ctx);
   // Someone from outside the agency is invited but we can't tell which client: never fall back to the agency's
   // own or personal projects, or a client's call could land (and its notes be filed) in an internal project.

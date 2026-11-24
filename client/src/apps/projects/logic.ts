@@ -1,4 +1,5 @@
 import type { TeamMember } from '../../../../shared/contract.ts';
+import { foldRef, nearRefs, refCandidates } from '../../../../shared/project-refs.ts';
 import { matchedKey } from '../../../../shared/projects.ts';
 import {
   INTERNAL_CLIENT,
@@ -73,8 +74,37 @@ export interface Filters {
   service: string;
   /** Only projects whose card is missing or unreadable. */
   noCard: boolean;
+  /** Typed in the search box: matches a title, folder name or project code. */
+  query: string;
 }
-export const NO_FILTERS: Filters = { mine: false, status: '', owner: '', service: '', noCard: false };
+export const NO_FILTERS: Filters = {
+  mine: false,
+  status: '',
+  owner: '',
+  service: '',
+  noCard: false,
+  query: '',
+};
+
+/** The typed text without brackets or spaces, compared as a project code (any case, O and 0 alike in the client part). */
+const codeText = (q: string): string => foldRef(q.replace(/[[\]\s]/g, ''));
+
+/** True when the search text is a card's code (decision 7's folding), or part of its title or folder name. */
+export function matchesQuery(c: ProjectCard, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (c.title.toLowerCase().includes(q) || c.slug.replace(/-/g, ' ').includes(q) || c.slug.includes(q))
+    return true;
+  return c.ref ? foldRef(c.ref) === codeText(query) : false;
+}
+
+/** "Did you mean AST4K7?": the live codes one slip from what was typed, only when it is shaped like a code. */
+export function didYouMean(query: string, cards: readonly ProjectCard[]): string[] {
+  const words = refCandidates(query.replace(/[[\]]/g, ' '));
+  if (words.length !== 1 || query.replace(/[[\]\s]/g, '').length !== words[0]?.length) return [];
+  const refs = cards.filter((c) => c.refState === 'ok' && c.ref && !c.archived).map((c) => c.ref as string);
+  return nearRefs(words[0], refs);
+}
 
 /** True when the project has no usable card. */
 export const needsCard = (c: ProjectCard): boolean => c.card !== 'ok';
@@ -90,6 +120,7 @@ export function filterProjects(cards: readonly ProjectCard[], f: Filters, me: st
     else if (f.status && c.status !== f.status) return false;
     if (f.owner && c.owner !== f.owner) return false;
     if (f.service && !c.service.includes(f.service)) return false;
+    if (!matchesQuery(c, f.query)) return false;
     return true;
   });
 }

@@ -26,7 +26,14 @@ import { findCallNote, type NoteCard } from './call-notes.ts';
 import { readClientAliases } from './client-aliases.ts';
 import { readMembers } from './identity.ts';
 import { gitIgnored } from './library.ts';
-import { domainOf, type MatchContext, matchMeeting, meetingEndMs, websiteDomain } from './meeting-match.ts';
+import {
+  cleanMeetingRefs,
+  domainOf,
+  type MatchContext,
+  matchMeeting,
+  meetingEndMs,
+  websiteDomain,
+} from './meeting-match.ts';
 import type { ProjectsIndex } from './projects.ts';
 import { readText } from './util.ts';
 
@@ -82,6 +89,7 @@ function parseCache(text: string): { generated: string; meetings: CachedMeeting[
         attendees.push({ name: str(x.name), email: str(x.email) });
       }
     }
+    const refs = cleanMeetingRefs(e.refs);
     meetings.push({
       id: e.id,
       title: str(e.title) ?? '',
@@ -90,6 +98,7 @@ function parseCache(text: string): { generated: string; meetings: CachedMeeting[
       allDay: e.allDay === true,
       location: null, // never used, never kept
       attendees,
+      ...(refs.length > 0 ? { refs } : {}),
     });
   }
   return { generated: r.generated, meetings };
@@ -149,6 +158,7 @@ export function createProjectMeetings(deps: ProjectMeetingsDeps): ProjectMeeting
       })),
       ignoreDomains: [...agency],
       selfEmails: self ? [self] : [],
+      ...(index.refs ? { refs: index.refs } : {}),
     };
   }
 

@@ -6,6 +6,7 @@
  * (`AppSlot.search`) and each section tool's own (`ToolSlot.search`, which checks its own visibility from `ctx.ads`), with async sources last so a late answer never moves the highlight.
  */
 import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import { foldRef, refCandidates } from '../../../shared/project-refs.ts';
 import { dueInWords } from '../format.ts';
 import { helpLibrary } from '../help/library.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
@@ -208,6 +209,13 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
   };
 }
 
+/** A project code typed with brackets, spaces or in lower case reads as the folded code; any other text is left alone. */
+function codeQuery(query: string): string {
+  const bare = query.replace(/[[\]\s]/g, '');
+  const words = refCandidates(query.replace(/[[\]]/g, ' '));
+  return words.length === 1 && words[0]?.length === bare.length ? foldRef(bare) : query;
+}
+
 /**
  * Projects (decision 14): matched on title, the client's name and aliases, and the slug. Archived projects
  * are left out. Choosing one sets the picker ("Filter to this project"), which narrows Home, To-dos,
@@ -216,9 +224,9 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
 const projects: SearchSource = {
   id: 'projects',
   title: 'Projects',
-  search: (query, ctx) =>
+  search: (rawQuery, ctx) =>
     ranked(
-      query,
+      codeQuery(rawQuery),
       (ctx.projects ?? []).filter((p) => !p.archived),
       (p) => {
         const client = ctx.clients.find((c) => c.slug === p.client);
@@ -229,6 +237,8 @@ const projects: SearchSource = {
             p.slug.replace(/-/g, ' '),
             client?.name ?? p.client ?? '',
             ...(client?.aliases ?? []),
+            // The project code, as written and folded (O/0, I/1 in the client part).
+            ...(p.ref ? [p.ref, foldRef(p.ref)] : []),
           ],
         };
       },

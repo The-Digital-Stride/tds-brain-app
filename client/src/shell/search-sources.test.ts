@@ -625,6 +625,20 @@ describe('the Projects group', () => {
     expect(hits('projects', 'old site', withProjects())).toEqual([]);
   });
 
+  it('finds a project by its code: any case, brackets ignored, O and 0 alike in the client part', () => {
+    const coded = [
+      card({ ref: 'H2O4K7', refState: 'ok' }),
+      card({ key: 'northwind/seo-retainer', slug: 'seo-retainer', client: 'northwind', ref: 'NWD5M2' }),
+    ];
+    const ids = (q: string) =>
+      hits('projects', q, withProjects({ projects: coded }))
+        .map((h) => h.id)
+        .filter((id) => !id.endsWith('#filter'));
+    expect(ids('[nwd5m2]')).toEqual(['northwind/seo-retainer']);
+    expect(ids('NWD5M2')).toEqual(['northwind/seo-retainer']);
+    expect(ids('h204k7')).toEqual(['acme-heating/website-rebuild']);
+  });
+
   it('opens the project page first, with "Filter to this project" as the second action', () => {
     const [open, filter] = hits('projects', 'website', withProjects());
     expect(open?.label).toBe('Acme Heating · Website rebuild');

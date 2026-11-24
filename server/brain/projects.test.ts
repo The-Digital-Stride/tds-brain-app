@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ClientInfo, Identity, TodoItem } from '../../shared/contract.ts';
 import { TodoChangeError } from '../../shared/contract.ts';
+import { PROJECTS_REFS_CAPABILITY } from '../../shared/project-refs-contract.ts';
 import {
   INTERNAL_CLIENT,
   PROJECTS_ARCHIVE_CAPABILITY,
@@ -74,7 +75,11 @@ const todoText = (fields: Record<string, string>) =>
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')}\n---\n\n# To-do\n`;
 
-const CLIENTS: ClientInfo[] = ['acme', 'harvey-nash', INTERNAL_CLIENT].map((slug) => ({ slug, name: slug }));
+const CLIENTS: ClientInfo[] = ['acme', 'harvey-nash', INTERNAL_CLIENT].map((slug) => ({
+  slug,
+  name: slug,
+  ...(slug === 'acme' ? { code: 'ACM' } : {}),
+}));
 
 interface Fakes {
   skillRuns: ProjectAction[];
@@ -1248,6 +1253,73 @@ describe('archive locations in the walk', () => {
     const denied = service({ mayChange: async () => false });
     fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_ARCHIVE_CAPABILITY];
     expect((await denied.list(ME)).canArchive).toBe(false);
+  });
+});
+
+describe('project codes', () => {
+  const V = 'c'.repeat(64);
+  it('reads ref: onto each card with its state, and resolves through the index', async () => {
+    put('clients/acme/projects/a/project.md', card('A', 'ref: acm4k7\n'));
+    put('clients/acme/projects/b/project.md', card('B'));
+    put('clients/harvey-nash/projects/c/project.md', card('C'));
+    put('clients/acme/projects/d/project.md', card('D', 'ref: nonsense\n'));
+    folder('personal/projects/p');
+    put('personal/projects/p/project.md', card('P', 'ref: ACM5M2\n'));
+    const s = service();
+    const { projects } = await s.list(ME);
+    const state = (k: string) => byKey(projects, k)?.refState;
+    expect(byKey(projects, 'acme/a')).toMatchObject({ ref: 'ACM4K7', refState: 'ok' });
+    expect(state('acme/b')).toBe('missing');
+    expect(state('harvey-nash/c')).toBe('no-client-code');
+    expect(byKey(projects, 'acme/d')).toMatchObject({ ref: null, refState: 'missing' });
+    expect(state('personal/p')).toBe('personal');
+    const idx = await s.index();
+    expect(idx.refs?.resolve('ACM4K7')).toBe('acme/a');
+    expect(idx.refs?.resolve('ACM5M2')).toBeNull();
+  });
+
+  it('marks the same ref on two cards as duplicate, and resolves neither', async () => {
+    put('clients/acme/projects/a/project.md', card('A', 'ref: ACM4K7\n'));
+    put('clients/harvey-nash/projects/b/project.md', card('B', 'ref: ACM4K7\n'));
+    const s = service();
+    const { projects } = await s.list(ME);
+    expect(byKey(projects, 'acme/a')).toMatchObject({
+      refState: 'duplicate',
+      refDuplicateOf: ['harvey-nash/b'],
+    });
+    expect((await s.index()).refs?.resolve('ACM4K7')).toBeNull();
+  });
+
+  it('sets canRef from the capability and roles, and canRefAll for the Owner only', async () => {
+    put('clients/acme/projects/a/project.md', card('A'));
+    const s = service();
+    expect((await s.list(ME)).canRef).toBe(false);
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_REFS_CAPABILITY];
+    s.changed();
+    expect(await s.list(ME)).toMatchObject({ canRef: true, canRefAll: true });
+    expect(await s.list({ ...ME, role: 'team' })).toMatchObject({ canRef: true, canRefAll: false });
+    const denied = service({ mayChange: async () => false });
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_REFS_CAPABILITY];
+    expect(await denied.list(ME)).toMatchObject({ canRef: false, canRefAll: false });
+  });
+
+  it('runs a ref change through the script, and refuses all for a non-Owner or without the capability', async () => {
+    put('clients/acme/projects/a/project.md', card('A'));
+    const s = service();
+    await expect(s.change({ kind: 'ref', key: 'acme/a', expect: V }, ME)).rejects.toMatchObject({
+      code: 'not-allowed',
+    });
+    fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_REFS_CAPABILITY];
+    await expect(s.change({ kind: 'ref', all: true }, { ...ME, role: 'team' })).rejects.toMatchObject({
+      code: 'not-allowed',
+    });
+    expect(fakes.skillRuns).toEqual([]);
+    await s.change({ kind: 'ref', key: 'acme/a', expect: V }, ME);
+    await s.change({ kind: 'ref', all: true }, ME);
+    expect(fakes.skillRuns).toEqual([
+      { kind: 'ref', key: 'acme/a', expect: V },
+      { kind: 'ref', all: true },
+    ]);
   });
 });
 

@@ -166,6 +166,11 @@ named here or it isn't one.
    notes", which opens the note as a file row does. A stale calendar shows a `.hint` line, "Calendar last checked
    {d Mon}.", above the rows or the empty line. The next meeting within 14 days also shows in Coming up as a plain
    "Meeting: {title}" row.
+   A project's code (Overview, above the cards; `.proj-ref`) is a label "Project code", the code in `--mono`
+   (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); "Copied"
+   shows beside it for two seconds (`useCopy`) and is announced. A `.proj-note` line says where to put it. "Make a
+   code" is a standard small button; replacing a duplicate's code uses `Confirm` (primary). The Projects search is
+   the library's `.lib-search` field and also finds a code.
 2. **Trailing order in a row**, left to right: star → the item's utility (Edit, Open, the expand chevron) →
    remove (bin, or X for a chip or a file added to a to-do or project) at the very edge. At most three icons. Where the row's main action is an icon
    (a to-do's blue chat button), that icon takes the edge and nothing destructive sits in the row.

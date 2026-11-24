@@ -173,4 +173,13 @@ Measured in the browser: 281px tall at 1280px with 1 all-day + 2 timed today (wa
 
 ## Review outcomes
 
-(to fill)
+- Correctness/link-safety/privacy reviewer (opus): no findings (tried ~two dozen link bypasses; dates incl. DST and
+  roll-overs; brain patch applied to a scratch copy). Coverage gap added: recurring instances sharing an id get
+  their own call link.
+- Design and layout expert (opus): redesign above; narrow-card blocker (project link hidden by the ellipsis, so a
+  focusable link could be invisible) fixed by measuring the card itself (`container-type`), wrapping the meta at
+  every width, and moving Join under the text below 360px. Signed off.
+- Overseer (fable): signed off, no blockers. Added: full title on hover. Tell Ian: Join is an addition he didn't
+  ask for; gm Step 3's "leave out declined" line also changes teammates' Workbench. Watch: on team seats Join and
+  the non-meeting filter depend on Claude writing `join`/`kind` through the connector; check one teammate's cache
+  after their next /gm.

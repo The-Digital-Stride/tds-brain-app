@@ -117,7 +117,9 @@ function MeetingRow({
         )}
       </span>
       <span className="line-text">
-        <span className="line-title">{m.title}</span>
+        <span className="line-title" title={m.title}>
+          {m.title}
+        </span>
         {meta.length ? <span className="line-meta">{meta}</span> : null}
       </span>
       <span className="meet-actions">

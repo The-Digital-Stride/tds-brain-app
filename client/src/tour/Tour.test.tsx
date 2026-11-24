@@ -33,7 +33,10 @@ class FakeEventSource {
 
 const { App } = await import('../App.tsx');
 const { startTour } = await import('./index.ts');
-const { TOUR_STEPS } = await import('./steps.ts');
+const { TOUR_STEPS, TOUR_VERSION } = await import('./steps.ts');
+/** Steps that show only for some people: Working on once the brain has projects, the Workbench for Ads users. */
+const SOMETIMES = new Set(['working-on', 'workbench']);
+const ALWAYS = TOUR_STEPS.filter((s) => !SOMETIMES.has(s.id));
 
 const prefs = {
   pins: [],
@@ -97,16 +100,23 @@ describe('when the tour starts', () => {
     const d = await dialog();
     expect(d.getAttribute('aria-labelledby')).toBeTruthy();
     expect(title()).toBe('Welcome to TDS Cortex');
-    expect(d.textContent).not.toContain('TDS Brain is now');
+    expect(d.textContent).toContain('where you work with Claude');
+    expect(d.textContent).not.toContain('TDS Brain');
   });
 
-  it('tells someone with earlier chats that TDS Brain is now TDS Cortex', async () => {
+  it('tells someone with earlier chats that Cortex has grown, and no longer mentions the rename', async () => {
     setup({}, [pastChat]);
     render(<App />);
     const d = await dialog();
     expect(title()).toBe('Welcome to TDS Cortex');
-    expect(d.textContent).toContain('TDS Brain is now TDS Cortex');
-    expect(d.textContent).toContain('Nothing you rely on has moved');
+    expect(d.textContent).toContain('has grown since you last looked round');
+    expect(d.textContent).not.toContain('TDS Brain');
+  });
+
+  it('shows again to someone who saw an older version', async () => {
+    setup({ tourSeen: TOUR_VERSION - 1 }, [pastChat]);
+    render(<App />);
+    await dialog();
   });
 
   it('starts when tourSeen is below the current version', async () => {
@@ -116,7 +126,7 @@ describe('when the tour starts', () => {
   });
 
   it('does not start once seen, in prefs or in the fallback', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -147,7 +157,7 @@ describe('after the tour', () => {
     await dialog();
     fireEvent.click(screen.getByRole('button', { name: 'Skip tour' }));
     await waitFor(() =>
-      expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: 1, whatsNewSeen: '0.40.0' }),
+      expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: TOUR_VERSION, whatsNewSeen: '0.40.0' }),
     );
     cleanup();
     vi.clearAllMocks();
@@ -156,11 +166,11 @@ describe('after the tour', () => {
     render(<App />);
     await dialog();
     fireEvent.click(screen.getByRole('button', { name: 'Skip tour' }));
-    await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: 1 }));
+    await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: TOUR_VERSION }));
   });
 
   it('moves to Home first when it starts on another view', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     fireEvent.click(
@@ -173,7 +183,7 @@ describe('after the tour', () => {
   });
 
   it('a replay that the palette interrupts comes back when it closes', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     act(() => startTour());
@@ -196,11 +206,11 @@ describe('walking through', () => {
       next();
       seen.push(title());
     }
-    expect(seen).toEqual(['Welcome to TDS Cortex', ...TOUR_STEPS.map((s) => s.title)]);
+    expect(seen).toEqual(['Welcome to TDS Cortex', ...ALWAYS.map((s) => s.title)]);
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     next();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: 1 });
+    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: TOUR_VERSION });
   });
 
   it('skips a step whose anchor is hidden', async () => {
@@ -260,7 +270,7 @@ describe('accessibility', () => {
       focused.push(this);
       real.call(this, o);
     });
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     (document.activeElement as HTMLElement | null)?.blur();
@@ -323,7 +333,7 @@ describe('finishing', () => {
     await dialog();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: 1 });
+    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: TOUR_VERSION });
   });
 
   it('Skip tour saves', async () => {
@@ -331,7 +341,7 @@ describe('finishing', () => {
     await dialog();
     fireEvent.click(screen.getByRole('button', { name: 'Skip tour' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: 1 });
+    expect(api.updatePrefs).toHaveBeenCalledWith({ tourSeen: TOUR_VERSION });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -355,7 +365,7 @@ describe('finishing', () => {
 
 describe('focus, keys and replay', () => {
   it('moves focus into the card and puts it back afterwards', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     const chats = document.querySelector('button.rail-item[data-dock-label="Chats"]') as HTMLElement;
@@ -369,7 +379,7 @@ describe('focus, keys and replay', () => {
   });
 
   it('replays through startTour even when seen', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -379,7 +389,7 @@ describe('focus, keys and replay', () => {
   });
 
   it('closes a pushing drawer and shows Home when it starts', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
     const todos = document.querySelector('button.rail-item[data-dock-label="To-dos"]') as HTMLElement;
@@ -404,11 +414,28 @@ describe('focus, keys and replay', () => {
 });
 
 describe('anchors', () => {
+  it('scrolls each step’s target into view, so the spotlight is never off-screen', async () => {
+    const scrolled: Element[] = [];
+    const scroll = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      render(<App />);
+      await dialog();
+      next();
+      await waitFor(() => expect(scrolled).toContain(document.querySelector(ALWAYS[0]?.anchor ?? 'body')));
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it('finds every anchor on the real Home, rail and sheet bar', async () => {
-    setup({ tourSeen: 1 });
+    setup({ tourSeen: TOUR_VERSION });
     render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Home' });
-    for (const step of TOUR_STEPS) {
+    for (const step of ALWAYS) {
       expect(document.querySelector(step.anchor ?? 'body'), `${step.id}: ${step.anchor}`).not.toBeNull();
     }
   });

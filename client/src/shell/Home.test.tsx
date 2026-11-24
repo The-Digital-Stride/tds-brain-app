@@ -9,6 +9,7 @@ import type {
   TodoItem,
 } from '../../../shared/contract.ts';
 import { openPicker, pickOption } from '../test/pick.ts';
+import { TOUR_VERSION } from '../tour/steps.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -79,7 +80,7 @@ const boot = {
     lastClient: null,
     todoPanelOpen: false,
     directWrites: false,
-    tourSeen: 1,
+    tourSeen: TOUR_VERSION,
     // Every to-do and chat these tests open from Home is pinned: Home lists only what is pinned.
     favouriteTodos: ['t-late.md', 't-today.md', 't-a.md', 'personal/t-p.md', 't-new.md'],
     favouriteChats: [SID1, SID2],

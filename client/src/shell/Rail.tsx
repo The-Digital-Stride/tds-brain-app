@@ -46,6 +46,8 @@ interface ItemProps {
   count?: number;
   after?: ReactNode;
   keys?: string;
+  /** For app buttons: the app's id, so the tour can point at it in both widths. */
+  app?: string;
   choose: () => void;
 }
 
@@ -62,6 +64,7 @@ function Item({
   count,
   after,
   keys,
+  app,
   choose,
 }: ItemProps) {
   return (
@@ -75,6 +78,7 @@ function Item({
       aria-controls={drawer ? DOCK_IDS.left : undefined}
       data-dock-label={drawer ? (drawer.label ?? DRAWER_LABELS[drawer.name]) : undefined}
       data-open={drawer?.open || undefined}
+      data-app={app}
       aria-keyshortcuts={keys}
       onClick={(e) => {
         // Safari doesn't focus a clicked button; the drawer returns focus to its opener on close.
@@ -233,6 +237,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
           <Item
             choose={choose}
             key={a.id}
+            app={a.id}
             icon={a.icon}
             label={a.title}
             wide={showsNames}
@@ -295,6 +300,7 @@ export function Rail({ inert = false }: { inert?: boolean }) {
               <Item
                 choose={choose}
                 key={a.id}
+                app={a.id}
                 icon={a.icon}
                 label={a.title}
                 wide={showsNames}

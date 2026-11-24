@@ -447,6 +447,36 @@ export interface DoneTodo {
   projectMatch?: TodoProjectMatch;
 }
 
+/**
+ * A teammate's open TDS to-do, shown read only (done-todos plan, decision 10): from `todo/<id>`, never personal.
+ * `GET ROUTES.teamTodo?id=<id>`; 404 when it isn't in `todo/` any more.
+ */
+export interface TeamTodo {
+  /** `team:todo/<id>`: never equal to a TodoItem.key, AskedTodo.key or DoneTodo.key. */
+  key: string;
+  /** The file name, e.g. "20261113-send-the-quote.md". Also its history key (TodoItem.key for TDS). */
+  id: string;
+  /** Brain-relative path: `todo/<id>`. */
+  path: string;
+  title: string;
+  /** Team slug of who has it; null when it is open to anyone. */
+  assignee: string | null;
+  /** The roster's name for `assignee`, else the slug; null when `assignee` is null. */
+  assigneeName: string | null;
+  /** YYYY-MM-DD from frontmatter `due`, else null. */
+  due: string | null;
+  /** Everything below the frontmatter, trimmed. Shown read only. */
+  details: string;
+  /** The file's fingerprint, as TodoItem.version. */
+  version: string;
+  /** As TodoItem.attachments. Shown read only. */
+  attachments: TodoAttachment[];
+  client: string | null;
+  project: string | null;
+  stage: string | null;
+  projectMatch?: TodoProjectMatch;
+}
+
 /** `GET ROUTES.doneTodos`. */
 export interface DoneTodoList {
   /** Every finished to-do this person may see, most recently finished first; unknown dates last. */
@@ -1996,6 +2026,7 @@ export const ROUTES = {
   /** `GET` → AskedTodoList. `no-store`. */
   askedTodos: '/api/todos/asked',
   doneTodos: '/api/todos/done',
+  teamTodo: '/api/todos/team',
   /** `GET ?key=` → TodoHistoryResponse. `no-store`. 400 `bad-request` for a bad key, 404 `not-found`. */
   todoHistory: '/api/todos/history',
   /**

@@ -89,6 +89,15 @@ project's finished to-dos.
    isn't a new app, rail item or Home feature.
    Plain: the help page says where finished to-dos are.
 
+10. **Teammates' open to-dos open read-only from a project page** (Ian, 2026-11-24, added mid-task: "Show
+   everyone's to-dos on the project" → chose "open teammates' to-dos"). A project's To-dos tab already
+   lists every TDS to-do in the project, but a teammate's row was plain text. It becomes a button that
+   opens the panel read-only, like a done to-do: details, files, history, "With Ben McAdam", due. New
+   `GET ROUTES.teamTodo?id=<id>` returns one `TeamTodo` from `todo/` (TDS only, never `personal/`, SAFE_ID,
+   no symlinked files; 404 when it has gone). Panel key `team:todo/<id>`; its history uses the plain id
+   (the existing item history). The panel waits while it loads and closes if it has gone.
+   Plain: on a project page you can open and read any teammate's to-do, but only change your own.
+
 ## Open questions for the overseer
 
 Decided by the overseer (2026-11-24): A keep the git fallback (46% have no stamp); B keep the box, Done

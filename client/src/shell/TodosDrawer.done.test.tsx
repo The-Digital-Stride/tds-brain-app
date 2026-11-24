@@ -272,6 +272,15 @@ const team = (over: Partial<TeamTodo> = {}): TeamTodo => ({
 });
 
 describe("a team: panel key (a teammate's open to-do)", () => {
+  it('switches to my own key when the to-do turns out to be mine (passed to me)', async () => {
+    api.teamTodo.mockResolvedValue(team({ assignee: 'sam-example', assigneeName: 'Sam Example' }));
+    render(<TodosDrawer />);
+    act(() => fakeShell.dispatch({ type: 'open-todo', key: TEAM_KEY, mode: 'read' }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({ type: 'open-todo', key: 't.md', mode: 'read', force: true }),
+    );
+  });
+
   it('waits for a slow load past the give-up time, then reads it with no edit buttons', async () => {
     let finish: (t: TeamTodo) => void = () => {};
     api.teamTodo.mockReturnValue(new Promise<TeamTodo>((r) => (finish = r)));

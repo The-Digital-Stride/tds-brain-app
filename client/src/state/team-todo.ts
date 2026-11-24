@@ -39,8 +39,9 @@ export const teamTodoStore = {
     if (running) return running;
     if (!key.startsWith(PREFIX)) return Promise.resolve();
     set(key, { ...teamTodoStore.get(key), loading: true });
-    const p = api
-      .teamTodo(key.slice(PREFIX.length))
+    // Inside the promise, so a request that throws at once is a failed load, never a broken click.
+    const p = Promise.resolve()
+      .then(() => api.teamTodo(key.slice(PREFIX.length)))
       .then(
         (item) => set(key, { item, loading: false, error: null }),
         (e: unknown) => {
@@ -56,9 +57,10 @@ export const teamTodoStore = {
     inflight.set(key, p);
     return p;
   },
-  /** Fetches the first time only. */
+  /** Fetches the first time, and again while nothing good has come back (a failed or missing one may be back). */
   ensure(key: string): void {
-    if (entries.has(key)) return;
+    const e = entries.get(key);
+    if (e && (e.item !== null || e.loading)) return;
     void teamTodoStore.refresh(key);
   },
   /** Refreshes every key already loaded (the brain changed). */
@@ -82,4 +84,12 @@ export function useTeamTodo(key: string | null): TeamSnapshot {
     if (key !== null) teamTodoStore.ensure(key);
   }, [key]);
   return s;
+}
+
+/**
+ * Call just before opening the panel on a `team:` key: starts a fresh load now, so the panel sees it loading on its
+ * first render (an old failure would otherwise close it at once, and a cached copy may be out of date).
+ */
+export function primeTeamTodo(key: string): void {
+  if (key.startsWith(PREFIX)) void teamTodoStore.refresh(key);
 }

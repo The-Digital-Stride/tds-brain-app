@@ -4,7 +4,7 @@ import type { TeamTodo } from '../../../shared/contract.ts';
 const api = vi.hoisted(() => ({ teamTodo: vi.fn() }));
 vi.mock('../api.ts', () => ({ api }));
 
-const { teamTodoStore } = await import('./team-todo.ts');
+const { teamTodoStore, primeTeamTodo } = await import('./team-todo.ts');
 
 const item = (id: string): TeamTodo => ({
   key: `team:todo/${id}`,
@@ -65,5 +65,39 @@ describe('teamTodoStore', () => {
     expect(teamTodoStore.get(KEY).item).toBeNull();
     expect(api.teamTodo).toHaveBeenCalledTimes(1);
     expect(teamTodoStore.get('team:todo/other.md')).toMatchObject({ item: null, loading: false });
+  });
+});
+
+describe('a failed load', () => {
+  it('is tried again by ensure and by primeTeamTodo, which shows it loading at once', async () => {
+    api.teamTodo.mockRejectedValueOnce(new Error('offline'));
+    await teamTodoStore.refresh(KEY);
+    expect(teamTodoStore.get(KEY)).toMatchObject({ item: null, loading: false, error: 'offline' });
+    api.teamTodo.mockResolvedValue(item('a.md'));
+    primeTeamTodo(KEY);
+    expect(teamTodoStore.get(KEY).loading).toBe(true);
+    await teamTodoStore.refresh(KEY);
+    expect(teamTodoStore.get(KEY).item?.id).toBe('a.md');
+    expect(api.teamTodo).toHaveBeenCalledTimes(2);
+
+    teamTodoStore.reset();
+    api.teamTodo.mockReset();
+    api.teamTodo.mockRejectedValueOnce(new Error('offline'));
+    await teamTodoStore.refresh(KEY);
+    api.teamTodo.mockResolvedValue(item('a.md'));
+    teamTodoStore.ensure(KEY);
+    expect(teamTodoStore.get(KEY).loading).toBe(true);
+    await teamTodoStore.refresh(KEY);
+    expect(api.teamTodo).toHaveBeenCalledTimes(2);
+    expect(teamTodoStore.get(KEY).item?.id).toBe('a.md');
+  });
+
+  it('does not start a request that throws at once as a broken call: it is a failed load', async () => {
+    api.teamTodo.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    expect(() => primeTeamTodo(KEY)).not.toThrow();
+    await teamTodoStore.refresh(KEY);
+    expect(teamTodoStore.get(KEY).error).toBe('boom');
   });
 });

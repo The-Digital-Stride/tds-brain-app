@@ -5,6 +5,7 @@ import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
 import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
+import { primeTeamTodo } from '../../state/team-todo.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
 
@@ -42,6 +43,7 @@ export function ProjectTodos({
   const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
   // The to-do panel belongs to the To-dos drawer, so open the drawer first.
   const openPanel = (key: string) => {
+    primeTeamTodo(key);
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };
@@ -109,13 +111,18 @@ export function ProjectTodos({
                 {g.items.map((t) => (
                   <li key={t.key} className="line proj-todo">
                     {/* A teammate's to-do opens read only (its own `team:` key); only mine get the star and chat. */}
-                    <button
-                      type="button"
-                      className="proj-open"
-                      onClick={() => openPanel(t.mine ? t.key : `team:todo/${t.id}`)}
-                    >
+                    {t.mine || t.scope === 'tds' ? (
+                      <button
+                        type="button"
+                        className="proj-open"
+                        onClick={() => openPanel(t.mine ? t.key : `team:todo/${t.id}`)}
+                      >
+                        <TodoText t={t} team={team} />
+                      </button>
+                    ) : (
+                      // A personal to-do not on my lists (one with no assignee) has nothing the panel can show.
                       <TodoText t={t} team={team} />
-                    </button>
+                    )}
                     {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). Only on my
                         to-dos: the server links a chat only to a to-do on my lists, and Home lists only those stars. */}
                     {t.mine ? (

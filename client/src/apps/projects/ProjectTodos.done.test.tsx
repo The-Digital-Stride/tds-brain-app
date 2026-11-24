@@ -105,6 +105,13 @@ describe("ProjectTodos teammates' rows", () => {
     expect(screen.queryByRole('button', { name: /star|chat/i })).toBeNull();
   });
 
+  it('leaves a personal to-do that is not on my lists as plain text (it is never sent as a team: key)', () => {
+    const personal = { ...todo('p.md', false), key: 'personal/p.md', scope: 'personal' } as ProjectTodoRow;
+    render(<ProjectTodos card={card} team={[]} rows={[personal]} failed={false} reload={async () => {}} />);
+    expect(screen.getByText('Job p.md')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Job p.md/ })).toBeNull();
+  });
+
   it('still opens my own to-do by its own key', () => {
     render(
       <ProjectTodos

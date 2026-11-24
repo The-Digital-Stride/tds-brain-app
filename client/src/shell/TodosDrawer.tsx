@@ -384,6 +384,12 @@ function PanelHost({
   // has not shown up in the list yet (just added) is waited for, but only for PANEL_WAIT_MS: a key that never
   // shows up (a teammate's to-do, one already done) would otherwise leave an empty panel over a locked sheet.
   const seen = useRef<string | null>(null);
+  // A teammate's to-do that has been passed to this person since it opened is theirs now: show it as their own.
+  const passedToMe =
+    panel.key?.startsWith('team:') === true && teamTodo !== null && teamTodo.assignee === rest.me;
+  useEffect(() => {
+    if (passedToMe && teamTodo) dispatch({ type: 'open-todo', key: teamTodo.id, mode: 'read', force: true });
+  }, [passedToMe, teamTodo, dispatch]);
   useEffect(() => {
     if (panel.key === null) return;
     if (todo || asked || done || teamTodo) {
@@ -1436,7 +1442,7 @@ export function TodosDrawer() {
           done={panelDone}
           doneLoading={doneSnap.list === null && doneSnap.error === null}
           teamTodo={panelTeamKey ? teamSnap.item : null}
-          teamLoading={teamSnap.item === null && teamSnap.error === null}
+          teamLoading={teamSnap.loading || (teamSnap.item === null && teamSnap.error === null)}
           order={order}
           message={message}
           isError={isError}

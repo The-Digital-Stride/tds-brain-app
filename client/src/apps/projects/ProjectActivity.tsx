@@ -12,6 +12,7 @@ import { InviteLink } from '../../shell/MeetingActions.tsx';
 import { ShowMore } from '../../shell/ShowMore.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
+import { primeTeamTodo } from '../../state/team-todo.ts';
 import { useStore } from '../../store.tsx';
 import { openLibraryItem } from '../shared/search.ts';
 import { dateWords } from './logic.ts';
@@ -214,6 +215,7 @@ export function ProjectActivity({
   };
 
   const openTodo = (key: string) => {
+    primeTeamTodo(key);
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };

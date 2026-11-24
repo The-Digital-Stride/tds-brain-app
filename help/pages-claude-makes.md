@@ -8,7 +8,7 @@ benefit: See a finished page at once, and ask for changes without leaving the ch
 roles: all
 related: [chat-files, what-claude-did, viewing-a-file]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -35,6 +35,7 @@ Buttons at the top of the page can include **Download with TDS branding**, **Ope
 - If there's more than one version, a **Version** list lets you pick one.
 - While Claude is still writing, the page says "Claude is still working on this page."
 - Some parts of a page only work on claude.ai. Cortex then says so.
+- To keep a claude.ai page with a project, press **Add a claude.ai page** on the project's **Files** tab. See [Projects](help:projects).
 - A page never opens over something you already have open.
 
 ## Try this

@@ -8,7 +8,7 @@ benefit: You never have to guess what a word means.
 roles: all
 related: [getting-help, cortex-guide, settings]
 since: 0.38.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 ### Brain
@@ -61,7 +61,7 @@ The rail is the strip of buttons down the side of Cortex. It opens drawers and p
 
 ### Home
 
-Home is the first screen. It has the message box and your favourite cards.
+Home is the first screen. It has the message box, your meetings and your favourite cards.
 
 ### pin
 

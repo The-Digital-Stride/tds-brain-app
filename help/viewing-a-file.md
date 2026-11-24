@@ -8,7 +8,7 @@ benefit: Read a file without losing your place.
 roles: all
 related: [documents, images, pinned, chat-files]
 since: 0.38.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -23,9 +23,9 @@ The file viewer opens a document, picture or PDF in a wide panel that slides ove
 
 ## How to use it
 
-1. On Home, click a file in the **Favourite files** card. In a chat's Files tab, click the file, then press **Open**.
+1. Open a file from Documents, Images, a project's **Files** tab or search. On Home, click a file in the **Favourite files** card. In a chat's Files tab, click the file, then press **Open**.
 2. Read it. The name is at the top, with where it lives under it.
-3. Press **Open in Documents** (or **Open in Images**) to carry on in that app.
+3. Press **Open in Documents** (or **Open in Images**) to carry on in that app. It opens with the file's details showing.
 4. Press **Download** to save a copy.
 5. Press the star to make it a favourite.
 6. Press **Close file**, or press Esc, to go back.

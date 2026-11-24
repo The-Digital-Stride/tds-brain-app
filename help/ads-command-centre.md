@@ -8,7 +8,7 @@ benefit: You see every regular job in one place and start each one with a single
 roles: [owner, scout]
 related: [ad-manager, ads-account-summary, workbench]
 since: 0.50.0
-reviewed: 2026-11-23
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -39,6 +39,7 @@ Ads Command Centre is for running a client's Google Ads account. The top panel s
 - The Daily standup has no **Open result**.
 - The newest buttons need the updated Ads skill in the Brain.
 - **Refresh** at the top reloads the account.
+- If you have typed scores or notes in **Rate calls** and try to leave, Cortex asks first. Press **Keep editing** to go back.
 
 ## Try this
 

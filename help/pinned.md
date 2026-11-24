@@ -29,7 +29,7 @@ Under the message box, Home shows cards for the things you have pinned. A pin is
 4. Click a row to open it. A to-do opens in the to-do panel, where **Start a chat** or **Open chat** takes you to its chat. A file opens in the viewer.
 5. Press **All to-dos**, **All chats** or **All files** to see the full lists.
 
-![Home in TDS Cortex, with the message box, the client picker and your favourite cards.](images/home-overview.webp)
+![Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and favourite cards.](images/home-overview.webp)
 
 ## Good to know
 

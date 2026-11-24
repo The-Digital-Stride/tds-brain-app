@@ -8,7 +8,7 @@ benefit: Get drafts, answers and filing done by explaining the job in plain word
 roles: all
 related: [home, chats-drawer, approvals-and-questions, documents]
 since: 0.36.0
-reviewed: 2026-11-15
+reviewed: 2026-11-24
 ---
 
 ## What it does
@@ -36,6 +36,7 @@ Claude may ask your permission, or ask you a question. See [Approvals and questi
 
 - You can attach up to 10 files, 32 MB each. They can be documents, spreadsheets, slides, text or pictures.
 - Claude files each attachment in the Brain and tells you where it went. If the client isn't clear, it asks.
+- If a chat has been quiet for a while, a check in Claude Code may hold back your message. Cortex says why and shows **Send again**. Press it to send the same message.
 - You can reopen any chat from the [Chats drawer](help:chats-drawer).
 
 ## Try this

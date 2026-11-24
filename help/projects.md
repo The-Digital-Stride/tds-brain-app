@@ -6,7 +6,7 @@ order: 3
 summary: See every project, who is on it, its to-dos and its files, in one place.
 benefit: Know how each project is going without asking around.
 roles: all
-related: [project-emails, project-codes, todos, documents, images, picking-the-client, home]
+related: [project-emails, project-codes, meetings, todos, documents, images, picking-the-client, home]
 since: 0.55.0
 reviewed: 2026-11-24
 ---
@@ -22,15 +22,15 @@ Projects shows the team's work for each client: each project's brief, team, to-d
 
 ## How to use it
 
-1. Open Projects from the rail.
+1. Open Projects, just under Home.
 2. Choose **Mine** for your projects, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what's new, what's due and the team. **To-dos** shows what is open. **Updates** logs notes, calls, emails and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images, with the same filters as Documents. **Add files** adds some from the library; the cross takes one off.
+3. Open a project. **Overview** shows what's new, what's due and the team. **To-dos** shows what is open. **Updates** logs notes, calls, emails and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images, with the same filters as Documents. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one here.
 4. **New project** adds one; **Edit** changes one. **Add to team** keeps a person marked "from to-dos".
-5. **New chat for this project** starts a chat whose files are saved in the project, under **Files**.
+5. **New chat for this project** starts a chat that saves its files here.
 6. **Move** moves a project to another client.
 7. When a project is finished, press **Archive** and choose what happens to each open to-do.
-8. Archived projects are under the **Archived** status filter. **Unarchive** brings one back.
-9. On a tidy-up notice, press **Tidy up** and review each label.
+8. Find archived projects under the **Archived** filter. **Unarchive** brings one back.
+9. On a tidy-up notice, press **Tidy up**, then check each label.
 10. To remove an archived project, press **Delete** and type its name.
 
 ## Good to know

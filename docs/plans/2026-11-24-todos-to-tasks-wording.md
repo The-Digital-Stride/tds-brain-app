@@ -115,4 +115,9 @@ No file appears in two rows.
 
 ## Review outcomes
 
-(Filled at step 10.)
+- **Overseer pre-review:** 3 blocking (guard test outside vitest's include → `scripts/`; help-shots selectors and shots.json alts unowned → Builder C; glossary pinned to `HELP_GLOSSARY_TERMS` → A and C in step), all fixed in the plan before building. Should items S1–S6 adopted (whole-line comment stripping, Go-to-only search terms, final chat line wording, extra word-map entries, What's new wording).
+- **Integration (lead):** the kits blurb in `shared/kits-contract.ts` was reverted to "to-dos" because `brain-skills/tdsapp-kits` holds a pinned copy (allowlisted); one trailing comment in `shared/contract.ts` reworded instead of allowlisted.
+- **Correctness reviewer (Opus):** no findings. Noted: some test fixtures standing in for brain file text now say "task"; each test still proves the same thing.
+- **Copy reviewer (Sonnet):** no findings.
+- **UX/UI gate (Opus):** 3 low. Fixed: "the todo skill" read like a typo (AskedList and two help pages reworded); What's new note wording ("assigned to", "starts using"). Deferred (Ad Manager frozen): Ad Manager's search keyword `'tasks'` in `client/src/tools/ad-manager/command-search.ts:42` means ⌘K "tasks" offers both Tasks and Ad Manager.
+- **Checks:** type-check, lint, 6,014 tests, build all pass; 23 help screenshots retaken; live browser check on the demo (rail "Tasks", "to-do" search → Tasks, no "to-do" on Home, drawer or panel, no page errors).

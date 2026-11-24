@@ -755,6 +755,8 @@ export function ProjectPage({
             card={card}
             team={team}
             rows={projectTodos.data?.todos ?? null}
+            done={projectTodos.data?.done}
+            doneCount={projectTodos.data?.doneCount}
             failed={projectTodos.error}
             reload={projectTodos.reload}
           />

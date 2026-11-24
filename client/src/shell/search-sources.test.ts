@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LiveSession, PastSession, SkillInfo, TodoItem, TodoList } from '../../../shared/contract.ts';
+import type {
+  DoneTodo,
+  LiveSession,
+  PastSession,
+  SkillInfo,
+  TodoItem,
+  TodoList,
+} from '../../../shared/contract.ts';
 import type { ProjectCard } from '../../../shared/projects-contract.ts';
 import type { AppSlot, SearchActions, SearchContext, SearchHit, SearchSource } from './contract.ts';
 
@@ -14,6 +21,7 @@ vi.mock('../api.ts', () => ({ api: { adsAccounts } }));
 const searchFn = vi.hoisted(() => vi.fn());
 vi.mock('../help/library.ts', () => ({ helpLibrary: { search: searchFn } }));
 
+const { doneStore } = await import('../state/todo-done.ts');
 const { SEARCH_GROUP_MAX, searchSources } = await import('./search-sources.ts');
 const { projectPageRequest } = await import('../state/client-choice.ts');
 const { adManagerSearch } = await import('../tools/ad-manager/search.ts');
@@ -128,12 +136,12 @@ describe('section tools in the sources', () => {
       fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
     );
     const ids = searchSources().map((x) => x.id);
-    expect(ids.slice(-2)).toEqual(['notes', 'ads']);
+    expect(ids.slice(-3)).toEqual(['notes', 'ads', 'done-todos']);
   });
 });
 
 describe('searchSources order', () => {
-  it('is Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats, Help, then apps', () => {
+  it('is Go to, To-dos, Open chats, Skills, Clients, Projects, Earlier chats, Help, then apps and Done to-dos', () => {
     apps.push(
       fakeApp('notes', 'Notes', { id: 'notes', title: 'Notes', search: () => ({ hits: [], total: 0 }) }),
     );
@@ -147,6 +155,7 @@ describe('searchSources order', () => {
       'earlier',
       'help',
       'notes',
+      'done-todos',
     ]);
   });
 
@@ -162,8 +171,8 @@ describe('searchSources order', () => {
     expect(
       searchSources()
         .map((s) => s.id)
-        .slice(-2),
-    ).toEqual(['notes', 'remote']);
+        .slice(-3),
+    ).toEqual(['notes', 'done-todos', 'remote']);
     expect(searchSources().at(-1)?.id).toBe('remote');
   });
 
@@ -664,5 +673,63 @@ describe('the Projects group', () => {
     });
     const [hit] = hits('todos', 'ship', withProjects({ todos: list([t]) }));
     expect(hit?.hint).toContain('Acme Heating · Website rebuild');
+  });
+});
+
+describe('Done to-dos', () => {
+  const done = (id: string, title: string, over: Partial<DoneTodo> = {}): DoneTodo => ({
+    key: `done:todo/done/${id}`,
+    id,
+    scope: 'tds',
+    path: `todo/done/${id}`,
+    title,
+    assignee: null,
+    assigneeName: null,
+    due: null,
+    details: '',
+    done: { slug: 'sam', name: 'Sam Example', at: '2026-11-12T10:00:00Z', source: 'stamp' },
+    version: 'v1',
+    attachments: [],
+    client: 'northwind',
+    project: null,
+    stage: null,
+    ...over,
+  });
+  const load = (items: DoneTodo[]) => {
+    // Seeds the shared store's list the way a finished load does.
+    doneStore.reset();
+    vi.spyOn(doneStore, 'get').mockReturnValue({
+      list: { items, historyRead: true },
+      loading: false,
+      error: null,
+    });
+  };
+
+  it('is its own group, with a title, and finds finished to-dos by title and place', () => {
+    load([done('a', 'Send the quote'), done('b', 'Book the van')]);
+    const s = source('done-todos');
+    expect(s.title).toBe('Done to-dos');
+    expect(s.idle).toBeUndefined();
+    expect(labels(hits('done-todos', 'quote'))).toEqual(['Send the quote']);
+    expect(labels(hits('done-todos', 'northwind'))).toHaveLength(2);
+    expect(hits('done-todos', 'zzz')).toEqual([]);
+  });
+
+  it('caps the group and reports the full total', () => {
+    load(Array.from({ length: 9 }, (_, i) => done(`t${i}`, `Quote ${i}`)));
+    const res = source('done-todos').search?.('quote', ctx());
+    expect(res?.hits).toHaveLength(SEARCH_GROUP_MAX);
+    expect(res?.total).toBe(9);
+  });
+
+  it('hints when and where, and choosing one reveals it', () => {
+    load([done('a', 'Send the quote'), done('b', 'Old thing', { done: null, client: null })]);
+    const [first] = hits('done-todos', 'quote');
+    expect(first?.hint).toMatch(/^Done 12 Nov/);
+    expect(first?.hint).toContain('Northwind');
+    expect(hits('done-todos', 'old')[0]?.hint).toBe('Done, date not known');
+    const actions = { revealDone: vi.fn() } as unknown as SearchActions;
+    first?.run(actions);
+    expect(actions.revealDone).toHaveBeenCalledWith('done:todo/done/a');
   });
 });

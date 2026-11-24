@@ -252,7 +252,10 @@ describe('listDoneTodos with a real git record', () => {
       GIT_COMMITTER_EMAIL: 'alex@example.test',
     };
     const git = (args: string[], date: string) =>
-      execFileSync('git', args, { cwd: root, env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+      execFileSync('git', args, {
+        cwd: root,
+        env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+      });
     git(['init', '-q'], '2026-11-01T09:00:00+00:00');
     git(['add', '-A'], '2026-11-01T09:00:00+00:00');
     git(['commit', '-q', '-m', 'add'], '2026-11-01T09:00:00+00:00');

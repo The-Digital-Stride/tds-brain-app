@@ -30,6 +30,7 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 5. Press a to-do's title to read it in a wide panel. Press **Mark as done** when it's finished.
 6. To add one, press the **+** button (1), type it and press Enter.
 7. To hand a to-do over, open it, press **Edit** and change who it's assigned to.
+8. Press **Done** to see finished to-dos, newest first. You can search them and read them, but not change them.
 
 ![The To-dos drawer with the Mine tab open.](images/todos-drawer.webp)
 
@@ -38,6 +39,7 @@ The To-dos drawer shows your to-dos and the team's open ones. They live in the B
 - TDS Cortex can't change to-dos until that switch is on. It's off by default, because to-dos are shared by the whole team.
 - Passing a personal to-do on makes it a TDS to-do, so your teammate can see it.
 - Marking something done records who did it and when.
+- **Done** shows the whole team's finished to-dos, plus your own personal ones. A project's **To-dos** tab keeps its finished ones in a folded **Done** section. Search finds them too, marked as done.
 - Open a to-do's **History** (at the bottom of the panel) to see how it changed.
 
 ## Try this

@@ -14,6 +14,7 @@ import {
   useAsyncSearch,
 } from '../state/palette.ts';
 import { useProjects } from '../state/projects.ts';
+import { useDoneTodos } from '../state/todo-done.ts';
 import { useStore } from '../store.tsx';
 import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
@@ -51,6 +52,7 @@ function PaletteDialog() {
     openPast,
     startSkill,
     revealTodo,
+    revealDoneTodo,
     requestComposerFocus,
     openTool,
     ads,
@@ -92,7 +94,10 @@ function PaletteDialog() {
     [boot, todos, sessions, ads, skillLevels, projectList],
   );
   const slots = useAsyncSearch(sources, q);
-  const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
+  // The finished to-dos load on the first search with text; the Done group re-runs when they arrive.
+  const { list: doneList } = useDoneTodos(q !== '');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `doneList` is read through the done store, not the closure.
+  const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots, doneList]);
   const options = useMemo<Option[]>(
     () => groups.flatMap((group) => group.hits.map((hit) => ({ key: optionKey(group, hit), group, hit }))),
     [groups],
@@ -176,6 +181,11 @@ function PaletteDialog() {
       skipRestore.current = true;
       dispatch({ type: 'open-drawer', drawer: 'todos' });
       revealTodo(todo);
+    },
+    revealDone: (key) => {
+      skipRestore.current = true;
+      dispatch({ type: 'open-drawer', drawer: 'todos' });
+      revealDoneTodo(key);
     },
     chooseClient: (slug) => {
       newChat({ client: slug });

@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
-import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import type { ProjectCard, ProjectDoneRow, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
 import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
@@ -12,6 +13,8 @@ export function ProjectTodos({
   card,
   team,
   rows,
+  done,
+  doneCount,
   failed,
   reload,
 }: {
@@ -19,10 +22,13 @@ export function ProjectTodos({
   team: readonly TeamMember[] | undefined;
   /** The project's open to-dos from the server, or null while loading. */
   rows: readonly ProjectTodoRow[] | null;
+  /** The project's finished to-dos, newest first. Absent from an older server: no Done section. */
+  done?: readonly ProjectDoneRow[] | undefined;
+  doneCount?: number | undefined;
   failed: boolean;
   reload: () => Promise<void>;
 }) {
-  const { todos, boot, toggleFavouriteTodo, openSettings } = useStore();
+  const { todos, boot, toggleFavouriteTodo, openSettings, revealDoneTodo } = useStore();
   const { dispatch } = useShell();
   // The same star as the To-dos drawer's rows; focus follows a to-do whose star moved it.
   const favs = boot?.prefs?.favouriteTodos ?? NO_FAVOURITES;
@@ -39,6 +45,31 @@ export function ProjectTodos({
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };
+  // A finished to-do opens in the drawer's read-only panel, as the global search does it.
+  const openDone = (key: string) => {
+    dispatch({ type: 'open-drawer', drawer: 'todos' });
+    revealDoneTodo(key);
+  };
+  const doneSection =
+    done && done.length > 0 ? (
+      <Fold title="Done" count={doneCount ?? done.length} defaultOpen={false}>
+        <ul className="lib-list">
+          {done.map((t) => (
+            <li key={t.key} className="line proj-todo">
+              <button type="button" className="proj-open" onClick={() => openDone(t.key)}>
+                <span className="line-text">
+                  <span className="line-title">{t.title}</span>
+                  <span className="line-meta">
+                    {t.doneDate ? `Done ${dateWords(t.doneDate)}` : 'Date not known'}
+                    {t.assignee ? ` · ${personName(t.assignee, team)}` : ''}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Fold>
+    ) : null;
   return (
     <>
       {card.archived ? null : todos?.changes === 'switched-off' ? (
@@ -65,7 +96,10 @@ export function ProjectTodos({
           Loading to-dos…
         </p>
       ) : groups.length === 0 ? (
-        <p className="proj-note">No open to-dos in this project.</p>
+        <>
+          <p className="proj-note">No open to-dos in this project.</p>
+          {doneSection}
+        </>
       ) : (
         <div className="tray lib-tray" ref={trayRef} tabIndex={-1}>
           {groups.map((g) => (
@@ -110,6 +144,7 @@ export function ProjectTodos({
               </ul>
             </section>
           ))}
+          {doneSection}
         </div>
       )}
     </>

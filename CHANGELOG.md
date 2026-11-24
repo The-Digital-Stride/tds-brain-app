@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.79.1 — 2026-11-24
+
+- **refactor**: to-dos are called tasks on every screen
+- **fix**: help says tasks instead of to-dos
+- **fix**: new screenshots and a What's new note for tasks
+- **fix**: name the todo skill clearly and tidy the What's new note
+
 ## v0.79.0 — 2026-11-24
 
 - **feat**: save a chat to its project as a summary update

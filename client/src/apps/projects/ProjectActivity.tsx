@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { MeetingLinks } from '../../../../shared/home-meetings-contract.ts';
 import {
   type ActivityItem,
   COMING_UP_DAYS,
@@ -7,6 +8,7 @@ import {
 } from '../../../../shared/project-activity-contract.ts';
 import type { ProjectKey } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { InviteLink } from '../../shell/MeetingActions.tsx';
 import { ShowMore } from '../../shell/ShowMore.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
@@ -355,16 +357,31 @@ export function ProjectActivity({
   );
 }
 
-/** A meeting in the Coming up list: a plain line, never a link. */
-type ComingRow = ComingUpItem | { text: string; date: string; overdue: false };
+/** A meeting in the Coming up list: a plain line with an Open invite link beside it. */
+type ComingRow =
+  | ComingUpItem
+  | ({ text: string; date: string; overdue: false; title: string } & Pick<
+      MeetingLinks,
+      'calendar' | 'calendarKind'
+    >);
 
 /** Coming up with the next meeting merged in, in date order (a meeting goes after to-dos on the same day). */
-function comingRows(items: ComingUpItem[], next: { title: string; start: string } | null): ComingRow[] {
+function comingRows(
+  items: ComingUpItem[],
+  next: ({ title: string; start: string } & Pick<MeetingLinks, 'calendar' | 'calendarKind'>) | null,
+): ComingRow[] {
   if (!next) return items;
   const at = new Date(next.start).getTime();
   const now = Date.now();
   if (Number.isNaN(at) || at < now || at > now + COMING_UP_DAYS * 24 * 60 * 60 * 1000) return items;
-  const row: ComingRow = { text: `Meeting: ${next.title}`, date: meetingDate(next.start), overdue: false };
+  const row: ComingRow = {
+    text: `Meeting: ${next.title}`,
+    date: meetingDate(next.start),
+    overdue: false,
+    title: next.title,
+    calendar: next.calendar,
+    calendarKind: next.calendarKind,
+  };
   const i = items.findIndex((c) => c.date > row.date);
   return i === -1 ? [...items, row] : [...items.slice(0, i), row, ...items.slice(i)];
 }
@@ -380,6 +397,13 @@ function ComingLine({ item, action }: { item: ComingRow; action: RowAction }) {
         <span className="badge" data-tone="warn">
           Overdue
         </span>
+      ) : null}
+      {'calendar' in item ? (
+        <InviteLink
+          meeting={{ calendar: item.calendar, calendarKind: item.calendarKind, join: null }}
+          title={item.title}
+          day={item.date}
+        />
       ) : null}
     </>
   );

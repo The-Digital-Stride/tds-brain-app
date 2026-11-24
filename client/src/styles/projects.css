@@ -330,6 +330,7 @@
 
   /* "Notes filed" text with its Open notes button, on the Meetings card */
   .proj-notes {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: var(--sp-8);

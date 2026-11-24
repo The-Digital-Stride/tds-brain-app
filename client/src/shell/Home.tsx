@@ -22,6 +22,7 @@ import { isNewToYou } from '../state/todo-new.ts';
 import { useStore } from '../store.tsx';
 import { ClientAsk } from './ClientAsk.tsx';
 import type { DrawerName } from './contract.ts';
+import { HomeMeetings } from './HomeMeetings.tsx';
 import { SearchSelect } from './SearchSelect.tsx';
 import { SheetBar } from './SheetBar.tsx';
 import { useShell } from './ShellProvider.tsx';
@@ -457,6 +458,7 @@ export function Home() {
           )}
 
           <div className="tray">
+            <HomeMeetings />
             {ads?.visible && ads.waiting > 0 ? (
               <section className="card" aria-labelledby="home-ads">
                 <div className="card-head">

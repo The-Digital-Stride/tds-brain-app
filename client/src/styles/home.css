@@ -130,6 +130,70 @@
     box-shadow: none;
     transform: none;
   }
+  /* Meetings card: spans both columns of the tray; rows are static (not buttons) so they don't lift. */
+  .home-meetings {
+    grid-column: 1 / -1;
+  }
+  .home-meeting {
+    --meet-when: 48px;
+    align-items: flex-start;
+  }
+  .tray .line.home-meeting:hover,
+  .tray .line.home-meeting:active {
+    background: var(--glass-92);
+    box-shadow: none;
+    transform: none;
+  }
+  .meet-when {
+    flex: none;
+    width: var(--meet-when);
+    display: flex;
+    flex-direction: column;
+    font-variant-numeric: tabular-nums;
+  }
+  .meet-start {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-size: var(--fs-body);
+    font-weight: 500;
+    color: var(--navy);
+  }
+  .meet-end {
+    font-size: var(--fs-small);
+    color: var(--iron);
+  }
+  .meet-all {
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--navy);
+  }
+  h3.meet-day {
+    margin: 0;
+    padding: var(--sp-4) var(--sp-8);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--iron);
+  }
+  .meet-group + .meet-group > h3.meet-day {
+    margin-top: var(--sp-8);
+  }
+  .meet-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-6);
+    margin-left: auto;
+  }
+  @container (max-width: 560px) {
+    .home-meeting {
+      flex-wrap: wrap;
+    }
+    .meet-actions {
+      flex-basis: 100%;
+      padding-left: calc(var(--meet-when) + var(--sp-10));
+    }
+  }
   .tray .line-meta .late {
     color: var(--danger);
     font-weight: 600;

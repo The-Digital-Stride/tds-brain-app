@@ -24,6 +24,7 @@ const api = vi.hoisted(() => ({
   updatePrefs: vi.fn(),
   libraryItems: vi.fn(),
   projects: vi.fn(),
+  homeMeetings: vi.fn(async () => ({ cache: 'none', checked: null, meetings: [] })),
 }));
 vi.mock('../api.ts', () => ({
   api,

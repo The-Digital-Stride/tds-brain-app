@@ -2,11 +2,17 @@ import { useContext, useEffect, useState } from 'react';
 import type { MeetingView, ProjectMeetingsResponse } from '../../../../shared/project-meetings-contract.ts';
 import type { ProjectKey } from '../../../../shared/projects-contract.ts';
 import { api } from '../../api.ts';
+import { InviteLink, JoinLink, joinOpen } from '../../shell/MeetingActions.tsx';
+import { meetingDate, meetingWhen, withWords } from '../../shell/meeting-words.ts';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
+import { useNow } from '../../shell/useNow.ts';
 import { projectChatPlace } from '../../state/chat-project.ts';
 import { useStore } from '../../store.tsx';
 import { openLibraryItem } from '../shared/search.ts';
+
+// Re-exported so existing imports keep working.
+export { meetingDate, meetingWhen };
 
 export interface MeetingsState {
   data: ProjectMeetingsResponse | null;
@@ -46,35 +52,12 @@ function parts(date: Date, opts: Intl.DateTimeFormatOptions): Record<string, str
   return out;
 }
 
-/** "Tue 25 Nov, 14:30" (the person's own time zone). */
-export function meetingWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const day = parts(d, { weekday: 'short', day: 'numeric', month: 'short' });
-  const time = parts(d, { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${day.weekday} ${day.day} ${day.month}, ${time.hour}:${time.minute}`;
-}
-
 /** "Tuesday 25 November at 14:30", for the File the notes prompt. */
 function promptWhen(iso: string): string {
   const d = new Date(iso);
   const day = parts(d, { weekday: 'long', day: 'numeric', month: 'long' });
   const time = parts(d, { hour: '2-digit', minute: '2-digit', hour12: false });
   return `${day.weekday} ${day.day} ${day.month} at ${time.hour}:${time.minute}`;
-}
-
-/** The meeting's date as YYYY-MM-DD in the person's own time zone (for ordering beside to-do dates). */
-export function meetingDate(iso: string): string {
-  const d = new Date(iso);
-  const p = parts(d, { year: 'numeric', month: '2-digit', day: '2-digit' });
-  return `${p.year}-${p.month}-${p.day}`;
-}
-
-function withWords(m: MeetingView): string {
-  const names = m.people.join(', ');
-  const extra = Math.max(0, m.others - m.people.length);
-  if (!names) return m.others > 0 ? `With ${m.others} ${m.others === 1 ? 'other' : 'others'}` : '';
-  return `With ${names}${extra > 0 ? ` +${extra}` : ''}`;
 }
 
 function checkedWords(iso: string | null): string {
@@ -140,6 +123,7 @@ export function ProjectMeetings({
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const { data, error, retry } = meetings;
+  const now = useNow(60_000);
 
   const clientName = clients.find((c) => c.slug === card.client)?.name ?? '';
   const place = clientName ? `${clientName} ${card.title}` : card.title;
@@ -203,36 +187,52 @@ export function ProjectMeetings({
                 label="Last meeting"
                 meeting={last}
                 action={
-                  last.notes ? (
-                    <span className="proj-notes">
-                      <span className="hint">Notes filed</span>
+                  <span className="proj-notes">
+                    {last.notes ? (
+                      <>
+                        <span className="hint">Notes filed</span>
+                        <button
+                          type="button"
+                          className="btn"
+                          data-variant="quiet"
+                          data-size="small"
+                          aria-label={`Open notes for ${last.title}`}
+                          onClick={() => last.notes && void openNotes(last.notes.id)}
+                        >
+                          Open notes
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
                         className="btn"
                         data-variant="quiet"
                         data-size="small"
-                        aria-label={`Open notes for ${last.title}`}
-                        onClick={() => last.notes && void openNotes(last.notes.id)}
+                        aria-disabled={busy || undefined}
+                        onClick={() => void fileNotes(last)}
                       >
-                        Open notes
+                        File the notes
                       </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      data-variant="quiet"
-                      data-size="small"
-                      aria-disabled={busy || undefined}
-                      onClick={() => void fileNotes(last)}
-                    >
-                      File the notes
-                    </button>
-                  )
+                    )}
+                    <InviteLink meeting={last} title={last.title} day={meetingDate(last.start)} />
+                  </span>
                 }
               />
             ) : null}
-            {next ? <MeetingLine label="Next meeting" meeting={next} /> : null}
+            {next ? (
+              <MeetingLine
+                label="Next meeting"
+                meeting={next}
+                action={
+                  <span className="proj-notes">
+                    {next.join && joinOpen({ ...next, allDay: false }, now) ? (
+                      <JoinLink href={next.join} title={next.title} />
+                    ) : null}
+                    <InviteLink meeting={next} title={next.title} day={meetingDate(next.start)} />
+                  </span>
+                }
+              />
+            ) : null}
           </ul>
         )}
       </>

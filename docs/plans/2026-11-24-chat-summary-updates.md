@@ -203,12 +203,12 @@ B1 imports B2's `readChatSummary`. Order: B2 and A first (small), B1, C, D in pa
 
 ## Gates
 
-- [ ] Type-check · [ ] Tests · [ ] Lint · [ ] Build (preview on port 3878, own data folder, demo mode)
-- [ ] No unintended large deletions: `git diff origin/main --numstat | awk '$2 > 40'`
-- [ ] Domain gates: security (new route, ownership, fork safety, email rule), UX/UI expert sign-off
-- [ ] Browser check: Save to project from a chat (with and without a project), review, save, to-dos step; Updates
+- [x] Type-check · [x] Tests (306 files, 6,123 tests) · [x] Lint · [x] Build (preview on port 3878, own data folder, demo mode)
+- [x] No unintended large deletions (none over 40 lines): `git diff origin/main --numstat | awk '$2 > 40'`
+- [x] Domain gates: security (new route, ownership, fork safety, email rule), UX/UI expert sign-off
+- [x] Browser check (demo mode, 1440 and 1100): Save to project from a chat (with and without a project), review, save, to-dos step; Updates
       tab card; Overview "Chats not saved yet"
-- [ ] Real-engine check (not demo): a draft of a real project chat writes no usage-log line and runs no brain
+- [x] Real-engine check (not demo): a draft of a real project chat writes no usage-log line and runs no brain
       sync (overseer blocking 2); a chat that read email gives a draft, not a refusal (blocking 3)
 
 ## Review outcomes

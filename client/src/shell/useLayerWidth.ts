@@ -112,20 +112,27 @@ export function useLayerWidth(layer: Layer = 'viewer', sheetWidth?: number, maxW
   const { width: windowWidth } = useDesk();
   const [draft, setDraft] = useState<number | null>(null);
   const chat = layer === 'chat';
-  const limits = chat ? chatDrawerLimits(sheetWidth ?? windowWidth) : viewerLimits(windowWidth);
+  const full = chat ? chatDrawerLimits(sheetWidth ?? windowWidth) : viewerLimits(windowWidth);
+  // A session cap is the handle's real maximum too, so a drag or End can't save a width wider than is shown (which
+  // tools would then open at): correctness re-check of the design round.
+  const limits: WidthLimits =
+    maxWidth === undefined ? full : { min: full.min, max: Math.max(full.min, Math.min(full.max, maxWidth)) };
   const resizable = windowWidth > FULL_WIDTH_AT && limits.max - limits.min >= MIN_TRAVEL;
   const wanted = draft ?? (chat ? state.chatDrawerWidth : state.viewerWidth);
-  const fallback = chat ? clampWidth(CHAT_DRAWER_DEFAULT, limits) : limits.min;
-  const clamped = wanted === null ? fallback : clampWidth(wanted, limits);
-  const capped = maxWidth !== undefined && clamped > Math.max(maxWidth, limits.min);
-  const width = capped ? clampWidth(maxWidth, limits) : clamped;
+  // The width without the cap; the cap shows (inline) whenever it makes the drawer narrower than that.
+  const natural =
+    wanted === null ? (chat ? clampWidth(CHAT_DRAWER_DEFAULT, full) : full.min) : clampWidth(wanted, full);
+  const capped = natural > limits.max;
+  const width = capped ? limits.max : natural;
   const preview = useCallback((w: number) => setDraft(w), []);
+  const capMax = limits.max;
   const commit = useCallback(
     (w: number | null) => {
       setDraft(null);
-      dispatch({ type: chat ? 'set-chat-drawer-width' : 'set-viewer-width', width: w });
+      const saved = w !== null && maxWidth !== undefined ? Math.min(w, capMax) : w;
+      dispatch({ type: chat ? 'set-chat-drawer-width' : 'set-viewer-width', width: saved });
     },
-    [dispatch, chat],
+    [dispatch, chat, maxWidth, capMax],
   );
   return {
     ...limits,

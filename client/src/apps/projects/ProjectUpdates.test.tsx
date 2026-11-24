@@ -5,7 +5,7 @@ import { composeChatSummary } from '../../../../shared/chat-summary.ts';
 import type { ProjectUpdateItem } from '../../../../shared/project-updates-contract.ts';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { projectPageRequest } from '../../state/client-choice.ts';
-import { saveChatRequest } from '../../state/save-chat-request.ts';
+import { saveChatRequest, savingChat } from '../../state/save-chat-request.ts';
 import { READ_ONLY_NOTICE } from './logic.ts';
 import { card, projectList } from './testing.ts';
 
@@ -406,9 +406,12 @@ describe('chat summary entries', () => {
     expect(await screen.findByLabelText('Objective')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Updates' }).getAttribute('aria-current')).toBe('page');
     expect(saveChatRequest.get()).toBeNull();
+    // The chat drawer hides its own Save to project while this form is open, and gets it back on Cancel.
+    expect(savingChat.get()).toBe('11111111-2222-3333-4444-555555555555');
     const calls = api.projectUpdates.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByLabelText('Objective')).toBeNull());
+    expect(savingChat.get()).toBeNull();
     expect(api.projectUpdates.mock.calls.length).toBe(calls);
   });
 

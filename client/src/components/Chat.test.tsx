@@ -92,7 +92,7 @@ vi.mock('../state/projects.ts', async (orig) => ({
   useProjects: () => ({ list: h.projects, error: null, refresh: async () => {}, apply: () => {} }),
 }));
 
-const { saveChatRequest } = await import('../state/save-chat-request.ts');
+const { saveChatRequest, savingChat } = await import('../state/save-chat-request.ts');
 const { projectPageRequest } = await import('../state/client-choice.ts');
 const { pickOption } = await import('../test/pick.ts');
 const { ChatView } = await import('./Chat.tsx');
@@ -749,6 +749,34 @@ describe('Save to project', () => {
     expect(projectPageRequest.get()).toBe('acme/site');
     expect(h.openView).toHaveBeenCalledWith('app:projects');
     expect(h.openChat).toHaveBeenCalledWith('s1', { in: 'drawer' });
+  });
+
+  it("is hidden in the drawer while this chat's form is open on Projects, and kept in the full-screen bar", () => {
+    h.chat = chatState('idle');
+    h.live.sdkSessionId = SDK;
+    h.projects = list(true);
+    savingChat.set(SDK);
+    try {
+      const { unmount } = render(
+        <ShellProvider>
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      expect(save()).toBeNull();
+      unmount();
+      render(sheet());
+      expect(save()).toBeTruthy();
+      cleanup();
+      savingChat.set('another-chat');
+      render(
+        <ShellProvider>
+          <ChatView placement="drawer" />
+        </ShellProvider>,
+      );
+      expect(save()).toBeTruthy();
+    } finally {
+      savingChat.set(null);
+    }
   });
 
   it("uses the chat's own live project without asking", () => {

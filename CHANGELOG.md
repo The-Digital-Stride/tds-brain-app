@@ -2,6 +2,17 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.77.0 — 2026-11-24
+
+- **feat**: list and search done to-dos in the drawer
+- **fix**: date open-to-anyone done to-dos and keep reveals through a stale list
+- **feat**: find done to-dos in search and on project pages
+- **fix**: name who ticked a project's done to-dos and tidy the Done tab
+- **feat**: open a teammate's to-do read-only from a project page
+- **feat**: open a teammate's to-do read-only from the Overview cards
+- **fix**: retry a teammate's to-do, keep personal rows out, follow a hand-over
+- **fix**: keep finished to-dos in search current with the drawer closed
+
 ## v0.76.0 — 2026-11-24
 
 - **feat**: show the client's background on a project's Overview

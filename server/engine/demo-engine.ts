@@ -5,6 +5,7 @@
  * (`session-manager.test.ts`). Replies depend on the first word of the prompt:
  *   `approve ...` an Edit the person must allow or refuse; `ask ...` a question with options; anything else
  *   a short reply after one Read step. The level picker's own call (no session file, no tools) gets a fixed pick.
+ *   A chat summary draft (a fork of the chat: `forkSession`) gets a fixed draft, DEMO_CHAT_DRAFT.
  */
 import { randomUUID } from 'node:crypto';
 import type { Options, PermissionResult, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -12,6 +13,17 @@ import type { EngineFns, EngineQuery, HistoryMessage, PastInfo } from './session
 
 /** The level picker's fixed answer: the same on every Mac, so pictures match. */
 export const DEMO_PICK = { tier: 'standard', helpers: false, reason: 'A short, everyday request.' } as const;
+
+/** A chat summary draft's fixed answer (plan 2026-11-24-chat-summary-updates): the same on every Mac. */
+export const DEMO_CHAT_DRAFT = {
+  objective: 'Tidy the call notes for Acme Heating and agree the follow-ups.',
+  outcome: 'The notes are grouped by topic, with three follow-ups listed at the end.',
+  figures: ['Boiler quote: £4,200 including VAT', 'Next call in 3 weeks'],
+  documents: [1],
+  nextSteps: ['Send the boiler quote to the office manager', 'Book the next call'],
+  fromEmail: false,
+  nothingNew: false,
+} as const;
 
 /** The chat's fixed "how full" reading (the engine's own call): 30% of the summarise point, the same every run. */
 export const DEMO_CONTEXT = {
@@ -175,6 +187,11 @@ class DemoQuery implements EngineQuery {
   }
 
   private async turn(text: string): Promise<void> {
+    // A side copy of a chat for its summary: answer the draft, touch nothing.
+    if (this.options.forkSession === true) {
+      this.result(JSON.stringify(DEMO_CHAT_DRAFT));
+      return;
+    }
     if (this.isPicker()) {
       this.result(JSON.stringify(DEMO_PICK));
       return;

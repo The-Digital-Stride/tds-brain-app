@@ -103,3 +103,9 @@ the merge (Ian's standing yes, 2026-11-23); the checks are in the file.
 `r2-email.md`: one edit to `.claude/rules/save-locations.md` (the only way in is `email-draft`) and one to
 `.claude/skills/gm/SKILL.md` (Step 4b makes up to 8 drafts a run for the inbox owner to approve in the app).
 Copy straight after the merge, with `tdsapp-projects` 0.6.0 (Ian's standing yes for R2); the checks are in the file.
+
+## Release 2, phase 5b: chat summaries
+
+`r2-chat-summaries.md`: copy the `tdsapp-projects` 0.7.0 skill into the brain and add one sentence to
+`.claude/rules/save-locations.md` (a chat's summary is saved with Save to project, never by Claude). Copy
+straight after the merge (Ian's standing yes for R2); the checks are in the file.

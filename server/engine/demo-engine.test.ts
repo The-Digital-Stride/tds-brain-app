@@ -1,7 +1,8 @@
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatEvent, Identity } from '../../shared/contract.ts';
-import { createDemoEngine, DEMO_CONTEXT, DEMO_PICK } from './demo-engine.ts';
+import { parseChatDraft } from './chat-summary.ts';
+import { createDemoEngine, DEMO_CHAT_DRAFT, DEMO_CONTEXT, DEMO_PICK } from './demo-engine.ts';
 import { parsePick } from './level-picker.ts';
 import { createSessionManager, type SessionManager } from './session-manager.ts';
 
@@ -169,5 +170,54 @@ describe('the level picker call', () => {
     }
     q.close();
     expect(parsePick(String(result))).toEqual(DEMO_PICK);
+  });
+});
+
+describe('a chat summary draft', () => {
+  it('an earlier demo chat drafts a fixed summary through the session manager', async () => {
+    mgr = makeManager();
+    const draft = await mgr.chatSummaries?.draft({
+      chat: '6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f',
+      project: { key: 'acme-heating/boiler', title: 'Boiler campaign', personal: false },
+      earlier: [],
+    });
+    expect(draft).toMatchObject({
+      chat: '6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f',
+      title: 'Acme Heating: tidy the call notes',
+      fields: { objective: DEMO_CHAT_DRAFT.objective, outcome: DEMO_CHAT_DRAFT.outcome },
+      fromEmail: false,
+      nothingNew: false,
+    });
+    expect((await mgr.list()).live).toHaveLength(0);
+  });
+
+  it('the fork answers the fixed draft, which the real parser accepts', async () => {
+    const engine = createDemoEngine();
+    const q = engine.query({
+      prompt: (async function* () {
+        yield {
+          type: 'user',
+          message: { role: 'user', content: 'Summarise' },
+          parent_tool_use_id: null,
+        } as SDKUserMessage;
+      })(),
+      options: {
+        resume: '6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f',
+        forkSession: true,
+        persistSession: false,
+        tools: [],
+      } as Options,
+    });
+    let result = '';
+    for await (const m of q) {
+      const r = m as { type?: string; result?: string };
+      if (r.type === 'assistant') throw new Error('a draft never shows steps');
+      if (r.type === 'result') {
+        result = String(r.result);
+        break;
+      }
+    }
+    q.close();
+    expect(parseChatDraft(result, 1)?.fields.nextSteps).toEqual([...DEMO_CHAT_DRAFT.nextSteps]);
   });
 });

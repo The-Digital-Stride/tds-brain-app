@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PROJECTS_CHAT_SUMMARY_CAPABILITY } from '../../shared/chat-summary-contract.ts';
 import type { Identity } from '../../shared/contract.ts';
 import { PROJECTS_EMAIL_CAPABILITY } from '../../shared/project-email-contract.ts';
 import { PROJECTS_UPDATES_CAPABILITY, UPDATES_PAGE } from '../../shared/project-updates-contract.ts';
@@ -69,7 +70,13 @@ function indexOf(...cards: ProjectCard[]): ProjectsIndex {
   };
 }
 function setup(
-  opts: { cards?: ProjectCard[]; caps?: string[]; may?: boolean; run?: ProjectsSkillRunner['run'] } = {},
+  opts: {
+    cards?: ProjectCard[];
+    caps?: string[];
+    may?: boolean;
+    run?: ProjectsSkillRunner['run'];
+    holds?: (id: string) => boolean | Promise<boolean>;
+  } = {},
 ) {
   const runs: unknown[] = [];
   const skill: ProjectsSkillRunner = {
@@ -85,6 +92,7 @@ function setup(
     index: async () => indexOf(...(opts.cards ?? [card()])),
     skill,
     mayChange: async () => opts.may ?? true,
+    ...(opts.holds ? { holdsChat: opts.holds } : {}),
   });
   return { svc, runs };
 }
@@ -475,5 +483,89 @@ describe('email entries (phase 5)', () => {
     expect(await can({ ...me('scout', 'zed'), name: 'Zed' })).toBe(true);
     expect(await can({ ...me('team', 'ben-mcadam'), name: 'Ben McAdam' })).toBe(false);
     expect(await can(me(), [PROJECTS_CAPABILITY, PROJECTS_UPDATES_CAPABILITY])).toBe(false);
+  });
+});
+
+describe('chat entries', () => {
+  const CHAT = '0b8f6c52-1a2b-4c3d-8e9f-0123456789ab';
+  const OTHER = '11111111-2222-4333-8444-555555555555';
+  const CAPS = [PROJECTS_CAPABILITY, PROJECTS_UPDATES_CAPABILITY, PROJECTS_CHAT_SUMMARY_CAPABILITY];
+  const chatEntry = (at: string, by = 'sam-example', chat = CHAT, title = 'Fix: "checkout"') =>
+    entry(at, by, 'chat', '**Objective:** x', `chat: ${chat}\nchat_title: '${title}'\n`);
+
+  it('reads chat and chat_title, ignoring an id that is not a session id', async () => {
+    add('2026-11-20T10:00:00Z', chatEntry('2026-11-20T10:00:00Z'));
+    add('2026-11-21T10:00:00Z', chatEntry('2026-11-21T10:00:00Z', 'sam-example', 'not-an-id'));
+    add('2026-11-19T10:00:00Z', entry('2026-11-19T10:00:00Z'));
+    const r = await setup({ caps: CAPS }).svc.read(KEY, null, me());
+    expect(r.updates[1]).toMatchObject({ kind: 'chat', chatId: CHAT, chatTitle: 'Fix: "checkout"' });
+    expect(r.updates[0]?.chatId).toBeUndefined();
+    expect(r.updates[2]?.chatId).toBeUndefined();
+    expect(r.updates[2]?.chatTitle).toBeUndefined();
+  });
+
+  it('marks chatOpenable only when this Mac holds the chat', async () => {
+    add('2026-11-20T10:00:00Z', chatEntry('2026-11-20T10:00:00Z', 'sam-example', CHAT), FOLDER, 'aaaaaa');
+    add('2026-11-21T10:00:00Z', chatEntry('2026-11-21T10:00:00Z', 'sam-example', OTHER), FOLDER, 'bbbbbb');
+    const held = await setup({ caps: CAPS, holds: async (id) => id === CHAT }).svc.read(KEY, null, me());
+    expect(held.updates.map((u) => u.chatOpenable)).toEqual([undefined, true]);
+    const none = await setup({ caps: CAPS }).svc.read(KEY, null, me());
+    expect(none.updates.some((u) => u.chatOpenable)).toBe(false);
+    const throws = await setup({
+      caps: CAPS,
+      holds: () => {
+        throw new Error('x');
+      },
+    }).svc.read(KEY, null, me());
+    expect(throws.updates.some((u) => u.chatOpenable)).toBe(false);
+  });
+
+  it('canRemove for a chat entry needs the chat capability', async () => {
+    add('2026-11-20T10:00:00Z', chatEntry('2026-11-20T10:00:00Z'));
+    expect((await setup({ caps: CAPS }).svc.read(KEY, null, me())).updates[0]?.canRemove).toBe(true);
+    const old = await setup().svc.read(KEY, null, me());
+    expect(old.updates[0]?.canRemove).toBe(false);
+  });
+
+  it('refuses a chat entry without the capability or with a bad shape, and passes a good one', async () => {
+    const good = {
+      kind: 'chat' as const,
+      summary: '**Objective:** x',
+      clientSafe: false,
+      chat: CHAT,
+      title: 'T',
+    };
+    const act = (entry: object) => ({ kind: 'update' as const, key: KEY, entry }) as never;
+    const s = setup({ caps: CAPS });
+    expect(await s.svc.change(act(good), me())).toEqual({});
+    expect(s.runs).toHaveLength(1);
+    for (const bad of [
+      { ...good, chat: 'nope' },
+      { ...good, title: '' },
+      { ...good, title: 'a\nb' },
+      { ...good, title: 'x'.repeat(121) },
+      { ...good, summary: ' ' },
+    ])
+      await expect(s.svc.change(act(bad), me())).rejects.toMatchObject({ code: 'bad-request' });
+    await expect(setup().svc.change(act(good), me())).rejects.toMatchObject({ code: 'not-allowed' });
+  });
+
+  it('chatEntries: this person, that chat, whole log, newest first', async () => {
+    for (let i = 0; i < UPDATES_PAGE + 5; i++) {
+      const at = `2026-11-20T10:${String(i).padStart(2, '0')}:00Z`;
+      add(at, entry(at), FOLDER, `n${String(i).padStart(5, '0')}`);
+    }
+    add('2026-10-01T09:00:00Z', chatEntry('2026-10-01T09:00:00Z'), FOLDER, 'old111');
+    add('2026-10-02T09:00:00Z', chatEntry('2026-10-02T09:00:00Z', 'ben-mcadam'), FOLDER, 'ben111');
+    add('2026-10-03T09:00:00Z', chatEntry('2026-10-03T09:00:00Z', 'sam-example', OTHER), FOLDER, 'oth111');
+    add('2026-10-04T09:00:00Z', chatEntry('2026-10-04T09:00:00Z'), FOLDER, 'new111');
+    const got = await setup({ caps: CAPS }).svc.chatEntries(KEY, CHAT, me());
+    expect(got.map((e) => e.at)).toEqual(['2026-10-04T09:00:00Z', '2026-10-01T09:00:00Z']);
+    expect(got[0]).toEqual({
+      path: file(FOLDER, '2026-10-04T09:00:00Z', 'new111'),
+      at: '2026-10-04T09:00:00Z',
+      summary: '**Objective:** x',
+    });
+    expect(await setup({ caps: CAPS }).svc.chatEntries('acme/none', CHAT, me())).toEqual([]);
   });
 });

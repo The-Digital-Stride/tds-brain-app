@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.79.0 — 2026-11-24
+
+- **feat**: save a chat to its project as a summary update
+- **fix**: review fixes for chat summaries
+- **fix**: chat summary screens follow the design rules
+- **fix**: the chat drawer can't save a width wider than it shows
+- **fix**: What's new for saving chats to projects
+
 ## v0.78.0 — 2026-11-24
 
 - **feat**: Everyone / Mine switch on a project's To-dos tab

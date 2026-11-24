@@ -82,7 +82,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'projects',
     anchor: 'button.rail-item[data-app="projects"]',
     title: 'Your projects',
-    text: 'One place for each piece of client work: its tasks, files, meetings, emails and an updates log.',
+    text: 'One place for each piece of client work: its tasks, files, meetings, emails and an updates log. Save a chat there to share what you did.',
     covers: ['app:projects'],
   },
   {

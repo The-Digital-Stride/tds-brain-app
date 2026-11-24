@@ -6,6 +6,7 @@
  * The app never writes brain files itself: every entry is written or removed by the script.
  */
 
+import type { ChatSummaryEntryInput, ChatUpdateFields } from './chat-summary-contract.ts';
 import type { ProjectEmailEntryInput } from './project-email-contract.ts';
 import type { ProjectKey, ProjectUpdate } from './projects-contract.ts';
 
@@ -34,11 +35,11 @@ export const UPDATES_PAGE = 50;
 
 // ─── Kinds ───────────────────────────────────────────────────────────────────────────────────────
 
-/** What a person (or Claude, through the skill) may add with the `update` action. */
+/** What a person (or Claude, through the skill) may add with the `update` action. `chat` (summaries of a chat, script 0.7) is added by the app's Save to project only: see ChatSummaryEntryInput. */
 export type ManualUpdateKind = 'note' | 'call';
 /** Written by the script itself on `edit` (decision 4): a status, health or Account Owner change. */
 export type AutoUpdateKind = 'status' | 'owner';
-/** Reserved for later phases: `email` (phase 5), `digest` (phase 6), `contract` (R3). Read and shown as written. */
+/** Also read: `email` (phase 5), `chat` (chat summaries), and reserved `digest` (phase 6), `contract` (R3). Shown as written. */
 export type UpdateKind = ProjectUpdate['kind'];
 
 // ─── The actions (added to ProjectAction) ────────────────────────────────────────────────────────
@@ -56,7 +57,10 @@ export type UpdateKind = ProjectUpdate['kind'];
 export interface ProjectUpdateAction {
   kind: 'update';
   key: ProjectKey;
-  entry: { kind: ManualUpdateKind; summary: string; clientSafe: boolean } | ProjectEmailEntryInput;
+  entry:
+    | { kind: ManualUpdateKind; summary: string; clientSafe: boolean }
+    | ProjectEmailEntryInput
+    | ChatSummaryEntryInput;
 }
 
 /**
@@ -96,7 +100,7 @@ export const AUTO_UPDATE_FIELDS = ['status', 'health', 'owner'] as const;
  * One entry as the app shows it. Unknown frontmatter keys are ignored; `kind` is plain text so a newer kind
  * never breaks an older app (shown by its name).
  */
-export interface ProjectUpdateItem extends Omit<ProjectUpdate, 'kind'> {
+export interface ProjectUpdateItem extends Omit<ProjectUpdate, 'kind'>, ChatUpdateFields {
   kind: string;
   /** Auto entries only: what changed, from and to (raw values). */
   change?: 'status' | 'health' | 'owner' | string;

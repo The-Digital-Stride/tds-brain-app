@@ -15,6 +15,11 @@ import {
   type AdsTriageReply,
   type ProposalFull,
 } from '../../shared/ads-contract.ts';
+import type {
+  ChatSummaryDraft,
+  ChatSummaryDraftRequest,
+  UnsavedChatsResponse,
+} from '../../shared/chat-summary-contract.ts';
 import type { ChatContextDetail } from '../../shared/context-contract.ts';
 import type {
   ApiError,
@@ -256,6 +261,12 @@ export const api = {
   uploadTodoFile: (req: TodoUploadRequest) => request<TodoUploadResponse>('POST', ROUTES.todoUpload, req),
   /** Projects R1 (plan 2026-11-20-projects-system). */
   projects: () => request<ProjectList>('GET', ROUTES.projects),
+  /** Chat summaries as project updates (plan 2026-11-24-chat-summary-updates): Claude's draft of the review form. */
+  chatSummaryDraft: (req: ChatSummaryDraftRequest) =>
+    request<ChatSummaryDraft>('POST', ROUTES.chatSummaryDraft, req),
+  /** This Mac's chats for a project that have new messages since they were last saved there. */
+  projectUnsavedChats: (key: string) =>
+    request<UnsavedChatsResponse>('GET', `${ROUTES.projectUnsavedChats}?key=${encodeURIComponent(key)}`),
   changeProject: (action: ProjectAction) => request<ProjectList>('POST', ROUTES.projectsChange, action),
   checkProjectMove: (req: Omit<ProjectMoveRequest, 'check' | 'dropPersonal'>) =>
     request<ProjectMoveCheckResponse>('POST', ROUTES.projectsMove, { ...req, check: true }),

@@ -52,6 +52,8 @@ import { createUploadStaging, type UploadStaging } from '../uploads/staging.ts';
 import {
   HttpError,
   handleApi,
+  parseChatSummaryDraft,
+  parseProjectAction,
   parseStartRequest,
   parseTodoAction,
   type RouteContext,
@@ -3508,5 +3510,67 @@ describe('POST /api/sessions with a project, through the real gate (Projects R2 
       expect((bad.json as { error: { code: string } }).error.code).toBe('bad-request');
     });
     expect(started).toEqual([]);
+  });
+});
+
+describe('chat summaries: parsing (plan 2026-11-24-chat-summary-updates)', () => {
+  const CHAT = '11111111-2222-4333-8444-555555555555';
+
+  it('parseChatSummaryDraft takes exactly a chat id and a project key', () => {
+    expect(parseChatSummaryDraft({ chat: CHAT, project: 'acme/web' })).toEqual({
+      chat: CHAT,
+      project: 'acme/web',
+    });
+    for (const bad of [
+      null,
+      [],
+      {},
+      { chat: CHAT },
+      { chat: 'x', project: 'acme/web' },
+      { chat: CHAT, project: 'a/b/c' },
+    ])
+      expect(() => parseChatSummaryDraft(bad)).toThrow(HttpError);
+    expect(() => parseChatSummaryDraft({ chat: CHAT, project: 'acme/web', more: 1 })).toThrow(HttpError);
+  });
+
+  it('parseProjectAction takes a chat entry with its id and one-line title, trimmed', () => {
+    expect(
+      parseProjectAction({
+        kind: 'update',
+        key: 'acme/web',
+        entry: {
+          kind: 'chat',
+          summary: '**Objective:** x',
+          clientSafe: false,
+          chat: CHAT,
+          title: '  Launch  ',
+        },
+      }),
+    ).toEqual({
+      kind: 'update',
+      key: 'acme/web',
+      entry: { kind: 'chat', summary: '**Objective:** x', clientSafe: false, chat: CHAT, title: 'Launch' },
+    });
+    const entry = { kind: 'chat', summary: 's', clientSafe: true, chat: CHAT, title: 'T' };
+    for (const over of [
+      { chat: 'AAAAAAAA-2222-4333-8444-555555555555' },
+      { title: ' ' },
+      { title: 'a\nb' },
+      { title: 'x'.repeat(121) },
+      { clientSafe: 'no' },
+      { summary: '' },
+      { extra: true },
+    ])
+      expect(() =>
+        parseProjectAction({ kind: 'update', key: 'acme/web', entry: { ...entry, ...over } }),
+      ).toThrow(HttpError);
+    // A note still may not carry chat fields.
+    expect(() =>
+      parseProjectAction({
+        kind: 'update',
+        key: 'acme/web',
+        entry: { kind: 'note', summary: 's', clientSafe: false, chat: CHAT },
+      }),
+    ).toThrow(HttpError);
   });
 });

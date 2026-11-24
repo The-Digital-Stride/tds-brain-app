@@ -92,30 +92,53 @@ export interface LayerWidth extends WidthLimits {
 /** Under this much room to grow, a handle could barely move, so none shows. */
 export const MIN_TRAVEL = 64;
 
-/** `sheetWidth`: the sheet's width now, which bounds the chat drawer (the viewer is bounded by the window). */
-export function useLayerWidth(layer: Layer = 'viewer', sheetWidth?: number): LayerWidth {
+/** What a page needs beside the chat drawer to stay usable (Save to project's review form). */
+export const CONTENT_MIN = 600;
+
+/**
+ * The widest the chat drawer may be, for this session only, so `CONTENT_MIN` is left beside it on the sheet
+ * (its own gaps included). Never below the drawer's narrowest: under that the drawer overlays as before.
+ */
+export function maxBesideContent(sheetWidth: number): number {
+  return Math.max(chatDrawerLimits(sheetWidth).min, sheetWidth - 2 * CHAT_DRAWER_PAD - CONTENT_MIN);
+}
+
+/**
+ * `sheetWidth`: the sheet's width now, which bounds the chat drawer (the viewer is bounded by the window).
+ * `maxWidth`: a cap for this session only, never saved (the saved width comes back when the cap goes).
+ */
+export function useLayerWidth(layer: Layer = 'viewer', sheetWidth?: number, maxWidth?: number): LayerWidth {
   const { state, dispatch } = useShell();
   const { width: windowWidth } = useDesk();
   const [draft, setDraft] = useState<number | null>(null);
   const chat = layer === 'chat';
-  const limits = chat ? chatDrawerLimits(sheetWidth ?? windowWidth) : viewerLimits(windowWidth);
+  const full = chat ? chatDrawerLimits(sheetWidth ?? windowWidth) : viewerLimits(windowWidth);
+  // A session cap is the handle's real maximum too, so a drag or End can't save a width wider than is shown (which
+  // tools would then open at): correctness re-check of the design round.
+  const limits: WidthLimits =
+    maxWidth === undefined ? full : { min: full.min, max: Math.max(full.min, Math.min(full.max, maxWidth)) };
   const resizable = windowWidth > FULL_WIDTH_AT && limits.max - limits.min >= MIN_TRAVEL;
   const wanted = draft ?? (chat ? state.chatDrawerWidth : state.viewerWidth);
-  const fallback = chat ? clampWidth(CHAT_DRAWER_DEFAULT, limits) : limits.min;
-  const width = wanted === null ? fallback : clampWidth(wanted, limits);
+  // The width without the cap; the cap shows (inline) whenever it makes the drawer narrower than that.
+  const natural =
+    wanted === null ? (chat ? clampWidth(CHAT_DRAWER_DEFAULT, full) : full.min) : clampWidth(wanted, full);
+  const capped = natural > limits.max;
+  const width = capped ? limits.max : natural;
   const preview = useCallback((w: number) => setDraft(w), []);
+  const capMax = limits.max;
   const commit = useCallback(
     (w: number | null) => {
       setDraft(null);
-      dispatch({ type: chat ? 'set-chat-drawer-width' : 'set-viewer-width', width: w });
+      const saved = w !== null && maxWidth !== undefined ? Math.min(w, capMax) : w;
+      dispatch({ type: chat ? 'set-chat-drawer-width' : 'set-viewer-width', width: saved });
     },
-    [dispatch, chat],
+    [dispatch, chat, maxWidth, capMax],
   );
   return {
     ...limits,
     resizable,
     width,
-    style: resizable && wanted !== null ? { width } : undefined,
+    style: capped || (resizable && wanted !== null) ? { width } : undefined,
     preview,
     commit,
   };

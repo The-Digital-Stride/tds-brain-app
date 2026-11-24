@@ -58,6 +58,11 @@ const ALLOWED: Allowed[] = [
     reason: 'BRAIN_COMPACT_INSTRUCTIONS: read only by Claude, which keeps the brain word.',
   },
   {
+    file: 'server/engine/chat-summary.ts',
+    text: 'short enough to be a to-do title',
+    reason: 'Chat-summary prompt read only by Claude; the length hint, not a word people see.',
+  },
+  {
     file: 'shared/kits-contract.ts',
     text: 'everyday agency work: clients, notes, to-dos, email, calendar, documents and meetings',
     reason:

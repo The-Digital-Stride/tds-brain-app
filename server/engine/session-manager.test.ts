@@ -47,6 +47,7 @@ import { PAGE_WRAPPER_CSP } from '../http/security.ts';
 import type { AssetCache } from '../store/asset-cache.ts';
 import { type ChatKindStore, createChatKindStore } from '../store/chat-kinds.ts';
 import { createChatPlaceStore } from '../store/chat-places.ts';
+import { type ChatSummaryStore, createChatSummaryStore } from '../store/chat-summaries.ts';
 import type { ContextReadingStore } from '../store/context-readings.ts';
 import type { PageCopyStore } from '../store/page-copies.ts';
 import { createUploadStaging, UploadError, type UploadStaging } from '../uploads/staging.ts';
@@ -379,10 +380,12 @@ function setup(
     kitPicker?: KitPicker;
     chatPlaces?: ChatScopeStore;
     projectsIndex?: () => Promise<ProjectsIndex>;
+    chatSummaryStore?: ChatSummaryStore;
   } = {},
 ) {
   const fx = makeEngine(script, opts.decorate);
   mgr = createSessionManager({
+    chatSummaryStore: opts.chatSummaryStore,
     chatPlaces: opts.chatPlaces,
     projectsIndex: opts.projectsIndex,
     kitTracker: opts.kitTracker,
@@ -6656,5 +6659,212 @@ describe('a chat for a project (Projects R2 phase 1)', () => {
     fx.past.push({ sessionId: 'old-1', summary: 'Earlier', lastModified: 1 });
     const s = await mgr.start({ resume: 'old-1', project: 'urban-cooling/web' });
     expect([s.client, s.project]).toEqual(['urban-cooling', null]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chat summaries (plan 2026-11-24-chat-summary-updates)
+// ---------------------------------------------------------------------------
+
+describe('chat summaries', () => {
+  const LIVE_ID = 'aaaaaaaa-1111-4222-8333-444444444444';
+  const PAST_ID = 'bbbbbbbb-1111-4222-8333-444444444444';
+  const DRAFT_JSON =
+    '{"objective":"Plan the launch","outcome":"Agreed a date","figures":[],"documents":[1],"nextSteps":[],"fromEmail":false,"nothingNew":false}';
+  const PROJECT = { key: 'urban-cooling/web', title: 'Website', personal: false };
+
+  /** Chats answer as usual; a draft (a fork) answers the fixed JSON. */
+  const draftAware: Script = ({ q, turn }) => {
+    if (q.options.forkSession) {
+      q.emit({ type: 'result', subtype: 'success', is_error: false, result: DRAFT_JSON });
+      return;
+    }
+    q.init();
+    q.text(`msg_${turn}`, `Reply ${turn}`);
+    q.result();
+  };
+
+  function pastHistory(): HistoryMessage[] {
+    const file = `${BRAIN}/clients/urban-cooling/projects/web/brief.md`;
+    return [
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'Write the brief' },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        message: {
+          id: 'm1',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'mcp__claude_ai_Gmail__get_thread',
+              input: { threadId: 'x' },
+            },
+            { type: 'tool_use', id: 't2', name: 'Write', input: { file_path: file, content: '# Brief' } },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'user',
+        uuid: 'u2',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'ok' },
+            { type: 'tool_result', tool_use_id: 't2', content: 'ok' },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: 'assistant',
+        uuid: 'a2',
+        message: { id: 'm2', content: [{ type: 'text', text: 'Done.' }] },
+        parent_tool_use_id: null,
+      },
+    ];
+  }
+
+  it('EMAIL_LINE names Save to project as the one other route', () => {
+    expect(EMAIL_LINE).toContain("chat summary saved through the app's Save to project");
+    expect(EMAIL_LINE).toContain('you never save one yourself');
+  });
+
+  it('ownsChat: a live chat by its Claude Code id, an earlier chat, never anything else', async () => {
+    const fx = setup(draftAware, {
+      decorate: (q) => {
+        q.sid = LIVE_ID;
+      },
+    });
+    fx.past.push({
+      sessionId: PAST_ID,
+      summary: 'Old chat',
+      lastModified: Date.parse('2026-11-20T10:00:00Z'),
+    });
+    await mgr.start({ prompt: 'hello' });
+    await flush();
+    expect(await mgr.ownsChat?.(LIVE_ID)).toBe(true);
+    expect(await mgr.ownsChat?.(PAST_ID)).toBe(true);
+    expect(await mgr.ownsChat?.('cccccccc-1111-4222-8333-444444444444')).toBe(false);
+    expect(await mgr.ownsChat?.('sdk-new-1')).toBe(false);
+    (fx.engine.listSessions as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('gone'));
+    expect(await mgr.ownsChat?.(PAST_ID)).toBe(false);
+  });
+
+  it('drafts an earlier chat from a fork with no tools or settings, its files rebuilt from history', async () => {
+    const lib = fakeLibrary();
+    const fx = setup(draftAware, {
+      brain: { libraryItemForPath: lib.libraryItemForPath },
+      engineDefaults: () => ({ model: 'opus' }),
+    });
+    fx.past.push({
+      sessionId: PAST_ID,
+      summary: 'Write the brief',
+      lastModified: Date.parse('2026-11-20T10:00:00Z'),
+    });
+    fx.history[PAST_ID] = pastHistory();
+    const draft = await mgr.chatSummaries?.draft({ chat: PAST_ID, project: PROJECT, earlier: [] });
+    const q = fx.queries.at(-1) as FakeQuery;
+    expect(q.options).toMatchObject({
+      resume: PAST_ID,
+      forkSession: true,
+      persistSession: false,
+      maxTurns: 1,
+      tools: [],
+      settingSources: [],
+      cwd: BRAIN,
+      pathToClaudeCodeExecutable: CLAUDE,
+      model: 'opus',
+    });
+    expect(q.options.mcpServers).toBeUndefined();
+    expect(q.options.hooks).toBeUndefined();
+    expect(q.closed).toBe(true);
+    expect(draft).toMatchObject({
+      chat: PAST_ID,
+      title: 'Write the brief',
+      fields: { objective: 'Plan the launch', outcome: 'Agreed a date' },
+      fromEmail: true,
+      documents: [{ ref: 'clients/urban-cooling/projects/web/brief.md', kind: 'file', picked: true }],
+    });
+    // The chat list is untouched: the fork is never a chat.
+    expect((await mgr.list()).live).toHaveLength(0);
+  });
+
+  it('a live chat is busy while it replies, and drafts once idle', async () => {
+    let hold = true;
+    const fx = setup(
+      (ctx) => {
+        if (ctx.q.options.forkSession || !hold) return draftAware(ctx);
+        ctx.q.init();
+      },
+      {
+        decorate: (q) => {
+          if (!q.options.forkSession) q.sid = LIVE_ID;
+        },
+      },
+    );
+    const s = await mgr.start({ prompt: 'work on it' });
+    await flush();
+    await expect(
+      mgr.chatSummaries?.draft({ chat: LIVE_ID, project: PROJECT, earlier: [] }),
+    ).rejects.toMatchObject({
+      code: 'busy',
+    });
+    // The reply ends.
+    const live = fx.queries[0] as FakeQuery;
+    live.text('msg_0', 'Done.');
+    live.result();
+    await flush();
+    hold = false;
+    const draft = await mgr.chatSummaries?.draft({ chat: LIVE_ID, project: PROJECT, earlier: [] });
+    expect(draft?.fields.objective).toBe('Plan the launch');
+    expect(draft?.fromEmail).toBe(false);
+    expect((fx.queries.at(-1) as FakeQuery).options.resume).toBe(LIVE_ID);
+    // A closing chat is busy too.
+    const closing = mgr.close(s.id);
+    await expect(
+      mgr.chatSummaries?.draft({ chat: LIVE_ID, project: PROJECT, earlier: [] }),
+    ).rejects.toMatchObject({
+      code: 'busy',
+    });
+    await vi.runAllTimersAsync();
+    await closing;
+  });
+
+  it('unsaved chats: placed in the project, counted; save then end is not listed', async () => {
+    const chatPlaces = createChatPlaceStore(null);
+    const store = createChatSummaryStore(null);
+    const fx = setup(draftAware, { chatPlaces, chatSummaryStore: store });
+    const at = Date.parse('2026-11-20T10:00:00Z');
+    fx.past.push({ sessionId: PAST_ID, summary: 'Write the brief', lastModified: at });
+    fx.history[PAST_ID] = pastHistory();
+    await chatPlaces.set(PAST_ID, { client: 'urban-cooling', project: 'urban-cooling/web' });
+    const ask = () =>
+      mgr.chatSummaries?.unsaved({ keys: ['urban-cooling/web'], since: 0, hasEntry: async () => false });
+    expect((await ask())?.map((c) => c.chat)).toEqual([PAST_ID]);
+    await mgr.chatSummaries?.recordSaved(PAST_ID, 'urban-cooling/web');
+    expect((await store.get(PAST_ID, 'urban-cooling/web'))?.messages).toBe(4);
+    // Ending (or reopening) the chat touches its file time, but adds no messages.
+    (fx.past[0] as PastInfo).lastModified = at + 60_000;
+    expect(await ask()).toEqual([]);
+    fx.history[PAST_ID] = [
+      ...pastHistory(),
+      { type: 'user', uuid: 'u3', message: { role: 'user', content: 'More' }, parent_tool_use_id: null },
+    ];
+    expect((await ask())?.map((c) => c.chat)).toEqual([PAST_ID]);
+    // Another project's chats never show.
+    expect(
+      await mgr.chatSummaries?.unsaved({
+        keys: ['urban-cooling/other'],
+        since: 0,
+        hasEntry: async () => false,
+      }),
+    ).toEqual([]);
   });
 });

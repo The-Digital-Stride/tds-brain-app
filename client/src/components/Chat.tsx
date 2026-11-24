@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { CHAT_TITLE_MAX } from '../../../shared/chat-summary-contract.ts';
 import { attentionFor } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
 import { engineLine } from '../format.ts';
 import { Confirm } from '../shell/Confirm.tsx';
 import { Icon } from '../shell/Icon.tsx';
+import { SearchSelect } from '../shell/SearchSelect.tsx';
 import { SheetBar } from '../shell/SheetBar.tsx';
 import { useShell } from '../shell/ShellProvider.tsx';
 import { useOpenPageAfterTurn } from '../shell/useOpenPageAfterTurn.ts';
 import { placeName } from '../shell/words.ts';
 import { currentStep } from '../state/blocks.ts';
 import { type ChatItem, COMPACTING_LINE, initialChatState, pendingCard } from '../state/chat-reducer.ts';
+import { projectPageRequest } from '../state/client-choice.ts';
 import { closeConfirmText, isClearCommand, needsCloseConfirm } from '../state/close.ts';
+import { filterOptions, isOpenProject, useProjects } from '../state/projects.ts';
+import { saveChatRequest, savingChat } from '../state/save-chat-request.ts';
 import { useStore } from '../store.tsx';
 import { AttentionBar } from './AttentionBar.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
@@ -26,6 +31,7 @@ const REASONS = {
 } as const;
 
 const NO_PAGES: ChatPage[] = [];
+const SAVE_BUSY = 'Claude is still replying. Save it once the reply is done.';
 
 /**
  * A message typed in the chat drawer, handed to the chat screen's message box when Open full screen moves the
@@ -76,6 +82,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     dismissLevelOffer,
     hideChatDrawer,
     expandChatDrawer,
+    openChat,
   } = useStore();
   const { dispatch: shellDispatch, state: shell } = useShell();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -103,6 +110,30 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
   const helpersWorking = (live?.helpers ?? []).filter((h) => h.status === 'working').length;
   const clients = boot?.clients ?? [];
   const title = live?.title || 'Chat';
+
+  // Save to project (plan 2026-11-24-chat-summary-updates): only once there is a reply to save, and only when
+  // this person may add project updates. The chat's own project is used when it is still a live one.
+  const { list: projectList } = useProjects();
+  const [picking, setPicking] = useState(false);
+  const sdkId = live?.sdkSessionId ?? chat.sdkSessionId ?? null;
+  const savable = (projectList?.projects ?? []).filter((c) => isOpenProject(c) && c.card === 'ok');
+  const canSave = projectList?.canSaveChat === true && sdkId !== null;
+  const saveTo = (key: string) => {
+    if (!sdkId) return;
+    setPicking(false);
+    saveChatRequest.set({ key, chat: sdkId, title: title.slice(0, CHAT_TITLE_MAX) });
+    projectPageRequest.set(key);
+    openView('app:projects');
+    // The chat stays open beside the form.
+    if (sessionId) openChat(sessionId, { in: 'drawer' });
+  };
+  const savingNow = useSyncExternalStore(savingChat.subscribe, savingChat.get);
+  const pressSave = () => {
+    if (working) return;
+    const own = live?.project ? savable.find((c) => c.key === live.project) : undefined;
+    if (own) saveTo(own.key);
+    else setPicking((v) => !v);
+  };
 
   const draftFor = (id: string | null) => (id !== null && handoff?.session === id ? handoff.text : '');
   // The chat screen's box has read the handed-over text by now.
@@ -189,12 +220,50 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
     if (!anotherCardWaits(latestItems.current, requestId)) requestComposerFocus();
   };
 
+  const saveButton = canSave ? (
+    <button
+      type="button"
+      className="btn"
+      data-size="small"
+      aria-disabled={working || undefined}
+      aria-expanded={picking}
+      data-tip={working ? SAVE_BUSY : undefined}
+      onClick={pressSave}
+    >
+      Save to project
+    </button>
+  ) : null;
+
+  const savePicker =
+    picking && canSave ? (
+      <div className="chat-save-pick">
+        <label className="client-label" htmlFor="pick-save-project">
+          Save to
+        </label>
+        <SearchSelect
+          id="pick-save-project"
+          className="project-select"
+          value=""
+          placeholder="Choose a project"
+          options={filterOptions(savable, clients)}
+          recentKey="projects"
+          onChange={(v) => {
+            if (v) saveTo(v);
+          }}
+        />
+        <button type="button" className="btn" data-size="small" onClick={() => setPicking(false)}>
+          Cancel
+        </button>
+      </div>
+    ) : null;
+
   const drawerHead = (
     <header className="panel-head chat-drawer-head">
       <div className="chat-drawer-name">
         <h2 id={headingId}>{title}</h2>
         {clientName ? <span className="chip">{clientName}</span> : null}
       </div>
+      {sdkId !== null && savingNow === sdkId ? null : saveButton}
       <button
         type="button"
         className="icon-btn"
@@ -232,6 +301,7 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
         <SheetBar crumb="Chats" title={title} panel="Files and details">
           {/* With no client the chip is left out; the panel's Details says so. */}
           {clientName ? <span className="chip">{clientName}</span> : null}
+          {saveButton}
           {confirming ? (
             <Confirm
               label="End this chat"
@@ -257,6 +327,8 @@ export function ChatView({ placement = 'sheet' }: { placement?: 'sheet' | 'drawe
           )}
         </SheetBar>
       )}
+
+      {savePicker}
 
       {chat.items.length > 0 ? (
         <Transcript

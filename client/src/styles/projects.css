@@ -535,3 +535,51 @@
     gap: var(--sp-8);
   }
 }
+
+@layer features {
+  /* Save to project (chat summaries): the to-dos step's rows and a chat entry on the Updates tab */
+  .proj-save-form {
+    container-type: inline-size;
+  }
+  .proj-save-steps {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--sp-8);
+  }
+  .proj-save-step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(120px, 180px);
+    align-items: center;
+    gap: var(--sp-8);
+    width: 100%;
+  }
+  .proj-save-docs {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  .proj-chat-line {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .proj-chat-more {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-12);
+  }
+  .proj-update-body > .fold {
+    margin: 0;
+  }
+  .proj-chat-more > ul {
+    margin: 0;
+    padding-left: var(--sp-16);
+  }
+  @container (max-width: 520px) {
+    .proj-save-step {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .proj-save-step > select {
+      grid-column: 2;
+    }
+  }
+}

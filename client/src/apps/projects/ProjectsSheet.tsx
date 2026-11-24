@@ -3,6 +3,7 @@ import { Icon } from '../../shell/Icon.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
 import { followMovedProject, projectPageRequest, takeProjectPageRequest } from '../../state/client-choice.ts';
 import { useProjects } from '../../state/projects.ts';
+import { saveChatRequest } from '../../state/save-chat-request.ts';
 import { useStore } from '../../store.tsx';
 import { EmailDrafts } from './EmailDrafts.tsx';
 import { moveState, plural, READ_ONLY_NOTICE } from './logic.ts';
@@ -36,7 +37,14 @@ export function ProjectsSheet() {
   const guardLeave = useRef(shell?.guardLeave);
   guardLeave.current = shell?.guardLeave;
   useEffect(() => {
-    const show = (key: string) => setScreen({ is: 'project', key, tab: 'overview' });
+    // A chat waiting to be saved to this project (Save to project) opens on its Updates tab, where the form is; a page
+    // already showing that tab keeps it, so the request the page took a moment ago isn't undone.
+    const show = (key: string) =>
+      setScreen((prev) =>
+        prev.is === 'project' && prev.key === key && prev.tab === 'updates'
+          ? prev
+          : { is: 'project', key, tab: saveChatRequest.get()?.key === key ? 'updates' : 'overview' },
+      );
     const first = takeProjectPageRequest();
     if (first) show(first);
     return projectPageRequest.subscribe(() => {

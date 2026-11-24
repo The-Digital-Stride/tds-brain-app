@@ -20,8 +20,9 @@ knows which project the meeting, note or email is about, instead of guessing fro
 - Ian (standing rule): the app never writes brain files itself; all writes go through brain skill scripts.
   Edits to brain skills are copied into `~/agencybrain` after merge (files only, never git).
 - Explainer: No.
-- **Open for Ian:** the codes for the 21 clients that have none (proposal in Appendix A), and whether
-  the-digital-stride should be `TDS`.
+- Ian (2026-11-24, after the plan): **meetings read codes from the invite title and description**; the
+  Appendix A codes are **all correct**, Swift stays **`SWFT`**, and Ian fills in any codes from the three
+  unread Monday boards after the build; **go build**.
 
 ## Facts (from the code and the brain, 2026-11-24)
 
@@ -149,22 +150,20 @@ and invoices (left for later, see Out of scope).
    and get UX expert sign-off.
    Plain: each project shows its code with a Copy button, and you can search by code.
 
-10. **Meetings (extends phase 4). OPEN FOR IAN: title only, or title and description.** The overseer
-    ruled title only: the app reads codes from the invite title it already has, so there is one pattern
-    implementation, no description reading, and no edit to /gm or to the Workbench's `calendar-live.cjs`.
-    Ian's request named the meeting description, so this goes back to him. If he wants descriptions too, the
-    cache gains an optional `refs: string[]` per meeting (candidates from the description, max
-    REF_CANDIDATES_MAX after dropping anything that isn't REF_PATTERN-shaped), written by the /gm Step 3
-    text and by `calendar-live.cjs` (`ev.description`), both brain edits; the description itself is never
-    stored. Either way, `matchMeeting` checks codes first: if
+10. **Meetings (extends phase 4): title and description (Ian, 2026-11-24).** The overseer had ruled title
+    only; Ian chose both. The cache gains an optional `refs: string[]` per meeting: the description's words
+    that fit REF_PATTERN after upper-casing, de-duplicated, at most MEETING_REFS_MAX (20, larger than the
+    lookup cap because the writers can't look codes up), omitted when none. Written by the /gm Step 3 text
+    and by `calendar-live.cjs` (`ev.description`), both brain edits; the description itself is never
+    stored. The app reads `refs` defensively and adds `refCandidates(title)`. `matchMeeting` checks codes first: if
     the meeting's refs resolve to exactly one project, that's the match (`match: 'ref'`), unless the
     attendees' email domains point at a different known client, in which case refs are ignored and the
     phase 4 rules run as before. Two or more different projects → refs ignored. An old cache with no `refs`
     works as today. `server/store/meeting-history.ts:39` accepts `'ref'` (overseer blocker 4) so a meeting
     matched by code still becomes "Last meeting". The "File the notes" prompt for a ref match says "It's for the <Client Project>
     project." (the code isn't put in the prompt).
-    Plain: a meeting with a code in its invite goes straight to the right project, and everything else
-    matches as it does now.
+    Plain: a meeting with a code in its invite title or description goes straight to the right project, and
+    everything else matches as it does now.
 
 11. **Meeting notes (brain edit).** At step 2, meeting-notes looks for a code in what it's filing from
     (invite, transcript, notes) and checks it with the script's new `find-ref` action. One real match: use
@@ -205,9 +204,9 @@ copied, the script).
 | Overseer | `overseer`, fable (resumed from phases 1–4) | plan critique and sign-off | (read-only) |
 | CRM expert | `expert`, opus | done: idea review | (read-only) |
 | Builder A | `builder`, opus | hard list: data integrity. It is the one file that writes the shared brain, and this is its first read of git history (overseer d) | `brain-skills/tdsapp-projects/scripts/tdsapp-projects.cjs`, `brain-skills/tdsapp-projects/test/**`, `brain-skills/tdsapp-projects/SKILL.md` |
-| Builder B | `builder`, sonnet | default | `shared/project-refs.ts` (+test), `server/brain/project-refs.ts` (+test), `server/brain/projects.ts`, `server/brain/clients.ts`, `server/brain/meeting-match.ts` (+test), `server/brain/project-meetings.ts`, `server/store/meeting-history.ts` (+test), `server/http/routes.ts`, route tests |
+| Builder B | `builder`, sonnet | default | `shared/project-refs.ts` (+test), `server/brain/project-refs.ts` (+test), `server/brain/projects.ts` (+test), `server/brain/projects-skill.ts`, `server/brain/clients.ts`, `server/brain/meeting-match.ts` (+test), `server/brain/project-meetings.ts`, `server/store/meeting-history.ts` (+test), `server/http/routes.ts`, route tests |
 | Builder C | `builder`, sonnet | default | `client/src/apps/projects/**`, `client/src/shell/search-sources.ts`, `client/src/api.ts`, `client/src/styles/projects.css`, `help/projects.md`, `docs/design-system.md` |
-| Lead (me) | | | `shared/project-refs-vectors.json` (test cases both suites read, written first), `shared/project-refs-contract.ts`, `shared/projects-contract.ts`, `shared/project-meetings-contract.ts`, `shared/contract.ts`, brain edits (`brain-skills/tdsapp-projects/brain-rules/r2-project-codes.md`: meeting-notes step 2, client-setup; gm Step 3 and `calendar-live.cjs` only if Ian wants descriptions) |
+| Lead (me) | | | `shared/project-refs-vectors.json` (test cases both suites read, written first), `shared/project-refs-contract.ts`, `shared/projects-contract.ts`, `shared/project-meetings-contract.ts`, `shared/contract.ts`, brain edits (`brain-skills/tdsapp-projects/brain-rules/r2-project-codes.md`: meeting-notes step 2, client-setup, gm Step 3, `calendar-live-refs.patch`, the 21 client `code:` lines) |
 | Reviewers | correctness (opus), UI/accessibility (sonnet) | | (read-only) |
 | UX expert | `expert`, opus | standing gate | (read-only) |
 
@@ -216,9 +215,9 @@ copied, the script).
 | Test file | Proves | Owner |
 |---|---|---|
 | `shared/project-refs.test.ts` | pattern finds `[AST4K7]`, `ast4k7`, `H2O4K7`; ignores `AST4K7X` and `XAST4K7` (part of a word), `SW1A1AA` (postcode), `BA284` (all digits); `AST4K1` and `AST4O7` are candidates but never valid refs (`isValidRef`); folding `H204K7`→`H2O4K7`; near-misses (substitution, swap) | B (tests first) |
-| `server/brain/project-refs.test.ts` | index: duplicates resolve to nothing and name each other; archived resolve; personal never; newer duplicate is the one offered a new code | B (tests first) |
+| `server/brain/project-refs.test.ts` | index: duplicates resolve to nothing and name each other (both 'duplicate'); archived resolve; personal never; invalid client `code:` reads as none; refState per card | B (tests first) |
 | `server/store/meeting-history.test.ts` | a `'ref'` match is kept and read back | B |
-| `server/brain/meeting-match.test.ts` | ref match wins; disagreeing attendee domain ignores refs; two projects ignore refs; cache without refs unchanged | B (tests first) |
+| `server/brain/meeting-match.test.ts` | ref in title wins; ref in cached `refs` (description) wins; junk `refs` ignored; disagreeing attendee domain ignores refs; two projects ignore refs; cache without refs unchanged | B (tests first) |
 | `brain-skills/tdsapp-projects/test/*` | `create`/`card` write a ref; `create` still writes the card (no ref) when git fails or the clone is shallow; `edit` refuses ref; no ref without a client code; never reuses a code from a deleted card; spaced from neighbours; `ref` refuses when git fails; `ref all` owner only and skips existing; `replace` only for a duplicate on disk; move from personal adds or keeps a unique ref; `find-ref`; capability answered; constants match the contract; vectors file passes | A (tests first) |
 | client tests | code shown with Copy (copies brackets); each state; owner-only Give projects codes; buttons hidden without capability; search and jump-to by code | C |
 
@@ -230,7 +229,7 @@ copied, the script).
 - [ ] Browser check: project page code and Copy in every state, Give projects codes, search by code, a
       meeting matched by ref, phone width
 
-## Appendix A: proposed client codes (needs Ian's yes)
+## Appendix A: client codes (Ian: all correct, 2026-11-24)
 
 Ian (2026-11-24): most codes can be fetched from Monday. Checked read-only through the Monday connector:
 the Clients board (1788463064) has no code column; the codes live as prefixes on item names in TDS Projects
@@ -266,8 +265,8 @@ vectors file. Should items adopted: search-sources owned by C; attendee domain o
 over a code; personal project returning keeps a unique ref; invalid client `code:` reads as none.
 Nice adopted: `360I` replaced (it holds I, against decision 2); the contract notes that 0 and 1 in client
 codes are for existing codes only.
-**Escalated to Ian, not adopted:** the overseer ruled meetings read codes from the title only. Ian's request
-named the meeting description, so decision 10 is open.
+**Escalated to Ian:** the overseer ruled meetings read codes from the title only. Ian chose title and
+description (decision 10).
 
 ## Review outcomes
 

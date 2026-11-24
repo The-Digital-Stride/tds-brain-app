@@ -10,6 +10,7 @@
 
 import type { LibraryItem } from './contract.ts';
 import type { ProjectUpdateAction, ProjectUpdateRemoveAction } from './project-updates-contract.ts';
+import type { ProjectRefState, RefAction } from './project-refs-contract.ts';
 
 // ─── Where projects live (decision 1) ─────────────────────────────────────────────────────────────
 
@@ -181,6 +182,14 @@ export interface ProjectCard {
    * first, at most PROJECT_MOVED_FROM_MAX). Old keys resolve here (decision 5). Absent from older readers.
    */
   movedFrom?: ProjectKey[];
+  /**
+   * R2 phase 4b (shared/project-refs-contract.ts): the project code as written on the card (upper-cased), null
+   * when none or invalid. Absent from older readers.
+   */
+  ref?: string | null;
+  refState?: ProjectRefState;
+  /** Other cards holding the same (folded) ref, when refState is 'duplicate'. */
+  refDuplicateOf?: ProjectKey[];
 }
 
 /**
@@ -228,6 +237,10 @@ export interface ProjectList {
    * allowed (`canChange`), `tdsapp-files` reports 'files-artifact-v1' and this person may add files. Absent = false.
    */
   canAddArtifact?: boolean;
+  /** R2 phase 4b: canChange && the script answers PROJECTS_REFS_CAPABILITY. False/absent → no code buttons. */
+  canRef?: boolean;
+  /** R2 phase 4b: canRef && identity.role 'owner' (the brain's Owner). Gates "Give projects codes". */
+  canRefAll?: boolean;
 }
 
 /** `POST ROUTES.projectArtifact` (decision 8). JSON only; the server builds the target path and files a link card. */
@@ -334,6 +347,8 @@ export type ProjectAction =
   /** R2 phase 2: adds one entry to the project's updates log (shared/project-updates-contract.ts). */
   | ProjectUpdateAction
   | ProjectUpdateRemoveAction
+  /** R2 phase 4b: give a card (or, brain Owner only, every card lacking one) a project code. */
+  | RefAction
   | { kind: 'capabilities' };
 
 /** The script answers `capabilities` with this too once it can `archive`, `unarchive` and `delete` (0.3). */

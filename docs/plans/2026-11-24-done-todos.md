@@ -162,4 +162,9 @@ D everyone's TDS done to-dos (decision 8b).
   me while open stayed read-only (switches to my own key). Dropped: none.
 - **Found in the browser check:** Overview cards still sent teammates' to-dos to the To-dos tab; they now
   open read-only too.
-- **Gates:** typecheck, biome (0 errors), 5,941 tests, deletion scan, browser check on the demo brain.
+- **Overseer sign-off:** signed off with one blocker: the done list and teammates' to-dos refreshed only
+  while the To-dos drawer was open, so search could miss a to-do finished meanwhile. Fixed as specified
+  (the refresh moved to a `StoreProvider` effect on `todos`; `store.doneRefresh.test.tsx`). Not blocking:
+  the Done search group can nudge the async groups down once on the first search.
+- **Gates:** typecheck, biome (0 errors), 5,943 tests (`LeaveGuard.app.test.tsx` flaky once under
+  full-suite load, passes alone), deletion scan (none on the branch), browser check on the demo brain.

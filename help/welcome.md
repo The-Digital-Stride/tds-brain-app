@@ -8,7 +8,7 @@ benefit: Get more done with less admin, and share your work with the team withou
 roles: all
 related: [home, talking-to-claude, todos, skills]
 since: 0.36.0
-reviewed: 2026-11-20
+reviewed: 2026-11-24
 ---
 
 TDS Cortex is where you work with Claude, our AI helper, using everything the agency knows. That shared folder of knowledge is called the Brain. The Brain knows. Cortex gets it done.
@@ -31,7 +31,7 @@ Home is where you start. The big box under the greeting is for your message (1).
 
 ## Take the tour
 
-The first time you open Cortex after this update, a short tour walks you round. It points at the message box, the rail and search. Press **Next** to move on, **Back** to go back, or **Skip tour** to leave. On the last step, press **Done**. You can take it again from Help with **Take the tour**.
+The first time you open Cortex, a short tour walks you round. It points at the message box, **Working on**, the rail, your Home cards and search. When Cortex gains a new app or feature, the tour shows once more with the new parts in it. Press **Next** to move on, **Back** to go back, or **Skip tour** to leave. On the last step, press **Done**. You can take it again from Help with **Take the tour**.
 
 ## How to get help
 

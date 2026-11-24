@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TOUR_VERSION } from '../tour/steps.ts';
 
 const store = vi.hoisted(() => ({
   boot: null as Record<string, unknown> | null,
@@ -19,7 +20,7 @@ const bootWith = (appVersion: string, prefs: Record<string, unknown>) => ({ appV
 
 beforeEach(() => {
   tour.open = false;
-  store.boot = bootWith('0.40.0', { tourSeen: 1, whatsNewSeen: null });
+  store.boot = bootWith('0.40.0', { tourSeen: TOUR_VERSION, whatsNewSeen: null });
   store.sessions = { live: [], past: [{}] };
   store.updatePrefs.mockClear();
   dispatch.mockClear();
@@ -77,17 +78,17 @@ describe('WhatsNewCard', () => {
 
   it('shows when there are no chats but a note was closed before', () => {
     store.sessions = { live: [], past: [] };
-    store.boot = bootWith('0.40.0', { tourSeen: 1, whatsNewSeen: '0.30.0' });
+    store.boot = bootWith('0.40.0', { tourSeen: TOUR_VERSION, whatsNewSeen: '0.30.0' });
     render(<WhatsNewCard />);
     expect(screen.getByRole('heading', { name: 'TDS Brain is now TDS Cortex' })).toBeTruthy();
   });
 
   it('shows nothing once closed, or when the app is older than the note', () => {
-    store.boot = bootWith('0.40.0', { tourSeen: 1, whatsNewSeen: '0.40.0' });
+    store.boot = bootWith('0.40.0', { tourSeen: TOUR_VERSION, whatsNewSeen: '0.40.0' });
     const { unmount } = render(<WhatsNewCard />);
     expect(screen.queryByRole('heading')).toBeNull();
     unmount();
-    store.boot = bootWith('0.39.0', { tourSeen: 1, whatsNewSeen: null });
+    store.boot = bootWith('0.39.0', { tourSeen: TOUR_VERSION, whatsNewSeen: null });
     render(<WhatsNewCard />);
     expect(screen.queryByRole('heading')).toBeNull();
   });

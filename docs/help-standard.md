@@ -107,7 +107,11 @@ A change that adds, removes or renames something people see updates its help pag
 1. Edit or add `help/<id>.md`, and bump `reviewed`.
 2. Re-run `pnpm help:shots` if a pictured screen changed.
 3. Add a line to `help/whats-new/<next-version>.md` in plain words, linking the page.
-4. `pnpm test` passes. It checks: every screen has a page; frontmatter and headings; summary ≤ 90 characters;
+4. A new app, rail item or Home feature also gets a step in the tour (`client/src/tour/steps.ts`): add the step,
+   bump `TOUR_VERSION` and add its `TOUR_HISTORY` line, so everyone is shown the new tour once. For apps, rail
+   sections and drawers `steps.test.ts` enforces this; anything else (a new Home card, a new control in the message
+   box) is on you. A small change inside an existing screen doesn't need a step.
+5. `pnpm test` passes. It checks: every screen has a page; frontmatter and headings; summary ≤ 90 characters;
    sentences ≤ 25 words; 120–350 words; reading level; UK spelling; banned jargon; every **bold** button label
    still exists in the app; `related` pages exist; pictures exist, have alt text, are small, have ≤ 4 callouts.
 

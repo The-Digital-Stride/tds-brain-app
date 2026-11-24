@@ -6,7 +6,8 @@ import type { SectionSlot, SectionsModule, ToolSlot, ToolSnapshot, ToolView } fr
 /**
  * Sections on the rail: each opens a left drawer listing its tools, and a tool opens on the main sheet as the view
  * `tool:<sectionId>/<toolId>`. Adding a section (Processes, later) is one entry here. Plan
- * 2026-11-16-workbench-ad-manager, decisions 1 to 6.
+ * 2026-11-16-workbench-ad-manager, decisions 1 to 6. A new section needs a tour step too (`client/src/tour/steps.ts`);
+ * `client/src/tour/steps.test.ts` fails until it has one.
  */
 export const SECTIONS: SectionSlot[] = [
   {

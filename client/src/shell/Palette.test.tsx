@@ -9,6 +9,7 @@ import type {
   TodoItem,
 } from '../../../shared/contract.ts';
 import { clientChoice } from '../state/client-choice.ts';
+import { TOUR_VERSION } from '../tour/steps.ts';
 
 const api = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -81,7 +82,7 @@ const boot = {
     lastClient: null,
     todoPanelOpen: false,
     directWrites: false,
-    tourSeen: 1,
+    tourSeen: TOUR_VERSION,
   },
 };
 

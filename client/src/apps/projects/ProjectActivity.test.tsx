@@ -199,7 +199,11 @@ describe('activity on the Overview', () => {
     expect(added.getAttribute('aria-haspopup')).toBe('dialog');
     fireEvent.click(added);
     expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'team:todo/20261120-theirs.md', mode: 'read' });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'open-todo',
+      key: 'team:todo/20261120-theirs.md',
+      mode: 'read',
+    });
   });
 
   it('sends a to-do key it cannot open read only to the To-dos tab', async () => {

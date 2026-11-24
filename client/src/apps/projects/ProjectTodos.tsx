@@ -49,7 +49,8 @@ export function ProjectTodos({
   const me = boot?.identity?.slug ?? null;
   const [picked, setPicked] = useState<TodoWho | null>(null);
   const anyTodos = rows !== null && (rows.length > 0 || (done?.length ?? 0) > 0);
-  const showWho = me !== null && anyTodos;
+  // Not in a personal project: everything there is mine, so the switch would change nothing.
+  const showWho = me !== null && anyTodos && card.space !== 'personal';
   const who: TodoWho = !showWho ? 'everyone' : (picked ?? readTodoWho(me));
   const chooseWho = (next: TodoWho) => {
     setPicked(next);
@@ -144,7 +145,8 @@ export function ProjectTodos({
               You have no open to-dos in this project.{' '}
               <button
                 type="button"
-                className="link-btn"
+                className="btn"
+                data-size="small"
                 onClick={() => {
                   chooseWho('everyone');
                   setFocusWho(true);

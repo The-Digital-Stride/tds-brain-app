@@ -22,9 +22,9 @@ Projects shows the team's work for each client: each project's brief, team, to-d
 
 ## How to use it
 
-1. Open Projects, just under Home.
+1. Open Projects.
 2. Choose **Mine**, or filter by status, Account Owner and service.
-3. Open a project. **Overview** shows what's new, what's due, the brief and the team. **To-dos** shows everyone's; **Mine** shows yours. **Updates** logs notes, calls, emails and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one here.
+3. Open a project. **Overview** shows what's new, what's due, the brief and team. **To-dos** lists everyone's; choose **Mine** there to see just yours. **Updates** logs notes, calls, emails and status changes. Notes stay internal unless you tick **Fine to share with the client**. **Files** lists documents and images. **Add files** adds library files; the cross removes one. **Add a claude.ai page** saves one here.
 4. **New project** adds one; **Edit** changes one. **Add to team** keeps a person marked "from to-dos".
 5. **New chat for this project** starts a chat that saves its files here.
 6. **Move** moves a project to another client.

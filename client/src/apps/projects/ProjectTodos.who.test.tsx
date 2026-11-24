@@ -103,6 +103,21 @@ describe('the Everyone / Mine switch', () => {
     expect(localStorage.getItem(todoWhoKey('sam'))).toBe('everyone');
   });
 
+  it('is not shown in a personal project, where every to-do is mine', () => {
+    const personal = { ...card, space: 'personal' } as unknown as ProjectCard;
+    render(
+      <ProjectTodos
+        card={personal}
+        team={[]}
+        rows={[open('p.md', 'sam', 'personal')]}
+        failed={false}
+        reload={async () => {}}
+      />,
+    );
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.getByText('Job p.md')).toBeTruthy();
+  });
+
   it('is not shown while loading or when the project has no to-dos at all', () => {
     render(<ProjectTodos card={card} team={[]} rows={null} failed={false} reload={async () => {}} />);
     expect(screen.queryByRole('radiogroup')).toBeNull();

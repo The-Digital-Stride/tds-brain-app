@@ -74,6 +74,7 @@ import type {
 } from '../../shared/levels-contract.ts';
 import type { PageAskRequest } from '../../shared/pages-contract.ts';
 import type { ProjectActivityResponse, ProjectSeenRequest } from '../../shared/project-activity-contract.ts';
+import type { ProjectBusinessResponse } from '../../shared/project-business-contract.ts';
 import type {
   EmailDraftApproveRequest,
   EmailDraftDismissRequest,
@@ -302,6 +303,9 @@ export const api = {
   /** Projects R2 phase 4: this person's last and next meeting for the project, from their own calendar. */
   projectMeetings: (key: ProjectKey) =>
     request<ProjectMeetingsResponse>('GET', `${ROUTES.projectMeetings}?key=${encodeURIComponent(key)}`),
+  /** The client's business background for a project's Overview (read only; changed in the brain). */
+  projectBusiness: (key: ProjectKey) =>
+    request<ProjectBusinessResponse>('GET', `${ROUTES.projectBusiness}?key=${encodeURIComponent(key)}`),
   /** Home meetings: every upcoming meeting from this person's own calendar, project or not. */
   homeMeetings: () => request<HomeMeetingsResponse>('GET', ROUTES.homeMeetings),
   projectTodos: (key: ProjectKey) =>

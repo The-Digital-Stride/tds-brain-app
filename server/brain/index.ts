@@ -18,6 +18,7 @@ import { defaultRunner, type Runner, readIdentity } from './identity.ts';
 import { createLibrary, isProtectedFile, type LibraryOptions, scopeOfId } from './library.ts';
 import { createProjectActivity, type ProjectActivityService, readDoneInfo } from './project-activity.ts';
 import { createProjectArtifact, type ProjectArtifactService } from './project-artifact.ts';
+import { createProjectBusiness, type ProjectBusinessService } from './project-business.ts';
 import { createProjectMeetings, type ProjectMeetingsService } from './project-meetings.ts';
 import { createProjectUpdates } from './project-updates.ts';
 import { createProjects } from './projects.ts';
@@ -80,6 +81,8 @@ export type SearchableBrain = BrainReaders &
     projectArtifact?: ProjectArtifactService;
     /** Projects R2 phase 4: this Mac's own meetings for a project (the cache /gm writes, read only). */
     projectMeetings?: ProjectMeetingsService['read'];
+    /** Client background on a project's Overview (read only). */
+    projectBusiness?: ProjectBusinessService['read'];
     /** Home meetings: every upcoming meeting in this Mac's cache, project or not. */
     homeMeetings?: ProjectMeetingsService['home'];
     /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK (this Mac's gitignored files, via the script). */
@@ -195,6 +198,11 @@ export function createBrainReaders(
   void projectMeetings.merge();
   const mergeTimer = setInterval(() => void projectMeetings.merge(), MEETINGS_MERGE_EVERY_MS);
   mergeTimer.unref();
+  const projectBusiness = createProjectBusiness({
+    root,
+    index: () => projects.index(),
+    clients: () => listClients(root),
+  });
   const library = createLibrary(root, {
     projects: () => projects.index(),
     clients: () => listClients(root),
@@ -226,6 +234,7 @@ export function createBrainReaders(
       },
     }),
     projectMeetings: projectMeetings.read,
+    projectBusiness: projectBusiness.read,
     homeMeetings: projectMeetings.home,
     emailDrafts,
     health: () => checkHealth(root),

@@ -13,6 +13,7 @@ export function Fold({
   open: openProp,
   onToggle,
   action,
+  level = 3,
   children,
 }: FoldProps) {
   const [own, setOwn] = useState(defaultOpen);
@@ -23,15 +24,16 @@ export function Fold({
     onToggle?.(next);
   };
   const id = useId();
+  const Head = level === 4 ? 'h4' : 'h3';
   return (
     <section className="fold" data-open={open} data-action={action ? 'true' : undefined}>
-      <h3 className="fold-head">
+      <Head className="fold-head">
         <button type="button" aria-expanded={open} aria-controls={id} onClick={toggle}>
           <Icon name="chevron" size={14} />
           <span className="fold-title">{title}</span>
           {count === undefined ? null : <span className="count">{count}</span>}
         </button>
-      </h3>
+      </Head>
       {action ? <div className="fold-action">{action}</div> : null}
       <div className="fold-rows" id={id} hidden={!open}>
         {children}

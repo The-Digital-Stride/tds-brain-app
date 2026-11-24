@@ -2,6 +2,13 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.70.0 — 2026-11-24
+
+- **feat**: show claude.ai artifacts in projects as copies or link cards
+- **fix**: review fixes for claude.ai pages in projects
+- **fix**: plainer words for claude.ai pages (UX review)
+- **fix**: re-read claude.ai tags for html entries saved without them
+
 ## v0.69.0 — 2026-11-23
 
 - **feat**: meetings on the project home, from your own calendar

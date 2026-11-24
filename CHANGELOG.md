@@ -2,6 +2,17 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.74.0 — 2026-11-24
+
+- **feat**: every chat drafts email for projects, never reads the drafts (R2 phase 5)
+- **feat**: email entries approved by the inbox owner (R2 phase 5)
+- **fix**: email approval wording, Save says why, own help page, never an address (UX review)
+- **fix**: one name per line keeps 'Smith, Alex' whole; an email may have no subject (correctness review)
+- **fix**: approve key lives outside the brain; guard checks paths, never prose (security and correctness reviews)
+- **fix**: guard resolves . and .., catches shell writes into updates/, walks repeated globs (fix-round review)
+- **fix**: updates guard checks each shell command part; the skill's own update-remove runs (fix-round recheck)
+- **fix**: updates guard follows cd and pushd; residual risk worded exactly (overseer sign-off)
+
 ## v0.73.2 — 2026-11-24
 
 - **fix**: Projects sits straight under Home in the main menu

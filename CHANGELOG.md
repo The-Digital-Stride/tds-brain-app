@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.72.1 — 2026-11-24
+
+- **fix**: code note no longer promises email matching before it exists
+
 ## v0.72.0 — 2026-11-24
 
 - **feat**: invite links on every meeting and a Home meetings read

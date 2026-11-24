@@ -232,6 +232,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* The To-dos tabs size to their words, so "Asked, N" keeps its count beside a short "Done". */
+  .drawer-tools.todo-tabs .seg > button {
+    flex: 1 1 auto;
+  }
   .drawer-tools.todo-filters .field {
     padding-left: var(--sp-10);
   }

@@ -5,6 +5,8 @@ import {
   type AskedTodoList,
   ATTENTION_LABEL,
   attentionFor,
+  type DoneTodo,
+  type TeamTodo,
   type TodoAction,
   type TodoItem,
 } from '../../../shared/contract.ts';
@@ -19,6 +21,8 @@ import {
   todoProjectChip,
   useProjects,
 } from '../state/projects.ts';
+import { useTeamTodo } from '../state/team-todo.ts';
+import { doneStore, filterDone, groupDone, searchDone, useDoneTodos } from '../state/todo-done.ts';
 import { splitFavouriteTodos } from '../state/todo-favourites.ts';
 import {
   EMPTY_FILTER,
@@ -32,6 +36,7 @@ import { newToYou } from '../state/todo-new.ts';
 import { type ChangeTodosResult, type HeldTodo, useStore } from '../store.tsx';
 import { AskedList, type AskedState, askedOrder } from './AskedList.tsx';
 import type { TodoFilter, TodoPanelState } from './contract.ts';
+import { DoneList, type DoneState, doneOrder } from './DoneList.tsx';
 import { Fold } from './Fold.tsx';
 import { Icon } from './Icon.tsx';
 import { ProjectChip } from './ProjectChip.tsx';
@@ -50,7 +55,7 @@ import { cap, handoverMeta } from './words.ts';
 // The panel, its editor and the converter load as one chunk the first time a to-do is opened (plan decision 19).
 const TodoPanel = lazy(() => import('./TodoPanel.tsx'));
 
-type Tab = 'mine' | 'open' | 'asked';
+type Tab = 'mine' | 'open' | 'asked' | 'done';
 
 /** What a row needs to open the panel: set by the drawer for every to-do (reading needs no permission). */
 interface RowControls {
@@ -336,10 +341,20 @@ function ResultsAnnouncer({ filtering, count }: { filtering: boolean; count: num
 export const PANEL_WAIT_MS = 4000;
 
 /** What `PanelHost` adds to the panel's own props: where it is open and what the drawer holds for it. */
-type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'mode' | 'dirtyAsk' | 'order'> & {
+type HostProps = Omit<
+  TodoPanelProps,
+  'todo' | 'asked' | 'done' | 'teamTodo' | 'mode' | 'dirtyAsk' | 'order'
+> & {
   panel: TodoPanelState;
   todo: TodoItem | null;
   asked: AskedTodo | null;
+  done: DoneTodo | null;
+  /** The finished to-dos are still on their way (not loaded, no failure yet): a `done:` key waits for them. */
+  doneLoading: boolean;
+  /** A teammate's open to-do, loaded for a `team:` key. */
+  teamTodo: TeamTodo | null;
+  /** Its load is still on its way (no answer or failure yet): a `team:` key waits for it. */
+  teamLoading: boolean;
   order: string[];
 };
 
@@ -348,7 +363,17 @@ type HostProps = Omit<TodoPanelProps, 'todo' | 'asked' | 'mode' | 'dirtyAsk' | '
  * keeps the shell's list of what previous and next walk through. The controller (drafts, saves, holds) stays
  * in the drawer, which is why the panel is rendered from here and not from App.
  */
-function PanelHost({ panel, todo, asked, order, ...rest }: HostProps) {
+function PanelHost({
+  panel,
+  todo,
+  asked,
+  done,
+  doneLoading,
+  teamTodo,
+  teamLoading,
+  order,
+  ...rest
+}: HostProps) {
   const { dispatch } = useShell();
   const orderKey = order.join('\n');
   // biome-ignore lint/correctness/useExhaustiveDependencies: `orderKey` stands for `order`.
@@ -359,10 +384,25 @@ function PanelHost({ panel, todo, asked, order, ...rest }: HostProps) {
   // has not shown up in the list yet (just added) is waited for, but only for PANEL_WAIT_MS: a key that never
   // shows up (a teammate's to-do, one already done) would otherwise leave an empty panel over a locked sheet.
   const seen = useRef<string | null>(null);
+  // A teammate's to-do that has been passed to this person since it opened is theirs now: show it as their own.
+  const passedToMe =
+    panel.key?.startsWith('team:') === true && teamTodo !== null && teamTodo.assignee === rest.me;
+  useEffect(() => {
+    if (passedToMe && teamTodo) dispatch({ type: 'open-todo', key: teamTodo.id, mode: 'read', force: true });
+  }, [passedToMe, teamTodo, dispatch]);
   useEffect(() => {
     if (panel.key === null) return;
-    if (todo || asked) {
+    if (todo || asked || done || teamTodo) {
       seen.current = panel.key;
+      return;
+    }
+    // A finished to-do is found in the shared done store: while that is still loading there is nothing to
+    // give up on yet (it can be big, and may be slow).
+    if (panel.key.startsWith('done:') && doneLoading) return;
+    // A teammate's to-do loads on its own: wait for it however long it takes, and close the moment it is
+    // known to be missing (finished or moved) or can't be read.
+    if (panel.key.startsWith('team:')) {
+      if (!teamLoading) dispatch({ type: 'close-todo', force: true });
       return;
     }
     if (seen.current === panel.key) {
@@ -371,11 +411,11 @@ function PanelHost({ panel, todo, asked, order, ...rest }: HostProps) {
     }
     const giveUp = setTimeout(() => dispatch({ type: 'close-todo', force: true }), PANEL_WAIT_MS);
     return () => clearTimeout(giveUp);
-  }, [panel.key, todo, asked, dispatch]);
-  if (panel.mode !== 'add' && !todo && !asked) return null;
+  }, [panel.key, todo, asked, done, doneLoading, teamTodo, teamLoading, dispatch]);
+  if (panel.mode !== 'add' && !todo && !asked && !done && !teamTodo) return null;
   const node = (
     <Suspense fallback={null}>
-      <TodoPanel todo={todo} asked={asked} mode={panel.mode} {...rest} />
+      <TodoPanel todo={todo} asked={asked} done={done} teamTodo={teamTodo} mode={panel.mode} {...rest} />
     </Suspense>
   );
   const slot = typeof document === 'undefined' ? null : document.getElementById('todo-panel-slot');
@@ -397,6 +437,8 @@ export function TodosDrawer() {
     markTodosSeen,
     reveal,
     clearReveal,
+    doneReveal,
+    clearDoneReveal,
     toggleFavouriteTodo,
   } = useStore();
   const pickedProject = useProjectChoice();
@@ -435,6 +477,14 @@ export function TodosDrawer() {
   });
   const { state: shell, dispatch: shellDispatch, modes } = useShell();
   const panel = shell.todoPanel ?? null;
+  // The finished to-dos are one shared store: the Done tab or a `done:` panel key starts the first load.
+  const panelIsDone = panel?.key?.startsWith('done:') === true;
+  const doneSnap = useDoneTodos(tab === 'done' || panelIsDone);
+  // A teammate's open to-do (`team:` key, from a project page) loads on its own, by key.
+  const panelTeamKey = panel?.key?.startsWith('team:') === true ? panel.key : null;
+  const teamSnap = useTeamTodo(panelTeamKey);
+  const [doneQuery, setDoneQuery] = useState('');
+  const searchId = useId();
   // The asked-of-others list is its own request: it never blocks or fails the main list. It loads with the
   // drawer and again whenever the to-dos reload (`todos` is a new object each time). A failed reload keeps
   // what was shown.
@@ -456,6 +506,7 @@ export function TodosDrawer() {
   const haveTodos = todos !== null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `todos` changing is the trigger to reload.
   useEffect(() => {
+    // The finished to-dos and teammates' to-dos refresh on the same signal in the store (StoreProvider).
     if (haveTodos) void loadAsked();
   }, [todos, haveTodos, loadAsked]);
   useEffect(
@@ -513,6 +564,42 @@ export function TodosDrawer() {
     setMessage('');
     shellDispatch({ type: 'open-todo', key, mode: 'read' });
   }, [reveal, todos, clearReveal, shellDispatch]);
+
+  // A finished to-do was asked for (`revealDoneTodo`): show the Done tab with no filters or search and open it in
+  // the panel. It waits for the shared store's list; a failed load drops the request. One the list doesn't hold
+  // yet (ticked since it last loaded, while the drawer was closed) gets one refresh before it is given up.
+  const doneRevealRefreshed = useRef<unknown>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `setMessage` only sets state.
+  useEffect(() => {
+    if (!doneReveal || !todos) return;
+    doneStore.ensure();
+    if (!doneSnap.list) {
+      if (doneSnap.error) clearDoneReveal();
+      return;
+    }
+    const key = doneReveal.key;
+    const item = doneSnap.list.items.find((t) => t.key === key);
+    if (!item) {
+      if (doneSnap.loading) return;
+      if (doneRevealRefreshed.current !== doneReveal) {
+        doneRevealRefreshed.current = doneReveal;
+        void doneStore.refresh();
+        return;
+      }
+      // Still not there after a fresh load: it has gone (deleted, or moved back), so there is nothing to show.
+      clearDoneReveal();
+      return;
+    }
+    clearDoneReveal();
+    setVisitSeen(new Set());
+    setTabState('done');
+    setFilter(EMPTY_FILTER);
+    setDoneQuery('');
+    if (pickedProject && todoProjectKey(item) !== pickedProject)
+      setChoice({ client: pickedClient, project: '' });
+    setMessage('');
+    shellDispatch({ type: 'open-todo', key, mode: 'read' });
+  }, [doneReveal, todos, doneSnap.list, doneSnap.error, doneSnap.loading, clearDoneReveal, shellDispatch]);
 
   // After the panel closes, put the keyboard back on the row's title button (or the Add button).
   useEffect(() => {
@@ -618,7 +705,8 @@ export function TodosDrawer() {
     };
   };
   const askedAll = asked ? [...asked.waiting, ...asked.done] : [];
-  const tabItems = tab === 'asked' ? askedAll : items;
+  const doneAll = doneSnap.list?.items ?? null;
+  const tabItems = tab === 'asked' ? askedAll : tab === 'done' ? (doneAll ?? []) : items;
   const showKind = tab === 'mine' && kindOnMine;
   const clientSlugs = slugsOf(tabItems);
   const showClient = !project && clientSlugs.length >= 2;
@@ -633,6 +721,12 @@ export function TodosDrawer() {
         done: filterAsked(asked.done, askedActive),
       }
     : null;
+  const doneQueryText = doneQuery.trim();
+  const doneShown = doneAll
+    ? searchDone(filterDone(doneAll, active), doneQueryText, { clients, projects: projectCards?.projects })
+    : null;
+  const doneState: DoneState = doneSnap.error ? 'failed' : doneSnap.list ? 'loaded' : 'loading';
+  const doneGroups = doneShown ? groupDone(doneShown, new Date()) : [];
   // The tab counts follow the filters, so a number always matches what its tab shows.
   const counts = {
     mine: filterTodos(todos.mine, activeFor('mine', todos.mine), clients).length,
@@ -640,7 +734,13 @@ export function TodosDrawer() {
     asked: askedShown ? askedShown.waiting.length : null,
   };
   const shownCount =
-    tab === 'asked' ? (askedShown ? askedShown.waiting.length + askedShown.done.length : 0) : shown.length;
+    tab === 'asked'
+      ? askedShown
+        ? askedShown.waiting.length + askedShown.done.length
+        : 0
+      : tab === 'done'
+        ? (doneShown?.length ?? 0)
+        : shown.length;
   /** The keyboard to the Project select; if it has gone (no projects listed), the first filter, else the list. */
   const focusProjectFilter = () => {
     const target =
@@ -803,16 +903,21 @@ export function TodosDrawer() {
   };
 
   // The order previous and next walk through: what the drawer shows now, held rows left out.
-  const order =
-    tab === 'asked'
+  const order = panelTeamKey
+    ? [panelTeamKey]
+    : tab === 'asked'
       ? askedOrder(askedShown)
-      : [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
-          .map((t) => t.key)
-          .filter((k) => !heldById.has(k));
+      : tab === 'done'
+        ? doneOrder(doneGroups)
+        : [...favourites, ...freshRows, ...groups.flatMap((g) => g.items)]
+            .map((t) => t.key)
+            .filter((k) => !heldById.has(k));
 
   const panelTodo = panel?.key
     ? ([...todos.mine, ...todos.open].find((t) => t.key === panel.key) ?? null)
     : null;
+  const panelDone =
+    panel?.key && panelIsDone && doneAll ? (doneAll.find((t) => t.key === panel.key) ?? null) : null;
   const panelAsked =
     panel?.key && asked ? ([...asked.waiting, ...asked.done].find((t) => t.key === panel.key) ?? null) : null;
 
@@ -1026,7 +1131,7 @@ export function TodosDrawer() {
 
   return (
     <div className="drawer-split">
-      <div className="drawer-tools">
+      <div className="drawer-tools todo-tabs">
         <Seg
           label="Which to-dos"
           value={tab}
@@ -1035,9 +1140,26 @@ export function TodosDrawer() {
             { value: 'mine', label: `Mine, ${counts.mine}` },
             { value: 'open', label: `Open, ${counts.open}` },
             { value: 'asked', label: counts.asked !== null ? `Asked, ${counts.asked}` : 'Asked' },
+            { value: 'done', label: 'Done' },
           ]}
         />
       </div>
+      {tab === 'done' ? (
+        <div className="drawer-tools">
+          <Icon name="search" size={16} />
+          <label className="visually-hidden" htmlFor={searchId}>
+            Search done to-dos
+          </label>
+          <input
+            id={searchId}
+            type="search"
+            className="field"
+            placeholder="Search done to-dos"
+            value={doneQuery}
+            onChange={(e) => setDoneQuery(e.target.value)}
+          />
+        </div>
+      ) : null}
       {hasFilterRow || canChange ? (
         <div
           className="drawer-tools todo-filters"
@@ -1126,7 +1248,7 @@ export function TodosDrawer() {
           ) : null}
         </div>
       ) : null}
-      {todos.changes === 'switched-off' ? (
+      {todos.changes === 'switched-off' && tab !== 'done' ? (
         <p className="todo-note todo-off">
           Adding and editing to-dos is switched off. Turn on 'Let the app change to-dos' in{' '}
           <button
@@ -1151,7 +1273,10 @@ export function TodosDrawer() {
           .
         </p>
       ) : null}
-      <ResultsAnnouncer filtering={filtering} count={shownCount} />
+      <ResultsAnnouncer
+        filtering={filtering || (tab === 'done' && doneQueryText !== '')}
+        count={shownCount}
+      />
       {/* With the panel open the status is said there (it may cover this drawer). */}
       <p className="todo-status" role="status" data-tone={isError ? 'error' : undefined}>
         {panel === null ? message : ''}
@@ -1188,6 +1313,35 @@ export function TodosDrawer() {
               onProject={project ? undefined : pickProject}
               state={askedState}
               onRetry={() => void loadAsked()}
+              openKey={panel?.key ?? null}
+              onOpen={(t) => {
+                if (panel?.dirty) return shellDispatch({ type: 'close-todo' });
+                setMessage('');
+                shellDispatch({ type: 'open-todo', key: t.key, mode: 'read' });
+              }}
+            />
+          ) : tab === 'done' ? (
+            <DoneList
+              items={doneShown}
+              historyRead={doneSnap.list?.historyRead ?? true}
+              query={doneQueryText}
+              filteredBy={filtering ? filterName || null : null}
+              now={new Date()}
+              placeOf={(t) => {
+                const where = {
+                  client: t.client ?? null,
+                  project: t.project ?? null,
+                  projectMatch: t.projectMatch,
+                };
+                const chip = todoProjectChip(where, projectCards?.projects, clients);
+                return {
+                  chip,
+                  places: project ? [] : todoPlaceParts(where, projectCards?.projects, clients),
+                };
+              }}
+              onProject={project ? undefined : pickProject}
+              state={doneState}
+              onRetry={() => void doneStore.refresh()}
               openKey={panel?.key ?? null}
               onOpen={(t) => {
                 if (panel?.dirty) return shellDispatch({ type: 'close-todo' });
@@ -1271,7 +1425,7 @@ export function TodosDrawer() {
             </>
           )}
           {/* It counts everyone's, filter or not: left out while filtering so the numbers don't disagree. */}
-          {tab !== 'asked' && !filtering && todos.othersCount > 0 ? (
+          {(tab === 'mine' || tab === 'open') && !filtering && todos.othersCount > 0 ? (
             <p className="dock-empty">
               {todos.othersCount} more {todos.othersCount === 1 ? 'belongs' : 'belong'} to other people.
             </p>
@@ -1283,6 +1437,10 @@ export function TodosDrawer() {
           panel={panel}
           todo={panelTodo}
           asked={panelAsked}
+          done={panelDone}
+          doneLoading={doneSnap.list === null && doneSnap.error === null}
+          teamTodo={panelTeamKey ? teamSnap.item : null}
+          teamLoading={teamSnap.loading || (teamSnap.item === null && teamSnap.error === null)}
           order={order}
           message={message}
           isError={isError}

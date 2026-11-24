@@ -32,6 +32,8 @@ import {
 } from '../../shared/projects-contract.ts';
 import { createProjects, type ProjectsOptions } from './projects.ts';
 import type { ProjectsSkillRunner } from './projects-skill.ts';
+import { createAskedLog } from './todo-asked.ts';
+import { listDoneTodos } from './todo-done.ts';
 import type { TodoRunAction, TodoSkillRunner } from './todo-skill.ts';
 
 const NOW = new Date('2026-11-21T12:00:00Z');
@@ -107,6 +109,7 @@ function service(
     dataDir?: string | null;
     mayChange?: ProjectsOptions['mayChange'];
     todoList?: ProjectsOptions['todoList'];
+    doneTodos?: ProjectsOptions['doneTodos'];
   } = {},
 ) {
   fakes = {
@@ -242,6 +245,7 @@ function service(
     dataDir: extra.dataDir === undefined ? data : extra.dataDir,
     ...(extra.mayChange ? { mayChange: extra.mayChange } : {}),
     ...(extra.todoList ? { todoList: extra.todoList } : {}),
+    ...(extra.doneTodos ? { doneTodos: extra.doneTodos } : {}),
     onMoved: (from, to) => fakes.moved.push([from, to]),
     now: () => NOW,
     git: async (args) => {
@@ -560,6 +564,98 @@ describe('counts and the team from to-dos', () => {
     expect(jev).toEqual({ todos: [expect.objectContaining({ key: 'personal/q.md', mine: true })], count: 1 });
     expect(jev.count).toBe(byKey(list.projects, 'personal/jev')?.openTodos);
     await expect(s.projectTodos('acme/nothing', ME)).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  // Done-todos plan, decision 7: finished to-dos fold under the open ones.
+  it("lists a project's finished to-dos newest first, personal ones only for their owner", async () => {
+    put(
+      'todo/done/dn-old.md',
+      todoText({
+        project: 'acme/site',
+        completed_by: 'ian-hancock',
+        completed_at: '2026-11-05T10:00:00+00:00',
+      }),
+    );
+    put(
+      'todo/done/dn-new.md',
+      todoText({
+        project: 'acme/site',
+        stage: 'Build',
+        assignee: 'simon-jones',
+        completed_by: 'simon-jones',
+        completed_at: '2026-11-18T10:00:00+00:00',
+      }),
+    );
+    put('todo/done/dn-nodate.md', todoText({ project: 'acme/site' }));
+    put(
+      'todo/done/dn-other.md',
+      todoText({
+        project: 'client-portal',
+        completed_by: 'ian-hancock',
+        completed_at: '2026-11-19T10:00:00+00:00',
+      }),
+    );
+    put(
+      'personal/todo/done/dn-mine.md',
+      todoText({
+        project: 'personal/jev',
+        assignee: 'ian-hancock',
+        completed_by: 'ian-hancock',
+        completed_at: '2026-11-17T10:00:00+00:00',
+      }),
+    );
+    put(
+      'personal/todo/done/dn-theirs.md',
+      todoText({
+        project: 'personal/jev',
+        assignee: 'someone-else',
+        completed_by: 'someone-else',
+        completed_at: '2026-11-17T10:00:00+00:00',
+      }),
+    );
+    const log = createAskedLog(async (args) => ({
+      stdout: args[0] === 'rev-parse' ? `${'b'.repeat(40)}\n` : '',
+      cut: false,
+    }));
+    const self: { s?: ReturnType<typeof service> } = {};
+    self.s = service({
+      doneTodos: (identity) =>
+        listDoneTodos(root, identity, {
+          log,
+          projects: () => (self.s as ReturnType<typeof service>).index(),
+        }),
+    });
+    const site = await self.s.projectTodos('acme/site', ME);
+    expect(site.doneCount).toBe(site.done?.length);
+    expect(site.done?.filter((d) => d.id.startsWith('dn-')).map((d) => [d.id, d.doneDate])).toEqual([
+      ['dn-new.md', '2026-11-18'],
+      ['dn-old.md', '2026-11-05'],
+      ['dn-nodate.md', null],
+    ]);
+    expect(site.done?.find((d) => d.id === 'dn-new.md')).toEqual({
+      key: 'done:todo/done/dn-new.md',
+      id: 'dn-new.md',
+      scope: 'tds',
+      title: 'To-do',
+      assignee: 'simon-jones',
+      stage: 'Build',
+      doneDate: '2026-11-18',
+      doneBy: 'Simon Jones',
+    });
+    const jev = await self.s.projectTodos('personal/jev', ME);
+    expect(jev.done?.map((d) => d.key)).toEqual(['done:personal/todo/done/dn-mine.md']);
+  });
+
+  it('omits done when the reader is missing or fails (older behaviour)', async () => {
+    expect(await service().projectTodos('acme/site', ME)).not.toHaveProperty('done');
+    const s = service({
+      doneTodos: async () => {
+        throw new Error('boom');
+      },
+    });
+    const res = await s.projectTodos('acme/site', ME);
+    expect(res).not.toHaveProperty('done');
+    expect(res.count).toBe(res.todos.length);
   });
 });
 

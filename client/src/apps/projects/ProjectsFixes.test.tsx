@@ -205,7 +205,7 @@ describe('the To-dos tab (fix 2)', () => {
     ],
   };
 
-  it("lists everyone's to-dos by stage, with names; only mine open the panel; the count comes from the server", async () => {
+  it("lists everyone's to-dos by stage, with names; a teammate's opens read only; the count comes from the server", async () => {
     api.projectTodos.mockResolvedValue(rows);
     await show(projectList([SKY]));
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
@@ -217,7 +217,9 @@ describe('the To-dos tab (fix 2)', () => {
     expect(heads).toEqual(['Discovery', 'Build', 'No stage']);
     // A to-do that isn't mine says who it is assigned to (UX consistency, release 2B).
     expect(screen.getByText('Assigned to Simon')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Simon two/ })).toBeNull();
+    // A teammate's to-do opens read only under its own team: key (done-todos plan, decision 10).
+    fireEvent.click(screen.getByRole('button', { name: /^Simon two/ }));
+    expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'team:todo/b', mode: 'read' });
     fireEvent.click(screen.getByRole('button', { name: /^Mine one/ }));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'open-todo', key: 'a', mode: 'read' });
   });

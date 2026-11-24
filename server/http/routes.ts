@@ -39,6 +39,7 @@ import {
   CLIENT_PICK_REPORTED,
   type ClientGuessResponse,
   type ClientPickReported,
+  type DoneTodoList,
   EFFORT_LEVELS,
   type EffortLevel,
   type EngineHealth,
@@ -65,6 +66,7 @@ import {
   type SequencedEvent,
   type StartSessionRequest,
   type SyncStatus,
+  type TeamTodo,
   THUMB_WIDTHS,
   type Thumbnailer,
   type ThumbWidth,
@@ -200,6 +202,10 @@ export interface RouteContext {
     homeMeetings?: () => Promise<HomeMeetingsResponse>;
     /** Projects R2 phase 5: email drafts waiting for their inbox owner's OK. Absent: the route says it isn't there. */
     emailDrafts?: EmailDraftsService;
+    /** Done-todos plan: finished to-dos. Beside the contract like `ads`; the real brain and setup mode have it. */
+    doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
+    /** Done-todos plan, decision 10: one teammate's open to-do, read only. Null when it has gone. */
+    teamTodo?: (id: string, identity: Identity) => Promise<TeamTodo | null>;
   };
   store: AppStore;
   sessions: SessionManager;
@@ -347,6 +353,8 @@ async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
     return fallback;
   }
 }
+
+const NO_DONE: DoneTodoList = { items: [], historyRead: false };
 
 const UNKNOWN_IDENTITY: Identity = {
   name: '',
@@ -2711,6 +2719,36 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, ctx: R
       historyRead: false,
     });
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.doneTodos) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const body: DoneTodoList = await safe(
+      ctx.brain.doneTodos?.(identity) ?? Promise.resolve(NO_DONE),
+      NO_DONE,
+    );
+    sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === ROUTES.teamTodo) {
+    if (method !== 'GET') throw methodNotAllowed();
+    const id = url.searchParams.get('id');
+    if (id === null || id.length > TODO_KEY_MAX || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(id)) {
+      throw new HttpError(400, 'bad-request', 'That is not a to-do this app can open.');
+    }
+    const identity = await safe(ctx.brain.identity(), UNKNOWN_IDENTITY);
+    const item = await safe(ctx.brain.teamTodo?.(id, identity) ?? Promise.resolve(null), null);
+    if (item === null) {
+      throw new HttpError(
+        404,
+        'not-found',
+        'That to-do could not be found. It may have been finished or moved.',
+      );
+    }
+    sendJson(res, 200, item);
     return;
   }
 

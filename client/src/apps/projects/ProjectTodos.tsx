@@ -1,9 +1,11 @@
 import { useMemo, useRef } from 'react';
 import type { TeamMember } from '../../../../shared/contract.ts';
-import type { ProjectCard, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import type { ProjectCard, ProjectDoneRow, ProjectTodoRow } from '../../../../shared/projects-contract.ts';
+import { Fold } from '../../shell/Fold.tsx';
 import { useShell } from '../../shell/ShellProvider.tsx';
 import { NO_FAVOURITES, StarButton, useStarFocus } from '../../shell/StarButton.tsx';
 import { TodoChatButton } from '../../shell/TodoChatButton.tsx';
+import { primeTeamTodo } from '../../state/team-todo.ts';
 import { useStore } from '../../store.tsx';
 import { dateWords, groupByStage, personName } from './logic.ts';
 
@@ -12,6 +14,8 @@ export function ProjectTodos({
   card,
   team,
   rows,
+  done,
+  doneCount,
   failed,
   reload,
 }: {
@@ -19,10 +23,13 @@ export function ProjectTodos({
   team: readonly TeamMember[] | undefined;
   /** The project's open to-dos from the server, or null while loading. */
   rows: readonly ProjectTodoRow[] | null;
+  /** The project's finished to-dos, newest first. Absent from an older server: no Done section. */
+  done?: readonly ProjectDoneRow[] | undefined;
+  doneCount?: number | undefined;
   failed: boolean;
   reload: () => Promise<void>;
 }) {
-  const { todos, boot, toggleFavouriteTodo, openSettings } = useStore();
+  const { todos, boot, toggleFavouriteTodo, openSettings, revealDoneTodo } = useStore();
   const { dispatch } = useShell();
   // The same star as the To-dos drawer's rows; focus follows a to-do whose star moved it.
   const favs = boot?.prefs?.favouriteTodos ?? NO_FAVOURITES;
@@ -36,9 +43,32 @@ export function ProjectTodos({
   const groups = useMemo(() => groupByStage(rows ?? [], card.stages), [rows, card.stages]);
   // The to-do panel belongs to the To-dos drawer, so open the drawer first.
   const openPanel = (key: string) => {
+    primeTeamTodo(key);
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };
+  // A finished to-do opens in the drawer's read-only panel, as the global search does it.
+  const openDone = (key: string) => {
+    dispatch({ type: 'open-drawer', drawer: 'todos' });
+    revealDoneTodo(key);
+  };
+  const doneSection =
+    done && done.length > 0 ? (
+      <Fold title="Done" count={doneCount ?? done.length} defaultOpen={false}>
+        <ul className="lib-list">
+          {done.map((t) => (
+            <li key={t.key} className="line proj-todo">
+              <button type="button" className="proj-open" onClick={() => openDone(t.key)}>
+                <span className="line-text">
+                  <span className="line-title">{t.title}</span>
+                  <span className="line-meta">{doneRowMeta(t)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Fold>
+    ) : null;
   return (
     <>
       {card.archived ? null : todos?.changes === 'switched-off' ? (
@@ -65,7 +95,10 @@ export function ProjectTodos({
           Loading to-dos…
         </p>
       ) : groups.length === 0 ? (
-        <p className="proj-note">No open to-dos in this project.</p>
+        <>
+          <p className="proj-note">No open to-dos in this project.</p>
+          {doneSection}
+        </>
       ) : (
         <div className="tray lib-tray" ref={trayRef} tabIndex={-1}>
           {groups.map((g) => (
@@ -77,11 +110,17 @@ export function ProjectTodos({
               <ul className="lib-list">
                 {g.items.map((t) => (
                   <li key={t.key} className="line proj-todo">
-                    {t.mine ? (
-                      <button type="button" className="proj-open" onClick={() => openPanel(t.key)}>
+                    {/* A teammate's to-do opens read only (its own `team:` key); only mine get the star and chat. */}
+                    {t.mine || t.scope === 'tds' ? (
+                      <button
+                        type="button"
+                        className="proj-open"
+                        onClick={() => openPanel(t.mine ? t.key : `team:todo/${t.id}`)}
+                      >
                         <TodoText t={t} team={team} />
                       </button>
                     ) : (
+                      // A personal to-do not on my lists (one with no assignee) has nothing the panel can show.
                       <TodoText t={t} team={team} />
                     )}
                     {/* The same buttons, in the same order, as a To-dos drawer row (Actions rules 2 and 10). Only on my
@@ -110,6 +149,7 @@ export function ProjectTodos({
               </ul>
             </section>
           ))}
+          {doneSection}
         </div>
       )}
     </>
@@ -132,4 +172,14 @@ function TodoText({ t, team }: { t: ProjectTodoRow; team: readonly TeamMember[] 
       </span>
     </span>
   );
+}
+
+/**
+ * A finished row's line, worded as the To-dos drawer's Done rows (who ticked it, not who had it): "Done by Sam,
+ * 20 Nov 2026". The year stays: the project's Done list has no month groups to give it.
+ */
+export function doneRowMeta(t: Pick<ProjectDoneRow, 'doneDate' | 'doneBy'>): string {
+  const first = t.doneBy?.split(/\s+/)[0] ?? '';
+  if (!t.doneDate) return first ? `Done by ${first}; date not known` : 'Done; date not known';
+  return `${first ? `Done by ${first}` : 'Done'}, ${dateWords(t.doneDate)}`;
 }

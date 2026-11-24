@@ -12,6 +12,7 @@ import { InviteLink } from '../../shell/MeetingActions.tsx';
 import { ShowMore } from '../../shell/ShowMore.tsx';
 import { StateNote } from '../../shell/StateNote.tsx';
 import { ShellContext } from '../../shell/shell-context.ts';
+import { primeTeamTodo } from '../../state/team-todo.ts';
 import { useStore } from '../../store.tsx';
 import { openLibraryItem } from '../shared/search.ts';
 import { dateWords } from './logic.ts';
@@ -214,6 +215,7 @@ export function ProjectActivity({
   };
 
   const openTodo = (key: string) => {
+    primeTeamTodo(key);
     dispatch({ type: 'open-drawer', drawer: 'todos' });
     dispatch({ type: 'open-todo', key, mode: 'read' });
   };
@@ -241,15 +243,19 @@ export function ProjectActivity({
       setMessage(missing);
     }
   };
-  // The panel can only show a to-do on this person's lists (a teammate's, or a finished one, would leave an
-  // empty panel over a locked page). A teammate's open to-do is listed on the To-dos tab instead.
+  // The panel shows a to-do on this person's lists as it is, and a teammate's open TDS one (a plain file name
+  // key) read only by its `team:` key. A finished one not on my lists stays plain text; anything else goes to
+  // the To-dos tab.
   const onMyLists = (key: string) =>
     todos !== null && (todos.mine.some((t) => t.key === key) || todos.open.some((t) => t.key === key));
+  // A teammate's open TDS to-do opens read only in the panel (done-todos plan, decision 10), as on the To-dos tab.
   const todoAction = (key: string, stillOpen: boolean): RowAction =>
     onMyLists(key)
       ? { panel: true, run: () => openTodo(key) }
       : stillOpen
-        ? { panel: false, run: onTodos }
+        ? key.includes('/')
+          ? { panel: false, run: onTodos }
+          : { panel: true, run: () => openTodo(`team:todo/${key}`) }
         : null;
   const sinceAction = (item: ActivityItem): RowAction => {
     const t = item.target;

@@ -9,7 +9,13 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { type ClientInfo, type Identity, TodoChangeError, type TodoList } from '../../shared/contract.ts';
+import {
+  type ClientInfo,
+  type DoneTodoList,
+  type Identity,
+  TodoChangeError,
+  type TodoList,
+} from '../../shared/contract.ts';
 import { PROJECTS_REFS_CAPABILITY, type RefIndex } from '../../shared/project-refs-contract.ts';
 import {
   archivedFolderPath,
@@ -39,6 +45,7 @@ import {
   PROJECTS_MOVE_CAPABILITY,
   type ProjectAction,
   type ProjectCard,
+  type ProjectDoneRow,
   type ProjectKey,
   type ProjectKind,
   type ProjectList,
@@ -134,6 +141,11 @@ export interface ProjectsOptions {
    * here by the same rule (theirs, an open TDS one, or their own personal one).
    */
   todoList?: (identity: Identity) => Promise<Pick<TodoList, 'mine' | 'open'>>;
+  /**
+   * This person's finished to-dos (the same reader as the Done tab), for `projectTodos`' `done` rows.
+   * Missing or failing: no `done` (older behaviour).
+   */
+  doneTodos?: (identity: Identity) => Promise<DoneTodoList>;
   /** After a move, archive, unarchive or delete: the old and new folders (brain-relative), so the library drops both from its caches. */
   onMoved?: (from: string, to: string) => void;
 }
@@ -1266,7 +1278,30 @@ export function createProjects(root: string, opts: ProjectsOptions): ProjectsSer
           a.title.localeCompare(b.title) ||
           a.key.localeCompare(b.key),
       );
-    return { todos: rows, count: rows.length };
+    const response: ProjectTodosResponse = { todos: rows, count: rows.length };
+    if (opts.doneTodos) {
+      try {
+        const doneRows: ProjectDoneRow[] = (await opts.doneTodos(identity)).items
+          .filter(
+            (t) => matchedKey(t.projectMatch ?? index.resolve(t.project, t.client, t.scope)) === card.key,
+          )
+          .map((t) => ({
+            key: t.key,
+            id: t.id,
+            scope: t.scope,
+            title: t.title,
+            assignee: t.assignee,
+            stage: t.stage,
+            doneDate: t.done && /^\d{4}-\d{2}-\d{2}/.test(t.done.at) ? t.done.at.slice(0, 10) : null,
+            doneBy: t.done?.name ?? null,
+          }));
+        response.done = doneRows;
+        response.doneCount = doneRows.length;
+      } catch {
+        // No Done section: the open to-dos still answer.
+      }
+    }
+    return response;
   };
 
   return {

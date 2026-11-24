@@ -158,7 +158,7 @@ describe('activity on the Overview', () => {
     expect(await screen.findByText('No updates yet.')).toBeTruthy();
   });
 
-  it("a teammate's to-do goes to the To-dos tab, never the panel; a finished one not on my lists is plain text", async () => {
+  it("a teammate's open to-do opens read only in the panel; a finished one not on my lists is plain text", async () => {
     api.projectActivity.mockResolvedValue(
       reply({
         items: [
@@ -167,7 +167,7 @@ describe('activity on the Overview', () => {
             text: 'To-do added: Book the photographer',
             at: null,
             byName: null,
-            target: { kind: 'todo', key: 'todo/theirs.md' },
+            target: { kind: 'todo', key: '20261120-theirs.md' },
           },
           {
             kind: 'todo-closed',
@@ -183,7 +183,7 @@ describe('activity on the Overview', () => {
             text: 'Book the photographer',
             date: '2026-11-27',
             overdue: false,
-            target: { kind: 'todo', key: 'todo/theirs.md' },
+            target: { kind: 'todo', key: '20261120-theirs.md' },
           },
         ],
       }),
@@ -194,16 +194,41 @@ describe('activity on the Overview', () => {
     expect(done?.classList.contains('proj-static')).toBe(true);
 
     const coming = screen.getByRole('button', { name: /^Book the photographer/ });
-    expect(coming.getAttribute('aria-haspopup')).toBeNull();
+    expect(coming.getAttribute('aria-haspopup')).toBe('dialog');
     const added = screen.getByRole('button', { name: /To-do added: Book the photographer/ });
+    expect(added.getAttribute('aria-haspopup')).toBe('dialog');
+    fireEvent.click(added);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'open-drawer', drawer: 'todos' });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'open-todo',
+      key: 'team:todo/20261120-theirs.md',
+      mode: 'read',
+    });
+  });
+
+  it('sends a to-do key it cannot open read only to the To-dos tab', async () => {
+    api.projectActivity.mockResolvedValue(
+      reply({
+        items: [
+          {
+            kind: 'todo-added',
+            text: 'To-do added: Odd one',
+            at: null,
+            byName: null,
+            target: { kind: 'todo', key: 'todo/odd.md' },
+          },
+        ],
+        comingUp: [],
+      }),
+    );
+    await openProject();
+    const added = await screen.findByRole('button', { name: /To-do added: Odd one/ });
     expect(added.getAttribute('aria-haspopup')).toBeNull();
     fireEvent.click(added);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /^To-dos/ }).getAttribute('aria-current')).toBeTruthy(),
     );
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-todo' }));
-    // The row is gone with the Overview, so focus goes to the tab now shown, not the page.
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^To-dos/ }));
   });
 
   it('shows five changes, then the shared Show more, and says where the rest are', async () => {

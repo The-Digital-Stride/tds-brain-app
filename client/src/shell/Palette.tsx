@@ -14,6 +14,7 @@ import {
   useAsyncSearch,
 } from '../state/palette.ts';
 import { useProjects } from '../state/projects.ts';
+import { useDoneTodos } from '../state/todo-done.ts';
 import { useStore } from '../store.tsx';
 import type { SearchActions, SearchContext, SearchHit } from './contract.ts';
 import { Icon } from './Icon.tsx';
@@ -51,6 +52,7 @@ function PaletteDialog() {
     openPast,
     startSkill,
     revealTodo,
+    revealDoneTodo,
     requestComposerFocus,
     openTool,
     ads,
@@ -92,7 +94,10 @@ function PaletteDialog() {
     [boot, todos, sessions, ads, skillLevels, projectList],
   );
   const slots = useAsyncSearch(sources, q);
-  const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots]);
+  // The finished to-dos load on the first search with text; the Done group re-runs when they arrive.
+  const { list: doneList, loading: doneLoading } = useDoneTodos(q !== '');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `doneList` is read through the done store, not the closure.
+  const groups = useMemo(() => paletteGroups(sources, q, ctx, slots), [sources, q, ctx, slots, doneList]);
   const options = useMemo<Option[]>(
     () => groups.flatMap((group) => group.hits.map((hit) => ({ key: optionKey(group, hit), group, hit }))),
     [groups],
@@ -100,7 +105,9 @@ function PaletteDialog() {
   const active = options.find((o) => o.key === activeId) ?? options[0];
   // Still looking (a partial answer being asked again) with nothing to show yet counts as still searching.
   const looking = asyncLooking(sources, q, slots);
-  const pending = asyncPending(sources, q, slots) || (options.length === 0 && looking);
+  // The finished to-dos' first load counts as still searching, so "Nothing matches" never shows before they arrive.
+  const doneFirstLoad = q !== '' && doneLoading && doneList === null;
+  const pending = asyncPending(sources, q, slots) || (options.length === 0 && (looking || doneFirstLoad));
   // A "Still looking…" no group carries (the looking group has no hits yet) goes at the foot of the list.
   const lookingAlone = looking && options.length > 0 && !groups.some((g) => g.looking);
   const tipKey = useTipKey(hoverId ?? (keyed ? (active?.key ?? null) : null));
@@ -176,6 +183,11 @@ function PaletteDialog() {
       skipRestore.current = true;
       dispatch({ type: 'open-drawer', drawer: 'todos' });
       revealTodo(todo);
+    },
+    revealDone: (key) => {
+      skipRestore.current = true;
+      dispatch({ type: 'open-drawer', drawer: 'todos' });
+      revealDoneTodo(key);
     },
     chooseClient: (slug) => {
       newChat({ client: slug });

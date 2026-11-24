@@ -10,12 +10,14 @@ import { Readable, Writable } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   type AskedTodoList,
+  type DoneTodoList,
   type LibraryListing,
   type LibrarySearchResponse,
   MAX_ATTACHMENTS,
   ROUTES,
   SESSION_COOKIE,
   sessionCookieName,
+  type TeamTodo,
   TODO_SCRIPT,
   type TodoHistoryResponse,
   type TodoList,
@@ -723,6 +725,62 @@ describe('GET ROUTES.askedTodos and ROUTES.todoHistory (plan 2026-11-16-asked-of
     expect(asked.status).toBe(200);
     expect((asked.json as AskedTodoList).historyRead).toBe(false);
     expect((asked.json as AskedTodoList).waiting).toHaveLength(1);
+  });
+
+  it('lists finished to-dos through the gate: own personal only, no-store, GET only', async () => {
+    const brain = makeBrain(gitOk);
+    const root = (brain as unknown as { root: string }).root;
+    mkdirSync(join(root, 'personal', 'todo', 'done'), { recursive: true });
+    writeFileSync(join(root, 'personal', 'todo', 'done', 'mine.md'), '---\nassignee: sam-example\n---\n');
+    writeFileSync(join(root, 'personal', 'todo', 'done', 'theirs.md'), '---\nassignee: alex-sample\n---\n');
+    mkdirSync(join(root, 'todo', 'done'), { recursive: true });
+    writeFileSync(
+      join(root, 'todo', 'done', '20261101-shared.md'),
+      '---\ncompleted_by: alex-sample\ncompleted_at: 2026-11-12T09:00:00+00:00\n---\n',
+    );
+    const { status, headers, json } = await get(brain, ROUTES.doneTodos);
+    expect(status).toBe(200);
+    expect(headers['Cache-Control']).toBe('no-store');
+    const keys = (json as DoneTodoList).items.map((i) => i.key);
+    expect(keys).toContain('done:todo/done/20261101-shared.md');
+    expect(keys).toContain('done:personal/todo/done/mine.md');
+    expect(keys).not.toContain('done:personal/todo/done/theirs.md');
+    expect((await get(brain, ROUTES.doneTodos, 'POST')).status).toBe(405);
+    const history = await get(
+      brain,
+      `${ROUTES.todoHistory}?key=${encodeURIComponent('done:todo/done/20261101-shared.md')}`,
+    );
+    expect(history.status).toBe(200);
+    const bad = await get(
+      brain,
+      `${ROUTES.todoHistory}?key=${encodeURIComponent('done:todo/done/..%2Fx.md')}`,
+    );
+    expect(bad.status).toBe(400);
+  });
+
+  it('reads one teammate to-do through the gate: 200, 400, 404, no-store, GET only', async () => {
+    const brain = makeBrain(gitOk);
+    const base = `${ROUTES.teamTodo}?id=`;
+    const ok = await get(brain, `${base}${ID}`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers['Cache-Control']).toBe('no-store');
+    expect((ok.json as TeamTodo).key).toBe(`team:todo/${ID}`);
+    for (const bad of ['', '..%2Fx.md', 'personal%2Ftodo%2Fa.md', 'a.txt']) {
+      expect((await get(brain, `${base}${bad}`)).status, bad).toBe(400);
+    }
+    expect((await get(brain, ROUTES.teamTodo)).status).toBe(400);
+    const gone = await get(brain, `${base}20261101-gone.md`);
+    expect(gone.status).toBe(404);
+    expect(JSON.stringify(gone.json)).toContain('could not be found');
+    expect((await get(brain, `${base}${ID}`, 'POST')).status).toBe(405);
+  });
+
+  it('setup mode answers a teammate to-do with 404', async () => {
+    expect((await get(createSetupBrain(), `${ROUTES.teamTodo}?id=${ID}`)).status).toBe(404);
+  });
+
+  it('setup mode answers done empty', async () => {
+    expect((await get(createSetupBrain(), ROUTES.doneTodos)).json).toEqual({ items: [], historyRead: false });
   });
 
   it('only GET', async () => {

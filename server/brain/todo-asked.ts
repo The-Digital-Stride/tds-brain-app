@@ -43,7 +43,7 @@ interface Author {
 }
 
 /** What the log says about one file name. */
-interface LogFacts {
+export interface LogFacts {
   /** The newest commit that added or changed `todo/<id>`'s `assignee:` line (never a D: the tick). */
   ask: Author | null;
   /** The newest commit that added `todo/done/<id>` (with an `assignee:` line). */
@@ -70,6 +70,27 @@ export function askedLogArgs(): string[] {
     '--format=%x1e%an%x00%ae%x00%aI',
     '--',
     'todo',
+  ];
+}
+
+/**
+ * Every commit that added a file to `todo/done/`, with only those files listed: the tick's commit for
+ * the Done list (done-todos plan, decision 2). Unlike `askedLogArgs` it doesn't need an `assignee:` line,
+ * so a to-do that was open to anyone is found too.
+ */
+export function doneLogArgs(): string[] {
+  return [
+    'log',
+    '--no-renames',
+    '--no-follow',
+    '--no-color',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--diff-filter=A',
+    '--name-status',
+    '--format=%x1e%an%x00%ae%x00%aI',
+    '--',
+    'todo/done',
   ];
 }
 
@@ -156,21 +177,22 @@ async function readTodoFiles(root: string, state: AskedTodo['state']): Promise<T
   return files;
 }
 
-interface Roster {
+export interface Roster {
   team: TeamMember[];
   members: Member[];
 }
 
-const rosterName = (team: TeamMember[], slug: string) => team.find((m) => m.slug === slug)?.name ?? null;
+export const rosterName = (team: TeamMember[], slug: string) =>
+  team.find((m) => m.slug === slug)?.name ?? null;
 
 /** A slug a stamp wrote: matched to the roster where it can be, else kept as written. */
-function stampActor(team: TeamMember[], written: string, at: string): TodoActor {
+export function stampActor(team: TeamMember[], written: string, at: string): TodoActor {
   const slug = written.toLowerCase();
   const name = rosterName(team, slug);
   return { slug: name === null ? null : slug, name: name ?? (written || null), at, source: 'stamp' };
 }
 
-function historyActor(roster: Roster, author: Author): TodoActor {
+export function historyActor(roster: Roster, author: Author): TodoActor {
   const slug = authorSlug(roster.members, roster.team, author);
   return {
     slug,
@@ -248,12 +270,18 @@ export interface AskedTodos {
 }
 
 /** The parsed log for one brain at one HEAD, or 'unread' when git couldn't give the whole log. */
-type LogResult = ParsedLog | 'unread';
+export type LogResult = ParsedLog | 'unread';
 
-export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
+/** One reader of the `todo/` git log per brain and HEAD: shared by the Asked and Done lists. */
+export interface AskedLog {
+  read(root: string): Promise<LogResult>;
+}
+
+/** One cached `git log` per brain folder and HEAD; `args` picks the log (Asked's by default, or `doneLogArgs`). */
+export function createAskedLog(run: GitLogRunner = runGit, args: () => string[] = askedLogArgs): AskedLog {
   const cache = new Map<string, { head: string; log: Promise<LogResult> }>();
 
-  const readLog = async (root: string): Promise<LogResult> => {
+  const read = async (root: string): Promise<LogResult> => {
     let head: string;
     try {
       head = (await run(['rev-parse', 'HEAD'], root)).stdout.trim();
@@ -265,7 +293,7 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
     // A shared in-flight read can still fail: every caller gets 'unread' (stamps only), never a throw.
     if (hit && hit.head === head) return hit.log.catch(() => 'unread' as const);
     const log = (async (): Promise<LogResult> => {
-      const out = await run(askedLogArgs(), root, {
+      const out = await run(args(), root, {
         maxOutput: ASKED_LOG_MAX_OUTPUT,
         timeoutMs: ASKED_LOG_TIMEOUT_MS,
       });
@@ -282,6 +310,11 @@ export function createAskedTodos(run: GitLogRunner = runGit): AskedTodos {
       return 'unread';
     }
   };
+  return { read };
+}
+
+export function createAskedTodos(run: GitLogRunner = runGit, shared?: AskedLog): AskedTodos {
+  const readLog = (shared ?? createAskedLog(run)).read;
 
   return {
     async list(root, identity, now, projects) {

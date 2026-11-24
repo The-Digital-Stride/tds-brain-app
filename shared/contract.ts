@@ -408,6 +408,84 @@ export interface AskedTodoList {
 }
 
 /**
+ * A finished to-do (done-todos plan 2026-11-24): a TDS one from `todo/done/`, or this person's own
+ * personal one from `personal/todo/done/`. Shown read only.
+ */
+export interface DoneTodo {
+  /**
+   * `done:todo/done/<id>` or `done:personal/todo/done/<id>`. Never equal to a TodoItem.key or an
+   * AskedTodo.key, so the panel, prev/next and React keys can hold every kind. Also the history key.
+   */
+  key: string;
+  /** The file name, e.g. "20261113-send-the-quote.md". */
+  id: string;
+  scope: TodoScope;
+  /** Brain-relative path: `todo/done/<id>` or `personal/todo/done/<id>`. */
+  path: string;
+  title: string;
+  /** Team slug of who had it when it was ticked; null when it was open to anyone. */
+  assignee: string | null;
+  /** The roster's name for `assignee`, else the slug; null when `assignee` is null. */
+  assigneeName: string | null;
+  /** YYYY-MM-DD from frontmatter `due`, else null. */
+  due: string | null;
+  /** Everything below the frontmatter, trimmed. Shown read only and searched. */
+  details: string;
+  /**
+   * Who ticked it and when: the done stamp (`completed_by`, `completed_at`/`completed`), else the git
+   * commit that added it to the done folder; null when neither is known.
+   */
+  done: TodoActor | null;
+  /** The file's fingerprint, as TodoItem.version. */
+  version: string;
+  /** As TodoItem.attachments. Shown read only. */
+  attachments: TodoAttachment[];
+  /** As TodoItem.client / project / stage / projectMatch, so the drawer's filters apply. */
+  client: string | null;
+  project: string | null;
+  stage: string | null;
+  projectMatch?: TodoProjectMatch;
+}
+
+/**
+ * A teammate's open TDS to-do, shown read only (done-todos plan, decision 10): from `todo/<id>`, never personal.
+ * `GET ROUTES.teamTodo?id=<id>`; 404 when it isn't in `todo/` any more.
+ */
+export interface TeamTodo {
+  /** `team:todo/<id>`: never equal to a TodoItem.key, AskedTodo.key or DoneTodo.key. */
+  key: string;
+  /** The file name, e.g. "20261113-send-the-quote.md". Also its history key (TodoItem.key for TDS). */
+  id: string;
+  /** Brain-relative path: `todo/<id>`. */
+  path: string;
+  title: string;
+  /** Team slug of who has it; null when it is open to anyone. */
+  assignee: string | null;
+  /** The roster's name for `assignee`, else the slug; null when `assignee` is null. */
+  assigneeName: string | null;
+  /** YYYY-MM-DD from frontmatter `due`, else null. */
+  due: string | null;
+  /** Everything below the frontmatter, trimmed. Shown read only. */
+  details: string;
+  /** The file's fingerprint, as TodoItem.version. */
+  version: string;
+  /** As TodoItem.attachments. Shown read only. */
+  attachments: TodoAttachment[];
+  client: string | null;
+  project: string | null;
+  stage: string | null;
+  projectMatch?: TodoProjectMatch;
+}
+
+/** `GET ROUTES.doneTodos`. */
+export interface DoneTodoList {
+  /** Every finished to-do this person may see, most recently finished first; unknown dates last. */
+  items: DoneTodo[];
+  /** False when the brain's git record couldn't be read: older to-dos without a stamp have no date. */
+  historyRead: boolean;
+}
+
+/**
  * One change in a to-do's life, worked out from one git commit (plus the stamps that commit added).
  * - created: the file first appears. `to` = the assignee it was created with ('open' for anyone).
  * - passed-on: `assignee:` changed. `from`/`to` = slugs, 'open' for anyone.
@@ -1947,6 +2025,8 @@ export const ROUTES = {
   changeTodo: '/api/todos/change',
   /** `GET` → AskedTodoList. `no-store`. */
   askedTodos: '/api/todos/asked',
+  doneTodos: '/api/todos/done',
+  teamTodo: '/api/todos/team',
   /** `GET ?key=` → TodoHistoryResponse. `no-store`. 400 `bad-request` for a bad key, 404 `not-found`. */
   todoHistory: '/api/todos/history',
   /**

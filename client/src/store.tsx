@@ -49,6 +49,8 @@ import type { ListState } from './state/health.ts';
 import { projectsStore } from './state/projects.ts';
 import { chooseInitialChat, readSavedChat, saveChat } from './state/resume.ts';
 import { isStalled } from './state/stall.ts';
+import { teamTodoStore } from './state/team-todo.ts';
+import { doneStore } from './state/todo-done.ts';
 import { loadAdsSummary } from './tools/ad-manager/summary.ts';
 import { taskRuns } from './tools/ad-manager/task-runs.ts';
 
@@ -463,6 +465,14 @@ export interface Store {
   revealTodo: (todo: TodoItem) => void;
   clearReveal: () => void;
   /**
+   * A finished to-do (`DoneTodo.key`, "done:...") the global search or a project page asked the to-dos
+   * drawer to show: it opens on the Done tab with that to-do in the panel. One-shot like `reveal`. The caller
+   * also opens the drawer (`open-drawer` 'todos'), as the palette does for `revealTodo`.
+   */
+  doneReveal: { key: string; n: number } | null;
+  revealDoneTodo: (key: string) => void;
+  clearDoneReveal: () => void;
+  /**
    * True when the chat's "Change" button asked Settings to put the cursor on Model. One-shot, like
    * `reveal`: Settings takes it once it has rendered and calls `clearSettingsFocus`.
    */
@@ -537,6 +547,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [todos, setTodos] = useState<TodoList | null>(null);
   const [sessions, setSessions] = useState<SessionList | null>(null);
+  // A to-do list change (a tick, a hand-over, a sync) also refreshes the finished to-dos and any teammate's
+  // to-do already read, whether or not the To-dos drawer is open, so search and the panel stay current.
+  useEffect(() => {
+    if (todos === null) return;
+    if (doneStore.isStarted()) void doneStore.refresh();
+    teamTodoStore.refreshLoaded();
+  }, [todos]);
   const [view, setView] = useState<View>('chat');
   const [activeChat, setActiveChat] = useState<ActiveChat>(() => freshNewChat());
   const [chats, dispatchChat] = useReducer(chatsReducer, {} as Chats);
@@ -563,6 +580,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setReveal({ todo, n: revealCount.current });
   }, []);
   const clearReveal = useCallback(() => setReveal(null), []);
+  const [doneReveal, setDoneReveal] = useState<{ key: string; n: number } | null>(null);
+  const doneRevealCount = useRef(0);
+  const revealDoneTodo = useCallback((key: string) => {
+    doneRevealCount.current += 1;
+    setDoneReveal({ key, n: doneRevealCount.current });
+  }, []);
+  const clearDoneReveal = useCallback(() => setDoneReveal(null), []);
   const restored = useRef(false);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const [drawerChat, setDrawerChat] = useState<string | null>(null);
@@ -1675,6 +1699,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reveal,
       revealTodo,
       clearReveal,
+      doneReveal,
+      revealDoneTodo,
+      clearDoneReveal,
       settingsFocus,
       settingsTab,
       openSettings,
@@ -1758,6 +1785,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reveal,
       revealTodo,
       clearReveal,
+      doneReveal,
+      revealDoneTodo,
+      clearDoneReveal,
       settingsFocus,
       settingsTab,
       openSettings,

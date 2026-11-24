@@ -5,13 +5,14 @@
  * Built-ins first (Go to, To-dos, Open chats, Skills, Clients, Earlier chats), then each app's own
  * (`AppSlot.search`) and each section tool's own (`ToolSlot.search`, which checks its own visibility from `ctx.ads`), with async sources last so a late answer never moves the highlight.
  */
-import type { PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
+import type { DoneTodo, PastSession, SkillInfo, TodoItem } from '../../../shared/contract.ts';
 import { foldRef, refCandidates } from '../../../shared/project-refs.ts';
 import { dueInWords } from '../format.ts';
 import { helpLibrary } from '../help/library.ts';
 import { projectPageRequest } from '../state/client-choice.ts';
 import { projectText, todoPlaceParts } from '../state/projects.ts';
 import { matchRank } from '../state/search-match.ts';
+import { doneStore } from '../state/todo-done.ts';
 import { APPS } from './apps.ts';
 import type {
   DrawerName,
@@ -24,7 +25,7 @@ import type {
 } from './contract.ts';
 import { SECTIONS } from './sections.ts';
 import { visibleSettingsTabs } from './settings-tabs.ts';
-import { placeName, whenWords } from './words.ts';
+import { placeName, shortDay, whenWords } from './words.ts';
 
 /** The Projects app's id (`apps.ts`): a Projects hit opens its page there. */
 const PROJECTS_APP_ID = 'projects';
@@ -208,6 +209,53 @@ function todoHit(todo: TodoItem, isOpen: boolean, ctx: SearchContext): SearchHit
     run: (a) => a.revealTodo(todo),
   };
 }
+
+/** "5 Nov", with the year when it isn't this year ("5 Nov 2025"), so an old finished to-do doesn't look recent. */
+function doneDay(iso: string, now: Date): string {
+  const day = shortDay(iso);
+  const year = new Date(iso).getFullYear();
+  return day && year !== now.getFullYear() ? `${day} ${year}` : day;
+}
+
+function doneHit(todo: DoneTodo, ctx: SearchContext): SearchHit {
+  const day = todo.done ? doneDay(todo.done.at, new Date()) : '';
+  const hint = [
+    day ? `Done ${day}` : 'Done, date not known',
+    todoPlaceParts(todo, ctx.projects, ctx.clients)[0],
+    todo.scope === 'personal' ? 'Personal' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return {
+    id: todo.key,
+    label: todo.title,
+    hint,
+    icon: 'todos',
+    run: (a) => a.revealDone?.(todo.key),
+  };
+}
+
+/**
+ * Finished to-dos (done-todos plan, decision 8): their own group, last, with its own cap. Reads the shared
+ * done store's loaded list (the palette starts the load and re-runs this when it arrives), so it needs
+ * the client and project names from the context, which an async source is not given. Only with a query.
+ */
+const doneTodos: SearchSource = {
+  id: 'done-todos',
+  title: 'Done to-dos',
+  search: (query, ctx) => {
+    const items = doneStore.get().list?.items ?? [];
+    return ranked(
+      query,
+      items,
+      (todo) => ({
+        title: todo.title,
+        fields: [todo.details, ...todoPlaceParts(todo, ctx.projects, ctx.clients)],
+      }),
+      (todo) => doneHit(todo, ctx),
+    );
+  },
+};
 
 /** A project code typed with brackets, spaces or in lower case reads as the folded code; any other text is left alone. */
 function codeQuery(query: string): string {
@@ -413,6 +461,7 @@ export function searchSources(): SearchSource[] {
     help,
     ...APPS.flatMap((a) => (a.search ? [a.search] : [])),
     ...SECTIONS.flatMap((s) => s.tools.flatMap((t) => (t.search ? [t.search] : []))),
+    doneTodos,
   ];
   return [...all.filter((s) => !s.searchAsync), ...all.filter((s) => s.searchAsync)];
 }

@@ -11,7 +11,9 @@ import {
 } from 'react';
 import {
   type AskedTodo,
+  type DoneTodo,
   type TeamMember,
+  type TeamTodo,
   TODO_DETAILS_MAX,
   TODO_TITLE_MAX,
   type TodoAction,
@@ -48,7 +50,14 @@ import {
   todoProjectValue,
 } from './TodoForms.tsx';
 import { TodoHistory } from './TodoHistory.tsx';
-import { askedStatusLine, handoverLine, todoChatDraft } from './words.ts';
+import {
+  askedStatusLine,
+  doneStatusLine,
+  handoverLine,
+  teamNote,
+  teamStatusLine,
+  todoChatDraft,
+} from './words.ts';
 
 const LONG_NOTE = 'These details are too long to edit here. Change them in a chat instead.';
 const UNFAITHFUL_NOTE =
@@ -59,6 +68,10 @@ export interface TodoPanelProps {
   todo: TodoItem | null;
   /** A to-do you passed on, shown read only (then `todo` is null). */
   asked?: AskedTodo | null;
+  /** A finished to-do, shown read only (then `todo` and `asked` are null). */
+  done?: DoneTodo | null;
+  /** A teammate's open to-do, shown read only (then `todo`, `asked` and `done` are null). */
+  teamTodo?: TeamTodo | null;
   mode: TodoPanelMode;
   /** The drawer's status line, said here while the panel is open (it may cover the drawer). */
   message: string;
@@ -109,6 +122,8 @@ function isTypingTarget(el: Element | null): boolean {
 export default function TodoPanel(props: TodoPanelProps) {
   const { todo, mode, message, isError } = props;
   const asked = props.asked ?? null;
+  const done = props.done ?? null;
+  const teamTodo = props.teamTodo ?? null;
   const { state, dispatch, modes } = useShell();
   const panel = state.todoPanel;
   const addStart = panel?.mode === 'add' ? (panel.start ?? null) : null;
@@ -145,7 +160,7 @@ export default function TodoPanel(props: TodoPanelProps) {
   const ask = panel?.ask ?? null;
 
   // Where the keyboard starts: the heading when reading, the title when editing or adding (its own field).
-  const key = todo?.key ?? asked?.key ?? '';
+  const key = todo?.key ?? asked?.key ?? done?.key ?? teamTodo?.key ?? '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: restart when the to-do or mode changes only.
   useEffect(() => {
     if (mode === 'edit') titleInput.current?.focus();
@@ -182,7 +197,8 @@ export default function TodoPanel(props: TodoPanelProps) {
   };
   const close = () => dispatch({ type: 'close-todo' });
 
-  const title = mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? '');
+  const title =
+    mode === 'add' ? 'Add a to-do' : (todo?.title ?? asked?.title ?? done?.title ?? teamTodo?.title ?? '');
   const keys = state.singleKeys;
 
   return (
@@ -285,6 +301,10 @@ export default function TodoPanel(props: TodoPanelProps) {
           </div>
         ) : asked ? (
           <AskedReadView asked={asked} team={props.team} me={props.me} onStatus={props.onStatus} />
+        ) : done ? (
+          <DoneReadView done={done} team={props.team} me={props.me} onStatus={props.onStatus} />
+        ) : teamTodo ? (
+          <TeamReadView team={teamTodo} roster={props.team} me={props.me} onStatus={props.onStatus} />
         ) : todo === null ? null : mode === 'edit' ? (
           <EditView
             {...props}
@@ -528,27 +548,38 @@ function ReadView({
   );
 }
 
-/** A to-do you passed on: read only. No Edit, tick, pass on, delete or chat: it is someone else's now. */
-function AskedReadView({
-  asked,
+/** What the read-only panel shows for a to-do that isn't the person's to change (passed on, or finished). */
+interface ReadOnlyItem {
+  key: string;
+  /** The history key, when it isn't `key` (a teammate's to-do is panelled as `team:todo/<id>`, kept as `<id>`). */
+  historyKey?: string;
+  details: string;
+  attachments: AskedTodo['attachments'];
+  due: string | null;
+  /** The due date is shown as late. */
+  overdue: boolean;
+  status: string;
+  /** Who it was with, as a fact row; omitted for none. */
+  assigned?: string;
+  /** The footer line saying why it can't be changed. */
+  note: string;
+}
+
+/** Read only: no Edit, tick, pass on, delete or chat. Used for to-dos passed on (Asked) and finished ones (Done). */
+function ReadOnlyView({
+  item,
   team,
   me,
   onStatus,
 }: {
-  asked: AskedTodo;
+  item: ReadOnlyItem;
   team: TeamMember[];
   me: string;
   onStatus: (text: string, isError?: boolean) => void;
 }) {
   // The Files section is shown as a list below the details, so it is left out of the text.
-  const details = splitTodoFiles(asked.details).details;
-  const due = asked.due ? dueInWords(asked.due) : '';
-  const first =
-    asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
-  const note =
-    asked.state === 'done'
-      ? `${first ? `${first} ticked this off` : 'This to-do was ticked off'}, so it can't be changed here.`
-      : `This is ${first || asked.assigneeName}'s to-do now, so you can read it but not change it.`;
+  const details = splitTodoFiles(item.details).details;
+  const due = item.due ? dueInWords(item.due) : '';
   return (
     <>
       <div className="todo-body">
@@ -559,45 +590,127 @@ function AskedReadView({
             <p className="todo-empty">No details yet.</p>
           )}
           <TodoFiles
-            attachments={asked.attachments}
+            attachments={item.attachments}
             todo={null}
             canAttach={false}
-            extras={todoFileExtras(asked.details)}
+            extras={todoFileExtras(item.details)}
             canUpload={false}
             me={me}
             team={team}
             busy={false}
             onStatus={onStatus}
           />
-          <TodoHistory key={asked.key} todoKey={asked.key} team={team} />
+          <TodoHistory key={item.historyKey ?? item.key} todoKey={item.historyKey ?? item.key} team={team} />
         </div>
         <dl className="todo-facts">
           <div>
             <dt>Status</dt>
-            <dd>{askedStatusLine(asked)}</dd>
+            <dd>{item.status}</dd>
           </div>
+          {item.assigned ? (
+            <div>
+              <dt>Assigned to</dt>
+              <dd>{item.assigned}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Due</dt>
-            <dd>
-              {due ? (
-                <span
-                  className={
-                    asked.state === 'waiting' && asked.due && isOverdue(asked.due) ? 'late' : undefined
-                  }
-                >
-                  {due}
-                </span>
-              ) : (
-                'No date'
-              )}
-            </dd>
+            <dd>{due ? <span className={item.overdue ? 'late' : undefined}>{due}</span> : 'No date'}</dd>
           </div>
         </dl>
       </div>
       <footer className="todo-foot">
-        <p className="todo-note todo-foot-note">{note}</p>
+        <p className="todo-note todo-foot-note">{item.note}</p>
       </footer>
     </>
+  );
+}
+
+/** A to-do you passed on: read only. It is someone else's now. */
+function AskedReadView({
+  asked,
+  ...rest
+}: {
+  asked: AskedTodo;
+  team: TeamMember[];
+  me: string;
+  onStatus: (text: string, isError?: boolean) => void;
+}) {
+  const first =
+    asked.state === 'done' ? asked.done?.name?.split(/\s+/)[0] : asked.assigneeName.split(/\s+/)[0];
+  const note =
+    asked.state === 'done'
+      ? `${first ? `${first} ticked this off` : 'This to-do was ticked off'}, so it can't be changed here.`
+      : `This is ${first || asked.assigneeName}'s to-do now, so you can read it but not change it.`;
+  return (
+    <ReadOnlyView
+      {...rest}
+      item={{
+        key: asked.key,
+        details: asked.details,
+        attachments: asked.attachments,
+        due: asked.due,
+        overdue: asked.state === 'waiting' && asked.due !== null && isOverdue(asked.due),
+        status: askedStatusLine(asked),
+        note,
+      }}
+    />
+  );
+}
+
+/** A finished to-do: read only, with its history. Nothing on it can be changed from here. */
+function DoneReadView({
+  done,
+  ...rest
+}: {
+  done: DoneTodo;
+  team: TeamMember[];
+  me: string;
+  onStatus: (text: string, isError?: boolean) => void;
+}) {
+  return (
+    <ReadOnlyView
+      {...rest}
+      item={{
+        key: done.key,
+        details: done.details,
+        attachments: done.attachments,
+        due: done.due,
+        overdue: false,
+        status: doneStatusLine(done),
+        assigned: done.assigneeName ?? undefined,
+        note: 'This to-do is finished, so it can only be read here.',
+      }}
+    />
+  );
+}
+
+/** A teammate's open to-do: read only, with its history (kept under the plain file name). */
+function TeamReadView({
+  team,
+  roster,
+  ...rest
+}: {
+  team: TeamTodo;
+  roster: TeamMember[];
+  me: string;
+  onStatus: (text: string, isError?: boolean) => void;
+}) {
+  return (
+    <ReadOnlyView
+      {...rest}
+      team={roster}
+      item={{
+        key: team.key,
+        historyKey: team.id,
+        details: team.details,
+        attachments: team.attachments,
+        due: team.due,
+        overdue: team.due !== null && isOverdue(team.due),
+        status: teamStatusLine(team),
+        note: teamNote(team),
+      }}
+    />
   );
 }
 

@@ -31,6 +31,7 @@ import type {
   ClientPickOutcomeRequest,
   ClientPickReported,
   CompleteTodoRequest,
+  DoneTodoList,
   EngineChoices,
   LibraryItem,
   LibraryItemsResponse,
@@ -48,6 +49,7 @@ import type {
   StartSessionRequest,
   StartSessionResponse,
   SyncStatus,
+  TeamTodo,
   TodoAction,
   TodoHistoryResponse,
   TodoList,
@@ -231,6 +233,10 @@ export const api = {
   todos: () => request<TodoList>('GET', ROUTES.todos),
   /** To-dos passed on to others (its own request: it never blocks or fails `todos`). */
   askedTodos: () => request<AskedTodoList>('GET', ROUTES.askedTodos),
+  /** Every finished to-do this person may see, newest first (its own request, like `askedTodos`). */
+  doneTodos: () => request<DoneTodoList>('GET', ROUTES.doneTodos),
+  /** One teammate's open to-do, read only (404 when it has gone). */
+  teamTodo: (id: string) => request<TeamTodo>('GET', `${ROUTES.teamTodo}?id=${encodeURIComponent(id)}`),
   todoHistory: (key: string) =>
     request<TodoHistoryResponse>('GET', `${ROUTES.todoHistory}?key=${encodeURIComponent(key)}`),
   sync: () => request<SyncStatus>('GET', ROUTES.sync),

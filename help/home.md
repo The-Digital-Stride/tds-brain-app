@@ -37,6 +37,7 @@ Under the box you will see your pinned to-dos, pinned chats and pinned files. If
 
 - Your chat opens as soon as you send, and you can follow it in the [Chats drawer](help:chats-drawer).
 - Pick a skill first, and Home starts the chat from that skill.
+- To move a card, drag the grip beside its heading. Your order is kept on this computer. **Reset card order** puts it back.
 - After an update, a What's new card may show above the message box. It says what changed and links to Help. Press **Close** to hide it. See [Updates and what's new](help:updates).
 
 ## Try this

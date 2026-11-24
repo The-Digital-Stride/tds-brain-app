@@ -810,3 +810,85 @@ describe('Home', () => {
     expect(screen.getByRole('button', { name: 'All chats' })).toBeTruthy();
   });
 });
+
+describe('Home: moving the cards', () => {
+  const order = () =>
+    [...document.querySelectorAll('.home-tray > section h2')].map((h) => h.textContent?.trim());
+  const KEY = 'tds.home.cardOrder.v1:sam-example';
+
+  it('moves a card with the keyboard on its grip, saves it for this person, and resets', async () => {
+    await renderHome();
+    await card('Favourite to-dos').findByText('Write the call tracking case');
+    expect(order()).toEqual([
+      'Meetings',
+      'Favourite to-dos',
+      'Favourite chats',
+      'Favourite files',
+      'Favourite skills',
+    ]);
+    expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
+
+    const grip = screen.getByRole('button', { name: 'Move Favourite to-dos, 2 of 5' });
+    fireEvent.keyDown(grip, { key: 'ArrowDown' });
+    expect(order()).toEqual([
+      'Meetings',
+      'Favourite chats',
+      'Favourite to-dos',
+      'Favourite files',
+      'Favourite skills',
+    ]);
+    expect(screen.getByText('Favourite to-dos moved to 3 of 5')).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
+      'meetings',
+      'chats',
+      'todos',
+      'files',
+      'skills',
+    ]);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Move Favourite to-dos, 3 of 5' }),
+      ),
+    );
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Favourite files, 4 of 5' }), { key: 'Home' });
+    expect(order()[0]).toBe('Favourite files');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset card order' }));
+    expect(order()).toEqual([
+      'Meetings',
+      'Favourite to-dos',
+      'Favourite chats',
+      'Favourite files',
+      'Favourite skills',
+    ]);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual([]);
+  });
+
+  it("uses this person's saved order, not someone else's on the same browser", async () => {
+    localStorage.setItem(KEY, JSON.stringify(['skills', 'files']));
+    localStorage.setItem('tds.home.cardOrder.v1:other-person', JSON.stringify(['chats']));
+    await renderHome();
+    await waitFor(() =>
+      expect(order()).toEqual([
+        'Favourite skills',
+        'Favourite files',
+        'Meetings',
+        'Favourite to-dos',
+        'Favourite chats',
+      ]),
+    );
+    expect(screen.getByRole('button', { name: 'Reset card order' })).toBeTruthy();
+  });
+
+  it('a card is only draggable while its grip is pressed', async () => {
+    await renderHome();
+    const section = screen.getByRole('region', { name: 'Favourite chats' });
+    expect(section.getAttribute('draggable')).toBe('false');
+    const grip = within(section).getByRole('button', { name: /^Move Favourite chats/ });
+    fireEvent.pointerDown(grip);
+    expect(section.getAttribute('draggable')).toBe('true');
+    fireEvent.pointerUp(grip);
+    expect(section.getAttribute('draggable')).toBe('false');
+  });
+});

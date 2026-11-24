@@ -171,7 +171,7 @@ named here or it isn't one.
    (no Join there).
    Everywhere a meeting shows (Home, a project's Meetings card, Coming up) it carries the link to its invite.
    Outside links are `<a class="btn" target="_blank" rel="noopener noreferrer">`, with a visually hidden " (opens in
-   a new tab)" in the name and no external-link icon, except Home's Meetings invite (an icon link, below). Home's Meetings card (`.home-meetings`, first in `.tray`, one
+   a new tab)" in the name and no external-link icon, except Home's Meetings invite (an icon link, below). Home's cards can be moved as the Ad Manager deep dive's tables are ("Reorder": grip left of the `h2`, dashed `.card-drop` placeholder, arrows/Home/End on the grip, name "Move {title}, {n} of {total}") through `useCardOrder` (client/src/shell/useCardOrder.tsx), with no full-width toggle. The order is saved per person in this browser's localStorage (`tds.home.cardOrder.v1:<identity slug>`), never in the brain; a hidden card (Ads approvals with nothing waiting) keeps its saved place. "Reset card order" (quiet, small) sits under the tray on the right, only while the order differs from the default. Home's Meetings card (`.home-meetings`, first in `.tray`, one
    column like the other cards, `h2` "Meetings", no count; head link "Open Google Calendar") groups by day (`h3.meet-day`: Today,
    Tomorrow, "Wed 26 Nov") with static `li.line.home-meeting` rows: a 48px time column (`.meet-when`: start and end,
    or "All day"; a working `.dot` and "Now" while it runs), the title, a meta line (client · project link, "with"

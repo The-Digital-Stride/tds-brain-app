@@ -22,6 +22,7 @@ import {
 } from '../state/client-choice.ts';
 import { isClearCommand } from '../state/close.ts';
 import { greeting, summary } from '../state/home.ts';
+import { isShown, resolveShortcut } from '../state/home-layout.ts';
 import { PINNED_ROWS, pinnedChats, pinnedFileIds, pinnedTodos, recentProjects } from '../state/home-pins.ts';
 import { filterOptions, projectText, todoPlaceParts, useProjects } from '../state/projects.ts';
 import { todoProjectKey } from '../state/todo-filter.ts';
@@ -38,6 +39,7 @@ import { NO_FAVOURITES, StarButton, useStarFocus } from './StarButton.tsx';
 import { StateNote } from './StateNote.tsx';
 import { clientOptions } from './search-select.ts';
 import { useCardOrder } from './useCardOrder.tsx';
+import { useHomeShortcuts } from './useHomeShortcuts.ts';
 import { WhatsNewCard } from './WhatsNewCard.tsx';
 import { placeName, STATE_WORDS, starterSkills, whenWords } from './words.ts';
 
@@ -134,6 +136,8 @@ export function Home() {
     openView,
     libraryVersion,
     ads,
+    homeHidden,
+    homeShortcuts,
     openTool,
     revealTodo,
     toggleFavouriteTodo,
@@ -141,7 +145,8 @@ export function Home() {
     toggleFavouriteFile,
     togglePin,
   } = useStore();
-  const { dispatch } = useShell();
+  const { dispatch, openCustomiseHome } = useShell();
+  const { sources: shortcutSources, hasGm, hasAds } = useHomeShortcuts();
   const clients = boot?.clients ?? [];
   const project = useProjectChoice();
   const { list: projectList } = useProjects();
@@ -207,6 +212,7 @@ export function Home() {
       .then(() => api.clientPickOutcome(outcome))
       .catch(() => {});
 
+  const filesHidden = !isShown('files', homeHidden);
   const fileFavs = boot?.prefs.favouriteFiles;
   const fileKey = (fileFavs ?? []).join('\n');
   // The pinned files, looked up by id. The newest reply wins, old rows stay while a new lookup runs, and rows
@@ -215,6 +221,8 @@ export function Home() {
   const [filesFailed, setFilesFailed] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `fileKey` stands for the list; `libraryVersion` refreshes after a change on disk
   useEffect(() => {
+    // A hidden Pinned files card needs no lookup.
+    if (filesHidden) return;
     const ids = pinnedFileIds(fileKey === '' ? [] : fileKey.split('\n'));
     if (ids.length === 0) {
       setPinnedFiles([]);
@@ -235,7 +243,7 @@ export function Home() {
     return () => {
       current = false;
     };
-  }, [fileKey, libraryVersion]);
+  }, [fileKey, libraryVersion, filesHidden]);
 
   // Each card's star keeps focus when its row moves or goes (a favourite taken off leaves the card).
   const todoCard = useRef<HTMLElement>(null);
@@ -252,16 +260,19 @@ export function Home() {
   // Recent projects only while some project has been worked on; its saved place is kept while it's hidden.
   const projectsShown = recentProjects(projectList?.projects).length > 0;
   const adsShown = Boolean(ads?.visible && ads.waiting > 0);
+  // A card the person hid is left out of the list (its saved place is kept, as for Ads and projects) and so isn't drawn.
+  const cardList = [
+    { id: 'meetings', title: 'Meetings', shown: isShown('meetings', homeHidden) },
+    { id: 'ads', title: 'Ads approvals', shown: isShown('ads', homeHidden, adsShown) },
+    { id: 'todos', title: 'Pinned tasks', shown: isShown('todos', homeHidden) },
+    { id: 'projects', title: 'Recent projects', shown: isShown('projects', homeHidden, projectsShown) },
+    { id: 'chats', title: 'Pinned chats', shown: isShown('chats', homeHidden) },
+    { id: 'files', title: 'Pinned files', shown: !filesHidden },
+    { id: 'skills', title: 'Pinned skills', shown: isShown('skills', homeHidden) },
+  ];
+  const shownCards = cardList.filter((c) => c.shown);
   const order = useCardOrder(
-    [
-      { id: 'meetings', title: 'Meetings' },
-      ...(adsShown ? [{ id: 'ads', title: 'Ads approvals' }] : []),
-      { id: 'todos', title: 'Pinned tasks' },
-      ...(projectsShown ? [{ id: 'projects', title: 'Recent projects' }] : []),
-      { id: 'chats', title: 'Pinned chats' },
-      { id: 'files', title: 'Pinned files' },
-      { id: 'skills', title: 'Pinned skills' },
-    ],
+    shownCards.map(({ id, title }) => ({ id, title })),
     boot ? homeOrderKey(boot.identity.slug) : null,
     HOME_CARDS,
   );
@@ -320,6 +331,32 @@ export function Home() {
   const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Pinned skills';
   const skillRows: SkillInfo[] = (pinned.length > 0 ? pinned : often).slice(0, 5);
 
+  // Start my day first (runs at once, as it always has), then the person's shortcuts. A target that is gone or
+  // still loading draws nothing here; the panel says so.
+  const shortcutButtons: { key: string; label: string; run: () => void }[] = [
+    ...(hasGm && isShown('start-my-day', homeHidden)
+      ? [
+          {
+            key: 'start-my-day',
+            label: 'Start my day',
+            run: () => void startChat('/gm', null, { open: true }),
+          },
+        ]
+      : []),
+    ...(homeShortcuts ?? []).flatMap((s) => {
+      const r = resolveShortcut(s, shortcutSources);
+      return r.state === 'ready' ? [{ key: r.key, label: r.label, run: r.run }] : [];
+    }),
+  ];
+  // Cards a person could see if shown: Ads only with access, Recent projects only once there are some.
+  const hiddenCount = cardList.filter(
+    (c) =>
+      !c.shown &&
+      (homeHidden ?? []).includes(c.id) &&
+      (c.id !== 'ads' || hasAds) &&
+      (c.id !== 'projects' || projectsShown),
+  ).length;
+
   const loaded = todos !== null && sessions !== null;
   const summaryText = loaded
     ? summary({
@@ -331,25 +368,28 @@ export function Home() {
 
   return (
     <div className="home-view">
-      <SheetBar title="Home" />
+      <SheetBar title="Home" panel={homeHidden !== undefined ? 'Customise Home' : undefined} />
       <div className="home-scroll">
         <div className="home-in">
           <p className="home-greeting">{greeting(new Date(), boot.identity.name)}</p>
           <p className="home-sub">{summaryText}</p>
-          {boot.skills.some((s) => s.name === 'gm') ? (
-            <div className="home-gm">
-              <button
-                type="button"
-                className="btn"
-                data-variant="quiet"
-                data-size="small"
-                onClick={() => void startChat('/gm', null, { open: true })}
-              >
-                Start my day
-              </button>
+          {shortcutButtons.length > 0 ? (
+            <div className="home-shortcuts">
+              {shortcutButtons.map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  className="btn"
+                  data-variant="quiet"
+                  data-size="small"
+                  onClick={b.run}
+                >
+                  {b.label}
+                </button>
+              ))}
             </div>
           ) : null}
-          <WhatsNewCard />
+          {isShown('whats-new', homeHidden) ? <WhatsNewCard /> : null}
 
           {activeChat.kind === 'new' ? (
             <div className="home-composer">
@@ -514,7 +554,7 @@ export function Home() {
             </>
           )}
 
-          <div className="tray home-tray" {...order.trayProps}>
+          <div className="tray home-tray" data-odd={shownCards.length % 2 === 1} {...order.trayProps}>
             {order.place([
               {
                 id: 'meetings',
@@ -901,19 +941,40 @@ export function Home() {
                 ),
               },
             ])}
+            {shownCards.length === 0 ? (
+              <p className="hint home-tray-empty">Your Home has no cards. Customise Home to add some.</p>
+            ) : null}
           </div>
           {order.status}
-          {order.moved ? (
+          {hiddenCount > 0 || order.moved ? (
             <div className="home-tray-foot">
-              <button
-                type="button"
-                className="btn"
-                data-variant="quiet"
-                data-size="small"
-                onClick={order.reset}
-              >
-                Reset card order
-              </button>
+              {hiddenCount > 0 ? (
+                <span className="tray-hidden">
+                  <span className="hint">
+                    {hiddenCount === 1 ? '1 card hidden.' : `${hiddenCount} cards hidden.`}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="quiet"
+                    data-size="small"
+                    onClick={openCustomiseHome}
+                  >
+                    Show hidden cards
+                  </button>
+                </span>
+              ) : null}
+              {order.moved ? (
+                <button
+                  type="button"
+                  className="btn"
+                  data-variant="quiet"
+                  data-size="small"
+                  onClick={order.reset}
+                >
+                  Reset card order
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

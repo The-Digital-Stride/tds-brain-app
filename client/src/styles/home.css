@@ -35,10 +35,13 @@
     color: var(--iron);
   }
 
-  .home-gm {
+  .home-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-8);
     margin: 0 0 var(--sp-16);
   }
-  .home-sub:has(+ .home-gm) {
+  .home-sub:has(+ .home-shortcuts) {
     margin-bottom: var(--sp-8);
   }
 
@@ -322,7 +325,30 @@
   }
   .home-tray-foot {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: flex-end;
+    gap: var(--sp-8);
     margin-top: var(--sp-6);
+  }
+  .tray-hidden {
+    margin-right: auto;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-8);
+  }
+  .tray-hidden .hint {
+    color: var(--iron);
+  }
+  /* A lone last card fills the row. Set from Home's own count of shown cards (data-odd); `section` skips the
+     drag placeholder, which is a div. Home only: .tray is shared with Ad Manager and Projects. */
+  .home-tray[data-odd="true"] > section.card:last-of-type {
+    grid-column: 1 / -1;
+  }
+  .home-tray-empty {
+    grid-column: 1 / -1;
+    margin: var(--sp-16) 0;
+    text-align: center;
   }
 }

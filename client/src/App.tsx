@@ -10,6 +10,7 @@ import { helpVisible } from './help/visibility.ts';
 import { APPS } from './shell/apps.ts';
 import { ChatDrawer } from './shell/ChatDrawer.tsx';
 import { ChatsDrawer } from './shell/ChatsDrawer.tsx';
+import { CustomiseHome } from './shell/CustomiseHome.tsx';
 import type { DrawerName } from './shell/contract.ts';
 import { Dock } from './shell/Dock.tsx';
 import { FileViewer } from './shell/FileViewer.tsx';
@@ -161,7 +162,7 @@ function Shell() {
   useAdsPreload();
   const { boot, view } = useStore();
   const snap = useToolSnapshot();
-  const { state, dispatch, modes } = useShell();
+  const { state, dispatch, modes, onHome, closeCustomiseHome } = useShell();
   // One source of truth for what shows and what floats: the shell provider's layout.
   const { railShowsNames, drawerModal, panelShowing, panelModal } = useDesk();
   // Keep the last drawer's body in place while the dock slides shut.
@@ -170,6 +171,12 @@ function Shell() {
   // The section drawer is headed with the section's own title, kept while the dock slides shut.
   const lastSection = useRef<string | null>(null);
   if (state.section) lastSection.current = state.section;
+  // On Home the right dock holds Customise Home (plan 2026-11-25-home-card-library, decision 15), kept in place while
+  // the dock slides shut.
+  const customising = onHome && state.homeCustomiseOpen;
+  const rightIsHome = useRef(false);
+  if (panelShowing) rightIsHome.current = customising;
+  const homePanel = panelShowing ? customising : onHome && rightIsHome.current;
   if (!boot) return null;
 
   const drawer = state.drawer ?? lastDrawer.current;
@@ -238,11 +245,20 @@ function Shell() {
           <Dock
             side="right"
             open={panelShowing}
-            label={sheetApp && AppPanel ? (sheetApp.panelLabel ?? sheetApp.title) : 'This chat'}
+            label={
+              homePanel
+                ? 'Customise Home'
+                : sheetApp && AppPanel
+                  ? (sheetApp.panelLabel ?? sheetApp.title)
+                  : 'This chat'
+            }
             overlay={modes.panelOverlays}
-            onClose={() => dispatch({ type: 'set-panel', open: false })}
+            // Customise Home shuts on its own: This chat's panel stays as the person left it.
+            onClose={homePanel ? closeCustomiseHome : () => dispatch({ type: 'set-panel', open: false })}
           >
-            {AppPanel ? (
+            {homePanel ? (
+              <CustomiseHome />
+            ) : AppPanel ? (
               <Suspense fallback={null}>
                 <AppPanel />
               </Suspense>

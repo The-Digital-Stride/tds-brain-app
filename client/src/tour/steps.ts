@@ -4,16 +4,18 @@ import { BRAND } from '../../../shared/brand.ts';
  * Bump to show the tour again to everyone who has finished or skipped an older one. Changing which steps
  * `TOUR_STEPS` has means a bump and a new `TOUR_HISTORY` line (steps.test.ts fails until both are done).
  */
-export const TOUR_VERSION = 2;
+export const TOUR_VERSION = 3;
 
 /**
  * The step ids each tour version walked through, newest last. steps.test.ts checks the current version's line
  * matches `TOUR_STEPS`, so a new step can't ship without everyone being shown the new tour once.
  * 1: the TDS Cortex launch. 2: Projects, Working on, Images and Documents, the Workbench and Home's cards.
+ * 3: the cards step now points at Customise Home.
  */
 export const TOUR_HISTORY: Record<number, string> = {
   1: 'message,client,chats,todos,search,help',
   2: 'message,working-on,client,projects,chats,todos,workbench,library,cards,search,help',
+  3: 'message,working-on,client,projects,chats,todos,workbench,library,cards,search,help',
 };
 
 /**
@@ -115,9 +117,9 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'cards',
-    anchor: '.home-tray .card-head',
-    title: 'Cards on Home',
-    text: 'Your meetings, recent projects and pinned tasks, chats and files show here. Drag a card by its grip to put them in your order.',
+    anchor: '.sheet-bar button[aria-label="Customise Home"]',
+    title: 'Make Home yours',
+    text: 'Customise Home lets you hide cards you don’t use and add shortcut buttons for your skills and tools. You can also drag a card by its grip to put your cards in your order.',
   },
   {
     id: 'search',

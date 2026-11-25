@@ -12,6 +12,7 @@ import './styles/shell.css';
 import './styles/drawers.css';
 import './styles/sections.css';
 import './styles/home.css';
+import './styles/customise-home.css';
 import './styles/palette.css';
 import './styles/search-select.css';
 import './styles/chat.css';

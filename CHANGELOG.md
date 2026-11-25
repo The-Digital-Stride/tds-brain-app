@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.82.1 — 2026-11-25
+
+- **fix**: days and weeks stand out on the Meetings card
+
 ## v0.82.0 — 2026-11-25
 
 - **feat**: call favourites Pinned, with a pushpin icon instead of the star

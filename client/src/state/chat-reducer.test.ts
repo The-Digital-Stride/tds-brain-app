@@ -132,6 +132,33 @@ describe('chatReducer', () => {
     expect(pendingCard(asked)).toMatchObject({ kind: 'permission', change });
   });
 
+  it('keeps the publish facts from a permission-request on its card, and has none when the event has none', () => {
+    const publish = {
+      kind: 'merge-and-push' as const,
+      repo: 'The-Digital-Stride/tds-brain-app',
+      isApp: true,
+      branch: 'app-change-guards',
+      target: 'main',
+      version: '0.82.3',
+      commits: ['abc1234 feat: add guards'],
+      commitCount: 1,
+      command: 'git push origin main',
+    };
+    const base = {
+      type: 'permission-request' as const,
+      requestId: 'r1',
+      tool: 'Bash',
+      title: 'Claude wants to merge and push',
+      detail: 'git push origin main',
+      warning: null,
+      sessionAllowLabel: null,
+    };
+    expect(pendingCard(apply([seq(1, { ...base, publish })]))).toMatchObject({ kind: 'permission', publish });
+    const plain = pendingCard(apply([seq(1, base)]));
+    expect(plain).toMatchObject({ kind: 'permission' });
+    expect((plain as { publish?: unknown }).publish).toBeUndefined();
+  });
+
   it('handles a question card the same way', () => {
     const asked = apply([
       seq(1, { type: 'question-request', requestId: 'q1', questions: [] }),

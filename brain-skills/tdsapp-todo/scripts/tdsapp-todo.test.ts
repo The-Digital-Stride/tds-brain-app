@@ -1384,11 +1384,11 @@ describe('the skill files', () => {
   const skill = (rel: string) =>
     appParse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')).data;
 
-  it('tdsapp-todo is v0.6, still for the owner and scouts, and keeps its USE WHEN triggers', () => {
+  it('tdsapp-todo is v0.6, open to the whole team, and keeps its USE WHEN triggers', () => {
     expect(skill('../SKILL.md')).toMatchObject({
       name: 'tdsapp-todo',
       version: '0.6',
-      roles: 'owner, scout',
+      roles: 'owner, scout, team',
       maturity: 'draft',
       members: 'false',
       agency: 'true',

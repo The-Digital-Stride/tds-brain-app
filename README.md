@@ -45,11 +45,16 @@ here is published.**
   setting a due date and deleting are off by default, because they change the shared brain; switch
   them on in Settings ("Let the app change tasks"). A tick records who did it and when. Every change
   except the tick is made by the brain's own `todo` skill (see `brain-skills/`), never by the app's
-  code, and works exactly as the Workbench does. Until that skill is released it is for owners and
-  scouts only. Weak spots found in the Workbench's behaviour wait for sign-off in
+  code, and works exactly as the Workbench does. The skill is open to the whole team (since
+  2026-11-25). Weak spots found in the Workbench's behaviour wait for sign-off in
   `os/tds-brain-app/change-requests.md` in the brain.
 - **Skills**: the brain's skills and commands you can run. Skills kept for owners and scouts are
   refused for other roles.
+- **Guards on the app itself**: only owners and scouts can change TDS Cortex's own code from a chat;
+  a team member's request becomes an offer to add a Feature Request task to the TDS Cortex Feedback
+  project. Every merge or push from a chat waits for a "merge and push" card with Yes and No buttons
+  (never a question in the chat, never "Allow for this chat"); the brain's own plain sync of `main` is
+  exempt. See `server/engine/change-guards.ts` and plan `docs/plans/2026-11-25-app-change-guards.md`.
 - **Images** and **Documents**: everything in the brain you're allowed to see, by client, in a grid
   or a list, with previews. Pictures, text, Markdown, HTML pages (sandboxed) and PDFs open in the app;
   anything can be downloaded. Document page previews use macOS Quick Look.

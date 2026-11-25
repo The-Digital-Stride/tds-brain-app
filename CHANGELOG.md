@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.81.0 — 2026-11-25
+
+- **feat**: add Start my day button on Home that runs /gm
+
 ## v0.80.0 — 2026-11-25
 
 - **feat**: Recent projects card, newest last-worked first

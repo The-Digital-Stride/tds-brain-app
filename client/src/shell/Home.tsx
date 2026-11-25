@@ -126,6 +126,7 @@ export function Home() {
     send,
     composerFocus,
     startSkill,
+    startChat,
     newChat,
     openChat,
     markTodosSeen,
@@ -335,6 +336,19 @@ export function Home() {
         <div className="home-in">
           <p className="home-greeting">{greeting(new Date(), boot.identity.name)}</p>
           <p className="home-sub">{summaryText}</p>
+          {boot.skills.some((s) => s.name === 'gm') ? (
+            <div className="home-gm">
+              <button
+                type="button"
+                className="btn"
+                data-variant="quiet"
+                data-size="small"
+                onClick={() => void startChat('/gm', null, { open: true })}
+              >
+                Start my day
+              </button>
+            </div>
+          ) : null}
           <WhatsNewCard />
 
           {activeChat.kind === 'new' ? (

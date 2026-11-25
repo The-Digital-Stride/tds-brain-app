@@ -925,4 +925,19 @@ describe('Home: moving the cards', () => {
     fireEvent.pointerUp(grip);
     expect(section.getAttribute('draggable')).toBe('false');
   });
+
+  describe('Start my day', () => {
+    it('is hidden when the brain has no /gm skill', async () => {
+      await renderHome();
+      expect(screen.queryByRole('button', { name: 'Start my day' })).toBeNull();
+    });
+
+    it('starts a chat that runs /gm', async () => {
+      api.bootstrap.mockResolvedValue({ ...boot, skills: [...boot.skills, skill('gm', 'Good morning')] });
+      await renderHome();
+      fireEvent.click(await screen.findByRole('button', { name: 'Start my day' }));
+      await waitFor(() => expect(api.startSession).toHaveBeenCalled());
+      expect(JSON.stringify(api.startSession.mock.calls[0])).toContain('/gm');
+    });
+  });
 });

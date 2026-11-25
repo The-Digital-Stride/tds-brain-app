@@ -102,7 +102,6 @@ describe('PUT /api/prefs: Home hidden items and shortcuts, through the request g
   it('saves both and a following GET returns them', async () => {
     const homeHidden = ['files'];
     const homeShortcuts = [
-      { kind: 'skill', name: 'meeting-notes' },
       { kind: 'tool', section: 'workbench', tool: 'ads' },
       { kind: 'place', place: 'projects' },
       { kind: 'drawer', drawer: 'todos' },
@@ -115,10 +114,14 @@ describe('PUT /api/prefs: Home hidden items and shortcuts, through the request g
   });
 
   it('refuses seven shortcuts and leaves the saved ones alone', async () => {
-    const seven = Array.from({ length: 7 }, (_, i) => ({ kind: 'skill', name: `skill-${i}` }));
+    const seven = Array.from({ length: 7 }, (_, i) => ({
+      kind: 'tool',
+      section: 'workbench',
+      tool: `tool-${i}`,
+    }));
     const put = await send('PUT', { homeShortcuts: seven });
     expect(put.status).toBe(400);
     expect(put.json.error?.message).toBe('The Home shortcuts were not understood.');
-    expect((await prefs()).homeShortcuts).toHaveLength(4);
+    expect((await prefs()).homeShortcuts).toHaveLength(3);
   });
 });

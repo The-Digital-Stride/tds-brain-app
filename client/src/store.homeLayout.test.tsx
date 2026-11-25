@@ -113,7 +113,7 @@ function brainChanged(): (b: Bootstrap) => Promise<void> {
   };
 }
 
-const skill = (name: string): HomeShortcut => ({ kind: 'skill', name });
+const tool = (name: string): HomeShortcut => ({ kind: 'tool', section: 'workbench', tool: name });
 
 describe('setHomeItemShown', () => {
   it('hides at once, before the save returns', async () => {
@@ -219,13 +219,13 @@ describe('Home shortcuts', () => {
   it('adds in order, ignores a repeat and anything past six', async () => {
     api.updatePrefs.mockImplementation(echo);
     await start();
-    for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) await act(async () => store?.addHomeShortcut(skill(n)));
+    for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) await act(async () => store?.addHomeShortcut(tool(n)));
     expect(screen.getByText('shortcuts 6')).toBeTruthy();
     expect(api.updatePrefs).toHaveBeenCalledTimes(6);
-    await act(async () => store?.addHomeShortcut(skill('a')));
-    await act(async () => store?.addHomeShortcut(skill('g')));
+    await act(async () => store?.addHomeShortcut(tool('a')));
+    await act(async () => store?.addHomeShortcut(tool('g')));
     expect(api.updatePrefs).toHaveBeenCalledTimes(6);
-    expect(store?.homeShortcuts?.map((s) => (s.kind === 'skill' ? s.name : homeShortcutKey(s)))).toEqual([
+    expect(store?.homeShortcuts?.map((s) => (s.kind === 'tool' ? s.tool : homeShortcutKey(s)))).toEqual([
       'a',
       'b',
       'c',
@@ -247,16 +247,16 @@ describe('Home shortcuts', () => {
   it('removes one by its key', async () => {
     api.updatePrefs.mockImplementation(echo);
     await start();
-    await act(async () => store?.addHomeShortcut(skill('a')));
+    await act(async () => store?.addHomeShortcut(tool('a')));
     await act(async () => store?.addHomeShortcut({ kind: 'tool', section: 'workbench', tool: 'ads' }));
     await act(async () => store?.removeHomeShortcut('tool:workbench/ads'));
-    expect(api.updatePrefs).toHaveBeenLastCalledWith({ homeShortcuts: [skill('a')] });
+    expect(api.updatePrefs).toHaveBeenLastCalledWith({ homeShortcuts: [tool('a')] });
     expect(screen.getByText('shortcuts 1')).toBeTruthy();
   });
 
   it('showAllHomeItems clears the hidden list only and leaves shortcuts alone', async () => {
     api.updatePrefs.mockImplementation(echo);
-    api.bootstrap.mockResolvedValue(boot({ homeHidden: ['files', 'ads'], homeShortcuts: [skill('a')] }));
+    api.bootstrap.mockResolvedValue(boot({ homeHidden: ['files', 'ads'], homeShortcuts: [tool('a')] }));
     render(
       <StoreProvider>
         <Probe />

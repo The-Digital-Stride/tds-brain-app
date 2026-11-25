@@ -1184,23 +1184,19 @@ export const HOME_SHORTCUT_DRAWERS = ['chats', 'todos'] as const; // rail order
 export type HomeShortcutDrawer = (typeof HOME_SHORTCUT_DRAWERS)[number];
 
 /**
- * A skill, a tool, a place or a drawer. A newer app may add kinds; an older app drops kinds it doesn't know when it
- * cleans its settings (so a downgrade forgets them), and the server only ever talks to the client it serves.
+ * A tool, a place or a drawer. Never a skill: the team doesn't start skills from Cortex's own buttons (Ian,
+ * 2026-11-25), so a 'skill' shortcut saved by v0.85-0.87 is dropped on clean and refused on save. A newer app may add
+ * kinds; an older app drops kinds it doesn't know when it cleans its settings (so a downgrade forgets them), and the
+ * server only ever talks to the client it serves.
  */
 export type HomeShortcut =
-  | { kind: 'skill'; name: string } // name matches SKILL_NAME_PATTERN
   | { kind: 'tool'; section: string; tool: string } // both match SECTION_ID_PATTERN
   | { kind: 'place'; place: HomeShortcutPlace }
   | { kind: 'drawer'; drawer: HomeShortcutDrawer };
 
-/**
- * Same shortcut twice = same key. Used for de-duplication on both sides, e.g. 'skill:gm', 'tool:workbench/ads',
- * 'place:projects', 'drawer:todos'.
- */
+/** Same shortcut twice = same key. Used for de-duplication on both sides, e.g. 'tool:workbench/ads', 'place:projects'. */
 export function homeShortcutKey(s: HomeShortcut): string {
   switch (s.kind) {
-    case 'skill':
-      return `skill:${s.name}`;
     case 'tool':
       return `tool:${s.section}/${s.tool}`;
     case 'place':
@@ -1219,10 +1215,6 @@ export function parseHomeShortcut(v: unknown): HomeShortcut | undefined {
   const o = v as Record<string, unknown>;
   const id = (x: unknown): x is string => typeof x === 'string' && SECTION_ID_PATTERN.test(x);
   switch (o.kind) {
-    case 'skill':
-      return typeof o.name === 'string' && SKILL_NAME_PATTERN.test(o.name)
-        ? { kind: 'skill', name: o.name }
-        : undefined;
     case 'tool':
       return id(o.section) && id(o.tool) ? { kind: 'tool', section: o.section, tool: o.tool } : undefined;
     case 'place':
@@ -1300,7 +1292,7 @@ export interface AppPrefs {
   homeHidden?: string[];
   /**
    * Home shortcut buttons (plan 2026-11-25-home-card-library): in the order added, at most HOME_SHORTCUTS_MAX, no
-   * repeats by homeShortcutKey. Skills, tools, places and drawers (plan 2026-11-25-home-shortcuts-places); an unknown
+   * repeats by homeShortcutKey. Tools, places and drawers, never skills; a retired (skill) or unknown
    * kind is dropped on clean. Start my day is not stored
    * here. This server always sends it; optional because an older server sends none, which reads as [].
    */

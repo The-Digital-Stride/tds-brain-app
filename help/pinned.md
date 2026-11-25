@@ -8,7 +8,7 @@ benefit: Start your day where you left off, without hunting.
 roles: all
 related: [home, favourites, todos, chats-drawer]
 since: 0.38.0
-reviewed: 2026-11-24
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -37,7 +37,7 @@ Under the message box, Home shows cards for the things you have pinned. You pin 
 - Each row has its own pin. Unpin it, on Home or anywhere else, and the item leaves Home at once.
 - Pins are yours alone. They are kept in Cortex on your computer, so teammates don't see them.
 - With nothing pinned, each card says "Pin a task to keep it here" and so on.
-- The skills card shows **Pinned skills**. With none pinned, it shows **Used often**.
+- Owners and scouts also have a skills card. It shows **Pinned skills**, or **Used often** with none pinned.
 
 ## Try this
 

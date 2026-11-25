@@ -66,7 +66,7 @@ const boot = {
   appVersion: '0',
   appState: { kind: 'ready' as const },
   service: { underService: true },
-  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'team', knownMember: true },
+  identity: { name: 'Sam Example', slug: 'sam-example', email: null, role: 'owner', knownMember: true },
   brain: { ok: true, path: '/brain', problems: [] },
   engine: { ok: true, claudePath: '/bin/claude', problem: null, permissionMode: 'default' },
   skills: [skill('meeting-notes', 'Meeting notes'), skill('standup', 'Standup')],
@@ -851,10 +851,22 @@ describe('Home', () => {
     await waitFor(() => expect(within(drawer()).getByRole('heading', { name: 'Skills' })).toBeTruthy());
   });
 
-  it('has no "All skills" for someone the Skills drawer is not for (team)', async () => {
+  it('has no Pinned skills card, and no "All skills", for someone the Skills drawer is not for (team)', async () => {
+    api.bootstrap.mockResolvedValue({ ...boot, identity: { ...boot.identity, role: 'team' } });
     await renderHome();
+    expect(screen.queryByRole('heading', { name: /skills/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'All skills' })).toBeNull();
     expect(screen.getByRole('button', { name: 'All chats' })).toBeTruthy();
+  });
+
+  it('never counts the Pinned skills card as hidden for the team', async () => {
+    api.bootstrap.mockResolvedValue({
+      ...boot,
+      identity: { ...boot.identity, role: 'team' },
+      prefs: { ...boot.prefs, homeHidden: ['skills'], homeShortcuts: [] },
+    });
+    await renderHome();
+    expect(screen.queryByText(/cards? hidden\./)).toBeNull();
   });
 });
 
@@ -1014,21 +1026,15 @@ describe('Home: choosing what shows', () => {
     expect(await screen.findByText('Your Home has no cards. Customise Home to add some.')).toBeTruthy();
   });
 
-  it('shows a ready skill shortcut, which opens the skill without running it, and hides a gone one', async () => {
+  it('never shows a skill as a shortcut, even one that slipped into the settings', async () => {
     withPrefs({
       homeHidden: [],
-      homeShortcuts: [
-        { kind: 'skill', name: 'standup' },
-        { kind: 'skill', name: 'removed-skill' },
-      ],
+      homeShortcuts: [{ kind: 'skill', name: 'standup' } as never, { kind: 'drawer', drawer: 'chats' }],
     });
     await renderHome();
-    await screen.findByRole('button', { name: 'Standup' });
     const row = within(document.querySelector('.home-shortcuts') as HTMLElement);
-    expect(row.getByRole('button', { name: 'Standup' })).toBeTruthy();
-    expect(row.queryByRole('button', { name: /removed-skill/ })).toBeNull();
-    fireEvent.click(row.getByRole('button', { name: 'Standup' }));
-    expect(api.startSession).not.toHaveBeenCalled();
+    expect(row.getByRole('button', { name: 'Chats' })).toBeTruthy();
+    expect(row.queryByRole('button', { name: 'Standup' })).toBeNull();
   });
 
   it('a drawer shortcut opens its drawer and a place shortcut opens the place', async () => {

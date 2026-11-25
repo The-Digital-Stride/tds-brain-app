@@ -8,11 +8,11 @@ const h = vi.hoisted(() => ({
   shortcuts: [] as unknown[],
   hasGm: true,
   hasAds: true,
+  hasSkills: true,
   setHomeItemShown: vi.fn(),
   addHomeShortcut: vi.fn(),
   removeHomeShortcut: vi.fn(),
   showAllHomeItems: vi.fn(),
-  pins: [] as string[],
   tools: [{ section: 'workbench', tool: 'ads', title: 'Ads Manager' }] as
     | { section: string; tool: string; title: string }[]
     | null,
@@ -20,7 +20,6 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
-    boot: { prefs: { pins: h.pins } },
     homeHidden: h.hidden,
     homeShortcuts: h.shortcuts,
     setHomeItemShown: h.setHomeItemShown,
@@ -33,36 +32,37 @@ vi.mock('./useHomeShortcuts.ts', () => ({
   useHomeShortcuts: () => ({
     hasGm: h.hasGm,
     hasAds: h.hasAds,
+    hasSkills: h.hasSkills,
     sources: {
-      skills: [
-        { name: 'gm', title: 'Start my day' },
-        { name: 'seo-audit', title: 'SEO audit' },
-        { name: 'report', title: 'Monthly report' },
-      ],
       tools: h.tools,
-      toolTitle: (_s: string, t: string) => (t === 'ads' ? 'Ads Manager' : undefined),
+      toolTitle: (_s: string, t: string) =>
+        ({ ads: 'Ads Manager', seo: 'SEO audit', report: 'Monthly report' })[t],
       places: [
         { id: 'projects', title: 'Projects' },
         { id: 'images', title: 'Images' },
       ],
       drawers: [{ id: 'todos', title: 'Tasks' }],
-      actions: { startSkill: vi.fn(), openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() },
+      actions: { openTool: vi.fn(), openPlace: vi.fn(), openDrawer: vi.fn() },
     },
   }),
 }));
 
 const { CustomiseHome } = await import('./CustomiseHome.tsx');
 
-const skill = (name: string): HomeShortcut => ({ kind: 'skill', name });
-const six: HomeShortcut[] = ['a', 'b', 'c', 'd', 'e', 'f'].map(skill);
+const tool = (name: string): HomeShortcut => ({ kind: 'tool', section: 'workbench', tool: name });
+const six: HomeShortcut[] = ['a', 'b', 'c', 'd', 'e', 'f'].map(tool);
 
 beforeEach(() => {
   h.hidden = [];
   h.shortcuts = [];
   h.hasGm = true;
   h.hasAds = true;
-  h.pins = [];
-  h.tools = [{ section: 'workbench', tool: 'ads', title: 'Ads Manager' }];
+  h.hasSkills = true;
+  h.tools = [
+    { section: 'workbench', tool: 'ads', title: 'Ads Manager' },
+    { section: 'workbench', tool: 'seo', title: 'SEO audit' },
+    { section: 'workbench', tool: 'report', title: 'Monthly report' },
+  ];
   vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -79,12 +79,15 @@ describe('CustomiseHome', () => {
     expect(hint?.textContent).toContain('Shows only while an Ads change waits for you');
   });
 
-  it('leaves out Start my day and Ads approvals when they are not available', () => {
+  it('leaves out Start my day, Ads approvals and Pinned skills when they are not available', () => {
     h.hasGm = false;
     h.hasAds = false;
+    h.hasSkills = false;
     render(<CustomiseHome />);
     expect(screen.queryByRole('switch', { name: 'Start my day' })).toBeNull();
     expect(screen.queryByRole('switch', { name: 'Ads approvals' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Pinned skills' })).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Pinned files' })).toBeTruthy();
   });
 
   it('toggles an item and says so', () => {
@@ -106,16 +109,14 @@ describe('CustomiseHome', () => {
 
   it('says what to do when there are no shortcuts', () => {
     render(<CustomiseHome />);
-    expect(
-      screen.getByText('Add a shortcut to start a skill, or open a tool, place or drawer, in one click.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Add a shortcut to open a tool, place or drawer in one click.')).toBeTruthy();
   });
 
   it('adds a shortcut from the grouped list, closes it and focuses the new row', () => {
     const { rerender } = render(<CustomiseHome />);
     fireEvent.click(screen.getByRole('button', { name: 'Add a shortcut' }));
     const menu = screen.getByRole('menu', { name: 'Add a shortcut' });
-    expect(within(menu).getByText('Skills')).toBeTruthy();
+    expect(within(menu).queryByText('Skills')).toBeNull();
     expect(within(menu).getByText('Tools')).toBeTruthy();
     expect(within(menu).queryByText('Start my day')).toBeNull();
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Ads Manager' }));
@@ -157,19 +158,19 @@ describe('CustomiseHome', () => {
   });
 
   it('marks a shortcut that has gone, and removes with focus on the next row', () => {
-    h.shortcuts = [skill('seo-audit'), skill('missing'), skill('report')];
+    h.shortcuts = [tool('seo'), tool('missing'), tool('report')];
     const { rerender } = render(<CustomiseHome />);
     expect(screen.getByText('No longer in your Brain')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Remove SEO audit from Home' }));
-    expect(h.removeHomeShortcut).toHaveBeenCalledWith('skill:seo-audit');
+    expect(h.removeHomeShortcut).toHaveBeenCalledWith('tool:workbench/seo');
     expect(screen.getByRole('status').textContent).toBe('SEO audit removed from Home');
-    h.shortcuts = [skill('missing'), skill('report')];
+    h.shortcuts = [tool('missing'), tool('report')];
     rerender(<CustomiseHome />);
     expect(document.activeElement).toBe(screen.getAllByRole('button', { name: /^Remove / })[0]);
   });
 
   it('moves focus to Add when the last shortcut goes', () => {
-    h.shortcuts = [skill('seo-audit')];
+    h.shortcuts = [tool('seo')];
     const { rerender } = render(<CustomiseHome />);
     fireEvent.click(screen.getByRole('button', { name: 'Remove SEO audit from Home' }));
     h.shortcuts = [];
@@ -190,17 +191,6 @@ describe('CustomiseHome', () => {
     expect(screen.getByRole('status').textContent).toBe('Every card is back on Home');
   });
 
-  it('says when a skill is also in Pinned skills', () => {
-    h.pins = ['seo-audit'];
-    render(<CustomiseHome />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a shortcut' }));
-    const row = screen.getByRole('menuitem', { name: /SEO audit/ });
-    expect(within(row).getByText('Also in Pinned skills')).toBeTruthy();
-    expect(
-      within(screen.getByRole('menuitem', { name: /Monthly report/ })).queryByText('Also in Pinned skills'),
-    ).toBeNull();
-  });
-
   it('names a waiting tool shortcut by its title, with Tool as its meta', () => {
     h.tools = null;
     h.shortcuts = [{ kind: 'tool', section: 'workbench', tool: 'ads' }];
@@ -219,7 +209,7 @@ describe('CustomiseHome', () => {
     const groups = within(menu)
       .getAllByRole('group')
       .map((g) => g.getAttribute('aria-label'));
-    expect(groups).toEqual(['Places', 'Drawers', 'Tools', 'Skills']);
+    expect(groups).toEqual(['Places', 'Drawers', 'Tools']);
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Tasks' }));
     expect(h.addHomeShortcut).toHaveBeenCalledWith({ kind: 'drawer', drawer: 'todos' });
     h.shortcuts = [
@@ -233,10 +223,9 @@ describe('CustomiseHome', () => {
   });
 
   it('disables Add, with a hint and no menu, when everything is already on Home', () => {
-    h.tools = [];
+    h.tools = [{ section: 'workbench', tool: 'seo', title: 'SEO audit' }];
     h.shortcuts = [
-      skill('seo-audit'),
-      skill('report'),
+      tool('seo'),
       { kind: 'place', place: 'projects' },
       { kind: 'place', place: 'images' },
       { kind: 'drawer', drawer: 'todos' },

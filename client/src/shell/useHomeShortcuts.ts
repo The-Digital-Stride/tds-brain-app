@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { HOME_SHORTCUT_DRAWERS, HOME_SHORTCUT_PLACES } from '../../../shared/contract.ts';
+import { skillsMenuVisible } from '../help/visibility.ts';
 import type { ShortcutSources } from '../state/home-layout.ts';
 import { useStore, useToolSnapshot } from '../store.tsx';
 import { APPS } from './apps.ts';
@@ -15,19 +16,23 @@ const PLACES = HOME_SHORTCUT_PLACES.flatMap((id) => {
 const DRAWERS = HOME_SHORTCUT_DRAWERS.map((id) => ({ id, title: DRAWER_LABELS[id] }));
 
 /**
- * What a shortcut can point at, for Home and the Customise Home panel: this Brain's skills and the tools this
- * person may see. `tools` stays null while the ads list has loaded nothing yet, so a tool shortcut waits instead of
- * looking gone. A skill shortcut opens the skill ready; it never runs it.
+ * What a shortcut can point at, for Home and the Customise Home panel: the tools this person may see, the rail's
+ * places and the Chats and Tasks drawers. Never a skill. `tools` stays null while the ads list has loaded nothing
+ * yet, so a tool shortcut waits instead of looking gone. `hasSkills`: the Pinned skills card is this person's
+ * (owners and scouts, `skillsMenuVisible`).
  */
-export function useHomeShortcuts(): { sources: ShortcutSources; hasGm: boolean; hasAds: boolean } {
-  const { boot, startSkill, openTool, openView } = useStore();
+export function useHomeShortcuts(): {
+  sources: ShortcutSources;
+  hasGm: boolean;
+  hasAds: boolean;
+  hasSkills: boolean;
+} {
+  const { boot, openTool, openView } = useStore();
   const { dispatch } = useShell();
   const snap = useToolSnapshot();
   const skills = boot?.skills;
-  const sources = useMemo<ShortcutSources>(() => {
-    const list = skills ?? [];
-    return {
-      skills: list.map((s) => ({ name: s.name, title: s.title })),
+  const sources = useMemo<ShortcutSources>(
+    () => ({
       tools:
         snap.ads === null
           ? null
@@ -42,19 +47,17 @@ export function useHomeShortcuts(): { sources: ShortcutSources; hasGm: boolean; 
       places: PLACES,
       drawers: DRAWERS,
       actions: {
-        startSkill: (name) => {
-          const skill = list.find((s) => s.name === name);
-          if (skill) startSkill(skill);
-        },
         openTool: (section, tool) => openTool(section, tool),
         openPlace: (id) => openView(`app:${id}`),
         openDrawer: (id) => dispatch({ type: 'open-drawer', drawer: id }),
       },
-    };
-  }, [skills, snap, startSkill, openTool, openView, dispatch]);
+    }),
+    [snap, openTool, openView, dispatch],
+  );
   return {
     sources,
     hasGm: (skills ?? []).some((s) => s.name === 'gm'),
     hasAds: snap.ads?.visible === true,
+    hasSkills: skillsMenuVisible(boot?.identity.role ?? 'unknown'),
   };
 }

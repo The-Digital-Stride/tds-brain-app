@@ -17,8 +17,8 @@ export type ResolvedShortcut =
   | { state: 'waiting'; key: string }
   | { state: 'gone'; key: string; label: string };
 
+/** What a shortcut can point at. No skills: Cortex never offers a skill as a shortcut (Ian, 2026-11-25). */
 export interface ShortcutSources {
-  skills: readonly { name: string; title: string }[];
   /** null while the tool list is still loading. */
   tools: readonly { section: string; tool: string; title: string }[] | null;
   /** A tool's fixed title, for a shortcut that is still loading or gone. Falls back to the raw id when absent. */
@@ -28,7 +28,6 @@ export interface ShortcutSources {
   /** The drawers a shortcut can open, by their rail names ("Tasks", "Chats"). */
   drawers: readonly { id: HomeShortcutDrawer; title: string }[];
   actions: {
-    startSkill: (name: string) => void;
     openTool: (section: string, tool: string) => void;
     openPlace: (id: HomeShortcutPlace) => void;
     openDrawer: (id: HomeShortcutDrawer) => void;
@@ -36,13 +35,14 @@ export interface ShortcutSources {
 }
 
 export function resolveShortcut(s: HomeShortcut, src: ShortcutSources): ResolvedShortcut {
+  // A retired kind (a v0.85-0.87 skill shortcut) never reaches here, as the server drops it; if one did, it is gone
+  // rather than a crash, so Home hides it and the panel can remove it.
+  if (!(['tool', 'place', 'drawer'] as const).some((k) => k === s.kind)) {
+    const kind = String((s as { kind?: unknown }).kind);
+    return { state: 'gone', key: kind, label: 'Old shortcut' };
+  }
   const key = homeShortcutKey(s);
   switch (s.kind) {
-    case 'skill': {
-      const hit = src.skills.find((k) => k.name === s.name);
-      if (!hit) return { state: 'gone', key, label: s.name };
-      return { state: 'ready', key, label: hit.title, run: () => src.actions.startSkill(s.name) };
-    }
     case 'tool': {
       if (src.tools === null) return { state: 'waiting', key };
       const hit = src.tools.find((t) => t.section === s.section && t.tool === s.tool);
@@ -62,36 +62,18 @@ export function resolveShortcut(s: HomeShortcut, src: ShortcutSources): Resolved
   }
 }
 
-export type ShortcutGroup = 'Skills' | 'Tools' | 'Places' | 'Drawers';
-/** The add list's groups, in the order they show: the short fixed lists first, so a Brain's many skills never bury them. */
-export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Places', 'Drawers', 'Tools', 'Skills'];
+export type ShortcutGroup = 'Places' | 'Drawers' | 'Tools';
+/** The add list's groups, in the order they show: the short fixed lists first. */
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Places', 'Drawers', 'Tools'];
 export interface ShortcutChoice {
   group: ShortcutGroup;
   shortcut: HomeShortcut;
   label: string;
-  meta?: string;
 }
 
-/**
- * What "Add a shortcut" offers: every ready target not already added, minus the `gm` skill (Start my day has its
- * own place). `pins` is an extra argument (not in the contract's signature) so a pinned skill can say so.
- */
-export function shortcutChoices(
-  current: readonly HomeShortcut[],
-  src: ShortcutSources,
-  pins: readonly string[] = [],
-): ShortcutChoice[] {
+/** What "Add a shortcut" offers: every ready place, drawer and tool not already added. */
+export function shortcutChoices(current: readonly HomeShortcut[], src: ShortcutSources): ShortcutChoice[] {
   const have = new Set(current.map(homeShortcutKey));
-  const skills = src.skills
-    .filter((k) => k.name !== 'gm')
-    .map((k) => ({ shortcut: { kind: 'skill', name: k.name } as HomeShortcut, label: k.title, name: k.name }))
-    .filter((c) => !have.has(homeShortcutKey(c.shortcut)))
-    .map((c) => ({
-      group: 'Skills' as const,
-      shortcut: c.shortcut,
-      label: c.label,
-      ...(pins.includes(c.name) ? { meta: 'Also in Pinned skills' } : {}),
-    }));
   const tools = (src.tools ?? [])
     .map((t) => ({
       shortcut: { kind: 'tool', section: t.section, tool: t.tool } as HomeShortcut,
@@ -113,12 +95,22 @@ export function shortcutChoices(
       label: d.title,
     }))
     .filter((c) => !have.has(homeShortcutKey(c.shortcut)));
-  return [...places, ...drawers, ...tools, ...skills];
+  return [...places, ...drawers, ...tools];
 }
 
-/** The switch rows a person can ever see: no Start my day without the gm skill, no Ads approvals without Ads access. */
-export function panelItems(ctx: { hasGm: boolean; hasAds: boolean }): readonly HomeItemDef[] {
+/**
+ * The switch rows a person can ever see: no Start my day without the gm skill, no Ads approvals without Ads access,
+ * no Pinned skills for anyone but owners and scouts (`skillsMenuVisible`).
+ */
+export function panelItems(ctx: {
+  hasGm: boolean;
+  hasAds: boolean;
+  hasSkills: boolean;
+}): readonly HomeItemDef[] {
   return HOME_ITEMS.filter(
-    (i) => !(i.id === 'start-my-day' && !ctx.hasGm) && !(i.id === 'ads' && !ctx.hasAds),
+    (i) =>
+      !(i.id === 'start-my-day' && !ctx.hasGm) &&
+      !(i.id === 'ads' && !ctx.hasAds) &&
+      !(i.id === 'skills' && !ctx.hasSkills),
   );
 }

@@ -31,14 +31,14 @@ Home is the first screen you see in TDS Cortex. It has a message box for startin
 
 ![The message box on Home, with Chat for set to Auto.](images/home-start.webp)
 
-**Start my day**, above the box, runs the good morning skill in a new chat. It shows only if your Brain has that skill. Under the box are your [meetings](help:meetings), pinned tasks, **Recent projects**, and pinned chats and files. While an Ads change waits for your yes, an **Ads approvals** card shows too. If you have no pinned skills yet, Home shows the ones you use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
+**Start my day**, above the box, runs the good morning skill in a new chat. It shows only if your Brain has that skill. Under the box are your [meetings](help:meetings), pinned tasks, **Recent projects**, and pinned chats and files. While an Ads change waits for your yes, an **Ads approvals** card shows too. Owners and scouts also see their pinned skills, or the ones they use most. A skill is a saved set of steps Claude follows. See [Skills](help:skills).
 
 ## Good to know
 
 - To choose what shows here, see [Customise Home](help:customise-home).
 - **Recent projects** lists open projects, newest first, once one has been worked on. **All projects** opens [Projects](help:projects).
 - Your chat opens as soon as you send, and you can follow it in the [Chats drawer](help:chats-drawer).
-- Pick a skill first, and Home starts the chat from that skill.
+- Owners and scouts can pick a skill on Home first, and Home starts the chat from that skill.
 - To move a card, drag the grip beside its heading. Or put the keyboard on the grip and use the arrow keys. Once you have moved a card, **Reset card order** puts them back.
 - After an update, a What's new card may show above the message box. It says what changed and links to Help. Press **Close** to hide it. See [Updates and what's new](help:updates).
 

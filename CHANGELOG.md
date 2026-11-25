@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.83.0 — 2026-11-25
+
+- **feat**: open the app to the whole team for the first release
+
 ## v0.82.2 — 2026-11-25
 
 - **fix**: keep the rail's foot the same height when it opens on hover

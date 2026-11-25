@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.90.1 — 2026-11-25
+
+- **fix**: every drawer over the sheet is as tall as the file viewer
+
 ## v0.90.0 — 2026-11-25
 
 - **feat**: an email Claude drafts in a project chat opens in the Gmail window

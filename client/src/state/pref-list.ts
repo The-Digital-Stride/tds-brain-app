@@ -94,8 +94,10 @@ export function usePrefList<F extends PrefListField>({
 
   const keepBoot = useCallback(
     (prefs: AppPrefs, begun: number): AppPrefs => {
-      if (pending.current > 0) return keep(prefs);
-      return sentAt.current > begun ? { ...prefs, [field]: latest.current } : prefs;
+      // Read before the newest save was sent: its list is older than anything confirmed since, so it never becomes
+      // `saved` (a failure would fall back to it and undo a confirmed change). Keep the list as shown.
+      if (sentAt.current > begun) return { ...prefs, [field]: latest.current };
+      return keep(prefs);
     },
     [field, keep],
   );

@@ -36,6 +36,21 @@ const shape = (blocks: Block[]) =>
   );
 
 describe('toBlocks', () => {
+  it('never folds a reply that holds a drafted email, even when a step follows it', () => {
+    const draft = 'Here it is:\n\n```email\nTo: jo@acme.co.uk\n\nHello\n```\n';
+    const blocks = toBlocks([user, text('a'), tool('1'), text('mail', draft), tool('2'), text('b'), turnEnd]);
+    expect(shape(blocks)).toEqual(['u', '[a 1]', 'mail', '[2]', 'b']);
+    // The word alone, or a code block in another language, is still a note.
+    const plain = toBlocks([
+      user,
+      text('n', 'I will email them.\n\n```ts\nemail\n```'),
+      tool('1'),
+      text('b'),
+      turnEnd,
+    ]);
+    expect(shape(plain)).toEqual(['u', '[n 1]', 'b']);
+  });
+
   it('folds text followed by a step in the same turn in with the steps, and leaves the answer out', () => {
     const blocks = toBlocks([user, text('a'), tool('1'), text('b'), turnEnd]);
     expect(shape(blocks)).toEqual(['u', '[a 1]', 'b']);

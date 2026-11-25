@@ -6,7 +6,7 @@ order: 5
 summary: Save what an email said to a project's Updates, once you've checked it.
 benefit: The team sees what was agreed by email without opening anyone's inbox.
 roles: all
-related: [projects, project-codes]
+related: [projects, project-codes, drafting-emails]
 since: 0.73.0
 reviewed: 2026-11-25
 ---

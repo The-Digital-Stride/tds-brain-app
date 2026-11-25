@@ -206,6 +206,20 @@ named here or it isn't one.
    at 12) come before the button: "Name (address)" for each, the main contact first and chosen to start with,
    then "Someone else" (Gmail's To left empty). The row's contents show once the contacts are known, so the
    button never moves under the pointer, and the row keeps its height meanwhile (2026-11-25).
+   The same small window opens from **an email Claude drafted in a chat** (`EmailDraftCard`,
+   `components/EmailDraft.tsx`, `.email-draft` in `chat.css`; plan 2026-11-25-chat-email-to-gmail): a reply's
+   top-level fenced `email` block is drawn as a card in the thread, never as code and never inside the "What
+   Claude did" fold. A white card (1px `--line-strong`, radius 12, `--lift-0`, 12px padding): a `dl` of To,
+   Cc, Bcc and Subject (13px, iron labels 56px wide; bare addresses only; "Nobody yet. Add them in Gmail."
+   for an empty To), a hairline, then the whole message as plain pre-wrapped text in the reading face, never
+   markdown, never clamped. Then "Open in Gmail" (a standard 32px `a.btn`, hidden text ": {subject} (opens
+   Gmail in a small window)") and "Copy text" (a standard `.btn`, `useCopy`). Notices are `.notice` boxes
+   above the buttons: addresses left out or that didn't fit (`warn`), and a text too long for Gmail's link (`info`: "This email
+   is too long to fill in for you. Press Copy text, then paste it into the Gmail window."). The card is a
+   `role="group"` named "Email draft: {subject}" (not a region: a thread can hold several). Copy text carries
+   the subject as hidden text, never an `aria-label`, so its name still holds "Copied". While the reply is
+   still arriving the card is `aria-busy` and shows its text with a `.hint` "Still writing…" in place of the
+   buttons and notices.
    On the Updates tab, the `email` entries of one conversation are one row (`.proj-thread`): the subject once and
    one `.proj-email-meta` line ("3 updates · latest 24 Nov 2026 · Open in Gmail", or "In Sam's inbox") in
    `.proj-thread-head`, the newest part open, and the rest in a shut `Fold` "Earlier in this thread (n)" (level 4,

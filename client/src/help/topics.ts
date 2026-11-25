@@ -13,6 +13,7 @@ export const HELP_TOPIC_IDS: readonly string[] = [
   'project-codes',
   'project-emails',
   'saving-chats-to-projects',
+  'drafting-emails',
   'meetings',
   'customise-home',
   // Phase 2

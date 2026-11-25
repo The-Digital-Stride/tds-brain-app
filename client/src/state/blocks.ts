@@ -1,3 +1,4 @@
+import { holdsEmail } from '../email-draft.ts';
 import type { AssistantItem, ChatItem, ReportItem, ToolItem } from './chat-reducer.ts';
 
 /** One line in a "What Claude did" fold: a step, a note Claude wrote between steps, or a helper's report. */
@@ -12,6 +13,8 @@ export type Block =
  * The ids of Claude's working notes: its own text that a step follows in the same turn. They
  * fold away with the steps, leaving the answer that ends the turn.
  * Text still being written counts once a step follows it.
+ * Text that holds an email Claude drafted is never a note: the draft and its "Open in Gmail" button must
+ * stay in view (plan 2026-11-25-chat-email-to-gmail, decision 10).
  */
 export function noteIds(items: ChatItem[]): Set<string> {
   const notes = new Set<string>();
@@ -21,7 +24,7 @@ export function noteIds(items: ChatItem[]): Set<string> {
     if (!item) continue;
     if (item.kind === 'user' || item.kind === 'turn-end') toolAhead = false;
     else if (item.kind === 'tool') toolAhead = true;
-    else if (item.kind === 'assistant' && toolAhead) notes.add(item.id);
+    else if (item.kind === 'assistant' && toolAhead && !holdsEmail(item.text)) notes.add(item.id);
   }
   return notes;
 }

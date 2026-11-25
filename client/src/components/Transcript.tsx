@@ -9,6 +9,7 @@ import {
 import type { ChatFile, SessionState } from '../../../shared/contract.ts';
 import type { ChatPage } from '../../../shared/pages-contract.ts';
 import { api } from '../api.ts';
+import { splitReply } from '../email-draft.ts';
 import { Markdown } from '../markdown.tsx';
 import { Icon } from '../shell/Icon.tsx';
 import { type ActivityEntry, currentStep, toBlocks } from '../state/blocks.ts';
@@ -17,6 +18,7 @@ import { reportTitle, STEP_WORDS } from '../state/steps.ts';
 import { useStore } from '../store.tsx';
 import { SentFiles } from './Attachments.tsx';
 import { PermissionCard, QuestionCard } from './Cards.tsx';
+import { EmailDraftCard } from './EmailDraft.tsx';
 
 /** What the transcript needs to turn file names and steps into links (plan 2026-11-13-chat-files). */
 interface FileLinks {
@@ -37,7 +39,17 @@ const FileLinksContext = createContext<FileLinks | null>(null);
  * still link older replies, so each reply works out which keys its own paths resolve to and only
  * renders again when that signature (or its text) changes.
  */
-const AssistantText = memo(function AssistantText({ text }: { text: string }) {
+const AssistantText = memo(function AssistantText({
+  text,
+  emails = false,
+  done = true,
+}: {
+  text: string;
+  /** Claude's own reply: an email it drafted shows as a card. Never set for a helper's words. */
+  emails?: boolean;
+  /** False while the reply is still arriving. */
+  done?: boolean;
+}) {
   const links = useContext(FileLinksContext);
   const mentions = useMemo(() => findPathMentions(text), [text]);
   // A short name in this reply (`audit.md`) links only into a folder this same reply names.
@@ -58,7 +70,24 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
     () => (links ? (raw: string) => latest.current?.link(raw, folders) ?? null : undefined),
     [signature, links === null, folders],
   );
-  return <Markdown text={text} link={link} onFile={links?.onFile} />;
+  const pieces = useMemo(() => (emails ? splitReply(text) : null), [emails, text]);
+  if (!pieces || pieces.every((p) => p.kind === 'text')) {
+    return <Markdown text={text} link={link} onFile={links?.onFile} />;
+  }
+  return (
+    <>
+      {pieces.map((p, i) =>
+        p.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: pieces only ever grow at the end while a reply arrives.
+          <Markdown key={i} text={p.text} link={link} onFile={links?.onFile} />
+        ) : (
+          // A reply that ended before the closing fence came is as ready as it will ever be.
+          // biome-ignore lint/suspicious/noArrayIndexKey: as above.
+          <EmailDraftCard key={i} email={p.email} ready={p.closed || done} />
+        ),
+      )}
+    </>
+  );
 });
 
 function ToolLine({ tool }: { tool: ToolItem }) {
@@ -206,7 +235,18 @@ function HeldNotice({ text, sessionId, canResend }: { text: string; sessionId: s
   );
 }
 
-function Row({ item, sessionId, resendId }: { item: ChatItem; sessionId: string; resendId?: string | null }) {
+function Row({
+  item,
+  sessionId,
+  resendId,
+  arriving = false,
+}: {
+  item: ChatItem;
+  sessionId: string;
+  resendId?: string | null;
+  /** This reply is the newest thing in the thread and Claude is still writing it. */
+  arriving?: boolean;
+}) {
   switch (item.kind) {
     case 'user':
       return (
@@ -218,7 +258,7 @@ function Row({ item, sessionId, resendId }: { item: ChatItem; sessionId: string;
     case 'assistant':
       return (
         <div className="msg-assistant">
-          <AssistantText text={item.text} />
+          <AssistantText text={item.text} emails done={item.done || !arriving} />
         </div>
       );
     // A card still waiting on the person shows in the floater above the message box, not here.
@@ -318,6 +358,10 @@ export function Transcript({
   }, [items, sessionState]);
   const lastTools = blocks.map((b) => b.kind).lastIndexOf('tools');
   const busy = sessionState === 'working' || sessionState === 'starting' || sessionState === 'waiting';
+  // The reply still being written: the newest item, while Claude works. A stopped or failed turn never
+  // marks its reply as finished (`done`), so anything older, or anything once Claude is free, counts as ended.
+  const newest = items.at(-1);
+  const arrivingId = busy && newest?.kind === 'assistant' && !newest.done ? newest.id : null;
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -347,7 +391,13 @@ export function Transcript({
                 waiting={sessionState === 'waiting'}
               />
             ) : (
-              <Row key={itemKey(b.item)} item={b.item} sessionId={sessionId} resendId={resendId} />
+              <Row
+                key={itemKey(b.item)}
+                item={b.item}
+                sessionId={sessionId}
+                resendId={resendId}
+                arriving={b.item.kind === 'assistant' && b.item.id === arrivingId}
+              />
             ),
           )}
         </div>

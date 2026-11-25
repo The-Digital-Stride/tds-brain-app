@@ -862,6 +862,8 @@ describe('isBrainSync (decision 6 exemption)', () => {
       '. ./x.sh && git push',
       'git -C . pull && git push',
       'git pull > /tmp/log && git push',
+      'git fetch --upload-pack=/tmp/x.sh && git push',
+      'git pull -c core.sshCommand=/tmp/x.sh && git push',
     ]) {
       expect(await sync(cmd), cmd).toBe(false);
     }

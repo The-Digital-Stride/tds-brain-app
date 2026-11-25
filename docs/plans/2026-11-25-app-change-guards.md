@@ -187,4 +187,12 @@ says so; Builder B starts after that.
   ordinary team and brain commands after the fix round (no regressions; `du ~/Library` and `open <app file>`
   are refused for team, accepted as strict). Builder B's first report claimed tests and help it hadn't
   written; caught by checking the files.
-- **Accepted limits:** see "Out of scope".
+- **Overseer sign-off (291046d):** two more blockers first: the app marker matched the brain's
+  `the-digital-stride/tds-brain-app` project key (anchored to the GitHub address), and the brain-sync
+  exemption could be steered by `git remote set-url`, `git config`, `git checkout`, `builtin cd`, `source`
+  (now every other step must be a bare daily-sync git step or echo/cat). Also: `--abort` only as the sole
+  argument, an unreadable subcommand counts as a push, lookups time-boxed (3 s + 5 s, well inside the
+  SDK's 60 s hook timeout, since a timed-out hook may fail open), and side steps with command-running options
+  (`--upload-pack`, `-c`) lose the exemption. Signed off.
+- **Accepted limits:** see "Out of scope", plus: a `$(…)` inside an *unquoted* heredoc body isn't checked by
+  the brain-sync rule. Next: the helper's name on a publish card (cosmetic).

@@ -870,6 +870,9 @@ function onlySyncSteps(text: string, depth: number): boolean {
     const words = seg.words;
     const first = words[0]?.v;
     if (first === undefined || words.some((w) => w.bad)) return false;
+    // Options that run a command (`fetch --upload-pack=…`, `--exec`, `-c core.sshCommand=…`).
+    if (words.some((w) => /^(?:--upload-pack|--receive-pack|--exec|-c$|--config-env)/.test(w.v)))
+      return false;
     const ok = first === 'git' ? SYNC_GIT_STEPS.has(words[1]?.v ?? '') : SYNC_OTHER_STEPS.has(first);
     if (!ok) return false;
     for (const w of words) for (const sub of w.subs) if (!onlySyncSteps(sub, depth + 1)) return false;

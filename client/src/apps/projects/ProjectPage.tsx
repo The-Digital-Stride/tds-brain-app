@@ -363,6 +363,8 @@ function Overview({
         card={card}
         list={list}
         title={(key) => list.projects.find((p) => p.key === key)?.title ?? 'another project'}
+        contacts={business.data?.contacts}
+        contactsReady={!showsBusiness(card) || business.data !== null || business.error}
       />
       <div className="tray lib-tray">
         {card.archived ? null : <EmailDrafts list={list} clients={clients} projectKey={card.key} />}

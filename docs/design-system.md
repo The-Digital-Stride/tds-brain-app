@@ -195,9 +195,16 @@ named here or it isn't one.
    (`.proj-ref-code`, navy) and one standard small "Copy" that copies it in square brackets (`[AST4K7]`); its
    accessible name is "Copy code AST4K7", the label swaps to "Copied" for two seconds (`useCopy`, like every copy
    button) and one hidden status line announces it. Only a code that resolves (`ok`) gets Copy and the `.proj-note`
-   line saying where to put it; a duplicate shows as plain text with neither. Beside Copy, an `ok` code also has
-   "Write an email": a standard small `a.btn` that opens Gmail's compose window in a new tab with the code line
-   in the text (hidden "(opens in a new tab)", as every outside link) (2026-11-25).
+   line saying where to put it; a duplicate shows as plain text with neither. Under the code row, an `ok` code
+   has an email row (`.proj-ref-email`, min-height 32px): "Write an email", a standard 32px `a.btn` that opens
+   Gmail's compose window with the code line in the text. A plain click opens it in a small window beside the
+   project (`window.open` with `popup`, `noopener` and `noreferrer`, 680 by 760 at the right of the Cortex
+   window; Gmail can't be shown inside another page); a click with a modifier key is left to the browser. Hidden
+   text "(opens Gmail in a small window)". When the client's files give contacts with an email address, a
+   visible "Email to" label and a native `select.field` (`.proj-ref-to`, at most 340px: a short fixed list, cut
+   at 12) come before the button: "Name (address)" for each, the main contact first and chosen to start with,
+   then "Someone else" (Gmail's To left empty). The row's contents show once the contacts are known, so the
+   button never moves under the pointer, and the row keeps its height meanwhile (2026-11-25).
    On the Updates tab, the `email` entries of one conversation are one row (`.proj-thread`): the subject once and
    one `.proj-email-meta` line ("3 updates · latest 24 Nov 2026 · Open in Gmail", or "In Sam's inbox") in
    `.proj-thread-head`, the newest part open, and the rest in a shut `Fold` "Earlier in this thread (n)" (level 4,

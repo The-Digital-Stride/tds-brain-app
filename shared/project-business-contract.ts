@@ -141,6 +141,37 @@ export interface BusinessSection {
   from: 'business' | 'profile';
 }
 
+/**
+ * Who an email from the project can go to ("Write an email", 2026-11-25). Read from the same two files, read
+ * only, every time the project opens; nothing is stored or copied.
+ *
+ * Where the reader looks (business.md first, then profile.md):
+ * - a label line whose label ends with "contact" or "contacts" (`**Main contact:**`, `- **Other contacts:**`),
+ *   with its wrapped value; a label with no value of its own takes the list or table straight under it;
+ * - a `##`, `###` or `####` section whose heading ends with "contact" or "contacts", or is "People" or
+ *   "Key people", up to the next heading of its level or above: each list item, table row and paragraph.
+ * An email address anywhere else in the files is never picked up.
+ *
+ * One contact per address (compared without case; the first spelling is kept). The name is the bold name or
+ * the leading words of the line, list item or table row the address sits in; null when none reads as a name,
+ * and the picker then shows the address alone. A list item or table row whose name is struck through
+ * (`~~Name~~`: they have left) is skipped. `main` is true for a "Main contact" or "Primary contact" label, or
+ * a line that says "main contact" or "primary contact". Main contacts come first, then file order, cut at
+ * BUSINESS_CONTACTS_MAX. Addresses at `example.com`, `example.org` and `example.net`, and any ending `.test`,
+ * `.example` or `.invalid`, are template text and are left out.
+ */
+export interface BusinessContact {
+  /** Plain text, at most CONTACT_NAME_MAX characters. Never HTML or markdown. */
+  name: string | null;
+  /** One address in a strict shape (letters, digits and `._%+-` before the @, a dotted host after). */
+  email: string;
+  main: boolean;
+}
+
+/** The picker is a short list (a native select). */
+export const BUSINESS_CONTACTS_MAX = 12;
+export const CONTACT_NAME_MAX = 60;
+
 /** `GET ROUTES.projectBusiness?key=<ProjectKey>` → this. */
 export interface ProjectBusinessResponse {
   /**
@@ -160,6 +191,13 @@ export interface ProjectBusinessResponse {
   path: string | null;
   facts: KeyFact[];
   sections: BusinessSection[];
+  /**
+   * The client's contacts that have an email address (see BusinessContact). Optional: an older server sends
+   * none, and the page then offers "Write an email" with nobody filled in, as before. Read from whichever of
+   * the two files passed the safe read, so 'missing' and 'unreadable' can still carry profile.md's contacts;
+   * always empty for 'none'.
+   */
+  contacts?: BusinessContact[];
 }
 
 // ROUTES addition (shared/contract.ts): projectBusiness: '/api/projects/business' (GET).

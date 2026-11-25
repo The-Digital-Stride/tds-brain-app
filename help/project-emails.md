@@ -36,7 +36,9 @@ Claude can suggest client emails for a project. Each one waits for the person wh
 - A conversation is one row on **Updates**. Each person adds only what is new. Open **Earlier in this thread** to read the older parts.
 - Each part keeps its own **Client can see this** setting and its own delete button.
 - Did a summary miss something? The person who saved that part deletes it and saves again.
-- To start an email from a project, press **Write an email** on its **Overview**.
+- To start an email from a project, press **Write an email** on its **Overview**. Gmail opens in a small window with the code already in it.
+- If the client has contacts with an email address, an **Email to** list sits beside the button. Pick who the email goes to, or **Someone else** to fill it in yourself.
+- The list comes from the client's business file and profile in the brain. To add someone, add their name and email address under the contacts there.
 
 ## Try this
 

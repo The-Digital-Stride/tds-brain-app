@@ -13,12 +13,12 @@ import {
   SECTION_RULES,
 } from '../../shared/project-business-contract.ts';
 
-const LABEL_LINE = /^\s*(?:[-*]\s+)?\*\*(.+?):\*\*\s*(.*)$/;
-const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+export const LABEL_LINE = /^\s*(?:[-*]\s+)?\*\*(.+?):\*\*\s*(.*)$/;
+export const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const LIST_OR_TABLE = /^\s*(?:[-*+]\s|\d+[.)]\s|\||>)/;
 
 /** Text with CRLF folded, frontmatter and HTML comments removed. */
-function clean(text: string | null): string {
+export function clean(text: string | null): string {
   if (!text) return '';
   let t = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   t = t.replace(/^---\n[\s\S]*?\n---[ \t]*(?:\n|$)/, '');
@@ -26,7 +26,7 @@ function clean(text: string | null): string {
 }
 
 /** Plain text: markdown marks, links and tags removed, spaces folded. */
-function plain(s: string): string {
+export function plain(s: string): string {
   return s
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/<[^>]*>/g, '')
@@ -74,7 +74,7 @@ function findFact(text: string, labels: readonly string[]): string | null {
 }
 
 /** A heading's text for matching: marks removed, trailing "(…)" dropped, lower case. */
-function headingKey(text: string): string {
+export function headingKey(text: string): string {
   return plain(text)
     .replace(/\s*\([^)]*\)\s*$/, '')
     .trim()

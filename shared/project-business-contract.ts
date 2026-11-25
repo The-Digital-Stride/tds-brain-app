@@ -160,7 +160,8 @@ export interface BusinessSection {
  * then shows the address alone). Each address is read against the name that starts its part of the line: the
  * name that leads the line, item, row or label value (its bold start, or the capitalised words before the
  * first comma, dash or bracket) for the first address when nothing separates them; after a `;`, `·`, table
- * bar or the end of a sentence, and for every later address, the capitalised words that start that part.
+ * bar or the end of a sentence, and for every later address, the capitalised words that start that part (a lone word only when the address
+ * looks like it: "Prefers kim@…" and "Reception: hello@…" name nobody).
  * - That name is used when it is the only person named before the address: nothing but a role, a phone
  *   number or punctuation in between ("Sarah Jones (MD) — hello@…", "Bob Smith (robert@…)").
  * - Otherwise there may be two people (that name, and a name touching the address: a bold name ending right
@@ -171,7 +172,7 @@ export interface BusinessSection {
  * - When a part names nobody, the first address may take the line's leading name (a table's first cell, a
  *   list item's bold name), but only when it looks like that person's. "Invoices to accounts@…" in Sarah's
  *   row is not Sarah.
- * - Job and team words ("Director", "Accounts", "PA") are never a name or part of one.
+ * - Job, team and company words ("Director", "Accounts", "PA", "Ltd") are never a name or part of one.
  *
  * Left out: someone struck through (`~~Name~~`, however nested, or a struck address: they have left; a struck
  * note about somebody else removes nobody); a label such as "Do not contact:" or "Never contact:"; template

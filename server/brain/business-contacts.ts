@@ -60,6 +60,12 @@ const LEADING_WORDS = new Set([
 ]);
 /** Words that mean a line label, a job or a team, never a person. */
 const NOT_A_NAME = new Set([
+  // A company is not a person.
+  'ltd',
+  'limited',
+  'plc',
+  'llp',
+  'inc',
   'email',
   'e-mail',
   'tel',
@@ -192,10 +198,16 @@ function nameTouching(part: string): string | null {
   return opener ? asName(opener[1] ?? '') : null;
 }
 
-/** The name that starts a part of a line (after a separator or an earlier address): its first capitalised words. */
-function nameStarting(part: string): string | null {
+/**
+ * The name that starts a part of a line (after a separator or an earlier address): its first capitalised
+ * words. A lone word must also look like the address: any sentence starts with a capital ("Prefers kim@…",
+ * "Reception: hello@…" name nobody; "Tom (tom@…)" is Tom).
+ */
+function nameStarting(part: string, email: string): string | null {
   const fromCapital = /(?:^|[^\p{L}])(\p{Lu}[\s\S]*)$/u.exec(part.replace(MARKS, ''));
-  return fromCapital ? asName(fromCapital[1] ?? '') : null;
+  const name = fromCapital ? asName(fromCapital[1] ?? '') : null;
+  if (!name) return null;
+  return name.includes(' ') || related(name, email) ? name : null;
 }
 
 /**
@@ -218,14 +230,16 @@ function onlyNameBefore(part: string, name: string): boolean {
  * - `first`, when it is the only person named before the address;
  * - else there may be two (`first`, and a name touching the address): the one the address looks like, the
  *   touching one when both do;
- * - else a touching name when the part starts with nobody; otherwise nobody.
+ * - else a touching name of two words or more when the part starts with nobody; otherwise nobody.
  */
 function pick(part: string, first: string | null, email: string): string | null {
   if (first && onlyNameBefore(part, first)) return first;
   const touching = nameTouching(part);
   if (touching && related(touching, email)) return touching;
   if (first && related(first, email)) return first;
-  return first ? null : touching;
+  // No name starts the part: a touching name of two words or more (a lone word was a team or a title once
+  // its role words were dropped: "Accounts Payable (ap@…)").
+  return !first && touching?.includes(' ') ? touching : null;
 }
 
 /**
@@ -243,7 +257,7 @@ function nameFor(b: Block, n: number, prevEnd: number, start: number, email: str
   const separated = cut >= 0 || start - prevEnd > LOOK;
   if (n === 0 && !separated) return pick(seg, b.lead, email);
   const part = cut >= 0 ? seg.slice(cut) : seg;
-  const name = pick(part, nameStarting(part), email);
+  const name = pick(part, nameStarting(part, email), email);
   if (name) return name;
   return n === 0 && b.lead && related(b.lead, email) ? b.lead : null;
 }

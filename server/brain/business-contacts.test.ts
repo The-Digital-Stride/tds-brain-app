@@ -486,4 +486,31 @@ describe('parseContacts: review fixes (2026-11-25)', () => {
       ).map((c) => c.name),
     ).toEqual(['Kim', null, 'Jo Day']);
   });
+
+  // Fourth look (2026-11-25).
+  it('a lone word that starts a later part of a line is not a name unless the address looks like it', () => {
+    const names = (line: string) => one(line).map((c) => c.name);
+    expect(names('## Contacts\n- Sarah Jones (sarah@acme.co.uk). Prefers kim@acme.co.uk\n')).toEqual([
+      'Sarah Jones',
+      null,
+    ]);
+    expect(names('## Contacts\n- **Sarah Jones** — MD. Reception: hello@acme.co.uk\n')).toEqual([null]);
+    expect(names('## Contacts\n- **Sarah Jones** — MD. Urgent: hello@acme.co.uk\n')).toEqual([null]);
+    expect(names('## Contacts\n| Sarah Jones | MD | Bookings hello@acme.co.uk |\n')).toEqual([null]);
+    expect(names('**Main contact:** Kim (kim@acme.co.uk); Accounts Payable (ap@acme.co.uk)\n')).toEqual([
+      'Kim',
+      null,
+    ]);
+    // One word is fine when the address is plainly theirs.
+    expect(names('**Main contact:** Sarah Jones (sarah@acme.co.uk); Tom (tom@acme.co.uk)\n')).toEqual([
+      'Sarah Jones',
+      'Tom',
+    ]);
+  });
+
+  it('a company is not a person', () => {
+    expect(
+      one('**Main contact:** Kim (kim@acme.co.uk); Acme Heating Ltd (info@acme.co.uk)\n').map((c) => c.name),
+    ).toEqual(['Kim', null]);
+  });
 });

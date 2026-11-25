@@ -127,7 +127,6 @@ export function Inspector() {
   const started = live ? whenWords(live.startedAt) : '';
   const sessionState = chat?.sessionState ?? live?.state ?? null;
   const sdkId = chat?.sdkSessionId ?? live?.sdkSessionId ?? null;
-  const canResume = boot.identity.role === 'owner' || boot.identity.role === 'scout';
 
   return (
     // The Show switch sits in the panel's fixed band, like a drawer's filters; only what it shows scrolls.
@@ -190,7 +189,7 @@ export function Inspector() {
                 {APPROVALS_SHORT}
                 <span className="kv-note">{approvalsSentence(boot.engine.permissionMode)}</span>
               </dd>
-              {sdkId && canResume ? (
+              {sdkId ? (
                 <>
                   <dt className="kv-wide">Continue in the terminal</dt>
                   <dd className="kv-wide">

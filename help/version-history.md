@@ -5,7 +5,7 @@ area: settings
 order: 10
 summary: Read what changed in every version of Cortex.
 benefit: You know what's new, and what to try, before anyone asks you.
-roles: [owner, scout]
+roles: all
 related: [settings, updates, skill-levels]
 since: 0.38.0
 reviewed: 2026-11-20
@@ -13,7 +13,7 @@ reviewed: 2026-11-20
 
 ## What it does
 
-Only owners and scouts see this. Ask one if you need it. **What's changed** in Settings (on the **About** tab) lists every version of Cortex, newest first, with what changed in each.
+**What's changed** in Settings (on the **About** tab) lists every version of Cortex, newest first, with what changed in each.
 
 ## Why it helps
 

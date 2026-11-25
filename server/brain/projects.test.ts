@@ -1387,7 +1387,7 @@ describe('project codes', () => {
     expect((await s.index()).refs?.resolve('ACM4K7')).toBeNull();
   });
 
-  it('sets canRef from the capability and roles, and canRefAll for the Owner only', async () => {
+  it('sets canRef from the capability and roles, and canRefAll for an owner or a scout', async () => {
     put('clients/acme/projects/a/project.md', card('A'));
     const s = service();
     expect((await s.list(ME)).canRef).toBe(false);
@@ -1395,6 +1395,7 @@ describe('project codes', () => {
     s.changed();
     expect(await s.list(ME)).toMatchObject({ canRef: true, canRefAll: true });
     expect(await s.list({ ...ME, role: 'team' })).toMatchObject({ canRef: true, canRefAll: false });
+    expect(await s.list({ ...ME, role: 'scout' })).toMatchObject({ canRef: true, canRefAll: true });
     const denied = service({ mayChange: async () => false });
     fakes.caps = [PROJECTS_CAPABILITY, PROJECTS_REFS_CAPABILITY];
     expect(await denied.list(ME)).toMatchObject({ canRef: false, canRefAll: false });

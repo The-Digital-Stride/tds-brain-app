@@ -912,7 +912,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
 
   /**
    * The listing with `canDelete` on each item (plan 2026-11-15-delete-library-files). True only when
-   * deleting is available to this person, the scope is a client's (any role) or Templates (owner), the
+   * deleting is available to this person, the scope is a client's (any role) or Templates (owner or scout), the
    * name isn't protected and git doesn't ignore the file. One batched git call per built listing; if
    * git can't answer, nothing is deletable. The cached listing itself is never changed.
    */
@@ -924,7 +924,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     return { ...listing, items: listing.items.map((i) => (ok.has(i.id) ? { ...i, canDelete: true } : i)) };
   }
 
-  /** Whether this person may delete in this scope right now (any known role for a client, the owner for Templates). */
+  /** Whether this person may delete in this scope right now (any known role for a client, an owner or scout for Templates). */
   async function mayDeleteIn(scope: ScopeDef): Promise<boolean> {
     if (!opts.deletion || scope.kind === 'personal' || scope.id === LEGACY_PROJECTS_SCOPE) return false;
     let who: { role: Role } | null = null;
@@ -935,7 +935,7 @@ export function createLibrary(root: string, opts: LibraryOptions): Library {
     }
     // Someone not on the team (`unknown`) gets no bin anywhere: the route and the script refuse them too.
     if (who === null || who.role === 'unknown') return false;
-    return scope.kind === 'client' || who.role === 'owner';
+    return scope.kind === 'client' || who.role === 'owner' || who.role === 'scout';
   }
 
   /**

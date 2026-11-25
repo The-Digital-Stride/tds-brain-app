@@ -1751,7 +1751,7 @@ describe('uploads', () => {
   });
 });
 
-describe('GET /api/changelog (owners and scouts only)', () => {
+describe('GET /api/changelog (open to everyone)', () => {
   const VERSIONS = [{ version: '0.6.0', date: '2026-11-13', changes: [{ kind: 'feat', text: 'x' }] }];
   async function get(role: string, method = 'GET', changelog = async () => VERSIONS) {
     const req = Object.assign(Readable.from([]), { method, headers: {} });
@@ -1779,19 +1779,11 @@ describe('GET /api/changelog (owners and scouts only)', () => {
     return { status: sent.status, body: JSON.parse(sent.body || '{}') };
   }
 
-  it('gives owners and scouts every version', async () => {
-    for (const role of ['owner', 'scout']) {
+  it('gives every role every version', async () => {
+    for (const role of ['owner', 'scout', 'team', 'unknown']) {
       const r = await get(role);
       expect(r.status).toBe(200);
       expect(r.body).toEqual({ versions: VERSIONS });
-    }
-  });
-
-  it('refuses the team and anyone not recognised', async () => {
-    for (const role of ['team', 'unknown']) {
-      const r = await get(role);
-      expect(r.status).toBe(403);
-      expect(r.body.error.code).toBe('not-allowed');
     }
   });
 

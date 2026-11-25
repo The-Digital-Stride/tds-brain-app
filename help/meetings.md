@@ -8,7 +8,7 @@ benefit: Know what's next in your diary without opening another app.
 roles: all
 related: [home, projects, project-codes]
 since: 0.72.0
-reviewed: 2026-11-24
+reviewed: 2026-11-25
 ---
 
 ## What it does
@@ -33,6 +33,7 @@ The **Meetings** card on Home lists your coming meetings from your own calendar,
 ## Good to know
 
 - The card says when your calendar was last checked. If it's old, run /gm to update it. Until /gm has checked your calendar once, the card is empty.
+- Meetings are grouped by day, under **Today**, **Tomorrow** or the day's name. A line with **Next week** or **Week of** marks where a new week starts.
 - **Working on** doesn't narrow your meetings. You always see them all.
 - If a meeting has no event page of its own, the calendar icon opens that day instead.
 - On a project's page, the same link reads **Open invite**.

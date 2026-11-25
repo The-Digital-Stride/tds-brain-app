@@ -174,8 +174,9 @@ named here or it isn't one.
    Everywhere a meeting shows (Home, a project's Meetings card, Coming up) it carries the link to its invite.
    Outside links are `<a class="btn" target="_blank" rel="noopener noreferrer">`, with a visually hidden " (opens in
    a new tab)" in the name and no external-link icon, except Home's Meetings invite (an icon link, below). Home's cards can be moved as the Ad Manager deep dive's tables are ("Reorder": grip left of the `h2`, dashed `.card-drop` placeholder, arrows/Home/End on the grip, name "Move {title}, {n} of {total}", always shown on Home: see Reorder) through `useCardOrder` (client/src/shell/useCardOrder.tsx), with no full-width toggle. The order is saved per person in this browser's localStorage (`tds.home.cardOrder.v1:<identity slug>`), never in the brain; a hidden card (Ads approvals with nothing waiting) keeps its saved place. "Reset card order" (quiet, small) sits under the tray on the right, only while the order differs from the default. Home's Meetings card (`.home-meetings`, first in `.tray`, one
-   column like the other cards, `h2` "Meetings", no count; head link "Open Google Calendar") groups by day (`h3.meet-day`: Today,
-   Tomorrow, "Wed 26 Nov") with static `li.line.home-meeting` rows: a 48px time column (`.meet-when`: start and end,
+   column like the other cards, `h2` "Meetings", no count; head link "Open Google Calendar") groups by calendar week, Monday on (`h3.meet-week`, 12/600 iron: "Next week", "Week of 7 Dec"; this week's
+   is visually hidden; each later week opens on a hairline), then by day (`h4.meet-day`: the name 13/600 navy, "Today",
+   "Tomorrow", "Friday", with its date as meta beside it, "Wed 25 Nov" or "27 Nov") with static `li.line.home-meeting` rows: a 48px time column (`.meet-when`: start and end,
    or "All day"; a working `.dot` and "Now" while it runs), the title, a meta line (client · project link, "with"
    people, "until {d}") and `.meet-actions`: Join (standard small, from 15 minutes before) then a 28px `a.icon-btn` with the `calendar`
    icon, named "Open invite for {title} (opens in a new tab)", tooltip "Open invite" ("Open calendar for {d}" /
@@ -378,7 +379,7 @@ under it, the band lifts one step and casts `--edge-lift` (an 8px shadow in `--l
 content, fading in over the first 12px of scroll (a scroll-driven animation; without one, a plain hard cut). It
 is the scroller's sticky `::before` and takes no room; a scroller with top or side padding sets `--edge-pt` and
 `--edge-px` to match. The scroller takes `scroll-padding-top: 8px`. Hairlines are for rows of plain
-content (Settings, tables), between drawer sections, and picture edges only. Scrollbars show a thumb and no track.
+content (Settings, tables), between drawer sections, week breaks in Home's Meetings card, and picture edges only. Scrollbars show a thumb and no track.
 
 ## Interaction states
 

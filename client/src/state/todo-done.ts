@@ -3,6 +3,7 @@ import type { DoneTodo, DoneTodoList } from '../../../shared/contract.ts';
 import type { ProjectCard } from '../../../shared/projects-contract.ts';
 import { api } from '../api.ts';
 import type { TodoFilter } from '../shell/contract.ts';
+import { weekStart } from '../shell/meeting-words.ts';
 import { todoPlaceParts } from './projects.ts';
 import { plain } from './search-match.ts';
 import { todoProjectKey } from './todo-filter.ts';
@@ -117,12 +118,6 @@ const MONTH_NAMES = [
   'November',
   'December',
 ];
-
-/** Midnight at the start of the Monday of `d`'s week. */
-function weekStart(d: Date): number {
-  const day = (d.getDay() + 6) % 7;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime();
-}
 
 /**
  * Groups finished to-dos by when they were done, keeping the order given: "This week" (this calendar week,

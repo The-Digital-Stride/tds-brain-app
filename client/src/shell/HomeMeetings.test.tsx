@@ -124,10 +124,38 @@ describe('Home meetings rows', () => {
         ],
       }),
     );
-    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
-      'Today',
-      'Tomorrow',
-      'Fri 27 Nov',
+    // Each day heading: the name to scan for, then its date (", " is for screen readers).
+    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'Today, Tue 24 Nov',
+      'Tomorrow, Wed 25 Nov',
+      'Friday, 27 Nov',
+    ]);
+  });
+
+  it('groups days into calendar weeks: this week (for screen readers only), Next week, then Week of …', async () => {
+    await show(
+      reply({
+        meetings: [
+          meeting({ id: 'a', title: 'A' }),
+          meeting({ id: 'b', title: 'B', start: at(30, 9), end: at(30, 10), day: '2026-11-30' }),
+          meeting({
+            id: 'c',
+            title: 'C',
+            start: new Date(2026, 11, 8, 9).toISOString(),
+            end: new Date(2026, 11, 8, 10).toISOString(),
+            day: '2026-12-08',
+          }),
+        ],
+      }),
+    );
+    const weeks = screen.getAllByRole('heading', { level: 3 });
+    expect(weeks.map((h) => h.textContent)).toEqual(['This week', 'Next week', 'Week of 7 Dec']);
+    expect(weeks[0]?.className).toBe('visually-hidden');
+    expect(weeks[1]?.className).toBe('meet-week');
+    expect(screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual([
+      'Today, Tue 24 Nov',
+      'Monday, 30 Nov',
+      'Tuesday, 8 Dec',
     ]);
   });
 

@@ -325,6 +325,52 @@ describe('Home', () => {
     expect(clientChoice.get()).toBe('client:northwind');
   });
 
+  describe('Recent projects card', () => {
+    const card = (key: string, title: string, at: string | null, status = 'active') => ({
+      key,
+      space: 'client',
+      slug: key.split('/')[1],
+      client: 'northwind',
+      folder: `clients/northwind/projects/${key.split('/')[1]}`,
+      archived: false,
+      status,
+      title,
+      lastChanged: at ? { by: 'ian', at } : null,
+    });
+    afterEach(() => {
+      projectsStore.reset();
+      api.projects.mockReset();
+    });
+
+    it('lists open projects by the date they were last worked on, newest first', async () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({
+        projects: [
+          card('northwind/old', 'Old job', '2026-10-01T09:00:00Z'),
+          card('northwind/new', 'New job', '2026-11-24T09:00:00Z'),
+          card('northwind/shut', 'Closed job', '2026-11-25T09:00:00Z', 'done'),
+        ],
+        duplicates: [],
+      });
+      await renderHome();
+      const section = (await screen.findByRole('heading', { name: 'Recent projects' })).closest('section');
+      if (!section) throw new Error('no card');
+      const rows = within(section).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain('New job');
+      expect(rows[0]?.textContent).toContain('Last worked on 24 Nov');
+      expect(rows[1]?.textContent).toContain('Old job');
+    });
+
+    it('is not shown when no project has been worked on', async () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({ projects: [], duplicates: [] });
+      await renderHome();
+      await act(async () => {});
+      expect(screen.queryByRole('heading', { name: 'Recent projects' })).toBeNull();
+    });
+  });
+
   describe('the chat is for a project (projects R2)', () => {
     const projectCard = (key: string, client: string | null, title: string) => ({
       key,
@@ -839,11 +885,12 @@ describe('Home: moving the cards', () => {
       'Favourite skills',
     ]);
     expect(screen.getByText('Favourite tasks moved to 3 of 5')).toBeTruthy();
-    // Ads approvals is hidden (nothing waiting) but keeps its default place, second, in what is saved.
+    // Ads approvals and Recent projects are hidden (nothing waiting, no projects) but keep their default places in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
       'ads',
       'chats',
+      'projects',
       'todos',
       'files',
       'skills',

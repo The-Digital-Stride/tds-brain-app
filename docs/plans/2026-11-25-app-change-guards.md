@@ -169,4 +169,22 @@ says so; Builder B starts after that.
 
 ## Review outcomes
 
-(filled at landing)
+- **Overseer pre-review:** 5 blocking (free pass for app-path-less segments, allowlist broke update-cortex,
+  bare `tds-brain-app` marker hit the brain's project folder, card facts from the wrong repo, hook failing
+  open) and 8 should items, all folded into decisions 3, 4, 6, 7, 8, 11, 15 before building. Spike confirmed a
+  thrown hook fails open.
+- **Correctness:** brain-sync exemption bypassed by `GIT_DIR=`/`env`/`pushd` (fixed: bare `git push` only,
+  no global options, no `GIT_*`, no `pushd`); heredoc apostrophe inside `$(…)` made commits look like a
+  publish (fixed in `scanParen`); exempt path untested (test added).
+- **Security:** team could delete or overwrite the app from its parent folder, via a bare `cd`, or a glob
+  (fixed: containing folders count, cd/pushd targets and glob prefixes checked, `~/` expanded for edits);
+  `gh api` writes, `git -c alias.*=push` and `git subtree push` missed (fixed); card named origin for another
+  remote (fixed).
+- **UI and copy:** tag now "Needs your approval"; warning moved above the facts; commits in a capped scroll
+  box with a label; short repo names; notices tell team members to ask an owner or scout; help folded into
+  the standard headings (help tests).
+- **Lead:** push range for a named branch that isn't the current one (fixed, test); re-check probe of
+  ordinary team and brain commands after the fix round (no regressions; `du ~/Library` and `open <app file>`
+  are refused for team, accepted as strict). Builder B's first report claimed tests and help it hadn't
+  written; caught by checking the files.
+- **Accepted limits:** see "Out of scope".

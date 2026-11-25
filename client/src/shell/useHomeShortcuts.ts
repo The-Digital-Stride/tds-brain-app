@@ -26,6 +26,7 @@ export function useHomeShortcuts(): { sources: ShortcutSources; hasGm: boolean; 
                 title: toolFor(toolView(section.id, tool.id))?.tool.title ?? tool.title,
               })),
             ),
+      toolTitle: (section, tool) => toolFor(toolView(section, tool))?.tool.title,
       actions: {
         startSkill: (name) => {
           const skill = list.find((s) => s.name === name);

@@ -15,6 +15,8 @@ export interface ShortcutSources {
   skills: readonly { name: string; title: string }[];
   /** null while the tool list is still loading. */
   tools: readonly { section: string; tool: string; title: string }[] | null;
+  /** A tool's fixed title, for a shortcut that is still loading or gone. Falls back to the raw id when absent. */
+  toolTitle?: (section: string, tool: string) => string | undefined;
   actions: {
     startSkill: (name: string) => void;
     openTool: (section: string, tool: string) => void;
@@ -30,7 +32,7 @@ export function resolveShortcut(s: HomeShortcut, src: ShortcutSources): Resolved
   }
   if (src.tools === null) return { state: 'waiting', key };
   const hit = src.tools.find((t) => t.section === s.section && t.tool === s.tool);
-  if (!hit) return { state: 'gone', key, label: s.tool };
+  if (!hit) return { state: 'gone', key, label: src.toolTitle?.(s.section, s.tool) ?? s.tool };
   return { state: 'ready', key, label: hit.title, run: () => src.actions.openTool(s.section, s.tool) };
 }
 

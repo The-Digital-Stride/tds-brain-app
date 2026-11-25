@@ -374,20 +374,21 @@ export function Home() {
           <p className="home-greeting">{greeting(new Date(), boot.identity.name)}</p>
           <p className="home-sub">{summaryText}</p>
           {shortcutButtons.length > 0 ? (
-            <div className="home-shortcuts">
+            <ul className="home-shortcuts" aria-label="Shortcuts">
               {shortcutButtons.map((b) => (
-                <button
-                  key={b.key}
-                  type="button"
-                  className="btn"
-                  data-variant="quiet"
-                  data-size="small"
-                  onClick={b.run}
-                >
-                  {b.label}
-                </button>
+                <li key={b.key}>
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="quiet"
+                    data-size="small"
+                    onClick={b.run}
+                  >
+                    {b.label}
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : null}
           {isShown('whats-new', homeHidden) ? <WhatsNewCard /> : null}
 

@@ -70,6 +70,22 @@ describe('resolveShortcut', () => {
   });
 });
 
+describe('resolveShortcut with a static tool title', () => {
+  it('a gone tool uses the static title, then the raw id', () => {
+    const t: { kind: 'tool'; section: string; tool: string } = {
+      kind: 'tool',
+      section: 'workbench',
+      tool: 'old',
+    };
+    expect(resolveShortcut(t, src({ tools: [], toolTitle: () => 'Old tool' }))).toEqual({
+      state: 'gone',
+      key: 'tool:workbench/old',
+      label: 'Old tool',
+    });
+    expect(resolveShortcut(t, src({ tools: [] }))).toMatchObject({ state: 'gone', label: 'old' });
+  });
+});
+
 describe('shortcutChoices', () => {
   it('lists Skills then Tools, without gm', () => {
     const c = shortcutChoices([], src());

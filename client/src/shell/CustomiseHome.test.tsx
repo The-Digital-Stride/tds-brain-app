@@ -12,10 +12,15 @@ const h = vi.hoisted(() => ({
   addHomeShortcut: vi.fn(),
   removeHomeShortcut: vi.fn(),
   showAllHomeItems: vi.fn(),
+  pins: [] as string[],
+  tools: [{ section: 'workbench', tool: 'ads', title: 'Ads Manager' }] as
+    | { section: string; tool: string; title: string }[]
+    | null,
 }));
 
 vi.mock('../store.tsx', () => ({
   useStore: () => ({
+    boot: { prefs: { pins: h.pins } },
     homeHidden: h.hidden,
     homeShortcuts: h.shortcuts,
     setHomeItemShown: h.setHomeItemShown,
@@ -34,7 +39,8 @@ vi.mock('./useHomeShortcuts.ts', () => ({
         { name: 'seo-audit', title: 'SEO audit' },
         { name: 'report', title: 'Monthly report' },
       ],
-      tools: [{ section: 'workbench', tool: 'ads', title: 'Ads Manager' }],
+      tools: h.tools,
+      toolTitle: (_s: string, t: string) => (t === 'ads' ? 'Ads Manager' : undefined),
       actions: { startSkill: vi.fn(), openTool: vi.fn() },
     },
   }),
@@ -50,6 +56,8 @@ beforeEach(() => {
   h.shortcuts = [];
   h.hasGm = true;
   h.hasAds = true;
+  h.pins = [];
+  h.tools = [{ section: 'workbench', tool: 'ads', title: 'Ads Manager' }];
   vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -173,5 +181,38 @@ describe('CustomiseHome', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show everything again' }));
     expect(h.showAllHomeItems).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status').textContent).toBe('Every card is back on Home');
+  });
+
+  it('says when a skill is also in Pinned skills', () => {
+    h.pins = ['seo-audit'];
+    render(<CustomiseHome />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a shortcut' }));
+    const row = screen.getByRole('menuitem', { name: /SEO audit/ });
+    expect(within(row).getByText('Also in Pinned skills')).toBeTruthy();
+    expect(
+      within(screen.getByRole('menuitem', { name: /Monthly report/ })).queryByText('Also in Pinned skills'),
+    ).toBeNull();
+  });
+
+  it('names a waiting tool shortcut by its title, with Tool as its meta', () => {
+    h.tools = null;
+    h.shortcuts = [{ kind: 'tool', section: 'workbench', tool: 'ads' }];
+    render(<CustomiseHome />);
+    expect(screen.getByText('Ads Manager')).toBeTruthy();
+    expect(screen.getByText('Tool')).toBeTruthy();
+    expect(screen.queryByText('ads')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ads Manager from Home' }));
+    expect(screen.getByRole('status').textContent).toBe('Ads Manager removed from Home');
+  });
+
+  it('disables Add, with a hint and no menu, when everything is already on Home', () => {
+    h.tools = [];
+    h.shortcuts = [skill('seo-audit'), skill('report')];
+    render(<CustomiseHome />);
+    const add = screen.getByRole('button', { name: 'Add a shortcut' });
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('Everything is already on your Home.')).toBeTruthy();
+    fireEvent.click(add);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

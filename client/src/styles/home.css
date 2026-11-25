@@ -36,6 +36,8 @@
   }
 
   .home-shortcuts {
+    list-style: none;
+    padding: 0;
     display: flex;
     flex-wrap: wrap;
     gap: var(--sp-8);

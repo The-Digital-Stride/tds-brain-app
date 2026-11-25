@@ -88,7 +88,4 @@
   .lib-pop .menu-row .meta {
     font-size: var(--fs-small);
   }
-  .lib-pop-none {
-    padding: var(--sp-8);
-  }
 }

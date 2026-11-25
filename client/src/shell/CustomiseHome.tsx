@@ -24,6 +24,8 @@ export function CustomiseHome() {
     removeHomeShortcut,
     showAllHomeItems,
   } = useStore();
+  const { boot } = useStore();
+  const pins = boot?.prefs.pins ?? [];
   const { sources, hasGm, hasAds } = useHomeShortcuts();
   const hidden = homeHidden ?? [];
   const shortcuts: readonly HomeShortcut[] = homeShortcuts ?? [];
@@ -64,10 +66,11 @@ export function CustomiseHome() {
   }, [open]);
 
   const items = panelItems({ hasGm, hasAds });
-  const choices = shortcutChoices(shortcuts, sources);
+  const choices = shortcutChoices(shortcuts, sources, pins);
   const label = (s: HomeShortcut): string => {
     const r = resolveShortcut(s, sources);
-    return r.state === 'waiting' ? (s.kind === 'tool' ? s.tool : s.name) : r.label;
+    if (r.state !== 'waiting') return r.label;
+    return s.kind === 'tool' ? (sources.toolTitle?.(s.section, s.tool) ?? s.tool) : s.name;
   };
 
   const toggle = (id: HomeItemId, title: string, shown: boolean) => {
@@ -108,11 +111,14 @@ export function CustomiseHome() {
     else if (e.key === 'Tab') setOpen(false);
   };
 
+  const nothingToAdd = !full && choices.length === 0;
   const addHint = full
     ? `You have ${HOME_SHORTCUTS_MAX} shortcuts. Remove one to add another.`
-    : shortcuts.length === 0
-      ? 'Add a shortcut to start a skill or open a tool in one click.'
-      : '';
+    : nothingToAdd
+      ? 'Everything is already on your Home.'
+      : shortcuts.length === 0
+        ? 'Add a shortcut to start a skill or open a tool in one click.'
+        : '';
 
   return (
     <div className="customise-home">
@@ -161,10 +167,10 @@ export function CustomiseHome() {
             aria-label="Add a shortcut"
             aria-haspopup="menu"
             aria-expanded={open}
-            aria-disabled={full ? 'true' : undefined}
+            aria-disabled={full || nothingToAdd ? 'true' : undefined}
             aria-describedby={addHint ? `${uid}-add-hint` : undefined}
             onClick={() => {
-              if (!full) setOpen((o) => !o);
+              if (!full && !nothingToAdd) setOpen((o) => !o);
             }}
           >
             <Icon name="plus" />
@@ -178,33 +184,29 @@ export function CustomiseHome() {
             ref={pop}
             onKeyDown={popKeys}
           >
-            {choices.length === 0 ? (
-              <p className="hint lib-pop-none">Everything is already on your Home.</p>
-            ) : (
-              (['Skills', 'Tools'] as const).map((group) => {
-                const rows = choices.filter((c) => c.group === group);
-                return rows.length === 0 ? null : (
-                  // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
-                  <div key={group} className="lib-pop-group" role="group" aria-label={group}>
-                    <div className="grp" aria-hidden="true">
-                      {group}
-                    </div>
-                    {rows.map((c) => (
-                      <button
-                        key={homeShortcutKey(c.shortcut)}
-                        type="button"
-                        className="menu-row"
-                        role="menuitem"
-                        onClick={() => add(c)}
-                      >
-                        <span>{c.label}</span>
-                        {c.meta ? <span className="meta">{c.meta}</span> : null}
-                      </button>
-                    ))}
+            {(['Skills', 'Tools'] as const).map((group) => {
+              const rows = choices.filter((c) => c.group === group);
+              return rows.length === 0 ? null : (
+                // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
+                <div key={group} className="lib-pop-group" role="group" aria-label={group}>
+                  <div className="grp" aria-hidden="true">
+                    {group}
                   </div>
-                );
-              })
-            )}
+                  {rows.map((c) => (
+                    <button
+                      key={homeShortcutKey(c.shortcut)}
+                      type="button"
+                      className="menu-row"
+                      role="menuitem"
+                      onClick={() => add(c)}
+                    >
+                      <span>{c.label}</span>
+                      {c.meta ? <span className="meta">{c.meta}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ) : null}
         <ul className="lib-shortcuts" ref={list}>
@@ -220,16 +222,15 @@ export function CustomiseHome() {
               >
                 <span className="line-text">
                   <span className="line-title">{name}</span>
-                  {r.state === 'waiting' ? null : (
-                    <span className="line-meta">
-                      {r.state === 'gone' ? 'No longer in your Brain' : s.kind === 'skill' ? 'Skill' : 'Tool'}
-                    </span>
-                  )}
+                  <span className="line-meta">
+                    {r.state === 'gone' ? 'No longer in your Brain' : s.kind === 'skill' ? 'Skill' : 'Tool'}
+                  </span>
                 </span>
                 <button
                   type="button"
                   className="icon-btn"
                   aria-label={`Remove ${name} from Home`}
+                  data-tip="Remove"
                   onClick={() => remove(s, i)}
                 >
                   <Icon name="close" />

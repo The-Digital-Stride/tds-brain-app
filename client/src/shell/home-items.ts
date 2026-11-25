@@ -12,12 +12,7 @@ export interface HomeItemDef {
 
 /** Every Home item, in the default order. The panel and Home both read this. */
 export const HOME_ITEMS: readonly HomeItemDef[] = [
-  {
-    id: 'start-my-day',
-    title: 'Start my day',
-    kind: 'button',
-    hint: 'Shows when the Start my day skill is in your Brain.',
-  },
+  { id: 'start-my-day', title: 'Start my day', kind: 'button' },
   { id: 'whats-new', title: "What's new", kind: 'button' },
   { id: 'meetings', title: 'Meetings', kind: 'card' },
   {

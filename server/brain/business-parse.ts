@@ -119,12 +119,20 @@ function findFact(text: string, labels: readonly string[]): string | null {
   return null;
 }
 
-/** A heading's text for matching: marks removed, trailing "(…)" dropped, lower case. */
+/**
+ * A heading's text for matching: marks removed, a trailing "(…)" dropped, lower case. The trailing note is
+ * cut by hand (the last bracketed run, when it closes at the end and holds no `)`): the pattern it replaced,
+ * `/\s*\([^)]*\)\s*$/`, took time growing with the square of a run of `(`.
+ */
 export function headingKey(text: string): string {
-  return plain(text)
-    .replace(/\s*\([^)]*\)\s*$/, '')
-    .trim()
-    .toLowerCase();
+  const s = plain(text);
+  let out = s;
+  if (s.endsWith(')')) {
+    const body = s.slice(0, -1);
+    const open = body.indexOf('(', body.lastIndexOf(')') + 1);
+    if (open >= 0) out = s.slice(0, open);
+  }
+  return out.trim().toLowerCase();
 }
 
 /** The body of the first `##` or `###` heading called `heading`, as markdown, or null. */

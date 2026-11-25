@@ -336,6 +336,8 @@ describe('reading stays quick on hostile text (2026-11-25)', () => {
       labelLinks: `**Main contact:** ${'[a]('.repeat(16000)}\n`,
       bodyBrackets: `### What We Sell\n${'['.repeat(64000)}\n`,
       comments: `${'<!--'.repeat(64000)}\n## Account\n`,
+      headingParens: `## ${'('.repeat(64000)}\n`,
+      headingParenSpaces: `## a${' ('.repeat(32000)}\n`,
     };
     for (const [name, text] of Object.entries(cases)) {
       const start = Date.now();
@@ -366,6 +368,31 @@ describe('reading stays quick on hostile text (2026-11-25)', () => {
     expect(read('Text ## not a heading')).toBeNull();
     for (const line of ['## Account', '#\tTab', '##', '#NoSpace', 'plain', '####### Seven']) {
       expect(HEADING.test(line), line).toBe(HEADING.exec(line) !== null);
+    }
+  });
+
+  it('a heading still matches with a trailing note in brackets, exactly as before', () => {
+    const text = (heading: string) => `## Goals\n\n### ${heading}\n**Monthly budget:** About a thousand.\n`;
+    for (const h of [
+      'Budget (updated 2026-10)',
+      'Budget   (a note)  ',
+      'Budget (a (b note)',
+      '**Budget** (x)',
+    ]) {
+      expect(
+        parseBusiness(text(h), null, ['ppc']).sections.map((s) => s.title),
+        h,
+      ).toEqual(['Budget']);
+    }
+    // Only the last bracketed note is dropped, and only a closed one.
+    for (const h of [
+      'Budget (unclosed',
+      'Budget ) odd',
+      '(Budget)',
+      'Budget (a (b) note)',
+      'Budget (one) (two)',
+    ]) {
+      expect(parseBusiness(text(h), null, ['ppc']).sections, h).toEqual([]);
     }
   });
 

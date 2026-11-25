@@ -353,11 +353,91 @@ describe('parseContacts: review fixes (2026-11-25)', () => {
     ]);
   });
 
-  it('a "do not contact" line or item lists nobody', () => {
+  it('a "Do not contact" or "Never contact" label lists nobody; a note about how to reach someone hides no one', () => {
+    expect(
+      one('**Do not contact:** Old Guy (old@acme.co.uk)\n**Never contact:** Other Guy (other@acme.co.uk)\n'),
+    ).toEqual([]);
     expect(
       one(
-        "**Do not contact:** Old Guy (old@acme.co.uk)\n\n## Contacts\n- **Ex Lead** — do not email. ex@acme.co.uk\n- **Kim Example** — kim@acme.co.uk\n- **Lee Other** — don't contact directly, lee@acme.co.uk\n",
+        "**Main contact:** Sarah Jones (sarah@acme.co.uk) — prefers email, don't use WhatsApp. Do not email after 6pm.\n",
       ),
-    ).toEqual([{ name: 'Kim Example', email: 'kim@acme.co.uk', main: false }]);
+    ).toEqual([{ name: 'Sarah Jones', email: 'sarah@acme.co.uk', main: true }]);
+  });
+
+  // Second look (2026-11-25).
+  it('the first address on a line goes to the person named beside it, not the one who leads the line', () => {
+    expect(one('## Contacts\n- **Sarah Jones** — MD, PA is Jan Lee (jan@acme.co.uk)\n')).toEqual([
+      { name: 'Jan Lee', email: 'jan@acme.co.uk', main: false },
+    ]);
+    expect(one('**Main contact:** Sarah Jones (on leave until June, cover: jan@acme.co.uk)\n')).toEqual([
+      { name: null, email: 'jan@acme.co.uk', main: true },
+    ]);
+    expect(
+      one(
+        '**Main contact:** Sarah Jones, Director. Ask for **Kate Lee** first; office line 01234. kate@acme.co.uk\n',
+      ),
+    ).toEqual([{ name: null, email: 'kate@acme.co.uk', main: true }]);
+  });
+
+  it('the leading name is kept when it sits right beside the address, whatever the address looks like', () => {
+    expect(
+      one(
+        '**Main contact:** Bob Smith (robert@acme.co.uk)\n**Second contact:** Di Lowe — hello@acme.co.uk\n',
+      ),
+    ).toEqual([
+      { name: 'Bob Smith', email: 'robert@acme.co.uk', main: true },
+      { name: 'Di Lowe', email: 'hello@acme.co.uk', main: false },
+    ]);
+    // Something between the name and an address that is not theirs: no name.
+    expect(one('**Main contact:** Bob Smith, Owner — the office is hello@acme.co.uk\n')).toEqual([
+      { name: null, email: 'hello@acme.co.uk', main: true },
+    ]);
+    // Something between, but the address is plainly theirs: kept.
+    expect(one('**Main contact:** Bob Smith, Owner, usually quick to reply — b.smith@acme.co.uk\n')).toEqual([
+      { name: 'Bob Smith', email: 'b.smith@acme.co.uk', main: true },
+    ]);
+  });
+
+  it('"main contact" counts with markdown marks in it', () => {
+    const got = one(
+      '## Contacts\n| Lee Other | Buyer | lee@acme.co.uk |\n| Tom Brown | **Main** contact | tom@acme.co.uk |\n- Pat Third, the *primary* contact: pat@acme.co.uk\n',
+    );
+    expect(got.map((c) => [c.name, c.main])).toEqual([
+      ['Tom Brown', true],
+      ['Pat Third', true],
+      ['Lee Other', false],
+    ]);
+  });
+
+  it('a struck name only removes that exact person', () => {
+    expect(
+      one('## Contacts\n- **Sarah Jones** (sarah@acme.co.uk) took over from ~~Sarah Jones-Smith~~\n'),
+    ).toEqual([{ name: 'Sarah Jones', email: 'sarah@acme.co.uk', main: false }]);
+    expect(one('## Contacts\n- **Tom** — tom@acme.co.uk, not to be confused with ~~Tom Brown~~\n')).toEqual([
+      { name: 'Tom', email: 'tom@acme.co.uk', main: false },
+    ]);
+  });
+
+  it('initials count as looking like the address; names with particles read whole', () => {
+    expect(
+      one(
+        '## Contacts\n| Sarah Jones | Owner | Main contact. sj@acme.co.uk |\n| Ana de la Cruz | Buyer | ana@acme.co.uk |\n',
+      ),
+    ).toEqual([
+      { name: 'Sarah Jones', email: 'sj@acme.co.uk', main: true },
+      { name: 'Ana de la Cruz', email: 'ana@acme.co.uk', main: false },
+    ]);
+  });
+
+  it('a name a long way before the address is only kept when the address looks like theirs', () => {
+    const filler = 'and a long note about the account '.repeat(12);
+    expect(
+      one(
+        `## Contacts\n- Sarah Jones — ${filler} accounts@acme.co.uk\n- Tom Brown — ${filler} tom.brown@acme.co.uk\n`,
+      ),
+    ).toEqual([
+      { name: null, email: 'accounts@acme.co.uk', main: false },
+      { name: 'Tom Brown', email: 'tom.brown@acme.co.uk', main: false },
+    ]);
   });
 });

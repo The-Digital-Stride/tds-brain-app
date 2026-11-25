@@ -327,6 +327,17 @@ describe('thread facts and held drafts', () => {
     expect(existsSync(join(root, 'briefing/email-drafts/aaaaaaaaaaaa.json'))).toBe(true);
   });
 
+  it('hides a draft whose Message-ID an entry holds, and a malformed message_id is unreadable', async () => {
+    putEntry('2026-11-21-0900-ben-mcadam-aaa111', 'email_key: "<abc.1@mail.example>"\n');
+    putDraft(draft('aaaaaaaaaaaa', { email_key: 'x:mine', message_id: '<abc.1@mail.example>' }));
+    putDraft(draft('cccccccccccc', { email_key: 'x:free', message_id: '<other@mail.example>' }));
+    const r = await setup().svc.list(null);
+    expect(r.drafts.map((d) => d.id)).toEqual(['cccccccccccc']);
+    expect(
+      parseDraft(JSON.stringify({ ...draft('aaaaaaaaaaaa'), message_id: 7 }), 'aaaaaaaaaaaa'),
+    ).toBeNull();
+  });
+
   it('a held draft returns when the holding entry is gone', async () => {
     putDraft(draft('aaaaaaaaaaaa', { email_key: 'x:own' }));
     expect((await setup().svc.list(null)).drafts).toHaveLength(1);

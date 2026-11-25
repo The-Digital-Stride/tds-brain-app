@@ -162,6 +162,7 @@ export function parseDraft(text: string, id: string): EmailDraftFile | null {
     (d.thread_keys !== undefined && !strList(d.thread_keys)) ||
     (d.codes_thread !== undefined && !strList(d.codes_thread)) ||
     (d.near_keys !== undefined && !isStrMap(d.near_keys)) ||
+    (d.message_id !== undefined && !isStr(d.message_id)) ||
     (d.fresh_at_draft !== undefined &&
       !(Number.isInteger(d.fresh_at_draft) && (d.fresh_at_draft as number) > 0))
   )
@@ -412,7 +413,9 @@ export function createEmailDrafts(root: string, deps: EmailDraftsDeps): EmailDra
     for (const d of mine) {
       const near = d.near_keys ?? {};
       // A teammate saved this very email first: hidden, never deleted (it returns if that entry is removed).
-      if (isHeld(d.email_key, near)) continue;
+      // The same when an entry holds it under its Message-ID (a save made without a thread list).
+      if (isHeld(d.email_key, near) || (d.message_id !== undefined && linked.held.has(d.message_id)))
+        continue;
       const route = routeEmail(
         {
           requested: d.requested,

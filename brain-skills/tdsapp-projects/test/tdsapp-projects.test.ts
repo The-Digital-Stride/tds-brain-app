@@ -4231,6 +4231,26 @@ describe('email entries', () => {
       expect(draftOf(newDraft({ messageId, subject: 'Another one' })).email_key).toBe(messageId);
     });
 
+    it('with a thread and a Message-ID, still knows the email by that Message-ID (second review)', () => {
+      const messageId = '<abc.123@mail.client.example>';
+      // Dismissed under the Message-ID (0.7.0, no thread): not suggested again with a thread.
+      const old = newDraft({ messageId });
+      runAt('email-draft-remove', { id: old, dismiss: true });
+      expect(refusal(draft({ messageId, thread: [SELF, BOB] }))).toEqual({ exit: 2, error: 'dismissed' });
+      // A waiting draft keyed by the Message-ID is replaced, not doubled.
+      const other = '<def.456@mail.client.example>';
+      newDraft({ messageId: other, subject: 'Second' });
+      const id = newDraft({ messageId: other, subject: 'Second', thread: [SELF, BOB] });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      expect(draftOf(id).message_id).toBe(other);
+      // A teammate saves that email under its Message-ID before this Save: refused, the draft kept.
+      holder(UPDATES, 'tess-team', other, '2026-11-19-0900-tess-team-fff003.md');
+      expect(refusal(approve(id))).toEqual({ exit: 2, error: 'exists' });
+      expect(draftFiles()).toEqual([`${id}.json`]);
+      // No Message-ID, no field.
+      expect(draftOf(newDraft({ subject: 'Third', thread: [SELF] })).message_id).toBeUndefined();
+    });
+
     it('refuses a thread message dated after now, so nobody can claim an email not yet sent', () => {
       const later = { from: 'bob@elsewhere.example', sentAt: '2026-11-20T10:30:00Z' }; // T0 is 10:20:30
       expect(refusal(draft({ thread: [later, SELF] }))).toEqual({ exit: 2, error: 'bad-request' });

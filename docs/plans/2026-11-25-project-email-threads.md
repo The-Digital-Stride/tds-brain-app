@@ -227,6 +227,24 @@ Known limit kept: when an inbox has the follow-up but not the message before it 
 show the clash), the 5-second slack can still take the follow-up for a saved copy. Needs the same sender, the
 same subject, two messages within 5 seconds of a minute boundary, and the earlier one missing from that inbox.
 
+Second known limit (the other side of the same fix): minute-level keys can't tell a copy stamped across a
+minute boundary from a second message in the next minute. When one sender writes twice with the same subject
+in neighbouring minutes, the first message's slack is switched off, so if a teammate's inbox stamped it on the
+other side of the boundary it counts as new and can be summarised again. A repeat, never a loss, which is the
+rule the contract sets.
+
+Second correctness look at the fix commit (Opus, 2026-11-25): 3 confirmed regressions from fix 3, all fixed
+with tests first; 1 dropped as a fix (its suggested change would have brought fault 1 back) and written down
+above as the second known limit.
+- An email dismissed under its Message-ID came back when drafted with a thread. Both keys are now checked.
+- A waiting draft keyed by the Message-ID was doubled, not replaced. Both keys now match.
+- A teammate's entry saved under the Message-ID between draft and Save was missed. The draft now keeps
+  `message_id`, checked at Save and by the app's list.
+Plain: giving a Message-ID with a thread never makes an email ask twice or save twice.
+
+Overseer sign-off (2026-11-25): signed off, confirming rulings (a) to (d); the three regressions above were
+found and fixed after it, each making matching stricter in the direction it had asked about.
+
 UX/UI (5 confirmed, all fixed): each Delete button's name now carries the saver; after deleting one part the
 keyboard stays in the thread; the covers line shows only for a thread of more than one email and says how
 much of the thread it covers; two wording fixes on the sheet; `docs/design-system.md` records the new pieces.

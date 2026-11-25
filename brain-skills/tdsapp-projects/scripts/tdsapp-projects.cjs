@@ -3566,7 +3566,9 @@ function emailDraft(input, ctx) {
   const folder = draftsFolder(ctx, true, [draftsRel(`${id}.json`), draftsRel(dismissedName(who.slug))]);
   sweepDrafts(ctx, folder);
 
-  if (Object.prototype.hasOwnProperty.call(readDismissed(ctx, folder, who.slug), emailKey)) {
+  // Under either key: an email dismissed by its Message-ID stays dismissed when drafted with a thread.
+  const dismissed = readDismissed(ctx, folder, who.slug);
+  if ([emailKey, messageKey].some(k => Object.prototype.hasOwnProperty.call(dismissed, k))) {
     throw refuse('dismissed', 'You said this email is not for a project, so it is not suggested again.');
   }
   const heldMap = heldKeys(ctx);
@@ -3576,7 +3578,8 @@ function emailDraft(input, ctx) {
 
   for (const name of draftNames(folder)) {
     const r = readDraft(folder, name);
-    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && r.draft.email_key === emailKey) {
+    // The same email under either key (a waiting draft made without a thread has the Message-ID).
+    if (r.state === 'ok' && r.draft.inbox_owner === who.slug && (r.draft.email_key === emailKey || r.draft.email_key === messageKey)) {
       removeQuietly(r.abs);
       removeKey(ctx, r.draft.id);
     }
@@ -3601,6 +3604,9 @@ function emailDraft(input, ctx) {
   };
   if (thread) {
     // Hashes only, newest first; the drafted email itself left out (it is `email_key`).
+    // The email's Message-ID, when given: asked for again at Save and by the app, so an entry a
+    // teammate saved under it (0.7.0, or a call without a thread) still stops a repeat.
+    if (messageKey !== ownKey) draft.message_id = messageKey;
     draft.thread_keys = distinctExcept([thread.map(m => m.key)], [emailKey]);
     const near = {};
     if (ownNear !== null) near[emailKey] = ownNear;
@@ -3779,7 +3785,7 @@ function emailUpdate(input, entry, loc, ctx) {
   // can be saved if that entry is removed.
   const heldMap = heldKeys(ctx);
   const near = draftNearKeys(r.draft);
-  const held = heldBy(heldMap, [r.draft.email_key, near[r.draft.email_key]]);
+  const held = heldBy(heldMap, [r.draft.email_key, near[r.draft.email_key], draftMessageId(r.draft)]);
   if (held) throw alreadyIn(held);
   // The thread's other messages: the ones no entry holds now are this entry's to hold; the newest one
   // some entry holds links it to that conversation, written as that entry has it (overseer B1).
@@ -3836,6 +3842,12 @@ function emailLines(e) {
 const THREAD_KEY_PATTERN = /^x:[0-9a-f]{64}$/;
 function draftThreadKeys(d) {
   return Array.isArray(d.thread_keys) ? d.thread_keys.filter(k => isText(k) && THREAD_KEY_PATTERN.test(k)) : [];
+}
+// A draft's `message_id` (`<...>`, as `messageIdOf` wrote it), or null.
+function draftMessageId(d) {
+  return isText(d.message_id) && /^<[^\s<>]+>$/.test(d.message_id) && d.message_id.length <= EMAIL.MESSAGE_ID_MAX + 2
+    ? d.message_id
+    : null;
 }
 function draftNearKeys(d) {
   const out = Object.create(null);

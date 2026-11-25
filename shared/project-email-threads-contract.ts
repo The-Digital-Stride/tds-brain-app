@@ -112,6 +112,11 @@ export interface EmailDraftThreadFields {
   near_keys?: Record<string, string>;
   /** Valid codes from quoted lines of the newest text and from `threadCodes`, minus those in subject or body. */
   codes_thread?: string[];
+  /**
+   * The drafted email's Message-ID (`<...>`), only when one was given with a `thread` (its `email_key` is then
+   * the derived key). The email is also held when an entry holds this (second review, 2026-11-25).
+   */
+  message_id?: string;
   /** How many of the thread's distinct keys (the drafted email included) no project held when the draft was made (at least 1). */
   fresh_at_draft?: number;
 }

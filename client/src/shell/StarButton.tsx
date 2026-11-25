@@ -21,12 +21,12 @@ export function StarButton({
       type="button"
       className="icon-btn star-btn"
       aria-pressed={on}
-      aria-label={`Favourite: ${title}`}
-      data-tip="Favourite"
+      aria-label={`Pin: ${title}`}
+      data-tip="Pin"
       data-star-id={id}
       onClick={(e) => onPress(id, e.currentTarget)}
     >
-      <Icon name="star" size={16} />
+      <Icon name="pin" size={16} />
     </button>
   );
 }

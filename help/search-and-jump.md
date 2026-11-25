@@ -32,7 +32,7 @@ reviewed: 2026-11-24
 
 ## Good to know
 
-- With nothing typed, the box shows places to go and a few of your own tasks and chats, and your favourite skills.
+- With nothing typed, the box shows places to go and a few of your own tasks and chats, and your pinned skills.
 - Each group shows its best six matches.
 - Picking a client starts a new chat for that client. Each project shows two rows. **Open project** opens it. **Filter to this project** sets **Working on** to it on Home. You can find a project by its code too.
 - Picking a skill starts a chat with that skill.

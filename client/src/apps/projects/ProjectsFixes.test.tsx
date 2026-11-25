@@ -230,9 +230,9 @@ describe('the Tasks tab (fix 2)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sky site/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Tasks/ }));
     await screen.findByText('Simon two');
-    const star = screen.getByRole('button', { name: 'Favourite: Mine one' });
+    const star = screen.getByRole('button', { name: 'Pin: Mine one' });
     expect(star.getAttribute('aria-pressed')).toBe('false');
-    expect(star.getAttribute('data-tip')).toBe('Favourite');
+    expect(star.getAttribute('data-tip')).toBe('Pin');
     // Star, then the chat button, as in a drawer row.
     const chat = screen.getByRole('button', { name: 'Start a chat on this: Mine one' });
     expect(chat.getAttribute('data-tip')).toBe('Start a chat');

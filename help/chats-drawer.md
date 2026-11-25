@@ -26,7 +26,7 @@ The Chats drawer lists every chat you have with Claude. It keeps the ones you're
 1. Open the Chats drawer from the rail.
 2. Use the switch at the top (1). **Open** shows the chats you're using now. **Earlier** shows past ones.
 3. Click any chat to carry on with it. To start a new one, press the **+** button at the end of the switch row.
-4. In **Earlier**, chats are grouped by when you last used them. Starred chats sit at the top.
+4. In **Earlier**, chats are grouped by when you last used them. Pinned chats sit at the top.
 
 ![The Chats drawer with two open chats and the Earlier switch.](images/chats-drawer.webp)
 

@@ -99,7 +99,6 @@ export const HELP_GLOSSARY_TERMS: readonly string[] = [
   'rail',
   'Home',
   'pin',
-  'favourite',
   'sync',
   'owner',
   'scout',

@@ -1369,7 +1369,7 @@ export function TodosDrawer() {
               {favourites.length > 0 ? (
                 <Fold
                   key="favourites"
-                  title="Favourites"
+                  title="Pinned"
                   count={favourites.length}
                   open={foldOpen('favourites', true)}
                   onToggle={(o) => setFold('favourites', o)}

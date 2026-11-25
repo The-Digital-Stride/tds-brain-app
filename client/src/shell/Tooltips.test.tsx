@@ -15,12 +15,7 @@ function Page({ close = true }: { close?: boolean }) {
           x
         </button>
       ) : null}
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label="Favourite: Renew the contract"
-        data-tip="Favourite"
-      >
+      <button type="button" className="icon-btn" aria-label="Pin: Renew the contract" data-tip="Pin">
         *
       </button>
       <button type="button" className="btn">
@@ -54,9 +49,9 @@ describe('Tooltips', () => {
     expect(tip()?.textContent).toBe('Close tasks');
     expect(tip()?.getAttribute('aria-hidden')).toBe('true');
     // Moving to the next one while one shows follows at once.
-    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: button('Favourite: Renew the contract') });
-    fireEvent.pointerOver(button('Favourite: Renew the contract'));
-    expect(tip()?.textContent).toBe('Favourite');
+    fireEvent.pointerOut(button('Close tasks'), { relatedTarget: button('Pin: Renew the contract') });
+    fireEvent.pointerOver(button('Pin: Renew the contract'));
+    expect(tip()?.textContent).toBe('Pin');
   });
 
   it('shows nothing for a button with words of its own, or for touch', () => {
@@ -100,9 +95,9 @@ describe('Tooltips', () => {
     act(() => button('Close tasks').focus());
     expect(tip()).toBeNull();
     fireEvent.keyDown(window, { key: 'Tab' });
-    act(() => button('Favourite: Renew the contract').focus());
-    expect(tip()?.textContent).toBe('Favourite');
-    act(() => button('Favourite: Renew the contract').blur());
+    act(() => button('Pin: Renew the contract').focus());
+    expect(tip()?.textContent).toBe('Pin');
+    act(() => button('Pin: Renew the contract').blur());
     expect(tip()).toBeNull();
   });
 
@@ -135,7 +130,7 @@ describe('Tooltips', () => {
     wait(TIP_DELAY_MS);
     fireEvent.pointerDown(button('Close tasks'));
     expect(tip()).toBeNull();
-    fireEvent.pointerOver(button('Favourite: Renew the contract'));
+    fireEvent.pointerOver(button('Pin: Renew the contract'));
     wait(TIP_DELAY_MS);
     fireEvent.scroll(window);
     expect(tip()).toBeNull();
@@ -210,12 +205,12 @@ describe('Tooltips', () => {
   it('takes a new name, and goes when the button no longer wants one', () => {
     page();
     fireEvent.keyDown(window, { key: 'Tab' });
-    const fav = button('Favourite: Renew the contract');
+    const fav = button('Pin: Renew the contract');
     act(() => fav.focus());
-    expect(tip()?.textContent).toBe('Favourite');
-    fav.dataset.tip = 'Favourited';
+    expect(tip()?.textContent).toBe('Pin');
+    fav.dataset.tip = 'Pinned';
     wait(250);
-    expect(tip()?.textContent).toBe('Favourited');
+    expect(tip()?.textContent).toBe('Pinned');
     delete fav.dataset.tip;
     fav.removeAttribute('aria-label');
     wait(250);

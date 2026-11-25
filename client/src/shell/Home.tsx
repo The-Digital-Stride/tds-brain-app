@@ -498,7 +498,6 @@ export function Home() {
     revealTodo(todo);
   };
 
-  const fileFavs2 = new Set(boot.prefs.favouriteFiles ?? []);
   // Recent documents and Recent images: the same card, a different kind and wording.
   const recentFilesCard = (c: {
     id: 'recent-documents' | 'recent-images';
@@ -550,7 +549,7 @@ export function Home() {
                     <StarButton
                       id={f.item.id}
                       title={f.item.title}
-                      on={fileFavs2.has(f.item.id)}
+                      on={starredFiles.has(f.item.id)}
                       onPress={(id, button) => {
                         holdPlace(button, true);
                         void toggleFavouriteFile(id);

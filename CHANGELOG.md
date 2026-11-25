@@ -2,6 +2,14 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.84.0 — 2026-11-25
+
+- **feat**: publish facts on permission requests
+- **feat**: guard app code for owners and scouts, and confirm every merge or push on a card
+- **fix**: close guard gaps from review; clearer merge-and-push card and help
+- **fix**: tighten the brain-sync exemption and app marker; time-box the guard's lookups
+- **fix**: no brain-sync exemption after a step with command-running options
+
 ## v0.83.0 — 2026-11-25
 
 - **feat**: open the app to the whole team for the first release

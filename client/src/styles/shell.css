@@ -309,14 +309,20 @@
     gap: var(--sp-4) var(--sp-6);
     margin: var(--sp-4) 0 0;
     padding: var(--sp-6) 0 0 7px;
+    /* Same height icons-only and with names (version line, gap, 28px button), so the rail never changes height
+     at the foot when it opens. */
+    min-height: 54px;
     border-top: 1px solid var(--line);
     font-size: var(--fs-caption);
     line-height: 1.3;
     color: var(--iron);
     font-variant-numeric: tabular-nums;
   }
+  /* The version always sits on its own line, over the button, in both widths. The foot is bottom-anchored, so
+   if it were shorter when the names are showing, every item above it would slide down under the pointer as the
+   rail opened. */
   .rail-version {
-    flex: 1;
+    flex: 1 1 100%;
     margin: 0;
     white-space: nowrap;
   }
@@ -382,6 +388,9 @@
     display: flex;
     align-items: flex-start;
     gap: var(--sp-6);
+    /* Icons only it is a dot over two lines (time, date); the names-showing line is one or two. The same
+     minimum keeps the foot, and so everything above it, still as the rail opens. */
+    min-height: 41px;
   }
   /* The longest line, "Not synced since 23:59, 30 Sept" in bold, can be wider than the rail: wrap it,
    keeping the time and date together. */

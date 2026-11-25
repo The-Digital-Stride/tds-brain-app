@@ -122,13 +122,13 @@ export function CustomiseHome() {
 
   return (
     <div className="customise-home">
-      <p className="hint lib-intro">Choose what shows on your Home. Only you see this.</p>
+      <p className="hint ch-intro">Choose what shows on your Home. Only you see this.</p>
 
-      <section className="lib-sec" aria-labelledby={`${uid}-cards`}>
-        <div className="lib-sec-head">
+      <section className="ch-sec" aria-labelledby={`${uid}-cards`}>
+        <div className="ch-sec-head">
           <h3 id={`${uid}-cards`}>Cards and buttons</h3>
         </div>
-        <div className="lib-list">
+        <div className="ch-list">
           {items.map((item) => (
             <label className="setting" key={item.id}>
               <span>
@@ -136,7 +136,7 @@ export function CustomiseHome() {
                   {item.title}
                 </span>
                 {item.hint ? (
-                  <span className="hint lib-item-hint" id={`${uid}-h-${item.id}`}>
+                  <span className="hint ch-item-hint" id={`${uid}-h-${item.id}`}>
                     {item.hint}
                   </span>
                 ) : null}
@@ -156,8 +156,8 @@ export function CustomiseHome() {
         </div>
       </section>
 
-      <section className="lib-sec" aria-labelledby={`${uid}-short`}>
-        <div className="lib-sec-head">
+      <section className="ch-sec" aria-labelledby={`${uid}-short`}>
+        <div className="ch-sec-head">
           <h3 id={`${uid}-short`}>Shortcuts</h3>
           <button
             ref={addBtn}
@@ -178,7 +178,7 @@ export function CustomiseHome() {
         </div>
         {open ? (
           <div
-            className="popover lib-pop"
+            className="popover ch-pop"
             role="menu"
             aria-label="Add a shortcut"
             ref={pop}
@@ -188,7 +188,7 @@ export function CustomiseHome() {
               const rows = choices.filter((c) => c.group === group);
               return rows.length === 0 ? null : (
                 // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own border; the label names the group.
-                <div key={group} className="lib-pop-group" role="group" aria-label={group}>
+                <div key={group} className="ch-pop-group" role="group" aria-label={group}>
                   <div className="grp" aria-hidden="true">
                     {group}
                   </div>
@@ -209,14 +209,14 @@ export function CustomiseHome() {
             })}
           </div>
         ) : null}
-        <ul className="lib-shortcuts" ref={list}>
+        <ul className="ch-shortcuts" ref={list}>
           {shortcuts.map((s, i) => {
             const r = resolveShortcut(s, sources);
             const name = label(s);
             return (
               <li
                 key={r.key}
-                className="lib-shortcut"
+                className="ch-shortcut"
                 data-key={r.key}
                 data-gone={r.state === 'gone' ? 'true' : undefined}
               >
@@ -240,13 +240,13 @@ export function CustomiseHome() {
           })}
         </ul>
         {addHint ? (
-          <p className="hint lib-add-hint" id={`${uid}-add-hint`}>
+          <p className="hint ch-add-hint" id={`${uid}-add-hint`}>
             {addHint}
           </p>
         ) : null}
       </section>
 
-      <div className="lib-foot">
+      <div className="ch-foot">
         <button
           type="button"
           className="btn"
@@ -262,7 +262,7 @@ export function CustomiseHome() {
           Show everything again
         </button>
       </div>
-      <p className="hint lib-status" role="status" aria-live="polite">
+      <p className="hint ch-status" role="status" aria-live="polite">
         {status}
       </p>
     </div>

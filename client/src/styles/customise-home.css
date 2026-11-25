@@ -1,48 +1,48 @@
 @layer features {
   /* customise-home.css: the body of the Customise Home panel (shell/CustomiseHome.tsx). Docs: design-system.md, "Customise Home". */
 
-  .lib-intro {
+  .ch-intro {
     margin: 0 var(--sp-6) var(--sp-8);
   }
-  .lib-sec {
+  .ch-sec {
     margin: var(--sp-16) var(--sp-6) 0;
   }
-  .lib-intro + .lib-sec {
+  .ch-intro + .ch-sec {
     margin-top: var(--sp-8);
   }
-  .lib-sec-head {
+  .ch-sec-head {
     display: flex;
     align-items: center;
     gap: var(--sp-8);
     min-height: 32px;
   }
-  .lib-sec-head h3 {
+  .ch-sec-head h3 {
     flex: 1;
     font-size: var(--fs-body);
   }
-  .lib-list .setting {
+  .ch-list .setting {
     cursor: pointer;
   }
-  .lib-list .setting:has(.switch:focus-visible) {
+  .ch-list .setting:has(.switch:focus-visible) {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
     border-radius: var(--r-8);
   }
-  .lib-list .setting .switch:focus-visible {
+  .ch-list .setting .switch:focus-visible {
     outline: none;
   }
-  .lib-item-hint {
+  .ch-item-hint {
     display: block;
     margin-top: var(--sp-2);
   }
-  .lib-shortcuts {
+  .ch-shortcuts {
     display: grid;
     gap: var(--sp-2);
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .lib-shortcut {
+  .ch-shortcut {
     display: flex;
     align-items: center;
     gap: var(--sp-10);
@@ -50,42 +50,42 @@
     border-radius: var(--r-10);
     background: var(--tint-04);
   }
-  .lib-shortcut .line-title {
+  .ch-shortcut .line-title {
     font-size: var(--fs-control);
   }
-  .lib-shortcut[data-gone="true"] .line-title {
+  .ch-shortcut[data-gone="true"] .line-title {
     color: var(--iron);
   }
-  .lib-add-hint {
+  .ch-add-hint {
     margin-top: var(--sp-6);
   }
-  .lib-foot {
+  .ch-foot {
     margin: var(--sp-24) var(--sp-6) 0;
     padding-top: var(--sp-12);
     border-top: 1px solid var(--line);
   }
-  .lib-status {
+  .ch-status {
     min-height: 1.45em;
     margin: var(--sp-8) var(--sp-6) 0;
   }
   /* The add list opens in the flow under the section head, so it never needs positioning inside the scrolling panel. */
-  .lib-pop {
+  .ch-pop {
     margin: var(--sp-4) 0 var(--sp-8);
     max-height: 280px;
   }
-  .lib-pop .grp {
+  .ch-pop .grp {
     padding: var(--sp-8) var(--sp-8) var(--sp-2);
     font-size: var(--fs-small);
     font-weight: 600;
     color: var(--iron);
   }
-  .lib-pop .lib-pop-group:first-child .grp {
+  .ch-pop .ch-pop-group:first-child .grp {
     padding-top: var(--sp-2);
   }
-  .lib-pop .menu-row {
+  .ch-pop .menu-row {
     font-size: var(--fs-control);
   }
-  .lib-pop .menu-row .meta {
+  .ch-pop .menu-row .meta {
     font-size: var(--fs-small);
   }
 }

@@ -17,7 +17,7 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 | Card and tray layout (grid, rows) | `client/src/styles/home.css` |
 | Words on screen (UK English) | `client/src/shell/words.ts`, or inline in `Home.tsx` |
 | A star on something | `client/src/shell/StarButton.tsx` (+ `FileStar.tsx` for files) |
-| Saving a list of stars | `client/src/state/favourite-list.ts` (`useFavouriteList`), wired in `client/src/store.tsx` |
+| Saving a list of stars, hidden items or shortcuts | `client/src/state/pref-list.ts` (`usePrefList`, optimistic, with the stale-reload guard `keepBoot`); `favourite-list.ts` wraps it for stars; wired in `client/src/store.tsx` |
 | Saved settings (prefs) | `shared/contract.ts` (`AppPrefs`, caps), `server/store/app-store.ts` (clean on read/write), `server/http/routes.ts` (validate on PUT `/api/prefs`) |
 | The look rules | `docs/design-system.md` (update it when a card or control changes) |
 
@@ -76,3 +76,5 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 - With two tabs open, the last change to hidden items or shortcuts wins (the same gap as favourites).
 - Going back to an older version forgets the Home set-up: an older app drops `homeHidden` and `homeShortcuts` on its next settings save, so everything shows again.
 - An older server sends neither field, so Customise Home is hidden until the server updates.
+- A save sent a moment before a page reload begins, which the server reads before it writes, can show the old list
+  until the next change (`pref-list.ts` `keepBoot`; about a millisecond on a local server, accepted).

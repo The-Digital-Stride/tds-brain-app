@@ -28,7 +28,7 @@ A project code is a short code such as AST4K7. It is your client's code, then a 
 3. Paste it in the title or description of a meeting invite, or anywhere in an email thread. One paste is enough for the whole thread.
 4. Or press **Write an email**. Gmail opens in a small window with the code already in it. If an **Email to** list shows, pick who it goes to first.
 5. No code yet? Press **Make a code**. If the client has no client code, add one to its profile first.
-6. On the Projects list, **Give projects codes** gives every project without one a code. Only an owner of the Brain sees it, and you only need it once.
+6. On the Projects list, **Give projects codes** gives every project without one a code. Only an owner or a scout sees it, and you only need it once.
 7. If two projects share a code, neither shows Copy. Press **Make a new code** on the one that should change.
 
 ## Good to know

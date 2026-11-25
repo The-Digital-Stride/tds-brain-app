@@ -577,9 +577,19 @@ describe('the ref action', () => {
     expect(refLine('clients/acme/projects/copy/project.md')).toBe('ref: ACM4K7');
   });
 
-  it("all: for the brain's Owner only", () => {
-    expect(call('ref', { kind: 'ref', all: true }).reply).toMatchObject({ ok: false, error: 'not-allowed' });
+  it('all: for an owner or a scout only', () => {
+    // A team member is refused, and nothing is written.
+    git(['config', 'user.email', 'tess@example.test']);
+    const refused = call('ref', { kind: 'ref', all: true });
+    expect(refused.reply).toMatchObject({ ok: false, error: 'not-allowed' });
+    expect(String(refused.reply.message)).toMatch(/owner or a scout/);
     expect(refLine(SITE)).toBeNull();
+    // A scout (Ian's decision, 2026-11-25: the brain already ran this rule) is allowed, as an owner is below.
+    git(['config', 'user.email', 'sam@example.test']);
+    const r = call('ref', { kind: 'ref', all: true });
+    expect(r.exit).toBe(0);
+    expect(r.reply).toMatchObject({ ok: true, given: [{ key: 'acme/site', ref: 'ACM2A2' }] });
+    expect(refLine(SITE)).toBe('ref: ACM2A2');
   });
 
   it('all: gives every live client and internal card lacking one a code, skipping the rest with reasons', () => {

@@ -125,7 +125,7 @@ echo '{"space":"client","client":"skyseal","slug":"website-rebuild","fields":{"t
 | `delete` | `key`, `filesExpect` (from a check), optional `expect`, optional `check: true`, optional `leftover: true` | Removes the project's folder and everything in it, for good. Only an archived project, a live one holding nothing but its card, or a leftover. |
 | `update` | `key`, `entry` (`kind` `"note"` or `"call"`, `summary`, `clientSafe`) | Adds one entry to the project's updates log and answers `file`, its path. Internal unless the person says it's fine for the client (`clientSafe: true`). See "The updates log" below. |
 | `update-remove` | `key`, `file`, `expect` (the SHA-256 of the entry file) | Removes one note or call from the log. For the person who added it, the brain's Owner or a scout. |
-| `ref` | `key` and `expect`, optional `replace: true`; or `all: true` alone | Gives one card a project code, or (the brain's Owner only) every live client and internal card without one. See "Project codes" below. |
+| `ref` | `key` and `expect`, optional `replace: true`; or `all: true` alone | Gives one card a project code, or (an owner or a scout only) every live client and internal card without one. See "Project codes" below. |
 | `find-ref` | `text` (at most 200,000 characters) | Finds the project codes in some text that belong to a real project, and near misses. Reads only; changes nothing. |
 | `email-draft` | `threadId`, `inboxAddress`, `subject`, `from`, `people`, `sentAt`, `summary`, `newestText`, optional `messageId`, `threadMessageIds`, `requested`, `thread`, `threadCodes` | Suggests one email for a project: a draft that waits on this Mac for the inbox owner's OK in the Projects app. Answers only its `id`. See "Emails" below. |
 | `email-draft-remove` | `id`, `dismiss` | Takes a waiting draft away (the inbox owner only); `dismiss: true` also means "not for a project", so it isn't suggested again. |
@@ -417,7 +417,7 @@ with no dash. Internal projects use The Digital Stride's code. Personal projects
 - `ref` with `key` and `expect` gives that card a code: refused when it already has one (`exists`),
   for personal and archived projects, and when the client has no code ("Add a client code to
   <Client>'s profile first."). `replace: true` gives it a new code only when another card holds the
-  same one (a copied folder); else `changed`. `all: true` is for the brain's Owner only (two people
+  same one (a copied folder); else `changed`. `all: true` is for an owner or a scout only (two people
   doing it before a sync would clash); it answers `given` (key and code) and `skipped` (key and
   reason: `has-ref`, `no-client-code`, `personal`, `archived` or `no-card`).
 - `find-ref` answers `found` (at most 5: `ref`, `key`, `title` and `client`, from the card) and `near`

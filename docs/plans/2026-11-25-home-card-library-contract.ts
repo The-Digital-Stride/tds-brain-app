@@ -115,3 +115,32 @@ export interface HomeCustomiseShell {
   openCustomiseHome: () => void;
   closeCustomiseHome: () => void; // focus returns to the "Customise Home" button (Dock.tsx already does this)
 }
+
+// ---------------------------------------------------------------------------
+// Part 5: hand-over points between Builders B, C and D (added at build start)
+// ---------------------------------------------------------------------------
+
+// Builder C, client/src/state/home-layout.ts (pure):
+/** The switch rows a person can ever see, in HOME_ITEMS order: no 'start-my-day' without the gm skill, no 'ads' without Ads access. */
+export declare function panelItems(ctx: { hasGm: boolean; hasAds: boolean }): readonly HomeItemDef[];
+
+// Builder C, client/src/shell/useHomeShortcuts.ts (hook; used by Home and by the panel):
+/**
+ * Builds ShortcutSources from useStore() (boot.skills, startSkill, openTool) and useToolSnapshot() (tools; null while the
+ * ads tool list hasn't loaded: `ads === null`), and also returns `hasGm` and `hasAds` (`ads?.visible === true`, as
+ * client/src/tools/ad-manager/slot.ts:26).
+ */
+export declare function useHomeShortcuts(): { sources: ShortcutSources; hasGm: boolean; hasAds: boolean };
+
+// Builder B: Part 3 is added to the `Store` returned by useStore() (client/src/store.tsx:504);
+// Part 4 is added to the `ShellApi` returned by useShell() (client/src/shell/ShellProvider.tsx:74).
+// B mounts D's panel in the right Dock (client/src/App.tsx:236-251) when the view is Home and homeCustomiseOpen,
+// with label 'Customise Home'. On the Home view, the SheetBar panel toggle drives homeCustomiseOpen (aria-pressed
+// follows it), never panelOpen.
+
+// Builder C: Home passes `panel="Customise Home"` to its SheetBar only when `homeHidden !== undefined` (decision 6);
+// the tray foot's "Show hidden cards" calls openCustomiseHome().
+
+// Builder D, client/src/shell/CustomiseHome.tsx:
+/** The panel body (no props). Reads Part 3 from useStore(), Part 4 from useShell(), useHomeShortcuts() and panelItems(). */
+export declare function CustomiseHome(): JSX.Element;

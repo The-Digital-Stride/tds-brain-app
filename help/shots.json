@@ -13,7 +13,7 @@
         "target": ".home-composer .client-select"
       }
     ],
-    "alt": "Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and favourite cards."
+    "alt": "Home in TDS Cortex, with the message box, the Chat for picker, and the Meetings and pinned cards."
   },
   {
     "id": "home-start",
@@ -87,7 +87,7 @@
         "target": "#drawer .star-btn"
       }
     ],
-    "alt": "The Skills drawer with a favourite skill at the top."
+    "alt": "The Skills drawer with a pinned skill at the top."
   },
   {
     "id": "documents-grid",

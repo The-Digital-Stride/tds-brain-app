@@ -313,7 +313,7 @@ export type IconName =
   | 'end'
   | 'expand'
   | 'home'
-  | 'star'
+  | 'pin'
   | 'edit'
   | 'more'
   | 'chat'

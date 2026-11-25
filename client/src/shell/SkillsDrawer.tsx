@@ -163,7 +163,7 @@ export function SkillsDrawer() {
           ) : (
             <>
               {pinned.length > 0 ? (
-                <Fold title="Favourites" count={pinned.length} {...fold('favourites', true)}>
+                <Fold title="Pinned" count={pinned.length} {...fold('favourites', true)}>
                   {list(pinned)}
                 </Fold>
               ) : null}

@@ -61,15 +61,11 @@ The rail is the strip of buttons down the side of Cortex. It opens drawers and p
 
 ### Home
 
-Home is the first screen. It has the message box, your meetings and your favourite cards.
+Home is the first screen. It has the message box, your meetings and your pinned cards.
 
 ### pin
 
-Starred tasks, chats and files also show on Home, under headings that start with Favourite.
-
-### favourite
-
-A favourite is something you starred, such as a chat, task, skill or file. It shows at the top of its list.
+A pin keeps something at the top of its list, such as a chat, task, skill or file. Pinned tasks, chats and files also show on Home, under headings that start with Pinned.
 
 ### sync
 

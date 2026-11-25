@@ -329,7 +329,7 @@ describe('Tasks drawer, held ticks (plan 2026-11-22-ux-consistency, R1)', () => 
       .map((b) => b.getAttribute('aria-label') ?? b.textContent);
     expect(buttons).toEqual([
       'Renew contract',
-      'Favourite: Renew contract',
+      'Pin: Renew contract',
       'Start a chat on this: Renew contract',
     ]);
   });
@@ -488,21 +488,19 @@ describe('Chats drawer favourites', () => {
     });
     render(<ChatsDrawer />);
     expect(titles()).toEqual(['Chat s2', 'Chat s1', 'Chat s3']);
-    const on = screen.getByRole('button', { name: 'Favourite: Chat s2' });
+    const on = screen.getByRole('button', { name: 'Pin: Chat s2' });
     expect(on.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Favourite: Chat s1' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    );
-    expect(screen.queryByRole('button', { name: 'Favourite: Chat s3' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pin: Chat s1' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Pin: Chat s3' })).toBeNull();
     fireEvent.click(on);
     expect(fns.toggleFavouriteChat).toHaveBeenCalledWith(B);
   });
 
-  it('shows earlier favourites in an open Favourites section, once, with today still open', () => {
+  it('shows earlier favourites in an open Pinned section, once, with today still open', () => {
     withFavs([C], { live: [], past: [past(A, 'Alpha chat'), past(C, 'Gamma chat')] });
     render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    const favs = screen.getByRole('button', { name: /Favourites/ });
+    const favs = screen.getByRole('button', { name: /Pinned/ });
     expect(favs.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('button', { name: /Today/ }).getAttribute('aria-expanded')).toBe('true');
     expect(titles()).toEqual(['Gamma chat', 'Alpha chat']);
@@ -513,13 +511,13 @@ describe('Chats drawer favourites', () => {
     withFavs([B], { live: [], past: [past(A, 'Alpha chat'), old] });
     const view = render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const star = screen.getByRole('button', { name: 'Pin: Beta chat' });
     star.focus();
     fireEvent.click(star);
     withFavs([], { live: [], past: [past(A, 'Alpha chat'), old] });
     view.rerender(<ChatsDrawer />);
     expect(screen.getByRole('button', { name: /^Earlier/ }).getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Favourite: Beta chat');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Pin: Beta chat');
   });
 
   it('brings focus back when a failed save puts the star back', () => {
@@ -527,7 +525,7 @@ describe('Chats drawer favourites', () => {
     withFavs([], sessions);
     const view = render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const star = screen.getByRole('button', { name: 'Pin: Beta chat' });
     star.focus();
     fireEvent.click(star);
     withFavs([B], sessions);
@@ -535,7 +533,7 @@ describe('Chats drawer favourites', () => {
     // The save failed: the store puts the list back, so the row moves again.
     withFavs([], sessions);
     view.rerender(<ChatsDrawer />);
-    const back = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const back = screen.getByRole('button', { name: 'Pin: Beta chat' });
     expect(back.getAttribute('aria-pressed')).toBe('false');
     expect(document.activeElement).toBe(back);
   });
@@ -545,13 +543,13 @@ describe('Chats drawer favourites', () => {
     withFavs([], sessions);
     const view = render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const star = screen.getByRole('button', { name: 'Pin: Beta chat' });
     star.focus();
     fireEvent.click(star);
     withFavs([B], sessions);
     view.rerender(<ChatsDrawer />);
     // The person moves on to another star, then the save's reply lands with an equal, new list.
-    const other = screen.getByRole('button', { name: 'Favourite: Alpha chat' });
+    const other = screen.getByRole('button', { name: 'Pin: Alpha chat' });
     other.focus();
     withFavs([B], sessions);
     view.rerender(<ChatsDrawer />);
@@ -567,14 +565,14 @@ describe('Chats drawer favourites', () => {
     withFavs([], { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat')] });
     const view = render(<ChatsDrawer />);
     fireEvent.click(screen.getByRole('radio', { name: 'Earlier' }));
-    const star = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const star = screen.getByRole('button', { name: 'Pin: Beta chat' });
     star.focus();
     fireEvent.click(star);
     expect(fns.toggleFavouriteChat).toHaveBeenCalledWith(B);
-    // The store saves it: the list moves Beta into Favourites, a new row.
+    // The store saves it: the list moves Beta into Pinned, a new row.
     withFavs([B], { live: [], past: [past(A, 'Alpha chat'), past(B, 'Beta chat')] });
     view.rerender(<ChatsDrawer />);
-    const moved = screen.getByRole('button', { name: 'Favourite: Beta chat' });
+    const moved = screen.getByRole('button', { name: 'Pin: Beta chat' });
     expect(moved.getAttribute('aria-pressed')).toBe('true');
     expect(document.activeElement).toBe(moved);
   });
@@ -811,15 +809,14 @@ describe('Skills drawer', () => {
     expect(screen.getByRole('status').textContent).toBe('1 skill matches');
   });
 
-  it("the star reflects and changes a skill's favourite, under Favourites, without starting the skill", () => {
+  it("the star reflects and changes a skill's favourite, under Pinned, without starting the skill", () => {
     setStore({}, false, ['a']);
     render(<SkillsDrawer />);
-    expect(screen.getByRole('button', { name: /^Favourites/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Pinned/ })).toBeNull();
-    const star = screen.getAllByRole('button', { name: 'Favourite: Alpha' })[0] as HTMLElement;
+    expect(screen.getByRole('button', { name: /^Pinned/ })).toBeTruthy();
+    const star = screen.getAllByRole('button', { name: 'Pin: Alpha' })[0] as HTMLElement;
     expect(star.getAttribute('aria-pressed')).toBe('true');
-    expect(star.dataset.tip).toBe('Favourite');
-    expect(star.querySelector('.icon-star')).not.toBeNull();
+    expect(star.dataset.tip).toBe('Pin');
+    expect(star.querySelector('.icon-pin')).not.toBeNull();
     fireEvent.click(star);
     expect(fns.togglePin).toHaveBeenCalledWith('a');
     expect(fns.startSkill).not.toHaveBeenCalled();
@@ -831,7 +828,7 @@ describe('Skills drawer', () => {
     const { rerender } = render(<SkillsDrawer />);
     const allSkills = () => screen.getByRole('button', { name: /^All skills/ });
     expect(allSkills().getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Favourite: Alpha' })[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pin: Alpha' })[0] as HTMLElement);
     expect(fns.togglePin).toHaveBeenCalledWith('a');
     // Alpha isn't used often, so un-starred it lives only under All skills.
     setStore({}, false, []);

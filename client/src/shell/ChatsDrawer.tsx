@@ -368,7 +368,7 @@ export function ChatsDrawer() {
               {favPast.length > 0 ? (
                 <Fold
                   key="favourites"
-                  title="Favourites"
+                  title="Pinned"
                   count={favPast.length}
                   open={openFolds.favourites ?? true}
                   onToggle={(o) => setOpenFolds((f) => ({ ...f, favourites: o }))}

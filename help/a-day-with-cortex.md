@@ -15,7 +15,7 @@ Here is how one day could go. You don't have to do all of it. Pick the parts tha
 
 ## Morning: see what needs you
 
-Open Cortex. Home greets you and sums up what needs attention. Your favourite tasks, chats and files sit underneath. See [Favourite tasks, chats and files](help:pinned).
+Open Cortex. Home greets you and sums up what needs attention. Your pinned tasks, chats and files sit underneath. See [Pinned tasks, chats and files](help:pinned).
 
 ## After a call: file it
 

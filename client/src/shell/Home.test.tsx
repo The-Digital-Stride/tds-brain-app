@@ -153,7 +153,7 @@ const card = (name: string) => within(screen.getByRole('region', { name }));
  * clicks the row, then that button (Start a chat, or Open chat when the to-do already has one).
  */
 const startChatFromPanel = async (title: RegExp) => {
-  fireEvent.click(await card('Favourite tasks').findByRole('button', { name: title }));
+  fireEvent.click(await card('Pinned tasks').findByRole('button', { name: title }));
   const panel = await screen.findByRole('dialog');
   fireEvent.click(within(panel).getByRole('button', { name: /^(Start a chat|Open chat)$/ }));
 };
@@ -190,7 +190,7 @@ describe('Home', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     await screen.findByText('One task is overdue, one is due today and one chat is waiting for you.');
 
-    const needs = card('Favourite tasks');
+    const needs = card('Pinned tasks');
     expect(needs.getByText('2')).toBeTruthy();
     expect(needs.getByText('Write the call tracking case')).toBeTruthy();
     expect(needs.getByText('overdue by 2 days').className).toBe('late');
@@ -200,12 +200,12 @@ describe('Home', () => {
     expect(needs.queryByText('Plan the quarter')).toBeNull();
     expect(needs.queryByRole('checkbox')).toBeNull();
 
-    const chats = card('Favourite chats');
+    const chats = card('Pinned chats');
     expect(chats.getByText('Monthly reports check')).toBeTruthy();
     expect(chats.getByText('Needs your answer')).toBeTruthy();
     expect(chats.getByText('Working')).toBeTruthy();
 
-    const skills = card('Favourite skills');
+    const skills = card('Pinned skills');
     expect(skills.getByText('Meeting notes')).toBeTruthy();
     expect(skills.queryByText('Standup')).toBeNull();
   });
@@ -222,11 +222,11 @@ describe('Home', () => {
       prefs: { ...boot.prefs, pins: [], favouriteTodos: [], favouriteChats: [] },
     });
     await renderHome();
-    expect(await screen.findByText('Favourite a task to keep it here.')).toBeTruthy();
-    expect(screen.getByText('Favourite a chat to keep it here.')).toBeTruthy();
-    expect(await screen.findByText('Favourite a file to keep it here.')).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Favourite skills' })).toBeTruthy();
-    expect(screen.getByText('Favourite a skill to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Pin a task to keep it here.')).toBeTruthy();
+    expect(screen.getByText('Pin a chat to keep it here.')).toBeTruthy();
+    expect(await screen.findByText('Pin a file to keep it here.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Pinned skills' })).toBeTruthy();
+    expect(screen.getByText('Pin a skill to keep it here.')).toBeTruthy();
     expect(screen.getByText('Nothing is waiting for you.')).toBeTruthy();
   });
 
@@ -245,8 +245,8 @@ describe('Home', () => {
     api.todos.mockReturnValue(new Promise(() => {}));
     api.sessions.mockReturnValue(new Promise(() => {}));
     await renderHome();
-    expect(card('Favourite tasks').getByText('Loading…')).toBeTruthy();
-    expect(card('Favourite chats').getByText('Loading…')).toBeTruthy();
+    expect(card('Pinned tasks').getByText('Loading…')).toBeTruthy();
+    expect(card('Pinned chats').getByText('Loading…')).toBeTruthy();
   });
 
   const typeAndSend = (box: HTMLElement, value: string) => {
@@ -479,7 +479,7 @@ describe('Home', () => {
   it('auto: empty text (a skill alone) is treated as none without asking', async () => {
     const box = await renderHome();
     expect(box).toBeTruthy();
-    fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
+    fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
     await screen.findByText('Meeting notes', { selector: 'strong' });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
@@ -608,7 +608,7 @@ describe('Home', () => {
       typeAndSend(box, 'Old message');
       await waitFor(() => expect(api.clientGuess).toHaveBeenCalled());
       // Another new chat (a favourite skill starts one): the pending guess must be dropped.
-      fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
+      fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
       await screen.findByText('Meeting notes', { selector: 'strong' });
       finish(kind === 'ask' ? { kind: 'ask', options: [] } : { kind: 'sure', client: 'acme', how: 'named' });
       await new Promise((r) => setTimeout(r, 20));
@@ -727,7 +727,7 @@ describe('Home', () => {
       ],
     });
     await renderHome();
-    fireEvent.click(await card('Favourite tasks').findByRole('button', { name: /^Fresh from Ben/ }));
+    fireEvent.click(await card('Pinned tasks').findByRole('button', { name: /^Fresh from Ben/ }));
     await waitFor(() => expect(api.updatePrefs).toHaveBeenCalledWith({ todoSeen: { 't-new.md': at } }));
   });
 
@@ -740,7 +740,7 @@ describe('Home', () => {
 
   it('opens a chat from the Pinned chats card', async () => {
     await renderHome();
-    fireEvent.click(await card('Favourite chats').findByRole('button', { name: /^Monthly reports check/ }));
+    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /^Monthly reports check/ }));
     await screen.findByRole('heading', { level: 1, name: 'Monthly reports check' });
   });
 
@@ -752,7 +752,7 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteFiles: ['f1', 'f2'] } });
     api.libraryItems.mockResolvedValue({ files: [file('f2', 'Newer plan'), file('f1', 'Older plan')] });
     await renderHome();
-    const files = card('Favourite files');
+    const files = card('Pinned files');
     await files.findByText('Newer plan');
     const rows = files.getAllByRole('listitem');
     expect(api.libraryItems).toHaveBeenCalledWith(['f2', 'f1']);
@@ -769,7 +769,7 @@ describe('Home', () => {
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Favourite tasks');
+    const card1 = card('Pinned tasks');
     await card1.findByText('Task 4');
     expect(card1.queryByText('Task 5')).toBeNull();
     const more = card1.getByRole('button', { name: 'Show 2 more tasks' });
@@ -794,7 +794,7 @@ describe('Home', () => {
       prefs: { ...boot.prefs, favouriteTodos: mine.map((t) => t.key) },
     });
     await renderHome();
-    const card1 = card('Favourite tasks');
+    const card1 = card('Pinned tasks');
     expect(await card1.findByRole('button', { name: 'Show 1 more task' })).toBeTruthy();
   });
 
@@ -804,12 +804,12 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteTodos: [only.key] } });
     api.updatePrefs.mockResolvedValue({ ...boot.prefs, favouriteTodos: [] });
     await renderHome();
-    const star = await card('Favourite tasks').findByRole('button', { name: 'Favourite: Only favourite' });
+    const star = await card('Pinned tasks').findByRole('button', { name: 'Pin: Only favourite' });
     star.focus();
     fireEvent.click(star);
-    await card('Favourite tasks').findByText('Favourite a task to keep it here.', { exact: false });
+    await card('Pinned tasks').findByText('Pin a task to keep it here.', { exact: false });
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Favourite tasks' })),
+      expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Pinned tasks' })),
     );
   });
 
@@ -824,13 +824,13 @@ describe('Home', () => {
     api.bootstrap.mockResolvedValue({ ...boot, prefs: { ...boot.prefs, favouriteChats: [sid] } });
     api.startSession.mockResolvedValue({ session: chat('r1', 'Last week plan', 'working') });
     await renderHome();
-    fireEvent.click(await card('Favourite chats').findByRole('button', { name: /^Last week plan/ }));
+    fireEvent.click(await card('Pinned chats').findByRole('button', { name: /^Last week plan/ }));
     await waitFor(() => expect(api.startSession).toHaveBeenCalledWith({ resume: sid }));
   });
 
   it('starts a pinned skill', async () => {
     await renderHome();
-    fireEvent.click(card('Favourite skills').getByRole('button', { name: 'Meeting notes' }));
+    fireEvent.click(card('Pinned skills').getByRole('button', { name: 'Meeting notes' }));
     await screen.findByText('Meeting notes', { selector: 'strong' });
   });
 
@@ -865,26 +865,14 @@ describe('Home: moving the cards', () => {
 
   it('moves a card with the keyboard on its grip, saves it for this person, and resets', async () => {
     await renderHome();
-    await card('Favourite tasks').findByText('Write the call tracking case');
-    expect(order()).toEqual([
-      'Meetings',
-      'Favourite tasks',
-      'Favourite chats',
-      'Favourite files',
-      'Favourite skills',
-    ]);
+    await card('Pinned tasks').findByText('Write the call tracking case');
+    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned chats', 'Pinned files', 'Pinned skills']);
     expect(screen.queryByRole('button', { name: 'Reset card order' })).toBeNull();
 
-    const grip = screen.getByRole('button', { name: 'Move Favourite tasks, 2 of 5' });
+    const grip = screen.getByRole('button', { name: 'Move Pinned tasks, 2 of 5' });
     fireEvent.keyDown(grip, { key: 'ArrowDown' });
-    expect(order()).toEqual([
-      'Meetings',
-      'Favourite chats',
-      'Favourite tasks',
-      'Favourite files',
-      'Favourite skills',
-    ]);
-    expect(screen.getByText('Favourite tasks moved to 3 of 5')).toBeTruthy();
+    expect(order()).toEqual(['Meetings', 'Pinned chats', 'Pinned tasks', 'Pinned files', 'Pinned skills']);
+    expect(screen.getByText('Pinned tasks moved to 3 of 5')).toBeTruthy();
     // Ads approvals and Recent projects are hidden (nothing waiting, no projects) but keep their default places in what is saved.
     expect(JSON.parse(localStorage.getItem(KEY) ?? '[]')).toEqual([
       'meetings',
@@ -896,22 +884,14 @@ describe('Home: moving the cards', () => {
       'skills',
     ]);
     await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Move Favourite tasks, 3 of 5' }),
-      ),
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Pinned tasks, 3 of 5' })),
     );
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Favourite files, 4 of 5' }), { key: 'Home' });
-    expect(order()[0]).toBe('Favourite files');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Move Pinned files, 4 of 5' }), { key: 'Home' });
+    expect(order()[0]).toBe('Pinned files');
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset card order' }));
-    expect(order()).toEqual([
-      'Meetings',
-      'Favourite tasks',
-      'Favourite chats',
-      'Favourite files',
-      'Favourite skills',
-    ]);
+    expect(order()).toEqual(['Meetings', 'Pinned tasks', 'Pinned chats', 'Pinned files', 'Pinned skills']);
     expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual([]);
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Meetings, 1 of 5' })),
@@ -923,13 +903,7 @@ describe('Home: moving the cards', () => {
     localStorage.setItem('tds.home.cardOrder.v1:other-person', JSON.stringify(['chats']));
     await renderHome();
     await waitFor(() =>
-      expect(order()).toEqual([
-        'Favourite skills',
-        'Favourite files',
-        'Meetings',
-        'Favourite tasks',
-        'Favourite chats',
-      ]),
+      expect(order()).toEqual(['Pinned skills', 'Pinned files', 'Meetings', 'Pinned tasks', 'Pinned chats']),
     );
     expect(screen.getByRole('button', { name: 'Reset card order' })).toBeTruthy();
   });
@@ -943,9 +917,9 @@ describe('Home: moving the cards', () => {
 
   it('a card is only draggable while its grip is pressed', async () => {
     await renderHome();
-    const section = screen.getByRole('region', { name: 'Favourite chats' });
+    const section = screen.getByRole('region', { name: 'Pinned chats' });
     expect(section.getAttribute('draggable')).toBe('false');
-    const grip = within(section).getByRole('button', { name: /^Move Favourite chats/ });
+    const grip = within(section).getByRole('button', { name: /^Move Pinned chats/ });
     fireEvent.pointerDown(grip);
     expect(section.getAttribute('draggable')).toBe('true');
     fireEvent.pointerUp(grip);

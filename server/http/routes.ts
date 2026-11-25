@@ -411,7 +411,7 @@ export async function validatePrefsPatch(
           value.length > MAX_PINS ||
           !value.every((v) => typeof v === 'string' && SKILL_NAME.test(v))
         ) {
-          throw bad('The favourite skills were not understood.');
+          throw bad('The pinned skills were not understood.');
         }
         patch.pins = [...new Set(value as string[])];
         break;
@@ -465,7 +465,7 @@ export async function validatePrefsPatch(
           value.length > FAVOURITE_CHATS_MAX ||
           !value.every((v) => typeof v === 'string' && SESSION_UUID_PATTERN.test(v))
         ) {
-          throw bad('The favourite chats were not understood.');
+          throw bad('The pinned chats were not understood.');
         }
         patch.favouriteChats = [...new Set(value as string[])];
         break;
@@ -476,7 +476,7 @@ export async function validatePrefsPatch(
           value.length > FAVOURITE_TODOS_MAX ||
           !value.every((v) => typeof v === 'string' && v !== '' && v.length <= TODO_KEY_MAX)
         ) {
-          throw bad('The favourite tasks were not understood.');
+          throw bad('The pinned tasks were not understood.');
         }
         patch.favouriteTodos = [...new Set(value as string[])];
         break;

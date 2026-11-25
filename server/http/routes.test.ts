@@ -1981,7 +1981,7 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     for (const favouriteChats of ['nope', ['not-a-uuid'], [3], ids]) {
       const sent = await call('/api/prefs', 'PUT', { favouriteChats });
       expect(sent.status).toBe(400);
-      expect(sent.json.error.message).toBe('The favourite chats were not understood.');
+      expect(sent.json.error.message).toBe('The pinned chats were not understood.');
     }
   });
 
@@ -2010,7 +2010,7 @@ describe('PUT /api/prefs and GET /api/engine/choices', () => {
     for (const favouriteTodos of ['nope', [''], [3], ['x'.repeat(301)], keys]) {
       const sent = await call('/api/prefs', 'PUT', { favouriteTodos });
       expect(sent.status).toBe(400);
-      expect(sent.json.error.message).toBe('The favourite tasks were not understood.');
+      expect(sent.json.error.message).toBe('The pinned tasks were not understood.');
     }
   });
 

@@ -147,7 +147,7 @@ describe('the Done tab', () => {
     const row = screen.getByText('Send the quote').closest('li') as HTMLElement;
     expect(within(row).getByText(/^Done by Ben, \d+ \w+$/)).toBeTruthy();
     // No star, edit, tick or chat buttons on a finished row.
-    expect(within(row).queryByRole('button', { name: /Edit|Start a chat|Favourite|Mark/ })).toBeNull();
+    expect(within(row).queryByRole('button', { name: /Edit|Start a chat|Pin|Mark/ })).toBeNull();
     expect(screen.getByText('This week')).toBeTruthy();
     expect(screen.getAllByText('Date not known')).toHaveLength(2);
     // The kind switch isn't shown; the search box is.

@@ -325,13 +325,13 @@ describe('editing and saving', () => {
     expect(within(panel).getByRole('button', { name: 'Delete' }).getAttribute('data-variant')).toBeNull();
     const head = panel.querySelector('.todo-head') as HTMLElement;
     const labels = [...head.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Favourite: Second', 'Previous task', 'Next task', 'Close task']);
+    expect(labels).toEqual(['Pin: Second', 'Previous task', 'Next task', 'Close task']);
   });
 
   it('the header star toggles the task as a favourite', async () => {
     mount();
     const panel = await open('Second');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Favourite: Second' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Pin: Second' }));
     expect(
       (store.current as { toggleFavouriteTodo: ReturnType<typeof vi.fn> }).toggleFavouriteTodo,
     ).toHaveBeenCalledWith('b.md');

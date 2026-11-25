@@ -353,11 +353,7 @@ describe('the details pane actions (UX consistency, release 2B)', () => {
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label') ?? b.textContent);
     // Open isn't offered for a file that can't be shown; Ask, the star, then the bin.
-    expect(names).toEqual([
-      'Ask Claude about it',
-      'Favourite: Google Ads audit',
-      'Delete file: Google Ads audit',
-    ]);
+    expect(names).toEqual(['Ask Claude about it', 'Pin: Google Ads audit', 'Delete file: Google Ads audit']);
     fireEvent.click(screen.getByRole('button', { name: 'Delete file: Google Ads audit' }));
     expect(store.deleteFile).toHaveBeenCalledWith(expect.objectContaining({ id: audit.id }));
     cleanup();

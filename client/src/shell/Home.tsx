@@ -256,11 +256,11 @@ export function Home() {
     [
       { id: 'meetings', title: 'Meetings' },
       ...(adsShown ? [{ id: 'ads', title: 'Ads approvals' }] : []),
-      { id: 'todos', title: 'Favourite tasks' },
+      { id: 'todos', title: 'Pinned tasks' },
       ...(projectsShown ? [{ id: 'projects', title: 'Recent projects' }] : []),
-      { id: 'chats', title: 'Favourite chats' },
-      { id: 'files', title: 'Favourite files' },
-      { id: 'skills', title: 'Favourite skills' },
+      { id: 'chats', title: 'Pinned chats' },
+      { id: 'files', title: 'Pinned files' },
+      { id: 'skills', title: 'Pinned skills' },
     ],
     boot ? homeOrderKey(boot.identity.slug) : null,
     HOME_CARDS,
@@ -317,7 +317,7 @@ export function Home() {
 
   const favouriteSkills = new Set(boot.prefs.pins ?? []);
   const { pinned, often } = starterSkills(boot);
-  const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Favourite skills';
+  const skillsTitle = pinned.length === 0 && often.length > 0 ? 'Used often' : 'Pinned skills';
   const skillRows: SkillInfo[] = (pinned.length > 0 ? pinned : often).slice(0, 5);
 
   const loaded = todos !== null && sessions !== null;
@@ -581,7 +581,7 @@ export function Home() {
                   >
                     <div className="card-head">
                       {order.grip('todos')}
-                      <h2 id="home-todos">Favourite tasks</h2>
+                      <h2 id="home-todos">Pinned tasks</h2>
                       {todos ? <span className="count">{pinnedTodoRows.length}</span> : null}
                       <button
                         type="button"
@@ -597,9 +597,7 @@ export function Home() {
                       <StateNote kind="loading" />
                     ) : pinnedTodoRows.length === 0 ? (
                       <StateNote kind="empty">
-                        {project
-                          ? 'No favourite tasks in this project.'
-                          : 'Favourite a task to keep it here.'}
+                        {project ? 'No pinned tasks in this project.' : 'Pin a task to keep it here.'}
                       </StateNote>
                     ) : (
                       <>
@@ -717,7 +715,7 @@ export function Home() {
                   >
                     <div className="card-head">
                       {order.grip('chats')}
-                      <h2 id="home-chats">Favourite chats</h2>
+                      <h2 id="home-chats">Pinned chats</h2>
                       <button
                         type="button"
                         className="btn"
@@ -731,7 +729,7 @@ export function Home() {
                     {!sessions ? (
                       <StateNote kind="loading" />
                     ) : pinnedChatRows.length === 0 ? (
-                      <StateNote kind="empty">Favourite a chat to keep it here.</StateNote>
+                      <StateNote kind="empty">Pin a chat to keep it here.</StateNote>
                     ) : (
                       <>
                         <ul className="drawer-list">
@@ -790,7 +788,7 @@ export function Home() {
                   >
                     <div className="card-head">
                       {order.grip('files')}
-                      <h2 id="home-files">Favourite files</h2>
+                      <h2 id="home-files">Pinned files</h2>
                       <button
                         type="button"
                         className="btn"
@@ -802,14 +800,12 @@ export function Home() {
                       </button>
                     </div>
                     {pinnedFiles === null && filesFailed ? (
-                      <StateNote kind="error">Couldn't load your favourite files.</StateNote>
+                      <StateNote kind="error">Couldn't load your pinned files.</StateNote>
                     ) : pinnedFiles === null ? (
                       <StateNote kind="loading" />
                     ) : pinnedFileRows.length === 0 ? (
                       <StateNote kind="empty">
-                        {project
-                          ? 'No favourite files in this project.'
-                          : 'Favourite a file to keep it here.'}
+                        {project ? 'No pinned files in this project.' : 'Pin a file to keep it here.'}
                       </StateNote>
                     ) : (
                       <>
@@ -875,7 +871,7 @@ export function Home() {
                       ) : null}
                     </div>
                     {skillRows.length === 0 ? (
-                      <StateNote kind="empty">Favourite a skill to keep it here.</StateNote>
+                      <StateNote kind="empty">Pin a skill to keep it here.</StateNote>
                     ) : (
                       <ul className="drawer-list">
                         {skillRows.map((s) => (

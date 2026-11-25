@@ -112,8 +112,8 @@
       opacity: 1;
     }
   }
-  /* A favourite's star is filled. */
-  .star-btn[aria-pressed="true"] .icon-star {
+  /* A pinned item's pin is filled. */
+  .star-btn[aria-pressed="true"] .icon-pin {
     fill: currentColor;
   }
   @media (prefers-reduced-motion: reduce) {

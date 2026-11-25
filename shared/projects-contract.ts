@@ -156,6 +156,12 @@ export interface ProjectCard {
   createdBy: string | null;
   /** From `git log -1` on the folder: who (team slug, else git name) and when (ISO). Null outside git or when unknown. */
   lastChanged: { by: string; at: string } | null;
+  /**
+   * ISO time of this person's newest change (git authorship, or an uncommitted file) under `folder`; null when
+   * they have none. Filled when the list is served, never stored. Absent for personal projects, when the history
+   * couldn't be read, and from older servers.
+   */
+  lastMine?: string | null;
   /** The body without the `## Linked files` section, trimmed. */
   brief: string;
   /** Brain-relative paths from `## Linked files`, in written order. */

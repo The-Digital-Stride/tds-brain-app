@@ -160,6 +160,7 @@ import type { EmailDraftsService } from '../brain/email-drafts.ts';
 import { parseFrontmatter } from '../brain/frontmatter.ts';
 import { openChecked, PAGE_MAX_BYTES, readChecked, scopeOfId, TEXT_MAX_BYTES } from '../brain/library.ts';
 import { classify } from '../brain/library-rules.ts';
+import { withLastMine as withMineCards } from '../brain/my-changes.ts';
 import {
   artifactRefusal,
   cleanArtifactDescription,
@@ -1470,6 +1471,14 @@ function bindHoldsChat(ctx: RouteContext): void {
 }
 
 /** Sets `canAddArtifact` (true only; absent otherwise) on a list the route sends: changes allowed and the files skill can add pages. */
+/** Each shared project card gets `lastMine` (this person's newest change under its folder); none when unreadable. */
+async function withLastMine(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
+  const mine = ctx.brain.myChanges;
+  if (!mine || !list || !Array.isArray(list.projects)) return list;
+  const changes = await safe(mine.call(ctx.brain, who), null);
+  return changes ? { ...list, projects: withMineCards(list.projects, changes) } : list;
+}
+
 async function withArtifactFlag(ctx: RouteContext, list: ProjectList, who: Identity): Promise<ProjectList> {
   const service = ctx.brain.projectArtifact;
   if (!service || !list || list.canChange !== true) return list;
@@ -1494,7 +1503,8 @@ async function projectsRoute(
     if (!list) throw missing();
     try {
       const who = await identity();
-      sendJson(res, 200, await withArtifactFlag(ctx, await list.call(ctx.brain, who), who));
+      const served = await withLastMine(ctx, await list.call(ctx.brain, who), who);
+      sendJson(res, 200, await withArtifactFlag(ctx, served, who));
     } catch (err) {
       throw projectsFailure(err, ctx, 'Reading the projects');
     }
@@ -1526,7 +1536,7 @@ async function projectsRoute(
       // Counted, not timed (decision 10): the nudge lists this chat again only once it has new messages.
       if (chatEntry && savedKey) await ctx.sessions.chatSummaries?.recordSaved(chatEntry.chat, savedKey);
       ctx.log(`Changed a project (${action.kind}).`);
-      sendJson(res, 200, await withArtifactFlag(ctx, list, who));
+      sendJson(res, 200, await withArtifactFlag(ctx, await withLastMine(ctx, list, who), who));
     } catch (err) {
       throw projectsFailure(err, ctx, 'A project change');
     }
@@ -1594,7 +1604,9 @@ async function projectsRoute(
       sendJson(
         res,
         200,
-        'list' in answer ? { ...answer, list: await withArtifactFlag(ctx, answer.list, who) } : answer,
+        'list' in answer
+          ? { ...answer, list: await withArtifactFlag(ctx, await withLastMine(ctx, answer.list, who), who) }
+          : answer,
       );
     } catch (err) {
       throw projectsFailure(err, ctx, move.check ? 'A project move check' : 'A project move');
@@ -1625,7 +1637,9 @@ async function projectsRoute(
       sendJson(
         res,
         200,
-        'list' in answer ? { ...answer, list: await withArtifactFlag(ctx, answer.list, who) } : answer,
+        'list' in answer
+          ? { ...answer, list: await withArtifactFlag(ctx, await withLastMine(ctx, answer.list, who), who) }
+          : answer,
       );
     } catch (err) {
       throw projectsFailure(err, ctx, what);
@@ -2280,6 +2294,7 @@ async function libraryRoute(
     }
     const recent = ctx.brain.libraryRecent;
     const empty: LibraryRecentResponse = { files: [], partial: false };
+    const who = recent ? await safe(ctx.brain.identity(), UNKNOWN_IDENTITY) : UNKNOWN_IDENTITY;
     sendJson(
       res,
       200,
@@ -2289,6 +2304,7 @@ async function libraryRoute(
               ctx.brain,
               kind === 'doc' ? 'document' : 'image',
               (project ?? undefined) as ProjectKey | undefined,
+              who,
             ),
             empty,
           )

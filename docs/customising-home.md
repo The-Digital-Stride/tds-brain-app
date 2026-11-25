@@ -42,7 +42,8 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
    same as 2, but decide the order and cap in the plan, and add the empty-state sentence. Files across every
    folder come from `GET /api/library/recent` (`Library.recent`, sharing search's listing gathering); a `partial`
    answer is asked again every second, up to five times. Leave personal-scope things out of anything listed
-   unasked.
+   unasked. "Mine" (v0.88.1) comes from `server/brain/my-changes.ts`: this person's commits (git author) plus
+   uncommitted changes; it also gives project cards `lastMine`.
 5. **A new kind of Home shortcut** (the places and drawers recipe, v0.87.0):
    1. Add the kind to `HomeShortcut`, `homeShortcutKey` and `parseHomeShortcut` in `shared/contract.ts`. Prefer a
       fixed list (like `HOME_SHORTCUT_PLACES`) over a pattern when the targets are known. The app store and the
@@ -85,8 +86,11 @@ How to change what Home shows, fast. Worked out on the pinned-cards change
 
 ## Known gaps (as of v0.35.0)
 
-- Recent documents and images sort by this Mac's file time, so a fresh install or a big sync can show many files as
-  changed today.
+- Files in gitignored client folders (such as feed-cache images) never show on Recent documents or images: git
+  never records who changed them.
+- Recent documents and images sort by the time of the person's own change: the commit time, or, for a change not
+  yet synced, this Mac's file time. History is read from the last 400 of their commits under clients, templates and
+  projects, so a file changed long ago may drop off.
 
 - "and N more files" opens Documents, which has no starred view, so pins past the fifth are found by browsing.
 - A failed pinned-files lookup shows a message but doesn't retry until a star or the library changes.

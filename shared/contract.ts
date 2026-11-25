@@ -941,10 +941,20 @@ export interface BrainReaders {
    */
   librarySearch?(q: string, kind: LibraryKind): Promise<LibrarySearchResponse>;
   /**
-   * The newest files of one kind for Home's Recent cards (see LibraryRecentResponse). Optional so older test
-   * fakes still satisfy the type; the route answers an empty reply when it is missing.
+   * The files this person changed, newest change of theirs first, for Home's Recent cards (see
+   * LibraryRecentResponse). Optional so older test fakes still satisfy the type; the route answers an empty
+   * reply when it is missing. `identity` says whose changes.
    */
-  libraryRecent?(kind: LibraryKind, project?: ProjectKey): Promise<LibraryRecentResponse>;
+  libraryRecent?(
+    kind: LibraryKind,
+    project: ProjectKey | undefined,
+    identity: Identity,
+  ): Promise<LibraryRecentResponse>;
+  /**
+   * The files this person changed (git authorship plus uncommitted files), for `lastMine` on project cards.
+   * Optional so older test fakes still satisfy the type; the route then leaves `lastMine` out.
+   */
+  myChanges?(identity: Identity): Promise<MyChanges>;
   /**
    * The listed scope a path from the brain's root falls in, with the key the file has (or would
    * have) there and the item when it is listed now (chat files, plan 2026-11-13-chat-files).
@@ -2331,7 +2341,7 @@ export const ROUTES = {
   /** `GET`: LibraryScope[]. */
   libraryScopes: '/api/library/scopes',
   librarySearch: '/api/library/search',
-  /** `GET ?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse (Home's Recent cards). Read-only. */
+  /** `GET ?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse (Home's Recent cards: files this person changed). Read-only. */
   libraryRecent: '/api/library/recent',
   /**
    * `POST {ids: string[]}` (at most FAVOURITE_FILES_MAX ids) → LibraryItemsResponse. The listed files for these ids,
@@ -2429,18 +2439,28 @@ export interface LibrarySearchResponse {
 
 export const LIBRARY_SEARCH_MAX = 20;
 
+/**
+ * The files one person changed (plan 2026-11-25-my-recents): lower-cased brain-relative path → ISO time of their
+ * newest change. `readable` is false when the history couldn't be read.
+ */
+export interface MyChanges {
+  paths: Map<string, string>;
+  readable: boolean;
+}
+
 /** At most this many files a Home Recent card can hold (plan 2026-11-25-home-recent-cards). */
 export const LIBRARY_RECENT_MAX = 20;
 
 /**
- * `GET /api/library/recent?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse. Read-only. The newest
- * files of one kind across every client and shared scope the person can see; personal-scope files are never
- * listed (private titles stay off screen unasked). Newest `modified` first, ties by path, at most
+ * `GET /api/library/recent?kind=image|doc[&project=<ProjectKey>]` → LibraryRecentResponse. Read-only. The files
+ * of one kind this person changed (their name on the brain's git history, plus uncommitted files), across every
+ * client and shared scope; personal-scope files are never listed (private titles stay off screen unasked).
+ * Newest change of theirs first (not file time), ties by path, at most
  * LIBRARY_RECENT_MAX. With `project`, only files whose `item.projects` holds that key, filtered before the cap;
  * with no project index, no files. Same listing gathering as search: cached listings even past freshness
  * (refreshing behind), cold scopes built three at a time within the search budget, then `partial: true`.
- * Items carry `projects` like search hits. Bad `kind`, or a `project` failing PROJECT_KEY_PATTERN → 400
- * `bad-request`.
+ * Items carry `projects` like search hits. When the history can't be read: `files: []`, `partial: true`, never
+ * the team's files. Bad `kind`, or a `project` failing PROJECT_KEY_PATTERN → 400 `bad-request`.
  */
 export interface LibraryRecentResponse {
   files: LibrarySearchHit[];

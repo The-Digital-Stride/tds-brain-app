@@ -120,7 +120,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'cards',
     anchor: '.sheet-bar button[aria-label="Customise Home"]',
     title: 'Make Home yours',
-    text: 'Home’s Recent cards show the newest tasks, chats, documents and images. Customise Home lets you hide cards you don’t use and add shortcuts for the places, drawers and tools you use most. Drag a card by its grip to reorder.',
+    text: 'Home’s Recent cards show your newest tasks, chats, documents, images and projects. Customise Home lets you hide cards you don’t use and add shortcuts for the places, drawers and tools you use most. Drag a card by its grip to reorder.',
   },
   {
     id: 'search',

@@ -369,6 +369,24 @@ describe('Home', () => {
       expect(rows[1]?.textContent).toContain('Old job');
     });
 
+    it('lists only the projects this person worked on, by their own last change', async () => {
+      projectsStore.reset();
+      api.projects.mockResolvedValue({
+        projects: [
+          { ...card('northwind/team', 'Team job', '2026-11-25T09:00:00Z'), lastMine: null },
+          { ...card('northwind/mine', 'My job', '2026-11-25T08:00:00Z'), lastMine: '2026-11-20T09:00:00Z' },
+        ],
+        duplicates: [],
+      });
+      await renderHome();
+      const section = (await screen.findByRole('heading', { name: 'Recent projects' })).closest('section');
+      if (!section) throw new Error('no card');
+      const rows = within(section).getAllByRole('listitem');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.textContent).toContain('My job');
+      expect(rows[0]?.textContent).toContain('You last worked on 20 Nov');
+    });
+
     it('is not shown when no project has been worked on', async () => {
       projectsStore.reset();
       api.projects.mockResolvedValue({ projects: [], duplicates: [] });
@@ -1214,24 +1232,25 @@ describe('Home: recent cards', () => {
             },
           }),
         ],
-        [rtodo('new.md', 'New one', '2026-11-25')],
+        [rtodo('new.md', 'Open to anyone', '2026-11-25')],
       );
       await renderHome();
       const c = card('Recent tasks');
-      await c.findByText('New one');
+      await c.findByText('Passed one');
       const rows = c.getAllByRole('listitem');
       expect(rows.map((r) => r.textContent)).toEqual([
-        'New oneAdded 25 Nov',
         'Passed onePassed to you 24 Nov',
         'Old oneAdded 1 Nov, Acme Heating',
       ]);
       expect(c.queryByText('Private one')).toBeNull();
+      // Only tasks assigned to this person: one open to anyone is not theirs (plan 2026-11-25-my-recents).
+      expect(c.queryByText('Open to anyone')).toBeNull();
     });
 
     it('says so when empty, in a project and out of it, and has an All tasks button', async () => {
       withTodos([]);
       await renderHome();
-      expect(await card('Recent tasks').findByText('No tasks yet.')).toBeTruthy();
+      expect(await card('Recent tasks').findByText('Tasks assigned to you show here.')).toBeTruthy();
       fireEvent.click(card('Recent tasks').getByRole('button', { name: 'All tasks' }));
       await waitFor(() =>
         expect(
@@ -1242,7 +1261,7 @@ describe('Home: recent cards', () => {
       withProject();
       projectChoice.set('northwind/site');
       await renderHome();
-      expect(await card('Recent tasks').findByText('No tasks in this project.')).toBeTruthy();
+      expect(await card('Recent tasks').findByText('No tasks of yours in this project.')).toBeTruthy();
     });
 
     it('Working on narrows it', async () => {
@@ -1366,8 +1385,8 @@ describe('Home: recent cards', () => {
       kind: 'document' as const,
       call: 'doc',
       all: 'All documents',
-      none: 'No documents yet.',
-      noneIn: 'No documents in this project.',
+      none: 'Documents you change show here.',
+      noneIn: "You haven't changed any documents in this project.",
       failed: "Couldn't load recent documents.",
       view: 'Documents',
     },
@@ -1376,8 +1395,8 @@ describe('Home: recent cards', () => {
       kind: 'image' as const,
       call: 'image',
       all: 'All images',
-      none: 'No images yet.',
-      noneIn: 'No images in this project.',
+      none: 'Images you change show here.',
+      noneIn: "You haven't changed any images in this project.",
       failed: "Couldn't load recent images.",
       view: 'Images',
     },

@@ -137,8 +137,9 @@ describe('recentTodos', () => {
         rt('none'),
         rt('b', { created: '2026-11-24' }),
         rt('a', { created: '2026-11-24' }),
+        rt('future', { surfaceDate: '2026-12-31' }),
+        rt('new', { created: '2026-11-25' }),
       ],
-      [rt('future', { surfaceDate: '2026-12-31' }), rt('new', { created: '2026-11-25' })],
       TODAY,
       ME,
     );
@@ -157,13 +158,16 @@ describe('recentTodos', () => {
         source: 'stamp',
       },
     });
-    const got = recentTodos([rt('made', { created: '2026-11-23' }), passed], [], TODAY, ME);
+    const got = recentTodos([rt('made', { created: '2026-11-23' }), passed], TODAY, ME);
     expect(got.map((t) => t.key)).toEqual(['passed', 'made']);
   });
-  it('leaves personal tasks out and lists a task in both lists once', () => {
+  it('leaves personal tasks out and lists a task once', () => {
     const got = recentTodos(
-      [rt('a', { created: '2026-11-24' }), rt('p', { scope: 'personal', created: '2026-11-25' })],
-      [rt('a', { created: '2026-11-24' })],
+      [
+        rt('a', { created: '2026-11-24' }),
+        rt('p', { scope: 'personal', created: '2026-11-25' }),
+        rt('a', { created: '2026-11-24' }),
+      ],
       TODAY,
       ME,
     );

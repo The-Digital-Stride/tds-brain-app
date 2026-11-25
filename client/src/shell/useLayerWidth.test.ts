@@ -28,9 +28,10 @@ describe('viewerLimits', () => {
 
 describe('chatDrawerLimits', () => {
   it('is bounded by the sheet it sits in, not the window, down to 380px', () => {
-    expect(chatDrawerLimits(700)).toEqual({ min: 380, max: 700 - 2 * CHAT_DRAWER_PAD });
-    // A sheet narrower than 380px plus the gaps: the drawer takes what room there is and cannot move.
-    expect(chatDrawerLimits(300)).toEqual({ min: 276, max: 276 });
+    // The drawer sits on the sheet's right edge, so only the gap on its left comes off.
+    expect(chatDrawerLimits(700)).toEqual({ min: 380, max: 700 - CHAT_DRAWER_PAD });
+    // A sheet narrower than 380px plus the gap: the drawer takes what room there is and cannot move.
+    expect(chatDrawerLimits(300)).toEqual({ min: 288, max: 288 });
   });
 });
 
@@ -71,8 +72,8 @@ describe('stepWidth', () => {
 });
 
 describe('maxBesideContent', () => {
-  it('leaves 600px beside the drawer and its gaps', () => {
-    expect(maxBesideContent(1200)).toBe(1200 - 2 * CHAT_DRAWER_PAD - CONTENT_MIN);
+  it('leaves 600px beside the drawer and its gap', () => {
+    expect(maxBesideContent(1200)).toBe(1200 - CHAT_DRAWER_PAD - CONTENT_MIN);
   });
   it("never goes under the drawer's narrowest", () => {
     expect(maxBesideContent(900)).toBe(380);

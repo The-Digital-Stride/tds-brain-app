@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react';
 import { useDesk, useShell } from './ShellProvider.tsx';
 
-/** The gap round the viewer drawer (`--viewer-pad` in viewer.css). */
+/**
+ * The gap round the viewer drawer (`--viewer-pad` in viewer.css). 8px under 600px wide, where the drawer fills the
+ * window and has no handle, so this is not used there.
+ */
 export const VIEWER_PAD = 12;
 /** What the viewer leaves clear on the left so the rail stays in view (the same 70px viewer.css leaves). */
 const RAIL_ROOM = 70;
@@ -35,15 +38,18 @@ function layerLimits(windowWidth: number, narrowest: number): WidthLimits {
   return { min, max: Math.max(min, room) };
 }
 
-/** The gap the chat drawer leaves round itself inside the sheet (`.chat-drawer` in viewer.css). */
+/**
+ * The gap the chat drawer keeps on its left, inside the sheet (`--chat-drawer-gap` on `.chat-drawer` in viewer.css).
+ * Its top, bottom and right are the sheet's own edges, so it is as tall as the file viewer.
+ */
 export const CHAT_DRAWER_PAD = 12;
 
 /**
- * The chat drawer sits inside the sheet, so its room is the sheet's width less its gaps: down to 380px (or the
- * room, if less); its default is 520px.
+ * The chat drawer sits inside the sheet, on its right edge, so its room is the sheet's width less the gap on its
+ * left: down to 380px (or the room, if less); its default is 520px.
  */
 export function chatDrawerLimits(sheetWidth: number): WidthLimits {
-  const room = sheetWidth - 2 * CHAT_DRAWER_PAD;
+  const room = sheetWidth - CHAT_DRAWER_PAD;
   const min = Math.min(CHAT_DRAWER_MIN, room);
   return { min, max: Math.max(min, room) };
 }
@@ -97,10 +103,10 @@ export const CONTENT_MIN = 600;
 
 /**
  * The widest the chat drawer may be, for this session only, so `CONTENT_MIN` is left beside it on the sheet
- * (its own gaps included). Never below the drawer's narrowest: under that the drawer overlays as before.
+ * (its own gap included). Never below the drawer's narrowest: under that the drawer overlays as before.
  */
 export function maxBesideContent(sheetWidth: number): number {
-  return Math.max(chatDrawerLimits(sheetWidth).min, sheetWidth - 2 * CHAT_DRAWER_PAD - CONTENT_MIN);
+  return Math.max(chatDrawerLimits(sheetWidth).min, sheetWidth - CHAT_DRAWER_PAD - CONTENT_MIN);
 }
 
 /**

@@ -35,7 +35,7 @@ describe('useLayerWidth with a session cap (Save to project beside Projects)', (
   });
 
   it('caps the default width too when the cap is narrower than it', () => {
-    const narrow = 1000; // cap = 380 (the narrowest), under the 520 default
+    const narrow = 980; // cap = 380 (the narrowest), under the 520 default
     const { result } = renderHook(() => useLayerWidth('chat', narrow, maxBesideContent(narrow)));
     expect(result.current.width).toBe(380);
     expect(result.current.style).toEqual({ width: 380 });
@@ -45,7 +45,8 @@ describe('useLayerWidth with a session cap (Save to project beside Projects)', (
     shell.state.chatDrawerWidth = 1000;
     const { result } = renderHook(() => useLayerWidth('chat', sheet));
     expect(result.current.width).toBe(1000);
-    expect(result.current.max).toBe(sheet - 24);
+    // The sheet's width less the 12px the drawer keeps on its left.
+    expect(result.current.max).toBe(sheet - 12);
     act(() => result.current.commit(1300));
     expect(shell.dispatch).toHaveBeenCalledWith({ type: 'set-chat-drawer-width', width: 1300 });
   });

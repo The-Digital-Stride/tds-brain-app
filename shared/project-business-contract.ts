@@ -152,13 +152,28 @@ export interface BusinessSection {
  *   "Key people", up to the next heading of its level or above: each list item, table row and paragraph.
  * An email address anywhere else in the files is never picked up.
  *
- * One contact per address (compared without case; the first spelling is kept). The name is the bold name or
- * the leading words of the line, list item or table row the address sits in; null when none reads as a name,
- * and the picker then shows the address alone. A list item or table row whose name is struck through
- * (`~~Name~~`: they have left) is skipped. `main` is true for a "Main contact" or "Primary contact" label, or
- * a line that says "main contact" or "primary contact". Main contacts come first, then file order, cut at
- * BUSINESS_CONTACTS_MAX. Addresses at `example.com`, `example.org` and `example.net`, and any ending `.test`,
- * `.example` or `.invalid`, are template text and are left out.
+ * One contact per address (compared without case; the first spelling is kept), main contacts first, then file
+ * order, cut at BUSINESS_CONTACTS_MAX. `main` is true for a "Main contact" or "Primary contact" label, or a
+ * line that says "main contact" or "primary contact".
+ *
+ * The name is a best reading of free text, and the rule is: better no name than the wrong one (the picker
+ * then shows the address alone).
+ * - The first address on a line, list item or label value, with nothing separating it from the start, takes
+ *   the name that leads it: the bold start, or the capitalised words before the first comma, dash or bracket.
+ * - After a separator (`;`, `·`, a table bar, the end of a sentence) the name written beside the address
+ *   wins: a bold name, "Name (" straight before it, or the capitalised words that start that part ("…; her
+ *   PA Kate Lee (kate@…)" is Kate Lee). A lone word there must also look like the address.
+ * - When nothing is written beside the first address, it may still take the leading name (a table's first
+ *   cell, a list item's bold name), but only when the address looks like that person's: a word of the name
+ *   in the part before the @, or their initials. "Invoices to accounts@…" in Sarah's row is not Sarah.
+ * - Job and team words ("Director", "Accounts", "PA") are never a name or part of one.
+ *
+ * Left out: anyone struck through (`~~Name~~`, however nested, or a struck address: they have left); a line
+ * or item that says "do not contact" or "don't email", and a label such as "Do not contact:"; template
+ * addresses (`example.com`, `example.org`, `example.net`, and any ending `.test`, `.example` or `.invalid`).
+ *
+ * Cost: names are read from at most a few hundred characters beside each address, and the shared markdown
+ * helpers are one-pass, so a hostile or pasted-in 256 KB file is read in well under a second.
  */
 export interface BusinessContact {
   /** Plain text, at most CONTACT_NAME_MAX characters. Never HTML or markdown. */

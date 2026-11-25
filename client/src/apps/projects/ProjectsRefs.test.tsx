@@ -152,9 +152,7 @@ describe('project code on the Overview', () => {
     expect(pick.value).toBe('kim@skyseal.co.uk');
     const link = screen.getByRole('link', { name: /Write an email/ });
     expect(link.getAttribute('href')).toBe(gmailComposeUrl(null, 'SKY4K7', 'kim@skyseal.co.uk'));
-    expect(
-      screen.getByText(/The people listed are the contacts in the client's files in the brain\./),
-    ).toBeTruthy();
+    expect(screen.getByText(/The people listed come from the client's contacts in the brain\./)).toBeTruthy();
 
     fireEvent.change(pick, { target: { value: 'lee@skyseal.co.uk' } });
     const toLee = gmailComposeUrl(null, 'SKY4K7', 'lee@skyseal.co.uk');
@@ -165,6 +163,38 @@ describe('project code on the Overview', () => {
     fireEvent.change(pick, { target: { value: '' } });
     expect(pick.value).toBe('');
     expect(link.getAttribute('href')).toBe(gmailComposeUrl(null, 'SKY4K7'));
+  });
+
+  it('the pick belongs to one project, and falls back to the first contact when its person is no longer listed', async () => {
+    const { ProjectRef } = await import('./ProjectRef.tsx');
+    const first = mk();
+    const second = mk({ slug: 'other', title: 'Other site', ref: 'SKY9P2' });
+    expect(second.key).not.toBe(first.key);
+    const list = projectList([first, second], { canRef: true });
+    const show = (c: typeof first, contacts: BusinessContact[]) => (
+      <ProjectRef card={c} list={list} title={() => 'x'} contacts={contacts} />
+    );
+    const { rerender } = render(show(first, [KIM, LEE]));
+    const pick = () => screen.getByLabelText('Email to') as HTMLSelectElement;
+    const href = () => screen.getByRole('link', { name: /Write an email/ }).getAttribute('href');
+    fireEvent.change(pick(), { target: { value: 'lee@skyseal.co.uk' } });
+    expect(pick().value).toBe('lee@skyseal.co.uk');
+
+    // Another project starts at its own first contact, with its own code.
+    rerender(show(second, [KIM, LEE]));
+    expect(pick().value).toBe('kim@skyseal.co.uk');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY9P2', 'kim@skyseal.co.uk'));
+
+    // Back on the first project, Lee is gone from the client's file: the first contact, never a stale address.
+    rerender(show(first, [KIM]));
+    expect(pick().value).toBe('kim@skyseal.co.uk');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY4K7', 'kim@skyseal.co.uk'));
+
+    // "Someone else" stays chosen when the list changes.
+    fireEvent.change(pick(), { target: { value: '' } });
+    rerender(show(first, [KIM, LEE]));
+    expect(pick().value).toBe('');
+    expect(href()).toBe(gmailComposeUrl(null, 'SKY4K7'));
   });
 
   it('never offers this person or a colleague named in the client file', async () => {

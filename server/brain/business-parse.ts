@@ -14,7 +14,27 @@ import {
 } from '../../shared/project-business-contract.ts';
 
 export const LABEL_LINE = /^\s*(?:[-*]\s+)?\*\*(.+?):\*\*\s*(.*)$/;
-export const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+const HEADING_START = /^(#{1,6})\s+/;
+const SPACE = /\s/;
+/**
+ * A markdown heading: `[line, hashes, text]`, the text without a closing run of #s or the spaces round it.
+ * Used like the pattern it replaced (`/^(#{1,6})\s+(.*?)\s*#*\s*$/`), which took time growing with the cube
+ * of a long run of spaces after a heading (800 spaces: 2.8 s on the server's one thread). The end is now
+ * trimmed by hand, in one pass.
+ */
+export const HEADING = {
+  exec(line: string): [string, string, string] | null {
+    const m = HEADING_START.exec(line);
+    if (!m) return null;
+    const from = m[0].length;
+    let end = line.length;
+    while (end > from && SPACE.test(line[end - 1] ?? '')) end--;
+    while (end > from && line[end - 1] === '#') end--;
+    while (end > from && SPACE.test(line[end - 1] ?? '')) end--;
+    return [line, m[1] ?? '', line.slice(from, end)];
+  },
+  test: (line: string): boolean => HEADING_START.test(line),
+};
 const LIST_OR_TABLE = /^\s*(?:[-*+]\s|\d+[.)]\s|\||>)/;
 
 /** Text with CRLF folded, frontmatter and HTML comments removed. */
@@ -22,14 +42,40 @@ export function clean(text: string | null): string {
   if (!text) return '';
   let t = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   t = t.replace(/^---\n[\s\S]*?\n---[ \t]*(?:\n|$)/, '');
-  return t.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/, '');
+  return withoutComments(t);
 }
 
-/** Plain text: markdown marks, links and tags removed, spaces folded. */
+/**
+ * HTML comments removed: each `<!-- … -->`, then anything from a `<!--` still left to the end (an unclosed
+ * one, or one the removals joined up, exactly as the two patterns this replaced did). One pass with
+ * `indexOf`; the patterns looked from every unclosed `<!--` to the end of the file.
+ */
+function withoutComments(t: string): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const open = t.indexOf('<!--', at);
+    const close = open < 0 ? -1 : t.indexOf('-->', open + 4);
+    if (close < 0) {
+      out += t.slice(at);
+      break;
+    }
+    out += t.slice(at, open);
+    at = close + 3;
+  }
+  const left = out.indexOf('<!--');
+  return left < 0 ? out : out.slice(0, left);
+}
+
+/**
+ * Plain text: markdown marks, links and tags removed, spaces folded. A link's text, its address and a tag are
+ * each looked for over a bounded length, so a run of `[` or `<` costs in proportion to its size (unbounded,
+ * 64,000 of them took over 15 s).
+ */
 export function plain(s: string): string {
   return s
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]*>/g, '')
+    .replace(/!?\[([^\]]{0,300})\]\([^)]{0,1000}\)/g, '$1')
+    .replace(/<[^>]{0,500}>/g, '')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/(\*\*|__|~~)/g, '')
     .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=$|[\s).,;:!?])/g, '$1$2')

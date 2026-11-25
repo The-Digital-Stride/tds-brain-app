@@ -209,8 +209,8 @@ export function ProjectRef({
       {shown ? (
         <p className="proj-note">
           Write an email opens Gmail in a small window with this code already in it.
-          {people.length > 0 ? " The people listed are the contacts in the client's files in the brain." : ''}{' '}
-          You can also paste the code into a meeting invite or any email.
+          {people.length > 0 ? " The people listed come from the client's contacts in the brain." : ''} You
+          can also paste the code into a meeting invite or any email.
         </p>
       ) : null}
       {problem ? (

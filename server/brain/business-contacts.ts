@@ -26,12 +26,41 @@ const MATCHES_MAX = 400;
 
 const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+/;
 const TABLE_ROW = /^\s*\|/;
-const TABLE_RULE = /^\s*\|?[\s:|-]+\|?\s*$/;
+const TABLE_RULE = /^[\s:|-]+$/;
 const MAIN_LABEL = /^(?:main|primary)\s+contacts?$/i;
 const SAYS_MAIN = /\b(?:main|primary)\s+contact\b/i;
-/** A name: a capitalised word, then more words (a nickname may sit in quotes). Letters, marks, `'`, `.` and `-` only. */
-const NAME = /^\p{Lu}[\p{L}\p{M}'’.-]*(?:\s+(?:[\p{L}\p{M}'’.-]+|["“][\p{L}\p{M}'’.-]+["”]))*$/u;
-/** Words that lead a line but are never a person. */
+/** "Do not contact", "don't email": the line names someone NOT to write to, so nobody on it is offered. */
+const SAYS_DO_NOT = /\bdo(?:n't|n’t|\s+not)\s+(?:contact|email|e-mail|write|use)\b/i;
+/** A label or heading longer than this is not a contact label (and is never cleaned up: see LOOK). */
+const LABEL_MAX = 80;
+/**
+ * How much text beside an address is read for a name. Everything that cleans markdown (`plain`) or looks
+ * backwards for a name works on a slice this long at most, so a hostile or pasted-in file costs time in
+ * proportion to its size and never more (correctness review, 2026-11-25: whole-block reads took minutes).
+ */
+const LOOK = 300;
+/** A name: capitalised words; a nickname may sit in quotes; a few lower-case particles ("de", "van") may join them. */
+const NAME =
+  /^\p{Lu}[\p{L}\p{M}'’.-]*(?:\s+(?:\p{Lu}[\p{L}\p{M}'’.-]*|["“]\p{Lu}[\p{L}\p{M}'’.-]*["”]|de|del|der|den|di|da|la|le|van|von|bin|al))*$/u;
+/** Words that lead a line but are never part of a person's name. */
+const LEADING_WORDS = new Set([
+  'her',
+  'his',
+  'their',
+  'the',
+  'also',
+  'and',
+  'or',
+  'with',
+  'cc',
+  'plus',
+  'then',
+  'via',
+  'to',
+  'from',
+  'for',
+]);
+/** Words that mean a line label, a job or a team, never a person. */
 const NOT_A_NAME = new Set([
   'email',
   'e-mail',
@@ -42,30 +71,106 @@ const NOT_A_NAME = new Set([
   'contacts',
   'note',
   'notes',
+  'invoices',
+  'billing',
+  'enquiries',
+  'director',
+  'manager',
+  'head',
+  'lead',
+  'owner',
+  'founder',
+  'officer',
+  'executive',
+  'assistant',
+  'marketing',
+  'sales',
+  'accounts',
+  'finance',
+  'operations',
+  'team',
+  'ceo',
+  'md',
+  'cfo',
+  'coo',
+  'cto',
+  'pa',
+  'partner',
+  'engineer',
+  'coordinator',
+  'administrator',
+  'consultant',
+  'office',
+  'support',
+  'department',
 ]);
 /** "Name (" or "Name <" straight before an address: up to four capitalised words. */
 const NAME_BEFORE_OPENER = /(\p{Lu}[\p{L}\p{M}'’.-]*(?:\s+\p{Lu}[\p{L}\p{M}'’.-]*){0,3})\s*[(<[]\s*$/u;
+/** What ends one person's part of a line: `;`, `·`, a table bar, or the end of a sentence. */
+const SEPARATOR = /[;·|]|\.\s/g;
 
 const isContactLabel = (label: string): boolean =>
-  !label.includes('*') && /(?:^|\s)contacts?$/i.test(plain(label).trim());
+  label.length <= LABEL_MAX &&
+  !label.includes('*') &&
+  /(?:^|\s)contacts?$/i.test(plain(label).trim()) &&
+  !/\b(?:not|never|no|don't|don’t)\b/i.test(label);
 
 function isContactHeading(text: string): boolean {
+  if (text.length > LABEL_MAX) return false;
   const key = headingKey(text);
   return /(?:^|\s)contacts?$/.test(key) || key === 'people' || key === 'key people';
 }
 
-/** The words as a person's name, or null when they don't read as one. */
-function asName(words: string): string | null {
+/**
+ * The words as a person's name, or null when they don't read as one: the first clause, without leading
+ * words like "her" or "PA", every word capitalised, and no job or team word left in it.
+ */
+function asName(text: string): string | null {
+  // A name that is the text of a mailto link: `[Kim Example](mailto:` straight before the address.
+  const words = text
+    .slice(0, LOOK)
+    .replace(/\]\((?:mailto:)?\s*$/i, '')
+    .replace(/^\s*\[/, '');
   const first = plain(words).split(/[—–,(:;·|[<]|\s-\s|\.(?:\s|$)/)[0] ?? '';
-  const name = first.trim();
-  if (name === '' || name.length > CONTACT_NAME_MAX) return null;
-  if (name.split(/\s+/).length > 5 || NOT_A_NAME.has(name.toLowerCase())) return null;
+  const parts = first.trim().split(/\s+/).filter(Boolean);
+  while (parts.length > 0 && isFiller(parts[0] ?? '')) parts.shift();
+  const name = parts.join(' ');
+  if (name === '' || name.length > CONTACT_NAME_MAX || parts.length > 5) return null;
+  if (parts.some((w) => NOT_A_NAME.has(bare(w)))) return null;
   return NAME.test(name) ? name : null;
+}
+
+const bare = (word: string): string => word.toLowerCase().replace(/[^\p{L}-]/gu, '');
+const isFiller = (word: string): boolean => LEADING_WORDS.has(bare(word)) || NOT_A_NAME.has(bare(word));
+
+/**
+ * Does the address look like this person's? True when a word of the name is in the part before the @
+ * ("brown" in `t.brown`), that part starts a word of the name (`rob` for Robert), or it is their initials.
+ */
+function related(name: string, email: string): boolean {
+  const local = email.slice(0, email.indexOf('@')).toLowerCase();
+  const tokens = local.split(/[^a-z0-9]+/).filter(Boolean);
+  const words = name
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter((w) => w.length >= 2);
+  const hit = words.some(
+    (w) =>
+      (w.length >= 3 && local.includes(w)) ||
+      tokens.includes(w) ||
+      tokens.some((t) => t.length >= 3 && w.startsWith(t)),
+  );
+  if (hit) return true;
+  const initials = words.map((w) => w[0]).join('');
+  return initials.length >= 2 && tokens.join('') === initials;
 }
 
 /** The name that leads a line, list item, table cell or label value: its bold start, or the words before the address. */
 function leadName(raw: string): string | null {
-  const t = raw.replace(LIST_ITEM, '').replace(/^\*\*[^*]+:\*\*\s*/, '');
+  const t = raw
+    .slice(0, LOOK * 2)
+    .replace(LIST_ITEM, '')
+    .replace(/^\*\*[^*]+:\*\*\s*/, '');
   const bold = /^\*\*([^*]+)\*\*/.exec(t);
   if (bold) return asName(bold[1] ?? '');
   EMAIL.lastIndex = 0;
@@ -74,17 +179,41 @@ function leadName(raw: string): string | null {
   return asName(at ? t.slice(0, at.index) : t);
 }
 
-/** The name for a later address on a line that holds several: read from the words since the address before. */
-function nearName(before: string): string | null {
-  const bolds = [...before.matchAll(/\*\*([^*]+)\*\*/g)];
+/**
+ * The name written beside an address: in `tail`, the words between the last separator (or the address
+ * before) and this address. A bold name; else "Name (" straight before it; else the capitalised words that
+ * start the tail, where a lone word must also look like the address ("Prefers kim@…" names nobody).
+ */
+function nameBeside(tail: string, email: string): string | null {
+  const bolds = [...tail.matchAll(/\*\*([^*]+)\*\*/g)];
   const lastBold = bolds[bolds.length - 1];
   if (lastBold) return asName(lastBold[1] ?? '');
-  const t = before.replace(/[`*_]/g, '');
+  const t = tail.replace(/[`*_~]/g, '');
   const opener = NAME_BEFORE_OPENER.exec(t);
-  if (opener) return asName(opener[1] ?? '');
-  const tail = t.split(/[;·|\n]/).pop() ?? '';
-  const fromCapital = /(?:^|[^\p{L}])(\p{Lu}[\s\S]*)$/u.exec(tail);
-  return fromCapital ? asName(fromCapital[1] ?? '') : null;
+  const beforeOpener = opener ? asName(opener[1] ?? '') : null;
+  if (beforeOpener) return beforeOpener;
+  const fromCapital = /(?:^|[^\p{L}])(\p{Lu}[\s\S]*)$/u.exec(t);
+  const name = fromCapital ? asName(fromCapital[1] ?? '') : null;
+  if (!name) return null;
+  return name.includes(' ') || related(name, email) ? name : null;
+}
+
+/**
+ * The name for the address that starts at `start`, given where the address before it ended. The first
+ * address on a line with nothing separating it from the line's start belongs to the name that leads the
+ * line. After a separator the name beside the address wins ("…; her PA Kate Lee (kate@…)"); when there is
+ * none, the first address may still take the leading name, but only when it looks like that person's (a
+ * table's "Invoices to accounts@…" is not the person in the first cell).
+ */
+function nameFor(b: Block, n: number, prevEnd: number, start: number, email: string): string | null {
+  const seg = b.raw.slice(Math.max(prevEnd, start - LOOK), start);
+  let cut = -1;
+  for (const m of seg.matchAll(SEPARATOR)) cut = (m.index ?? 0) + m[0].length;
+  const separated = cut >= 0 || start - prevEnd > LOOK;
+  if (n === 0 && !separated) return b.lead;
+  const beside = nameBeside(cut >= 0 ? seg.slice(cut) : seg, email);
+  if (beside) return beside;
+  return n === 0 && b.lead && related(b.lead, email) ? b.lead : null;
 }
 
 interface Block {
@@ -96,8 +225,11 @@ interface Block {
 const block = (raw: string, lead: string | null, main = false): Block => ({
   raw,
   lead,
-  main: main || SAYS_MAIN.test(plain(raw)),
+  main: main || SAYS_MAIN.test(raw),
 });
+
+/** A name struck through at the start of an item or cell, however the marks are nested (`**~~Name~~**`). */
+const STRUCK_START = /^(?:\*\*|__)?~~/;
 
 const isBreak = (line: string): boolean => line.trim() === '' || HEADING.test(line);
 
@@ -111,7 +243,7 @@ function readOne(lines: string[], i: number): [Block | null, number] {
   if (TABLE_ROW.test(line)) {
     if (TABLE_RULE.test(line)) return [null, i + 1];
     const first = (line.replace(/^\s*\|/, '').split('|')[0] ?? '').trim();
-    if (first.startsWith('~~')) return [null, i + 1];
+    if (STRUCK_START.test(first)) return [null, i + 1];
     return [block(line, leadName(first)), i + 1];
   }
   const item = LIST_ITEM.exec(line);
@@ -128,7 +260,7 @@ function readOne(lines: string[], i: number): [Block | null, number] {
     } else if (nextItem || LABEL_LINE.test(next)) break;
     parts.push(next);
   }
-  if (item && /^~~/.test(line.replace(LIST_ITEM, ''))) return [null, j];
+  if (item && STRUCK_START.test(line.replace(LIST_ITEM, ''))) return [null, j];
   const raw = parts.join('\n');
   return [block(raw, leadName(parts.join(' '))), j];
 }
@@ -198,15 +330,25 @@ export function parseContacts(businessText: string | null, profileText: string |
     let seen = 0;
     for (const b of contactBlocks(text)) {
       if (seen >= MATCHES_MAX) break;
+      if (SAYS_DO_NOT.test(b.raw)) continue;
+      // Struck-through runs: an address inside one, or whose name is inside one, belongs to someone who has left.
+      const struck = [...b.raw.matchAll(/~~[^~]*~~/g)].map((m) => ({
+        from: m.index ?? 0,
+        to: (m.index ?? 0) + m[0].length,
+        words: plain(m[0].slice(0, LOOK)),
+      }));
       let prevEnd = 0;
       let n = 0;
       for (const m of b.raw.matchAll(EMAIL)) {
         if (++seen > MATCHES_MAX) break;
         const email = m[0];
         const start = m.index ?? 0;
-        const name = n === 0 ? b.lead : nearName(b.raw.slice(prevEnd, start));
+        // A struck address is as if it were not written: the next one on the line still counts as the first.
+        if (struck.some((r) => start >= r.from && start < r.to)) continue;
+        const name = nameFor(b, n, prevEnd, start, email);
         n++;
         prevEnd = start + email.length;
+        if (name && struck.some((r) => r.words.includes(name))) continue;
         if (email.length > 254 || TEMPLATE_HOST.test(email.slice(email.indexOf('@') + 1))) continue;
         const key = email.toLowerCase();
         const had = found.get(key);

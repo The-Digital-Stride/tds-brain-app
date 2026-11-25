@@ -267,3 +267,97 @@ describe('parseContacts: what is kept and left out', () => {
     expect(Date.now() - start).toBeLessThan(1500);
   });
 });
+
+describe('parseContacts: review fixes (2026-11-25)', () => {
+  it('stays quick on hostile text: brackets, tags, one huge word, a long table line', () => {
+    const cases = [
+      `## Contacts\n\n${'['.repeat(64000)}`,
+      `## Contacts\n\n${'<'.repeat(64000)}`,
+      `## Contacts\n\n${'[a]('.repeat(16000)}`,
+      `## Contacts\n\na@b.co ${'A'.repeat(64000)} c@d.co`,
+      `## Contacts\n\n- ${'A'.repeat(64000)} c@d.co`,
+      `## Contacts\n\n|${' '.repeat(64000)}x`,
+      `**${'['.repeat(64000)} contact:** a@b.co`,
+      `## ${'['.repeat(64000)} contacts\n`,
+      `**Main contact:** ${'~~a'.repeat(30000)} a@b.co`,
+    ];
+    for (const text of cases) {
+      const start = Date.now();
+      parseContacts(text, text);
+      expect(Date.now() - start, text.slice(0, 30)).toBeLessThan(1000);
+    }
+  });
+
+  it('someone struck through is skipped however the marks are nested', () => {
+    const got = one(
+      [
+        '## Contacts',
+        '- **~~Sarah Jones~~** — sarah@acme.co.uk',
+        '- __~~Pat Third~~__ — pat@acme.co.uk',
+        '| **~~Old Hand~~** | Was the lead | old@acme.co.uk |',
+        '- Kim Example — ~~kim.old@acme.co.uk~~ kim@acme.co.uk',
+      ].join('\n'),
+    );
+    expect(got).toEqual([{ name: 'Kim Example', email: 'kim@acme.co.uk', main: false }]);
+  });
+
+  it('a struck name inside a line drops only that person', () => {
+    const got = one('**Main contact:** ~~Sarah Jones~~ (sarah@acme.co.uk); Tom Brown (tom@acme.co.uk)\n');
+    expect(got).toEqual([{ name: 'Tom Brown', email: 'tom@acme.co.uk', main: true }]);
+  });
+
+  it('the name beside an address wins over the name that leads the line', () => {
+    expect(one('## Contacts\n- **Sarah Jones** — Director; her PA Kate Lee (kate@acme.co.uk)\n')).toEqual([
+      { name: 'Kate Lee', email: 'kate@acme.co.uk', main: false },
+    ]);
+    expect(
+      one('**Main contact:** Sarah Jones, Director. Her PA is **Kate Lee** — kate@acme.co.uk\n'),
+    ).toEqual([{ name: 'Kate Lee', email: 'kate@acme.co.uk', main: true }]);
+  });
+
+  it("a name from further back is only kept when the address looks like that person's", () => {
+    const got = one(
+      [
+        '## Contacts',
+        '| Name | Role | Notes |',
+        '|---|---|---|',
+        '| Sarah Jones | Director | Invoices to accounts@acme.co.uk |',
+        '| Tom Brown | Owner | Main contact. t.brown@acme.co.uk |',
+        '| Director | Ann Lee | ann@acme.co.uk |',
+        '- **Kim Example** — Director; pa@acme.co.uk books her diary',
+        '- **Jo Fourth**, Senior Manager. Tel: 01234 567 890. Email: jfourth@acme.co.uk.',
+      ].join('\n'),
+    );
+    expect(got).toEqual([
+      { name: 'Tom Brown', email: 't.brown@acme.co.uk', main: true },
+      { name: null, email: 'accounts@acme.co.uk', main: false },
+      { name: null, email: 'ann@acme.co.uk', main: false },
+      { name: null, email: 'pa@acme.co.uk', main: false },
+      { name: 'Jo Fourth', email: 'jfourth@acme.co.uk', main: false },
+    ]);
+  });
+
+  it('a role or company straight before the address is not taken for a name', () => {
+    expect(one('**Main contact:** Sarah Jones, Director (sarah@acme.co.uk)\n')).toEqual([
+      { name: 'Sarah Jones', email: 'sarah@acme.co.uk', main: true },
+    ]);
+    expect(one('## Contacts\n- Lee Other (lee@acme.co.uk); Marketing Director (md@acme.co.uk)\n')).toEqual([
+      { name: 'Lee Other', email: 'lee@acme.co.uk', main: false },
+      { name: null, email: 'md@acme.co.uk', main: false },
+    ]);
+  });
+
+  it('reads the name out of a mailto link', () => {
+    expect(one('**Main contact:** [Sarah Jones](mailto:sarah@acme.co.uk)\n')).toEqual([
+      { name: 'Sarah Jones', email: 'sarah@acme.co.uk', main: true },
+    ]);
+  });
+
+  it('a "do not contact" line or item lists nobody', () => {
+    expect(
+      one(
+        "**Do not contact:** Old Guy (old@acme.co.uk)\n\n## Contacts\n- **Ex Lead** — do not email. ex@acme.co.uk\n- **Kim Example** — kim@acme.co.uk\n- **Lee Other** — don't contact directly, lee@acme.co.uk\n",
+      ),
+    ).toEqual([{ name: 'Kim Example', email: 'kim@acme.co.uk', main: false }]);
+  });
+});

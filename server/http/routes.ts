@@ -55,6 +55,11 @@ import {
   FAVOURITE_FILES_MAX,
   FAVOURITE_TODOS_MAX,
   FILE_ID_MAX,
+  HOME_HIDDEN_MAX,
+  HOME_ITEM_ID_PATTERN,
+  HOME_SHORTCUTS_MAX,
+  type HomeShortcut,
+  homeShortcutKey,
   type Identity,
   LIBRARY_SEARCH_QUERY,
   type LibraryFile,
@@ -72,6 +77,7 @@ import {
   SECTIONS_MAX,
   SESSION_UUID_PATTERN,
   type SequencedEvent,
+  SKILL_NAME_PATTERN,
   type StartSessionRequest,
   type SyncStatus,
   type TeamTodo,
@@ -390,10 +396,25 @@ const EMPTY_TODOS: TodoList = {
   canAttach: false,
   canUpload: false,
 };
-const SKILL_NAME = /^[A-Za-z0-9][\w.:-]{0,127}$/;
 const MAX_PINS = 100;
 const SEEN_KEY_MAX = TODO_KEY_MAX;
 const SEEN_VALUE_MAX = 40;
+
+/** A Home shortcut of a kind this server knows, with every field in its pattern. Extra fields are dropped. */
+function isHomeShortcut(v: unknown): v is HomeShortcut {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (o.kind === 'skill') return typeof o.name === 'string' && SKILL_NAME_PATTERN.test(o.name);
+  if (o.kind === 'tool') {
+    return (
+      typeof o.section === 'string' &&
+      SECTION_ID_PATTERN.test(o.section) &&
+      typeof o.tool === 'string' &&
+      SECTION_ID_PATTERN.test(o.tool)
+    );
+  }
+  return false;
+}
 
 /** `PUT /api/prefs`: only known keys, each of the right type. */
 export async function validatePrefsPatch(
@@ -409,7 +430,7 @@ export async function validatePrefsPatch(
         if (
           !Array.isArray(value) ||
           value.length > MAX_PINS ||
-          !value.every((v) => typeof v === 'string' && SKILL_NAME.test(v))
+          !value.every((v) => typeof v === 'string' && SKILL_NAME_PATTERN.test(v))
         ) {
           throw bad('The pinned skills were not understood.');
         }
@@ -490,6 +511,27 @@ export async function validatePrefsPatch(
           throw bad('The starred files were not understood.');
         }
         patch.favouriteFiles = [...new Set(value as string[])];
+        break;
+      }
+      case 'homeHidden': {
+        if (
+          !Array.isArray(value) ||
+          value.length > HOME_HIDDEN_MAX ||
+          !value.every((v) => typeof v === 'string' && HOME_ITEM_ID_PATTERN.test(v))
+        ) {
+          throw bad('The hidden Home items were not understood.');
+        }
+        patch.homeHidden = [...new Set(value as string[])];
+        break;
+      }
+      case 'homeShortcuts': {
+        if (!Array.isArray(value) || value.length > HOME_SHORTCUTS_MAX || !value.every(isHomeShortcut)) {
+          throw bad('The Home shortcuts were not understood.');
+        }
+        const byKey = new Map<string, HomeShortcut>();
+        for (const v of value as HomeShortcut[])
+          if (!byKey.has(homeShortcutKey(v))) byKey.set(homeShortcutKey(v), v);
+        patch.homeShortcuts = [...byKey.values()];
         break;
       }
       case 'levelMode': {
@@ -725,7 +767,7 @@ function parseSetSkillLevel(body: unknown): { skill: string; tier: LevelTier | n
   const bad = () => new HttpError(400, 'bad-request', SKILL_LEVEL_MESSAGES['bad-request']);
   if (!isRec(body)) throw bad();
   const { skill, tier, note } = body;
-  if (typeof skill !== 'string' || !SKILL_NAME.test(skill)) throw bad();
+  if (typeof skill !== 'string' || !SKILL_NAME_PATTERN.test(skill)) throw bad();
   if (tier !== null && !isLevelTier(tier)) throw bad();
   if (
     note !== undefined &&

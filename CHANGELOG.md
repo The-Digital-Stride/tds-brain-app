@@ -2,6 +2,10 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.89.1 — 2026-11-25
+
+- **fix**: an owner or a scout can give every project a code
+
 ## v0.89.0 — 2026-11-25
 
 - **feat**: pick who an email goes to; Gmail opens in a small window

@@ -33,7 +33,7 @@ reviewed: 2026-11-25
 
 - When cards are hidden, the foot of Home says how many. Press **Show hidden cards** to open the panel.
 - Some cards only show when they have something in them, such as **Ads approvals**. The panel says when each one shows.
-- Shortcuts never start a skill. To use a skill, ask Claude in a chat.
+- Shortcuts never start a skill. To run one, type a slash and its name in a chat, such as `/meeting-notes`.
 - If a shortcut's tool is no longer in your Brain, Home hides it. The panel says "No longer in your Brain".
 - Your choices are kept with your app on this computer.
 

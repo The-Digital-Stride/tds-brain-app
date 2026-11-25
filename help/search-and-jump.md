@@ -3,7 +3,7 @@ id: search-and-jump
 title: Search or jump to
 area: getting-around
 order: 1
-summary: Find any task, chat, skill, client or file, or jump to a screen.
+summary: Find any task, chat, client, project or file, or jump to a screen.
 benefit: Get anywhere in a few key presses, without hunting through drawers.
 roles: all
 related: [keyboard-shortcuts, home, getting-help]

@@ -282,7 +282,11 @@ function PaletteDialog() {
           aria-autocomplete="list"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search tasks, chats, skills, files and more"
+          placeholder={
+            ctx.skillsHidden
+              ? 'Search tasks, chats, files and more'
+              : 'Search tasks, chats, skills, files and more'
+          }
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);

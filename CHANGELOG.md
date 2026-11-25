@@ -2,6 +2,11 @@
 
 Written automatically. When a `feat`, `fix`, `perf` or `refactor` commit lands on `main` (committed there or merged in), a git hook bumps the version in `package.json` and adds an entry here. See `scripts/bump-version.ts`.
 
+## v0.87.1 — 2026-11-25
+
+- **fix**: no skill shortcuts; Pinned skills card and skills in search for owners and scouts only
+- **fix**: no promise of skills in the search box for the team; help names both ways to start a skill
+
 ## v0.87.0 — 2026-11-25
 
 - **feat**: Home shortcuts can open a place or a drawer
